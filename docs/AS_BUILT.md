@@ -43,8 +43,10 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   already exists. **Add existing queue…** picks any queue folder. Rename, Hide/Show, and Remove
   (added ones only) never touch files. Saved in `~/Library/Application Support/ai.sweetlemon.muster/projects.json`.
   Folders are picked by the core's own dialog, so the window never hands the core a path.
-- **Logo:** the owner's purple dog-face mark (source: `muster/tasks/attachments/0006/`), as
-  the app icon and in the header.
+- **Logo:** the owner's dog-face mark, recoloured mint to blue on a dark blue-black with thicker
+  lines so it reads in the Dock and at 32 px (owner: "different color, slightly different, more
+  visible"). The original and two other colourings (amber, bright violet) are in
+  `muster/tasks/attachments/0006/`. It's the app icon and sits in the header.
 - **Board:** Inbox / To do / Doing / Blocked / Done. Cards show the id, title, type, priority,
   "needs you", open questions, files, who's on it (flagged when quiet for 12 h), what a blocked
   task waits on, and when it last changed. Tasks waiting on the owner sort first. Done shows the
