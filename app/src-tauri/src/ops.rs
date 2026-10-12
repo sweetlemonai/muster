@@ -239,9 +239,16 @@ pub fn slug(title: &str) -> String {
 
 /// The next free id: one more than the highest in any task file (four digits).
 pub fn next_id(root: &Path) -> Result<String, String> {
+    // The id written inside each task file, falling back to its file name.
     let max = queue::task_files(root)
         .iter()
-        .filter_map(|(_, p)| p.file_name()?.to_str()?.get(..4)?.parse::<u32>().ok())
+        .filter_map(|(_, p)| {
+            let text = std::fs::read_to_string(p).ok();
+            text.as_deref()
+                .and_then(front_matter)
+                .and_then(|(fm, _)| fm.get("id").and_then(|i| i.parse::<u32>().ok()))
+                .or_else(|| p.file_name()?.to_str()?.get(..4)?.parse::<u32>().ok())
+        })
         .max()
         .unwrap_or(0);
     if max >= 9999 {
@@ -953,6 +960,23 @@ mod tests {
         let t = &state(d.path()).tasks[0];
         assert_eq!((t.est_time.as_str(), t.est_tokens.as_str()), ("30m", ""));
         assert!(state(d.path()).problems.is_empty());
+    }
+
+    #[test]
+    fn next_id_ignores_dated_notes() {
+        let d = queue();
+        fs::write(d.path().join("inbox/2026-10-12-0900-note.md"), "note").unwrap();
+        create_task(
+            d.path(),
+            &NewTask {
+                title: "One".into(),
+                ..Default::default()
+            },
+            "o",
+            T,
+        )
+        .unwrap();
+        assert_eq!(next_id(d.path()).unwrap(), "0002");
     }
 
     #[test]

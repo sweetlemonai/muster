@@ -138,9 +138,19 @@ pub fn task_files(root: &Path) -> Vec<(String, PathBuf)> {
     out
 }
 
+/// `NNNN-slug.md`. Not a date-named note (`2026-10-12-0900-….md`, what agents drop in inbox/).
 fn is_task_name(name: &str) -> bool {
     let b = name.as_bytes();
-    name.len() > 8 && b[..4].iter().all(u8::is_ascii_digit) && b[4] == b'-' && name.ends_with(".md")
+    let task = name.len() > 8
+        && b[..4].iter().all(u8::is_ascii_digit)
+        && b[4] == b'-'
+        && name.ends_with(".md");
+    let dated = name.len() > 11
+        && b[5..7].iter().all(u8::is_ascii_digit)
+        && b[7] == b'-'
+        && b[8..10].iter().all(u8::is_ascii_digit)
+        && b[10] == b'-';
+    task && !dated
 }
 
 pub fn front_matter(text: &str) -> Option<(HashMap<String, String>, &str)> {
@@ -958,6 +968,25 @@ mod tests {
         assert_eq!(base64(b"fo"), "Zm8=");
         assert_eq!(base64(b"foo"), "Zm9v");
         assert_eq!(base64(b"foobar"), "Zm9vYmFy");
+    }
+
+    #[test]
+    fn dated_inbox_notes_are_not_tasks() {
+        assert!(is_task_name("0019-guard-escapes.md"));
+        assert!(is_task_name("0020-10-things.md"));
+        assert!(!is_task_name("2026-10-12-0900-i18n-followups.md"));
+        let d = queue();
+        fs::write(
+            d.path().join("inbox/2026-10-12-0900-note.md"),
+            "a raw note, no front matter",
+        )
+        .unwrap();
+        let s = read_state(
+            &[("p".into(), d.path().to_path_buf())],
+            &mut Cache::default(),
+        );
+        assert_eq!(s.tasks.len(), 1);
+        assert!(s.problems.is_empty(), "{:?}", s.problems);
     }
 
     #[test]
