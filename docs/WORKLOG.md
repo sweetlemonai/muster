@@ -2,6 +2,19 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-12 — Decided: `.muster/` in the repo, backlog, stages with roles, levels, points
+**Decided:** the owner moved tasks into the repo's `.muster/` (committed or local per project),
+picked the stage names (Backlog, Shaping, Ready, Building, Testing, Your check, Done) and the
+levels (Goal, Feature, Task). Blocked is a flag on any stage, claims live in the shared git
+folder, and actuals are stamped by the tool. Recorded in decision 0003.
+**Did:** filed Muster tasks 0014 (stages), 0015 (backlog and shaping), 0016 (levels), 0017
+(type, points, links, comments) and 0018 (`INDEX.md`). Rescoped 0002, 0004 and 0005. The build
+order is 0014, 0002, 0005, then the rest. Queue commit `7d5d372`. Updated `AS_BUILT.md`.
+**Verified:** `muster check` and `manifest.py --check` are clean.
+**Open:** whether the sandbox lets a worktree write to the main checkout's git folder (0005
+checks first). Drover's waiting-list reader has to follow `.muster/` (tell Drover's capture).
+`PROTOCOL.md` is still Drover's v2 text and gets rewritten with 0005.
+
 ## 2026-10-12 — Handed over to its own session
 **Did:** Muster gets its own session (builder + capture for `muster/tasks`). Drover's capture
 session keeps `drover/tasks`. Handoff: `.claude/work/handoffs/2026-10-12-1421-muster-takeover.md`.

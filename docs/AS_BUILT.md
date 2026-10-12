@@ -203,13 +203,21 @@ owner ◀────────────┘ WAITING-FOR-OWNER.md    └─ 
   fixed (`DOGFOOD.md` 36).
 - Hook cost: about 10 ms per tool call with an empty mailbox.
 
-## Decided: a queue next to each project
+## Decided, not built yet: `.muster/` in the repo, backlog, stages, levels (decision 0003)
 
-Each project's queue is `<project>/tasks`, beside its repo, with its own git history. There's no
-central queue repo. **New queue…** and `muster init` create it there. The app finds every
-`~/playground/*/tasks` (plus queues added by hand), and its **All** view gives the view across
-projects that was the reason for a central repo. Chosen by the build and confirmed in review
-(2026-10-12). It matches how every project under `~/playground` already lays out its repo.
+Today each queue is `<project>/tasks`, beside its repo, with its own git history (what's described
+above). The owner decided on 2026-10-12 to move it into the repo as `.muster/`, either committed
+(the default) or local. With that comes:
+- A backlog of raw one-liners, which agents shape into tasks.
+- Stages with roles: Backlog, Shaping, Ready, Building, Testing, Your check, Done. Blocked is a
+  flag on a stage, not a stage of its own.
+- Goals, features and tasks.
+- Points: estimates and actuals, in minutes and tokens.
+- Links, comments, and a generated `INDEX.md`.
+
+Live claims go in the repo's shared git folder. See
+`docs/decisions/0003-muster-in-the-repo-backlog-and-stages.md`. The work, in order: tasks 0014,
+0002, 0005, then 0015–0018 and 0004.
 
 ## Known limits
 
