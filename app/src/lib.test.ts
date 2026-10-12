@@ -43,7 +43,9 @@ describe("helpers", () => {
   });
   it("claimant drops the session id", () => {
     expect(claimant("drover/main (session 3fba2222)")).toBe("drover/main");
-    expect(claimant("themes session (outside this queue)")).toBe("themes session (outside this queue)");
+    expect(claimant("worktree-i18n (.claude/worktrees/i18n), session 41f7fe18")).toBe("worktree-i18n");
+    expect(claimant("capture (drover/main, session 349bc9c3)")).toBe("capture");
+    expect(claimant("themes session (outside this queue)")).toBe("themes session");
   });
   it("feed merges commits and file changes, newest first", () => {
     const f = feed([{ queue: "q", at: 5, what: "c", source: "commit" }], [task({ modified: 9, logTail: ["x done"] })]);

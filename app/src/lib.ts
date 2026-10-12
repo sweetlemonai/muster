@@ -44,7 +44,9 @@ export function stamp(d: Date): string {
 
 /** Who holds a claim, without the session id: "drover/main (session 3fba2222)" → "drover/main". */
 export function claimant(claimedBy: string): string {
-  return claimedBy.replace(/\s*\(session [0-9a-f]+\)\s*$/, "").trim();
+  // "drover/main (session 3fba2222)", "worktree-i18n (.claude/worktrees/i18n), session 41f7fe18" and
+  // "capture (drover/main, session 349bc9c3)" all come out as the name before the first ( or ,.
+  return claimedBy.split(/\s*[(,]/)[0].trim() || claimedBy.trim();
 }
 
 /** Recent changes: commits, plus tasks whose files changed, newest first. */

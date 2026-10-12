@@ -44,10 +44,18 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   already exists. **Add existing queue…** picks any queue folder. Rename, Hide/Show, and Remove
   (added ones only) never touch files. Saved in `~/Library/Application Support/ai.sweetlemon.muster/projects.json`.
   Folders are picked by the core's own dialog, so the window never hands the core a path.
-- **Logo:** the owner's dog-face mark, recoloured mint to blue on a dark blue-black with thicker
-  lines so it reads in the Dock and at 32 px (owner: "different color, slightly different, more
-  visible"). The original and two other colourings (amber, bright violet) are in
-  `muster/tasks/attachments/0006/`. It's the app icon and sits in the header.
+- **Look** (Muster task 0010): a violet palette (accent `#8B6CF0` dark and `#6D4AE0` light, with
+  violet-tinted backgrounds and surfaces), chosen because orange belongs to Drover and Braindump
+  and blue to 127. Board status colours: inbox gray, to do violet, doing teal, blocked rose,
+  needs you gold, done green, with no orange or blue. Contrast is checked to WCAG AA. Dark
+  buttons use dark text on violet. In the light theme, status colours are fills behind dark
+  text, with darker variants for coloured words.
+- **Icon:** a bot face with a visor eye and a check, drawn by capture as a vector
+  (`muster/tasks/attachments/0010/`). In use: **B**, the lineup's style (violet bot on near-black
+  `#16131F`, eye and check cut out), like Drover's orange crook on navy. **A** (light face on a
+  `#2E1F66`→`#170F38` gradient) is ready if the owner prefers it. `dock-preview-drover-a-drover-b.png`
+  shows both next to Drover's. The earlier dog-face mark and its recolourings are in
+  `attachments/0006/`.
 - **Board:** Inbox / To do / Doing / Blocked / Done. Cards show the id, title, type, priority,
   "needs you", open questions, files, who's on it (flagged when quiet for 12 h), what a blocked
   task waits on, and when it last changed. Tasks waiting on the owner sort first. Done shows the

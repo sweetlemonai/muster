@@ -239,7 +239,7 @@ function Card({ t, now, multi, onOpen, active }: { t: Task; now: number; multi: 
         {t.waitingForOwner && <span className="badge warn">needs you</span>}
         {t.openQuestions > 0 && <span className="badge">{t.openQuestions} open Q</span>}
         {t.attachments.length > 0 && <span className="badge">{t.attachments.length} file{t.attachments.length === 1 ? "" : "s"}</span>}
-        {t.status === "doing" && t.claimedBy && <span className={stale ? "badge warn" : "badge who"}>{claimant(t.claimedBy)}{stale ? " · quiet 12 h+" : ""}</span>}
+        {t.status === "doing" && t.claimedBy && <span className={stale ? "badge stale" : "badge who"}>{claimant(t.claimedBy)}{stale ? " · quiet 12 h+" : ""}</span>}
         {t.status === "blocked" && t.waitingOn && <span className="badge">on {t.waitingOn}</span>}
         <span className="age">{ago(now, t.modified)}</span>
       </span>
