@@ -1,0 +1,163 @@
+# Drover — task queue (protocol v2)
+
+Ideas, bugs and tasks from the owner, written up by the capture session and picked up by coding
+sessions. This queue is also a test bed for chit (`~/playground/chit`, `SPEC.md`). Its rules are
+taken from chit one at a time, tried here, and recorded in `SYSTEM.md` (what's adopted) and
+`DOGFOOD.md` (what went wrong).
+
+**One queue, one place:** `/Users/imassih/playground/drover/tasks/`, outside every code repo.
+Every checkout shares it. It has its own git history (the capture session commits). Never
+delete a task file.
+
+## Roles
+
+| Role | Who | Does |
+|---|---|---|
+| Owner | the human | product decisions, answers what's escalated |
+| Capture (PM + tech lead) | one session | writes tasks, triages `inbox/`, answers questions, escalates product questions to the owner, keeps the queue healthy |
+| Coder | any other session | claims a task, does it, logs, asks |
+
+Coders never ask the owner directly about a task. They ask in the task file. Capture answers
+or escalates. That way every answer lands in the file, where the next session finds it.
+
+## Layout: the folder is the status
+
+| Folder | Status | Meaning |
+|---|---|---|
+| `inbox/` | inbox | Raw notes from coders (new bugs, ideas found while working). Capture turns them into tasks. |
+| `todo/` | todo | Ready to claim. |
+| `doing/` | doing | Claimed by one session. |
+| `blocked/` | blocked | Waiting on something (`waiting_on`). Nobody holds it. |
+| `done/` | done | Shipped, with the commit. |
+
+**Find a task by its id, never by a remembered path:** files move between folders. Before every
+read or edit, locate it fresh:
+`ls /Users/imassih/playground/drover/tasks/*/0007-*`
+
+## The manifest: `tasks.json`
+
+`tasks.json` lists every task (id, title, status, folder, path, claim, heartbeat, waiting_on, open
+questions, attachments), plus counts, the inbox, what's waiting for the owner, the next free id,
+and any problems found. **It's generated from the task files, never edited by hand.** The files
+are the source of truth, so nobody fights over one shared file.
+
+- Build it: `python3 -I /Users/imassih/playground/drover/tasks/bin/manifest.py`
+- Check only (exit 1 on problems): `... bin/manifest.py --check`. It catches a status that doesn't
+  match the folder, ids used twice or not matching the file name, `doing/` with no claim,
+  `blocked/` with no `waiting_on`, `waiting_on` pointing at a task that doesn't exist, and a
+  heartbeat older than 12 hours.
+- Capture rebuilds it with every commit. Anyone may run it to read the queue.
+
+## Task file
+
+```markdown
+---
+id: 0012
+type: bug | idea | task
+priority: high | normal | low
+status: todo | doing | blocked | done
+captured: 2026-10-11
+claimed-by:            # branch/worktree + session id, set when claimed
+heartbeat:             # date-time of the owner's last log line; set on every log line
+waiting_on:            # owner | capture | 00NN (another task), when blocked
+commit:                # set when done
+---
+
+# One-line title
+
+**What the owner said:** their words, close to verbatim.
+**Details:** what exists today, where in the code, what's wanted.
+
+## Acceptance criteria
+- [ ] AC1: what must be true. — verify: command (`pnpm check`) | screenshot (what) | owner (what they check)
+
+## Questions
+## Log
+- 2026-10-11 captured
+```
+
+**Screenshots and other files** go in `attachments/<id>/` (e.g. `attachments/0008/2026-10-11-settings-today.png`),
+named by date and what they show. The task links them by that path and also describes what
+they show in words, for sessions that can't view images. Anything pasted into a chat is saved
+right away, because chat paste files are temporary.
+
+Ids: only capture numbers tasks. Coders who find something new drop a note in `inbox/` named
+`<date-time>-<short-slug>.md` (no number), and capture files it.
+
+## Working a task (coder)
+
+1. **Pick:** `todo/`, high priority first, then lowest id. Skip tasks whose `depends on` (in
+   Details) isn't done.
+2. **One claim at a time per session.** Finish, block or release your current task before you
+   claim another.
+3. **Claim:** `mv /Users/imassih/playground/drover/tasks/todo/00NN-*.md /Users/imassih/playground/drover/tasks/doing/`.
+   If it fails, someone else got it. Then set `status: doing`, `claimed-by`, `heartbeat`, and
+   add a log line.
+4. **Work** in the repo with its rules (`CLAUDE.md`, gate, work log). Never copy task files into
+   the repo.
+5. **Log** each meaningful step (one line) and update `heartbeat`. A task in `doing/` with no
+   heartbeat for 12 hours is returned to `todo/` by capture, with a note.
+6. **Waiting on something** (the themes branch, another task, an answer that blocks everything):
+   set `status: blocked` and `waiting_on`, log why, and move it to `blocked/`. That releases your
+   claim. Don't sit on it in `doing/`.
+7. **Done:** tick the acceptance criteria with their proof, set `status: done` and `commit`,
+   log, and move it to `done/`.
+
+## Questions and answers
+
+**Use the `task` command.** Answers then reach you on their own:
+
+```sh
+T=/Users/imassih/playground/drover/tasks/bin/task
+$T ask 0016 "Child webview or a separate window for phase 2?" --from <your branch>
+$T inbox            # answers waiting for this session (the hook delivers them anyway)
+```
+
+`ask` numbers the question, writes it into the task, lists the task's earlier questions (read
+them: yours may be answered), refuses a question that's already answered, and records your
+session. When capture answers (`$T answer 0016 Q3 "…"`), the answer is written into the task
+and put in your session's mailbox. A Claude Code hook (`bin/answer-hook.py`, on PostToolUse,
+UserPromptSubmit and SessionStart) hands it to you after your next tool call, mid-work. You
+don't have to re-read anything to see it. Without the hook, run `$T inbox` between steps.
+
+### File contract (v1): for tools that write answers without running `bin/task`
+
+`tasks.json` is replaced atomically (temp file + rename), so it's never seen half-written.
+Drover (task 0015) and any other tool may answer questions by writing files directly, as long as it
+keeps exactly this. `bin/task` keeps it too. `tasks.json` carries `"version": 1`. A tool that
+sees another version falls back to writing only the task file.
+
+1. **Lock:** hold an exclusive `flock` on `mail/.lock` for the whole read–modify–write of a task
+   file and the mailbox.
+2. **Answer:** in the task's `## Questions`, change the item's `- [ ] **Qn` to `- [x] **Qn` and
+   add a line directly under the item: `  **A (<who>, YYYY-MM-DD HH:MM):** <text>`. Append to
+   `## Log`: `- YYYY-MM-DD HH:MM <who>: answered Qn`. `<who>` is `capture`, `owner`, or a
+   session label.
+3. **Text:** strip control characters (U+0000–U+001F except newline, and U+007F), trim, and cap at
+   4,000 characters. Text is data. Never execute it.
+4. **Asker:** `mail/asks.json` maps `"<task>-Q<n>"` to the asker's session prefix: the first 8
+   characters of its session id, lowercase hex (`[0-9a-f]{8}`). Anything else is refused. If
+   it's missing there, use the `session xxxxxxxx` in the question line. If neither exists, no
+   mailbox file is written.
+5. **Mailbox:** write `mail/<session8>/<task>-Q<n>.md`, either the mailbox or typing it into a live
+   session, never both (so it isn't delivered twice),, plain UTF-8 text, naming the task, the
+   question and the answer. `bin/answer-hook.py` delivers it to that session as is, and moves it
+   to `mail/<session8>/delivered/`.
+
+By hand, if the command isn't available:
+
+- **Ask in the file, and keep going** on whatever the question doesn't block:
+  ```markdown
+  ## Questions
+  - [ ] **Q1 (your branch, session, 2026-10-11):** the question, what you checked, the options,
+    your pick.
+  ```
+  Only if it blocks everything: step 6 above with `waiting_on: capture`.
+- **Capture answers** under it and ticks it: `- [x] **Q1 ...**` then
+  `**A (capture, date):** ...`. Product questions get `**Escalated to owner (date)**`, then the
+  owner's answer. Answers decided for the owner say so, so the owner can overrule them.
+- **Before you continue, and before you tell the owner anything is waiting, re-read the
+  file.** An answered question is ticked. Never pass the owner a question that already has an
+  answer in the file.
+- Any role may append to `## Questions` and `## Log` of any task, claimed or not. Nothing else
+  in a claimed task is touched by anyone but its owner (and the owner human).
