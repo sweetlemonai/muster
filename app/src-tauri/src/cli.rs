@@ -9,10 +9,11 @@ const HELP: &str = "muster — tasks for agents and people
 
   muster new \"<title>\" [--type bug|task|idea] [--priority high|normal|low] [--body <text>|-]
                                              (in --body, \\n is a line break)
-  muster list [--status <s>] [--json]        tasks, by status
+  muster list [--status <s>] [--tag <t>] [--json]   tasks, by status
+                                             (new takes --tags spike,tech-debt; set <id> tags a,b)
   muster show <id> [--json]                  one task in full
   muster move <id> <inbox|todo|blocked|done> [--on \"<what it waits on>\"]
-  muster set <id> <priority|type|title> <value>
+  muster set <id> <priority|type|title|tags> <value>
   muster note <id> \"<text>\"                  add a line to the log
   muster attach <id> <file>...               copy files into attachments/<id>/
   muster answer <id> <Qn> \"<text>\"           answer a question (the asker gets it pushed)
@@ -41,7 +42,8 @@ fn parse(argv: &[String]) -> Result<Args, String> {
     while let Some(x) = it.next() {
         match x.as_str() {
             "--json" => a.json = true,
-            "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on" => {
+            "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on"
+            | "--tags" | "--tag" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -220,6 +222,11 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                 kind: a.flags.get("type").cloned().unwrap_or_default(),
                 priority: a.flags.get("priority").cloned().unwrap_or_default(),
                 body,
+                tags: a
+                    .flags
+                    .get("tags")
+                    .map(|t| vec![t.clone()])
+                    .unwrap_or_default(),
             };
             let c = ops::create_task(root, &new, &me, stamp)?;
             if a.json {
@@ -251,6 +258,9 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                         let mut extra = String::new();
                         if t.waiting_for_owner {
                             extra.push_str("  [needs you]");
+                        }
+                        if !t.tags.is_empty() {
+                            extra.push_str(&format!("  #{}", t.tags.join(" #")));
                         }
                         if t.open_questions > 0 {
                             extra.push_str(&format!("  [{} open Q]", t.open_questions));

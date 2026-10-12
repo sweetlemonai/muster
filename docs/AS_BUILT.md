@@ -44,6 +44,12 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   already exists. **Add existing queue…** picks any queue folder. Rename, Hide/Show, and Remove
   (added ones only) never touch files. Saved in `~/Library/Application Support/ai.sweetlemon.muster/projects.json`.
   Folders are picked by the core's own dialog, so the window never hands the core a path.
+- **Themes and accents** (Appearance, docked): 7 themes (Violet night, Violet day, Graphite,
+  Midnight, Paper, Snow, High contrast), with Match the Mac picking one dark and one light, and 6
+  accents (Violet, Teal, Rose, Gold, Green, Graphite). No blue, no orange. They apply live and are
+  remembered. Default: Muster's violet, following the Mac. A test checks every theme and accent
+  pair: text 7:1, secondary text 4.5:1, accent-coloured words 4.5:1 (they use the strong shade),
+  button text 4.5:1, fills 3:1.
 - **Look** (Muster task 0010): a violet palette (accent `#8B6CF0` dark and `#6D4AE0` light, with
   violet-tinted backgrounds and surfaces), chosen because orange belongs to Drover and Braindump
   and blue to 127. Board status colours: inbox gray, to do violet, doing teal, blocked rose,
@@ -56,7 +62,12 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   `#2E1F66`→`#170F38` gradient) is ready if the owner prefers it. `dock-preview-drover-a-drover-b.png`
   shows both next to Drover's. The earlier dog-face mark and its recolourings are in
   `attachments/0006/`.
-- **Board:** Inbox / To do / Doing / Blocked / Done. Cards show the id, title, type, priority,
+- **Layout: nothing covers the board.** A task, New task and Appearance open in one pane docked
+  beside the content, with the board still visible and live beside it (the owner: "need to have
+  everything in front of my eyes"). Drag the edge to resize it; the width is remembered. Esc
+  closes it.
+- **Filters:** above the board, by priority and by tag, with a "24 of 98 tasks" count.
+- **Board:** Inbox / To do / Doing / Blocked / Done. Cards show the id, title, type, priority (on every card: HIGH filled gold, normal outlined, low faint), tags,
   "needs you", open questions, files, who's on it (flagged when quiet for 12 h), what a blocked
   task waits on, and when it last changed. Tasks waiting on the owner sort first. Done shows the
   latest 8.
@@ -64,9 +75,13 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Task panel** (loads on first open): the task rendered as Markdown with a Raw switch,
   open questions with an answer box (⌘↩), the files as thumbnails that open large (← → between
   them, Esc to close), who's on it, what it waits on, and the commit.
-- **New task** (`+ New task`, ⌘N): project, type, priority, a one-line title, a Markdown
+- **New task** (`+ New task`, ⌘N, in the docked pane): project, type, priority, tags, a one-line title, a Markdown
   description, and files by paste, drop or picking. The id comes from the core under the queue's
   lock. The task lands in To do and opens.
+- **Tags:** a `tags:` list in the front matter. Suggested: spike, chore, tech-debt, code, docs,
+  design, research, test, perf, security, and any other word works. They're cleaned the same way
+  everywhere (lowercase, hyphens, 24 characters, 8 at most). On cards, in the filter, in New task
+  and on each task. `muster new --tags`, `muster set <id> tags`, `muster list --tag`.
 - **Managing a task** (top of its panel): status (inbox, to do, blocked with what it waits on,
   done; moving a claimed task releases the claim; the app never claims), priority, type, rename,
   a note to the log, and files by paste, drop or **Attach…**. Every change is logged with the

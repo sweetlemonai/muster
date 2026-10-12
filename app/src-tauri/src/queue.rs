@@ -48,6 +48,7 @@ pub struct Task {
     pub questions: Vec<Question>,
     pub open_questions: usize,
     pub waiting_for_owner: bool,
+    pub tags: Vec<String>,
     pub attachments: Vec<String>,
     pub log_tail: Vec<String>,
     pub modified: u64,
@@ -275,6 +276,11 @@ pub fn parse_task(
         questions,
         open_questions,
         waiting_for_owner,
+        tags: get("tags")
+            .split(',')
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .collect(),
         attachments,
         log_tail,
         modified,

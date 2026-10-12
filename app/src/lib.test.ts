@@ -5,7 +5,7 @@ import type { Task } from "./types";
 const task = (over: Partial<Task>): Task => ({
   queue: "drover", id: "0001", title: "T", kind: "task", priority: "normal", status: "todo", folder: "todo",
   path: "todo/0001-t.md", claimedBy: "", heartbeat: "", waitingOn: "", commit: "", captured: "", questions: [],
-  openQuestions: 0, waitingForOwner: false, attachments: [], logTail: [], modified: 0, ...over,
+  openQuestions: 0, waitingForOwner: false, tags: [], attachments: [], logTail: [], modified: 0, ...over,
 });
 
 describe("columns", () => {

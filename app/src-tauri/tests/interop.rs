@@ -88,6 +88,7 @@ fn tasks_made_by_the_app_pass_the_python_check() {
         kind: "bug".into(),
         priority: "high".into(),
         body: "Steps.".into(),
+        tags: vec!["spike".into()],
     };
     let c = muster_lib::ops::create_task(d.path(), &new, "owner", t).unwrap();
     muster_lib::ops::attach(d.path(), &c.id, "shot.png", b"png", "owner", t).unwrap();

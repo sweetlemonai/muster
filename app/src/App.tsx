@@ -4,13 +4,18 @@ import { ago, claimant, columns, COLUMNS, feed, key } from "./lib";
 import type { State, Task } from "./types";
 import Projects from "./Projects";
 import NewTask from "./NewTask";
+import Appearance from "./Appearance";
 import logo from "./logo.png";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
 const TaskPanel = lazy(() => import("./TaskPanel"));
 const Helper = lazy(() => import("./Helper"));
 type View = "board" | "helper" | "waiting" | "activity" | "problems" | "projects";
+// One docked pane beside the content, never over it (the owner wants everything in view).
+type Pane = { kind: "task"; key: string } | { kind: "new" } | { kind: "appearance" } | null;
 const POLL_MS = 2000;
+const PRIORITIES = ["high", "normal", "low"] as const;
+const PANE_KEY = "muster.paneWidth";
 
 // Poll the core while the window is visible; stop when it's hidden.
 function useQueues() {
@@ -49,43 +54,61 @@ function useQueues() {
   return { state, error, at, refresh };
 }
 
+function usePaneWidth(): [number, (w: number) => void] {
+  const [w, setW] = useState(() => Number(localStorage.getItem(PANE_KEY)) || 560);
+  const set = useCallback((v: number) => {
+    const c = Math.round(Math.min(Math.max(v, 360), Math.max(420, window.innerWidth - 420)));
+    setW(c);
+    localStorage.setItem(PANE_KEY, String(c));
+  }, []);
+  return [w, set];
+}
+
 export default function App() {
   const { state, error, at, refresh } = useQueues();
   const [queue, setQueue] = useState("all");
   const [view, setView] = useState<View>("board");
-  const [open, setOpen] = useState<string | null>(null);
+  const [pane, setPane] = useState<Pane>(null);
   const [showAllDone, setShowAllDone] = useState(false);
-  const [creating, setCreating] = useState(false);
+  const [prio, setPrio] = useState<string[]>([]);
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [width, setWidth] = usePaneWidth();
 
   useEffect(() => {
     if (queue !== "all" && state && !state.queues.some((q) => q.name === queue)) setQueue("all");
   }, [state, queue]);
 
+  const inQueue = useMemo(() => (state?.tasks ?? []).filter((t) => queue === "all" || t.queue === queue), [state, queue]);
   const tasks = useMemo(
-    () => (state?.tasks ?? []).filter((t) => queue === "all" || t.queue === queue),
-    [state, queue],
+    () =>
+      inQueue.filter(
+        (t) => (prio.length === 0 || prio.includes(t.priority || "normal")) && (tagFilter.length === 0 || tagFilter.some((g) => t.tags.includes(g))),
+      ),
+    [inQueue, prio, tagFilter],
   );
-  const problems = useMemo(
-    () => (state?.problems ?? []).filter((p) => queue === "all" || p.startsWith(`${queue}:`)),
-    [state, queue],
-  );
-  const waiting = tasks.filter((t) => t.waitingForOwner);
+  const allTags = useMemo(() => [...new Set(inQueue.flatMap((t) => t.tags))].sort(), [inQueue]);
+  const problems = useMemo(() => (state?.problems ?? []).filter((p) => queue === "all" || p.startsWith(`${queue}:`)), [state, queue]);
+  const waiting = inQueue.filter((t) => t.waitingForOwner);
   const cols = useMemo(() => columns(tasks), [tasks]);
-  const openTask = open ? (state?.tasks ?? []).find((t) => key(t) === open) ?? null : null;
+  const openKey = pane?.kind === "task" ? pane.key : null;
+  const openTask = openKey ? (state?.tasks ?? []).find((t) => key(t) === openKey) ?? null : null;
   const now = state?.now ?? Math.floor(Date.now() / 1000);
   const multi = queue === "all" && (state?.queues.length ?? 0) > 1;
+  const open = (t: Task) => setPane({ kind: "task", key: key(t) });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(null);
+      if (e.key === "Escape") setPane(null);
       if (e.key === "n" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        setCreating(true);
+        setPane({ kind: "new" });
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  const toggle = (list: string[], set: (v: string[]) => void, v: string) => set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
   return (
     <div className="app">
@@ -102,7 +125,7 @@ export default function App() {
           ))}
           <button className="chip add" onClick={() => setView("projects")} title="New or existing project queue">+ Project</button>
         </nav>
-        <button className="new" onClick={() => setCreating(true)} disabled={!state?.queues.length} title="New task (⌘N)">+ New task</button>
+        <button className="new" onClick={() => setPane({ kind: "new" })} disabled={!state?.queues.length} title="New task (⌘N)">+ New task</button>
         <nav className="views" aria-label="Views">
           <button className={view === "board" ? "tab on" : "tab"} onClick={() => setView("board")}>Board</button>
           <button className={view === "helper" ? "tab on" : "tab"} onClick={() => setView("helper")}>Helper</button>
@@ -115,126 +138,194 @@ export default function App() {
           </button>
           <button className={view === "projects" ? "tab on" : "tab"} onClick={() => setView("projects")}>Projects</button>
         </nav>
+        <button className={pane?.kind === "appearance" ? "tab on" : "tab"} onClick={() => setPane(pane?.kind === "appearance" ? null : { kind: "appearance" })} title="Theme and accent">
+          Appearance
+        </button>
         <span className="live" title={error || "Updates every 2 seconds while the window is visible"}>
           {error ? <span className="err">Can't read the queues</span> : at ? <><i className="dot" /> live</> : "loading…"}
         </span>
       </header>
 
-      {state && state.queues.length === 0 && (
-        <p className="empty">No queues yet. Muster looks for <code>~/playground/*/tasks</code> folders, or add one under Projects.</p>
-      )}
-
-      {view === "board" && (
-        <main className="board">
-          {COLUMNS.map((c) => {
-            const list = cols[c.status] ?? [];
-            const shown = c.status === "done" && !showAllDone ? list.slice(0, 8) : list;
-            return (
-              <section key={c.status} className={`column col-${c.status}`}>
-                <h2>
-                  {c.label} <small>{list.length}</small>
-                </h2>
-                <div className="cards">
-                  {shown.map((t) => (
-                    <Card key={key(t)} t={t} now={now} multi={multi} onOpen={() => setOpen(key(t))} active={open === key(t)} />
-                  ))}
-                  {c.status === "done" && list.length > 8 && (
-                    <button className="more" onClick={() => setShowAllDone((v) => !v)}>
-                      {showAllDone ? "Show fewer" : `Show all ${list.length}`}
-                    </button>
-                  )}
-                  {list.length === 0 && <p className="none">Nothing here</p>}
-                </div>
-              </section>
-            );
-          })}
-        </main>
-      )}
-
-      {view === "waiting" && (
-        <main className="list">
-          {waiting.length === 0 && <p className="empty">Nothing is waiting for you.</p>}
-          {waiting.map((t) => (
-            <article key={key(t)} className="waiting">
-              <header>
-                <button className="link" onClick={() => setOpen(key(t))}>
-                  {multi && <span className="q">{t.queue}</span>} {t.id} · {t.title}
-                </button>
-              </header>
-              {t.questions.filter((q) => !q.ticked && q.escalated).map((q) => (
-                <p key={q.n ?? q.text}><b>Q{q.n}</b> {q.text}</p>
-              ))}
-              {t.status === "blocked" && t.waitingOn.toLowerCase().startsWith("owner") && <p>Blocked on you: {t.waitingOn}</p>}
-              <button onClick={() => setOpen(key(t))}>Open to answer</button>
-            </article>
-          ))}
-        </main>
-      )}
-
-      {view === "activity" && (
-        <main className="list">
-          <ul className="feed">
-            {feed(state?.activity.filter((a) => queue === "all" || a.queue === queue) ?? [], tasks).map((a, i) => (
-              <li key={i}>
-                <span className="when">{ago(now, a.at)}</span>
-                {multi && <span className="q">{a.queue}</span>}
-                <span className={`src ${a.source}`}>{a.source === "commit" ? "commit" : "changed"}</span>
-                <span className="what">{a.what}</span>
-              </li>
-            ))}
-          </ul>
-        </main>
-      )}
-
-      {view === "problems" && (
-        <main className="list">
-          {problems.length === 0 ? <p className="empty">No problems found in the queues.</p> : (
-            <ul className="problems">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
+      <div className="workspace">
+        <div className="content">
+          {state && state.queues.length === 0 && (
+            <p className="empty">No queues yet. Muster looks for <code>~/playground/*/tasks</code> folders, or add one under Projects.</p>
           )}
-        </main>
-      )}
 
-      {creating && state && state.queues.length > 0 && (
-        <NewTask
-          queues={state.queues.map((q) => q.name)}
-          initial={queue !== "all" ? queue : state.queues[0].name}
-          onClose={() => setCreating(false)}
-          onCreated={(q, id) => {
-            setCreating(false);
-            setView("board");
-            void refresh().then(() => setOpen(`${q}/${id}`));
-          }}
-        />
-      )}
+          {view === "board" && (
+            <>
+              <div className="filters" aria-label="Filters">
+                <span className="meta">Priority</span>
+                {PRIORITIES.map((p) => (
+                  <button key={p} className={prio.includes(p) ? `chip on pchip-${p}` : "chip"} onClick={() => toggle(prio, setPrio, p)}>
+                    {p}
+                  </button>
+                ))}
+                {allTags.length > 0 && <span className="meta sep">Tags</span>}
+                {allTags.map((g) => (
+                  <button key={g} className={tagFilter.includes(g) ? "chip on" : "chip"} onClick={() => toggle(tagFilter, setTagFilter, g)}>
+                    #{g}
+                  </button>
+                ))}
+                {(prio.length > 0 || tagFilter.length > 0) && (
+                  <button className="chip" onClick={() => { setPrio([]); setTagFilter([]); }}>Clear</button>
+                )}
+                <span className="meta right">{tasks.length === inQueue.length ? `${tasks.length} tasks` : `${tasks.length} of ${inQueue.length} tasks`}</span>
+              </div>
+              <main className="board">
+                {COLUMNS.map((c) => {
+                  const list = cols[c.status] ?? [];
+                  const shown = c.status === "done" && !showAllDone ? list.slice(0, 8) : list;
+                  return (
+                    <section key={c.status} className={`column col-${c.status}`}>
+                      <h2>
+                        {c.label} <small>{list.length}</small>
+                      </h2>
+                      <div className="cards">
+                        {shown.map((t) => (
+                          <Card key={key(t)} t={t} now={now} multi={multi} onOpen={() => open(t)} active={openKey === key(t)} />
+                        ))}
+                        {c.status === "done" && list.length > 8 && (
+                          <button className="more" onClick={() => setShowAllDone((v) => !v)}>
+                            {showAllDone ? "Show fewer" : `Show all ${list.length}`}
+                          </button>
+                        )}
+                        {list.length === 0 && <p className="none">Nothing here</p>}
+                      </div>
+                    </section>
+                  );
+                })}
+              </main>
+            </>
+          )}
 
-      {view === "helper" && state && state.queues.length > 0 && (
-        <Suspense fallback={<p className="none">Loading…</p>}>
-          <Helper queues={state.queues.map((q) => q.name)} initial={queue !== "all" ? queue : state.queues[0].name} onChanged={refresh} />
-        </Suspense>
-      )}
+          {view === "waiting" && (
+            <main className="list">
+              {waiting.length === 0 && <p className="empty">Nothing is waiting for you.</p>}
+              {waiting.map((t) => (
+                <article key={key(t)} className={openKey === key(t) ? "waiting active" : "waiting"}>
+                  <header>
+                    <button className="link" onClick={() => open(t)}>
+                      {multi && <span className="q">{t.queue}</span>} {t.id} · {t.title}
+                    </button>
+                  </header>
+                  {t.questions.filter((q) => !q.ticked && q.escalated).map((q) => (
+                    <p key={q.n ?? q.text}><b>Q{q.n}</b> {q.text}</p>
+                  ))}
+                  {t.status === "blocked" && t.waitingOn.toLowerCase().startsWith("owner") && <p>Blocked on you: {t.waitingOn}</p>}
+                  <button onClick={() => open(t)}>Open to answer</button>
+                </article>
+              ))}
+            </main>
+          )}
 
-      {view === "projects" && <Projects queues={state?.queues ?? []} onChanged={refresh} />}
+          {view === "activity" && (
+            <main className="list">
+              <ul className="feed">
+                {feed(state?.activity.filter((a) => queue === "all" || a.queue === queue) ?? [], inQueue).map((a, i) => (
+                  <li key={i}>
+                    <span className="when">{ago(now, a.at)}</span>
+                    {multi && <span className="q">{a.queue}</span>}
+                    <span className={`src ${a.source}`}>{a.source === "commit" ? "commit" : "changed"}</span>
+                    <span className="what">{a.what}</span>
+                  </li>
+                ))}
+              </ul>
+            </main>
+          )}
 
-      {openTask && (
-        <Suspense fallback={<aside className="panel"><p className="none">Loading…</p></aside>}>
-          <TaskPanel task={openTask} now={now} onClose={() => setOpen(null)} onChanged={refresh} />
-        </Suspense>
-      )}
+          {view === "problems" && (
+            <main className="list">
+              {problems.length === 0 ? <p className="empty">No problems found in the queues.</p> : <ul className="problems">{problems.map((p) => <li key={p}>{p}</li>)}</ul>}
+            </main>
+          )}
+
+          {view === "helper" && state && state.queues.length > 0 && (
+            <Suspense fallback={<p className="none">Loading…</p>}>
+              <Helper queues={state.queues.map((q) => q.name)} initial={queue !== "all" ? queue : state.queues[0].name} onChanged={refresh} />
+            </Suspense>
+          )}
+
+          {view === "projects" && <Projects queues={state?.queues ?? []} onChanged={refresh} />}
+        </div>
+
+        {pane && (
+          <>
+            <Splitter width={width} onWidth={setWidth} />
+            <aside className="pane" style={{ width }} aria-label="Details">
+              {pane.kind === "task" && openTask && (
+                <Suspense fallback={<p className="none">Loading…</p>}>
+                  <TaskPanel task={openTask} now={now} onClose={() => setPane(null)} onChanged={refresh} />
+                </Suspense>
+              )}
+              {pane.kind === "task" && !openTask && <p className="none">That task is gone.</p>}
+              {pane.kind === "new" && state && state.queues.length > 0 && (
+                <NewTask
+                  queues={state.queues.map((q) => q.name)}
+                  initial={queue !== "all" ? queue : state.queues[0].name}
+                  onClose={() => setPane(null)}
+                  onCreated={(q, id) => {
+                    setView("board");
+                    void refresh().then(() => setPane({ kind: "task", key: `${q}/${id}` }));
+                  }}
+                />
+              )}
+              {pane.kind === "appearance" && <Appearance onClose={() => setPane(null)} />}
+            </aside>
+          </>
+        )}
+      </div>
     </div>
+  );
+}
+
+/** The drag handle between the content and the pane. */
+function Splitter({ width, onWidth }: { width: number; onWidth: (w: number) => void }) {
+  return (
+    <div
+      className="splitter"
+      role="separator"
+      aria-orientation="vertical"
+      aria-valuenow={width}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowLeft") onWidth(width + 40);
+        if (e.key === "ArrowRight") onWidth(width - 40);
+      }}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const start = width;
+        const move = (ev: MouseEvent) => onWidth(start + (startX - ev.clientX));
+        const up = () => {
+          window.removeEventListener("mousemove", move);
+          window.removeEventListener("mouseup", up);
+        };
+        window.addEventListener("mousemove", move);
+        window.addEventListener("mouseup", up);
+      }}
+      title="Drag to resize"
+    />
   );
 }
 
 function Card({ t, now, multi, onOpen, active }: { t: Task; now: number; multi: boolean; onOpen: () => void; active: boolean }) {
   const stale = t.status === "doing" && now - t.modified > 12 * 3600;
+  const priority = t.priority || "normal";
   return (
     <button className={`card${active ? " active" : ""}${t.waitingForOwner ? " needs-you" : ""}`} onClick={onOpen}>
       <span className="card-top">
         {multi && <span className="q">{t.queue}</span>}
         <span className="id">{t.id}</span>
         <span className={`kind ${t.kind}`}>{t.kind}</span>
-        {t.priority === "high" && <span className="pri">high</span>}
+        <span className={`pri pri-${priority}`} title={`Priority: ${priority}`}>{priority}</span>
       </span>
       <span className="title">{t.title || "(no title)"}</span>
+      {t.tags.length > 0 && (
+        <span className="tags">
+          {t.tags.map((g) => <span key={g} className="tag">#{g}</span>)}
+        </span>
+      )}
       <span className="card-bottom">
         {t.waitingForOwner && <span className="badge warn">needs you</span>}
         {t.openQuestions > 0 && <span className="badge">{t.openQuestions} open Q</span>}

@@ -24,6 +24,7 @@ export type Task = {
   questions: Question[];
   openQuestions: number;
   waitingForOwner: boolean;
+  tags: string[];
   attachments: string[];
   logTail: string[];
   modified: number;

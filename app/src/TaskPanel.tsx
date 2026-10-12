@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { ago, readFiles, stamp } from "./lib";
 import Markdown from "./Markdown";
+import TagEditor from "./Tags";
 import type { Question, Task } from "./types";
 
 const IMAGE = /\.(png|jpe?g|gif|webp)$/i;
@@ -27,7 +28,7 @@ export default function TaskPanel({ task, now, onClose, onChanged }: { task: Tas
   const open = task.questions.filter((q) => !q.ticked && q.n !== null);
 
   return (
-    <aside className="panel" aria-label={`Task ${task.id}`}>
+    <div className="panel" aria-label={`Task ${task.id}`}>
       <header>
         <div>
           <div className="meta">
@@ -66,7 +67,7 @@ export default function TaskPanel({ task, now, onClose, onChanged }: { task: Tas
         {body === null && !error && <p className="none">Loading…</p>}
         {body !== null && (raw ? <pre className="raw">{body}</pre> : <Markdown text={shown} />)}
       </section>
-    </aside>
+    </div>
   );
 }
 
@@ -258,6 +259,7 @@ function Controls({ task, onChanged }: { task: Task; onChanged: () => void }) {
         <button type="button" onClick={() => setTitle(task.title)}>Rename</button>
         <button type="button" onClick={() => void run(() => api.attachPick(task.queue, task.id, stamp(new Date())), "Files attached.")}>Attach…</button>
       </div>
+      <TagEditor tags={task.tags} onChange={(t) => void run(() => api.setField(task.queue, task.id, "tags", t.join(","), stamp(new Date())), "Tags saved.")} />
       {blocking && (
         <form
           className="control-row"

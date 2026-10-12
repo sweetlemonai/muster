@@ -22,6 +22,51 @@ pub struct NewTask {
     pub kind: String,
     pub priority: String,
     pub body: String,
+    pub tags: Vec<String>,
+}
+
+/// Tags the app suggests. Any other tag works too.
+pub const SUGGESTED_TAGS: [&str; 10] = [
+    "spike",
+    "chore",
+    "tech-debt",
+    "code",
+    "docs",
+    "design",
+    "research",
+    "test",
+    "perf",
+    "security",
+];
+const MAX_TAGS: usize = 8;
+
+/// Clean a list of tags: lowercase, spaces and underscores become hyphens, only letters, digits
+/// and hyphens kept, 24 characters at most, no duplicates, 8 tags at most.
+pub fn clean_tags(input: &[String]) -> Result<Vec<String>, String> {
+    let mut out: Vec<String> = Vec::new();
+    for raw in input.iter().flat_map(|t| t.split(',')) {
+        let t: String = raw
+            .trim()
+            .to_lowercase()
+            .chars()
+            .map(|c| if c == ' ' || c == '_' { '-' } else { c })
+            .filter(|c| c.is_alphanumeric() || *c == '-')
+            .collect();
+        let t = t.trim_matches('-').to_string();
+        if t.is_empty() {
+            continue;
+        }
+        if t.chars().count() > 24 {
+            return Err(format!("the tag {t:?} is longer than 24 characters"));
+        }
+        if !out.contains(&t) {
+            out.push(t);
+        }
+    }
+    if out.len() > MAX_TAGS {
+        return Err(format!("a task can have at most {MAX_TAGS} tags"));
+    }
+    Ok(out)
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -133,6 +178,12 @@ pub fn create_task(root: &Path, new: &NewTask, who: &str, stamp: &str) -> Result
     let kind = pick(&new.kind, &KINDS, "task", "type")?;
     let priority = pick(&new.priority, &PRIORITIES, "normal", "priority")?;
     let body = body_text(&new.body)?;
+    let tags = clean_tags(&new.tags)?.join(", ");
+    let tags = if tags.is_empty() {
+        String::new()
+    } else {
+        format!(" {tags}")
+    };
     let date = &stamp[..stamp.len().min(10)];
     with_lock(root, || {
         let id = next_id(root)?;
@@ -145,7 +196,7 @@ pub fn create_task(root: &Path, new: &NewTask, who: &str, stamp: &str) -> Result
             format!("{body}\n\n")
         };
         let text = format!(
-            "---\nid: {id}\ntype: {kind}\npriority: {priority}\nstatus: todo\ncaptured: {date}\nclaimed-by:\nheartbeat:\nwaiting_on:\ncommit:\n---\n\n# {title}\n\n{details}## Log\n- {stamp} {who}: created\n"
+            "---\nid: {id}\ntype: {kind}\npriority: {priority}\ntags:{tags}\nstatus: todo\ncaptured: {date}\nclaimed-by:\nheartbeat:\nwaiting_on:\ncommit:\n---\n\n# {title}\n\n{details}## Log\n- {stamp} {who}: created\n"
         );
         write_atomic(&path, &text)?;
         let rel = path
@@ -243,9 +294,14 @@ pub fn set_field(
         ),
         "type" | "kind" => ("type", pick(value, &KINDS, "", "type")?.to_string()),
         "title" => ("title", one_line(value, MAX_TITLE, "the title")?),
-        _ => return Err(format!("can't set {field:?}: use priority, type or title")),
+        "tags" => ("tags", clean_tags(&[value.to_string()])?.join(", ")),
+        _ => {
+            return Err(format!(
+                "can't set {field:?}: use priority, type, title or tags"
+            ))
+        }
     };
-    if val.is_empty() {
+    if val.is_empty() && key != "tags" {
         return Err(format!("{field} is empty"));
     }
     edit(root, id, |_, text| {
@@ -466,6 +522,7 @@ mod tests {
                 kind: "Bug".into(),
                 priority: "high".into(),
                 body: "Steps:\n1. resize\n\tindented".into(),
+                tags: vec![],
             },
             "owner",
             T,
@@ -491,7 +548,7 @@ mod tests {
         assert_eq!(b.id, "0002");
         let text = fs::read_to_string(d.path().join(&a.path)).unwrap();
         assert!(text.starts_with(
-            "---\nid: 0001\ntype: bug\npriority: high\nstatus: todo\ncaptured: 2026-10-12\n"
+            "---\nid: 0001\ntype: bug\npriority: high\ntags:\nstatus: todo\ncaptured: 2026-10-12\n"
         ));
         assert!(text.contains("# Board flickers on resize\n\nSteps:\n1. resize\n\tindented\n\n## Log\n- 2026-10-12 14:05 owner: created\n"));
         let s = state(d.path());
@@ -704,6 +761,40 @@ mod tests {
         );
         assert!(data_url_bytes("data:text/plain,hi").is_err());
         assert!(unbase64("@@@@").is_err());
+    }
+
+    #[test]
+    fn tags_are_cleaned_and_round_trip() {
+        let v = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            clean_tags(&v(&["Tech Debt", "spike,  CODE", "spike", "my_tag!"])).unwrap(),
+            v(&["tech-debt", "spike", "code", "my-tag"])
+        );
+        assert!(clean_tags(&v(&["a,b,c,d,e,f,g,h,i"]))
+            .unwrap_err()
+            .contains("at most 8"));
+        assert!(clean_tags(&v(&["x".repeat(25).as_str()]))
+            .unwrap_err()
+            .contains("24"));
+        assert!(clean_tags(&v(&[" , "])).unwrap().is_empty());
+        let d = queue();
+        create_task(
+            d.path(),
+            &NewTask {
+                title: "Tagged".into(),
+                tags: v(&["Spike", "tech debt"]),
+                ..Default::default()
+            },
+            "o",
+            T,
+        )
+        .unwrap();
+        assert_eq!(state(d.path()).tasks[0].tags, v(&["spike", "tech-debt"]));
+        set_field(d.path(), "0001", "tags", "chore, code", "o", T).unwrap();
+        assert_eq!(state(d.path()).tasks[0].tags, v(&["chore", "code"]));
+        set_field(d.path(), "0001", "tags", "", "o", T).unwrap();
+        assert!(state(d.path()).tasks[0].tags.is_empty());
+        assert!(state(d.path()).problems.is_empty());
     }
 
     #[test]

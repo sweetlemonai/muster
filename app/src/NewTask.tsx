@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { readFiles, stamp } from "./lib";
+import TagEditor from "./Tags";
 
-/** The New task dialog: title, type, priority, description, and files by paste or drop. */
+/** New task, in the docked pane beside the board: title, type, priority, tags, description, files. */
 export default function NewTask({ queues, initial, onClose, onCreated }: {
   queues: string[];
   initial: string;
@@ -14,6 +15,7 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
   const [kind, setKind] = useState("task");
   const [priority, setPriority] = useState("normal");
   const [body, setBody] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
   const [files, setFiles] = useState<[string, string][]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -45,7 +47,7 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
     setBusy(true);
     setError("");
     try {
-      const c = await api.createTask(queue, { title, kind, priority, body }, files, stamp(new Date()));
+      const c = await api.createTask(queue, { title, kind, priority, body, tags }, files, stamp(new Date()));
       onCreated(queue, c.id);
     } catch (e) {
       setError(String(e));
@@ -54,10 +56,9 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
   };
 
   return (
-    <div className="modal-back" onMouseDown={onClose}>
+    <div className="pane-body">
       <form
-        className="modal"
-        onMouseDown={(e) => e.stopPropagation()}
+        className="pane-form"
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
@@ -74,7 +75,10 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
           void add(e.dataTransfer.files);
         }}
       >
-        <h2>New task</h2>
+        <header className="pane-head">
+          <h1>New task</h1>
+          <button type="button" className="close" onClick={onClose} aria-label="Close">×</button>
+        </header>
         <div className="row">
           <label>
             Project
@@ -100,6 +104,7 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
           </label>
         </div>
         <input ref={titleRef} className="title-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What's wrong or wanted, in one line" maxLength={200} />
+        <TagEditor tags={tags} onChange={setTags} />
         <textarea
           value={body}
           onChange={(e) => setBody(e.target.value)}
