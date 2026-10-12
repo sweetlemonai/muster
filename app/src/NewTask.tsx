@@ -16,6 +16,8 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
   const [priority, setPriority] = useState("normal");
   const [body, setBody] = useState("");
   const [tags, setTags] = useState<string[]>([]);
+  const [estTime, setEstTime] = useState("");
+  const [estTokens, setEstTokens] = useState("");
   const [files, setFiles] = useState<[string, string][]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -47,7 +49,7 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
     setBusy(true);
     setError("");
     try {
-      const c = await api.createTask(queue, { title, kind, priority, body, tags }, files, stamp(new Date()));
+      const c = await api.createTask(queue, { title, kind, priority, body, tags, estTime, estTokens }, files, stamp(new Date()));
       onCreated(queue, c.id);
     } catch (e) {
       setError(String(e));
@@ -101,6 +103,14 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
               <option value="normal">Normal</option>
               <option value="low">Low</option>
             </select>
+          </label>
+          <label>
+            Agent time
+            <input value={estTime} onChange={(e) => setEstTime(e.target.value)} placeholder="2h" size={6} maxLength={10} />
+          </label>
+          <label>
+            Tokens
+            <input value={estTokens} onChange={(e) => setEstTokens(e.target.value)} placeholder="500k" size={6} maxLength={10} />
           </label>
         </div>
         <input ref={titleRef} className="title-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What's wrong or wanted, in one line" maxLength={200} />

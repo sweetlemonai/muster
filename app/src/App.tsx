@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
-import { ago, claimant, columns, COLUMNS, feed, key } from "./lib";
+import { ago, claimant, columns, COLUMNS, estimateTotal, feed, key } from "./lib";
 import type { State, Task } from "./types";
 import Projects from "./Projects";
 import NewTask from "./NewTask";
@@ -177,7 +177,10 @@ export default function App() {
                 {(prio.length > 0 || tagFilter.length > 0) && (
                   <button className="chip" onClick={() => { setPrio([]); setTagFilter([]); }}>Clear</button>
                 )}
-                <span className="meta right">{tasks.length === inQueue.length ? `${tasks.length} tasks` : `${tasks.length} of ${inQueue.length} tasks`}</span>
+                <span className="meta right">
+                  {estimateTotal(tasks) && <span className="est-total">{estimateTotal(tasks)} · </span>}
+                  {tasks.length === inQueue.length ? `${tasks.length} tasks` : `${tasks.length} of ${inQueue.length} tasks`}
+                </span>
               </div>
               {view === "table" && <TableView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} />}
               {view === "timeline" && <TimelineView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} />}
@@ -345,6 +348,7 @@ function Card({ t, now, multi, onOpen, active }: { t: Task; now: number; multi: 
         {t.waitingForOwner && <span className="badge warn">needs you</span>}
         {t.openQuestions > 0 && <span className="badge">{t.openQuestions} open Q</span>}
         {t.attachments.length > 0 && <span className="badge">{t.attachments.length} file{t.attachments.length === 1 ? "" : "s"}</span>}
+        {(t.estTime || t.estTokens) && <span className="badge est" title="Estimated agent time and tokens">~{[t.estTime, t.estTokens].filter(Boolean).join(" · ")}</span>}
         {t.status === "doing" && t.claimedBy && <span className={stale ? "badge stale" : "badge who"}>{claimant(t.claimedBy)}{stale ? " · quiet 12 h+" : ""}</span>}
         {t.status === "blocked" && t.waitingOn && <span className="badge">on {t.waitingOn}</span>}
         <span className="age">{ago(now, t.modified)}</span>

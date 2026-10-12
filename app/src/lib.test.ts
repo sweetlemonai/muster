@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { ago, claimant, columns, feed, fileName, stamp } from "./lib";
+import { ago, claimant, columns, estimateTotal, feed, fileName, fmtMinutes, fmtTokens, stamp } from "./lib";
 import type { Task } from "./types";
 
 const task = (over: Partial<Task>): Task => ({
   queue: "drover", id: "0001", title: "T", kind: "task", priority: "normal", status: "todo", folder: "todo",
   path: "todo/0001-t.md", claimedBy: "", heartbeat: "", waitingOn: "", commit: "", captured: "", questions: [],
-  openQuestions: 0, waitingForOwner: false, tags: [], claimedOn: "", doneOn: "", attachments: [], logTail: [], modified: 0, ...over,
+  openQuestions: 0, waitingForOwner: false, tags: [], estTime: "", estTokens: "", estMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", attachments: [], logTail: [], modified: 0, ...over,
 });
 
 describe("columns", () => {
@@ -59,5 +59,17 @@ describe("fileName", () => {
     expect(fileName({ name: "shot.png", type: "image/png" }, 0, "2026-10-12 14:05")).toBe("shot.png");
     expect(fileName({ name: "image.png", type: "image/png" }, 0, "2026-10-12 14:05")).toBe("pasted-2026-10-12-14-05.png");
     expect(fileName({ name: "", type: "image/jpeg" }, 1, "2026-10-12 14:05")).toBe("pasted-2026-10-12-14-05-2.jpg");
+  });
+});
+
+describe("estimates", () => {
+  it("formats time and tokens", () => {
+    expect([fmtMinutes(45), fmtMinutes(90), fmtMinutes(480), fmtMinutes(600), fmtMinutes(0)]).toEqual(["45 min", "1.5 h", "1 d", "1 d 2 h", ""]);
+    expect([fmtTokens(450_000), fmtTokens(3_210_000), fmtTokens(900), fmtTokens(0)]).toEqual(["450k tokens", "3.2M tokens", "900 tokens", ""]);
+  });
+  it("totals open, estimated tasks and says how many are estimated", () => {
+    const t = (m: number, k: number, status = "todo") => ({ estMinutes: m, estTokenCount: k, status });
+    expect(estimateTotal([t(60, 100_000), t(30, 50_000), t(0, 0), t(600, 0, "done")])).toBe("≈ 1.5 h · 150k tokens left (2 of 3 open tasks estimated)");
+    expect(estimateTotal([t(0, 0)])).toBe("");
   });
 });

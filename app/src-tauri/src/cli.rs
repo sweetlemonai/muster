@@ -23,7 +23,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         match x.as_str() {
             "--json" => a.json = true,
             "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on"
-            | "--tags" | "--tag" => {
+            | "--tags" | "--tag" | "--time" | "--tokens" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -217,6 +217,8 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                     .get("tags")
                     .map(|t| vec![t.clone()])
                     .unwrap_or_default(),
+                est_time: a.flags.get("time").cloned().unwrap_or_default(),
+                est_tokens: a.flags.get("tokens").cloned().unwrap_or_default(),
             };
             let c = ops::create_task(root, &new, &me, stamp)?;
             if a.json {
@@ -229,10 +231,12 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
         "list" => {
             let s = tasks_of(root);
             let only = a.flags.get("status");
+            let tag = a.flags.get("tag");
             let mut tasks: Vec<_> = s
                 .tasks
                 .iter()
                 .filter(|t| only.is_none_or(|o| &t.status == o))
+                .filter(|t| tag.is_none_or(|g| t.tags.iter().any(|x| x == g)))
                 .collect();
             tasks.sort_by(|x, y| x.id.cmp(&y.id));
             if a.json {
@@ -248,6 +252,17 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                         let mut extra = String::new();
                         if t.waiting_for_owner {
                             extra.push_str("  [needs you]");
+                        }
+                        if !t.est_time.is_empty() || !t.est_tokens.is_empty() {
+                            extra.push_str(&format!(
+                                "  ~{}",
+                                [t.est_time.as_str(), t.est_tokens.as_str()]
+                                    .iter()
+                                    .filter(|x| !x.is_empty())
+                                    .copied()
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                            ));
                         }
                         if !t.tags.is_empty() {
                             extra.push_str(&format!("  #{}", t.tags.join(" #")));
@@ -408,6 +423,32 @@ mod tests {
         assert_eq!(ok(&["move", "0001", "blocked", "--on", "owner"]), 0);
         assert_eq!(ok(&["list"]), 0);
         assert_eq!(ok(&["check"]), 0);
+        assert_eq!(
+            ok(&[
+                "new",
+                "Estimated",
+                "--time",
+                "90 min",
+                "--tokens",
+                "250k",
+                "--tags",
+                "spike"
+            ]),
+            0
+        );
+        let est = tasks_of(d.path())
+            .tasks
+            .into_iter()
+            .find(|t| t.title == "Estimated")
+            .unwrap();
+        assert_eq!(
+            (
+                est.est_time.as_str(),
+                est.est_tokens.as_str(),
+                est.tags.clone()
+            ),
+            ("90m", "250k", vec!["spike".to_string()])
+        );
         let t = &tasks_of(d.path()).tasks[0];
         assert_eq!(
             (t.status.as_str(), t.priority.as_str(), t.kind.as_str()),

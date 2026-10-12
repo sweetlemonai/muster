@@ -83,3 +83,29 @@ export function fileName(f: { name: string; type: string }, i: number, stampText
   const ext = f.type.split("/")[1]?.replace("jpeg", "jpg") || "bin";
   return `pasted-${stampText.replace(/[ :]/g, "-")}${i ? `-${i + 1}` : ""}.${ext}`;
 }
+
+/** "14 h", "2 d 3 h" (8-hour agent days, as the core counts them), "45 min". */
+export function fmtMinutes(m: number): string {
+  if (m <= 0) return "";
+  if (m < 60) return `${m} min`;
+  const h = Math.round(m / 6) / 10;
+  if (h < 8) return `${h} h`;
+  const d = Math.floor(h / 8), rest = Math.round((h - d * 8) * 10) / 10;
+  return rest ? `${d} d ${rest} h` : `${d} d`;
+}
+/** "3.2M tokens", "450k tokens". */
+export function fmtTokens(n: number): string {
+  if (n <= 0) return "";
+  if (n >= 1e6) return `${(Math.round(n / 1e5) / 10).toString()}M tokens`;
+  if (n >= 1e3) return `${Math.round(n / 1e3)}k tokens`;
+  return `${n} tokens`;
+}
+/** Totals of what's shown: "≈ 14 h · 3.2M tokens (9 of 24 estimated)". */
+export function estimateTotal(tasks: { estMinutes: number; estTokenCount: number; status: string }[]): string {
+  const open = tasks.filter((t) => t.status !== "done");
+  const est = open.filter((t) => t.estMinutes || t.estTokenCount);
+  if (!est.length) return "";
+  const m = est.reduce((a, t) => a + t.estMinutes, 0), k = est.reduce((a, t) => a + t.estTokenCount, 0);
+  const parts = [fmtMinutes(m), fmtTokens(k)].filter(Boolean).join(" · ");
+  return `≈ ${parts} left${est.length < open.length ? ` (${est.length} of ${open.length} open tasks estimated)` : ""}`;
+}

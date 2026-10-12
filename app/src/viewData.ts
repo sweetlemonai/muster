@@ -2,7 +2,7 @@ import type { Task } from "./types";
 
 // Pure helpers for the Table and Timeline views (tested in viewData.test.ts).
 
-export type SortKey = "queue" | "id" | "title" | "kind" | "priority" | "status" | "who" | "captured" | "changed";
+export type SortKey = "queue" | "id" | "title" | "kind" | "priority" | "status" | "who" | "estimate" | "captured" | "changed";
 const PRIORITY_RANK: Record<string, number> = { high: 0, normal: 1, low: 2 };
 const STATUS_RANK: Record<string, number> = { inbox: 0, todo: 1, doing: 2, blocked: 3, done: 4 };
 
@@ -12,6 +12,7 @@ export function sortTasks(tasks: Task[], by: SortKey, desc: boolean): Task[] {
       case "priority": return PRIORITY_RANK[t.priority || "normal"] ?? 1;
       case "status": return STATUS_RANK[t.status] ?? 9;
       case "changed": return t.modified;
+      case "estimate": return t.estMinutes * 1e7 + t.estTokenCount;
       case "who": return t.claimedBy;
       case "kind": return t.kind;
       default: return t[by];

@@ -336,3 +336,8 @@ button:disabled { opacity: 0.45; cursor: default; }
 .examples { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 6px; }
 .help-opts { border-collapse: collapse; margin: 6px 0; font-size: 12.5px; }
 .help-opts td { padding: 3px 12px 3px 0; vertical-align: top; }
+
+.badge.est { color: var(--muted); }
+.est-total { color: var(--text); }
+.control-row label input { min-width: 0; width: 70px; flex: none; }
+.est-cell { white-space: nowrap; }

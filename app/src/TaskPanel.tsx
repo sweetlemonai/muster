@@ -256,6 +256,7 @@ function Controls({ task, onChanged }: { task: Task; onChanged: () => void }) {
             <option value="idea">idea</option>
           </select>
         </label>
+        <Estimate task={task} run={run} />
         <button type="button" onClick={() => setTitle(task.title)}>Rename</button>
         <button type="button" onClick={() => void run(() => api.attachPick(task.queue, task.id, stamp(new Date())), "Files attached.")}>Attach…</button>
       </div>
@@ -303,5 +304,32 @@ function Controls({ task, onChanged }: { task: Task; onChanged: () => void }) {
       </form>
       {msg && <p className={msg.ok ? "ok small" : "err small"}>{msg.text}</p>}
     </section>
+  );
+}
+
+/** Estimated agent time and tokens, saved when a field loses focus or on Enter. */
+function Estimate({ task, run }: { task: Task; run: (what: () => Promise<unknown>, done: string) => Promise<void> }) {
+  const [time, setTime] = useState(task.estTime);
+  const [tokens, setTokens] = useState(task.estTokens);
+  useEffect(() => setTime(task.estTime), [task.estTime]);
+  useEffect(() => setTokens(task.estTokens), [task.estTokens]);
+  const save = (field: "time" | "tokens", value: string, was: string) => {
+    if (value.trim() === was) return;
+    void run(() => api.setField(task.queue, task.id, field, value, stamp(new Date())), field === "time" ? "Time estimate saved." : "Token estimate saved.");
+  };
+  const keys = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+  };
+  return (
+    <>
+      <label>
+        Agent time
+        <input value={time} onChange={(e) => setTime(e.target.value)} onBlur={() => save("time", time, task.estTime)} onKeyDown={keys} placeholder="2h" size={5} maxLength={10} />
+      </label>
+      <label>
+        Tokens
+        <input value={tokens} onChange={(e) => setTokens(e.target.value)} onBlur={() => save("tokens", tokens, task.estTokens)} onKeyDown={keys} placeholder="500k" size={5} maxLength={10} />
+      </label>
+    </>
   );
 }

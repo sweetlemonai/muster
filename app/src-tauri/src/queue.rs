@@ -49,6 +49,11 @@ pub struct Task {
     pub open_questions: usize,
     pub waiting_for_owner: bool,
     pub tags: Vec<String>,
+    /// Estimates ("2h", "400k"), and the same as numbers for totals.
+    pub est_time: String,
+    pub est_tokens: String,
+    pub est_minutes: u64,
+    pub est_token_count: u64,
     /// From the log: the day work started (first "claimed" line) and the day it was done.
     pub claimed_on: String,
     pub done_on: String,
@@ -309,6 +314,14 @@ pub fn parse_task(
         waiting_for_owner,
         done_on,
         claimed_on,
+        est_minutes: crate::ops::time_minutes(
+            &crate::ops::clean_time(&get("est-time")).unwrap_or_default(),
+        ),
+        est_token_count: crate::ops::token_count(
+            &crate::ops::clean_tokens(&get("est-tokens")).unwrap_or_default(),
+        ),
+        est_time: crate::ops::clean_time(&get("est-time")).unwrap_or_default(),
+        est_tokens: crate::ops::clean_tokens(&get("est-tokens")).unwrap_or_default(),
         tags: get("tags")
             .split(',')
             .map(|t| t.trim().to_string())

@@ -33,16 +33,18 @@ pub struct Help {
 pub const COMMANDS: &[Command] = &[
     Command {
         name: "new",
-        usage: "muster new \"<title>\" [--type bug|task|idea] [--priority high|normal|low] [--tags a,b] [--body <text>|-]",
+        usage: "muster new \"<title>\" [--type bug|task|idea] [--priority high|normal|low] [--tags a,b] [--time 2h] [--tokens 400k] [--body <text>|-]",
         what: "Create a task in To do. Its id is taken in order under the queue's lock, and it's logged as you.",
         options: &[
             ("--type", "bug, task (default) or idea"),
             ("--priority", "high, normal (default) or low"),
             ("--tags", "comma-separated: spike, chore, tech-debt, code, docs, design, research, test, perf, security, or your own"),
+            ("--time", "estimated agent time: 45m, 2h, 1.5d"),
+            ("--tokens", "estimated tokens: 150k, 1.2M"),
             ("--body", "the description in Markdown; \\n is a line break; - reads it from stdin"),
         ],
         examples: &[
-            "muster new \"Board flickers on resize\" --type bug --priority high --tags code",
+            "muster new \"Board flickers on resize\" --type bug --priority high --tags code --time 1h --tokens 300k",
             "muster new \"Export as CSV\" --type idea --body \"What: …\\n\\nDone looks like: …\"",
             "pbpaste | muster new \"From the clipboard\" --body -",
         ],
@@ -50,7 +52,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "list",
         usage: "muster list [--status <s>] [--tag <t>] [--json]",
-        what: "Tasks grouped by status, with type, priority, tags, \"needs you\" and open questions.",
+        what: "Tasks grouped by status, with type, priority, estimate, tags, \"needs you\" and open questions.",
         options: &[("--status", "inbox, todo, doing, blocked or done"), ("--tag", "only tasks with this tag"), ("--json", "machine-readable, for scripts and agents")],
         examples: &["muster list", "muster list --status todo --tag spike", "muster list --queue drover --json"],
     },
@@ -70,10 +72,10 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "set",
-        usage: "muster set <id> <priority|type|title|tags> <value>",
+        usage: "muster set <id> <priority|type|title|tags|time|tokens> <value>",
         what: "Change one field, logged with the time and who.",
         options: &[],
-        examples: &["muster set 0007 priority high", "muster set 0007 tags spike,tech-debt", "muster set 0007 tags \"\"", "muster set 0007 title \"A clearer title\""],
+        examples: &["muster set 0007 priority high", "muster set 0007 tags spike,tech-debt", "muster set 0007 tags \"\"", "muster set 0007 time 3h", "muster set 0007 tokens 600k", "muster set 0007 title \"A clearer title\""],
     },
     Command {
         name: "note",

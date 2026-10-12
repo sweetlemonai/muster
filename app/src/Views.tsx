@@ -11,6 +11,7 @@ const COLS: { key: SortKey; label: string }[] = [
   { key: "priority", label: "Priority" },
   { key: "status", label: "Status" },
   { key: "who", label: "On it / waiting on" },
+  { key: "estimate", label: "Estimate" },
   { key: "captured", label: "Captured" },
   { key: "changed", label: "Changed" },
 ];
@@ -50,6 +51,7 @@ export function TableView({ tasks, now, multi, openKey, onOpen }: { tasks: Task[
               <td><span className={`pri pri-${t.priority || "normal"}`}>{t.priority || "normal"}</span></td>
               <td><span className={`status-pill s-${t.status}`}>{t.status}</span></td>
               <td className="meta">{t.status === "doing" ? claimant(t.claimedBy) : t.status === "blocked" ? t.waitingOn : ""}</td>
+              <td className="meta est-cell">{[t.estTime, t.estTokens].filter(Boolean).join(" · ")}</td>
               <td className="meta">{t.captured}</td>
               <td className="meta">{ago(now, t.modified)}</td>
               <td>{t.tags.map((g) => <span key={g} className="tag">#{g}</span>)}</td>

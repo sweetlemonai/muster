@@ -40,4 +40,4 @@ export type HelperLine = { role: "owner" | "helper" | "system"; kind: string; te
 export type AccountInfo = { name: string; loggedIn: boolean | null; plan: string };
 export type HelperInfo = { claude: string | null; accounts: AccountInfo[]; account: string; running: boolean; lines: HelperLine[] };
 
-export type NewTask = { title: string; kind: string; priority: string; body: string; tags: string[] };
+export type NewTask = { title: string; kind: string; priority: string; body: string; tags: string[]; estTime: string; estTokens: string };

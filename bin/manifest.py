@@ -69,6 +69,8 @@ def main():
                 "waiting_on": fields.get("waiting_on", ""),
                 "commit": fields.get("commit", ""),
                 "tags": [t.strip() for t in fields.get("tags", "").split(",") if t.strip()],
+                "est_time": fields.get("est-time", ""),
+                "est_tokens": fields.get("est-tokens", ""),
                 "open_questions": len(re.findall(r"^- \[ \] \*\*Q", questions, re.M)),
                 "escalated_to_owner": any(
                     q.startswith("[ ]") and "Escalated to owner" in q

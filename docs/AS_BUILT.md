@@ -91,6 +91,12 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   design, research, test, perf, security, and any other word works. They're cleaned the same way
   everywhere (lowercase, hyphens, 24 characters, 8 at most). On cards, in the filter, in New task
   and on each task. `muster new --tags`, `muster set <id> tags`, `muster list --tag`.
+- **Estimates:** `est-time` (45m, 2h, 1.5d; a day is 8 agent hours) and `est-tokens` (150k, 1.2M)
+  on each task, cleaned the same way everywhere. On cards (`~2h · 500k`), in the table (sortable),
+  in New task and on each task. The filter bar totals what's shown and still open ("≈ 10 d · 20.1M
+  tokens left, 11 of 13 open tasks estimated"). The helper estimates every task it files with a size
+  guide (S 30m/150k, M 2h/500k, L 1d/2M, XL: split). `muster new --time --tokens`, `muster set <id>
+  time|tokens`. Actual time and tokens per task can come later from Drover (Drover task 0018).
 - **Managing a task** (top of its panel): status (inbox, to do, blocked with what it waits on,
   done; moving a claimed task releases the claim; the app never claims), priority, type, rename,
   a note to the log, and files by paste, drop or **Attach…**. Every change is logged with the

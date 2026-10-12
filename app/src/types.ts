@@ -25,6 +25,10 @@ export type Task = {
   openQuestions: number;
   waitingForOwner: boolean;
   tags: string[];
+  estTime: string;
+  estTokens: string;
+  estMinutes: number;
+  estTokenCount: number;
   claimedOn: string;
   doneOn: string;
   attachments: string[];

@@ -23,6 +23,97 @@ pub struct NewTask {
     pub priority: String,
     pub body: String,
     pub tags: Vec<String>,
+    pub est_time: String,
+    pub est_tokens: String,
+}
+
+/// Agent time: a number and m, h or d ("45m", "1.5h", "2d"). Empty is fine (no estimate).
+pub fn clean_time(input: &str) -> Result<String, String> {
+    let t = input.trim().to_lowercase().replace(' ', "");
+    if t.is_empty() {
+        return Ok(t);
+    }
+    let (num, unit) = t.split_at(t.find(|c: char| c.is_ascii_alphabetic()).unwrap_or(t.len()));
+    let unit = match unit {
+        "m" | "min" | "mins" => "m",
+        "h" | "hr" | "hrs" | "hour" | "hours" => "h",
+        "d" | "day" | "days" => "d",
+        _ => {
+            return Err(format!(
+                "time {input:?}: use a number and m, h or d, like 45m, 2h or 1.5d"
+            ))
+        }
+    };
+    let n: f64 = num
+        .parse()
+        .map_err(|_| format!("time {input:?}: use a number and m, h or d, like 45m, 2h or 1.5d"))?;
+    if !(n > 0.0 && n <= 1000.0) {
+        return Err(format!("time {input:?} is out of range"));
+    }
+    Ok(format!("{}{unit}", trim_num(n)))
+}
+
+/// Tokens: a number with an optional k or M ("400k", "1.2M", "50000"). Empty is fine.
+pub fn clean_tokens(input: &str) -> Result<String, String> {
+    let t = input.trim().replace([' ', ','], "");
+    if t.is_empty() {
+        return Ok(t);
+    }
+    let (num, unit) = t.split_at(t.find(|c: char| c.is_ascii_alphabetic()).unwrap_or(t.len()));
+    let mult = match unit.to_lowercase().as_str() {
+        "" => 1.0,
+        "k" => 1e3,
+        "m" => 1e6,
+        _ => {
+            return Err(format!(
+                "tokens {input:?}: use a number with k or M, like 400k or 1.2M"
+            ))
+        }
+    };
+    let n: f64 = num
+        .parse()
+        .map_err(|_| format!("tokens {input:?}: use a number with k or M, like 400k or 1.2M"))?;
+    let total = n * mult;
+    if !(1.0..=1e9).contains(&total) {
+        return Err(format!("tokens {input:?} is out of range"));
+    }
+    Ok(if total >= 1e6 {
+        format!("{}M", trim_num(total / 1e6))
+    } else if total >= 1e3 {
+        format!("{}k", trim_num(total / 1e3))
+    } else {
+        trim_num(total)
+    })
+}
+
+fn trim_num(n: f64) -> String {
+    let s = format!("{:.1}", n);
+    s.trim_end_matches(".0").to_string()
+}
+
+/// Minutes in a cleaned time ("1.5h" → 90), for totals.
+pub fn time_minutes(t: &str) -> u64 {
+    let Some(unit) = t.chars().last() else {
+        return 0;
+    };
+    let n: f64 = t[..t.len() - 1].parse().unwrap_or(0.0);
+    (n * match unit {
+        'm' => 1.0,
+        'h' => 60.0,
+        'd' => 480.0,
+        _ => 0.0,
+    })
+    .round() as u64
+}
+
+/// Tokens in a cleaned count ("1.2M" → 1_200_000), for totals.
+pub fn token_count(t: &str) -> u64 {
+    let (num, mult) = match t.chars().last() {
+        Some('k') => (&t[..t.len() - 1], 1e3),
+        Some('M') => (&t[..t.len() - 1], 1e6),
+        _ => (t, 1.0),
+    };
+    (num.parse::<f64>().unwrap_or(0.0) * mult).round() as u64
 }
 
 /// Tags the app suggests. Any other tag works too.
@@ -184,6 +275,9 @@ pub fn create_task(root: &Path, new: &NewTask, who: &str, stamp: &str) -> Result
     } else {
         format!(" {tags}")
     };
+    let sp = |v: String| if v.is_empty() { v } else { format!(" {v}") };
+    let est_time = sp(clean_time(&new.est_time)?);
+    let est_tokens = sp(clean_tokens(&new.est_tokens)?);
     let date = &stamp[..stamp.len().min(10)];
     with_lock(root, || {
         let id = next_id(root)?;
@@ -196,7 +290,7 @@ pub fn create_task(root: &Path, new: &NewTask, who: &str, stamp: &str) -> Result
             format!("{body}\n\n")
         };
         let text = format!(
-            "---\nid: {id}\ntype: {kind}\npriority: {priority}\ntags:{tags}\nstatus: todo\ncaptured: {date}\nclaimed-by:\nheartbeat:\nwaiting_on:\ncommit:\n---\n\n# {title}\n\n{details}## Log\n- {stamp} {who}: created\n"
+            "---\nid: {id}\ntype: {kind}\npriority: {priority}\ntags:{tags}\nest-time:{est_time}\nest-tokens:{est_tokens}\nstatus: todo\ncaptured: {date}\nclaimed-by:\nheartbeat:\nwaiting_on:\ncommit:\n---\n\n# {title}\n\n{details}## Log\n- {stamp} {who}: created\n"
         );
         write_atomic(&path, &text)?;
         let rel = path
@@ -295,13 +389,15 @@ pub fn set_field(
         "type" | "kind" => ("type", pick(value, &KINDS, "", "type")?.to_string()),
         "title" => ("title", one_line(value, MAX_TITLE, "the title")?),
         "tags" => ("tags", clean_tags(&[value.to_string()])?.join(", ")),
+        "time" | "est-time" => ("est-time", clean_time(value)?),
+        "tokens" | "est-tokens" => ("est-tokens", clean_tokens(value)?),
         _ => {
             return Err(format!(
-                "can't set {field:?}: use priority, type, title or tags"
+                "can't set {field:?}: use priority, type, title, tags, time or tokens"
             ))
         }
     };
-    if val.is_empty() && key != "tags" {
+    if val.is_empty() && !matches!(key, "tags" | "est-time" | "est-tokens") {
         return Err(format!("{field} is empty"));
     }
     edit(root, id, |_, text| {
@@ -522,7 +618,7 @@ mod tests {
                 kind: "Bug".into(),
                 priority: "high".into(),
                 body: "Steps:\n1. resize\n\tindented".into(),
-                tags: vec![],
+                ..Default::default()
             },
             "owner",
             T,
@@ -548,7 +644,7 @@ mod tests {
         assert_eq!(b.id, "0002");
         let text = fs::read_to_string(d.path().join(&a.path)).unwrap();
         assert!(text.starts_with(
-            "---\nid: 0001\ntype: bug\npriority: high\ntags:\nstatus: todo\ncaptured: 2026-10-12\n"
+            "---\nid: 0001\ntype: bug\npriority: high\ntags:\nest-time:\nest-tokens:\nstatus: todo\ncaptured: 2026-10-12\n"
         ));
         assert!(text.contains("# Board flickers on resize\n\nSteps:\n1. resize\n\tindented\n\n## Log\n- 2026-10-12 14:05 owner: created\n"));
         let s = state(d.path());
@@ -794,6 +890,68 @@ mod tests {
         assert_eq!(state(d.path()).tasks[0].tags, v(&["chore", "code"]));
         set_field(d.path(), "0001", "tags", "", "o", T).unwrap();
         assert!(state(d.path()).tasks[0].tags.is_empty());
+        assert!(state(d.path()).problems.is_empty());
+    }
+
+    #[test]
+    fn estimates_are_cleaned_set_and_counted() {
+        assert_eq!(clean_time(" 45 min ").unwrap(), "45m");
+        assert_eq!(clean_time("1.5H").unwrap(), "1.5h");
+        assert_eq!(clean_time("2 days").unwrap(), "2d");
+        assert_eq!(clean_time("").unwrap(), "");
+        assert!(
+            clean_time("soon").is_err() && clean_time("5w").is_err() && clean_time("0h").is_err()
+        );
+        assert_eq!(clean_tokens("400k").unwrap(), "400k");
+        assert_eq!(clean_tokens("1200000").unwrap(), "1.2M");
+        assert_eq!(clean_tokens("1,500").unwrap(), "1.5k");
+        assert_eq!(clean_tokens("2m").unwrap(), "2M");
+        assert!(clean_tokens("lots").is_err() && clean_tokens("5g").is_err());
+        assert_eq!(
+            (
+                time_minutes("1.5h"),
+                time_minutes("45m"),
+                time_minutes("1d"),
+                time_minutes("")
+            ),
+            (90, 45, 480, 0)
+        );
+        assert_eq!(
+            (
+                token_count("400k"),
+                token_count("1.2M"),
+                token_count("900"),
+                token_count("")
+            ),
+            (400_000, 1_200_000, 900, 0)
+        );
+        let d = queue();
+        create_task(
+            d.path(),
+            &NewTask {
+                title: "Est".into(),
+                est_time: "2h".into(),
+                est_tokens: "300k".into(),
+                ..Default::default()
+            },
+            "o",
+            T,
+        )
+        .unwrap();
+        let t = &state(d.path()).tasks[0];
+        assert_eq!(
+            (
+                t.est_time.as_str(),
+                t.est_tokens.as_str(),
+                t.est_minutes,
+                t.est_token_count
+            ),
+            ("2h", "300k", 120, 300_000)
+        );
+        set_field(d.path(), "0001", "time", "30m", "o", T).unwrap();
+        set_field(d.path(), "0001", "tokens", "", "o", T).unwrap();
+        let t = &state(d.path()).tasks[0];
+        assert_eq!((t.est_time.as_str(), t.est_tokens.as_str()), ("30m", ""));
         assert!(state(d.path()).problems.is_empty());
     }
 
