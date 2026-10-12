@@ -8,6 +8,14 @@ happened → what it shows → what chit has or lacks.
 
 ## 2026-10-12
 
+40. **Confirmed: an agent typed made-up times all day.** The drover/main session wrote it in a
+    note itself: its heartbeats and log lines from 08:00 to 19:00 on four tasks were guessed. The
+    real clock at its note was 04:29. The order of events was right, the times weren't. So
+    heartbeat-based "stale" checks were meaningless for that session. → Already acted on: the
+    app judges staleness by file modification time, and `muster` stamps every change itself.
+    Remaining: agents still edit task files by hand for claims and logs, until `muster
+    claim/heartbeat/log` exist (Muster task 0002). That's the fix, and it raises 0002's priority.
+
 39. **The answer push works live.** With the hook installed, a self-test question asked and
     answered through `bin/task` showed up in the asking session's context right after its next
     Bash call, with no file read. Sessions already running pick the hook up without a restart (this
