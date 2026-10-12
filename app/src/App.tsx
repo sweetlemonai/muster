@@ -8,7 +8,8 @@ import logo from "./logo.png";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
 const TaskPanel = lazy(() => import("./TaskPanel"));
-type View = "board" | "waiting" | "activity" | "problems" | "projects";
+const Helper = lazy(() => import("./Helper"));
+type View = "board" | "helper" | "waiting" | "activity" | "problems" | "projects";
 const POLL_MS = 2000;
 
 // Poll the core while the window is visible; stop when it's hidden.
@@ -103,6 +104,7 @@ export default function App() {
         <button className="new" onClick={() => setCreating(true)} disabled={!state?.queues.length} title="New task (⌘N)">+ New task</button>
         <nav className="views" aria-label="Views">
           <button className={view === "board" ? "tab on" : "tab"} onClick={() => setView("board")}>Board</button>
+          <button className={view === "helper" ? "tab on" : "tab"} onClick={() => setView("helper")}>Helper</button>
           <button className={view === "waiting" ? "tab on" : "tab"} onClick={() => setView("waiting")}>
             Waiting for you{waiting.length ? <b className="count warn">{waiting.length}</b> : null}
           </button>
@@ -202,6 +204,12 @@ export default function App() {
             void refresh().then(() => setOpen(`${q}/${id}`));
           }}
         />
+      )}
+
+      {view === "helper" && state && state.queues.length > 0 && (
+        <Suspense fallback={<p className="none">Loading…</p>}>
+          <Helper queues={state.queues.map((q) => q.name)} initial={queue !== "all" ? queue : state.queues[0].name} onChanged={refresh} />
+        </Suspense>
       )}
 
       {view === "projects" && <Projects queues={state?.queues ?? []} onChanged={refresh} />}

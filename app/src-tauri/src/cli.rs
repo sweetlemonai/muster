@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 const HELP: &str = "muster — tasks for agents and people
 
   muster new \"<title>\" [--type bug|task|idea] [--priority high|normal|low] [--body <text>|-]
+                                             (in --body, \\n is a line break)
   muster list [--status <s>] [--json]        tasks, by status
   muster show <id> [--json]                  one task in full
   muster move <id> <inbox|todo|blocked|done> [--on \"<what it waits on>\"]
@@ -21,7 +22,7 @@ const HELP: &str = "muster — tasks for agents and people
   muster help
 
   --queue <name|folder>   which queue (default: $MUSTER_ROOT, then the nearest one from here)
-  --as <who>              who is acting, for the log (default: $USER)";
+  --as <who>              who is acting, for the log (default: $MUSTER_AS, then $USER)";
 
 #[derive(Debug)]
 struct Args {
@@ -109,6 +110,7 @@ fn who(a: &Args) -> String {
     a.flags
         .get("as")
         .cloned()
+        .or_else(|| std::env::var("MUSTER_AS").ok())
         .or_else(|| std::env::var("USER").ok())
         .unwrap_or_else(|| "cli".into())
 }
@@ -208,7 +210,9 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                     .map_err(|e| e.to_string())?;
                     s
                 }
-                Some(b) => b.to_string(),
+                // A one-line command can carry line breaks as `\n` (the helper writes them so, because
+                // a permission rule only matches a command on one line).
+                Some(b) => b.replace("\\n", "\n"),
                 None => String::new(),
             };
             let new = ops::NewTask {
@@ -299,7 +303,13 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
         }
         "note" => {
             let id = need(a, 1, "a task id")?;
-            ops::add_note(root, id, &a.pos[2..].join(" "), &me, stamp)?;
+            ops::add_note(
+                root,
+                id,
+                &a.pos[2..].join(" ").replace("\\n", " "),
+                &me,
+                stamp,
+            )?;
             println!("{id}: noted");
             Ok(0)
         }
@@ -387,6 +397,13 @@ mod tests {
             0
         );
         assert_eq!(ok(&["note", "0001", "first", "note"]), 0);
+        assert_eq!(
+            ok(&["new", "Two lines", "--body", "line one\\nline two"]),
+            0
+        );
+        assert!(queue::read_body(d.path(), "0002")
+            .unwrap()
+            .contains("line one\nline two"));
         assert_eq!(ok(&["set", "0001", "priority", "low"]), 0);
         assert_eq!(ok(&["move", "0001", "blocked", "--on", "owner"]), 0);
         assert_eq!(ok(&["list"]), 0);

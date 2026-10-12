@@ -27,7 +27,7 @@ gives one view of everything and checks the queue for problems. The owner reads
 | Attachments | `attachments/<id>/` per queue | In use (screenshots, mockups) |
 | `muster` command line | the app's binary, `bin/muster` shim | Built: new, list, show, move, set, note, attach, answer, check, projects, init (same rules as the app) |
 | Commands `/muster`, `/mu` | `docs/COMMANDS.md` | Designed, not built |
-| Desktop app | `app/` (Tauri 2 + React 19, decision 0001) | Built and running: board, waiting for you with answering, task pages, files, activity, problems |
+| Desktop app | `app/` (Tauri 2 + React 19, decision 0001) | Built and running: board, new task, task management, waiting for you with answering, files, activity, problems, projects, the AI helper |
 
 ## The app
 
@@ -70,6 +70,23 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Live:** refreshes every 2 s while the window is visible, and never while it's hidden.
   On the real queues (21 tasks): 19 ms for the first read, 0.6 ms after that. Startup code is
   229 KB (72 KB gzipped). The task panel is a separate 102 KB chunk. The app is 5.2 MB.
+
+## The AI helper
+
+The **Helper** tab: a chat per project that does what the capture session does. You write ideas,
+bugs and tasks (and paste screenshots). It checks the queue for duplicates, reads the project to
+understand the code, files one task per point with your words, details and acceptance criteria,
+and asks in plain words when something's unclear, with its own pick. You see its replies and a
+folded "steps" line, never file edits.
+
+- It runs your own `claude` with the account you pick once (decision 0002), in restricted mode:
+  only `muster` and read-only tools, file reading inside the project folder, and anything else
+  refused. Router and token variables are stripped. Model: Sonnet.
+- Conversations resume per project. **New conversation** starts fresh, and **Stop** ends a turn.
+  The transcript lives in the app's settings folder (`helper/<project>.jsonl`).
+- Checked end to end on a throwaway project: a two-item message filed both items (a high-priority
+  bug and an idea) through `muster new`, for $0.05–0.07 a turn. Writes, deletes and reads outside the
+  project were refused. The queue check was clean afterwards.
 
 ## The command line
 

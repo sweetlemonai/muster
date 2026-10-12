@@ -3,20 +3,25 @@
 //! the core gave it, never by a path it made up. Folders are picked by the core's own dialog.
 
 pub mod cli;
+pub mod helper;
+mod helper_cmds;
 pub mod ops;
 pub mod projects;
 pub mod queue;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
-struct AppState {
+pub(crate) struct AppState {
     cache: Mutex<queue::Cache>,
+    /// Running helper turns, by queue name.
+    pub(crate) helpers: Mutex<HashMap<String, std::process::Child>>,
     /// Serializes changes to projects.json.
     config: Mutex<()>,
-    config_file: PathBuf,
+    pub(crate) config_file: PathBuf,
 }
 
 fn base() -> PathBuf {
@@ -25,12 +30,12 @@ fn base() -> PathBuf {
         .unwrap_or_else(|| home().join("playground"))
 }
 
-fn home() -> PathBuf {
+pub(crate) fn home() -> PathBuf {
     PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
 }
 
 /// Muster's tools, which a new queue's stand-ins run.
-fn tools() -> PathBuf {
+pub(crate) fn tools() -> PathBuf {
     std::env::var_os("MUSTER_TOOLS")
         .map(PathBuf::from)
         .unwrap_or_else(|| home().join("playground/muster/main/bin"))
@@ -40,7 +45,7 @@ fn queues(config_file: &std::path::Path) -> Vec<(String, PathBuf)> {
     projects::active(&base(), &projects::load(config_file))
 }
 
-fn queue_root(config_file: &std::path::Path, name: &str) -> Result<PathBuf, String> {
+pub(crate) fn queue_root(config_file: &std::path::Path, name: &str) -> Result<PathBuf, String> {
     queues(config_file)
         .into_iter()
         .find(|(n, _)| n == name)
@@ -48,7 +53,7 @@ fn queue_root(config_file: &std::path::Path, name: &str) -> Result<PathBuf, Stri
         .ok_or_else(|| format!("no queue named {name:?}"))
 }
 
-async fn blocking<T: Send + 'static>(
+pub(crate) async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
     tauri::async_runtime::spawn_blocking(f)
@@ -108,7 +113,7 @@ async fn answer(
         .await
 }
 
-fn check_stamp(stamp: &str) -> Result<(), String> {
+pub(crate) fn check_stamp(stamp: &str) -> Result<(), String> {
     let ok = stamp.len() == 16
         && stamp.char_indices().all(|(i, c)| match i {
             4 | 7 => c == '-',
@@ -423,6 +428,7 @@ pub fn run() {
             let dir = app.path().app_config_dir()?;
             app.manage(AppState {
                 cache: Mutex::new(queue::Cache::default()),
+                helpers: Mutex::new(HashMap::new()),
                 config: Mutex::new(()),
                 config_file: dir.join("projects.json"),
             });
@@ -444,7 +450,12 @@ pub fn run() {
             set_field,
             add_note,
             attach_data,
-            attach_pick
+            attach_pick,
+            helper_cmds::helper_info,
+            helper_cmds::helper_set_account,
+            helper_cmds::helper_reset,
+            helper_cmds::helper_stop,
+            helper_cmds::helper_send
         ])
         .run(tauri::generate_context!())
         .expect("error while running Muster");

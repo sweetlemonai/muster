@@ -26,6 +26,15 @@ export const api = {
   attachData: (queue: string, id: string, files: [string, string][], stamp: string) =>
     invoke<string[]>("attach_data", { queue, id, files, stamp }),
   attachPick: (queue: string, id: string, stamp: string) => invoke<string[]>("attach_pick", { queue, id, stamp }),
+  helperInfo: (queue: string) => invoke<HelperInfo>("helper_info", { queue }),
+  helperSetAccount: (account: string) => invoke<void>("helper_set_account", { account }),
+  helperReset: (queue: string) => invoke<void>("helper_reset", { queue }),
+  helperStop: (queue: string) => invoke<void>("helper_stop", { queue }),
+  helperSend: (queue: string, message: string, files: [string, string][], stamp: string) =>
+    invoke<void>("helper_send", { queue, message, files, stamp }),
 };
+
+export type HelperLine = { role: "owner" | "helper" | "system"; kind: string; text: string; at: number };
+export type HelperInfo = { claude: string | null; accounts: string[]; account: string; running: boolean; lines: HelperLine[] };
 
 export type NewTask = { title: string; kind: string; priority: string; body: string };
