@@ -8,6 +8,14 @@ happened → what it shows → what chit has or lacks.
 
 ## 2026-10-12
 
+41. **Agents couldn't claim: the sandbox blocked writes to the queue** (the review session's claim of
+    Drover 0019 failed; note 16 predicted it). Each session's sandbox only writes inside its own
+    repo, and queues sit outside repos on purpose. Fixed in the personal layer (owner's yes):
+    `layer-settings.json` → `sandbox.filesystem.allowWrite` now lists `~/playground/{drover,muster,braindump}/tasks`,
+    re-applied to all 13 checkouts (the linker refreshes the sandbox block it wrote and keeps the answer
+    hook). It applies without a restart. → `muster init` / New queue must add the new queue's
+    folder there too (task 0004), or the next project hits the same wall.
+
 40. **Confirmed: an agent typed made-up times all day.** The drover/main session wrote it in a
     note itself: its heartbeats and log lines from 08:00 to 19:00 on four tasks were guessed. The
     real clock at its note was 04:29. The order of events was right, the times weren't. So

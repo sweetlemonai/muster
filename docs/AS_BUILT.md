@@ -213,6 +213,11 @@ projects that was the reason for a central repo. Chosen by the build and confirm
 
 ## Known limits
 
+- **A new queue needs its folder in the layer's sandbox list** (`~/playground/.claude/layer-settings.json`,
+  `allowWrite`), then `link-personal-layer` re-run in that project's checkouts. Otherwise its agents
+  can read tasks but not claim, log or ask (`DOGFOOD.md` 41). `muster init` and New queue don't do it
+  yet (task 0004).
+
 - **New session id after `/clear` or a handoff:** answers to the old session's questions wait in
   its old mailbox (`task inbox --session <old>`). Fix: carry open question ids in the handoff,
   and route by task claim too.
