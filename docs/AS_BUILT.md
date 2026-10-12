@@ -37,7 +37,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 
 - **Queues:** every `~/playground/*/tasks` that looks like a Muster queue (today Drover's and
   Muster's), plus queues added by hand, with All or one at a time in the header.
-- **Projects** (tab): every project with its folder, task count and where it came from (found
+- **Projects** (tab, or **+ Project** next to the project chips): every project with its folder, task count and where it came from (found
   in `~/playground`, or added). **New queue…** picks a project folder and creates its `tasks/`:
   status folders, README with the rules, `WAITING-FOR-OWNER.md`, the tools' stand-ins in `bin/`,
   and its own git with a first commit. It refuses inside a git repo, and refuses if `tasks/`
@@ -82,6 +82,10 @@ folded "steps" line, never file edits.
 - It runs your own `claude` with the account you pick once (decision 0002), in restricted mode:
   only `muster` and read-only tools, file reading inside the project folder, and anything else
   refused. Router and token variables are stripped. Model: Sonnet.
+- **Accounts:** the picker shows each `~/.claude*` folder's login (from `claude auth status`, no model
+  call), with **Change account** any time. An account that only works through a shell command
+  with a token (like `cc-hg`) isn't logged in on its own: the helper says so in plain words and
+  offers another account or **Log in…** (Terminal on that account's own `claude auth login`).
 - Conversations resume per project. **New conversation** starts fresh, and **Stop** ends a turn.
   The transcript lives in the app's settings folder (`helper/<project>.jsonl`).
 - Checked end to end on a throwaway project: a two-item message filed both items (a high-priority

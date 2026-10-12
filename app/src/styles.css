@@ -188,3 +188,7 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .working { margin: 0; }
 .composer { border-top: 1px solid var(--border); padding: 10px 16px; display: flex; flex-direction: column; gap: 8px; }
 .composer textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px; resize: vertical; }
+
+.chip.add { color: var(--accent); }
+.login-card { align-self: stretch; border: 1px solid var(--warn); background: var(--warn-soft); border-radius: 8px; padding: 10px 12px; }
+.login-card p { margin: 0 0 8px; }

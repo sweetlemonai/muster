@@ -42,6 +42,56 @@ pub fn accounts(home: &Path) -> Vec<String> {
     out
 }
 
+/// Is this account logged in? From `claude auth status` (JSON, no model call). `None` when it
+/// can't tell. `.claude` is the default folder, so CLAUDE_CONFIG_DIR stays unset for it.
+pub fn login_status(claude: &Path, home: &Path, account: &str) -> Option<(bool, String)> {
+    let mut cmd = std::process::Command::new(claude);
+    cmd.args(["auth", "status"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    for k in STRIP_ENV {
+        cmd.env_remove(k);
+    }
+    if account != ".claude" {
+        cmd.envs([("CLAUDE_CONFIG_DIR", home.join(account))]);
+    }
+    let mut child = cmd.spawn().ok()?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(50))
+            }
+            _ => {
+                let _ = child.kill();
+                return None;
+            }
+        }
+    }
+    let mut out = String::new();
+    std::io::Read::read_to_string(&mut child.stdout.take()?, &mut out).ok()?;
+    parse_status(&out)
+}
+
+pub fn parse_status(json: &str) -> Option<(bool, String)> {
+    let v: Value = serde_json::from_str(json.trim()).ok()?;
+    let logged = v["loggedIn"].as_bool()?;
+    let plan = v["subscriptionType"]
+        .as_str()
+        .or_else(|| v["authMethod"].as_str())
+        .unwrap_or("")
+        .to_string();
+    Some((logged, if logged { plan } else { String::new() }))
+}
+
+/// Text for the "Not logged in" reply the CLI gives, so the window can offer a fix.
+pub fn is_login_error(text: &str) -> bool {
+    let t = text.to_lowercase();
+    t.contains("not logged in") || t.contains("please run /login") || t.contains("invalid api key")
+}
+
 pub fn brief(project: &str, queue: &Path) -> String {
     format!(
         "You are the capture helper for the Muster task queue of the project \"{project}\" ({queue}). \
@@ -279,6 +329,23 @@ mod tests {
         );
         assert!(parse_line("not json").is_empty());
         assert!(parse_line(r#"{"type":"stream_event"}"#).is_empty());
+    }
+
+    #[test]
+    fn reads_login_status() {
+        assert_eq!(
+            parse_status(
+                r#"{"loggedIn": true, "authMethod": "claude.ai", "subscriptionType": "team"}"#
+            ),
+            Some((true, "team".into()))
+        );
+        assert_eq!(
+            parse_status(r#"{"loggedIn": false, "authMethod": "none", "subscriptionType": null}"#),
+            Some((false, String::new()))
+        );
+        assert_eq!(parse_status("Claude configuration file not found"), None);
+        assert!(is_login_error("Not logged in · Please run /login"));
+        assert!(!is_login_error("Filed 0012."));
     }
 
     #[test]

@@ -26,9 +26,18 @@ pub struct HelperLine {
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AccountInfo {
+    name: String,
+    /// None when it couldn't be checked.
+    logged_in: Option<bool>,
+    plan: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HelperInfo {
     claude: Option<String>,
-    accounts: Vec<String>,
+    accounts: Vec<AccountInfo>,
     account: String,
     running: bool,
     lines: Vec<HelperLine>,
@@ -126,13 +135,70 @@ pub async fn helper_info(handle: tauri::AppHandle, queue: String) -> Result<Help
             .lock()
             .map_err(|e| e.to_string())?
             .contains_key(&queue);
+        let claude = helper::find_claude(&home());
+        let accounts = helper::accounts(&home())
+            .into_iter()
+            .map(|name| {
+                let status = claude
+                    .as_ref()
+                    .and_then(|c| helper::login_status(c, &home(), &name));
+                AccountInfo {
+                    logged_in: status.as_ref().map(|s| s.0),
+                    plan: status.map(|s| s.1).unwrap_or_default(),
+                    name,
+                }
+            })
+            .collect();
         Ok(HelperInfo {
-            claude: helper::find_claude(&home()).map(|p| p.to_string_lossy().to_string()),
-            accounts: helper::accounts(&home()),
+            claude: claude.map(|p| p.to_string_lossy().to_string()),
+            accounts,
             account: load_helper(&app).account,
             running,
             lines: read_transcript(&app, &queue),
         })
+    })
+    .await
+}
+
+/// Open Terminal on the account's own login (`claude auth login`). The owner signs in there;
+/// Muster never sees the login.
+#[tauri::command]
+pub async fn helper_login(handle: tauri::AppHandle, account: String) -> Result<(), String> {
+    blocking(move || {
+        if !helper::accounts(&home()).contains(&account) {
+            return Err("no such account folder".into());
+        }
+        let claude = helper::find_claude(&home()).ok_or("couldn't find the claude command")?;
+        let app = handle.state::<AppState>();
+        let dir = helper_dir(&app);
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let script = dir.join("login.command");
+        let folder = if account == ".claude" {
+            "unset CLAUDE_CONFIG_DIR".to_string()
+        } else {
+            format!("export CLAUDE_CONFIG_DIR='{}'", home().join(&account).display())
+        };
+        let body = format!(
+            "#!/bin/sh\n# Muster: log in the Claude account ~/{account} for the helper.\nunset ANTHROPIC_BASE_URL ANTHROPIC_CUSTOM_HEADERS ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN\n{folder}\n'{}' auth login\necho\necho 'Done. You can close this window and go back to Muster.'\n",
+            claude.display()
+        );
+        std::fs::write(&script, body).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+        }
+        let ok = std::process::Command::new("open")
+            .args(["-a", "Terminal"])
+            .arg(&script)
+            .status()
+            .map_err(|e| e.to_string())?
+            .success();
+        if ok {
+            Ok(())
+        } else {
+            Err("couldn't open Terminal".into())
+        }
     })
     .await
 }
@@ -265,6 +331,14 @@ pub async fn helper_send(
                     }
                     if ev.kind == "done" || ev.kind == "error" {
                         got_result = true;
+                    }
+                    // "Not logged in" comes as a reply and an error: show it once, as a login
+                    // problem the window can offer a fix for.
+                    if helper::is_login_error(&ev.text) {
+                        if ev.kind == "error" {
+                            push(&h, &queue, "helper", "login", &ev.text);
+                        }
+                        continue;
                     }
                     push(&h, &queue, "helper", &ev.kind, &ev.text);
                 }

@@ -455,7 +455,8 @@ pub fn run() {
             helper_cmds::helper_set_account,
             helper_cmds::helper_reset,
             helper_cmds::helper_stop,
-            helper_cmds::helper_send
+            helper_cmds::helper_send,
+            helper_cmds::helper_login
         ])
         .run(tauri::generate_context!())
         .expect("error while running Muster");

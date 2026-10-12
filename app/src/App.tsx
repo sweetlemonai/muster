@@ -100,6 +100,7 @@ export default function App() {
               {q.name} <small>{Object.values(q.counts).reduce((a, b) => a + b, 0)}</small>
             </button>
           ))}
+          <button className="chip add" onClick={() => setView("projects")} title="New or existing project queue">+ Project</button>
         </nav>
         <button className="new" onClick={() => setCreating(true)} disabled={!state?.queues.length} title="New task (⌘N)">+ New task</button>
         <nav className="views" aria-label="Views">

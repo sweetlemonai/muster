@@ -28,6 +28,8 @@ export const api = {
   attachPick: (queue: string, id: string, stamp: string) => invoke<string[]>("attach_pick", { queue, id, stamp }),
   helperInfo: (queue: string) => invoke<HelperInfo>("helper_info", { queue }),
   helperSetAccount: (account: string) => invoke<void>("helper_set_account", { account }),
+  // Opens Terminal on that account's own `claude auth login`.
+  helperLogin: (account: string) => invoke<void>("helper_login", { account }),
   helperReset: (queue: string) => invoke<void>("helper_reset", { queue }),
   helperStop: (queue: string) => invoke<void>("helper_stop", { queue }),
   helperSend: (queue: string, message: string, files: [string, string][], stamp: string) =>
@@ -35,6 +37,7 @@ export const api = {
 };
 
 export type HelperLine = { role: "owner" | "helper" | "system"; kind: string; text: string; at: number };
-export type HelperInfo = { claude: string | null; accounts: string[]; account: string; running: boolean; lines: HelperLine[] };
+export type AccountInfo = { name: string; loggedIn: boolean | null; plan: string };
+export type HelperInfo = { claude: string | null; accounts: AccountInfo[]; account: string; running: boolean; lines: HelperLine[] };
 
 export type NewTask = { title: string; kind: string; priority: string; body: string };

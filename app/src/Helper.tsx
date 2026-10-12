@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { api, type HelperInfo, type HelperLine } from "./api";
+import { api, type AccountInfo, type HelperInfo, type HelperLine } from "./api";
 import { readFiles, stamp } from "./lib";
 import Markdown from "./Markdown";
 
@@ -14,6 +14,7 @@ function groups(lines: HelperLine[]): Group[] {
     if (g.owner || g.replies.length || g.tools.length || g.end || g.notes.length) out.push(g);
   };
   for (const l of lines) {
+    if (l.role === "helper" && l.kind === "reply" && /^not logged in/i.test(l.text)) continue;
     if (l.role === "owner") {
       flush();
       g = { owner: l, replies: [], tools: [], notes: [] };
@@ -38,6 +39,9 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
   const [files, setFiles] = useState<[string, string][]>([]);
   const [error, setError] = useState("");
   const end = useRef<HTMLDivElement>(null);
+  const [picking, setPicking] = useState(false);
+
+  const reload = () => api.helperInfo(queue).then(setInfo, (e) => setError(String(e)));
 
   useEffect(() => {
     let live = true;
@@ -98,22 +102,18 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
       </main>
     );
   }
-  if (info && !info.account) {
+  if (info && (!info.account || picking)) {
     return (
       <main className="list helper">
-        <h2>Which Claude account should the helper use?</h2>
-        <p className="meta">
-          The helper runs your own Claude Code with that account's login, like any session you start. What you write here goes to
-          Anthropic, the same as any Claude Code session. Pick once; you can change it later.
-        </p>
-        <div className="accounts">
-          {info.accounts.map((a) => (
-            <button key={a} onClick={() => void api.helperSetAccount(a).then(() => setInfo({ ...info, account: a }), (e) => setError(String(e)))}>
-              {a === ".claude" ? "~/.claude (default)" : `~/${a}`}
-            </button>
-          ))}
-        </div>
-        {error && <p className="err">{error}</p>}
+        <AccountPicker
+          info={info}
+          onPicked={(a) => {
+            setInfo({ ...info, account: a });
+            setPicking(false);
+          }}
+          onRefresh={() => void reload()}
+          onCancel={info.account ? () => setPicking(false) : undefined}
+        />
       </main>
     );
   }
@@ -132,6 +132,7 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
           {info && <> Account: ~/{info.account}.</>}
         </span>
         <span className="spacer" />
+        <button onClick={() => { setPicking(true); void reload(); }} disabled={running}>Change account</button>
         {running && <button onClick={() => void api.helperStop(queue)}>Stop</button>}
         <button onClick={() => void api.helperReset(queue).then(() => api.helperInfo(queue)).then((i) => setLines(i.lines))} disabled={running}>
           New conversation
@@ -160,6 +161,19 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
               <div key={j} className="bubble helper-reply"><Markdown text={r.text} /></div>
             ))}
             {b.end?.kind === "error" && <p className="err">{b.end.text}</p>}
+            {b.end?.kind === "login" && info && (
+              <div className="login-card">
+                <p>
+                  <b>The account ~/{info.account} isn't logged in on its own.</b> The helper uses an account's own login and never
+                  reads tokens, so an account that only works through a shell command with a token won't work here. Pick an account
+                  that's logged in, or log this one in (it opens Terminal on Claude's own login).
+                </p>
+                <div className="accounts">
+                  <button onClick={() => { setPicking(true); void reload(); }}>Choose another account</button>
+                  <button onClick={() => void api.helperLogin(info.account).catch((e) => setError(String(e)))}>Log in ~/{info.account}…</button>
+                </div>
+              </div>
+            )}
             {b.end?.kind === "done" && b.end.text && <p className="meta cost">{b.end.text}</p>}
           </div>
         ))}
@@ -211,5 +225,49 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
         </div>
       </form>
     </main>
+  );
+}
+
+function AccountPicker({ info, onPicked, onRefresh, onCancel }: {
+  info: HelperInfo;
+  onPicked: (a: string) => void;
+  onRefresh: () => void;
+  onCancel?: () => void;
+}) {
+  const [error, setError] = useState("");
+  const pick = (a: AccountInfo) =>
+    void api.helperSetAccount(a.name).then(() => onPicked(a.name), (e) => setError(String(e)));
+  const label = (a: AccountInfo) => (a.name === ".claude" ? "~/.claude (default)" : `~/${a.name}`);
+  return (
+    <>
+      <h2>Which Claude account should the helper use?</h2>
+      <p className="meta">
+        The helper runs your own Claude Code with that account's own login, like any session you start, and never reads tokens.
+        What you write here goes to Anthropic, the same as any Claude Code session. You can change it any time.
+      </p>
+      <table className="projects-table">
+        <tbody>
+          {info.accounts.map((a) => (
+            <tr key={a.name}>
+              <td><b>{label(a)}</b>{info.account === a.name && <span className="meta"> · in use</span>}</td>
+              <td>
+                {a.loggedIn === true && <span className="ok">logged in{a.plan ? ` · ${a.plan}` : ""}</span>}
+                {a.loggedIn === false && <span className="err">not logged in</span>}
+                {a.loggedIn === null && <span className="meta">couldn't check</span>}
+              </td>
+              <td className="actions">
+                {a.loggedIn !== true && <button onClick={() => void api.helperLogin(a.name).catch((e) => setError(String(e)))}>Log in…</button>}
+                <button onClick={() => pick(a)} disabled={a.loggedIn === false}>Use this one</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="accounts">
+        <button onClick={onRefresh}>Check again</button>
+        {onCancel && <button onClick={onCancel}>Cancel</button>}
+      </div>
+      {error && <p className="err">{error}</p>}
+    </>
   );
 }
