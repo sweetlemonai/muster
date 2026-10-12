@@ -14,6 +14,10 @@ then it's its own repo, tools and (soon) app.
 - **Adopted from chit, and next:** [`docs/ADOPTION.md`](docs/ADOPTION.md)
 - **Dogfood notes** (what went wrong, and what it taught): [`docs/DOGFOOD.md`](docs/DOGFOOD.md)
 
+## Layout
+
+`~/playground/muster/main` is this repo. `~/playground/muster/tasks` is Muster's own queue.
+
 ## Tools (`bin/`)
 
 Python 3 standard library only. No dependencies. Every tool reads the queue folder from
@@ -30,4 +34,9 @@ Python 3 standard library only. No dependencies. Every tool reads the queue fold
 
 | Project | Queue folder |
 |---|---|
-| Drover | `/Users/imassih/playground/drover/tasks` (own git; `bin/` there holds stand-ins that forward here) |
+| Drover | `/Users/imassih/playground/drover/tasks` |
+| Muster itself | `/Users/imassih/playground/muster/tasks` |
+
+Each queue sits next to its project's repo (`<project>/tasks`) with its own git history. Its
+`bin/` holds stand-ins that run these tools with `MUSTER_ROOT` set to that queue. Muster's own
+work is in `muster/tasks`: the desktop app (0001) is next.
