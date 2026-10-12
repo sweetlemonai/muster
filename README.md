@@ -14,6 +14,13 @@ then it's its own repo, tools and (soon) app.
 - **Adopted from chit, and next:** [`docs/ADOPTION.md`](docs/ADOPTION.md)
 - **Dogfood notes** (what went wrong, and what it taught): [`docs/DOGFOOD.md`](docs/DOGFOOD.md)
 
+## The app
+
+`app/`: a desktop app to watch every queue live: board, what's waiting for you (answer
+in place), task pages with their files, activity, problems. Build with `cd app && pnpm install &&
+pnpm release:build`, then open `app/src-tauri/target/release/bundle/macos/Muster.app`. Decision:
+[`docs/decisions/0001-app-on-drovers-stack.md`](docs/decisions/0001-app-on-drovers-stack.md).
+
 ## Layout
 
 `~/playground/muster/main` is this repo. `~/playground/muster/tasks` is Muster's own queue.

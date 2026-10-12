@@ -1,0 +1,30 @@
+[package]
+name = "muster"
+version = "0.1.0"
+description = "Watch Muster task queues: board, what's waiting for you, activity"
+authors = ["Sweet Lemon"]
+edition = "2021"
+rust-version = "1.89"
+
+[lib]
+name = "muster_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.1", features = [] }
+
+# Only crates Drover already uses (no new dependencies to vet).
+[dependencies]
+tauri = { version = "2.12.2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "unwind"
+strip = true

@@ -1,4 +1,4 @@
-# Muster: as built (2026-10-12)
+# Muster: as built (2026-10-12, updated with the app)
 
 What exists, how it fits together, how it was checked, and what's left. Newest state, not
 history (history is in `DOGFOOD.md` and the queue's git log).
@@ -26,7 +26,31 @@ gives one view of everything and checks the queue for problems. The owner reads
 | Owner's waiting list | `WAITING-FOR-OWNER.md` per queue (by hand); Drover's Home (task 0015) | By hand here. Built in Drover |
 | Attachments | `attachments/<id>/` per queue | In use (screenshots, mockups) |
 | Commands `/muster`, `/mu` | `docs/COMMANDS.md` | Designed, not built |
-| Desktop app (the UI) | not yet | Planned: Tauri 2 + React/TS, same stack as Drover so it can move into Drover later |
+| Desktop app | `app/` (Tauri 2 + React 19, decision 0001) | Built and running: board, waiting for you with answering, task pages, files, activity, problems |
+
+## The app
+
+`app/` is a Tauri 2 + React desktop app on Drover's stack (decision 0001), so it can move into
+Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muster.app` (build:
+`cd app && pnpm install && pnpm release:build`; develop: `pnpm app`).
+
+- **Queues:** every `~/playground/*/tasks` that looks like a Muster queue (today Drover's and
+  Muster's), with All or one at a time in the header.
+- **Board:** Inbox / To do / Doing / Blocked / Done. Cards show the id, title, type, priority,
+  "needs you", open questions, files, who's on it (flagged when quiet for 12 h), what a blocked
+  task waits on, and when it last changed. Tasks waiting on the owner sort first. Done shows the
+  latest 8.
+- **Waiting for you:** escalated questions and owner-blocked tasks, each opening its task.
+- **Task panel** (loads on first open): the task rendered as Markdown with a Raw switch,
+  open questions with an answer box (⌘↩), the files as thumbnails that open large (← → between
+  them, Esc to close), who's on it, what it waits on, and the commit.
+- **Answering** writes file contract v1, so the asking agent gets it pushed by the answer hook.
+  It's the only write the app makes.
+- **Activity:** queue commits and changed task files, newest first. **Problems:** the same
+  checks as `manifest.py --check`, done natively.
+- **Live:** refreshes every 2 s while the window is visible, and never while it's hidden.
+  On the real queues (21 tasks): 19 ms for the first read, 0.6 ms after that. Startup code is
+  229 KB (72 KB gzipped). The task panel is a separate 102 KB chunk. The app is 5.2 MB.
 
 ## How the pieces talk
 
@@ -47,6 +71,12 @@ owner ◀────────────┘ WAITING-FOR-OWNER.md    └─ 
 
 ## Checked
 
+- App: `pnpm check` green (typecheck, 7 UI tests, build, `cargo fmt`, clippy with warnings as
+  errors, 10 Rust tests, plus `tests/interop.rs`: a question asked with `bin/task`, answered by
+  the app, is read back by `bin/task inbox`, refused as already answered, and passes
+  `manifest.py --check`). The real queues were read by `examples/probe.rs`. The release app was
+  built and launched. Its screens haven't been looked at by a person yet.
+
 - `bin/test_task.py`: 15 tests (ask/answer/deliver, numbering, refusal of an already answered
   question, earlier questions listed, old unnumbered questions, sessions from env and text,
   refusals, control characters and tabs stripped, uppercase session ids, escalate, hook given bad
@@ -66,14 +96,19 @@ owner ◀────────────┘ WAITING-FOR-OWNER.md    └─ 
   and `link-personal-layer` rewriting `settings.local.json`, can drop it. Fix: put it in the
   personal layer (owner's call).
 - **One capture session at a time** for ids, and capture's watcher lives in its chat session.
-  Fix: the app (or Drover) watches. Ids become collision-proof.
+  The app now shows changes live, but it doesn't wake capture. Ids become collision-proof
+  with task 0002 (`file` under the lock).
+- **Files still move between status folders** (v2). The owner wants files that never move, with
+  status only inside the file. The app already reads both layouts. The tools and the move
+  itself are next (muster task 0005).
 - **Rules not enforced by the tools yet:** claiming, one claim per session, blocking and done
   are still by hand (README rules). The planned `/mu` commands move them into the tool.
 
 ## What's left (in order)
 
-1. **The desktop app**, to see what's happening: board by status, waiting for the owner, open
-   questions, who's on what with heartbeats, recent activity, live. Tauri 2 + React/TS.
+1. **App, next round:** a look by the owner, then theme it like Drover (its `src/ui`), and add
+   a menu-bar count of what's waiting, a notification when something new needs you, and
+   moving tasks on the board for the owner (claims stay with agents).
 2. **More of the commands** (`claim`, `next`, `block`, `done`, `found`, `triage`, `report`), and
    the `/muster` / `/mu` slash commands over them.
 3. **Other projects:** one shared queue repo with a folder per project, or a queue next to each
