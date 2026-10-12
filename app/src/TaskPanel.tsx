@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import { ago, stamp } from "./lib";
+import { ago, readFiles, stamp } from "./lib";
 import Markdown from "./Markdown";
 import type { Question, Task } from "./types";
 
@@ -43,6 +43,8 @@ export default function TaskPanel({ task, now, onClose, onChanged }: { task: Tas
         </div>
         <button className="close" onClick={onClose} aria-label="Close">×</button>
       </header>
+
+      <Controls task={task} onChanged={onChanged} />
 
       {open.length > 0 && (
         <section className="answers">
@@ -166,6 +168,138 @@ function Attachments({ task }: { task: Task }) {
           <p>{names[big]} · {big + 1} of {names.length} · ← → to move · Esc to close</p>
         </div>
       )}
+    </section>
+  );
+}
+
+const STATUSES = ["inbox", "todo", "blocked", "done"];
+
+/** The owner's changes: status, priority, type, title, a note, files. All through the core's rules. */
+function Controls({ task, onChanged }: { task: Task; onChanged: () => void }) {
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [blocking, setBlocking] = useState(false);
+  const [waitingOn, setWaitingOn] = useState("");
+  const [note, setNote] = useState("");
+  const [title, setTitle] = useState<string | null>(null);
+  const [over, setOver] = useState(false);
+
+  const run = async (what: () => Promise<unknown>, done: string) => {
+    try {
+      await what();
+      setMsg({ ok: true, text: done });
+      onChanged();
+    } catch (e) {
+      setMsg({ ok: false, text: String(e) });
+    }
+  };
+  const move = (status: string) => {
+    if (status === "blocked") {
+      setBlocking(true);
+      return;
+    }
+    void run(() => api.moveTask(task.queue, task.id, status, "", stamp(new Date())), `Moved to ${status}.`);
+  };
+  const files = async (list: FileList | File[] | null) => {
+    if (!list || !list.length) return;
+    const read = await readFiles(list, stamp(new Date()));
+    void run(() => api.attachData(task.queue, task.id, read, stamp(new Date())), `Attached ${read.length} file${read.length === 1 ? "" : "s"}.`);
+  };
+
+  return (
+    <section
+      className={`controls${over ? " drop" : ""}`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setOver(false);
+        void files(e.dataTransfer.files);
+      }}
+      onPaste={(e) => {
+        if (e.clipboardData.files.length) {
+          e.preventDefault();
+          void files(e.clipboardData.files);
+        }
+      }}
+    >
+      <div className="control-row">
+        <label>
+          Status
+          {task.status === "doing" ? (
+            <select value="doing" onChange={(e) => move(e.target.value)} title="Claimed by an agent. Moving it releases the claim.">
+              <option value="doing" disabled>doing (claimed)</option>
+              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          ) : (
+            <select value={task.status} onChange={(e) => move(e.target.value)}>
+              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
+        </label>
+        <label>
+          Priority
+          <select value={task.priority || "normal"} onChange={(e) => void run(() => api.setField(task.queue, task.id, "priority", e.target.value, stamp(new Date())), "Priority set.")}>
+            <option value="high">high</option>
+            <option value="normal">normal</option>
+            <option value="low">low</option>
+          </select>
+        </label>
+        <label>
+          Type
+          <select value={task.kind || "task"} onChange={(e) => void run(() => api.setField(task.queue, task.id, "type", e.target.value, stamp(new Date())), "Type set.")}>
+            <option value="task">task</option>
+            <option value="bug">bug</option>
+            <option value="idea">idea</option>
+          </select>
+        </label>
+        <button type="button" onClick={() => setTitle(task.title)}>Rename</button>
+        <button type="button" onClick={() => void run(() => api.attachPick(task.queue, task.id, stamp(new Date())), "Files attached.")}>Attach…</button>
+      </div>
+      {blocking && (
+        <form
+          className="control-row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setBlocking(false);
+            void run(() => api.moveTask(task.queue, task.id, "blocked", waitingOn, stamp(new Date())), "Blocked.");
+          }}
+        >
+          <input autoFocus value={waitingOn} onChange={(e) => setWaitingOn(e.target.value)} placeholder="Waiting on: a task id (0012), owner, or capture" maxLength={200} />
+          <button type="submit" disabled={!waitingOn.trim()}>Block</button>
+          <button type="button" onClick={() => setBlocking(false)}>Cancel</button>
+        </form>
+      )}
+      {title !== null && (
+        <form
+          className="control-row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const t = title;
+            setTitle(null);
+            void run(() => api.setField(task.queue, task.id, "title", t, stamp(new Date())), "Renamed.");
+          }}
+        >
+          <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
+          <button type="submit" disabled={!title.trim()}>Save</button>
+          <button type="button" onClick={() => setTitle(null)}>Cancel</button>
+        </form>
+      )}
+      <form
+        className="control-row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const n = note;
+          setNote("");
+          void run(() => api.addNote(task.queue, task.id, n, stamp(new Date())), "Note added to the log.");
+        }}
+      >
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note to the log… (or paste / drop files here)" maxLength={2000} />
+        <button type="submit" disabled={!note.trim()}>Add</button>
+      </form>
+      {msg && <p className={msg.ok ? "ok small" : "err small"}>{msg.text}</p>}
     </section>
   );
 }

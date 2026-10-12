@@ -25,6 +25,7 @@ gives one view of everything and checks the queue for problems. The owner reads
 | Manifest + check | `bin/manifest.py` → `tasks.json` | Built, tested. Capture rebuilds it on every commit |
 | Owner's waiting list | `WAITING-FOR-OWNER.md` per queue (by hand); Drover's Home (task 0015) | By hand here. Built in Drover |
 | Attachments | `attachments/<id>/` per queue | In use (screenshots, mockups) |
+| `muster` command line | the app's binary, `bin/muster` shim | Built: new, list, show, move, set, note, attach, answer, check, projects, init (same rules as the app) |
 | Commands `/muster`, `/mu` | `docs/COMMANDS.md` | Designed, not built |
 | Desktop app | `app/` (Tauri 2 + React 19, decision 0001) | Built and running: board, waiting for you with answering, task pages, files, activity, problems |
 
@@ -55,6 +56,13 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Task panel** (loads on first open): the task rendered as Markdown with a Raw switch,
   open questions with an answer box (⌘↩), the files as thumbnails that open large (← → between
   them, Esc to close), who's on it, what it waits on, and the commit.
+- **New task** (`+ New task`, ⌘N): project, type, priority, a one-line title, a Markdown
+  description, and files by paste, drop or picking. The id comes from the core under the queue's
+  lock. The task lands in To do and opens.
+- **Managing a task** (top of its panel): status (inbox, to do, blocked with what it waits on,
+  done; moving a claimed task releases the claim; the app never claims), priority, type, rename,
+  a note to the log, and files by paste, drop or **Attach…**. Every change is logged with the
+  time and "owner".
 - **Answering** writes file contract v1, so the asking agent gets it pushed by the answer hook.
   It's the only write the app makes.
 - **Activity:** queue commits and changed task files, newest first. **Problems:** the same
@@ -62,6 +70,24 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Live:** refreshes every 2 s while the window is visible, and never while it's hidden.
   On the real queues (21 tasks): 19 ms for the first read, 0.6 ms after that. Startup code is
   229 KB (72 KB gzipped). The task panel is a separate 102 KB chunk. The app is 5.2 MB.
+
+## The command line
+
+The app's binary is also the `muster` command (`bin/muster` runs it). It uses the same Rust code as
+the app (`ops.rs`), so the app and the command line can't disagree. It picks the queue from
+`--queue <name|folder>`, then `$MUSTER_ROOT`, then the nearest queue from the current folder (a
+queue, or a `tasks/` beside or above it).
+
+```
+muster new "Board flickers on resize" --type bug --priority high --body "Steps: …"
+muster list [--status todo] [--json]      muster show 0007 [--json]
+muster move 0007 blocked --on owner       muster set 0007 priority low
+muster note 0007 "Checked on the Mac"     muster attach 0007 shot.png
+muster answer 0007 Q2 "Use 5173"          muster check      muster projects      muster init ~/playground/x
+```
+
+`ask` and `inbox`, and the answer hook, are still the Python `bin/task` for now. They move to
+`muster` next (task 0002), then the Python stand-ins point at `muster`.
 
 ## How the pieces talk
 
@@ -83,8 +109,11 @@ owner ◀────────────┘ WAITING-FOR-OWNER.md    └─ 
 ## Checked
 
 - App: `pnpm check` green (typecheck, 7 UI tests, build, `cargo fmt`, clippy with warnings as
-  errors, 15 Rust tests (queue reading, contract writing, projects: list, add, create, refuse
-  inside a repo, settings round trip), plus `tests/interop.rs`: a question asked with `bin/task`, answered by
+  errors, 26 Rust tests (queue reading, contract writing; projects: list, add, create, refuse
+  inside a repo, settings round trip; task operations: create with ids and template, refusals,
+  flat layout, moves and claim release, fields and notes, attachments that never overwrite or
+  escape, base64; the command line), plus a second interop test (tasks the app makes pass
+  `manifest.py --check` and work with `bin/task`), plus `tests/interop.rs`: a question asked with `bin/task`, answered by
   the app, is read back by `bin/task inbox`, refused as already answered, and passes
   `manifest.py --check`). The real queues were read by `examples/probe.rs`. The release app was
   built and launched. Its screens haven't been looked at by a person yet.

@@ -74,3 +74,30 @@ fn python_asks_app_answers_python_reads() {
     let (ok, out) = run(d.path(), "manifest.py", &["--check"]);
     assert!(ok, "{out}");
 }
+
+#[test]
+fn tasks_made_by_the_app_pass_the_python_check() {
+    let d = tempfile::tempdir().unwrap();
+    for f in muster_lib::queue::STATUS_FOLDERS {
+        std::fs::create_dir(d.path().join(f)).unwrap();
+    }
+    std::fs::write(d.path().join("README.md"), "q").unwrap();
+    let t = "2026-10-12 15:00";
+    let new = muster_lib::ops::NewTask {
+        title: "Made in the app".into(),
+        kind: "bug".into(),
+        priority: "high".into(),
+        body: "Steps.".into(),
+    };
+    let c = muster_lib::ops::create_task(d.path(), &new, "owner", t).unwrap();
+    muster_lib::ops::attach(d.path(), &c.id, "shot.png", b"png", "owner", t).unwrap();
+    muster_lib::ops::move_task(d.path(), &c.id, "blocked", "owner", "owner", t).unwrap();
+    let (ok, out) = run(d.path(), "manifest.py", &["--check"]);
+    assert!(ok, "{out}");
+    let (ok, out) = run(
+        d.path(),
+        "task",
+        &["ask", &c.id, "Which build?", "--session", "abcd1234"],
+    );
+    assert!(ok, "bin/task works on an app-made task: {out}");
+}

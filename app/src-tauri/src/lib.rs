@@ -2,6 +2,8 @@
 //! in `spawn_blocking`. The window names a queue by its project name, and a project by the key
 //! the core gave it, never by a path it made up. Folders are picked by the core's own dialog.
 
+pub mod cli;
+pub mod ops;
 pub mod projects;
 pub mod queue;
 
@@ -100,6 +102,13 @@ async fn answer(
     text: String,
     stamp: String,
 ) -> Result<Option<String>, String> {
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || queue::answer(&queue_root(&file, &queue)?, &id, n, &text, "owner", &stamp))
+        .await
+}
+
+fn check_stamp(stamp: &str) -> Result<(), String> {
     let ok = stamp.len() == 16
         && stamp.char_indices().all(|(i, c)| match i {
             4 | 7 => c == '-',
@@ -107,12 +116,172 @@ async fn answer(
             13 => c == ':',
             _ => c.is_ascii_digit(),
         });
-    if !ok {
-        return Err("bad time stamp".into());
+    if ok {
+        Ok(())
+    } else {
+        Err("bad time stamp".into())
     }
+}
+
+#[tauri::command]
+async fn create_task(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    task: ops::NewTask,
+    files: Vec<(String, String)>,
+    stamp: String,
+) -> Result<ops::Created, String> {
+    check_stamp(&stamp)?;
     let file = app.config_file.clone();
-    blocking(move || queue::answer(&queue_root(&file, &queue)?, &id, n, &text, "owner", &stamp))
-        .await
+    blocking(move || {
+        let root = queue_root(&file, &queue)?;
+        let created = ops::create_task(&root, &task, "owner", &stamp)?;
+        for (name, data_url) in files {
+            ops::attach(
+                &root,
+                &created.id,
+                &name,
+                &ops::data_url_bytes(&data_url)?,
+                "owner",
+                &stamp,
+            )?;
+        }
+        Ok(created)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn move_task(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+    status: String,
+    waiting_on: String,
+    stamp: String,
+) -> Result<String, String> {
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || {
+        ops::move_task(
+            &queue_root(&file, &queue)?,
+            &id,
+            &status,
+            &waiting_on,
+            "owner",
+            &stamp,
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+async fn set_field(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+    field: String,
+    value: String,
+    stamp: String,
+) -> Result<String, String> {
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || {
+        ops::set_field(
+            &queue_root(&file, &queue)?,
+            &id,
+            &field,
+            &value,
+            "owner",
+            &stamp,
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+async fn add_note(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+    note: String,
+    stamp: String,
+) -> Result<String, String> {
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || ops::add_note(&queue_root(&file, &queue)?, &id, &note, "owner", &stamp)).await
+}
+
+/// Attach files the window holds (pasted or dropped), as data URLs.
+#[tauri::command]
+async fn attach_data(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+    files: Vec<(String, String)>,
+    stamp: String,
+) -> Result<Vec<String>, String> {
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || {
+        let root = queue_root(&file, &queue)?;
+        files
+            .iter()
+            .map(|(name, url)| {
+                ops::attach(
+                    &root,
+                    &id,
+                    name,
+                    &ops::data_url_bytes(url)?,
+                    "owner",
+                    &stamp,
+                )
+            })
+            .collect()
+    })
+    .await
+}
+
+/// Attach files picked with the core's own dialog.
+#[tauri::command]
+async fn attach_pick(
+    handle: tauri::AppHandle,
+    queue: String,
+    id: String,
+    stamp: String,
+) -> Result<Vec<String>, String> {
+    check_stamp(&stamp)?;
+    let h = handle.clone();
+    let picked = blocking(move || {
+        Ok(h.dialog()
+            .file()
+            .set_title("Attach files")
+            .blocking_pick_files()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|p| p.into_path().ok())
+            .collect::<Vec<_>>())
+    })
+    .await?;
+    blocking(move || {
+        let app = handle.state::<AppState>();
+        let root = queue_root(&app.config_file, &queue)?;
+        let mut saved = Vec::new();
+        for p in picked {
+            let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
+            if !meta.is_file() {
+                continue;
+            }
+            let bytes = std::fs::read(&p).map_err(|e| e.to_string())?;
+            let name = p
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            saved.push(ops::attach(&root, &id, &name, &bytes, "owner", &stamp)?);
+        }
+        Ok(saved)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -269,7 +438,13 @@ pub fn run() {
             create_project,
             rename_project,
             hide_project,
-            remove_project
+            remove_project,
+            create_task,
+            move_task,
+            set_field,
+            add_note,
+            attach_data,
+            attach_pick
         ])
         .run(tauri::generate_context!())
         .expect("error while running Muster");

@@ -581,15 +581,7 @@ pub fn answer(
 ) -> Result<Option<String>, String> {
     let text = clean_text(text)?;
     let mail = root.join("mail");
-    fs::create_dir_all(&mail).map_err(|e| e.to_string())?;
-    let lock = fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(mail.join(".lock"))
-        .map_err(|e| e.to_string())?;
-    lock.lock().map_err(|e| e.to_string())?;
-    let result = (|| {
+    with_lock(root, || {
         let path = find_task(root, id)?;
         let body = fs::read_to_string(&path).map_err(|e| e.to_string())?;
         let head = "## Questions\n";
@@ -640,7 +632,21 @@ pub fn answer(
             write_atomic(&dir.join(format!("{id}-Q{n}.md")), &msg)?;
         }
         Ok(asker)
-    })();
+    })
+}
+
+/// Run `f` holding the queue's lock (an exclusive flock on `mail/.lock`, file contract rule 1).
+pub fn with_lock<T>(root: &Path, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    let mail = root.join("mail");
+    fs::create_dir_all(&mail).map_err(|e| e.to_string())?;
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(mail.join(".lock"))
+        .map_err(|e| e.to_string())?;
+    lock.lock().map_err(|e| e.to_string())?;
+    let result = f();
     let _ = lock.unlock();
     result
 }
@@ -666,7 +672,7 @@ fn asker_session(mail: &Path, id: &str, n: u32, item: &str) -> Option<String> {
     valid(&s).then_some(s)
 }
 
-fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
+pub fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
     let tmp = path.with_extension(format!("muster-{}.tmp", std::process::id()));
     let mut f = fs::File::create(&tmp).map_err(|e| e.to_string())?;
     f.write_all(text.as_bytes()).map_err(|e| e.to_string())?;

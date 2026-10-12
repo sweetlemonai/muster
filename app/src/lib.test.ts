@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ago, claimant, columns, feed, stamp } from "./lib";
+import { ago, claimant, columns, feed, fileName, stamp } from "./lib";
 import type { Task } from "./types";
 
 const task = (over: Partial<Task>): Task => ({
@@ -49,5 +49,13 @@ describe("helpers", () => {
     const f = feed([{ queue: "q", at: 5, what: "c", source: "commit" }], [task({ modified: 9, logTail: ["x done"] })]);
     expect(f.map((a) => a.source)).toEqual(["file", "commit"]);
     expect(f[0].what).toContain("x done");
+  });
+});
+
+describe("fileName", () => {
+  it("keeps real names and names pasted images", () => {
+    expect(fileName({ name: "shot.png", type: "image/png" }, 0, "2026-10-12 14:05")).toBe("shot.png");
+    expect(fileName({ name: "image.png", type: "image/png" }, 0, "2026-10-12 14:05")).toBe("pasted-2026-10-12-14-05.png");
+    expect(fileName({ name: "", type: "image/jpeg" }, 1, "2026-10-12 14:05")).toBe("pasted-2026-10-12-14-05-2.jpg");
   });
 });

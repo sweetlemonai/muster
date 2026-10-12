@@ -43,7 +43,12 @@ script (today `bin/task`), which enforces the rules, so they don't live only in 
 | `/mu init <project>` | Start Muster in another project |
 | `/mu dogfood <note>` | Log a rough edge in Muster itself (`DOGFOOD.md`) |
 
-## Built today (in `bin/`)
+## Built today
+
+The `muster` command (the app's binary, `bin/muster`): `new`, `list`, `show`, `move`, `set`, `note`,
+`attach`, `answer`, `check`, `projects`, `init`. The slash commands will call it.
+
+### Python tools (in `bin/`)
 
 `task ask`, `task answer`, `task escalate`, `task inbox`, the answer hook, `manifest.py` (board
 data + `--check`). Everything else above is still to build.

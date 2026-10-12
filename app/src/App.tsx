@@ -3,6 +3,7 @@ import { api } from "./api";
 import { ago, claimant, columns, COLUMNS, feed, key } from "./lib";
 import type { State, Task } from "./types";
 import Projects from "./Projects";
+import NewTask from "./NewTask";
 import logo from "./logo.png";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
@@ -53,6 +54,7 @@ export default function App() {
   const [view, setView] = useState<View>("board");
   const [open, setOpen] = useState<string | null>(null);
   const [showAllDone, setShowAllDone] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     if (queue !== "all" && state && !state.queues.some((q) => q.name === queue)) setQueue("all");
@@ -75,6 +77,10 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(null);
+      if (e.key === "n" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setCreating(true);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -94,6 +100,7 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <button className="new" onClick={() => setCreating(true)} disabled={!state?.queues.length} title="New task (⌘N)">+ New task</button>
         <nav className="views" aria-label="Views">
           <button className={view === "board" ? "tab on" : "tab"} onClick={() => setView("board")}>Board</button>
           <button className={view === "waiting" ? "tab on" : "tab"} onClick={() => setView("waiting")}>
@@ -182,6 +189,19 @@ export default function App() {
             <ul className="problems">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
           )}
         </main>
+      )}
+
+      {creating && state && state.queues.length > 0 && (
+        <NewTask
+          queues={state.queues.map((q) => q.name)}
+          initial={queue !== "all" ? queue : state.queues[0].name}
+          onClose={() => setCreating(false)}
+          onCreated={(q, id) => {
+            setCreating(false);
+            setView("board");
+            void refresh().then(() => setOpen(`${q}/${id}`));
+          }}
+        />
       )}
 
       {view === "projects" && <Projects queues={state?.queues ?? []} onChanged={refresh} />}

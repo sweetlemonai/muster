@@ -59,3 +59,25 @@ export function feed(activity: Activity[], tasks: Task[], limit = 60): Activity[
 }
 
 export const key = (t: Pick<Task, "queue" | "id">) => `${t.queue}/${t.id}`;
+
+/** Files from a paste or drop, as [name, data URL]. Pasted images without a name get one. */
+export async function readFiles(list: FileList | File[], stampText: string): Promise<[string, string][]> {
+  const files = Array.from(list);
+  return Promise.all(
+    files.map(
+      (f, i) =>
+        new Promise<[string, string]>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve([fileName(f, i, stampText), String(r.result)]);
+          r.onerror = () => reject(r.error);
+          r.readAsDataURL(f);
+        }),
+    ),
+  );
+}
+
+export function fileName(f: { name: string; type: string }, i: number, stampText: string): string {
+  if (f.name && f.name !== "image.png") return f.name;
+  const ext = f.type.split("/")[1]?.replace("jpeg", "jpg") || "bin";
+  return `pasted-${stampText.replace(/[ :]/g, "-")}${i ? `-${i + 1}` : ""}.${ext}`;
+}

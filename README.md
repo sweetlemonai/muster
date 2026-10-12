@@ -25,6 +25,11 @@ pnpm release:build`, then open `app/src-tauri/target/release/bundle/macos/Muster
 
 `~/playground/muster/main` is this repo. `~/playground/muster/tasks` is Muster's own queue.
 
+## Command line
+
+`bin/muster`: the same rules as the app, from a terminal or for agents (`muster help`). See
+[`docs/AS_BUILT.md`](docs/AS_BUILT.md), "The command line".
+
 ## Tools (`bin/`)
 
 Python 3 standard library only. No dependencies. Every tool reads the queue folder from

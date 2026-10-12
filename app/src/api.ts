@@ -15,4 +15,17 @@ export const api = {
   renameProject: (key: string, name: string) => invoke<void>("rename_project", { key, name }),
   hideProject: (key: string, hidden: boolean) => invoke<void>("hide_project", { key, hidden }),
   removeProject: (key: string) => invoke<void>("remove_project", { key }),
+  createTask: (queue: string, task: NewTask, files: [string, string][], stamp: string) =>
+    invoke<{ id: string; path: string }>("create_task", { queue, task, files, stamp }),
+  moveTask: (queue: string, id: string, status: string, waitingOn: string, stamp: string) =>
+    invoke<string>("move_task", { queue, id, status, waitingOn, stamp }),
+  setField: (queue: string, id: string, field: string, value: string, stamp: string) =>
+    invoke<string>("set_field", { queue, id, field, value, stamp }),
+  addNote: (queue: string, id: string, note: string, stamp: string) => invoke<string>("add_note", { queue, id, note, stamp }),
+  // Files the window holds (pasted or dropped) go as [name, data URL]; picking uses the core's dialog.
+  attachData: (queue: string, id: string, files: [string, string][], stamp: string) =>
+    invoke<string[]>("attach_data", { queue, id, files, stamp }),
+  attachPick: (queue: string, id: string, stamp: string) => invoke<string[]>("attach_pick", { queue, id, stamp }),
 };
+
+export type NewTask = { title: string; kind: string; priority: string; body: string };
