@@ -25,6 +25,8 @@ export type Task = {
   openQuestions: number;
   waitingForOwner: boolean;
   tags: string[];
+  claimedOn: string;
+  doneOn: string;
   attachments: string[];
   logTail: string[];
   modified: number;

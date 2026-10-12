@@ -5,12 +5,14 @@ import type { State, Task } from "./types";
 import Projects from "./Projects";
 import NewTask from "./NewTask";
 import Appearance from "./Appearance";
+import { TableView, TimelineView } from "./Views";
 import logo from "./logo.png";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
 const TaskPanel = lazy(() => import("./TaskPanel"));
 const Helper = lazy(() => import("./Helper"));
-type View = "board" | "helper" | "waiting" | "activity" | "problems" | "projects";
+const HelpView = lazy(() => import("./Help"));
+type View = "board" | "table" | "timeline" | "helper" | "waiting" | "activity" | "problems" | "projects" | "help";
 // One docked pane beside the content, never over it (the owner wants everything in view).
 type Pane = { kind: "task"; key: string } | { kind: "new" } | { kind: "appearance" } | null;
 const POLL_MS = 2000;
@@ -123,11 +125,15 @@ export default function App() {
               {q.name} <small>{Object.values(q.counts).reduce((a, b) => a + b, 0)}</small>
             </button>
           ))}
-          <button className="chip add" onClick={() => setView("projects")} title="New or existing project queue">+ Project</button>
         </nav>
+        <button className="chip add" onClick={() => setView("projects")} title="New or existing project queue">+ Project</button>
         <button className="new" onClick={() => setPane({ kind: "new" })} disabled={!state?.queues.length} title="New task (⌘N)">+ New task</button>
         <nav className="views" aria-label="Views">
-          <button className={view === "board" ? "tab on" : "tab"} onClick={() => setView("board")}>Board</button>
+          <span className="view-group" role="group" aria-label="Project views">
+            <button className={view === "board" ? "tab on" : "tab"} onClick={() => setView("board")}>Board</button>
+            <button className={view === "table" ? "tab on" : "tab"} onClick={() => setView("table")}>Table</button>
+            <button className={view === "timeline" ? "tab on" : "tab"} onClick={() => setView("timeline")}>Timeline</button>
+          </span>
           <button className={view === "helper" ? "tab on" : "tab"} onClick={() => setView("helper")}>Helper</button>
           <button className={view === "waiting" ? "tab on" : "tab"} onClick={() => setView("waiting")}>
             Waiting for you{waiting.length ? <b className="count warn">{waiting.length}</b> : null}
@@ -137,6 +143,7 @@ export default function App() {
             Problems{problems.length ? <b className="count">{problems.length}</b> : null}
           </button>
           <button className={view === "projects" ? "tab on" : "tab"} onClick={() => setView("projects")}>Projects</button>
+          <button className={view === "help" ? "tab on" : "tab"} onClick={() => setView("help")}>Help</button>
         </nav>
         <button className={pane?.kind === "appearance" ? "tab on" : "tab"} onClick={() => setPane(pane?.kind === "appearance" ? null : { kind: "appearance" })} title="Theme and accent">
           Appearance
@@ -152,7 +159,7 @@ export default function App() {
             <p className="empty">No queues yet. Muster looks for <code>~/playground/*/tasks</code> folders, or add one under Projects.</p>
           )}
 
-          {view === "board" && (
+          {(view === "board" || view === "table" || view === "timeline") && (
             <>
               <div className="filters" aria-label="Filters">
                 <span className="meta">Priority</span>
@@ -172,7 +179,9 @@ export default function App() {
                 )}
                 <span className="meta right">{tasks.length === inQueue.length ? `${tasks.length} tasks` : `${tasks.length} of ${inQueue.length} tasks`}</span>
               </div>
-              <main className="board">
+              {view === "table" && <TableView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} />}
+              {view === "timeline" && <TimelineView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} />}
+              {view === "board" && <main className="board">
                 {COLUMNS.map((c) => {
                   const list = cols[c.status] ?? [];
                   const shown = c.status === "done" && !showAllDone ? list.slice(0, 8) : list;
@@ -195,7 +204,7 @@ export default function App() {
                     </section>
                   );
                 })}
-              </main>
+              </main>}
             </>
           )}
 
@@ -243,6 +252,12 @@ export default function App() {
           {view === "helper" && state && state.queues.length > 0 && (
             <Suspense fallback={<p className="none">Loading…</p>}>
               <Helper queues={state.queues.map((q) => q.name)} initial={queue !== "all" ? queue : state.queues[0].name} onChanged={refresh} />
+            </Suspense>
+          )}
+
+          {view === "help" && (
+            <Suspense fallback={<p className="none">Loading…</p>}>
+              <HelpView />
             </Suspense>
           )}
 

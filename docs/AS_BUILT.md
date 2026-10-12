@@ -67,6 +67,15 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   everything in front of my eyes"). Drag the edge to resize it; the width is remembered. Esc
   closes it.
 - **Filters:** above the board, by priority and by tag, with a "24 of 98 tasks" count.
+- **Three views of a project:** **Board** (the kanban below), **Table** (every task as a row:
+  project, id, title, type, priority, status, who's on it or what it waits on, captured, changed,
+  tags; click a header to sort) and **Timeline** (each task as a bar from the day it was captured
+  to the day it was done, or to today while open; the darker part starts the day it was claimed;
+  a line marks today). All three share the priority and tag filters and open tasks in the docked
+  pane.
+- **Help** (tab): every `muster` command with usage, options and examples (click to copy), how to
+  use Muster inside a Claude Code session (you, agents, capture), and the app's keys. It's the
+  same list `muster help` prints (`help.rs`, with a test that fails if a command isn't documented).
 - **Board:** Inbox / To do / Doing / Blocked / Done. Cards show the id, title, type, priority (on every card: HIGH filled gold, normal outlined, low faint), tags,
   "needs you", open questions, files, who's on it (flagged when quiet for 12 h), what a blocked
   task waits on, and when it last changed. Tasks waiting on the owner sort first. Done shows the
@@ -125,6 +134,10 @@ The app's binary is also the `muster` command (`bin/muster` runs it). It uses th
 the app (`ops.rs`), so the app and the command line can't disagree. It picks the queue from
 `--queue <name|folder>`, then `$MUSTER_ROOT`, then the nearest queue from the current folder (a
 queue, or a `tasks/` beside or above it).
+
+`muster` is linked into `~/.local/bin`, so it works in any terminal and in any Claude Code
+session as `! muster …`. `muster help` lists everything, and `muster help <command>` shows usage,
+options and examples (`--json` for scripts).
 
 ```
 muster new "Board flickers on resize" --type bug --priority high --body "Steps: …"

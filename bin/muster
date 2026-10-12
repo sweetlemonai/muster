@@ -1,7 +1,12 @@
 #!/bin/sh
 # `muster`: the command line, built into the Muster app's binary (same rules as the app).
-# Put this folder on your PATH, or link this file into ~/.local/bin.
-here=$(cd "$(dirname "$0")" && pwd -P)
+# Put this folder on your PATH, or link this file into ~/.local/bin (links are followed).
+src=$0
+while [ -L "$src" ]; do
+  t=$(readlink "$src")
+  case $t in /*) src=$t ;; *) src=$(dirname "$src")/$t ;; esac
+done
+here=$(cd "$(dirname "$src")" && pwd -P)
 bin="$here/../app/src-tauri/target/release/muster"
 if [ ! -x "$bin" ]; then
   echo "muster: build it first: (cd $here/../app && pnpm install && pnpm release:build)" >&2

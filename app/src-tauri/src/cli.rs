@@ -5,26 +5,6 @@
 use crate::{ops, projects, queue};
 use std::path::{Path, PathBuf};
 
-const HELP: &str = "muster — tasks for agents and people
-
-  muster new \"<title>\" [--type bug|task|idea] [--priority high|normal|low] [--body <text>|-]
-                                             (in --body, \\n is a line break)
-  muster list [--status <s>] [--tag <t>] [--json]   tasks, by status
-                                             (new takes --tags spike,tech-debt; set <id> tags a,b)
-  muster show <id> [--json]                  one task in full
-  muster move <id> <inbox|todo|blocked|done> [--on \"<what it waits on>\"]
-  muster set <id> <priority|type|title|tags> <value>
-  muster note <id> \"<text>\"                  add a line to the log
-  muster attach <id> <file>...               copy files into attachments/<id>/
-  muster answer <id> <Qn> \"<text>\"           answer a question (the asker gets it pushed)
-  muster check                               problems in the queue (exit 1 if any)
-  muster projects                            every queue Muster knows
-  muster init <project-folder>               create <project-folder>/tasks
-  muster help
-
-  --queue <name|folder>   which queue (default: $MUSTER_ROOT, then the nearest one from here)
-  --as <who>              who is acting, for the log (default: $MUSTER_AS, then $USER)";
-
 #[derive(Debug)]
 struct Args {
     pos: Vec<String>,
@@ -159,8 +139,18 @@ fn run(argv: &[String]) -> Result<i32, String> {
     let cmd = a.pos.first().map(String::as_str).unwrap_or("help");
     let stamp = local_stamp();
     match cmd {
-        "help" | "-h" => {
-            println!("{HELP}");
+        "help" | "-h" | "--help" => {
+            if a.json {
+                print_json(&crate::help::help())?;
+                return Ok(0);
+            }
+            match a.pos.get(1) {
+                Some(name) => match crate::help::command_text(name) {
+                    Some(t) => print!("{t}"),
+                    None => return Err(format!("unknown command {name:?} (see `muster help`)")),
+                },
+                None => print!("{}", crate::help::text()),
+            }
             Ok(0)
         }
         "projects" => {

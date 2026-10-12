@@ -278,3 +278,61 @@ button:disabled { opacity: 0.45; cursor: default; }
 .accent.on { outline: 2px solid var(--accent); }
 .accent i { width: 16px; height: 16px; border-radius: 50%; display: inline-block; }
 .pane-body section > button { border: 1px solid var(--border); background: var(--bg); border-radius: 6px; padding: 4px 12px; }
+
+/* Project views: Board, Table, Timeline. */
+.view-group { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 999px; margin-right: 6px; }
+.status-pill { font-size: 11px; border-radius: 999px; padding: 1px 8px; color: var(--on-status); }
+.s-inbox { --status: var(--st-inbox); } .s-todo { --status: var(--st-todo); } .s-doing { --status: var(--st-doing); } .s-blocked { --status: var(--st-blocked); } .s-done { --status: var(--st-done); }
+.status-pill { background: var(--status); }
+.status-pill.s-todo { color: var(--on-accent); }
+.table-view { flex: 1; overflow: auto; padding: 8px 14px 14px; }
+.tasks-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tasks-table th { position: sticky; top: 0; background: var(--bg); text-align: left; border-bottom: 1px solid var(--border); padding: 0; z-index: 1; }
+.tasks-table th button { width: 100%; text-align: left; border: none; background: none; padding: 7px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+.tasks-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.tasks-table tr { cursor: pointer; }
+.tasks-table tbody tr:hover td { background: var(--surface); }
+.tasks-table tr.active td { background: var(--accent-soft); }
+.tasks-table td:first-child { border-left: 3px solid var(--status, transparent); }
+.tasks-table .t-title { font-weight: 550; min-width: 260px; }
+.tasks-table .badge { margin: 0 4px; font-weight: 400; }
+.timeline { flex: 1; overflow: auto; padding: 8px 14px 14px; }
+.tl-grid { --label: 340px; min-width: calc(var(--label) + var(--day) * var(--days)); }
+.tl-head, .tl-row { display: grid; grid-template-columns: var(--label) calc(var(--day) * var(--days)); align-items: center; }
+.tl-head { position: sticky; top: 0; background: var(--bg); z-index: 2; height: 28px; border-bottom: 1px solid var(--border); }
+.tl-row { width: 100%; border: none; background: none; text-align: left; padding: 0; height: 30px; border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent); }
+.tl-row:hover { background: var(--surface); }
+.tl-row.active { background: var(--accent-soft); }
+.tl-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0 10px 0 4px; font-size: 12.5px; }
+.tl-track { position: relative; height: 100%; }
+.tl-tick { position: absolute; top: 6px; width: var(--day); text-align: center; font-size: 10px; color: var(--muted); }
+.tl-tick.today { color: var(--accent-text); font-weight: 700; }
+.tl-today { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--accent); opacity: 0.5; }
+.tl-bar { position: absolute; top: 6px; height: 18px; border-radius: 9px; background: color-mix(in srgb, var(--status) 38%, var(--surface)); border: 1px solid var(--status); overflow: hidden; }
+.tl-bar.open { border-top-right-radius: 3px; border-bottom-right-radius: 3px; }
+.tl-bar.needs-you { box-shadow: 0 0 0 2px var(--st-needs); }
+.tl-work { position: absolute; top: 0; bottom: 0; background: var(--status); opacity: 0.75; }
+.tl-bar-text { position: relative; font-size: 10px; padding: 0 8px; line-height: 16px; color: var(--text); white-space: nowrap; }
+.tl-legend { margin-top: 10px; max-width: 760px; }
+
+/* Header: one line, always. Project chips scroll sideways rather than wrap. */
+.top { flex-wrap: nowrap; gap: 10px; overflow: hidden; }
+.top .chip, .top .tab, .top .new, .brand { white-space: nowrap; flex: none; }
+.top .queues { flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.top .queues::-webkit-scrollbar { display: none; }
+.top .views { flex: none; }
+.tasks-table td.meta, .tasks-table .id, .tasks-table .q, .tasks-table td:nth-last-child(2), .tasks-table td:nth-last-child(3) { white-space: nowrap; }
+.tasks-table th.plain { padding: 7px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); font-weight: 600; }
+
+/* Help. */
+.help h2 { font-size: 16px; margin: 22px 0 6px; }
+.help-toc { font-size: 12px; color: var(--muted); }
+.help-toc a { color: var(--accent-text); }
+.help-cmd { border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin: 8px 0; background: var(--surface); }
+.help-cmd h3 { margin: 0 0 4px; font-size: 13px; }
+.help-cmd p { margin: 4px 0; }
+.cmd { display: inline-block; background: var(--tint); border-radius: 5px; padding: 3px 8px; cursor: copy; overflow-wrap: anywhere; }
+.cmd:hover { outline: 1px solid var(--accent); }
+.examples { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 6px; }
+.help-opts { border-collapse: collapse; margin: 6px 0; font-size: 12.5px; }
+.help-opts td { padding: 3px 12px 3px 0; vertical-align: top; }

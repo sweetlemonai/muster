@@ -49,6 +49,9 @@ pub struct Task {
     pub open_questions: usize,
     pub waiting_for_owner: bool,
     pub tags: Vec<String>,
+    /// From the log: the day work started (first "claimed" line) and the day it was done.
+    pub claimed_on: String,
+    pub done_on: String,
     pub attachments: Vec<String>,
     pub log_tail: Vec<String>,
     pub modified: u64,
@@ -244,6 +247,25 @@ pub fn parse_task(
         })
         .map(|v| v[v.len().saturating_sub(3)..].to_vec())
         .unwrap_or_default();
+    let log_lines: Vec<&str> = section(body, "Log")
+        .map(|s| s.lines().filter(|l| l.starts_with("- ")).collect())
+        .unwrap_or_default();
+    let day_of = |l: &str| -> Option<String> {
+        let d = l.get(2..12)?;
+        let b = d.as_bytes();
+        (b.len() == 10
+            && b[4] == b'-'
+            && b[7] == b'-'
+            && d.bytes()
+                .enumerate()
+                .all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit()))
+        .then(|| d.to_string())
+    };
+    let claimed_on = log_lines
+        .iter()
+        .find(|l| l.to_lowercase().contains("claimed"))
+        .and_then(|l| day_of(l))
+        .unwrap_or_default();
     let id = get("id");
     let mut status = get("status");
     if status.is_empty() {
@@ -259,6 +281,15 @@ pub fn parse_task(
         .unwrap_or(path)
         .to_string_lossy()
         .to_string();
+    let done_on = if status == "done" {
+        log_lines
+            .iter()
+            .rev()
+            .find_map(|l| day_of(l))
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
     Some(Task {
         queue: queue.to_string(),
         id,
@@ -276,6 +307,8 @@ pub fn parse_task(
         questions,
         open_questions,
         waiting_for_owner,
+        done_on,
+        claimed_on,
         tags: get("tags")
             .split(',')
             .map(|t| t.trim().to_string())
@@ -729,8 +762,27 @@ mod tests {
         assert_eq!(t.open_questions, 2);
         assert!(t.waiting_for_owner);
         assert_eq!(t.log_tail.len(), 2);
+        assert_eq!((t.claimed_on.as_str(), t.done_on.as_str()), ("", ""));
         assert!(s.problems.is_empty(), "{:?}", s.problems);
         assert_eq!(s.queues[0].counts.get("doing"), Some(&1));
+    }
+
+    #[test]
+    fn reads_claim_and_done_days_from_the_log() {
+        let d = tempfile::tempdir().unwrap();
+        let text = TASK.replace("status: doing", "status: done").replace(
+            "- 2026-10-11 wt-a: asked Q1\n",
+            "- 2026-10-11 10:00 claimed by wt-a\n- 2026-10-12 09:00 note\n- 2026-10-13 18:00 done in abc123\n",
+        );
+        std::fs::write(d.path().join("0042-x.md"), text).unwrap();
+        let s = read_state(
+            &[("p".into(), d.path().to_path_buf())],
+            &mut Cache::default(),
+        );
+        assert_eq!(
+            (s.tasks[0].claimed_on.as_str(), s.tasks[0].done_on.as_str()),
+            ("2026-10-11", "2026-10-13")
+        );
     }
 
     #[test]

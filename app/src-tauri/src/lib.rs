@@ -3,6 +3,7 @@
 //! the core gave it, never by a path it made up. Folders are picked by the core's own dialog.
 
 pub mod cli;
+pub mod help;
 pub mod helper;
 mod helper_cmds;
 pub mod ops;
@@ -290,6 +291,11 @@ async fn attach_pick(
 }
 
 #[tauri::command]
+fn help() -> help::Help {
+    help::help()
+}
+
+#[tauri::command]
 async fn projects(app: tauri::State<'_, AppState>) -> Result<Vec<projects::Project>, String> {
     let file = app.config_file.clone();
     blocking(move || Ok(projects::list(&base(), &projects::load(&file)))).await
@@ -436,6 +442,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             state,
+            help,
             task_body,
             image,
             answer,
