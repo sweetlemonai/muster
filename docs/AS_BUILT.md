@@ -64,7 +64,11 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   a note to the log, and files by paste, drop or **Attach…**. Every change is logged with the
   time and "owner".
 - **Answering** writes file contract v1, so the asking agent gets it pushed by the answer hook.
-  It's the only write the app makes.
+- **What the app writes**, all through the core's rules, under the queue's lock, logged with the
+  time and "owner": new tasks (and their ids), status moves, priority, type and title, log notes,
+  attachments, answers to questions, and new queues (`New queue…`). Its own settings go in
+  `projects.json`, and the helper's transcripts in its settings folder. **The app never claims a
+  task.** Claims belong to the agents doing the work.
 - **Activity:** queue commits and changed task files, newest first. **Problems:** the same
   checks as `manifest.py --check`, done natively.
 - **Live:** refreshes every 2 s while the window is visible, and never while it's hidden.
@@ -119,10 +123,14 @@ owner ──chat──▶ capture ──writes──▶ queue/todo/NNNN-*.md ◀
 owner ◀────────────┘ WAITING-FOR-OWNER.md    └─ task answer ─▶ mail/<session8>/NNNN-Qn.md ─▶ answer-hook ─▶ coder's context
 ```
 
-- **Ids:** four digits, assigned by capture (`manifest.py` reports `next_id` and catches
-  duplicates). A coder that finds something new drops a note in `inbox/`.
-- **Locks:** `flock` on `mail/.lock` for every task-file write through the tools. Claiming is an
-  atomic `mv`.
+- **Ids:** four digits, taken in order under the queue's lock by whoever creates the task: `muster
+  new`, the app's New task, or the helper (through `muster new`). Taking them under the lock is
+  what prevents two tasks getting the same id. The Python `bin/task` doesn't create tasks yet
+  (task 0002 has it allocate the same way, or hand over to `muster`). `manifest.py` reports
+  `next_id` and catches duplicates left from before. A coder that finds something new drops a
+  note in `inbox/`.
+- **Locks:** `flock` on `mail/.lock` for every task-file write through the tools (`muster`, the
+  app, `bin/task`). Claiming is still an atomic `mv` from `todo/` to `doing/`, done by hand.
 - **Time:** the tools stamp times. Agents' own timestamps aren't trusted (`DOGFOOD.md` 37).
 - **Git:** each queue is its own git repo, outside every code repo. Capture commits named files
   (never `git add -A` on the queue while others write, `DOGFOOD.md` 31).
@@ -149,6 +157,14 @@ owner ◀────────────┘ WAITING-FOR-OWNER.md    └─ 
   fixed (`DOGFOOD.md` 36).
 - Hook cost: about 10 ms per tool call with an empty mailbox.
 
+## Decided: a queue next to each project
+
+Each project's queue is `<project>/tasks`, beside its repo, with its own git history. There's no
+central queue repo. **New queue…** and `muster init` create it there. The app finds every
+`~/playground/*/tasks` (plus queues added by hand), and its **All** view gives the view across
+projects that was the reason for a central repo. Chosen by the build and confirmed in review
+(2026-10-12). It matches how every project under `~/playground` already lays out its repo.
+
 ## Known limits
 
 - **New session id after `/clear` or a handoff:** answers to the old session's questions wait in
@@ -157,24 +173,34 @@ owner ◀────────────┘ WAITING-FOR-OWNER.md    └─ 
 - **The hook only runs where it's installed:** Drover's four checkouts so far. New worktrees,
   and `link-personal-layer` rewriting `settings.local.json`, can drop it. Fix: put it in the
   personal layer (owner's call).
-- **One capture session at a time** for ids, and capture's watcher lives in its chat session.
-  The app now shows changes live, but it doesn't wake capture. Ids become collision-proof
-  with task 0002 (`file` under the lock).
+- **Capture's watcher lives in its chat session.** The app shows changes live, but nothing wakes
+  a capture session when an agent asks something.
 - **Files still move between status folders** (v2). The owner wants files that never move, with
-  status only inside the file. The app already reads both layouts. The tools and the move
-  itself are next (muster task 0005).
-- **Rules not enforced by the tools yet:** claiming, one claim per session, blocking and done
-  are still by hand (README rules). The planned `/mu` commands move them into the tool.
+  status only inside the file (task 0005). The app already reads both layouts. **0005 must ship
+  with `muster claim` (task 0002), not before.** Today a claim is safe because the `mv` is atomic:
+  of two coders moving the same file, only one succeeds. Once files stop moving, that guarantee
+  is gone, and two agents editing the front matter at once could both believe they won. So
+  `muster claim` reads the status and writes the claim under the queue's lock, and agents never
+  edit the status themselves.
+- **Rules not enforced by the tools yet:** claiming, one claim per session, heartbeats, blocking
+  and done are still by hand (README rules), so agents type their own times and they can be
+  wrong (`DOGFOOD.md` 40). Task 0002 moves them into `muster`.
+- **No crash recovery yet.** A card flags a claim whose file hasn't changed in 12 hours, but
+  nothing releases it. A crashed coder's task stays claimed until someone notices. Task 0002
+  includes the lease (`muster heartbeat`, stamped by the tool) and reclaim (`muster reclaim`
+  releases claims past their lease, with a log line, and the app offers it on stale cards).
 
 ## What's left (in order)
 
 1. **App, next round:** a look by the owner, then theme it like Drover (its `src/ui`), and add
    a menu-bar count of what's waiting, a notification when something new needs you, and
    moving tasks on the board for the owner (claims stay with agents).
-2. **More of the commands** (`claim`, `next`, `block`, `done`, `found`, `triage`, `report`), and
-   the `/muster` / `/mu` slash commands over them.
-3. **Other projects:** one shared queue repo with a folder per project, or a queue next to each
-   project (owner's call). The hook and rules go in through the personal layer. Pilot on one
-   more project.
-4. **Into Drover:** Drover task 0005 (task creator per project) and 0015 (waiting list) are the
+2. **Claims in the tool, then files that never move:** task 0002 (`claim` and `next` under the
+   lock, `heartbeat` and lease, `reclaim`, `block`, `done`, `found`, `triage`, and `ask`/`inbox`
+   in `muster`), then task 0005 on top of it. Then the `/muster` / `/mu` slash commands (0003).
+3. **Other projects:** the answer hook and the rules go in through the personal layer (task
+   0004). Pilot on one more project.
+4. **Orchestration:** Muster decides who does what, Drover starts and steers the agents (owner,
+   2026-10-12; Muster 0009, Drover 0018).
+5. **Into Drover:** Drover task 0005 (task creator per project) and 0015 (waiting list) are the
    first pieces. The app's screens move into Drover when it's ready.
