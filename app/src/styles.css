@@ -341,3 +341,26 @@ button:disabled { opacity: 0.45; cursor: default; }
 .est-total { color: var(--text); }
 .control-row label input { min-width: 0; width: 70px; flex: none; }
 .est-cell { white-space: nowrap; }
+
+/* Left sidebar: the projects. */
+.shell { flex-direction: row; }
+.sidebar { flex: none; width: 210px; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--border); min-height: 0; }
+.sidebar .brand { padding: 12px 14px 10px; }
+.projects-nav { flex: 1; overflow-y: auto; padding: 4px 8px; display: flex; flex-direction: column; gap: 2px; }
+.side-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin: 10px 6px 4px; }
+.side-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 1px solid transparent; background: none; border-radius: 6px; padding: 6px 8px; }
+.side-item:hover { background: var(--tint); }
+.side-item.on { background: var(--accent-soft); border-color: var(--accent); }
+.side-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+.side-badges { display: inline-flex; gap: 5px; align-items: center; }
+.side-badges small { color: var(--muted); font-variant-numeric: tabular-nums; }
+.side-badges .count { margin-left: 0; }
+.side-doing { font-size: 11px; color: var(--st-doing); }
+.side-doing::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--st-doing); margin-right: 3px; vertical-align: 1px; }
+.side-add { margin: 8px; border: 1px dashed var(--border); background: none; border-radius: 6px; padding: 6px; color: var(--accent-text); }
+.side-add:hover { border-color: var(--accent); }
+.main-col { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+
+.column.empty .cards { display: none; }
+.column.empty h2 { writing-mode: vertical-rl; padding: 12px 0; margin: 0 auto; white-space: nowrap; }
+.column.empty h2::before { margin: 0 0 6px; }

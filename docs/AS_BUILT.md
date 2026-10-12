@@ -35,8 +35,10 @@ gives one view of everything and checks the queue for problems. The owner reads
 Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muster.app` (build:
 `cd app && pnpm install && pnpm release:build`; develop: `pnpm app`).
 
-- **Queues:** every `~/playground/*/tasks` that looks like a Muster queue (today Drover's and
-  Muster's), plus queues added by hand, with All or one at a time in the header.
+- **Projects sidebar** (left): All and every queue (`~/playground/*/tasks` plus ones added by
+  hand), each with its task count, how many need you (gold) and how many are in progress
+  (teal), and **+ Project** at the bottom. The header keeps only the views, New task and
+  Appearance, on one line.
 - **Projects** (tab, or **+ Project** next to the project chips): every project with its folder, task count and where it came from (found
   in `~/playground`, or added). **New queue…** picks a project folder and creates its `tasks/`:
   status folders, README with the rules, `WAITING-FOR-OWNER.md`, the tools' stand-ins in `bin/`,
@@ -66,6 +68,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   beside the content, with the board still visible and live beside it (the owner: "need to have
   everything in front of my eyes"). Drag the edge to resize it; the width is remembered. Esc
   closes it.
+- **Columns always fit:** an empty column becomes a slim strip with its name written vertically,
+  so all five stay in view, even with a task open beside the board.
 - **Filters:** above the board, by priority and by tag, with a "24 of 98 tasks" count.
 - **Three views of a project:** **Board** (the kanban below), **Table** (every task as a row:
   project, id, title, type, priority, status, who's on it or what it waits on, captured, changed,

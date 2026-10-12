@@ -113,20 +113,28 @@ export default function App() {
   const toggle = (list: string[], set: (v: string[]) => void, v: string) => set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
   return (
-    <div className="app">
-      <header className="top">
-        <span className="brand"><img src={logo} alt="" width={22} height={22} /> Muster</span>
-        <nav className="queues" aria-label="Queues">
-          <button className={queue === "all" ? "chip on" : "chip"} onClick={() => setQueue("all")}>
-            All <small>{state?.tasks.length ?? ""}</small>
-          </button>
+    <div className="app shell">
+      <aside className="sidebar" aria-label="Projects">
+        <div className="brand"><img src={logo} alt="" width={22} height={22} /> Muster</div>
+        <nav className="projects-nav">
+          <ProjectItem name="All" total={state?.tasks.length ?? 0} tasks={state?.tasks ?? []} on={queue === "all"} onClick={() => setQueue("all")} />
+          <div className="side-label">Projects</div>
           {state?.queues.map((q) => (
-            <button key={q.name} className={queue === q.name ? "chip on" : "chip"} onClick={() => setQueue(q.name)} title={q.path}>
-              {q.name} <small>{Object.values(q.counts).reduce((a, b) => a + b, 0)}</small>
-            </button>
+            <ProjectItem
+              key={q.name}
+              name={q.name}
+              title={q.path}
+              total={Object.values(q.counts).reduce((x, y) => x + y, 0)}
+              tasks={(state?.tasks ?? []).filter((t) => t.queue === q.name)}
+              on={queue === q.name}
+              onClick={() => setQueue(q.name)}
+            />
           ))}
         </nav>
-        <button className="chip add" onClick={() => setView("projects")} title="New or existing project queue">+ Project</button>
+        <button className="side-add" onClick={() => setView("projects")} title="New or existing project queue">+ Project</button>
+      </aside>
+      <div className="main-col">
+      <header className="top">
         <button className="new" onClick={() => setPane({ kind: "new" })} disabled={!state?.queues.length} title="New task (⌘N)">+ New task</button>
         <nav className="views" aria-label="Views">
           <span className="view-group" role="group" aria-label="Project views">
@@ -184,12 +192,12 @@ export default function App() {
               </div>
               {view === "table" && <TableView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} />}
               {view === "timeline" && <TimelineView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} />}
-              {view === "board" && <main className="board">
+              {view === "board" && <main className="board" style={{ gridTemplateColumns: COLUMNS.map((c) => ((cols[c.status] ?? []).length ? "minmax(118px, 1fr)" : "44px")).join(" ") }}>
                 {COLUMNS.map((c) => {
                   const list = cols[c.status] ?? [];
                   const shown = c.status === "done" && !showAllDone ? list.slice(0, 8) : list;
                   return (
-                    <section key={c.status} className={`column col-${c.status}`}>
+                    <section key={c.status} className={`column col-${c.status}${list.length ? "" : " empty"}`}>
                       <h2>
                         {c.label} <small>{list.length}</small>
                       </h2>
@@ -293,7 +301,24 @@ export default function App() {
           </>
         )}
       </div>
+      </div>
     </div>
+  );
+}
+
+/** One project in the sidebar: its name and count, what's in progress and what needs you. */
+function ProjectItem({ name, title, total, tasks, on, onClick }: { name: string; title?: string; total: number; tasks: Task[]; on: boolean; onClick: () => void }) {
+  const doing = tasks.filter((t) => t.status === "doing").length;
+  const needs = tasks.filter((t) => t.waitingForOwner).length;
+  return (
+    <button className={on ? "side-item on" : "side-item"} onClick={onClick} title={title}>
+      <span className="side-name">{name}</span>
+      <span className="side-badges">
+        {needs > 0 && <span className="count warn" title={`${needs} need you`}>{needs}</span>}
+        {doing > 0 && <span className="side-doing" title={`${doing} in progress`}>{doing}</span>}
+        <small>{total}</small>
+      </span>
+    </button>
   );
 }
 
