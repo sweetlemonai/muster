@@ -19,14 +19,28 @@ capture's call, overrule any time). Replaces "Decided: a queue next to each proj
   commit and PR as the code. **`local = true`** in `config.toml` gitignores everything but
   `config.toml`, for queues that stay on this Mac. In that case the tool reads the main
   checkout's `.muster/` from any worktree.
-- **Live state outside the tree:** claims, leases, heartbeats and the lock live in the repo's
-  shared git folder (`$(git rev-parse --git-common-dir)/muster/`). Every worktree of the repo sees
-  the same claims at once, so two worktrees can't both take a task, and claims never cause
-  merge conflicts.
+- **Each piece of a task lives in one place.** Every worktree has its own copy of the task
+  files, so two places holding the same fact would disagree and conflict on merge:
+
+  | What | Lives in | Copies |
+  |---|---|---|
+  | What's happening now: stage, who holds it, lease, heartbeat, questions, answers, new comments, the lock | the repo's shared git folder, `$(git rev-parse --git-common-dir)/muster/` | one, seen by every worktree, never committed |
+  | The write-up: spec, criteria, final actuals | `.muster/tasks/NNNN-slug.md` | one per branch, but only the branch that holds the claim edits it |
+  | `INDEX.md`, `tasks.json` | `.muster/` | rebuilt by the tool, never merged |
+
+  The tool reads a task as main's file, then the claimant's worktree copy if someone holds it
+  (the claim names the worktree), then the live state on top. On Done it writes the stage,
+  ticked criteria, comments and actuals into the claimant's file, so they reach main in that
+  branch's PR. Backlog notes and new tasks take their id from the live state and are committed on
+  main by the tool, touching only `.muster/` (never pushed). A local queue has one copy anyway:
+  ignored files don't exist in worktrees.
+- Worktrees from Claude Code, Drover lanes (`.claude/worktrees/<lane>`) and Orca
+  (`<project>/worktrees/<repo>/<name>`) are all git worktrees of the same repo, so they share
+  one live state.
 - **Backlog → task:** anything in `backlog/` is a backlog item, a one-line `.md` included,
   however it got there (app, CLI, Claude Code, a file dropped by hand). Shaping turns it into a
   numbered task in `tasks/`. That's the only move a task ever makes.
-- **Stages** (in the file, written only by `muster`):
+- **Stages** (live state while in flight, written into the file at Done; only `muster` writes them):
 
   | Stage | Who | Meaning |
   |---|---|---|
