@@ -35,7 +35,16 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 `cd app && pnpm install && pnpm release:build`; develop: `pnpm app`).
 
 - **Queues:** every `~/playground/*/tasks` that looks like a Muster queue (today Drover's and
-  Muster's), with All or one at a time in the header.
+  Muster's), plus queues added by hand, with All or one at a time in the header.
+- **Projects** (tab): every project with its folder, task count and where it came from (found
+  in `~/playground`, or added). **New queue…** picks a project folder and creates its `tasks/`:
+  status folders, README with the rules, `WAITING-FOR-OWNER.md`, the tools' stand-ins in `bin/`,
+  and its own git with a first commit. It refuses inside a git repo, and refuses if `tasks/`
+  already exists. **Add existing queue…** picks any queue folder. Rename, Hide/Show, and Remove
+  (added ones only) never touch files. Saved in `~/Library/Application Support/ai.sweetlemon.muster/projects.json`.
+  Folders are picked by the core's own dialog, so the window never hands the core a path.
+- **Logo:** the owner's purple dog-face mark (source: `muster/tasks/attachments/0006/`), as
+  the app icon and in the header.
 - **Board:** Inbox / To do / Doing / Blocked / Done. Cards show the id, title, type, priority,
   "needs you", open questions, files, who's on it (flagged when quiet for 12 h), what a blocked
   task waits on, and when it last changed. Tasks waiting on the owner sort first. Done shows the
@@ -72,7 +81,8 @@ owner ◀────────────┘ WAITING-FOR-OWNER.md    └─ 
 ## Checked
 
 - App: `pnpm check` green (typecheck, 7 UI tests, build, `cargo fmt`, clippy with warnings as
-  errors, 10 Rust tests, plus `tests/interop.rs`: a question asked with `bin/task`, answered by
+  errors, 15 Rust tests (queue reading, contract writing, projects: list, add, create, refuse
+  inside a repo, settings round trip), plus `tests/interop.rs`: a question asked with `bin/task`, answered by
   the app, is read back by `bin/task inbox`, refused as already answered, and passes
   `manifest.py --check`). The real queues were read by `examples/probe.rs`. The release app was
   built and launched. Its screens haven't been looked at by a person yet.

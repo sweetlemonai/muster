@@ -2,10 +2,12 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { api } from "./api";
 import { ago, claimant, columns, COLUMNS, feed, key } from "./lib";
 import type { State, Task } from "./types";
+import Projects from "./Projects";
+import logo from "./logo.png";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
 const TaskPanel = lazy(() => import("./TaskPanel"));
-type View = "board" | "waiting" | "activity" | "problems";
+type View = "board" | "waiting" | "activity" | "problems" | "projects";
 const POLL_MS = 2000;
 
 // Poll the core while the window is visible; stop when it's hidden.
@@ -52,6 +54,10 @@ export default function App() {
   const [open, setOpen] = useState<string | null>(null);
   const [showAllDone, setShowAllDone] = useState(false);
 
+  useEffect(() => {
+    if (queue !== "all" && state && !state.queues.some((q) => q.name === queue)) setQueue("all");
+  }, [state, queue]);
+
   const tasks = useMemo(
     () => (state?.tasks ?? []).filter((t) => queue === "all" || t.queue === queue),
     [state, queue],
@@ -77,7 +83,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="top">
-        <span className="brand">Muster</span>
+        <span className="brand"><img src={logo} alt="" width={22} height={22} /> Muster</span>
         <nav className="queues" aria-label="Queues">
           <button className={queue === "all" ? "chip on" : "chip"} onClick={() => setQueue("all")}>
             All <small>{state?.tasks.length ?? ""}</small>
@@ -97,6 +103,7 @@ export default function App() {
           <button className={view === "problems" ? "tab on" : "tab"} onClick={() => setView("problems")}>
             Problems{problems.length ? <b className="count">{problems.length}</b> : null}
           </button>
+          <button className={view === "projects" ? "tab on" : "tab"} onClick={() => setView("projects")}>Projects</button>
         </nav>
         <span className="live" title={error || "Updates every 2 seconds while the window is visible"}>
           {error ? <span className="err">Can't read the queues</span> : at ? <><i className="dot" /> live</> : "loading…"}
@@ -104,7 +111,7 @@ export default function App() {
       </header>
 
       {state && state.queues.length === 0 && (
-        <p className="empty">No queues found. Muster looks for <code>~/playground/*/tasks</code> folders with a README and a <code>todo/</code> folder.</p>
+        <p className="empty">No queues yet. Muster looks for <code>~/playground/*/tasks</code> folders, or add one under Projects.</p>
       )}
 
       {view === "board" && (
@@ -176,6 +183,8 @@ export default function App() {
           )}
         </main>
       )}
+
+      {view === "projects" && <Projects queues={state?.queues ?? []} onChanged={refresh} />}
 
       {openTask && (
         <Suspense fallback={<aside className="panel"><p className="none">Loading…</p></aside>}>

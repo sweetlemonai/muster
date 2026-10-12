@@ -12,8 +12,19 @@ fn main() {
     for q in &s.queues {
         println!("{} {:?}", q.name, q.counts);
     }
-    let waiting: Vec<_> = s.tasks.iter().filter(|t| t.waiting_for_owner).map(|t| format!("{}/{}", t.queue, t.id)).collect();
-    println!("tasks {} · waiting for owner {:?} · problems {} · activity {}", s.tasks.len(), waiting, s.problems.len(), s.activity.len());
+    let waiting: Vec<_> = s
+        .tasks
+        .iter()
+        .filter(|t| t.waiting_for_owner)
+        .map(|t| format!("{}/{}", t.queue, t.id))
+        .collect();
+    println!(
+        "tasks {} · waiting for owner {:?} · problems {} · activity {}",
+        s.tasks.len(),
+        waiting,
+        s.problems.len(),
+        s.activity.len()
+    );
     for p in &s.problems {
         println!("  problem: {p}");
     }

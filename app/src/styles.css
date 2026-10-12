@@ -39,7 +39,8 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 .app { display: flex; flex-direction: column; height: 100%; }
 .top { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--raised); }
-.brand { font-weight: 700; font-size: 15px; letter-spacing: 0.2px; }
+.brand { display: flex; align-items: center; gap: 7px; font-weight: 700; font-size: 15px; letter-spacing: 0.2px; }
+.brand img { border-radius: 5px; }
 .queues, .views { display: flex; gap: 4px; }
 .views { margin-left: auto; }
 .chip, .tab { border: 1px solid transparent; background: none; border-radius: 999px; padding: 3px 10px; color: var(--muted); }
@@ -125,3 +126,15 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .markdown table { border-collapse: collapse; margin: 8px 0; }
 .markdown th, .markdown td { border: 1px solid var(--border); padding: 3px 8px; text-align: left; vertical-align: top; }
 .markdown a { color: var(--accent); }
+
+.projects-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 12px; }
+.projects-bar button, .actions button { border: 1px solid var(--border); background: var(--raised); border-radius: 6px; padding: 3px 10px; }
+.projects-bar button:first-child { background: var(--accent); border-color: var(--accent); color: #fff; }
+.projects-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+.projects-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.projects-table td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.projects-table tr.dim td { opacity: 0.55; }
+.projects-table .path { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); overflow-wrap: anywhere; max-width: 420px; }
+.projects-table .actions { white-space: nowrap; text-align: right; }
+.projects-table .actions button { margin-left: 4px; }
+.projects-table input { font: inherit; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 4px; background: var(--bg); color: var(--text); width: 220px; }

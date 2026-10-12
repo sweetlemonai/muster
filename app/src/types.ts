@@ -40,3 +40,12 @@ export type State = {
   activity: Activity[];
   now: number;
 };
+
+export type Project = {
+  key: string;
+  name: string;
+  path: string;
+  source: "found" | "added";
+  hidden: boolean;
+  ok: boolean;
+};

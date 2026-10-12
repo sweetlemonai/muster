@@ -7,7 +7,8 @@ part of Drover later)
 
 - **Stack:** Tauri 2.12 + React 19 + Vite 8 + TypeScript, pnpm. That's Drover's stack, so screens
   and Rust code can move into Drover later without a rewrite.
-- **Dependencies:** only ones Drover already uses (`tauri`, `serde`, `serde_json`, `tempfile` for
+- **Dependencies:** only ones Drover already uses (`tauri`, `tauri-plugin-dialog` for the folder
+  picker, called from Rust only, so the window gets no dialog permission; `serde`, `serde_json`, `tempfile` for
   tests; `react`, `react-dom`, `@tauri-apps/api`, `markdown-it`). The Rust lockfile was seeded
   from Drover's so the versions match. No libc: file locking uses std's `File::lock` (Rust
   1.89+), and the answer's time stamp comes from the window's local clock, validated in Rust.
