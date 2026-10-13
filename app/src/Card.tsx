@@ -20,7 +20,8 @@ export default function Card(props: CardProps) {
   return (
     <>
       <CardButton {...props} />
-      <CardPing t={t} now={props.now}>{(t.paused || pausable(t)) && <CardPause t={t} />}</CardPing>
+      {/* Keyed on the pause, so a pause or resume from anywhere starts it afresh, without an old note. */}
+      <CardPing t={t} now={props.now}>{(t.paused || pausable(t)) && <CardPause key={t.paused ?? ""} t={t} />}</CardPing>
     </>
   );
 }

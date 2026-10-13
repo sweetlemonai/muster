@@ -269,7 +269,8 @@
 > why"); it isn't blocked, so it's never red and waits on nothing. **Nobody can claim, pass or
 > pick it** (`claim`, `next`, `start`, `ready`, `pass` and the merge's pass refuse it: "0042 is
 > paused (since …); resume it first"), and nobody, the owner included, moves it (`return`,
-> `stage`, `move` refuse it the same way; the app's stage track is off); its holder may still
+> `stage`, `move` and `release`, `--clean` too, refuse it the same way; the app's stage track is
+> off); its holder may still
 > check in and note, but a check-in or note that would read as a pause or resume line is refused. **Its lease doesn't
 > run** (`reclaim`, Release, `muster check` and `manifest.py --check` skip it), and the tasks that
 > depend on it still wait. The front matter says it, `paused: <stamp>` and `paused-why: <why>`,

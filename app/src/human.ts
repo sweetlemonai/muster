@@ -40,10 +40,11 @@ const byAttention = (a: Task, b: Task) =>
   a.id.localeCompare(b.id);
 
 /** The Waiting for you tab's list, the tasks `needsYouCount` counts: what the agents wait on the
- *  owner for first, then the owner's own To do, then Doing, each by attention. */
+ *  owner for first, then the owner's own To do, then Doing (not the ones they paused, 0045), each
+ *  by attention. */
 export function waitingForYou(tasks: Task[]): Task[] {
   const agents = tasks.filter((t) => !isHuman(t) && t.waitingForOwner).sort(byAttention);
-  const own = (c: HumanColumn) => tasks.filter((t) => isHuman(t) && humanColumn(t.stage) === c).sort(byAttention);
+  const own = (c: HumanColumn) => tasks.filter((t) => isHuman(t) && humanColumn(t.stage) === c && needsYou(t)).sort(byAttention);
   return [...agents, ...own("todo"), ...own("doing")];
 }
 

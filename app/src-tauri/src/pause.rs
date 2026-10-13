@@ -556,6 +556,19 @@ mod tests {
         refused(ops::set_stage(d.path(), "0042", "ready", None, "owner", T).unwrap_err());
         refused(ops::set_stage(d.path(), "0042", "your-check", None, "capture", T).unwrap_err());
         refused(ops::move_task(d.path(), "0042", "todo", "", "owner", T).unwrap_err());
+        // Nor given up (review 3): `muster release` checks before touching its worktree.
+        let path = queue::find_task(d.path(), "0042").unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        fs::write(
+            &path,
+            text.replace(
+                "waiting_on:\n",
+                "waiting_on:\nbranch: task/0042-t\nworktree: /w\n",
+            ),
+        )
+        .unwrap();
+        refused(ops::check_release(d.path(), "0042", "owner").unwrap_err());
+        refused(ops::release_task(d.path(), "0042", "owner", T, "the worktree").unwrap_err());
         let t = read_task(d.path(), "0042").unwrap();
         assert_eq!((t.stage.as_str(), t.claimed_by.as_str()), ("building", A));
         // Blocking keeps its stage, so it's still allowed.

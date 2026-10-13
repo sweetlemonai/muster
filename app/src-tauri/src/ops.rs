@@ -1791,8 +1791,8 @@ pub fn start_task(
     })
 }
 
-/// Refused unless `who` may release task `id`'s worktree (`release --clean`, 0023): it was
-/// started (a branch on record), it's in Ready, Building or Testing, and in Building it's
+/// Refused unless `who` may release task `id`'s worktree (`release --clean`, 0023): it isn't
+/// paused (0045), it was started (a branch on record), it's in Ready, Building or Testing, and in Building it's
 /// `who`'s claim or `who` is the owner. Writes nothing.
 pub fn check_release(root: &Path, id: &str, who: &str) -> Result<(), String> {
     let who = actor(who)?;
@@ -1803,6 +1803,8 @@ pub fn check_release(root: &Path, id: &str, who: &str) -> Result<(), String> {
 }
 
 fn release_rules(id: &str, t: &Current, who: &str) -> Result<(), String> {
+    // A paused task is given up only once it's resumed (0045), before its worktree is touched.
+    not_paused(id, t)?;
     if t.branch.is_empty() {
         return Err(format!(
             "{id} has no worktree or branch on record (it wasn't started with muster start)"

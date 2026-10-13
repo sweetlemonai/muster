@@ -43,7 +43,8 @@ export function cardPauseNote(p: Paused): string {
 
 /** Pause or Resume under a card, one click: Pause from Backlog through Testing, Resume on a paused
  *  one, nothing otherwise. It goes first in the card's strip (Ping's CardPing), beside the card,
- *  since the card is itself a button. What came of it stays beside it until the next poll. */
+ *  since the card is itself a button. What came of it stays beside it until the task is paused or
+ *  resumed again, from here or anywhere (the card keys it on `paused`). */
 export function CardPause({ t }: { t: Task }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");

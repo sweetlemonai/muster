@@ -20,6 +20,11 @@ moved when a card went quiet → first in the strip, a bare text button unless t
 (u7); the chip's tooltip has the why (u8); goals and features can't be paused (u9).
 Each with a test first (red before the fix: c1, c3, u1–u8; c4's DST case fails under one offset):
 `bin/gate`: `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`.
+**Fixed (review, second round):** Waiting for you still listed the owner's own paused task, one
+more than its badge → its own-task lists go through `needsYou` too. The card's "its session can't
+be told" note outlived a resume made elsewhere → the strip's Pause is keyed on `paused`.
+`muster release` (and `--clean`) gave up a paused task → refused with "resume it first", before
+its worktree is touched. Each with a test first, red before the fix.
 **Did:** the owner: "option to pause a task". **Pause** / **Resume** under a card (Backlog through
 Testing) and beside the stage in the pane (optional why, typed in place), and `muster pause <id>
 ["why"]` / `muster resume <id>`. A paused task keeps its stage, claim, worktree and column, shows a

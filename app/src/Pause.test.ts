@@ -1,4 +1,4 @@
-import { createElement } from "react";
+import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { isWorking, projectActivity } from "./activity";
@@ -81,6 +81,15 @@ describe("a paused card on the board", () => {
     expect(quiet.match(/data-part="card-ping"/g)).toHaveLength(1);
     expect(quiet).toContain('<div class="card-ping" data-part="card-ping">');
     expect(card({ stage: "ready" })).toContain('<div class="card-ping bare" data-part="card-ping">');
+  });
+  it("starts the strip's Pause afresh when the task is paused or resumed, so an old note goes (review 2)", () => {
+    // React remounts a child whose key changes, which clears what it remembered.
+    const pauseOf = (t: Task) => {
+      const strip = (Card({ t, now: NOW, multi: false, parent: "", onOpen: () => {}, active: false, words: [] }) as ReactElement<{ children: ReactElement[] }>).props.children[1] as ReactElement<{ children: ReactElement }>;
+      return strip.props.children;
+    };
+    expect(pauseOf(task(paused)).key).toBe("2026-10-13 10:00");
+    expect(pauseOf(task({ stage: "ready" })).key).toBe("");
   });
   it("says why its session couldn't be told, in the strip, until the next poll (review u6)", () => {
     expect(cardPauseNote({ path: "", session: "", unreached: "this claim has no session to reach; ask its session to re-claim" })).toBe(

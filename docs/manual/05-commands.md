@@ -426,7 +426,7 @@ muster unblock 0007
 
 ### muster pause
 
-Not now, keep it as it is: the task keeps its stage, write-up, claim and worktree, and shows Paused (not blocked) where it is. Nobody can claim, pass or pick it (next, ready), and nobody, the owner included, returns it or moves its stage (return, stage, move) until it's resumed; its lease doesn't run while it's paused (reclaim skips it); the tasks that depend on it still wait. A task (not a goal or feature), from Backlog through Testing. In Building or Testing its session gets a stop request through its mailbox: stop at a safe point, check in (in Testing, a note) what's done and next, and end its turn. Logged as "paused (why)"; the timeline and the Work section's time leave paused stretches out.
+Not now, keep it as it is: the task keeps its stage, write-up, claim and worktree, and shows Paused (not blocked) where it is. Nobody can claim, pass or pick it (next, ready), and nobody, the owner included, returns it, moves its stage or releases it (return, stage, move, release) until it's resumed; its lease doesn't run while it's paused (reclaim skips it); the tasks that depend on it still wait. A task (not a goal or feature), from Backlog through Testing. In Building or Testing its session gets a stop request through its mailbox: stop at a safe point, check in (in Testing, a note) what's done and next, and end its turn. Logged as "paused (why)"; the timeline and the Work section's time leave paused stretches out.
 
 ```
 muster pause <id> ["<why>"]
@@ -735,7 +735,7 @@ muster start 0031 --at ~/wt/0031 --as wt-a
 
 ### muster release
 
-Give up a started task: back to Ready with its claim released, its worktree removed and its branch deleted (the local one; a branch pushed to origin stays, and so does its work). It first lists what that would lose (uncommitted files in the worktree, commits on no other branch) and refuses it unless --force. Works when the worktree is already gone too. A runner's worktree (start --here) is never removed: it's left detached with its files, and only the branch goes. In Building only its holder or the owner releases it.
+Give up a started task: back to Ready with its claim released, its worktree removed and its branch deleted (the local one; a branch pushed to origin stays, and so does its work). It first lists what that would lose (uncommitted files in the worktree, commits on no other branch) and refuses it unless --force. Works when the worktree is already gone too. A runner's worktree (start --here) is never removed: it's left detached with its files, and only the branch goes. In Building only its holder or the owner releases it. A paused task is refused: resume it first.
 
 ```
 muster release <id> --clean [--force]

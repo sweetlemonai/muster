@@ -96,6 +96,10 @@ describe("Waiting for you: the count's tasks, as a list", () => {
   it("lists what the agents wait on you for first, then your own To do, then Doing, each by attention", () => {
     expect(ids(waitingForYou(QUEUE))).toEqual(["0050", "0051", "0052", "0041", "0045", "0042"]);
     expect(waitingForYou(QUEUE)).toHaveLength(needsYouCount(QUEUE));
+    // Your own paused task (0045) isn't waiting on you: it's on the board with its Paused chip.
+    const paused = [...QUEUE, mine("0060", { paused: "2026-10-13 10:00" }), mine("0061", { stage: "building", paused: "2026-10-13 10:00" })];
+    expect(ids(waitingForYou(paused))).toEqual(ids(waitingForYou(QUEUE)));
+    expect(waitingForYou(paused)).toHaveLength(needsYouCount(paused));
   });
   it("puts what waits on the owner first, then by priority, then by project and id", () => {
     const x = waitingForYou([mine("0003"), mine("0002", { priority: "low" }), mine("0001", { priority: "high" }), mine("0004", { questions: [question(1, "?")], waitingForOwner: true })]);
