@@ -43,6 +43,21 @@ const STATUS_TEXT: Record<Mode, { err: string; ok: string; gold: string }> = {
   light: { err: "#C2334F", ok: "#177A4B", gold: "#8A6A00" },
 };
 
+// Stage colours (and the blocked flag's), the same in every theme: column strips, card edges,
+// pills and timeline bars. Words on them use --on-status. Grey, violet (Ready the stronger),
+// teal (Testing the lighter), gold for the owner, green, rose; never orange or blue.
+export const STAGE_COLOURS: Record<string, string> = {
+  backlog: "#8E8AA6",
+  shaping: "#B9A6F7",
+  ready: "#8B6CF0",
+  building: "#2EC4B6",
+  testing: "#8ADFD6",
+  "your-check": "#F5C04A",
+  done: "#4CC38A",
+  blocked: "#F0647D",
+};
+const ON_STATUS = "#1A1730";
+
 export function luminance(hex: string): number {
   const h = hex.replace("#", "");
   const c = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
@@ -94,6 +109,8 @@ export function variables(theme: Theme, accent: Accent): Record<string, string> 
     "--err": st.err,
     "--ok": st.ok,
     "--gold-text": st.gold,
+    ...Object.fromEntries(Object.entries(STAGE_COLOURS).map(([s, c]) => [`--st-${s}`, c])),
+    "--on-status": ON_STATUS,
   };
 }
 

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
-import { ago, claimant, columns, COLUMNS, estimateTotal, feed, key } from "./lib";
+import { ago, columns, estimateTotal, feed, holder, inProgress, key, queueTotal, STAGES } from "./lib";
 import type { State, Task } from "./types";
 import Projects from "./Projects";
 import NewTask from "./NewTask";
@@ -124,7 +124,7 @@ export default function App() {
               key={q.name}
               name={q.name}
               title={q.path}
-              total={Object.values(q.counts).reduce((x, y) => x + y, 0)}
+              total={queueTotal(q.counts)}
               tasks={(state?.tasks ?? []).filter((t) => t.queue === q.name)}
               on={queue === q.name}
               onClick={() => setQueue(q.name)}
@@ -192,20 +192,21 @@ export default function App() {
               </div>
               {view === "table" && <TableView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} />}
               {view === "timeline" && <TimelineView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} />}
-              {view === "board" && <main className="board" style={{ gridTemplateColumns: COLUMNS.map((c) => ((cols[c.status] ?? []).length ? "minmax(118px, 1fr)" : "44px")).join(" ") }}>
-                {COLUMNS.map((c) => {
-                  const list = cols[c.status] ?? [];
-                  const shown = c.status === "done" && !showAllDone ? list.slice(0, 8) : list;
+              {view === "board" && <main className="board" style={{ gridTemplateColumns: STAGES.map((s) => ((cols[s.id] ?? []).length ? "minmax(118px, 1fr)" : "44px")).join(" ") }}>
+                {STAGES.map((c) => {
+                  const list = cols[c.id] ?? [];
+                  const shown = c.id === "done" && !showAllDone ? list.slice(0, 8) : list;
                   return (
-                    <section key={c.status} className={`column col-${c.status}${list.length ? "" : " empty"}`}>
-                      <h2>
+                    <section key={c.id} className={`column col-${c.id}${list.length ? "" : " empty"}`}>
+                      <h2 title={c.role ? `${c.label}: ${c.role}` : c.label}>
                         {c.label} <small>{list.length}</small>
+                        {c.role && <span className="role">{c.role}</span>}
                       </h2>
                       <div className="cards">
                         {shown.map((t) => (
                           <Card key={key(t)} t={t} now={now} multi={multi} onOpen={() => open(t)} active={openKey === key(t)} />
                         ))}
-                        {c.status === "done" && list.length > 8 && (
+                        {c.id === "done" && list.length > 8 && (
                           <button className="more" onClick={() => setShowAllDone((v) => !v)}>
                             {showAllDone ? "Show fewer" : `Show all ${list.length}`}
                           </button>
@@ -232,7 +233,8 @@ export default function App() {
                   {t.questions.filter((q) => !q.ticked && q.escalated).map((q) => (
                     <p key={q.n ?? q.text}><b>Q{q.n}</b> {q.text}</p>
                   ))}
-                  {t.status === "blocked" && t.waitingOn.toLowerCase().startsWith("owner") && <p>Blocked on you: {t.waitingOn}</p>}
+                  {t.blocked && t.waitingOn.toLowerCase().startsWith("owner") && <p>Blocked on you: {t.waitingOn}</p>}
+                  {t.stage === "your-check" && <p>In Your check: accept it, or send it back with what's wrong.</p>}
                   <button onClick={() => open(t)}>Open to answer</button>
                 </article>
               ))}
@@ -281,7 +283,7 @@ export default function App() {
             <aside className="pane" style={{ width }} aria-label="Details">
               {pane.kind === "task" && openTask && (
                 <Suspense fallback={<p className="none">Loading…</p>}>
-                  <TaskPanel task={openTask} now={now} onClose={() => setPane(null)} onChanged={refresh} />
+                  <TaskPanel key={openKey} task={openTask} now={now} onClose={() => setPane(null)} onChanged={refresh} />
                 </Suspense>
               )}
               {pane.kind === "task" && !openTask && <p className="none">That task is gone.</p>}
@@ -308,14 +310,14 @@ export default function App() {
 
 /** One project in the sidebar: its name and count, what's in progress and what needs you. */
 function ProjectItem({ name, title, total, tasks, on, onClick }: { name: string; title?: string; total: number; tasks: Task[]; on: boolean; onClick: () => void }) {
-  const doing = tasks.filter((t) => t.status === "doing").length;
+  const doing = tasks.filter(inProgress).length;
   const needs = tasks.filter((t) => t.waitingForOwner).length;
   return (
     <button className={on ? "side-item on" : "side-item"} onClick={onClick} title={title}>
       <span className="side-name">{name}</span>
       <span className="side-badges">
         {needs > 0 && <span className="count warn" title={`${needs} need you`}>{needs}</span>}
-        {doing > 0 && <span className="side-doing" title={`${doing} in progress`}>{doing}</span>}
+        {doing > 0 && <span className="side-doing" title={`${doing} in progress (Building or Testing)`}>{doing}</span>}
         <small>{total}</small>
       </span>
     </button>
@@ -353,7 +355,8 @@ function Splitter({ width, onWidth }: { width: number; onWidth: (w: number) => v
 }
 
 function Card({ t, now, multi, onOpen, active }: { t: Task; now: number; multi: boolean; onOpen: () => void; active: boolean }) {
-  const stale = t.status === "doing" && now - t.modified > 12 * 3600;
+  const stale = t.stage === "building" && !t.blocked && now - t.modified > 12 * 3600;
+  const who = holder(t);
   const priority = t.priority || "normal";
   return (
     <button className={`card${active ? " active" : ""}${t.waitingForOwner ? " needs-you" : ""}`} onClick={onOpen}>
@@ -370,12 +373,12 @@ function Card({ t, now, multi, onOpen, active }: { t: Task; now: number; multi: 
         </span>
       )}
       <span className="card-bottom">
+        {t.blocked && <span className="badge blocked">blocked{t.waitingOn ? `: ${t.waitingOn}` : ""}</span>}
         {t.waitingForOwner && <span className="badge warn">needs you</span>}
         {t.openQuestions > 0 && <span className="badge">{t.openQuestions} open Q</span>}
         {t.attachments.length > 0 && <span className="badge">{t.attachments.length} file{t.attachments.length === 1 ? "" : "s"}</span>}
         {(t.estTime || t.estTokens) && <span className="badge est" title="Estimated agent time and tokens">~{[t.estTime, t.estTokens].filter(Boolean).join(" · ")}</span>}
-        {t.status === "doing" && t.claimedBy && <span className={stale ? "badge stale" : "badge who"}>{claimant(t.claimedBy)}{stale ? " · quiet 12 h+" : ""}</span>}
-        {t.status === "blocked" && t.waitingOn && <span className="badge">on {t.waitingOn}</span>}
+        {who && <span className={stale ? "badge stale" : "badge who"}>{who}{stale ? " · quiet 12 h+" : ""}</span>}
         <span className="age">{ago(now, t.modified)}</span>
       </span>
     </button>

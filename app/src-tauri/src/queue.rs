@@ -13,6 +13,17 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const STATUS_FOLDERS: [&str; 5] = ["inbox", "todo", "doing", "blocked", "done"];
+/// The stages a task moves through, in order (decision 0003). `stage:` in the front matter is
+/// the truth; the old `status:` (and the v2 folder) is kept as a mirror for older tools.
+pub const STAGES: [&str; 7] = [
+    "backlog",
+    "shaping",
+    "ready",
+    "building",
+    "testing",
+    "your-check",
+    "done",
+];
 const MAX_TASK_BYTES: u64 = 1024 * 1024;
 const MAX_ANSWER_CHARS: usize = 4000;
 const MAX_IMAGE_BYTES: u64 = 15 * 1024 * 1024;
@@ -24,9 +35,132 @@ pub struct Question {
     pub n: Option<u32>,
     pub ticked: bool,
     pub asker: String,
+    /// The question and what's under it (escalation, answers), as written: continuation lines
+    /// without the two-space indent they have in the file (contract rule 3).
     pub text: String,
     pub escalated: bool,
     pub owner_answered: bool,
+}
+
+/// One stage change from the log: `- <at> <who>: stage <from> → <to>[ (<detail>)]`.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StageStep {
+    pub at: String,
+    pub who: String,
+    pub from: String,
+    pub to: String,
+}
+
+/// The stage's name as people read it, or "" for an unknown stage.
+pub fn stage_label(stage: &str) -> &'static str {
+    match stage {
+        "backlog" => "Backlog",
+        "shaping" => "Shaping",
+        "ready" => "Ready",
+        "building" => "Building",
+        "testing" => "Testing",
+        "your-check" => "Your check",
+        "done" => "Done",
+        _ => "",
+    }
+}
+
+/// Who works a stage by default (a label, not enforced). "" where nobody holds it: Ready is
+/// claimable, Done is finished.
+pub fn stage_role(stage: &str) -> &'static str {
+    match stage {
+        "backlog" => "anyone",
+        "shaping" => "product + tech + UI agents",
+        "building" => "code agent",
+        "testing" => "QA agent",
+        "your-check" => "owner",
+        _ => "",
+    }
+}
+
+/// The old status a stage and the blocked flag mean, kept for Drover's tools and `manifest.py`.
+pub fn mirror_status(stage: &str, blocked: bool) -> &'static str {
+    if blocked {
+        return "blocked";
+    }
+    match stage {
+        "backlog" => "inbox",
+        "shaping" | "ready" => "todo",
+        "done" => "done",
+        _ => "doing",
+    }
+}
+
+/// The stage an old status means, for files written before stages.
+fn legacy_stage(status: &str) -> &'static str {
+    match status {
+        "todo" | "blocked" => "ready",
+        "doing" => "building",
+        "done" => "done",
+        _ => "backlog",
+    }
+}
+
+/// A tool-written stage line from the log, with its detail (the text in the closing brackets).
+/// Anything else, a hand-typed "moved todo → doing" included, is not stage history.
+pub fn stage_line(line: &str) -> Option<(StageStep, &str)> {
+    let rest = line.strip_prefix("- ")?;
+    let at = rest.get(..16)?;
+    let stamp_ok = at.bytes().enumerate().all(|(i, c)| match i {
+        4 | 7 => c == b'-',
+        10 => c == b' ',
+        13 => c == b':',
+        _ => c.is_ascii_digit(),
+    });
+    if !stamp_ok {
+        return None;
+    }
+    let (who, tail) = rest.get(16..)?.strip_prefix(' ')?.split_once(": stage ")?;
+    let (from, tail) = tail.split_once(" → ")?;
+    let (to, detail) = match tail.split_once(' ') {
+        Some((to, d)) => (to, d.strip_prefix('(')?.strip_suffix(')')?),
+        None => (tail, ""),
+    };
+    let known = |s: &str| STAGES.contains(&s);
+    if who.trim().is_empty() || !known(from) || !known(to) || from == to {
+        return None;
+    }
+    Some((
+        StageStep {
+            at: at.to_string(),
+            who: who.to_string(),
+            from: from.to_string(),
+            to: to.to_string(),
+        },
+        detail,
+    ))
+}
+
+/// Stage lines of a task's Log section, oldest first.
+pub fn stage_lines(body: &str) -> Vec<(StageStep, &str)> {
+    log_section(body)
+        .map(|s| s.lines().filter_map(stage_line).collect())
+        .unwrap_or_default()
+}
+
+/// Acceptance criteria: (items, ticked). Items are `- [ ]` / `- [x]` lines at the start of a
+/// line under `## Acceptance criteria`.
+pub fn criteria(body: &str) -> (usize, usize) {
+    let Some(s) = section(body, "Acceptance criteria") else {
+        return (0, 0);
+    };
+    let mut total = 0;
+    let mut ticked = 0;
+    for l in s.lines() {
+        if l.starts_with("- [ ]") {
+            total += 1;
+        } else if l.starts_with("- [x]") || l.starts_with("- [X]") {
+            total += 1;
+            ticked += 1;
+        }
+    }
+    (total, ticked)
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -38,6 +172,17 @@ pub struct Task {
     pub kind: String,
     pub priority: String,
     pub status: String,
+    /// One of STAGES: `stage:` from the file, else what the old status means.
+    pub stage: String,
+    /// Waiting on something (`waiting_on`, or an old file with status blocked). Any stage.
+    pub blocked: bool,
+    pub stage_history: Vec<StageStep>,
+    /// A `stage:` value that isn't a stage (read as `stage` instead), for `check`.
+    #[serde(skip)]
+    pub bad_stage: String,
+    /// The file says its stage (`stage:`), so its status must mirror it, for `check`.
+    #[serde(skip)]
+    pub stage_set: bool,
     pub folder: String,
     pub path: String,
     pub claimed_by: String,
@@ -185,6 +330,51 @@ fn section<'a>(body: &'a str, name: &str) -> Option<&'a str> {
     start.map(|s| &body[s..])
 }
 
+/// Where the Log's lines are: the content of the LAST `## Log` section, as (start, end) byte
+/// offsets. The tool only ever appends there (`append_log`), so a `## Log` line quoted in a
+/// description or an answer above it is just text: it can't forge or hide stage history.
+fn log_span(text: &str) -> Option<(usize, usize)> {
+    let mut start = None;
+    let mut pos = 0;
+    for line in text.split_inclusive('\n') {
+        pos += line.len();
+        if line.trim_end() == "## Log" {
+            start = Some(pos);
+        }
+    }
+    let start = start?;
+    let mut end = start;
+    for line in text[start..].split_inclusive('\n') {
+        if line.starts_with("## ") {
+            break;
+        }
+        end += line.len();
+    }
+    Some((start, end))
+}
+
+/// The task's Log section (the last `## Log`; see `log_span`).
+fn log_section(body: &str) -> Option<&str> {
+    log_span(body).map(|(a, b)| &body[a..b])
+}
+
+/// Add `- <line>` at the end of the Log section `log_section` reads, before any section that
+/// follows it; a task without one gets a Log at the end.
+pub fn append_log(text: &str, line: &str) -> String {
+    match log_span(text) {
+        None => format!("{}\n\n## Log\n- {line}\n", text.trim_end_matches('\n')),
+        Some((_, end)) => {
+            let (head, tail) = text.split_at(end);
+            let head = head.trim_end_matches('\n');
+            if tail.is_empty() {
+                format!("{head}\n- {line}\n")
+            } else {
+                format!("{head}\n- {line}\n\n{tail}")
+            }
+        }
+    }
+}
+
 /// Question items in a Questions section: each starts at `- [ ] **Q` or `- [x] **Q`.
 pub fn question_items(section: &str) -> Vec<(usize, usize)> {
     let mut starts = Vec::new();
@@ -216,14 +406,14 @@ fn parse_question(item: &str) -> Question {
         .map(|(a, _)| a.to_string())
         .unwrap_or_default();
     let text = match item.find(":**") {
-        Some(i) => item[i + 3..].trim().to_string(),
-        None => item.to_string(),
+        Some(i) => item[i + 3..].trim(),
+        None => item,
     };
     Question {
         n,
         ticked,
         asker,
-        text,
+        text: unindent_text(text),
         escalated: item.contains("Escalated to owner"),
         owner_answered: item.contains("**A (owner"),
     }
@@ -253,7 +443,7 @@ pub fn parse_task(
                 .collect()
         })
         .unwrap_or_default();
-    let log_tail: Vec<String> = section(body, "Log")
+    let log_tail: Vec<String> = log_section(body)
         .map(|s| {
             s.lines()
                 .filter(|l| l.starts_with("- "))
@@ -262,7 +452,7 @@ pub fn parse_task(
         })
         .map(|v| v[v.len().saturating_sub(3)..].to_vec())
         .unwrap_or_default();
-    let log_lines: Vec<&str> = section(body, "Log")
+    let log_lines: Vec<&str> = log_section(body)
         .map(|s| s.lines().filter(|l| l.starts_with("- ")).collect())
         .unwrap_or_default();
     let day_of = |l: &str| -> Option<String> {
@@ -287,9 +477,21 @@ pub fn parse_task(
         status = folder.to_string();
     }
     let waiting_on = get("waiting_on");
+    let raw_stage = get("stage").to_lowercase();
+    let stage_set = STAGES.contains(&raw_stage.as_str());
+    let (stage, bad_stage) = match STAGES.iter().find(|s| **s == raw_stage) {
+        Some(s) => (s.to_string(), String::new()),
+        None => (
+            legacy_stage(&status).to_string(),
+            raw_stage.chars().take(40).collect(),
+        ),
+    };
+    let blocked = !waiting_on.is_empty() || status == "blocked";
+    let stage_history = stage_lines(body).into_iter().map(|(s, _)| s).collect();
     let open_questions = questions.iter().filter(|q| !q.ticked).count();
     let waiting_for_owner = questions.iter().any(|q| !q.ticked && q.escalated)
-        || (status == "blocked" && waiting_on.to_lowercase().starts_with("owner"));
+        || stage == "your-check"
+        || (blocked && waiting_on.to_lowercase().starts_with("owner"));
     let attachments = list_attachments(root, &id);
     let rel = path
         .strip_prefix(root)
@@ -312,6 +514,11 @@ pub fn parse_task(
         kind: get("type"),
         priority: get("priority"),
         status,
+        stage,
+        blocked,
+        stage_history,
+        bad_stage,
+        stage_set,
         folder: folder.to_string(),
         path: rel,
         claimed_by: get("claimed-by"),
@@ -417,7 +624,10 @@ pub fn read_state(queues: &[(String, PathBuf)], cache: &mut Cache) -> State {
         }
         state.problems.extend(problems(name, &tasks, state.now));
         for t in &tasks {
-            *counts.entry(t.status.clone()).or_default() += 1;
+            *counts.entry(t.stage.clone()).or_default() += 1;
+            if t.blocked {
+                *counts.entry("blocked".into()).or_default() += 1;
+            }
         }
         state.activity.extend(git_activity(name, root, cache));
         state.queues.push(QueueInfo {
@@ -454,13 +664,27 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64) -> Vec<String> {
                 t.path, t.id
             ));
         }
-        if t.status == "doing" && t.claimed_by.is_empty() {
+        if t.stage_set && mirror_status(&t.stage, t.blocked) != t.status {
+            out.push(format!(
+                "{queue}: {} says stage {} but status {} (moved by hand? use `muster stage`)",
+                t.path, t.stage, t.status
+            ));
+        }
+        if !t.bad_stage.is_empty() {
+            out.push(format!(
+                "{queue}: {} has stage '{}', which isn't a stage (read as {})",
+                t.path, t.bad_stage, t.stage
+            ));
+        }
+        // Only Building is held by someone; a blocked task isn't being worked on.
+        let building = t.stage == "building" && !t.blocked;
+        if building && t.claimed_by.is_empty() {
             out.push(format!(
                 "{queue}: {} is being worked on but nobody has claimed it",
                 t.path
             ));
         }
-        if t.status == "doing" && now.saturating_sub(t.modified) > STALE_SECS {
+        if building && now.saturating_sub(t.modified) > STALE_SECS {
             out.push(format!(
                 "{queue}: {} is claimed but hasn't changed in {} h",
                 t.path,
@@ -552,6 +776,25 @@ pub fn find_task(root: &Path, id: &str) -> Result<PathBuf, String> {
     }
 }
 
+/// The status folder a task file is in, or "" when it sits in the queue folder (flat layout).
+pub fn folder_of(root: &Path, path: &Path) -> String {
+    match path.parent() {
+        Some(p) if p != root => p
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        _ => String::new(),
+    }
+}
+
+/// One task, parsed.
+pub fn read_task(root: &Path, id: &str) -> Result<Task, String> {
+    let text = read_body(root, id)?;
+    let path = find_task(root, id)?;
+    parse_task("", root, &folder_of(root, &path), &path, &text, 0)
+        .ok_or_else(|| format!("task {id} has no front matter"))
+}
+
 pub fn read_body(root: &Path, id: &str) -> Result<String, String> {
     let p = find_task(root, id)?;
     let meta = fs::metadata(&p).map_err(|e| e.to_string())?;
@@ -613,6 +856,40 @@ pub fn base64(data: &[u8]) -> String {
     out
 }
 
+/// Who's acting, as it goes into the front matter and the log: one line of at most 100
+/// characters, and nothing that would let a log line pass for tool-written stage history.
+pub fn actor(who: &str) -> Result<String, String> {
+    let t: String = who
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let t = t.split_whitespace().collect::<Vec<_>>().join(" ");
+    if t.is_empty() {
+        return Err("who (--as) is empty".into());
+    }
+    if t.chars().count() > 100 {
+        return Err("who (--as) is longer than 100 characters".into());
+    }
+    if t.contains(": stage ") || t.contains(" → ") {
+        return Err(format!(
+            "who (--as) can't contain \": stage \" or \" → \" (that's stage history): {t:?}"
+        ));
+    }
+    Ok(t)
+}
+
+/// Contract rule 3, as text goes into a task: every line after the first is indented by two
+/// spaces (a Markdown list continuation), so no line of a question or an answer can start a
+/// heading or a new item and end the item it belongs to.
+fn indent_text(text: &str) -> String {
+    text.replace('\n', "\n  ")
+}
+
+/// The text as it was written: the two-space continuation indent of `indent_text` taken off.
+fn unindent_text(text: &str) -> String {
+    text.replace("\n  ", "\n")
+}
+
 /// Contract rule 3: control characters out (newline kept), trimmed, capped.
 pub fn clean_text(text: &str) -> Result<String, String> {
     let t: String = text
@@ -641,6 +918,7 @@ pub fn answer(
     who: &str,
     stamp: &str,
 ) -> Result<Option<String>, String> {
+    let who = actor(who)?;
     let text = clean_text(text)?;
     let mail = root.join("mail");
     with_lock(root, || {
@@ -662,14 +940,14 @@ pub fn answer(
             .ok_or(format!("no Q{n} in {id}"))?;
         let item = &sect[a..b];
         let new_item = format!(
-            "{}\n  **A ({who}, {stamp}):** {text}",
-            item.replacen("- [ ] **Q", "- [x] **Q", 1)
+            "{}\n  **A ({who}, {stamp}):** {}",
+            item.replacen("- [ ] **Q", "- [x] **Q", 1),
+            indent_text(&text)
         );
         let new_sect = format!("{}{}{}", &sect[..a], new_item, &sect[b..]);
-        let mut new_body = format!("{}{}{}", &body[..start], new_sect, &body[end..]);
-        new_body = format!(
-            "{}\n- {stamp} {who}: answered Q{n}\n",
-            new_body.trim_end_matches('\n')
+        let new_body = append_log(
+            &format!("{}{}{}", &body[..start], new_sect, &body[end..]),
+            &format!("{stamp} {who}: answered Q{n}"),
         );
         write_atomic(&path, &new_body)?;
         let asker = asker_session(&mail, id, n, item);
@@ -787,7 +1065,8 @@ mod tests {
         assert_eq!(t.log_tail.len(), 2);
         assert_eq!((t.claimed_on.as_str(), t.done_on.as_str()), ("", ""));
         assert!(s.problems.is_empty(), "{:?}", s.problems);
-        assert_eq!(s.queues[0].counts.get("doing"), Some(&1));
+        assert_eq!(s.queues[0].counts.get("building"), Some(&1));
+        assert_eq!((t.stage.as_str(), t.blocked), ("building", false));
     }
 
     #[test]
@@ -899,6 +1178,78 @@ mod tests {
     }
 
     #[test]
+    fn multi_line_text_stays_inside_its_item_and_reads_back_as_written() {
+        let d = queue();
+        let p = d.path().join("doing/0042-something.md");
+        // A question with lines of its own, as bin/task writes it: lines after the first indented.
+        let question = "Which port?\n- 5173, Vite's\n\n  - or 8080 (indented by the asker)";
+        fs::write(
+            &p,
+            TASK.replace(
+                "Which port?",
+                "Which port?\n  - 5173, Vite's\n  \n    - or 8080 (indented by the asker)",
+            ),
+        )
+        .unwrap();
+        let text = "5173.\n\n  (indented by me) é → ü\n## Log\n- [ ] **Q9 (x):** fake";
+        answer(d.path(), "0042", 1, text, "owner", "2026-10-12 09:30").unwrap();
+        let body = fs::read_to_string(&p).unwrap();
+        assert!(
+            body.contains("\n  **A (owner, 2026-10-12 09:30):** 5173.\n  \n    (indented by me) é → ü\n  ## Log\n  - [ ] **Q9 (x):** fake\n- [ ] **Q2 ("),
+            "{body}"
+        );
+        let s = read_state(
+            &[("p".into(), d.path().to_path_buf())],
+            &mut Cache::default(),
+        );
+        let t = &s.tasks[0];
+        assert_eq!(t.questions.len(), 2, "{:?}", t.questions);
+        assert_eq!(
+            t.questions[0].text,
+            format!("{question}\n**A (owner, 2026-10-12 09:30):** {text}")
+        );
+        assert_eq!(
+            t.log_tail.last().map(String::as_str),
+            Some("2026-10-12 09:30 owner: answered Q1")
+        );
+        let mail = fs::read_to_string(d.path().join("mail/aaaa1111/0042-Q1.md")).unwrap();
+        assert!(
+            mail.contains(&format!("Your question: {question}\nAnswer: {text}\n")),
+            "{mail}"
+        );
+    }
+
+    #[test]
+    fn the_indent_round_trips_and_the_cap_is_on_the_text_as_written() {
+        for t in [
+            "",
+            "a",
+            "\n",
+            "a\n",
+            "\na",
+            "a\n\nb",
+            "a\n  b\n    c",
+            "é → ü\n## Log\n- [x] x",
+        ] {
+            let w = indent_text(t);
+            assert_eq!(unindent_text(&w), t);
+            assert!(w.split('\n').skip(1).all(|l| l.starts_with("  ")), "{w:?}");
+        }
+        // 3,999 characters on 2,000 lines: indented, it's near 8,000 in the file, and it's still
+        // taken, because the 4,000 cap is on the text as written.
+        let d = queue();
+        let long = format!("{}b", "a\n".repeat(1999));
+        answer(d.path(), "0042", 1, &long, "owner", "2026-10-12 09:30").unwrap();
+        let s = read_state(
+            &[("p".into(), d.path().to_path_buf())],
+            &mut Cache::default(),
+        );
+        assert!(s.tasks[0].questions[0]
+            .text
+            .ends_with(&format!("):** {long}")));
+    }
+
+    #[test]
     fn asks_json_wins_over_the_question_line() {
         let d = queue();
         fs::create_dir(d.path().join("mail")).unwrap();
@@ -987,6 +1338,246 @@ mod tests {
         );
         assert_eq!(s.tasks.len(), 1);
         assert!(s.problems.is_empty(), "{:?}", s.problems);
+    }
+
+    fn parse_one(text: &str, folder: &str) -> Task {
+        let root = Path::new("/nonexistent-queue");
+        parse_task("p", root, folder, &root.join("0042-x.md"), text, 0).unwrap()
+    }
+
+    #[test]
+    fn stages_in_the_order_the_app_relies_on() {
+        assert_eq!(
+            STAGES,
+            [
+                "backlog",
+                "shaping",
+                "ready",
+                "building",
+                "testing",
+                "your-check",
+                "done"
+            ]
+        );
+        let labels: Vec<_> = STAGES.iter().map(|s| stage_label(s)).collect();
+        assert_eq!(
+            labels,
+            [
+                "Backlog",
+                "Shaping",
+                "Ready",
+                "Building",
+                "Testing",
+                "Your check",
+                "Done"
+            ]
+        );
+        let roles: Vec<_> = STAGES.iter().map(|s| stage_role(s)).collect();
+        assert_eq!(
+            roles,
+            [
+                "anyone",
+                "product + tech + UI agents",
+                "",
+                "code agent",
+                "QA agent",
+                "owner",
+                ""
+            ]
+        );
+        assert_eq!((stage_label("qa"), stage_role("qa")), ("", ""));
+    }
+
+    #[test]
+    fn legacy_statuses_map_to_stages() {
+        for (status, stage, blocked) in [
+            ("inbox", "backlog", false),
+            ("todo", "ready", false),
+            ("doing", "building", false),
+            ("blocked", "ready", true),
+            ("done", "done", false),
+            ("parked", "backlog", false),
+        ] {
+            let t = parse_one(
+                &TASK.replace("status: doing", &format!("status: {status}")),
+                "",
+            );
+            assert_eq!((t.stage.as_str(), t.blocked), (stage, blocked), "{status}");
+        }
+        // No status: the folder says it.
+        let t = parse_one(&TASK.replace("status: doing\n", ""), "todo");
+        assert_eq!((t.status.as_str(), t.stage.as_str()), ("todo", "ready"));
+        // A reason to wait is the blocked flag, whatever the status.
+        let t = parse_one(&TASK.replace("waiting_on:", "waiting_on: 0012"), "");
+        assert_eq!((t.stage.as_str(), t.blocked), ("building", true));
+    }
+
+    #[test]
+    fn stage_in_the_file_wins_and_serializes_camel_case() {
+        let t = parse_one(
+            &TASK.replace("status: doing", "status: doing\nstage: Testing"),
+            "doing",
+        );
+        assert_eq!((t.stage.as_str(), t.blocked), ("testing", false));
+        let v = serde_json::to_value(&t).unwrap();
+        assert_eq!(v["stage"], "testing");
+        assert_eq!(v["blocked"], false);
+        assert!(v["stageHistory"].as_array().unwrap().is_empty());
+        assert!(v.get("badStage").is_none() && v.get("bad_stage").is_none());
+        // An unknown stage falls back to the status, and `check` says so.
+        let d = queue();
+        fs::write(
+            d.path().join("doing/0042-something.md"),
+            TASK.replace("status: doing", "status: doing\nstage: qa"),
+        )
+        .unwrap();
+        let s = read_state(
+            &[("p".into(), d.path().to_path_buf())],
+            &mut Cache::default(),
+        );
+        assert_eq!(s.tasks[0].stage, "building");
+        assert!(
+            s.problems
+                .iter()
+                .any(|p| p.contains("has stage 'qa', which isn't a stage")),
+            "{:?}",
+            s.problems
+        );
+    }
+
+    #[test]
+    fn stage_history_takes_only_exact_tool_lines() {
+        let log = "## Log\n\
+- 2026-10-12 10:00 wt-a (session aaaa1111): stage ready → building (claimed)\n\
+- 2026-10-12 11:00 wt-a: stage building → testing (gate: gate full: green (12 steps))\n\
+- 2026-10-12 11:05 wt-b: moved todo → doing\n\
+- 2026-10-12 11:06 wt-b: stage testing → nowhere\n\
+- 2026-10-12 11:07 wt-b: Stage testing → done\n\
+- 2026-10-12 11:08 wt-b: stage testing -> done\n\
+- 2026-10-12 11:09 qa: stage testing → building (returned: AC2 fails — the “→” arrow)\n\
+- 2026-10-12 wt-b: stage testing → done\n\
+- 2026-10-12 11:10 : stage testing → done\n\
+- 2026-10-12 11:11 wt-b: stage testing → testing\n\
+- 2026-10-12 11:12 wt-b: stage done → done extra\n\
+- 2026-10-12 11:13 wt-b: stage testing → done (unclosed\n\
+- 2026-1é-12 11:14 wt-b: stage testing → done\n\
+- 2026-10-12 11:15 né: stage testing → your-check (set)\n";
+        let text = format!(
+            "{}- 2026-10-12 09:00 x: stage backlog → done\n\n{log}",
+            TASK.split("## Log").next().unwrap()
+        );
+        let t = parse_one(&text, "");
+        let got: Vec<_> = t
+            .stage_history
+            .iter()
+            .map(|s| format!("{} {}: {} → {}", s.at, s.who, s.from, s.to))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                "2026-10-12 10:00 wt-a (session aaaa1111): ready → building",
+                "2026-10-12 11:00 wt-a: building → testing",
+                "2026-10-12 11:09 qa: testing → building",
+                "2026-10-12 11:15 né: testing → your-check",
+            ]
+        );
+        assert_eq!(t.claimed_on, "2026-10-12");
+    }
+
+    #[test]
+    fn problems_and_counts_follow_stages() {
+        let d = queue();
+        let old = |p: &str| {
+            let f = fs::File::options()
+                .write(true)
+                .open(d.path().join(p))
+                .unwrap();
+            f.set_modified(SystemTime::now() - std::time::Duration::from_secs(13 * 3600))
+                .unwrap();
+        };
+        let unclaimed = TASK.replace("claimed-by: wt-a (session aaaa1111)", "claimed-by:");
+        // Building, nobody on it: a problem. Testing in doing/ with no claim: fine.
+        fs::write(d.path().join("doing/0042-something.md"), &unclaimed).unwrap();
+        fs::write(
+            d.path().join("doing/0043-t.md"),
+            unclaimed
+                .replace("id: 0042", "id: 0043")
+                .replace("status: doing", "status: doing\nstage: testing"),
+        )
+        .unwrap();
+        old("doing/0043-t.md");
+        // Blocked in Building, quiet for 13 h: not stale, it's waiting.
+        fs::write(
+            d.path().join("blocked/0044-b.md"),
+            TASK.replace("id: 0042", "id: 0044")
+                .replace("status: doing", "status: blocked\nstage: building")
+                .replace("waiting_on:", "waiting_on: owner"),
+        )
+        .unwrap();
+        old("blocked/0044-b.md");
+        fs::write(
+            d.path().join("doing/0045-y.md"),
+            TASK.replace("id: 0042", "id: 0045")
+                .replace("status: doing", "status: doing\nstage: your-check")
+                .replace("**Escalated to owner (capture, 2026-10-11 10:06).**\n", ""),
+        )
+        .unwrap();
+        // Claimed, not blocked, in Building and quiet for 13 h: stale.
+        fs::write(
+            d.path().join("doing/0046-q.md"),
+            TASK.replace("id: 0042", "id: 0046")
+                .replace("status: doing", "status: doing\nstage: building"),
+        )
+        .unwrap();
+        old("doing/0046-q.md");
+        // Claimed by hand (mv todo/ doing/ and status edited): the stage still says Ready.
+        fs::write(
+            d.path().join("doing/0047-h.md"),
+            TASK.replace("id: 0042", "id: 0047")
+                .replace("status: doing", "status: doing\nstage: ready"),
+        )
+        .unwrap();
+        let s = read_state(
+            &[("p".into(), d.path().to_path_buf())],
+            &mut Cache::default(),
+        );
+        let all = s.problems.join("\n");
+        assert!(
+            all.contains("0042-something.md is being worked on but nobody has claimed it"),
+            "{all}"
+        );
+        assert!(
+            all.contains("doing/0046-q.md is claimed but hasn't changed in 13 h"),
+            "{all}"
+        );
+        assert!(
+            all.contains("doing/0047-h.md says stage ready but status doing (moved by hand? use `muster stage`)"),
+            "{all}"
+        );
+        assert_eq!(s.problems.len(), 3, "{all}");
+        let c = &s.queues[0].counts;
+        assert_eq!(
+            (
+                c.get("building"),
+                c.get("testing"),
+                c.get("your-check"),
+                c.get("blocked"),
+                c.get("doing")
+            ),
+            (Some(&3), Some(&1), Some(&1), Some(&1), None)
+        );
+        let y = s.tasks.iter().find(|t| t.id == "0045").unwrap();
+        assert!(y.waiting_for_owner, "Your check needs the owner");
+        assert_eq!(y.open_questions, 2);
+    }
+
+    #[test]
+    fn criteria_counts() {
+        assert_eq!(
+            criteria("# T\n\n## Acceptance criteria\n- [ ] AC1\n- [x] AC2\n- [X] AC3\n  - [ ] a sub-step\n\n## Log\n- [ ] not a criterion\n"),
+            (3, 2)
+        );
+        assert_eq!(criteria("# T\n\n- [ ] outside\n"), (0, 0));
     }
 
     #[test]

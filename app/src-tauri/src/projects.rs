@@ -252,7 +252,26 @@ const WAITING: &str = "# Waiting for you\n\nOnly what really needs the owner, ea
 fn readme(project: &str, q: &Path) -> String {
     let q = q.display();
     format!(
-        "# {project} — task queue\n\nA Muster queue. **The rules are in Muster's `docs/PROTOCOL.md`. Read them before you claim\nanything.** The short version:\n\n- The folder is the status: `inbox/ todo/ doing/ blocked/ done/`. Find a task by its id\n  (`ls {q}/*/0001-*`), never by a remembered path.\n- One claim per session. Claim with `mv todo/NNNN-*.md doing/`, then set `status`, `claimed-by`,\n  `heartbeat` and add a log line.\n- Ask without stopping, and the answer is pushed to you:\n  `{q}/bin/task ask NNNN \"<question>\" --from <branch>`\n- Waiting on something: move it to `blocked/` with `waiting_on`. Done: tick the criteria with\n  proof, set `commit`, move it to `done/`.\n- Code goes in the project's repo, never in this folder.\n- New bugs or ideas you find: a note in `inbox/`. Capture writes them up.\n- `bin/` holds stand-ins that run Muster's tools on this queue.\n"
+        "# {project} — task queue\n\nA Muster queue. **The rules are in Muster's `docs/PROTOCOL.md`. Read them before you claim\n\
+         anything.** The short version:\n\n\
+         - A task moves through stages: Backlog → Shaping → Ready → Building → Testing → Your check → Done.\n  \
+         Shaping is for product, tech and UI agents, Building for the code agent, Testing for the QA\n  \
+         agent, Your check for the owner. Find a task by its id (`muster show 0001`), never by a path.\n\
+         - Only `muster` changes a stage. Never move task files or edit `stage:`, `status:` or\n  \
+         `claimed-by:` by hand (the folders `inbox/ todo/ doing/ blocked/ done/` mirror the stage for\n  \
+         older tools). `muster` finds this queue from the project's repo; elsewhere add `--queue {q}`.\n\
+         - One claim per session. Pick from Ready and claim it: `muster list --stage ready`, then\n  \
+         `muster pass NNNN --as <your branch> --from ready`.\n\
+         - Ask without stopping, and the answer is pushed to you:\n  \
+         `{q}/bin/task ask NNNN \"<question>\" --from <branch>`\n\
+         - Built and the gate is green: `muster pass NNNN --as <your branch> --from building --gate \"<the gate's result line>\"`.\n  \
+         Testing ticks each criterion with its proof, then passes it on to the owner's check.\n\
+         - Something's wrong: `muster return NNNN \"<why>\"` sends it back a stage.\n\
+         - Waiting on something: `muster block NNNN --on \"<task id|owner|capture> …\"`, then\n  \
+         `muster unblock NNNN`. It keeps its stage.\n\
+         - Code goes in the project's repo, never in this folder.\n\
+         - New bugs or ideas you find: a note in `inbox/`. Capture writes them up.\n\
+         - `bin/` holds stand-ins that run Muster's tools on this queue.\n"
     )
 }
 
@@ -326,6 +345,15 @@ mod tests {
         }
         let readme = fs::read_to_string(q.join("README.md")).unwrap();
         assert!(readme.starts_with("# gamma — task queue"));
+        // Agents hand work on with muster, never by moving files.
+        for cmd in ["muster pass", "muster return", "muster block", "--gate"] {
+            assert!(readme.contains(cmd), "README names {cmd}: {readme}");
+        }
+        assert!(
+            readme.contains("Backlog → Shaping → Ready → Building → Testing → Your check → Done")
+        );
+        assert!(!readme.contains("mv todo/"), "{readme}");
+        assert!(!readme.contains("move it to"), "{readme}");
         let stand = fs::read_to_string(q.join("bin/task")).unwrap();
         assert!(stand.contains("\"/opt/muster/bin/task\""));
         assert!(q.join(".git").is_dir());

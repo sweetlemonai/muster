@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ago, claimant, key } from "./lib";
+import { ago, holder, key, stageLabel, stageOf } from "./lib";
 import type { Task } from "./types";
 import { bars, dayLabel, sortTasks, type SortKey } from "./viewData";
 
@@ -9,7 +9,7 @@ const COLS: { key: SortKey; label: string }[] = [
   { key: "title", label: "Title" },
   { key: "kind", label: "Type" },
   { key: "priority", label: "Priority" },
-  { key: "status", label: "Status" },
+  { key: "stage", label: "Stage" },
   { key: "who", label: "On it / waiting on" },
   { key: "estimate", label: "Estimate" },
   { key: "captured", label: "Captured" },
@@ -18,7 +18,7 @@ const COLS: { key: SortKey; label: string }[] = [
 
 /** Every task as a row: sortable by any column, everything at a glance. */
 export function TableView({ tasks, now, multi, openKey, onOpen }: { tasks: Task[]; now: number; multi: boolean; openKey: string | null; onOpen: (t: Task) => void }) {
-  const [by, setBy] = useState<SortKey>("status");
+  const [by, setBy] = useState<SortKey>("stage");
   const [desc, setDesc] = useState(false);
   const rows = useMemo(() => sortTasks(tasks, by, desc), [tasks, by, desc]);
   const cols = multi ? COLS : COLS.filter((c) => c.key !== "queue");
@@ -40,7 +40,7 @@ export function TableView({ tasks, now, multi, openKey, onOpen }: { tasks: Task[
         </thead>
         <tbody>
           {rows.map((t) => (
-            <tr key={key(t)} className={`${openKey === key(t) ? "active " : ""}st-${t.status}`} onClick={() => onOpen(t)}>
+            <tr key={key(t)} className={`${openKey === key(t) ? "active " : ""}s-${stageOf(t)}`} onClick={() => onOpen(t)}>
               {multi && <td className="q">{t.queue}</td>}
               <td className="id">{t.id}</td>
               <td className="t-title">
@@ -49,8 +49,11 @@ export function TableView({ tasks, now, multi, openKey, onOpen }: { tasks: Task[
               </td>
               <td className={`kind ${t.kind}`}>{t.kind}</td>
               <td><span className={`pri pri-${t.priority || "normal"}`}>{t.priority || "normal"}</span></td>
-              <td><span className={`status-pill s-${t.status}`}>{t.status}</span></td>
-              <td className="meta">{t.status === "doing" ? claimant(t.claimedBy) : t.status === "blocked" ? t.waitingOn : ""}</td>
+              <td>
+                <span className={`status-pill s-${stageOf(t)}`}>{stageLabel(t.stage)}</span>
+                {t.blocked && <span className="status-pill blocked">blocked</span>}
+              </td>
+              <td className="meta">{t.blocked ? t.waitingOn : holder(t)}</td>
               <td className="meta est-cell">{[t.estTime, t.estTokens].filter(Boolean).join(" · ")}</td>
               <td className="meta">{t.captured}</td>
               <td className="meta">{ago(now, t.modified)}</td>
@@ -90,12 +93,12 @@ export function TimelineView({ tasks, now, multi, openKey, onOpen }: { tasks: Ta
             <span className="tl-track">
               <span className="tl-today" style={{ left: (today - from) * dayW + dayW / 2 }} />
               <span
-                className={`tl-bar s-${b.task.status}${b.open ? " open" : ""}${b.task.waitingForOwner ? " needs-you" : ""}`}
+                className={`tl-bar s-${stageOf(b.task)}${b.open ? " open" : ""}${b.task.blocked ? " blocked" : ""}${b.task.waitingForOwner ? " needs-you" : ""}`}
                 style={{ left: (b.start - from) * dayW + 3, width: (b.end - b.start + 1) * dayW - 6 }}
-                title={`${b.task.status} · captured ${b.task.captured}${b.task.claimedOn ? ` · started ${b.task.claimedOn}` : ""}${b.task.doneOn ? ` · done ${b.task.doneOn}` : ""}`}
+                title={`${stageLabel(b.task.stage)}${b.task.blocked ? `, blocked on ${b.task.waitingOn || "something"}` : ""} · captured ${b.task.captured}${b.task.claimedOn ? ` · started ${b.task.claimedOn}` : ""}${b.task.doneOn ? ` · done ${b.task.doneOn}` : ""}`}
               >
                 {b.work !== null && <span className="tl-work" style={{ left: (b.work - b.start) * dayW, right: 0 }} />}
-                <span className="tl-bar-text">{b.task.status}{b.task.priority === "high" ? " · high" : ""}</span>
+                <span className="tl-bar-text">{stageLabel(b.task.stage)}{b.task.blocked ? " · blocked" : ""}{b.task.priority === "high" ? " · high" : ""}</span>
               </span>
             </span>
           </button>

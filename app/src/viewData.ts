@@ -1,19 +1,19 @@
+import { holder, stageRank } from "./lib";
 import type { Task } from "./types";
 
 // Pure helpers for the Table and Timeline views (tested in viewData.test.ts).
 
-export type SortKey = "queue" | "id" | "title" | "kind" | "priority" | "status" | "who" | "estimate" | "captured" | "changed";
+export type SortKey = "queue" | "id" | "title" | "kind" | "priority" | "stage" | "who" | "estimate" | "captured" | "changed";
 const PRIORITY_RANK: Record<string, number> = { high: 0, normal: 1, low: 2 };
-const STATUS_RANK: Record<string, number> = { inbox: 0, todo: 1, doing: 2, blocked: 3, done: 4 };
 
 export function sortTasks(tasks: Task[], by: SortKey, desc: boolean): Task[] {
   const val = (t: Task): string | number => {
     switch (by) {
       case "priority": return PRIORITY_RANK[t.priority || "normal"] ?? 1;
-      case "status": return STATUS_RANK[t.status] ?? 9;
+      case "stage": return stageRank(t.stage);
       case "changed": return t.modified;
       case "estimate": return t.estMinutes * 1e7 + t.estTokenCount;
-      case "who": return t.claimedBy;
+      case "who": return t.blocked ? t.waitingOn : holder(t);
       case "kind": return t.kind;
       default: return t[by];
     }
@@ -45,9 +45,9 @@ export function bars(tasks: Task[], today: number): { bars: Bar[]; from: number;
   for (const t of tasks) {
     const start = dayNumber(t.captured) ?? Math.floor(t.modified / 86400);
     const done = dayNumber(t.doneOn);
-    const end = Math.max(start, t.status === "done" && done !== null ? done : today);
+    const end = Math.max(start, t.stage === "done" && done !== null ? done : today);
     const work = dayNumber(t.claimedOn);
-    out.push({ task: t, start, work: work !== null && work >= start && work <= end ? work : null, end, open: t.status !== "done" });
+    out.push({ task: t, start, work: work !== null && work >= start && work <= end ? work : null, end, open: t.stage !== "done" });
   }
   out.sort((a, b) => a.start - b.start || a.task.queue.localeCompare(b.task.queue) || a.task.id.localeCompare(b.task.id));
   const from = out.length ? Math.min(...out.map((b) => b.start)) : today;

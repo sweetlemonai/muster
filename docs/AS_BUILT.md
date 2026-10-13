@@ -25,7 +25,7 @@ gives one view of everything and checks the queue for problems. The owner reads
 | Manifest + check | `bin/manifest.py` → `tasks.json` | Built, tested. Capture rebuilds it on every commit |
 | Owner's waiting list | `WAITING-FOR-OWNER.md` per queue (by hand); Drover's Home (task 0015) | By hand here. Built in Drover |
 | Attachments | `attachments/<id>/` per queue | In use (screenshots, mockups) |
-| `muster` command line | the app's binary, `bin/muster` shim | Built: new, list, show, move, set, note, attach, answer, check, projects, init (same rules as the app) |
+| `muster` command line | the app's binary, `bin/muster` shim | Built: new, list, show, move, set, note, attach, answer, check, projects, init, and the stage commands pass, return, block, unblock, stage (same rules as the app) |
 | Commands `/muster`, `/mu` | `docs/COMMANDS.md` | Designed, not built |
 | Desktop app | `app/` (Tauri 2 + React 19, decision 0001) | Built and running: board, new task, task management, waiting for you with answering, files, activity, problems, projects, the AI helper |
 
@@ -80,7 +80,20 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Help** (tab): every `muster` command with usage, options and examples (click to copy), how to
   use Muster inside a Claude Code session (you, agents, capture), and the app's keys. It's the
   same list `muster help` prints (`help.rs`, with a test that fails if a command isn't documented).
-- **Board:** Inbox / To do / Doing / Blocked / Done. Cards show the id, title, type, priority (on every card: HIGH filled gold, normal outlined, low faint), tags,
+- **Stages** (task 0014, decision 0003): Backlog, Shaping (product, tech and UI agents), Ready,
+  Building (code agent), Testing (QA agent), Your check (the owner), Done. `stage:` in the file is
+  the truth, written only by `muster`. A stage change is logged as `<time> <who>: stage <from> → <to>`,
+  and those lines are the stage history. Blocked is a flag (`waiting_on`) that keeps the task in its
+  stage. `pass` moves it on, refusing when the task is blocked, when someone else holds it, or when it
+  has moved since you looked (`--from`). It also refuses Building → Testing without the gate's line,
+  and Testing → Your check with any criterion unticked. `return` sends it back with a reason and
+  hands Building back to its last builder. Until 0005, `status:` and the status folder are a mirror
+  of the stage for older readers (Drover, `manifest.py`), and `check` reports a stage whose status
+  doesn't match, which is what a hand move leaves.
+- **Board:** one column per stage, with its role under the name. Blocked cards stay in their stage
+  with a rose "blocked: …" badge, and Your check cards count as "needs you". The task pane has a
+  stage picker, Pass to <next> (with the gate line out of Building), Send back with a reason,
+  Block/Unblock, and Accept / Send back in Your check. Only one action runs at a time. Cards show the id, title, type, priority (on every card: HIGH filled gold, normal outlined, low faint), tags,
   "needs you", open questions, files, who's on it (flagged when quiet for 12 h), what a blocked
   task waits on, and when it last changed. Tasks waiting on the owner sort first. Done shows the
   latest 8.

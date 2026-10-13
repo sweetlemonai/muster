@@ -8,6 +8,19 @@ happened → what it shows → what chit has or lacks.
 
 ## 2026-10-12
 
+43. **Stage history is only as good as the log it's read from** (0014 review, five rounds). Once
+    the stage became the truth, every line of free text the tool writes into a task turned into a
+    way to fake a claim: a note or title shaped like a stage line, a multi-line answer that planted
+    its own `## Log` heading, a `who` with a line break. Each fix was narrow: the exact stage-line
+    check on one-line text, readers using the last `## Log`, indenting multi-line question and
+    answer text, and cleaning `who` in Rust and Python. It shows the same thing as note 1: the
+    file is shared by every writer, so one rule set has to live in one tool. The live state in
+    `.git/muster/` (0005) takes the stage out of the file for good.
+42. **A guard that matched a phrase refused ordinary prose.** The first fix for forged stage lines
+    refused any note containing ": stage ", and capture's own note on 0021 ("…: stage track full
+    width") was refused within the hour. Fixed by checking whether the whole log line would read as
+    a stage change. A guard on free text has to match the exact thing it protects against, or
+    people word around it.
 41. **Agents couldn't claim: the sandbox blocked writes to the queue** (the review session's claim of
     Drover 0019 failed; note 16 predicted it). Each session's sandbox only writes inside its own
     repo, and queues sit outside repos on purpose. Fixed in the personal layer (owner's yes):

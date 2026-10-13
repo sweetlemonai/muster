@@ -1,0 +1,55 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+import TaskPanel from "./TaskPanel";
+import type { Task } from "./types";
+
+const task = (over: Partial<Task>): Task => ({
+  queue: "demo", id: "0007", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
+  folder: "todo", path: "todo/0007-t.md", claimedBy: "", heartbeat: "", waitingOn: "", commit: "", captured: "", questions: [],
+  openQuestions: 0, waitingForOwner: false, tags: [], estTime: "", estTokens: "", estMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", attachments: [], logTail: [], modified: 0, ...over,
+});
+
+/** The pane as first drawn: its stage line, the stage row's buttons and the notes under it. */
+function pane(over: Partial<Task>) {
+  const html = renderToStaticMarkup(createElement(TaskPanel, { task: task(over), now: 0, onClose: () => {}, onChanged: () => {} }));
+  const row = /<section class="controls">\s*<div class="control-row">([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "";
+  const buttons = [...row.matchAll(/<button([^>]*)>([^<]*)<\/button>/g)].map((m) => `${m[2]}${m[1].includes("disabled") ? " (disabled)" : ""}`);
+  const line = /<div class="stage-line">([\s\S]*?)<\/div>/.exec(html)?.[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() ?? "";
+  return { html, buttons, line };
+}
+
+describe("task pane stage controls", () => {
+  it("shows the stage with its role", () => {
+    expect(pane({ stage: "building", claimedBy: "owner" }).line).toBe("Building code agent");
+    expect(pane({ stage: "your-check" }).line).toBe("Your check owner");
+  });
+  it("passes to the next stage, and Backlog can't be sent back", () => {
+    expect(pane({ stage: "backlog" }).buttons).toEqual(["Pass to Shaping", "Block"]);
+    expect(pane({ stage: "ready" }).buttons).toEqual(["Pass to Building", "Send back", "Block"]);
+  });
+  it("in Your check reads Accept and Send back", () => {
+    expect(pane({ stage: "your-check" }).buttons).toEqual(["Accept", "Send back", "Block"]);
+  });
+  it("Done has no pass, only Send back", () => {
+    expect(pane({ stage: "done" }).buttons).toEqual(["Send back", "Block"]);
+  });
+  it("names who else holds Building and points to the stage picker instead of a Pass that would fail", () => {
+    const p = pane({ stage: "building", claimedBy: "drover/main (session 3fba2222)" });
+    expect(p.buttons).toEqual(["Send back", "Block"]);
+    expect(p.html).toContain("drover/main holds it in Building, so only they can pass it on. To move it yourself, pick a stage above.");
+    expect(pane({ stage: "building", claimedBy: "owner" }).buttons).toEqual(["Pass to Testing", "Send back", "Block"]);
+  });
+  it("a blocked task keeps its stage; Pass waits for Unblock", () => {
+    const p = pane({ stage: "your-check", blocked: true, status: "blocked", waitingOn: "owner pick a colour" });
+    expect(p.line).toBe("Your check owner blocked: owner pick a colour");
+    expect(p.buttons).toEqual(["Accept (disabled)", "Send back", "Unblock"]);
+    expect(p.html).toContain("Blocked on owner pick a colour. Unblock it to pass it on.");
+  });
+  it("a stage it doesn't know: shown as is, only the picker and Block", () => {
+    const p = pane({ stage: "reviewing" });
+    expect(p.line).toBe("reviewing (unknown)");
+    expect(p.html).toContain('<option value="" disabled="" selected="">reviewing (unknown)</option>');
+    expect(p.buttons).toEqual(["Block"]);
+  });
+});

@@ -23,7 +23,8 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         match x.as_str() {
             "--json" => a.json = true,
             "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on"
-            | "--tags" | "--tag" | "--time" | "--tokens" => {
+            | "--tags" | "--tag" | "--time" | "--tokens" | "--stage" | "--gate" | "--commit"
+            | "--to" | "--from" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -109,6 +110,83 @@ fn tasks_of(root: &Path) -> queue::State {
         &[("q".into(), root.to_path_buf())],
         &mut queue::Cache::default(),
     )
+}
+
+/// After a stage change: `0007: Building (doing/0007-x.md)`, with what it waits on if blocked.
+/// The change is already written, so a failed re-read only shortens the message: it never
+/// turns a done change into an error.
+fn stage_message(root: &Path, id: &str, path: &str) -> String {
+    match queue::read_task(root, id) {
+        Ok(t) => {
+            let blocked = if t.blocked {
+                format!(", blocked: {}", t.waiting_on)
+            } else {
+                String::new()
+            };
+            format!("{id}: {}{blocked} ({path})", queue::stage_label(&t.stage))
+        }
+        Err(_) => format!("{id}: changed ({path})"),
+    }
+}
+
+/// `muster list`'s tasks: by status, stage and tag when given, in id order.
+fn list_filter<'a>(
+    tasks: &'a [queue::Task],
+    status: Option<&str>,
+    stage: Option<&str>,
+    tag: Option<&str>,
+) -> Vec<&'a queue::Task> {
+    let mut out: Vec<_> = tasks
+        .iter()
+        .filter(|t| status.is_none_or(|o| t.status == o))
+        .filter(|t| stage.is_none_or(|g| t.stage == g))
+        .filter(|t| tag.is_none_or(|g| t.tags.iter().any(|x| x == g)))
+        .collect();
+    out.sort_by(|x, y| x.id.cmp(&y.id));
+    out
+}
+
+/// `muster list` as text: a heading per stage in STAGES order, then one line per task.
+fn list_text(tasks: &[&queue::Task]) -> String {
+    let mut out = String::new();
+    for st in ops::STAGES {
+        let group: Vec<_> = tasks.iter().filter(|t| t.stage == st).collect();
+        if group.is_empty() {
+            continue;
+        }
+        out.push_str(&format!("{} ({})\n", ops::stage_label(st), group.len()));
+        for t in group {
+            let mut extra = String::new();
+            if t.blocked {
+                extra.push_str(&format!(" blocked: {}", t.waiting_on));
+            }
+            if t.waiting_for_owner {
+                extra.push_str("  [needs you]");
+            }
+            if !t.est_time.is_empty() || !t.est_tokens.is_empty() {
+                extra.push_str(&format!(
+                    "  ~{}",
+                    [t.est_time.as_str(), t.est_tokens.as_str()]
+                        .iter()
+                        .filter(|x| !x.is_empty())
+                        .copied()
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ));
+            }
+            if !t.tags.is_empty() {
+                extra.push_str(&format!("  #{}", t.tags.join(" #")));
+            }
+            if t.open_questions > 0 {
+                extra.push_str(&format!("  [{} open Q]", t.open_questions));
+            }
+            out.push_str(&format!(
+                "  {} {:<6} {:<7} {}{extra}\n",
+                t.id, t.kind, t.priority, t.title
+            ));
+        }
+    }
+    out
 }
 
 fn print_json<T: serde::Serialize>(v: &T) -> Result<(), String> {
@@ -229,53 +307,23 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
             Ok(0)
         }
         "list" => {
+            let stage = a.flags.get("stage").map(|s| s.to_lowercase());
+            if let Some(s) = &stage {
+                if !ops::STAGES.contains(&s.as_str()) {
+                    return Err(format!("stage must be one of {}", ops::STAGES.join(", ")));
+                }
+            }
             let s = tasks_of(root);
-            let only = a.flags.get("status");
-            let tag = a.flags.get("tag");
-            let mut tasks: Vec<_> = s
-                .tasks
-                .iter()
-                .filter(|t| only.is_none_or(|o| &t.status == o))
-                .filter(|t| tag.is_none_or(|g| t.tags.iter().any(|x| x == g)))
-                .collect();
-            tasks.sort_by(|x, y| x.id.cmp(&y.id));
+            let tasks = list_filter(
+                &s.tasks,
+                a.flags.get("status").map(String::as_str),
+                stage.as_deref(),
+                a.flags.get("tag").map(String::as_str),
+            );
             if a.json {
                 print_json(&tasks)?;
             } else {
-                for st in ops::status_folders() {
-                    let group: Vec<_> = tasks.iter().filter(|t| t.status == *st).collect();
-                    if group.is_empty() {
-                        continue;
-                    }
-                    println!("{st} ({})", group.len());
-                    for t in group {
-                        let mut extra = String::new();
-                        if t.waiting_for_owner {
-                            extra.push_str("  [needs you]");
-                        }
-                        if !t.est_time.is_empty() || !t.est_tokens.is_empty() {
-                            extra.push_str(&format!(
-                                "  ~{}",
-                                [t.est_time.as_str(), t.est_tokens.as_str()]
-                                    .iter()
-                                    .filter(|x| !x.is_empty())
-                                    .copied()
-                                    .collect::<Vec<_>>()
-                                    .join(" ")
-                            ));
-                        }
-                        if !t.tags.is_empty() {
-                            extra.push_str(&format!("  #{}", t.tags.join(" #")));
-                        }
-                        if t.open_questions > 0 {
-                            extra.push_str(&format!("  [{} open Q]", t.open_questions));
-                        }
-                        println!(
-                            "  {} {:<6} {:<7} {}{extra}",
-                            t.id, t.kind, t.priority, t.title
-                        );
-                    }
-                }
+                print!("{}", list_text(&tasks));
             }
             Ok(0)
         }
@@ -306,6 +354,49 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                 stamp,
             )?;
             println!("{id} → {p}");
+            Ok(0)
+        }
+        "pass" => {
+            let id = need(a, 1, "a task id")?;
+            let opts = ops::PassOpts {
+                gate: a.flags.get("gate").cloned().unwrap_or_default(),
+                commit: a.flags.get("commit").cloned().unwrap_or_default(),
+                from: a.flags.get("from").cloned(),
+            };
+            let p = ops::pass_task(root, id, &me, stamp, &opts)?;
+            println!("{}", stage_message(root, id, &p));
+            Ok(0)
+        }
+        "return" => {
+            let id = need(a, 1, "a task id")?;
+            need(a, 2, "the reason")?;
+            let why = a.pos[2..].join(" ").replace("\\n", " ");
+            let to = a.flags.get("to").map(String::as_str);
+            let p = ops::return_task(root, id, &why, to, &me, stamp)?;
+            println!("{}", stage_message(root, id, &p));
+            Ok(0)
+        }
+        "block" => {
+            let id = need(a, 1, "a task id")?;
+            let on = a
+                .flags
+                .get("on")
+                .ok_or("block needs --on \"<task id|owner|capture> …\" (see `muster help`)")?;
+            let p = ops::block_task(root, id, on, &me, stamp)?;
+            println!("{}", stage_message(root, id, &p));
+            Ok(0)
+        }
+        "unblock" => {
+            let id = need(a, 1, "a task id")?;
+            let p = ops::unblock_task(root, id, &me, stamp)?;
+            println!("{}", stage_message(root, id, &p));
+            Ok(0)
+        }
+        "stage" => {
+            let id = need(a, 1, "a task id")?;
+            let stage = need(a, 2, "a stage")?;
+            let p = ops::set_stage(root, id, stage, &me, stamp)?;
+            println!("{}", stage_message(root, id, &p));
             Ok(0)
         }
         "set" => {
@@ -461,6 +552,159 @@ mod tests {
         assert!(run(&sv(&["move", "0001", "doing", "--queue", &q]))
             .unwrap_err()
             .contains("claim"));
+    }
+
+    #[test]
+    fn stage_commands_and_their_exit_codes() {
+        let d = tempfile::tempdir().unwrap();
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir(d.path().join(f)).unwrap();
+        }
+        std::fs::write(d.path().join("README.md"), "q").unwrap();
+        let q = d.path().to_string_lossy().to_string();
+        let code = |args: &[&str]| {
+            let mut v = sv(args);
+            v.extend(sv(&["--queue", &q, "--as", "wt-a"]));
+            main(&v)
+        };
+        let task = || queue::read_task(d.path(), "0001").unwrap();
+        assert_eq!(code(&["new", "Staged"]), 0);
+        std::fs::write(
+            d.path().join("todo/0001-staged.md"),
+            queue::read_body(d.path(), "0001").unwrap().replace(
+                "## Log",
+                "## Acceptance criteria\n- [x] AC1: works\n\n## Log",
+            ),
+        )
+        .unwrap();
+        assert_eq!(code(&["pass", "0001"]), 0);
+        assert_eq!(
+            (task().stage, task().claimed_by),
+            ("building".to_string(), "wt-a".to_string())
+        );
+        // Refused (1): no gate line; usage (2): no id, block without --on.
+        assert_eq!(code(&["pass", "0001"]), 1);
+        assert_eq!(code(&["pass"]), 2);
+        assert_eq!(code(&["block", "0001"]), 2);
+        assert_eq!(code(&["return", "0001"]), 2);
+        assert_eq!(
+            code(&["pass", "0001", "--from", "ready", "--gate", "x"]),
+            1,
+            "moved on since"
+        );
+        assert_eq!(
+            code(&[
+                "pass",
+                "0001",
+                "--from",
+                "building",
+                "--gate",
+                "gate full: green"
+            ]),
+            0
+        );
+        assert_eq!(task().stage, "testing");
+        assert_eq!(code(&["block", "0001", "--on", "someday"]), 1);
+        assert_eq!(code(&["block", "0001", "--on", "owner: which colour?"]), 0);
+        let t = task();
+        assert_eq!(
+            (t.stage.as_str(), t.status.as_str()),
+            ("testing", "blocked")
+        );
+        assert_eq!(code(&["list"]), 0);
+        assert_eq!(code(&["list", "--stage", "testing", "--json"]), 0);
+        assert_eq!(code(&["list", "--stage", "qa"]), 1);
+        assert_eq!(code(&["pass", "0001"]), 1, "blocked");
+        assert_eq!(code(&["unblock", "0001"]), 0);
+        assert_eq!(code(&["unblock", "0001"]), 1, "not blocked");
+        assert_eq!(
+            code(&["return", "0001", "AC1", "fails", "--to", "done"]),
+            1,
+            "not earlier"
+        );
+        assert_eq!(code(&["return", "0001", "AC1", "fails"]), 0);
+        let t = task();
+        assert_eq!(
+            (t.stage.as_str(), t.claimed_by.as_str()),
+            ("building", "wt-a")
+        );
+        assert!(queue::read_body(d.path(), "0001")
+            .unwrap()
+            .contains("wt-a: stage testing → building (returned: AC1 fails)"));
+        assert_eq!(code(&["stage", "0001", "your-check"]), 0);
+        assert!(task().waiting_for_owner);
+        assert_eq!(code(&["stage", "0001", "nowhere"]), 1);
+        assert_eq!(code(&["stage", "0001"]), 2);
+        assert_eq!(code(&["pass", "0001", "--commit", "abc1234"]), 0);
+        let t = task();
+        assert_eq!(
+            (t.stage.as_str(), t.commit.as_str(), t.path.as_str()),
+            ("done", "abc1234", "done/0001-staged.md")
+        );
+        assert_eq!(code(&["pass", "0001"]), 1, "nothing after Done");
+        assert_eq!(code(&["show", "0001", "--json"]), 0);
+        assert_eq!(code(&["check"]), 0);
+    }
+
+    #[test]
+    fn list_groups_by_stage_and_filters() {
+        let d = tempfile::tempdir().unwrap();
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir(d.path().join(f)).unwrap();
+        }
+        std::fs::write(d.path().join("README.md"), "q").unwrap();
+        let file = |rel: &str, id: &str, fm: &str, title: &str| {
+            std::fs::write(
+                d.path().join(rel),
+                format!("---\nid: {id}\ntype: task\npriority: normal\n{fm}\n---\n\n# {title}\n\n## Log\n- 2026-10-12 09:00 capture: created\n"),
+            )
+            .unwrap();
+        };
+        file(
+            "done/0001-a.md",
+            "0001",
+            "status: done\nstage: done",
+            "Shipped",
+        );
+        file(
+            "blocked/0002-b.md",
+            "0002",
+            "status: blocked\nstage: testing\nwaiting_on: 0012 the API\ntags: ui",
+            "Under test",
+        );
+        file(
+            "todo/0003-c.md",
+            "0003",
+            "status: todo\nstage: shaping",
+            "Shaping it",
+        );
+        file("inbox/0004-d.md", "0004", "status: inbox", "Raw");
+        let s = tasks_of(d.path());
+        let text = list_text(&list_filter(&s.tasks, None, None, None));
+        assert_eq!(
+            text,
+            "Backlog (1)\n  0004 task   normal  Raw\nShaping (1)\n  0003 task   normal  Shaping it\nTesting (1)\n  0002 task   normal  Under test blocked: 0012 the API  #ui\nDone (1)\n  0001 task   normal  Shipped\n"
+        );
+        let ids = |v: Vec<&queue::Task>| v.iter().map(|t| t.id.clone()).collect::<Vec<_>>();
+        assert_eq!(
+            ids(list_filter(&s.tasks, None, Some("testing"), None)),
+            ["0002"]
+        );
+        assert_eq!(
+            ids(list_filter(&s.tasks, Some("todo"), None, None)),
+            ["0003"]
+        );
+        assert_eq!(ids(list_filter(&s.tasks, None, None, Some("ui"))), ["0002"]);
+        assert!(list_filter(&s.tasks, None, Some("ready"), None).is_empty());
+        // After a change: the stage, and what it waits on; a failed re-read still says it changed.
+        assert_eq!(
+            stage_message(d.path(), "0002", "blocked/0002-b.md"),
+            "0002: Testing, blocked: 0012 the API (blocked/0002-b.md)"
+        );
+        assert_eq!(
+            stage_message(d.path(), "0009", "doing/0009-x.md"),
+            "0009: changed (doing/0009-x.md)"
+        );
     }
 
     #[test]

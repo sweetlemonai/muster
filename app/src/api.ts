@@ -17,8 +17,18 @@ export const api = {
   removeProject: (key: string) => invoke<void>("remove_project", { key }),
   createTask: (queue: string, task: NewTask, files: [string, string][], stamp: string) =>
     invoke<{ id: string; path: string }>("create_task", { queue, task, files, stamp }),
-  moveTask: (queue: string, id: string, status: string, waitingOn: string, stamp: string) =>
-    invoke<string>("move_task", { queue, id, status, waitingOn, stamp }),
+  // Stages: each returns the task's new path. The core refuses what its rules don't allow, with
+  // a message to show as is. `from` is the stage the window shows: refused if the task moved on
+  // since. `gate` only for Building → Testing, `commit` only for Your check → Done.
+  passTask: (queue: string, id: string, from: string, gate: string, commit: string, stamp: string) =>
+    invoke<string>("pass_task", { queue, id, from, gate, commit, stamp }),
+  // `to` is an earlier stage; null sends it back one.
+  returnTask: (queue: string, id: string, why: string, to: string | null, stamp: string) =>
+    invoke<string>("return_task", { queue, id, why, to, stamp }),
+  blockTask: (queue: string, id: string, on: string, stamp: string) => invoke<string>("block_task", { queue, id, on, stamp }),
+  unblockTask: (queue: string, id: string, stamp: string) => invoke<string>("unblock_task", { queue, id, stamp }),
+  // The owner's override: any stage.
+  setStage: (queue: string, id: string, stage: string, stamp: string) => invoke<string>("set_stage", { queue, id, stage, stamp }),
   setField: (queue: string, id: string, field: string, value: string, stamp: string) =>
     invoke<string>("set_field", { queue, id, field, value, stamp }),
   addNote: (queue: string, id: string, note: string, stamp: string) => invoke<string>("add_note", { queue, id, note, stamp }),

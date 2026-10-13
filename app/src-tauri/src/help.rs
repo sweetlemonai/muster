@@ -51,10 +51,15 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "list",
-        usage: "muster list [--status <s>] [--tag <t>] [--json]",
-        what: "Tasks grouped by status, with type, priority, estimate, tags, \"needs you\" and open questions.",
-        options: &[("--status", "inbox, todo, doing, blocked or done"), ("--tag", "only tasks with this tag"), ("--json", "machine-readable, for scripts and agents")],
-        examples: &["muster list", "muster list --status todo --tag spike", "muster list --queue drover --json"],
+        usage: "muster list [--stage <s>] [--status <s>] [--tag <t>] [--json]",
+        what: "Tasks grouped by stage (Backlog, Shaping, Ready, Building, Testing, Your check, Done), with type, priority, what a blocked task waits on, estimate, tags, \"needs you\" and open questions.",
+        options: &[
+            ("--stage", "backlog, shaping, ready, building, testing, your-check or done"),
+            ("--status", "the old status: inbox, todo, doing, blocked or done"),
+            ("--tag", "only tasks with this tag"),
+            ("--json", "machine-readable, for scripts and agents"),
+        ],
+        examples: &["muster list", "muster list --stage ready --tag spike", "muster list --queue drover --json"],
     },
     Command {
         name: "show",
@@ -66,9 +71,56 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "move",
         usage: "muster move <id> <inbox|todo|blocked|done> [--on \"<what it waits on>\"]",
-        what: "Change a task's status. Blocked needs what it waits on. Moving a claimed task out of doing releases the claim. Only agents claim (doing).",
+        what: "The old way to change a task, kept for scripts: inbox puts it in Backlog, todo in Ready, done in Done (and unblocks it), blocked is muster block. Use pass, return, block and stage instead.",
         options: &[("--on", "for blocked: a task id (0012), owner, or capture, and a few words")],
         examples: &["muster move 0007 blocked --on \"owner: pick a colour\"", "muster move 0007 todo", "muster move 0007 done"],
+    },
+    Command {
+        name: "pass",
+        usage: "muster pass <id> [--from <stage>] [--gate \"<gate result line>\"] [--commit <sha>]",
+        what: "Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria. Building → Testing needs the gate's result line and releases your claim. Testing → Your check needs every criterion ticked. Refused while it's blocked, or when someone else holds it.",
+        options: &[
+            ("--from", "the stage you saw it in; refused if it has moved on since (use it, so a repeat never moves it twice)"),
+            ("--gate", "Building → Testing: the gate's result line, verbatim"),
+            ("--commit", "Your check → Done: the commit that ships it"),
+            ("--as", "who you are; must match who claimed it to pass it out of Building"),
+        ],
+        examples: &[
+            "muster pass 0007 --as wt-a --from ready",
+            "muster pass 0007 --as wt-a --from building --gate \"gate full: green (9 steps)\"",
+            "muster pass 0007 --from your-check --commit 3f2a9c1",
+        ],
+    },
+    Command {
+        name: "return",
+        usage: "muster return <id> \"<why>\" [--to <stage>]",
+        what: "Send a task back one stage, or to an earlier stage with --to, with the reason (one line, 500 characters). Back to Building gives it to whoever last claimed it there.",
+        options: &[("--to", "an earlier stage: backlog, shaping, ready, building, testing or your-check")],
+        examples: &[
+            "muster return 0007 \"AC2 fails: the board still flickers\"",
+            "muster return 0007 \"the spec misses the empty state\" --to shaping",
+        ],
+    },
+    Command {
+        name: "block",
+        usage: "muster block <id> --on \"<task id|owner|capture> …\"",
+        what: "Mark a task blocked. It stays in its stage and keeps its claim; the card shows what it waits on. Blocked is a flag, not a stage.",
+        options: &[("--on", "starts with a task id (0012), owner or capture, then a few words")],
+        examples: &["muster block 0007 --on 0012", "muster block 0007 --on \"owner: which colour?\""],
+    },
+    Command {
+        name: "unblock",
+        usage: "muster unblock <id>",
+        what: "Clear the blocked flag. The task carries on in its stage.",
+        options: &[],
+        examples: &["muster unblock 0007"],
+    },
+    Command {
+        name: "stage",
+        usage: "muster stage <id> <stage>",
+        what: "Put a task in any stage (the owner's or capture's override), logged as set. Leaving Building releases its claim.",
+        options: &[],
+        examples: &["muster stage 0007 ready", "muster stage 0007 your-check"],
     },
     Command {
         name: "set",
@@ -101,7 +153,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "check",
         usage: "muster check",
-        what: "Problems in the queue: ids used twice, status not matching the folder, claims with no owner or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist. Exit 1 if any.",
+        what: "Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist. Exit 1 if any.",
         options: &[],
         examples: &["muster check", "muster check --queue braindump"],
     },
@@ -150,16 +202,20 @@ pub const SESSION: &[Topic] = &[
         title: "Agents doing the work (coding sessions)",
         lines: &[
             "Read the queue's README.md first: ../tasks/README.md from the project's repo.",
-            "Pick from todo/, then claim by moving the file. One claim per session. muster claim is coming (task 0002):",
-            "$ mv ../tasks/todo/0007-*.md ../tasks/doing/",
+            "A task moves through stages: Backlog (anyone), Shaping (product, tech and UI agents), Ready (claimable), Building (code agent), Testing (QA agent), Your check (the owner), Done. Only muster changes a stage: never move or edit task files for that.",
+            "Pick from Ready, then claim it with pass, under your branch name. One claim per session:",
+            "$ muster list --stage ready",
+            "$ muster pass 0007 --as <your branch> --from ready",
             "Ask without stopping. The answer is pushed into your session after your next tool call (the answer hook):",
             "$ ../tasks/bin/task ask 0007 \"Child webview or a separate window?\" --from <your branch>",
             "No hook in this checkout? Collect answers yourself:",
             "$ ../tasks/bin/task inbox",
-            "Log progress, block, finish, with the tool stamping the time:",
+            "Log progress, block, hand on, with the tool stamping the time:",
             "$ muster note 0007 \"Phase 1 done, gate green\"",
-            "$ muster move 0007 blocked --on 0012",
-            "$ muster move 0007 done",
+            "$ muster block 0007 --on 0012",
+            "$ muster pass 0007 --as <your branch> --from building --gate \"<the gate's result line>\"",
+            "Testing found a problem? Send it back with the reason:",
+            "$ muster return 0007 \"AC2 fails: …\"",
             "Found something new? Drop a note in ../tasks/inbox/, and capture files it.",
         ],
     },
@@ -182,6 +238,22 @@ pub const APP: &[(&str, &str)] = &[
         "create the task, send the answer, or send to the helper",
     ),
     ("Drag the pane's edge", "resize it (remembered)"),
+    (
+        "Pass to <next stage>",
+        "in a task's pane: hand it on (from Building it asks for the gate's result line); in Your check the button reads Accept and marks it Done",
+    ),
+    (
+        "Send back",
+        "in a task's pane: back one stage, or to any earlier one, with the reason",
+    ),
+    (
+        "Block · Unblock",
+        "in a task's pane: it waits on a task id, owner or capture, and keeps its stage",
+    ),
+    (
+        "Stage picker",
+        "in a task's pane: your override, any stage. Use it when someone else holds the task, since only they can pass it",
+    ),
     (
         "Board · Table · Timeline",
         "three views of the same tasks, with the same priority and tag filters",
@@ -258,8 +330,8 @@ mod tests {
     fn every_command_the_cli_runs_is_documented() {
         // The commands cli::run_on and cli::run dispatch.
         for name in [
-            "new", "list", "show", "move", "set", "note", "attach", "answer", "check", "projects",
-            "init", "help",
+            "new", "list", "show", "move", "pass", "return", "block", "unblock", "stage", "set",
+            "note", "attach", "answer", "check", "projects", "init", "help",
         ] {
             let c = COMMANDS
                 .iter()
@@ -277,7 +349,7 @@ mod tests {
                 "{name}'s examples use it"
             );
         }
-        assert_eq!(COMMANDS.len(), 12);
+        assert_eq!(COMMANDS.len(), 17);
     }
 
     #[test]
@@ -285,7 +357,28 @@ mod tests {
         let t = text();
         assert!(t.contains("Inside a Claude Code session"));
         assert!(t.contains("      ! muster list"));
+        // Agents hand work on with muster, never by moving files.
+        assert!(t.contains("      muster pass 0007 --as <your branch> --from ready\n"));
+        assert!(t.contains("      muster block 0007 --on 0012\n"));
+        assert!(t.contains("      muster return 0007"));
+        assert!(!t.contains("mv ../tasks"));
+        assert!(!t.contains("muster move 0007"));
+        assert!(command_text("pass").unwrap().contains("--gate"));
+        assert!(command_text("return").unwrap().contains("--to"));
         assert!(command_text("new").unwrap().contains("--tags"));
         assert!(command_text("frob").is_none());
+        assert!(command_text("pass").unwrap().contains("--from"));
+        // The app's help names the pane's stage actions.
+        let app: String = APP.iter().map(|(k, v)| format!("{k} {v}\n")).collect();
+        for word in [
+            "Pass to",
+            "Accept",
+            "Send back",
+            "Block",
+            "Unblock",
+            "Stage picker",
+        ] {
+            assert!(app.contains(word), "{word}: {app}");
+        }
     }
 }

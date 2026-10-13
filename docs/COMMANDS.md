@@ -46,7 +46,11 @@ script (today `bin/task`), which enforces the rules, so they don't live only in 
 ## Built today
 
 The `muster` command (the app's binary, `bin/muster`): `new`, `list`, `show`, `move`, `set`, `note`,
-`attach`, `answer`, `check`, `projects`, `init`. The slash commands will call it.
+`attach`, `answer`, `check`, `projects`, `init`, and the stage commands (task 0014): `pass`
+(to the next stage. `--from <stage>` refuses if it has moved on. `--gate` is needed out of
+Building, and `--commit` goes with the pass into Done), `return` (back, with
+the reason), `block --on` / `unblock` (a flag, the task keeps its stage), and `stage` (the owner's
+override). The slash commands will call it.
 
 ### Python tools (in `bin/`)
 

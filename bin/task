@@ -31,6 +31,7 @@ if not _root:
 ROOT = Path(_root).resolve()
 FOLDERS = ["inbox", "todo", "doing", "blocked", "done"]
 MAX_TEXT = 4000
+MAX_WHO = 100
 
 
 class Refused(Exception):
@@ -81,6 +82,32 @@ def clean(text):
     return text
 
 
+def actor(who: str, flag: str) -> str:
+    """Who's acting, as it goes into a question, an answer and the log (queue::actor in the app):
+    one line of at most 100 characters, and nothing that would let a log line pass for
+    tool-written stage history. `flag` names the option it came from, for the message."""
+    t = " ".join(re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", who).split())
+    if not t:
+        raise Refused(f"who ({flag}) is empty")
+    if len(t) > MAX_WHO:
+        raise Refused(f"who ({flag}) is longer than {MAX_WHO} characters")
+    if ": stage " in t or " → " in t:
+        raise Refused(f"who ({flag}) can't contain \": stage \" or \" → \" (that's stage history): {t!r}")
+    return t
+
+
+def indent(text: str) -> str:
+    """File contract rule 3, as text goes into a task: lines after the first are indented by two
+    spaces (a Markdown list continuation), so no line of a question or an answer can start a
+    heading or a new item and end the item it belongs to."""
+    return text.replace("\n", "\n  ")
+
+
+def unindent(text: str) -> str:
+    """The text as it was written: the two-space continuation indent of indent() taken off."""
+    return text.replace("\n  ", "\n")
+
+
 def questions_block(body):
     """(start, end) of the ## Questions section's content, creating the section above ## Log."""
     m = re.search(r"^## Questions[ \t]*\n", body, re.M)
@@ -109,6 +136,7 @@ def log_line(body, line):
 
 
 def ask(task_id, question, who, session):
+    who = actor(who, "--from")
     question = clean(question)
     sid = short(session)
     with locked():
@@ -116,10 +144,11 @@ def ask(task_id, question, who, session):
         body, start, end = questions_block(path.read_text(encoding="utf-8"))
         qs = items(body[start:end])
         for _, ticked, text in qs:
-            if ticked and question.lower() in text.lower():
-                raise Refused(f"already answered in {task_id}:\n{text}")
+            shown = unindent(text)
+            if ticked and question.lower() in shown.lower():
+                raise Refused(f"already answered in {task_id}:\n{shown}")
         n = max([q for q, _, _ in qs if q] + [0, len(qs)]) + 1
-        item = f"- [ ] **Q{n} ({who}, session {sid}, {now()}):** {question}\n"
+        item = f"- [ ] **Q{n} ({who}, session {sid}, {now()}):** {indent(question)}\n"
         section = body[start:end].rstrip("\n")
         section = (section + "\n" if section.strip() else "") + item + "\n"
         body = body[:start] + section + body[end:]
@@ -138,6 +167,7 @@ def ask(task_id, question, who, session):
 
 
 def answer(task_id, qref, text, who):
+    who = actor(who, "--as")
     text = clean(text)
     m = re.fullmatch(r"Q?(\d+)", qref)
     if not m:
@@ -151,7 +181,7 @@ def answer(task_id, qref, text, who):
         if not target:
             raise Refused(f"no Q{n} in {task_id}")
         _, ticked, item = target
-        new = item.replace("- [ ] **Q", "- [x] **Q", 1) + f"\n  **A ({who}, {now()}):** {text}"
+        new = item.replace("- [ ] **Q", "- [x] **Q", 1) + f"\n  **A ({who}, {now()}):** {indent(text)}"
         section = section.replace(item, new, 1)
         body = body[:start] + section + body[end:]
         body = log_line(body, f"{now()} {who}: answered Q{n}")
@@ -161,7 +191,7 @@ def answer(task_id, qref, text, who):
             box = ROOT / "mail" / sid
             box.mkdir(parents=True, exist_ok=True)
             title = re.search(r"^# (.+)$", body, re.M)
-            q = re.sub(r"^- \[[ x]\] \*\*Q\d+ \([^)]*\):\*\* ?", "", item).strip()
+            q = unindent(re.sub(r"^- \[[ x]\] \*\*Q\d+ \([^)]*\):\*\* ?", "", item).strip())
             (box / f"{task_id}-Q{n}.md").write_text(
                 f"Answer to Q{n} on task {task_id} ({title.group(1) if title else ''}), from {who}:\n"
                 f"Your question: {q}\n"

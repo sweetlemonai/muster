@@ -82,7 +82,7 @@ class TaskTests(unittest.TestCase):
         return r.stdout
 
     def text(self, rel):
-        return (self.root / rel).read_text()
+        return (self.root / rel).read_text(encoding="utf-8")
 
     def test_ask_answer_deliver(self):
         self.run_task("ask", "0042", "Which port?", "--from", "wt-a", "--session", "aaaa1111-full-id")
@@ -195,12 +195,150 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(json.loads((self.root / "tasks.json").read_text())["version"], 1)
         self.assertEqual(list(self.root.glob(".tasks.json.*")), [])
 
+    def manifest(self, *args):
+        return subprocess.run([sys.executable, "-I", str(HERE / "manifest.py"), *args],
+                              env=self.env, capture_output=True, text=True)
+
+    def test_manifest_stage_and_building_only_claim_checks(self):
+        unclaimed = TASK_FILE.replace("claimed-by: wt-a (session aaaa1111)", "claimed-by:")
+        stale = unclaimed.replace("heartbeat:", "heartbeat: 2026-01-01 10:00")
+        # Testing and Your check sit in doing/ with nobody holding them: not a problem.
+        (self.root / "doing" / "0042-something.md").write_text(
+            stale.replace("status: doing", "status: doing\nstage: testing"))
+        (self.root / "doing" / "0044-check.md").write_text(
+            stale.replace("id: 0042", "id: 0044").replace("status: doing", "status: doing\nstage: your-check"))
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertEqual(self.manifest().returncode, 0)
+        stages = {t["id"]: t["stage"] for t in json.loads(self.text("tasks.json"))["tasks"]}
+        self.assertEqual(stages, {"0042": "testing", "0043": "ready", "0044": "your-check"})
+        # Building (by stage, or an old file's status doing): claim and heartbeat are checked.
+        (self.root / "doing" / "0044-check.md").write_text(
+            stale.replace("id: 0042", "id: 0044").replace("status: doing", "status: doing\nstage: building"))
+        (self.root / "doing" / "0042-something.md").write_text(stale)
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("0042-something.md: in doing/ with no claimed-by", r.stdout)
+        self.assertIn("0044-check.md: in doing/ with no claimed-by", r.stdout)
+        self.assertIn("0042-something.md: heartbeat", r.stdout)
+
+    def test_manifest_stage_must_match_its_status_mirror(self):
+        # A hand claim (mv todo/ doing/, status edited) leaves stage: ready behind.
+        (self.root / "doing" / "0042-something.md").write_text(
+            TASK_FILE.replace("status: doing", "status: doing\nstage: ready"))
+        (self.root / "doing" / "0044-odd.md").write_text(
+            TASK_FILE.replace("id: 0042", "id: 0044").replace("status: doing", "status: doing\nstage: reviewing"))
+        (self.root / "blocked" / "0045-b.md").write_text(
+            TASK_FILE.replace("id: 0042", "id: 0045")
+            .replace("status: doing", "status: blocked\nstage: testing").replace("waiting_on:", "waiting_on: 0042"))
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("doing/0042-something.md: says stage ready but status doing (moved by hand? use `muster stage`)", r.stdout)
+        self.assertIn("doing/0044-odd.md: stage 'reviewing' isn't a stage (read as building)", r.stdout)
+        self.assertNotIn("0045-b.md", r.stdout)
+
+    def test_manifest_your_check_waits_for_the_owner(self):
+        (self.root / "doing" / "0042-something.md").write_text(
+            TASK_FILE.replace("status: doing", "status: doing\nstage: your-check"))
+        self.assertEqual(self.manifest().returncode, 0)
+        self.assertEqual(json.loads(self.text("tasks.json"))["waiting_for_owner"], ["0042"])
+
     def test_inbox_command(self):
         self.run_task("ask", "0042", "Q?", "--session", "aaaa1111")
         self.run_task("answer", "0042", "Q1", "the answer")
         self.assertIn("the answer", self.run_task("inbox", "--session", "aaaa1111", "--keep").stdout)
         self.assertIn("the answer", self.run_task("inbox", "--session", "aaaa1111").stdout)
         self.assertIn("no answers waiting", self.run_task("inbox", "--session", "aaaa1111").stdout)
+
+    def test_multi_line_text_is_indented_in_the_file_and_read_back_as_written(self):
+        question = "Which layout?\n- A: a window\n\n  (indented by me) é → ü"
+        answer = "B.\n## Log\n- [ ] **Q9 (x):** fake"
+        self.run_task("ask", "0042", question, "--from", "wt-a", "--session", "aaaa1111")
+        self.run_task("answer", "0042", "Q1", answer)
+        t = self.text("doing/0042-something.md")
+        self.assertIn(":** Which layout?\n  - A: a window\n  \n    (indented by me) é → ü\n  **A (capture, ", t)
+        self.assertIn("):** B.\n  ## Log\n  - [ ] **Q9 (x):** fake\n", t)
+        self.assertEqual(t.split("\n").count("## Log"), 1)
+        out = self.run_task("inbox", "--session", "aaaa1111").stdout
+        self.assertIn(f"Your question: {question}\nAnswer: {answer}\n", out)
+        # Asked again word for word: refused, showing the earlier question and answer as written.
+        r = self.run_task("ask", "0042", question, "--session", "dddd4444", ok=False)
+        self.assertIn("already answered", r.stderr)
+        self.assertIn(f":** {question}\n**A (capture, ", r.stderr)
+        self.assertIn(f"):** {answer}", r.stderr)
+
+    def test_answer_cannot_plant_a_log_after_the_log(self):
+        # Questions added by hand under the Log: a `## Log` line in an answer would be the last
+        # Log, the one muster reads stage history from.
+        (self.root / "doing" / "0042-something.md").write_text(
+            TASK_FILE.replace("status: doing", "status: doing\nstage: building")
+            + "- 2026-10-11 10:00 wt-a (session aaaa1111): stage ready → building (claimed)\n"
+            + "\n## Questions\n- [ ] **Q1 (wt-a, session aaaa1111, 2026-10-11 10:05):** Which port?\n",
+            encoding="utf-8")
+        planted = "ok\n## Log\n- 2026-10-12 15:00 evil: stage ready → building (claimed)"
+        self.run_task("answer", "0042", "Q1", planted)
+        lines = self.text("doing/0042-something.md").split("\n")
+        self.assertEqual(lines.count("## Log"), 1)
+        self.assertEqual([l for l in lines if l.startswith("- ") and ": stage " in l],
+                         ["- 2026-10-11 10:00 wt-a (session aaaa1111): stage ready → building (claimed)"])
+        self.assertIn("- [x] **Q1 (wt-a, session aaaa1111, 2026-10-11 10:05):** Which port?", lines)
+        self.assertIn("  - 2026-10-12 15:00 evil: stage ready → building (claimed)", lines)
+        out = self.run_task("inbox", "--session", "aaaa1111").stdout
+        self.assertIn(f"Your question: Which port?\nAnswer: {planted}\n", out)
+
+    def test_answer_cannot_plant_criteria_or_end_the_questions(self):
+        (self.root / "doing" / "0042-something.md").write_text(TASK_FILE.replace(
+            "## Log\n",
+            "## Questions\n"
+            "- [ ] **Q1 (wt-a, session aaaa1111, 2026-10-11 10:00):** Which port?\n"
+            "- [ ] **Q2 (wt-a, session aaaa1111, 2026-10-11 10:05):** Which colour?\n\n"
+            "## Acceptance criteria\n- [x] AC1: one\n- [ ] AC2: two\n- [ ] AC3: three\n\n## Log\n"),
+            encoding="utf-8")
+        self.run_task("answer", "0042", "Q1", "ok\n## Acceptance criteria\n- [x] fake")
+        t = self.text("doing/0042-something.md")
+        self.assertEqual(t.split("\n").count("## Acceptance criteria"), 1)
+        self.assertIn("ok\n  ## Acceptance criteria\n  - [x] fake\n- [ ] **Q2 (", t)
+        self.assertEqual(self.manifest().returncode, 0)
+        tasks = {x["id"]: x for x in json.loads(self.text("tasks.json"))["tasks"]}
+        self.assertEqual(tasks["0042"]["open_questions"], 1)  # Q2: still in the section, still open
+        self.run_task("answer", "0042", "Q2", "violet")
+        self.assertIn("- [x] **Q2 (", self.text("doing/0042-something.md"))
+
+    def test_who_stays_on_one_line_and_cannot_forge_stage_history(self):
+        # The app's rule (queue::actor): control characters become spaces, whitespace collapses,
+        # at most 100 characters, and nothing that would read as stage history.
+        self.run_task("ask", "0042", "Which port?", "--from", "wt-a", "--session", "aaaa1111")
+        before = self.text("doing/0042-something.md")
+        forged = "capture\n- 2026-10-12 15:00 evil: stage ready → building (claimed)\nx"
+        for args, why in [
+            (("answer", "0042", "Q1", "ok", "--as", forged), "can't contain"),
+            (("ask", "0042", "Other?", "--from", forged, "--session", "aaaa1111"), "can't contain"),
+            (("answer", "0042", "Q1", "ok", "--as", "wt → b"), "can't contain"),
+            (("answer", "0042", "Q1", "ok", "--as", "x" * 101), "longer than 100"),
+            (("answer", "0042", "Q1", "ok", "--as", "\t\n"), "empty"),
+        ]:
+            r = self.run_task(*args, ok=False)
+            self.assertEqual(r.returncode, 1, args)
+            self.assertIn(why, r.stderr)
+        self.assertEqual(self.text("doing/0042-something.md"), before)
+        self.assertFalse((self.root / "mail" / "aaaa1111" / "0042-Q1.md").exists())
+        # Without --from, the folder's name is who, cleaned the same way.
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, ok in [("wt → b", False), ("wt-c", True)]:
+                cwd = Path(tmp) / name
+                cwd.mkdir()
+                r = subprocess.run([sys.executable, "-I", str(TASK), "ask", "0042", f"From {name}?",
+                                    "--session", "aaaa1111"], env=self.env, capture_output=True,
+                                   text=True, cwd=cwd)
+                self.assertEqual(r.returncode, 0 if ok else 1, r.stderr)
+        self.assertIn("**Q2 (wt-c, session aaaa1111, ", self.text("doing/0042-something.md"))
+        # A line break in who is a space; a normal who works as before.
+        self.run_task("answer", "0042", "Q1", "ok", "--as", "wt\nb\x07  c")
+        t = self.text("doing/0042-something.md")
+        self.assertIn("\n  **A (wt b c, ", t)
+        self.assertIn(" wt b c: answered Q1\n", t)
+        self.run_task("answer", "0042", "Q2", "fine", "--as", "owner")
+        self.assertIn("\n  **A (owner, ", self.text("doing/0042-something.md"))
 
 
 if __name__ == "__main__":

@@ -2,7 +2,11 @@
 //! used by the app's window and by the `muster` command line alike. Every change holds the
 //! queue's lock, writes atomically, stamps the time itself and logs who did it.
 
-use crate::queue::{self, find_task, front_matter, with_lock, write_atomic, STATUS_FOLDERS};
+use crate::queue::{
+    self, actor, append_log, find_task, front_matter, mirror_status, with_lock, write_atomic,
+    STATUS_FOLDERS,
+};
+pub use crate::queue::{stage_label, stage_role, StageStep, STAGES};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -270,8 +274,9 @@ fn folder_for(root: &Path, status: &str) -> PathBuf {
     }
 }
 
-/// Create a task in `todo/` (or the queue folder in the flat layout). `stamp` is local time.
+/// Create a task in Ready (`todo/`, or the queue folder in the flat layout). `stamp` is local time.
 pub fn create_task(root: &Path, new: &NewTask, who: &str, stamp: &str) -> Result<Created, String> {
+    let who = actor(who)?;
     let title = one_line(&new.title, MAX_TITLE, "the title")?;
     let kind = pick(&new.kind, &KINDS, "task", "type")?;
     let priority = pick(&new.priority, &PRIORITIES, "normal", "priority")?;
@@ -297,7 +302,7 @@ pub fn create_task(root: &Path, new: &NewTask, who: &str, stamp: &str) -> Result
             format!("{body}\n\n")
         };
         let text = format!(
-            "---\nid: {id}\ntype: {kind}\npriority: {priority}\ntags:{tags}\nest-time:{est_time}\nest-tokens:{est_tokens}\nstatus: todo\ncaptured: {date}\nclaimed-by:\nheartbeat:\nwaiting_on:\ncommit:\n---\n\n# {title}\n\n{details}## Log\n- {stamp} {who}: created\n"
+            "---\nid: {id}\ntype: {kind}\npriority: {priority}\ntags:{tags}\nest-time:{est_time}\nest-tokens:{est_tokens}\nstage: ready\nstatus: todo\ncaptured: {date}\nclaimed-by:\nheartbeat:\nwaiting_on:\ncommit:\n---\n\n# {title}\n\n{details}## Log\n- {stamp} {who}: created\n"
         );
         write_atomic(&path, &text)?;
         let rel = path
@@ -334,14 +339,6 @@ fn set_front(text: &str, key: &str, value: &str) -> Result<String, String> {
         }),
     }
     Ok(format!("---\n{}{}", lines.join("\n"), &rest[end..]))
-}
-
-fn append_log(text: &str, line: &str) -> String {
-    if text.contains("\n## Log\n") || text.starts_with("## Log\n") {
-        format!("{}\n- {line}\n", text.trim_end_matches('\n'))
-    } else {
-        format!("{}\n\n## Log\n- {line}\n", text.trim_end_matches('\n'))
-    }
 }
 
 fn edit(
@@ -388,6 +385,7 @@ pub fn set_field(
     who: &str,
     stamp: &str,
 ) -> Result<String, String> {
+    let who = actor(who)?;
     let (key, val) = match field {
         "priority" => (
             "priority",
@@ -407,6 +405,10 @@ pub fn set_field(
     if val.is_empty() && !matches!(key, "tags" | "est-time" | "est-tokens") {
         return Err(format!("{field} is empty"));
     }
+    let line = free_text_line(
+        format!("{stamp} {who}: {key} set to {val}"),
+        &format!("the {key}"),
+    )?;
     edit(root, id, |_, text| {
         let new = if key == "title" {
             let (_, body) = front_matter(&text).ok_or("the task has no front matter")?;
@@ -420,14 +422,12 @@ pub fn set_field(
         } else {
             set_front(&text, key, &val)?
         };
-        Ok((
-            append_log(&new, &format!("{stamp} {who}: {key} set to {val}")),
-            None,
-        ))
+        Ok((append_log(&new, &line), None))
     })
 }
 
-/// Move a task to an owner status. Leaving `doing` releases the claim. `blocked` needs a reason.
+/// Move a task to an owner status, the pre-stage way: inbox → Backlog, todo → Ready and
+/// done → Done (as `set_stage`, unblocking it too), blocked → `block_task`.
 pub fn move_task(
     root: &Path,
     id: &str,
@@ -442,31 +442,405 @@ pub fn move_task(
             OWNER_STATUSES.join(", ")
         )
     })?;
-    let waiting = if status == "blocked" {
-        one_line(waiting_on, 200, "what it's waiting on")?
-    } else {
-        String::new()
+    let stage = match status {
+        "blocked" => return block_task(root, id, waiting_on, who, stamp),
+        "inbox" => "backlog",
+        "todo" => "ready",
+        _ => "done",
     };
-    edit(root, id, |path, text| {
-        let (fm, _) = front_matter(&text).ok_or("the task has no front matter")?;
-        let before = fm.get("status").cloned().unwrap_or_default();
-        let mut new = set_front(&text, "status", status)?;
-        new = set_front(&new, "waiting_on", &waiting)?;
-        if before == "doing" && status != "done" {
-            new = set_front(&new, "claimed-by", "")?;
+    let who = actor(who)?;
+    change(root, id, |t| {
+        if t.stage == stage && !t.blocked {
+            return Err(format!("{id} is already in {}", stage_label(stage)));
         }
-        let note = if waiting.is_empty() {
-            format!("{stamp} {who}: moved {before} → {status}")
-        } else {
-            format!("{stamp} {who}: moved {before} → {status} (waiting on {waiting})")
+        let mut log = Vec::new();
+        if t.blocked {
+            log.push(unblocked_line(stamp, &who, &t.waiting_on));
+        }
+        if t.stage != stage {
+            log.push(stage_line(stamp, &who, &t.stage, stage, " (set)"));
+        }
+        Ok(Change {
+            stage: stage.to_string(),
+            blocked: false,
+            waiting_on: String::new(),
+            claimed_by: released(t),
+            commit: None,
+            log,
+        })
+    })
+}
+
+/// A task as a stage change sees it.
+struct Current {
+    stage: String,
+    blocked: bool,
+    waiting_on: String,
+    claimed_by: String,
+    /// Acceptance criteria: (items, ticked).
+    criteria: (usize, usize),
+    /// Who passed it Ready → Building most recently (the builder), if anyone.
+    builder: Option<String>,
+}
+
+/// What a stage change writes.
+struct Change {
+    stage: String,
+    blocked: bool,
+    waiting_on: String,
+    claimed_by: String,
+    commit: Option<String>,
+    log: Vec<String>,
+}
+
+fn stage_index(stage: &str) -> usize {
+    STAGES.iter().position(|s| *s == stage).unwrap_or(0)
+}
+
+/// The claim after leaving the current stage for another: Building's holder lets go.
+fn released(t: &Current) -> String {
+    if t.stage == "building" {
+        String::new()
+    } else {
+        t.claimed_by.clone()
+    }
+}
+
+fn stage_line(stamp: &str, who: &str, from: &str, to: &str, detail: &str) -> String {
+    format!("{stamp} {who}: stage {from} → {to}{detail}")
+}
+
+/// Would this log line read as tool-written stage history?
+fn reads_as_stage(line: &str) -> bool {
+    queue::stage_line(&format!("- {line}")).is_some()
+}
+
+/// A log line carrying free text (a note, a field's value, what it waits on). Only the stage
+/// writer may log stage history, so a line the log's reader would take for a stage change
+/// (`queue::stage_line`, whatever part of it the who and the text make up) is refused. Prose
+/// that only mentions a stage doesn't parse as one, so it's fine.
+fn free_text_line(line: String, what: &str) -> Result<String, String> {
+    if reads_as_stage(&line) {
+        return Err(format!(
+            "{what} would read as a stage change in the log (\"<who>: stage <from> → <to>\"); only muster pass, return and stage write those"
+        ));
+    }
+    Ok(line)
+}
+
+fn unblocked_line(stamp: &str, who: &str, was: &str) -> String {
+    let line = format!("{stamp} {who}: unblocked (was waiting on {was})");
+    // `was` comes from the file and may be hand-written; never let it log a stage change.
+    if was.is_empty() || reads_as_stage(&line) {
+        format!("{stamp} {who}: unblocked")
+    } else {
+        line
+    }
+}
+
+/// Change a task's stage or blocked flag under the lock: read it, let `f` decide, then write
+/// `stage:`, the status mirror, `waiting_on`, `claimed-by` (and `commit`), the log lines, and
+/// move the file to the mirror's folder in the v2 layout. Returns the new relative path.
+fn change(
+    root: &Path,
+    id: &str,
+    f: impl FnOnce(&Current) -> Result<Change, String>,
+) -> Result<String, String> {
+    edit(root, id, |path, text| {
+        let folder = queue::folder_of(root, path);
+        let t = queue::parse_task("", root, &folder, path, &text, 0)
+            .ok_or("the task has no front matter")?;
+        let (_, body) = front_matter(&text).ok_or("the task has no front matter")?;
+        let builder = queue::stage_lines(body)
+            .into_iter()
+            .rev()
+            .find(|(s, detail)| s.from == "ready" && s.to == "building" && *detail == "claimed")
+            .map(|(s, _)| s.who);
+        let now = Current {
+            criteria: queue::criteria(body),
+            stage: t.stage,
+            blocked: t.blocked,
+            waiting_on: t.waiting_on,
+            claimed_by: t.claimed_by,
+            builder,
         };
-        new = append_log(&new, &note);
+        let c = f(&now)?;
+        let status = mirror_status(&c.stage, c.blocked);
+        let mut new = set_front(&text, "stage", &c.stage)?;
+        new = set_front(&new, "status", status)?;
+        new = set_front(&new, "waiting_on", &c.waiting_on)?;
+        new = set_front(&new, "claimed-by", &c.claimed_by)?;
+        if let Some(commit) = &c.commit {
+            new = set_front(&new, "commit", commit)?;
+        }
+        for line in &c.log {
+            new = append_log(&new, line);
+        }
         let dest = if has_status_folders(root) {
             Some(folder_for(root, status).join(path.file_name().ok_or("bad path")?))
         } else {
             None
         };
         Ok((new, dest))
+    })
+}
+
+/// What `pass_task` may need besides the task: the gate's result line (Building → Testing)
+/// and the commit (Your check → Done).
+#[derive(Debug, Clone, Default)]
+pub struct PassOpts {
+    pub gate: String,
+    pub commit: String,
+    /// The stage the caller saw the task in. When given, the pass is refused if the task has
+    /// moved on since (a double click, a stale window), so one click never moves two stages.
+    pub from: Option<String>,
+}
+
+/// A git commit id: 7 to 40 hex characters, kept lowercase. Empty is fine (none given).
+fn clean_commit(input: &str) -> Result<String, String> {
+    let c = input.trim().to_lowercase();
+    if c.is_empty() || ((7..=40).contains(&c.len()) && c.bytes().all(|b| b.is_ascii_hexdigit())) {
+        Ok(c)
+    } else {
+        Err(format!(
+            "commit must be a git commit id (7 to 40 hex characters), got {input:?}"
+        ))
+    }
+}
+
+/// Hand a task to the next stage. Refused when it's blocked or done, when someone else holds
+/// Ready or Building, Shaping → Ready without acceptance criteria, Building → Testing without
+/// the gate's result line, and Testing → Your check before every criterion is ticked.
+pub fn pass_task(
+    root: &Path,
+    id: &str,
+    who: &str,
+    stamp: &str,
+    opts: &PassOpts,
+) -> Result<String, String> {
+    let who = actor(who)?;
+    let gate = if opts.gate.trim().is_empty() {
+        String::new()
+    } else {
+        one_line(&opts.gate, 500, "the gate line")?
+    };
+    let commit = clean_commit(&opts.commit)?;
+    let expected = match opts.from.as_deref().map(str::trim) {
+        Some(s) if !s.is_empty() => Some(pick(s, &STAGES, "", "stage")?),
+        _ => None,
+    };
+    change(root, id, |t| {
+        if let Some(seen) = expected.filter(|s| *s != t.stage) {
+            return Err(format!(
+                "{id} is now in {}, not {}; it moved on since you looked",
+                stage_label(&t.stage),
+                stage_label(seen)
+            ));
+        }
+        if t.blocked {
+            let on = if t.waiting_on.is_empty() {
+                "something it doesn't name"
+            } else {
+                &t.waiting_on
+            };
+            return Err(format!("{id} is blocked on {on}; unblock it first"));
+        }
+        let from = t.stage.as_str();
+        let Some(&to) = STAGES.get(stage_index(from) + 1) else {
+            return Err(format!("{id} is done; there's no stage after Done"));
+        };
+        if !gate.is_empty() && from != "building" {
+            return Err("--gate is only for passing Building → Testing".into());
+        }
+        if !commit.is_empty() && from != "your-check" {
+            return Err("--commit is only for passing Your check → Done".into());
+        }
+        if matches!(from, "ready" | "building") && !t.claimed_by.is_empty() && t.claimed_by != who {
+            return Err(format!("{id} is claimed by {}", t.claimed_by));
+        }
+        let (items, ticked) = t.criteria;
+        let detail = match from {
+            "shaping" | "testing" if items == 0 => {
+                return Err(format!(
+                    "{id} has no acceptance criteria: add `- [ ]` items under `## Acceptance criteria` first"
+                ))
+            }
+            "testing" if ticked < items => {
+                return Err(format!(
+                    "{id}: {} of {items} acceptance criteria aren't ticked; tick each with its proof first",
+                    items - ticked
+                ))
+            }
+            "building" if gate.is_empty() => {
+                return Err(format!(
+                    "passing {id} Building → Testing needs the gate's result line (--gate \"…\")"
+                ))
+            }
+            "building" => format!(" (gate: {gate})"),
+            "ready" => " (claimed)".to_string(),
+            _ => String::new(),
+        };
+        Ok(Change {
+            stage: to.to_string(),
+            blocked: false,
+            waiting_on: t.waiting_on.clone(),
+            claimed_by: if to == "building" {
+                who.clone()
+            } else {
+                released(t)
+            },
+            commit: (to == "done" && !commit.is_empty()).then(|| commit.clone()),
+            log: vec![stage_line(stamp, &who, from, to, &detail)],
+        })
+    })
+}
+
+/// Send a task back one stage, or to the earlier stage `to`, with the reason. Back to Building
+/// gives it to whoever last claimed it there.
+pub fn return_task(
+    root: &Path,
+    id: &str,
+    why: &str,
+    to: Option<&str>,
+    who: &str,
+    stamp: &str,
+) -> Result<String, String> {
+    let who = actor(who)?;
+    let why = one_line(why, 500, "the reason")?;
+    let to = match to.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(s) => Some(pick(s, &STAGES, "", "stage")?),
+        None => None,
+    };
+    change(root, id, |t| {
+        let i = stage_index(&t.stage);
+        if i == 0 {
+            return Err(format!("{id} is in Backlog; there's no stage before it"));
+        }
+        let target = to.unwrap_or(STAGES[i - 1]);
+        if stage_index(target) >= i {
+            return Err(format!(
+                "{id} is in {}; return sends it to an earlier stage, not {}",
+                stage_label(&t.stage),
+                stage_label(target)
+            ));
+        }
+        Ok(Change {
+            stage: target.to_string(),
+            blocked: t.blocked,
+            waiting_on: t.waiting_on.clone(),
+            claimed_by: if target == "building" {
+                t.builder.clone().unwrap_or_default()
+            } else {
+                String::new()
+            },
+            commit: None,
+            log: vec![stage_line(
+                stamp,
+                &who,
+                &t.stage,
+                target,
+                &format!(" (returned: {why})"),
+            )],
+        })
+    })
+}
+
+/// What a task waits on: a task id (`0012`), `owner` or `capture`, then optional words.
+fn clean_on(on: &str) -> Result<String, String> {
+    let on = one_line(on, 200, "what it's waiting on")?;
+    let rest_ok = |r: &str| !r.starts_with(|c: char| c.is_alphanumeric());
+    let task = on.len() >= 4
+        && on.as_bytes()[..4].iter().all(u8::is_ascii_digit)
+        && on.get(4..).is_some_and(rest_ok);
+    if task {
+        return Ok(on);
+    }
+    for word in ["owner", "capture"] {
+        let head_ok = on
+            .get(..word.len())
+            .is_some_and(|h| h.eq_ignore_ascii_case(word));
+        if let Some(tail) = on.get(word.len()..).filter(|t| head_ok && rest_ok(t)) {
+            return Ok(format!("{word}{tail}"));
+        }
+    }
+    Err(format!(
+        "what it's waiting on must start with a task id (0012), owner or capture, then a few words; got {on:?}"
+    ))
+}
+
+/// Set the blocked flag: the task keeps its stage (and its claim) and waits on `on`.
+pub fn block_task(
+    root: &Path,
+    id: &str,
+    on: &str,
+    who: &str,
+    stamp: &str,
+) -> Result<String, String> {
+    let who = actor(who)?;
+    let on = clean_on(on)?;
+    let line = free_text_line(
+        format!("{stamp} {who}: blocked on {on}"),
+        "what it waits on",
+    )?;
+    change(root, id, |t| {
+        if t.waiting_on == on {
+            return Err(format!("{id} is already blocked on {on}"));
+        }
+        Ok(Change {
+            stage: t.stage.clone(),
+            blocked: true,
+            waiting_on: on.clone(),
+            claimed_by: t.claimed_by.clone(),
+            commit: None,
+            log: vec![line.clone()],
+        })
+    })
+}
+
+/// Clear the blocked flag; the status mirror goes back to what the stage means.
+pub fn unblock_task(root: &Path, id: &str, who: &str, stamp: &str) -> Result<String, String> {
+    let who = actor(who)?;
+    change(root, id, |t| {
+        if !t.blocked {
+            return Err(format!("{id} isn't blocked"));
+        }
+        Ok(Change {
+            stage: t.stage.clone(),
+            blocked: false,
+            waiting_on: String::new(),
+            claimed_by: t.claimed_by.clone(),
+            commit: None,
+            log: vec![unblocked_line(stamp, &who, &t.waiting_on)],
+        })
+    })
+}
+
+/// The owner's (or capture's) override: put a task in any stage, logged with `(set)`. Leaving
+/// Building releases its claim; the blocked flag stays.
+pub fn set_stage(
+    root: &Path,
+    id: &str,
+    stage: &str,
+    who: &str,
+    stamp: &str,
+) -> Result<String, String> {
+    let who = actor(who)?;
+    let stage = pick(stage.trim(), &STAGES, "", "stage")?;
+    if stage.is_empty() {
+        return Err(format!("stage must be one of {}", STAGES.join(", ")));
+    }
+    change(root, id, |t| {
+        if t.stage == stage {
+            return Err(format!("{id} is already in {}", stage_label(stage)));
+        }
+        Ok(Change {
+            stage: stage.to_string(),
+            blocked: t.blocked,
+            waiting_on: t.waiting_on.clone(),
+            claimed_by: released(t),
+            commit: None,
+            log: vec![stage_line(stamp, &who, &t.stage, stage, " (set)")],
+        })
     })
 }
 
@@ -478,10 +852,10 @@ pub fn add_note(
     who: &str,
     stamp: &str,
 ) -> Result<String, String> {
+    let who = actor(who)?;
     let note = one_line(note, 2000, "the note")?;
-    edit(root, id, |_, text| {
-        Ok((append_log(&text, &format!("{stamp} {who}: {note}")), None))
-    })
+    let line = free_text_line(format!("{stamp} {who}: {note}"), "a note")?;
+    edit(root, id, |_, text| Ok((append_log(&text, &line), None)))
 }
 
 /// A safe attachment name: the base name, with only letters, digits and `-_.` kept.
@@ -513,6 +887,7 @@ pub fn attach(
     who: &str,
     stamp: &str,
 ) -> Result<String, String> {
+    let who = actor(who)?;
     if bytes.len() > MAX_ATTACHMENT {
         return Err("attachments are limited to 25 MB".into());
     }
@@ -651,12 +1026,13 @@ mod tests {
         assert_eq!(b.id, "0002");
         let text = fs::read_to_string(d.path().join(&a.path)).unwrap();
         assert!(text.starts_with(
-            "---\nid: 0001\ntype: bug\npriority: high\ntags:\nest-time:\nest-tokens:\nstatus: todo\ncaptured: 2026-10-12\n"
+            "---\nid: 0001\ntype: bug\npriority: high\ntags:\nest-time:\nest-tokens:\nstage: ready\nstatus: todo\ncaptured: 2026-10-12\n"
         ));
         assert!(text.contains("# Board flickers on resize\n\nSteps:\n1. resize\n\tindented\n\n## Log\n- 2026-10-12 14:05 owner: created\n"));
         let s = state(d.path());
         assert_eq!(s.tasks.len(), 2);
         assert!(s.problems.is_empty(), "{:?}", s.problems);
+        assert!(s.tasks.iter().all(|t| t.stage == "ready" && !t.blocked));
         assert_eq!(s.tasks[1].kind, "task");
         assert_eq!(s.tasks[1].priority, "normal");
     }
@@ -722,10 +1098,11 @@ mod tests {
             T,
         )
         .unwrap();
-        // An agent claimed it.
+        // An agent claimed it (stage, its status mirror and folder, claimed-by).
         let p = d.path().join("todo/0001-move-me.md");
         let t = fs::read_to_string(&p)
             .unwrap()
+            .replace("stage: ready", "stage: building")
             .replace("status: todo", "status: doing")
             .replace("claimed-by:", "claimed-by: wt (session aaaa1111)");
         fs::remove_file(&p).unwrap();
@@ -750,17 +1127,37 @@ mod tests {
         );
         let s = state(d.path());
         let t = &s.tasks[0];
+        // Blocked is a flag: the task stays in Building and keeps its claim.
         assert_eq!(
-            (t.status.as_str(), t.folder.as_str(), t.claimed_by.as_str()),
-            ("blocked", "blocked", "")
+            (
+                t.status.as_str(),
+                t.folder.as_str(),
+                t.stage.as_str(),
+                t.claimed_by.as_str()
+            ),
+            ("blocked", "blocked", "building", "wt (session aaaa1111)")
         );
         assert_eq!(t.waiting_on, "owner: pick a colour");
         assert!(t.waiting_for_owner);
         assert!(s.problems.is_empty(), "{:?}", s.problems);
         move_task(d.path(), "0001", "todo", "", "owner", T).unwrap();
         let t = &state(d.path()).tasks[0];
-        assert_eq!((t.status.as_str(), t.waiting_on.as_str()), ("todo", ""));
-        assert!(t.log_tail.last().unwrap().contains("moved blocked → todo"));
+        assert_eq!(
+            (
+                t.status.as_str(),
+                t.stage.as_str(),
+                t.waiting_on.as_str(),
+                t.claimed_by.as_str()
+            ),
+            ("todo", "ready", "", "")
+        );
+        assert_eq!(
+            t.log_tail[1..],
+            [
+                "2026-10-12 14:05 owner: unblocked (was waiting on owner: pick a colour)",
+                "2026-10-12 14:05 owner: stage building → ready (set)"
+            ]
+        );
     }
 
     #[test]
@@ -977,6 +1374,897 @@ mod tests {
         )
         .unwrap();
         assert_eq!(next_id(d.path()).unwrap(), "0002");
+    }
+
+    /// A task file with the given front-matter lines (`status:`, `stage:`, …) and body sections.
+    fn task_text(fm: &str, sections: &str) -> String {
+        format!("---\nid: 0001\ntype: task\npriority: normal\n{fm}\n---\n\n# Staged\n\n{sections}## Log\n- 2026-10-12 09:00 capture: created\n")
+    }
+    const CRITERIA: &str = "## Acceptance criteria\n- [x] AC1: one\n- [ ] AC2: two\n\n";
+    const TICKED: &str = "## Acceptance criteria\n- [x] AC1: one\n- [x] AC2: two\n\n";
+
+    fn put(d: &Path, rel: &str, text: &str) {
+        fs::write(d.join(rel), text).unwrap();
+    }
+    fn only(d: &Path) -> crate::queue::Task {
+        let s = state(d);
+        assert_eq!(s.tasks.len(), 1, "{:?}", s.problems);
+        s.tasks.into_iter().next().unwrap()
+    }
+    fn no_gate() -> PassOpts {
+        PassOpts::default()
+    }
+
+    #[test]
+    fn pass_ready_to_building_claims_it() {
+        let d = queue();
+        put(
+            d.path(),
+            "todo/0001-t.md",
+            &task_text("status: todo\nclaimed-by:\nwaiting_on:", CRITERIA),
+        );
+        assert_eq!(
+            pass_task(d.path(), "0001", "wt-a", T, &no_gate()).unwrap(),
+            "doing/0001-t.md"
+        );
+        let t = only(d.path());
+        assert_eq!(
+            (
+                t.stage.as_str(),
+                t.status.as_str(),
+                t.folder.as_str(),
+                t.claimed_by.as_str()
+            ),
+            ("building", "doing", "doing", "wt-a")
+        );
+        assert_eq!(
+            t.stage_history,
+            vec![crate::queue::StageStep {
+                at: T.into(),
+                who: "wt-a".into(),
+                from: "ready".into(),
+                to: "building".into()
+            }]
+        );
+        assert_eq!(t.claimed_on, "2026-10-12");
+        let text = fs::read_to_string(d.path().join("doing/0001-t.md")).unwrap();
+        assert!(text.contains("\nstage: building\n"), "{text}");
+        assert!(text.ends_with("- 2026-10-12 14:05 wt-a: stage ready → building (claimed)\n"));
+        assert!(state(d.path()).problems.is_empty());
+    }
+
+    #[test]
+    fn passes_through_every_stage_and_moves_the_file() {
+        let d = queue();
+        put(
+            d.path(),
+            "inbox/0001-t.md",
+            &task_text("status: inbox\nclaimed-by:\nwaiting_on:\ncommit:", TICKED),
+        );
+        let gate = PassOpts {
+            gate: "gate full: green (9 steps)".into(),
+            ..Default::default()
+        };
+        let done = PassOpts {
+            commit: "ABC1234".into(),
+            ..Default::default()
+        };
+        let steps: [(&PassOpts, &str, &str, &str); 6] = [
+            (&no_gate(), "shaping", "todo", ""),
+            (&no_gate(), "ready", "todo", ""),
+            (&no_gate(), "building", "doing", "wt-a"),
+            (&gate, "testing", "doing", ""),
+            (&no_gate(), "your-check", "doing", ""),
+            (&done, "done", "done", ""),
+        ];
+        for (opts, stage, folder, claim) in steps {
+            let p = pass_task(d.path(), "0001", "wt-a", T, opts).unwrap();
+            assert_eq!(p, format!("{folder}/0001-t.md"));
+            let t = only(d.path());
+            assert_eq!(
+                (t.stage.as_str(), t.status.as_str(), t.claimed_by.as_str()),
+                (stage, folder, claim)
+            );
+            assert!(state(d.path()).problems.is_empty(), "{stage}");
+        }
+        let t = only(d.path());
+        assert_eq!(t.commit, "abc1234");
+        assert_eq!(t.stage_history.len(), 6);
+        assert_eq!(t.done_on, "2026-10-12");
+        let text = fs::read_to_string(d.path().join("done/0001-t.md")).unwrap();
+        assert!(
+            text.contains("wt-a: stage building → testing (gate: gate full: green (9 steps))\n")
+        );
+        assert!(text.ends_with("wt-a: stage your-check → done\n"));
+    }
+
+    #[test]
+    fn flat_layout_passes_without_moving() {
+        let d = tempfile::tempdir().unwrap();
+        put(
+            d.path(),
+            "0001-t.md",
+            &task_text("status: todo\nclaimed-by:\nwaiting_on:", CRITERIA),
+        );
+        assert_eq!(
+            pass_task(d.path(), "0001", "wt-a", T, &no_gate()).unwrap(),
+            "0001-t.md"
+        );
+        assert_eq!(
+            block_task(d.path(), "0001", "owner", "o", T).unwrap(),
+            "0001-t.md"
+        );
+        let t = only(d.path());
+        assert_eq!(
+            (t.stage.as_str(), t.status.as_str(), t.blocked),
+            ("building", "blocked", true)
+        );
+    }
+
+    #[test]
+    fn pass_refusals_leave_the_file_alone() {
+        let d = queue();
+        let cases: [(&str, &str, &str, PassOpts, &str); 9] = [
+            (
+                "todo",
+                "status: blocked\nwaiting_on: 0012 the API",
+                CRITERIA,
+                no_gate(),
+                "blocked on 0012 the API; unblock it first",
+            ),
+            (
+                "done",
+                "status: done\nstage: done",
+                CRITERIA,
+                no_gate(),
+                "no stage after Done",
+            ),
+            (
+                "todo",
+                "status: todo\nstage: shaping",
+                "## Acceptance criteria\n\nnothing yet\n\n",
+                no_gate(),
+                "no acceptance criteria",
+            ),
+            (
+                "todo",
+                "status: todo\nclaimed-by: wt-b",
+                CRITERIA,
+                no_gate(),
+                "claimed by wt-b",
+            ),
+            (
+                "doing",
+                "status: doing\nstage: building\nclaimed-by: wt-a",
+                CRITERIA,
+                PassOpts {
+                    gate: "  \n ".into(),
+                    ..Default::default()
+                },
+                "needs the gate's result line",
+            ),
+            (
+                "doing",
+                "status: doing\nstage: testing",
+                CRITERIA,
+                no_gate(),
+                "1 of 2 acceptance criteria aren't ticked",
+            ),
+            (
+                "doing",
+                "status: doing\nstage: testing",
+                "",
+                no_gate(),
+                "no acceptance criteria",
+            ),
+            (
+                "doing",
+                "status: doing\nstage: your-check",
+                TICKED,
+                PassOpts {
+                    commit: "not a sha".into(),
+                    ..Default::default()
+                },
+                "commit must be",
+            ),
+            (
+                "todo",
+                "status: todo",
+                CRITERIA,
+                PassOpts {
+                    gate: "green".into(),
+                    ..Default::default()
+                },
+                "--gate is only for",
+            ),
+        ];
+        for (folder, fm, sections, opts, want) in cases {
+            let rel = format!("{folder}/0001-t.md");
+            let text = task_text(fm, sections);
+            put(d.path(), &rel, &text);
+            let e = pass_task(d.path(), "0001", "wt-a", T, &opts).unwrap_err();
+            assert!(e.contains(want), "{fm}: {e}");
+            assert_eq!(fs::read_to_string(d.path().join(&rel)).unwrap(), text);
+            fs::remove_file(d.path().join(&rel)).unwrap();
+        }
+    }
+
+    #[test]
+    fn hand_typed_history_lines_do_not_count() {
+        let d = queue();
+        let mut text = task_text("status: doing\nstage: testing", TICKED);
+        text.push_str("- 2026-10-12 10:00 wt-a: moved todo → doing (claimed)\n- 2026-10-12 10:01 wt-a: stage ready -> building\n");
+        put(d.path(), "doing/0001-t.md", &text);
+        assert!(only(d.path()).stage_history.is_empty());
+    }
+
+    #[test]
+    fn return_goes_back_and_restores_the_builder() {
+        let d = queue();
+        put(
+            d.path(),
+            "todo/0001-t.md",
+            &task_text("status: todo\nclaimed-by:\nwaiting_on:", TICKED),
+        );
+        pass_task(d.path(), "0001", "wt-a", T, &no_gate()).unwrap();
+        pass_task(
+            d.path(),
+            "0001",
+            "wt-a",
+            T,
+            &PassOpts {
+                gate: "green".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        pass_task(d.path(), "0001", "qa", T, &no_gate()).unwrap();
+        // Refusals first: a later or equal stage, an unknown one, no reason, a long reason.
+        let r = |to: Option<&str>, why: &str| return_task(d.path(), "0001", why, to, "qa", T);
+        assert!(r(Some("done"), "x").unwrap_err().contains("earlier stage"));
+        assert!(r(Some("your-check"), "x")
+            .unwrap_err()
+            .contains("earlier stage"));
+        assert!(r(Some("qa"), "x")
+            .unwrap_err()
+            .contains("stage must be one of"));
+        assert!(r(None, " \n ").unwrap_err().contains("reason is empty"));
+        assert!(r(None, &"x".repeat(501)).unwrap_err().contains("500"));
+        // Your check → Testing (one back), then Testing → Building with the builder back.
+        assert_eq!(r(None, "looks off").unwrap(), "doing/0001-t.md");
+        assert_eq!(only(d.path()).stage, "testing");
+        r(Some("building"), "AC2 fails (see shot)").unwrap();
+        let t = only(d.path());
+        assert_eq!(
+            (t.stage.as_str(), t.claimed_by.as_str()),
+            ("building", "wt-a")
+        );
+        assert_eq!(
+            t.stage_history
+                .last()
+                .map(|s| (s.from.as_str(), s.to.as_str())),
+            Some(("testing", "building"))
+        );
+        let text = fs::read_to_string(d.path().join("doing/0001-t.md")).unwrap();
+        assert!(text.ends_with("qa: stage testing → building (returned: AC2 fails (see shot))\n"));
+        // Building → Shaping releases the claim and moves back to todo/.
+        assert_eq!(
+            r(Some("Shaping"), "the spec is wrong").unwrap(),
+            "todo/0001-t.md"
+        );
+        let t = only(d.path());
+        assert_eq!((t.stage.as_str(), t.claimed_by.as_str()), ("shaping", ""));
+        set_stage(d.path(), "0001", "backlog", "owner", T).unwrap();
+        assert!(r(None, "x").unwrap_err().contains("no stage before"));
+    }
+
+    #[test]
+    fn return_to_building_without_a_claim_on_record_leaves_it_unclaimed() {
+        let d = queue();
+        put(
+            d.path(),
+            "doing/0001-t.md",
+            &task_text("status: doing\nstage: testing\nclaimed-by:", TICKED),
+        );
+        return_task(d.path(), "0001", "bug", None, "qa", T).unwrap();
+        let t = only(d.path());
+        assert_eq!((t.stage.as_str(), t.claimed_by.as_str()), ("building", ""));
+    }
+
+    #[test]
+    fn block_keeps_the_stage_and_unblock_mirrors_back() {
+        let d = queue();
+        put(
+            d.path(),
+            "doing/0001-t.md",
+            &task_text(
+                "status: doing\nstage: testing\nclaimed-by: qa\nwaiting_on:",
+                TICKED,
+            ),
+        );
+        for bad in ["", "soon", "12 days", "owners", "00123", "captured"] {
+            assert!(
+                block_task(d.path(), "0001", bad, "qa", T).is_err(),
+                "{bad:?} is refused"
+            );
+        }
+        assert_eq!(
+            block_task(d.path(), "0001", "Owner: which colour?", "qa", T).unwrap(),
+            "blocked/0001-t.md"
+        );
+        let t = only(d.path());
+        assert_eq!(
+            (
+                t.stage.as_str(),
+                t.status.as_str(),
+                t.blocked,
+                t.waiting_on.as_str(),
+                t.claimed_by.as_str()
+            ),
+            ("testing", "blocked", true, "owner: which colour?", "qa")
+        );
+        assert!(t.waiting_for_owner);
+        assert!(t
+            .log_tail
+            .last()
+            .unwrap()
+            .ends_with("qa: blocked on owner: which colour?"));
+        assert!(
+            block_task(d.path(), "0001", "owner: which colour?", "qa", T)
+                .unwrap_err()
+                .contains("already blocked")
+        );
+        block_task(d.path(), "0001", "0012", "qa", T).unwrap();
+        block_task(d.path(), "0001", "capture, needs a spec", "qa", T).unwrap();
+        // Blocked: no pass, but return and set keep the flag.
+        assert!(pass_task(d.path(), "0001", "qa", T, &no_gate())
+            .unwrap_err()
+            .contains("unblock it first"));
+        assert_eq!(
+            unblock_task(d.path(), "0001", "owner", T).unwrap(),
+            "doing/0001-t.md"
+        );
+        let t = only(d.path());
+        assert_eq!(
+            (
+                t.stage.as_str(),
+                t.status.as_str(),
+                t.blocked,
+                t.waiting_on.as_str()
+            ),
+            ("testing", "doing", false, "")
+        );
+        assert!(t
+            .log_tail
+            .last()
+            .unwrap()
+            .ends_with("owner: unblocked (was waiting on capture, needs a spec)"));
+        assert!(unblock_task(d.path(), "0001", "owner", T)
+            .unwrap_err()
+            .contains("isn't blocked"));
+        assert!(state(d.path()).problems.is_empty());
+    }
+
+    #[test]
+    fn legacy_blocked_without_a_reason_can_be_unblocked() {
+        let d = queue();
+        put(
+            d.path(),
+            "blocked/0001-t.md",
+            &task_text("status: blocked\nwaiting_on:", ""),
+        );
+        let t = only(d.path());
+        assert_eq!((t.stage.as_str(), t.blocked), ("ready", true));
+        // Returning or setting keeps the flag even with nothing in waiting_on.
+        set_stage(d.path(), "0001", "shaping", "owner", T).unwrap();
+        let t = only(d.path());
+        assert_eq!(
+            (t.stage.as_str(), t.status.as_str(), t.blocked),
+            ("shaping", "blocked", true)
+        );
+        assert_eq!(
+            unblock_task(d.path(), "0001", "owner", T).unwrap(),
+            "todo/0001-t.md"
+        );
+        assert_eq!(only(d.path()).status, "todo");
+    }
+
+    #[test]
+    fn set_stage_overrides_and_releases_building() {
+        let d = queue();
+        put(
+            d.path(),
+            "doing/0001-t.md",
+            &task_text("status: doing\nclaimed-by: wt-a\nwaiting_on:", ""),
+        );
+        assert!(set_stage(d.path(), "0001", "building", "owner", T)
+            .unwrap_err()
+            .contains("already in Building"));
+        assert!(set_stage(d.path(), "0001", "qa", "owner", T)
+            .unwrap_err()
+            .contains("stage must be one of"));
+        assert!(set_stage(d.path(), "0001", "", "owner", T)
+            .unwrap_err()
+            .contains("stage must be one of"));
+        assert_eq!(
+            set_stage(d.path(), "0001", "Your-Check", "owner", T).unwrap(),
+            "doing/0001-t.md"
+        );
+        let t = only(d.path());
+        assert_eq!(
+            (t.stage.as_str(), t.claimed_by.as_str()),
+            ("your-check", "")
+        );
+        assert!(t.waiting_for_owner, "Your check needs the owner");
+        let text = fs::read_to_string(d.path().join("doing/0001-t.md")).unwrap();
+        assert!(text.ends_with("owner: stage building → your-check (set)\n"));
+        assert_eq!(
+            set_stage(d.path(), "0001", "done", "owner", T).unwrap(),
+            "done/0001-t.md"
+        );
+    }
+
+    #[test]
+    fn move_maps_old_statuses_to_stages() {
+        let d = queue();
+        put(
+            d.path(),
+            "todo/0001-t.md",
+            &task_text("status: todo\nclaimed-by:\nwaiting_on:", ""),
+        );
+        let st = |d: &Path| {
+            let t = only(d);
+            (t.stage, t.status, t.blocked)
+        };
+        move_task(d.path(), "0001", "inbox", "", "owner", T).unwrap();
+        assert_eq!(st(d.path()), ("backlog".into(), "inbox".into(), false));
+        move_task(d.path(), "0001", "blocked", "0042", "owner", T).unwrap();
+        assert_eq!(st(d.path()), ("backlog".into(), "blocked".into(), true));
+        // Moving a blocked task to todo unblocks it and sets Ready, in one change.
+        assert_eq!(
+            move_task(d.path(), "0001", "todo", "", "owner", T).unwrap(),
+            "todo/0001-t.md"
+        );
+        assert_eq!(st(d.path()), ("ready".into(), "todo".into(), false));
+        assert!(move_task(d.path(), "0001", "todo", "", "owner", T)
+            .unwrap_err()
+            .contains("already in Ready"));
+        move_task(d.path(), "0001", "done", "", "owner", T).unwrap();
+        assert_eq!(st(d.path()), ("done".into(), "done".into(), false));
+    }
+
+    #[test]
+    fn a_taken_destination_refuses_the_change() {
+        let d = queue();
+        let text = task_text("status: todo\nclaimed-by:\nwaiting_on:", "");
+        put(d.path(), "todo/0001-t.md", &text);
+        // Something already at the destination (a folder, so it isn't read as a second task).
+        fs::create_dir_all(d.path().join("doing/0001-t.md")).unwrap();
+        assert!(pass_task(d.path(), "0001", "wt-a", T, &no_gate())
+            .unwrap_err()
+            .contains("already exists"));
+        assert_eq!(
+            fs::read_to_string(d.path().join("todo/0001-t.md")).unwrap(),
+            text
+        );
+    }
+
+    #[test]
+    fn two_passes_at_once_claim_once() {
+        for _ in 0..20 {
+            let d = queue();
+            put(
+                d.path(),
+                "todo/0001-t.md",
+                &task_text("status: todo\nclaimed-by:\nwaiting_on:", ""),
+            );
+            let root = d.path().to_path_buf();
+            let go = std::sync::Arc::new(std::sync::Barrier::new(2));
+            let runs: Vec<_> = ["wt-a", "wt-b"]
+                .into_iter()
+                .map(|who| {
+                    let (root, go) = (root.clone(), go.clone());
+                    std::thread::spawn(move || {
+                        go.wait();
+                        pass_task(&root, "0001", who, T, &PassOpts::default())
+                    })
+                })
+                .collect();
+            let results: Vec<_> = runs.into_iter().map(|h| h.join().unwrap()).collect();
+            let ok = results.iter().filter(|r| r.is_ok()).count();
+            assert_eq!(ok, 1, "{results:?}");
+            let refused = results.iter().find_map(|r| r.as_ref().err()).unwrap();
+            assert!(refused.contains("claimed by wt-"), "{refused}");
+            let t = only(d.path());
+            assert_eq!((t.stage.as_str(), t.stage_history.len()), ("building", 1));
+        }
+    }
+
+    #[test]
+    fn who_and_reasons_stay_on_one_line() {
+        let d = queue();
+        put(
+            d.path(),
+            "todo/0001-t.md",
+            &task_text("status: todo\nclaimed-by:\nwaiting_on:", ""),
+        );
+        pass_task(d.path(), "0001", "wt-a\nstage: done", T, &no_gate()).unwrap();
+        let t = only(d.path());
+        assert_eq!(
+            (t.stage.as_str(), t.claimed_by.as_str()),
+            ("building", "wt-a stage: done")
+        );
+        assert!(pass_task(d.path(), "0001", " ", T, &no_gate())
+            .unwrap_err()
+            .contains("who"));
+    }
+
+    #[test]
+    fn pass_from_a_stage_it_already_left_is_refused() {
+        let d = queue();
+        put(
+            d.path(),
+            "doing/0001-t.md",
+            &task_text("status: doing\nstage: testing\nclaimed-by:", TICKED),
+        );
+        let from = |s: &str| PassOpts {
+            from: Some(s.into()),
+            ..Default::default()
+        };
+        // A double click: both passes were meant for Testing → Your check.
+        pass_task(d.path(), "0001", "owner", T, &from("testing")).unwrap();
+        let e = pass_task(d.path(), "0001", "owner", T, &from("testing")).unwrap_err();
+        assert!(e.contains("0001 is now in Your check"), "{e}");
+        let t = only(d.path());
+        assert_eq!((t.stage.as_str(), t.stage_history.len()), ("your-check", 1));
+        assert!(pass_task(d.path(), "0001", "owner", T, &from("qa"))
+            .unwrap_err()
+            .contains("stage must be one of"));
+        pass_task(d.path(), "0001", "owner", T, &from("Your-Check")).unwrap();
+        assert_eq!(only(d.path()).stage, "done");
+    }
+
+    #[test]
+    fn return_to_building_gives_it_to_the_latest_claimer() {
+        let d = queue();
+        put(
+            d.path(),
+            "todo/0001-t.md",
+            &task_text("status: todo\nclaimed-by:\nwaiting_on:", TICKED),
+        );
+        let gate = PassOpts {
+            gate: "green".into(),
+            ..Default::default()
+        };
+        pass_task(d.path(), "0001", "wt-a", T, &no_gate()).unwrap();
+        return_task(d.path(), "0001", "not yet", Some("ready"), "owner", T).unwrap();
+        assert_eq!(only(d.path()).claimed_by, "");
+        pass_task(d.path(), "0001", "wt-b", T, &no_gate()).unwrap();
+        pass_task(d.path(), "0001", "wt-b", T, &gate).unwrap();
+        return_task(d.path(), "0001", "AC1 fails", None, "qa", T).unwrap();
+        let t = only(d.path());
+        assert_eq!(
+            (t.stage.as_str(), t.claimed_by.as_str()),
+            ("building", "wt-b")
+        );
+        // The owner's override into Building isn't a claim: the builder stays wt-b.
+        set_stage(d.path(), "0001", "ready", "owner", T).unwrap();
+        set_stage(d.path(), "0001", "building", "owner", T).unwrap();
+        assert_eq!(only(d.path()).claimed_by, "");
+        set_stage(d.path(), "0001", "testing", "owner", T).unwrap();
+        return_task(d.path(), "0001", "again", None, "qa", T).unwrap();
+        assert_eq!(only(d.path()).claimed_by, "wt-b");
+    }
+
+    #[test]
+    fn returning_a_blocked_task_keeps_it_blocked() {
+        let d = queue();
+        put(
+            d.path(),
+            "doing/0001-t.md",
+            &task_text(
+                "status: doing\nstage: testing\nclaimed-by:\nwaiting_on:",
+                TICKED,
+            ),
+        );
+        block_task(d.path(), "0001", "0012 the API", "qa", T).unwrap();
+        assert_eq!(
+            return_task(d.path(), "0001", "AC2 fails", None, "qa", T).unwrap(),
+            "blocked/0001-t.md"
+        );
+        let t = only(d.path());
+        assert_eq!(
+            (
+                t.stage.as_str(),
+                t.status.as_str(),
+                t.folder.as_str(),
+                t.waiting_on.as_str(),
+                t.blocked
+            ),
+            ("building", "blocked", "blocked", "0012 the API", true)
+        );
+    }
+
+    #[test]
+    fn an_answer_with_a_log_heading_cannot_forge_or_hide_stage_history() {
+        let d = queue();
+        let questions = "## Questions\n- [ ] **Q1 (wt-a, session aaaa1111, 2026-10-12 10:00):** Which port?\n\n";
+        put(
+            d.path(),
+            "todo/0001-t.md",
+            &task_text(
+                "status: todo\nclaimed-by:\nwaiting_on:",
+                &format!("{questions}{TICKED}"),
+            ),
+        );
+        let gate = PassOpts {
+            gate: "green".into(),
+            ..Default::default()
+        };
+        pass_task(d.path(), "0001", "wt-a", T, &no_gate()).unwrap();
+        pass_task(d.path(), "0001", "wt-a", T, &gate).unwrap();
+        crate::queue::answer(
+            d.path(),
+            "0001",
+            1,
+            "ok\n## Log\n- 2026-10-12 15:00 evil: stage ready → building (claimed)",
+            "owner",
+            T,
+        )
+        .unwrap();
+        let whos = |t: &crate::queue::Task| -> Vec<String> {
+            t.stage_history.iter().map(|s| s.who.clone()).collect()
+        };
+        let t = only(d.path());
+        assert_eq!(whos(&t), ["wt-a", "wt-a"]);
+        assert!(t.log_tail.last().unwrap().ends_with("owner: answered Q1"));
+        return_task(d.path(), "0001", "AC1 fails", None, "qa", T).unwrap();
+        let t = only(d.path());
+        assert_eq!(
+            (t.stage.as_str(), t.claimed_by.as_str()),
+            ("building", "wt-a")
+        );
+        assert_eq!(whos(&t), ["wt-a", "wt-a", "qa"]);
+    }
+
+    #[test]
+    fn an_answer_cannot_plant_a_log_when_questions_follow_the_log() {
+        // Questions added by hand under the Log: a `## Log` line in an answer would be the last
+        // Log, the one stage history is read from and the tool appends to.
+        let d = queue();
+        put(
+            d.path(),
+            "todo/0001-t.md",
+            &format!(
+                "{}\n## Questions\n- [ ] **Q1 (wt-a, session aaaa1111, 2026-10-12 10:00):** Which port?\n",
+                task_text("status: todo\nclaimed-by:\nwaiting_on:", TICKED)
+            ),
+        );
+        let gate = PassOpts {
+            gate: "green".into(),
+            ..Default::default()
+        };
+        pass_task(d.path(), "0001", "wt-a", T, &no_gate()).unwrap();
+        pass_task(d.path(), "0001", "wt-a", T, &gate).unwrap();
+        let planted = "ok\n## Log\n- 2026-10-12 15:00 evil: stage ready → building (claimed)";
+        crate::queue::answer(d.path(), "0001", 1, planted, "owner", T).unwrap();
+        let whos = |t: &crate::queue::Task| -> Vec<String> {
+            t.stage_history.iter().map(|s| s.who.clone()).collect()
+        };
+        let t = only(d.path());
+        assert_eq!(whos(&t), ["wt-a", "wt-a"]);
+        assert_eq!((t.questions.len(), t.open_questions), (1, 0));
+        assert_eq!(
+            t.questions[0].text,
+            format!("Which port?\n**A (owner, {T}):** {planted}")
+        );
+        assert!(t.log_tail.last().unwrap().ends_with("owner: answered Q1"));
+        return_task(d.path(), "0001", "AC1 fails", None, "qa", T).unwrap();
+        let t = only(d.path());
+        assert_eq!(
+            (t.stage.as_str(), t.claimed_by.as_str()),
+            ("building", "wt-a")
+        );
+        assert_eq!(whos(&t), ["wt-a", "wt-a", "qa"]);
+    }
+
+    #[test]
+    fn an_answer_cannot_plant_criteria_or_hide_later_questions() {
+        let d = queue();
+        let questions = "## Questions\n- [ ] **Q1 (wt-a, session aaaa1111, 2026-10-12 10:00):** Which port?\n- [ ] **Q2 (wt-a, session aaaa1111, 2026-10-12 10:05):** Which colour?\n\n";
+        let criteria =
+            "## Acceptance criteria\n- [x] AC1: one\n- [ ] AC2: two\n- [ ] AC3: three\n\n";
+        put(
+            d.path(),
+            "doing/0001-t.md",
+            &task_text(
+                "status: doing\nstage: testing\nclaimed-by:\nwaiting_on:",
+                &format!("{questions}{criteria}"),
+            ),
+        );
+        let path = d.path().join("doing/0001-t.md");
+        let counted = || crate::queue::criteria(&fs::read_to_string(&path).unwrap());
+        assert_eq!(counted(), (3, 1));
+        let planted = "ok\n## Acceptance criteria\n- [x] fake";
+        crate::queue::answer(d.path(), "0001", 1, planted, "owner", T).unwrap();
+        assert_eq!(counted(), (3, 1));
+        crate::queue::answer(d.path(), "0001", 2, "violet", "owner", T).unwrap();
+        let t = only(d.path());
+        assert_eq!((t.questions.len(), t.open_questions), (2, 0));
+        assert_eq!(
+            t.questions[0].text,
+            format!("Which port?\n**A (owner, {T}):** {planted}")
+        );
+        let e = pass_task(d.path(), "0001", "qa", T, &no_gate()).unwrap_err();
+        assert!(
+            e.contains("2 of 3 acceptance criteria aren't ticked"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn a_description_quoting_a_log_does_not_hide_stage_history() {
+        let d = queue();
+        let c = create_task(
+            d.path(),
+            &NewTask {
+                title: "Template".into(),
+                body: "Copy this:\n\n## Log\n- 2026-01-01 09:00 evil: stage ready → building (claimed)\n\n## Notes\nend of template".into(),
+                ..Default::default()
+            },
+            "owner",
+            T,
+        )
+        .unwrap();
+        pass_task(d.path(), &c.id, "wt-a", T, &no_gate()).unwrap();
+        let t = only(d.path());
+        assert_eq!(
+            t.stage_history
+                .iter()
+                .map(|s| (s.who.as_str(), s.from.as_str()))
+                .collect::<Vec<_>>(),
+            [("wt-a", "ready")]
+        );
+        assert_eq!(t.claimed_on, "2026-10-12");
+        assert!(
+            t.log_tail[0].ends_with("owner: created"),
+            "{:?}",
+            t.log_tail
+        );
+    }
+
+    #[test]
+    fn notes_go_into_the_log_even_when_a_section_follows_it() {
+        let d = queue();
+        put(
+            d.path(),
+            "todo/0001-t.md",
+            "---\nid: 0001\nstatus: todo\n---\n\n# T\n\n## Log\n- 2026-10-12 09:00 capture: created\n\n## Notes\nkeep me\n",
+        );
+        add_note(d.path(), "0001", "first", "wt-a", T).unwrap();
+        let text = fs::read_to_string(d.path().join("todo/0001-t.md")).unwrap();
+        assert!(
+            text.ends_with("## Log\n- 2026-10-12 09:00 capture: created\n- 2026-10-12 14:05 wt-a: first\n\n## Notes\nkeep me\n"),
+            "{text}"
+        );
+        assert!(only(d.path())
+            .log_tail
+            .last()
+            .unwrap()
+            .ends_with("wt-a: first"));
+    }
+
+    #[test]
+    fn unblocking_a_hand_written_waiting_on_logs_no_stage_history() {
+        let d = queue();
+        put(
+            d.path(),
+            "blocked/0001-t.md",
+            &task_text(
+                "status: blocked\nwaiting_on: owner: stage ready → building (claimed)",
+                "",
+            ),
+        );
+        unblock_task(d.path(), "0001", "owner", T).unwrap();
+        let t = only(d.path());
+        assert!(t.stage_history.is_empty(), "{:?}", t.stage_history);
+        assert!(t.log_tail.last().unwrap().ends_with("owner: unblocked"));
+    }
+
+    #[test]
+    fn who_and_notes_cannot_forge_stage_history() {
+        let d = queue();
+        put(
+            d.path(),
+            "todo/0001-t.md",
+            &task_text("status: todo\nclaimed-by:\nwaiting_on:", ""),
+        );
+        let new = NewTask {
+            title: "X".into(),
+            ..Default::default()
+        };
+        for who in ["x: stage ready → done", "wt → b", "a: stage b"] {
+            let refused = |r: Result<String, String>| r.unwrap_err().contains("who");
+            assert!(refused(pass_task(d.path(), "0001", who, T, &no_gate())));
+            assert!(refused(add_note(d.path(), "0001", "hi", who, T)));
+            assert!(refused(set_field(
+                d.path(),
+                "0001",
+                "priority",
+                "high",
+                who,
+                T
+            )));
+            assert!(refused(attach(d.path(), "0001", "a.png", b"png", who, T)));
+            assert!(refused(
+                crate::queue::answer(d.path(), "0001", 1, "yes", who, T).map(|_| String::new())
+            ));
+            assert!(refused(create_task(d.path(), &new, who, T).map(|c| c.id)));
+        }
+        assert!(!d.path().join("attachments/0001").exists());
+        assert_eq!(state(d.path()).tasks.len(), 1);
+        // Free text anywhere in a line that would read as a claim: refused, before anything is
+        // written, so it can't become the builder that a return to Building restores.
+        let forged = "fyi: stage ready → building (claimed)";
+        let refused =
+            |r: Result<String, String>| r.unwrap_err().contains("would read as a stage change");
+        assert!(refused(add_note(d.path(), "0001", forged, "owner", T)));
+        assert!(refused(block_task(
+            d.path(),
+            "0001",
+            "owner: stage ready → building (claimed)",
+            "owner",
+            T
+        )));
+        assert!(refused(set_field(
+            d.path(),
+            "0001",
+            "title",
+            "x: stage ready → done",
+            "owner",
+            T
+        )));
+        // A who with a colon plus text that starts the stage form makes the same line.
+        assert!(refused(add_note(
+            d.path(),
+            "0001",
+            "stage ready → building (claimed)",
+            "owner: fyi",
+            T
+        )));
+        assert!(only(d.path()).stage_history.is_empty());
+        add_note(d.path(), "0001", "Stage two next", "wt-a", T).unwrap();
+        add_note(
+            d.path(),
+            "0001",
+            "staged the fix; stage two next",
+            "wt\na",
+            T,
+        )
+        .unwrap();
+        let t = only(d.path());
+        assert!(t.stage_history.is_empty());
+        assert!(t
+            .log_tail
+            .last()
+            .unwrap()
+            .ends_with("wt a: staged the fix; stage two next"));
+        // Prose that only mentions a stage reads as no stage change: a fine note, title or reason.
+        let prose = "variant D drawn (x): stage track full width";
+        add_note(d.path(), "0001", prose, "owner", T).unwrap();
+        assert!(only(d.path())
+            .log_tail
+            .last()
+            .unwrap()
+            .ends_with(&format!("owner: {prose}")));
+        set_field(d.path(), "0001", "title", "D: stage track wide", "owner", T).unwrap();
+        block_task(d.path(), "0001", "owner: stage track width", "owner", T).unwrap();
+        let t = only(d.path());
+        assert_eq!(
+            (t.title.as_str(), t.waiting_on.as_str()),
+            ("D: stage track wide", "owner: stage track width")
+        );
+        assert!(t.stage_history.is_empty());
     }
 
     #[test]

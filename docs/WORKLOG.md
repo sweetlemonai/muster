@@ -2,6 +2,38 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-12 — Stages with roles (task 0014)
+**Did:** tasks have a stage: Backlog, Shaping, Ready, Building, Testing, Your check, Done.
+- `stage:` in the file is the truth; blocked is a flag that keeps the task in its stage; stage
+  history comes from the tool's own log lines.
+- New commands `muster pass` (with `--from`, `--gate`, `--commit`), `return`, `block`, `unblock` and
+  `stage`. `list` groups by stage.
+- The board has one column per stage. The task pane has the stage picker, Pass, Send back,
+  Block/Unblock and Accept, running one action at a time.
+- `status:` and the folder stay as a mirror until 0005.
+- Main files: `app/src-tauri/src/{ops,queue,cli,help,lib,projects}.rs`, `app/src/{lib,TaskPanel,App,Views,viewData,themes}.ts(x)`,
+  `bin/manifest.py`, `bin/task`.
+**Fixed (from review):**
+- A double-click on Pass could go Testing → Your check → Done. Fixed with an expected
+  `from` stage and one action at a time.
+- Hand moves weren't reported. `check` now reports a stage that disagrees with its status.
+- Notes, titles, block reasons, a multi-line answer with its own `## Log`, and a `who` with a line
+  break could each fake a stage line. Fixed with the exact stage-line check, readers that use the
+  last `## Log`, indented question and answer lines (file contract rule 3), and `who` cleaned in
+  Rust and Python (rule 2).
+- Also four test gaps, stale names on Done cards, and stale forms.
+**Decided:** the old status and folder stay as a mirror of the stage (Drover's tools read them).
+The owner can't Pass a task an agent holds; the stage picker overrides.
+**Verified:** `pnpm check` exit 0 (108 UI, 72 Rust, 5 interop tests), `python3 -I bin/test_task.py` 22 OK.
+Deep review across 10 lenses: 6 should-fix and 4 nits, all fixed over 4 rounds, each re-reviewed;
+the final re-review was clean. 0014 itself was passed Building → Testing → Your check with the new
+commands, and `muster check` is clean.
+**Open:**
+- Not seen in a real window: the sandbox can't launch WebKit, so the owner's check covers the look.
+- 0028: criteria only the owner can verify shouldn't block the pass into Your check.
+- Drover must adopt contract rule 3 (note in Drover's inbox).
+- `bin/task` still writes its "asked/answered" log lines at the end of the file.
+
 ## 2026-10-12 — Tag editor shows only the task's own tags
 **Did:** the tag editor (task panel and New task) shows only the tags on the task, each with ×
 to remove. The suggested tags complete as you type in "+ tag" (a native `datalist`, minus the

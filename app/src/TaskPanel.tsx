@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import { ago, readFiles, stamp } from "./lib";
+import { ago, earlierStages, heldByOther, isStage, nextStage, oneAtATime, passLabel, readFiles, stamp, STAGES, stageLabel, stageOf } from "./lib";
 import Markdown from "./Markdown";
 import TagEditor from "./Tags";
 import type { Question, Task } from "./types";
@@ -32,9 +32,10 @@ export default function TaskPanel({ task, now, onClose, onChanged }: { task: Tas
       <header>
         <div>
           <div className="meta">
-            {task.queue} · {task.id} · {task.kind} · {task.priority} · <b>{task.status}</b> · changed {ago(now, task.modified)} ago
+            {task.queue} · {task.id} · {task.kind} · {task.priority} · changed {ago(now, task.modified)} ago
           </div>
           <h1>{task.title}</h1>
+          <StageLine task={task} />
           <div className="meta">
             {task.claimedBy && <>on it: {task.claimedBy} · </>}
             {task.waitingOn && <>waiting on: {task.waitingOn} · </>}
@@ -67,6 +68,19 @@ export default function TaskPanel({ task, now, onClose, onChanged }: { task: Tas
         {body === null && !error && <p className="none">Loading…</p>}
         {body !== null && (raw ? <pre className="raw">{body}</pre> : <Markdown text={shown} />)}
       </section>
+    </div>
+  );
+}
+
+/** The stage, who works it, and the blocked flag. */
+function StageLine({ task }: { task: Task }) {
+  const known = isStage(task.stage);
+  const role = known ? STAGES.find((s) => s.id === task.stage)?.role : "";
+  return (
+    <div className="stage-line">
+      <span className={`status-pill s-${stageOf(task)}`}>{known ? stageLabel(task.stage) : `${task.stage || "no stage"} (unknown)`}</span>
+      {role && <span className="meta">{role}</span>}
+      {task.blocked && <span className="status-pill blocked">blocked{task.waitingOn ? `: ${task.waitingOn}` : ""}</span>}
     </div>
   );
 }
@@ -173,32 +187,70 @@ function Attachments({ task }: { task: Task }) {
   );
 }
 
-const STATUSES = ["inbox", "todo", "blocked", "done"];
-
-/** The owner's changes: status, priority, type, title, a note, files. All through the core's rules. */
+/** The owner's changes: stage, priority, type, title, a note, files. All through the core's rules. */
 function Controls({ task, onChanged }: { task: Task; onChanged: () => void }) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [blocking, setBlocking] = useState(false);
+  // One stage form open at a time: the gate line (Building → Testing), send back, or block. A
+  // form belongs to the stage it was opened in: once the task moves, here or elsewhere, it's gone.
+  const [opened, setForm] = useState<{ kind: "gate" | "back" | "block"; stage: string } | null>(null);
+  const form = opened?.stage === task.stage ? opened.kind : null;
+  const open = (kind: "gate" | "back" | "block") => setForm({ kind, stage: task.stage });
+  // Stage actions run one at a time, and their controls are off while one is in flight.
+  const [once] = useState(oneAtATime);
+  const [busy, setBusy] = useState(false);
+  const [gate, setGate] = useState("");
+  const [why, setWhy] = useState("");
+  const [backTo, setBackTo] = useState("");
   const [waitingOn, setWaitingOn] = useState("");
   const [note, setNote] = useState("");
   const [title, setTitle] = useState<string | null>(null);
   const [over, setOver] = useState(false);
 
+  /** Runs one change; the core's refusal is shown as is. True when it went through. */
   const run = async (what: () => Promise<unknown>, done: string) => {
     try {
       await what();
       setMsg({ ok: true, text: done });
       onChanged();
+      return true;
     } catch (e) {
       setMsg({ ok: false, text: String(e) });
+      return false;
     }
   };
-  const move = (status: string) => {
-    if (status === "blocked") {
-      setBlocking(true);
+  const stageRun = (what: () => Promise<unknown>, done: string) =>
+    once(async () => {
+      setBusy(true);
+      try {
+        return await run(what, done);
+      } finally {
+        setBusy(false);
+      }
+    });
+  // A stage form closes (and forgets its text) only once the core took the change.
+  const submit = (what: () => Promise<unknown>, done: string) =>
+    void stageRun(what, done).then((ok) => {
+      if (!ok) return;
+      setForm(null);
+      setGate("");
+      setWhy("");
+      setWaitingOn("");
+    });
+  const now = () => stamp(new Date());
+  const known = isStage(task.stage);
+  const pass = passLabel(task.stage);
+  const back = earlierStages(task.stage);
+  // Where Send back goes: the choice, while it's still an earlier stage; else one back.
+  const backTarget = back.some((s) => s.id === backTo) ? backTo : back[0]?.id ?? "";
+  const holder = heldByOther(task);
+  // Every pass says the stage it was clicked in, so the core refuses it if the task moved on.
+  const passFrom = (gateLine: string, done: string) => submit(() => api.passTask(task.queue, task.id, task.stage, gateLine, "", now()), done);
+  const passNow = () => {
+    if (task.stage === "building") {
+      open("gate");
       return;
     }
-    void run(() => api.moveTask(task.queue, task.id, status, "", stamp(new Date())), `Moved to ${status}.`);
+    passFrom("", task.stage === "your-check" ? "Accepted: it's done." : `Passed to ${nextStage(task.stage)?.label ?? "the next stage"}.`);
   };
   const files = async (list: FileList | File[] | null) => {
     if (!list || !list.length) return;
@@ -228,18 +280,84 @@ function Controls({ task, onChanged }: { task: Task; onChanged: () => void }) {
     >
       <div className="control-row">
         <label>
-          Status
-          {task.status === "doing" ? (
-            <select value="doing" onChange={(e) => move(e.target.value)} title="Claimed by an agent. Moving it releases the claim.">
-              <option value="doing" disabled>doing (claimed)</option>
-              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          ) : (
-            <select value={task.status} onChange={(e) => move(e.target.value)}>
-              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          )}
+          Stage
+          <select
+            value={known ? task.stage : ""}
+            disabled={busy}
+            title="Your override: put it in any stage. Leaving Building releases the claim."
+            onChange={(e) => {
+              const to = e.target.value;
+              void stageRun(() => api.setStage(task.queue, task.id, to, now()), `Put in ${stageLabel(to)}.`);
+            }}
+          >
+            {!known && <option value="" disabled>{task.stage || "no stage"} (unknown)</option>}
+            {STAGES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
         </label>
+        {pass && !holder && (
+          <button type="button" className="primary" disabled={task.blocked || busy} onClick={passNow}>{pass}</button>
+        )}
+        {back.length > 0 && (
+          <button type="button" disabled={busy} onClick={() => { setBackTo(""); open("back"); }}>Send back</button>
+        )}
+        {task.blocked ? (
+          <button type="button" disabled={busy} onClick={() => void stageRun(() => api.unblockTask(task.queue, task.id, now()), "Unblocked.")}>Unblock</button>
+        ) : (
+          <button type="button" disabled={busy} onClick={() => open("block")}>Block</button>
+        )}
+      </div>
+      {holder && (
+        <p className="meta small">
+          {holder} holds it in {stageLabel(task.stage)}, so only they can pass it on. To move it yourself, pick a stage above.
+        </p>
+      )}
+      {pass && !holder && task.blocked && <p className="meta small">Blocked on {task.waitingOn || "something it doesn't name"}. Unblock it to pass it on.</p>}
+      {form === "gate" && task.stage === "building" && (
+        <form
+          className="control-row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (gate.trim()) passFrom(gate, "Passed to Testing.");
+          }}
+        >
+          <input autoFocus value={gate} onChange={(e) => setGate(e.target.value)} placeholder="The gate's result line (gate full: green …)" aria-label="The gate's result line" maxLength={500} />
+          <button type="submit" disabled={busy || !gate.trim()}>Pass to Testing</button>
+          <button type="button" onClick={() => setForm(null)}>Cancel</button>
+        </form>
+      )}
+      {form === "back" && backTarget && (
+        <form
+          className="control-row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (why.trim()) submit(() => api.returnTask(task.queue, task.id, why, backTarget, now()), `Sent back to ${stageLabel(backTarget)}.`);
+          }}
+        >
+          <label>
+            Back to
+            <select value={backTarget} onChange={(e) => setBackTo(e.target.value)}>
+              {back.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
+          </label>
+          <input autoFocus value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Why: what's wrong or missing" aria-label="Why it goes back" maxLength={500} />
+          <button type="submit" disabled={busy || !why.trim()}>Send back</button>
+          <button type="button" onClick={() => setForm(null)}>Cancel</button>
+        </form>
+      )}
+      {form === "block" && !task.blocked && (
+        <form
+          className="control-row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (waitingOn.trim()) submit(() => api.blockTask(task.queue, task.id, waitingOn, now()), "Blocked. It keeps its stage.");
+          }}
+        >
+          <input autoFocus value={waitingOn} onChange={(e) => setWaitingOn(e.target.value)} placeholder="Waiting on: a task id (0012), owner, or capture, then a few words" aria-label="What it's waiting on" maxLength={200} />
+          <button type="submit" disabled={busy || !waitingOn.trim()}>Block</button>
+          <button type="button" onClick={() => setForm(null)}>Cancel</button>
+        </form>
+      )}
+      <div className="control-row">
         <label>
           Priority
           <select value={task.priority || "normal"} onChange={(e) => void run(() => api.setField(task.queue, task.id, "priority", e.target.value, stamp(new Date())), "Priority set.")}>
@@ -261,20 +379,6 @@ function Controls({ task, onChanged }: { task: Task; onChanged: () => void }) {
         <button type="button" onClick={() => void run(() => api.attachPick(task.queue, task.id, stamp(new Date())), "Files attached.")}>Attach…</button>
       </div>
       <TagEditor tags={task.tags} onChange={(t) => void run(() => api.setField(task.queue, task.id, "tags", t.join(","), stamp(new Date())), "Tags saved.")} />
-      {blocking && (
-        <form
-          className="control-row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setBlocking(false);
-            void run(() => api.moveTask(task.queue, task.id, "blocked", waitingOn, stamp(new Date())), "Blocked.");
-          }}
-        >
-          <input autoFocus value={waitingOn} onChange={(e) => setWaitingOn(e.target.value)} placeholder="Waiting on: a task id (0012), owner, or capture" maxLength={200} />
-          <button type="submit" disabled={!waitingOn.trim()}>Block</button>
-          <button type="button" onClick={() => setBlocking(false)}>Cancel</button>
-        </form>
-      )}
       {title !== null && (
         <form
           className="control-row"
@@ -308,7 +412,7 @@ function Controls({ task, onChanged }: { task: Task; onChanged: () => void }) {
 }
 
 /** Estimated agent time and tokens, saved when a field loses focus or on Enter. */
-function Estimate({ task, run }: { task: Task; run: (what: () => Promise<unknown>, done: string) => Promise<void> }) {
+function Estimate({ task, run }: { task: Task; run: (what: () => Promise<unknown>, done: string) => Promise<boolean> }) {
   const [time, setTime] = useState(task.estTime);
   const [tokens, setTokens] = useState(task.estTokens);
   useEffect(() => setTime(task.estTime), [task.estTime]);

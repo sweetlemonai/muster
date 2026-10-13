@@ -181,6 +181,109 @@ async fn move_task(
     .await
 }
 
+pub(crate) fn check_id(id: &str) -> Result<(), String> {
+    if id.len() == 4 && id.bytes().all(|b| b.is_ascii_digit()) {
+        Ok(())
+    } else {
+        Err("bad task id".into())
+    }
+}
+
+/// The owner hands a task to the next stage (the gate line and commit only where they apply).
+/// `from` is the stage the window showed: refused if the task has moved on since.
+#[tauri::command]
+async fn pass_task(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+    from: String,
+    gate: String,
+    commit: String,
+    stamp: String,
+) -> Result<String, String> {
+    check_id(&id)?;
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || {
+        let opts = ops::PassOpts {
+            gate,
+            commit,
+            from: Some(from),
+        };
+        ops::pass_task(&queue_root(&file, &queue)?, &id, "owner", &stamp, &opts)
+    })
+    .await
+}
+
+/// The owner sends a task back one stage, or to the earlier stage `to`, with the reason.
+#[tauri::command]
+async fn return_task(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+    why: String,
+    to: Option<String>,
+    stamp: String,
+) -> Result<String, String> {
+    check_id(&id)?;
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || {
+        ops::return_task(
+            &queue_root(&file, &queue)?,
+            &id,
+            &why,
+            to.as_deref(),
+            "owner",
+            &stamp,
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+async fn block_task(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+    on: String,
+    stamp: String,
+) -> Result<String, String> {
+    check_id(&id)?;
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || ops::block_task(&queue_root(&file, &queue)?, &id, &on, "owner", &stamp)).await
+}
+
+#[tauri::command]
+async fn unblock_task(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+    stamp: String,
+) -> Result<String, String> {
+    check_id(&id)?;
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || ops::unblock_task(&queue_root(&file, &queue)?, &id, "owner", &stamp)).await
+}
+
+/// The owner's override: put a task in any stage.
+#[tauri::command]
+async fn set_stage(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+    stage: String,
+    stamp: String,
+) -> Result<String, String> {
+    check_id(&id)?;
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || ops::set_stage(&queue_root(&file, &queue)?, &id, &stage, "owner", &stamp))
+        .await
+}
+
 #[tauri::command]
 async fn set_field(
     app: tauri::State<'_, AppState>,
@@ -454,6 +557,11 @@ pub fn run() {
             remove_project,
             create_task,
             move_task,
+            pass_task,
+            return_task,
+            block_task,
+            unblock_task,
+            set_stage,
             set_field,
             add_note,
             attach_data,
@@ -467,4 +575,26 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Muster");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_arguments_are_checked() {
+        assert!(check_id("0007").is_ok());
+        for bad in ["7", "00007", "../x", "abcd", "٠١٢٣", ""] {
+            assert!(check_id(bad).is_err(), "{bad:?}");
+        }
+        assert!(check_stamp("2026-10-12 14:05").is_ok());
+        for bad in [
+            "2026-10-12",
+            "2026-10-12T14:05",
+            "2026-10-12 14:5x",
+            "２026-10-12 14:05",
+        ] {
+            assert!(check_stamp(bad).is_err(), "{bad:?}");
+        }
+    }
 }

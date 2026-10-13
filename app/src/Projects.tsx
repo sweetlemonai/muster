@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
+import { queueTotal } from "./lib";
 import type { Project, QueueInfo } from "./types";
 
 export default function Projects({ queues, onChanged }: { queues: QueueInfo[]; onChanged: () => void }) {
@@ -31,7 +32,7 @@ export default function Projects({ queues, onChanged }: { queues: QueueInfo[]; o
   };
   const total = (p: Project) => {
     const q = queues.find((x) => x.path === p.path);
-    return q ? Object.values(q.counts).reduce((a, b) => a + b, 0) : null;
+    return q ? queueTotal(q.counts) : null;
   };
 
   return (

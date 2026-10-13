@@ -1,22 +1,93 @@
 import type { Activity, Task } from "./types";
 
-export const COLUMNS = [
-  { status: "inbox", label: "Inbox" },
-  { status: "todo", label: "To do" },
-  { status: "doing", label: "Doing" },
-  { status: "blocked", label: "Blocked" },
-  { status: "done", label: "Done" },
+/** The stages a task moves through, in order, with who works each by default. Mirrors the core's
+ *  STAGES, stage_label and stage_role (queue.rs); its tests pin the same order. The core leaves
+ *  Ready's role empty because nobody holds it; here it says so. */
+export const STAGES = [
+  { id: "backlog", label: "Backlog", role: "anyone" },
+  { id: "shaping", label: "Shaping", role: "product + tech + UI agents" },
+  { id: "ready", label: "Ready", role: "claimable" },
+  { id: "building", label: "Building", role: "code agent" },
+  { id: "testing", label: "Testing", role: "QA agent" },
+  { id: "your-check", label: "Your check", role: "owner" },
+  { id: "done", label: "Done", role: "" },
 ] as const;
+export type Stage = (typeof STAGES)[number];
+export type StageId = Stage["id"];
+
+const stageIndex = (stage: string) => STAGES.findIndex((s) => s.id === stage);
+
+/** The task's stage, or Backlog for a value this window doesn't know. */
+export function stageOf(t: Pick<Task, "stage">): StageId {
+  return STAGES[Math.max(0, stageIndex(t.stage))].id;
+}
+export const isStage = (stage: string) => stageIndex(stage) >= 0;
+/** Position in STAGES; an unknown stage ranks as Backlog, where the board shows it. */
+export const stageRank = (stage: string) => Math.max(0, stageIndex(stage));
+/** "Your check"; an unknown stage reads as Backlog, like the board shows it. */
+export const stageLabel = (stage: string) => STAGES[stageRank(stage)].label;
+
+/** The stage `pass` leads to, or null from Done (or an unknown stage). */
+export function nextStage(stage: string): Stage | null {
+  const i = stageIndex(stage);
+  return i < 0 ? null : STAGES[i + 1] ?? null;
+}
+/** The pass button's words: "Pass to Testing", and "Accept" in Your check. */
+export function passLabel(stage: string): string | null {
+  const next = nextStage(stage);
+  if (!next) return null;
+  return stage === "your-check" ? "Accept" : `Pass to ${next.label}`;
+}
+/** Where `return` can send a task: every earlier stage, the nearest (the default) first. */
+export function earlierStages(stage: string): Stage[] {
+  return STAGES.slice(0, Math.max(0, stageIndex(stage))).reverse();
+}
+export const inProgress = (t: Pick<Task, "stage">) => t.stage === "building" || t.stage === "testing";
+
+/** Who holds a task, without the session id: only Ready and Building can be held, so a
+ *  leftover `claimed-by` on any other stage shows nothing. */
+export function holder(t: Pick<Task, "stage" | "claimedBy">): string {
+  if (t.stage !== "ready" && t.stage !== "building") return "";
+  const who = t.claimedBy.trim();
+  return who ? claimant(who) : "";
+}
+
+/** Who else holds a task in Ready or Building; "" when nobody or the owner does. The core
+ *  refuses the owner's pass while someone else holds it. */
+export function heldByOther(t: Pick<Task, "stage" | "claimedBy">): string {
+  return t.claimedBy.trim() === "owner" ? "" : holder(t);
+}
+
+/** Runs one action at a time: a call made while one is in flight is dropped (false), so a
+ *  double click can't pass a task twice. */
+export function oneAtATime() {
+  let busy = false;
+  return async (action: () => Promise<boolean>): Promise<boolean> => {
+    if (busy) return false;
+    busy = true;
+    try {
+      return await action();
+    } finally {
+      busy = false;
+    }
+  };
+}
+
+/** A queue's task count: per-stage counts only, since "blocked" counts tasks already in a stage. */
+export function queueTotal(counts: Record<string, number>): number {
+  return Object.entries(counts).reduce((n, [k, v]) => (k === "blocked" ? n : n + v), 0);
+}
 
 const PRIORITY: Record<string, number> = { high: 0, P0: 0, P1: 0, normal: 1, P2: 1, low: 2, P3: 2 };
 
-/** Tasks per column. Waiting-for-owner first, then priority, then id. Unknown statuses go to Inbox. */
+/** Tasks per stage. Blocked tasks stay in their stage; an unknown stage goes to Backlog.
+ *  Waiting-for-owner first, then priority, then id; Done newest first. */
 export function columns(tasks: Task[]): Record<string, Task[]> {
-  const out: Record<string, Task[]> = Object.fromEntries(COLUMNS.map((c) => [c.status, [] as Task[]]));
-  for (const t of tasks) (out[t.status] ?? out.inbox).push(t);
-  for (const [status, list] of Object.entries(out)) {
+  const out: Record<string, Task[]> = Object.fromEntries(STAGES.map((s) => [s.id, [] as Task[]]));
+  for (const t of tasks) out[stageOf(t)].push(t);
+  for (const [stage, list] of Object.entries(out)) {
     list.sort((a, b) =>
-      status === "done"
+      stage === "done"
         ? b.modified - a.modified
         : Number(b.waitingForOwner) - Number(a.waitingForOwner) ||
           (PRIORITY[a.priority] ?? 1) - (PRIORITY[b.priority] ?? 1) ||
@@ -54,7 +125,7 @@ export function feed(activity: Activity[], tasks: Task[], limit = 60): Activity[
   const touched: Activity[] = tasks.map((t) => ({
     queue: t.queue,
     at: t.modified,
-    what: `${t.id} ${t.title} · ${t.status}${t.logTail.length ? ` · ${t.logTail[t.logTail.length - 1]}` : ""}`,
+    what: `${t.id} ${t.title} · ${stageLabel(t.stage)}${t.blocked ? `, blocked on ${t.waitingOn || "something"}` : ""}${t.logTail.length ? ` · ${t.logTail[t.logTail.length - 1]}` : ""}`,
     source: "file",
   }));
   return [...activity, ...touched].sort((a, b) => b.at - a.at).slice(0, limit);
@@ -101,8 +172,8 @@ export function fmtTokens(n: number): string {
   return `${n} tokens`;
 }
 /** Totals of what's shown: "≈ 14 h · 3.2M tokens (9 of 24 estimated)". */
-export function estimateTotal(tasks: { estMinutes: number; estTokenCount: number; status: string }[]): string {
-  const open = tasks.filter((t) => t.status !== "done");
+export function estimateTotal(tasks: { estMinutes: number; estTokenCount: number; stage: string }[]): string {
+  const open = tasks.filter((t) => t.stage !== "done");
   const est = open.filter((t) => t.estMinutes || t.estTokenCount);
   if (!est.length) return "";
   const m = est.reduce((a, t) => a + t.estMinutes, 0), k = est.reduce((a, t) => a + t.estTokenCount, 0);

@@ -17,6 +17,10 @@ if not _root:
     sys.exit("muster: set MUSTER_ROOT to the task queue folder")
 ROOT = Path(_root).resolve()
 FOLDERS = ["inbox", "todo", "doing", "blocked", "done"]
+# The stages (decision 0003). `stage:` is the truth; an old file's status says it otherwise.
+# The rules live in the app's core (ops.rs); this only reads them.
+STAGES = ["backlog", "shaping", "ready", "building", "testing", "your-check", "done"]
+LEGACY_STAGE = {"inbox": "backlog", "todo": "ready", "doing": "building", "blocked": "ready", "done": "done"}
 STALE_HOURS = 12
 
 
@@ -31,6 +35,20 @@ def front_matter(text):
             v = v.split("  #")[0].strip()
             fields[k.strip()] = v
     return fields, text[m.end():]
+
+
+def stage_of(fields: dict, folder: str) -> str:
+    stage = fields.get("stage", "").lower()
+    if stage in STAGES:
+        return stage
+    return LEGACY_STAGE.get(fields.get("status") or folder, "backlog")
+
+
+def mirror_status(stage: str, blocked: bool) -> str:
+    """The old status a stage and the blocked flag mean (ops.rs/queue.rs mirror_status)."""
+    if blocked:
+        return "blocked"
+    return {"backlog": "inbox", "shaping": "todo", "ready": "todo", "done": "done"}.get(stage, "doing")
 
 
 def heartbeat_age(value, now):
@@ -62,6 +80,7 @@ def main():
                 "type": fields.get("type", ""),
                 "priority": fields.get("priority", ""),
                 "status": fields.get("status", ""),
+                "stage": stage_of(fields, folder),
                 "folder": folder,
                 "path": rel,
                 "claimed_by": fields.get("claimed-by", ""),
@@ -84,13 +103,21 @@ def main():
             tasks.append(t)
             if t["status"] != folder:
                 problems.append(f"{rel}: status '{t['status']}' but it's in {folder}/")
+            raw_stage = fields.get("stage", "").lower()
+            blocked = bool(t["waiting_on"]) or t["status"] == "blocked"
+            if raw_stage in STAGES and mirror_status(raw_stage, blocked) != t["status"]:
+                problems.append(f"{rel}: says stage {raw_stage} but status {t['status']} (moved by hand? use `muster stage`)")
+            elif raw_stage and raw_stage not in STAGES:
+                problems.append(f"{rel}: stage '{raw_stage[:40]}' isn't a stage (read as {t['stage']})")
             if not re.fullmatch(r"\d{4}", t["id"]) or not path.name.startswith(t["id"] + "-"):
                 problems.append(f"{rel}: id '{t['id']}' doesn't match the file name")
-            if folder == "doing" and not t["claimed_by"]:
+            # Only Building is held by someone; Testing and Your check also sit in doing/.
+            building = folder == "doing" and t["stage"] == "building"
+            if building and not t["claimed_by"]:
                 problems.append(f"{rel}: in doing/ with no claimed-by")
             if folder == "blocked" and not t["waiting_on"]:
                 problems.append(f"{rel}: blocked with no waiting_on")
-            if folder == "doing" and t["heartbeat"]:
+            if building and t["heartbeat"]:
                 age = heartbeat_age(t["heartbeat"], now)
                 if age is not None and age > STALE_HOURS:
                     problems.append(f"{rel}: heartbeat {age:.0f} h old (stale after {STALE_HOURS} h)")
@@ -113,7 +140,10 @@ def main():
             "next_id": f"{max((int(i) for i in known if i.isdigit()), default=0) + 1:04d}",
             "counts": {f: sum(t["folder"] == f for t in tasks) for f in FOLDERS},
             "inbox": inbox,
-            "waiting_for_owner": [t["id"] for t in tasks if t["escalated_to_owner"] or t["waiting_on"].startswith("owner")],
+            "waiting_for_owner": [
+                t["id"] for t in tasks
+                if t["escalated_to_owner"] or t["stage"] == "your-check" or t["waiting_on"].startswith("owner")
+            ],
             "tasks": tasks,
             "problems": problems,
         }
