@@ -337,12 +337,13 @@ export function fmtTokens(n: number): string {
   if (n >= 1e3) return `${Math.round(n / 1e3)}k tokens`;
   return `${n} tokens`;
 }
-/** Totals of what's shown: "≈ 14 h · 3.2M tokens (9 of 24 estimated)". */
-export function estimateTotal(tasks: { estMinutes: number; estTokenCount: number; stage: string }[]): string {
+/** Totals of what's shown: "≈ 14 h · 3.2M tokens (9 of 24 estimated)". Time is agent time plus
+ *  test time. */
+export function estimateTotal(tasks: { estMinutes: number; estTestMinutes: number; estTokenCount: number; stage: string }[]): string {
   const open = tasks.filter((t) => t.stage !== "done");
-  const est = open.filter((t) => t.estMinutes || t.estTokenCount);
+  const est = open.filter((t) => t.estMinutes || t.estTestMinutes || t.estTokenCount);
   if (!est.length) return "";
-  const m = est.reduce((a, t) => a + t.estMinutes, 0), k = est.reduce((a, t) => a + t.estTokenCount, 0);
+  const m = est.reduce((a, t) => a + t.estMinutes + t.estTestMinutes, 0), k = est.reduce((a, t) => a + t.estTokenCount, 0);
   const parts = [fmtMinutes(m), fmtTokens(k)].filter(Boolean).join(" · ");
   return `≈ ${parts} left${est.length < open.length ? ` (${est.length} of ${open.length} open tasks estimated)` : ""}`;
 }

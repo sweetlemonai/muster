@@ -53,9 +53,12 @@ export default function StageContent({ task, nowSecs, body, childTasks, busy, on
 /** Building and Testing: the stage history, time spent against the estimate, and sessions (0025). */
 function WorkSoFar({ task, nowSecs }: { task: Task; nowSecs: number }) {
   const spent = timeInWork(task.stageHistory, task.stage, stampMinutes(stamp(new Date(nowSecs * 1000))));
-  const est = task.estMinutes;
-  // Time spent is wall-clock (24-hour days); the estimate is agent time (8-hour days). Both are
-  // named for what they are, and nothing pretends to compare them.
+  // Time spent is wall-clock (24-hour days); the estimates are agent time and test time (8-hour
+  // days). Each is named for what it is, and nothing pretends to compare them.
+  const est = [
+    task.estMinutes > 0 && `${fmtMinutes(task.estMinutes)} of agent time`,
+    task.estTestMinutes > 0 && `${fmtMinutes(task.estTestMinutes)} of test time`,
+  ].filter(Boolean).join(" and ");
   return (
     <div className="stage-block" data-part="work">
       <span className="lbl">Work so far</span>
@@ -63,7 +66,7 @@ function WorkSoFar({ task, nowSecs }: { task: Task; nowSecs: number }) {
         <span className="lbl">Time</span>
         <span className="small">
           {spent === null ? "not timed: no move into Building in the log" : `${fmtWall(spent)} in Building and Testing`}
-          {est > 0 ? ` · estimate ${fmtMinutes(est)} of agent time` : " · no time estimate"}
+          {est ? ` · estimate ${est}` : " · no time estimate"}
         </span>
       </p>
       {task.estTokenCount > 0 && (
@@ -115,8 +118,9 @@ function Criteria({ body }: { body: string | null }) {
   );
 }
 
+/** The estimate: agent time plus test time (as the board's totals count it), and tokens. */
 function Estimates({ task }: { task: Task }) {
-  const parts = [fmtMinutes(task.estMinutes), fmtTokens(task.estTokenCount)].filter(Boolean).join(" · ");
+  const parts = [fmtMinutes(task.estMinutes + task.estTestMinutes), fmtTokens(task.estTokenCount)].filter(Boolean).join(" · ");
   return (
     <div className="stage-block" data-part="estimates">
       <span className="lbl">Estimate</span>

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { estimateText } from "./fields";
 import { ago, holder, key, stageLabel, stageOf } from "./lib";
 import type { Task } from "./types";
 import {
@@ -75,7 +76,7 @@ export function TableView({ tasks, now, multi, openKey, onOpen, groups, by: grou
  *  it and the estimate left of its open tasks. */
 function Row({ t, now, multi, active, onOpen }: { t: Task; now: number; multi: boolean; active: boolean; onOpen: (t: Task) => void }) {
   const parentLevel = !isWork(t);
-  const own = [t.estTime, t.estTokens].filter(Boolean).join(" · ");
+  const own = estimateText(t);
   return (
     <tr className={`${active ? "active " : ""}s-${parentLevel ? shownStageClass(t) : stageOf(t)}${parentLevel ? " level-item" : ""}`} onClick={() => onOpen(t)}>
       {multi && <td className="q">{t.queue}</td>}

@@ -10,7 +10,7 @@ import { TimelineChart, TimelineControls } from "./Views";
 const t = (over: Partial<Task>): Task => ({
   queue: "q", id: "0001", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [], folder: "todo", path: "", claimedBy: "", heldBy: "", stageSince: "", checkins: [],
   heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "2026-10-14", capturedAt: "", blockHistory: [], questions: [], openQuestions: 0, ownerCriteria: [], waitingForOwner: false,
-  tags: [], estTime: "", estTokens: "", estMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", ...over,
+  tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [], attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", ...over,
 });
 const step = (at: string, from: string, to: string) => ({ at, who: "agent", from, to });
 const NOW = stampMinutes("2026-10-14 17:20")!;

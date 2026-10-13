@@ -26,7 +26,7 @@
 > Ready, an unblock or a return to you alike, so pass, return or block the first. It's checked under
 > the queue's lock (two claims at once: one wins), and a claim says which queue it was made in. A
 > claim has a lease: `heartbeat:` is stamped by the tool on the claim, on `muster heartbeat <id>`
-> (the holder, on long work), on the holder's note, ask, pass, return and block, and when the task
+> (the holder, on long work), on the holder's note, comment, ask, pass, return and block, and when the task
 > is unblocked (waiting isn't going quiet). `muster check` warns about the same quiet claims. `muster reclaim [--after 12h]` puts every
 > Building claim quiet for longer than the lease (no heartbeat, or without one no change to the
 > file) back in Ready, logged as `stage building → ready (reclaimed from <holder> (no heartbeat for
@@ -88,6 +88,31 @@
 > quiet for longer than 30 minutes says "no check-in for 45 min". A note, title or reason that would
 > read as a check-in is refused, like one that would read as a stage change.
 
+> **Task fields: type, estimates, links, comments (Muster 0017, 2026-10-12).** `type:` is one of
+> code, bug, chore, tech-debt, spike, design, docs, research (`muster new --type`, `muster set <id>
+> type`). An old `type: task` reads as code, and an old `type: idea` stays as it is, but `new` and
+> `set` refuse idea: an idea goes in the backlog (`muster add`). Estimates are `est-time:` (agent
+> time), `est-test-time:` (the QA agent plus the owner's check, the same format: 30m, 2h, 1.5d) and
+> `est-tokens:`; `muster new --time --test-time --tokens`, `muster set <id> time|test-time|tokens`.
+> **Links** are one front-matter line, `links: The spec <https://…>; <https://…>`: each entry an
+> optional title and the address in `<…>`, entries separated by `;`. Only `muster link <id>
+> <https-url> ["title"]` and `muster link <id> --remove <n|url>` write it: https only, at most 2,000
+> characters of printable ASCII (percent-encode the rest), no user name or password and no
+> percent-encoding in the host, a title without `<`, `>` or `;`, at most 20 links. `muster check`
+> reports a link that isn't a plain https one, and
+> the app opens only those. **Comments** go in a `## Comments` section that only the tool writes,
+> right above the Log (the last `## Log`), made there by the first comment: `muster comment <id>
+> "<text>"` (or `--body -`) adds `- **<who>, <YYYY-MM-DD HH:MM>:** <text>`, with the text cleaned and
+> indented like an answer (rule 3 below: control characters out, 4,000 characters, every line after
+> the first indented by two spaces), a line that would read as a stage change refused, and logged as
+> `commented`; the holder's comment keeps their claim alive, like a note. Anyone may comment on any
+> task at any stage, one someone else holds included:
+> comments aren't the write-up, so `muster edit` and the app's Edit leave them out and keep them as
+> they are, and a description or write-up can't have a `## Comments` line of its own. A new
+> `## Questions` goes above the Comments. Decision 0003 keeps new comments in the live state and
+> writes them into the file at each stage change; until task 0005 builds that state, they're written
+> to the file straight away.
+
 Ideas, bugs and tasks from the owner, written up by the capture session and picked up by coding
 sessions. This queue is also a test bed for chit (`~/playground/chit`, `SPEC.md`). Its rules are
 taken from chit one at a time, tried here, and recorded in `SYSTEM.md` (what's adopted) and
@@ -141,7 +166,7 @@ are the source of truth, so nobody fights over one shared file.
 ```markdown
 ---
 id: 0012
-type: bug | idea | task
+type: code | bug | chore | tech-debt | spike | design | docs | research
 priority: high | normal | low
 status: todo | doing | blocked | done
 captured: 2026-10-11

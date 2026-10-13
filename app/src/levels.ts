@@ -101,7 +101,8 @@ export function progressText(p: Progress | null): string {
   return p.total ? `${p.done} of ${p.total} done` : "no tasks yet";
 }
 
-/** The estimate of its open tasks: "≈ 2 h · 200k tokens left", or "" without one. */
+/** The estimate of its open tasks: "≈ 2 h · 200k tokens left", or "" without one. The time is
+ *  agent time plus test time (the core sums both into `estMinutes`, as `estimateTotal` does). */
 export function estimateLeft(p: Progress | null): string {
   if (!p) return "";
   const parts = [fmtMinutes(p.estMinutes), fmtTokens(p.estTokenCount)].filter(Boolean).join(" · ");

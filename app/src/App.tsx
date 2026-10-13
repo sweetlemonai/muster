@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { api } from "./api";
 import { mayLeave } from "./writeUp";
 import { ago, columns, estimateTotal, feed, inProgress, key, STAGES } from "./lib";
+import { estimateText } from "./fields";
 import type { State, Task } from "./types";
 import { backlogColumn, backlogNotes, NoteCard, noteKey, projectCount, QuickAdd } from "./Backlog";
 import Projects from "./Projects";
@@ -457,7 +458,7 @@ function Card({ t, now, multi, parent, onOpen, active }: { t: Task; now: number;
         {t.waitingForOwner && <span className="badge warn">needs you</span>}
         {t.openQuestions > 0 && <span className="badge">{t.openQuestions} open Q</span>}
         {t.attachments.length > 0 && <span className="badge">{t.attachments.length} file{t.attachments.length === 1 ? "" : "s"}</span>}
-        {(t.estTime || t.estTokens) && <span className="badge est" title="Estimated agent time and tokens">~{[t.estTime, t.estTokens].filter(Boolean).join(" · ")}</span>}
+        {estimateText(t) && <span className="badge est" title="Estimated agent time, test time and tokens">{estimateText(t)}</span>}
         <span className="age">{ago(now, t.modified)}</span>
       </span>
     </button>

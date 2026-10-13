@@ -9,7 +9,7 @@ import type { Task } from "./types";
 const t = (over: Partial<Task>): Task => ({
   queue: "q", id: "0001", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [], folder: "todo", path: "", claimedBy: "", heldBy: "", stageSince: "", checkins: [],
   heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "2026-10-11", capturedAt: "", blockHistory: [], questions: [], openQuestions: 0, ownerCriteria: [], waitingForOwner: false,
-  tags: [], estTime: "", estTokens: "", estMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", attachments: [], logTail: [], modified: 0,
+  tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [], attachments: [], logTail: [], modified: 0,
   level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", ...over,
 });
 
@@ -24,6 +24,13 @@ describe("sortTasks", () => {
     // "On it / waiting on" sorts by what the cell shows: a Done task's old claim counts as nobody.
     const who = [t({ id: "a", stage: "done", claimedBy: "aaa" }), t({ id: "b", stage: "building", claimedBy: "zed" }), t({ id: "c", blocked: true, waitingOn: "0012" })];
     expect(sortTasks(who, "who", false).map((x) => x.id)).toEqual(["a", "c", "b"]);
+  });
+  it("sorts by estimate as agent time plus test time, then tokens", () => {
+    const a = t({ id: "a", estMinutes: 60, estTestMinutes: 0 });
+    const b = t({ id: "b", estMinutes: 30, estTestMinutes: 60 });
+    const c = t({ id: "c", estMinutes: 60, estTokenCount: 500_000 });
+    expect(sortTasks([b, c, a], "estimate", false).map((x) => x.id)).toEqual(["a", "c", "b"]);
+    expect(sortTasks([a, b, c], "estimate", true).map((x) => x.id)).toEqual(["b", "c", "a"]);
   });
 });
 

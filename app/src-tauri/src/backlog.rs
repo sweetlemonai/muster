@@ -638,7 +638,7 @@ pub fn brief(
         text,
         roles: ROLES.to_vec(),
         docs,
-        command: format!("muster file --queue {q} {n} \"<title>\" --type task|bug|idea --priority high|normal|low --tags <a,b> --time <2h> --tokens <500k> --body -"),
+        command: format!("muster file --queue {q} {n} \"<title>\" --type code|bug|chore|tech-debt|spike|design|docs|research --priority high|normal|low --tags <a,b> --time <2h> --test-time <30m> --tokens <500k> --body -"),
         template: TEMPLATE.to_string(),
         then: format!("muster pass <id> --from shaping --queue {q}"),
         drop: format!("muster drop --queue {q} {n} \"<why>\""),
@@ -1078,6 +1078,7 @@ mod tests {
             body: body.into(),
             tags: vec!["code".into()],
             est_time: "2h".into(),
+            est_test_time: "30m".into(),
             est_tokens: "400k".into(),
             ..Default::default()
         }
@@ -1105,7 +1106,7 @@ mod tests {
             }
         );
         let text = fs::read_to_string(p.join(&f.path)).unwrap();
-        assert!(text.contains("\ntype: bug\npriority: high\ntags: code\nest-time: 2h\nest-tokens: 400k\nstage: shaping\nstatus: todo\n"), "{text}");
+        assert!(text.contains("\ntype: bug\npriority: high\ntags: code\nest-time: 2h\nest-test-time: 30m\nest-tokens: 400k\nstage: shaping\nstatus: todo\n"), "{text}");
         assert!(text.contains(&format!("# Board flickers on resize\n\n**From the backlog:** “Board flickers on resize” (the note is attached as {note})\n\n**Details:** the board.\n")), "{text}");
         assert!(
             text.ends_with(&format!(
@@ -1409,7 +1410,7 @@ mod tests {
             "\"no UI\"",
             "  /p/main/CLAUDE.md\n  /p/main/docs/DESIGN.md\n",
             "  0002 Building: Board columns flicker on resize (shares board, columns, resize)",
-            "muster file --queue '/p/tasks' 'it'\\''s a note.md' \"<title>\" --type task|bug|idea --priority high|normal|low",
+            "muster file --queue '/p/tasks' 'it'\\''s a note.md' \"<title>\" --type code|bug|chore|tech-debt|spike|design|docs|research --priority high|normal|low",
             "--body -",
             "## Acceptance criteria\n- [ ] AC1: ",
             "— verify: command (",

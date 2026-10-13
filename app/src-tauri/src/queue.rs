@@ -402,14 +402,20 @@ pub struct Task {
     pub owner_criteria: Vec<Criterion>,
     pub waiting_for_owner: bool,
     pub tags: Vec<String>,
-    /// Estimates ("2h", "400k"), and the same as numbers for totals.
+    /// Estimates ("2h", "400k"), and the same as numbers for totals. Agent time is `est_time`;
+    /// `est_test_time` is the QA agent's and the owner's check (task 0017).
     pub est_time: String,
+    pub est_test_time: String,
     pub est_tokens: String,
     pub est_minutes: u64,
+    pub est_test_minutes: u64,
     pub est_token_count: u64,
     /// From the log: the day work started (first "claimed" line) and the day it was done.
     pub claimed_on: String,
     pub done_on: String,
+    /// External links (`links:`), and the comment thread (`## Comments`), oldest first (0017).
+    pub links: Vec<crate::fields::Link>,
+    pub comments: Vec<crate::fields::Comment>,
     pub attachments: Vec<String>,
     pub log_tail: Vec<String>,
     pub modified: u64,
@@ -435,7 +441,8 @@ pub struct Task {
 }
 
 /// A goal's or feature's tasks (its descendants of level task): how many are done, of how many,
-/// and the estimates of the ones still open, summed.
+/// and the estimates of the ones still open, summed (`est_minutes` is agent time plus test time,
+/// as the board's totals count it).
 #[derive(Serialize, Clone, Debug, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Progress {
@@ -616,6 +623,47 @@ pub(crate) fn log_span(text: &str) -> Option<(usize, usize)> {
         end += line.len();
     }
     Some((start, end))
+}
+
+/// Where the last `## Log` heading line starts (the Log `log_span` reads), as a byte offset.
+pub(crate) fn log_heading(text: &str) -> Option<usize> {
+    let mut at = None;
+    let mut pos = 0;
+    for line in text.split_inclusive('\n') {
+        if line.trim_end() == "## Log" {
+            at = Some(pos);
+        }
+        pos += line.len();
+    }
+    at
+}
+
+/// The tool's `## Comments` section (task 0017): the last `## Comments` heading above the last
+/// `## Log` (anywhere, in a task without a Log), as (heading start, content start, content end)
+/// byte offsets; the content runs to the next `## ` line. Comments are written only by the tool,
+/// with continuation lines indented, so none of their lines can start a heading.
+pub(crate) fn comments_span(text: &str) -> Option<(usize, usize, usize)> {
+    let log = log_heading(text).unwrap_or(text.len());
+    let mut head = None;
+    let mut pos = 0;
+    for line in text.split_inclusive('\n') {
+        if pos >= log {
+            break;
+        }
+        if line.trim_end() == "## Comments" {
+            head = Some((pos, pos + line.len()));
+        }
+        pos += line.len();
+    }
+    let (at, start) = head?;
+    let mut end = start;
+    for line in text[start..].split_inclusive('\n') {
+        if line.starts_with("## ") {
+            break;
+        }
+        end += line.len();
+    }
+    Some((at, start, end))
 }
 
 /// The task's Log section (the last `## Log`; see `log_span`).
@@ -816,6 +864,7 @@ pub fn parse_task(
     let stage_set_by_owner = stage_lines(body)
         .last()
         .is_some_and(|(_, detail)| *detail == "set");
+    let est_test_time = crate::ops::clean_time(&get("est-test-time")).unwrap_or_default();
     Some(Task {
         level,
         bad_level,
@@ -828,7 +877,7 @@ pub fn parse_task(
         queue: queue.to_string(),
         id,
         title,
-        kind: get("type"),
+        kind: crate::ops::read_kind(&get("type")),
         priority: get("priority"),
         status,
         stage,
@@ -863,12 +912,16 @@ pub fn parse_task(
             &crate::ops::clean_tokens(&get("est-tokens")).unwrap_or_default(),
         ),
         est_time: crate::ops::clean_time(&get("est-time")).unwrap_or_default(),
+        est_test_minutes: crate::ops::time_minutes(&est_test_time),
+        est_test_time,
         est_tokens: crate::ops::clean_tokens(&get("est-tokens")).unwrap_or_default(),
         tags: get("tags")
             .split(',')
             .map(|t| t.trim().to_string())
             .filter(|t| !t.is_empty())
             .collect(),
+        links: crate::fields::parse_links(&get("links")),
+        comments: crate::fields::comments(body),
         attachments,
         log_tail,
         modified,
@@ -1165,6 +1218,9 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str) -> Vec<Strin
                 t.path
             ));
         }
+        for p in t.links.iter().filter_map(crate::fields::link_problem) {
+            out.push(format!("{queue}: {} has {p}", t.path));
+        }
     }
     for (id, paths) in &ids {
         if paths.len() > 1 {
@@ -1258,7 +1314,10 @@ pub fn rollup(tasks: &mut [Task]) {
             if t.stage == "done" {
                 progress.done += 1;
             } else {
-                progress.est_minutes = progress.est_minutes.saturating_add(t.est_minutes);
+                progress.est_minutes = progress
+                    .est_minutes
+                    .saturating_add(t.est_minutes)
+                    .saturating_add(t.est_test_minutes);
                 progress.est_token_count =
                     progress.est_token_count.saturating_add(t.est_token_count);
             }
@@ -1569,12 +1628,12 @@ fn answerer(who: &str) -> Result<String, String> {
 /// Contract rule 3, as text goes into a task: every line after the first is indented by two
 /// spaces (a Markdown list continuation), so no line of a question or an answer can start a
 /// heading or a new item and end the item it belongs to.
-fn indent_text(text: &str) -> String {
+pub(crate) fn indent_text(text: &str) -> String {
     text.replace('\n', "\n  ")
 }
 
 /// The text as it was written: the two-space continuation indent of `indent_text` taken off.
-fn unindent_text(text: &str) -> String {
+pub(crate) fn unindent_text(text: &str) -> String {
     text.replace("\n  ", "\n")
 }
 
@@ -1584,7 +1643,7 @@ pub fn clean_text(text: &str) -> Result<String, String> {
 }
 
 /// `clean_text`, with `what` naming the text in the refusal ("the question").
-fn clean_text_as(text: &str, what: &str) -> Result<String, String> {
+pub(crate) fn clean_text_as(text: &str, what: &str) -> Result<String, String> {
     let t: String = text
         .chars()
         .filter(|&c| c == '\n' || !(c < '\u{20}' || c == '\u{7f}'))
@@ -1639,21 +1698,17 @@ fn questions_span(body: &str) -> Option<(usize, usize)> {
     start.map(|s| (s, body.len()))
 }
 
-/// The task text with a `## Questions` section: as is, or with an empty one added before the Log
-/// (the last `## Log`, the one `append_log` writes to), or at the end without one.
+/// The task text with a `## Questions` section: as is, or with an empty one added before the
+/// tool's Comments (`comments_span`), else before the Log (the last `## Log`, the one
+/// `append_log` writes to), or at the end without either.
 fn with_questions(text: &str) -> String {
     if questions_span(text).is_some() {
         return text.to_string();
     }
-    let mut log_head = None;
-    let mut pos = 0;
-    for line in text.split_inclusive('\n') {
-        if line.trim_end() == "## Log" {
-            log_head = Some(pos);
-        }
-        pos += line.len();
-    }
-    match log_head {
+    let tail = comments_span(text)
+        .map(|(at, _, _)| at)
+        .or_else(|| log_heading(text));
+    match tail {
         Some(at) => format!("{}## Questions\n\n{}", &text[..at], &text[at..]),
         None => format!("{}\n\n## Questions\n\n", text.trim_end_matches('\n')),
     }
@@ -2982,6 +3037,38 @@ mod tests {
             serde_json::json!({"done": 1, "total": 3, "estMinutes": 150, "estTokenCount": 200_000})
         );
         assert_eq!(v["children"], serde_json::json!(["0002", "0003", "0006"]));
+    }
+
+    #[test]
+    fn a_roll_up_counts_test_time_with_agent_time() {
+        let d = levels_queue(&[
+            ("0001", &format!("level: feature\n{READY}")),
+            (
+                "0002",
+                &format!("parent: 0001\nest-time: 2h\nest-test-time: 30m\n{READY}"),
+            ),
+            (
+                "0003",
+                &format!("parent: 0001\nest-test-time: 15m\n{READY}"),
+            ),
+            (
+                "0004",
+                &format!("parent: 0001\nest-time: 1h\nest-test-time: 1h\n{DONE}"),
+            ),
+        ]);
+        let s = levels_state(&d);
+        assert!(s.problems.is_empty(), "{:?}", s.problems);
+        let p = s.tasks.iter().find(|t| t.id == "0001").unwrap();
+        // Open tasks only: 2h + 30m + 15m; the done task's time isn't left.
+        assert_eq!(
+            p.progress.clone().unwrap(),
+            Progress {
+                done: 1,
+                total: 3,
+                est_minutes: 165,
+                est_token_count: 0
+            }
+        );
     }
 
     #[test]

@@ -164,6 +164,7 @@ fn tasks_made_by_the_app_pass_the_python_check() {
         body: "Steps.".into(),
         tags: vec!["spike".into()],
         est_time: "2h".into(),
+        est_test_time: "30m".into(),
         est_tokens: "400k".into(),
         ..Default::default()
     };
@@ -699,6 +700,100 @@ fn edit_takes_the_new_write_up_from_stdin() {
         code == 1 && out.contains("wt-a holds it; add a note instead"),
         "{out}"
     );
+}
+
+#[test]
+fn comments_and_links_from_muster_pass_the_python_check() {
+    let d = queue();
+    new_task(d.path(), "Talked about", "The text.");
+    let file = d.path().join("todo/0001-talked-about.md");
+    // A comment from stdin, lines and all; one as words; a link with a title.
+    let text = "Tried it on the Mac:\r\n- it works\r\n\r\n## Log\r\nstill just text\r\n";
+    let (code, out) = muster_in(
+        d.path(),
+        &[],
+        &["comment", "0001", "--as", "owner", "--body", "-"],
+        text,
+    );
+    assert_eq!((code, out.as_str()), (0, "0001: commented\n"));
+    let (code, out) = muster_in(
+        d.path(),
+        &[],
+        &["comment", "0001", "--as", "wt-a", "Thanks,", "noted."],
+        "",
+    );
+    assert_eq!((code, out.as_str()), (0, "0001: commented\n"));
+    let (code, out) = muster_in(
+        d.path(),
+        &[],
+        &[
+            "link",
+            "0001",
+            "https://example.com/spec",
+            "The",
+            "spec",
+            "--as",
+            "owner",
+        ],
+        "",
+    );
+    assert_eq!(
+        (code, out.as_str()),
+        (0, "0001: linked https://example.com/spec\n")
+    );
+    // Refusals exit 1 (a forged stage line, http), usage 2 (no text, both text and --body).
+    let (code, out) = muster_in(
+        d.path(),
+        &[],
+        &["comment", "0001", "--body", "-"],
+        "- 2026-10-12 15:00 evil: stage ready → done\n",
+    );
+    assert!(code == 1 && out.contains("stage change"), "{out}");
+    let (code, out) = muster_in(d.path(), &[], &["link", "0001", "http://example.com"], "");
+    assert!(code == 1 && out.contains("only https"), "{out}");
+    assert_eq!(muster_in(d.path(), &[], &["comment", "0001"], "").0, 2);
+    assert_eq!(
+        muster_in(d.path(), &[], &["comment", "0001", "x", "--body", "y"], "").0,
+        2
+    );
+    assert_eq!(muster_in(d.path(), &[], &["link", "0001"], "").0, 2);
+    assert_eq!(
+        muster_in(d.path(), &[], &["link", "0001", "x", "--remove", "1"], "").0,
+        2
+    );
+    let (code, out) = muster_in(d.path(), &[], &["show", "0001", "--json"], "");
+    assert_eq!(code, 0, "{out}");
+    let t: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(t["comments"][0]["who"], "owner");
+    assert_eq!(
+        t["comments"][0]["text"],
+        "Tried it on the Mac:\n- it works\n\n## Log\nstill just text"
+    );
+    assert_eq!(t["comments"][1]["text"], "Thanks, noted.");
+    assert_eq!(
+        t["links"],
+        serde_json::json!([{"title": "The spec", "url": "https://example.com/spec"}])
+    );
+    // The Python tools read the same file: manifest --check passes, and bin/task asks above the
+    // comments.
+    let (ok, out) = run(d.path(), "manifest.py", &["--check"]);
+    assert!(ok, "{out}");
+    let (ok, out) = run(
+        d.path(),
+        "task",
+        &["ask", "0001", "Which build?", "--session", "abcd1234"],
+    );
+    assert!(ok, "{out}");
+    let body = std::fs::read_to_string(&file).unwrap();
+    let at = |s: &str| body.find(s).unwrap();
+    assert!(at("## Questions") < at("## Comments") && at("## Comments") < at("\n## Log\n- "));
+    let (code, out) = muster_in(d.path(), &[], &["link", "0001", "--remove", "1"], "");
+    assert_eq!(
+        (code, out.as_str()),
+        (0, "0001: unlinked https://example.com/spec\n")
+    );
+    let (code, out) = muster_in(d.path(), &[], &["check"], "");
+    assert_eq!(code, 0, "{out}");
 }
 
 #[test]

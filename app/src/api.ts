@@ -54,6 +54,10 @@ export const api = {
   // when the text is unchanged (nothing written), else the task's path.
   editBody: (queue: string, id: string, body: string, expected: string, stamp: string) =>
     invoke<string | null>("edit_body", { queue, id, body, expected, stamp }),
+  // A comment (0017), as the owner, at any stage; returns the task's path.
+  addComment: (queue: string, id: string, text: string, stamp: string) => invoke<string>("add_comment", { queue, id, text, stamp }),
+  // Opens one of the task's links in the browser: the core opens only an address the task has, and only https.
+  openLink: (queue: string, id: string, url: string) => invoke<void>("open_link", { queue, id, url }),
   // Files the window holds (pasted or dropped) go as [name, data URL]; picking uses the core's dialog.
   attachData: (queue: string, id: string, files: [string, string][], stamp: string) =>
     invoke<string[]>("attach_data", { queue, id, files, stamp }),
@@ -72,4 +76,4 @@ export type HelperLine = { role: "owner" | "helper" | "system"; kind: string; te
 export type AccountInfo = { name: string; loggedIn: boolean | null; plan: string };
 export type HelperInfo = { claude: string | null; accounts: AccountInfo[]; account: string; running: boolean; lines: HelperLine[] };
 
-export type NewTask = { title: string; kind: string; priority: string; body: string; tags: string[]; estTime: string; estTokens: string; level: string; parent: string; due: string };
+export type NewTask = { title: string; kind: string; priority: string; body: string; tags: string[]; estTime: string; estTestTime: string; estTokens: string; level: string; parent: string; due: string };

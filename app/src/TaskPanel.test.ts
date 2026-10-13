@@ -10,7 +10,7 @@ import type { StageStep, Task } from "./types";
 const task = (over: Partial<Task>): Task => ({
   queue: "demo", id: "0007", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
   folder: "todo", path: "todo/0007-t.md", claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "", capturedAt: "",
-  blockHistory: [], questions: [], openQuestions: 0, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTokens: "", estMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "",
+  blockHistory: [], questions: [], openQuestions: 0, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [],
   attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", ...over,
 });
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ").trim();
@@ -312,5 +312,37 @@ describe("task pane for a goal or feature", () => {
     expect(pane({ level: "goal", stage: "shaping", shownStage: "shaping", progress }).buttons).toEqual(["Pass to Ready", "Send back", "Block"]);
     const held = { level: "feature", stage: "building", shownStage: "building", claimedBy: "owner", heartbeat: "", modified: 0, progress };
     expect(pane(held, 12 * 3600 + 60).buttons).toEqual(["Send back", "Block"]);
+  });
+});
+
+describe("the pane's 0017 fields in the D2 layout", () => {
+  it("counts test time with agent time in the estimate", () => {
+    const p = pane({ stage: "ready", estMinutes: 120, estTestMinutes: 30, estTokenCount: 500_000 });
+    expect(text(part(p.html, "estimates"))).toBe("Estimate ≈ 2.5 h · 500k tokens");
+    expect(text(part(pane({ stage: "shaping", estTestMinutes: 45 }).html, "estimates"))).toBe("Estimate ≈ 45 min");
+  });
+  it("names test time beside agent time in the work so far", () => {
+    const work = (over: Partial<Task>) => text(part(pane({ stage: "building", claimedBy: "owner", ...over }).html, "work"));
+    expect(work({ estMinutes: 480, estTestMinutes: 60 })).toContain("· estimate 1 d of agent time and 1 h of test time");
+    expect(work({ estTestMinutes: 30 })).toContain("· estimate 30 min of test time");
+  });
+  it("has a test time field beside agent time and tokens", () => {
+    const html = pane({ estTestTime: "30m" }).html;
+    expect(html).toMatch(/<input[^>]*aria-label="Test time"[^>]*value="30m"/);
+    expect(html.indexOf('aria-label="Agent time"')).toBeLessThan(html.indexOf('aria-label="Test time"'));
+    expect(html.indexOf('aria-label="Test time"')).toBeLessThan(html.indexOf('aria-label="Tokens"'));
+  });
+  it("lists the links in the sidebar, after the files", () => {
+    const html = pane({ links: [{ title: "The spec", url: "https://example.com/spec" }] }).html;
+    const files = html.indexOf('aria-label="Files"'), links = html.indexOf('aria-label="Links"');
+    expect(files).toBeGreaterThan(html.indexOf("<aside"));
+    expect(links).toBeGreaterThan(files);
+    expect(links).toBeLessThan(html.indexOf("</aside>"));
+    expect(html).toContain('title="https://example.com/spec">The spec</button>');
+  });
+  it("puts the comment thread below the write-up and above the note bar", () => {
+    const html = pane({ comments: [{ who: "owner", at: "2026-10-12 10:00", text: "Hi." }] }).html;
+    expect(html.indexOf('data-part="body"')).toBeLessThan(html.indexOf('class="comments"'));
+    expect(html.indexOf('class="comments"')).toBeLessThan(html.indexOf('data-part="note-bar"'));
   });
 });

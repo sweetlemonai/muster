@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { KINDS } from "./fields";
 import { claimant, earlierStages, heldByOther, isStage, LEASE_SECS, leaseRunOut, passLabel, stageLabel } from "./lib";
 import { isWork } from "./levels";
+import Links from "./Links";
 import { ownerOpen } from "./OwnerChecklist";
 import TagEditor from "./Tags";
 import type { Task } from "./types";
@@ -11,7 +13,7 @@ const IMAGE = /\.(png|jpe?g|gif|webp)$/i;
 
 /** The task pane's right column: the next step as the one primary button, then Send back and
  *  Block or Unblock; under a rule, priority and type (the current value; click to choose),
- *  the estimate, tags and files. Every control is always in the same place. */
+ *  the estimate, tags, files and the task's links (0017). Every control is always in the same place. */
 export default function Sidebar({ task, nowSecs, a }: { task: Task; nowSecs: number; a: TaskActions }) {
   return (
     <aside className="tp-side" aria-label="Actions and settings">
@@ -23,9 +25,11 @@ export default function Sidebar({ task, nowSecs, a }: { task: Task; nowSecs: num
         </div>
         <div className="kv">
           <span className="lbl">Type</span>
-          <ValueChip label="Type" value={task.kind || "task"} options={["task", "bug", "idea"]} onPick={(v) => a.setField("type", v, "Type set.")} />
+          {/* The core's types (0017); an old file's idea still shows, as the one pressed. */}
+          <ValueChip label="Type" value={task.kind || "no type"} options={KINDS} onPick={(v) => a.setField("type", v, "Type set.")} />
         </div>
-        <div className="kv">
+        {/* Three fields (agent time, test time, tokens) need the column's width: label above. */}
+        <div className="kv stack">
           <span className="lbl">Est</span>
           <Estimate task={task} onSave={a.setField} />
         </div>
@@ -34,6 +38,7 @@ export default function Sidebar({ task, nowSecs, a }: { task: Task; nowSecs: num
           <TagEditor tags={task.tags} onChange={(t) => a.setField("tags", t.join(","), "Tags saved.")} />
         </div>
         <Files task={task} onAttach={a.attachPick} />
+        <Links task={task} />
       </div>
     </aside>
   );
@@ -106,7 +111,7 @@ function nothingNext(t: Task): string {
 
 /** A field's current value as one chip. Clicking it lays the options out in its place (no
  *  popover); picking one, Esc, or tabbing away closes them. Picking the current value changes nothing. */
-export function ValueChip({ label, value, options, onPick }: { label: string; value: string; options: string[]; onPick: (v: string) => void }) {
+export function ValueChip({ label, value, options, onPick }: { label: string; value: string; options: readonly string[]; onPick: (v: string) => void }) {
   const [open, setOpen] = useState(false);
   const pick = (v: string) => {
     setOpen(false);
@@ -116,7 +121,7 @@ export function ValueChip({ label, value, options, onPick }: { label: string; va
 }
 
 export function ValueChipView({ label, value, options, open, onOpen, onClose, onPick }: {
-  label: string; value: string; options: string[]; open: boolean; onOpen: () => void; onClose: () => void; onPick: (v: string) => void;
+  label: string; value: string; options: readonly string[]; open: boolean; onOpen: () => void; onClose: () => void; onPick: (v: string) => void;
 }) {
   if (!open) {
     return <button type="button" className="vchip" aria-label={`${label}: ${value}, click to change`} onClick={onOpen}>{value}</button>;
@@ -147,15 +152,19 @@ export function ValueChipView({ label, value, options, open, onOpen, onClose, on
   );
 }
 
-/** Estimated agent time and tokens, saved when a field loses focus or on Enter. */
+/** Estimated agent time, test time (the QA agent plus the owner's check) and tokens, saved when a
+ *  field loses focus or on Enter. */
 function Estimate({ task, onSave }: { task: Task; onSave: (field: string, value: string, done: string) => void }) {
   const [time, setTime] = useState(task.estTime);
+  const [testTime, setTestTime] = useState(task.estTestTime);
   const [tokens, setTokens] = useState(task.estTokens);
   useEffect(() => setTime(task.estTime), [task.estTime]);
+  useEffect(() => setTestTime(task.estTestTime), [task.estTestTime]);
   useEffect(() => setTokens(task.estTokens), [task.estTokens]);
-  const save = (field: "time" | "tokens", value: string, was: string) => {
+  const saved = { time: "Time estimate saved.", "test-time": "Test time estimate saved.", tokens: "Token estimate saved." };
+  const save = (field: "time" | "test-time" | "tokens", value: string, was: string) => {
     if (value.trim() === was) return;
-    onSave(field, value, field === "time" ? "Time estimate saved." : "Token estimate saved.");
+    onSave(field, value, saved[field]);
   };
   const keys = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") (e.target as HTMLInputElement).blur();
@@ -163,6 +172,7 @@ function Estimate({ task, onSave }: { task: Task; onSave: (field: string, value:
   return (
     <span className="est-pair">
       <input value={time} onChange={(e) => setTime(e.target.value)} onBlur={() => save("time", time, task.estTime)} onKeyDown={keys} placeholder="2h" size={4} maxLength={10} aria-label="Agent time" title="Agent time (45m, 2h, 1.5d)" />
+      <input value={testTime} onChange={(e) => setTestTime(e.target.value)} onBlur={() => save("test-time", testTime, task.estTestTime)} onKeyDown={keys} placeholder="30m" size={4} maxLength={10} aria-label="Test time" title="Test time, the QA agent plus your check (30m, 1h)" />
       <input value={tokens} onChange={(e) => setTokens(e.target.value)} onBlur={() => save("tokens", tokens, task.estTokens)} onKeyDown={keys} placeholder="500k" size={4} maxLength={10} aria-label="Tokens" title="Tokens (150k, 1.2M)" />
     </span>
   );

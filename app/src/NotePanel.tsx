@@ -5,7 +5,7 @@ import { ago, oneAtATime, stamp } from "./lib";
 import Markdown from "./Markdown";
 import type { Note } from "./types";
 
-const KINDS = ["task", "bug", "idea"] as const;
+import { KINDS } from "./fields";
 const PRIORITIES = ["high", "normal", "low"] as const;
 
 /** Put `text` on the clipboard now, in the click that asked: WebKit refuses a write made after an
@@ -66,7 +66,7 @@ export default function NotePanel({ note, now, onClose, onChanged, onFiled }: {
   const file = () => {
     if (!draft.title.trim()) return;
     run(async () => {
-      const f = await api.fileNote(note.queue, note.file, { ...draft, tags: [], estTime: "", estTokens: "" }, stamp(new Date()));
+      const f = await api.fileNote(note.queue, note.file, { ...draft, tags: [], estTime: "", estTestTime: "", estTokens: "" }, stamp(new Date()));
       onFiled(note.queue, f.id);
     });
   };

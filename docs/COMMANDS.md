@@ -76,7 +76,8 @@ Prints the command and its output, verbatim.
 `muster help` lists every command, the same list as the app's Help tab. The ones /mu doesn't
 route run as `! muster …` in a session: new, move, stage, set, attach, escalate, inbox, reclaim,
 checkin (task 0030), projects, init, tick, untick (the owner's criteria, task 0028), edit (task
-0020), and the backlog's shape, file and drop (task 0015). Also coming: `depends:` (task 0019).
+0020), the backlog's shape, file and drop (task 0015), and link and comment (task 0017: a task's
+external links, and a comment thread anyone may add to). Also coming: `depends:` (task 0019).
 
 Who's on it (task 0030): `checkin <id> "<what's done, what's next>" [--pct <0-100>]` is the holder
 saying how far along it is, which renews the claim too. Inside a session every command stamps the

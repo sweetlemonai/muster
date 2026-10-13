@@ -14,7 +14,7 @@ export function sortTasks(tasks: Task[], by: SortKey, desc: boolean): Task[] {
       // A goal or feature sorts by the stage it shows (from its children).
       case "stage": return isWork(t) ? stageRank(t.stage) : shownStageRank(t);
       case "changed": return t.modified;
-      case "estimate": return t.estMinutes * 1e7 + t.estTokenCount;
+      case "estimate": return (t.estMinutes + t.estTestMinutes) * 1e7 + t.estTokenCount;
       case "who": return t.blocked ? t.waitingOn : holder(t);
       case "kind": return t.kind;
       default: return t[by];

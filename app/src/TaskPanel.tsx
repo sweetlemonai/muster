@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
+import Comments from "./Comments";
 import EditBody from "./EditBody";
+import { splitLog, withoutComments } from "./fields";
 import { stageLabel, stamp } from "./lib";
 import Markdown from "./Markdown";
 import PaneHeader from "./PaneHeader";
@@ -11,21 +13,32 @@ import StageForms from "./StageForms";
 import StageTrack from "./StageTrack";
 import type { Question, Task } from "./types";
 import { useTaskActions } from "./useTaskActions";
+import { anyDirty, withPart } from "./writeUp";
 
 /** The task pane (0021, the owner's design D2): title and status first, the stage track, then
  *  two columns (what this stage needs; the next step and the task's settings), the stage forms
- *  under both, the path; then open questions, the write-up and, at the bottom, the note bar. */
+ *  under both, the path; then open questions, the write-up, the comment thread (0017) and the
+ *  Log and, at the bottom, the note bar. */
 export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudge, childTasks }: {
   task: Task;
   now: number;
   onClose: () => void;
   onChanged: () => void;
-  /** `onDirty` and `nudge` pass between the window and the write-up editor (see EditBody). */
+  /** `onDirty` and `nudge` pass between the window and the parts with typed text, the write-up
+   *  editor (see EditBody) and the comment box: the pane is unsaved while either is. */
   onDirty?: (dirty: boolean) => void;
   nudge?: number;
   /** A goal's or feature's children, as far as the window has them. */
   childTasks?: Task[];
 }) {
+  const [dirtyParts, setDirtyParts] = useState<Record<string, boolean>>({});
+  const editDirty = useCallback((d: boolean) => setDirtyParts((p) => withPart(p, "edit", d)), []);
+  const commentDirty = useCallback((d: boolean) => setDirtyParts((p) => withPart(p, "comment", d)), []);
+  const unsaved = anyDirty(dirtyParts);
+  useEffect(() => {
+    onDirty?.(unsaved);
+  }, [unsaved, onDirty]);
+  useEffect(() => () => onDirty?.(false), [onDirty]);
   const [body, setBody] = useState<string | null>(null);
   const [raw, setRaw] = useState(false);
   const [error, setError] = useState("");
@@ -61,7 +74,9 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
     }
   };
 
-  const shown = body ? body.replace(/^---\n[\s\S]*?\n---\n/, "") : "";
+  // The comments show as their own thread, between the write-up and the Log, so they're left out
+  // of the rendering.
+  const [shown, log] = splitLog(body ? withoutComments(body.replace(/^---\n[\s\S]*?\n---\n/, "")) : "");
   const open = task.questions.filter((q) => !q.ticked && q.n !== null);
   const undo = undoFor(a.msg, task.stage);
 
@@ -122,7 +137,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
           <EditBody
             task={task}
             opened={editing}
-            onDirty={onDirty}
+            onDirty={editDirty}
             nudge={nudge}
             onClose={() => setEditing(null)}
             onSaved={(text) => {
@@ -147,7 +162,12 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
         )}
       </section>
 
-      {/* Below the description: the place for 0017's comment thread and links. */}
+      <Comments task={task} onChanged={onChanged} onDirty={commentDirty} nudge={nudge} />
+      {log && !raw && editing === null && (
+        <section className="log">
+          <Markdown text={log} />
+        </section>
+      )}
 
       {task.checkins.length > 0 && <Checkins task={task} />}
 
