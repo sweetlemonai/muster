@@ -4,6 +4,27 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Task keys with a project prefix: mu-12 (task 0033)
+**Did:** every place that shows a task shows its key (`mu-12`, no leading zeros): cards, rows,
+graph, timeline, task pane, Recently finished, INDEX.md, `muster list`/`show`/`check`, refusals
+and new log lines; files, `depends:`, `tasks.json` and manifest.py keep `0012`. Every command and
+the app's search take `mu-12`, `MU-12`, `12` or `0012`; another project's key finds its queue
+(`muster show br-7` from Muster), a conflicting `--queue` is refused. Prefix per project in the
+queue's README front matter (`prefix: mu`), set with `muster projects set <name> prefix`,
+`muster init --prefix` or Settings › Projects (inline, refusal shown under the field); 2–4
+lowercase letters, unique. Keys link in the write-up, Log, comments and questions. Branches are
+`task/mu-12-slug`. Files: `key.rs`, `taskKey.ts`, `keyLinks.ts`, cli/ops/parallel/projects/index.
+**Decided:** default prefix = first 2 letters of the project, 3 on a clash, and a queue stores its
+default on its first write so keys never drift (a rename or a new project can't change them); a
+branch belongs to its task by number whatever the prefix; error text is keyed at the CLI/app edge
+(only ids of tasks in that queue, plus the typed one). Prefix moves to `.muster/config.toml` in 0005.
+**Fixed (review):** a prefix change refused merge/release of started tasks; `block --on "mu-2, mu-3"`
+blocked on one; a new prefix left INDEX.md stale; New task's Parent took only `0030`.
+**Verified:** `bin/gate` → `gate: green (pnpm check, test_task, test_commands, cargo test
+(Kiritimati))` on ec8db79; two reviewers (correctness+Rust, TS+tests), 7 findings, all fixed test-first.
+**Open:** keys in the Vision section don't link; the helper's own errors aren't keyed; the first
+write to each real queue adds `prefix:` front matter to its README (a change in the queue's git).
+
 ## 2026-10-13 — Recently finished: what got merged and accepted, newest first, "4 min ago" (task 0051)
 **Did:** the owner: "looking at a project I need to see list of recent tasks done, by date: like
 4 min ago". **Recently finished** is docked at the board's right edge (plain or grouped): merged
