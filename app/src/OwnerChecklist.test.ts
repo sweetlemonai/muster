@@ -47,7 +47,7 @@ describe("Accept waits for the owner's criteria", () => {
   it("is disabled while one is open, with the reason", () => {
     const b = accept(task({ ownerCriteria: [crit(1, true), crit(2, false)] }));
     expect(b).toContain("disabled");
-    expect(b).toContain('title="Tick yours below first"');
+    expect(b).toContain('title="Tick yours in the checklist first"');
   });
   it("is enabled once all are ticked, or when there are none", () => {
     expect(accept(task({ ownerCriteria: [crit(1, true)] }))).not.toContain("disabled");

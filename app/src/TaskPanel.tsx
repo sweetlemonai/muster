@@ -1,18 +1,20 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import EditBody from "./EditBody";
-import {
-  ago, claimant, earlierStages, heldByOther, holderOf, isStage, LEASE_SECS, leaseRunOut, nextStage, oneAtATime, passLabel, readFiles, splitHolder, stageHolders, stamp, STAGES, stageLabel,
-  stageOf, startedAgo,
-} from "./lib";
-import { estimateLeft, isWork, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
+import { stageLabel, stamp } from "./lib";
 import Markdown from "./Markdown";
-import OwnerChecklist, { ownerOpen } from "./OwnerChecklist";
-import TagEditor from "./Tags";
+import PaneHeader from "./PaneHeader";
+import { isFileDrag, releasedBy, undoFor } from "./paneData";
+import Sidebar from "./Sidebar";
+import StageContent from "./StageContent";
+import StageForms from "./StageForms";
+import StageTrack from "./StageTrack";
 import type { Question, Task } from "./types";
+import { useTaskActions } from "./useTaskActions";
 
-const IMAGE = /\.(png|jpe?g|gif|webp)$/i;
-
+/** The task pane (0021, the owner's design D2): title and status first, the stage track, then
+ *  two columns (what this stage needs; the next step and the task's settings), the stage forms
+ *  under both, the path; then open questions, the write-up and, at the bottom, the note bar. */
 export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudge, childTasks }: {
   task: Task;
   now: number;
@@ -32,6 +34,8 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
   const [editMsg, setEditMsg] = useState<{ ok: boolean; text: string } | null>(null);
   // Bumped after a save, so the text reloads even within the second the file last changed.
   const [saves, setSaves] = useState(0);
+  const [over, setOver] = useState(false);
+  const a = useTaskActions(task, onChanged);
 
   // Reload the text when the file changes (its modified time moves).
   useEffect(() => {
@@ -49,35 +53,63 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
     setEditMsg(null);
     api.editableBody(task.queue, task.id).then(setEditing, (e) => setEditMsg({ ok: false, text: String(e) }));
   };
+  // Files pasted on the header or the note bar, or dropped anywhere on the pane, are attached.
+  const onPaste = (e: React.ClipboardEvent) => {
+    if (e.clipboardData.files.length) {
+      e.preventDefault();
+      a.attachFiles(e.clipboardData.files);
+    }
+  };
 
   const shown = body ? body.replace(/^---\n[\s\S]*?\n---\n/, "") : "";
   const open = task.questions.filter((q) => !q.ticked && q.n !== null);
+  const undo = undoFor(a.msg, task.stage);
 
   return (
-    <div className="panel" aria-label={`Task ${task.id}`}>
-      <header>
-        <div>
-          <div className="meta">
-            {task.queue} · {task.id} · {task.kind} · {task.priority} · changed {ago(now, task.modified)} ago
+    <div
+      className={`panel task-pane${over ? " drop" : ""}`}
+      aria-label={`Task ${task.id}`}
+      // Only file drags are the pane's: text dragged into the editor or an answer box drops there.
+      onDragOver={(e) => {
+        if (!isFileDrag(e.dataTransfer.types)) return;
+        e.preventDefault();
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        if (!isFileDrag(e.dataTransfer.types)) return;
+        e.preventDefault();
+        setOver(false);
+        a.attachFiles(e.dataTransfer.files);
+      }}
+    >
+      <header className="pane-top" onPaste={onPaste}>
+        <PaneHeader task={task} now={now} onClose={onClose} onRename={(t) => a.setField("title", t, "Renamed.")} />
+        <StageTrack stage={task.stage} busy={a.busy} onPick={a.move} releases={(to) => releasedBy(task, to)} />
+        <div className="tp-cols">
+          <div className="tp-main">
+            <StageContent task={task} nowSecs={now} body={body === null ? null : shown} childTasks={childTasks} busy={a.busy} onTick={a.tick} />
           </div>
-          <h1>{task.title}</h1>
-          <StageLine task={task} />
-          <Holders task={task} now={now} />
-          <div className="meta">
-            {task.waitingOn && <>waiting on: {task.waitingOn} · </>}
-            {task.commit && <>commit {task.commit} · </>}
-            <span title={task.path}>{task.path}</span>
-          </div>
+          <Sidebar task={task} nowSecs={now} a={a} />
         </div>
-        <button className="close" onClick={onClose} aria-label="Close">×</button>
+        <StageForms task={task} a={a} />
+        {a.msg && (
+          <p className={a.msg.ok ? "ok small pane-msg" : "err small pane-msg"} role="status">
+            {a.msg.text}
+            {undo && (
+              <button type="button" className="undo" disabled={a.busy} onClick={() => a.undo(undo)}>
+                Undo: back to {stageLabel(undo.back)}
+              </button>
+            )}
+          </p>
+        )}
+        <div className="pathline" data-part="path" title={task.path}>
+          {task.commit ? `commit ${task.commit}` : "commit none"} · {task.path}
+        </div>
       </header>
 
-      {!isWork(task) && <Rollup task={task} childTasks={childTasks} />}
-
-      <Controls task={task} nowSecs={now} onChanged={onChanged} />
-
       {open.length > 0 && (
-        <section className="answers">
+        <section className="answers" data-part="questions">
           <h2>Open questions</h2>
           {open.map((q) => (
             <AnswerBox key={q.n} task={task} q={q} onChanged={onChanged} />
@@ -85,9 +117,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
         </section>
       )}
 
-      {task.attachments.length > 0 && <Attachments task={task} />}
-
-      <section className="body">
+      <section className="body" data-part="body">
         {editing !== null ? (
           <EditBody
             task={task}
@@ -117,58 +147,37 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
         )}
       </section>
 
+      {/* Below the description: the place for 0017's comment thread and links. */}
+
       {task.checkins.length > 0 && <Checkins task={task} />}
+
+      <NoteBar onNote={a.note} onPaste={onPaste} />
     </div>
   );
 }
 
-/** A goal's or feature's roll-up: its tasks' progress, the estimate left, a goal's due date, and
- *  its children with the stage each shows. */
-function Rollup({ task, childTasks }: { task: Task; childTasks?: Task[] }) {
-  const byId = new Map((childTasks ?? []).map((c) => [c.id, c]));
-  const left = estimateLeft(task.progress);
+/** A note to the log, in a bar fixed at the bottom of the pane. */
+function NoteBar({ onNote, onPaste }: { onNote: (text: string) => void; onPaste: (e: React.ClipboardEvent) => void }) {
+  const [note, setNote] = useState("");
   return (
-    <section className="rollup-panel" aria-label="Roll-up">
-      <h2>{levelLabel(task.level)} · {progressText(task.progress) || "no tasks yet"}</h2>
-      {left && <p className="meta">{left}</p>}
-      {task.due && <p className="meta">due {task.due}</p>}
-      {task.children.length > 0 && (
-        <ul className="children">
-          {task.children.map((id) => {
-            const c = byId.get(id);
-            return (
-              <li key={id}>
-                {c ? <><span className="id">{id}</span> {c.title} <span className={`status-pill s-${shownStageClass(c)}`}>{shownStageLabel(c)}</span></> : id}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
+    <form
+      className="note-bar"
+      data-part="note-bar"
+      onPaste={onPaste}
+      onSubmit={(e) => {
+        e.preventDefault();
+        const n = note;
+        setNote("");
+        onNote(n);
+      }}
+    >
+      <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note to the log… (or paste / drop files here)" aria-label="Note to the log" maxLength={2000} />
+      <button type="submit" disabled={!note.trim()}>Add to log</button>
+    </form>
   );
 }
 
-/** "you" for the owner, else who as written, session and all (the pane shows the full id). */
-const person = (who: string) => (splitHolder(who).label === "owner" ? (who === "owner" ? "you" : `you, ${who}`) : who);
-
-/** Who's on it now and since when, and who held each stage so far (0030). */
-function Holders({ task, now }: { task: Task; now: number }) {
-  const current = holderOf(task);
-  const started = startedAgo(task, now);
-  const earlier = stageHolders(task).filter((h) => h.stage !== task.stage);
-  if (!current && !started && earlier.length === 0) return null;
-  return (
-    <div className="meta holders">
-      {current && <>on it: {person(current)}</>}
-      {started && <>{current ? " · " : ""}{started}</>}
-      {earlier.map((h) => (
-        <span key={h.stage}> · {stageLabel(h.stage)}: {person(h.who)}</span>
-      ))}
-    </div>
-  );
-}
-
-/** Every check-in, in order: when, how far (the session's own estimate), what, who. */
+/** Every check-in, in order: when, how far (the session's own estimate), what, who (0030). */
 function Checkins({ task }: { task: Task }) {
   return (
     <section className="checkins">
@@ -182,29 +191,6 @@ function Checkins({ task }: { task: Task }) {
         ))}
       </ol>
     </section>
-  );
-}
-
-/** The stage, who works it, and the blocked flag. A goal or feature shows the stage its children
- *  give it, and its level. */
-function StageLine({ task }: { task: Task }) {
-  if (!isWork(task)) {
-    return (
-      <div className="stage-line">
-        <span className={`status-pill s-${shownStageClass(task)}`}>{shownStageLabel(task)}</span>
-        <span className="meta">{levelLabel(task.level)}</span>
-        {task.blocked && <span className="status-pill blocked">blocked{task.waitingOn ? `: ${task.waitingOn}` : ""}</span>}
-      </div>
-    );
-  }
-  const known = isStage(task.stage);
-  const role = known ? STAGES.find((s) => s.id === task.stage)?.role : "";
-  return (
-    <div className="stage-line">
-      <span className={`status-pill s-${stageOf(task)}`}>{known ? stageLabel(task.stage) : `${task.stage || "no stage"} (unknown)`}</span>
-      {role && <span className="meta">{role}</span>}
-      {task.blocked && <span className="status-pill blocked">blocked{task.waitingOn ? `: ${task.waitingOn}` : ""}</span>}
-    </div>
   );
 }
 
@@ -250,349 +236,5 @@ function AnswerBox({ task, q, onChanged }: { task: Task; q: Question; onChanged:
         {msg && <span className={state === "error" ? "err" : "ok"}>{msg}</span>}
       </div>
     </div>
-  );
-}
-
-function Attachments({ task }: { task: Task }) {
-  const [images, setImages] = useState<Record<string, string>>({});
-  const [big, setBig] = useState<number | null>(null);
-  const names = task.attachments.filter((n) => IMAGE.test(n));
-  const others = task.attachments.filter((n) => !IMAGE.test(n));
-
-  useEffect(() => {
-    let live = true;
-    setImages({});
-    for (const n of names) {
-      api.image(task.queue, task.id, n).then(
-        (url) => live && setImages((m) => ({ ...m, [n]: url })),
-        () => {},
-      );
-    }
-    return () => {
-      live = false;
-    };
-    // `names` comes from task.attachments, so their joined list is the dependency.
-  }, [task.queue, task.id, task.attachments.join("|")]);
-
-  useEffect(() => {
-    if (big === null) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight") setBig((i) => (i === null ? i : (i + 1) % names.length));
-      if (e.key === "ArrowLeft") setBig((i) => (i === null ? i : (i - 1 + names.length) % names.length));
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        setBig(null);
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [big, names.length]);
-
-  return (
-    <section className="attachments">
-      <h2>Files <small>{task.attachments.length}</small></h2>
-      <div className="thumbs">
-        {names.map((n, i) => (
-          <button key={n} className="thumb" onClick={() => setBig(i)} title={n}>
-            {images[n] ? <img src={images[n]} alt={n} /> : <span className="none">…</span>}
-            <span className="name">{n}</span>
-          </button>
-        ))}
-      </div>
-      {others.length > 0 && <p className="meta">Other files: {others.join(", ")}</p>}
-      {big !== null && names[big] && (
-        <div className="lightbox" onClick={() => setBig(null)} role="dialog" aria-label={names[big]}>
-          {images[names[big]] && <img src={images[names[big]]} alt={names[big]} />}
-          <p>{names[big]} · {big + 1} of {names.length} · ← → to move · Esc to close</p>
-        </div>
-      )}
-    </section>
-  );
-}
-
-/** The owner's changes: stage, priority, type, title, a note, files. All through the core's rules.
- *  `nowSecs` is the state's clock, for the claim's lease. */
-function Controls({ task, nowSecs, onChanged }: { task: Task; nowSecs: number; onChanged: () => void }) {
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  // One stage form open at a time: the gate line (Building → Testing), send back, or block. A
-  // form belongs to the stage it was opened in: once the task moves, here or elsewhere, it's gone.
-  const [opened, setForm] = useState<{ kind: "gate" | "back" | "block"; stage: string } | null>(null);
-  const form = opened?.stage === task.stage ? opened.kind : null;
-  const open = (kind: "gate" | "back" | "block") => setForm({ kind, stage: task.stage });
-  // Stage actions run one at a time, and their controls are off while one is in flight.
-  const [once] = useState(oneAtATime);
-  const [busy, setBusy] = useState(false);
-  const [gate, setGate] = useState("");
-  const [why, setWhy] = useState("");
-  const [backTo, setBackTo] = useState("");
-  const [waitingOn, setWaitingOn] = useState("");
-  const [note, setNote] = useState("");
-  const [title, setTitle] = useState<string | null>(null);
-  const [over, setOver] = useState(false);
-
-  /** Runs one change; the core's refusal is shown as is. True when it went through. */
-  const run = async (what: () => Promise<unknown>, done: string) => {
-    try {
-      await what();
-      setMsg({ ok: true, text: done });
-      onChanged();
-      return true;
-    } catch (e) {
-      setMsg({ ok: false, text: String(e) });
-      return false;
-    }
-  };
-  const stageRun = (what: () => Promise<unknown>, done: string) =>
-    once(async () => {
-      setBusy(true);
-      try {
-        return await run(what, done);
-      } finally {
-        setBusy(false);
-      }
-    });
-  // A stage form closes (and forgets its text) only once the core took the change.
-  const submit = (what: () => Promise<unknown>, done: string) =>
-    void stageRun(what, done).then((ok) => {
-      if (!ok) return;
-      setForm(null);
-      setGate("");
-      setWhy("");
-      setWaitingOn("");
-    });
-  const now = () => stamp(new Date());
-  const known = isStage(task.stage);
-  const pass = passLabel(task.stage);
-  const back = earlierStages(task.stage);
-  // Where Send back goes: the choice, while it's still an earlier stage; else one back.
-  const backTarget = back.some((s) => s.id === backTo) ? backTo : back[0]?.id ?? "";
-  const holder = heldByOther(task);
-  // A claim nobody has heard from past the lease: the owner may give it back to Ready.
-  // Goals and features never go into or through Building: they may be passed on only while
-  // they're shaped, and have no claim to release. The stage picker stays the owner's.
-  const shapedOnly = !isWork(task);
-  const stale = !shapedOnly && leaseRunOut(task, nowSecs);
-  const showPass = pass !== null && !holder && (!shapedOnly || task.stage === "backlog" || task.stage === "shaping");
-  // Every pass says the stage it was clicked in, so the core refuses it if the task moved on.
-  const passFrom = (gateLine: string, done: string) => submit(() => api.passTask(task.queue, task.id, task.stage, gateLine, "", now()), done);
-  const passNow = () => {
-    if (task.stage === "building") {
-      open("gate");
-      return;
-    }
-    passFrom("", task.stage === "your-check" ? "Accepted: it's done." : `Passed to ${nextStage(task.stage)?.label ?? "the next stage"}.`);
-  };
-  const files = async (list: FileList | File[] | null) => {
-    if (!list || !list.length) return;
-    const read = await readFiles(list, stamp(new Date()));
-    void run(() => api.attachData(task.queue, task.id, read, stamp(new Date())), `Attached ${read.length} file${read.length === 1 ? "" : "s"}.`);
-  };
-
-  return (
-    <section
-      className={`controls${over ? " drop" : ""}`}
-      onDragOver={(e) => {
-        e.preventDefault();
-        setOver(true);
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setOver(false);
-        void files(e.dataTransfer.files);
-      }}
-      onPaste={(e) => {
-        if (e.clipboardData.files.length) {
-          e.preventDefault();
-          void files(e.clipboardData.files);
-        }
-      }}
-    >
-      <div className="control-row">
-        <label>
-          Stage
-          <select
-            value={known ? task.stage : ""}
-            disabled={busy}
-            title="Your override: put it in any stage. Leaving Building releases the claim."
-            onChange={(e) => {
-              const to = e.target.value;
-              void stageRun(() => api.setStage(task.queue, task.id, to, now()), `Put in ${stageLabel(to)}.`);
-            }}
-          >
-            {!known && <option value="" disabled>{task.stage || "no stage"} (unknown)</option>}
-            {STAGES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-          </select>
-        </label>
-        {showPass && (
-          <button
-            type="button"
-            className="primary"
-            disabled={task.blocked || busy || (task.stage === "your-check" && ownerOpen(task) > 0)}
-            title={task.stage === "your-check" && ownerOpen(task) > 0 ? "Tick yours below first" : undefined}
-            onClick={passNow}
-          >
-            {pass}
-          </button>
-        )}
-        {stale && (
-          <button
-            type="button"
-            className={showPass ? undefined : "primary"}
-            disabled={busy}
-            title="Back to Ready, with the claim released and logged as reclaimed"
-            onClick={() => void stageRun(() => api.reclaimTask(task.queue, task.id, now()), "Released: back in Ready.")}
-          >
-            Release
-          </button>
-        )}
-        {back.length > 0 && (
-          <button type="button" disabled={busy} onClick={() => { setBackTo(""); open("back"); }}>Send back</button>
-        )}
-        {task.blocked ? (
-          <button type="button" disabled={busy} onClick={() => void stageRun(() => api.unblockTask(task.queue, task.id, now()), "Unblocked.")}>Unblock</button>
-        ) : (
-          <button type="button" disabled={busy} onClick={() => open("block")}>Block</button>
-        )}
-      </div>
-      <OwnerChecklist
-        task={task}
-        busy={busy}
-        onTick={(which, undo) => void stageRun(() => api.tickCriterion(task.queue, task.id, which, undo, now()), `${undo ? "Unticked" : "Ticked"} ${which}.`)}
-      />
-      {holder && (
-        <p className="meta small">
-          {holder} holds it in {stageLabel(task.stage)}, so only they can pass it on. To move it yourself, pick a stage above.
-        </p>
-      )}
-      {stale && (
-        <p className="meta small">
-          {claimant(task.claimedBy)} hasn't been heard from for {LEASE_SECS / 3600} h. Release puts it back in Ready, logged as reclaimed.
-        </p>
-      )}
-      {showPass && task.blocked && <p className="meta small">Blocked on {task.waitingOn || "something it doesn't name"}. Unblock it to pass it on.</p>}
-      {form === "gate" && task.stage === "building" && (
-        <form
-          className="control-row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (gate.trim()) passFrom(gate, "Passed to Testing.");
-          }}
-        >
-          <input autoFocus value={gate} onChange={(e) => setGate(e.target.value)} placeholder="The gate's result line (gate full: green …)" aria-label="The gate's result line" maxLength={500} />
-          <button type="submit" disabled={busy || !gate.trim()}>Pass to Testing</button>
-          <button type="button" onClick={() => setForm(null)}>Cancel</button>
-        </form>
-      )}
-      {form === "back" && backTarget && (
-        <form
-          className="control-row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (why.trim()) submit(() => api.returnTask(task.queue, task.id, why, backTarget, now()), `Sent back to ${stageLabel(backTarget)}.`);
-          }}
-        >
-          <label>
-            Back to
-            <select value={backTarget} onChange={(e) => setBackTo(e.target.value)}>
-              {back.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-            </select>
-          </label>
-          <input autoFocus value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Why: what's wrong or missing" aria-label="Why it goes back" maxLength={500} />
-          <button type="submit" disabled={busy || !why.trim()}>Send back</button>
-          <button type="button" onClick={() => setForm(null)}>Cancel</button>
-        </form>
-      )}
-      {form === "block" && !task.blocked && (
-        <form
-          className="control-row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (waitingOn.trim()) submit(() => api.blockTask(task.queue, task.id, waitingOn, now()), "Blocked. It keeps its stage.");
-          }}
-        >
-          <input autoFocus value={waitingOn} onChange={(e) => setWaitingOn(e.target.value)} placeholder="Waiting on: a task id (0012), owner, or capture, then a few words" aria-label="What it's waiting on" maxLength={200} />
-          <button type="submit" disabled={busy || !waitingOn.trim()}>Block</button>
-          <button type="button" onClick={() => setForm(null)}>Cancel</button>
-        </form>
-      )}
-      <div className="control-row">
-        <label>
-          Priority
-          <select value={task.priority || "normal"} onChange={(e) => void run(() => api.setField(task.queue, task.id, "priority", e.target.value, stamp(new Date())), "Priority set.")}>
-            <option value="high">high</option>
-            <option value="normal">normal</option>
-            <option value="low">low</option>
-          </select>
-        </label>
-        <label>
-          Type
-          <select value={task.kind || "task"} onChange={(e) => void run(() => api.setField(task.queue, task.id, "type", e.target.value, stamp(new Date())), "Type set.")}>
-            <option value="task">task</option>
-            <option value="bug">bug</option>
-            <option value="idea">idea</option>
-          </select>
-        </label>
-        <Estimate task={task} run={run} />
-        <button type="button" onClick={() => setTitle(task.title)}>Rename</button>
-        <button type="button" onClick={() => void run(() => api.attachPick(task.queue, task.id, stamp(new Date())), "Files attached.")}>Attach…</button>
-      </div>
-      <TagEditor tags={task.tags} onChange={(t) => void run(() => api.setField(task.queue, task.id, "tags", t.join(","), stamp(new Date())), "Tags saved.")} />
-      {title !== null && (
-        <form
-          className="control-row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const t = title;
-            setTitle(null);
-            void run(() => api.setField(task.queue, task.id, "title", t, stamp(new Date())), "Renamed.");
-          }}
-        >
-          <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
-          <button type="submit" disabled={!title.trim()}>Save</button>
-          <button type="button" onClick={() => setTitle(null)}>Cancel</button>
-        </form>
-      )}
-      <form
-        className="control-row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const n = note;
-          setNote("");
-          void run(() => api.addNote(task.queue, task.id, n, stamp(new Date())), "Note added to the log.");
-        }}
-      >
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note to the log… (or paste / drop files here)" maxLength={2000} />
-        <button type="submit" disabled={!note.trim()}>Add</button>
-      </form>
-      {msg && <p className={msg.ok ? "ok small" : "err small"}>{msg.text}</p>}
-    </section>
-  );
-}
-
-/** Estimated agent time and tokens, saved when a field loses focus or on Enter. */
-function Estimate({ task, run }: { task: Task; run: (what: () => Promise<unknown>, done: string) => Promise<boolean> }) {
-  const [time, setTime] = useState(task.estTime);
-  const [tokens, setTokens] = useState(task.estTokens);
-  useEffect(() => setTime(task.estTime), [task.estTime]);
-  useEffect(() => setTokens(task.estTokens), [task.estTokens]);
-  const save = (field: "time" | "tokens", value: string, was: string) => {
-    if (value.trim() === was) return;
-    void run(() => api.setField(task.queue, task.id, field, value, stamp(new Date())), field === "time" ? "Time estimate saved." : "Token estimate saved.");
-  };
-  const keys = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-  };
-  return (
-    <>
-      <label>
-        Agent time
-        <input value={time} onChange={(e) => setTime(e.target.value)} onBlur={() => save("time", time, task.estTime)} onKeyDown={keys} placeholder="2h" size={5} maxLength={10} />
-      </label>
-      <label>
-        Tokens
-        <input value={tokens} onChange={(e) => setTokens(e.target.value)} onBlur={() => save("tokens", tokens, task.estTokens)} onKeyDown={keys} placeholder="500k" size={5} maxLength={10} />
-      </label>
-    </>
   );
 }

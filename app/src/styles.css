@@ -169,8 +169,6 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .panel { display: flex; flex-direction: column; min-height: 100%; }
 .panel > header { display: flex; gap: 12px; padding: 16px 18px 12px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); z-index: 1; }
 .panel h1 { font-size: 17px; margin: 4px 0; line-height: 1.3; }
-.stage-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 2px 0 4px; }
-.stage-line .status-pill.blocked { margin-left: 0; }
 .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin: 0 0 8px; }
 .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .close { margin-left: auto; align-self: flex-start; border: none; background: none; font-size: 22px; line-height: 1; color: var(--muted); }
@@ -185,10 +183,6 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .answer-bar { display: flex; gap: 10px; align-items: center; margin-top: 6px; font-size: 12px; }
 .answer-bar button, .waiting > button { background: var(--accent); color: var(--on-accent); border: none; border-radius: 6px; padding: 4px 12px; }
 .answer-bar button:disabled { opacity: 0.5; cursor: default; }
-.thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
-.thumb { width: 132px; padding: 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); display: flex; flex-direction: column; gap: 4px; }
-.thumb img { width: 100%; height: 84px; object-fit: cover; border-radius: 4px; }
-.thumb .name { font-size: 10px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lightbox { position: fixed; inset: 0; background: rgb(0 0 0 / 0.82); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 20; padding: 24px; }
 .lightbox img { max-width: 100%; max-height: calc(100% - 40px); object-fit: contain; border-radius: 6px; }
 .lightbox p { color: #ddd; font-size: 12px; }
@@ -249,7 +243,6 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .pending-file img { width: 36px; height: 24px; object-fit: cover; border-radius: 3px; }
 .pending-file button { border: none; background: none; color: var(--muted); }
 .controls { display: flex; flex-direction: column; gap: 8px; }
-.controls.drop { outline: 2px dashed var(--accent); outline-offset: -4px; }
 .small { font-size: 12px; margin: 0; }
 
 .helper { flex: 1; display: flex; flex-direction: column; min-height: 0; max-width: 980px; width: 100%; margin: 0 auto; }
@@ -537,3 +530,92 @@ button:disabled { opacity: 0.45; cursor: default; }
 .g-title { font-size: 12px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; min-height: 0; -webkit-box-orient: vertical; overflow: hidden; }
 .graph-loose { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
 .g-loose { border: 1px solid var(--border); border-left: 3px solid var(--edge, var(--status, var(--border))); border-radius: 6px; font-size: 12px; }
+
+/* Task pane (0021, the owner's design D2): title and status, the stage track, two columns (what the
+   stage needs; the sidebar), the forms under both, the path, then the write-up and a note bar fixed
+   at the bottom. Theme tokens only, so every theme works light and dark (themes.test.ts checks). */
+.task-pane { flex: 1 0 auto; }
+.task-pane.drop { outline: 2px dashed var(--accent); outline-offset: -4px; }
+.panel > .pane-top { display: flex; flex-direction: column; gap: 8px; padding: 10px 16px 12px; position: static; border-bottom: 1px solid var(--border); background: var(--surface); }
+.task-pane .lbl { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); font-weight: 600; }
+.task-pane .lbl .meta { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 11px; }
+.topline { display: flex; align-items: center; gap: 8px; }
+.topline .meta { font-size: 11.5px; }
+.qname { color: var(--accent-text); font-weight: 600; }
+.panel .pane-title { margin: 0; font-size: 17px; line-height: 1.3; font-weight: 650; }
+.tid { color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 600; }
+.title-btn { border: 0; background: none; padding: 0 2px; margin: 0 -2px; text-align: left; font-weight: 650; border-radius: 4px; cursor: text; text-decoration: underline dotted color-mix(in srgb, var(--muted) 50%, transparent); text-underline-offset: 4px; text-decoration-thickness: 1px; }
+.title-btn:hover, .title-btn:focus-visible { background: var(--tint); text-decoration-color: var(--muted); }
+.title-edit { display: flex; gap: 6px; align-items: center; }
+.title-edit input { flex: 1; min-width: 0; font: inherit; font-size: 15px; font-weight: 600; color: var(--text); background: var(--bg); border: 1px solid var(--accent); border-radius: 6px; padding: 3px 8px; }
+.status-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
+.status-line .status-pill.blocked { margin-left: 0; }
+.task-pane .holder { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+/* Who's on it in full (0030): a session id is long, so it wraps rather than widening the pane. */
+.task-pane .holders { min-width: 0; overflow-wrap: anywhere; }
+.pulse { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--st-building); flex: none; }
+.pulse.idle { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted); }
+.live-badge { font-size: 9.5px; font-weight: 800; letter-spacing: 0.6px; color: var(--on-status); background: var(--st-building); border-radius: 4px; padding: 0 4px; }
+.task-pane .needs { color: var(--gold-text); font-weight: 650; }
+
+.track-wrap { display: flex; flex-direction: column; gap: 3px; }
+.track-label { display: flex; gap: 8px; align-items: baseline; }
+.track-label .small { font-size: 11px; }
+.stage-track { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.stage-track button { border: 0; background: none; padding: 2px 0 0; text-align: left; color: var(--muted); font-size: 10.5px; line-height: 1.2; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border-radius: 3px; }
+.stage-track button i { display: block; height: 5px; border-radius: 3px; background: var(--border); margin-bottom: 3px; }
+.stage-track .past i { background: color-mix(in srgb, var(--status) 40%, var(--border)); }
+.stage-track .cur { color: var(--text); font-weight: 700; }
+.stage-track .cur i { background: var(--status); box-shadow: 0 0 0 2px color-mix(in srgb, var(--status) 30%, transparent); }
+.stage-track button:not(:disabled):hover, .stage-track button:focus-visible { color: var(--text); }
+.stage-track button:not(:disabled):hover i { background: var(--status); }
+
+.tp-cols { display: flex; gap: 12px; margin-top: 2px; }
+.tp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.tp-main .rollup-panel { padding: 0; border: 0; }
+.stage-block { display: flex; flex-direction: column; gap: 5px; }
+.stage-block .markdown { font-size: 12.5px; }
+.stage-block .markdown ul { padding-left: 18px; margin: 2px 0; }
+.stage-block .owner-checklist { margin: 0; }
+.wline { display: flex; gap: 6px; align-items: baseline; margin: 0; }
+.wline .lbl { width: 48px; flex: none; }
+.task-pane .history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
+.task-pane .history li { display: flex; gap: 8px; }
+.h-when { flex: none; width: 74px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.tp-side { width: 176px; flex: none; display: flex; flex-direction: column; gap: 8px; padding-left: 12px; border-left: 1px solid var(--border); }
+.tp-side button { border: 1px solid var(--border); background: none; color: var(--muted); border-radius: 6px; padding: 2px 8px; font-size: 12px; line-height: 18px; }
+.tp-side button:not(:disabled):hover, .tp-side button:focus-visible { color: var(--text); border-color: var(--muted); }
+.next-step { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; align-items: start; }
+.next-step > .lbl, .next-step > .primary, .next-step > .release, .next-step > p { grid-column: 1 / -1; }
+.next-step > p { margin: 0; font-size: 11.5px; line-height: 1.35; }
+.tp-side .next-step .primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 650; padding: 4px 8px; }
+.tp-side .next-step .primary:not(:disabled):hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--on-accent); }
+.side-settings { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
+.task-pane .kv { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 20px; }
+.task-pane .kv > .lbl { width: 52px; flex: none; }
+.task-pane .kv.stack { flex-direction: column; align-items: flex-start; gap: 3px; }
+.task-pane .kv.stack > .lbl { width: auto; }
+.tp-side .vchip { background: var(--accent-soft); color: var(--text); border-radius: 999px; padding: 0 9px; font-size: 11.5px; font-weight: 600; }
+.tp-side .vchip:hover, .tp-side .vchip:focus-visible { border-color: var(--accent); }
+.task-pane .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.tp-side .seg button { border: 0; border-left: 1px solid var(--border); border-radius: 0; padding: 0 6px; font-size: 11.5px; line-height: 18px; }
+.tp-side .seg button:first-child { border-left: 0; }
+.tp-side .seg button.on { background: var(--accent-soft); color: var(--text); font-weight: 650; }
+.est-pair { display: inline-flex; gap: 4px; }
+.est-pair input { width: 46px; font: inherit; font-size: 12px; text-align: center; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 1px 4px; }
+.tp-side .tag-editor input { width: 72px; }
+.file-list { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; max-width: 100%; }
+.tp-side .mini-thumb { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 2px 6px 2px 2px; background: var(--bg); font-size: 11px; }
+.mini-thumb img, .mini-img { display: block; width: 34px; height: 22px; object-fit: cover; border-radius: 3px; flex: none; background: var(--tint); }
+.mini-thumb .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.other-file { max-width: 100%; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-side .attach { font-size: 11px; padding: 0 7px; line-height: 17px; }
+
+.stage-form { padding: 6px; background: var(--tint); border-radius: 6px; align-items: center; }
+.pane-msg { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.task-pane .undo { border: 1px solid var(--border); background: none; color: var(--text); border-radius: 6px; padding: 0 8px; font-size: 11.5px; line-height: 18px; }
+.pathline { font: 10.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.note-bar { position: sticky; bottom: 0; margin-top: auto; z-index: 1; display: flex; gap: 6px; padding: 8px 16px 10px; border-top: 1px solid var(--border); background: var(--surface); }
+.note-bar input { flex: 1; min-width: 0; font: inherit; font-size: 12px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
+.note-bar button { border: 1px solid var(--border); background: none; color: var(--text); border-radius: 6px; padding: 2px 10px; font-size: 12px; white-space: nowrap; }

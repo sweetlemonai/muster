@@ -167,10 +167,10 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "stage",
-        usage: "muster stage <id> <stage>",
+        usage: "muster stage <id> <stage> [--from <stage>]",
         what: "Put a task in any stage (the owner's or capture's override), logged as set. Leaving Building releases its claim.",
-        options: &[],
-        examples: &["muster stage 0007 ready", "muster stage 0007 your-check"],
+        options: &[("--from", "the stage you saw it in; refused if it has moved on since (use it, so a repeat never moves it twice)")],
+        examples: &["muster stage 0007 ready", "muster stage 0007 your-check --from testing"],
     },
     Command {
         name: "set",
