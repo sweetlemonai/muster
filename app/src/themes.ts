@@ -64,6 +64,10 @@ export const NEEDS_COLOUR = STAGE_COLOURS["your-check"];
 /** The owner's own tasks (0022): an old gold for the "You" ribbon, in the needs-you family but
  *  never a stage colour (a brighter gold would pass for Testing's amber), as styles.css's --st-human. */
 export const HUMAN_COLOUR = "#A08428";
+/** How much of the gold a hatch stripe on the owner's own card takes, mixed into the card's
+ *  surface (owner, 2026-10-13: one board, human cards patterned). Faint enough that every word on
+ *  a card keeps its contrast in every theme, strong enough to see (tested in themes.test.ts). */
+export const HUMAN_HATCH = 0.14;
 // Priority colours, for cards coloured by priority: magenta for high (orange means "needs you" and
 // red means blocked), violet for normal, grey for low.
 // Priority has its own colours, never a stage's (owner, 2026-10-13: "a solid color code"):
@@ -194,6 +198,7 @@ export function variables(theme: Theme, accent: Accent): Record<string, string> 
     "--edge-needs": edge(NEEDS_COLOUR),
     "--st-human": HUMAN_COLOUR,
     "--edge-human": edge(HUMAN_COLOUR),
+    "--human-hatch": `${Math.round(HUMAN_HATCH * 100)}%`,
     ...Object.fromEntries(Object.entries(PRIORITY_COLOURS).map(([p, c]) => [`--pri-${p}`, c])),
     ...Object.fromEntries(Object.entries(PRIORITY_COLOURS).map(([p, c]) => [`--edge-pri-${p}`, edge(c)])),
     "--card-tint": `${Math.round(CARD_TINT[theme.mode] * 100)}%`,

@@ -1,6 +1,7 @@
 // The dependency graph (task 0019): a layered layout, left to right, in our own code (no library).
 // Ranks are the longest chain of dependencies before a task, so what can start now sits on the
 // left; within a rank, a few barycentre sweeps keep linked tasks near each other.
+import { isBlocked } from "./blockWords";
 import { stageOf } from "./lib";
 import type { Task } from "./types";
 
@@ -134,12 +135,13 @@ export function edgeLit(e: GraphEdge, selected: string | null, up: Set<string>, 
   return upward || downward;
 }
 
-/** Ready to start: in Ready, nobody holds it, not blocked, and every dependency here is done. */
+/** Ready to start: in Ready, nobody holds it, not blocked (by the flag or by tasks, 0024), and
+ *  every dependency here is done. */
 export function readyToStart(t: Task, byId: Map<string, Task>): boolean {
   return (
     stageOf(t) === "ready" &&
     !t.claimedBy &&
-    !t.blocked &&
+    !isBlocked(t) &&
     t.depends.every((d) => {
       const dep = byId.get(d);
       return !dep || stageOf(dep) === "done";

@@ -83,7 +83,7 @@ export type Task = {
    *  isn't also listed as unchecked. */
   badVision?: string;
   /** It waits on the owner (the core's needs_owner): Your check, a question escalated to them, or
-   *  blocked on the owner. An agent's task like this is in the Human board's "From the agents". */
+   *  blocked on the owner. On the board it's a needs-you card, and it counts in `needsYouCount`. */
   waitingForOwner: boolean;
   tags: string[];
   /** Estimates: agent time, test time (the QA agent plus the owner's check) and tokens, as written

@@ -81,6 +81,9 @@ describe("chains and readiness", () => {
     expect(readyToStart(task("0030", [], { blocked: true }), byId)).toBe(false);
     expect(readyToStart(task("0030", [], { claimedBy: "wt-b" }), byId)).toBe(false);
     expect(readyToStart(byId.get("0002")!, byId)).toBe(false); // Building
+    // Blocked only by the tasks it depends on, as the core derives it (0024): not ready, even
+    // when those tasks aren't among the ones given.
+    expect(readyToStart(task("0030", [], { blockedKind: "tasks", blockedBy: [{ id: "0041", stage: "ready", holder: "" }] }), byId)).toBe(false);
   });
 });
 
@@ -140,6 +143,14 @@ describe("GraphView", () => {
     expect(chip("0023")).toContain('<span class="g-stage">Building</span>');
     expect(chip("0023")).toContain('<span class="g-who">wt-b</span>');
     expect(chip("0024")).toContain('<span class="badge warn">needs you</span>');
+  });
+  it("marks a task blocked only by the tasks it depends on as blocked, as its card is (0024)", () => {
+    const byTasks = { blockedKind: "tasks", blockedBy: [{ id: "0001", stage: "ready", holder: "" }] };
+    const html = view(null, [task("0001", [], { forWho: "human" }), task("0002", ["0001"], byTasks), task("0009", [], byTasks)]);
+    expect(html).toMatch(/class="g-node s-ready blocked"[^>]*><span class="g-top"><span class="id">0002<\/span>.*?<span class="badge blocked">blocked<\/span>/);
+    const chip = new RegExp(`<button[^>]*g-loose[^>]*><span class="id">0009</span>.*?</button>`).exec(html)?.[0] ?? "";
+    expect(chip).toContain('<span class="badge blocked">blocked</span>');
+    expect(chip).not.toContain("g-ready");
   });
   it("dims done tasks, but not when they're on the selected chain", () => {
     const tasks = [task("0001", [], { stage: "done" }), task("0002", ["0001"])];

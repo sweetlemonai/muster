@@ -5,8 +5,8 @@ import YouRibbon from "./YouRibbon";
 
 /** A board card's classes: its priority (for colour by priority), and the states that take over
  *  its colour in every look: blocked (by the flag or by tasks it depends on, 0024), needs you; the
- *  selected one; and `human` for the owner's own task (0022), which carries the You ribbon in every
- *  look. */
+ *  selected one; and `human` for the owner's own task (0022), hatched in gold (styles.css
+ *  `.card.human`) with the You ribbon in every look. */
 export function cardClass(t: Pick<Task, "priority" | "blocked" | "blockedKind" | "waitingForOwner"> & { forWho?: string }, active: boolean): string {
   return `card p-${priorityName(t.priority)}${active ? " active" : ""}${t.waitingForOwner ? " needs-you" : ""}${t.blocked || t.blockedKind ? " blocked" : ""}${t.forWho === "human" ? " human" : ""}`;
 }

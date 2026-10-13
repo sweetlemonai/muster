@@ -39,7 +39,7 @@ export default function Sidebar({ task, nowSecs, a }: { task: Task; nowSecs: num
               label="For"
               value={isHuman(task) ? "human" : "ai"}
               options={["human", "ai"]}
-              onPick={(v) => a.setField("for", v, v === "human" ? "It's yours to do now: on the Human board." : "It's the agents' now: on the AI board.")}
+              onPick={(v) => a.setField("for", v, v === "human" ? "It's yours to do now: hatched on the board, with the You ribbon." : "It's the agents' now.")}
             />
           </div>
         )}

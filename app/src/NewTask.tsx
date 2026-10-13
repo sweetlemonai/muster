@@ -10,8 +10,8 @@ import { pressed } from "./shortcuts";
 
 /** Who does a new task (0022), as a chip pair: an agent (the default) or you. */
 export const FOR_CHOICES = [
-  { id: "human", label: "Human", hint: "Yours to do: on the Human board, and agents never take it" },
-  { id: "ai", label: "AI", hint: "An agent's: on the AI board" },
+  { id: "human", label: "Human", hint: "Yours to do: on the board hatched, with the You ribbon, and agents never take it" },
+  { id: "ai", label: "AI", hint: "An agent's: on the board as usual" },
 ] as const;
 
 /** New task, in the docked pane beside the board: who does it, title, type, priority, tags,

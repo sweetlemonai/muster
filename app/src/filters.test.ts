@@ -83,7 +83,12 @@ describe("applyQuery", () => {
     expect(run({ filters: { state: ["questions"] } })).toEqual(["0003"]);
     expect(run({ filters: { state: ["blocked", "needs-you"] } })).toEqual(["0002", "0003"]);
   });
-  it("needs you is the Human board's count: the owner's own tasks until done, too (0022)", () => {
+  it("blocked keeps a task blocked only by the tasks it depends on, as its red card says (0024)", () => {
+    const waits = t({ id: "0005", depends: ["0001"], blockedKind: "tasks", blockedBy: [{ id: "0001", stage: "building", holder: "drover/main" }] });
+    expect(ids(applyQuery([...tasks, waits], q({ filters: { state: ["blocked"] } }), ctx))).toEqual(["0002", "0005"]);
+    expect(groupValues(GROUPS.find((g) => g.id === "state")!, [tasks[0], waits], [], ctx)).toEqual(["blocked"]);
+  });
+  it("needs you is the one needs-you count: the owner's own tasks until done, too (0022)", () => {
     const mine = [t({ id: "0005", forWho: "human", stage: "ready" }), t({ id: "0006", forWho: "human", stage: "building" }), t({ id: "0007", forWho: "human", stage: "done" })];
     const shown = applyQuery([...tasks, ...mine], q({ filters: { state: ["needs-you"] } }), ctx);
     expect(ids(shown)).toEqual(["0003", "0005", "0006"]);

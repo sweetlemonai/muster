@@ -47,7 +47,7 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
 }
 
 /** One project in the sidebar: its name and count, what's in progress and what needs you (the
- *  Human board's count: your own tasks to do and doing, and what the agents wait on you for), and
+ *  needs-you count: your own tasks to do and doing, and what the agents wait on you for), and
  *  under them its activity line. */
 export function ProjectItem({ name, title, total, tasks, on, onClick, children }: { name: string; title?: string; total: number; tasks: Task[]; on: boolean; onClick: () => void; children: ReactNode }) {
   const doing = tasks.filter(inProgress).length;
