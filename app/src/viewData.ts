@@ -7,6 +7,20 @@ import { isWork, shownStageRank } from "./levels";
 export type SortKey = "queue" | "id" | "title" | "kind" | "priority" | "stage" | "who" | "estimate" | "captured" | "changed";
 const PRIORITY_RANK: Record<string, number> = { high: 0, normal: 1, low: 2 };
 
+const SORT_KEYS: SortKey[] = ["queue", "id", "title", "kind", "priority", "stage", "who", "estimate", "captured", "changed"];
+/** The Table's saved sort (owner, 2026-10-13: "tables should save what I sorted it last"), read
+ *  back safely: anything unknown is the default, Stage ascending. */
+export function parseTableSort(raw: string | null): { by: SortKey; desc: boolean } {
+  try {
+    const v = JSON.parse(raw ?? "") as { by?: unknown; desc?: unknown };
+    if (SORT_KEYS.includes(v.by as SortKey)) return { by: v.by as SortKey, desc: v.desc === true };
+  } catch {
+    /* not saved yet, or not ours: the default */
+  }
+  return { by: "stage", desc: false };
+}
+export const TABLE_SORT_KEY = "muster.tableSort";
+
 export function sortTasks(tasks: Task[], by: SortKey, desc: boolean): Task[] {
   const val = (t: Task): string | number => {
     switch (by) {

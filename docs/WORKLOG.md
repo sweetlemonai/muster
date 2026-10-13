@@ -4,6 +4,12 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — The Table remembers its sort
+**Did:** the owner: "tables should save what I sorted it last". The Table's sort column and
+direction are saved (local storage) and restored on start; anything unreadable falls back to
+Stage ascending. `Views.tsx`, `viewData.ts` (`parseTableSort`, tested).
+**Verified:** `pnpm check` green.
+
 ## 2026-10-13 — Timeline shows work: from when a task started to when it finished (0031 follow-up)
 **Fixed:** the owner: "it should be hour based, each task when started and finished". Bars
 started at capture (mostly a date, so midnight) and ran to now, so waiting drowned the work.

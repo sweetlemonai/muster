@@ -3,6 +3,7 @@ import { stampMinutes } from "./lib";
 import {
   axis, DAY, layout, nowAt, parseScale, segmentTitle, sortTasks, spans, taskSpan, timeWindow, wallMinutes, windowLabel,
   type Placed, type Scale, type Span,
+  parseTableSort,
 } from "./viewData";
 import type { Task } from "./types";
 
@@ -326,5 +327,14 @@ describe("a done task from before stage history (owner's screenshot, 2026-10-13)
   });
   it("without one, isn't drawn: its times aren't known", () => {
     expect(taskSpan(old(""), NOW)).toBeNull();
+  });
+});
+
+describe("the Table remembers its sort (owner, 2026-10-13)", () => {
+  it("reads back what was saved, and the default for anything else", () => {
+    expect(parseTableSort(JSON.stringify({ by: "priority", desc: true }))).toEqual({ by: "priority", desc: true });
+    expect(parseTableSort(JSON.stringify({ by: "captured" }))).toEqual({ by: "captured", desc: false });
+    for (const bad of [null, "", "not json", JSON.stringify({ by: "colour", desc: true }), JSON.stringify([1, 2]), "null"])
+      expect(parseTableSort(bad), String(bad)).toEqual({ by: "stage", desc: false });
   });
 });

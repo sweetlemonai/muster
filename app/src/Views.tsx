@@ -3,7 +3,7 @@ import { estimateText } from "./fields";
 import { ago, holder, key, stageLabel, stageOf } from "./lib";
 import type { Task } from "./types";
 import {
-  axis, layout, nowAt, parseScale, SCALES, segmentTitle, sortTasks, spans, timeWindow, wallMinutes, windowLabel,
+  axis, layout, nowAt, parseScale, SCALES, segmentTitle, parseTableSort, sortTasks, TABLE_SORT_KEY, spans, timeWindow, wallMinutes, windowLabel,
   type Placed, type Scale, type SortKey, type Tick,
 } from "./viewData";
 import { BandHead } from "./Groups";
@@ -36,8 +36,17 @@ export function TableView({ tasks, now, multi, openKey, onOpen, groups, by: grou
   /** The search's words, marked in ids, titles and tags (task 0032). */
   words: string[];
 }) {
-  const [by, setBy] = useState<SortKey>("stage");
-  const [desc, setDesc] = useState(false);
+  // The last sort is kept across restarts (owner, 2026-10-13).
+  const [sort, setSort] = useState(() => parseTableSort(localStorage.getItem(TABLE_SORT_KEY)));
+  const { by, desc } = sort;
+  const sortBy = (next: { by: SortKey; desc: boolean }) => {
+    setSort(next);
+    try {
+      localStorage.setItem(TABLE_SORT_KEY, JSON.stringify(next));
+    } catch {
+      /* storage full or off: the sort still applies for now */
+    }
+  };
   const rows = useMemo(() => sortTasks(tasks, by, desc), [tasks, by, desc]);
   const cols = multi ? COLS : COLS.filter((c) => c.key !== "queue");
   const row = (t: Task) => <Row key={key(t)} t={t} now={now} multi={multi} active={openKey === key(t)} onOpen={onOpen} words={words} />;
@@ -48,7 +57,7 @@ export function TableView({ tasks, now, multi, openKey, onOpen, groups, by: grou
           <tr>
             {cols.map((c) => (
               <th key={c.key} aria-sort={by === c.key ? (desc ? "descending" : "ascending") : "none"}>
-                <button onClick={() => (by === c.key ? setDesc(!desc) : (setBy(c.key), setDesc(false)))}>
+                <button onClick={() => sortBy(by === c.key ? { by, desc: !desc } : { by: c.key, desc: false })}>
                   {c.label}
                   {by === c.key ? (desc ? " ↓" : " ↑") : ""}
                 </button>
