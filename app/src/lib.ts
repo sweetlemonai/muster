@@ -58,6 +58,40 @@ export function heldByOther(t: Pick<Task, "stage" | "claimedBy">): string {
   return t.claimedBy.trim() === "owner" ? "" : holder(t);
 }
 
+/** The core's default lease (ops::LEASE): a claim nobody has heard from for longer may be released. */
+export const LEASE_SECS = 12 * 3600;
+
+/** A tool stamp ("2026-10-12 14:05", local time) as wall-clock minutes: minutes since
+ *  1970-01-01 00:00 as if every day had 24 hours, with no time zone. Null for anything else, a
+ *  date that doesn't exist included. The same count as the core's ops::stamp_minutes. */
+export function stampMinutes(s: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/.exec(s);
+  if (!m) return null;
+  const [y, mo, d, h, mi] = m.slice(1).map(Number);
+  if (h > 23 || mi > 59) return null;
+  const ms = Date.UTC(y, mo - 1, d, h, mi);
+  const at = new Date(ms);
+  if (at.getUTCFullYear() !== y || at.getUTCMonth() !== mo - 1 || at.getUTCDate() !== d) return null;
+  return ms / 60000;
+}
+
+/** Whole minutes a claim has been quiet (ops::quiet_minutes): from its heartbeat to the wall
+ *  clock now, both as stamps, when it has one; else since its file changed. `now` is seconds
+ *  since 1970. Counting wall-clock minutes like the core keeps the two agreeing across a clock
+ *  change, so Release shows exactly when the core would take it. */
+export function quietMinutes(t: Pick<Task, "heartbeat" | "modified">, now: number): number {
+  const beat = stampMinutes(t.heartbeat);
+  const wall = stampMinutes(stamp(new Date(now * 1000)));
+  if (beat !== null && wall !== null) return Math.max(0, wall - beat);
+  return Math.floor(Math.max(0, now - t.modified) / 60);
+}
+
+/** A claim whose lease ran out, exactly what the core's reclaim takes: held, in Building, not
+ *  blocked (that's waiting), and quiet for longer than the lease. */
+export function leaseRunOut(t: Pick<Task, "stage" | "blocked" | "claimedBy" | "heartbeat" | "modified">, now: number): boolean {
+  return t.stage === "building" && !t.blocked && t.claimedBy.trim() !== "" && quietMinutes(t, now) > LEASE_SECS / 60;
+}
+
 /** Runs one action at a time: a call made while one is in flight is dropped (false), so a
  *  double click can't pass a task twice. */
 export function oneAtATime() {

@@ -27,6 +27,8 @@ export const api = {
     invoke<string>("return_task", { queue, id, why, to, stamp }),
   blockTask: (queue: string, id: string, on: string, stamp: string) => invoke<string>("block_task", { queue, id, on, stamp }),
   unblockTask: (queue: string, id: string, stamp: string) => invoke<string>("unblock_task", { queue, id, stamp }),
+  // A claim in Building whose lease ran out goes back to Ready; refused if it's live again.
+  reclaimTask: (queue: string, id: string, stamp: string) => invoke<string>("reclaim_task", { queue, id, stamp }),
   // The owner's override: any stage.
   setStage: (queue: string, id: string, stage: string, stamp: string) => invoke<string>("set_stage", { queue, id, stage, stamp }),
   setField: (queue: string, id: string, field: string, value: string, stamp: string) =>

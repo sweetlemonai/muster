@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
-  ago, claimant, columns, earlierStages, estimateTotal, feed, fileName, fmtMinutes, fmtTokens, heldByOther, holder, inProgress, nextStage, oneAtATime, passLabel,
-  queueTotal, stageOf, STAGES, stamp,
+  ago, claimant, columns, earlierStages, estimateTotal, feed, fileName, fmtMinutes, fmtTokens, heldByOther, holder, inProgress, LEASE_SECS, leaseRunOut, nextStage, oneAtATime, passLabel,
+  queueTotal, quietMinutes, stageOf, STAGES, stamp, stampMinutes,
 } from "./lib";
 import type { Task } from "./types";
 
@@ -134,6 +134,61 @@ describe("helpers", () => {
     expect(f[0].what).toContain("· Ready ·");
     const b = feed([], [task({ stage: "testing", blocked: true, waitingOn: "0012" })]);
     expect(b[0].what).toBe("0001 T · Testing, blocked on 0012");
+  });
+});
+
+describe("lease (the core's ops::reclaim rule)", () => {
+  /** The moment the wall clock here reads `s`, in seconds since 1970 (the state's `now`). */
+  const at = (s: string) => {
+    const [y, mo, d, h, mi] = s.split(/[- :]/).map(Number);
+    return new Date(y, mo - 1, d, h, mi).getTime() / 1000;
+  };
+  const m = (s: string) => stampMinutes(s) ?? NaN;
+  it("reads tool stamps as wall-clock minutes, and nothing else (ops::stamp_minutes)", () => {
+    expect(stampMinutes("2026-10-12 14:05")).toBe(Date.UTC(2026, 9, 12, 14, 5) / 60000);
+    expect(m("2027-01-01 01:00") - m("2026-12-31 23:00")).toBe(120);
+    expect(m("2028-03-01 12:00") - m("2028-02-28 12:00")).toBe(2 * 1440);
+    for (const bad of ["", "2026-10-12", "2026-10-12T14:05", "2026-13-01 10:00", "2026-02-30 10:00", "2026-10-12 24:00", "2026-10-12 10:60", " 2026-10-12 10:00"]) {
+      expect(stampMinutes(bad)).toBeNull();
+    }
+  });
+  it("counts wall-clock minutes across a clock change, as the core does", () => {
+    vi.stubEnv("TZ", "America/New_York");
+    try {
+      // 2026-11-01 02:00 the clocks go back an hour: 12 wall-clock hours are 13 real ones.
+      const now = at("2026-11-01 12:30");
+      expect(now - at("2026-11-01 00:30")).toBe(13 * 3600);
+      const held = task({ stage: "building", claimedBy: "wt-a", heartbeat: "2026-11-01 00:30", modified: now });
+      expect(quietMinutes(held, now)).toBe(720);
+      expect(leaseRunOut(held, now)).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+  it("is quiet since the heartbeat, else since the file changed, in whole minutes", () => {
+    const now = at("2026-10-12 14:05");
+    expect(quietMinutes({ heartbeat: "2026-10-12 01:00", modified: now - 60 }, now)).toBe(13 * 60 + 5);
+    expect(quietMinutes({ heartbeat: "", modified: now - 3 * 3600 - 59 }, now)).toBe(180);
+    expect(quietMinutes({ heartbeat: "yesterday", modified: now - 600 }, now)).toBe(10);
+    expect(quietMinutes({ heartbeat: "2026-10-13 01:00", modified: 0 }, now)).toBe(0);
+  });
+  it("runs out on a held, unblocked Building claim quiet for more than 12 h", () => {
+    const now = at("2026-10-12 14:05");
+    const held = { stage: "building", claimedBy: "wt-a (session aaaa1111)", modified: now };
+    expect(leaseRunOut(task({ ...held, heartbeat: "2026-10-12 02:04" }), now)).toBe(true);
+    // 12 h exactly, or 12 h and 59 s: not yet (the core counts whole minutes).
+    expect(leaseRunOut(task({ ...held, heartbeat: "2026-10-12 02:05" }), now)).toBe(false);
+    expect(leaseRunOut(task({ ...held, heartbeat: "2026-10-12 02:05" }), now + 59)).toBe(false);
+    expect(leaseRunOut(task({ ...held, heartbeat: "2026-10-12 02:05" }), now + 60)).toBe(true);
+    // A fresh heartbeat wins over an old file, and an old file counts without one.
+    expect(leaseRunOut(task({ ...held, heartbeat: "2026-10-12 14:00", modified: 0 }), now)).toBe(false);
+    expect(leaseRunOut(task({ ...held, heartbeat: "", modified: now - 13 * 3600 }), now)).toBe(true);
+    // Blocked (waiting), nobody holding it, or another stage: no lease.
+    const old = { ...held, heartbeat: "2026-10-01 10:00" };
+    expect(leaseRunOut(task({ ...old, blocked: true, waitingOn: "owner" }), now)).toBe(false);
+    expect(leaseRunOut(task({ ...old, claimedBy: " " }), now)).toBe(false);
+    expect(leaseRunOut(task({ ...old, stage: "testing" }), now)).toBe(false);
+    expect(LEASE_SECS).toBe(12 * 3600);
   });
 });
 

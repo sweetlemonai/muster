@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import { ago, earlierStages, heldByOther, isStage, nextStage, oneAtATime, passLabel, readFiles, stamp, STAGES, stageLabel, stageOf } from "./lib";
+import { ago, claimant, earlierStages, heldByOther, isStage, LEASE_SECS, leaseRunOut, nextStage, oneAtATime, passLabel, readFiles, stamp, STAGES, stageLabel, stageOf } from "./lib";
 import Markdown from "./Markdown";
 import TagEditor from "./Tags";
 import type { Question, Task } from "./types";
@@ -46,7 +46,7 @@ export default function TaskPanel({ task, now, onClose, onChanged }: { task: Tas
         <button className="close" onClick={onClose} aria-label="Close">×</button>
       </header>
 
-      <Controls task={task} onChanged={onChanged} />
+      <Controls task={task} nowSecs={now} onChanged={onChanged} />
 
       {open.length > 0 && (
         <section className="answers">
@@ -187,8 +187,9 @@ function Attachments({ task }: { task: Task }) {
   );
 }
 
-/** The owner's changes: stage, priority, type, title, a note, files. All through the core's rules. */
-function Controls({ task, onChanged }: { task: Task; onChanged: () => void }) {
+/** The owner's changes: stage, priority, type, title, a note, files. All through the core's rules.
+ *  `nowSecs` is the state's clock, for the claim's lease. */
+function Controls({ task, nowSecs, onChanged }: { task: Task; nowSecs: number; onChanged: () => void }) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   // One stage form open at a time: the gate line (Building → Testing), send back, or block. A
   // form belongs to the stage it was opened in: once the task moves, here or elsewhere, it's gone.
@@ -243,6 +244,9 @@ function Controls({ task, onChanged }: { task: Task; onChanged: () => void }) {
   // Where Send back goes: the choice, while it's still an earlier stage; else one back.
   const backTarget = back.some((s) => s.id === backTo) ? backTo : back[0]?.id ?? "";
   const holder = heldByOther(task);
+  // A claim nobody has heard from past the lease: the owner may give it back to Ready.
+  const stale = leaseRunOut(task, nowSecs);
+  const showPass = pass !== null && !holder;
   // Every pass says the stage it was clicked in, so the core refuses it if the task moved on.
   const passFrom = (gateLine: string, done: string) => submit(() => api.passTask(task.queue, task.id, task.stage, gateLine, "", now()), done);
   const passNow = () => {
@@ -294,8 +298,19 @@ function Controls({ task, onChanged }: { task: Task; onChanged: () => void }) {
             {STAGES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
           </select>
         </label>
-        {pass && !holder && (
+        {showPass && (
           <button type="button" className="primary" disabled={task.blocked || busy} onClick={passNow}>{pass}</button>
+        )}
+        {stale && (
+          <button
+            type="button"
+            className={showPass ? undefined : "primary"}
+            disabled={busy}
+            title="Back to Ready, with the claim released and logged as reclaimed"
+            onClick={() => void stageRun(() => api.reclaimTask(task.queue, task.id, now()), "Released: back in Ready.")}
+          >
+            Release
+          </button>
         )}
         {back.length > 0 && (
           <button type="button" disabled={busy} onClick={() => { setBackTo(""); open("back"); }}>Send back</button>
@@ -309,6 +324,11 @@ function Controls({ task, onChanged }: { task: Task; onChanged: () => void }) {
       {holder && (
         <p className="meta small">
           {holder} holds it in {stageLabel(task.stage)}, so only they can pass it on. To move it yourself, pick a stage above.
+        </p>
+      )}
+      {stale && (
+        <p className="meta small">
+          {claimant(task.claimedBy)} hasn't been heard from for {LEASE_SECS / 3600} h. Release puts it back in Ready, logged as reclaimed.
         </p>
       )}
       {pass && !holder && task.blocked && <p className="meta small">Blocked on {task.waitingOn || "something it doesn't name"}. Unblock it to pass it on.</p>}

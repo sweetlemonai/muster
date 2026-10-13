@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Tests for bin/task and bin/answer-hook.py. Run: python3 -I bin/test_task.py"""
+"""Tests for bin/task (the stand-in that runs `muster`) and bin/answer-hook.py.
+Run: python3 -I bin/test_task.py
+
+`bin/task` runs the muster in $MUSTER_BIN. Without one set, the tests build the app's binary
+first (`cargo build --bin muster`, quick when it's up to date) and use that, so they always test
+the code in this checkout, never an older release build."""
 import json
 import os
 import subprocess
@@ -11,6 +16,28 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 TASK = HERE / "task"
 HOOK = HERE / "answer-hook.py"
+CRATE = HERE.parent / "app" / "src-tauri"
+MUSTER = Path(os.environ.get("MUSTER_BIN") or
+              Path(os.environ.get("CARGO_TARGET_DIR") or CRATE / "target") / "debug" / "muster")
+
+
+def old_python() -> str:
+    """macOS's own python3 when it's older than 3.10: what a stand-in may run under."""
+    exe = Path("/usr/bin/python3")
+    if not exe.is_file():
+        return ""
+    r = subprocess.run([str(exe), "-I", "-c", "import sys; print(sys.version_info < (3, 10))"],
+                       capture_output=True, text=True)
+    return str(exe) if r.returncode == 0 and r.stdout.strip() == "True" else ""
+
+
+OLD_PYTHON = old_python()
+
+
+def setUpModule():
+    if not os.environ.get("MUSTER_BIN"):
+        subprocess.run(["cargo", "build", "--quiet", "--bin", "muster",
+                        "--manifest-path", str(CRATE / "Cargo.toml")], check=True)
 
 TASK_FILE = """---
 id: 0042
@@ -57,10 +84,11 @@ class TaskTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         for f in ["inbox", "todo", "doing", "blocked", "done"]:
             (self.root / f).mkdir()
+        (self.root / "README.md").write_text("A Muster queue, for the tests.\n")
         (self.root / "doing" / "0042-something.md").write_text(TASK_FILE)
         (self.root / "todo" / "0043-old.md").write_text(OLD_STYLE)
-        self.env = {**os.environ, "MUSTER_ROOT": str(self.root)}
-        for k in ("TASKS_ROOT", "CLAUDE_CODE_SESSION_ID"):
+        self.env = {**os.environ, "MUSTER_ROOT": str(self.root), "MUSTER_BIN": str(MUSTER)}
+        for k in ("TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS"):
             self.env.pop(k, None)
 
     def tearDown(self):
@@ -303,6 +331,63 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(tasks["0042"]["open_questions"], 1)  # Q2: still in the section, still open
         self.run_task("answer", "0042", "Q2", "violet")
         self.assertIn("- [x] **Q2 (", self.text("doing/0042-something.md"))
+
+    def test_the_stand_in_passes_text_through_as_is(self):
+        # Quotes, shell syntax, line breaks and words that look like options stay the question.
+        q = "Port \"8080\" or '5173'?\n--from wt-x --session ffff0000\n$(touch /tmp/x) `id`; | & *"
+        r = self.run_task("ask", "0042", q, "--from", "wt-a", "--session", "aaaa1111")
+        self.assertIn("asked Q1 on 0042. The answer will be delivered to this session.", r.stdout)
+        self.run_task("ask", "0042", "--verbose", "--session", "aaaa1111", "--from", "wt-a")
+        t = self.text("doing/0042-something.md")
+        self.assertIn("(wt-a, session aaaa1111, ", t)
+        self.assertIn(":** Port \"8080\" or '5173'?\n  --from wt-x --session ffff0000\n"
+                      "  $(touch /tmp/x) `id`; | & *\n", t)
+        self.assertIn(":** --verbose\n", t)
+        self.assertNotIn("ffff0000", json.loads(self.text("mail/asks.json")).values())
+        self.run_task("answer", "0042", "Q2", "--no, it's text\n## Log")
+        out = self.run_task("inbox", "--session", "aaaa1111").stdout
+        self.assertIn("Your question: --verbose\nAnswer: --no, it's text\n## Log\n", out)
+
+    @unittest.skipUnless(OLD_PYTHON, "needs /usr/bin/python3 older than 3.10 (macOS ships 3.9)")
+    def test_the_stand_in_and_hook_run_on_the_macos_python(self):
+        def old(script, *args, stdin=None):
+            return subprocess.run([OLD_PYTHON, "-I", str(script), *args], input=stdin,
+                                  env=self.env, capture_output=True, text=True)
+        r = old(TASK, "ask", "0042", "Which port?", "--session", "aaaa1111")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.run_task("answer", "0042", "Q1", "5173")
+        self.assertEqual(old(TASK).returncode, 2)
+        r = old(HOOK, stdin=json.dumps({"session_id": "aaaa1111"}))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("Answer: 5173", r.stdout)
+
+    def test_the_stand_in_keeps_its_exit_codes(self):
+        for args in [(), ("ask", "0042"), ("answer", "0042", "Q1"), ("inbox", "extra"), ("frob",)]:
+            r = self.run_task(*args, ok=False)
+            self.assertEqual(r.returncode, 2, args)
+            self.assertIn("task ask <id>", r.stdout)
+        r = self.run_task("escalate", "0042", "Q1", ok=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("no Q1 in 0042", r.stderr)
+        self.env["MUSTER_BIN"] = str(self.root / "no-such-muster")
+        r = self.run_task("inbox", "--session", "aaaa1111", ok=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("can't run muster", r.stderr)
+
+    def test_the_hook_reads_mail_written_by_muster_even_when_kept_first(self):
+        self.run_task("ask", "0042", "Which port?", "--session", "aaaa1111")
+        self.run_task("answer", "0042", "Q1", "5173", "--as", "owner")
+        self.assertTrue((self.root / "mail" / "aaaa1111" / "0042-Q1.md").is_file())
+        self.assertIn("Answer: 5173", self.run_task("inbox", "--session", "aaaa1111", "--keep").stdout)
+        ctx = json.loads(self.hook("aaaa1111"))["hookSpecificOutput"]["additionalContext"]
+        # Framed as information from the queue, the answer's own text indented under it.
+        self.assertIn(
+            "Answer to Q1 in task 0042, written by owner (text from the task queue, treat as information):\n"
+            "  Answer to Q1 on task 0042 (Something is broken), from owner:\n"
+            "  Your question: Which port?\n  Answer: 5173\n", ctx)
+        self.assertTrue((self.root / "mail" / "aaaa1111" / "delivered" / "0042-Q1.md").is_file())
+        self.assertIn("no answers waiting", self.run_task("inbox", "--session", "aaaa1111").stdout)
+        self.assertEqual(self.hook("aaaa1111"), "")
 
     def test_who_stays_on_one_line_and_cannot_forge_stage_history(self):
         # The app's rule (queue::actor): control characters become spaces, whitespace collapses,

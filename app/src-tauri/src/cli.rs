@@ -10,21 +10,31 @@ struct Args {
     pos: Vec<String>,
     flags: std::collections::HashMap<String, String>,
     json: bool,
+    keep: bool,
 }
 
+/// Options and positionals; after `--`, everything is positional (text that starts with `--`).
 fn parse(argv: &[String]) -> Result<Args, String> {
     let mut a = Args {
         pos: vec![],
         flags: Default::default(),
         json: false,
+        keep: false,
     };
     let mut it = argv.iter();
+    let mut rest = false;
     while let Some(x) = it.next() {
+        if rest {
+            a.pos.push(x.clone());
+            continue;
+        }
         match x.as_str() {
+            "--" => rest = true,
             "--json" => a.json = true,
+            "--keep" => a.keep = true,
             "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on"
             | "--tags" | "--tag" | "--time" | "--tokens" | "--stage" | "--gate" | "--commit"
-            | "--to" | "--from" => {
+            | "--to" | "--from" | "--after" | "--session" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -36,15 +46,9 @@ fn parse(argv: &[String]) -> Result<Args, String> {
     Ok(a)
 }
 
-/// Local time as `YYYY-MM-DD HH:MM`, from the system clock (`date`), so agents never type times.
+/// Local time as `YYYY-MM-DD HH:MM`, from the system clock, so agents never type times.
 pub fn local_stamp() -> String {
-    std::process::Command::new("date")
-        .arg("+%Y-%m-%d %H:%M")
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .filter(|s| s.len() == 16)
-        .unwrap_or_else(|| "1970-01-01 00:00".into())
+    queue::local_stamp()
 }
 
 pub fn config_file() -> PathBuf {
@@ -61,32 +65,156 @@ fn base() -> PathBuf {
         .unwrap_or_else(|| home().join("playground"))
 }
 
-fn resolve_queue(flag: Option<&String>) -> Result<PathBuf, String> {
+/// Where the queue a command runs on came from.
+#[derive(Debug, Clone, PartialEq)]
+enum Source {
+    /// `--queue`: always what the caller meant.
+    Flag,
+    /// `$MUSTER_ROOT` (or the older `$TASKS_ROOT`), named.
+    Env(&'static str),
+    /// The current folder's own queue.
+    Here,
+}
+
+/// The queue root from the environment, if set (and not empty).
+fn env_root() -> Option<(&'static str, PathBuf)> {
+    ["MUSTER_ROOT", "TASKS_ROOT"].into_iter().find_map(|var| {
+        std::env::var_os(var)
+            .filter(|v| !v.is_empty())
+            .map(|v| (var, PathBuf::from(v)))
+    })
+}
+
+/// The queue a folder belongs to: the folder itself or one above it, or a `tasks/` beside it
+/// or beside a folder above it (so a repo, or a worktree inside it, finds `<project>/tasks`).
+fn queue_of(cwd: &Path) -> Option<PathBuf> {
+    cwd.ancestors().find_map(|dir| {
+        if projects::looks_like_queue(dir) {
+            return Some(dir.to_path_buf());
+        }
+        let beside = dir.join("tasks");
+        projects::looks_like_queue(&beside).then_some(beside)
+    })
+}
+
+/// The queue to use: `--queue <name|folder>`, else the environment's, else the current folder's.
+/// `known` lists the queues Muster knows, by name (read only when a name needs it).
+fn resolve_queue(
+    flag: Option<&str>,
+    env: Option<(&'static str, PathBuf)>,
+    cwd: Option<&Path>,
+    known: &dyn Fn() -> Vec<(String, PathBuf)>,
+) -> Result<(PathBuf, Source), String> {
     if let Some(q) = flag {
         let p = Path::new(q);
         if p.is_dir() && projects::looks_like_queue(p) {
-            return Ok(p.to_path_buf());
+            return Ok((p.to_path_buf(), Source::Flag));
         }
-        return projects::active(&base(), &projects::load(&config_file()))
+        return known()
             .into_iter()
             .find(|(n, _)| n == q)
-            .map(|(_, p)| p)
+            .map(|(_, p)| (p, Source::Flag))
             .ok_or_else(|| format!("no queue named {q:?} (see `muster projects`)"));
     }
-    if let Some(r) = std::env::var_os("MUSTER_ROOT").or_else(|| std::env::var_os("TASKS_ROOT")) {
-        return Ok(PathBuf::from(r));
+    if let Some((var, root)) = env {
+        return Ok((root, Source::Env(var)));
     }
-    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    for dir in cwd.ancestors() {
-        if projects::looks_like_queue(dir) {
-            return Ok(dir.to_path_buf());
-        }
-        let beside = dir.join("tasks");
-        if projects::looks_like_queue(&beside) {
-            return Ok(beside);
-        }
+    let cwd = cwd.ok_or("can't read the current folder: pass --queue <name|folder>")?;
+    queue_of(cwd)
+        .map(|q| (q, Source::Here))
+        .ok_or_else(|| "no queue here: pass --queue <name|folder> or set MUSTER_ROOT".into())
+}
+
+/// Commands that claim, hand on or hold a task. A slip of the environment would do them in
+/// another project's queue (it happened: drover's 0022 claimed from muster), so they're checked.
+const TARGETED: [&str; 8] = [
+    "claim",
+    "next",
+    "pass",
+    "return",
+    "block",
+    "unblock",
+    "stage",
+    "heartbeat",
+];
+
+/// The same folder, through symlinks too.
+fn same_folder(a: &Path, b: &Path) -> bool {
+    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    canon(a) == canon(b)
+}
+
+/// `drover/tasks`: a queue as people name it, its project folder and its own.
+fn short_queue(root: &Path) -> String {
+    let name = |p: Option<&Path>| {
+        p.and_then(Path::file_name)
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default()
+    };
+    match name(root.parent()) {
+        parent if !parent.is_empty() => format!("{parent}/{}", name(Some(root))),
+        _ => root.display().to_string(),
     }
-    Err("no queue here: pass --queue <name|folder> or set MUSTER_ROOT".into())
+}
+
+/// Refuse a targeted command on a queue that came from the environment while the current folder
+/// has a different queue of its own. `--queue` always wins, and a folder without a queue is fine.
+fn check_target(
+    source: &Source,
+    root: &Path,
+    cwd: Option<&Path>,
+    known: &dyn Fn() -> Vec<(String, PathBuf)>,
+) -> Result<(), String> {
+    let Source::Env(var) = source else {
+        return Ok(());
+    };
+    let Some(here) = cwd.and_then(queue_of) else {
+        return Ok(());
+    };
+    if same_folder(&here, root) {
+        return Ok(());
+    }
+    let name = known()
+        .into_iter()
+        .find(|(_, p)| same_folder(p, root))
+        .map(|(n, _)| n)
+        .unwrap_or_else(|| root.display().to_string());
+    Err(format!(
+        "{var} points at {} but you're in {}/…; pass --queue {name} to mean it",
+        short_queue(root),
+        projects::default_name(&here)
+    ))
+}
+
+/// `claimed 0019 in muster (/…/muster/tasks)`, then where it is now.
+fn claimed_message(root: &Path, id: &str, path: &str) -> String {
+    format!(
+        "claimed {id} in {} ({})\n{}",
+        projects::default_name(root),
+        root.display(),
+        stage_message(root, id, path)
+    )
+}
+
+/// `Q3`, `q3` or `3`.
+fn question_number(q: &str) -> Result<u32, String> {
+    let digits = q.strip_prefix(['Q', 'q']).unwrap_or(q);
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(format!("question must look like Q3, got {q:?}"));
+    }
+    digits
+        .parse()
+        .map_err(|_| format!("question must look like Q3, got {q:?}"))
+}
+
+/// The session asking or collecting answers: `--session`, else `$CLAUDE_CODE_SESSION_ID`.
+fn session(a: &Args) -> String {
+    a.flags
+        .get("session")
+        .filter(|s| !s.is_empty())
+        .cloned()
+        .or_else(|| std::env::var("CLAUDE_CODE_SESSION_ID").ok())
+        .unwrap_or_default()
 }
 
 fn who(a: &Args) -> String {
@@ -259,7 +387,13 @@ fn run(argv: &[String]) -> Result<i32, String> {
             Ok(0)
         }
         _ => {
-            let root = resolve_queue(a.flags.get("queue"))?;
+            let cwd = std::env::current_dir().ok();
+            let known = || projects::active(&base(), &projects::load(&config_file()));
+            let flag = a.flags.get("queue").map(String::as_str);
+            let (root, source) = resolve_queue(flag, env_root(), cwd.as_deref(), &known)?;
+            if TARGETED.contains(&cmd) {
+                check_target(&source, &root, cwd.as_deref(), &known)?;
+            }
             run_on(&a, cmd, &root, &stamp)
         }
     }
@@ -441,14 +575,97 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
         "answer" => {
             let id = need(a, 1, "a task id")?;
             let q = need(a, 2, "a question like Q2")?;
-            let n: u32 = q
-                .trim_start_matches(['Q', 'q'])
-                .parse()
-                .map_err(|_| format!("{q} isn't like Q2"))?;
+            let n = question_number(q)?;
             let asker = queue::answer(root, id, n, &a.pos[3..].join(" "), &me, stamp)?;
             match asker {
                 Some(s) => println!("{id}: answered {q}; delivered to session {s}"),
                 None => println!("{id}: answered {q}; no asking session on record"),
+            }
+            Ok(0)
+        }
+        "claim" => {
+            let id = need(a, 1, "a task id")?;
+            let p = ops::claim_task(root, id, &me, stamp)?;
+            println!("{}", claimed_message(root, id, &p));
+            Ok(0)
+        }
+        "next" => match ops::next_task(root, &me, stamp)? {
+            Some(c) => {
+                println!("{}", claimed_message(root, &c.id, &c.path));
+                Ok(0)
+            }
+            None => {
+                println!(
+                    "nothing ready in {} ({}) that {me} may take",
+                    projects::default_name(root),
+                    root.display()
+                );
+                Ok(1)
+            }
+        },
+        "heartbeat" => {
+            let id = need(a, 1, "a task id")?;
+            ops::heartbeat_task(root, id, &me, stamp)?;
+            println!("{id}: heartbeat {stamp}");
+            Ok(0)
+        }
+        "reclaim" => {
+            let after = a.flags.get("after").map(String::as_str).unwrap_or("");
+            let lease = ops::lease_minutes(after)?;
+            let r = ops::reclaim(root, lease, &me, stamp, queue::now_secs())?;
+            if a.json {
+                print_json(&r)?;
+            } else {
+                for x in &r.released {
+                    println!(
+                        "released {} from {} (no heartbeat for {}): back in Ready ({})",
+                        x.id, x.holder, x.quiet, x.path
+                    );
+                }
+                if r.released.is_empty() && r.failed.is_empty() {
+                    let within = if after.trim().is_empty() {
+                        ops::LEASE
+                    } else {
+                        after
+                    };
+                    println!("nothing to release: every claim in Building was heard from within {within}");
+                }
+            }
+            for f in &r.failed {
+                eprintln!("muster: couldn't release {f}");
+            }
+            Ok(if r.failed.is_empty() { 0 } else { 1 })
+        }
+        "ask" => {
+            let id = need(a, 1, "a task id")?;
+            need(a, 2, "the question")?;
+            let asked = queue::ask(root, id, &a.pos[2..].join(" "), &me, &session(a), stamp)?;
+            println!(
+                "asked Q{} on {id}. The answer will be delivered to this session.",
+                asked.n
+            );
+            if !asked.earlier.is_empty() {
+                println!("\nQuestions on this task so far (check that yours isn't answered here):");
+                for (answered, line) in &asked.earlier {
+                    let tag = if *answered { "[answered]" } else { "[open]" };
+                    println!("  {tag} {line}");
+                }
+            }
+            Ok(0)
+        }
+        "escalate" => {
+            let id = need(a, 1, "a task id")?;
+            let n = question_number(need(a, 2, "a question like Q2")?)?;
+            queue::escalate(root, id, n, &me, stamp)?;
+            println!("escalated Q{n} on {id}; add it to WAITING-FOR-OWNER.md");
+            Ok(0)
+        }
+        "inbox" => {
+            let mail = queue::take_mail(root, &session(a), a.keep)?;
+            if mail.is_empty() {
+                println!("no answers waiting");
+            } else {
+                println!("{}", mail.join("\n"));
             }
             Ok(0)
         }
@@ -704,6 +921,243 @@ mod tests {
         assert_eq!(
             stage_message(d.path(), "0009", "doing/0009-x.md"),
             "0009: changed (doing/0009-x.md)"
+        );
+    }
+
+    #[test]
+    fn everything_after_double_dash_is_text() {
+        let a = parse(&sv(&[
+            "ask",
+            "--session",
+            "aaaa1111",
+            "--keep",
+            "--",
+            "0007",
+            "--from",
+            "--weird?",
+        ]))
+        .unwrap();
+        assert_eq!(a.pos, vec!["ask", "0007", "--from", "--weird?"]);
+        assert_eq!(a.flags.get("session").map(String::as_str), Some("aaaa1111"));
+        assert!(a.keep);
+        let a = parse(&sv(&["reclaim", "--after", "2h"])).unwrap();
+        assert_eq!(a.flags.get("after").map(String::as_str), Some("2h"));
+        assert!(question_number("Q3").is_ok() && question_number("3").is_ok());
+        for bad in ["seven", "Q", "QQ2", "Q-1", "Q3a", ""] {
+            assert!(
+                question_number(bad).unwrap_err().contains("look like Q3"),
+                "{bad:?}"
+            );
+        }
+    }
+
+    fn v2_queue() -> tempfile::TempDir {
+        let d = tempfile::tempdir().unwrap();
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir(d.path().join(f)).unwrap();
+        }
+        std::fs::write(d.path().join("README.md"), "q").unwrap();
+        d
+    }
+
+    #[test]
+    fn claim_next_heartbeat_and_reclaim_with_their_exit_codes() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let code = |who: &str, args: &[&str]| {
+            let mut v = sv(args);
+            v.extend(sv(&["--queue", &q, "--as", who]));
+            main(&v)
+        };
+        for title in ["One", "Two", "Three"] {
+            assert_eq!(code("owner", &["new", title]), 0);
+        }
+        assert_eq!(code("wt-a", &["claim", "0002"]), 0);
+        assert_eq!(code("wt-a", &["claim", "0001"]), 1, "one claim per holder");
+        assert_eq!(code("wt-a", &["next"]), 1, "one claim per holder");
+        assert_eq!(code("wt-a", &["claim"]), 2, "usage");
+        assert_eq!(code("wt-b", &["next"]), 0);
+        assert_eq!(code("wt-c", &["next"]), 0);
+        assert_eq!(code("wt-d", &["next"]), 1, "nothing ready");
+        let t = |id: &str| queue::read_task(d.path(), id).unwrap();
+        assert_eq!(
+            (
+                t("0001").claimed_by,
+                t("0002").claimed_by,
+                t("0003").claimed_by
+            ),
+            ("wt-b".into(), "wt-a".into(), "wt-c".into())
+        );
+        assert_eq!(code("wt-a", &["heartbeat", "0002"]), 0);
+        assert_eq!(code("wt-b", &["heartbeat", "0002"]), 1, "not the holder");
+        assert_eq!(code("wt-a", &["heartbeat"]), 2);
+        // Every claim was just made: nothing to release, and a lease that isn't a time is refused.
+        assert_eq!(code("capture", &["reclaim"]), 0);
+        assert_eq!(code("capture", &["reclaim", "--after", "30m", "--json"]), 0);
+        assert_eq!(code("capture", &["reclaim", "--after", "soon"]), 1);
+        assert_eq!(t("0002").stage, "building");
+        assert_eq!(code("wt-a", &["show", "0002", "--json"]), 0);
+    }
+
+    #[test]
+    fn ask_escalate_and_inbox_on_the_command_line() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        // --queue goes right after the command: never after a `--`, where it would be text and
+        // the queue would come from the current folder instead.
+        let code = |args: &[&str]| {
+            let mut v = sv(&args[..1]);
+            v.extend(sv(&["--queue", &q]));
+            v.extend(sv(&args[1..]));
+            main(&v)
+        };
+        assert_eq!(code(&["new", "Asked", "--as", "owner"]), 0);
+        let s = ["--session", "abcd1234-full"];
+        let ask = |text: &str| code(&["ask", "--as", "wt-a", s[0], s[1], "--", "0001", text]);
+        assert_eq!(ask("--port? 5173 or \"8080\"\nsecond line"), 0);
+        let body = queue::read_body(d.path(), "0001").unwrap();
+        assert!(
+            body.contains(":** --port? 5173 or \"8080\"\n  second line\n"),
+            "{body}"
+        );
+        assert_eq!(
+            code(&["ask", "0001", "x?", "--as", "wt-a", "--session", "nothex!!"]),
+            1
+        );
+        assert_eq!(
+            code(&["ask", "0001", "--as", "wt-a", s[0], s[1]]),
+            2,
+            "no question"
+        );
+        assert_eq!(code(&["escalate", "0001", "Q1", "--as", "capture"]), 0);
+        assert_eq!(
+            code(&["escalate", "0001", "Q1", "--as", "capture"]),
+            1,
+            "again"
+        );
+        assert_eq!(code(&["escalate", "0001", "one", "--as", "capture"]), 1);
+        assert_eq!(code(&["answer", "0001", "Q1", "5173", "--as", "owner"]), 0);
+        assert!(d.path().join("mail/abcd1234/0001-Q1.md").is_file());
+        assert_eq!(code(&["inbox", s[0], s[1], "--keep"]), 0);
+        assert!(d.path().join("mail/abcd1234/0001-Q1.md").is_file(), "kept");
+        assert_eq!(code(&["inbox", s[0], s[1]]), 0);
+        assert!(d
+            .path()
+            .join("mail/abcd1234/delivered/0001-Q1.md")
+            .is_file());
+        assert_eq!(code(&["inbox", "--session", "zz"]), 1);
+        let t = queue::read_task(d.path(), "0001").unwrap();
+        assert_eq!((t.questions.len(), t.open_questions), (1, 0));
+        assert!(t.questions[0].escalated && t.questions[0].owner_answered);
+    }
+
+    /// `<base>/<project>/tasks` as a queue, and `<base>/<project>/main` as its repo.
+    fn project(base: &Path, name: &str) -> (PathBuf, PathBuf) {
+        let q = base.join(name).join("tasks");
+        std::fs::create_dir_all(q.join("todo")).unwrap();
+        std::fs::write(q.join("README.md"), "q").unwrap();
+        let repo = base.join(name).join("main");
+        std::fs::create_dir_all(repo.join(".claude/worktrees/wt-x/src")).unwrap();
+        (q, repo)
+    }
+
+    #[test]
+    fn an_env_queue_is_refused_for_claims_made_from_another_projects_folder() {
+        let base = tempfile::tempdir().unwrap();
+        let (drover, _) = project(base.path(), "drover");
+        let (muster, repo) = project(base.path(), "muster");
+        let known = || vec![("drover".to_string(), drover.clone())];
+        let env = || Some(("MUSTER_ROOT", drover.clone()));
+        // From muster's repo, MUSTER_ROOT at drover's queue: the queue resolves, and claims are refused.
+        let (root, source) = resolve_queue(None, env(), Some(&repo), &known).unwrap();
+        assert_eq!(
+            (root.as_path(), &source),
+            (drover.as_path(), &Source::Env("MUSTER_ROOT"))
+        );
+        let e = check_target(&source, &root, Some(&repo), &known).unwrap_err();
+        assert_eq!(
+            e,
+            "MUSTER_ROOT points at drover/tasks but you're in muster/…; pass --queue drover to mean it"
+        );
+        // Inside a worktree of that repo too, and from TASKS_ROOT, naming the variable used.
+        let wt = repo.join(".claude/worktrees/wt-x/src");
+        let old = Some(("TASKS_ROOT", drover.clone()));
+        let (root, source) = resolve_queue(None, old, Some(&wt), &known).unwrap();
+        assert!(check_target(&source, &root, Some(&wt), &known)
+            .unwrap_err()
+            .starts_with("TASKS_ROOT points at drover/tasks but you're in muster/…"));
+        // A queue Muster doesn't know by name: the message gives its folder.
+        let none = || Vec::new();
+        assert!(check_target(&source, &root, Some(&wt), &none)
+            .unwrap_err()
+            .ends_with(&format!("pass --queue {} to mean it", drover.display())));
+        // --queue always wins, by name or by folder.
+        for flag in ["drover", drover.to_str().unwrap()] {
+            let (root, source) = resolve_queue(Some(flag), env(), Some(&repo), &known).unwrap();
+            assert_eq!((root.as_path(), &source), (drover.as_path(), &Source::Flag));
+            assert!(check_target(&source, &root, Some(&repo), &known).is_ok());
+        }
+        // The env's queue is the folder's own (by a symlink, say), or the folder has none: fine.
+        let link = base.path().join("link-to-muster-tasks");
+        std::os::unix::fs::symlink(&muster, &link).unwrap();
+        let (root, source) =
+            resolve_queue(None, Some(("MUSTER_ROOT", link)), Some(&repo), &known).unwrap();
+        assert!(check_target(&source, &root, Some(&repo), &known).is_ok());
+        let elsewhere = tempfile::tempdir().unwrap();
+        let (root, source) = resolve_queue(None, env(), Some(elsewhere.path()), &known).unwrap();
+        assert!(check_target(&source, &root, Some(elsewhere.path()), &known).is_ok());
+        assert!(check_target(&source, &root, None, &known).is_ok());
+        // With no env, the folder's own queue; with neither, a clear refusal.
+        let (root, source) = resolve_queue(None, None, Some(&wt), &known).unwrap();
+        assert_eq!((root, source), (muster.clone(), Source::Here));
+        assert!(resolve_queue(None, None, Some(elsewhere.path()), &known)
+            .unwrap_err()
+            .contains("no queue here"));
+        assert!(resolve_queue(Some("nowhere"), None, None, &known)
+            .unwrap_err()
+            .contains("no queue named"));
+        // Which commands are checked: the ones that claim, hand on or hold a task, not reads.
+        for cmd in [
+            "claim",
+            "next",
+            "pass",
+            "return",
+            "block",
+            "unblock",
+            "stage",
+            "heartbeat",
+        ] {
+            assert!(TARGETED.contains(&cmd), "{cmd}");
+        }
+        for cmd in ["list", "show", "check", "projects", "help"] {
+            assert!(!TARGETED.contains(&cmd), "{cmd}");
+        }
+    }
+
+    #[test]
+    fn a_claim_says_which_queue_it_was_made_in() {
+        let base = tempfile::tempdir().unwrap();
+        let (q, _) = project(base.path(), "muster");
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir_all(q.join(f)).unwrap();
+        }
+        let c = ops::create_task(
+            &q,
+            &ops::NewTask {
+                title: "Said".into(),
+                ..Default::default()
+            },
+            "o",
+            "2026-10-12 10:00",
+        )
+        .unwrap();
+        let p = ops::claim_task(&q, &c.id, "wt-a", "2026-10-12 10:01").unwrap();
+        assert_eq!(
+            claimed_message(&q, &c.id, &p),
+            format!(
+                "claimed 0001 in muster ({})\n0001: Building (doing/0001-said.md)",
+                q.display()
+            )
         );
     }
 

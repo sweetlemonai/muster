@@ -50,9 +50,13 @@ The `muster` command (the app's binary, `bin/muster`): `new`, `list`, `show`, `m
 (to the next stage. `--from <stage>` refuses if it has moved on. `--gate` is needed out of
 Building, and `--commit` goes with the pass into Done), `return` (back, with
 the reason), `block --on` / `unblock` (a flag, the task keeps its stage), and `stage` (the owner's
-override). The slash commands will call it.
+override). Claims and their lease (task 0002): `claim` (Ready → Building, one claim per holder),
+`next` (the top Ready task you may take, by priority then id), `heartbeat` (the holder keeps a
+claim alive), and `reclaim [--after 12h]` (claims quiet past their lease go back to Ready). Questions
+(task 0002): `ask`, `escalate` and `inbox`, beside `answer`. The slash commands will call it.
 
 ### Python tools (in `bin/`)
 
-`task ask`, `task answer`, `task escalate`, `task inbox`, the answer hook, `manifest.py` (board
-data + `--check`). Everything else above is still to build.
+`task ask|answer|escalate|inbox` (a stand-in that runs the `muster` commands with the same
+arguments), the answer hook (reads the mailbox itself, for speed), `manifest.py` (board data +
+`--check`). Still to build: `found` and `triage` (task 0015), `depends:` (task 0019).

@@ -14,267 +14,71 @@
 The session id comes from --session, else $CLAUDE_CODE_SESSION_ID. Mailboxes live in
 mail/<first 8 chars of the session id>/ and are not committed. bin/answer-hook.py delivers them
 into a running Claude Code session after each tool call.
+
+This is a stand-in kept for scripts and agents that call `task`: it runs `muster ask`, `answer`,
+`escalate` or `inbox` (one implementation of the rules), on the queue in $MUSTER_ROOT, with the
+same arguments. $MUSTER_BIN names the muster to run; by default it's bin/muster beside this file.
 """
-import fcntl
-import json
+# Annotations stay text, so `list[str] | None` runs on macOS's own python3 (3.9) too.
+from __future__ import annotations
+
 import os
-import re
 import sys
-from contextlib import contextmanager
-from datetime import datetime
 from pathlib import Path
 
-# The queue folder (task files, mail/). Set by the caller: MUSTER_ROOT (TASKS_ROOT is the older name).
-_root = os.environ.get("MUSTER_ROOT") or os.environ.get("TASKS_ROOT")
-if not _root:
-    sys.exit("muster: set MUSTER_ROOT to the task queue folder")
-ROOT = Path(_root).resolve()
-FOLDERS = ["inbox", "todo", "doing", "blocked", "done"]
-MAX_TEXT = 4000
-MAX_WHO = 100
+HERE = Path(__file__).resolve().parent
+VALUE_OPTIONS = ("--from", "--session", "--as")
+# Each command and how many arguments it takes after its name.
+ARITY = {"ask": 2, "answer": 3, "escalate": 2, "inbox": 0}
 
 
-class Refused(Exception):
-    pass
+def muster_args(argv: list[str], folder: str, root: str | None) -> list[str] | None:
+    """The `muster` command line for a `task` one, or None when it isn't a `task` command.
 
-
-def now():
-    return datetime.now().strftime("%Y-%m-%d %H:%M")
-
-
-def short(session):
-    if not session:
-        raise Refused("no session id: pass --session or run inside Claude Code")
-    s = session.strip().lower()[:8]
-    if not re.fullmatch(r"[0-9a-f]{8}", s):
-        raise Refused(f"session id must start with 8 hex characters (a Claude Code or Codex session id), got {session[:20]!r}")
-    return s
-
-
-@contextmanager
-def locked():
-    (ROOT / "mail").mkdir(exist_ok=True)
-    with open(ROOT / "mail" / ".lock", "w") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
-
-
-def find(task_id):
-    if not re.fullmatch(r"\d{4}", task_id):
-        raise Refused(f"task id must be four digits, got {task_id!r}")
-    hits = [p for f in FOLDERS for p in (ROOT / f).glob(f"{task_id}-*.md")]
-    if not hits:
-        raise Refused(f"no task {task_id}")
-    if len(hits) > 1:
-        raise Refused(f"task {task_id} exists twice: {', '.join(str(h.relative_to(ROOT)) for h in hits)}")
-    return hits[0]
-
-
-def clean(text):
-    text = re.sub(r"[\x00-\x09\x0b-\x1f\x7f]", "", text).strip()
-    if not text:
-        raise Refused("empty text")
-    if len(text) > MAX_TEXT:
-        raise Refused(f"text longer than {MAX_TEXT} characters")
-    return text
-
-
-def actor(who: str, flag: str) -> str:
-    """Who's acting, as it goes into a question, an answer and the log (queue::actor in the app):
-    one line of at most 100 characters, and nothing that would let a log line pass for
-    tool-written stage history. `flag` names the option it came from, for the message."""
-    t = " ".join(re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", who).split())
-    if not t:
-        raise Refused(f"who ({flag}) is empty")
-    if len(t) > MAX_WHO:
-        raise Refused(f"who ({flag}) is longer than {MAX_WHO} characters")
-    if ": stage " in t or " → " in t:
-        raise Refused(f"who ({flag}) can't contain \": stage \" or \" → \" (that's stage history): {t!r}")
-    return t
-
-
-def indent(text: str) -> str:
-    """File contract rule 3, as text goes into a task: lines after the first are indented by two
-    spaces (a Markdown list continuation), so no line of a question or an answer can start a
-    heading or a new item and end the item it belongs to."""
-    return text.replace("\n", "\n  ")
-
-
-def unindent(text: str) -> str:
-    """The text as it was written: the two-space continuation indent of indent() taken off."""
-    return text.replace("\n  ", "\n")
-
-
-def questions_block(body):
-    """(start, end) of the ## Questions section's content, creating the section above ## Log."""
-    m = re.search(r"^## Questions[ \t]*\n", body, re.M)
-    if not m:
-        log = re.search(r"^## Log[ \t]*\n", body, re.M)
-        at = log.start() if log else len(body)
-        body = body[:at] + "## Questions\n\n" + body[at:]
-        m = re.search(r"^## Questions[ \t]*\n", body, re.M)
-    nxt = re.search(r"^## ", body[m.end():], re.M)
-    end = m.end() + nxt.start() if nxt else len(body)
-    return body, m.end(), end
-
-
-def items(section):
-    """Question items: (number or None, ticked, text of the whole item)."""
-    out = []
-    for chunk in re.split(r"^(?=- \[[ x]\] \*\*Q)", section, flags=re.M):
-        m = re.match(r"- \[([ x])\] \*\*Q(\d+)?", chunk)
-        if m:
-            out.append((int(m.group(2)) if m.group(2) else None, m.group(1) == "x", chunk.rstrip("\n")))
-    return out
-
-
-def log_line(body, line):
-    return body.rstrip("\n") + f"\n- {line}\n"
-
-
-def ask(task_id, question, who, session):
-    who = actor(who, "--from")
-    question = clean(question)
-    sid = short(session)
-    with locked():
-        path = find(task_id)
-        body, start, end = questions_block(path.read_text(encoding="utf-8"))
-        qs = items(body[start:end])
-        for _, ticked, text in qs:
-            shown = unindent(text)
-            if ticked and question.lower() in shown.lower():
-                raise Refused(f"already answered in {task_id}:\n{shown}")
-        n = max([q for q, _, _ in qs if q] + [0, len(qs)]) + 1
-        item = f"- [ ] **Q{n} ({who}, session {sid}, {now()}):** {indent(question)}\n"
-        section = body[start:end].rstrip("\n")
-        section = (section + "\n" if section.strip() else "") + item + "\n"
-        body = body[:start] + section + body[end:]
-        body = log_line(body, f"{now()} {who}: asked Q{n}")
-        path.write_text(body, encoding="utf-8")
-        reg = ROOT / "mail" / "asks.json"
-        asks = json.loads(reg.read_text()) if reg.exists() else {}
-        asks[f"{task_id}-Q{n}"] = sid
-        reg.write_text(json.dumps(asks, indent=1) + "\n")
-    print(f"asked Q{n} on {task_id}. The answer will be delivered to this session.")
-    if qs:
-        print("\nQuestions on this task so far (check that yours isn't answered here):")
-        for _, ticked, text in qs:
-            print(("  [answered] " if ticked else "  [open] ") + text.splitlines()[0][:200])
-    return n
-
-
-def answer(task_id, qref, text, who):
-    who = actor(who, "--as")
-    text = clean(text)
-    m = re.fullmatch(r"Q?(\d+)", qref)
-    if not m:
-        raise Refused(f"question must look like Q3, got {qref!r}")
-    n = int(m.group(1))
-    with locked():
-        path = find(task_id)
-        body, start, end = questions_block(path.read_text(encoding="utf-8"))
-        section = body[start:end]
-        target = next((it for it in items(section) if it[0] == n), None)
-        if not target:
-            raise Refused(f"no Q{n} in {task_id}")
-        _, ticked, item = target
-        new = item.replace("- [ ] **Q", "- [x] **Q", 1) + f"\n  **A ({who}, {now()}):** {indent(text)}"
-        section = section.replace(item, new, 1)
-        body = body[:start] + section + body[end:]
-        body = log_line(body, f"{now()} {who}: answered Q{n}")
-        path.write_text(body, encoding="utf-8")
-        sid = asker(task_id, n, item)
-        if sid:
-            box = ROOT / "mail" / sid
-            box.mkdir(parents=True, exist_ok=True)
-            title = re.search(r"^# (.+)$", body, re.M)
-            q = unindent(re.sub(r"^- \[[ x]\] \*\*Q\d+ \([^)]*\):\*\* ?", "", item).strip())
-            (box / f"{task_id}-Q{n}.md").write_text(
-                f"Answer to Q{n} on task {task_id} ({title.group(1) if title else ''}), from {who}:\n"
-                f"Your question: {q}\n"
-                f"Answer: {text}\n"
-                f"(Also written in {path.relative_to(ROOT)} in the task queue.)\n",
-                encoding="utf-8",
-            )
-    print(f"answered Q{n} on {task_id}" + (f"; delivered to session {sid}" if sid else "; no asking session on record"))
-
-
-def asker(task_id, n, item):
-    reg = ROOT / "mail" / "asks.json"
-    asks = json.loads(reg.read_text()) if reg.exists() else {}
-    if f"{task_id}-Q{n}" in asks:
-        return asks[f"{task_id}-Q{n}"]
-    m = re.search(r"session ([0-9a-f]{8})", item)
-    return m.group(1) if m else None
-
-
-def escalate(task_id, qref):
-    m = re.fullmatch(r"Q?(\d+)", qref)
-    if not m:
-        raise Refused(f"question must look like Q3, got {qref!r}")
-    n = int(m.group(1))
-    with locked():
-        path = find(task_id)
-        body, start, end = questions_block(path.read_text(encoding="utf-8"))
-        section = body[start:end]
-        target = next((it for it in items(section) if it[0] == n), None)
-        if not target:
-            raise Refused(f"no Q{n} in {task_id}")
-        item = target[2]
-        if "Escalated to owner" in item:
-            raise Refused(f"Q{n} is already escalated")
-        section = section.replace(item, item + f"\n  **Escalated to owner (capture, {now()}).**", 1)
-        body = log_line(body[:start] + section + body[end:], f"{now()} capture: escalated Q{n} to the owner")
-        path.write_text(body, encoding="utf-8")
-    print(f"escalated Q{n} on {task_id}; add it to WAITING-FOR-OWNER.md")
-
-
-def take_mail(session, keep=False):
-    box = ROOT / "mail" / short(session)
-    if not box.is_dir():
-        return []
-    out = []
-    for f in sorted(box.glob("*.md")):
-        out.append(f.read_text(encoding="utf-8"))
-        if not keep:
-            (box / "delivered").mkdir(exist_ok=True)
-            f.rename(box / "delivered" / f.name)
-    return out
-
-
-def main(argv):
-    args, opts = [], {}
+    Options go before `--` and the arguments after it, so a question or an answer that starts
+    with `--` stays text. Who defaults as `task` always did: the asker is this folder's name
+    (`ask --from` sets it), the answerer and escalator capture (`--as` sets it)."""
+    args: list[str] = []
+    opts: dict[str, str] = {}
+    keep = False
     it = iter(argv)
     for a in it:
-        if a in ("--from", "--session", "--as"):
+        if a in VALUE_OPTIONS:
             opts[a[2:]] = next(it, "")
         elif a == "--keep":
-            opts["keep"] = True
+            keep = True
         else:
             args.append(a)
-    session = opts.get("session") or os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    cmd = args[0] if args else ""
+    if not args or args[0] not in ARITY or len(args) != ARITY[args[0]] + 1:
+        return None
+    cmd = args[0]
+    out = [cmd]
+    if root:
+        out += ["--queue", root]
+    if cmd == "ask":
+        out += ["--as", opts.get("from") or folder]
+    elif cmd in ("answer", "escalate"):
+        out += ["--as", opts.get("as") or "capture"]
+    if cmd in ("ask", "inbox") and opts.get("session"):
+        out += ["--session", opts["session"]]
+    if cmd == "inbox" and keep:
+        out.append("--keep")
+    return out + ["--", *args[1:]]
+
+
+def main(argv: list[str]) -> int:
+    root = os.environ.get("MUSTER_ROOT") or os.environ.get("TASKS_ROOT")
+    args = muster_args(argv, Path.cwd().name, str(Path(root).resolve()) if root else None)
+    if args is None:
+        print(__doc__.strip())
+        return 2
+    muster = os.environ.get("MUSTER_BIN") or str(HERE / "muster")
     try:
-        if cmd == "ask" and len(args) == 3:
-            who = opts.get("from") or Path.cwd().name
-            ask(args[1], args[2], who, session)
-        elif cmd == "answer" and len(args) == 4:
-            answer(args[1], args[2], args[3], opts.get("as") or "capture")
-        elif cmd == "escalate" and len(args) == 3:
-            escalate(args[1], args[2])
-        elif cmd == "inbox" and len(args) == 1:
-            mail = take_mail(session, opts.get("keep", False))
-            print("\n".join(mail) if mail else "no answers waiting")
-        else:
-            print(__doc__.strip())
-            return 2
-    except Refused as e:
-        print(f"refused: {e}", file=sys.stderr)
+        os.execv(muster, [muster, *args])
+    except OSError as e:
+        print(f"task: can't run muster ({muster}): {e}", file=sys.stderr)
         return 1
-    return 0
+    return 0  # not reached: execv replaces this process
 
 
 if __name__ == "__main__":

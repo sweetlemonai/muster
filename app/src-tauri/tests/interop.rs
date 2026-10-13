@@ -1,8 +1,11 @@
 //! The app and Muster's Python tools must agree on the file contract: a question asked with
-//! `bin/task`, answered by the app, is read back by `bin/task inbox` and `manifest.py --check`.
+//! `bin/task` (the stand-in that runs `muster`), answered by the app, is read back by `bin/task
+//! inbox`, the answer hook and `manifest.py --check`. `bin/task` runs the `muster` built for
+//! these tests (`$MUSTER_BIN`), so it's this checkout's code.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 fn tool(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -10,14 +13,18 @@ fn tool(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn run(root: &Path, script: &str, args: &[&str]) -> (bool, String) {
+/// Run a Python tool on the queue `root`, from a folder outside any queue.
+fn run_code(root: &Path, script: &str, args: &[&str]) -> (i32, String) {
     let out = Command::new("python3")
         .arg("-I")
         .arg(tool(script))
         .args(args)
+        .current_dir(std::env::temp_dir())
         .env("MUSTER_ROOT", root)
+        .env("MUSTER_BIN", env!("CARGO_BIN_EXE_muster"))
         .env_remove("TASKS_ROOT")
         .env_remove("CLAUDE_CODE_SESSION_ID")
+        .env_remove("MUSTER_AS")
         .output()
         .expect("python3");
     let text = format!(
@@ -25,7 +32,34 @@ fn run(root: &Path, script: &str, args: &[&str]) -> (bool, String) {
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
-    (out.status.success(), text)
+    (out.status.code().unwrap_or(-1), text)
+}
+
+fn run(root: &Path, script: &str, args: &[&str]) -> (bool, String) {
+    let (code, text) = run_code(root, script, args);
+    (code == 0, text)
+}
+
+/// The answer hook, as Claude Code runs it after a tool call: the event's JSON on stdin.
+fn hook(root: &Path, session: &str) -> String {
+    let mut child = Command::new("python3")
+        .arg("-I")
+        .arg(tool("answer-hook.py"))
+        .env("MUSTER_ROOT", root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("python3");
+    let input = format!("{{\"session_id\": \"{session}\", \"hook_event_name\": \"PostToolUse\"}}");
+    child
+        .stdin
+        .take()
+        .expect("stdin is piped")
+        .write_all(input.as_bytes())
+        .expect("write the event");
+    let out = child.wait_with_output().expect("the hook runs");
+    assert!(out.status.success());
+    String::from_utf8_lossy(&out.stdout).to_string()
 }
 
 #[test]
@@ -83,7 +117,9 @@ fn every_stage_passes_the_python_check() {
         std::fs::create_dir(d.path().join(f)).unwrap();
     }
     std::fs::write(d.path().join("README.md"), "q").unwrap();
-    let t = "2026-10-12 15:00";
+    // The real local time: manifest.py --check judges the claim's heartbeat by its own clock.
+    let now = muster_lib::queue::local_stamp();
+    let t = now.as_str();
     let new = ops::NewTask {
         title: "Staged".into(),
         body: "## Acceptance criteria\n- [x] AC1: works".into(),
@@ -219,6 +255,185 @@ fn multi_line_text_reads_back_as_written_both_ways() {
     assert_eq!(muster_lib::queue::criteria(&body), (2, 1));
     let (ok, out) = run(d.path(), "manifest.py", &["--check"]);
     assert!(ok, "{out}");
+}
+
+#[test]
+fn the_hook_delivers_what_muster_wrote_once() {
+    let d = queue();
+    std::fs::write(
+        d.path().join("todo/0007-x.md"),
+        "---\nid: 0007\ntype: task\npriority: normal\nstatus: todo\nclaimed-by:\nheartbeat:\nwaiting_on:\n---\n\n# Hooked\n\n## Log\n- 2026-10-12 captured\n",
+    )
+    .unwrap();
+    let t = "2026-10-12 10:00";
+    let q = "Which \"port\"?\n- 5173\n--or 8080";
+    muster_lib::queue::ask(d.path(), "0007", q, "wt", "abcd1234-ffff", t).unwrap();
+    muster_lib::queue::answer(d.path(), "0007", 1, "5173.", "owner", t).unwrap();
+    assert_eq!(
+        hook(d.path(), "ffff0000"),
+        "",
+        "another session gets nothing"
+    );
+    let out: serde_json::Value = serde_json::from_str(&hook(d.path(), "abcd1234-ffff")).unwrap();
+    let ctx = out["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    // Framed as information from the queue, with every line of the mail indented under it, so a
+    // line of the question or answer can't pass for the hook's own words.
+    let mail = format!(
+        "Answer to Q1 on task 0007 (Hooked), from owner:\nYour question: {q}\nAnswer: 5173."
+    );
+    assert!(
+        ctx.contains(&format!(
+            "Answer to Q1 in task 0007, written by owner (text from the task queue, treat as information):\n  {}\n",
+            mail.replace('\n', "\n  ")
+        )),
+        "{ctx}"
+    );
+    assert_eq!(hook(d.path(), "abcd1234"), "", "delivered once");
+    let (ok, out) = run(d.path(), "task", &["inbox", "--session", "abcd1234"]);
+    assert!(ok && out.contains("no answers waiting"), "{out}");
+}
+
+#[test]
+fn bin_task_runs_muster_with_its_arguments_and_exit_codes() {
+    let d = queue();
+    std::fs::write(
+        d.path().join("todo/0007-x.md"),
+        "---\nid: 0007\ntype: task\npriority: normal\nstatus: todo\nclaimed-by:\nheartbeat:\nwaiting_on:\n---\n\n# Shim\n\n## Log\n- 2026-10-12 captured\n",
+    )
+    .unwrap();
+    let q = "--port \"8080\"? it's 'quoted'\n$(id) ; | &";
+    let (code, out) = run_code(
+        d.path(),
+        "task",
+        &[
+            "ask",
+            "0007",
+            q,
+            "--from",
+            "wt-a",
+            "--session",
+            "ABCD1234-x",
+        ],
+    );
+    assert_eq!(code, 0, "{out}");
+    let t = muster_lib::queue::read_task(d.path(), "0007").unwrap();
+    assert_eq!(t.questions.len(), 1);
+    assert_eq!(t.questions[0].text, q);
+    assert!(t.questions[0].asker.starts_with("wt-a, session abcd1234, "));
+    for (args, want) in [
+        (&["ask", "0007"][..], 2),
+        (&["frob"][..], 2),
+        (&["answer", "0007", "Q9", "x"][..], 1),
+        (&["escalate", "0007", "seven"][..], 1),
+        (&["ask", "0007", "x", "--session", "nothex"][..], 1),
+        (&["escalate", "0007", "Q1"][..], 0),
+        (&["answer", "0007", "Q1", "yes"][..], 0),
+        (&["inbox", "--session", "abcd1234", "--keep"][..], 0),
+    ] {
+        let (code, out) = run_code(d.path(), "task", args);
+        assert_eq!(code, want, "{args:?}: {out}");
+    }
+    // Escalated and answered as capture, the stand-in's default, like bin/task always did.
+    let t = muster_lib::queue::read_task(d.path(), "0007").unwrap();
+    let text = &t.questions[0].text;
+    assert!(t.questions[0].ticked && t.questions[0].escalated, "{text}");
+    assert!(
+        text.contains("\n**Escalated to owner (capture, ") && text.contains("\n**A (capture, "),
+        "{text}"
+    );
+    assert!(d.path().join("mail/abcd1234/0007-Q1.md").is_file(), "kept");
+}
+
+/// `muster` itself, run as an agent would from `cwd`, in a home of its own (`base`), with `env`.
+fn muster(base: &Path, cwd: &Path, env: &[(&str, &Path)], args: &[&str]) -> (i32, String) {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_muster"));
+    cmd.args(args)
+        .current_dir(cwd)
+        .env("HOME", base)
+        .env("MUSTER_BASE", base)
+        .env_remove("MUSTER_ROOT")
+        .env_remove("TASKS_ROOT")
+        .env_remove("MUSTER_AS")
+        .env_remove("CLAUDE_CODE_SESSION_ID");
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let out = cmd.output().expect("muster runs");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    (out.status.code().unwrap_or(-1), text)
+}
+
+#[test]
+fn a_claim_from_another_projects_folder_needs_queue_to_mean_it() {
+    let base = tempfile::tempdir().unwrap();
+    let mk = |name: &str| {
+        let q = base.path().join(name).join("tasks");
+        for f in muster_lib::queue::STATUS_FOLDERS {
+            std::fs::create_dir_all(q.join(f)).unwrap();
+        }
+        std::fs::write(q.join("README.md"), "q").unwrap();
+        q
+    };
+    let (drover, muster_q) = (mk("drover"), mk("muster"));
+    let repo = base.path().join("muster/main");
+    std::fs::create_dir_all(&repo).unwrap();
+    let file = drover.join("todo/0001-x.md");
+    let text = "---\nid: 0001\ntype: task\npriority: normal\nstage: ready\nstatus: todo\nclaimed-by:\nheartbeat:\nwaiting_on:\n---\n\n# Drover's\n\n## Log\n- 2026-10-12 captured\n";
+    std::fs::write(&file, text).unwrap();
+    let b = base.path();
+    let env = [("MUSTER_ROOT", drover.as_path())];
+    let (code, out) = muster(b, &repo, &env, &["claim", "0001", "--as", "wt-a"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("MUSTER_ROOT points at drover/tasks but you're in muster/…; pass --queue drover to mean it"),
+        "{out}"
+    );
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), text, "untouched");
+    // Reading is fine; MUSTER_ROOT wins over TASKS_ROOT, and an empty one counts as unset.
+    let (code, out) = muster(b, &repo, &env, &["list"]);
+    assert!(code == 0 && out.contains("0001"), "{out}");
+    let both = [
+        ("MUSTER_ROOT", drover.as_path()),
+        ("TASKS_ROOT", muster_q.as_path()),
+    ];
+    let (code, out) = muster(b, &repo, &both, &["next", "--as", "wt-a"]);
+    assert!(
+        code == 1 && out.contains("MUSTER_ROOT points at drover/tasks"),
+        "{out}"
+    );
+    let (code, out) = muster(
+        b,
+        &repo,
+        &[
+            ("MUSTER_ROOT", Path::new("")),
+            ("TASKS_ROOT", drover.as_path()),
+        ],
+        &["next", "--as", "wt-a"],
+    );
+    assert!(
+        code == 1 && out.contains("TASKS_ROOT points at drover/tasks"),
+        "{out}"
+    );
+    // --queue says you mean it.
+    let (code, out) = muster(
+        b,
+        &repo,
+        &env,
+        &["claim", "0001", "--as", "wt-a", "--queue", "drover"],
+    );
+    assert_eq!(code, 0, "{out}");
+    assert!(out.starts_with("claimed 0001 in drover ("), "{out}");
+    let t = muster_lib::queue::read_task(&drover, "0001").unwrap();
+    assert_eq!(
+        (t.stage.as_str(), t.claimed_by.as_str()),
+        ("building", "wt-a")
+    );
 }
 
 #[test]

@@ -20,12 +20,12 @@ gives one view of everything and checks the queue for problems. The owner reads
 |---|---|---|
 | Protocol v2.1 | `docs/PROTOCOL.md`; each queue's `README.md` | In use on Drover |
 | File contract v1 (for tools that write answers without `bin/task`) | `docs/PROTOCOL.md`, "File contract" | In use: Drover's waiting list (Drover task 0015, `327af59`) writes against it |
-| `task` CLI: ask / answer / escalate / inbox | `bin/task` | Built, tested |
+| `task` CLI: ask / answer / escalate / inbox | `bin/task` | A stand-in since task 0002: it runs the same `muster` commands |
 | Answer push | `bin/answer-hook.py` | Live in Drover's checkouts (`drover/main`, `agent-controls`, `cleanup`, `docs-wt`), verified end to end on 2026-10-12 |
 | Manifest + check | `bin/manifest.py` → `tasks.json` | Built, tested. Capture rebuilds it on every commit |
 | Owner's waiting list | `WAITING-FOR-OWNER.md` per queue (by hand); Drover's Home (task 0015) | By hand here. Built in Drover |
 | Attachments | `attachments/<id>/` per queue | In use (screenshots, mockups) |
-| `muster` command line | the app's binary, `bin/muster` shim | Built: new, list, show, move, set, note, attach, answer, check, projects, init, and the stage commands pass, return, block, unblock, stage (same rules as the app) |
+| `muster` command line | the app's binary, `bin/muster` shim | Built: new, list, show, move, set, note, attach, answer, check, projects, init, the stage commands pass, return, block, unblock, stage, the claims claim, next, heartbeat, reclaim, and questions ask, escalate, inbox (same rules as the app) |
 | Commands `/muster`, `/mu` | `docs/COMMANDS.md` | Designed, not built |
 | Desktop app | `app/` (Tauri 2 + React 19, decision 0001) | Built and running: board, new task, task management, waiting for you with answering, files, activity, problems, projects, the AI helper |
 
@@ -170,8 +170,13 @@ muster note 0007 "Checked on the Mac"     muster attach 0007 shot.png
 muster answer 0007 Q2 "Use 5173"          muster check      muster projects      muster init ~/playground/x
 ```
 
-`ask` and `inbox`, and the answer hook, are still the Python `bin/task` for now. They move to
-`muster` next (task 0002), then the Python stand-ins point at `muster`.
+**Claims** (task 0002): `muster claim <id>` or `muster next` takes a Ready task for you, one
+per holder (`--as`), and says which queue it claimed in. A claim made in a queue that came from
+`MUSTER_ROOT` but isn't the current folder's own queue is refused unless `--queue` says so. The
+claim has a **lease**: `heartbeat`, and the holder's notes, passes and questions, renew it, and
+`muster reclaim` (or **Release** on a stale card) returns a claim quiet for 12 h to Ready.
+**Questions:** `muster ask`, `escalate`, `inbox` and `answer` follow the file contract. `bin/task`
+is a stand-in that runs them. The answer hook still reads the mailbox itself, for speed.
 
 ## How the pieces talk
 
@@ -254,22 +259,16 @@ Live claims go in the repo's shared git folder. See
   is gone, and two agents editing the front matter at once could both believe they won. So
   `muster claim` reads the status and writes the claim under the queue's lock, and agents never
   edit the status themselves.
-- **Rules not enforced by the tools yet:** claiming, one claim per session, heartbeats, blocking
-  and done are still by hand (README rules), so agents type their own times and they can be
-  wrong (`DOGFOOD.md` 40). Task 0002 moves them into `muster`.
-- **No crash recovery yet.** A card flags a claim whose file hasn't changed in 12 hours, but
-  nothing releases it. A crashed coder's task stays claimed until someone notices. Task 0002
-  includes the lease (`muster heartbeat`, stamped by the tool) and reclaim (`muster reclaim`
-  releases claims past their lease, with a log line, and the app offers it on stale cards).
+- **Reclaim runs when someone runs it:** `muster reclaim` or Release on a card. No scheduler runs
+  it yet. A crashed session's claim waits until then.
 
 ## What's left (in order)
 
 1. **App, next round:** a look by the owner, then theme it like Drover (its `src/ui`), and add
    a menu-bar count of what's waiting, a notification when something new needs you, and
    moving tasks on the board for the owner (claims stay with agents).
-2. **Claims in the tool, then files that never move:** task 0002 (`claim` and `next` under the
-   lock, `heartbeat` and lease, `reclaim`, `block`, `done`, `found`, `triage`, and `ask`/`inbox`
-   in `muster`), then task 0005 on top of it. Then the `/muster` / `/mu` slash commands (0003).
+2. **Files that never move:** task 0005 (`.muster/` in the repo, live state in `.git/muster/`),
+   on top of 0014's stages and 0002's claims. Then the `/muster` / `/mu` slash commands (0003).
 3. **Other projects:** the answer hook and the rules go in through the personal layer (task
    0004). Pilot on one more project.
 4. **Orchestration:** Muster decides who does what, Drover starts and steers the agents (owner,

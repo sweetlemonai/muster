@@ -268,6 +268,34 @@ async fn unblock_task(
     blocking(move || ops::unblock_task(&queue_root(&file, &queue)?, &id, "owner", &stamp)).await
 }
 
+/// The owner releases a claim whose lease ran out (the card says "quiet 12 h+"): back to Ready,
+/// logged as reclaimed. Refused if the holder was heard from again since the window looked.
+#[tauri::command]
+async fn reclaim_task(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+    stamp: String,
+) -> Result<String, String> {
+    check_id(&id)?;
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || release(&queue_root(&file, &queue)?, &id, &stamp, queue::now_secs())).await
+}
+
+/// What `reclaim_task` does once it has the queue: its arguments checked, then the core's rule,
+/// with the default lease (the one the card's "quiet 12 h+" shows).
+pub(crate) fn release(
+    root: &std::path::Path,
+    id: &str,
+    stamp: &str,
+    now_secs: u64,
+) -> Result<String, String> {
+    check_id(id)?;
+    check_stamp(stamp)?;
+    ops::reclaim_task(root, id, ops::LEASE_MINUTES, "owner", stamp, now_secs)
+}
+
 /// The owner's override: put a task in any stage.
 #[tauri::command]
 async fn set_stage(
@@ -561,6 +589,7 @@ pub fn run() {
             return_task,
             block_task,
             unblock_task,
+            reclaim_task,
             set_stage,
             set_field,
             add_note,
@@ -596,5 +625,39 @@ mod tests {
         ] {
             assert!(check_stamp(bad).is_err(), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn release_checks_its_arguments_then_the_lease() {
+        let d = tempfile::tempdir().unwrap();
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir(d.path().join(f)).unwrap();
+        }
+        std::fs::write(
+            d.path().join("doing/0007-t.md"),
+            "---\nid: 0007\nstage: building\nstatus: doing\nclaimed-by: wt-a\nheartbeat: 2026-10-12 10:00\nwaiting_on:\n---\n\n# T\n\n## Log\n- 2026-10-12 09:00 capture: created\n",
+        )
+        .unwrap();
+        let now = queue::now_secs();
+        assert_eq!(
+            release(d.path(), "7", "2026-10-13 10:00", now).unwrap_err(),
+            "bad task id"
+        );
+        assert_eq!(
+            release(d.path(), "0007", "2026-10-13T10:00", now).unwrap_err(),
+            "bad time stamp"
+        );
+        assert!(release(d.path(), "0007", "2026-10-12 21:59", now)
+            .unwrap_err()
+            .contains("lease hasn't run out"));
+        assert_eq!(
+            release(d.path(), "0007", "2026-10-12 22:01", now).unwrap(),
+            "todo/0007-t.md"
+        );
+        let t = queue::read_task(d.path(), "0007").unwrap();
+        assert_eq!((t.stage.as_str(), t.claimed_by.as_str()), ("ready", ""));
+        assert!(t.log_tail.last().unwrap().ends_with(
+            "owner: stage building → ready (reclaimed from wt-a (no heartbeat for 12 h))"
+        ));
     }
 }

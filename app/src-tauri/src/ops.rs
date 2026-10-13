@@ -315,7 +315,7 @@ pub fn create_task(root: &Path, new: &NewTask, who: &str, stamp: &str) -> Result
 }
 
 /// Replace a front-matter field's value (adding it before the closing `---` if missing).
-fn set_front(text: &str, key: &str, value: &str) -> Result<String, String> {
+pub(crate) fn set_front(text: &str, key: &str, value: &str) -> Result<String, String> {
     let rest = text
         .strip_prefix("---\n")
         .ok_or("the task has no front matter")?;
@@ -346,34 +346,41 @@ fn edit(
     id: &str,
     f: impl FnOnce(&Path, String) -> Result<(String, Option<PathBuf>), String>,
 ) -> Result<String, String> {
-    with_lock(root, || {
-        let path = find_task(root, id)?;
-        let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        let (new, move_to) = f(&path, text)?;
-        match move_to {
-            Some(dest) if dest != path => {
-                if dest.exists() {
-                    return Err(format!("{} already exists", dest.display()));
-                }
-                write_atomic(&path, &new)?;
-                fs::create_dir_all(dest.parent().unwrap_or(root)).map_err(|e| e.to_string())?;
-                fs::rename(&path, &dest).map_err(|e| e.to_string())?;
-                Ok(dest
-                    .strip_prefix(root)
-                    .unwrap_or(&dest)
-                    .to_string_lossy()
-                    .to_string())
+    with_lock(root, || edit_locked(root, id, f))
+}
+
+/// `edit` for a caller that already holds the queue's lock (the lock isn't reentrant).
+fn edit_locked(
+    root: &Path,
+    id: &str,
+    f: impl FnOnce(&Path, String) -> Result<(String, Option<PathBuf>), String>,
+) -> Result<String, String> {
+    let path = find_task(root, id)?;
+    let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let (new, move_to) = f(&path, text)?;
+    match move_to {
+        Some(dest) if dest != path => {
+            if dest.exists() {
+                return Err(format!("{} already exists", dest.display()));
             }
-            _ => {
-                write_atomic(&path, &new)?;
-                Ok(path
-                    .strip_prefix(root)
-                    .unwrap_or(&path)
-                    .to_string_lossy()
-                    .to_string())
-            }
+            write_atomic(&path, &new)?;
+            fs::create_dir_all(dest.parent().unwrap_or(root)).map_err(|e| e.to_string())?;
+            fs::rename(&path, &dest).map_err(|e| e.to_string())?;
+            Ok(dest
+                .strip_prefix(root)
+                .unwrap_or(&dest)
+                .to_string_lossy()
+                .to_string())
         }
-    })
+        _ => {
+            write_atomic(&path, &new)?;
+            Ok(path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .to_string())
+        }
+    }
 }
 
 /// Set priority, type or title.
@@ -449,7 +456,7 @@ pub fn move_task(
         _ => "done",
     };
     let who = actor(who)?;
-    change(root, id, |t| {
+    change(root, id, &who, stamp, |t| {
         if t.stage == stage && !t.blocked {
             return Err(format!("{id} is already in {}", stage_label(stage)));
         }
@@ -481,6 +488,9 @@ struct Current {
     criteria: (usize, usize),
     /// Who passed it Ready → Building most recently (the builder), if anyone.
     builder: Option<String>,
+    /// The claim's lease: the holder's last heartbeat stamp, and the file's modified time.
+    heartbeat: String,
+    modified: u64,
 }
 
 /// What a stage change writes.
@@ -541,12 +551,29 @@ fn unblocked_line(stamp: &str, who: &str, was: &str) -> String {
 /// Change a task's stage or blocked flag under the lock: read it, let `f` decide, then write
 /// `stage:`, the status mirror, `waiting_on`, `claimed-by` (and `commit`), the log lines, and
 /// move the file to the mirror's folder in the v2 layout. Returns the new relative path.
+///
+/// The claim's lease (`heartbeat:`) is stamped here, so no caller can forget it: when `who` is
+/// the one holding the task in Building (their pass, return or block keeps it alive), and when the
+/// change hands Building to a holder it didn't have (a claim, or a return to the builder).
 fn change(
     root: &Path,
     id: &str,
+    who: &str,
+    stamp: &str,
     f: impl FnOnce(&Current) -> Result<Change, String>,
 ) -> Result<String, String> {
-    edit(root, id, |path, text| {
+    with_lock(root, || change_locked(root, id, who, stamp, f))
+}
+
+/// `change` for a caller that already holds the queue's lock.
+fn change_locked(
+    root: &Path,
+    id: &str,
+    who: &str,
+    stamp: &str,
+    f: impl FnOnce(&Current) -> Result<Change, String>,
+) -> Result<String, String> {
+    edit_locked(root, id, |path, text| {
         let folder = queue::folder_of(root, path);
         let t = queue::parse_task("", root, &folder, path, &text, 0)
             .ok_or("the task has no front matter")?;
@@ -556,6 +583,9 @@ fn change(
             .rev()
             .find(|(s, detail)| s.from == "ready" && s.to == "building" && *detail == "claimed")
             .map(|(s, _)| s.who);
+        let modified = fs::metadata(path)
+            .map(|m| queue::mtime_secs(&m))
+            .map_err(|e| e.to_string())?;
         let now = Current {
             criteria: queue::criteria(body),
             stage: t.stage,
@@ -563,8 +593,27 @@ fn change(
             waiting_on: t.waiting_on,
             claimed_by: t.claimed_by,
             builder,
+            heartbeat: t.heartbeat,
+            modified,
         };
         let c = f(&now)?;
+        // A claim is held Building, not blocked. One per holder (the owner may hold several),
+        // whichever change makes it: a pass from Ready, a return to the builder, an unblock, a set.
+        let held_before = now.stage == "building" && !now.blocked && !now.claimed_by.is_empty();
+        let held_after = c.stage == "building" && !c.blocked && !c.claimed_by.is_empty();
+        let new_hold = held_after && !(held_before && now.claimed_by == c.claimed_by);
+        if new_hold && c.claimed_by != "owner" {
+            if let Some(held) = holding(&tasks_now(root), &c.claimed_by, id) {
+                return Err(if c.claimed_by == who {
+                    already_holds(&held)
+                } else {
+                    format!(
+                        "{} already holds {held} in Building; one claim per holder, so they pass, return or block it first",
+                        c.claimed_by
+                    )
+                });
+            }
+        }
         let status = mirror_status(&c.stage, c.blocked);
         let mut new = set_front(&text, "stage", &c.stage)?;
         new = set_front(&new, "status", status)?;
@@ -572,6 +621,16 @@ fn change(
         new = set_front(&new, "claimed-by", &c.claimed_by)?;
         if let Some(commit) = &c.commit {
             new = set_front(&new, "commit", commit)?;
+        }
+        // The lease restarts when the holder acts, and whenever a change makes a hold: a claim,
+        // a return to the builder, or an unblock (time spent waiting isn't time gone quiet).
+        let holder_acts =
+            now.stage == "building" && !now.claimed_by.is_empty() && now.claimed_by == who;
+        let new_claim = c.stage == "building"
+            && !c.claimed_by.is_empty()
+            && (now.stage != "building" || now.claimed_by != c.claimed_by);
+        if holder_acts || new_claim || new_hold {
+            new = set_front(&new, "heartbeat", stamp)?;
         }
         for line in &c.log {
             new = append_log(&new, line);
@@ -629,69 +688,414 @@ pub fn pass_task(
         Some(s) if !s.is_empty() => Some(pick(s, &STAGES, "", "stage")?),
         _ => None,
     };
-    change(root, id, |t| {
-        if let Some(seen) = expected.filter(|s| *s != t.stage) {
+    change(root, id, &who, stamp, |t| {
+        pass_change(id, t, &who, stamp, &gate, &commit, expected)
+    })
+}
+
+/// What a pass does to the task `t` (the rules of `pass_task`, after its inputs are cleaned).
+fn pass_change(
+    id: &str,
+    t: &Current,
+    who: &str,
+    stamp: &str,
+    gate: &str,
+    commit: &str,
+    expected: Option<&str>,
+) -> Result<Change, String> {
+    if let Some(seen) = expected.filter(|s| *s != t.stage) {
+        return Err(format!(
+            "{id} is now in {}, not {}; it moved on since you looked",
+            stage_label(&t.stage),
+            stage_label(seen)
+        ));
+    }
+    if t.blocked {
+        let on = if t.waiting_on.is_empty() {
+            "something it doesn't name"
+        } else {
+            &t.waiting_on
+        };
+        return Err(format!("{id} is blocked on {on}; unblock it first"));
+    }
+    let from = t.stage.as_str();
+    let Some(&to) = STAGES.get(stage_index(from) + 1) else {
+        return Err(format!("{id} is done; there's no stage after Done"));
+    };
+    if !gate.is_empty() && from != "building" {
+        return Err("--gate is only for passing Building → Testing".into());
+    }
+    if !commit.is_empty() && from != "your-check" {
+        return Err("--commit is only for passing Your check → Done".into());
+    }
+    if matches!(from, "ready" | "building") && !t.claimed_by.is_empty() && t.claimed_by != who {
+        return Err(format!("{id} is claimed by {}", t.claimed_by));
+    }
+    let (items, ticked) = t.criteria;
+    let detail = match from {
+        "shaping" | "testing" if items == 0 => {
             return Err(format!(
-                "{id} is now in {}, not {}; it moved on since you looked",
-                stage_label(&t.stage),
-                stage_label(seen)
+                "{id} has no acceptance criteria: add `- [ ]` items under `## Acceptance criteria` first"
+            ))
+        }
+        "testing" if ticked < items => {
+            return Err(format!(
+                "{id}: {} of {items} acceptance criteria aren't ticked; tick each with its proof first",
+                items - ticked
+            ))
+        }
+        "building" if gate.is_empty() => {
+            return Err(format!(
+                "passing {id} Building → Testing needs the gate's result line (--gate \"…\")"
+            ))
+        }
+        "building" => format!(" (gate: {gate})"),
+        "ready" => " (claimed)".to_string(),
+        _ => String::new(),
+    };
+    Ok(Change {
+        stage: to.to_string(),
+        blocked: false,
+        waiting_on: t.waiting_on.clone(),
+        claimed_by: if to == "building" {
+            who.to_string()
+        } else {
+            released(t)
+        },
+        commit: (to == "done" && !commit.is_empty()).then(|| commit.to_string()),
+        log: vec![stage_line(stamp, who, from, to, &detail)],
+    })
+}
+
+/// A claim as `claim` and `next` report it: the task and its new relative path.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Claimed {
+    pub id: String,
+    pub path: String,
+}
+
+/// Every task of a queue as it is on disk now (files over 1 MB or without front matter are
+/// skipped), with each file's modified time. For decisions taken under the lock.
+fn tasks_now(root: &Path) -> Vec<queue::Task> {
+    let mut out: Vec<queue::Task> = queue::task_files(root)
+        .into_iter()
+        .filter_map(|(folder, path)| {
+            let meta = fs::metadata(&path).ok()?;
+            if meta.len() > queue::MAX_TASK_BYTES {
+                return None;
+            }
+            let text = fs::read_to_string(&path).ok()?;
+            queue::parse_task("", root, &folder, &path, &text, queue::mtime_secs(&meta))
+        })
+        .collect();
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    out
+}
+
+/// The task `who` holds in Building in this queue (not blocked: a blocked task is waiting, and
+/// blocking it is how a holder lets go), other than `except`.
+fn holding(tasks: &[queue::Task], who: &str, except: &str) -> Option<String> {
+    tasks
+        .iter()
+        .find(|t| t.stage == "building" && !t.blocked && t.claimed_by == who && t.id != except)
+        .map(|t| t.id.clone())
+}
+
+fn already_holds(id: &str) -> String {
+    format!("you already hold {id}; pass, return or block it first")
+}
+
+fn is_id(id: &str) -> bool {
+    id.len() == 4 && id.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// Claim a Ready task for `who`: Ready → Building, as `pass --from ready`, and refused while
+/// `who` already holds another task in Building in this queue. The check and the claim happen
+/// under one lock, so of two claims at once only one can win.
+pub fn claim_task(root: &Path, id: &str, who: &str, stamp: &str) -> Result<String, String> {
+    let who = actor(who)?;
+    // `change` refuses a second claim for `who`, under the same lock as the claim itself.
+    change(root, id, &who, stamp, |t| {
+        pass_change(id, t, &who, stamp, "", "", Some("ready"))
+    })
+}
+
+fn priority_rank(p: &str) -> u8 {
+    match p.to_ascii_lowercase().as_str() {
+        "high" => 0,
+        "low" => 2,
+        _ => 1,
+    }
+}
+
+/// Claim the top Ready task `who` may take: not blocked, not held in Ready by someone else;
+/// high before normal before low, then the lowest id. None when there's nothing to take.
+/// Refused while `who` already holds a task in Building here.
+pub fn next_task(root: &Path, who: &str, stamp: &str) -> Result<Option<Claimed>, String> {
+    let who = actor(who)?;
+    with_lock(root, || {
+        let tasks = tasks_now(root);
+        // Checked before picking, so a holder is told so rather than handed a refusal for one
+        // task; `change` checks again. The owner may hold several.
+        if let Some(held) = holding(&tasks, &who, "").filter(|_| who != "owner") {
+            return Err(already_holds(&held));
+        }
+        let Some(top) = tasks
+            .iter()
+            .filter(|t| t.stage == "ready" && !t.blocked && is_id(&t.id))
+            .filter(|t| t.claimed_by.is_empty() || t.claimed_by == who)
+            .min_by_key(|t| (priority_rank(&t.priority), t.id.clone()))
+        else {
+            return Ok(None);
+        };
+        let id = top.id.clone();
+        let path = change_locked(root, &id, &who, stamp, |t| {
+            pass_change(&id, t, &who, stamp, "", "", Some("ready"))
+        })?;
+        Ok(Some(Claimed { id, path }))
+    })
+}
+
+/// Keep a claim alive: stamp `heartbeat:` on a task `who` holds in Building. No log line.
+pub fn heartbeat_task(root: &Path, id: &str, who: &str, stamp: &str) -> Result<String, String> {
+    let who = actor(who)?;
+    edit(root, id, |path, text| {
+        let t = queue::parse_task("", root, &queue::folder_of(root, path), path, &text, 0)
+            .ok_or("the task has no front matter")?;
+        if t.stage != "building" {
+            return Err(format!(
+                "{id} is in {}, not Building; only a claim in Building has a lease to keep alive",
+                stage_label(&t.stage)
             ));
         }
-        if t.blocked {
-            let on = if t.waiting_on.is_empty() {
-                "something it doesn't name"
+        if t.claimed_by != who {
+            return Err(if t.claimed_by.is_empty() {
+                format!("nobody holds {id}; claim it first")
             } else {
-                &t.waiting_on
-            };
-            return Err(format!("{id} is blocked on {on}; unblock it first"));
+                format!("{id} is held by {}, not {who}", t.claimed_by)
+            });
         }
-        let from = t.stage.as_str();
-        let Some(&to) = STAGES.get(stage_index(from) + 1) else {
-            return Err(format!("{id} is done; there's no stage after Done"));
-        };
-        if !gate.is_empty() && from != "building" {
-            return Err("--gate is only for passing Building → Testing".into());
-        }
-        if !commit.is_empty() && from != "your-check" {
-            return Err("--commit is only for passing Your check → Done".into());
-        }
-        if matches!(from, "ready" | "building") && !t.claimed_by.is_empty() && t.claimed_by != who {
-            return Err(format!("{id} is claimed by {}", t.claimed_by));
-        }
-        let (items, ticked) = t.criteria;
-        let detail = match from {
-            "shaping" | "testing" if items == 0 => {
-                return Err(format!(
-                    "{id} has no acceptance criteria: add `- [ ]` items under `## Acceptance criteria` first"
-                ))
+        Ok((set_front(&text, "heartbeat", stamp)?, None))
+    })
+}
+
+/// The default lease: a claim with no heartbeat for this long can be reclaimed.
+pub const LEASE: &str = "12h";
+/// `LEASE` in minutes, what `lease_minutes("")` gives (a test pins the two together).
+pub const LEASE_MINUTES: u64 = 12 * 60;
+
+/// A lease's length in minutes, from a time like `clean_time` takes (30m, 2h, 1d). A day here is
+/// 24 hours (not the 8-hour agent day of estimates). Empty is the default, 12 h.
+pub fn lease_minutes(input: &str) -> Result<u64, String> {
+    let input = if input.trim().is_empty() {
+        LEASE
+    } else {
+        input
+    };
+    let t = clean_time(input)?;
+    let (num, per) = match t.as_bytes().last() {
+        Some(b'm') => (&t[..t.len() - 1], 1.0),
+        Some(b'h') => (&t[..t.len() - 1], 60.0),
+        Some(b'd') => (&t[..t.len() - 1], 1440.0),
+        _ => return Err(format!("lease {input:?}: use 30m, 2h or 1d")),
+    };
+    let n: f64 = num
+        .parse()
+        .map_err(|_| format!("lease {input:?}: use 30m, 2h or 1d"))?;
+    let minutes = (n * per).round();
+    if minutes < 1.0 {
+        return Err(format!("lease {input:?} is shorter than a minute"));
+    }
+    // clean_time caps the number at 1000, so this is at most 1,440,000 minutes.
+    Ok(minutes as u64)
+}
+
+/// A tool stamp, `YYYY-MM-DD HH:MM` local time, as minutes since 1970-01-01 00:00 (same zone).
+/// None for anything else, a date that doesn't exist included.
+pub fn stamp_minutes(s: &str) -> Option<i64> {
+    let b = s.as_bytes();
+    let shape = b.len() == 16
+        && b.iter().enumerate().all(|(i, c)| match i {
+            4 | 7 => *c == b'-',
+            10 => *c == b' ',
+            13 => *c == b':',
+            _ => c.is_ascii_digit(),
+        });
+    if !shape {
+        return None;
+    }
+    let num = |a: usize, z: usize| s[a..z].parse::<i64>().ok();
+    let (y, m, d, h, min) = (
+        num(0, 4)?,
+        num(5, 7)?,
+        num(8, 10)?,
+        num(11, 13)?,
+        num(14, 16)?,
+    );
+    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    let days_in = match m {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return None,
+    };
+    if !(1..=days_in).contains(&d) || h > 23 || min > 59 {
+        return None;
+    }
+    // Days from the civil date (H. Hinnant's algorithm).
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some(days * 1440 + h * 60 + min)
+}
+
+/// How long a claim has been quiet, in minutes: since its heartbeat when that's a tool stamp,
+/// else since the file last changed. `stamp` and `now_secs` are the same moment, as local time
+/// and as seconds since 1970, so neither needs the time zone.
+pub fn quiet_minutes(heartbeat: &str, modified: u64, stamp: &str, now_secs: u64) -> u64 {
+    match (stamp_minutes(heartbeat), stamp_minutes(stamp)) {
+        (Some(beat), Some(now)) => u64::try_from(now - beat).unwrap_or(0),
+        _ => now_secs.saturating_sub(modified) / 60,
+    }
+}
+
+/// "13 h", or "45 min" under an hour.
+fn quiet_text(minutes: u64) -> String {
+    if minutes >= 60 {
+        format!("{} h", minutes / 60)
+    } else {
+        format!("{minutes} min")
+    }
+}
+
+/// A claim `reclaim` gave back to Ready.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Released {
+    pub id: String,
+    pub holder: String,
+    /// How long it had been quiet ("13 h").
+    pub quiet: String,
+    pub path: String,
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Reclaimed {
+    pub released: Vec<Released>,
+    /// Claims past their lease that couldn't be released, with why.
+    pub failed: Vec<String>,
+}
+
+/// What releasing the claim on `t` writes, or why it's refused: only a claim in Building, not
+/// blocked, quiet for longer than `lease` minutes.
+fn release_change(
+    id: &str,
+    t: &Current,
+    lease: u64,
+    who: &str,
+    stamp: &str,
+    now_secs: u64,
+) -> Result<Change, String> {
+    if t.stage != "building" {
+        return Err(format!(
+            "{id} is in {}, not Building; there's no claim to release",
+            stage_label(&t.stage)
+        ));
+    }
+    if t.claimed_by.is_empty() {
+        return Err(format!("nobody holds {id}; there's no claim to release"));
+    }
+    if t.blocked {
+        return Err(format!(
+            "{id} is blocked on {}; it's waiting, not quiet",
+            t.waiting_on
+        ));
+    }
+    let quiet = quiet_minutes(&t.heartbeat, t.modified, stamp, now_secs);
+    if quiet <= lease {
+        return Err(format!(
+            "{id}'s lease hasn't run out: {} was last heard from {} ago (the lease is {})",
+            t.claimed_by,
+            quiet_text(quiet),
+            quiet_text(lease)
+        ));
+    }
+    Ok(Change {
+        stage: "ready".into(),
+        blocked: false,
+        waiting_on: t.waiting_on.clone(),
+        claimed_by: String::new(),
+        commit: None,
+        log: vec![stage_line(
+            stamp,
+            who,
+            "building",
+            "ready",
+            &format!(
+                " (reclaimed from {} (no heartbeat for {}))",
+                t.claimed_by,
+                quiet_text(quiet)
+            ),
+        )],
+    })
+}
+
+/// Give every claim whose lease ran out back to Ready: each task in Building, not blocked, held
+/// by someone, with no heartbeat (or, without one, no change to its file) for longer than
+/// `lease` minutes. Live claims are left alone. One lock for the whole pass, so a heartbeat
+/// lands either before it (and counts) or after it (and is refused: the task isn't Building).
+pub fn reclaim(
+    root: &Path,
+    lease: u64,
+    who: &str,
+    stamp: &str,
+    now_secs: u64,
+) -> Result<Reclaimed, String> {
+    let who = actor(who)?;
+    with_lock(root, || {
+        let mut out = Reclaimed::default();
+        let quiet = tasks_now(root).into_iter().filter(|t| {
+            t.stage == "building"
+                && !t.blocked
+                && !t.claimed_by.is_empty()
+                && quiet_minutes(&t.heartbeat, t.modified, stamp, now_secs) > lease
+        });
+        for t in quiet {
+            match change_locked(root, &t.id, &who, stamp, |c| {
+                release_change(&t.id, c, lease, &who, stamp, now_secs)
+            }) {
+                Ok(path) => out.released.push(Released {
+                    quiet: quiet_text(quiet_minutes(&t.heartbeat, t.modified, stamp, now_secs)),
+                    id: t.id,
+                    holder: t.claimed_by,
+                    path,
+                }),
+                Err(e) => out.failed.push(format!("{}: {e}", t.id)),
             }
-            "testing" if ticked < items => {
-                return Err(format!(
-                    "{id}: {} of {items} acceptance criteria aren't ticked; tick each with its proof first",
-                    items - ticked
-                ))
-            }
-            "building" if gate.is_empty() => {
-                return Err(format!(
-                    "passing {id} Building → Testing needs the gate's result line (--gate \"…\")"
-                ))
-            }
-            "building" => format!(" (gate: {gate})"),
-            "ready" => " (claimed)".to_string(),
-            _ => String::new(),
-        };
-        Ok(Change {
-            stage: to.to_string(),
-            blocked: false,
-            waiting_on: t.waiting_on.clone(),
-            claimed_by: if to == "building" {
-                who.clone()
-            } else {
-                released(t)
-            },
-            commit: (to == "done" && !commit.is_empty()).then(|| commit.clone()),
-            log: vec![stage_line(stamp, &who, from, to, &detail)],
-        })
+        }
+        Ok(out)
+    })
+}
+
+/// Release one claim whose lease ran out (the app's Release): refused if it's live again.
+pub fn reclaim_task(
+    root: &Path,
+    id: &str,
+    lease: u64,
+    who: &str,
+    stamp: &str,
+    now_secs: u64,
+) -> Result<String, String> {
+    let who = actor(who)?;
+    change(root, id, &who, stamp, |t| {
+        release_change(id, t, lease, &who, stamp, now_secs)
     })
 }
 
@@ -711,7 +1115,7 @@ pub fn return_task(
         Some(s) => Some(pick(s, &STAGES, "", "stage")?),
         None => None,
     };
-    change(root, id, |t| {
+    change(root, id, &who, stamp, |t| {
         let i = stage_index(&t.stage);
         if i == 0 {
             return Err(format!("{id} is in Backlog; there's no stage before it"));
@@ -782,7 +1186,7 @@ pub fn block_task(
         format!("{stamp} {who}: blocked on {on}"),
         "what it waits on",
     )?;
-    change(root, id, |t| {
+    change(root, id, &who, stamp, |t| {
         if t.waiting_on == on {
             return Err(format!("{id} is already blocked on {on}"));
         }
@@ -800,7 +1204,7 @@ pub fn block_task(
 /// Clear the blocked flag; the status mirror goes back to what the stage means.
 pub fn unblock_task(root: &Path, id: &str, who: &str, stamp: &str) -> Result<String, String> {
     let who = actor(who)?;
-    change(root, id, |t| {
+    change(root, id, &who, stamp, |t| {
         if !t.blocked {
             return Err(format!("{id} isn't blocked"));
         }
@@ -829,7 +1233,7 @@ pub fn set_stage(
     if stage.is_empty() {
         return Err(format!("stage must be one of {}", STAGES.join(", ")));
     }
-    change(root, id, |t| {
+    change(root, id, &who, stamp, |t| {
         if t.stage == stage {
             return Err(format!("{id} is already in {}", stage_label(stage)));
         }
@@ -855,7 +1259,17 @@ pub fn add_note(
     let who = actor(who)?;
     let note = one_line(note, 2000, "the note")?;
     let line = free_text_line(format!("{stamp} {who}: {note}"), "a note")?;
-    edit(root, id, |_, text| Ok((append_log(&text, &line), None)))
+    edit(root, id, |path, text| {
+        let mut new = append_log(&text, &line);
+        // The holder's note keeps its claim alive.
+        let t = queue::parse_task("", root, &queue::folder_of(root, path), path, &text, 0);
+        if t.is_some_and(|t| {
+            t.stage == "building" && !t.claimed_by.is_empty() && t.claimed_by == who
+        }) {
+            new = set_front(&new, "heartbeat", stamp)?;
+        }
+        Ok((new, None))
+    })
 }
 
 /// A safe attachment name: the base name, with only letters, digits and `-_.` kept.
@@ -975,7 +1389,7 @@ pub fn status_folders() -> &'static [&'static str] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::queue::{base64, read_state, Cache};
+    use crate::queue::{base64, read_state_at, Cache};
 
     fn queue() -> tempfile::TempDir {
         let d = tempfile::tempdir().unwrap();
@@ -986,8 +1400,10 @@ mod tests {
         d
     }
     const T: &str = "2026-10-12 14:05";
+    /// The queue's state as the app reads it, at the tests' time `T`: a claim stamped at `T`
+    /// is fresh whatever the wall clock says.
     fn state(d: &Path) -> crate::queue::State {
-        read_state(&[("p".into(), d.to_path_buf())], &mut Cache::default())
+        read_state_at(&[("p".into(), d.to_path_buf())], &mut Cache::default(), T)
     }
 
     #[test]
@@ -2275,5 +2691,649 @@ mod tests {
         );
         assert_eq!(slug("ÄÖÜ"), "task");
         assert!(slug(&"word ".repeat(30)).len() <= 48);
+    }
+
+    /// A task file `<id>-t.md` in `folder` ("" for the flat layout) with these front-matter lines.
+    fn put_task(d: &Path, folder: &str, id: &str, fm: &str) -> PathBuf {
+        let dir = if folder.is_empty() {
+            d.to_path_buf()
+        } else {
+            d.join(folder)
+        };
+        let p = dir.join(format!("{id}-t.md"));
+        fs::write(
+            &p,
+            format!("---\nid: {id}\ntype: task\n{fm}\n---\n\n# Task {id}\n\n## Log\n- 2026-10-12 09:00 capture: created\n"),
+        )
+        .unwrap();
+        p
+    }
+    fn ready_fm(priority: &str) -> String {
+        format!("priority: {priority}\nstage: ready\nstatus: todo\nclaimed-by:\nheartbeat:\nwaiting_on:")
+    }
+    fn task_of(d: &Path, id: &str) -> crate::queue::Task {
+        crate::queue::read_task(d, id).unwrap()
+    }
+    fn file_of(d: &Path, id: &str) -> String {
+        crate::queue::read_body(d, id).unwrap()
+    }
+
+    #[test]
+    fn claim_takes_ready_starts_the_lease_and_allows_one_claim_per_holder() {
+        let d = queue();
+        for id in ["0001", "0002", "0003"] {
+            put_task(d.path(), "todo", id, &ready_fm("normal"));
+        }
+        assert_eq!(
+            claim_task(d.path(), "0001", "wt-a", T).unwrap(),
+            "doing/0001-t.md"
+        );
+        let t = task_of(d.path(), "0001");
+        assert_eq!(
+            (
+                t.stage.as_str(),
+                t.status.as_str(),
+                t.claimed_by.as_str(),
+                t.heartbeat.as_str()
+            ),
+            ("building", "doing", "wt-a", T)
+        );
+        assert!(file_of(d.path(), "0001")
+            .ends_with("- 2026-10-12 14:05 wt-a: stage ready → building (claimed)\n"));
+        // A second claim by the same holder: refused, and the file is left alone.
+        let before = file_of(d.path(), "0002");
+        let e = claim_task(d.path(), "0002", "wt-a", T).unwrap_err();
+        assert_eq!(e, "you already hold 0001; pass, return or block it first");
+        assert_eq!(file_of(d.path(), "0002"), before);
+        // Who is cleaned the same way before it's compared.
+        assert!(claim_task(d.path(), "0002", " wt-a\n", T)
+            .unwrap_err()
+            .contains("you already hold 0001"));
+        // Another holder may; a task already in Building can't be claimed again.
+        claim_task(d.path(), "0002", "wt-b", T).unwrap();
+        assert!(claim_task(d.path(), "0001", "wt-c", T)
+            .unwrap_err()
+            .contains("0001 is now in Building, not Ready"));
+        // Blocking your task frees you to claim another.
+        block_task(d.path(), "0001", "0002 the API", "wt-a", T).unwrap();
+        claim_task(d.path(), "0003", "wt-a", T).unwrap();
+        assert_eq!(task_of(d.path(), "0003").claimed_by, "wt-a");
+        assert!(state(d.path()).problems.is_empty());
+    }
+
+    #[test]
+    fn claim_refusals() {
+        let d = queue();
+        put_task(
+            d.path(),
+            "inbox",
+            "0001",
+            "priority: normal\nstage: backlog\nstatus: inbox",
+        );
+        put_task(
+            d.path(),
+            "blocked",
+            "0002",
+            "priority: normal\nstage: ready\nstatus: blocked\nwaiting_on: owner",
+        );
+        assert!(claim_task(d.path(), "0001", "wt-a", T)
+            .unwrap_err()
+            .contains("0001 is now in Backlog, not Ready"));
+        assert!(claim_task(d.path(), "0002", "wt-a", T)
+            .unwrap_err()
+            .contains("blocked on owner"));
+        assert!(claim_task(d.path(), "0009", "wt-a", T)
+            .unwrap_err()
+            .contains("no task 0009"));
+        assert!(claim_task(d.path(), "0001", " ", T)
+            .unwrap_err()
+            .contains("who"));
+    }
+
+    #[test]
+    fn next_claims_the_top_ready_task_by_priority_then_id() {
+        let d = queue();
+        put_task(d.path(), "todo", "0001", &ready_fm("low"));
+        put_task(d.path(), "todo", "0002", &ready_fm("normal"));
+        put_task(
+            d.path(),
+            "blocked",
+            "0003",
+            "priority: high\nstage: ready\nstatus: blocked\nwaiting_on: 0001 first",
+        );
+        put_task(d.path(), "todo", "0005", &ready_fm("high"));
+        put_task(d.path(), "todo", "0004", &ready_fm("High"));
+        put_task(
+            d.path(),
+            "todo",
+            "0006",
+            "priority: high\nstage: ready\nstatus: todo\nclaimed-by: wt-z",
+        );
+        put_task(
+            d.path(),
+            "inbox",
+            "0007",
+            "priority: high\nstage: backlog\nstatus: inbox",
+        );
+        put_task(
+            d.path(),
+            "todo",
+            "0008",
+            "priority: high\nstage: shaping\nstatus: todo",
+        );
+        // An old file without a stage: status todo means Ready, and no priority means normal.
+        put_task(d.path(), "todo", "0009", "status: todo");
+        let next = |who: &str| next_task(d.path(), who, T).map(|c| c.map(|c| c.id));
+        assert_eq!(next("wt-a").unwrap().as_deref(), Some("0004"));
+        assert_eq!(
+            next("wt-a").unwrap_err(),
+            "you already hold 0004; pass, return or block it first"
+        );
+        assert_eq!(next("wt-b").unwrap().as_deref(), Some("0005"));
+        // 0006 is held in Ready by wt-z, so only wt-z takes it.
+        assert_eq!(next("wt-z").unwrap().as_deref(), Some("0006"));
+        assert_eq!(next("wt-c").unwrap().as_deref(), Some("0002"));
+        assert_eq!(next("wt-d").unwrap().as_deref(), Some("0009"));
+        assert_eq!(next("wt-e").unwrap().as_deref(), Some("0001"));
+        assert_eq!(next("wt-f").unwrap(), None, "nothing ready");
+        let t = task_of(d.path(), "0004");
+        assert_eq!(
+            (
+                t.stage.as_str(),
+                t.claimed_by.as_str(),
+                t.heartbeat.as_str()
+            ),
+            ("building", "wt-a", T)
+        );
+        assert_eq!(task_of(d.path(), "0003").stage, "ready", "blocked stays");
+    }
+
+    #[test]
+    fn heartbeat_is_the_holders_and_only_in_building() {
+        let d = queue();
+        put_task(d.path(), "todo", "0001", &ready_fm("normal"));
+        put_task(d.path(), "todo", "0002", &ready_fm("normal"));
+        claim_task(d.path(), "0001", "wt-a", "2026-10-12 09:00").unwrap();
+        assert_eq!(task_of(d.path(), "0001").heartbeat, "2026-10-12 09:00");
+        let log_before = task_of(d.path(), "0001").log_tail;
+        assert_eq!(
+            heartbeat_task(d.path(), "0001", "wt-a", "2026-10-12 10:00").unwrap(),
+            "doing/0001-t.md"
+        );
+        let t = task_of(d.path(), "0001");
+        assert_eq!(t.heartbeat, "2026-10-12 10:00");
+        assert_eq!(t.log_tail, log_before, "a heartbeat adds no log line");
+        assert_eq!(
+            heartbeat_task(d.path(), "0001", "wt-b", "2026-10-12 11:00").unwrap_err(),
+            "0001 is held by wt-a, not wt-b"
+        );
+        assert!(heartbeat_task(d.path(), "0002", "wt-a", T)
+            .unwrap_err()
+            .contains("0002 is in Ready, not Building"));
+        // Someone else's note doesn't renew the lease; the holder's note, block and pass do.
+        add_note(d.path(), "0001", "looks good", "owner", "2026-10-12 11:00").unwrap();
+        assert_eq!(task_of(d.path(), "0001").heartbeat, "2026-10-12 10:00");
+        add_note(d.path(), "0001", "phase 1 done", "wt-a", "2026-10-12 11:30").unwrap();
+        assert_eq!(task_of(d.path(), "0001").heartbeat, "2026-10-12 11:30");
+        let gate = PassOpts {
+            gate: "green".into(),
+            ..Default::default()
+        };
+        pass_task(d.path(), "0001", "wt-a", "2026-10-12 12:00", &gate).unwrap();
+        assert_eq!(task_of(d.path(), "0001").heartbeat, "2026-10-12 12:00");
+        // Testing returns it to Building, to its builder: the lease starts again then.
+        return_task(
+            d.path(),
+            "0001",
+            "AC1 fails",
+            None,
+            "qa",
+            "2026-10-13 09:00",
+        )
+        .unwrap();
+        let t = task_of(d.path(), "0001");
+        assert_eq!(
+            (t.claimed_by.as_str(), t.heartbeat.as_str()),
+            ("wt-a", "2026-10-13 09:00")
+        );
+        // Nobody holds it any more: no heartbeat.
+        set_stage(d.path(), "0001", "ready", "owner", T).unwrap();
+        assert_eq!(
+            heartbeat_task(d.path(), "0001", "wt-a", T).unwrap_err(),
+            "0001 is in Ready, not Building; only a claim in Building has a lease to keep alive"
+        );
+    }
+
+    #[test]
+    fn quiet_time_comes_from_the_heartbeat_else_the_file() {
+        assert_eq!(
+            stamp_minutes("2026-10-12 14:05"),
+            stamp_minutes("2026-10-12 14:05")
+        );
+        let m = |a: &str, b: &str| stamp_minutes(b).unwrap() - stamp_minutes(a).unwrap();
+        assert_eq!(m("2026-10-12 01:00", "2026-10-12 14:05"), 13 * 60 + 5);
+        assert_eq!(m("2026-12-31 23:00", "2027-01-01 01:00"), 120);
+        assert_eq!(
+            m("2028-02-28 12:00", "2028-03-01 12:00"),
+            2 * 1440,
+            "leap year"
+        );
+        assert_eq!(m("2026-02-28 12:00", "2026-03-01 12:00"), 1440);
+        for bad in [
+            "",
+            "2026-10-12",
+            "2026-10-12T14:05",
+            "2026-13-01 10:00",
+            "2026-02-30 10:00",
+            "2026-10-12 24:00",
+            "2026-10-12 10:60",
+            "2026-1é-12 10:00",
+        ] {
+            assert_eq!(stamp_minutes(bad), None, "{bad:?}");
+        }
+        let now = 1_000_000;
+        assert_eq!(quiet_minutes("2026-10-12 01:00", 0, T, now), 13 * 60 + 5);
+        // A heartbeat ahead of the clock is no time at all.
+        assert_eq!(quiet_minutes("2026-10-13 01:00", 0, T, now), 0);
+        // Empty or not a stamp: the file's modified time.
+        assert_eq!(quiet_minutes("", now - 3 * 3600, T, now), 180);
+        assert_eq!(quiet_minutes("yesterday", now - 600, T, now), 10);
+        assert_eq!(lease_minutes("").unwrap(), LEASE_MINUTES);
+        assert_eq!(LEASE_MINUTES, 12 * 60);
+        assert_eq!(lease_minutes("30m").unwrap(), 30);
+        assert_eq!(lease_minutes(" 2 h ").unwrap(), 120);
+        assert_eq!(lease_minutes("1d").unwrap(), 24 * 60, "a lease day is 24 h");
+        assert!(lease_minutes("soon").is_err() && lease_minutes("0.01m").is_err());
+    }
+
+    /// Back-date a file's modified time by `secs` from `now`.
+    fn age(p: &Path, now: u64, secs: u64) {
+        let f = fs::File::options().write(true).open(p).unwrap();
+        f.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(now - secs))
+            .unwrap();
+    }
+
+    #[test]
+    fn reclaim_returns_quiet_claims_to_ready_and_leaves_live_ones() {
+        let d = queue();
+        let now = crate::queue::now_secs();
+        let building = |hb: &str, who: &str| {
+            format!("priority: normal\nstage: building\nstatus: doing\nclaimed-by: {who}\nheartbeat: {hb}\nwaiting_on:")
+        };
+        // 13 h since its heartbeat, though the file changed a minute ago (an answer, say).
+        let p = put_task(
+            d.path(),
+            "doing",
+            "0001",
+            &building("2026-10-12 01:00", "wt-a"),
+        );
+        age(&p, now, 60);
+        // 4 h: live.
+        put_task(
+            d.path(),
+            "doing",
+            "0002",
+            &building("2026-10-12 10:00", "wt-b"),
+        );
+        // No heartbeat: the file's time, 13 h.
+        let p = put_task(d.path(), "doing", "0003", &building("", "wt-c"));
+        age(&p, now, 13 * 3600);
+        // Blocked, Testing, or nobody holding it: not a lease, left alone.
+        let p = put_task(
+            d.path(),
+            "blocked",
+            "0004",
+            "priority: normal\nstage: building\nstatus: blocked\nclaimed-by: wt-d\nheartbeat: 2026-10-01 10:00\nwaiting_on: owner",
+        );
+        age(&p, now, 99 * 3600);
+        let p = put_task(
+            d.path(),
+            "doing",
+            "0005",
+            "priority: normal\nstage: testing\nstatus: doing\nclaimed-by:\nheartbeat: 2026-10-01 10:00",
+        );
+        age(&p, now, 99 * 3600);
+        let p = put_task(d.path(), "doing", "0006", &building("2026-10-01 10:00", ""));
+        age(&p, now, 99 * 3600);
+        let r = reclaim(d.path(), lease_minutes("").unwrap(), "capture", T, now).unwrap();
+        assert!(r.failed.is_empty(), "{:?}", r.failed);
+        assert_eq!(
+            r.released,
+            vec![
+                Released {
+                    id: "0001".into(),
+                    holder: "wt-a".into(),
+                    quiet: "13 h".into(),
+                    path: "todo/0001-t.md".into()
+                },
+                Released {
+                    id: "0003".into(),
+                    holder: "wt-c".into(),
+                    quiet: "13 h".into(),
+                    path: "todo/0003-t.md".into()
+                },
+            ]
+        );
+        let t = task_of(d.path(), "0001");
+        assert_eq!(
+            (
+                t.stage.as_str(),
+                t.status.as_str(),
+                t.folder.as_str(),
+                t.claimed_by.as_str()
+            ),
+            ("ready", "todo", "todo", "")
+        );
+        assert!(file_of(d.path(), "0001").ends_with(
+            "- 2026-10-12 14:05 capture: stage building → ready (reclaimed from wt-a (no heartbeat for 13 h))\n"
+        ));
+        let step = t.stage_history.last().unwrap();
+        assert_eq!(
+            (step.who.as_str(), step.from.as_str(), step.to.as_str()),
+            ("capture", "building", "ready")
+        );
+        for id in ["0002", "0004", "0005", "0006"] {
+            assert_ne!(task_of(d.path(), id).stage, "ready", "{id} left alone");
+        }
+        // The old holder's heartbeat after the reclaim is refused; nothing is left to release.
+        assert!(heartbeat_task(d.path(), "0001", "wt-a", T)
+            .unwrap_err()
+            .contains("not Building"));
+        let again = reclaim(d.path(), 720, "capture", T, now).unwrap();
+        assert!(again.released.is_empty() && again.failed.is_empty());
+        // A shorter lease takes 0002 (4 h quiet) too.
+        let short = reclaim(d.path(), lease_minutes("30m").unwrap(), "capture", T, now).unwrap();
+        assert_eq!(
+            short
+                .released
+                .iter()
+                .map(|r| (r.id.as_str(), r.quiet.as_str()))
+                .collect::<Vec<_>>(),
+            [("0002", "4 h")]
+        );
+    }
+
+    #[test]
+    fn release_of_one_task_needs_its_lease_to_have_run_out() {
+        let d = queue();
+        let now = crate::queue::now_secs();
+        put_task(
+            d.path(),
+            "doing",
+            "0001",
+            "priority: normal\nstage: building\nstatus: doing\nclaimed-by: wt-a\nheartbeat: 2026-10-12 10:00\nwaiting_on:",
+        );
+        put_task(d.path(), "todo", "0002", &ready_fm("normal"));
+        let e = reclaim_task(d.path(), "0001", 720, "owner", T, now).unwrap_err();
+        assert_eq!(
+            e,
+            "0001's lease hasn't run out: wt-a was last heard from 4 h ago (the lease is 12 h)"
+        );
+        assert!(reclaim_task(d.path(), "0002", 720, "owner", T, now)
+            .unwrap_err()
+            .contains("0002 is in Ready, not Building"));
+        // A day later the same release goes through, logged as the owner's.
+        assert_eq!(
+            reclaim_task(d.path(), "0001", 720, "owner", "2026-10-13 10:01", now).unwrap(),
+            "todo/0001-t.md"
+        );
+        assert!(file_of(d.path(), "0001").ends_with(
+            "owner: stage building → ready (reclaimed from wt-a (no heartbeat for 24 h))\n"
+        ));
+        assert!(reclaim_task(d.path(), "0001", 720, "owner", T, now)
+            .unwrap_err()
+            .contains("not Building"));
+    }
+
+    /// Run `f` for each of `who` on its own thread, all at once.
+    fn at_once<R: Send + 'static>(
+        whos: &[&'static str],
+        f: impl Fn(&'static str) -> R + Send + Sync + 'static,
+    ) -> Vec<R> {
+        let go = std::sync::Arc::new(std::sync::Barrier::new(whos.len()));
+        let f = std::sync::Arc::new(f);
+        let runs: Vec<_> = whos
+            .iter()
+            .map(|&who| {
+                let (go, f) = (go.clone(), f.clone());
+                std::thread::spawn(move || {
+                    go.wait();
+                    f(who)
+                })
+            })
+            .collect();
+        runs.into_iter().map(|h| h.join().unwrap()).collect()
+    }
+
+    fn layouts() -> [(tempfile::TempDir, &'static str); 2] {
+        [(queue(), "todo"), (tempfile::tempdir().unwrap(), "")]
+    }
+
+    #[test]
+    fn two_claims_of_one_task_at_once_one_wins_in_both_layouts() {
+        for _ in 0..10 {
+            for (d, folder) in layouts() {
+                put_task(d.path(), folder, "0001", &ready_fm("normal"));
+                let root = d.path().to_path_buf();
+                let results = at_once(&["wt-a", "wt-b"], move |who| {
+                    claim_task(&root, "0001", who, T)
+                });
+                assert_eq!(
+                    results.iter().filter(|r| r.is_ok()).count(),
+                    1,
+                    "{results:?}"
+                );
+                let t = task_of(d.path(), "0001");
+                assert_eq!((t.stage.as_str(), t.stage_history.len()), ("building", 1));
+            }
+        }
+    }
+
+    #[test]
+    fn one_holder_claiming_twice_at_once_gets_one_task_in_both_layouts() {
+        for _ in 0..10 {
+            for (d, folder) in layouts() {
+                for id in ["0001", "0002", "0003"] {
+                    put_task(d.path(), folder, id, &ready_fm("normal"));
+                }
+                let root = d.path().to_path_buf();
+                // Two `next`s, and a `next` racing a `claim`, by the same holder.
+                let results = at_once(&["next", "next", "claim"], move |how| match how {
+                    "next" => next_task(&root, "wt-a", T).map(|c| c.map(|c| c.id)),
+                    _ => claim_task(&root, "0003", "wt-a", T).map(|_| Some("0003".into())),
+                });
+                assert_eq!(
+                    results.iter().filter(|r| r.is_ok()).count(),
+                    1,
+                    "{results:?}"
+                );
+                for e in results.iter().filter_map(|r| r.as_ref().err()) {
+                    assert!(e.starts_with("you already hold "), "{e}");
+                }
+                let held = state(d.path())
+                    .tasks
+                    .into_iter()
+                    .filter(|t| t.stage == "building")
+                    .count();
+                assert_eq!(held, 1);
+            }
+        }
+    }
+
+    #[test]
+    fn a_heartbeat_racing_a_reclaim_lands_before_it_or_is_refused() {
+        let now = crate::queue::now_secs();
+        for _ in 0..20 {
+            for (d, folder) in layouts() {
+                let folder = if folder.is_empty() { "" } else { "doing" };
+                put_task(
+                    d.path(),
+                    folder,
+                    "0001",
+                    "priority: normal\nstage: building\nstatus: doing\nclaimed-by: wt-a\nheartbeat: 2026-10-12 01:00\nwaiting_on:",
+                );
+                let root = d.path().to_path_buf();
+                let results = at_once(&["heartbeat", "reclaim"], move |how| match how {
+                    "heartbeat" => heartbeat_task(&root, "0001", "wt-a", T).map(|_| 0),
+                    _ => reclaim(&root, 720, "capture", T, now).map(|r| r.released.len()),
+                });
+                let t = task_of(d.path(), "0001");
+                match (&results[0], &results[1]) {
+                    // The heartbeat first: the claim is live, so the reclaim leaves it.
+                    (Ok(_), Ok(0)) => {
+                        assert_eq!((t.stage.as_str(), t.heartbeat.as_str()), ("building", T))
+                    }
+                    // The reclaim first: the heartbeat finds it in Ready and is refused.
+                    (Err(e), Ok(1)) => {
+                        assert!(e.contains("not Building"), "{e}");
+                        assert_eq!((t.stage.as_str(), t.claimed_by.as_str()), ("ready", ""));
+                    }
+                    other => panic!("{other:?}"),
+                }
+            }
+        }
+    }
+
+    fn gate() -> PassOpts {
+        PassOpts {
+            gate: "green".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn every_way_into_building_keeps_one_claim_per_holder_but_the_owner() {
+        let d = queue();
+        for id in ["0001", "0002", "0003", "0004", "0005"] {
+            put_task(d.path(), "todo", id, &ready_fm("normal"));
+        }
+        // pass --from ready is a claim like any other.
+        pass_task(d.path(), "0001", "wt-a", T, &no_gate()).unwrap();
+        let before = file_of(d.path(), "0002");
+        assert_eq!(
+            pass_task(d.path(), "0002", "wt-a", T, &no_gate()).unwrap_err(),
+            "you already hold 0001; pass, return or block it first"
+        );
+        assert_eq!(file_of(d.path(), "0002"), before);
+        // Block 0001, claim 0002: unblocking 0001 would give wt-a two, so it's refused, for anyone.
+        block_task(d.path(), "0001", "owner", "wt-a", T).unwrap();
+        claim_task(d.path(), "0002", "wt-a", T).unwrap();
+        assert_eq!(
+            unblock_task(d.path(), "0001", "wt-a", T).unwrap_err(),
+            "you already hold 0002; pass, return or block it first"
+        );
+        assert_eq!(
+            unblock_task(d.path(), "0001", "owner", T).unwrap_err(),
+            "wt-a already holds 0002 in Building; one claim per holder, so they pass, return or block it first"
+        );
+        assert!(task_of(d.path(), "0001").blocked);
+        // A return to the builder who now holds another task: refused too.
+        claim_task(d.path(), "0003", "wt-b", T).unwrap();
+        pass_task(d.path(), "0003", "wt-b", T, &gate()).unwrap();
+        claim_task(d.path(), "0004", "wt-b", T).unwrap();
+        assert!(return_task(d.path(), "0003", "AC1 fails", None, "qa", T)
+            .unwrap_err()
+            .starts_with("wt-b already holds 0004 in Building"));
+        assert_eq!(task_of(d.path(), "0003").stage, "testing");
+        // The owner may hold several.
+        pass_task(d.path(), "0005", "owner", T, &no_gate()).unwrap();
+        set_stage(d.path(), "0002", "ready", "owner", T).unwrap();
+        claim_task(d.path(), "0002", "owner", T).unwrap();
+        assert_eq!(
+            next_task(d.path(), "owner", T).unwrap(),
+            None,
+            "nothing left, but not refused"
+        );
+        assert!(state(d.path()).problems.is_empty());
+    }
+
+    #[test]
+    fn a_pass_from_ready_racing_next_for_one_holder_claims_once() {
+        for _ in 0..10 {
+            for (d, folder) in layouts() {
+                for id in ["0001", "0002"] {
+                    put_task(d.path(), folder, id, &ready_fm("normal"));
+                }
+                let root = d.path().to_path_buf();
+                let results = at_once(&["pass", "next"], move |how| match how {
+                    "pass" => pass_task(&root, "0002", "wt-a", T, &PassOpts::default()).map(|_| ()),
+                    _ => next_task(&root, "wt-a", T).map(|_| ()),
+                });
+                assert_eq!(
+                    results.iter().filter(|r| r.is_ok()).count(),
+                    1,
+                    "{results:?}"
+                );
+                let held = state(d.path())
+                    .tasks
+                    .into_iter()
+                    .filter(|t| t.stage == "building")
+                    .count();
+                assert_eq!(held, 1);
+            }
+        }
+    }
+
+    #[test]
+    fn unblocking_or_asking_restarts_the_lease() {
+        let d = queue();
+        let now = crate::queue::now_secs();
+        put_task(d.path(), "todo", "0001", &ready_fm("normal"));
+        claim_task(d.path(), "0001", "wt-a", "2026-10-11 09:00").unwrap();
+        block_task(
+            d.path(),
+            "0001",
+            "owner: which colour?",
+            "wt-a",
+            "2026-10-11 10:00",
+        )
+        .unwrap();
+        unblock_task(d.path(), "0001", "owner", "2026-10-12 11:00").unwrap();
+        assert_eq!(task_of(d.path(), "0001").heartbeat, "2026-10-12 11:00");
+        let r = reclaim(d.path(), 720, "capture", "2026-10-12 11:00", now).unwrap();
+        assert!(r.released.is_empty(), "{r:?}");
+        // The holder asking a question is being heard from; someone else asking isn't.
+        crate::queue::ask(
+            d.path(),
+            "0001",
+            "Port?",
+            "qa",
+            "bbbb2222",
+            "2026-10-12 12:00",
+        )
+        .unwrap();
+        assert_eq!(task_of(d.path(), "0001").heartbeat, "2026-10-12 11:00");
+        crate::queue::ask(
+            d.path(),
+            "0001",
+            "Colour?",
+            "wt-a",
+            "aaaa1111",
+            "2026-10-12 13:00",
+        )
+        .unwrap();
+        assert_eq!(task_of(d.path(), "0001").heartbeat, "2026-10-12 13:00");
+    }
+
+    #[test]
+    fn the_lease_runs_out_after_exactly_its_length() {
+        let now = crate::queue::now_secs();
+        let d = queue();
+        let fm = "priority: normal\nstage: building\nstatus: doing\nclaimed-by: wt-a\nheartbeat: 2026-10-12 02:05\nwaiting_on:";
+        put_task(d.path(), "doing", "0001", fm);
+        // 720 minutes quiet: kept, by both; 721: released.
+        let r = reclaim(d.path(), 720, "capture", "2026-10-12 14:05", now).unwrap();
+        assert!(r.released.is_empty());
+        assert!(
+            reclaim_task(d.path(), "0001", 720, "owner", "2026-10-12 14:05", now)
+                .unwrap_err()
+                .contains("lease hasn't run out")
+        );
+        let r = reclaim(d.path(), 720, "capture", "2026-10-12 14:06", now).unwrap();
+        assert_eq!(r.released.len(), 1);
+        put_task(d.path(), "doing", "0002", fm);
+        fs::remove_file(d.path().join("todo/0001-t.md")).unwrap();
+        reclaim_task(d.path(), "0002", 720, "owner", "2026-10-12 14:06", now).unwrap();
+        assert_eq!(task_of(d.path(), "0002").stage, "ready");
     }
 }

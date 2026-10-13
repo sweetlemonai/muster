@@ -17,6 +17,25 @@
 > refused only when its log line would read as a stage change (`<who>: stage <from> → <to>`),
 > because only the tool writes those. The text below is the earlier v2 protocol (written for Drover's queue).
 > Where it says to move files, use the commands above. It's rewritten with 0005.
+>
+> **Claims, leases and questions (Muster 0002, 2026-10-12).** Claim with `muster next --as <you>`
+> (the top Ready task you may take: not blocked, high priority first, then the lowest id) or
+> `muster claim <id> --as <you>`. One claim per holder (the owner may hold several): anything that
+> would give you a second unblocked task in Building in that queue is refused, a claim, a pass from
+> Ready, an unblock or a return to you alike, so pass, return or block the first. It's checked under
+> the queue's lock (two claims at once: one wins), and a claim says which queue it was made in. A
+> claim has a lease: `heartbeat:` is stamped by the tool on the claim, on `muster heartbeat <id>`
+> (the holder, on long work), on the holder's note, ask, pass, return and block, and when the task
+> is unblocked (waiting isn't going quiet). `muster check` warns about the same quiet claims. `muster reclaim [--after 12h]` puts every
+> Building claim quiet for longer than the lease (no heartbeat, or without one no change to the
+> file) back in Ready, logged as `stage building → ready (reclaimed from <holder> (no heartbeat for
+> <n> h))`, and the app's **Release** does it for one stale card. Claims and hand-ons refuse a queue
+> that came from `$MUSTER_ROOT` while you're in another project's folder; `--queue <name>` says you
+> mean it. **Agents never edit `stage:`, `status:`, `claimed-by:` or `heartbeat:` by hand.** Ask
+> with `muster ask <id> "<question>" --as <you>` and collect answers with `muster inbox` (the hook
+> delivers them anyway); capture answers with `muster answer` and escalates with `muster escalate`.
+> `bin/task ask|answer|escalate|inbox` still works and runs the same commands, with the same file
+> contract (below).
 
 Ideas, bugs and tasks from the owner, written up by the capture session and picked up by coding
 sessions. This queue is also a test bed for chit (`~/playground/chit`, `SPEC.md`). Its rules are

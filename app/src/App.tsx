@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
-import { ago, columns, estimateTotal, feed, holder, inProgress, key, queueTotal, STAGES } from "./lib";
+import { ago, columns, estimateTotal, feed, holder, inProgress, key, leaseRunOut, queueTotal, STAGES } from "./lib";
 import type { State, Task } from "./types";
 import Projects from "./Projects";
 import NewTask from "./NewTask";
@@ -355,7 +355,7 @@ function Splitter({ width, onWidth }: { width: number; onWidth: (w: number) => v
 }
 
 function Card({ t, now, multi, onOpen, active }: { t: Task; now: number; multi: boolean; onOpen: () => void; active: boolean }) {
-  const stale = t.stage === "building" && !t.blocked && now - t.modified > 12 * 3600;
+  const stale = leaseRunOut(t, now);
   const who = holder(t);
   const priority = t.priority || "normal";
   return (

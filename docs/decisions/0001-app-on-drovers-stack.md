@@ -28,6 +28,10 @@ part of Drover later)
   gif or webp). The capability is `core:default` only. CSP as Drover's.
 - **"Stale":** a claimed task whose file hasn't changed in 12 h, from the file's mtime, not
   the `heartbeat:` text, because agents' typed times aren't trusted (`DOGFOOD.md` 37).
+  **Amended 2026-10-12 (task 0002):** `heartbeat:` is now written only by `muster` (claim,
+  `heartbeat`, and the holder's notes, passes and questions; and an unblock), so it's trusted. Stale
+  means quiet past the 12 h lease by that heartbeat, falling back to mtime when it's empty. Reclaim,
+  `check`, the card and Release all use the same rule.
 
 ## Options considered
 

@@ -11,8 +11,8 @@ const task = (over: Partial<Task>): Task => ({
 });
 
 /** The pane as first drawn: its stage line, the stage row's buttons and the notes under it. */
-function pane(over: Partial<Task>) {
-  const html = renderToStaticMarkup(createElement(TaskPanel, { task: task(over), now: 0, onClose: () => {}, onChanged: () => {} }));
+function pane(over: Partial<Task>, now = 0) {
+  const html = renderToStaticMarkup(createElement(TaskPanel, { task: task(over), now, onClose: () => {}, onChanged: () => {} }));
   const row = /<section class="controls">\s*<div class="control-row">([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "";
   const buttons = [...row.matchAll(/<button([^>]*)>([^<]*)<\/button>/g)].map((m) => `${m[2]}${m[1].includes("disabled") ? " (disabled)" : ""}`);
   const line = /<div class="stage-line">([\s\S]*?)<\/div>/.exec(html)?.[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() ?? "";
@@ -45,6 +45,18 @@ describe("task pane stage controls", () => {
     expect(p.line).toBe("Your check owner blocked: owner pick a colour");
     expect(p.buttons).toEqual(["Accept (disabled)", "Send back", "Unblock"]);
     expect(p.html).toContain("Blocked on owner pick a colour. Unblock it to pass it on.");
+  });
+  it("offers Release on a claim whose lease ran out, and only then", () => {
+    const held = { stage: "building", claimedBy: "drover/main (session 3fba2222)", heartbeat: "", modified: 0 };
+    const late = 12 * 3600 + 60;
+    const p = pane(held, late);
+    expect(p.buttons).toEqual(["Release", "Send back", "Block"]);
+    expect(p.html).toContain("drover/main hasn&#x27;t been heard from for 12 h. Release puts it back in Ready, logged as reclaimed.");
+    expect(pane(held, 12 * 3600).buttons).toEqual(["Send back", "Block"]);
+    expect(pane({ ...held, blocked: true, status: "blocked", waitingOn: "owner" }, late).buttons).toEqual(["Send back", "Unblock"]);
+    expect(pane({ ...held, stage: "testing" }, late).buttons).toEqual(["Pass to Your check", "Send back", "Block"]);
+    // The owner's own quiet claim: Pass stays the primary action, Release sits beside it.
+    expect(pane({ ...held, claimedBy: "owner" }, late).buttons).toEqual(["Pass to Testing", "Release", "Send back", "Block"]);
   });
   it("a stage it doesn't know: shown as is, only the picker and Block", () => {
     const p = pane({ stage: "reviewing" });

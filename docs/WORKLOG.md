@@ -2,6 +2,33 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-12 — Claims, lease and questions in the tool (task 0002)
+**Did:**
+- `muster claim` and `muster next` give one claim per holder (the owner is exempt), checked
+  centrally for every way into Building. Each claim names the queue it was made in.
+- `muster heartbeat` and the holder's notes, passes, questions and unblocks renew a 12 h lease.
+  `muster reclaim` (and Release in the task pane) returns quiet claims to Ready, and `check`, the
+  card and reclaim judge staleness the same way.
+- A claim from a folder whose own queue differs from `MUSTER_ROOT` is refused unless `--queue`
+  says so (the Drover 0022 mix-up).
+- `muster ask`, `escalate` and `inbox` are in Rust. `bin/task` is a stand-in that runs them, and
+  works on macOS's Python 3.9. The answer hook frames answers as information from the queue.
+- Main files: `app/src-tauri/src/{ops,queue,cli,help,lib}.rs`, `bin/task`, `bin/answer-hook.py`,
+  `app/src/{lib,TaskPanel}.ts(x)`.
+**Fixed (from review):**
+- Unblocking left an old heartbeat, so the claim was reclaimable at once.
+- `bin/task` crashed on Python 3.9.
+- Tests depended on the wall clock and would have failed from 02:06 tonight. They now take an
+  explicit time, and were checked under three time zones.
+- The end-to-end refusal and the exact 12 h boundary weren't tested.
+- An early test wrote two questions into the real queue's 0001. Undone.
+**Decided:** decision 0001's "stale" amended: by the tool's heartbeat, falling back to mtime.
+**Verified:** `pnpm check` exit 0 (113 UI, 102 Rust, 8 interop tests), `python3 -I bin/test_task.py`
+26 OK, and the Rust and Python suites also under `TZ=Pacific/Kiritimati`. Reviewed on four lenses
+(correctness, concurrency, tests, security), with two fix rounds, each re-reviewed.
+**Open:** nothing runs `muster reclaim` on a schedule yet. Claims still go in the task file until
+0005 moves live state into `.git/muster/`.
+
 ## 2026-10-12 — One picture: tasks checked for conflicts, VISION.md, vision check queued
 **Did:** read every open task (0002–0029) against decision 0003 and wrote `docs/VISION.md`: the
 spine (each stage, who works it, which task builds it), where things live, and the open

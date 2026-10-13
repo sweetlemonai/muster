@@ -60,7 +60,7 @@ pub fn looks_like_queue(dir: &Path) -> bool {
         && (dir.join("todo").is_dir() || dir.join("tasks.json").is_file())
 }
 
-fn default_name(dir: &Path) -> String {
+pub fn default_name(dir: &Path) -> String {
     // `<project>/tasks` → the project's folder name; anything else → its own name.
     let own = dir
         .file_name()
@@ -257,13 +257,15 @@ fn readme(project: &str, q: &Path) -> String {
          - A task moves through stages: Backlog → Shaping → Ready → Building → Testing → Your check → Done.\n  \
          Shaping is for product, tech and UI agents, Building for the code agent, Testing for the QA\n  \
          agent, Your check for the owner. Find a task by its id (`muster show 0001`), never by a path.\n\
-         - Only `muster` changes a stage. Never move task files or edit `stage:`, `status:` or\n  \
-         `claimed-by:` by hand (the folders `inbox/ todo/ doing/ blocked/ done/` mirror the stage for\n  \
-         older tools). `muster` finds this queue from the project's repo; elsewhere add `--queue {q}`.\n\
-         - One claim per session. Pick from Ready and claim it: `muster list --stage ready`, then\n  \
-         `muster pass NNNN --as <your branch> --from ready`.\n\
+         - Only `muster` changes a stage. Never move task files or edit `stage:`, `status:`, `claimed-by:` or `heartbeat:` by hand.\n  \
+         (The folders `inbox/ todo/ doing/ blocked/ done/` mirror the stage for older tools.)\n  \
+         `muster` finds this queue from the project's repo; elsewhere add `--queue {q}`.\n\
+         - One claim per session, made by `muster`: `muster next --as <your branch>` takes the top\n  \
+         Ready task, `muster claim NNNN --as <your branch>` a given one. It says which queue it claimed in.\n\
+         - On long work, `muster heartbeat NNNN --as <your branch>` keeps the claim alive (your notes and\n  \
+         passes do too). A claim quiet for 12 h goes back to Ready (`muster reclaim`).\n\
          - Ask without stopping, and the answer is pushed to you:\n  \
-         `{q}/bin/task ask NNNN \"<question>\" --from <branch>`\n\
+         `muster ask NNNN \"<question>\" --as <your branch>`. No answer hook? `muster inbox` collects them.\n\
          - Built and the gate is green: `muster pass NNNN --as <your branch> --from building --gate \"<the gate's result line>\"`.\n  \
          Testing ticks each criterion with its proof, then passes it on to the owner's check.\n\
          - Something's wrong: `muster return NNNN \"<why>\"` sends it back a stage.\n\
@@ -346,9 +348,26 @@ mod tests {
         let readme = fs::read_to_string(q.join("README.md")).unwrap();
         assert!(readme.starts_with("# gamma — task queue"));
         // Agents hand work on with muster, never by moving files.
-        for cmd in ["muster pass", "muster return", "muster block", "--gate"] {
+        for cmd in [
+            "muster next",
+            "muster claim",
+            "muster heartbeat",
+            "muster ask",
+            "muster inbox",
+            "muster pass",
+            "muster return",
+            "muster block",
+            "--gate",
+        ] {
             assert!(readme.contains(cmd), "README names {cmd}: {readme}");
         }
+        assert!(readme.contains(
+            "Never move task files or edit `stage:`, `status:`, `claimed-by:` or `heartbeat:` by hand."
+        ));
+        assert!(
+            !readme.contains("--from ready"),
+            "claims use claim/next: {readme}"
+        );
         assert!(
             readme.contains("Backlog → Shaping → Ready → Building → Testing → Your check → Done")
         );

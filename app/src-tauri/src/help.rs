@@ -76,6 +76,37 @@ pub const COMMANDS: &[Command] = &[
         examples: &["muster move 0007 blocked --on \"owner: pick a colour\"", "muster move 0007 todo", "muster move 0007 done"],
     },
     Command {
+        name: "claim",
+        usage: "muster claim <id> [--as <who>]",
+        what: "Take a Ready task: it moves to Building, held by you, with its lease started (heartbeat). Refused while you already hold another task in Building in this queue (pass, return or block that first), when it's blocked, or when it isn't in Ready any more. Says which queue it claimed in.",
+        options: &[("--as", "who you are (your branch or worktree); default $MUSTER_AS, then $USER")],
+        examples: &["muster claim 0007 --as wt-a", "muster claim 0007 --as wt-a --queue drover"],
+    },
+    Command {
+        name: "next",
+        usage: "muster next [--as <who>]",
+        what: "Claim the top Ready task you may take: not blocked, not held by someone else; high priority first, then normal, then low, then the lowest id. Prints \"nothing ready\" and exits 1 when there's none. Refused while you already hold a task in Building.",
+        options: &[("--as", "who you are; default $MUSTER_AS, then $USER")],
+        examples: &["muster next --as wt-a", "muster next --as wt-a --queue muster"],
+    },
+    Command {
+        name: "heartbeat",
+        usage: "muster heartbeat <id> [--as <who>]",
+        what: "Keep your claim alive on long work: stamps the task's heartbeat, no log line. Only the holder, only in Building. Your note, ask, pass, return and block stamp it too, and so does an unblock. A claim quiet for 12 h can be released to Ready.",
+        options: &[("--as", "who you are; must be who holds it")],
+        examples: &["muster heartbeat 0007 --as wt-a"],
+    },
+    Command {
+        name: "reclaim",
+        usage: "muster reclaim [--after 12h] [--json]",
+        what: "Release every claim whose lease ran out: a task in Building, held, not blocked, with no heartbeat (or, without one, no change to its file) for longer than --after goes back to Ready, its claim cleared and the release logged as a stage change. Live claims are left alone. Prints what it released.",
+        options: &[
+            ("--after", "the lease: 30m, 2h, 1d (a day is 24 h); default 12h"),
+            ("--json", "what was released, for scripts"),
+        ],
+        examples: &["muster reclaim", "muster reclaim --after 1d --queue drover"],
+    },
+    Command {
         name: "pass",
         usage: "muster pass <id> [--from <stage>] [--gate \"<gate result line>\"] [--commit <sha>]",
         what: "Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria. Building → Testing needs the gate's result line and releases your claim. Testing → Your check needs every criterion ticked. Refused while it's blocked, or when someone else holds it.",
@@ -144,11 +175,41 @@ pub const COMMANDS: &[Command] = &[
         examples: &["muster attach 0007 ~/Desktop/shot.png", "muster attach 0007 *.png"],
     },
     Command {
+        name: "ask",
+        usage: "muster ask <id> \"<question>\" [--as <who>] [--session <id>]",
+        what: "Ask a question in a task without stopping: numbered, written under ## Questions, and your session recorded so the answer is pushed to you (the answer hook) or waits in muster inbox. Lists the task's earlier questions, and refuses one that's already answered there.",
+        options: &[
+            ("--as", "who's asking (your branch); default $MUSTER_AS, then $USER"),
+            ("--session", "your session id; default $CLAUDE_CODE_SESSION_ID"),
+        ],
+        examples: &[
+            "muster ask 0007 \"Child webview or a separate window?\" --as wt-a",
+            "muster ask 0007 -- \"--verbose or --quiet by default?\"",
+        ],
+    },
+    Command {
         name: "answer",
         usage: "muster answer <id> <Qn> \"<text>\"",
         what: "Answer a question in a task. It's written under the question, and the agent that asked gets it pushed into its session.",
         options: &[],
         examples: &["muster answer 0008 Q2 \"B, the window beside the app\""],
+    },
+    Command {
+        name: "escalate",
+        usage: "muster escalate <id> <Qn> [--as capture]",
+        what: "Mark a question \"Escalated to owner\": it shows as waiting for you. Capture then adds it to WAITING-FOR-OWNER.md. Once per question.",
+        options: &[("--as", "who takes it to the owner, usually capture")],
+        examples: &["muster escalate 0008 Q2 --as capture"],
+    },
+    Command {
+        name: "inbox",
+        usage: "muster inbox [--session <id>] [--keep]",
+        what: "Answers waiting for your session, each handed over once and moved to delivered/ (unless --keep). Without the answer hook, run it between steps.",
+        options: &[
+            ("--session", "your session id; default $CLAUDE_CODE_SESSION_ID"),
+            ("--keep", "show them without marking them delivered"),
+        ],
+        examples: &["muster inbox", "muster inbox --session 3fba2222 --keep"],
     },
     Command {
         name: "check",
@@ -203,15 +264,18 @@ pub const SESSION: &[Topic] = &[
         lines: &[
             "Read the queue's README.md first: ../tasks/README.md from the project's repo.",
             "A task moves through stages: Backlog (anyone), Shaping (product, tech and UI agents), Ready (claimable), Building (code agent), Testing (QA agent), Your check (the owner), Done. Only muster changes a stage: never move or edit task files for that.",
-            "Pick from Ready, then claim it with pass, under your branch name. One claim per session:",
-            "$ muster list --stage ready",
-            "$ muster pass 0007 --as <your branch> --from ready",
+            "Never edit stage:, status:, claimed-by: or heartbeat: by hand. Only muster writes them.",
+            "Claim with muster, under your branch name, in the queue of the project you're in (it says which queue it claimed in). One claim per session: take the top Ready task, or a given one:",
+            "$ muster next --as <your branch>",
+            "$ muster claim 0007 --as <your branch>",
+            "On long work, keep the claim alive. A claim with no heartbeat for 12 h goes back to Ready (muster reclaim). Your notes and passes count too:",
+            "$ muster heartbeat 0007 --as <your branch>",
             "Ask without stopping. The answer is pushed into your session after your next tool call (the answer hook):",
-            "$ ../tasks/bin/task ask 0007 \"Child webview or a separate window?\" --from <your branch>",
+            "$ muster ask 0007 \"Child webview or a separate window?\" --as <your branch>",
             "No hook in this checkout? Collect answers yourself:",
-            "$ ../tasks/bin/task inbox",
+            "$ muster inbox",
             "Log progress, block, hand on, with the tool stamping the time:",
-            "$ muster note 0007 \"Phase 1 done, gate green\"",
+            "$ muster note 0007 \"Phase 1 done, gate green\" --as <your branch>",
             "$ muster block 0007 --on 0012",
             "$ muster pass 0007 --as <your branch> --from building --gate \"<the gate's result line>\"",
             "Testing found a problem? Send it back with the reason:",
@@ -224,7 +288,10 @@ pub const SESSION: &[Topic] = &[
         lines: &[
             "Writes the owner's ideas and bugs up as tasks, answers agents' technical questions, and takes product questions to the owner in plain words (WAITING-FOR-OWNER.md).",
             "$ muster new \"…\" --tags spike --body \"**What the owner said:** …\\n\\n## Acceptance criteria\\n- [ ] AC1: …\"",
-            "$ ../tasks/bin/task answer 0007 Q1 \"Use the window\"",
+            "$ muster answer 0007 Q1 \"Use the window\" --as capture",
+            "$ muster escalate 0007 Q2 --as capture",
+            "$ muster reclaim",
+            "../tasks/bin/task ask, answer, escalate and inbox still work: they run the same muster commands.",
             "The app's Helper tab does the same job without a separate session.",
         ],
     },
@@ -253,6 +320,10 @@ pub const APP: &[(&str, &str)] = &[
     (
         "Stage picker",
         "in a task's pane: your override, any stage. Use it when someone else holds the task, since only they can pass it",
+    ),
+    (
+        "Release",
+        "in a task's pane, when its card says quiet 12 h+: the holder hasn't been heard from for longer than the lease, so it goes back to Ready, logged as reclaimed",
     ),
     (
         "Board · Table · Timeline",
@@ -330,8 +401,30 @@ mod tests {
     fn every_command_the_cli_runs_is_documented() {
         // The commands cli::run_on and cli::run dispatch.
         for name in [
-            "new", "list", "show", "move", "pass", "return", "block", "unblock", "stage", "set",
-            "note", "attach", "answer", "check", "projects", "init", "help",
+            "new",
+            "list",
+            "show",
+            "move",
+            "claim",
+            "next",
+            "heartbeat",
+            "reclaim",
+            "pass",
+            "return",
+            "block",
+            "unblock",
+            "stage",
+            "set",
+            "note",
+            "attach",
+            "ask",
+            "answer",
+            "escalate",
+            "inbox",
+            "check",
+            "projects",
+            "init",
+            "help",
         ] {
             let c = COMMANDS
                 .iter()
@@ -349,7 +442,7 @@ mod tests {
                 "{name}'s examples use it"
             );
         }
-        assert_eq!(COMMANDS.len(), 17);
+        assert_eq!(COMMANDS.len(), 24);
     }
 
     #[test]
@@ -357,8 +450,21 @@ mod tests {
         let t = text();
         assert!(t.contains("Inside a Claude Code session"));
         assert!(t.contains("      ! muster list"));
-        // Agents hand work on with muster, never by moving files.
-        assert!(t.contains("      muster pass 0007 --as <your branch> --from ready\n"));
+        // Agents claim, keep claims alive, ask and hand work on with muster, never by hand.
+        assert!(t.contains("      muster next --as <your branch>\n"));
+        assert!(t.contains("      muster claim 0007 --as <your branch>\n"));
+        assert!(t.contains("      muster heartbeat 0007 --as <your branch>\n"));
+        assert!(t.contains("      muster ask 0007 "));
+        assert!(t.contains("      muster inbox\n"));
+        assert!(t.contains(
+            "Never edit stage:, status:, claimed-by: or heartbeat: by hand. Only muster writes them."
+        ));
+        assert!(
+            !t.contains("--as <your branch> --from ready"),
+            "claims use claim/next"
+        );
+        assert!(command_text("reclaim").unwrap().contains("--after"));
+        assert!(command_text("inbox").unwrap().contains("--keep"));
         assert!(t.contains("      muster block 0007 --on 0012\n"));
         assert!(t.contains("      muster return 0007"));
         assert!(!t.contains("mv ../tasks"));
@@ -377,6 +483,7 @@ mod tests {
             "Block",
             "Unblock",
             "Stage picker",
+            "Release",
         ] {
             assert!(app.contains(word), "{word}: {app}");
         }

@@ -24,10 +24,9 @@ pub const STAGES: [&str; 7] = [
     "your-check",
     "done",
 ];
-const MAX_TASK_BYTES: u64 = 1024 * 1024;
+pub(crate) const MAX_TASK_BYTES: u64 = 1024 * 1024;
 const MAX_ANSWER_CHARS: usize = 4000;
 const MAX_IMAGE_BYTES: u64 = 15 * 1024 * 1024;
-const STALE_SECS: u64 = 12 * 3600;
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -573,9 +572,37 @@ fn list_attachments(root: &Path, id: &str) -> Vec<String> {
 pub struct Cache {
     files: HashMap<PathBuf, (u64, u64, Option<Task>)>,
     git: HashMap<PathBuf, (u64, Vec<Activity>)>,
+    /// The local time stamp, and the minute (seconds since 1970 / 60) it was read in.
+    stamp: Option<(u64, String)>,
 }
 
-fn mtime_secs(m: &fs::Metadata) -> u64 {
+impl Cache {
+    /// Local time at `now` (seconds since 1970), read from the clock once a minute: a stamp only
+    /// changes per minute, and the window asks for the state every two seconds.
+    fn stamp_at(&mut self, now: u64) -> String {
+        match &self.stamp {
+            Some((minute, s)) if *minute == now / 60 => s.clone(),
+            _ => {
+                let s = local_stamp();
+                self.stamp = Some((now / 60, s.clone()));
+                s
+            }
+        }
+    }
+}
+
+/// Local time as `YYYY-MM-DD HH:MM`, from the system clock (`date`), so agents never type times.
+pub fn local_stamp() -> String {
+    std::process::Command::new("date")
+        .arg("+%Y-%m-%d %H:%M")
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| s.len() == 16)
+        .unwrap_or_else(|| "1970-01-01 00:00".into())
+}
+
+pub(crate) fn mtime_secs(m: &fs::Metadata) -> u64 {
     m.modified()
         .ok()
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
@@ -584,6 +611,14 @@ fn mtime_secs(m: &fs::Metadata) -> u64 {
 }
 
 pub fn read_state(queues: &[(String, PathBuf)], cache: &mut Cache) -> State {
+    let stamp = cache.stamp_at(now_secs());
+    read_state_at(queues, cache, &stamp)
+}
+
+/// `read_state` with the local time given: `stamp` (`YYYY-MM-DD HH:MM`) is "now" for the claims'
+/// heartbeats, so tests that stamp a claim at a fixed time judge its lease at that time, not at
+/// whatever the wall clock says. File times are still judged by the real clock.
+pub fn read_state_at(queues: &[(String, PathBuf)], cache: &mut Cache, stamp: &str) -> State {
     let mut state = State {
         now: now_secs(),
         ..Default::default()
@@ -622,7 +657,9 @@ pub fn read_state(queues: &[(String, PathBuf)], cache: &mut Cache) -> State {
                     .push(format!("{name}: {} has no front matter", path.display())),
             }
         }
-        state.problems.extend(problems(name, &tasks, state.now));
+        state
+            .problems
+            .extend(problems(name, &tasks, state.now, stamp));
         for t in &tasks {
             *counts.entry(t.stage.clone()).or_default() += 1;
             if t.blocked {
@@ -643,7 +680,9 @@ pub fn read_state(queues: &[(String, PathBuf)], cache: &mut Cache) -> State {
     state
 }
 
-pub fn problems(queue: &str, tasks: &[Task], now: u64) -> Vec<String> {
+/// What's wrong in a queue's tasks. `now` and `stamp` are the same moment, as seconds since 1970
+/// and as local time (`YYYY-MM-DD HH:MM`), for the claims' lease.
+pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut ids: HashMap<&str, Vec<&str>> = HashMap::new();
     for t in tasks {
@@ -684,11 +723,13 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64) -> Vec<String> {
                 t.path
             ));
         }
-        if building && now.saturating_sub(t.modified) > STALE_SECS {
+        // The lease `muster reclaim` uses: since the heartbeat, else since the file changed.
+        let quiet = crate::ops::quiet_minutes(&t.heartbeat, t.modified, stamp, now);
+        if building && quiet > crate::ops::LEASE_MINUTES {
             out.push(format!(
-                "{queue}: {} is claimed but hasn't changed in {} h",
+                "{queue}: {} is claimed but hasn't been heard from in {} h",
                 t.path,
-                (now - t.modified) / 3600
+                quiet / 60
             ));
         }
         if t.status == "blocked" && t.waiting_on.is_empty() {
@@ -892,20 +933,265 @@ fn unindent_text(text: &str) -> String {
 
 /// Contract rule 3: control characters out (newline kept), trimmed, capped.
 pub fn clean_text(text: &str) -> Result<String, String> {
+    clean_text_as(text, "the answer")
+}
+
+/// `clean_text`, with `what` naming the text in the refusal ("the question").
+fn clean_text_as(text: &str, what: &str) -> Result<String, String> {
     let t: String = text
         .chars()
         .filter(|&c| c == '\n' || !(c < '\u{20}' || c == '\u{7f}'))
         .collect();
     let t = t.trim().to_string();
     if t.is_empty() {
-        return Err("the answer is empty".into());
+        return Err(format!("{what} is empty"));
     }
     if t.chars().count() > MAX_ANSWER_CHARS {
         return Err(format!(
-            "the answer is longer than {MAX_ANSWER_CHARS} characters"
+            "{what} is longer than {MAX_ANSWER_CHARS} characters"
         ));
     }
     Ok(t)
+}
+
+/// Contract rule 4: a session's mailbox name, the first 8 characters of its id in lowercase,
+/// which must be hex (a Claude Code or Codex session id).
+pub fn session8(session: &str) -> Result<String, String> {
+    let s = session.trim().to_lowercase();
+    if s.is_empty() {
+        return Err("no session id: pass --session or run inside Claude Code".into());
+    }
+    let short: String = s.chars().take(8).collect();
+    if short.len() == 8 && short.bytes().all(|b| b.is_ascii_hexdigit()) {
+        Ok(short)
+    } else {
+        Err(format!(
+            "session id must start with 8 hex characters (a Claude Code or Codex session id), got {:?}",
+            session.chars().take(20).collect::<String>()
+        ))
+    }
+}
+
+/// The first `## Questions` section's content: (start, end) byte offsets, from the line after
+/// the heading to the next `## ` line or the end.
+fn questions_span(body: &str) -> Option<(usize, usize)> {
+    let mut start = None;
+    let mut pos = 0;
+    for line in body.split_inclusive('\n') {
+        match start {
+            Some(s) if line.starts_with("## ") => return Some((s, pos)),
+            None if line.ends_with('\n')
+                && line.trim_end_matches('\n').trim_end_matches([' ', '\t']) == "## Questions" =>
+            {
+                start = Some(pos + line.len());
+            }
+            _ => {}
+        }
+        pos += line.len();
+    }
+    start.map(|s| (s, body.len()))
+}
+
+/// The task text with a `## Questions` section: as is, or with an empty one added before the Log
+/// (the last `## Log`, the one `append_log` writes to), or at the end without one.
+fn with_questions(text: &str) -> String {
+    if questions_span(text).is_some() {
+        return text.to_string();
+    }
+    let mut log_head = None;
+    let mut pos = 0;
+    for line in text.split_inclusive('\n') {
+        if line.trim_end() == "## Log" {
+            log_head = Some(pos);
+        }
+        pos += line.len();
+    }
+    match log_head {
+        Some(at) => format!("{}## Questions\n\n{}", &text[..at], &text[at..]),
+        None => format!("{}\n\n## Questions\n\n", text.trim_end_matches('\n')),
+    }
+}
+
+/// `mail/asks.json` (contract rule 4) to add to: empty when there's none yet. A file that isn't
+/// a JSON object is refused rather than overwritten, since other askers' entries are in it.
+fn read_asks(mail: &Path) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+    let file = mail.join("asks.json");
+    let text = match fs::read_to_string(&file) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Default::default()),
+        Err(e) => return Err(format!("mail/asks.json: {e}")),
+    };
+    match serde_json::from_str::<serde_json::Value>(&text) {
+        Ok(serde_json::Value::Object(map)) => Ok(map),
+        _ => Err("mail/asks.json isn't a JSON object of asks; fix or remove it first".into()),
+    }
+}
+
+/// What `ask` did: the question's number, and the questions the task had before it as
+/// (answered, first line).
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Asked {
+    pub n: u32,
+    pub earlier: Vec<(bool, String)>,
+}
+
+/// Ask question `text` in task `id` as `who` from `session`: numbered on from the task's
+/// questions, written as an item in `## Questions` (lines after the first indented, contract
+/// rule 3), logged, and its asker recorded in `mail/asks.json` so the answer reaches that
+/// session. Refused when a question already answered in the task contains the same words.
+pub fn ask(
+    root: &Path,
+    id: &str,
+    text: &str,
+    who: &str,
+    session: &str,
+    stamp: &str,
+) -> Result<Asked, String> {
+    let who = actor(who)?;
+    let question = clean_text_as(text, "the question")?;
+    let sid = session8(session)?;
+    let mail = root.join("mail");
+    with_lock(root, || {
+        let path = find_task(root, id)?;
+        let mut asks = read_asks(&mail)?;
+        let body = with_questions(&read_body(root, id)?);
+        let (start, end) = questions_span(&body).ok_or("the task's Questions section is gone")?;
+        let sect = &body[start..end];
+        let items: Vec<Question> = question_items(sect)
+            .into_iter()
+            .map(|(a, b)| parse_question(&sect[a..b]))
+            .collect();
+        let raw: Vec<&str> = question_items(sect)
+            .into_iter()
+            .map(|(a, b)| &sect[a..b])
+            .collect();
+        let wanted = question.to_lowercase();
+        for (q, item) in items.iter().zip(&raw) {
+            let shown = unindent_text(item);
+            if q.ticked && shown.to_lowercase().contains(&wanted) {
+                return Err(format!("already answered in {id}:\n{shown}"));
+            }
+        }
+        let highest = items.iter().filter_map(|q| q.n).max().unwrap_or(0);
+        let count = u32::try_from(items.len()).unwrap_or(u32::MAX);
+        let n = highest
+            .max(count)
+            .checked_add(1)
+            .ok_or("the task has too many questions")?;
+        let item = format!(
+            "- [ ] **Q{n} ({who}, session {sid}, {stamp}):** {}\n",
+            indent_text(&question)
+        );
+        let kept = sect.trim_end_matches('\n');
+        let new_sect = if kept.trim().is_empty() {
+            format!("{item}\n")
+        } else {
+            format!("{kept}\n{item}\n")
+        };
+        let mut new_body = append_log(
+            &format!("{}{new_sect}{}", &body[..start], &body[end..]),
+            &format!("{stamp} {who}: asked Q{n}"),
+        );
+        // The holder asking is the holder being heard from: it keeps the claim alive.
+        let held =
+            parse_task("", root, &folder_of(root, &path), &path, &body, 0).is_some_and(|t| {
+                t.stage == "building" && !t.claimed_by.is_empty() && t.claimed_by == who
+            });
+        if held {
+            new_body = crate::ops::set_front(&new_body, "heartbeat", stamp)?;
+        }
+        // The asker first: a question without its entry is still answered by the session in
+        // its line, while an entry without its question is only overwritten by the next ask.
+        asks.insert(format!("{id}-Q{n}"), serde_json::Value::String(sid.clone()));
+        let reg = serde_json::to_string_pretty(&asks).map_err(|e| e.to_string())?;
+        write_atomic(&mail.join("asks.json"), &format!("{reg}\n"))?;
+        write_atomic(&path, &new_body)?;
+        let earlier = items
+            .iter()
+            .zip(&raw)
+            .map(|(q, item)| {
+                let first = item.lines().next().unwrap_or("");
+                (q.ticked, first.chars().take(200).collect())
+            })
+            .collect();
+        Ok(Asked { n, earlier })
+    })
+}
+
+/// Mark question `n` of task `id` "Escalated to owner" (capture takes it to the owner), once.
+pub fn escalate(root: &Path, id: &str, n: u32, who: &str, stamp: &str) -> Result<(), String> {
+    let who = actor(who)?;
+    with_lock(root, || {
+        let path = find_task(root, id)?;
+        let body = read_body(root, id)?;
+        let no_q = || format!("no Q{n} in {id}");
+        let (start, end) = questions_span(&body).ok_or_else(no_q)?;
+        let sect = &body[start..end];
+        let (a, b) = question_items(sect)
+            .into_iter()
+            .find(|&(a, b)| parse_question(&sect[a..b]).n == Some(n))
+            .ok_or_else(no_q)?;
+        let item = &sect[a..b];
+        if item.contains("Escalated to owner") {
+            return Err(format!("Q{n} is already escalated"));
+        }
+        let new_body = append_log(
+            &format!(
+                "{}{item}\n  **Escalated to owner ({who}, {stamp}).**{}",
+                &body[..start + a],
+                &body[start + b..]
+            ),
+            &format!("{stamp} {who}: escalated Q{n} to the owner"),
+        );
+        write_atomic(&path, &new_body)
+    })
+}
+
+/// The answers waiting in `session`'s mailbox (contract rule 5), oldest name first. Each is
+/// moved to `delivered/` as it's taken, unless `keep`; one another reader moved first is skipped,
+/// so an answer is handed over once.
+pub fn take_mail(root: &Path, session: &str, keep: bool) -> Result<Vec<String>, String> {
+    let dir = root.join("mail").join(session8(session)?);
+    let entries = match fs::read_dir(&dir) {
+        Ok(rd) => rd,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(format!("{}: {e}", dir.display())),
+    };
+    let mut names: Vec<String> = entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|n| n.ends_with(".md"))
+        .collect();
+    names.sort();
+    let mut out = Vec::new();
+    for name in names {
+        let from = if keep {
+            dir.join(&name)
+        } else {
+            let done = dir.join("delivered");
+            fs::create_dir_all(&done).map_err(|e| e.to_string())?;
+            match fs::rename(dir.join(&name), done.join(&name)) {
+                Ok(()) => done.join(&name),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(e) => return Err(e.to_string()),
+            }
+        };
+        if let Some(text) = read_mail(&from)? {
+            out.push(text);
+        }
+    }
+    Ok(out)
+}
+
+/// A mailbox file's text, or None when it's gone (the hook delivered it meanwhile).
+fn read_mail(path: &Path) -> Result<Option<String>, String> {
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(Some(text)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
 }
 
 /// Contract v1: answer question `n` of task `id` as `who`, then drop the asker's mailbox file.
@@ -924,15 +1210,7 @@ pub fn answer(
     with_lock(root, || {
         let path = find_task(root, id)?;
         let body = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        let head = "## Questions\n";
-        let start = body
-            .find(head)
-            .map(|i| i + head.len())
-            .ok_or("the task has no Questions section")?;
-        let end = body[start..]
-            .find("\n## ")
-            .map(|i| start + i + 1)
-            .unwrap_or(body.len());
+        let (start, end) = questions_span(&body).ok_or_else(|| format!("no Q{n} in {id}"))?;
         let sect = &body[start..end];
         let (a, b) = question_items(sect)
             .into_iter()
@@ -1547,7 +1825,7 @@ mod tests {
             "{all}"
         );
         assert!(
-            all.contains("doing/0046-q.md is claimed but hasn't changed in 13 h"),
+            all.contains("doing/0046-q.md is claimed but hasn't been heard from in 13 h"),
             "{all}"
         );
         assert!(
@@ -1572,12 +1850,284 @@ mod tests {
     }
 
     #[test]
+    fn check_calls_a_claim_quiet_by_the_same_lease_as_reclaim() {
+        let now = 2_000_000_000;
+        let stamp = "2026-10-12 14:05";
+        let held = |id: &str, hb: &str, modified: u64| {
+            let text = TASK
+                .replace("id: 0042", &format!("id: {id}"))
+                .replace("heartbeat:", &format!("heartbeat: {hb}"));
+            let root = Path::new("/nonexistent-queue");
+            parse_task(
+                "p",
+                root,
+                "doing",
+                &root.join(format!("doing/{id}-x.md")),
+                &text,
+                modified,
+            )
+            .unwrap()
+        };
+        let tasks = [
+            // An old heartbeat, though the file just changed (an answer, say): quiet.
+            held("0001", "2026-10-12 01:00", now - 60),
+            // A fresh heartbeat in an old file: live.
+            held("0002", "2026-10-12 13:00", now - 99 * 3600),
+            // No heartbeat: the file's time.
+            held("0003", "", now - 13 * 3600),
+            // Exactly the lease: not yet.
+            held("0004", "2026-10-12 02:05", now - 99 * 3600),
+        ];
+        let quiet: Vec<_> = problems("p", &tasks, now, stamp)
+            .into_iter()
+            .filter(|p| p.contains("heard from"))
+            .collect();
+        assert_eq!(
+            quiet,
+            [
+                "p: doing/0001-x.md is claimed but hasn't been heard from in 13 h",
+                "p: doing/0003-x.md is claimed but hasn't been heard from in 13 h"
+            ]
+        );
+    }
+
+    #[test]
+    fn state_judges_a_claims_lease_at_the_time_given() {
+        let d = queue();
+        fs::write(
+            d.path().join("doing/0042-something.md"),
+            TASK.replace("heartbeat:", "heartbeat: 2026-10-12 01:00"),
+        )
+        .unwrap();
+        let q = [("p".to_string(), d.path().to_path_buf())];
+        let quiet = |stamp: &str| {
+            read_state_at(&q, &mut Cache::default(), stamp)
+                .problems
+                .into_iter()
+                .filter(|p| p.contains("heard from"))
+                .count()
+        };
+        assert_eq!(quiet("2026-10-12 13:00"), 0);
+        assert_eq!(quiet("2026-10-12 13:01"), 1);
+    }
+
+    #[test]
     fn criteria_counts() {
         assert_eq!(
             criteria("# T\n\n## Acceptance criteria\n- [ ] AC1\n- [x] AC2\n- [X] AC3\n  - [ ] a sub-step\n\n## Log\n- [ ] not a criterion\n"),
             (3, 2)
         );
         assert_eq!(criteria("# T\n\n- [ ] outside\n"), (0, 0));
+    }
+
+    /// A task without questions, as most start.
+    const PLAIN: &str = "---\nid: 0007\ntype: task\npriority: normal\nstatus: doing\nstage: building\nclaimed-by: wt-a\nheartbeat:\nwaiting_on:\n---\n\n# Plain\n\n**Details:** synthetic.\n\n## Log\n- 2026-10-11 captured\n";
+    const S: &str = "2026-10-12 09:00";
+
+    fn plain() -> tempfile::TempDir {
+        let d = queue();
+        fs::write(d.path().join("doing/0007-plain.md"), PLAIN).unwrap();
+        d
+    }
+    fn body_of(d: &Path, id: &str) -> String {
+        read_body(d, id).unwrap()
+    }
+
+    #[test]
+    fn session_ids_become_mailbox_names() {
+        assert_eq!(session8("aaaa1111-full-id").unwrap(), "aaaa1111");
+        assert_eq!(session8(" ABCD1234-5678 ").unwrap(), "abcd1234");
+        assert!(session8("").unwrap_err().contains("no session id"));
+        for bad in ["codex-ru", "a1", "../../etc", "aaaa111g", "é"] {
+            assert!(session8(bad).unwrap_err().contains("8 hex"), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn ask_writes_the_question_above_the_log_and_records_the_asker() {
+        let d = plain();
+        let a = ask(d.path(), "0007", "Which port?", "wt-a", "aaaa1111-x", S).unwrap();
+        assert_eq!((a.n, a.earlier.len()), (1, 0));
+        let b = body_of(d.path(), "0007");
+        assert!(
+            b.contains("**Details:** synthetic.\n\n## Questions\n- [ ] **Q1 (wt-a, session aaaa1111, 2026-10-12 09:00):** Which port?\n\n## Log\n"),
+            "{b}"
+        );
+        assert!(b.ends_with("- 2026-10-12 09:00 wt-a: asked Q1\n"), "{b}");
+        let reg: HashMap<String, String> =
+            serde_json::from_str(&fs::read_to_string(d.path().join("mail/asks.json")).unwrap())
+                .unwrap();
+        assert_eq!(reg.get("0007-Q1").map(String::as_str), Some("aaaa1111"));
+        // The next one is numbered on, in the same section, and lists the first.
+        let a = ask(d.path(), "0007", "And the colour?", "wt-b", "bbbb2222", S).unwrap();
+        assert_eq!(a.n, 2);
+        assert_eq!(
+            a.earlier,
+            vec![(
+                false,
+                "- [ ] **Q1 (wt-a, session aaaa1111, 2026-10-12 09:00):** Which port?".to_string()
+            )]
+        );
+        let b = body_of(d.path(), "0007");
+        assert_eq!(b.matches("## Questions").count(), 1);
+        assert!(b.contains("Which port?\n- [ ] **Q2 (wt-b, session bbbb2222, "));
+        let t = read_task(d.path(), "0007").unwrap();
+        assert_eq!((t.questions.len(), t.open_questions), (2, 2));
+        // The app's answer reaches the asker recorded at ask time.
+        assert_eq!(
+            answer(d.path(), "0007", 2, "Violet.", "owner", S)
+                .unwrap()
+                .as_deref(),
+            Some("bbbb2222")
+        );
+    }
+
+    #[test]
+    fn ask_refuses_what_is_already_answered_and_shows_it_as_written() {
+        let d = plain();
+        let q = "Which layout?\n- A: a window\n\n  (indented by me) é → ü";
+        ask(d.path(), "0007", q, "wt-a", "aaaa1111", S).unwrap();
+        answer(d.path(), "0007", 1, "B.\n## Log", "capture", S).unwrap();
+        let before = body_of(d.path(), "0007");
+        let e = ask(d.path(), "0007", "WHICH LAYOUT?", "wt-b", "bbbb2222", S).unwrap_err();
+        assert!(
+            e.starts_with("already answered in 0007:\n- [x] **Q1 ("),
+            "{e}"
+        );
+        assert!(
+            e.contains(&format!(":** {q}\n**A (capture, {S}):** B.\n## Log")),
+            "{e}"
+        );
+        assert_eq!(body_of(d.path(), "0007"), before);
+        // An open question with the same words doesn't block asking again.
+        ask(d.path(), "0007", "Open one?", "wt-a", "aaaa1111", S).unwrap();
+        ask(d.path(), "0007", "Open one?", "wt-a", "aaaa1111", S).unwrap();
+    }
+
+    #[test]
+    fn ask_numbers_after_old_unnumbered_questions() {
+        let d = queue();
+        fs::write(
+            d.path().join("todo/0043-old.md"),
+            "---\nid: 0043\nstatus: todo\n---\n\n# Old\n\n## Questions\n- [ ] **Q (drover/main, session bbbb2222, 2026-10-11):** unnumbered?\n\n## Log\n- 2026-10-11 captured\n",
+        )
+        .unwrap();
+        assert_eq!(
+            ask(d.path(), "0043", "New?", "x", "eeee5555", S).unwrap().n,
+            2
+        );
+        assert!(
+            body_of(d.path(), "0043").contains("unnumbered?\n- [ ] **Q2 (x, session eeee5555, ")
+        );
+    }
+
+    #[test]
+    fn ask_refusals_leave_the_queue_alone() {
+        let d = plain();
+        let e =
+            |id: &str, q: &str, who: &str, s: &str| ask(d.path(), id, q, who, s, S).unwrap_err();
+        assert!(e("0007", "x", "wt-a", "").contains("no session id"));
+        assert!(e("0007", "x", "wt-a", "codex-ru").contains("8 hex"));
+        assert!(e("0007", " \u{7} ", "wt-a", "aaaa1111").contains("the question is empty"));
+        assert!(e("0007", &"x".repeat(4001), "wt-a", "aaaa1111")
+            .contains("the question is longer than 4000"));
+        assert!(e("0007", "x", "wt → b", "aaaa1111").contains("can't contain"));
+        assert!(e("0099", "x", "wt-a", "aaaa1111").contains("no task 0099"));
+        assert!(e("42", "x", "wt-a", "aaaa1111").contains("four digits"));
+        fs::create_dir_all(d.path().join("mail")).unwrap();
+        fs::write(d.path().join("mail/asks.json"), "{not json").unwrap();
+        assert!(e("0007", "x", "wt-a", "aaaa1111").contains("asks.json"));
+        assert_eq!(body_of(d.path(), "0007"), PLAIN);
+        assert_eq!(
+            fs::read_to_string(d.path().join("mail/asks.json")).unwrap(),
+            "{not json"
+        );
+    }
+
+    #[test]
+    fn ask_cleans_control_characters_and_keeps_a_question_inside_its_item() {
+        let d = plain();
+        ask(
+            d.path(),
+            "0007",
+            "bad\u{1b}[31m text\u{7}\tend?\n## Log\n- [ ] **Q9 (x):** fake",
+            "wt-a",
+            "aaaa1111",
+            S,
+        )
+        .unwrap();
+        let b = body_of(d.path(), "0007");
+        assert!(
+            b.contains(":** bad[31m textend?\n  ## Log\n  - [ ] **Q9 (x):** fake\n"),
+            "{b}"
+        );
+        let t = read_task(d.path(), "0007").unwrap();
+        assert_eq!(t.questions.len(), 1);
+        assert!(t.stage_history.is_empty());
+    }
+
+    #[test]
+    fn escalate_marks_the_question_for_the_owner_once() {
+        let d = plain();
+        ask(d.path(), "0007", "Product call?", "wt-a", "aaaa1111", S).unwrap();
+        escalate(d.path(), "0007", 1, "capture", "2026-10-12 09:05").unwrap();
+        let b = body_of(d.path(), "0007");
+        assert!(b.contains(
+            ":** Product call?\n  **Escalated to owner (capture, 2026-10-12 09:05).**\n"
+        ));
+        assert!(b.ends_with("- 2026-10-12 09:05 capture: escalated Q1 to the owner\n"));
+        let t = read_task(d.path(), "0007").unwrap();
+        assert!(t.questions[0].escalated && t.waiting_for_owner);
+        assert!(escalate(d.path(), "0007", 1, "capture", S)
+            .unwrap_err()
+            .contains("Q1 is already escalated"));
+        assert!(escalate(d.path(), "0007", 2, "capture", S)
+            .unwrap_err()
+            .contains("no Q2 in 0007"));
+        let d = plain();
+        assert!(escalate(d.path(), "0007", 1, "capture", S)
+            .unwrap_err()
+            .contains("no Q1 in 0007"));
+        assert_eq!(
+            body_of(d.path(), "0007"),
+            PLAIN,
+            "no Questions section added"
+        );
+        assert!(answer(d.path(), "0007", 1, "x", "owner", S)
+            .unwrap_err()
+            .contains("no Q1 in 0007"));
+    }
+
+    #[test]
+    fn inbox_hands_over_each_answer_once_unless_kept() {
+        let d = plain();
+        ask(d.path(), "0007", "Which port?", "wt-a", "aaaa1111", S).unwrap();
+        ask(d.path(), "0007", "Which colour?", "wt-a", "aaaa1111", S).unwrap();
+        assert!(take_mail(d.path(), "aaaa1111", false).unwrap().is_empty());
+        answer(d.path(), "0007", 2, "Violet.", "owner", S).unwrap();
+        answer(d.path(), "0007", 1, "5173.", "capture", S).unwrap();
+        assert!(take_mail(d.path(), "bbbb2222", false).unwrap().is_empty());
+        let kept = take_mail(d.path(), "AAAA1111-full", true).unwrap();
+        assert_eq!(kept.len(), 2);
+        assert!(kept[0].contains("Answer to Q1 on task 0007 (Plain), from capture:\nYour question: Which port?\nAnswer: 5173.\n"));
+        assert!(kept[1].contains("Answer: Violet."));
+        assert_eq!(take_mail(d.path(), "aaaa1111", false).unwrap(), kept);
+        assert!(take_mail(d.path(), "aaaa1111", false).unwrap().is_empty());
+        assert!(d
+            .path()
+            .join("mail/aaaa1111/delivered/0007-Q1.md")
+            .is_file());
+        assert!(take_mail(d.path(), "../../etc", false)
+            .unwrap_err()
+            .contains("8 hex"));
+        // One the hook moved away between the listing and the read is skipped, not an error.
+        assert_eq!(
+            read_mail(&d.path().join("mail/aaaa1111/0007-Q9.md")).unwrap(),
+            None
+        );
+        assert!(read_mail(&d.path().join("mail/aaaa1111"))
+            .unwrap_err()
+            .contains("aaaa1111"));
     }
 
     #[test]
