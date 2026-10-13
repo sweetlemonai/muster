@@ -19,6 +19,23 @@ export function editKey(e: Key, dirty: boolean, armed: boolean): EditAction {
 /** What the editor says when the window refused to leave it. */
 export const UNSAVED = "Unsaved changes: Save, or press Esc twice to discard";
 
+/** What the comment box says, with typed text, after a first Esc or a refused switch. */
+export const UNSENT = "Unsent comment: send it (⌘↩), or press Esc twice to throw it away";
+
+/** The comment box's notice: only while it holds text, once Esc armed the discard or the window
+ *  refused to leave it. */
+export const commentNotice = (dirty: boolean, armed: boolean, refused: boolean): string | null =>
+  dirty && (armed || refused) ? UNSENT : null;
+
+/** The task pane's unsaved parts (the write-up editor, the comment box), with one part's state
+ *  set. The same object when nothing changed, so setting it again doesn't re-render. */
+export function withPart(parts: Record<string, boolean>, part: string, dirty: boolean): Record<string, boolean> {
+  return (parts[part] ?? false) === dirty ? parts : { ...parts, [part]: dirty };
+}
+
+/** Whether any part of the pane has unsaved text: then the window keeps the pane where it is. */
+export const anyDirty = (parts: Record<string, boolean>) => Object.values(parts).some(Boolean);
+
 type PaneLike = { kind: string; key?: string } | null;
 
 /** May the docked pane change from `from` to `to`? Not while the write-up editor has unsaved

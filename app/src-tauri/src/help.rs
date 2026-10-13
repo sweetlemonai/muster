@@ -93,7 +93,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "heartbeat",
         usage: "muster heartbeat <id> [--as <who>]",
-        what: "Keep your claim alive on long work: stamps the task's heartbeat, no log line. Only the holder, only in Building. Your note, ask, pass, return and block stamp it too, and so does an unblock. A claim quiet for 12 h can be released to Ready.",
+        what: "Keep your claim alive on long work: stamps the task's heartbeat, no log line. Only the holder, only in Building. Your note, comment, ask, pass, return and block stamp it too, and so does an unblock. A claim quiet for 12 h can be released to Ready.",
         options: &[("--as", "who you are; must be who holds it")],
         examples: &["muster heartbeat 0007 --as wt-a"],
     },
@@ -186,7 +186,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "comment",
         usage: "muster comment <id> \"<text>\" | --body <text>|-",
-        what: "Add a comment to a task's thread: under ## Comments, above the Log, stamped with who and when, and logged as commented. Anyone may comment on any task at any stage, one someone else holds included: comments don't touch the write-up, and edit leaves them alone. Lines are kept (each after the first indented in the file); control characters go, at most 4,000 characters, and a line that would read as a stage change is refused.",
+        what: "Add a comment to a task's thread: under ## Comments, above the Log, stamped with who and when, and logged as commented. Anyone may comment on any task at any stage, one someone else holds included: comments don't touch the write-up, and edit leaves them alone. The holder's own comment keeps their claim alive, like a note. Lines are kept (each after the first indented in the file); control characters go, at most 4,000 characters, and a line that would read as a stage change is refused.",
         options: &[
             ("--body", "the comment instead of the words after the id; \\n is a line break; - reads it from stdin"),
             ("--as", "who's commenting; default $MUSTER_AS, then $USER"),
@@ -199,7 +199,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "link",
         usage: "muster link <id> <https-url> [\"<title>\"] | muster link <id> --remove <n|url>",
-        what: "Add an external link to a task (a spec, a PR, a design), or remove one by its number (from 1) or address. Links are https only, up to 2,000 characters, printable ASCII (percent-encode the rest), without a user name or password; a title has no <, > or ;. At most 20 per task. They're in the front matter as links: title <https://…>; <https://…>, the task pane lists them, and a click opens one in your browser. Logged.",
+        what: "Add an external link to a task (a spec, a PR, a design), or remove one by its number (from 1) or address. Links are https only, up to 2,000 characters, printable ASCII (percent-encode the rest), without a user name or password or a percent-encoded host; a title has no <, > or ;. At most 20 per task. They're in the front matter as links: title <https://…>; <https://…>, the task pane lists them, and a click opens one in your browser. Logged.",
         options: &[("--remove", "the link's number (1 is the first) or its address")],
         examples: &[
             "muster link 0007 https://github.com/sweetlemonai/muster/pull/12 \"The PR\"",
@@ -454,7 +454,7 @@ pub const APP: &[(&str, &str)] = &[
     ),
     (
         "Comments",
-        "in a task's pane, under the description: the thread, oldest first, and a box to add yours (⌘↩ sends). Anyone may comment at any stage, while someone else holds it too",
+        "in a task's pane, under the description: the thread, oldest first, and a box to add yours (⌘↩ sends). While it holds typed text the pane stays open, and Esc twice throws the text away. Anyone may comment at any stage, while someone else holds it too",
     ),
     (
         "Board · Table · Timeline",

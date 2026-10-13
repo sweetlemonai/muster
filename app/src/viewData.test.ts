@@ -20,6 +20,13 @@ describe("sortTasks", () => {
     const who = [t({ id: "a", stage: "done", claimedBy: "aaa" }), t({ id: "b", stage: "building", claimedBy: "zed" }), t({ id: "c", blocked: true, waitingOn: "0012" })];
     expect(sortTasks(who, "who", false).map((x) => x.id)).toEqual(["a", "c", "b"]);
   });
+  it("sorts by estimate as agent time plus test time, then tokens", () => {
+    const a = t({ id: "a", estMinutes: 60, estTestMinutes: 0 });
+    const b = t({ id: "b", estMinutes: 30, estTestMinutes: 60 });
+    const c = t({ id: "c", estMinutes: 60, estTokenCount: 500_000 });
+    expect(sortTasks([b, c, a], "estimate", false).map((x) => x.id)).toEqual(["a", "c", "b"]);
+    expect(sortTasks([a, b, c], "estimate", true).map((x) => x.id)).toEqual(["b", "c", "a"]);
+  });
 });
 
 describe("timeline bars", () => {

@@ -9,6 +9,7 @@ import NewTask from "./NewTask";
 import TaskPanel from "./TaskPanel";
 import type { Task } from "./types";
 import TypePick from "./TypePick";
+import { anyDirty, commentNotice, editKey, mayLeave, UNSENT, withPart } from "./writeUp";
 
 const task = (over: Partial<Task>): Task => ({
   queue: "demo", id: "0017", title: "T", kind: "code", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
@@ -124,6 +125,36 @@ describe("comments", () => {
   it("render a comment's text as data: no raw HTML", () => {
     const html = renderToStaticMarkup(createElement(Comments, { task: task({ comments: [{ who: "x", at: "2026-10-12 10:00", text: "<img src=x onerror=alert(1)>" }] }), onChanged: () => {} }));
     expect(html).not.toContain("<img");
+  });
+  it("keep typed text: the pane is unsaved while either the editor or the comment box has some", () => {
+    let parts: Record<string, boolean> = {};
+    expect(anyDirty(parts)).toBe(false);
+    parts = withPart(parts, "comment", true);
+    expect(anyDirty(parts)).toBe(true);
+    // The editor closing (clean) doesn't clear the comment box's typing.
+    parts = withPart(parts, "edit", false);
+    expect(anyDirty(parts)).toBe(true);
+    expect(withPart(parts, "edit", false)).toBe(parts);
+    parts = withPart(parts, "comment", false);
+    expect(anyDirty(parts)).toBe(false);
+    // Unsaved typing keeps the pane: Esc (closing) and another card are refused.
+    const here = { kind: "task", key: "demo/0017" };
+    expect(mayLeave(anyDirty({ comment: true }), here, null)).toBe(false);
+    expect(mayLeave(anyDirty({ comment: true }), here, { kind: "task", key: "demo/0018" })).toBe(false);
+  });
+  it("arm on the first Esc and say so inline; the second throws the text away", () => {
+    const esc = { key: "Escape", metaKey: false, ctrlKey: false, altKey: false, isComposing: false };
+    expect(editKey(esc, true, false)).toBe("arm");
+    expect(editKey(esc, true, true)).toBe("cancel");
+    expect(commentNotice(true, true, false)).toBe(UNSENT);
+    expect(commentNotice(true, false, true)).toBe(UNSENT);
+    expect(commentNotice(true, false, false)).toBeNull();
+    expect(commentNotice(false, true, true)).toBeNull();
+    expect(UNSENT).toBe("Unsent comment: send it (⌘↩), or press Esc twice to throw it away");
+  });
+  it("say nothing unsent while the box is empty, even after a refused switch", () => {
+    const html = renderToStaticMarkup(createElement(Comments, { task: task({}), onChanged: () => {}, nudge: 3 }));
+    expect(html).not.toContain("Unsent comment");
   });
   it("sit under the description in the task pane", () => {
     const html = renderToStaticMarkup(createElement(TaskPanel, { task: task({ comments: [{ who: "owner", at: "2026-10-12 10:00", text: "Hi." }] }), now: 0, onClose: () => {}, onChanged: () => {} }));

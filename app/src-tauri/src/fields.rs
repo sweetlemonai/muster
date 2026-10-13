@@ -36,7 +36,8 @@ pub struct Comment {
 
 /// A link's address as muster keeps and opens it: https with a host, at most 2,000 characters,
 /// printable ASCII without spaces, `<`, `>`, `"`, `\` or a backtick (percent-encode anything
-/// else), and no user name or password in it. The scheme is written in lowercase.
+/// else), no user name or password in it, and no percent-encoding in the host. The scheme is
+/// written in lowercase.
 pub fn clean_url(input: &str) -> Result<String, String> {
     let u = input.trim();
     if u.is_empty() {
@@ -63,6 +64,10 @@ pub fn clean_url(input: &str) -> Result<String, String> {
     }
     if host.contains('@') {
         return Err("a link can't carry a user name or password".into());
+    }
+    // A percent-encoded host could read as one host and open as another.
+    if host.contains('%') {
+        return Err("the link's host can't be percent-encoded".into());
     }
     Ok(format!("https://{rest}"))
 }
@@ -340,7 +345,15 @@ pub fn add_comment(
     with_lock(root, || {
         let path = find_task(root, id)?;
         let body = queue::read_body(root, id)?;
-        write_atomic(&path, &append_log(&with_comment(&body, &item), &line))?;
+        let mut new = append_log(&with_comment(&body, &item), &line);
+        // The holder's comment is the holder being heard from: it keeps the claim alive.
+        let t = queue::parse_task("", root, &queue::folder_of(root, &path), &path, &body, 0);
+        if t.is_some_and(|t| {
+            t.stage == "building" && !t.claimed_by.is_empty() && t.claimed_by == who
+        }) {
+            new = set_front(&new, "heartbeat", stamp)?;
+        }
+        write_atomic(&path, &new)?;
         Ok(path
             .strip_prefix(root)
             .unwrap_or(&path)
@@ -411,6 +424,16 @@ mod tests {
         refused("https://", "no host");
         refused("https:///path", "no host");
         refused("https://user:pw@example.com/", "user name or password");
+        // A percent-encoded host could show as one host and open as another.
+        refused("https://ex%61mple.com/", "host can't be percent-encoded");
+        refused(
+            "https://example.com%2Fevil.com/",
+            "host can't be percent-encoded",
+        );
+        assert_eq!(
+            clean_url("https://example.com/a%20b?q=%2F#%C3%A9").unwrap(),
+            "https://example.com/a%20b?q=%2F#%C3%A9"
+        );
         refused("https://example.com/a b", "percent-encode");
         refused("https://example.com/\u{7}", "percent-encode");
         refused("https://example.com/\nx", "percent-encode");
@@ -785,6 +808,17 @@ mod tests {
         );
         assert_eq!(t.comments.len(), 2);
         assert_eq!(t.stage_history.len(), 1);
+        // The holder's own comment is the holder being heard from: it renews the lease.
+        add_comment(d.path(), "0001", "Halfway.", "wt-a", "2026-10-12 16:30").unwrap();
+        let t = read_task(d.path(), "0001").unwrap();
+        assert_eq!(
+            (
+                t.heartbeat.as_str(),
+                t.claimed_by.as_str(),
+                t.comments.len()
+            ),
+            ("2026-10-12 16:30", "wt-a", 3)
+        );
         // Done, and a flat-layout task without a Log: the section and a Log are made.
         let flat = tempfile::tempdir().unwrap();
         let f = flat.path().join("0001-t.md");

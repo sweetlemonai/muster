@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import Comments from "./Comments";
 import EditBody from "./EditBody";
@@ -9,12 +9,22 @@ import Markdown from "./Markdown";
 import OwnerChecklist, { ownerOpen } from "./OwnerChecklist";
 import TagEditor from "./Tags";
 import TypePick from "./TypePick";
+import { anyDirty, withPart } from "./writeUp";
 import type { Question, Task } from "./types";
 
 const IMAGE = /\.(png|jpe?g|gif|webp)$/i;
 
-/** `onDirty` and `nudge` pass between the window and the write-up editor (see EditBody). */
+/** `onDirty` and `nudge` pass between the window and the parts with typed text, the write-up
+ *  editor (see EditBody) and the comment box: the pane is unsaved while either is. */
 export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudge }: { task: Task; now: number; onClose: () => void; onChanged: () => void; onDirty?: (dirty: boolean) => void; nudge?: number }) {
+  const [dirtyParts, setDirtyParts] = useState<Record<string, boolean>>({});
+  const editDirty = useCallback((d: boolean) => setDirtyParts((p) => withPart(p, "edit", d)), []);
+  const commentDirty = useCallback((d: boolean) => setDirtyParts((p) => withPart(p, "comment", d)), []);
+  const unsaved = anyDirty(dirtyParts);
+  useEffect(() => {
+    onDirty?.(unsaved);
+  }, [unsaved, onDirty]);
+  useEffect(() => () => onDirty?.(false), [onDirty]);
   const [body, setBody] = useState<string | null>(null);
   const [raw, setRaw] = useState(false);
   const [error, setError] = useState("");
@@ -85,7 +95,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
           <EditBody
             task={task}
             opened={editing}
-            onDirty={onDirty}
+            onDirty={editDirty}
             nudge={nudge}
             onClose={() => setEditing(null)}
             onSaved={(text) => {
@@ -110,7 +120,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
         )}
       </section>
 
-      <Comments task={task} onChanged={onChanged} />
+      <Comments task={task} onChanged={onChanged} onDirty={commentDirty} nudge={nudge} />
       {log && !raw && editing === null && (
         <section className="log">
           <Markdown text={log} />

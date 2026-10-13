@@ -44,6 +44,13 @@ def stage_of(fields: dict, folder: str) -> str:
     return LEGACY_STAGE.get(fields.get("status") or folder, "backlog")
 
 
+def kind_of(raw: str) -> str:
+    """A type as muster reads it (ops.rs read_kind): lowercase, the old `task` as `code`, anything
+    else (an old `idea`) as it is."""
+    kind = raw.strip().lower()
+    return "code" if kind == "task" else kind
+
+
 def mirror_status(stage: str, blocked: bool) -> str:
     """The old status a stage and the blocked flag mean (ops.rs/queue.rs mirror_status)."""
     if blocked:
@@ -178,7 +185,7 @@ def main():
             t = {
                 "id": fields.get("id", ""),
                 "title": title,
-                "type": fields.get("type", ""),
+                "type": kind_of(fields.get("type", "")),
                 "priority": fields.get("priority", ""),
                 "status": fields.get("status", ""),
                 "stage": stage_of(fields, folder),
@@ -190,6 +197,7 @@ def main():
                 "commit": fields.get("commit", ""),
                 "tags": [t.strip() for t in fields.get("tags", "").split(",") if t.strip()],
                 "est_time": fields.get("est-time", ""),
+                "est_test_time": fields.get("est-test-time", ""),
                 "est_tokens": fields.get("est-tokens", ""),
                 "open_questions": len(re.findall(r"^- \[ \] \*\*Q", questions, re.M)),
                 "escalated_to_owner": any(

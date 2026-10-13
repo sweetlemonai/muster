@@ -250,6 +250,28 @@ class TaskTests(unittest.TestCase):
         self.assertIn("0044-check.md: in doing/ with no claimed-by", r.stdout)
         self.assertIn("0042-something.md: heartbeat", r.stdout)
 
+    def test_manifest_reads_types_and_test_time_like_muster(self):
+        # An old `type: task` is code (any case), idea and the rest stay; test time is read.
+        (self.root / "todo" / "0044-old-task.md").write_text(
+            TASK_FILE.replace("id: 0042", "id: 0044").replace("status: doing", "status: todo")
+            .replace("type: bug", "type: Task").replace("commit:", "commit:\nest-time: 2h\nest-test-time: 30m"))
+        (self.root / "todo" / "0045-debt.md").write_text(
+            TASK_FILE.replace("id: 0042", "id: 0045").replace("status: doing", "status: todo")
+            .replace("type: bug", "type: tech-debt"))
+        self.assertEqual(self.manifest().returncode, 0)
+        tasks = {t["id"]: t for t in json.loads(self.text("tasks.json"))["tasks"]}
+        self.assertEqual({i: t["type"] for i, t in tasks.items()},
+                         {"0042": "bug", "0043": "idea", "0044": "code", "0045": "tech-debt"})
+        self.assertEqual((tasks["0044"]["est_time"], tasks["0044"]["est_test_time"]), ("2h", "30m"))
+        self.assertEqual(tasks["0045"]["est_test_time"], "")
+        # And what muster writes reads back the same.
+        r = subprocess.run([str(MUSTER), "new", "Typed", "--type", "task", "--test-time", "45m", "--as", "owner"],
+                           env=self.env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.manifest().returncode, 0)
+        made = next(t for t in json.loads(self.text("tasks.json"))["tasks"] if t["title"] == "Typed")
+        self.assertEqual((made["type"], made["est_test_time"]), ("code", "45m"))
+
     def test_manifest_stage_must_match_its_status_mirror(self):
         # A hand claim (mv todo/ doing/, status edited) leaves stage: ready behind.
         (self.root / "doing" / "0042-something.md").write_text(
