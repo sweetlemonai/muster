@@ -37,7 +37,13 @@ export function TableView({ tasks, now, multi, openKey, onOpen, groups, by: grou
   words: string[];
 }) {
   // The last sort is kept across restarts (owner, 2026-10-13).
-  const [sort, setSort] = useState(() => parseTableSort(localStorage.getItem(TABLE_SORT_KEY)));
+  const [sort, setSort] = useState(() => {
+    try {
+      return parseTableSort(localStorage.getItem(TABLE_SORT_KEY));
+    } catch {
+      return parseTableSort(null); // no storage (off, or a test run): the default
+    }
+  });
   const { by, desc } = sort;
   const sortBy = (next: { by: SortKey; desc: boolean }) => {
     setSort(next);
