@@ -13,6 +13,8 @@ struct HelperConfig {
     account: String,
     /// Conversation to resume, by queue name.
     sessions: HashMap<String, String>,
+    /// The model it runs (0036), one of `helper::MODELS`; empty or unknown is the default.
+    model: String,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -39,6 +41,9 @@ pub struct HelperInfo {
     claude: Option<String>,
     accounts: Vec<AccountInfo>,
     account: String,
+    /// The model it runs, and the ones it can (0036).
+    model: &'static str,
+    models: [&'static str; 3],
     running: bool,
     lines: Vec<HelperLine>,
 }
@@ -135,6 +140,7 @@ pub async fn helper_info(handle: tauri::AppHandle, queue: String) -> Result<Help
             .lock()
             .map_err(|e| e.to_string())?
             .contains_key(&queue);
+        let config = load_helper(&app);
         let claude = helper::find_claude(&home());
         let accounts = helper::accounts(&home())
             .into_iter()
@@ -152,7 +158,9 @@ pub async fn helper_info(handle: tauri::AppHandle, queue: String) -> Result<Help
         Ok(HelperInfo {
             claude: claude.map(|p| p.to_string_lossy().to_string()),
             accounts,
-            account: load_helper(&app).account,
+            account: config.account,
+            model: helper::model_or_default(&config.model),
+            models: helper::MODELS,
             running,
             lines: read_transcript(&app, &queue),
         })
@@ -213,6 +221,21 @@ pub async fn helper_set_account(handle: tauri::AppHandle, account: String) -> Re
         let mut c = load_helper(&app);
         c.account = account;
         c.sessions.clear(); // a conversation belongs to one account
+        save_helper(&app, &c)
+    })
+    .await
+}
+
+/// The model the helper runs from its next turn (0036): one of `helper::MODELS`, exactly.
+#[tauri::command]
+pub async fn helper_set_model(handle: tauri::AppHandle, model: String) -> Result<(), String> {
+    blocking(move || {
+        if !helper::MODELS.contains(&model.as_str()) {
+            return Err(format!("no model named {model:?}"));
+        }
+        let app = handle.state::<AppState>();
+        let mut c = load_helper(&app);
+        c.model = model;
         save_helper(&app, &c)
     })
     .await
@@ -299,7 +322,7 @@ pub async fn helper_send(
             home().join(".local/bin").display()
         );
         let mut cmd = std::process::Command::new(&claude);
-        cmd.args(helper::args(&text, &brief, resume.as_deref()))
+        cmd.args(helper::args(&text, &brief, resume.as_deref(), &cfg.model))
             .current_dir(&project_dir)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())

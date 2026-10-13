@@ -2231,22 +2231,13 @@ pub fn lease_minutes(input: &str) -> Result<u64, String> {
     } else {
         input
     };
-    let t = clean_time(input)?;
-    let (num, per) = match t.as_bytes().last() {
-        Some(b'm') => (&t[..t.len() - 1], 1.0),
-        Some(b'h') => (&t[..t.len() - 1], 60.0),
-        Some(b'd') => (&t[..t.len() - 1], 1440.0),
-        _ => return Err(format!("lease {input:?}: use 30m, 2h or 1d")),
-    };
-    let n: f64 = num
-        .parse()
-        .map_err(|_| format!("lease {input:?}: use 30m, 2h or 1d"))?;
-    let minutes = (n * per).round();
-    if minutes < 1.0 {
+    // As typed (1.25h is 75 minutes), the way Settings reads it (0036).
+    let minutes = crate::settings::span_minutes(input)
+        .ok_or_else(|| format!("lease {input:?}: use 30m, 2h or 1d"))?;
+    if minutes < 1 {
         return Err(format!("lease {input:?} is shorter than a minute"));
     }
-    // clean_time caps the number at 1000, so this is at most 1,440,000 minutes.
-    Ok(minutes as u64)
+    Ok(minutes)
 }
 
 /// A tool stamp, `YYYY-MM-DD HH:MM` local time, as minutes since 1970-01-01 00:00 (same zone).
@@ -5272,6 +5263,10 @@ mod tests {
         assert_eq!(lease_minutes(" 2 h ").unwrap(), 120);
         assert_eq!(lease_minutes("1d").unwrap(), 24 * 60, "a lease day is 24 h");
         assert!(lease_minutes("soon").is_err() && lease_minutes("0.01m").is_err());
+        // As typed, not rounded to one decimal first (0036 review): 1.25 h is 75 minutes.
+        assert_eq!(lease_minutes("1.25h").unwrap(), 75);
+        assert_eq!(lease_minutes("0.75d").unwrap(), 1080);
+        assert!(lease_minutes("-2h").is_err() && lease_minutes("1.2.3h").is_err());
     }
 
     /// Back-date a file's modified time by `secs` from `now`.

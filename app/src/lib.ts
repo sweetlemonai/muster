@@ -223,9 +223,9 @@ export function quietMinutes(t: Pick<Task, "heartbeat" | "modified">, now: numbe
 
 /** A claim whose lease ran out, exactly what the core's reclaim takes: held, in Building, not
  *  blocked (that's waiting, by tasks too), not the owner's own task (`for: human`, which has no
- *  lease), and quiet for longer than the lease. */
-export function leaseRunOut(t: Pick<Task, "stage" | "blocked" | "blockedKind" | "claimedBy" | "heartbeat" | "modified" | "forWho">, now: number): boolean {
-  return t.stage === "building" && !t.blocked && !t.blockedKind && t.forWho !== "human" && t.claimedBy.trim() !== "" && quietMinutes(t, now) > LEASE_SECS / 60;
+ *  lease), and quiet for longer than the lease: `leaseMinutes`, this machine's from Settings (0036). */
+export function leaseRunOut(t: Pick<Task, "stage" | "blocked" | "blockedKind" | "claimedBy" | "heartbeat" | "modified" | "forWho">, now: number, leaseMinutes = LEASE_SECS / 60): boolean {
+  return t.stage === "building" && !t.blocked && !t.blockedKind && t.forWho !== "human" && t.claimedBy.trim() !== "" && quietMinutes(t, now) > leaseMinutes;
 }
 
 /** Runs one action at a time: a call made while one is in flight is dropped (false), so a

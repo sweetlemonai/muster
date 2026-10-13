@@ -900,3 +900,74 @@ fn edit_opens_visual_or_editor_on_the_write_up_without_a_shell() {
         .unwrap()
         .contains("# Someone else"));
 }
+
+/// The lease is a per-machine setting (0036): `muster reclaim` with no --after and `muster check`
+/// use the lease saved in the app's settings.json, so a short lease reclaims sooner. A broken file
+/// is the default 12 h.
+#[test]
+fn a_short_lease_in_the_settings_reclaims_sooner() {
+    let base = tempfile::tempdir().unwrap();
+    let b = base.path();
+    let q = b.join("proj/tasks");
+    for f in muster_lib::queue::STATUS_FOLDERS {
+        std::fs::create_dir_all(q.join(f)).unwrap();
+    }
+    std::fs::write(q.join("README.md"), "q").unwrap();
+    let held = |id: &str| {
+        let file = q.join(format!("doing/{id}-x.md"));
+        std::fs::write(
+            &file,
+            format!("---\nid: {id}\ntype: task\npriority: normal\nstage: building\nstatus: doing\nclaimed-by: wt-a\nheartbeat:\nwaiting_on:\n---\n\n# Held\n\n## Log\n- 2026-10-12 captured\n"),
+        )
+        .unwrap();
+        // No heartbeat: the claim is judged by the file's time, 2 h ago.
+        let two_hours_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 3600);
+        std::fs::File::options()
+            .write(true)
+            .open(&file)
+            .unwrap()
+            .set_modified(two_hours_ago)
+            .unwrap();
+    };
+    held("0001");
+    let env = [("MUSTER_ROOT", q.as_path())];
+    let settings = b.join("Library/Application Support/ai.sweetlemon.muster/settings.json");
+    std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
+
+    // The default lease, 12 h: two quiet hours are fine.
+    let (code, out) = muster(b, b, &env, &["check"]);
+    assert!(!out.contains("heard from"), "{code} {out}");
+    let (code, out) = muster(b, b, &env, &["reclaim", "--as", "owner"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("nothing to release: every claim in Building was heard from within 12 h"),
+        "{out}"
+    );
+
+    // A broken settings file is the default too.
+    std::fs::write(&settings, "{ not json").unwrap();
+    let (_, out) = muster(b, b, &env, &["reclaim", "--as", "owner"]);
+    assert!(out.contains("within 12 h"), "{out}");
+
+    // A 1-hour lease: check calls it quiet, and reclaim releases it.
+    std::fs::write(&settings, r#"{"leaseMinutes": 60}"#).unwrap();
+    let (_, out) = muster(b, b, &env, &["check"]);
+    assert!(
+        out.contains("doing/0001-x.md is claimed but hasn't been heard from in 2 h"),
+        "{out}"
+    );
+    let (code, out) = muster(b, b, &env, &["reclaim", "--as", "owner"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("released 0001 from wt-a (no heartbeat for 2 h): back in Ready"),
+        "{out}"
+    );
+
+    // --after still wins over the setting.
+    held("0002");
+    let (_, out) = muster(b, b, &env, &["reclaim", "--after", "3h", "--as", "owner"]);
+    assert!(
+        out.contains("nothing to release: every claim in Building was heard from within 3h"),
+        "{out}"
+    );
+}

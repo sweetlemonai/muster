@@ -23,9 +23,9 @@ export type Shortcut = {
 
 const TABLE = [
   { id: "new-task", keys: "⌘N", codes: ["n"], mod: true, what: "Open New task in the pane beside the board", where: "Anywhere in the window", area: "Anywhere", files: ["keys.ts"] },
-  { id: "close-pane", keys: "Esc", codes: ["Escape"], mod: false, what: "Close the pane: a task, a note, New task or Appearance", where: "Anywhere while the pane is open, except in the search box or a view's name, which take Esc for themselves", area: "Anywhere", files: ["keys.ts"] },
+  { id: "close-pane", keys: "Esc", codes: ["Escape"], mod: false, what: "Close the pane: a task, a note or New task", where: "Anywhere while the pane is open, except in the search box or a view's name, which take Esc for themselves", area: "Anywhere", files: ["keys.ts"] },
   { id: "search", keys: "⌘F", codes: ["f"], mod: "cmd", what: "Put the caret in the search box, with its words selected so typing replaces them. Ctrl+F is left to text fields, where it moves the caret", where: "Anywhere in the window. From a tab without a search box, it opens the board first", area: "Anywhere", files: ["keys.ts"] },
-  { id: "zoom-in", keys: "⌘+", codes: ["=", "+"], mod: "cmd", what: "Make everything larger: the board, the panes and the manual (the size is remembered; also in Appearance → Text size)", where: "Anywhere in the window", area: "Anywhere", files: ["zoom.ts"] },
+  { id: "zoom-in", keys: "⌘+", codes: ["=", "+"], mod: "cmd", what: "Make everything larger: the board, the panes and the manual (the size is remembered; also in Settings, Appearance, Text size)", where: "Anywhere in the window", area: "Anywhere", files: ["zoom.ts"] },
   { id: "zoom-out", keys: "⌘−", codes: ["-", "_"], mod: "cmd", what: "Make everything smaller", where: "Anywhere in the window", area: "Anywhere", files: ["zoom.ts"] },
   { id: "zoom-reset", keys: "⌘0", codes: ["0"], mod: "cmd", what: "Back to 100%", where: "Anywhere in the window", area: "Anywhere", files: ["zoom.ts"] },
   { id: "resize-pane", keys: "← →", codes: ["ArrowLeft", "ArrowRight"], mod: false, what: "Widen or narrow the pane by 40 pixels (the width is remembered)", where: "The pane's edge, once Tab has put the focus on it", area: "Anywhere", files: ["App.tsx"] },

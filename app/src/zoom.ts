@@ -37,7 +37,7 @@ export function loadZoom(read: () => string | null = () => localStorage.getItem(
   }
 }
 
-/** Sets the size on the page, remembers it, and tells the Appearance pane. */
+/** Sets the size on the page, remembers it, and tells Settings' Appearance group. */
 export function setZoom(z: number, root: { style: { setProperty: (k: string, v: string) => void } } = document.documentElement): number {
   const size = parseZoom(String(z));
   root.style.setProperty("zoom", String(size));

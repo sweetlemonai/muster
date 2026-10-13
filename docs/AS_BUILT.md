@@ -38,7 +38,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 
 - **Projects sidebar** (left): All and every queue (`~/playground/*/tasks` plus ones added by
   hand), each with its task count, how many need you (orange) and how many are in progress
-  (the Building colour), and **+ Project** at the bottom. The header keeps only the views, New task and
+  (the Building colour), and **+ Project** at the bottom (Settings, at Projects). The header keeps only the views, New task and
   Appearance, on one line. Under each name, quietly (0037, `activity.ts`): the Building-colour
   dot and "2 working" (tasks with a live session, or a check-in or heartbeat in the last 30
   minutes; never in Done, and in Your check only while live), or **stalled** in the attention
@@ -48,14 +48,28 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   The All row sums projects: "3 working · 1 stalled". Chips above the list order it: **Working**
   (default: working projects first, then by last activity), **A–Z**, **Needs you** (most waiting
   first, then as Working), remembered in `localStorage` (`muster.sidebarOrder`).
-- **Projects** (tab, or **+ Project** next to the project chips): every project with its folder, task count and where it came from (found
+- **Projects** (in Settings, or **+ Project** under the project list): every project with its folder, task count and where it came from (found
   in `~/playground`, or added). **New queue…** picks a project folder and creates its `tasks/`:
   status folders, README with the rules, `WAITING-FOR-OWNER.md`, the tools' stand-ins in `bin/`,
   and its own git with a first commit. It refuses inside a git repo, and refuses if `tasks/`
   already exists. **Add existing queue…** picks any queue folder. Rename, Hide/Show, and Remove
   (added ones only) never touch files. Saved in `~/Library/Application Support/ai.sweetlemon.muster/projects.json`.
   Folders are picked by the core's own dialog, so the window never hands the core a path.
-- **Themes and accents** (Appearance, docked): 7 themes (Violet night, Violet day, Graphite,
+- **Settings** (task 0036, `Settings.tsx`, `settingsData.ts`, `settings.rs`): a view in the header's
+  row (never a window), its groups docked on the left (Appearance, Projects, Agents, Help, About;
+  `SETTINGS_GROUPS` is where later groups such as display modes and notifications go), the open
+  group's settings on the right. The header's **Appearance** opens it at Appearance in one click;
+  the old Appearance pane and Projects tab are gone, their contents moved here. **Agents** has the
+  helper's account and model, the **claim lease** (default 12 h, 1 h to 7 d) and the **LIVE
+  window** (default 5 min, 1 min to 1 h), typed as `30m`, `2h`, `1d` and checked by the core.
+  Both are saved per machine in `settings.json` beside `projects.json`; `muster reclaim` (with
+  no `--after`) and `muster check` read the same file, the app reads it on every poll (Release,
+  the card's "quiet" and dot, the pane's LIVE), and a missing, broken or out-of-bounds value is
+  the default, field by field. **Projects** also shows each project's gate command (0023),
+  read-only, with the `muster projects set` line when none is set. Your check's view buttons
+  (0043) open Settings for Appearance, Projects and Settings. **Help** links into the manual; **About** shows the version, the
+  settings folder and its files, and every folder the app reads.
+- **Themes and accents** (Settings' Appearance, one click from the header): 7 themes (Violet night, Violet day, Graphite,
   Midnight, Paper, Snow, High contrast), with Match the Mac picking one dark and one light, and 6
   accents (Violet, Teal, Rose, Gold, Green, Graphite). No blue, no orange. They apply live and are
   remembered. Default: Muster's violet, following the Mac. A test checks every theme and accent
@@ -75,7 +89,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   `#2E1F66`→`#170F38` gradient) is ready if the owner prefers it. `dock-preview-drover-a-drover-b.png`
   shows both next to Drover's. The earlier dog-face mark and its recolourings are in
   `attachments/0006/`.
-- **Layout: nothing covers the board.** A task, New task and Appearance open in one pane docked
+- **Layout: nothing covers the board.** A task, a backlog note and New task open in one pane docked
   beside the content, with the board still visible and live beside it (the owner: "need to have
   everything in front of my eyes"). Drag the edge to resize it; the width is remembered. Esc
   closes it.
@@ -329,7 +343,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **What the app writes**, all through the core's rules, under the queue's lock, logged with the
   time and "owner": new tasks (and their ids), status moves, priority, type and title, log notes,
   attachments, answers to questions, and new queues (`New queue…`). Its own settings go in
-  `projects.json`, and the helper's transcripts in its settings folder. **The app never claims a
+  `projects.json` and `settings.json`, and the helper's transcripts in its settings folder. **The app never claims a
   task.** Claims belong to the agents doing the work.
 - **Activity:** queue commits and changed task files, newest first. **Problems:** the same
   checks as `manifest.py --check`, done natively.
@@ -347,7 +361,8 @@ folded "steps" line, never file edits.
 
 - It runs your own `claude` with the account you pick once (decision 0002), in restricted mode:
   only `muster` and read-only tools, file reading inside the project folder, and anything else
-  refused. Router and token variables are stripped. Model: Sonnet.
+  refused. Router and token variables are stripped. Model: Sonnet, or Haiku or Opus picked in
+  Settings (0036; saved in `helper/helper.json`, and anything else there reads as Sonnet).
 - **Accounts:** the picker shows each `~/.claude*` folder's login (from `claude auth status`, no model
   call), with **Change account** any time. An account that only works through a shell command
   with a token (like `cc-hg`) isn't logged in on its own: the helper says so in plain words and
@@ -381,7 +396,8 @@ muster answer 0007 Q2 "Use 5173"          muster check      muster projects     
 per holder (`--as`), and says which queue it claimed in. A claim made in a queue that came from
 `MUSTER_ROOT` but isn't the current folder's own queue is refused unless `--queue` says so. The
 claim has a **lease**: `heartbeat`, and the holder's notes, passes and questions, renew it, and
-`muster reclaim` (or **Release** on a stale card) returns a claim quiet for 12 h to Ready.
+`muster reclaim` (or **Release** on a stale card) returns a claim quiet past the lease to Ready:
+12 h, or this Mac's lease from Settings (0036).
 **Questions:** `muster ask`, `escalate`, `inbox` and `answer` follow the file contract. `bin/task`
 is a stand-in that runs them. The answer hook still reads the mailbox itself, for speed.
 

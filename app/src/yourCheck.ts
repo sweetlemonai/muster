@@ -132,7 +132,7 @@ export function nextStep(t: StepTask): NextStep {
 /** The app's views a criterion can name, in the app's order. "board", "table", "timeline",
  *  "graph" and "appearance" count in any case; the rest are everyday words, so only their name
  *  with its capital counts ("Help", not "helps"). */
-export type NamedView = "board" | "table" | "timeline" | "graph" | "helper" | "waiting" | "activity" | "problems" | "projects" | "help" | "appearance";
+export type NamedView = "board" | "table" | "timeline" | "graph" | "helper" | "waiting" | "activity" | "problems" | "projects" | "help" | "settings" | "appearance";
 export const VIEW_NAMES: { id: NamedView; label: string; find: RegExp }[] = [
   { id: "board", label: "Board", find: /\bboard\b/i },
   { id: "table", label: "Table", find: /\btable\b/i },
@@ -144,6 +144,7 @@ export const VIEW_NAMES: { id: NamedView; label: string; find: RegExp }[] = [
   { id: "problems", label: "Problems", find: /\bProblems\b/ },
   { id: "projects", label: "Projects", find: /\bProjects\b/ },
   { id: "help", label: "Help", find: /\bHelp\b/ },
+  { id: "settings", label: "Settings", find: /\bSettings\b/ },
   { id: "appearance", label: "Appearance", find: /\bappearance\b/i },
 ];
 export const namedViews = (text: string): NamedView[] => VIEW_NAMES.filter((v) => v.find.test(text)).map((v) => v.id);

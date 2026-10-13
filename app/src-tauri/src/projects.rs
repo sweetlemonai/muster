@@ -308,7 +308,7 @@ fn readme(project: &str, q: &Path) -> String {
          - One claim per session, made by `muster`: `muster next --as <your branch>` takes the top\n  \
          Ready task, `muster claim NNNN --as <your branch>` a given one. It says which queue it claimed in.\n\
          - On long work, `muster heartbeat NNNN --as <your branch>` keeps the claim alive (your notes and\n  \
-         passes do too). A claim quiet for 12 h goes back to Ready (`muster reclaim`).\n\
+         passes do too). A claim quiet for longer than the lease (12 h unless changed in Settings) goes back to Ready (`muster reclaim`).\n\
          - Ask without stopping, and the answer is pushed to you:\n  \
          `muster ask NNNN \"<question>\" --as <your branch>`. No answer hook? `muster inbox` collects them.\n\
          - Built and the gate is green: `muster pass NNNN --as <your branch> --from building --gate \"<the gate's result line>\"`.\n  \

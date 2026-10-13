@@ -4,6 +4,39 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Settings: one place for appearance, projects, agents, help and about (task 0036)
+**Did:** **Settings** is a view in the header's row: the groups (Appearance, Projects, Agents,
+Help, About) docked on the left, the open group's settings on the right (`Settings.tsx`,
+`settingsData.ts`, whose `SETTINGS_GROUPS` is where 0038's display modes and 0006's notifications
+go). The header's **Appearance** opens it at Appearance in one click and **+ Project** at
+Projects; the Appearance pane and the Projects tab are gone, their contents moved in. **Agents**
+has the helper's account and its model (Sonnet by default, or Haiku or Opus, in `helper.json`),
+the claim lease (12 h, 1 h to 7 d) and the LIVE window (5 min, 1 min to 1 h). Those two are
+per machine in `settings.json` beside `projects.json` (`settings.rs`): `muster reclaim` with no
+`--after` and `muster check` read it, and the app reads it every poll for Release, the card's
+"quiet" and dot, and the pane's LIVE. Missing, broken or out-of-bounds values are the defaults.
+**About** shows the version, the settings folder and every folder the app reads. The manual's In
+the app page has a Settings section; other pages point there; the Commands page was regenerated.
+**Fixed (review round 1):** "1.25h" saved as 72 min → spans went through estimates' one-decimal
+cleaning → `settings::span_minutes` reads the raw text, and `reclaim --after` uses it too. Agents
+jumped when the accounts loaded → Claims come first. The model chip lit only after a refetch →
+it lights when the core saves it. Esc's shortcut text still named Appearance. The CLI unit tests
+read this Mac's settings.json → the CLI reads it under the caller's `$HOME` (none in tests). The
+queue README template said 12 h → "longer than the lease"; `manifest.py`'s STALE_HOURS stays the
+default 12 h, and its comment says so.
+**Fitted to main** (rebased onto 0022's rework, 0023, 0042, 0043): the cards' lease and LIVE
+window reach 0043's Card and Your turn lines through the same context; Your check's **Open
+Appearance** and **Open Projects** open Settings at that group, and a criterion naming Settings
+gets **Open Settings**; Settings › Projects shows each project's 0023 gate command, read-only
+(the command line stays the one place to set it).
+**Decided:** bounds and a settable helper model went to the owner as 0036 Q1 with pick (a); built
+as (a) while it waits.
+**Verified:** `pnpm check` exit 0 (vitest 748, cargo test 341 + 14 + 3, clippy and fmt clean,
+build), `python3 -I bin/test_task.py` OK (40), `python3 -I bin/test_commands.py` OK (11). A test
+with a 1-hour lease in `settings.json` makes `muster check` and `muster reclaim` release a claim
+quiet for 2 hours that the default 12 h leaves alone.
+**Open:** the owner's answer to 0036 Q1; the Settings screen not yet looked at in the running app.
+
 ## 2026-10-13 — Your check says what to do: next step, effort groups, Accept all (task 0043)
 **Did:** the owner, on 21 tasks in Your check: "not clear what I need to do about it". Each Your
 check card now says **Your turn** (the pane too, instead of "on it: you") and its next step, the

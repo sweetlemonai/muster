@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import CardStatus from "./CardStatus";
 import type { Task } from "./types";
+import { Machine } from "./settingsData";
 
 const task = (over: Partial<Task>): Task => ({
   queue: "demo", id: "0030", title: "T", kind: "task", priority: "normal", status: "doing", stage: "building", blocked: false, stageHistory: [],
@@ -50,6 +51,19 @@ describe("the card's who and progress lines", () => {
       ["card-who", "you · started 2 h ago"],
       ["card-quiet", "quiet 12 h+"],
     ]);
+  });
+  it("judges the lease by this machine's settings (0036), and names it", () => {
+    const withLease = (leaseMinutes: number, over: Partial<Task>) => {
+      const card = createElement(CardStatus, { t: task(over), now: NOW });
+      const html = renderToStaticMarkup(createElement(Machine.Provider, { value: { leaseMinutes, liveMinutes: 5 } }, card));
+      return /<span class="card-quiet">([^<]*)<\/span>/.exec(html)?.[1] ?? "";
+    };
+    // 1 h 15 min quiet: past a 1-hour lease, not the default.
+    const quiet = { ...building, claimedBy: "owner", heartbeat: "2026-10-12 12:50" };
+    expect(withLease(60, quiet)).toBe("quiet 1 h+");
+    expect(withLease(90, quiet)).toBe("");
+    expect(withLease(720, quiet)).toBe("");
+    expect(withLease(70, { ...quiet })).toBe("quiet 1 h 10 min+");
   });
   it("in Testing and Your check: the holder from held-by, and Testing's start", () => {
     expect(lines({ stage: "testing", heldBy: "wt-0030 (session 7b5e8856)", stageSince: "2026-10-12 13:00" })).toEqual([

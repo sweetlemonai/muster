@@ -3,7 +3,7 @@
 //! from the current folder (a queue itself, or a `tasks/` beside or above it).
 
 use crate::session::{self, Session};
-use crate::{backlog, fields, index, ops, projects, queue, search, vision};
+use crate::{backlog, fields, index, ops, projects, queue, search, settings, vision};
 use std::path::{Path, PathBuf};
 
 /// The environment a command reads its caller from (`std::env::var`, or a test's own).
@@ -86,6 +86,22 @@ pub fn local_stamp() -> String {
 
 pub fn config_file() -> PathBuf {
     home().join("Library/Application Support/ai.sweetlemon.muster/projects.json")
+}
+
+/// This machine's settings (0036): `settings.json` beside `projects.json` under the caller's
+/// `$HOME`, which the app writes and both read. The defaults without a home (a test's empty
+/// environment), so nothing on this Mac changes what a test sees.
+fn machine_settings(env: Env) -> settings::Settings {
+    env("HOME")
+        .filter(|h| !h.is_empty())
+        .map(|h| {
+            settings::load(
+                &Path::new(&h)
+                    .join("Library/Application Support/ai.sweetlemon.muster")
+                    .join(settings::FILE),
+            )
+        })
+        .unwrap_or_default()
 }
 
 fn home() -> PathBuf {
@@ -1373,8 +1389,13 @@ fn run_on(
             Ok(0)
         }
         "reclaim" => {
+            // --after, else this machine's lease (0036; 12 h unless changed in Settings).
             let after = a.flags.get("after").map(String::as_str).unwrap_or("");
-            let lease = ops::lease_minutes(after)?;
+            let lease = if after.trim().is_empty() {
+                machine_settings(env).lease_minutes
+            } else {
+                ops::lease_minutes(after)?
+            };
             let r = ops::reclaim(root, lease, &me(), stamp, queue::now_secs())?;
             if a.json {
                 print_json(&r)?;
@@ -1387,9 +1408,9 @@ fn run_on(
                 }
                 if r.released.is_empty() && r.failed.is_empty() {
                     let within = if after.trim().is_empty() {
-                        ops::LEASE
+                        settings::span_text(lease)
                     } else {
-                        after
+                        after.to_string()
                     };
                     println!("nothing to release: every claim in Building was heard from within {within}");
                 }
@@ -1479,7 +1500,12 @@ fn run_on(
         }
         "vision" => run_vision(a, root, &me, stamp),
         "check" => {
-            let s = tasks_of(root);
+            // A claim is quiet past this machine's lease (0036), as `reclaim` judges it.
+            let s = queue::read_state_with(
+                &[("q".into(), root.to_path_buf())],
+                &mut queue::Cache::default(),
+                &machine_settings(env),
+            );
             for p in &s.problems {
                 println!("{p}");
             }
@@ -1645,6 +1671,26 @@ mod tests {
     }
     fn run(argv: &[String]) -> Result<i32, String> {
         run_with(argv, &no_env)
+    }
+
+    /// The lease and LIVE window come from the caller's $HOME (0036), so these tests, which give
+    /// no environment, use the defaults whatever this Mac's settings.json says.
+    #[test]
+    fn settings_come_from_the_callers_home_and_are_the_defaults_without_one() {
+        assert_eq!(machine_settings(&no_env), settings::Settings::default());
+        let home = tempfile::tempdir().unwrap();
+        let dir = home
+            .path()
+            .join("Library/Application Support/ai.sweetlemon.muster");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(settings::FILE), r#"{"leaseMinutes": 90}"#).unwrap();
+        let h = home.path().to_string_lossy().to_string();
+        let env = move |k: &str| (k == "HOME").then(|| h.clone());
+        assert_eq!(machine_settings(&env).lease_minutes, 90);
+        assert_eq!(
+            machine_settings(&|_: &str| Some(String::new())),
+            settings::Settings::default()
+        );
     }
 
     /// `list --status --stage --tag`, as the options give it.

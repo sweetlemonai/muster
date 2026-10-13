@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { api } from "./api";
 import { blockSentence } from "./blockWords";
 import { BranchPane } from "./Branch";
 import { KINDS } from "./fields";
-import { claimant, earlierStages, heldByOther, isStage, LEASE_SECS, leaseRunOut, passLabel, stageLabel } from "./lib";
+import { claimant, earlierStages, heldByOther, isStage, leaseRunOut, passLabel, stageLabel } from "./lib";
+import { Machine, spanText } from "./settingsData";
 import { isHuman } from "./human";
 import { isWork } from "./levels";
 import Links from "./Links";
@@ -72,8 +73,9 @@ function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a: TaskAc
   const back = earlierStages(task.stage);
   const holder = heldByOther(task);
   const shapedOnly = !isWork(task);
-  // A claim nobody has heard from past the lease: the owner may give it back to Ready.
-  const stale = !shapedOnly && leaseRunOut(task, nowSecs);
+  // A claim nobody has heard from past the lease (this machine's, Settings 0036): the owner may give it back to Ready.
+  const lease = useContext(Machine).leaseMinutes;
+  const stale = !shapedOnly && leaseRunOut(task, nowSecs, lease);
   const showPass = pass !== null && !holder && (!shapedOnly || task.stage === "backlog" || task.stage === "shaping");
   const yoursOpen = !human && task.stage === "your-check" && ownerOpen(task) > 0;
   return (
@@ -114,7 +116,7 @@ function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a: TaskAc
       )}
       {stale && (
         <p className="meta small">
-          {claimant(task.claimedBy)} hasn't been heard from for {LEASE_SECS / 3600} h. Release puts it back in Ready, logged as reclaimed.
+          {claimant(task.claimedBy)} hasn't been heard from for {spanText(lease)}. Release puts it back in Ready, logged as reclaimed.
         </p>
       )}
       {showPass && task.blocked && <p className="meta small">{blockSentence(task) || "Blocked on something it doesn't name"}. Unblock it to pass it on.</p>}

@@ -23,6 +23,11 @@ function idsReadIn(text: string): string[] {
 }
 
 describe("the shortcut table", () => {
+  it("says what Esc closes: the panes there are, not Appearance, which is in Settings now (0036)", () => {
+    const what = (id: string) => SHORTCUTS.find((s) => s.id === id)?.what;
+    expect(what("close-pane")).toBe("Close the pane: a task, a note or New task");
+    expect(what("zoom-in")).toContain("also in Settings, Appearance, Text size");
+  });
   it("lists every key a handler in the window acts on, for that file", () => {
     const missing: string[] = [];
     for (const [file, text] of Object.entries(sources)) {

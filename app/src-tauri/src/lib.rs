@@ -16,6 +16,7 @@ pub mod projects;
 pub mod queue;
 pub mod search;
 pub mod session;
+pub mod settings;
 pub mod transcripts;
 pub mod vision;
 pub mod work;
@@ -30,9 +31,11 @@ pub(crate) struct AppState {
     cache: Mutex<queue::Cache>,
     /// Running helper turns, by queue name.
     pub(crate) helpers: Mutex<HashMap<String, std::process::Child>>,
-    /// Serializes changes to projects.json.
+    /// Serializes changes to projects.json and settings.json.
     config: Mutex<()>,
     pub(crate) config_file: PathBuf,
+    /// This machine's settings (0036), beside projects.json; `muster` reads the same file.
+    settings_file: PathBuf,
     /// Session transcripts under the home folder (0025), read and cached off the main thread.
     transcripts: Arc<transcripts::Reader>,
 }
@@ -77,13 +80,17 @@ pub(crate) async fn blocking<T: Send + 'static>(
 #[tauri::command]
 async fn state(app: tauri::State<'_, AppState>) -> Result<queue::State, String> {
     let file = app.config_file.clone();
+    let settings_file = app.settings_file.clone();
     // The cache is small and the read is quick on a warm cache; take it inside the blocking task.
     let cache = std::mem::take(&mut *app.cache.lock().map_err(|e| e.to_string())?);
     let reader = app.transcripts.clone();
     let (state, cache) = blocking(move || {
         let mut cache = cache;
-        let mut s = queue::read_state(&queues(&file), &mut cache);
+        // Read every poll, so a change in Settings (or by hand) applies at the next one.
+        let settings = settings::load(&settings_file);
+        let mut s = queue::read_state_with(&queues(&file), &mut cache, &settings);
         // The cards' live dot: file times only, about a millisecond for 50 sessions.
+        reader.set_live_secs(settings.live_secs());
         work::mark_live(&mut s.tasks, &reader, s.now);
         Ok((s, cache))
     })
@@ -430,20 +437,32 @@ async fn reclaim_task(
     check_id(&id)?;
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
-    blocking(move || release(&queue_root(&file, &queue)?, &id, &stamp, queue::now_secs())).await
+    let settings_file = app.settings_file.clone();
+    blocking(move || {
+        let lease = settings::load(&settings_file).lease_minutes;
+        release(
+            &queue_root(&file, &queue)?,
+            &id,
+            &stamp,
+            queue::now_secs(),
+            lease,
+        )
+    })
+    .await
 }
 
 /// What `reclaim_task` does once it has the queue: its arguments checked, then the core's rule,
-/// with the default lease (the one the card's "quiet 12 h+" shows).
+/// with this machine's lease of `lease` minutes (the one the card's "quiet 12 h+" shows).
 pub(crate) fn release(
     root: &std::path::Path,
     id: &str,
     stamp: &str,
     now_secs: u64,
+    lease: u64,
 ) -> Result<String, String> {
     check_id(id)?;
     check_stamp(stamp)?;
-    ops::reclaim_task(root, id, ops::LEASE_MINUTES, "owner", stamp, now_secs)
+    ops::reclaim_task(root, id, lease, "owner", stamp, now_secs)
 }
 
 /// The owner's override: put a task in any stage. `from`, when given, is the stage the window
@@ -546,9 +565,13 @@ async fn task_sessions(
 ) -> Result<work::Work, String> {
     check_id(&id)?;
     let file = app.config_file.clone();
+    let settings_file = app.settings_file.clone();
     let reader = app.transcripts.clone();
-    blocking(move || work::for_task(&reader, &queue_root(&file, &queue)?, &id, queue::now_secs()))
-        .await
+    blocking(move || {
+        reader.set_live_secs(settings::load(&settings_file).live_secs());
+        work::for_task(&reader, &queue_root(&file, &queue)?, &id, queue::now_secs())
+    })
+    .await
 }
 
 /// One of a task's sessions' transcripts, folded to Markdown for the task pane (0025). Only a
@@ -854,6 +877,71 @@ async fn projects(app: tauri::State<'_, AppState>) -> Result<Vec<projects::Proje
     blocking(move || Ok(projects::list(&base(), &projects::load(&file)))).await
 }
 
+/// What Settings shows (0036): this machine's settings with their bounds, and for About the
+/// version, the config folder and the folders the app reads.
+#[derive(serde::Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SettingsInfo {
+    settings: settings::Settings,
+    /// The lease's and the LIVE window's bounds, in minutes: [least, most].
+    lease_bounds: [u64; 2],
+    live_bounds: [u64; 2],
+    version: String,
+    /// The app's config folder: projects.json, settings.json and the helper's folder.
+    config_dir: String,
+    /// Where queues are found on their own (`<base>/*/tasks`).
+    base: String,
+    /// The session transcripts' folders (0025).
+    transcripts: Vec<String>,
+}
+
+fn info_for(
+    settings_file: &std::path::Path,
+    version: &str,
+    reader: &transcripts::Reader,
+) -> SettingsInfo {
+    let shown = |p: &std::path::Path| p.to_string_lossy().to_string();
+    SettingsInfo {
+        settings: settings::load(settings_file),
+        lease_bounds: [settings::LEASE_MIN, settings::LEASE_MAX],
+        live_bounds: [settings::LIVE_MIN, settings::LIVE_MAX],
+        version: version.to_string(),
+        config_dir: settings_file.parent().map(shown).unwrap_or_default(),
+        base: shown(&base()),
+        transcripts: reader.folders().iter().map(|p| shown(p)).collect(),
+    }
+}
+
+#[tauri::command]
+async fn settings_info(handle: tauri::AppHandle) -> Result<SettingsInfo, String> {
+    let version = handle.package_info().version.to_string();
+    blocking(move || {
+        let app = handle.state::<AppState>();
+        Ok(info_for(&app.settings_file, &version, &app.transcripts))
+    })
+    .await
+}
+
+/// Change one of this machine's settings, `lease` or `live`, to a span like `12h` or `5m` (empty
+/// is the default). The core checks the name, the units and the bounds; the next poll uses it.
+#[tauri::command]
+async fn set_setting(
+    handle: tauri::AppHandle,
+    name: String,
+    value: String,
+) -> Result<SettingsInfo, String> {
+    let version = handle.package_info().version.to_string();
+    blocking(move || {
+        let app = handle.state::<AppState>();
+        {
+            let _guard = app.config.lock().map_err(|e| e.to_string())?;
+            settings::set(&app.settings_file, &name, &value)?;
+        }
+        Ok(info_for(&app.settings_file, &version, &app.transcripts))
+    })
+    .await
+}
+
 /// Change projects.json under the lock: load, edit, save.
 fn edit_config<T>(
     app: &AppState,
@@ -991,6 +1079,7 @@ pub fn run() {
                 config: Mutex::new(()),
                 transcripts: Arc::new(transcripts::Reader::new(home())),
                 config_file: dir.join("projects.json"),
+                settings_file: dir.join(settings::FILE),
             });
             Ok(())
         })
@@ -1002,6 +1091,8 @@ pub fn run() {
             image,
             answer,
             projects,
+            settings_info,
+            set_setting,
             add_project,
             create_project,
             rename_project,
@@ -1035,6 +1126,7 @@ pub fn run() {
             attach_pick,
             helper_cmds::helper_info,
             helper_cmds::helper_set_account,
+            helper_cmds::helper_set_model,
             helper_cmds::helper_reset,
             helper_cmds::helper_stop,
             helper_cmds::helper_send,
@@ -1312,6 +1404,42 @@ mod tests {
     }
 
     #[test]
+    fn settings_info_shows_the_settings_their_bounds_and_where_things_are() {
+        let home = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(home.path().join(".claude/projects")).unwrap();
+        let dir = home
+            .path()
+            .join("Library/Application Support/ai.sweetlemon.muster");
+        let file = dir.join(settings::FILE);
+        let reader = transcripts::Reader::new(home.path());
+        let info = info_for(&file, "0.1.0", &reader);
+        // Nothing saved yet: the defaults.
+        assert_eq!(info.settings, settings::Settings::default());
+        assert_eq!(
+            (info.lease_bounds, info.live_bounds),
+            ([60, 10080], [1, 60])
+        );
+        assert_eq!(info.version, "0.1.0");
+        assert_eq!(info.config_dir, dir.to_string_lossy());
+        assert_eq!(info.transcripts.len(), 1);
+        assert!(
+            info.transcripts[0].ends_with(".claude/projects"),
+            "{:?}",
+            info.transcripts
+        );
+        settings::set(&file, "live", "15m").unwrap();
+        let json = serde_json::to_string(&info_for(&file, "0.1.0", &reader)).unwrap();
+        assert!(
+            json.contains(r#""settings":{"leaseMinutes":720,"liveMinutes":15}"#),
+            "{json}"
+        );
+        assert!(
+            json.contains(r#""leaseBounds":[60,10080],"liveBounds":[1,60]"#),
+            "{json}"
+        );
+    }
+
+    #[test]
     fn release_checks_its_arguments_then_the_lease() {
         let d = tempfile::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
@@ -1323,25 +1451,30 @@ mod tests {
         )
         .unwrap();
         let now = queue::now_secs();
+        let lease = settings::Settings::default().lease_minutes;
         assert_eq!(
-            release(d.path(), "7", "2026-10-13 10:00", now).unwrap_err(),
+            release(d.path(), "7", "2026-10-13 10:00", now, lease).unwrap_err(),
             "bad task id"
         );
         assert_eq!(
-            release(d.path(), "0007", "2026-10-13T10:00", now).unwrap_err(),
+            release(d.path(), "0007", "2026-10-13T10:00", now, lease).unwrap_err(),
             "bad time stamp"
         );
-        assert!(release(d.path(), "0007", "2026-10-12 21:59", now)
+        assert!(release(d.path(), "0007", "2026-10-12 21:59", now, lease)
+            .unwrap_err()
+            .contains("lease hasn't run out"));
+        // This machine's lease (0036): 2 h releases it sooner.
+        assert!(release(d.path(), "0007", "2026-10-12 12:00", now, 120)
             .unwrap_err()
             .contains("lease hasn't run out"));
         assert_eq!(
-            release(d.path(), "0007", "2026-10-12 22:01", now).unwrap(),
+            release(d.path(), "0007", "2026-10-12 12:01", now, 120).unwrap(),
             "todo/0007-t.md"
         );
         let t = queue::read_task(d.path(), "0007").unwrap();
         assert_eq!((t.stage.as_str(), t.claimed_by.as_str()), ("ready", ""));
         assert!(t.log_tail.last().unwrap().ends_with(
-            "owner: stage building → ready (reclaimed from wt-a (no heartbeat for 12 h))"
+            "owner: stage building → ready (reclaimed from wt-a (no heartbeat for 2 h))"
         ));
     }
 }

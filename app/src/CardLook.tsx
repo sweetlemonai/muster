@@ -1,4 +1,6 @@
+import { useContext } from "react";
 import { priorityName, stageLabel } from "./lib";
+import { Machine } from "./settingsData";
 import { CARD_LOOKS, type CardColour, type CardLook } from "./themes";
 import type { Task } from "./types";
 import YouRibbon from "./YouRibbon";
@@ -23,11 +25,13 @@ export function CardBand({ t }: { t: Pick<Task, "stage" | "blocked" | "blockedKi
   );
 }
 
-/** The card's live dot (0025): one of the task's sessions changed its transcript in the last 5
- *  minutes, so someone is working on it now. Nothing otherwise. */
+/** The card's live dot (0025): one of the task's sessions changed its transcript within the LIVE
+ *  window (5 minutes, or this machine's from Settings, 0036), so someone is working on it now.
+ *  Nothing otherwise. */
 export function LiveDot({ t }: { t: Pick<Task, "live"> }) {
+  const live = useContext(Machine).liveMinutes;
   if (!t.live) return null;
-  return <i className="dot live-dot" role="img" aria-label="live" title="A session on it is working now: its transcript changed in the last 5 minutes" />;
+  return <i className="dot live-dot" role="img" aria-label="live" title={`A session on it is working now: its transcript changed in the last ${live} minute${live === 1 ? "" : "s"}`} />;
 }
 
 type Sample = { stage: string; title: string; priority: string; blocked?: boolean; needsYou?: boolean; human?: boolean };

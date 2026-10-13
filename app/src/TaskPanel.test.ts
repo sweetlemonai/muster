@@ -7,6 +7,7 @@ import StageTrack from "./StageTrack";
 import { trackSteps } from "./paneData";
 import TaskPanel from "./TaskPanel";
 import type { StageStep, Task } from "./types";
+import { Machine } from "./settingsData";
 
 const task = (over: Partial<Task>): Task => ({
   queue: "demo", id: "0007", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
@@ -85,6 +86,21 @@ describe("task pane stage controls", () => {
     const own = pane({ ...held, claimedBy: "owner" }, late);
     expect(own.buttons).toEqual(["Pass to Testing", "Release", "Send back", "Block"]);
     expect(own.primary).toEqual(["Pass to Testing"]);
+  });
+  it("judges Release and LIVE by this machine's settings (0036)", () => {
+    const held = { stage: "building", claimedBy: "drover/main (session 3fba2222)", heartbeat: "", modified: 0 };
+    const withSettings = (now: number) =>
+      renderToStaticMarkup(
+        createElement(Machine.Provider, { value: { leaseMinutes: 90, liveMinutes: 10 } }, createElement(TaskPanel, { task: task(held), now, onClose: () => {}, onChanged: () => {} })),
+      );
+    // 91 minutes quiet: past a 90-minute lease.
+    const late = withSettings(91 * 60);
+    expect(part(late, "next-step")).toContain(">Release</button>");
+    expect(text(late)).toContain("drover/main hasn't been heard from for 1 h 30 min. Release puts it back in Ready");
+    expect(part(withSettings(90 * 60), "next-step")).not.toContain(">Release</button>");
+    // LIVE for 10 minutes after the file changed.
+    expect(text(part(withSettings(9 * 60), "status"))).toContain("LIVE");
+    expect(text(part(withSettings(10 * 60), "status"))).not.toContain("LIVE");
   });
   it("has Edit beside the description, in every stage and whoever holds it", () => {
     for (const over of [{ stage: "backlog" }, { stage: "building", claimedBy: "drover/main (session 3fba2222)" }, { stage: "done" }]) {

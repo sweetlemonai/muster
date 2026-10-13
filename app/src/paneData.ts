@@ -5,11 +5,12 @@ import { ownerOpen } from "./OwnerChecklist";
 import type { StageStep, Task } from "./types";
 import type { Msg, Undo } from "./useTaskActions";
 
-/** Until sessions come with 0025, "live" means the task file changed this recently. */
+/** The default LIVE window: the pane's LIVE means the task file changed this recently. */
 export const LIVE_SECS = 5 * 60;
 
-/** The task file changed in the last 5 minutes (`now` in seconds since 1970). */
-export const isLive = (t: Pick<Task, "modified">, now: number) => now - t.modified < LIVE_SECS;
+/** The task file changed in the last `liveSecs` (`now` in seconds since 1970): 5 minutes, or
+ *  this machine's LIVE window from Settings (0036). */
+export const isLive = (t: Pick<Task, "modified">, now: number, liveSecs = LIVE_SECS) => now - t.modified < liveSecs;
 
 /** What waits on the owner, in words, in a fixed order: Your check, escalated questions, a block
  *  on the owner or by a permission (0024: a person acts on both). The same things the core counts

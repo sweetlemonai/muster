@@ -546,7 +546,7 @@ muster next --as wt-a --queue muster
 
 ### muster heartbeat
 
-Keep your claim alive on long work: stamps the task's heartbeat, no log line. Only the holder, only in Building. Your note, comment, ask, pass, return and block stamp it too, and so does an unblock. A claim quiet for 12 h can be released to Ready.
+Keep your claim alive on long work: stamps the task's heartbeat, no log line. Only the holder, only in Building. Your note, comment, ask, pass, return and block stamp it too, and so does an unblock. A claim quiet past the lease (12 h, unless changed in the app's Settings on this Mac) can be released to Ready.
 
 ```
 muster heartbeat <id> [--as <who>]
@@ -595,7 +595,7 @@ muster reclaim [--after 12h] [--json]
 
 | Option | What it does |
 | --- | --- |
-| `--after` | the lease: 30m, 2h, 1d (a day is 24 h); default 12h |
+| `--after` | the lease: 30m, 2h, 1d (a day is 24 h); default this Mac's lease from the app's Settings, 12h unless changed |
 | `--json` | what was released, for scripts |
 
 Examples:
@@ -969,7 +969,7 @@ muster init ~/playground/braindump
 
 ### muster check
 
-Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist, a link that isn't a plain https link, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop, a for that isn't human or ai, a vision count that doesn't match the task's Vision section, an INDEX.md that shows something the task files no longer say (rebuild with muster index; none yet is fine). Exit 1 if any. A goal past its due date with tasks open, a block from before kinds (read as one from what it waits on until it's blocked again with a kind), and an INDEX.md only due a refresh (the files changed outside muster, as Drover's answers do), are warnings: shown, without failing. Also lists, without counting them as problems, what waits on the owner's look, Shaping tasks with no vision check yet, and what parallel sessions left behind: a started task whose worktree is gone, a worktree of a task sent back to Ready, and a worktree on a task/\<id\>- branch whose task is past Testing, each with the command that cleans it.
+Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet past the lease (12 h unless changed in the app's Settings), blocked with no reason, waiting on a task that doesn't exist, a link that isn't a plain https link, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop, a for that isn't human or ai, a vision count that doesn't match the task's Vision section, an INDEX.md that shows something the task files no longer say (rebuild with muster index; none yet is fine). Exit 1 if any. A goal past its due date with tasks open, a block from before kinds (read as one from what it waits on until it's blocked again with a kind), and an INDEX.md only due a refresh (the files changed outside muster, as Drover's answers do), are warnings: shown, without failing. Also lists, without counting them as problems, what waits on the owner's look, Shaping tasks with no vision check yet, and what parallel sessions left behind: a started task whose worktree is gone, a worktree of a task sent back to Ready, and a worktree on a task/\<id\>- branch whose task is past Testing, each with the command that cleans it.
 
 ```
 muster check
@@ -1084,7 +1084,7 @@ muster ready --parallel
 muster start 0007 --as <your branch>
 ```
 
-On long work, keep the claim alive. A claim with no heartbeat for 12 h goes back to Ready (muster reclaim). Your notes and passes count too:
+On long work, keep the claim alive. A claim with no heartbeat for longer than the lease (12 h unless the owner changed it) goes back to Ready (muster reclaim). Your notes and passes count too:
 
 ```
 muster heartbeat 0007 --as <your branch>

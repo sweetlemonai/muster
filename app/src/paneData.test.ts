@@ -23,6 +23,11 @@ describe("live (until 0025: the task file changed in the last 5 minutes)", () =>
   it("a file from the future (clock skew) counts as just changed", () => {
     expect(isLive(task({ modified: 2000 }), 1000)).toBe(true);
   });
+  it("uses this machine's LIVE window from Settings when given (0036)", () => {
+    expect(isLive(task({ modified: 1000 }), 1000 + 599, 600)).toBe(true);
+    expect(isLive(task({ modified: 1000 }), 1000 + 600, 600)).toBe(false);
+    expect(isLive(task({ modified: 1000 }), 1000 + 60, 60)).toBe(false);
+  });
 });
 
 describe("what's waiting on the owner", () => {

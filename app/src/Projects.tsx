@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { queueTotal } from "./lib";
-import { HelpButton } from "./HelpButton";
 import type { Project, QueueInfo } from "./types";
 
+/** Settings' Projects group (0036): every project with its folder and task count, New queue and Add existing. */
 export default function Projects({ queues, onChanged }: { queues: QueueInfo[]; onChanged: () => void }) {
   const [list, setList] = useState<Project[] | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -37,12 +37,11 @@ export default function Projects({ queues, onChanged }: { queues: QueueInfo[]; o
   };
 
   return (
-    <main className="list projects">
+    <div className="projects">
       <div className="projects-bar">
         <button onClick={() => void act(api.createProject, "Queue created and added.")}>New queue…</button>
         <button onClick={() => void act(api.addProject, "Queue added.")}>Add existing queue…</button>
         {msg && <span className={msg.ok ? "ok" : "err"}>{msg.text}</span>}
-        <HelpButton topic="projects" />
       </div>
       <p className="meta">
         Muster finds every <code>~/playground/*/tasks</code> queue on its own. Add queues kept anywhere else, or start one for a
@@ -52,7 +51,7 @@ export default function Projects({ queues, onChanged }: { queues: QueueInfo[]; o
       {list === null && <p className="none">Loading…</p>}
       <table className="projects-table">
         <thead>
-          <tr><th>Project</th><th>Folder</th><th>Tasks</th><th></th></tr>
+          <tr><th>Project</th><th>Folder</th><th>Tasks</th><th>Gate</th><th></th></tr>
         </thead>
         <tbody>
           {list?.map((p) => (
@@ -79,6 +78,7 @@ export default function Projects({ queues, onChanged }: { queues: QueueInfo[]; o
               </td>
               <td className="path" title={p.path}>{p.path}</td>
               <td>{p.hidden || !p.ok ? "—" : total(p) ?? "…"}</td>
+              <td><GateCell name={p.name} gate={p.gate ?? ""} /></td>
               <td className="actions">
                 <button onClick={() => { setEditing(p.key); setName(p.name); }}>Rename</button>
                 <button onClick={() => void act(() => api.hideProject(p.key, !p.hidden))}>{p.hidden ? "Show" : "Hide"}</button>
@@ -88,6 +88,17 @@ export default function Projects({ queues, onChanged }: { queues: QueueInfo[]; o
           ))}
         </tbody>
       </table>
-    </main>
+    </div>
+  );
+}
+
+/** A project's gate command (0023), shown as it is: a merge runs it in the task's worktree, and
+ *  never runs without one. Set with `muster projects set`, the one place that checks it. */
+export function GateCell({ name, gate }: { name: string; gate: string }) {
+  if (gate) return <code className="path">{gate}</code>;
+  return (
+    <span className="meta">
+      none: merges wait for one. <code>muster projects set {name} gate "&lt;command&gt;"</code>
+    </span>
   );
 }

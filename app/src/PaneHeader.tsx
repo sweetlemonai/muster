@@ -1,8 +1,9 @@
-import { Fragment, useState } from "react";
+import { Fragment, useContext, useState } from "react";
 import { HelpButton } from "./HelpButton";
 import { ago, holderOf, isStage, splitHolder, stageHolders, stageLabel, stageOf, STAGES, startedAgo } from "./lib";
 import BlockWhy from "./BlockWhy";
 import { isLive, waitingOnYou } from "./paneData";
+import { Machine } from "./settingsData";
 import { isWork, levelLabel, shownStageClass, shownStageLabel } from "./levels";
 import { isHuman } from "./human";
 import type { Task } from "./types";
@@ -97,7 +98,7 @@ export function StatusLine({ task, now, onOpenTask }: { task: Task; now: number;
   const yourTurn = task.stage === "your-check" && splitHolder(who).label === "owner";
   const started = startedAgo(task, now);
   const earlier = stageHolders(task).filter((h) => h.stage !== task.stage);
-  const live = isLive(task, now);
+  const live = isLive(task, now, useContext(Machine).liveMinutes * 60);
   const waiting = waitingOnYou(task);
   return (
     <div className="status-line" data-part="status">

@@ -4,10 +4,8 @@ import { mayLeave } from "./writeUp";
 import { ago, columns, estimateTotal, feed, key, STAGES } from "./lib";
 import type { State, Task } from "./types";
 import { backlogColumn, backlogNotes, NoteCard, noteKey, QuickAdd } from "./Backlog";
-import Projects from "./Projects";
 import ProjectList from "./ProjectList";
 import NewTask from "./NewTask";
-import Appearance from "./Appearance";
 import Card from "./Card";
 import { GraphView } from "./GraphView";
 import { TableView, TimelineView } from "./Views";
@@ -24,6 +22,8 @@ import type { NamedView } from "./yourCheck";
 import { byWho, FOR_FILTERS, FOR_KEY, type ForFilter, needsYouCount, parseForFilter, waitingForYou, whoFiltersOn, whoShows } from "./human";
 import { HelpButton, OpenHelp } from "./HelpButton";
 import { HELP_TOPICS, type HelpTopic, type ManualAt } from "./helpTopics";
+import { AppearanceShortcut } from "./AppearanceShortcut";
+import { Machine, machineOf, type SettingsGroup } from "./settingsData";
 import logo from "./logo.png";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
@@ -31,9 +31,10 @@ const TaskPanel = lazy(() => import("./TaskPanel"));
 const NotePanel = lazy(() => import("./NotePanel"));
 const Helper = lazy(() => import("./Helper"));
 const HelpView = lazy(() => import("./Help"));
-type View = "board" | "table" | "timeline" | "graph" | "helper" | "waiting" | "activity" | "problems" | "projects" | "help";
+const SettingsView = lazy(() => import("./Settings"));
+type View = "board" | "table" | "timeline" | "graph" | "helper" | "waiting" | "activity" | "problems" | "help" | "settings";
 // One docked pane beside the content, never over it (the owner wants everything in view).
-type Pane = { kind: "task"; key: string } | { kind: "note"; key: string } | { kind: "new" } | { kind: "appearance" } | null;
+type Pane = { kind: "task"; key: string } | { kind: "note"; key: string } | { kind: "new" } | null;
 const POLL_MS = 2000;
 const PANE_KEY = "muster.paneWidth";
 
@@ -178,6 +179,15 @@ export default function App() {
     },
     [helpGo],
   );
+  // Settings (0036): the group it shows; the header's Appearance and the sidebar's + Project open it at theirs.
+  const [settingsAt, setSettingsAt] = useState<SettingsGroup>("appearance");
+  const openSettings = (g: SettingsGroup) => {
+    setSettingsAt(g);
+    setView("settings");
+  };
+  // This machine's lease and LIVE window, from the last poll, for the cards and the task pane.
+  const { leaseMinutes, liveMinutes } = machineOf(state);
+  const machine = useMemo(() => ({ leaseMinutes, liveMinutes }), [leaseMinutes, liveMinutes]);
 
   useEffect(() => {
     if (queue !== "all" && state && !state.queues.some((q) => q.name === queue)) setQueue("all");
@@ -249,10 +259,10 @@ export default function App() {
   const card = (t: Task) => (
     <Card key={key(t)} t={t} now={now} multi={multi} parent={parentLine(t, index)} onOpen={() => open(t)} active={openKey === key(t)} words={words} />
   );
-  // A view an owner criterion names, from its button in Your check (0043). Appearance is a pane,
-  // so it takes the task's place; every other one is a tab, and the task stays open beside it.
+  // A view an owner criterion names, from its button in Your check (0043). Each is a tab, and the
+  // task stays open beside it; Appearance and Projects are groups of Settings (0036).
   const openView = (v: NamedView) => {
-    if (v === "appearance") go({ kind: "appearance" });
+    if (v === "appearance" || v === "projects") openSettings(v);
     else setView(v);
   };
 
@@ -279,11 +289,12 @@ export default function App() {
 
   return (
     <OpenHelp.Provider value={openHelp}>
+    <Machine.Provider value={machine}>
     <div className="app shell">
       <aside className="sidebar" aria-label="Projects">
         <div className="brand"><img src={logo} alt="" width={22} height={22} /> Muster</div>
         <ProjectList queues={state?.queues ?? []} tasks={state?.tasks ?? []} notes={allNotes} activity={state?.activity ?? []} now={now} current={queue} onPick={setQueue} />
-        <button className="side-add" onClick={() => setView("projects")} title="New or existing project queue">+ Project</button>
+        <button className="side-add" onClick={() => openSettings("projects")} title="New or existing project queue, in Settings">+ Project</button>
       </aside>
       <div className="main-col">
       <header className="top">
@@ -304,12 +315,10 @@ export default function App() {
             Problems{problems.length ? <b className="count">{problems.length}</b> : null}
             {unchecked.length ? <small className="count quiet" title="Shaping tasks with no vision check yet">{unchecked.length}</small> : null}
           </button>
-          <button className={view === "projects" ? "tab on" : "tab"} onClick={() => setView("projects")}>Projects</button>
           <button className={view === "help" ? "tab on" : "tab"} onClick={() => setView("help")}>Help</button>
+          <button className={view === "settings" ? "tab on" : "tab"} onClick={() => setView("settings")} title="Appearance, projects, agents, help and about">Settings</button>
         </nav>
-        <button className={pane?.kind === "appearance" ? "tab on" : "tab"} onClick={() => go(pane?.kind === "appearance" ? null : { kind: "appearance" })} title="Theme and accent">
-          Appearance
-        </button>
+        <AppearanceShortcut active={view === "settings" && settingsAt === "appearance"} onOpen={openSettings} />
         <span className="live" title={error || "Updates every 2 seconds while the window is visible"}>
           {error ? <span className="err">Can't read the queues</span> : at ? <><i className="dot" /> live</> : "loading…"}
         </span>
@@ -318,7 +327,7 @@ export default function App() {
       <div className="workspace">
         <div className="content">
           {state && state.queues.length === 0 && (
-            <p className="empty">No queues yet. Muster looks for <code>~/playground/*/tasks</code> folders, or add one under Projects.</p>
+            <p className="empty">No queues yet. Muster looks for <code>~/playground/*/tasks</code> folders, or add one in Settings, under Projects.</p>
           )}
 
           {(view === "board" || view === "table" || view === "timeline" || view === "graph") && (
@@ -449,7 +458,20 @@ export default function App() {
             </Suspense>
           )}
 
-          {view === "projects" && <Projects queues={state?.queues ?? []} onChanged={refresh} />}
+          {view === "settings" && (
+            <Suspense fallback={<p className="none">Loading…</p>}>
+              <SettingsView
+                group={settingsAt}
+                onGroup={setSettingsAt}
+                queues={state?.queues ?? []}
+                onChanged={refresh}
+                onManual={(file, slug) => {
+                  setView("help");
+                  helpGo(file, slug);
+                }}
+              />
+            </Suspense>
+          )}
         </div>
 
         {pane && (
@@ -476,13 +498,13 @@ export default function App() {
                   onCreated={showTask}
                 />
               )}
-              {pane.kind === "appearance" && <Appearance onClose={() => setPane(null)} />}
             </aside>
           </>
         )}
       </div>
       </div>
     </div>
+    </Machine.Provider>
     </OpenHelp.Provider>
   );
 }

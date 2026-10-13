@@ -196,6 +196,9 @@ export type State = {
   problems: string[];
   activity: Activity[];
   now: number;
+  /** This machine's settings the core judged by (0036), in minutes; read with settingsData's
+   *  machineOf, which falls back to the defaults. */
+  settings?: { leaseMinutes: number; liveMinutes: number };
 };
 
 export type Project = {
@@ -205,4 +208,6 @@ export type Project = {
   source: "found" | "added";
   hidden: boolean;
   ok: boolean;
+  /** The project's gate command (0023), "" when none is set; set with `muster projects set`. */
+  gate?: string;
 };

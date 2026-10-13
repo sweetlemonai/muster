@@ -33,7 +33,7 @@ A project's tasks live in a **queue**, a folder beside its code (see [Projects a
    ```
 
    It prints `created /Users/you/playground/myapp/tasks`. The new folder has the status folders, a `README.md` with the rules for agents, a `WAITING-FOR-OWNER.md`, the tools in `bin/`, and its own git history with a first commit.
-3. Look at the app. A queue under `~/playground` shows up on the left on its own. For a queue anywhere else, go to **Projects** and click **Add existing queue…**. (**New queue…** there does what `muster init` does.)
+3. Look at the app. A queue under `~/playground` shows up on the left on its own. For a queue anywhere else, go to **Settings**, then **Projects**, and click **Add existing queue…**. (**New queue…** there does what `muster init` does.)
 4. Add a first task. From inside the project, `muster` finds the queue by itself:
 
    ```

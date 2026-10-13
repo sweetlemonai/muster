@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SearchIndex } from "./search";
+import type { SettingsInfo } from "./settingsData";
 import type { Project, State, Work } from "./types";
 import type { AcceptResult } from "./yourCheck";
 
@@ -20,6 +21,10 @@ export const api = {
   renameProject: (key: string, name: string) => invoke<void>("rename_project", { key, name }),
   hideProject: (key: string, hidden: boolean) => invoke<void>("hide_project", { key, hidden }),
   removeProject: (key: string) => invoke<void>("remove_project", { key }),
+  // This machine's settings (0036) with their bounds, and what Settings' About shows. Set one by
+  // name (`lease` or `live`) to a span like 12h or 5m, empty for the default; the core checks it.
+  settingsInfo: () => invoke<SettingsInfo>("settings_info"),
+  setSetting: (name: "lease" | "live", value: string) => invoke<SettingsInfo>("set_setting", { name, value }),
   createTask: (queue: string, task: NewTask, files: [string, string][], stamp: string) =>
     invoke<{ id: string; path: string }>("create_task", { queue, task, files, stamp }),
   // Stages: each returns the task's new path. The core refuses what its rules don't allow, with
@@ -85,6 +90,8 @@ export const api = {
   help: () => invoke<{ commandsPage?: unknown }>("help"),
   helperInfo: (queue: string) => invoke<HelperInfo>("helper_info", { queue }),
   helperSetAccount: (account: string) => invoke<void>("helper_set_account", { account }),
+  // One of HelperInfo's `models`, from the helper's next turn (0036).
+  helperSetModel: (model: string) => invoke<void>("helper_set_model", { model }),
   // Opens Terminal on that account's own `claude auth login`.
   helperLogin: (account: string) => invoke<void>("helper_login", { account }),
   helperReset: (queue: string) => invoke<void>("helper_reset", { queue }),
@@ -95,6 +102,6 @@ export const api = {
 
 export type HelperLine = { role: "owner" | "helper" | "system"; kind: string; text: string; at: number };
 export type AccountInfo = { name: string; loggedIn: boolean | null; plan: string };
-export type HelperInfo = { claude: string | null; accounts: AccountInfo[]; account: string; running: boolean; lines: HelperLine[] };
+export type HelperInfo = { claude: string | null; accounts: AccountInfo[]; account: string; model: string; models: string[]; running: boolean; lines: HelperLine[] };
 
 export type NewTask = { title: string; kind: string; priority: string; body: string; tags: string[]; estTime: string; estTestTime: string; estTokens: string; level: string; parent: string; due: string; forWho: string };

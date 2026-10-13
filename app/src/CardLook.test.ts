@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { CardBand, CardLookPicker, cardClass, LiveDot, SAMPLES } from "./CardLook";
+import { Machine } from "./settingsData";
 
 const band = (t: { stage: string; blocked: boolean; waitingForOwner: boolean; priority: string }) =>
   renderToStaticMarkup(createElement(CardBand, { t }));
@@ -85,5 +86,9 @@ describe("the live dot (0025)", () => {
       '<i class="dot live-dot" role="img" aria-label="live" title="A session on it is working now: its transcript changed in the last 5 minutes"></i>',
     );
     expect(renderToStaticMarkup(createElement(LiveDot, { t: { live: false } }))).toBe("");
+  });
+  it("names this machine's LIVE window from Settings (0036)", () => {
+    const html = renderToStaticMarkup(createElement(Machine.Provider, { value: { leaseMinutes: 720, liveMinutes: 15 } }, createElement(LiveDot, { t: { live: true } })));
+    expect(html).toContain('title="A session on it is working now: its transcript changed in the last 15 minutes"');
   });
 });

@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { CardLookPicker } from "./CardLook";
-import { HelpButton } from "./HelpButton";
 import { stageLabel } from "./lib";
 import { loadZoom, setZoom, ZOOM_EVENT, ZOOMS } from "./zoom";
 import { ACCENTS, apply, buildingColour, cardChoice, type Choice, DEFAULT_CHOICE, load, resolve, save, THEMES, variables } from "./themes";
 
-/** Theme, accent and card look, applied live while the board stays in view beside it. */
-export default function Appearance({ onClose }: { onClose: () => void }) {
+/** Settings' Appearance group (0036): theme, accent, text size and card look, applied live and
+ *  remembered on this Mac (the window's own storage). */
+export default function Appearance() {
   const [c, setC] = useState<Choice>(load);
   useEffect(() => {
     apply(c);
@@ -21,11 +21,7 @@ export default function Appearance({ onClose }: { onClose: () => void }) {
   const selected = (id: string) => (c.matchSystem ? c.light === id || c.dark === id : c.theme === id);
 
   return (
-    <div className="pane-body">
-      <header className="pane-head">
-        <h1>Appearance <HelpButton topic="appearance" /></h1>
-        <button className="close" onClick={onClose} aria-label="Close">×</button>
-      </header>
+    <div className="settings-sections">
       <section>
         <label className="check">
           <input type="checkbox" checked={c.matchSystem} onChange={(e) => setC({ ...c, matchSystem: e.target.checked, theme: current.theme.id })} />

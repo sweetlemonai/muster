@@ -25,7 +25,7 @@ Why: the board is only useful if it's true. A hand edit can say a task was teste
    muster checkin 0007 "gate green, writing tests" --pct 60 --as wt-a
    ```
 
-   A check-in, a note, a question or `muster heartbeat 0007 --as wt-a` keeps the claim alive. A claim quiet for 12 hours can be released to Ready.
+   A check-in, a note, a question or `muster heartbeat 0007 --as wt-a` keeps the claim alive. A claim quiet past the lease (12 hours unless the owner changed it) can be released to Ready.
 5. **Ask without stopping** when something's unclear, and carry on with what the question doesn't block:
 
    ```

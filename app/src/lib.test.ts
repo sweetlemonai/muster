@@ -255,6 +255,16 @@ describe("lease (the core's ops::reclaim rule)", () => {
     expect(leaseRunOut(task({ ...old, claimedBy: "owner" }), now)).toBe(true);
     expect(LEASE_SECS).toBe(12 * 3600);
   });
+  it("uses this machine's lease from Settings when given (0036)", () => {
+    const now = at("2026-10-12 14:05");
+    const held = { stage: "building", claimedBy: "wt-a (session aaaa1111)", modified: now };
+    // Two hours quiet: within the default 12 h, past a 1-hour lease, not past 2 h exactly.
+    const twoHours = task({ ...held, heartbeat: "2026-10-12 12:05" });
+    expect(leaseRunOut(twoHours, now)).toBe(false);
+    expect(leaseRunOut(twoHours, now, 60)).toBe(true);
+    expect(leaseRunOut(twoHours, now, 120)).toBe(false);
+    expect(leaseRunOut(twoHours, now, 119)).toBe(true);
+  });
 });
 
 describe("who's on it, since when, and how far (0030)", () => {

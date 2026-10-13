@@ -174,6 +174,10 @@ describe("the views a criterion names", () => {
       "table", "helper", "waiting", "activity", "problems", "projects",
     ]);
   });
+  it("finds Settings (0036) by its name, after Help, and not the everyday word", () => {
+    expect(namedViews("Settings shows the lease; Help opens the manual")).toEqual(["help", "settings"]);
+    expect(namedViews("the settings of a camera")).toEqual([]);
+  });
   it("ignores everyday words that aren't the view's name", () => {
     expect(namedViews("it helps the projects; activity and problems show; a tabled motion; graphics")).toEqual([]);
   });

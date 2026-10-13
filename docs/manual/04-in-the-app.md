@@ -5,14 +5,14 @@ Every view and pane of the Muster app, and what each control does. A **?** besid
 ## The window at a glance
 
 - **Left:** the projects (see [The projects sidebar](#the-projects-sidebar)).
-- **Top:** **+ New task**, then the views: **Board**, **Table**, **Timeline** and **Graph** (four views of the same tasks), **Helper**, **Waiting for you**, **Activity**, **Problems**, **Projects** and **Help**. Then **Appearance**, and "live" with a dot while the app is reading the queues. If it can't read them, that spot says "Can't read the queues"; point at it to see why.
-- **Right:** the **pane**, when one is open: a task, a backlog note, New task or Appearance. It docks beside the content, which shrinks and stays live, so nothing ever covers the board. Drag the pane's edge to resize it (the width is remembered), and press Esc to close it.
+- **Top:** **+ New task**, then the views: **Board**, **Table**, **Timeline** and **Graph** (four views of the same tasks), **Helper**, **Waiting for you**, **Activity**, **Problems**, **Help** and **Settings**. Then **Appearance**, which opens [Settings](#settings) at Appearance in one click, and "live" with a dot while the app is reading the queues. If it can't read them, that spot says "Can't read the queues"; point at it to see why.
+- **Right:** the **pane**, when one is open: a task, a backlog note or New task. It docks beside the content, which shrinks and stays live, so nothing ever covers the board. Drag the pane's edge to resize it (the width is remembered), and press Esc to close it.
 
 The app reads the queues every 2 seconds while its window is visible, and stops while it's hidden.
 
 ## The projects sidebar
 
-**All** shows every project together. Below it is each project, with three numbers: an orange one for the tasks that need you, one in the Building colour for tasks in Building or Testing, and the total, notes included. Click a project to see only its tasks. **+ Project** at the bottom opens [Projects](#projects).
+**All** shows every project together. Below it is each project, with three numbers: an orange one for the tasks that need you, one in the Building colour for tasks in Building or Testing, and the total, notes included. Click a project to see only its tasks. **+ Project** at the bottom opens [Settings](#settings) at [Projects](#projects).
 
 ## The board
 
@@ -20,9 +20,9 @@ One column per stage, with the stage's role under its name. An empty column shri
 
 Each card shows, top to bottom:
 
-- the project (when you're looking at All), the id, a small dot while a session is working on it (its transcript changed in the last 5 minutes), the type, and the priority: **HIGH** filled in magenta, normal outlined, low faint;
+- the project (when you're looking at All), the id, a small dot while a session is working on it (its transcript changed in the last 5 minutes, the [LIVE window](#agents)), the type, and the priority: **HIGH** filled in magenta, normal outlined, low faint;
 - the title, the feature or goal it's under, and its tags;
-- who's on it and how long ago they started, their latest check-in ("60% · gate green, writing tests · 12 min ago"), and a warning when they've gone quiet ("quiet 12 h+", "no check-in for 45 min"). In Your check: **Your turn** and the next step (see [Your check](#your-check));
+- who's on it and how long ago they started, their latest check-in ("60% · gate green, writing tests · 12 min ago"), and a warning when they've gone quiet ("quiet 12 h+" past the [claim lease](#agents), "no check-in for 45 min"). In Your check: **Your turn** and the next step (see [Your check](#your-check));
 - "⚠ 2 vision" while the task has open [vision conflicts](02-concepts.md#the-vision-check);
 - badges: why it's blocked, the kind first ("Blocked on you: …", [Blocked, and why](02-concepts.md#blocked-and-why)); needs you; open questions; files; the estimate; and how long ago it last changed.
 
@@ -82,16 +82,16 @@ Click a card to open its task beside the board. The pane keeps every control in 
 
 1. **The top line:** the project and how long ago the task changed, and **×** to close.
 2. **The title**, with its id. Click the title to rename it: ↩ saves, Esc keeps the old one. The **?** beside it opens this section.
-3. **The status line:** the stage, why it's blocked (the kind first; each task it's blocked by opens with a click), **LIVE** (the file changed in the last 5 minutes) or how long it's been quiet, who's on it ("Your turn" in Your check) and who held the stages before, the stage's role, and what's waiting on you, or "nothing waiting on you".
+3. **The status line:** the stage, why it's blocked (the kind first; each task it's blocked by opens with a click), **LIVE** (the file changed in the last 5 minutes, the [LIVE window](#agents)) or how long it's been quiet, who's on it ("Your turn" in Your check) and who held the stages before, the stage's role, and what's waiting on you, or "nothing waiting on you".
 4. **The stage track:** all seven stages, the task's own lit; for your own task only **To do**, **Doing** and **Done**. Click another stage to put the task there. That's your override: it happens at once, and the message under it offers **Undo**. When the move would release someone's claim, the stage's tooltip says whose.
 5. **Two columns.** The left one shows what this stage needs:
    - Backlog, Shaping and Ready: the acceptance criteria and the estimate.
    - Building and Testing: **Work so far**, the time spent against the estimate, the tokens estimated, and the stage history. The sessions and the tokens they used are in the **Work** section further down.
-   - Your check: **Your checklist** of the criteria only you verify, and the history. The open ones come first, each with its effort (One look or Needs a session), **Tick**, and a button for each view it names (**Open Graph**, **Open Timeline**, **Open Appearance**…). A view opens beside the task; Appearance opens in the pane in the task's place. Ticked ones follow, with **Untick**.
+   - Your check: **Your checklist** of the criteria only you verify, and the history. The open ones come first, each with its effort (One look or Needs a session), **Tick**, and a button for each view it names (**Open Graph**, **Open Timeline**, **Open Appearance**…). A view opens beside the task, which stays open; **Open Appearance** and **Open Projects** open [Settings](#settings) on that group, and **Open Settings** on the group it showed last. Ticked ones follow, with **Untick**.
    - Done: the history.
    - A goal or feature: its tasks and their stages, its progress and the estimate left.
 
-   The right one is the **Next step**: the one primary button, **Pass to** the next stage (**Accept** in Your check), then **Send back** and **Block** or **Unblock**. **Release** shows when the holder has been quiet past the 12-hour lease. If someone else holds the task in Building, there's no Pass: only they can pass it, and the pane says so. Under the next step are the task's settings: **Priority** and **Type** show their value as a chip (click it to lay out the choices), **Est** has agent time, test time and tokens (↩ or leaving the field saves), then **Tags**, **Files** (images as thumbnails that open large; **+ Attach** picks more) and **Links** (a click opens one in your browser, https only).
+   The right one is the **Next step**: the one primary button, **Pass to** the next stage (**Accept** in Your check), then **Send back** and **Block** or **Unblock**. **Release** shows when the holder has been quiet past the [claim lease](#agents), 12 hours unless you changed it. If someone else holds the task in Building, there's no Pass: only they can pass it, and the pane says so. Under the next step are the task's settings: **Priority** and **Type** show their value as a chip (click it to lay out the choices), **Est** has agent time, test time and tokens (↩ or leaving the field saves), then **Tags**, **Files** (images as thumbnails that open large; **+ Attach** picks more) and **Links** (a click opens one in your browser, https only).
 6. **The stage forms**, under both columns, when one is open: the gate's result line for Pass to Testing, **Send back** with where to and why, or **Block** with what it waits on. The core's answer, or its refusal, shows under them.
 7. **The path line:** the commit that shipped it, and the task's file.
 
@@ -135,11 +135,28 @@ Every task waiting on you, in one list. Tasks in Your check come first, grouped 
 
 A chat that files tasks for you, per project. Tell it ideas, bugs and tasks, paste screenshots, and press ⌘↩ (or **Send**). It checks the queue for duplicates, reads the project to understand the code, files one task per point through `muster`, and asks in plain words when something's unclear.
 
-The first time, pick which Claude account it uses. It runs your own Claude Code with that account's login, restricted to `muster` and reading, so it can't change files. What you write goes to Anthropic, as in any Claude Code session. The bar has the **Project**, **Change account**, **Stop** (while it's working), **New conversation**, and **?**. Each reply shows "n steps" with the commands it ran folded inside, and what the turn cost. See decision [0002](../decisions/0002-helper-runs-the-owners-claude-restricted.md).
+The first time, pick which Claude account it uses. It runs your own Claude Code with that account's login, restricted to `muster` and reading, so it can't change files. What you write goes to Anthropic, as in any Claude Code session. The bar has the **Project**, **Change account**, **Stop** (while it's working), **New conversation**, and **?**, and names the account and the model it uses. Each reply shows "n steps" with the commands it ran folded inside, and what the turn cost. The account and the model are also in [Settings](#settings), under [Agents](#agents). See decision [0002](../decisions/0002-helper-runs-the-owners-claude-restricted.md).
 
-## Projects
+## Help
 
-Every project Muster shows, with its folder and task count:
+This manual. The sidebar has the search box, then every page with its sections; the page you're on is lit. ◀ and ▶ at the top and bottom of a page go to the page before and after. Links between pages and sections move here; a link to another file in the repo says where it is. Click a command line in a grey block to copy it. A **?** anywhere in the app opens its section here, and the pane stays where it was.
+
+## Settings
+
+One place for how the app looks and works on this Mac: **Settings** in the top row, or **Appearance** beside it, which opens Settings at Appearance in one click. Settings is a view like the others, not a window. The groups are listed down its left side, each with what it holds: **Appearance**, **Projects**, **Agents**, **Help** and **About**. Click one and all of its settings show on the right, each with its current value and what it changes. Every change applies at once and is remembered after the app restarts. The **?** beside a group's name opens its section here.
+
+### Appearance
+
+- **Match the Mac's light or dark:** pick a dark theme and a light one, and the app follows the Mac. Off, one theme stays.
+- **Theme:** Violet night, Violet day, Graphite, Midnight, Paper, Snow and High contrast.
+- **Accent:** Violet, Teal, Rose, Gold, Green or Graphite. Building takes the accent colour, unless it would look like another stage's; then Building stays violet, and Appearance says so.
+- **Text size:** 90%, 100%, 115%, 130% or 150%, for everything in the window, this manual too. ⌘+ and ⌘− step through the sizes and ⌘0 goes back to 100%; the size is remembered.
+- **Cards:** how a card shows its colour (Stripe, Tint, Top bar, Dot or Outline), and whether the colour shows its **Stage** or its **Priority**. Blocked and "needs you" always take over the colour.
+- **Back to Muster's violet** resets the theme and accent.
+
+### Projects
+
+Every project Muster shows, with its folder, task count and **Gate**: the command a merge runs in a task's worktree (see [Run parallel sessions in worktrees](03-tutorials.md#run-parallel-sessions-in-worktrees)). A merge never runs without one, so a project with none says so, with the line that sets it: `muster projects set <project> gate "<command>"`. The command line is the one place to set it.
 
 - **New queue…** picks a project's folder and makes its queue there, like `muster init`.
 - **Add existing queue…** picks a queue kept outside `~/playground`.
@@ -147,20 +164,25 @@ Every project Muster shows, with its folder and task count:
 
 None of them deletes files. A project marked "not a queue any more" points at a folder that no longer has a queue's `README.md` and `todo/` folder.
 
-## Appearance
+### Agents
 
-Opens in the pane, and every change applies at once and is remembered:
+Claims come first, then the helper, whose accounts take a moment to check.
 
-- **Match the Mac's light or dark:** pick a dark theme and a light one, and the app follows the Mac. Off, one theme stays.
-- **Theme:** Violet night, Violet day, Graphite, Midnight, Paper, Snow and High contrast.
-- **Text size:** 90%, 100%, 115%, 130% or 150%, for everything in the window, this manual too. ⌘+ and ⌘− step through the sizes and ⌘0 goes back to 100%; the size is remembered.
-- **Accent:** Violet, Teal, Rose, Gold, Green or Graphite. Building takes the accent colour, unless it would look like another stage's; then Building stays violet, and Appearance says so.
-- **Cards:** how a card shows its colour (Stripe, Tint, Top bar, Dot or Outline), and whether the colour shows its **Stage** or its **Priority**. Blocked and "needs you" always take over the colour.
-- **Back to Muster's violet** resets the theme and accent.
+- **Claim lease** (12 h unless you change it): a claim in Building that nobody has heard from for longer than this can go back to Ready. The card then says "quiet 12 h+", the task pane offers **Release**, `muster check` lists it, and `muster reclaim` takes it. It can be from 1 hour to 7 days; under an hour would take tasks from sessions that check in every 30 minutes.
+- **LIVE window** (5 min unless you change it): how recent a change counts as working now, for the card's dot (a session's transcript) and the task pane's **LIVE** (the task's file). From 1 minute to 1 hour.
+- **The helper:** which Claude account [the Helper](#the-helper) uses, with each account's login (**Log in…** opens Terminal on that account's own login), and its **Model**: **Sonnet** unless you pick another, **Haiku** (quicker, costs less) or **Opus** (thinks hardest, costs most). The chip lights as soon as the choice is saved, and the helper uses it from its next message.
 
-## Help
+Type a span the way `muster reclaim --after` takes it: `30m`, `2h`, `1.25h` or `1d` (a day is 24 hours; decimals count as typed), then ↩ or **Save**. A value out of bounds, or one that isn't a span, is refused with why, and nothing changes. **Back to 12 h** and **Back to 5 min** go back to the defaults. Both are saved on this Mac in `settings.json` in the app's settings folder (see [About](#about)); the `muster` command reads the same file, so the app, `muster reclaim` and `muster check` agree. A missing or broken file means the defaults.
 
-This manual. The sidebar has the search box, then every page with its sections; the page you're on is lit. ◀ and ▶ at the top and bottom of a page go to the page before and after. Links between pages and sections move here; a link to another file in the repo says where it is. Click a command line in a grey block to copy it. A **?** anywhere in the app opens its section here, and the pane stays where it was.
+### Help
+
+Links into this manual: **Start here**, this section, every view and button, **Concepts**, **Commands**, **Shortcuts** and **FAQ and troubleshooting**. Each opens the page in the Help tab.
+
+### About
+
+- **Version:** the app's version.
+- **Settings on this Mac:** the app's settings folder (`~/Library/Application Support/ai.sweetlemon.muster`) and what's in it: `projects.json` (the projects you added, hid or renamed), `settings.json` (the claim lease and the LIVE window) and `helper/` (the helper's account, model and conversations). Appearance, text size, Group by, saved views and the pane's width are kept by the window itself.
+- **What it reads:** where it finds queues on its own (`~/playground/*/tasks`), each project's folder, and the folders of the Claude Code session transcripts. All of it is read on this Mac and nothing is sent anywhere; only what you write to the helper goes to Anthropic, through your own Claude Code.
 
 ## Colours
 

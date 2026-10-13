@@ -599,6 +599,9 @@ pub struct State {
     pub problems: Vec<String>,
     pub activity: Vec<Activity>,
     pub now: u64,
+    /// The per-machine settings the state was judged by (0036): the lease for the quiet claims,
+    /// and the LIVE window the app's live marks use.
+    pub settings: crate::settings::Settings,
 }
 
 pub fn now_secs() -> u64 {
@@ -1217,16 +1220,36 @@ pub fn search_index(queues: &[(String, PathBuf)], cache: &mut Cache) -> HashMap<
 }
 
 pub fn read_state(queues: &[(String, PathBuf)], cache: &mut Cache) -> State {
+    read_state_with(queues, cache, &crate::settings::Settings::default())
+}
+
+/// `read_state` with this machine's settings (0036): a claim is quiet past `settings`' lease.
+pub fn read_state_with(
+    queues: &[(String, PathBuf)],
+    cache: &mut Cache,
+    settings: &crate::settings::Settings,
+) -> State {
     let stamp = cache.stamp_at(now_secs());
-    read_state_at(queues, cache, &stamp)
+    read_state_at_with(queues, cache, &stamp, settings)
 }
 
 /// `read_state` with the local time given: `stamp` (`YYYY-MM-DD HH:MM`) is "now" for the claims'
 /// heartbeats, so tests that stamp a claim at a fixed time judge its lease at that time, not at
 /// whatever the wall clock says. File times are still judged by the real clock.
 pub fn read_state_at(queues: &[(String, PathBuf)], cache: &mut Cache, stamp: &str) -> State {
+    read_state_at_with(queues, cache, stamp, &crate::settings::Settings::default())
+}
+
+/// `read_state_at` with this machine's settings.
+pub fn read_state_at_with(
+    queues: &[(String, PathBuf)],
+    cache: &mut Cache,
+    stamp: &str,
+    settings: &crate::settings::Settings,
+) -> State {
     let mut state = State {
         now: now_secs(),
+        settings: *settings,
         ..Default::default()
     };
     let mut seen = HashSet::new();
@@ -1253,9 +1276,13 @@ pub fn read_state_at(queues: &[(String, PathBuf)], cache: &mut Cache, stamp: &st
             }
         }
         crate::block::derive(&mut tasks);
-        state
-            .problems
-            .extend(problems(name, &tasks, state.now, stamp));
+        state.problems.extend(problems(
+            name,
+            &tasks,
+            state.now,
+            stamp,
+            settings.lease_minutes,
+        ));
         rollup(&mut tasks);
         let today = stamp.get(..10).unwrap_or("");
         state.problems.extend(level_problems(name, &tasks, today));
@@ -1376,8 +1403,8 @@ pub fn dependency_loops<'a>(edges: &HashMap<&'a str, Vec<&'a str>>) -> Vec<Vec<S
 }
 
 /// What's wrong in a queue's tasks. `now` and `stamp` are the same moment, as seconds since 1970
-/// and as local time (`YYYY-MM-DD HH:MM`), for the claims' lease.
-pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str) -> Vec<String> {
+/// and as local time (`YYYY-MM-DD HH:MM`), for the claims' lease of `lease` minutes.
+pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str, lease: u64) -> Vec<String> {
     let mut out = Vec::new();
     let mut ids: HashMap<&str, Vec<&str>> = HashMap::new();
     for t in tasks {
@@ -1427,7 +1454,7 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str) -> Vec<Strin
         // The lease `muster reclaim` uses: since the heartbeat, else since the file changed. The
         // owner's own task (for: human) has none.
         let quiet = crate::ops::quiet_minutes(&t.heartbeat, t.modified, stamp, now);
-        if building && !t.is_human() && quiet > crate::ops::LEASE_MINUTES {
+        if building && !t.is_human() && quiet > lease {
             out.push(format!(
                 "{queue}: {} is claimed but hasn't been heard from in {} h",
                 t.path,
@@ -3138,10 +3165,16 @@ mod tests {
             // Exactly the lease: not yet.
             held("0004", "2026-10-12 02:05", now - 99 * 3600),
         ];
-        let quiet: Vec<_> = problems("p", &tasks, now, stamp)
+        let quiet: Vec<_> = problems("p", &tasks, now, stamp, crate::ops::LEASE_MINUTES)
             .into_iter()
             .filter(|p| p.contains("heard from"))
             .collect();
+        // A shorter lease from the settings (0036): 0002, an hour quiet, is quiet past 30 min.
+        let short: Vec<_> = problems("p", &tasks, now, stamp, 30)
+            .into_iter()
+            .filter(|p| p.contains("heard from"))
+            .collect();
+        assert_eq!(short.len(), 4, "{short:?}");
         assert_eq!(
             quiet,
             [
@@ -3169,6 +3202,28 @@ mod tests {
         };
         assert_eq!(quiet("2026-10-12 13:00"), 0);
         assert_eq!(quiet("2026-10-12 13:01"), 1);
+        // With this machine's settings (0036): a 2-hour lease, and the state says which it used.
+        let short = crate::settings::Settings {
+            lease_minutes: 120,
+            live_minutes: 10,
+        };
+        let s = read_state_at_with(&q, &mut Cache::default(), "2026-10-12 03:01", &short);
+        assert_eq!(
+            s.problems
+                .iter()
+                .filter(|p| p.contains("heard from"))
+                .count(),
+            1
+        );
+        assert_eq!(s.settings, short);
+        assert!(serde_json::to_string(&s)
+            .unwrap()
+            .contains(r#""settings":{"leaseMinutes":120,"liveMinutes":10}"#));
+        assert_eq!(
+            quiet("2026-10-12 03:01"),
+            0,
+            "the default lease is still 12 h"
+        );
     }
 
     #[test]
