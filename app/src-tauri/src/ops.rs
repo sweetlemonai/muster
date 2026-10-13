@@ -1026,6 +1026,7 @@ pub fn move_task(
     };
     let who = actor(who)?;
     change(root, id, &who, stamp, |t| {
+        not_paused(id, t)?;
         if t.stage == stage && !t.blocked {
             return Err(format!("{id} is already in {}", stage_label(stage)));
         }
@@ -1876,6 +1877,15 @@ fn seen_stage(from: Option<&str>) -> Result<Option<&'static str>, String> {
     }
 }
 
+/// Refuses moving a paused task (0045), for anyone, the owner's override included: resume it first.
+fn not_paused(id: &str, t: &Current) -> Result<(), String> {
+    if t.paused.is_empty() {
+        Ok(())
+    } else {
+        Err(crate::pause::refusal(id, &t.paused))
+    }
+}
+
 /// Refuses a change made from a stage the task has since left (a double click, a stale window).
 fn check_seen(id: &str, t: &Current, expected: Option<&str>) -> Result<(), String> {
     match expected.filter(|s| *s != t.stage) {
@@ -1953,9 +1963,7 @@ fn pass_change(
     expected: Option<&str>,
 ) -> Result<Change, String> {
     check_seen(id, t, expected)?;
-    if !t.paused.is_empty() {
-        return Err(crate::pause::refusal(id, &t.paused));
-    }
+    not_paused(id, t)?;
     if t.blocked {
         let on = if t.waiting_on.is_empty() {
             "something it doesn't name"
@@ -2311,6 +2319,11 @@ pub fn checkin_task(
             "the check-in would read as a stage change in the log (\"<who>: stage <from> → <to>\"); say it another way".into(),
         );
     }
+    if crate::pause::pause_shaped(&format!("- {line}")).is_some() {
+        return Err(
+            "the check-in would read as a pause or resume in the log (\"…: paused\", \"…: resumed\"); say it another way".into(),
+        );
+    }
     // What the log's reader takes from the line is exactly this check-in.
     let back = queue::checkin_line(&format!("- {line}"));
     if back
@@ -2582,6 +2595,7 @@ pub fn return_task(
         None => None,
     };
     change(root, id, &who, stamp, |t| {
+        not_paused(id, t)?;
         let i = stage_index(&t.stage);
         if i == 0 {
             return Err(format!("{id} is in Backlog; there's no stage before it"));
@@ -2948,6 +2962,7 @@ pub fn set_stage(
     let expected = seen_stage(from)?;
     change(root, id, &who, stamp, |t| {
         check_seen(id, t, expected)?;
+        not_paused(id, t)?;
         if t.stage == stage {
             return Err(format!("{id} is already in {}", stage_label(stage)));
         }

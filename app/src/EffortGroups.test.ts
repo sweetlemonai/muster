@@ -84,7 +84,7 @@ describe("Accept all's confirm, in place (0043)", () => {
 
 describe("Waiting for you by effort (0043)", () => {
   const q = (n: number, text: string): Question => ({ n, ticked: false, asker: "wt-a", text, escalated: true, ownerAnswered: false });
-  const list = (tasks: Task[]) => renderToStaticMarkup(createElement(WaitingList, { tasks, multi: false, openKey: null, onOpen: () => {}, onChanged: () => {} }));
+  const list = (tasks: Task[]) => renderToStaticMarkup(createElement(WaitingList, { tasks, multi: false, openKey: null, onOpen: () => {}, onChanged: () => {}, now: 0 }));
   it("groups Your check by effort, with each one's next step in full, then the rest", () => {
     const html = list([
       ...CHECK.slice(0, 3),

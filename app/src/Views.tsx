@@ -3,6 +3,7 @@ import { estimateText } from "./fields";
 import BlockWhy from "./BlockWhy";
 import { blockLead, isBlocked } from "./blockWords";
 import { ago, holder, key, stageLabel, stageOf } from "./lib";
+import { PAUSE_GLYPH } from "./Pause";
 import type { Task } from "./types";
 import {
   axis, barTitle, layout, nowAt, parseScale, SCALES, segmentTitle, parseTableSort, sortTasks, TABLE_SORT_KEY, spans, timeWindow, wallMinutes, windowLabel,
@@ -114,6 +115,7 @@ function Row({ t, now, multi, active, onOpen, words }: { t: Task; now: number; m
       <td><span className={`pri pri-${t.priority || "normal"}`}>{t.priority || "normal"}</span></td>
       <td>
         {parentLevel ? <span className={`status-pill s-${shownStageClass(t)}`}>{shownStageLabel(t)}</span> : <span className={`status-pill s-${stageOf(t)}`}>{stageLabel(t.stage)}</span>}
+        {t.paused && <span className="status-pill paused">{`${PAUSE_GLYPH} Paused`}</span>}
         {isBlocked(t) && <span className="status-pill blocked">blocked</span>}
       </td>
       <td className="meta">{isBlocked(t) ? <BlockWhy t={t} short pill={false} /> : holder(t)}</td>

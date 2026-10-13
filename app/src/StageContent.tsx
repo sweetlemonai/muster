@@ -56,7 +56,8 @@ export default function StageContent({ task, nowSecs, body, childTasks, busy, on
 
 /** Building and Testing: the stage history, time spent against the estimate, and sessions (0025). */
 function WorkSoFar({ task, nowSecs }: { task: Task; nowSecs: number }) {
-  const spent = timeInWork(task.stageHistory, task.stage, stampMinutes(stamp(new Date(nowSecs * 1000))));
+  // Paused time (0045) isn't time spent on it.
+  const spent = timeInWork(task.stageHistory, task.stage, stampMinutes(stamp(new Date(nowSecs * 1000))), task.pauseHistory);
   // Time spent is wall-clock (24-hour days); the estimates are agent time and test time (8-hour
   // days). Each is named for what it is, and nothing pretends to compare them.
   const est = [

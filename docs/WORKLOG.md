@@ -5,6 +5,21 @@
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
 ## 2026-10-13 — Pause a task: it keeps its place and claim, nobody works it, its session is told (task 0045)
+**Fixed (review):** a check-in's text could forge a pause or resume line (`next: paused (x)`) →
+`pause_line` read any log line shaped like one → a check-in line never reads as one, and
+`checkin` refuses such text (c1). The stop or carry-on mail was written before the task file, so
+the hook could set it aside unread → the file first, then the mail; a mail that fails says so and
+the pause holds (c2). `return`, `stage` and `move` moved a paused task → refused for everyone,
+the owner included, and the pane's stage track is off (c3). Paused minutes in the Work section
+used today's UTC offset for every stamp, an hour off across DST → each stamp read by its own day
+(`queue::stamp_epoch`, `date`) (c4). The pane's "time so far" counted paused time (u1); the
+owner's own paused task still needed them and Waiting didn't say paused (u2); the graph called a
+paused Ready task ready (u3); the table had no Paused mark (u4); a fresh heartbeat on a paused
+task counted as working (u5); the card didn't say when its session couldn't be told (u6); Pause
+moved when a card went quiet → first in the strip, a bare text button unless the card is quiet
+(u7); the chip's tooltip has the why (u8); goals and features can't be paused (u9).
+Each with a test first (red before the fix: c1, c3, u1–u8; c4's DST case fails under one offset):
+`bin/gate`: `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`.
 **Did:** the owner: "option to pause a task". **Pause** / **Resume** under a card (Backlog through
 Testing) and beside the stage in the pane (optional why, typed in place), and `muster pause <id>
 ["why"]` / `muster resume <id>`. A paused task keeps its stage, claim, worktree and column, shows a

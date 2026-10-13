@@ -1274,6 +1274,26 @@ pub fn local_stamp() -> String {
         .unwrap_or_else(|| "1970-01-01 00:00".into())
 }
 
+/// A tool stamp (`YYYY-MM-DD HH:MM`, local time) as seconds since 1970, by the zone's own rules
+/// for that day, daylight saving included (`date`, as `local_stamp` makes them). `tz` names
+/// another zone (tests); None is this Mac's. None for anything that isn't a stamp.
+pub fn stamp_epoch(stamp: &str, tz: Option<&str>) -> Option<i64> {
+    crate::ops::stamp_minutes(stamp)?;
+    let mut date = std::process::Command::new("date");
+    date.args([
+        "-j",
+        "-f",
+        "%Y-%m-%d %H:%M:%S",
+        &format!("{stamp}:00"),
+        "+%s",
+    ]);
+    if let Some(tz) = tz {
+        date.env("TZ", tz);
+    }
+    let out = date.output().ok().filter(|o| o.status.success())?;
+    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
+}
+
 pub(crate) fn mtime_secs(m: &fs::Metadata) -> u64 {
     m.modified()
         .ok()

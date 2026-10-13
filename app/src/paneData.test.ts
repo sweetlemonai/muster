@@ -85,6 +85,12 @@ describe("time in Building and Testing, from the stage history", () => {
     expect(timeInWork([step("2026-10-12 17:00", "ready", "building")], "ready", now)).toBe(0);
     expect(timeInWork([step("2026-10-12 17:00", "ready", "building")], "building", null)).toBe(0);
   });
+  it("leaves out paused stretches, an open one to now (0045, review u1)", () => {
+    const h = [step("2026-10-12 16:00", "ready", "building")];
+    const pauses = [{ from: "2026-10-12 16:30", to: "2026-10-12 17:00" }, { from: "2026-10-12 17:30", to: "" }, { from: "2026-10-12 09:00", to: "2026-10-12 10:00" }];
+    expect(timeInWork(h, "building", now, pauses)).toBe(120 - 30 - 30);
+    expect(timeInWork(h, "building", now, [{ from: "nope", to: "" }])).toBe(120);
+  });
   it("never counts backwards (a clock change, a hand edit)", () => {
     const h = [step("2026-10-12 17:00", "ready", "building"), step("2026-10-12 16:00", "building", "testing")];
     expect(timeInWork(h, "testing", now)).toBe(120);

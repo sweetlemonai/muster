@@ -68,7 +68,9 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   · why" (never red, never a stage colour); its claim isn't quiet and its lease doesn't run (the
   card's flags, Release, the sidebar's stalled), Pass is off with why, the timeline hatches its
   paused stretches grey (`pauseHistory`), the Flags filter has **paused**, and the sidebar row
-  counts them ("⏸ 2"). In Building or Testing the holder's session is told through its mailbox
+  counts them ("⏸ 2"); the table has a grey ⏸ Paused pill, the graph a paused badge (and never
+  "ready"), Waiting for you shows the chip, the owner's own paused task doesn't need them, the
+  stage track is off, and the pane's time so far leaves paused time out. In Building or Testing the holder's session is told through its mailbox
   (`<id>-pause.md`, `<id>-resume.md`); the pane says whether it was.
 - **Projects** (in Settings, or **+ Project** under the project list): every project with its folder, task count and where it came from (found
   in `~/playground`, or added). Discovery (`queue::discover`) looks at `<project>/tasks` and one

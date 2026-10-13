@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api } from "./api";
+import { api, type Paused } from "./api";
 import { agoText, minutesSince, stamp } from "./lib";
 import type { Task } from "./types";
 
@@ -29,26 +29,34 @@ export function pausedText(t: Pick<Task, "paused" | "pausedWhy">, now: number): 
 export function PausedChip({ t, now }: { t: Task; now: number }) {
   if (!t.paused) return null;
   return (
-    <span className="card-paused" title={`Paused since ${t.paused}: nobody claims or passes it until it's resumed`}>
+    <span className="card-paused" title={`Paused since ${t.paused}${t.pausedWhy ? `: ${t.pausedWhy}` : ""}. Nobody claims or passes it until it's resumed`}>
       <span className="paused-chip">{`${PAUSE_GLYPH} Paused`}</span> {pausedText(t, now)}
     </span>
   );
 }
 
+/** What the card's strip says after a pause or resume: only that its session couldn't be told,
+ *  with why; "" when it was, or nobody works on it. */
+export function cardPauseNote(p: Paused): string {
+  return p.session || !p.unreached ? "" : `its session can't be told: ${p.unreached}`;
+}
+
 /** Pause or Resume under a card, one click: Pause from Backlog through Testing, Resume on a paused
- *  one, nothing otherwise. It goes in the card's strip (Ping's CardPing), beside the card, since
- *  the card is itself a button. */
+ *  one, nothing otherwise. It goes first in the card's strip (Ping's CardPing), beside the card,
+ *  since the card is itself a button. What came of it stays beside it until the next poll. */
 export function CardPause({ t }: { t: Task }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [note, setNote] = useState("");
   const paused = Boolean(t.paused);
   if (!paused && !pausable(t)) return null;
   const go = async () => {
     setBusy(true);
     setError("");
+    setNote("");
     try {
-      if (paused) await api.resumeTask(t.queue, t.id, stamp(new Date()));
-      else await api.pauseTask(t.queue, t.id, "", stamp(new Date()));
+      const p = paused ? await api.resumeTask(t.queue, t.id, stamp(new Date())) : await api.pauseTask(t.queue, t.id, "", stamp(new Date()));
+      setNote(cardPauseNote(p));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -65,6 +73,7 @@ export function CardPause({ t }: { t: Task }) {
       >
         {paused ? "Resume" : "Pause"}
       </button>
+      {note && <span className="why">{note}</span>}
       {error && <span className="err">{error}</span>}
     </>
   );

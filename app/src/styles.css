@@ -628,6 +628,9 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .side-paused { color: var(--muted); font-size: 11px; }
 .pane-pause { display: inline-flex; gap: 4px; align-items: center; }
 .pane-pause input { width: 9em; font-size: 12px; padding: 1px 6px; }
+.card-ping.bare { margin-top: -6px; padding: 0 8px 2px; border: 0; background: none; }
+.card-ping.bare button { border-color: transparent; padding: 0 2px; }
+.status-pill.paused, .badge.paused { background: none; border: 1px solid var(--muted); color: var(--muted); }
 .pause-btn { border: 1px solid var(--border); background: none; color: var(--muted); border-radius: 6px; padding: 0 7px; font-size: 11.5px; line-height: 18px; }
 .pause-btn:not(:disabled):hover, .pause-btn:focus-visible { color: var(--text); border-color: var(--muted); }
 .tl-pause { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--muted) 55%, transparent) 0 3px, var(--surface) 3px 7px); border-left: 1px solid var(--muted); border-right: 1px solid var(--muted); pointer-events: none; }

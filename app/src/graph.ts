@@ -138,7 +138,7 @@ export function edgeLit(e: GraphEdge, selected: string | null, up: Set<string>, 
 /** Ready to start: in Ready, nobody holds it, and not blocked, by the flag or by the tasks it
  *  depends on. That last is the core's verdict (`blockedBy`, block.rs `holds`: a dependency counts
  *  once it's merged, in Your check or Done, the owner's own once Done, 0042), so the Graph marks
- *  exactly what `muster claim` takes. */
+ *  exactly what `muster claim` takes. A paused one (0045) isn't. */
 export function readyToStart(t: Task): boolean {
-  return stageOf(t) === "ready" && !t.claimedBy && !isBlocked(t);
+  return stageOf(t) === "ready" && !t.claimedBy && !isBlocked(t) && !t.paused;
 }

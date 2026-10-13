@@ -264,11 +264,13 @@
 
 > **Pausing a task (Muster 0045, 2026-10-13).** "Not now, keep it as it is": `muster pause <id>
 > ["<why>"]` (the app's **Pause**, under a card and beside the stage in the task pane) and `muster
-> resume <id>` (**Resume**). From Backlog through Testing. A paused task keeps its stage, write-up,
+> resume <id>` (**Resume**). A task (not a goal or feature), from Backlog through Testing. A paused task keeps its stage, write-up,
 > claim and worktree, and the board keeps it in its column with a grey **Paused** chip ("2 h ago ·
 > why"); it isn't blocked, so it's never red and waits on nothing. **Nobody can claim, pass or
 > pick it** (`claim`, `next`, `start`, `ready`, `pass` and the merge's pass refuse it: "0042 is
-> paused (since …); resume it first"); its holder may still check in and note. **Its lease doesn't
+> paused (since …); resume it first"), and nobody, the owner included, moves it (`return`,
+> `stage`, `move` refuse it the same way; the app's stage track is off); its holder may still
+> check in and note, but a check-in or note that would read as a pause or resume line is refused. **Its lease doesn't
 > run** (`reclaim`, Release, `muster check` and `manifest.py --check` skip it), and the tasks that
 > depend on it still wait. The front matter says it, `paused: <stamp>` and `paused-why: <why>`,
 > which only muster writes; the log says `<who>: paused (why)` and `<who>: resumed after 2 h`, and a
@@ -279,11 +281,14 @@
 > session 7b5e8856 to stop`. Resume writes `<id>-resume.md`, "carry on from your last check-in"
 > (one waiting per task: the newer of the two replaces the older), and in Building starts the
 > claim's lease over, so the holder has one lease to come back before `reclaim` gives it to whoever
-> claims it next. The hook hands either over only while it still stands (still paused, or still
+> claims it next. The task file is written before the mail, so the hook never sees a request the
+> file doesn't back yet; if the mail can't be written, the pause or resume holds and the command
+> says the message wasn't sent. The hook hands either over only while it still stands (still paused, or still
 > resumed) and the session still works on it; otherwise it's set aside in `delivered/`. **A
 > session told to stop** checks in what's done and next, ends its turn and keeps the claim. Paused
-> stretches are drawn hatched grey on the timeline and left out of the Work section's minutes and
-> the merge report's Building and Testing times.
+> stretches are drawn hatched grey on the timeline and left out of the pane's time so far, the
+> Work section's minutes (each stamp read by its own day's offset) and the merge report's Building
+> and Testing times. The owner's own paused task doesn't count as needing them.
 
 > **Task fields: type, estimates, links, comments (Muster 0017, 2026-10-12).** `type:` is one of
 > code, bug, chore, tech-debt, spike, design, docs, research (`muster new --type`, `muster set <id>

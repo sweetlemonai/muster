@@ -426,7 +426,7 @@ muster unblock 0007
 
 ### muster pause
 
-Not now, keep it as it is: the task keeps its stage, write-up, claim and worktree, and shows Paused (not blocked) where it is. Nobody can claim, pass or pick it (next, ready) until it's resumed; its lease doesn't run while it's paused (reclaim skips it); the tasks that depend on it still wait. From Backlog through Testing. In Building or Testing its session gets a stop request through its mailbox: stop at a safe point, check in (in Testing, a note) what's done and next, and end its turn. Logged as "paused (why)"; the timeline and the Work section's time leave paused stretches out.
+Not now, keep it as it is: the task keeps its stage, write-up, claim and worktree, and shows Paused (not blocked) where it is. Nobody can claim, pass or pick it (next, ready), and nobody, the owner included, returns it or moves its stage (return, stage, move) until it's resumed; its lease doesn't run while it's paused (reclaim skips it); the tasks that depend on it still wait. A task (not a goal or feature), from Backlog through Testing. In Building or Testing its session gets a stop request through its mailbox: stop at a safe point, check in (in Testing, a note) what's done and next, and end its turn. Logged as "paused (why)"; the timeline and the Work section's time leave paused stretches out.
 
 ```
 muster pause <id> ["<why>"]

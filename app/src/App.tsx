@@ -479,7 +479,7 @@ export default function App() {
             </>
           )}
 
-          {view === "waiting" && <WaitingList tasks={waiting} multi={multi} openKey={openKey} onOpen={open} onChanged={() => void refresh()} />}
+          {view === "waiting" && <WaitingList tasks={waiting} multi={multi} openKey={openKey} onOpen={open} onChanged={() => void refresh()} now={now} />}
 
           {view === "activity" && (
             <main className="list">

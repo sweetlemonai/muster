@@ -79,7 +79,7 @@ muster pause 0042 "the design changes first"
 muster resume 0042
 ```
 
-A paused task keeps its stage, its write-up, whoever holds it and its worktree, and it stays in its column with a grey **Paused** chip: "Paused 2 h ago · the design changes first". It isn't blocked: it isn't red and doesn't wait on anything. While it's paused nobody can claim it, pass it or pick it next, and its holder's lease doesn't run out. Tasks that depend on it still wait for it.
+Only tasks pause; goals and features follow their tasks. A paused task keeps its stage, its write-up, whoever holds it and its worktree, and it stays in its column with a grey **Paused** chip: "Paused 2 h ago · the design changes first". It isn't blocked: it isn't red and doesn't wait on anything. While it's paused nobody can claim it, pass it, pick it next, send it back or move its stage (you included: resume it first), and its holder's lease doesn't run out. Tasks that depend on it still wait for it, and your own paused task doesn't count as waiting on you.
 
 If a session is working on it (Building or Testing), that session is asked, through its mailbox, to stop at a safe point, check in what's done and next, and end its turn. When you resume it, the session is told to carry on from its last check-in, and in Building its claim gets a fresh lease: if that session doesn't come back within one lease, whoever claims it next can have it. The log says `owner: paused (why)` and `owner: resumed after 2 h`. Paused time is hatched grey on the timeline and isn't counted as work time.
 

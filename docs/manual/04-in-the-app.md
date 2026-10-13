@@ -27,7 +27,7 @@ Each card shows, top to bottom:
 - who's on it and how long ago they started, their latest check-in ("60% · gate green, writing tests · 12 min ago"), and a warning when they've gone quiet ("quiet 12 h+" past the [claim lease](#agents), "no check-in for 45 min"). After you ask for a check-in, "asked 2 min ago" takes the check-in's place until one comes. In Your check: **Your turn** and the next step (see [Your check](#your-check));
 - a paused task's grey **⏸ Paused** chip with when and why ("Paused 2 h ago · the design changes first"); a paused card is never quiet or red ([Paused](02-concepts.md#paused));
 - under a quiet card, **Ask for a check-in**: it puts a request in the session's mailbox, and the answer hook hands it over after that session's next tool call. A claim with no session stamp (made before stamps, or outside Claude Code) can't be reached: the button is shown off, with why ("ask its session to re-claim");
-- under every card from Backlog through Testing, **Pause**, and under a paused one **Resume**: one click, no dialog;
+- under every card from Backlog through Testing, **Pause**, and under a paused one **Resume**: one click, no dialog, always first in the same spot (a quiet text button, with the check-in ask after it on a quiet card). If its session can't be told, it says why beside it;
 - "⚠ 2 vision" while the task has open [vision conflicts](02-concepts.md#the-vision-check);
 - badges: why it's blocked, the kind first ("Blocked on you: …", [Blocked, and why](02-concepts.md#blocked-and-why)); needs you; open questions; files; the estimate; and how long ago it last changed.
 
@@ -90,7 +90,7 @@ Click a card to open its task beside the board. The pane keeps every control in 
 1. **The top line:** the project and how long ago the task changed, and **×** to close.
 2. **The title**, with its id. Click the title to rename it: ↩ saves, Esc keeps the old one. The **?** beside it opens this section.
 3. **The status line:** the stage, **Paused** with when and why, **Pause** (with a "why (optional)" box beside it; ↩ pauses too) or **Resume**, why it's blocked (the kind first; each task it's blocked by opens with a click), **LIVE** (the file changed in the last 5 minutes, the [LIVE window](#agents)) or how long it's been quiet, who's on it ("Your turn" in Your check) and who held the stages before, the stage's role, and what's waiting on you, or "nothing waiting on you".
-4. **The stage track:** all seven stages, the task's own lit; for your own task only **To do**, **Doing** and **Done**. Click another stage to put the task there. That's your override: it happens at once, and the message under it offers **Undo**. When the move would release someone's claim, the stage's tooltip says whose.
+4. **The stage track** (off while the task is paused): all seven stages, the task's own lit; for your own task only **To do**, **Doing** and **Done**. Click another stage to put the task there. That's your override: it happens at once, and the message under it offers **Undo**. When the move would release someone's claim, the stage's tooltip says whose.
 5. **Two columns.** The left one shows what this stage needs:
    - Backlog, Shaping and Ready: the acceptance criteria and the estimate.
    - Building and Testing: **Work so far**, the time spent against the estimate, the tokens estimated, and the stage history. The sessions and the tokens they used are in the **Work** section further down.

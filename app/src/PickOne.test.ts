@@ -59,7 +59,7 @@ describe("pick-one questions in the task pane (0049)", () => {
 
 describe("pick-one questions in Waiting for you (0049)", () => {
   const list = (questions: Question[]) =>
-    renderToStaticMarkup(createElement(WaitingList, { tasks: [task({ questions, openQuestions: questions.length })], multi: false, openKey: null, onOpen: () => {}, onChanged: () => {} }));
+    renderToStaticMarkup(createElement(WaitingList, { tasks: [task({ questions, openQuestions: questions.length })], multi: false, openKey: null, onOpen: () => {}, onChanged: () => {}, now: 0 }));
 
   it("lists the options as chips under the question, so one click answers there too", () => {
     const html = list([LEASE, PORT]);

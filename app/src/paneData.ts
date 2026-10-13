@@ -33,8 +33,9 @@ const WORK = new Set(["building", "testing"]);
 /** Wall-clock minutes the task spent in Building and Testing, from its stage history (oldest
  *  first): each stay runs to the next stage line, the open one to `now` (wall-clock minutes, as
  *  lib's stampMinutes) while the file is still in that stage. A stay it can't time (an unreadable
- *  stamp, a stamp earlier than the one before) counts nothing. Null when it never went in. */
-export function timeInWork(history: StageStep[], stage: string, now: number | null): number | null {
+ *  stamp, a stamp earlier than the one before) counts nothing. Null when it never went in.
+ *  Paused stretches (0045, `pauses`, one still open running to `now`) aren't counted. */
+export function timeInWork(history: StageStep[], stage: string, now: number | null, pauses: { from: string; to: string }[] = []): number | null {
   let total: number | null = null;
   history.forEach((s, i) => {
     if (!WORK.has(s.to)) return;
@@ -42,9 +43,20 @@ export function timeInWork(history: StageStep[], stage: string, now: number | nu
     const start = stampMinutes(s.at);
     const next = history[i + 1];
     const end = next ? stampMinutes(next.at) : stage === s.to ? now : null;
-    if (start !== null && end !== null && end >= start) total += end - start;
+    if (start !== null && end !== null && end >= start) total += end - start - pausedWithin(pauses, start, end, now ?? end);
   });
   return total;
+}
+
+/** Minutes of `from..to` that fall in a paused stretch (as pause.rs `paused_within`). */
+function pausedWithin(pauses: { from: string; to: string }[], from: number, to: number, now: number): number {
+  let sum = 0;
+  for (const p of pauses) {
+    const a = stampMinutes(p.from);
+    const z = p.to ? stampMinutes(p.to) : now;
+    if (a !== null && z !== null) sum += Math.max(0, Math.min(z, to) - Math.max(a, from));
+  }
+  return sum;
 }
 
 /** Wall-clock minutes as people read them: "45 min", "16 h", "1 d 1.5 h" (24-hour days, unlike

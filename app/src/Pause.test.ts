@@ -1,12 +1,18 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { projectActivity } from "./activity";
+import { isWorking, projectActivity } from "./activity";
 import Card from "./Card";
 import { applyQuery, dayContext, GROUPS, groupValues } from "./filters";
 import { leaseRunOut, quietCheckin } from "./lib";
 import { StatusLine } from "./PaneHeader";
-import { pausable, PausedChip, pausedText } from "./Pause";
+import { GraphView } from "./GraphView";
+import { readyToStart } from "./graph";
+import { needsYou, needsYouCount } from "./human";
+import { cardPauseNote, pausable, PausedChip, pausedText } from "./Pause";
+import StageTrack from "./StageTrack";
+import { TableView } from "./Views";
+import WaitingList from "./WaitingList";
 import { ProjectItem } from "./ProjectList";
 import type { Task } from "./types";
 import { pausedMsg } from "./useTaskActions";
@@ -49,6 +55,8 @@ describe("what a paused task says (0045)", () => {
     expect(text(html)).toBe("⏸︎ Paused 2 h ago · the design changes first");
     expect(html).not.toMatch(/blocked|s-building|warn/);
     expect(renderToStaticMarkup(createElement(PausedChip, { t: task({}), now: NOW }))).toBe("");
+    // Review u8: the why is in the tooltip too, since the line may be cut.
+    expect(html).toContain('title="Paused since 2026-10-13 10:00: the design changes first. Nobody claims or passes it until it&#x27;s resumed"');
   });
 });
 
@@ -66,10 +74,20 @@ describe("a paused card on the board", () => {
   it("offers Pause on a card from Backlog through Testing, beside the card, and nothing after", () => {
     for (const stage of ["backlog", "ready", "building", "testing"]) expect(buttons(card({ stage })), stage).toEqual(["Pause"]);
     for (const stage of ["your-check", "done"]) expect(buttons(card({ stage })), stage).toEqual([]);
-    // A quiet card has both, in one strip: the check-in ask first.
+    // Review u7: Pause comes first, in the same place whether the card is quiet or not; a quiet
+    // card adds its check-in ask after it, in the bordered tab, and otherwise the strip is bare.
     const quiet = card({ stage: "building", claimedBy: A, stageSince: "2026-10-13 08:00", heartbeat: "2026-10-13 11:00", modified: NOW });
-    expect(buttons(quiet)).toEqual(["Ask for a check-in", "Pause"]);
+    expect(buttons(quiet)).toEqual(["Pause", "Ask for a check-in"]);
     expect(quiet.match(/data-part="card-ping"/g)).toHaveLength(1);
+    expect(quiet).toContain('<div class="card-ping" data-part="card-ping">');
+    expect(card({ stage: "ready" })).toContain('<div class="card-ping bare" data-part="card-ping">');
+  });
+  it("says why its session couldn't be told, in the strip, until the next poll (review u6)", () => {
+    expect(cardPauseNote({ path: "", session: "", unreached: "this claim has no session to reach; ask its session to re-claim" })).toBe(
+      "its session can't be told: this claim has no session to reach; ask its session to re-claim",
+    );
+    expect(cardPauseNote({ path: "", session: "7b5e8856", unreached: "" })).toBe("");
+    expect(cardPauseNote({ path: "", session: "", unreached: "" })).toBe("");
   });
   it("a paused claim isn't quiet and its lease doesn't run out", () => {
     const t = task({ ...paused, heartbeat: "2026-10-12 08:00" });
@@ -127,5 +145,42 @@ describe("finding paused tasks", () => {
     const list = [task({ ...paused, modified: NOW - 4 * 3600 })];
     expect(projectActivity(list, 0, NOW).stalled).toBe(false);
     expect(projectActivity([{ ...list[0], paused: "" }], 0, NOW).stalled).toBe(true);
+  });
+});
+
+describe("paused everywhere a task shows (review)", () => {
+  it("the owner's own paused task isn't waiting on them; an agent's that is says it's paused", () => {
+    const own = task({ ...paused, forWho: "human", claimedBy: "owner" });
+    expect(needsYou(own)).toBe(false);
+    expect(needsYouCount([own, task({ forWho: "human", stage: "ready" })])).toBe(1);
+    const asked = task({ ...paused, stage: "testing", waitingForOwner: true, questions: [{ n: 1, ticked: false, asker: "qa", text: "Which port?", escalated: true, ownerAnswered: false }], openQuestions: 1 });
+    expect(needsYou(asked)).toBe(true);
+    const html = renderToStaticMarkup(createElement(WaitingList, { tasks: [asked], multi: false, openKey: null, onOpen: () => {}, onChanged: () => {}, now: NOW }));
+    expect(text(html)).toContain("Paused 2 h ago · the design changes first");
+  });
+  it("the graph doesn't call it ready to start, and says paused", () => {
+    const ready = task({ stage: "ready", paused: "2026-10-13 10:00" });
+    expect(readyToStart(ready)).toBe(false);
+    expect(readyToStart(task({ stage: "ready" }))).toBe(true);
+    const html = renderToStaticMarkup(createElement(GraphView, { tasks: [ready], all: [ready], multi: false, openKey: null, onOpen: () => {} }));
+    expect(html).toContain('<span class="badge paused">⏸︎ paused</span>');
+    expect(html).not.toContain('class="g-ready"');
+  });
+  it("the table has a grey Paused pill beside the stage", () => {
+    const html = renderToStaticMarkup(createElement(TableView, { tasks: [task(paused)], now: NOW, multi: false, openKey: null, onOpen: () => {}, words: [] }));
+    expect(html).toContain('<span class="status-pill s-building">Building</span><span class="status-pill paused">⏸︎ Paused</span>');
+  });
+  it("a fresh heartbeat on a paused task isn't anyone working", () => {
+    const fresh = task({ ...paused, heartbeat: "2026-10-13 11:55" });
+    expect(isWorking(fresh, NOW)).toBe(false);
+    expect(isWorking({ ...fresh, paused: "" }, NOW)).toBe(true);
+  });
+  it("the pane's stage track is off while it's paused, with why", () => {
+    const html = renderToStaticMarkup(createElement(StageTrack, { stage: "building", busy: false, onPick: () => {}, paused: "2026-10-13 10:00" }));
+    const off = (h: string) => [...h.matchAll(/<button([^>]*)>/g)].map((m) => m[1].includes("disabled"));
+    expect(off(html)).toEqual(Array(7).fill(true));
+    expect(text(html)).toContain("paused: resume it to move it");
+    const live = renderToStaticMarkup(createElement(StageTrack, { stage: "building", busy: false, onPick: () => {} }));
+    expect(off(live)).toEqual(Array(7).fill(false));
   });
 });

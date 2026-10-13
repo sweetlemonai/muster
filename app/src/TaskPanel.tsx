@@ -130,7 +130,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
           onOpenTask={onOpenTask}
           pause={{ busy: a.busy, onPause: a.pause, onResume: a.resume }}
         />
-        <StageTrack stage={task.stage} busy={a.busy} onPick={a.move} releases={(to) => releasedBy(task, to)} human={isHuman(task)} />
+        <StageTrack stage={task.stage} busy={a.busy} onPick={a.move} releases={(to) => releasedBy(task, to)} human={isHuman(task)} paused={task.paused ?? ""} />
         <div className="tp-cols">
           <div className="tp-main">
             <StageContent task={task} nowSecs={now} body={body === null ? null : shown} childTasks={childTasks} busy={a.busy} onTick={a.tick} onView={onOpenView} />

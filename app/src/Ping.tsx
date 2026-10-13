@@ -14,8 +14,9 @@ import type { Task } from "./types";
 type Result = { ok: boolean; text: string } | null;
 
 /** "Ask for a check-in" under a quiet card (the "no check-in for N min" flag), beside the card
- *  rather than inside it, since the card is itself a button. Nothing on a card that isn't quiet,
- *  unless the card has other controls for the same strip (`children`: Pause, 0045). */
+ *  rather than inside it, since the card is itself a button. The card's own controls for the
+ *  strip (`children`: Pause, 0045) come first, so they never move; without a quiet card the strip
+ *  is bare (no border or fill), and nothing at all without either. */
 export function CardPing({ t, now, children }: { t: Task; now: number; children?: ReactNode }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -34,7 +35,8 @@ export function CardPing({ t, now, children }: { t: Task; now: number; children?
     }
   };
   return (
-    <div className="card-ping" data-part="card-ping">
+    <div className={quiet ? "card-ping" : "card-ping bare"} data-part="card-ping">
+      {children}
       {quiet && (
         <>
           <button
@@ -49,7 +51,6 @@ export function CardPing({ t, now, children }: { t: Task; now: number; children?
           {error && <span className="err">{error}</span>}
         </>
       )}
-      {children}
     </div>
   );
 }

@@ -21,15 +21,15 @@ export function humanColumn(stage: string): HumanColumn {
   return stageRank(stage) >= stageRank("building") ? "doing" : "todo";
 }
 
-/** Does this task need the owner? Their own task until it's done, or an agent's waiting on them
- *  (the core's needs_owner: Your check, a question escalated to them, blocked on you or by a
- *  permission). */
-export function needsYou(t: Pick<Task, "forWho" | "waitingForOwner" | "stage">): boolean {
-  return isHuman(t) ? humanColumn(t.stage) !== "done" : t.waitingForOwner;
+/** Does this task need the owner? Their own task until it's done, unless they paused it (0045), or
+ *  an agent's waiting on them (the core's needs_owner: Your check, a question escalated to them,
+ *  blocked on you or by a permission). */
+export function needsYou(t: Pick<Task, "forWho" | "waitingForOwner" | "stage" | "paused">): boolean {
+  return isHuman(t) ? humanColumn(t.stage) !== "done" && !t.paused : t.waitingForOwner;
 }
 
 /** How many tasks need the owner: their own to do and doing, plus what the agents wait on them for. */
-export const needsYouCount = (tasks: Pick<Task, "forWho" | "waitingForOwner" | "stage">[]) => tasks.filter(needsYou).length;
+export const needsYouCount = (tasks: Pick<Task, "forWho" | "waitingForOwner" | "stage" | "paused">[]) => tasks.filter(needsYou).length;
 
 const PRIORITY_RANK = { high: 0, normal: 1, low: 2 } as const;
 /** What waits on the owner first, then priority, then project and id (as the board's columns). */

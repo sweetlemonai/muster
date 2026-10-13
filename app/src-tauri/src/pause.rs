@@ -44,11 +44,18 @@ pub struct Paused {
 
 /// A tool-written pause or resume line from the log: its stamp, and true for a pause. `- <at>
 /// <who>: paused`, `… paused (<why>)`, `… paused; asked session <id> to stop`, `- <at> <who>:
-/// resumed after 2 h` (and `; asked session <id> to carry on`). A stage line never is one.
+/// resumed after 2 h` (and `; asked session <id> to carry on`). A stage line or a check-in never
+/// is one, whatever its text says.
 pub fn pause_line(line: &str) -> Option<(String, bool)> {
-    if queue::stage_line(line).is_some() {
+    if queue::stage_line(line).is_some() || queue::checkin_line(line).is_some() {
         return None;
     }
+    pause_shaped(line)
+}
+
+/// `pause_line`'s shape alone, for a line that would be read as something else first: a check-in
+/// whose text has this shape is refused (`ops::checkin_task`), so it never reads as one.
+pub fn pause_shaped(line: &str) -> Option<(String, bool)> {
     let rest = line.strip_prefix("- ")?;
     let at = rest.get(..16).filter(|a| stamp_minutes(a).is_some())?;
     let tail = rest.get(16..)?.strip_prefix(' ')?;
@@ -193,8 +200,10 @@ fn checked(line: String) -> Result<String, String> {
 }
 
 /// Pause task `id` (0045), with an optional reason. In Building or Testing, the session working
-/// on it gets a stop request in its mailbox. Refused: a task already paused, one in Your check or
-/// Done.
+/// on it gets a stop request in its mailbox, written after the task file says it's paused (the
+/// hook delivers it only while it does); if that fails, the pause holds and the error says the
+/// request wasn't sent. Refused: a task already paused, one in Your check or Done, a goal or a
+/// feature.
 pub fn pause(root: &Path, id: &str, why: &str, who: &str, stamp: &str) -> Result<Paused, String> {
     let who = actor(who)?;
     let why = if why.trim().is_empty() {
@@ -213,6 +222,9 @@ pub fn pause(root: &Path, id: &str, why: &str, who: &str, stamp: &str) -> Result
                 queue::stage_label(&t.stage)
             ));
         }
+        if t.level != "task" {
+            return Err(format!("{id} is a {}; pause its tasks instead", t.level));
+        }
         let (sid, unreached) = told(&t);
         let mut line = format!("{stamp} {who}: paused");
         if !why.is_empty() {
@@ -228,17 +240,13 @@ pub fn pause(root: &Path, id: &str, why: &str, who: &str, stamp: &str) -> Result
         } else {
             set_front(&new, "paused-why", &why)?
         };
-        if let Some(sid) = &sid {
-            post(
-                root,
-                sid,
-                id,
-                "pause",
-                "resume",
-                &stop_request(root, &path, &text, &t, &who, &why),
-            )?;
-        }
         write_atomic(&path, &append_log(&new, &line))?;
+        if let Some(sid) = &sid {
+            let request = stop_request(root, &path, &text, &t, &who, &why);
+            post(root, sid, id, "pause", "resume", &request).map_err(|e| {
+                format!("{id} is paused, but the stop request to session {sid} wasn't sent: {e}")
+            })?;
+        }
         Ok(Paused {
             path: ping::rel(root, &path),
             session: sid.unwrap_or_default(),
@@ -282,7 +290,8 @@ fn stop_request(
 /// Resume a paused task (0045): it carries on as it was. Its claim in Building gets a fresh lease,
 /// so the holder has one lease to come back before reclaim may give it to someone else; the
 /// session working on it in Building or Testing gets a carry-on message in its mailbox. Logged as
-/// `resumed after 2 h`. Refused for a task that isn't paused.
+/// `resumed after 2 h`. The message is written after the task file, as `pause` does. Refused for a
+/// task that isn't paused.
 pub fn resume(root: &Path, id: &str, who: &str, stamp: &str) -> Result<Paused, String> {
     let who = actor(who)?;
     with_lock(root, || {
@@ -321,9 +330,13 @@ pub fn resume(root: &Path, id: &str, who: &str, stamp: &str) -> Result<Paused, S
                 session::split(&who).0,
                 ping::rel(root, &path),
             );
-            post(root, sid, id, "resume", "pause", &message)?;
+            write_atomic(&path, &append_log(&new, &line))?;
+            post(root, sid, id, "resume", "pause", &message).map_err(|e| {
+                format!("{id} is resumed, but the message to session {sid} to carry on wasn't sent: {e}")
+            })?;
+        } else {
+            write_atomic(&path, &append_log(&new, &line))?;
         }
-        write_atomic(&path, &append_log(&new, &line))?;
         Ok(Paused {
             path: ping::rel(root, &path),
             session: sid.unwrap_or_default(),
@@ -528,6 +541,30 @@ mod tests {
     }
 
     #[test]
+    fn a_paused_task_isnt_moved_by_return_stage_or_move_even_by_the_owner() {
+        // Review c3: resume it first, for everyone.
+        let d = queue();
+        put(d.path(), "0042", "building", A, "");
+        pause(d.path(), "0042", "", "owner", T).unwrap();
+        let refused = |e: String| {
+            assert_eq!(
+                e,
+                "0042 is paused (since 2026-10-13 10:00); resume it first: muster resume 0042"
+            )
+        };
+        refused(ops::return_task(d.path(), "0042", "redo it", None, "owner", T).unwrap_err());
+        refused(ops::set_stage(d.path(), "0042", "ready", None, "owner", T).unwrap_err());
+        refused(ops::set_stage(d.path(), "0042", "your-check", None, "capture", T).unwrap_err());
+        refused(ops::move_task(d.path(), "0042", "todo", "", "owner", T).unwrap_err());
+        let t = read_task(d.path(), "0042").unwrap();
+        assert_eq!((t.stage.as_str(), t.claimed_by.as_str()), ("building", A));
+        // Blocking keeps its stage, so it's still allowed.
+        ops::block_task(d.path(), "0042", "outside: the API", "owner", T).unwrap();
+        resume(d.path(), "0042", "owner", T).unwrap();
+        ops::set_stage(d.path(), "0042", "ready", None, "owner", T).unwrap();
+    }
+
+    #[test]
     fn a_paused_claim_never_runs_out_and_resuming_gives_its_holder_one_lease() {
         let d = queue();
         put(d.path(), "0042", "building", A, "");
@@ -665,6 +702,37 @@ mod tests {
     }
 
     #[test]
+    fn the_file_says_it_before_the_session_is_told_and_a_failed_message_says_so() {
+        // Review c2: the hook reads the file to decide whether a request still stands, so the
+        // file is written first. Here the mailbox can't be made (a file where its folder goes).
+        let d = queue();
+        put(d.path(), "0042", "building", A, "");
+        fs::create_dir_all(d.path().join("mail")).unwrap();
+        fs::write(d.path().join("mail/7b5e8856"), "not a folder").unwrap();
+        let e = pause(d.path(), "0042", "", "owner", T).unwrap_err();
+        assert!(
+            e.starts_with("0042 is paused, but the stop request to session 7b5e8856 wasn't sent: "),
+            "{e}"
+        );
+        assert_eq!(
+            read_task(d.path(), "0042").unwrap().paused,
+            T,
+            "the pause holds"
+        );
+        let e = resume(d.path(), "0042", "owner", "2026-10-13 10:30").unwrap_err();
+        assert!(
+            e.starts_with(
+                "0042 is resumed, but the message to session 7b5e8856 to carry on wasn't sent: "
+            ),
+            "{e}"
+        );
+        assert!(
+            read_task(d.path(), "0042").unwrap().paused.is_empty(),
+            "the resume holds"
+        );
+    }
+
+    #[test]
     fn pause_and_resume_refusals() {
         let d = queue();
         put(d.path(), "0001", "your-check", "", "owner");
@@ -675,6 +743,19 @@ mod tests {
             .contains("is in Your check; a task can be paused from Backlog through Testing"));
         assert!(e(pause(d.path(), "0002", "", "owner", T)).contains("is in Done"));
         assert_eq!(e(resume(d.path(), "0003", "owner", T)), "0003 isn't paused");
+        // Tasks only (review u9): a goal's or feature's stage comes from its tasks.
+        let goal = queue::find_task(d.path(), "0003").unwrap();
+        let text = fs::read_to_string(&goal).unwrap();
+        fs::write(
+            &goal,
+            text.replace("type: code\n", "type: code\nlevel: feature\n"),
+        )
+        .unwrap();
+        assert_eq!(
+            e(pause(d.path(), "0003", "", "owner", T)),
+            "0003 is a feature; pause its tasks instead"
+        );
+        fs::write(&goal, text).unwrap();
         pause(d.path(), "0003", "", "owner", T).unwrap();
         assert_eq!(
             e(pause(d.path(), "0003", "", "owner", T)),
@@ -721,6 +802,38 @@ mod tests {
             .unwrap()
             .pause_history
             .is_empty());
+        // A check-in's text can't forge one either (review c1): refused when written, and a
+        // check-in line already in a log is never read as one.
+        put(d.path(), "0002", "building", A, "");
+        for text in [
+            "next: paused (owner asked)",
+            "parser done: resumed",
+            "x: paused; y",
+        ] {
+            let e = ops::checkin_task(d.path(), "0002", text, "", A, T).unwrap_err();
+            assert!(e.contains("would read as a pause"), "{text}: {e}");
+        }
+        ops::checkin_task(
+            d.path(),
+            "0002",
+            "paused the build, now resumed it",
+            "",
+            A,
+            T,
+        )
+        .unwrap();
+        let lines = [
+            "- 2026-10-13 09:00 owner: paused (later)",
+            "- 2026-10-13 09:30 wt-a: check-in 40% · parser done: resumed",
+            "- 2026-10-13 09:40 wt-a: check-in · next: paused (owner asked)",
+        ];
+        assert_eq!(
+            history(&lines),
+            [PauseSpan {
+                from: "2026-10-13 09:00".into(),
+                to: String::new()
+            }]
+        );
     }
 
     #[test]

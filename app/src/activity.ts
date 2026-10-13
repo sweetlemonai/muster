@@ -61,8 +61,8 @@ function workingAt(t: ActivityTask, wall: number | null): boolean {
   // A heartbeat or check-in counts only while someone holds the task and it isn't waiting: in
   // Building with a claim, or in Testing with a holder. A task handed back to Ready, blocked (by
   // tasks too, 0024), or in Your check keeps its last heartbeat, which isn't anyone working
-  // (review, 2026-10-13).
-  const held = !isBlocked(t) && ((t.stage === "building" && t.claimedBy.trim() !== "") || (t.stage === "testing" && (t.heldBy ?? "").trim() !== ""));
+  // (review, 2026-10-13). Nor is a paused one's (0045): it was asked to stop.
+  const held = !isBlocked(t) && !t.paused && ((t.stage === "building" && t.claimedBy.trim() !== "") || (t.stage === "testing" && (t.heldBy ?? "").trim() !== ""));
   if (!held) return false;
   const m = sinceBeat(t, wall);
   return m !== null && m <= CHECKIN_MINUTES;
