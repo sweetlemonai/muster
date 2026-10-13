@@ -220,8 +220,9 @@ describe("the pane's layout by stage (D2)", () => {
     expect(p.primary).toEqual(["Pass to Testing"]);
     const work = text(part(p.html, "work"));
     expect(work).toContain("Time 2 h in Building and Testing · estimate 1 d of agent time");
-    expect(work).toContain("Tokens 2M tokens estimated · used: with 0025");
-    expect(work).toContain("Sessions: coming with 0025");
+    expect(work).toContain("Tokens 2M tokens estimated · used: in Work below");
+    expect(work).toContain("Sessions, tokens used and transcripts: in Work below.");
+    expect(work).not.toContain("coming with 0025");
     expect(work).toContain("10-12 16:00 Ready → Building · wt-a 10-12 15:00 Shaping → Ready · capture");
     // Wall-clock time and agent time aren't the same unit: no bar pretends to compare them.
     expect(p.html).not.toContain("of the time estimate");

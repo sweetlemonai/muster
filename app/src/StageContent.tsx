@@ -72,10 +72,10 @@ function WorkSoFar({ task, nowSecs }: { task: Task; nowSecs: number }) {
       {task.estTokenCount > 0 && (
         <p className="wline">
           <span className="lbl">Tokens</span>
-          <span className="small">{fmtTokens(task.estTokenCount)} estimated · used: with 0025</span>
+          <span className="small">{fmtTokens(task.estTokenCount)} estimated · used: in Work below</span>
         </p>
       )}
-      <p className="meta small">Sessions: coming with 0025</p>
+      <p className="meta small">Sessions, tokens used and transcripts: in Work below.</p>
       <HistoryList task={task} />
     </div>
   );
