@@ -5,6 +5,8 @@ import { paneEscape } from "./keys";
 import { readFiles, stamp } from "./lib";
 import TagEditor from "./Tags";
 import { LEVELS } from "./levels";
+import { HelpButton } from "./HelpButton";
+import { pressed } from "./shortcuts";
 
 /** Who does a new task (0022), as a chip pair: an agent (the default) or you. */
 export const FOR_CHOICES = [
@@ -91,7 +93,7 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
         }}
       >
         <header className="pane-head">
-          <h1>New task</h1>
+          <h1>New task <HelpButton topic="new-task" /></h1>
           <button type="button" className="close" onClick={onClose} aria-label="Close">×</button>
         </header>
         <div className="row">
@@ -181,7 +183,7 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
           placeholder="Details in Markdown: steps to reproduce, where in the app, what done looks like. Paste or drop screenshots anywhere here."
           rows={10}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void submit();
+            if (pressed(e, "send")) void submit();
           }}
         />
         {files.length > 0 && (

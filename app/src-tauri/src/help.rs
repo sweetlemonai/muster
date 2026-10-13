@@ -28,6 +28,20 @@ pub struct Help {
     pub common: &'static [(&'static str, &'static str)],
     pub session: &'static [Topic],
     pub app: &'static [(&'static str, &'static str)],
+    /// The manual's Commands page in Markdown (`commands_page`), which the Help tab shows.
+    pub commands_page: String,
+}
+
+/// A section of the manual's Commands page: the commands that do one kind of job, in the order
+/// the page shows them. Levels has no commands of its own, so it shows examples of `new` and
+/// `set` instead (each one also in that command's examples).
+#[derive(Clone, Debug)]
+pub struct Group {
+    pub title: &'static str,
+    /// Markdown, written for the page.
+    pub intro: &'static str,
+    pub commands: &'static [&'static str],
+    pub examples: &'static [&'static str],
 }
 
 pub const COMMANDS: &[Command] = &[
@@ -564,13 +578,144 @@ pub const APP: &[(&str, &str)] = &[
     ),
 ];
 
+/// The Commands page's groups: every command in exactly one (a test checks it).
+pub const GROUPS: &[Group] = &[
+    Group {
+        title: "Tasks",
+        intro: "Make a task, read it, and change what it says: its fields, its write-up, its log, its comments, its links and its files.",
+        commands: &["new", "list", "show", "set", "edit", "note", "comment", "link", "attach"],
+        examples: &[],
+    },
+    Group {
+        title: "Stages",
+        intro: "Move a task on to the next stage, send it back, or mark it blocked. Only these commands change a stage: never move or edit a task file for that. See [Stages and roles](02-concepts.md#stages-and-roles).",
+        commands: &["pass", "return", "block", "unblock", "stage", "tick", "untick", "move"],
+        examples: &[],
+    },
+    Group {
+        title: "Claims",
+        intro: "Who's on a task. A coding session claims a Ready task, keeps the claim alive while it works, and checks in to say how far it got. See [Claims, leases and check-ins](02-concepts.md#claims-leases-and-check-ins).",
+        commands: &["claim", "next", "heartbeat", "checkin", "reclaim"],
+        examples: &[],
+    },
+    Group {
+        title: "Questions",
+        intro: "Ask in a task without stopping. The answer is written into the task and pushed back to the session that asked. See [Questions and answers](02-concepts.md#questions-and-answers).",
+        commands: &["ask", "answer", "escalate", "inbox"],
+        examples: &[],
+    },
+    Group {
+        title: "Backlog",
+        intro: "One-line ideas that aren't tasks yet, shaping them into tasks, and checking a shaped task against the project's vision before it goes to Ready. See [The backlog and shaping](02-concepts.md#the-backlog-and-shaping) and [The vision check](02-concepts.md#the-vision-check).",
+        commands: &["add", "shape", "file", "drop", "vision"],
+        examples: &[],
+    },
+    Group {
+        title: "Levels",
+        intro: "Goals and features group tasks. They have no commands of their own: `muster new` takes a level, a parent and a goal's due date, and `muster set` changes them, and what a task depends on. See [Goals, features and tasks](02-concepts.md#goals-features-and-tasks).",
+        commands: &[],
+        examples: &[
+            "muster new \"Ship 1.0\" --level goal --due 2026-12-01",
+            "muster new \"Stage track\" --level feature --parent 0030",
+            "muster set 0032 parent 0031",
+            "muster set 0018 depends 0014,0016",
+        ],
+    },
+    Group {
+        title: "Projects and the queue",
+        intro: "Find the queues Muster knows, start one for a project, check a queue for problems, and rebuild its master list.",
+        commands: &["projects", "init", "check", "index", "help"],
+        examples: &[],
+    },
+];
+
 pub fn help() -> Help {
     Help {
         commands: COMMANDS,
         common: COMMON,
         session: SESSION,
         app: APP,
+        commands_page: commands_page(),
     }
+}
+
+/// Text from the help data as Markdown that reads the same: `<id>` stays text on GitHub, and
+/// `_`, `*`, backticks and brackets don't start formatting.
+fn md_text(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        if matches!(ch, '\\' | '`' | '*' | '_' | '[' | ']' | '<' | '>' | '|') {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// A command line as its own code block, so the app copies it with a click.
+fn code_block(out: &mut String, line: &str) {
+    out.push_str(&format!("\n```\n{line}\n```\n"));
+}
+
+/// One command on the Commands page: what it does, its usage, options and examples.
+fn command_md(out: &mut String, c: &Command) {
+    out.push_str(&format!("\n### muster {}\n\n{}\n", c.name, md_text(c.what)));
+    code_block(out, c.usage);
+    if !c.options.is_empty() {
+        out.push_str("\n| Option | What it does |\n| --- | --- |\n");
+        for (k, v) in c.options {
+            out.push_str(&format!(
+                "| `{}` | {} |\n",
+                k.replace('|', "\\|"),
+                md_text(v)
+            ));
+        }
+    }
+    out.push_str("\nExamples:\n");
+    for e in c.examples {
+        code_block(out, e);
+    }
+}
+
+/// The manual's Commands page (`docs/manual/05-commands.md`, and the Help tab's): every command,
+/// grouped, then the options every command takes and how to use Muster in a Claude Code session.
+pub fn commands_page() -> String {
+    let mut out = String::from(
+        "# Commands\n\nEvery `muster` command, grouped by the job it does. This page is made from the command line's own help, so it always matches the `muster` you have: in a terminal, `muster help` lists the commands and `muster help <command>` shows one. In the app, click a command line to copy it.\n",
+    );
+    for g in GROUPS {
+        out.push_str(&format!("\n## {}\n\n{}\n", g.title, g.intro));
+        for name in g.commands {
+            if let Some(c) = COMMANDS.iter().find(|c| c.name == *name) {
+                command_md(&mut out, c);
+            }
+        }
+        if !g.examples.is_empty() {
+            out.push_str("\nExamples:\n");
+            for e in g.examples {
+                code_block(&mut out, e);
+            }
+        }
+    }
+    out.push_str("\n## On every command\n\n| Option | What it does |\n| --- | --- |\n");
+    for (k, v) in COMMON {
+        out.push_str(&format!(
+            "| `{}` | {} |\n",
+            k.replace('|', "\\|"),
+            md_text(v)
+        ));
+    }
+    out.push_str("\n## Inside a Claude Code session\n");
+    for t in SESSION {
+        out.push_str(&format!("\n### {}\n", t.title));
+        for l in t.lines {
+            match l.strip_prefix("$ ") {
+                Some(cmd) => code_block(&mut out, cmd),
+                None => out.push_str(&format!("\n{}\n", md_text(l))),
+            }
+        }
+    }
+    out
 }
 
 /// `muster help` as plain text.
@@ -684,6 +829,95 @@ mod tests {
             );
         }
         assert_eq!(COMMANDS.len(), 36);
+    }
+
+    #[test]
+    fn every_command_is_on_the_commands_page_once_in_its_group() {
+        let mut seen: Vec<&str> = Vec::new();
+        for g in GROUPS {
+            for name in g.commands {
+                assert!(
+                    COMMANDS.iter().any(|c| c.name == *name),
+                    "{name} in {} isn't a command",
+                    g.title
+                );
+                assert!(!seen.contains(name), "{name} is in two groups");
+                seen.push(name);
+            }
+            for e in g.examples {
+                assert!(
+                    COMMANDS.iter().any(|c| c.examples.contains(e)),
+                    "{e} isn't one of the commands' own examples"
+                );
+            }
+            assert!(
+                !g.commands.is_empty() || !g.examples.is_empty(),
+                "{} shows nothing",
+                g.title
+            );
+        }
+        for c in COMMANDS {
+            assert!(seen.contains(&c.name), "{} is in no group", c.name);
+        }
+        let page = commands_page();
+        for c in COMMANDS {
+            let heading = format!("\n### muster {}\n", c.name);
+            assert_eq!(page.matches(&heading).count(), 1, "{heading}");
+            for e in c.examples {
+                assert!(page.contains(&format!("\n```\n{e}\n```\n")), "{e}");
+            }
+        }
+        let titles: Vec<&str> = page.lines().filter_map(|l| l.strip_prefix("## ")).collect();
+        assert_eq!(
+            titles,
+            [
+                "Tasks",
+                "Stages",
+                "Claims",
+                "Questions",
+                "Backlog",
+                "Levels",
+                "Projects and the queue",
+                "On every command",
+                "Inside a Claude Code session"
+            ]
+        );
+        assert!(page.starts_with("# Commands\n"));
+        // The Help tab gets it with the rest of the help.
+        assert_eq!(help().commands_page, page);
+    }
+
+    #[test]
+    fn the_commands_page_keeps_the_help_text_as_text() {
+        let page = commands_page();
+        // `<id>` would be an HTML tag on GitHub, and `_` or `*` would start emphasis.
+        assert!(page.contains("Create \\<project-folder\\>/tasks"), "{page}");
+        assert!(page.contains("CLAUDE\\_CODE\\_SESSION\\_ID"), "{page}");
+        // A `|` inside an option's name would end its table cell.
+        assert!(page.contains("| `--queue <name\\|folder>` |"), "{page}");
+        // Command lines stay as typed, in their own blocks.
+        assert!(page.contains("\n```\nmuster new \"<title>\" [--type"));
+        assert!(page.contains("\n```\n! muster list\n```\n"));
+    }
+
+    #[test]
+    fn the_commands_page_in_the_docs_is_what_muster_makes() {
+        // docs/manual/05-commands.md, so the manual reads the same on GitHub as in the app.
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("docs")
+            .join("manual")
+            .join("05-commands.md");
+        let page = commands_page();
+        if std::env::var_os("MUSTER_WRITE_MANUAL").is_some() {
+            std::fs::write(&path, &page).unwrap();
+        }
+        let file = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(
+            file == page,
+            "docs/manual/05-commands.md isn't what help.rs makes: run `MUSTER_WRITE_MANUAL=1 cargo test commands_page` in app/src-tauri"
+        );
     }
 
     #[test]

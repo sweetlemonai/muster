@@ -4,6 +4,16 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Help is a manual: concepts, tutorials, commands, shortcuts (task 0035)
+**Did:** the Help tab is a manual with a docked sidebar (every page and section, search across
+pages, ◀ ▶): Start here, Concepts, Tutorials, In the app, Commands (generated from `help.rs`),
+Shortcuts (generated from one table, `shortcuts.ts`, that the key handlers read), For agents,
+FAQ. Pages are Markdown in `docs/manual/`, so they read on GitHub too. A "?" beside each view's
+toolbar and each pane's title opens its section. Tests fail when a command or shortcut is
+missing, or a link between pages is broken. Built by an implementer agent that claimed, noted
+and passed the task itself.
+**Open:** screenshots (the sandbox can't run the app); the owner reads Start here and a tutorial.
+
 ## 2026-10-13 — Ready is cyan, well apart from Building
 **Fixed:** the owner: "ready and building colors are too close" (blue next to violet, distance 47
 though past the general check). Ready is now cyan (88 from violet Building, 60+ from every

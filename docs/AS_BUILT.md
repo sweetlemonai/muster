@@ -114,9 +114,21 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   faded start. A now line runs across the chart and open tasks run to it. Bars are worked out in
   `viewData.ts` in wall-clock minutes, so a clock change doesn't bend them). All three, and the
   Graph (0019), share the search and filters and open tasks in the docked pane.
-- **Help** (tab): every `muster` command with usage, options and examples (click to copy), how to
-  use Muster inside a Claude Code session (you, agents, capture), and the app's keys. It's the
-  same list `muster help` prints (`help.rs`, with a test that fails if a command isn't documented).
+- **Help** (tab, task 0035): the manual in `docs/manual/`, eight pages (Start here, Concepts,
+  Tutorials, In the app, Commands, Shortcuts, For agents, FAQ), bundled at build time and rendered
+  with the same sanitised Markdown as task text. A docked sidebar lists every page and its
+  sections, the current one lit, under a search box over all pages (an in-memory match); ◀ ▶ step
+  between pages; links between pages and sections move within the tab. Commands is made from
+  `help.rs` (`help::commands_page`, grouped: tasks, stages, claims, questions, backlog, levels,
+  projects), and a Rust test keeps `docs/manual/05-commands.md` equal to it
+  (`MUSTER_WRITE_MANUAL=1 cargo test commands_page` rewrites it). Shortcuts is made from one table,
+  `app/src/shortcuts.ts`, which the key handlers read (`pressed`; the window's Esc, ⌘N and ⌘F
+  and the search box's Esc in `keys.ts`; ⌘F takes ⌘ only), and a test fails when a handler
+  acts on a key the table doesn't list for its file; `pnpm test -u` rewrites
+  `docs/manual/06-shortcuts.md`. Another test fails on a link to a page, section or repo file that
+  doesn't exist. A small **?** beside each pane's title and in each view's toolbar opens its
+  section, with the pane left in place. Click a command line to copy it. The manual has no
+  screenshots yet.
 - **Stages** (task 0014, decision 0003): Backlog, Shaping (product, tech and UI agents), Ready,
   Building (code agent), Testing (QA agent), Your check (the owner), Done. `stage:` in the file is
   the truth, written only by `muster`. A stage change is logged as `<time> <who>: stage <from> → <to>`,

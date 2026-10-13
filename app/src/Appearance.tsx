@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { CardLookPicker } from "./CardLook";
+import { HelpButton } from "./HelpButton";
 import { stageLabel } from "./lib";
 import { ACCENTS, apply, buildingColour, cardChoice, type Choice, DEFAULT_CHOICE, load, resolve, save, THEMES, variables } from "./themes";
 
@@ -21,7 +22,7 @@ export default function Appearance({ onClose }: { onClose: () => void }) {
   return (
     <div className="pane-body">
       <header className="pane-head">
-        <h1>Appearance</h1>
+        <h1>Appearance <HelpButton topic="appearance" /></h1>
         <button className="close" onClick={onClose} aria-label="Close">×</button>
       </header>
       <section>

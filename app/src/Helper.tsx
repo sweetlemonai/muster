@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { api, type AccountInfo, type HelperInfo, type HelperLine } from "./api";
 import { readFiles, stamp } from "./lib";
 import Markdown from "./Markdown";
+import { HelpButton } from "./HelpButton";
 
 type Group = { owner?: HelperLine; replies: HelperLine[]; tools: { cmd: string; result?: string }[]; end?: HelperLine; notes: HelperLine[] };
 
@@ -137,6 +138,7 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
         <button onClick={() => void api.helperReset(queue).then(() => api.helperInfo(queue)).then((i) => setLines(i.lines))} disabled={running}>
           New conversation
         </button>
+        <HelpButton topic="helper" />
       </header>
       <div className="chat">
         {blocks.length === 0 && <p className="empty">Nothing yet. Try: “The board flickers when I resize the window, and I'd like a dark mode toggle.”</p>}

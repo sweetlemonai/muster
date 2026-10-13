@@ -471,18 +471,36 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .tasks-table td.meta, .tasks-table .id, .tasks-table .q, .tasks-table td:nth-last-child(2), .tasks-table td:nth-last-child(3) { white-space: nowrap; }
 .tasks-table th.plain { padding: 7px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); font-weight: 600; }
 
-/* Help. */
-.help h2 { font-size: 16px; margin: 22px 0 6px; }
-.help-toc { font-size: 12px; color: var(--muted); }
-.help-toc a { color: var(--accent-text); }
-.help-cmd { border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin: 8px 0; background: var(--surface); }
-.help-cmd h3 { margin: 0 0 4px; font-size: 13px; }
-.help-cmd p { margin: 4px 0; }
-.cmd { display: inline-block; background: var(--tint); border-radius: 5px; padding: 3px 8px; cursor: copy; overflow-wrap: anywhere; }
-.cmd:hover { outline: 1px solid var(--accent); }
-.examples { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 6px; }
-.help-opts { border-collapse: collapse; margin: 6px 0; font-size: 12.5px; }
-.help-opts td { padding: 3px 12px 3px 0; vertical-align: top; }
+/* Help: the manual, its sidebar docked beside the page (no overlays). */
+.manual { flex: 1; display: flex; min-height: 0; }
+.manual-side { flex: none; width: 236px; overflow-y: auto; padding: 12px 10px 24px 14px; border-right: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 55%, var(--bg)); font-size: 12.5px; }
+.manual-search { width: 100%; box-sizing: border-box; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
+.manual-hits { margin: 8px 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.manual-hits ul { list-style: none; margin: 0; padding: 0; }
+.manual-hits button { display: block; width: 100%; text-align: left; border: none; background: none; color: var(--text); padding: 4px 6px; border-radius: 6px; }
+.manual-hits button:hover, .manual-hits button:focus-visible { background: var(--tint); }
+.manual-hits .snippet { display: block; color: var(--muted); font-size: 11.5px; overflow-wrap: anywhere; }
+.manual-pages, .manual-pages ul { list-style: none; margin: 0; padding: 0; }
+.manual-pages > li { margin-top: 8px; }
+.manual-pages ul { margin: 2px 0 0 8px; border-left: 1px solid var(--border); }
+.manual-pages button { display: block; width: 100%; text-align: left; border: none; background: none; border-radius: 6px; padding: 2px 8px; }
+.manual-pages .page { color: var(--text); font-weight: 600; }
+.manual-pages .section { color: var(--muted); }
+.manual-pages button:hover, .manual-pages button:focus-visible { color: var(--text); background: var(--tint); }
+.manual-pages .page.on, .manual-pages .section.on { color: var(--accent-text); background: var(--accent-soft); }
+.manual-page { flex: 1; min-width: 0; overflow-y: auto; padding: 12px 28px 28px; }
+.manual-page .markdown { max-width: 760px; font-size: 13.5px; line-height: 1.55; }
+.manual-page .markdown h1 { font-size: 22px; margin: 6px 0 10px; }
+.manual-page .markdown h2 { font-size: 16px; margin: 26px 0 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.manual-page .markdown h3 { font-size: 14px; margin: 18px 0 6px; }
+.manual-page .markdown pre { margin: 4px 0; padding: 6px 10px; cursor: copy; }
+.manual-page .markdown pre:hover { outline: 1px solid var(--accent); }
+.manual-steps { display: flex; justify-content: space-between; max-width: 760px; margin: 0 0 6px; }
+.manual-page .markdown + .manual-steps { margin-top: 24px; }
+.manual-note { max-width: 760px; margin: 0 0 6px; }
+/* The "?" of context help: quiet until pointed at. */
+.help-q { flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: none; color: var(--muted); font-size: 11px; font-weight: 600; line-height: 1; vertical-align: middle; }
+.help-q:hover, .help-q:focus-visible { color: var(--accent-text); border-color: var(--accent); }
 
 .badge.est { color: var(--muted); }
 .est-total { color: var(--text); }
@@ -538,6 +556,7 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .note-file .chip-row { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; font-size: 12px; }
 .note-file .chip-row .sep { margin-left: 10px; }
 .note-panel .control-row .on { outline: 2px solid var(--accent); outline-offset: 1px; }
+.note-panel .title-row { display: flex; align-items: center; gap: 8px; }
 
 /* Levels (task 0016): Group by, bands of the grouped board, the card's parent line, goals and
    features in the table, and the New task form's Level chips. */

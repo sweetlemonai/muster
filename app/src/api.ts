@@ -76,6 +76,8 @@ export const api = {
   attachData: (queue: string, id: string, files: [string, string][], stamp: string) =>
     invoke<string[]>("attach_data", { queue, id, files, stamp }),
   attachPick: (queue: string, id: string, stamp: string) => invoke<string[]>("attach_pick", { queue, id, stamp }),
+  // The help `muster help` prints; the Help tab shows its Commands page (Markdown, from help.rs).
+  help: () => invoke<{ commandsPage?: unknown }>("help"),
   helperInfo: (queue: string) => invoke<HelperInfo>("helper_info", { queue }),
   helperSetAccount: (account: string) => invoke<void>("helper_set_account", { account }),
   // Opens Terminal on that account's own `claude auth login`.

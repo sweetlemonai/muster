@@ -46,12 +46,14 @@ type Props = {
    *  count. */
   arrange?: ReactNode;
   searchRef?: RefObject<HTMLInputElement | null>;
+  /** The view's "?", last in the top row (task 0035). */
+  help?: ReactNode;
 };
 
 /** The bar above Board, Table, Timeline and Graph: search, saved views, every filter group as
  *  chips, the board's sort, and one line that reads what's active and how much it hides. Nothing
  *  in it folds away (docs/DESIGN.md). */
-export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views, onViews, shown, total, hidden, estimate, arrange, searchRef }: Props) {
+export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views, onViews, shown, total, hidden, estimate, arrange, searchRef, help }: Props) {
   const [naming, setNaming] = useState<string | null>(null);
   const items = activeItems(query);
   const active = isActive(query);
@@ -115,6 +117,7 @@ export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views,
           {estimate && <span className="est-total">{estimate} · </span>}
           {shown === total ? `${total} tasks` : `${shown} of ${total} tasks`}
         </span>
+        {help}
       </div>
       <div className="filters groups">
         {GROUPS.map((g) => {

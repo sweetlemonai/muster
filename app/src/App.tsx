@@ -22,6 +22,8 @@ import { focusSearchBox, searchView, windowKey } from "./keys";
 import HumanBoard from "./HumanBoard";
 import { byWho, FOR_FILTERS, FOR_KEY, type ForFilter, humanBoard, humanColumn, isHuman, needsYouCount, parseForFilter, waitsOnYou } from "./human";
 import YouRibbon from "./YouRibbon";
+import { HelpButton, OpenHelp } from "./HelpButton";
+import { HELP_TOPICS, type HelpTopic, type ManualAt } from "./helpTopics";
 import logo from "./logo.png";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
@@ -165,6 +167,16 @@ export default function App() {
   const [width, setWidth] = usePaneWidth();
   const [groupBy, setGroupBy] = useGroupBy();
   const [who, setWho] = useForFilter();
+  // Where the manual is open in the Help tab; a "?" opens it at its topic, and the pane stays.
+  const [helpAt, setHelpAt] = useState<ManualAt>({ file: "01-start-here.md", slug: "", n: 0 });
+  const helpGo = useCallback((file: string, slug: string) => setHelpAt((a) => ({ file, slug, n: a.n + 1 })), []);
+  const openHelp = useCallback(
+    (topic: HelpTopic) => {
+      setView("help");
+      helpGo(HELP_TOPICS[topic].file, HELP_TOPICS[topic].slug);
+    },
+    [helpGo],
+  );
 
   useEffect(() => {
     if (queue !== "all" && state && !state.queues.some((q) => q.name === queue)) setQueue("all");
@@ -258,6 +270,7 @@ export default function App() {
   }, [focusSearch]);
 
   return (
+    <OpenHelp.Provider value={openHelp}>
     <div className="app shell">
       <aside className="sidebar" aria-label="Projects">
         <div className="brand"><img src={logo} alt="" width={22} height={22} /> Muster</div>
@@ -344,6 +357,7 @@ export default function App() {
                   </>
                 }
                 searchRef={searchRef}
+                help={<HelpButton topic={view} />}
               />
               {indexError && <p className="err small" role="alert">Search can't read the tasks' text: {indexError}</p>}
               {view === "table" && <TableView tasks={viewTasks} now={now} multi={multi} openKey={openKey} onOpen={open} groups={tableGroups} by={groupBy} words={words} />}
@@ -458,7 +472,7 @@ export default function App() {
 
           {view === "help" && (
             <Suspense fallback={<p className="none">Loading…</p>}>
-              <HelpView />
+              <HelpView at={helpAt} onGo={helpGo} />
             </Suspense>
           )}
 
@@ -496,6 +510,7 @@ export default function App() {
       </div>
       </div>
     </div>
+    </OpenHelp.Provider>
   );
 }
 

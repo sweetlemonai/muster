@@ -1,0 +1,205 @@
+# Concepts
+
+Each idea in Muster, in the order you meet it. Every section says what the idea is, why it's there, where you see it in the app, the command for it, and where the decision behind it is written down. Ideas that aren't built yet are marked **coming**, with the task that builds them.
+
+## Projects and queues
+
+A **queue** is the folder that holds one project's tasks: one Markdown file per task. Today it sits beside the project's code, at `<project>/tasks` (for example `~/playground/myapp/tasks`, next to the repo at `~/playground/myapp/main`), and has its own git history. A **project** is the name the app shows for a queue, taken from the folder it's in.
+
+Why a folder of files: you, every agent and every tool can read a task with nothing but a text editor, and git keeps its history. The queue stays outside the code repo so a code commit can't sweep it up.
+
+In the app, the projects are listed down the left side, with **All** at the top. The app finds every `~/playground/*/tasks` folder on its own; add a queue kept anywhere else under **Projects**. Inside a queue, the folders `inbox/`, `todo/`, `doing/`, `blocked/` and `done/` mirror each task's stage for older tools. Don't move files between them yourself.
+
+Commands: `muster projects` lists the queues, and `muster init <project-folder>` starts one. Every command takes `--queue <name>`; without it, `muster` uses the queue of the folder you're in. See [Projects and the queue](05-commands.md#projects-and-the-queue).
+
+**Coming (task 0005):** the queue moves into the repo as `.muster/`, and task files stop moving between folders. Decisions: [0001](../decisions/0001-app-on-drovers-stack.md) for how the app finds queues, [0003](../decisions/0003-muster-in-the-repo-backlog-and-stages.md) for `.muster/`.
+
+## A task and its file
+
+A **task** is one piece of work small enough for one agent to build. Its file is named by its id and title, like `0012-board-flickers-when-the-pane-opens.md`. The id is four digits, given out in order by `muster`, so two tasks never share one.
+
+The file has four parts:
+
+- The **front matter**, between two `---` lines at the top: the task's fields, such as `type: bug`, `priority: high`, `stage: building` and `claimed-by: wt-a`.
+- The **write-up**: the title, what you asked for, the details, and the **acceptance criteria**, a checklist that says when it's done.
+- **Questions** and **Comments**, when there are any.
+- The **Log**: one line per thing that happened, each stamped with the time and who did it.
+
+A task has a **type** (code, bug, chore, tech-debt, spike, design, docs or research), a **priority** (high, normal or low), and may have tags, estimates, links and attached files.
+
+Only `muster` writes the stage, the claim and the times. That's the rule that keeps the board true: an agent that edited `stage:` by hand could say a task was tested when it wasn't. You and agents may edit the write-up, with `muster edit` or **Edit** in the task pane.
+
+In the app, click a card to open the task in the pane beside the board. Commands: `muster new`, `muster show`, `muster set`, `muster edit`. See [Tasks](05-commands.md#tasks) and the file format in [PROTOCOL.md](../PROTOCOL.md#task-file).
+
+## Stages and roles
+
+A **stage** is the step a task has reached, and each stage has a **role**: the kind of worker whose job it is.
+
+| Stage | Role | To move on |
+| --- | --- | --- |
+| Backlog | anyone | Shaping starts it. |
+| Shaping | product, tech and UI agents | It needs acceptance criteria, and no open [vision conflict](#the-vision-check). |
+| Ready | none: it waits to be claimed | Passing it claims it for whoever passes it. |
+| Building | a coding agent | It needs the gate's result line: the summary the project's checks print. |
+| Testing | a testing (QA) agent | Every criterion is ticked with its proof, except yours. |
+| Your check | you | You tick your criteria, then Accept. |
+| Done | none | It can still be sent back. |
+
+**Passing** moves a task to the next stage: `muster pass <id> --from <stage>`. The `--from` says which stage you saw it in, so a pass made twice, or after someone else moved it, is refused instead of skipping a stage. **Sending back** moves it to an earlier stage with a reason: `muster return <id> "<why>"`. You can also put a task in any stage at all: that's your **override**, `muster stage <id> <stage>`, or a click on the stage track in the task pane, and it's logged like everything else.
+
+Why stages: each kind of work gets its own worker and its own check, and you only see a task when it's your turn. See [Stages](05-commands.md#stages), [the spine in VISION.md](../VISION.md#the-spine-one-task-start-to-finish) and decision [0003](../decisions/0003-muster-in-the-repo-backlog-and-stages.md).
+
+## Blocked, and why
+
+**Blocked** means a task is waiting for something. It isn't a stage: a blocked task stays in its stage, keeps whoever holds it, and can't be passed on until it's unblocked.
+
+You block a task by saying what it waits on. The reason starts with a task id, `owner` (you) or `capture` (the session that writes tasks up for you), then a few words:
+
+```
+muster block 0012 --on "owner: which colour for the button?"
+```
+
+The card shows a red "blocked: owner: which colour for the button?" badge, and a task blocked on `owner` also counts as waiting for you. `muster unblock 0012` lets it go on. In the task pane, use **Block** and **Unblock**.
+
+**Coming (task 0024):** blocked says why in kinds (by other tasks, by you, by a permission, by a question, by something outside), and a task blocked by the tasks it depends on is worked out from them, never typed twice.
+
+## Goals, features and tasks
+
+Tasks can be grouped in two **levels** above them:
+
+- A **goal** is an outcome you want, such as "Ship 1.0". It may have a due date.
+- A **feature** groups the tasks that build one thing, such as "Stage track". Its parent is a goal.
+- A **task** sits under a feature or a goal, or under nothing.
+
+Agents build only tasks. A goal or feature never goes into Building; its stage comes from its tasks. It's Done when every task under it is Done, and in progress once any of them is past Ready.
+
+In the app, **Group by Feature** or **Goal**, above the board and the table, gives each feature or goal a band of its own with its progress ("3 of 5 done") and the estimate left. Each card names its parent.
+
+```
+muster new "Ship 1.0" --level goal --due 2026-12-01
+muster new "Stage track" --level feature --parent 0030
+muster new "Pass button" --parent 0031 --time 2h
+```
+
+See [Levels](05-commands.md#levels) and decision [0003](../decisions/0003-muster-in-the-repo-backlog-and-stages.md) (task 0016).
+
+## Depends and the graph
+
+A task can **depend on** other tasks in the same queue: it shouldn't start until they're done. You set it with `muster set 0018 depends 0014,0016` (an empty value clears it). `muster claim` and `muster next` won't take a task while anything it depends on isn't Done.
+
+The **Graph** tab draws it: an arrow points from a task to each task that waits on it. Click a task and what it waits on, and what waits on it, light up. A task with nothing left to wait on is marked "ready to start". See [The graph](04-in-the-app.md#the-graph) (task 0019).
+
+## The backlog and shaping
+
+The **backlog** is where an idea goes before it's a task. A **backlog note** is a one-line Markdown file, with no id. Anyone can add one: you from the app or the command line, an agent that found something while working, or a file dropped into the backlog folder by hand.
+
+**Shaping** turns a note into a task. A shaping session reads the note and the project, then writes what done looks like (the acceptance criteria), the type and an estimate. Notes exist so that capturing an idea costs one line, and only shaped work reaches an agent.
+
+In the app, notes sit at the top of the Backlog column under the **Add to the backlog…** field. Open one to **File as task**, **Drop** it with a reason, or **Copy shaping brief** for a session.
+
+```
+muster add "Board flickers when the pane opens"
+muster shape 2026-10-13-0105-board-flickers-when-the-pane-opens.md
+muster file 2026-10-13-0105-board-flickers-when-the-pane-opens.md "Board flickers when the pane opens" --type bug --body -
+muster drop 2026-10-13-0105-board-flickers-when-the-pane-opens.md "a duplicate of 0012"
+```
+
+`muster file` makes the task in Shaping and keeps the note in the task's files. Before it goes on to Ready, it's checked against the project's picture ([The vision check](#the-vision-check)). See [Backlog](05-commands.md#backlog), the tutorial [Add a one-liner and shape it](03-tutorials.md#add-a-one-liner-and-shape-it), and decision [0003](../decisions/0003-muster-in-the-repo-backlog-and-stages.md) (task 0015).
+
+## Claims, leases and check-ins
+
+A **claim** says who is building a task. A coding session takes a Ready task with `muster next` (the top one it may take) or `muster claim <id>`, and the task moves to Building, held by that session. Each session holds one task at a time: it passes, sends back or blocks the first before it claims another. Two sessions claiming at once can't both win.
+
+Who is acting is the `--as` name, usually the session's branch or worktree. Inside a Claude Code session, `muster` adds the session itself (its short id, its folder and its account), so you see `wt-0030 (main-29 · session 7b5e8856 · cc-hg)` without anyone typing it.
+
+A claim has a **lease** of 12 hours. Everything the holder does through `muster` (a note, a question, a pass, a check-in or `muster heartbeat`) renews it. A claim nobody has heard from for longer can be released: `muster reclaim` puts every such task back in Ready, and the task pane shows **Release** on one. That way a session that crashed never holds a task forever.
+
+A **check-in** is the holder saying how far it got: `muster checkin 0012 "gate green, writing tests" --pct 60`. The card shows it ("60% · gate green, writing tests · 12 min ago"). Sessions check in at each milestone and at least every 30 minutes, and a card quiet for longer says "no check-in for 45 min". The percentage is the session's own guess.
+
+The **holder** is who the task is with now: the claim in Ready and Building, and `held-by:` in Testing (who passed it there) and Your check (you). The card and the pane's status line show it. The status line adds **LIVE** when the task's file changed in the last 5 minutes, and "quiet" with how long when it didn't.
+
+See [Claims](05-commands.md#claims) and decision [0001](../decisions/0001-app-on-drovers-stack.md) (how a quiet claim is told apart; tasks 0002 and 0030).
+
+## Your criteria and Your check
+
+An acceptance criterion ends with how it's verified. `— verify: command (pnpm test)` means a command proves it; an agent ticks it with the proof. `— verify: owner (open a task and watch the board)` means only you can judge it: it's **your criterion**.
+
+Testing passes a task to Your check without your criteria ticked: they're yours to tick. In **Your check** the task pane shows **Your checklist**. Try each thing, click it to tick it, then click **Accept**, and the task is Done. Accept stays off until all of yours are ticked. A criterion verified by "command (test) and owner" isn't yours alone: the agent ticks it with the command's proof.
+
+```
+muster tick 0012 AC2
+muster pass 0012 --from your-check --commit 3f2a9c1
+```
+
+See the tutorial [Do your check and accept](03-tutorials.md#do-your-check-and-accept), and [the task file format](../PROTOCOL.md#task-file) (task 0028).
+
+## Questions and answers
+
+An agent that needs an answer asks in the task and keeps working on what the question doesn't block:
+
+```
+muster ask 0012 "Flicker on resize too, or only on open?" --as wt-a
+```
+
+The question is numbered (Q1, Q2…) and written under `## Questions`, and `muster` records which session asked. The **capture** session, the one that writes tasks up for you, answers what it can and **escalates** the rest to you. An escalated question shows in **Waiting for you** and in the task pane, with a box to answer it (⌘↩ sends).
+
+Your answer is written into the task and handed to the session that asked. Where the **answer hook** is installed (a Claude Code hook that ships with Muster), the answer appears in that session after its next step, without it looking. Without the hook, the session runs `muster inbox`. Why: an agent never stops to wait, and every answer ends up in the file, where the next session finds it.
+
+See [Questions](05-commands.md#questions), the tutorial [Answer an agent's question](03-tutorials.md#answer-an-agents-question), and [PROTOCOL.md](../PROTOCOL.md#questions-and-answers).
+
+## Comments, notes and the log
+
+Three places hold words about a task besides its write-up:
+
+- **Comments** are a conversation: anyone can add one at any stage with `muster comment <id> "<text>"` or the comment box in the pane, even while someone else holds the task.
+- A **note** is one line in the log: `muster note <id> "<text>"`, or the note bar at the bottom of the pane.
+- The **log** is the task's history. `muster` adds a stamped line for every change, and the stage lines (`owner: stage testing → your-check`) are what the pane's History and the Timeline read.
+
+## Estimates, sessions and cost
+
+A task can carry three **estimates**, set while shaping: agent time (`--time 2h`), test time for the testing agent plus your check (`--test-time 30m`), and tokens (`--tokens 400k`). Cards show them, the filter bar adds up what's left ("≈ 2 d · 3.2M tokens left"), and the pane's **Work so far** shows the time a task has spent in Building and Testing next to its estimate. An agent day counts 8 hours.
+
+What a task actually cost comes from the Claude Code sessions that worked on it. `muster` stamps the session's id on the claim, on who holds the task, and on every log line it writes, so Muster knows which sessions to look at. It reads their transcripts on this Mac, where Claude Code keeps them, and sends nothing anywhere.
+
+The task pane's **Work** section shows what it found:
+
+- one row per session: who it was, the stage it worked in, when it started and ended (or **live** while it's still going), its time and its tokens;
+- the totals against the estimates, such as "Tokens 70k of 100k (70%)", and the tokens by kind;
+- a guess at how far along the task is, from its ticked criteria and its stage, labelled as a guess;
+- **View** on a row, which opens that session's transcript below the rows: one line per prompt, reply and tool call.
+
+A card shows a small dot beside its id while one of its sessions is working, meaning its transcript changed in the last 5 minutes. A session that ran on another Mac shows as "not on this Mac". A session that also worked on other tasks is counted in full on each, and the section says so, so the task's own cost is lower than shown.
+
+See [The task pane](04-in-the-app.md#the-task-pane) (task 0025).
+
+## The vision check
+
+`docs/VISION.md` is the project's one picture: what it is, how a task moves, and which task builds what. Together with `docs/decisions/` and `docs/DESIGN.md`, it's what every task has to fit.
+
+Before a shaped task goes to Ready, a session checks it against that picture and against the open tasks it touches. Muster doesn't run an agent for this. `muster vision <id>` prints a brief for a session: the task, the picture's files, the tasks it touches (by shared title words, by id in its text, its parent, and what it depends on), and what to look for, which is conflicts, overlaps, gaps and the cost of changing course. The session hands its findings back with `muster vision <id> --record -`, and Muster writes them into the task.
+
+The result is the task's **Vision** section, under its write-up. Each conflict is numbered (V1, V2…) with both sides quoted. While a conflict is open, the card shows "⚠ 2 vision", and the task can't pass from Shaping to Ready: `muster` says "0024 has 2 open vision conflicts (V1, V2): resolve them or record a new check". Overlaps and gaps are listed but never hold a task back. Nor does a missing check: **Problems** and `muster check` list the Shaping tasks that haven't been checked yet.
+
+Sometimes fixing a conflict would change the project's direction, because it goes against a decision, the spine, a design rule or an answer you gave earlier. Then the check adds the **cost of pivoting**: the tasks to rewrite, the built work that would change or be thrown away, what's been spent, what redoing it would take, what waiting costs and what keeping course costs, with the session's recommendation. That reaches you as one question in **Waiting for you**.
+
+To settle a conflict, click **Resolve V2** in the task pane's Vision section and say how in one line, or use `muster vision <id> --resolve V2 "<how>"`. **Copy vision brief** puts the brief on the clipboard for a session. Don't edit the Vision section by hand: Edit leaves it out, and `muster check` reports one whose count doesn't match.
+
+```
+muster vision 0031
+pbpaste | muster vision 0031 --record - --as wt-shape
+muster vision 0031 --resolve V2 "0019 keeps depends:; 0024 derives blocked by tasks from it"
+```
+
+See [muster vision](05-commands.md#muster-vision) (task 0029).
+
+## What needs you
+
+One list, everywhere, of what's waiting on you:
+
+- tasks in **Your check**,
+- questions **escalated** to you,
+- tasks **blocked on `owner`**.
+
+They're counted on the **Waiting for you** tab and beside each project on the left, in orange, and marked "needs you" on their cards, which sort to the top of their columns. **Coming (task 0022):** tasks only you can do, on a board of your own beside the agents'.
+
+Why: you shouldn't have to look for what needs you. See [DESIGN.md](../DESIGN.md#everything-visible).

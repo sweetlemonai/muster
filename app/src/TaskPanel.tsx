@@ -17,6 +17,7 @@ import { withoutVision } from "./Vision";
 import VisionPanel from "./VisionPanel";
 import { anyDirty, withPart } from "./writeUp";
 import Work from "./Work";
+import { pressed } from "./shortcuts";
 
 /** The task pane (0021, the owner's design D2): title and status first, the stage track, then
  *  two columns (what this stage needs; the next step and the task's settings), the stage forms
@@ -253,7 +254,7 @@ function AnswerBox({ task, q, onChanged }: { task: Task; q: Question; onChanged:
         rows={3}
         maxLength={4000}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void send();
+          if (pressed(e, "send")) void send();
         }}
       />
       <div className="answer-bar">

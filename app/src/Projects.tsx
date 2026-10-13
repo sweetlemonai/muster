@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { queueTotal } from "./lib";
+import { HelpButton } from "./HelpButton";
 import type { Project, QueueInfo } from "./types";
 
 export default function Projects({ queues, onChanged }: { queues: QueueInfo[]; onChanged: () => void }) {
@@ -41,6 +42,7 @@ export default function Projects({ queues, onChanged }: { queues: QueueInfo[]; o
         <button onClick={() => void act(api.createProject, "Queue created and added.")}>New queue…</button>
         <button onClick={() => void act(api.addProject, "Queue added.")}>Add existing queue…</button>
         {msg && <span className={msg.ok ? "ok" : "err"}>{msg.text}</span>}
+        <HelpButton topic="projects" />
       </div>
       <p className="meta">
         Muster finds every <code>~/playground/*/tasks</code> queue on its own. Add queues kept anywhere else, or start one for a

@@ -1,4 +1,5 @@
 import { Fragment, useState } from "react";
+import { HelpButton } from "./HelpButton";
 import { ago, holderOf, isStage, splitHolder, stageHolders, stageLabel, stageOf, STAGES, startedAgo } from "./lib";
 import { isLive, waitingOnYou } from "./paneData";
 import { isWork, levelLabel, shownStageClass, shownStageLabel } from "./levels";
@@ -23,7 +24,8 @@ export default function PaneHeader({ task, now, onClose, onRename }: { task: Tas
       {title === null ? (
         <h1 className="pane-title" data-part="title">
           <span className="tid">{task.id}</span>{" "}
-          <button type="button" className="title-btn" title="Click to rename" onClick={() => setTitle(task.title)}>{task.title}</button>
+          <button type="button" className="title-btn" title="Click to rename" onClick={() => setTitle(task.title)}>{task.title}</button>{" "}
+          <HelpButton topic="task-pane" />
         </h1>
       ) : (
         <TitleEdit

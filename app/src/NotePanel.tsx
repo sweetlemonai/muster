@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { fileDraft, noteTitle } from "./Backlog";
 import { ago, oneAtATime, stamp } from "./lib";
+import { HelpButton } from "./HelpButton";
 import Markdown from "./Markdown";
 import type { Note } from "./types";
 
@@ -93,7 +94,10 @@ export default function NotePanel({ note, now, onClose, onChanged, onFiled }: {
           <div className="meta">
             {note.queue} · backlog note · added {ago(now, note.added)} ago
           </div>
-          <h1>{noteTitle(note)}</h1>
+          <div className="title-row">
+            <h1>{noteTitle(note)}</h1>
+            <HelpButton topic="note-pane" />
+          </div>
           <div className="meta">
             <span title={note.file}>{note.file}</span>
           </div>
