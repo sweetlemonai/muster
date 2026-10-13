@@ -10,7 +10,7 @@ ones already on), and the box disables at the core's 8-tag cap. `app/src/Tags.ts
 **Verified:** `pnpm check` green: vitest 108 passed (7 new), cargo test 68 + 3 passed, clippy and
 build clean.
 
-## 2026-10-12 — Design rules for the whole app; tasks 0019–0024 and 0026 filed
+## 2026-10-12 — Design rules for the whole app; tasks 0019–0024, 0026 and 0027 filed
 **Decided:** the owner has ADHD, and out of sight is out of mind. Every screen shows its options
 (no menus, popovers, short-choice dropdowns, or tabs for things used together), but keeps them out
 of the way through weight, size and fixed placement, not by hiding them. Written as
@@ -19,7 +19,8 @@ of the way through weight, size and fixed placement, not by hiding them. Written
 comments in the panel), 0021 (task panel header redesign) and 0022 (Human board and AI board per
 project), and 0023 (parallel sessions: a worktree per task, then merge, clean up, report and
 take the next; split out of 0009), and 0024 (a blocked task says why: by tasks, by you, by a
-permission, by a question, or by something outside), and 0026 (card looks to pick in Appearance). Added the owner's tags note (show only selected tags) and the design rule to 0006.
+permission, by a question, or by something outside), 0026 (card looks to pick in Appearance), and 0027 (agent PRs reviewed by the owner's
+review engine, fixed by the agent, lessons kept for the next agents). Added the owner's tags note (show only selected tags) and the design rule to 0006.
 Brought 0021 and 0022 in line with the rule. Queue commits `eff688b`, `ce98eab`, `4fc7efa`,
 `8d57a2c`, `5e5aebc`, `0774e29`, `7c8191d`, `af57e1c`.
 
