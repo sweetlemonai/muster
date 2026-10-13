@@ -1,0 +1,27 @@
+{
+  "about": "Task keys (task 0033), one set of answers for both: key.rs's tests and taskKey.test.ts read these. `format` is [prefix, id, key]; `parse` is [what's typed, its prefix or null, the id]; `bad` is never a key or an id.",
+  "format": [
+    ["mu", "0012", "mu-12"],
+    ["mu", "0001", "mu-1"],
+    ["br", "0100", "br-100"],
+    ["dr", "1000", "dr-1000"],
+    ["abcd", "9999", "abcd-9999"],
+    ["mu", "0000", "mu-0"],
+    ["", "0012", "0012"],
+    ["mu", "", ""],
+    ["mu", "x12", "x12"]
+  ],
+  "parse": [
+    ["mu-12", "mu", "0012"],
+    ["MU-12", "mu", "0012"],
+    ["Mu-0012", "mu", "0012"],
+    [" mu-12 ", "mu", "0012"],
+    ["abcd-9999", "abcd", "9999"],
+    ["br-7", "br", "0007"],
+    ["12", null, "0012"],
+    ["0012", null, "0012"],
+    ["7", null, "0007"],
+    ["9999", null, "9999"]
+  ],
+  "bad": ["", " ", "mu", "mu-", "-12", "m-12", "abcde-12", "mu-12345", "12345", "mu-1a", "mu_12", "mu 12", "mü-12", "mu--12", "mu-+1", "+12", "1-2", "12-mu", "mu-١٢", "１２"]
+}

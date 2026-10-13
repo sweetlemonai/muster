@@ -102,7 +102,7 @@ function Row({ t, now, multi, active, onOpen, words }: { t: Task; now: number; m
   return (
     <tr className={`${active ? "active " : ""}s-${parentLevel ? shownStageClass(t) : stageOf(t)}${parentLevel ? " level-item" : ""}`} onClick={() => onOpen(t)}>
       {multi && <td className="q">{t.queue}</td>}
-      <td className="id"><HlId id={t.id} words={words} /></td>
+      <td className="id"><HlId t={t} words={words} /></td>
       <td className="t-title">
         {isHuman(t) && <YouRibbon />}
         {parentLevel && <span className="badge level">{levelLabel(t.level)}</span>}
@@ -213,7 +213,7 @@ export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen,
           <button key={key(t)} className={openKey === key(t) ? "tl-row active" : "tl-row"} onClick={() => onOpen(t)}>
             <span className="tl-label">
               {isHuman(t) && <YouRibbon />}
-              {multi && <span className="q">{t.queue}</span>} <span className="id"><HlId id={t.id} words={words} /></span> <Hl text={t.title} words={words} />
+              {multi && <span className="q">{t.queue}</span>} <span className="id"><HlId t={t} words={words} /></span> <Hl text={t.title} words={words} />
             </span>
             <span className="tl-track">
               <span

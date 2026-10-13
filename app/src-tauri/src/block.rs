@@ -204,12 +204,21 @@ pub fn sentence(kind: &str, detail: &str, by: &[BlockedBy], short: bool) -> Stri
     }
 }
 
-/// `sentence` for a task: "" when nothing blocks it.
+/// `sentence` for a task: "" when nothing blocks it. The tasks it's blocked by are named by their
+/// keys (0033) when it has its project's prefix.
 pub fn sentence_of(t: &Task, short: bool) -> String {
     if t.blocked_kind.is_empty() {
         return String::new();
     }
-    sentence(&t.blocked_kind, &t.block_detail, &t.blocked_by, short)
+    let by: Vec<BlockedBy> = t
+        .blocked_by
+        .iter()
+        .map(|b| BlockedBy {
+            id: crate::key::key(&t.prefix, &b.id),
+            ..b.clone()
+        })
+        .collect();
+    sentence(&t.blocked_kind, &t.block_detail, &by, short)
 }
 
 /// Is a task in `stage` met as a dependency (0042)? An agent's task once it's merged: work merges
@@ -532,7 +541,8 @@ mod tests {
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }
-        fs::write(d.path().join("README.md"), "q").unwrap();
+        // Its prefix stored (0033): the log names other tasks by their keys, bk-1.
+        fs::write(d.path().join("README.md"), "---\nprefix: bk\n---\nq").unwrap();
         d
     }
     /// Task `id` in `folder` with these front-matter lines and sections above the Log.
@@ -955,7 +965,7 @@ mod tests {
             t.log_tail
                 .last()
                 .unwrap()
-                .ends_with("owner: unblocked: 0001, 0002 done"),
+                .ends_with("owner: unblocked: bk-1, bk-2 done"),
             "{:?}",
             t.log_tail
         );
@@ -994,13 +1004,13 @@ mod tests {
         );
         let n = t.log_tail.len();
         assert!(
-            t.log_tail[n - 2].ends_with("owner: unblocked: 0003 done"),
+            t.log_tail[n - 2].ends_with("owner: unblocked: bk-3 done"),
             "{:?}",
             t.log_tail
         );
         assert!(
             t.log_tail[n - 1]
-                .ends_with("owner: stage building → ready (released: wt-a already holds 0002)"),
+                .ends_with("owner: stage building → ready (released: wt-a already holds bk-2)"),
             "{:?}",
             t.log_tail
         );
@@ -1243,12 +1253,12 @@ mod tests {
         );
         pass_task(p, "0001", "qa", "2026-10-13 10:00", &PassOpts::default()).unwrap();
         assert!(
-            last_log(p, "0004").ends_with("qa: unblocked: 0001 in Your check"),
+            last_log(p, "0004").ends_with("qa: unblocked: bk-1 in Your check"),
             "{}",
             last_log(p, "0004")
         );
         assert!(
-            last_log(p, "0005").ends_with("qa: unblocked: 0002 done; 0001 in Your check"),
+            last_log(p, "0005").ends_with("qa: unblocked: bk-2 done; bk-1 in Your check"),
             "{}",
             last_log(p, "0005")
         );
@@ -1257,7 +1267,7 @@ mod tests {
         assert_eq!(sentence_of(&t, false), "Blocked by tasks: 0003 (Ready)");
         // Accepted later: it was free already, so Done writes nothing more on it.
         pass_task(p, "0001", "owner", T, &PassOpts::default()).unwrap();
-        assert!(last_log(p, "0004").ends_with("qa: unblocked: 0001 in Your check"));
+        assert!(last_log(p, "0004").ends_with("qa: unblocked: bk-1 in Your check"));
         assert_eq!(task(p, "0004").log_tail.len(), 2);
         assert!(state(p).problems.is_empty(), "{:?}", state(p).problems);
     }
@@ -1323,7 +1333,7 @@ mod tests {
                 t.log_tail
                     .last()
                     .unwrap()
-                    .ends_with("owner: 0001 went back to Building: the colours are off"),
+                    .ends_with("owner: bk-1 went back to Building: the colours are off"),
                 "{id}: {:?}",
                 t.log_tail
             );
@@ -1350,11 +1360,11 @@ mod tests {
         )
         .unwrap();
         pass_task(p, "0001", "qa", "2026-10-13 12:00", &PassOpts::default()).unwrap();
-        assert!(last_log(p, "0002").ends_with("qa: unblocked: 0001 in Your check"));
+        assert!(last_log(p, "0002").ends_with("qa: unblocked: bk-1 in Your check"));
         assert_eq!(task(p, "0003").log_tail.len(), n3);
         // Sent back by the owner's override, without a reason: the note still says where.
         set_stage(p, "0001", "testing", None, "owner", T).unwrap();
-        assert!(last_log(p, "0003").ends_with("owner: 0001 went back to Testing"));
+        assert!(last_log(p, "0003").ends_with("owner: bk-1 went back to Testing"));
         assert!(state(p).problems.is_empty(), "{:?}", state(p).problems);
     }
 
@@ -1409,7 +1419,7 @@ mod tests {
         claim_task(p, "0002", "wt-a", T).unwrap();
         set_stage(p, "0001", "building", None, "owner", T).unwrap();
         // Overridden back out of Done: noted on the task under way, which keeps going.
-        assert!(last_log(p, "0002").ends_with("owner: 0001 went back to Building"));
+        assert!(last_log(p, "0002").ends_with("owner: bk-1 went back to Building"));
         assert_eq!(
             block_task(p, "0002", "0001", "wt-a", T).unwrap_err(),
             "0001 went back after it was done, and 0002 is under way, so it doesn't wait for it again; block on outside or you to wait anyway"

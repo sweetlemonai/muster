@@ -34,7 +34,7 @@ The **Backlog** column starts with the **Add to the backlog…** field: type a l
 
 Above the board, the filter bar is shared by all four views (Board, Table, Timeline and Graph). Nothing in it folds away:
 
-- **The search box** (⌘F from anywhere): words in any order, each found in a task's title, tags, text or holder, and a number finds that id (`19` finds 0019). Matches are marked on cards and rows. Esc clears it, and Esc again leaves the box.
+- **The search box** (⌘F from anywhere): words in any order, each found in a task's title, tags, text or holder, and a number or a key finds that task (`19` or `mu-19` finds mu-19). Matches are marked on cards and rows. Esc clears it, and Esc again leaves the box.
 - **Views:** your saved views as chips; click one to bring back its search, filters and sort, ✕ to delete it. **+ Save view** names the current ones (↩ saves, Esc cancels).
 - **Who** All · You · Agents (board, table and timeline): **You** shows only your own tasks, **Agents** only the agents', **All** both. The backlog's notes show under every choice: they're nobody's yet. The choice is remembered.
 - **Group by** None · Feature · Goal (board, table and graph): one band per feature or goal, with its stage, its progress ("3 of 5 done"), the estimate left and a goal's due date, and the stage columns inside. Tasks under none come last. Click a band's title to open the feature or goal.
@@ -124,11 +124,12 @@ The first time, pick which Claude account it uses. It runs your own Claude Code 
 
 ## Projects
 
-Every project Muster shows, with its folder and task count:
+Every project Muster shows, with its prefix (what its tasks' keys start with, `mu` in `mu-12`), folder and task count:
 
 - **New queue…** picks a project's folder and makes its queue there, like `muster init`.
 - **Add existing queue…** picks a queue kept outside `~/playground`.
 - **Rename** a project, **Hide** or **Show** it, and **Remove** one you added.
+- **Prefix** sets what its tasks' keys start with: 2 to 4 lowercase letters that no other project has. The files keep their ids, so nothing moves, but the old keys stop finding its tasks.
 
 None of them deletes files. A project marked "not a queue any more" points at a folder that no longer has a queue's `README.md` and `todo/` folder.
 

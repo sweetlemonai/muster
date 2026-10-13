@@ -1,5 +1,6 @@
 {
-  "about": "Search, filters and sort, one set of answers for both: tests/search_cases.rs writes these tasks as files and runs `muster list` on each case; search-cases.test.ts runs the app's filter on the same tasks. `parsed` is what the core reads from each file, which the app gets with the task.",
+  "about": "Search, filters and sort, one set of answers for both: tests/search_cases.rs writes these tasks as files and runs `muster list` on each case; search-cases.test.ts runs the app's filter on the same tasks. `parsed` is what the core reads from each file, which the app gets with the task. `prefix` is the queue's (0033), for keys.",
+  "prefix": "sq",
   "fold": [
     ["Café RÉSUMÉ", "cafe resume"],
     ["Café", "cafe"],
@@ -77,6 +78,13 @@
     { "query": { "search": "19" }, "ids": ["0019"] },
     { "query": { "search": "0119" }, "ids": ["0119"] },
     { "query": { "search": "19 guide" }, "ids": ["0019"] },
+    { "query": { "search": "sq-19" }, "ids": ["0019"] },
+    { "query": { "search": "SQ-0019 guide" }, "ids": ["0019"] },
+    { "query": { "search": "sq-119" }, "ids": ["0119"] },
+    { "query": { "search": "sq-7 board" }, "ids": ["0007"] },
+    { "query": { "search": "sq-19 board" }, "ids": [] },
+    { "query": { "search": "xy-19" }, "ids": [] },
+    { "query": { "search": "sq-19,20" }, "ids": [] },
     { "query": { "search": "١٩" }, "ids": ["0020"] },
     { "query": { "search": "shrinks flick" }, "ids": ["0007"] },
     { "query": { "search": "drover" }, "ids": ["0007"] },

@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { api } from "./api";
 import { mayLeave } from "./writeUp";
 import { ago, columns, estimateTotal, feed, key, STAGES } from "./lib";
+import { keyIndex, taskKey } from "./taskKey";
 import type { State, Task } from "./types";
 import { backlogColumn, backlogNotes, NoteCard, noteKey, QuickAdd } from "./Backlog";
 import Projects from "./Projects";
@@ -214,6 +215,10 @@ export default function App() {
   const shownCount = whoFilters ? viewTasks.length : tasks.length;
   const openKey = pane?.kind === "task" ? pane.key : null;
   const openTask = openKey ? (state?.tasks ?? []).find((t) => key(t) === openKey) ?? null : null;
+  // Each project's prefix to its queue (0033), for keys in task text: a new map only when a prefix
+  // or a name changes (what `prefixes` sums up), so the 2 s poll doesn't render the text again.
+  const prefixes = (state?.queues ?? []).map((q) => `${q.prefix ?? ""} ${q.name}`).join("\n");
+  const keys = useMemo(() => keyIndex(state?.queues ?? []), [prefixes]);
   const allNotes = state?.backlog ?? [];
   // Notes show on the ungrouped board only (Group by bands hold tasks), so only it counts them
   // as hidden. The Board, Table and Timeline also count the tasks their Who chips hide.
@@ -406,7 +411,7 @@ export default function App() {
                 <article key={key(t)} className={openKey === key(t) ? "waiting active" : "waiting"}>
                   <header>
                     <button className="link" onClick={() => open(t)}>
-                      {isHuman(t) && <YouRibbon />} {multi && <span className="q">{t.queue}</span>} {t.id} · {t.title}
+                      {isHuman(t) && <YouRibbon />} {multi && <span className="q">{t.queue}</span>} {taskKey(t)} · {t.title}
                     </button>
                   </header>
                   {isHuman(t) && <p>Yours to do: {humanColumn(t.stage) === "doing" ? "in Doing. Mark it Done when it is." : "in To do. Start it when you do."}</p>}
@@ -464,7 +469,7 @@ export default function App() {
             <aside className="pane" style={{ width }} aria-label="Details">
               {pane.kind === "task" && openTask && (
                 <Suspense fallback={<p className="none">Loading…</p>}>
-                  <TaskPanel key={openKey} task={openTask} now={now} onClose={() => go(null)} onChanged={refresh} onDirty={onDirty} nudge={nudge} childTasks={childrenOf(openTask, index)} onOpenTask={(id) => go({ kind: "task", key: key({ queue: openTask.queue, id }) })} />
+                  <TaskPanel key={openKey} task={openTask} now={now} onClose={() => go(null)} onChanged={refresh} onDirty={onDirty} nudge={nudge} childTasks={childrenOf(openTask, index)} onOpenTask={(id) => go({ kind: "task", key: key({ queue: openTask.queue, id }) })} keys={keys} onOpenAt={(queue, id) => go({ kind: "task", key: key({ queue, id }) })} />
                 </Suspense>
               )}
               {pane.kind === "task" && !openTask && <p className="none">That task is gone.</p>}

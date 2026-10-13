@@ -31,9 +31,9 @@
 >    entries overlap when the part of one before its first wildcard starts the other's, and **a
 >    task without `touches:` never pairs**. Take one no other session is on.
 > 2. **Start.** From the project's repo: `muster start <id> --as <you>`. It claims the task by
->    `claim`'s rules, makes a branch `task/<id>-<slug>` from the local main's commit (the main
->    checkout may be dirty: only its commit is used) and a worktree for it at
->    `<project>/worktrees/<repo>/<id>-<slug>` (`--at <path>` for another place, `--here` when a
+>    `claim`'s rules, makes a branch `task/<key>-<slug>` (`task/mu-12-board-flickers`, 0033) from
+>    the local main's commit (the main checkout may be dirty: only its commit is used) and a
+>    worktree for it at `<project>/worktrees/<repo>/<key>-<slug>` (`--at <path>` for another place, `--here` when a
 >    runner already put you in a worktree of your own: it's switched to the task's branch), records
 >    both as `worktree:` and `branch:` in the task, and prints them with the brief: the task file,
 >    what it touches, its criteria. Work in that worktree only.
@@ -75,7 +75,8 @@
 > on no other branch refuse it without `--force`. A runner's worktree (`--here`) is never
 > removed: it's left detached, its files as they are, and only the branch goes. **Left behind:** `muster check` lists a started
 > task whose worktree is gone, a worktree of a task sent back to Ready, and a worktree on a
-> `task/<id>-…` branch whose task is past Testing, each with the command that cleans it. Never
+> `task/<key>-…` branch (or a `task/<id>-…` one from before keys) whose task is past Testing,
+> each with the command that cleans it. Never
 > delete a worktree or a branch by hand while its task is in Building or Testing.
 
 > **Human tasks (Muster 0022, 2026-10-13).** `for: human` in the front matter makes a task the
@@ -94,7 +95,7 @@
 >
 > **Blocked says why (Muster 0024, 2026-10-13).** A block has a kind: **tasks**, **you**,
 > **permission**, **question** or **outside**. Block with `muster block <id> --on <kind> "<what>"`:
-> `--on 0014,0016` (task ids), `--on you "set the API key in the Keychain"`, `--on permission "write
+> `--on 0014,0016` or `--on mu-14,mu-16` (tasks of the same project), `--on you "set the API key in the Keychain"`, `--on permission "write
 > to ~/x/tasks (sandbox): grant in the layer's write list"`, `--on question Q2` (an open question in
 > that task), `--on outside "Apple review"`. `--on owner …` and `--on capture …` still work, as you
 > and question. Refused: an unknown kind, no detail, a question that isn't open. The kind is
@@ -355,6 +356,23 @@ right away, because chat paste files are temporary.
 Ids: only the tool numbers tasks. Coders who find something new run `muster add "<one line>"`,
 which drops a note in `inbox/` named `<date-time>-<short-slug>.md` (no number), and a shaping
 session files it with `muster file` (see the note at the top).
+
+**Keys (Muster 0033).** A task is shown and typed as its key: its project's prefix and its number,
+`mu-12` for Muster's `0012`. The file name, `depends:`, `parent:`, `attachments/<id>/` and the ids
+in `--json` keep the four digits (`--json` adds `key` beside `id`), so nothing is migrated. Every
+command takes `mu-12`, `MU-12`, `12` or `0012`, in `--parent`, `set <id> depends` and `block --on`
+too (tasks of the same project there). A key with another project's prefix runs in that project's
+queue wherever you are (`muster show br-7` from Muster's folder finds Braindump's), even where
+`$MUSTER_ROOT` points elsewhere; with a `--queue` that names another project it's refused. The
+prefix is 2 to 4 lowercase letters, stored in the queue's `README.md` front matter (`prefix: mu`)
+until task 0005 moves it to `.muster/config.toml` (`key.rs` reads it in one place). Without one,
+it's the first 2 letters of the project's name, or 3, then 4, when another project Muster knows
+starts the same (both take more); a stored one is kept. `muster init --prefix <p>`, `muster
+projects set <name> prefix <p>` and the app's Projects tab set it, and refuse one that isn't 2 to
+4 lowercase letters or that another project has; `muster init` and New queue store the default.
+What muster prints names tasks by their keys, and so do the lines it writes to a task's log from
+now on (`unblocked: mu-14 done`, `mu-17 went back to Building`). INDEX.md, `manifest.py` and
+refusals still say ids.
 
 ## Sessions (decision 0004)
 

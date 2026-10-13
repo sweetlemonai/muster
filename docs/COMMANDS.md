@@ -5,8 +5,9 @@ chit (`~/playground/chit`) is the earlier CLI and spec it grows from. A single t
 called a ticket.
 
 **Slash commands:** `/muster`, with `/mu` as the short form. Both are one router, like `/pr` in
-`~/playground/.claude/commands/pr.md`. The first word picks the route, a task id (four digits)
-shows that task, and anything else is captured as a backlog one-liner, never guessed as a command.
+`~/playground/.claude/commands/pr.md`. The first word picks the route, a task (its key, `mu-8`,
+or its number, `8` or `0008`) shows that task, and anything else is captured as a backlog
+one-liner, never guessed as a command.
 A route matches only its shape: `/mu next week we try dark mode` is captured, not a claim. Each
 route runs one `muster` command, which holds the rules.
 
@@ -58,7 +59,7 @@ options pass through.
 | `/mu note <id> <text>` | Add a line to the task's log | `muster note <id> -- '<text>'` |
 | `/mu pass <id> …` | Hand on to the next stage (from, gate line, commit as needed) | `muster pass <id> …` |
 | `/mu return <id> <why>` | Send back a stage, with the reason | `muster return <id> -- '<why>'` |
-| `/mu block <id> <on what>` | Mark it blocked, and why: task ids (0014,0016, added to its depends), you, permission, question Q2 or outside, then what it waits on (owner and capture still work); it keeps its stage | `muster block <id> --on '<on what>'` |
+| `/mu block <id> <on what>` | Mark it blocked, and why: tasks of this project (mu-14,mu-16 or 0014,0016, added to its depends), you, permission, question Q2 or outside, then what it waits on (owner and capture still work); it keeps its stage | `muster block <id> --on '<on what>'` |
 | `/mu unblock <id>` | Clear the blocked flag (a block on tasks clears by itself when they're done) | `muster unblock <id>` |
 
 ## For running the system

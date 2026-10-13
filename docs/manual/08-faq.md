@@ -28,7 +28,7 @@ A card in Building that says **quiet 12 h+** belongs to a session nobody has hea
 
 A search or a filter is probably still on. The line under the filter chips says what's active and how many tasks it hides ("12 hidden by filters"). Click ✕ on one, or **Clear all**. Clicking a saved view turns its search and filters back on, so check that line after you pick one.
 
-To find one task, press ⌘F and type its number: `19` finds 0019. See [Find tasks and keep a view](03-tutorials.md#find-tasks-and-keep-a-view).
+To find one task, press ⌘F and type its key or its number: `mu-19` or `19` finds mu-19. See [Find tasks and keep a view](03-tutorials.md#find-tasks-and-keep-a-view).
 
 ## An agent didn't get my answer
 

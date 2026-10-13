@@ -5,6 +5,7 @@ import {
 import { BOARD_SORTS } from "./lib";
 import { searchBoxKey } from "./keys";
 import { highlights, idHit } from "./search";
+import { taskKey } from "./taskKey";
 import type { Task } from "./types";
 
 /** Text with the search's words marked. */
@@ -22,9 +23,10 @@ export function Hl({ text, words }: { text: string; words: string[] }) {
   return <>{out}</>;
 }
 
-/** A task's id, marked when the search names it ("19" for 0019). */
-export function HlId({ id, words }: { id: string; words: string[] }) {
-  return idHit(id, words) ? <mark>{id}</mark> : <>{id}</>;
+/** A task's key (0033), marked when the search names it ("19" or "mu-19" for mu-19). */
+export function HlId({ t, words }: { t: Pick<Task, "id" | "prefix">; words: string[] }) {
+  const k = taskKey(t);
+  return idHit(t, words) ? <mark>{k}</mark> : <>{k}</>;
 }
 
 type Props = {

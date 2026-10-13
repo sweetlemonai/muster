@@ -170,7 +170,7 @@ pub(crate) fn holds_ready(id: &str, open: usize, ids: &[String]) -> String {
 }
 
 /// Shaping tasks with no vision check yet, as `check` warns about them (not problems: the check
-/// is the shaper's job, and a task never checked isn't held back).
+/// is the shaper's job, and a task never checked isn't held back), by their keys (0033).
 pub fn unchecked(tasks: &[queue::Task]) -> Vec<String> {
     let mut list: Vec<&queue::Task> = tasks
         .iter()
@@ -179,10 +179,8 @@ pub fn unchecked(tasks: &[queue::Task]) -> Vec<String> {
     list.sort_by(|a, b| a.id.cmp(&b.id));
     list.iter()
         .map(|t| {
-            format!(
-                "{}: in Shaping with no vision check yet (muster vision {})",
-                t.id, t.id
-            )
+            let k = crate::key::key(&t.prefix, &t.id);
+            format!("{k}: in Shaping with no vision check yet (muster vision {k})")
         })
         .collect()
 }

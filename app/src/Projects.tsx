@@ -9,6 +9,9 @@ export default function Projects({ queues, onChanged }: { queues: QueueInfo[]; o
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [name, setName] = useState("");
+  // The project whose prefix (0033) is being changed, and what's typed.
+  const [prefixOf, setPrefixOf] = useState<string | null>(null);
+  const [prefix, setPrefix] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -52,7 +55,7 @@ export default function Projects({ queues, onChanged }: { queues: QueueInfo[]; o
       {list === null && <p className="none">Loading…</p>}
       <table className="projects-table">
         <thead>
-          <tr><th>Project</th><th>Folder</th><th>Tasks</th><th></th></tr>
+          <tr><th>Project</th><th title="What its tasks' keys start with: mu-12">Prefix</th><th>Folder</th><th>Tasks</th><th></th></tr>
         </thead>
         <tbody>
           {list?.map((p) => (
@@ -77,10 +80,27 @@ export default function Projects({ queues, onChanged }: { queues: QueueInfo[]; o
                   {!p.ok && <span className="err"> · not a queue any more</span>}
                 </div>
               </td>
+              <td className="prefix">
+                {prefixOf === p.key ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      setPrefixOf(null);
+                      const next = prefix.trim();
+                      void act(() => api.setProjectPrefix(p.key, next), `Prefix set: its tasks are ${next}-1, ${next}-2…`);
+                    }}
+                  >
+                    <input autoFocus value={prefix} onChange={(e) => setPrefix(e.target.value)} maxLength={4} size={5} aria-label={`${p.name}'s prefix`} placeholder="2–4 letters" />
+                  </form>
+                ) : (
+                  <code>{p.prefix}</code>
+                )}
+              </td>
               <td className="path" title={p.path}>{p.path}</td>
               <td>{p.hidden || !p.ok ? "—" : total(p) ?? "…"}</td>
               <td className="actions">
                 <button onClick={() => { setEditing(p.key); setName(p.name); }}>Rename</button>
+                {p.ok && <button onClick={() => { setPrefixOf(p.key); setPrefix(p.prefix); }} title="What its tasks' keys start with (mu-12): 2 to 4 lowercase letters, no other project's">Prefix</button>}
                 <button onClick={() => void act(() => api.hideProject(p.key, !p.hidden))}>{p.hidden ? "Show" : "Hide"}</button>
                 {p.source === "added" && <button onClick={() => void act(() => api.removeProject(p.key))}>Remove</button>}
               </td>

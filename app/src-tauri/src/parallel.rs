@@ -269,10 +269,16 @@ fn branch_exists(repo: &Repo, branch: &str) -> bool {
     .is_ok()
 }
 
-/// A branch muster made for task `id` (`task/<id>-…`), so nothing else is ever deleted by a
-/// hand-edited `branch:`.
-fn task_branch(id: &str, branch: &str) -> Result<(), String> {
-    let ok = branch.starts_with(&format!("task/{id}-"))
+/// Task `id`'s key (0033), as its branch and worktree are named: `mu-12`.
+fn task_key(root: &Path, id: &str) -> String {
+    crate::key::key(&crate::key::prefix_for(root), id)
+}
+
+/// A branch muster made for task `id`: `task/<key>-…` (0033: `task/mu-12-…`), or `task/<id>-…`
+/// from before keys, so nothing else is ever deleted by a hand-edited `branch:`.
+fn task_branch(id: &str, key: &str, branch: &str) -> Result<(), String> {
+    let ok = (branch.starts_with(&format!("task/{key}-"))
+        || branch.starts_with(&format!("task/{id}-")))
         && branch.len() < 200
         && !branch.contains("..")
         && branch
@@ -282,7 +288,7 @@ fn task_branch(id: &str, branch: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!(
-            "{id}'s branch {branch:?} isn't one muster made (task/{id}-…); fix it by hand"
+            "{key}'s branch {branch:?} isn't one muster made (task/{key}-…); fix it by hand"
         ))
     }
 }
@@ -527,7 +533,7 @@ pub fn start(
             &format!("refs/heads/{}", repo.trunk),
         ],
     )?;
-    let name = format!("{id}-{}", ops::slug(&t.title));
+    let name = format!("{}-{}", task_key(root, id), ops::slug(&t.title));
     let branch = format!("task/{name}");
     if branch_exists(&repo, &branch) {
         return Err(format!(
@@ -833,7 +839,7 @@ pub fn merge(
             queue::stage_label(&t.stage)
         ));
     }
-    task_branch(id, &t.branch)?;
+    task_branch(id, &task_key(root, id), &t.branch)?;
     // Refused now if the pass itself would be (criteria not ticked, blocked): never merge first.
     ops::check_merge_pass(root, id, who)?;
     if gate.is_empty() {
@@ -1069,7 +1075,7 @@ pub fn release(
 ) -> Result<Vec<String>, String> {
     ops::check_release(root, id, who)?;
     let t = queue::read_task(root, id)?;
-    task_branch(id, &t.branch)?;
+    task_branch(id, &task_key(root, id), &t.branch)?;
     let wt = PathBuf::from(&t.worktree);
     let present = !t.worktree.is_empty() && wt.is_dir();
     let repo = if present {
@@ -1162,11 +1168,29 @@ fn worktrees(repo: &Repo) -> Vec<(PathBuf, String)> {
     out
 }
 
+/// The task a branch muster made is for: `task/mu-12-…` (0033) as its prefix and id, or
+/// `task/0012-…` from before keys as its id alone.
+fn branch_task(branch: &str) -> Option<(Option<String>, String)> {
+    let rest = branch.strip_prefix("task/")?;
+    if let Some(id) = rest
+        .get(..4)
+        .filter(|i| is_id(i) && rest.get(4..5) == Some("-"))
+    {
+        return Some((None, id.to_string()));
+    }
+    let (prefix, after) = rest.split_once('-')?;
+    let (number, _) = after.split_once('-')?;
+    let t = crate::key::parse(&format!("{prefix}-{number}"))?;
+    Some((t.prefix, t.id))
+}
+
 /// What `muster check` lists for 0023, none of it failing the check: claims whose worktree is gone,
-/// worktrees of tasks released to Ready, and worktrees on a `task/<id>-…` branch whose task is
+/// worktrees of tasks released to Ready, and worktrees on a `task/<key>-…` branch whose task is
 /// past Testing (or no longer names that branch), each with the command that cleans it. The
 /// repos looked in are those of the tasks' worktrees, plus `extra` (the repo `check` runs in).
+/// Tasks are named by their keys when they have their project's prefix.
 pub fn stale(tasks: &[Task], extra: &[PathBuf]) -> Vec<String> {
+    let key = |t: &Task| crate::key::key(&t.prefix, &t.id);
     let mut out = Vec::new();
     let mut repos: Vec<Repo> = Vec::new();
     let mut add = |r: Repo| {
@@ -1180,19 +1204,23 @@ pub fn stale(tasks: &[Task], extra: &[PathBuf]) -> Vec<String> {
         match (t.stage.as_str(), present) {
             ("building" | "testing", false) => out.push(format!(
                 "{}: its worktree {} is gone ({}, branch {}): muster release {} --clean",
-                t.id,
+                key(t),
                 t.worktree,
                 queue::stage_label(&t.stage),
                 t.branch,
-                t.id
+                key(t)
             )),
             ("ready", true) => out.push(format!(
                 "{}: released to Ready but its worktree {} is still there: muster release {} --clean (or muster start {} to pick it up again)",
-                t.id, t.worktree, t.id, t.id
+                key(t),
+                t.worktree,
+                key(t),
+                key(t)
             )),
             ("ready", false) => out.push(format!(
                 "{}: released to Ready with its worktree gone: muster release {} --clean",
-                t.id, t.id
+                key(t),
+                key(t)
             )),
             _ => {}
         }
@@ -1209,14 +1237,14 @@ pub fn stale(tasks: &[Task], extra: &[PathBuf]) -> Vec<String> {
     }
     for repo in &repos {
         for (path, branch) in worktrees(repo) {
-            let Some(id) = branch
-                .strip_prefix("task/")
-                .and_then(|b| b.get(..4))
-                .filter(|i| is_id(i) && branch.get(9..10) == Some("-"))
-            else {
+            let Some((prefix, id)) = branch_task(&branch) else {
                 continue;
             };
-            let Some(t) = tasks.iter().find(|t| t.id == id) else {
+            let ours = |t: &&Task| {
+                t.id == id
+                    && (t.prefix.is_empty() || prefix.as_ref().is_none_or(|p| *p == t.prefix))
+            };
+            let Some(t) = tasks.iter().find(ours) else {
                 continue;
             };
             let current =
@@ -1225,8 +1253,9 @@ pub fn stale(tasks: &[Task], extra: &[PathBuf]) -> Vec<String> {
                 continue;
             }
             out.push(format!(
-                "stale worktree {} (branch {branch}): {id} is {}: git -C {} worktree remove {}, then git -C {} branch -d {branch}",
+                "stale worktree {} (branch {branch}): {} is {}: git -C {} worktree remove {}, then git -C {} branch -d {branch}",
                 path.display(),
+                key(t),
                 queue::stage_label(&t.stage),
                 repo.main.display(),
                 path.display(),
@@ -1292,7 +1321,8 @@ pub(crate) mod tests {
         for f in queue::STATUS_FOLDERS {
             fs::create_dir_all(root.join(f)).unwrap();
         }
-        fs::write(root.join("README.md"), "q").unwrap();
+        // Its prefix stored (0033), so branch names don't hang on the projects this Mac knows.
+        fs::write(root.join("README.md"), "---\nprefix: pj\n---\nq").unwrap();
         let hooks = base.join("no-hooks");
         fs::create_dir(&hooks).unwrap();
         let origin = base.join("origin.git");
@@ -1638,10 +1668,10 @@ pub(crate) mod tests {
         let s = start(&f.root, &id, "wt-a", T0, &f.repo, &Place::Default).unwrap();
         let wt = f
             .base
-            .join("proj/worktrees/main/0001-board-flickers-on-resize");
+            .join("proj/worktrees/main/pj-1-board-flickers-on-resize");
         assert_eq!(
             (s.worktree.clone(), s.branch.as_str(), s.resumed),
-            (wt.clone(), "task/0001-board-flickers-on-resize", false)
+            (wt.clone(), "task/pj-1-board-flickers-on-resize", false)
         );
         assert!(wt.join("README.md").is_file(), "a checkout of main");
         assert_eq!(g(&wt, &["rev-parse", "--abbrev-ref", "HEAD"]), s.branch);
@@ -1690,7 +1720,7 @@ pub(crate) mod tests {
         let e = start(&f.root, &other, "wt-a", T0, &f.repo, &Place::Default).unwrap_err();
         assert!(e.contains("you already hold 0001"), "{e}");
         assert!(!f.base.join("proj/worktrees/main/0002-second").exists());
-        assert!(!has_branch(&f, "task/0002-second"));
+        assert!(!has_branch(&f, "task/pj-2-second"));
         assert_eq!(read(&f.root, &other).stage, "ready");
         // --at, relative to where it runs.
         let s2 = start(
@@ -1711,7 +1741,7 @@ pub(crate) mod tests {
             .unwrap_err()
             .contains("owner's to do"));
         let third = task(&f.root, "Third", "t/");
-        g(&f.repo, &["branch", "task/0004-third"]);
+        g(&f.repo, &["branch", "task/pj-4-third"]);
         let e = start(&f.root, &third, "wt-c", T0, &f.repo, &Place::Default).unwrap_err();
         assert!(e.contains("already exists"), "{e}");
         assert_eq!(read(&f.root, &third).stage, "ready");
@@ -1749,7 +1779,7 @@ pub(crate) mod tests {
         assert_eq!(s.worktree, lane);
         assert_eq!(
             g(&lane, &["rev-parse", "--abbrev-ref", "HEAD"]),
-            "task/0001-lane"
+            "task/pj-1-lane"
         );
         assert_eq!(read(&f.root, &id).worktree, lane.to_str().unwrap());
         // A refused claim switches the lane back.
@@ -1769,7 +1799,7 @@ pub(crate) mod tests {
         let e = start(&f.root, &other, "wt-a", T0, &lane2, &Place::Here).unwrap_err();
         assert!(e.contains("you already hold"), "{e}");
         assert_eq!(g(&lane2, &["rev-parse", "--abbrev-ref", "HEAD"]), "lane-2");
-        assert!(!has_branch(&f, "task/0002-other"));
+        assert!(!has_branch(&f, "task/pj-2-other"));
     }
 
     #[test]
@@ -2148,7 +2178,7 @@ pub(crate) mod tests {
         };
         assert_eq!(notes.len(), 1, "{notes:?}");
         assert!(
-            notes[0].contains("origin's task/0001-pushed-early") && notes[0].contains("kept"),
+            notes[0].contains("origin's task/pj-1-pushed-early") && notes[0].contains("kept"),
             "{notes:?}"
         );
         assert!(git(
@@ -2204,7 +2234,7 @@ pub(crate) mod tests {
         };
         assert!(
             why.starts_with(
-                "rebase on main conflicts in README.md: rebase task/0001-conflict on main"
+                "rebase on main conflicts in README.md: rebase task/pj-1-conflict on main"
             ),
             "{why}"
         );
@@ -2450,7 +2480,7 @@ pub(crate) mod tests {
         assert_eq!(
             lines[0],
             format!(
-                "{gone}: its worktree {} is gone (Building, branch task/0001-gone): muster release {gone} --clean",
+                "{gone}: its worktree {} is gone (Building, branch task/pj-1-gone): muster release {gone} --clean",
                 sg.worktree.display()
             )
         );
@@ -2464,7 +2494,7 @@ pub(crate) mod tests {
         );
         assert!(
             lines[2].starts_with(&format!(
-                "stale worktree {} (branch task/0003-done-by-hand): {done} is Done: git -C {} worktree remove",
+                "stale worktree {} (branch task/pj-3-done-by-hand): {done} is Done: git -C {} worktree remove",
                 sd.worktree.display(),
                 f.repo.display()
             )),
@@ -2478,7 +2508,7 @@ pub(crate) mod tests {
             &f.repo,
             &["worktree", "remove", sd.worktree.to_str().unwrap()],
         );
-        g(&f.repo, &["branch", "-D", "task/0003-done-by-hand"]);
+        g(&f.repo, &["branch", "-D", "task/pj-3-done-by-hand"]);
         assert_eq!(
             stale(&state(&f.root).tasks, std::slice::from_ref(&f.repo)),
             Vec::<String>::new()
@@ -2582,9 +2612,34 @@ pub(crate) mod tests {
             .collect();
         let named = name_files(&many);
         assert!(named.ends_with(" more") && named.len() < 300, "{named}");
-        assert!(task_branch("0001", "task/0001-x").is_ok());
-        for bad in ["main", "task/0002-x", "task/0001-x y", "task/0001-../main"] {
-            assert!(task_branch("0001", bad).is_err(), "{bad}");
+        assert!(task_branch("0001", "mu-1", "task/mu-1-x").is_ok());
+        assert!(
+            task_branch("0001", "mu-1", "task/0001-x").is_ok(),
+            "from before keys"
+        );
+        for bad in [
+            "main",
+            "task/0002-x",
+            "task/mu-2-x",
+            "task/br-1-x",
+            "task/mu-10-x",
+            "task/0001-x y",
+            "task/0001-../main",
+            "task/mu-1-../main",
+        ] {
+            assert!(task_branch("0001", "mu-1", bad).is_err(), "{bad}");
+        }
+        let named = |p: Option<&str>, id: &str| Some((p.map(String::from), id.to_string()));
+        assert_eq!(branch_task("task/mu-12-board"), named(Some("mu"), "0012"));
+        assert_eq!(branch_task("task/0012-board"), named(None, "0012"));
+        for not in [
+            "main",
+            "task/mu-board",
+            "task/mu-12",
+            "task/m-1-x",
+            "feature/mu-1-x",
+        ] {
+            assert_eq!(branch_task(not), None, "{not}");
         }
     }
 }

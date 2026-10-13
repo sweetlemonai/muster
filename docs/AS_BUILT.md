@@ -48,12 +48,13 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   The All row sums projects: "3 working · 1 stalled". Chips above the list order it: **Working**
   (default: working projects first, then by last activity), **A–Z**, **Needs you** (most waiting
   first, then as Working), remembered in `localStorage` (`muster.sidebarOrder`).
-- **Projects** (tab, or **+ Project** next to the project chips): every project with its folder, task count and where it came from (found
+- **Projects** (tab, or **+ Project** next to the project chips): every project with its prefix, folder, task count and where it came from (found
   in `~/playground`, or added). **New queue…** picks a project folder and creates its `tasks/`:
   status folders, README with the rules, `WAITING-FOR-OWNER.md`, the tools' stand-ins in `bin/`,
   and its own git with a first commit. It refuses inside a git repo, and refuses if `tasks/`
   already exists. **Add existing queue…** picks any queue folder. Rename, Hide/Show, and Remove
-  (added ones only) never touch files. Saved in `~/Library/Application Support/ai.sweetlemon.muster/projects.json`.
+  (added ones only) never touch files; **Prefix** sets its tasks' keys (0033), stored with the
+  queue, refused when it's bad or another project's, and New queue stores the default. Saved in `~/Library/Application Support/ai.sweetlemon.muster/projects.json`.
   Folders are picked by the core's own dialog, so the window never hands the core a path.
 - **Themes and accents** (Appearance, docked): 7 themes (Violet night, Violet day, Graphite,
   Midnight, Paper, Snow, High contrast), with Match the Mac picking one dark and one light, and 6
@@ -86,7 +87,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   - **Search** (always there, ⌘F, Esc clears): words in any order, case and accents aside, in the
     id, title, tags, text and holder; the matches are marked on cards, backlog notes and rows. A
     word of digits only (0–9) is an id (19 finds 0019) and never matches text, so dates in logs
-    don't swamp it. The core builds each task's search text when it reads the file (title, tags,
+    don't swamp it; a key (mu-19, MU-19) finds that project's task (0033). The core builds each task's search text when it reads the file (title, tags,
     body without front matter, folded, each word once, digit-only words out, 4 KB at most),
     cached with the task, so the window filters in memory (1,000 tasks well under a frame,
     measured in a test). The text isn't in the 2 s `state` poll or `--json`: the window asks for
@@ -333,7 +334,8 @@ folded "steps" line, never file edits.
 The app's binary is also the `muster` command (`bin/muster` runs it). It uses the same Rust code as
 the app (`ops.rs`), so the app and the command line can't disagree. It picks the queue from
 `--queue <name|folder>`, then `$MUSTER_ROOT`, then the nearest queue from the current folder (a
-queue, or a `tasks/` beside or above it).
+queue, or a `tasks/` beside or above it); a task named by another project's key (`br-7`) picks
+that project's queue instead.
 
 `muster` is linked into `~/.local/bin`, so it works in any terminal and in any Claude Code
 session as `! muster …`. `muster help` lists everything, and `muster help <command>` shows usage,
@@ -364,6 +366,16 @@ owner ──chat──▶ capture ──writes──▶ queue/todo/NNNN-*.md ◀
 owner ◀────────────┘ WAITING-FOR-OWNER.md    └─ task answer ─▶ mail/<session8>/NNNN-Qn.md ─▶ answer-hook ─▶ coder's context
 ```
 
+- **Keys** (task 0033, `key.rs` and `taskKey.ts`, held to `app/src/key-cases.json`): a task is
+  shown and typed as `mu-12`, its project's prefix and its number; files, `depends:` and ids in
+  JSON keep `0012`. The prefix is 2 to 4 lowercase letters in the queue's README.md front matter
+  (`prefix: mu`, read only by `key::stored_prefix`), else the first 2 letters of the project's
+  name (3 or 4 when another project Muster knows starts the same). Every command takes `mu-12`,
+  `MU-12`, `12` or `0012`; another project's key runs in its queue (refused against a `--queue`
+  that names another). Cards, rows, the timeline, the graph, the pane, the parent line, the
+  activity feed, `muster list`/`show`, what commands print, branches (`task/mu-12-slug`) and new
+  log lines name tasks by key, and a key in a task's text or log links to it. INDEX.md,
+  `manifest.py` and refusals still say ids.
 - **Ids:** four digits, taken in order under the queue's lock by whoever creates the task: `muster
   new`, the app's New task, or the helper (through `muster new`). Taking them under the lock is
   what prevents two tasks getting the same id. The Python `bin/task` doesn't create tasks yet

@@ -1,4 +1,5 @@
 import { fmtMinutes, fmtTokens, key, stageLabel, stageOf, stageRank } from "./lib";
+import { siblingKey, taskKey } from "./taskKey";
 import type { Progress, Task } from "./types";
 
 // Goal → Feature → Task (decision 0003): a task names its parent, and the board and the table can
@@ -49,11 +50,11 @@ export function childrenOf(t: Pick<Task, "queue" | "children">, index: Map<strin
   return t.children.flatMap((id) => index.get(key({ queue: t.queue, id })) ?? []);
 }
 
-/** A card's quiet parent line: "▸ Feature 0030 Stage track", or "" without a parent. */
-export function parentLine(t: Pick<Task, "queue" | "parent">, index: Map<string, Task>): string {
+/** A card's quiet parent line: "▸ Feature mu-30 Stage track", or "" without a parent. */
+export function parentLine(t: Pick<Task, "queue" | "parent" | "prefix">, index: Map<string, Task>): string {
   if (!t.parent) return "";
   const p = parentOf(t, index);
-  return p ? `▸ ${levelLabel(p.level)} ${p.id} ${p.title}` : `▸ ${t.parent} (not found)`;
+  return p ? `▸ ${levelLabel(p.level)} ${taskKey(p)} ${p.title}` : `▸ ${siblingKey(t, t.parent)} (not found)`;
 }
 
 /** The band an item goes in: its feature (its parent, if that's a feature), or its goal (its

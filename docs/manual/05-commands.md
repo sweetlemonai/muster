@@ -69,7 +69,7 @@ muster list [--search "<words>"] [--stage <s,…>] [--type <t,…>] [--tag <t,�
 
 | Option | What it does |
 | --- | --- |
-| `--search` | words in any order, case and accents aside, each in the id (19 finds 0019), title, tags, text or holder; a word of digits only is an id |
+| `--search` | words in any order, case and accents aside, each in the id (19 finds 0019), title, tags, text or holder; a word of digits only is an id, and a key (mu-19, MU-19) is that task |
 | `--stage` | backlog, shaping, ready, building, testing, your-check or done |
 | `--type` | code, bug, chore, tech-debt, spike, design, docs or research (task means code) |
 | `--tag` | only tasks with this tag |
@@ -99,7 +99,7 @@ muster list --queue drover --json
 
 ### muster show
 
-One task in full: its file as Markdown, or its parsed fields with --json.
+One task in full: its file as Markdown, then its key, who's on it and the latest check-in; or its parsed fields with --json. Name it by its key (mu-7, MU-7) or its number (7, 0007); another project's key shows that project's task.
 
 ```
 muster show <id> [--json]
@@ -107,12 +107,20 @@ muster show <id> [--json]
 
 | Option | What it does |
 | --- | --- |
-| `--json` | fields, questions, attachments, log tail |
+| `--json` | fields (its key beside its id), questions, attachments, log tail |
 
 Examples:
 
 ```
-muster show 0007
+muster show mu-7
+```
+
+```
+muster show 7
+```
+
+```
+muster show br-12
 ```
 
 ```
@@ -929,10 +937,10 @@ Find the queues Muster knows, start one for a project, check a queue for problem
 
 ### muster projects
 
-Every queue Muster knows: found under ~/playground and added in the app, with each one's gate. projects set \<name\> gate stores the project's gate command in the app's projects.json: what a merge runs in a task's worktree (muster pass \<id\> --from testing). It's split into words like a shell would, quotes and all, but no shell runs it, so a pipe or a cd is just a word: point it at a script in the repo (bin/gate) for anything more. "" clears it; with no gate, nothing merges.
+Every queue Muster knows: found under ~/playground and added in the app, with each one's prefix and gate. A prefix is what its tasks' keys start with (mu in mu-12): 2 to 4 lowercase letters, stored in its queue's README.md (prefix: mu). Without one it's the first 2 letters of the project's name, or 3 or 4 when another project's start the same. projects set \<name\> prefix stores one, refused when it isn't 2 to 4 lowercase letters or another project has it; the files keep their ids, so nothing moves, but the old keys stop finding its tasks. projects set \<name\> gate stores the project's gate command in the app's projects.json: what a merge runs in a task's worktree (muster pass \<id\> --from testing). It's split into words like a shell would, quotes and all, but no shell runs it, so a pipe or a cd is just a word: point it at a script in the repo (bin/gate) for anything more. "" clears it; with no gate, nothing merges.
 
 ```
-muster projects [--json] | muster projects set <name> gate "<command>"
+muster projects [--json] | muster projects set <name> gate "<command>" | muster projects set <name> prefix <p>
 ```
 
 | Option | What it does |
@@ -953,18 +961,30 @@ muster projects set muster gate bin/gate
 muster projects set drover gate "pnpm check"
 ```
 
+```
+muster projects set braindump prefix bd
+```
+
 ### muster init
 
-Create \<project-folder\>/tasks: status folders, README with the rules, the tool stand-ins, and its own git. Refuses inside a git repo or over an existing tasks/.
+Create \<project-folder\>/tasks: status folders, README with the rules and its prefix, the tool stand-ins, and its own git. Refuses inside a git repo, over an existing tasks/, and a prefix that isn't 2 to 4 lowercase letters or that another project has.
 
 ```
-muster init <project-folder>
+muster init <project-folder> [--prefix <p>]
 ```
+
+| Option | What it does |
+| --- | --- |
+| `--prefix` | what its tasks' keys start with (mu in mu-12); default the first 2 letters of the folder's name, more when another project has them |
 
 Examples:
 
 ```
 muster init ~/playground/braindump
+```
+
+```
+muster init ~/playground/germ --prefix gm
 ```
 
 ### muster check
@@ -1029,6 +1049,7 @@ muster help new
 
 | Option | What it does |
 | --- | --- |
+| `<id>` | a task, by its key (mu-12, MU-12: its project's prefix and number) or its number (12, 0012). A key with another project's prefix runs in that project's queue, wherever you are; with a --queue that names another project it's refused. Keys work in --parent, depends and block --on too, for tasks of the same project |
 | `--queue <name\|folder>` | which queue; default $MUSTER\_ROOT, then the nearest queue from the current folder (a queue, or tasks/ beside or above it) |
 | `--as <who>` | who's acting, for the log; default $MUSTER\_AS, then the folder's git user.name, then owner. Inside a Claude Code session muster adds the session (name, short id, checkout, account) |
 

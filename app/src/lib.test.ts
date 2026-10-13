@@ -195,6 +195,9 @@ describe("helpers", () => {
     // Blocked only by the tasks it depends on (0024): no flag, no waiting_on, still blocked.
     const d = feed([], [task({ blockedKind: "tasks", blockedBy: [{ id: "0041", stage: "ready", holder: "" }, { id: "0042", stage: "building", holder: "wt-a" }] })]);
     expect(d[0].what).toBe("0001 T · Ready, blocked on 0041, 0042");
+    // By keys (0033), with the project's prefix.
+    const k = feed([], [task({ prefix: "mu", blockedKind: "tasks", blockedBy: [{ id: "0041", stage: "ready", holder: "" }] })]);
+    expect(k[0].what).toBe("mu-1 T · Ready, blocked on mu-41");
   });
 });
 

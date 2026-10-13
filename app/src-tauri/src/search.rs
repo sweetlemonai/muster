@@ -12,6 +12,9 @@
 //! - A query is its folded words. A task matches when every word does, in any order.
 //! - A word of digits only (0–9) is an id: it matches the task whose id is all digits and the
 //!   same number (19, 0019 and 00019 all find 0019). It never matches text.
+//! - A key (0033: a word between spaces that `key::parse` reads with a prefix, mu-12, MU-0012) is
+//!   kept whole, as `mu-0012`: it matches the task with that prefix and number, and never text.
+//!   Only spaces, tabs and line breaks separate a key from the words beside it.
 //! - Any other word matches when it's part of the folded holder (`holder`) or of the task's
 //!   `search` text: its title, tags and body (no front matter), each folded word once, words of
 //!   digits only left out, cut at `MAX_SEARCH_BYTES`. So "flick" finds "flickers".
@@ -93,6 +96,11 @@ fn same_id(w: &str, id: &str) -> bool {
     is_id_word(id) && w.trim_start_matches('0') == id.trim_start_matches('0')
 }
 
+/// A query's key word (`mu-0012`) as its prefix and number; folded words never have a `-`.
+fn key_word(w: &str) -> Option<(&str, &str)> {
+    w.split_once('-')
+}
+
 /// Each folded word of `parts` once, in order, without words of digits only, up to `cap` bytes
 /// (a word that doesn't fit ends it).
 fn words_of(parts: &[&str], cap: usize) -> String {
@@ -123,13 +131,25 @@ pub fn search_text(title: &str, tags: &[String], body: &str) -> String {
     words_of(&[title, &tags, body], MAX_SEARCH_BYTES)
 }
 
-/// A query's folded words; none for an empty query, which finds everything.
+/// A query's folded words, a key kept whole (`mu-0012`); none for an empty query, which finds
+/// everything.
 pub fn query_words(q: &str) -> Vec<String> {
-    fold(q)
-        .split(' ')
-        .filter(|w| !w.is_empty())
-        .map(str::to_string)
-        .collect()
+    let mut out = Vec::new();
+    for raw in q.split(|c: char| c.is_ascii_whitespace()) {
+        match crate::key::parse(raw) {
+            Some(crate::key::Typed {
+                prefix: Some(p),
+                id,
+            }) => out.push(format!("{p}-{id}")),
+            _ => out.extend(
+                fold(raw)
+                    .split(' ')
+                    .filter(|w| !w.is_empty())
+                    .map(str::to_string),
+            ),
+        }
+    }
+    out
 }
 
 /// Who holds a task, without the session id, as the app shows it (lib.ts `holder`): whoever
@@ -148,12 +168,16 @@ pub fn holder(t: &Task) -> &str {
     }
 }
 
-/// Whether a task has every word: digits as its id, the rest in its holder or its search text.
+/// Whether a task has every word: digits as its id, a key as its prefix and id, the rest in its
+/// holder or its search text.
 pub fn task_matches(t: &Task, words: &[String]) -> bool {
     let mut hay: Option<String> = None;
     words.iter().all(|w| {
         if is_id_word(w) {
             return same_id(w, &t.id);
+        }
+        if let Some((prefix, n)) = key_word(w) {
+            return t.prefix == prefix && same_id(n, &t.id);
         }
         hay.get_or_insert_with(|| format!("{} {}", fold(holder(t)), t.search))
             .contains(w.as_str())
@@ -161,7 +185,7 @@ pub fn task_matches(t: &Task, words: &[String]) -> bool {
 }
 
 /// Whether a backlog note (title and text) has every word. A note has no id, so a word of
-/// digits never matches one.
+/// digits, or a key, never matches one.
 pub fn note_matches(title: &str, text: &str, words: &[String]) -> bool {
     if words.is_empty() {
         return true;
@@ -169,7 +193,7 @@ pub fn note_matches(title: &str, text: &str, words: &[String]) -> bool {
     let hay = words_of(&[title, text], usize::MAX);
     words
         .iter()
-        .all(|w| !is_id_word(w) && hay.contains(w.as_str()))
+        .all(|w| !is_id_word(w) && key_word(w).is_none() && hay.contains(w.as_str()))
 }
 
 /// What `muster list` keeps: the search and the filter groups the app has as chips.

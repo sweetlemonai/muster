@@ -21,7 +21,7 @@ export default function Card({ t, now, multi, parent, onOpen, active, words }: {
       <CardBand t={t} />
       <span className="card-top">
         {multi && <span className="q">{t.queue}</span>}
-        <span className="id"><HlId id={t.id} words={words} /></span>
+        <span className="id"><HlId t={t} words={words} /></span>
         <LiveDot t={t} />
         <span className={`kind ${t.kind}`}>{t.kind}</span>
         <span className={`pri pri-${priority}`} title={`Priority: ${priority}`}>{priority}</span>

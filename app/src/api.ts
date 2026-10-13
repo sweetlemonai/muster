@@ -17,6 +17,9 @@ export const api = {
   addProject: () => invoke<string | null>("add_project"),
   createProject: () => invoke<string | null>("create_project"),
   renameProject: (key: string, name: string) => invoke<void>("rename_project", { key, name }),
+  // What its tasks' keys start with (0033), 2 to 4 lowercase letters; refused when another
+  // project has it.
+  setProjectPrefix: (key: string, prefix: string) => invoke<void>("set_project_prefix", { key, prefix }),
   hideProject: (key: string, hidden: boolean) => invoke<void>("hide_project", { key, hidden }),
   removeProject: (key: string) => invoke<void>("remove_project", { key }),
   createTask: (queue: string, task: NewTask, files: [string, string][], stamp: string) =>

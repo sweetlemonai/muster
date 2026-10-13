@@ -84,7 +84,8 @@ class TaskTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         for f in ["inbox", "todo", "doing", "blocked", "done"]:
             (self.root / f).mkdir()
-        (self.root / "README.md").write_text("A Muster queue, for the tests.\n")
+        # Its prefix stored (0033): muster names 0042 tt-42, whatever projects this Mac has.
+        (self.root / "README.md").write_text("---\nprefix: tt\n---\nA Muster queue, for the tests.\n")
         (self.root / "doing" / "0042-something.md").write_text(TASK_FILE)
         (self.root / "todo" / "0043-old.md").write_text(OLD_STYLE)
         self.env = {**os.environ, "MUSTER_ROOT": str(self.root), "MUSTER_BIN": str(MUSTER)}
@@ -176,7 +177,8 @@ class TaskTests(unittest.TestCase):
 
     def test_refusals(self):
         self.assertIn("no task", self.run_task("ask", "0099", "x", "--session", "aaaa1111", ok=False).stderr)
-        self.assertIn("four digits", self.run_task("ask", "42", "x", "--session", "aaaa1111", ok=False).stderr)
+        # 42 is 0042 now (0033); what isn't a task's key or number is refused.
+        self.assertIn("mu-12, 12 or 0012", self.run_task("ask", "4x2", "x", "--session", "aaaa1111", ok=False).stderr)
         self.assertIn("no session", self.run_task("ask", "0042", "x", ok=False).stderr)
         self.assertIn("8 hex", self.run_task("ask", "0042", "x", "--session", "codex-ru", ok=False).stderr)
         self.assertIn("8 hex", self.run_task("ask", "0042", "x", "--session", "a1", ok=False).stderr)
@@ -666,7 +668,7 @@ class TaskTests(unittest.TestCase):
         # Quotes, shell syntax, line breaks and words that look like options stay the question.
         q = "Port \"8080\" or '5173'?\n--from wt-x --session ffff0000\n$(touch /tmp/x) `id`; | & *"
         r = self.run_task("ask", "0042", q, "--from", "wt-a", "--session", "aaaa1111")
-        self.assertIn("asked Q1 on 0042. The answer will be delivered to this session.", r.stdout)
+        self.assertIn("asked Q1 on tt-42. The answer will be delivered to this session.", r.stdout)
         self.run_task("ask", "0042", "--verbose", "--session", "aaaa1111", "--from", "wt-a")
         t = self.text("doing/0042-something.md")
         self.assertIn("(wt-a, session aaaa1111, ", t)

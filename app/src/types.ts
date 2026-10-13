@@ -29,6 +29,9 @@ export type Checkin = { at: string; who: string; pct: number | null; text: strin
 export type Task = {
   queue: string;
   id: string;
+  /** Its project's prefix (0033), for its key (`mu-12`, taskKey.ts); the core always sends it,
+   *  and a task without one shows its id. */
+  prefix?: string;
   title: string;
   kind: string;
   priority: string;
@@ -185,8 +188,9 @@ export type Progress = { done: number; total: number; estMinutes: number; estTok
 
 export type Activity = { queue: string; at: number; what: string; source: string };
 
-/** `counts` is tasks per stage, plus "blocked" (tasks also counted in their stage). */
-export type QueueInfo = { name: string; path: string; counts: Record<string, number> };
+/** `counts` is tasks per stage, plus "blocked" (tasks also counted in their stage). `prefix` is
+ *  what its tasks' keys start with (0033). */
+export type QueueInfo = { name: string; path: string; prefix?: string; counts: Record<string, number> };
 
 export type State = {
   queues: QueueInfo[];
@@ -205,4 +209,6 @@ export type Project = {
   source: "found" | "added";
   hidden: boolean;
   ok: boolean;
+  /** What its tasks' keys start with (0033): stored with its queue, or its default. */
+  prefix: string;
 };

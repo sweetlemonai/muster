@@ -3,6 +3,7 @@ import { blockSentence, isBlocked } from "./blockWords";
 import { downstream, edgeLit, type Graph, hiddenDeps, layoutGraph, readyToStart, upstream } from "./graph";
 import { isHuman } from "./human";
 import { holder, key, stageLabel, stageOf } from "./lib";
+import { siblingKey, taskKey } from "./taskKey";
 import type { Task } from "./types";
 import YouRibbon from "./YouRibbon";
 
@@ -125,11 +126,11 @@ function QueueGraph({ name, tasks, all, openKey, onOpen }: { name: string; tasks
                 className={`g-node s-${stageOf(t)}${isHuman(t) ? " human" : ""}${isBlocked(t) ? " blocked" : ""}${ready ? " ready" : ""}${role(n.id)}`}
                 style={{ left: p.x, top: p.y, width: W, height: H }}
                 onClick={() => onOpen(t)}
-                title={`${t.id} ${t.title}\n${stageLabel(t.stage)}${t.blockedKind ? `\n${blockSentence(t)}` : ""}${t.depends.length ? `\nwaits on ${t.depends.join(", ")}` : ""}`}
+                title={`${taskKey(t)} ${t.title}\n${stageLabel(t.stage)}${t.blockedKind ? `\n${blockSentence(t)}` : ""}${t.depends.length ? `\nwaits on ${t.depends.map((d) => siblingKey(t, d)).join(", ")}` : ""}`}
                 aria-pressed={n.id === selected}
               >
                 <span className="g-top">
-                  <span className="id">{t.id}</span>
+                  <span className="id">{taskKey(t)}</span>
                   {isHuman(t) && <YouRibbon />}
                   {up.has(n.id) && <span className="g-rel">needed first</span>}
                   {down.has(n.id) && <span className="g-rel">waits for it</span>}
@@ -147,7 +148,7 @@ function QueueGraph({ name, tasks, all, openKey, onOpen }: { name: string; tasks
           <span className="meta">Not linked to any task ({g.loose.length})</span>
           {g.loose.map((t) => (
             <button key={t.id} type="button" className={`chip g-loose s-${stageOf(t)}${isHuman(t) ? " human" : ""}${key(t) === openKey ? " on" : ""}`} onClick={() => onOpen(t)} title={t.title}>
-              <span className="id">{t.id}</span>{isHuman(t) && <YouRibbon />} {t.title.length > 34 ? `${t.title.slice(0, 33)}…` : t.title} <Status t={t} ready={readyToStart(t)} />
+              <span className="id">{taskKey(t)}</span>{isHuman(t) && <YouRibbon />} {t.title.length > 34 ? `${t.title.slice(0, 33)}…` : t.title} <Status t={t} ready={readyToStart(t)} />
             </button>
           ))}
         </div>
@@ -162,7 +163,7 @@ function DepsLine({ t, hidden, neededBy }: { t: Task; hidden: string[]; neededBy
   if (!deps.length && !neededBy) return null;
   return (
     <span className="g-deps">
-      {deps.length > 0 && <>waits on {deps.map((d) => (hidden.includes(d) ? `${d} (not shown)` : d)).join(", ")}</>}
+      {deps.length > 0 && <>waits on {deps.map((d) => (hidden.includes(d) ? `${siblingKey(t, d)} (not shown)` : siblingKey(t, d))).join(", ")}</>}
       {deps.length > 0 && neededBy > 0 && " · "}
       {neededBy > 0 && <>{neededBy} wait{neededBy === 1 ? "s" : ""} on it</>}
     </span>

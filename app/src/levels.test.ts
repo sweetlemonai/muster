@@ -37,6 +37,10 @@ describe("levels", () => {
     expect(parentLine(task({ parent: "0099" }), index)).toBe("▸ 0099 (not found)");
     // The same id in another project isn't its parent.
     expect(parentLine(task({ queue: "drover", parent: "0002" }), index)).toBe("▸ 0002 (not found)");
+    // By keys (0033), when the tasks have their project's prefix.
+    const keyed = [task({ id: "0002", level: "feature", title: "Stage track", prefix: "mu" }), task({ id: "0005", parent: "0002", prefix: "mu" })];
+    expect(parentLine(keyed[1], indexTasks(keyed))).toBe("▸ Feature mu-2 Stage track");
+    expect(parentLine(task({ parent: "0099", prefix: "mu" }), index)).toBe("▸ mu-99 (not found)");
   });
   it("finds the band a task belongs in", () => {
     expect(groupHead(t5, index, "feature")?.id).toBe("0002");

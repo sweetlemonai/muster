@@ -38,6 +38,9 @@ pub struct Project {
     pub ok: bool,
     /// Its gate command (0023), or "" when none is set.
     pub gate: String,
+    /// What its tasks' keys start with (0033): `mu` in `mu-12`, stored or its default
+    /// (`key::prefixes`).
+    pub prefix: String,
 }
 
 pub fn load(file: &Path) -> Config {
@@ -97,6 +100,7 @@ pub fn list(base: &Path, config: &Config) -> Vec<Project> {
             ok: looks_like_queue(&path),
             hidden: hidden.contains(key.as_str()),
             gate: config.gate.get(&key).cloned().unwrap_or_default(),
+            prefix: String::new(),
             path: key.clone(),
             key,
             source: source.to_string(),
@@ -116,15 +120,31 @@ pub fn list(base: &Path, config: &Config) -> Vec<Project> {
             p.name = format!("{}-{}", p.name, n);
         }
     }
+    let named: Vec<(String, Option<String>)> = out
+        .iter()
+        .map(|p| {
+            (
+                p.name.clone(),
+                crate::key::stored_prefix(Path::new(&p.path)),
+            )
+        })
+        .collect();
+    for (p, prefix) in out.iter_mut().zip(crate::key::prefixes(&named)) {
+        p.prefix = prefix;
+    }
     out
 }
 
 /// The queues to read: shown, still valid, as (name, folder).
 pub fn active(base: &Path, config: &Config) -> Vec<(String, PathBuf)> {
-    list(base, config)
-        .into_iter()
+    shown(&list(base, config))
+}
+
+/// `active`, of a list already made.
+pub fn shown(list: &[Project]) -> Vec<(String, PathBuf)> {
+    list.iter()
         .filter(|p| !p.hidden && p.ok)
-        .map(|p| (p.name, PathBuf::from(p.path)))
+        .map(|p| (p.name.clone(), PathBuf::from(&p.path)))
         .collect()
 }
 
@@ -189,8 +209,59 @@ pub fn add(config: &mut Config, base: &Path, dir: &Path) -> Result<String, Strin
     Ok(key)
 }
 
-/// Create a queue: `<project>/tasks` with Muster's layout, its tools' stand-ins and its own git.
-pub fn create(project_dir: &Path, tools: &Path) -> Result<PathBuf, String> {
+/// Store `prefix` (0033) for the project named `name`, refused when it isn't 2 to 4 lowercase
+/// letters or another project has it. Returns the project's queue folder.
+pub fn set_prefix(
+    config: &Config,
+    base: &Path,
+    name: &str,
+    prefix: &str,
+) -> Result<String, String> {
+    set_prefix_where(config, base, prefix, &|p| p.name == name)
+        .ok_or_else(|| format!("no project named {name:?} (see `muster projects`)"))?
+}
+
+/// `set_prefix` for the project the window names by its key.
+pub fn set_prefix_by_key(
+    config: &Config,
+    base: &Path,
+    key: &str,
+    prefix: &str,
+) -> Result<String, String> {
+    set_prefix_where(config, base, prefix, &|p| p.key == key).ok_or("no such project")?
+}
+
+fn set_prefix_where(
+    config: &Config,
+    base: &Path,
+    prefix: &str,
+    pick: &dyn Fn(&Project) -> bool,
+) -> Option<Result<String, String>> {
+    let all = list(base, config);
+    let p = all.iter().find(|p| pick(p))?;
+    if !p.ok {
+        return Some(Err(format!(
+            "{} isn't a queue any more ({})",
+            p.name, p.path
+        )));
+    }
+    let root = Path::new(&p.path);
+    Some(
+        crate::key::check_new_prefix(prefix, root, &all)
+            .and_then(|()| crate::key::store_prefix(root, prefix))
+            .map(|()| p.key.clone()),
+    )
+}
+
+/// Create a queue: `<project>/tasks` with Muster's layout, its tools' stand-ins and its own git,
+/// and its prefix (0033) stored: `wanted`, refused when it isn't one or one of `known` has it, else
+/// the default it gets beside them. Returns the queue's folder and its prefix.
+pub fn create(
+    project_dir: &Path,
+    tools: &Path,
+    wanted: Option<&str>,
+    known: &[Project],
+) -> Result<(PathBuf, String), String> {
     let project_dir = project_dir.canonicalize().map_err(|e| e.to_string())?;
     if inside_git_work_tree(&project_dir) {
         return Err(format!(
@@ -206,6 +277,16 @@ pub fn create(project_dir: &Path, tools: &Path) -> Result<PathBuf, String> {
         ));
     }
     let project = default_name(&q);
+    let prefix = match wanted {
+        Some(p) => {
+            crate::key::check_new_prefix(p, &q, known)?;
+            p.to_string()
+        }
+        None => {
+            let taken: Vec<String> = known.iter().map(|p| p.prefix.clone()).collect();
+            crate::key::prefix_beside(&project, &taken)
+        }
+    };
     fs::create_dir(&q).map_err(|e| e.to_string())?;
     let result = (|| {
         for d in queue::STATUS_FOLDERS
@@ -217,7 +298,7 @@ pub fn create(project_dir: &Path, tools: &Path) -> Result<PathBuf, String> {
                 fs::write(q.join(d).join(".gitkeep"), "").map_err(|e| e.to_string())?;
             }
         }
-        fs::write(q.join("README.md"), readme(&project, &q)).map_err(|e| e.to_string())?;
+        fs::write(q.join("README.md"), readme(&project, &q, &prefix)).map_err(|e| e.to_string())?;
         fs::write(q.join("WAITING-FOR-OWNER.md"), WAITING).map_err(|e| e.to_string())?;
         fs::write(q.join(".gitignore"), ".DS_Store\nmail/\n__pycache__/\n")
             .map_err(|e| e.to_string())?;
@@ -251,7 +332,7 @@ pub fn create(project_dir: &Path, tools: &Path) -> Result<PathBuf, String> {
         let _ = fs::remove_dir_all(&q);
         return Err(e);
     }
-    Ok(q)
+    Ok((q, prefix))
 }
 
 #[cfg(unix)]
@@ -294,14 +375,14 @@ fn stand_in(tool: &str, tools: &Path) -> String {
 
 const WAITING: &str = "# Waiting for you\n\nOnly what really needs the owner, each with what it is, why it matters, what each answer leads\nto, capture's pick, and what happens with no answer.\n\nNothing is waiting for you.\n";
 
-fn readme(project: &str, q: &Path) -> String {
+fn readme(project: &str, q: &Path, prefix: &str) -> String {
     let q = q.display();
     format!(
-        "# {project} — task queue\n\nA Muster queue. **The rules are in Muster's `docs/PROTOCOL.md`. Read them before you claim\n\
+        "---\nprefix: {prefix}\n---\n\n# {project} — task queue\n\nA Muster queue. **The rules are in Muster's `docs/PROTOCOL.md`. Read them before you claim\n\
          anything.** The short version:\n\n\
          - A task moves through stages: Backlog → Shaping → Ready → Building → Testing → Your check → Done.\n  \
          Shaping is for product, tech and UI agents, Building for the code agent, Testing for the QA\n  \
-         agent, Your check for the owner. Find a task by its id (`muster show 0001`), never by a path.\n\
+         agent, Your check for the owner. Find a task by its key (`muster show {prefix}-1`; its file keeps the id, 0001), never by a path.\n\
          - Only `muster` changes a stage. Never move task files or edit `stage:`, `status:`, `claimed-by:` or `heartbeat:` by hand.\n  \
          (The folders `inbox/ todo/ doing/ blocked/ done/` mirror the stage for older tools.)\n  \
          `muster` finds this queue from the project's repo; elsewhere add `--queue {q}`.\n\
@@ -390,13 +471,19 @@ mod tests {
         let base = tempfile::tempdir().unwrap();
         let proj = base.path().join("gamma");
         fs::create_dir(&proj).unwrap();
-        let q = create(&proj, Path::new("/opt/muster/bin")).unwrap();
+        let (q, prefix) = create(&proj, Path::new("/opt/muster/bin"), None, &[]).unwrap();
+        assert_eq!(prefix, "ga");
         assert!(looks_like_queue(&q));
         for d in queue::STATUS_FOLDERS {
             assert!(q.join(d).is_dir());
         }
         let readme = fs::read_to_string(q.join("README.md")).unwrap();
-        assert!(readme.starts_with("# gamma — task queue"));
+        assert!(readme.starts_with("---\nprefix: ga\n---\n\n# gamma — task queue"));
+        assert_eq!(crate::key::stored_prefix(&q).as_deref(), Some("ga"));
+        assert!(
+            readme.contains("Find a task by its key (`muster show ga-1`"),
+            "{readme}"
+        );
         // Agents hand work on with muster, never by moving files.
         for cmd in [
             "muster next",
@@ -446,7 +533,7 @@ mod tests {
             .output()
             .unwrap();
         assert!(String::from_utf8_lossy(&log.stdout).contains("Muster queue for gamma"));
-        assert!(create(&proj, Path::new("/x"))
+        assert!(create(&proj, Path::new("/x"), None, &[])
             .unwrap_err()
             .contains("already exists"));
     }
@@ -457,7 +544,7 @@ mod tests {
         let repo = base.path().join("repo");
         fs::create_dir_all(repo.join(".git")).unwrap();
         fs::create_dir(repo.join("sub")).unwrap();
-        assert!(create(&repo.join("sub"), Path::new("/x"))
+        assert!(create(&repo.join("sub"), Path::new("/x"), None, &[])
             .unwrap_err()
             .contains("inside a git repository"));
         assert!(!repo.join("sub/tasks").exists());

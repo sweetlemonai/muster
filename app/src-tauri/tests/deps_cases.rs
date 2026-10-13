@@ -31,11 +31,22 @@ fn strings(v: &Value) -> Vec<String> {
 }
 
 /// The fixture's tasks as a v2 queue: each file in its status folder, its log as written.
+/// The queue's prefix (0033), stored, so `muster` names its tasks dc-1, dc-2…
+const PREFIX: &str = "dc";
+
+fn key(id: &str) -> String {
+    muster_lib::key::key(PREFIX, id)
+}
+
 fn write_queue(root: &Path) {
     for f in queue::STATUS_FOLDERS {
         std::fs::create_dir(root.join(f)).unwrap();
     }
-    std::fs::write(root.join("README.md"), "q").unwrap();
+    std::fs::write(
+        root.join("README.md"),
+        format!("---\nprefix: {PREFIX}\n---\n"),
+    )
+    .unwrap();
     for t in cases()["tasks"].as_array().expect("tasks") {
         let blocked = !s(t, "waitingOn").is_empty();
         let status = queue::mirror_status(s(t, "stage"), blocked);
@@ -108,12 +119,12 @@ fn muster_list_says_what_each_task_is_blocked_by() {
             && t["blocked"] == false
             && t["blockedKind"] == "";
         assert_eq!(Value::Bool(ready), want["ready"], "{id} ready");
-        // The text list says it in the card's short words, ids only.
+        // The text list says it in the card's short words, keys only.
         let line = text
             .lines()
-            .find(|l| l.contains(&format!("{id} ")))
+            .find(|l| l.contains(&format!("{} ", key(id))))
             .unwrap_or_else(|| panic!("{id} in {text}"));
-        let ids: Vec<&str> = by.iter().map(|b| b["id"].as_str().unwrap()).collect();
+        let ids: Vec<String> = by.iter().map(|b| key(b["id"].as_str().unwrap())).collect();
         let short = format!("[Blocked by tasks: {}]", ids.join(", "));
         assert_eq!(line.contains(&short), !ids.is_empty(), "{line}");
     }
@@ -164,8 +175,8 @@ fn claim_and_next_take_exactly_what_is_free() {
     let out = muster(d.path(), &["next", "--as", "wt-z"]);
     assert!(out.status.success(), "{}", stdout(&out));
     assert!(
-        stdout(&out).starts_with(&format!("claimed {}", s(&c, "next")))
-            || stdout(&out).contains(&format!("\n{}: Building", s(&c, "next"))),
+        stdout(&out).starts_with(&format!("claimed {} ", key(s(&c, "next"))))
+            || stdout(&out).contains(&format!("\n{}: Building", key(s(&c, "next")))),
         "{}",
         stdout(&out)
     );

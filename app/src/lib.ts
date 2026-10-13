@@ -1,3 +1,4 @@
+import { keyOf, taskKey } from "./taskKey";
 import type { Activity, Checkin, Task } from "./types";
 
 /** The stages a task moves through, in order, with who works each by default. Mirrors the core's
@@ -340,9 +341,9 @@ export function claimant(claimedBy: string): string {
 
 /** What a blocked task waits on, in a few words: its `waiting_on`, else the tasks it's blocked
  *  by (a block by tasks has no flag, 0024); "" when nothing blocks it. */
-function blockedOn(t: Pick<Task, "blocked" | "blockedKind" | "waitingOn" | "blockedBy">): string {
+function blockedOn(t: Pick<Task, "blocked" | "blockedKind" | "waitingOn" | "blockedBy" | "prefix">): string {
   if (!t.blocked && !t.blockedKind) return "";
-  return t.waitingOn || (t.blockedBy ?? []).map((b) => b.id).join(", ") || "something";
+  return t.waitingOn || (t.blockedBy ?? []).map((b) => keyOf(t.prefix, b.id)).join(", ") || "something";
 }
 
 /** Recent changes: commits, plus tasks whose files changed, newest first. */
@@ -352,7 +353,7 @@ export function feed(activity: Activity[], tasks: Task[], limit = 60): Activity[
     return {
       queue: t.queue,
       at: t.modified,
-      what: `${t.id} ${t.title} · ${stageLabel(t.stage)}${on ? `, blocked on ${on}` : ""}${t.logTail.length ? ` · ${t.logTail[t.logTail.length - 1]}` : ""}`,
+      what: `${taskKey(t)} ${t.title} · ${stageLabel(t.stage)}${on ? `, blocked on ${on}` : ""}${t.logTail.length ? ` · ${t.logTail[t.logTail.length - 1]}` : ""}`,
       source: "file",
     };
   });

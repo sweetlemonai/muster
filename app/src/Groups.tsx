@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import { type BoardSort, columns, key, STAGES } from "./lib";
+import { taskKey } from "./taskKey";
 import { estimateLeft, type Group, GROUP_BYS, type GroupBy, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
 import type { Task } from "./types";
 
@@ -38,8 +39,8 @@ export function BandHead({ group, by, multi, active, onOpen }: {
   const left = estimateLeft(h.progress);
   return (
     <div className="band-head">
-      <button className={`band-title link${active ? " active" : ""}`} onClick={() => onOpen(h)} title={`Open ${levelLabel(h.level).toLowerCase()} ${h.id}`}>
-        {multi && <span className="q">{h.queue}</span>} <span className="level">{levelLabel(h.level)}</span> <span className="id">{h.id}</span> {h.title || "(no title)"}
+      <button className={`band-title link${active ? " active" : ""}`} onClick={() => onOpen(h)} title={`Open ${levelLabel(h.level).toLowerCase()} ${taskKey(h)}`}>
+        {multi && <span className="q">{h.queue}</span>} <span className="level">{levelLabel(h.level)}</span> <span className="id">{taskKey(h)}</span> {h.title || "(no title)"}
       </button>
       <span className={`status-pill s-${shownStageClass(h)}`}>{shownStageLabel(h)}</span>
       {h.blocked && <span className="status-pill blocked">blocked</span>}

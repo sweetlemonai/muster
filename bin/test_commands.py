@@ -233,6 +233,11 @@ def render(cmd: str, id_: str, text: str = TEXT) -> list[str]:
     return shlex.split(s)
 
 
+def ident(key: str) -> str:
+    """A task's file id from the key muster prints (0033): tc-12 is 0012."""
+    return key.rsplit("-", 1)[-1].zfill(4)
+
+
 class RoutesRunOnARealQueue(unittest.TestCase):
     """Each route's command, as the router writes it, run by this checkout's muster on a
     throwaway queue: the forms parse, the text arrives intact, and an unbuilt command is
@@ -243,7 +248,9 @@ class RoutesRunOnARealQueue(unittest.TestCase):
         self.root = Path(self.tmp.name) / "tasks"
         for f in ("inbox", "todo", "doing", "blocked", "done"):
             (self.root / f).mkdir(parents=True)
-        (self.root / "README.md").write_text("A Muster queue, for the tests.\n", encoding="utf-8")
+        # Its prefix stored (0033): muster names its tasks tc-1, tc-2…, whatever projects this Mac has.
+        (self.root / "README.md").write_text("---\nprefix: tc\n---\nA Muster queue, for the tests.\n",
+                                              encoding="utf-8")
         self.env = {**os.environ, "MUSTER_ROOT": str(self.root), "MUSTER_AS": "wt-a",
                     "CLAUDE_CODE_SESSION_ID": "aaaa1111-test"}
         self.env.pop("TASKS_ROOT", None)
@@ -273,8 +280,8 @@ class RoutesRunOnARealQueue(unittest.TestCase):
             out.append(r)
         return out
 
-    def task(self, id_: str) -> str:
-        return next(self.root.glob(f"*/{id_}-*.md")).read_text(encoding="utf-8")
+    def task(self, key: str) -> str:
+        return next(self.root.glob(f"*/{ident(key)}-*.md")).read_text(encoding="utf-8")
 
     def test_every_built_route_runs(self):
         self.assertIn("Synthetic first", self.route("")[0].stdout)
@@ -303,7 +310,7 @@ class RoutesRunOnARealQueue(unittest.TestCase):
         # Task ids go into depends, with no flag: it shows blocked by them until they're done.
         out = self.route("block", self.b)[0].stdout
         self.assertIn(f"Blocked by tasks: {self.b} (Building, wt-b)", out)
-        self.assertIn(f"depends: [{self.b}]", self.task(self.a))
+        self.assertIn(f"depends: [{ident(self.b)}]", self.task(self.a))
         self.assertNotIn("blocked-kind: tasks", self.task(self.a))
         self.route("check")
         self.route("help")
@@ -341,7 +348,7 @@ class RoutesRunOnARealQueue(unittest.TestCase):
         [claim] = commands_of(self.routes["claim"])
         r = self.muster(render(claim, mine))
         self.assertEqual(r.returncode, 1, r.stdout)
-        self.assertIn(f"{mine} is the owner's to do", r.stderr)
+        self.assertIn(f"{ident(mine)} is the owner's to do", r.stderr)
         part = ROUTER.read_text(encoding="utf-8").split("### What's waiting", 1)[1].split("\n### ", 1)[0]
         self.assertIn("`[you]`", part)
         hints = re.findall(r"`/mu pass <id> (--from (?:ready|building) --as owner)`", part)

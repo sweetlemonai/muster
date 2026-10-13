@@ -377,6 +377,9 @@ pub fn criteria(body: &str) -> (usize, usize) {
 pub struct Task {
     pub queue: String,
     pub id: String,
+    /// Its project's prefix (0033), for its key (`mu-12`): set by whoever read the state for
+    /// the window or a command (`key::apply`), "" until then.
+    pub prefix: String,
     pub title: String,
     pub kind: String,
     pub priority: String,
@@ -586,6 +589,8 @@ pub struct Activity {
 pub struct QueueInfo {
     pub name: String,
     pub path: String,
+    /// Its tasks' prefix (0033), as `Task::prefix`.
+    pub prefix: String,
     pub counts: HashMap<String, usize>,
 }
 
@@ -1004,6 +1009,7 @@ pub fn parse_task(
         .collect();
     let search = crate::search::search_text(&title, &tags, body);
     let mut task = Task {
+        prefix: String::new(),
         level,
         bad_level,
         parent: get("parent").chars().take(40).collect(),
@@ -1269,6 +1275,7 @@ pub fn read_state_at(queues: &[(String, PathBuf)], cache: &mut Cache, stamp: &st
         state.queues.push(QueueInfo {
             name: name.clone(),
             path: root.to_string_lossy().to_string(),
+            prefix: String::new(),
             counts,
         });
         state.tasks.extend(tasks);

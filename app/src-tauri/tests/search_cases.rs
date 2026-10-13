@@ -30,11 +30,15 @@ fn strings(v: &Value) -> Vec<String> {
 }
 
 /// The fixture's tasks as a v2 queue: each file in its status folder, with its change time.
-fn write_queue(root: &Path, tasks: &[Value]) {
+fn write_queue(root: &Path, prefix: &str, tasks: &[Value]) {
     for f in queue::STATUS_FOLDERS {
         std::fs::create_dir(root.join(f)).unwrap();
     }
-    std::fs::write(root.join("README.md"), "q").unwrap();
+    std::fs::write(
+        root.join("README.md"),
+        format!("---\nprefix: {prefix}\n---\n"),
+    )
+    .unwrap();
     for t in tasks {
         let blocked = !s(t, "waitingOn").is_empty();
         let status = queue::mirror_status(s(t, "stage"), blocked);
@@ -117,7 +121,7 @@ fn the_core_reads_each_fixture_task_as_the_app_is_told() {
     let c = cases();
     let tasks = c["tasks"].as_array().expect("tasks");
     let d = tempfile::tempdir().unwrap();
-    write_queue(d.path(), tasks);
+    write_queue(d.path(), s(&c, "prefix"), tasks);
     for t in tasks {
         let got = queue::read_task(d.path(), s(t, "id")).expect("reads");
         let want = &t["parsed"];
@@ -170,7 +174,11 @@ fn the_core_reads_each_fixture_task_as_the_app_is_told() {
 fn muster_list_gives_each_cases_tasks_in_order() {
     let c = cases();
     let d = tempfile::tempdir().unwrap();
-    write_queue(d.path(), c["tasks"].as_array().expect("tasks"));
+    write_queue(
+        d.path(),
+        s(&c, "prefix"),
+        c["tasks"].as_array().expect("tasks"),
+    );
     for case in c["cases"].as_array().expect("cases") {
         let opts = args(&case["query"]);
         let out = list(d.path(), &opts);

@@ -1,3 +1,4 @@
+import { taskKey } from "./taskKey";
 import type { Task } from "./types";
 
 // The vision check (0029): a task checked against the project's one picture. The core writes a
@@ -99,5 +100,5 @@ export function visionWarnings(tasks: Task[]): string[] {
   return tasks
     .filter((t) => t.stage === "shaping" && (t.visionOpen ?? null) === null && !t.badVision)
     .sort((a, b) => a.queue.localeCompare(b.queue) || a.id.localeCompare(b.id))
-    .map((t) => `${t.queue}: ${t.id} ${t.title} is in Shaping with no vision check yet (muster vision ${t.id})`);
+    .map((t) => `${t.queue}: ${taskKey(t)} ${t.title} is in Shaping with no vision check yet (muster vision ${taskKey(t)})`);
 }

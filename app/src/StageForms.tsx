@@ -71,13 +71,14 @@ function BlockForm({ task, a }: { task: Task; a: TaskActions }) {
       kind={kind}
       detail={detail}
       questions={task.questions}
+      prefix={task.prefix}
       busy={a.busy}
       onKind={setKind}
       onDetail={(d) => {
         if (kind) setDetails((all) => ({ ...all, [kind]: d }));
       }}
       onSubmit={() => {
-        const r = kind ? blockRequest(kind, detail) : null;
+        const r = kind ? blockRequest(kind, detail, task.prefix) : null;
         if (r?.ok) a.block(r.kind, r.detail);
       }}
       onCancel={a.close}
@@ -88,17 +89,19 @@ function BlockForm({ task, a }: { task: Task; a: TaskActions }) {
 /** The Block form as drawn: the five kinds always on screen (no dropdown), the chosen one
  *  pressed, and under it, in the same place, the detail: task ids (they go into its depends), the
  *  task's open questions as chips, or a line of words. Block waits for what the kind needs. */
-export function BlockFormView({ kind, detail, questions, busy, onKind, onDetail, onSubmit, onCancel }: {
+export function BlockFormView({ kind, detail, questions, prefix, busy, onKind, onDetail, onSubmit, onCancel }: {
   kind: BlockKind | null;
   detail: string;
   questions: Question[];
+  /** The task's project's prefix (0033): its keys are what the tasks field takes. */
+  prefix?: string;
   busy: boolean;
   onKind: (k: BlockKind) => void;
   onDetail: (d: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
 }) {
-  const ready = kind !== null && blockRequest(kind, detail).ok;
+  const ready = kind !== null && blockRequest(kind, detail, prefix).ok;
   const need = BLOCK_KINDS.find((k) => k.id === kind)?.need ?? "";
   const open = questions.filter((q) => !q.ticked && q.n !== null);
   return (

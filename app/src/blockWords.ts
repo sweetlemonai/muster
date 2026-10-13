@@ -1,4 +1,5 @@
 import { isStage, stageLabel } from "./lib";
+import { keyOf, parseKey } from "./taskKey";
 import type { BlockedBy, Task } from "./types";
 
 // Why a task is blocked, in words (task 0024). The core's block.rs says the same words: its
@@ -7,7 +8,7 @@ import type { BlockedBy, Task } from "./types";
 
 /** The kinds, in the order the Block form shows them, with what each asks for. */
 export const BLOCK_KINDS = [
-  { id: "tasks", label: "tasks", need: "Task ids, like 0014, 0016" },
+  { id: "tasks", label: "tasks", need: "Tasks by key or number, like 14, 16" },
   { id: "you", label: "you", need: "What you have to do or decide" },
   { id: "permission", label: "permission", need: "What access it lacks, and where to grant it" },
   { id: "question", label: "question", need: "Pick the open question it waits on" },
@@ -18,7 +19,7 @@ export type BlockKind = (typeof BLOCK_KINDS)[number]["id"];
 /** The most of a detail the card's short form shows, in characters (block.rs SHORT). */
 const SHORT = 60;
 
-type Block = Pick<Task, "blockedKind" | "blockDetail" | "blockedBy">;
+type Block = Pick<Task, "blockedKind" | "blockDetail" | "blockedBy" | "prefix">;
 
 /** The words a block's sentence starts with, bold on screen. */
 export function blockLead(kind: string): string {
@@ -38,10 +39,12 @@ function cut(text: string): string {
   return chars.length <= SHORT ? text : `${chars.slice(0, SHORT).join("").trimEnd()}…`;
 }
 
-/** One task as the full sentence names it: "0014 (Building, codex)", "0016 (Ready)", "0099". */
-export function blockedByText(b: BlockedBy): string {
-  if (!isStage(b.stage)) return b.id;
-  return `${b.id} (${stageLabel(b.stage)}${b.holder ? `, ${b.holder}` : ""})`;
+/** One task as the full sentence names it, by its key with its project's `prefix` (0033): "mu-14
+ *  (Building, codex)", "mu-16 (Ready)", "mu-99". */
+export function blockedByText(b: BlockedBy, prefix?: string): string {
+  const k = keyOf(prefix, b.id);
+  if (!isStage(b.stage)) return k;
+  return `${k} (${stageLabel(b.stage)}${b.holder ? `, ${b.holder}` : ""})`;
 }
 
 /** The lead, and what follows it (block.rs `words`); `tasks` are the tasks the text names, for
@@ -53,7 +56,7 @@ export function blockWords(t: Block, short = false): { lead: string; text: strin
   const shown = short ? cut(detail) : detail;
   const lead = blockLead(kind);
   if (kind === "tasks" && by.length > 0) {
-    return { lead, text: by.map((b) => (short ? b.id : blockedByText(b))).join(", "), tasks: by };
+    return { lead, text: by.map((b) => (short ? keyOf(t.prefix, b.id) : blockedByText(b, t.prefix))).join(", "), tasks: by };
   }
   if (kind === "question" && !short) return { lead, text: shown ? `${shown}, waiting on capture` : "waiting on capture", tasks: [] };
   return { lead, text: shown, tasks: [] };
@@ -69,10 +72,13 @@ export function blockSentence(t: Block, short = false): string {
 /** Blocked, by the flag or by tasks it depends on that aren't merged yet (the core's `blockedKind`). */
 export const isBlocked = (t: Pick<Task, "blocked" | "blockedKind">) => t.blocked || !!t.blockedKind;
 
-/** What the Block form sends for a kind and what was typed or picked, or why it can't yet. */
-export function blockRequest(kind: BlockKind, detail: string): { ok: true; kind: BlockKind; detail: string } | { ok: false; why: string } {
+/** What the Block form sends for a kind and what was typed or picked, or why it can't yet. Tasks
+ *  are typed as keys of the task's own project (`prefix`, 0033) or numbers, and sent as ids. */
+export function blockRequest(kind: BlockKind, detail: string, prefix?: string): { ok: true; kind: BlockKind; detail: string } | { ok: false; why: string } {
   const d = detail.trim();
   const need = BLOCK_KINDS.find((k) => k.id === kind)?.need ?? "";
-  const fits = kind === "tasks" ? /^\d{4}(\s*[,\s]\s*\d{4})*$/.test(d) : d !== "";
-  return fits ? { ok: true, kind, detail: d } : { ok: false, why: need };
+  if (kind !== "tasks") return d !== "" ? { ok: true, kind, detail: d } : { ok: false, why: need };
+  const typed = d.split(/[\s,]+/).filter(Boolean).map(parseKey);
+  const ids = typed.flatMap((k) => (k && (k.prefix === null || k.prefix === prefix) ? [k.id] : []));
+  return ids.length > 0 && ids.length === typed.length ? { ok: true, kind, detail: ids.join(", ") } : { ok: false, why: need };
 }

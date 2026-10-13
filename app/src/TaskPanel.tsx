@@ -6,6 +6,7 @@ import { splitLog, withoutComments } from "./fields";
 import { isHuman } from "./human";
 import { stageLabel, stamp } from "./lib";
 import Markdown from "./Markdown";
+import { taskKey, taskOfHref } from "./taskKey";
 import PaneHeader from "./PaneHeader";
 import { isFileDrag, releasedBy, undoFor } from "./paneData";
 import Sidebar from "./Sidebar";
@@ -24,7 +25,7 @@ import { pressed } from "./shortcuts";
  *  two columns (what this stage needs; the next step and the task's settings), the stage forms
  *  under both, the path; then open questions, the write-up, the vision check (0029), the comment
  *  thread (0017) and the Log and, at the bottom, the note bar. */
-export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudge, childTasks, onOpenTask }: {
+export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudge, childTasks, onOpenTask, keys, onOpenAt }: {
   task: Task;
   now: number;
   onClose: () => void;
@@ -37,6 +38,10 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
   childTasks?: Task[];
   /** Open another task of this queue in the pane, by id (the tasks a block names, 0024). */
   onOpenTask?: (id: string) => void;
+  /** Each project's prefix to its queue (0033): a key written in the text links to its task, which
+   *  `onOpenAt` opens, in whichever project it is. */
+  keys?: Map<string, string>;
+  onOpenAt?: (queue: string, id: string) => void;
 }) {
   const [dirtyParts, setDirtyParts] = useState<Record<string, boolean>>({});
   const editDirty = useCallback((d: boolean) => setDirtyParts((p) => withPart(p, "edit", d)), []);
@@ -56,6 +61,10 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
   const [saves, setSaves] = useState(0);
   const [over, setOver] = useState(false);
   const a = useTaskActions(task, onChanged);
+  const openLink = (href: string) => {
+    const at = taskOfHref(href);
+    if (at) onOpenAt?.(at.queue, at.id);
+  };
 
   // Reload the text when the file changes (its modified time moves).
   useEffect(() => {
@@ -91,7 +100,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
   return (
     <div
       className={`panel task-pane${over ? " drop" : ""}`}
-      aria-label={`Task ${task.id}`}
+      aria-label={`Task ${taskKey(task)}`}
       // Only file drags are the pane's: text dragged into the editor or an answer box drops there.
       onDragOver={(e) => {
         if (!isFileDrag(e.dataTransfer.types)) return;
@@ -165,7 +174,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
             {editMsg && <p className={editMsg.ok ? "ok small" : "err small"}>{editMsg.text}</p>}
             {error && <p className="err">{error}</p>}
             {body === null && !error && <p className="none">Loading…</p>}
-            {body !== null && (raw ? <pre className="raw">{body}</pre> : <Markdown text={shown} />)}
+            {body !== null && (raw ? <pre className="raw">{body}</pre> : <Markdown text={shown} keys={keys} onLink={openLink} />)}
           </>
         )}
       </section>
@@ -176,7 +185,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
       <Comments task={task} onChanged={onChanged} onDirty={commentDirty} nudge={nudge} />
       {log && !raw && editing === null && (
         <section className="log">
-          <Markdown text={log} />
+          <Markdown text={log} keys={keys} onLink={openLink} />
         </section>
       )}
 

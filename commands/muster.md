@@ -1,5 +1,5 @@
 ---
-description: Muster's task queue from any session. Bare /mu shows what's waiting for you, /mu 0008 explains a task, /mu add, ask, answer, claim, next, pass, return, block, unblock, heartbeat, note, list, check and help each run one muster command, and anything else is captured as a backlog one-liner.
+description: Muster's task queue from any session. Bare /mu shows what's waiting for you, /mu mu-8 explains a task, /mu add, ask, answer, claim, next, pass, return, block, unblock, heartbeat, note, list, check and help each run one muster command, and anything else is captured as a backlog one-liner.
 argument-hint: "[<id> | waiting | add <text> | answer <id> Q<n> <text> | ask <id> <question> | claim <id> | next | heartbeat <id> | note <id> <text> | pass <id> [--from s] [--gate line] [--commit sha] | return <id> <why> | block <id> <on what> | unblock <id> | list [--stage s] | check | help [<command>] | <any text>]  (bare = what's waiting for you)"
 allowed-tools: Bash(muster list:*), Bash(muster show:*), Bash(muster add:*), Bash(muster answer:*), Bash(muster ask:*), Bash(muster claim:*), Bash(muster next:*), Bash(muster heartbeat:*), Bash(muster note:*), Bash(muster pass:*), Bash(muster return:*), Bash(muster block:*), Bash(muster unblock:*), Bash(muster check:*), Bash(muster help:*), Read, Glob, Grep
 ---
@@ -18,7 +18,9 @@ picks the command, runs it and reports what happened. Never edit a task file or 
 Look at the **first word** of the arguments (case-insensitive) and find its row. A route matches
 only when the words after it fit its shape:
 
-- `<id>` is a task id: exactly four digits, like `0008`.
+- `<id>` is a task: its key, 2 to 4 letters, a dash and its number, like `mu-8` or `MU-8`, or its
+  number alone, 1 to 4 digits, like `8` or `0008`. A key of another project's prefix reaches that
+  project's task; muster says so when no project has the prefix.
 - Routes that take an id need one as the second word (`answer` also needs `Q<n>` after it).
 - `waiting`, `next` and `check` take nothing after them but options; `list` only options; `help`
   at most one word.
@@ -42,7 +44,7 @@ mode` is captured, never a claim. Never guess which command was meant.
 | `/mu note <id> <text>` | agent | `muster note <id> -- '<text>'` | A line in the task's log. |
 | `/mu pass <id> …` | agent | `muster pass <id> …` | Hand on to the next stage, with the options as typed (from, gate line, commit). |
 | `/mu return <id> <why>` | agent | `muster return <id> -- '<why>'` | Send back a stage, with the reason (`--to <stage>` passes through). |
-| `/mu block <id> <on what>` | agent | `muster block <id> --on '<on what>'` | Mark it blocked, and why: the text starts with task ids (0014,0016: added to its depends), you, permission, question Q2 or outside, then what it waits on (owner and capture still work). |
+| `/mu block <id> <on what>` | agent | `muster block <id> --on '<on what>'` | Mark it blocked, and why: the text starts with tasks of this project (mu-14,mu-16 or 0014,0016: added to its depends), you, permission, question Q2 or outside, then what it waits on (owner and capture still work). |
 | `/mu unblock <id>` | agent | `muster unblock <id>` | Clear the blocked flag. |
 | `/mu list [--stage <s>]` | system | `muster list [--stage <s>]` | Tasks by stage. |
 | `/mu check` | system | `muster check` | Problems in the queue. |
@@ -60,7 +62,7 @@ Not routed: `new`, `move`, `stage`, `set`, `attach`, `escalate`, `inbox`, `recla
 - Options go right after the id (for `answer`, right after `Q<n>`), or right after the route word
   for routes with no id (`next`, `list`, `check`). There they (`--as`, `--queue`, `--from`,
   `--gate`, `--commit`, `--to`, `--stage`, `--tag`, `--status`) pass through unchanged, before the
-  `--`. Everything after them is the text, as typed, even when it holds `--`: `/mu note 0008 use
+  `--`. Everything after them is the text, as typed, even when it holds `--`: `/mu note mu-8 use
   --verbose` notes "use --verbose". The shape rule still decides the route first. muster refuses
   an option it doesn't know.
 - Who's acting: `--as` as typed, otherwise muster uses `$MUSTER_AS`, then the user name.
@@ -71,8 +73,8 @@ Not routed: `new`, `move`, `stage`, `set`, `attach`, `escalate`, `inbox`, `recla
 
 ## Owner routes: plain words
 
-Talk like a colleague. Name a task by its title with its id after it ("Stages with roles
-(0014)"), never by id alone. Say stages as the board does (Your check, not `your-check`). No front
+Talk like a colleague. Name a task by its title with its key after it ("Stages with roles
+(mu-14)"), never by key alone. Say stages as the board does (Your check, not `your-check`). No front
 matter field names, no flags, no jargon. Anything that asks the owner to decide follows the asking
 rule: **what** it is, **why** it needs them, the **options** and what each leads to, the **pick**
 (the agent's or capture's when the task or `WAITING-FOR-OWNER.md` gives one; otherwise say there's

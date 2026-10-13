@@ -67,7 +67,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             | "--tags" | "--tag" | "--time" | "--test-time" | "--tokens" | "--stage" | "--gate"
             | "--commit" | "--to" | "--from" | "--after" | "--session" | "--level" | "--parent"
             | "--due" | "--pct" | "--remove" | "--record" | "--resolve" | "--search"
-            | "--holder" | "--sort" | "--at" | "--touches" => {
+            | "--holder" | "--sort" | "--at" | "--touches" | "--prefix" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -92,7 +92,7 @@ fn home() -> PathBuf {
     PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
 }
 
-fn base() -> PathBuf {
+pub(crate) fn base() -> PathBuf {
     std::env::var_os("MUSTER_BASE")
         .map(PathBuf::from)
         .unwrap_or_else(|| home().join("playground"))
@@ -107,6 +107,8 @@ enum Source {
     Env(&'static str),
     /// The current folder's own queue.
     Here,
+    /// A task's key (0033): the project its prefix names, whatever the folder or the environment.
+    Key,
 }
 
 /// The queue root from the environment, if set (and not empty).
@@ -235,21 +237,127 @@ fn check_target(
     ))
 }
 
-/// `claimed 0019 in muster (/…/muster/tasks)`, then where it is now.
-fn claimed_message(root: &Path, id: &str, path: &str) -> String {
+/// Commands whose first word after the command is a task (0033: `mu-12`, `MU-12`, `12` or `0012`).
+const TAKES_A_TASK: [&str; 24] = [
+    "show",
+    "move",
+    "pass",
+    "return",
+    "block",
+    "unblock",
+    "stage",
+    "set",
+    "note",
+    "tick",
+    "untick",
+    "edit",
+    "link",
+    "comment",
+    "attach",
+    "answer",
+    "claim",
+    "start",
+    "release",
+    "heartbeat",
+    "checkin",
+    "ask",
+    "escalate",
+    "vision",
+];
+
+/// Where the task is in `a.pos` for this command, when it takes one and was given it.
+fn task_arg(cmd: &str, a: &Args) -> Option<usize> {
+    let takes = TAKES_A_TASK.contains(&cmd) && !(cmd == "vision" && a.all);
+    (takes && a.pos.len() > 1).then_some(1)
+}
+
+/// The queue a key names (0033): the one `--queue` names, refused unless it's that project's;
+/// else the environment's or the current folder's, when it's that project's; else the project
+/// Muster knows by that prefix.
+fn key_queue(
+    typed: &str,
+    prefix: &str,
+    flag: Option<&str>,
+    env: Option<(&'static str, PathBuf)>,
+    cwd: Option<&Path>,
+    known: &dyn Fn() -> Vec<(String, PathBuf)>,
+) -> Result<(PathBuf, Source), String> {
+    let owner = || {
+        crate::key::known()
+            .into_iter()
+            .find(|p| p.ok && p.prefix == prefix)
+    };
+    if let Some(q) = flag {
+        let (root, source) = resolve_queue(Some(q), None, None, known)?;
+        let has = crate::key::prefix_for(&root);
+        if has == prefix {
+            return Ok((root, source));
+        }
+        let whose = owner()
+            .map(|p| format!("{}'s task", p.name))
+            .unwrap_or_else(|| format!("a task of the project with the prefix {prefix}"));
+        return Err(format!(
+            "{typed} is {whose}, but --queue {q} is {has}: leave --queue out, or name the task {has}-<number>"
+        ));
+    }
+    if let Ok((root, _)) = resolve_queue(None, env, cwd, known) {
+        if crate::key::prefix_for(&root) == prefix {
+            return Ok((root, Source::Key));
+        }
+    }
+    owner()
+        .map(|p| (PathBuf::from(p.path), Source::Key))
+        .ok_or_else(|| format!("no project has the prefix {prefix} (see `muster projects`)"))
+}
+
+/// The task lists in a command's options and values (`--parent`, `block --on`, `set <id>
+/// depends|parent`), keys made ids; a key of another project is refused.
+fn task_lists(a: &mut Args, cmd: &str, prefix: &str, project: &str) -> Result<(), String> {
+    let ids = |v: &str| crate::key::same_project_ids(v, prefix, project);
+    if let Some(v) = a.flags.get("parent") {
+        if let Some(i) = ids(v)? {
+            a.flags.insert("parent".into(), i.join(", "));
+        }
+    }
+    // `--on 0014,0016 [what]`: only its first word can be tasks.
+    if let Some(on) = a.flags.get("on") {
+        let (head, rest) = on.trim().split_once(' ').unwrap_or((on.trim(), ""));
+        if let Some(i) = ids(head)? {
+            let joined = i.join(",");
+            let on = if rest.is_empty() {
+                joined
+            } else {
+                format!("{joined} {rest}")
+            };
+            a.flags.insert("on".into(), on);
+        }
+    }
+    let field = a.pos.get(2).map(String::as_str);
+    if cmd == "set" && matches!(field, Some("depends" | "parent")) && a.pos.len() > 3 {
+        if let Some(i) = ids(&a.pos[3..].join(" "))? {
+            a.pos.truncate(3);
+            a.pos.push(i.join(", "));
+        }
+    }
+    Ok(())
+}
+
+/// `claimed mu-19 in muster (/…/muster/tasks)`, then where it is now.
+fn claimed_message(root: &Path, prefix: &str, id: &str, path: &str) -> String {
     format!(
-        "claimed {id} in {} ({})\n{}",
+        "claimed {} in {} ({})\n{}",
+        crate::key::key(prefix, id),
         projects::default_name(root),
         root.display(),
-        stage_message(root, id, path)
+        stage_message(root, prefix, id, path)
     )
 }
 
-/// `filed 0031 in muster (Shaping)`: what `muster file` made, and where.
-fn filed_message(root: &Path, f: &backlog::Filed) -> String {
+/// `filed mu-31 in muster (Shaping)`: what `muster file` made, and where.
+fn filed_message(root: &Path, prefix: &str, f: &backlog::Filed) -> String {
     format!(
         "filed {} in {} ({})",
-        f.id,
+        crate::key::key(prefix, &f.id),
         projects::default_name(root),
         queue::stage_label("shaping")
     )
@@ -348,21 +456,30 @@ fn tasks_of(root: &Path) -> queue::State {
     )
 }
 
-/// After a stage change: `0007: Building (doing/0007-x.md)`, with what it waits on if blocked.
+/// `tasks_of`, each task with its project's prefix (0033) for its key.
+fn keyed(root: &Path, prefix: &str) -> queue::State {
+    let mut s = tasks_of(root);
+    crate::key::apply(&mut s, |_| prefix.to_string());
+    s
+}
+
+/// After a stage change: `mu-7: Building (doing/0007-x.md)`, with what it waits on if blocked.
 /// The change is already written, so a failed re-read only shortens the message: it never
 /// turns a done change into an error.
-fn stage_message(root: &Path, id: &str, path: &str) -> String {
+fn stage_message(root: &Path, prefix: &str, id: &str, path: &str) -> String {
+    let k = crate::key::key(prefix, id);
     match ops::tasks_now(root).into_iter().find(|t| t.id == id) {
-        Some(t) => {
+        Some(mut t) => {
+            t.prefix = prefix.to_string();
             let why = crate::block::sentence_of(&t, false);
             let blocked = if why.is_empty() {
                 why
             } else {
                 format!(", {why}")
             };
-            format!("{id}: {}{blocked} ({path})", queue::stage_label(&t.stage))
+            format!("{k}: {}{blocked} ({path})", queue::stage_label(&t.stage))
         }
-        None => format!("{id}: changed ({path})"),
+        None => format!("{k}: changed ({path})"),
     }
 }
 
@@ -448,10 +565,13 @@ fn checkin_text(c: &queue::Checkin, max: usize) -> String {
     }
 }
 
-/// `muster show`'s lines after the file: who's on it in this stage, since when, and the latest
-/// check-in. Empty when there's nothing to say.
+/// `muster show`'s lines after the file: its key (0033), who's on it in this stage, since when,
+/// and the latest check-in. Empty when there's nothing to say.
 fn show_footer(t: &queue::Task) -> String {
     let mut out = String::new();
+    if !t.prefix.is_empty() {
+        out.push_str(&format!("key: {}\n", crate::key::key(&t.prefix, &t.id)));
+    }
     let holder = t.holder();
     if !holder.is_empty() {
         let since = if t.stage_since.is_empty() {
@@ -492,9 +612,16 @@ fn list_notes<'a>(notes: &'a [backlog::Note], q: &ListQuery) -> Vec<&'a backlog:
 }
 
 /// A task as `--json` gives it: without its search text (`Task::search` is never serialized),
-/// which is only for matching and would cost an agent reading the list a few KB a task.
+/// which is only for matching and would cost an agent reading the list a few KB a task; with its
+/// key (0033) beside its id.
 fn task_json(t: &queue::Task) -> serde_json::Value {
-    serde_json::json!(t)
+    with_key(serde_json::json!(t), crate::key::key(&t.prefix, &t.id))
+}
+
+/// A JSON object with the task's key (0033) beside its id.
+fn with_key(mut v: serde_json::Value, key: String) -> serde_json::Value {
+    v["key"] = key.into();
+    v
 }
 
 /// `muster list --json`: the tasks, and the backlog notes beside them.
@@ -504,9 +631,11 @@ fn list_json(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> serde_json::Va
 }
 
 /// `muster list` as text: the backlog notes first (file name and title), then a heading per
-/// stage in STAGES order, then one line per task.
+/// stage in STAGES order, then one line per task, by its key (0033).
 fn list_text(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> String {
     let mut out = String::new();
+    let key = |t: &queue::Task| crate::key::key(&t.prefix, &t.id);
+    let width = tasks.iter().map(|t| key(t).len()).max().unwrap_or(0);
     if !notes.is_empty() {
         out.push_str(&format!("Backlog notes ({})\n", notes.len()));
         for n in notes {
@@ -553,8 +682,11 @@ fn list_text(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> String {
                 extra.push_str(&format!("  [check-in {}]", checkin_text(c, 60)));
             }
             out.push_str(&format!(
-                "  {} {:<9} {:<7} {}{extra}\n",
-                t.id, t.kind, t.priority, t.title
+                "  {:<width$} {:<9} {:<7} {}{extra}\n",
+                key(t),
+                t.kind,
+                t.priority,
+                t.title
             ));
         }
     }
@@ -750,10 +882,10 @@ fn set_project_gate(
     base: &Path,
 ) -> Result<String, String> {
     let name = need(a, 2, "a project name")?;
-    let field = need(a, 3, "the field to set (gate)")?;
+    let field = need(a, 3, "the field to set (gate or prefix)")?;
     if field != "gate" {
         return Err(format!(
-            "projects set takes gate, not {field:?} (see `muster help`)"
+            "projects set takes gate or prefix, not {field:?} (see `muster help`)"
         ));
     }
     let cmd = need(a, 4, "the gate command, in quotes (\"\" clears it)")?;
@@ -776,6 +908,20 @@ fn set_project_gate(
     })
 }
 
+/// `muster projects set <name> prefix <p>` (0033): stored with the queue, refused when it isn't 2
+/// to 4 lowercase letters or another project has it. Returns what to print.
+fn set_project_prefix(a: &Args, config: &projects::Config, base: &Path) -> Result<String, String> {
+    let name = need(a, 2, "a project name")?;
+    let prefix = need(a, 4, "the prefix (2 to 4 lowercase letters)")?;
+    if a.pos.len() > 5 {
+        return Err("projects set <name> prefix takes one prefix (see `muster help`)".into());
+    }
+    projects::set_prefix(config, base, name, prefix)?;
+    Ok(format!(
+        "{name}: prefix set to {prefix} (its tasks are {prefix}-1, {prefix}-2…)"
+    ))
+}
+
 /// The gate command as words, from the project's `gate` (None when it has none).
 fn gate_words(project: &str, gate: &str) -> Result<Vec<String>, String> {
     if gate.trim().is_empty() {
@@ -794,22 +940,24 @@ fn gate_words(project: &str, gate: &str) -> Result<Vec<String>, String> {
 fn merge_cmd(
     a: &Args,
     root: &Path,
+    prefix: &str,
     id: &str,
     who: &str,
     gate: Option<(String, String)>,
 ) -> Result<i32, String> {
+    let k = crate::key::key(prefix, id);
     if a.flags.contains_key("gate") || a.flags.contains_key("commit") {
         return Err(format!(
-            "{id} merges when it passes from Testing: the gate runs itself, and the merge commit is recorded; leave --gate and --commit out (see `muster help`)"
+            "{k} merges when it passes from Testing: the gate runs itself, and the merge commit is recorded; leave --gate and --commit out (see `muster help`)"
         ));
     }
     let (project, gate) = gate.unwrap_or_else(|| (projects::default_name(root), String::new()));
     let argv = gate_words(&project, &gate)?;
-    println!("{id}: merging into main (gate: {})", argv.join(" "));
+    println!("{k}: merging into main (gate: {})", argv.join(" "));
     let mut say = |line: String| println!("{line}");
     match crate::parallel::merge(root, id, who, &local_stamp, &argv, &mut say)? {
         crate::parallel::Merge::Returned(why) => {
-            println!("{id}: back in Building: {why}");
+            println!("{k}: back in Building: {why}");
             Ok(1)
         }
         crate::parallel::Merge::Merged {
@@ -822,10 +970,13 @@ fn merge_cmd(
             for n in &notes {
                 println!("left behind: {n} (muster check lists it)");
             }
-            println!("{}", stage_message(root, id, &path));
-            println!("{id}: {report}");
+            println!("{}", stage_message(root, prefix, id, &path));
+            println!("{k}: {report}");
             match next {
-                Some((n, title)) => println!("next: {n} {title}: muster start {n}"),
+                Some((n, title)) => {
+                    let n = crate::key::key(prefix, &n);
+                    println!("next: {n} {title}: muster start {n}")
+                }
                 None => {
                     println!("next: nothing else ready that's safe beside the tasks still running")
                 }
@@ -837,13 +988,14 @@ fn merge_cmd(
 
 /// What `muster start` prints: where, the stage, and the brief (the task file, what it touches,
 /// its criteria), then what to do.
-fn started_text(root: &Path, id: &str, s: &crate::parallel::Started) -> String {
+fn started_text(root: &Path, prefix: &str, id: &str, s: &crate::parallel::Started) -> String {
+    let k = crate::key::key(prefix, id);
     let mut out = format!(
-        "{} {id} in {} ({})\n{}\nworktree: {}\nbranch:   {}\nbrief:    {}\n",
+        "{} {k} in {} ({})\n{}\nworktree: {}\nbranch:   {}\nbrief:    {}\n",
         if s.resumed { "picked up" } else { "started" },
         projects::default_name(root),
         root.display(),
-        stage_message(root, id, &s.path),
+        stage_message(root, prefix, id, &s.path),
         s.worktree.display(),
         s.branch,
         root.join(&s.path).display()
@@ -868,25 +1020,30 @@ fn started_text(root: &Path, id: &str, s: &crate::parallel::Started) -> String {
         }
     }
     out.push_str(&format!(
-        "Work in the worktree. Check in every 30 minutes (muster checkin {id} \"…\" --pct <n>); when the gate is green: muster pass {id} --from building --gate \"<the gate's line>\"\n"
+        "Work in the worktree. Check in every 30 minutes (muster checkin {k} \"…\" --pct <n>); when the gate is green: muster pass {k} --from building --gate \"<the gate's line>\"\n"
     ));
     out
 }
 
-/// One line per task for `muster ready`: id, priority, title, and what it touches.
+/// One line per task for `muster ready`: key, priority, title, and what it touches.
 fn ready_line(t: &queue::Task) -> String {
     let touches = if t.touches.is_empty() {
         "no touches".to_string()
     } else {
         format!("touches: {}", t.touches.join(", "))
     };
-    format!("  {} {:<7} {}  [{touches}]\n", t.id, t.priority, t.title)
+    format!(
+        "  {} {:<7} {}  [{touches}]\n",
+        crate::key::key(&t.prefix, &t.id),
+        t.priority,
+        t.title
+    )
 }
 
 /// `muster ready [--parallel [N]] [--json]` (0023): the tasks a session could start now, or with
 /// --parallel up to N (default 3) safe together, and the ones left out with why.
-fn ready_cmd(a: &Args, root: &Path) -> Result<i32, String> {
-    let s = tasks_of(root);
+fn ready_cmd(a: &Args, root: &Path, prefix: &str) -> Result<i32, String> {
+    let s = keyed(root, prefix);
     let n = match (a.parallel, a.pos.get(1)) {
         (_, None) => 3,
         (true, Some(v)) => v
@@ -913,7 +1070,9 @@ fn ready_cmd(a: &Args, root: &Path) -> Result<i32, String> {
         let tasks: Vec<_> = set.iter().map(|t| task_json(t)).collect();
         let left: Vec<_> = left
             .iter()
-            .map(|(t, why)| serde_json::json!({ "id": t.id, "why": why }))
+            .map(|(t, why)| {
+                serde_json::json!({ "id": t.id, "key": crate::key::key(prefix, &t.id), "why": why })
+            })
             .collect();
         print_json(&serde_json::json!({ "tasks": tasks, "left": left }))?;
         return Ok(0);
@@ -937,7 +1096,11 @@ fn ready_cmd(a: &Args, root: &Path) -> Result<i32, String> {
     if !left.is_empty() {
         out.push_str("Not with them:\n");
         for (t, why) in &left {
-            out.push_str(&format!("  {} {}: {why}\n", t.id, t.title));
+            out.push_str(&format!(
+                "  {} {}: {why}\n",
+                crate::key::key(prefix, &t.id),
+                t.title
+            ));
         }
     }
     print!("{out}");
@@ -987,6 +1150,11 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
             if a.pos.get(1).map(String::as_str) == Some("set") {
                 let file = config_file();
                 let mut c = projects::load(&file);
+                // A prefix lives with the queue (0033), not in projects.json.
+                if a.pos.get(3).map(String::as_str) == Some("prefix") {
+                    println!("{}", set_project_prefix(&a, &c, &base())?);
+                    return Ok(0);
+                }
                 println!("{}", set_project_gate(&a, &mut c, &base())?);
                 projects::save(&file, &c)?;
                 return Ok(0);
@@ -1008,7 +1176,7 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
                     } else {
                         format!("  gate: {}", p.gate)
                     };
-                    println!("{:<16} {}{state}{gate}", p.name, p.path);
+                    println!("{:<16} {:<4}  {}{state}{gate}", p.name, p.prefix, p.path);
                 }
             }
             Ok(0)
@@ -1018,19 +1186,43 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
             let tools = std::env::var_os("MUSTER_TOOLS")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| home().join("playground/muster/main/bin"));
-            let q = projects::create(Path::new(dir), &tools)?;
-            println!("created {}", q.display());
+            let wanted = a.flags.get("prefix").map(String::as_str);
+            let (q, prefix) =
+                projects::create(Path::new(dir), &tools, wanted, &crate::key::known())?;
+            println!(
+                "created {} (prefix {prefix}: its tasks are {prefix}-1, {prefix}-2…)",
+                q.display()
+            );
             Ok(0)
         }
         _ => {
             let cwd = std::env::current_dir().ok();
             let known = || projects::active(&base(), &projects::load(&config_file()));
             let flag = a.flags.get("queue").map(String::as_str);
-            let (root, source) = resolve_queue(flag, env_root(), cwd.as_deref(), &known)?;
+            // The task as typed (0033): a key with a prefix names its project's queue.
+            let typed = task_arg(cmd, &a)
+                .map(|i| crate::key::typed(&a.pos[i]).map(|t| (i, t)))
+                .transpose()?;
+            let (root, source) = match &typed {
+                Some((
+                    i,
+                    crate::key::Typed {
+                        prefix: Some(p), ..
+                    },
+                )) => key_queue(&a.pos[*i], p, flag, env_root(), cwd.as_deref(), &known)?,
+                _ => resolve_queue(flag, env_root(), cwd.as_deref(), &known)?,
+            };
             if targeted(cmd, &a) {
                 check_target(&source, &root, cwd.as_deref(), &known)?;
             }
-            run_on(&a, cmd, &root, &stamp, env, cwd.as_deref())
+            let prefix = crate::key::prefix_for(&root);
+            let cmd = cmd.to_string();
+            let mut a = a;
+            if let Some((i, t)) = typed {
+                a.pos[i] = t.id;
+            }
+            task_lists(&mut a, &cmd, &prefix, &projects::default_name(&root))?;
+            run_on(&a, &cmd, &root, &prefix, &stamp, env, cwd.as_deref())
         }
     }
 }
@@ -1039,10 +1231,13 @@ fn run_on(
     a: &Args,
     cmd: &str,
     root: &Path,
+    prefix: &str,
     stamp: &str,
     env: Env,
     cwd: Option<&Path>,
 ) -> Result<i32, String> {
+    // A task as it's shown (0033): `mu-12`.
+    let key = |id: &str| crate::key::key(prefix, id);
     // Who's acting, worked out only by the commands that write: the label, and the label with the
     // session (the questions' commands record the session on their own).
     let label = || label(a, env, root);
@@ -1061,15 +1256,15 @@ fn run_on(
             };
             let c = ops::create_task(root, &new, &me(), stamp)?;
             if a.json {
-                print_json(&c)?;
+                print_json(&with_key(serde_json::json!(c), key(&c.id)))?;
             } else {
-                println!("{} {}", c.id, c.path);
+                println!("{} {}", key(&c.id), c.path);
             }
             Ok(0)
         }
         "list" => {
             let q = list_query(a)?;
-            let s = tasks_of(root);
+            let s = keyed(root, prefix);
             let tasks = list_filter(&s.tasks, &q);
             let notes = list_notes(&s.backlog, &q);
             if a.json {
@@ -1082,7 +1277,7 @@ fn run_on(
         "show" => {
             let id = need(a, 1, "a task id")?;
             if a.json {
-                let s = tasks_of(root);
+                let s = keyed(root, prefix);
                 let t = s
                     .tasks
                     .iter()
@@ -1092,7 +1287,8 @@ fn run_on(
             } else {
                 print!("{}", queue::read_body(root, id)?);
                 // Who's on it and the latest check-in, which the file only has in pieces.
-                if let Ok(t) = queue::read_task(root, id) {
+                if let Ok(mut t) = queue::read_task(root, id) {
+                    t.prefix = prefix.to_string();
                     print!("{}", show_footer(&t));
                 }
             }
@@ -1109,7 +1305,7 @@ fn run_on(
                 &me(),
                 stamp,
             )?;
-            println!("{id} → {p}");
+            println!("{} → {p}", key(id));
             Ok(0)
         }
         "pass" => {
@@ -1120,7 +1316,7 @@ fn run_on(
                 .is_ok_and(|t| t.stage == "testing" && !t.branch.is_empty());
             if started && from.as_deref().is_none_or(|f| f == "testing") {
                 let gate = projects::gate_of(&base(), &projects::load(&config_file()), root);
-                return merge_cmd(a, root, id, &me(), gate);
+                return merge_cmd(a, root, prefix, id, &me(), gate);
             }
             let opts = ops::PassOpts {
                 gate: a.flags.get("gate").cloned().unwrap_or_default(),
@@ -1128,7 +1324,7 @@ fn run_on(
                 from: a.flags.get("from").cloned(),
             };
             let p = ops::pass_task(root, id, &me(), stamp, &opts)?;
-            println!("{}", stage_message(root, id, &p));
+            println!("{}", stage_message(root, prefix, id, &p));
             Ok(0)
         }
         "return" => {
@@ -1137,7 +1333,7 @@ fn run_on(
             let why = a.pos[2..].join(" ").replace("\\n", " ");
             let to = a.flags.get("to").map(String::as_str);
             let p = ops::return_task(root, id, &why, to, &me(), stamp)?;
-            println!("{}", stage_message(root, id, &p));
+            println!("{}", stage_message(root, prefix, id, &p));
             Ok(0)
         }
         "block" => {
@@ -1155,13 +1351,13 @@ fn run_on(
                 detail.push_str(&more);
             }
             let p = ops::block_as(root, id, &kind, &detail, &me(), stamp)?;
-            println!("{}", stage_message(root, id, &p));
+            println!("{}", stage_message(root, prefix, id, &p));
             Ok(0)
         }
         "unblock" => {
             let id = need(a, 1, "a task id")?;
             let p = ops::unblock_task(root, id, &me(), stamp)?;
-            println!("{}", stage_message(root, id, &p));
+            println!("{}", stage_message(root, prefix, id, &p));
             Ok(0)
         }
         "stage" => {
@@ -1169,7 +1365,7 @@ fn run_on(
             let stage = need(a, 2, "a stage")?;
             let from = a.flags.get("from").map(String::as_str);
             let p = ops::set_stage(root, id, stage, from, &me(), stamp)?;
-            println!("{}", stage_message(root, id, &p));
+            println!("{}", stage_message(root, prefix, id, &p));
             Ok(0)
         }
         "set" => {
@@ -1177,7 +1373,7 @@ fn run_on(
             let field = need(a, 2, "a field")?;
             let value = a.pos[3..].join(" ");
             ops::set_field(root, id, field, &value, &me(), stamp)?;
-            println!("{id}: {field} set");
+            println!("{}: {field} set", key(id));
             Ok(0)
         }
         "note" => {
@@ -1189,7 +1385,7 @@ fn run_on(
                 &me(),
                 stamp,
             )?;
-            println!("{id}: noted");
+            println!("{}: noted", key(id));
             Ok(0)
         }
         "tick" | "untick" => {
@@ -1197,7 +1393,11 @@ fn run_on(
             let which = need(a, 2, "which criterion (AC2 or 2)")?;
             let undo = cmd == "untick";
             ops::tick_criterion(root, id, which, undo, &me(), stamp)?;
-            println!("{id}: {} {which}", if undo { "unticked" } else { "ticked" });
+            println!(
+                "{}: {} {which}",
+                key(id),
+                if undo { "unticked" } else { "ticked" }
+            );
             Ok(0)
         }
         "edit" => {
@@ -1231,8 +1431,8 @@ fn run_on(
                 _ => {}
             }
             match saved? {
-                Some(p) => println!("{id}: edited ({p})"),
-                None => println!("{id}: no change"),
+                Some(p) => println!("{}: edited ({p})", key(id)),
+                None => println!("{}: no change", key(id)),
             }
             Ok(0)
         }
@@ -1244,12 +1444,12 @@ fn run_on(
                         return Err("link --remove takes the link's number or address, nothing more (see `muster help`)".into());
                     }
                     let gone = fields::remove_link(root, id, which, &me(), stamp)?;
-                    println!("{id}: unlinked {}", gone.url);
+                    println!("{}: unlinked {}", key(id), gone.url);
                 }
                 None => {
                     let url = need(a, 2, "an https link")?;
                     let l = fields::add_link(root, id, url, &a.pos[3..].join(" "), &me(), stamp)?;
-                    println!("{id}: linked {}", l.url);
+                    println!("{}: linked {}", key(id), l.url);
                 }
             }
             Ok(0)
@@ -1269,7 +1469,7 @@ fn run_on(
                 }
             };
             fields::add_comment(root, id, &text, &me(), stamp)?;
-            println!("{id}: commented");
+            println!("{}: commented", key(id));
             Ok(0)
         }
         "attach" => {
@@ -1288,7 +1488,7 @@ fn run_on(
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
                 let saved = ops::attach(root, id, &name, &bytes, &me, stamp)?;
-                println!("{id}: attached {saved}");
+                println!("{}: attached {saved}", key(id));
             }
             Ok(0)
         }
@@ -1298,22 +1498,22 @@ fn run_on(
             let n = question_number(q)?;
             let asker = queue::answer(root, id, n, &a.pos[3..].join(" "), &label(), stamp)?;
             match asker {
-                Some(s) => println!("{id}: answered {q}; delivered to session {s}"),
-                None => println!("{id}: answered {q}; no asking session on record"),
+                Some(s) => println!("{}: answered {q}; delivered to session {s}", key(id)),
+                None => println!("{}: answered {q}; no asking session on record", key(id)),
             }
             Ok(0)
         }
         "claim" => {
             let id = need(a, 1, "a task id")?;
             let p = ops::claim_task(root, id, &me(), stamp)?;
-            println!("{}", claimed_message(root, id, &p));
+            println!("{}", claimed_message(root, prefix, id, &p));
             Ok(0)
         }
         "next" => {
             let me = me();
             match ops::next_task(root, &me, stamp)? {
                 Some(c) => {
-                    println!("{}", claimed_message(root, &c.id, &c.path));
+                    println!("{}", claimed_message(root, prefix, &c.id, &c.path));
                     Ok(0)
                 }
                 None => {
@@ -1341,15 +1541,16 @@ fn run_on(
             let cwd =
                 cwd.ok_or("can't read the current folder: run start from the project's repo")?;
             let s = crate::parallel::start(root, id, &me(), stamp, cwd, &place)?;
-            print!("{}", started_text(root, id, &s));
+            print!("{}", started_text(root, prefix, id, &s));
             Ok(0)
         }
-        "ready" => ready_cmd(a, root),
+        "ready" => ready_cmd(a, root, prefix),
         "release" => {
             let id = need(a, 1, "a task id")?;
             if !a.clean {
                 return Err(format!(
-                    "release takes --clean: it gives {id} back to Ready and removes its worktree and branch (to send it back and keep them: muster return) (see `muster help`)"
+                    "release takes --clean: it gives {} back to Ready and removes its worktree and branch (to send it back and keep them: muster return) (see `muster help`)",
+                    key(id)
                 ));
             }
             for line in crate::parallel::release(root, id, &me(), stamp, a.force, cwd)? {
@@ -1360,7 +1561,7 @@ fn run_on(
         "heartbeat" => {
             let id = need(a, 1, "a task id")?;
             ops::heartbeat_task(root, id, &me(), stamp)?;
-            println!("{id}: heartbeat {stamp}");
+            println!("{}: heartbeat {stamp}", key(id));
             Ok(0)
         }
         "checkin" => {
@@ -1369,7 +1570,7 @@ fn run_on(
             let text = a.pos[2..].join(" ").replace("\\n", " ");
             let pct = a.flags.get("pct").map(String::as_str).unwrap_or("");
             ops::checkin_task(root, id, &text, pct, &me(), stamp)?;
-            println!("{id}: checked in; heartbeat {stamp}");
+            println!("{}: checked in; heartbeat {stamp}", key(id));
             Ok(0)
         }
         "reclaim" => {
@@ -1382,7 +1583,10 @@ fn run_on(
                 for x in &r.released {
                     println!(
                         "released {} from {} (no heartbeat for {}): back in Ready ({})",
-                        x.id, x.holder, x.quiet, x.path
+                        key(&x.id),
+                        x.holder,
+                        x.quiet,
+                        x.path
                     );
                 }
                 if r.released.is_empty() && r.failed.is_empty() {
@@ -1411,8 +1615,9 @@ fn run_on(
                 stamp,
             )?;
             println!(
-                "asked Q{} on {id}. The answer will be delivered to this session.",
-                asked.n
+                "asked Q{} on {}. The answer will be delivered to this session.",
+                asked.n,
+                key(id)
             );
             if !asked.earlier.is_empty() {
                 println!("\nQuestions on this task so far (check that yours isn't answered here):");
@@ -1427,7 +1632,10 @@ fn run_on(
             let id = need(a, 1, "a task id")?;
             let n = question_number(need(a, 2, "a question like Q2")?)?;
             queue::escalate(root, id, n, &label(), stamp)?;
-            println!("escalated Q{n} on {id}; add it to WAITING-FOR-OWNER.md");
+            println!(
+                "escalated Q{n} on {}; add it to WAITING-FOR-OWNER.md",
+                key(id)
+            );
             Ok(0)
         }
         "inbox" => {
@@ -1463,9 +1671,9 @@ fn run_on(
             let new = new_task(a, &a.pos[2..].join(" "), body);
             let f = backlog::file_note(root, note, &new, &me(), stamp)?;
             if a.json {
-                print_json(&f)?;
+                print_json(&with_key(serde_json::json!(f), key(&f.id)))?;
             } else {
-                println!("{}", filed_message(root, &f));
+                println!("{}", filed_message(root, prefix, &f));
             }
             Ok(0)
         }
@@ -1477,9 +1685,9 @@ fn run_on(
             println!("dropped {note} ({p})");
             Ok(0)
         }
-        "vision" => run_vision(a, root, &me, stamp),
+        "vision" => run_vision(a, root, prefix, &me, stamp),
         "check" => {
-            let s = tasks_of(root);
+            let s = keyed(root, prefix);
             for p in &s.problems {
                 println!("{p}");
             }
@@ -1511,7 +1719,11 @@ fn run_on(
                     })
                     .collect();
                 if !open.is_empty() {
-                    println!("{}: waits on the owner to verify {}", t.id, open.join(", "));
+                    println!(
+                        "{}: waits on the owner to verify {}",
+                        key(&t.id),
+                        open.join(", ")
+                    );
                 }
             }
             let index_line = index_check_line(index::status(root));
@@ -1562,7 +1774,13 @@ fn run_on(
 
 /// `muster vision`: one task's brief, `--record` an agent's result (`-` reads it from stdin),
 /// `--resolve V2 "<how>"`, or `--all` for the whole queue's inputs.
-fn run_vision(a: &Args, root: &Path, me: &dyn Fn() -> String, stamp: &str) -> Result<i32, String> {
+fn run_vision(
+    a: &Args,
+    root: &Path,
+    prefix: &str,
+    me: &dyn Fn() -> String,
+    stamp: &str,
+) -> Result<i32, String> {
     let (record, resolve) = (a.flags.get("record"), a.flags.get("resolve"));
     if a.all {
         if a.pos.len() > 1 || record.is_some() || resolve.is_some() {
@@ -1605,7 +1823,8 @@ fn run_vision(a: &Args, root: &Path, me: &dyn Fn() -> String, stamp: &str) -> Re
             let how = a.pos[2..].join(" ").replace("\\n", " ");
             let left = vision::resolve(root, id, which, &how, &me(), stamp)?;
             println!(
-                "{id}: vision conflict {} resolved; {left} still open",
+                "{}: vision conflict {} resolved; {left} still open",
+                crate::key::key(prefix, id),
                 which.trim()
             );
             Ok(0)
@@ -1613,7 +1832,8 @@ fn run_vision(a: &Args, root: &Path, me: &dyn Fn() -> String, stamp: &str) -> Re
         (None, None) => {
             if a.pos.len() > 2 {
                 return Err(format!(
-                    "vision takes one task id; to resolve a conflict: muster vision {id} --resolve V1 \"<how>\" (see `muster help`)"
+                    "vision takes one task id; to resolve a conflict: muster vision {} --resolve V1 \"<how>\" (see `muster help`)",
+                    crate::key::key(prefix, id)
                 ));
             }
             let b = vision::brief(root, id)?;
@@ -2123,12 +2343,17 @@ mod tests {
         assert!(list_filter(&s.tasks, &lq(None, Some("ready"), None)).is_empty());
         // After a change: the stage, and what it waits on; a failed re-read still says it changed.
         assert_eq!(
-            stage_message(d.path(), "0002", "blocked/0002-b.md"),
+            stage_message(d.path(), "", "0002", "blocked/0002-b.md"),
             "0002: Testing, Blocked by tasks: 0012 (blocked/0002-b.md)"
         );
+        // By keys (0033), the tasks it waits on too.
         assert_eq!(
-            stage_message(d.path(), "0009", "doing/0009-x.md"),
-            "0009: changed (doing/0009-x.md)"
+            stage_message(d.path(), "mu", "0002", "blocked/0002-b.md"),
+            "mu-2: Testing, Blocked by tasks: mu-12 (blocked/0002-b.md)"
+        );
+        assert_eq!(
+            stage_message(d.path(), "mu", "0009", "doing/0009-x.md"),
+            "mu-9: changed (doing/0009-x.md)"
         );
     }
 
@@ -2618,7 +2843,10 @@ mod tests {
         };
         let base = tempfile::tempdir().unwrap();
         let (q, _) = project(base.path(), "drover");
-        assert_eq!(filed_message(&q, &f), "filed 0031 in drover (Shaping)");
+        assert_eq!(
+            filed_message(&q, "dr", &f),
+            "filed dr-31 in drover (Shaping)"
+        );
     }
 
     #[test]
@@ -2640,9 +2868,9 @@ mod tests {
         .unwrap();
         let p = ops::claim_task(&q, &c.id, "wt-a", "2026-10-12 10:01").unwrap();
         assert_eq!(
-            claimed_message(&q, &c.id, &p),
+            claimed_message(&q, "mu", &c.id, &p),
             format!(
-                "claimed 0001 in muster ({})\n0001: Building (doing/0001-said.md)",
+                "claimed mu-1 in muster ({})\nmu-1: Building (doing/0001-said.md)",
                 q.display()
             )
         );
@@ -3150,14 +3378,23 @@ mod tests {
         let id = task(&f.root, "From the CLI", "cli/");
         let run_in = |dir: &Path, args: &[&str]| {
             let a = parse(&sv(args)).unwrap();
-            run_on(&a, args[0], &f.root, "2026-10-13 10:00", &no_env, Some(dir))
+            run_on(
+                &a,
+                args[0],
+                &f.root,
+                "pj",
+                "2026-10-13 10:00",
+                &no_env,
+                Some(dir),
+            )
         };
         assert_eq!(run_in(&f.repo, &["start", &id, "--as", "wt-a"]), Ok(0));
         let t = queue::read_task(&f.root, &id).unwrap();
         let wt = PathBuf::from(&t.worktree);
-        assert!(wt.is_dir() && t.branch == "task/0001-from-the-cli");
+        assert!(wt.is_dir() && t.branch == "task/pj-1-from-the-cli");
         let text = started_text(
             &f.root,
+            "pj",
             &id,
             &crate::parallel::Started {
                 worktree: wt.clone(),
@@ -3167,7 +3404,7 @@ mod tests {
             },
         );
         assert!(text.starts_with(&format!(
-            "started 0001 in proj ({})\n0001: Building (doing/0001-from-the-cli.md)\nworktree: {}\nbranch:   task/0001-from-the-cli\nbrief:    {}\ntouches:  cli/\ncriteria:\n  - [x] AC1: works — verify: command\n",
+            "started pj-1 in proj ({})\npj-1: Building (doing/0001-from-the-cli.md)\nworktree: {}\nbranch:   task/pj-1-from-the-cli\nbrief:    {}\ntouches:  cli/\ncriteria:\n  - [x] AC1: works — verify: command\n",
             f.root.display(),
             wt.display(),
             f.root.join("doing/0001-from-the-cli.md").display()
@@ -3176,17 +3413,26 @@ mod tests {
         to_testing(&f, &id);
         // From Testing, with no gate set for the project: refused, nothing touched.
         let a = parse(&sv(&["pass", &id, "--from", "testing"])).unwrap();
-        let e = merge_cmd(&a, &f.root, &id, "qa", None).unwrap_err();
+        let e = merge_cmd(&a, &f.root, "pj", &id, "qa", None).unwrap_err();
         assert!(
             e.contains("no gate set for proj") && e.contains("muster projects set proj gate"),
             "{e}"
         );
-        let e = merge_cmd(&a, &f.root, &id, "qa", Some(("proj".into(), "  ".into()))).unwrap_err();
+        let e = merge_cmd(
+            &a,
+            &f.root,
+            "pj",
+            &id,
+            "qa",
+            Some(("proj".into(), "  ".into())),
+        )
+        .unwrap_err();
         assert!(e.contains("no gate set"), "{e}");
         let with_gate = parse(&sv(&["pass", &id, "--from", "testing", "--gate", "x"])).unwrap();
         assert!(merge_cmd(
             &with_gate,
             &f.root,
+            "pj",
             &id,
             "qa",
             Some(("proj".into(), "true".into()))
@@ -3197,7 +3443,7 @@ mod tests {
         // With the project's gate (quoted words, no shell): merged, pushed, cleaned, next named.
         let gate = format!("'{}'", green(&f)[0]);
         assert_eq!(
-            merge_cmd(&a, &f.root, &id, "qa", Some(("proj".into(), gate))),
+            merge_cmd(&a, &f.root, "pj", &id, "qa", Some(("proj".into(), gate))),
             Ok(0)
         );
         let t = queue::read_task(&f.root, &id).unwrap();

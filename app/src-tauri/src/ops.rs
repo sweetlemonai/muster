@@ -1382,20 +1382,22 @@ fn change_locked(
 /// Task `dep_id` was just merged (0042: it reached Your check, or Done; the owner's own task,
 /// Done). Of the tasks it was holding back (`waiting`, read before the change), every one that's
 /// blocked only by tasks (not flagged) and that waits on nothing else now gets a log line saying
-/// it's free, `unblocked: 0014, 0016 done; 0017 in Your check`, which also ends its blocked span on
-/// the timeline. The block itself is derived from `depends:`, so it has cleared whether or not
-/// this line is written; a line that can't be written loses only the line, and never turns the
-/// change that's already written into an error. Done after Your check frees nothing more, so it
-/// writes nothing. The caller holds the queue's lock.
+/// it's free, `unblocked: mu-14, mu-16 done; mu-17 in Your check` (by their keys, 0033), which
+/// also ends its blocked span on the timeline. The block itself is derived from `depends:`, so it
+/// has cleared whether or not this line is written; a line that can't be written loses only the
+/// line, and never turns the change that's already written into an error. Done after Your check
+/// frees nothing more, so it writes nothing. The caller holds the queue's lock.
 ///
 /// A freed task in Building held by someone (not the owner) is theirs again: its lease starts
 /// over (time spent waiting isn't time gone quiet). If they already hold another task in Building,
 /// one holder would hold two, so the freed one goes back to Ready instead, with its claim
-/// released and a stage line saying why (`released: wt-a already holds 0007`).
+/// released and a stage line saying why (`released: wt-a already holds mu-7`).
 fn log_unblocked(root: &Path, dep_id: &str, waiting: &[String], who: &str, stamp: &str) {
     if waiting.is_empty() {
         return;
     }
+    let prefix = crate::key::prefix_for(root);
+    let key = |id: &str| crate::key::key(&prefix, id);
     let tasks = tasks_now(root);
     let mut released: Vec<&str> = Vec::new();
     for t in &tasks {
@@ -1415,8 +1417,11 @@ fn log_unblocked(root: &Path, dep_id: &str, waiting: &[String], who: &str, stamp
                 .map(|o| o.stage == "done")
         };
         let deps = || t.depends.iter().map(String::as_str).filter(|d| *d != t.id);
-        let done: Vec<&str> = deps().filter(|d| state(d) == Some(true)).collect();
-        let merged: Vec<&str> = deps().filter(|d| state(d) == Some(false)).collect();
+        let done: Vec<String> = deps().filter(|d| state(d) == Some(true)).map(key).collect();
+        let merged: Vec<String> = deps()
+            .filter(|d| state(d) == Some(false))
+            .map(key)
+            .collect();
         let mut parts = Vec::new();
         if !done.is_empty() {
             parts.push(format!("{} done", done.join(", ")));
@@ -1442,7 +1447,7 @@ fn log_unblocked(root: &Path, dep_id: &str, waiting: &[String], who: &str, stamp
                 let why = format!(
                     " (released: {} already holds {})",
                     crate::session::split(&t.claimed_by).0,
-                    o.id
+                    key(&o.id)
                 );
                 change_locked(root, &t.id, who, stamp, |c| {
                     Ok(Change {
@@ -1476,10 +1481,11 @@ fn log_unblocked(root: &Path, dep_id: &str, waiting: &[String], who: &str, stamp
 /// override), with `why` when a return gave one (0042). The tasks that depend on it and haven't
 /// started are blocked by it again, derived, with nothing written. Each one already under way
 /// (`block::started`) keeps going, its claim and stage as they are, and gets a note on its log
-/// instead: `0002 went back to Building: <why>`. A note that can't be written loses only the
-/// note. The caller holds the queue's lock.
+/// instead: `mu-2 went back to Building: <why>` (by its key, 0033). A note that can't be
+/// written loses only the note. The caller holds the queue's lock.
 fn note_went_back(root: &Path, dep_id: &str, to: &str, why: &str, who: &str, stamp: &str) {
-    let head = format!("{stamp} {who}: {dep_id} went back to {}", stage_label(to));
+    let dep_key = crate::key::key(&crate::key::prefix_for(root), dep_id);
+    let head = format!("{stamp} {who}: {dep_key} went back to {}", stage_label(to));
     // `why` was checked as one line by `return`; still, never let it log a stage change.
     let line = free_text_line(format!("{head}: {why}"), "the reason")
         .ok()
@@ -6807,7 +6813,8 @@ mod human_tests {
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }
-        fs::write(d.path().join("README.md"), "q").unwrap();
+        // Its prefix stored (0033): the log names other tasks by their keys, hu-1.
+        fs::write(d.path().join("README.md"), "---\nprefix: hu\n---\nq").unwrap();
         d
     }
     fn state_at(d: &Path, stamp: &str) -> crate::queue::State {
@@ -7182,7 +7189,7 @@ mod human_tests {
         pass_task(d.path(), "0001", "owner", T, &no_gate()).unwrap();
         assert_eq!(
             file(d.path(), "0002"),
-            format!("{before}- {T} owner: unblocked: 0001 done\n")
+            format!("{before}- {T} owner: unblocked: hu-1 done\n")
         );
         assert_eq!(next_task(d.path(), "wt-a", T).unwrap().unwrap().id, "0002");
     }
@@ -7215,7 +7222,7 @@ mod human_tests {
         pass_task(d.path(), "0001", "owner", T, &no_gate()).unwrap();
         assert_eq!(
             file(d.path(), "0002"),
-            format!("{before}- {T} owner: unblocked: 0001 done\n")
+            format!("{before}- {T} owner: unblocked: hu-1 done\n")
         );
         assert_eq!(blocked(d.path()), "");
         assert_eq!(next_task(d.path(), "wt-a", T).unwrap().unwrap().id, "0002");

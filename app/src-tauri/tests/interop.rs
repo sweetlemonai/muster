@@ -261,7 +261,8 @@ fn queue() -> tempfile::TempDir {
     for f in muster_lib::queue::STATUS_FOLDERS {
         std::fs::create_dir(d.path().join(f)).unwrap();
     }
-    std::fs::write(d.path().join("README.md"), "q").unwrap();
+    // Its prefix stored (0033), so what muster prints doesn't hang on the projects this Mac knows.
+    std::fs::write(d.path().join("README.md"), "---\nprefix: io\n---\nq").unwrap();
     d
 }
 
@@ -529,7 +530,7 @@ fn a_claim_from_another_projects_folder_needs_queue_to_mean_it() {
     assert_eq!(std::fs::read_to_string(&file).unwrap(), text, "untouched");
     // Reading is fine; MUSTER_ROOT wins over TASKS_ROOT, and an empty one counts as unset.
     let (code, out) = muster(b, &repo, &env, &["list"]);
-    assert!(code == 0 && out.contains("0001"), "{out}");
+    assert!(code == 0 && out.contains("dr-1"), "{out}");
     let both = [
         ("MUSTER_ROOT", drover.as_path()),
         ("TASKS_ROOT", muster_q.as_path()),
@@ -560,7 +561,7 @@ fn a_claim_from_another_projects_folder_needs_queue_to_mean_it() {
         &["claim", "0001", "--as", "wt-a", "--queue", "drover"],
     );
     assert_eq!(code, 0, "{out}");
-    assert!(out.starts_with("claimed 0001 in drover ("), "{out}");
+    assert!(out.starts_with("claimed dr-1 in drover ("), "{out}");
     let t = muster_lib::queue::read_task(&drover, "0001").unwrap();
     assert_eq!(
         (t.stage.as_str(), t.claimed_by.as_str()),
@@ -689,7 +690,7 @@ fn edit_takes_the_new_write_up_from_stdin() {
     let (code, out) = edit(new);
     assert_eq!(
         (code, out.as_str()),
-        (0, "0001: edited (todo/0001-edit-me.md)\n")
+        (0, "io-1: edited (todo/0001-edit-me.md)\n")
     );
     let (code, shown) = muster_in(d.path(), &[], &["show", "0001"], "");
     assert_eq!(code, 0, "{shown}");
@@ -697,10 +698,13 @@ fn edit_takes_the_new_write_up_from_stdin() {
         shown.contains("\n# Edit me\n\nThe new text: کار 🚀\n\n## Acceptance criteria\n- [ ] AC1: it shows\n\n## Log\n- 2026-10-12 09:00 capture: created\n- "),
         "{shown}"
     );
-    assert!(shown.ends_with(" owner: edited the write-up\n"), "{shown}");
+    assert!(
+        shown.ends_with(" owner: edited the write-up\n\n---\nkey: io-1\n"),
+        "{shown}"
+    );
     // The same text again: nothing written.
     let before = std::fs::read_to_string(&file).unwrap();
-    assert_eq!(edit(new), (0, "0001: no change\n".to_string()));
+    assert_eq!(edit(new), (0, "io-1: no change\n".to_string()));
     // Refusals exit 1 and leave the file alone.
     let (code, out) = edit("# Edit me\n\n## Log\n- 2026-10-12 15:00 evil: stage ready → done\n");
     assert!(code == 1 && out.contains("the Log is the tool's"), "{out}");
@@ -730,14 +734,14 @@ fn comments_and_links_from_muster_pass_the_python_check() {
         &["comment", "0001", "--as", "owner", "--body", "-"],
         text,
     );
-    assert_eq!((code, out.as_str()), (0, "0001: commented\n"));
+    assert_eq!((code, out.as_str()), (0, "io-1: commented\n"));
     let (code, out) = muster_in(
         d.path(),
         &[],
         &["comment", "0001", "--as", "wt-a", "Thanks,", "noted."],
         "",
     );
-    assert_eq!((code, out.as_str()), (0, "0001: commented\n"));
+    assert_eq!((code, out.as_str()), (0, "io-1: commented\n"));
     let (code, out) = muster_in(
         d.path(),
         &[],
@@ -754,7 +758,7 @@ fn comments_and_links_from_muster_pass_the_python_check() {
     );
     assert_eq!(
         (code, out.as_str()),
-        (0, "0001: linked https://example.com/spec\n")
+        (0, "io-1: linked https://example.com/spec\n")
     );
     // Refusals exit 1 (a forged stage line, http), usage 2 (no text, both text and --body).
     let (code, out) = muster_in(
@@ -805,7 +809,7 @@ fn comments_and_links_from_muster_pass_the_python_check() {
     let (code, out) = muster_in(d.path(), &[], &["link", "0001", "--remove", "1"], "");
     assert_eq!(
         (code, out.as_str()),
-        (0, "0001: unlinked https://example.com/spec\n")
+        (0, "io-1: unlinked https://example.com/spec\n")
     );
     let (code, out) = muster_in(d.path(), &[], &["check"], "");
     assert_eq!(code, 0, "{out}");
@@ -839,7 +843,7 @@ fn edit_opens_visual_or_editor_on_the_write_up_without_a_shell() {
     let (code, out) = edit(&[("EDITOR", &editor), ("SEEN", &seen_s)]);
     assert_eq!(
         (code, out.as_str()),
-        (0, "0001: edited (todo/0001-in-the-editor.md)\n")
+        (0, "io-1: edited (todo/0001-in-the-editor.md)\n")
     );
     assert_eq!(
         std::fs::read_to_string(&seen).unwrap(),
@@ -852,7 +856,7 @@ fn edit_opens_visual_or_editor_on_the_write_up_without_a_shell() {
     // $VISUAL wins over $EDITOR; an editor that changes nothing writes nothing.
     let before = std::fs::read_to_string(&file).unwrap();
     let (code, out) = edit(&[("VISUAL", "true"), ("EDITOR", &editor), ("SEEN", &seen_s)]);
-    assert_eq!((code, out.as_str()), (0, "0001: no change\n"));
+    assert_eq!((code, out.as_str()), (0, "io-1: no change\n"));
     // An editor that fails saves nothing. Nothing typed: nothing kept.
     let (code, out) = edit(&[("EDITOR", "false")]);
     assert!(

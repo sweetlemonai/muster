@@ -6,8 +6,8 @@ import type { BlockKind } from "./blockWords";
 import type { Question } from "./types";
 
 const q = (n: number, text: string, ticked = false): Question => ({ n, ticked, asker: "wt-a", text, escalated: false, ownerAnswered: false });
-const view = (kind: BlockKind | null, detail = "", questions: Question[] = [], busy = false) =>
-  renderToStaticMarkup(createElement(BlockFormView, { kind, detail, questions, busy, onKind: () => {}, onDetail: () => {}, onSubmit: () => {}, onCancel: () => {} }));
+const view = (kind: BlockKind | null, detail = "", questions: Question[] = [], busy = false, prefix?: string) =>
+  renderToStaticMarkup(createElement(BlockFormView, { kind, detail, questions, prefix, busy, onKind: () => {}, onDetail: () => {}, onSubmit: () => {}, onCancel: () => {} }));
 const chips = (html: string) => [...html.matchAll(/<button type="button" class="chip( on)?" aria-pressed="(true|false)"[^>]*>([^<]*)<\/button>/g)].map((m) => `${m[3]}${m[1] ? " (on)" : ""}`);
 const block = (html: string) => /<button type="submit"([^>]*)>Block<\/button>/.exec(html)?.[1].includes("disabled") ? "disabled" : "enabled";
 
@@ -22,10 +22,13 @@ describe("the Block form (0024)", () => {
   it("asks tasks for their ids, which go into depends", () => {
     const html = view("tasks", "0014, 0016");
     expect(chips(html)).toContain("tasks (on)");
-    expect(html).toContain('placeholder="Task ids, like 0014, 0016"');
+    expect(html).toContain('placeholder="Tasks by key or number, like 14, 16"');
     expect(html).toContain("added to its depends");
     expect(block(html)).toBe("enabled");
     expect(block(view("tasks", "soon"))).toBe("disabled");
+    // Its project's keys too (0033), not another project's.
+    expect(block(view("tasks", "mu-14, 16", [], false, "mu"))).toBe("enabled");
+    expect(block(view("tasks", "br-14", [], false, "mu"))).toBe("disabled");
   });
   it("asks you, permission and outside for words", () => {
     expect(view("you")).toContain('placeholder="What you have to do or decide"');

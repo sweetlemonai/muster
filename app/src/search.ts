@@ -1,4 +1,5 @@
 import { holder, key } from "./lib";
+import { parseKey } from "./taskKey";
 import type { Task } from "./types";
 
 // Search (task 0032; the board's orders are in lib.ts). The core has the same rules (search.rs)
@@ -14,6 +15,9 @@ import type { Task } from "./types";
 // - A query is its folded words. A task matches when every word does, in any order.
 // - A word of digits only (0–9) is an id: it matches the task whose id is all digits and the same
 //   number (19, 0019 and 00019 all find 0019). It never matches text, so dates don't swamp ids.
+// - A key (0033: a word between spaces that taskKey.ts `parseKey` reads with a prefix, mu-12,
+//   MU-0012) is kept whole, as `mu-0012`: it matches the task with that prefix and number, and
+//   never text. Only spaces, tabs and line breaks separate a key from the words beside it.
 // - Any other word matches when it's part of the folded holder (lib.ts `holder`) or of the task's
 //   `search` text (the core's: title, tags and body, each folded word once, digit-only words left
 //   out), so "flick" finds "flickers".
@@ -56,9 +60,13 @@ export function fold(s: string): string {
 
 const split = (folded: string) => folded.split(" ").filter(Boolean);
 
-/** The words of a query, folded. None for an empty query: it finds everything. */
+/** The words of a query, folded, a key kept whole (`mu-0012`). None for an empty query: it finds
+ *  everything. */
 export function queryWords(q: string): string[] {
-  return split(fold(q));
+  return q.split(/[ \t\n\r\f]/).flatMap((raw) => {
+    const k = parseKey(raw);
+    return k?.prefix ? [`${k.prefix}-${k.id}`] : split(fold(raw));
+  });
 }
 
 /** A text as the core stores it in `search`: each folded word once, in order, without words of
@@ -70,6 +78,17 @@ export function searchWords(text: string): string {
 const isIdWord = (w: string) => DIGITS.test(w);
 const number = (s: string) => s.replace(/^0+/, "");
 const sameId = (w: string, id: string) => DIGITS.test(id) && number(w) === number(id);
+/** A query's key word (`mu-0012`) as its prefix and number; folded words never have a `-`. */
+function keyWord(w: string): [string, string] | null {
+  const at = w.indexOf("-");
+  return at < 0 ? null : [w.slice(0, at), w.slice(at + 1)];
+}
+/** Whether a word is this task: digits as its id, a key as its prefix and id; null for a word of text. */
+function isTask(w: string, t: Pick<Task, "id" | "prefix">): boolean | null {
+  if (isIdWord(w)) return sameId(w, t.id);
+  const k = keyWord(w);
+  return k ? (t.prefix ?? "") === k[0] && sameId(k[1], t.id) : null;
+}
 
 // Holders are few and repeat on every keystroke; their folds are kept (and dropped when many).
 const folded = new Map<string, string>();
@@ -85,12 +104,14 @@ function foldHolder(t: Task): string {
   return f;
 }
 
-/** Whether a task has every word: digits as its id, the rest in its holder or its search text. */
+/** Whether a task has every word: digits as its id, a key as its prefix and id, the rest in its
+ *  holder or its search text. */
 export function taskMatches(t: Task, words: string[]): boolean {
   let hay: string | null = null;
   for (const w of words) {
-    if (isIdWord(w)) {
-      if (!sameId(w, t.id)) return false;
+    const it = isTask(w, t);
+    if (it !== null) {
+      if (!it) return false;
       continue;
     }
     hay ??= `${foldHolder(t)} ${t.search ?? ""}`;
@@ -124,20 +145,21 @@ export function withSearch(tasks: Task[], index: SearchIndex): Task[] {
   return tasks.map((t) => ({ ...t, search: Object.hasOwn(index, key(t)) ? index[key(t)] : "" }));
 }
 
-/** Whether a word of the query is this id (so the id is marked where it shows). */
-export const idHit = (id: string, words: string[]) => words.some((w) => isIdWord(w) && sameId(w, id));
+/** Whether a word of the query names this task, by its id or its key (so its key is marked where
+ *  it shows). */
+export const idHit = (t: Pick<Task, "id" | "prefix">, words: string[]) => words.some((w) => isTask(w, t) === true);
 
 /** Whether a folded text (a backlog note's `searchWords`) has every word. A note has no id, so a
- *  word of digits never matches one. */
+ *  word of digits, or a key, never matches one. */
 export function textMatches(hay: string, words: string[]): boolean {
-  return words.every((w) => !isIdWord(w) && hay.includes(w));
+  return words.every((w) => !isIdWord(w) && !keyWord(w) && hay.includes(w));
 }
 
 /** Where the words are in a text as shown: [start, end) in UTF-16 units, merged, in order. The
  *  marks cover the original characters, a decomposed accent included. Digit words are ids and
- *  mark nothing. */
+ *  and keys mark nothing. */
 export function highlights(text: string, words: string[]): [number, number][] {
-  const look = words.filter((w) => w && !isIdWord(w));
+  const look = words.filter((w) => w && !isIdWord(w) && !keyWord(w));
   if (!look.length || !text) return [];
   let f = "";
   const from: number[] = [];

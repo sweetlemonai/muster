@@ -12,7 +12,7 @@ type FixtureQuery = { search?: string; stage?: string[]; type?: string[]; tag?: 
 
 /** A task as the core gives it to the window: the file's fields, plus what it derives. */
 const tasks: Task[] = cases.tasks.map((f) => ({
-  queue: "q", id: f.id, title: f.title, kind: f.type, priority: f.priority, status: "", stage: f.stage, blocked: f.parsed.blocked, stageHistory: [], folder: "", path: "",
+  queue: "q", prefix: cases.prefix, id: f.id, title: f.title, kind: f.type, priority: f.priority, status: "", stage: f.stage, blocked: f.parsed.blocked, stageHistory: [], folder: "", path: "",
   claimedBy: f.claimedBy, heldBy: f.heldBy, stageSince: "", checkins: [], heartbeat: "", waitingOn: f.waitingOn, blockedKind: f.parsed.blockedKind, depends: f.depends, forWho: "ai", commit: "", captured: f.captured, capturedAt: "", doneAt: "",
   blockHistory: [], questions: [], openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: f.parsed.waitingForOwner, tags: f.tags,
   estTime: f.estTime, estTestTime: "", estTokens: "", estMinutes: f.parsed.estMinutes, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [],

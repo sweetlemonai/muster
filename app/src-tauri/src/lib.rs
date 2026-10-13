@@ -10,6 +10,7 @@ pub mod help;
 pub mod helper;
 mod helper_cmds;
 pub mod index;
+pub mod key;
 pub mod ops;
 pub mod parallel;
 pub mod projects;
@@ -82,7 +83,15 @@ async fn state(app: tauri::State<'_, AppState>) -> Result<queue::State, String> 
     let reader = app.transcripts.clone();
     let (state, cache) = blocking(move || {
         let mut cache = cache;
-        let mut s = queue::read_state(&queues(&file), &mut cache);
+        let list = projects::list(&base(), &projects::load(&file));
+        let mut s = queue::read_state(&projects::shown(&list), &mut cache);
+        // Each project's prefix, for its tasks' keys (0033).
+        key::apply(&mut s, |name| {
+            list.iter()
+                .find(|p| p.name == name)
+                .map(|p| p.prefix.clone())
+                .unwrap_or_default()
+        });
         // The cards' live dot: file times only, about a millisecond for 50 sessions.
         work::mark_live(&mut s.tasks, &reader, s.now);
         Ok((s, cache))
@@ -829,9 +838,29 @@ async fn create_project(handle: tauri::AppHandle) -> Result<Option<String>, Stri
     };
     let h = handle.clone();
     blocking(move || {
-        let q = projects::create(&dir, &tools())?;
         let app = h.state::<AppState>();
+        // Its prefix is stored with it (0033): the default beside every project's.
+        let known = projects::list(&base(), &projects::load(&app.config_file));
+        let (q, _) = projects::create(&dir, &tools(), None, &known)?;
         edit_config(&app, |c| projects::add(c, &base(), &q)).map(Some)
+    })
+    .await
+}
+
+/// Set a project's prefix (0033), stored with its queue: refused when it isn't 2 to 4 lowercase
+/// letters or another project has it.
+#[tauri::command]
+async fn set_project_prefix(
+    handle: tauri::AppHandle,
+    key: String,
+    prefix: String,
+) -> Result<(), String> {
+    blocking(move || {
+        let app = handle.state::<AppState>();
+        // Under the config lock, so two changes can't both take one prefix.
+        let _guard = app.config.lock().map_err(|e| e.to_string())?;
+        let c = projects::load(&app.config_file);
+        projects::set_prefix_by_key(&c, &base(), &key, prefix.trim()).map(|_| ())
     })
     .await
 }
@@ -918,6 +947,7 @@ pub fn run() {
             add_project,
             create_project,
             rename_project,
+            set_project_prefix,
             hide_project,
             remove_project,
             create_task,

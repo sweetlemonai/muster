@@ -1,6 +1,7 @@
 import { claimant, fmtMinutes, fmtTokens, stageLabel, stamp, stampMinutes } from "./lib";
 import { estimateLeft, isWork, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
 import Markdown from "./Markdown";
+import { siblingKey } from "./taskKey";
 import OwnerChecklist from "./OwnerChecklist";
 import { criteriaSection, fmtWall, timeInWork } from "./paneData";
 import type { Task } from "./types";
@@ -145,7 +146,7 @@ function Rollup({ task, childTasks }: { task: Task; childTasks?: Task[] }) {
             const c = byId.get(id);
             return (
               <li key={id}>
-                {c ? <><span className="id">{id}</span> {c.title} <span className={`status-pill s-${shownStageClass(c)}`}>{shownStageLabel(c)}</span></> : id}
+                {c ? <><span className="id">{siblingKey(task, id)}</span> {c.title} <span className={`status-pill s-${shownStageClass(c)}`}>{shownStageLabel(c)}</span></> : siblingKey(task, id)}
               </li>
             );
           })}

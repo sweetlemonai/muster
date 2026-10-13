@@ -18,6 +18,8 @@ Commands: `muster projects` lists the queues, and `muster init <project-folder>`
 
 A **task** is one piece of work small enough for one agent to build. Its file is named by its id and title, like `0012-board-flickers-when-the-pane-opens.md`. The id is four digits, given out in order by `muster`, so two tasks never share one.
 
+Everywhere you see a task, it's named by its **key**: its project's prefix and its number, like `mu-12` for Muster's `0012`. Type either one: `muster show mu-12`, `muster show 12` and `muster show 0012` find the same task, and `muster show br-7` finds Braindump's task 7 from any folder. The file keeps its id, so nothing is renamed. A project's prefix is 2 to 4 lowercase letters: the first two of its name unless another project starts the same, or the one you set in **Projects** or with `muster projects set <name> prefix <p>`. A key written in a task's text links to that task in the app.
+
 The file has four parts:
 
 - The **front matter**, between two `---` lines at the top: the task's fields, such as `type: bug`, `priority: high`, `stage: building` and `claimed-by: wt-a`.
@@ -66,7 +68,7 @@ muster block 0012 --on you "which colour for the button?"
 muster block 0012 --on 0014,0016
 ```
 
-The card, the table, the timeline and the task pane say why in words, the kind first: "Blocked on you: which colour for the button?", "Blocked by tasks: 0014 (Building, codex), 0016 (Ready)". In the pane each task id opens that task. A task blocked on you or by a permission also counts as waiting for you. `muster unblock 0012` lets it go on. In the task pane, use **Block** (pick the kind from its chips) and **Unblock**.
+The card, the table, the timeline and the task pane say why in words, the kind first: "Blocked on you: which colour for the button?", "Blocked by tasks: mu-14 (Building, codex), mu-16 (Ready)". In the pane each task's key opens that task. A task blocked on you or by a permission also counts as waiting for you. `muster unblock 0012` lets it go on. In the task pane, use **Block** (pick the kind from its chips) and **Unblock**.
 
 ## Goals, features and tasks
 
