@@ -7,6 +7,7 @@ pub mod cli;
 pub mod help;
 pub mod helper;
 mod helper_cmds;
+pub mod index;
 pub mod ops;
 pub mod projects;
 pub mod queue;

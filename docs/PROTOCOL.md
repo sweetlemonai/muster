@@ -1,5 +1,13 @@
 # Muster — task queue protocol (v2, with stages)
 
+> **INDEX.md, the master list (Muster 0018, 2026-10-13).** `INDEX.md` in the queue folder lists
+> every task with a link to its file: goals with their features and tasks, then the tasks under
+> none by stage, the backlog notes, and what's done. muster writes it after every change it makes,
+> under the queue's lock, so **never edit it by hand**. After you edit a task file by hand, run
+> `muster index`. `muster check` and `manifest.py --check` report a list that doesn't match the
+> files. A queue committed with its project (`.muster/`) would see branches conflict on it; the
+> pre-commit hook that rebuilds it and the git merge driver that does the same come with task 0005.
+>
 > **Stages (Muster 0014, 2026-10-12).** A task goes Backlog → Shaping (product, tech and UI
 > agents) → Ready → Building (code agent) → Testing (QA agent) → Your check (the owner) → Done.
 > `stage:` in the front matter is the truth, and only `muster` writes it. Hand a task on with

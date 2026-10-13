@@ -249,9 +249,19 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "check",
         usage: "muster check",
-        what: "Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop. Exit 1 if any. A goal past its due date with tasks open is a warning: shown, without failing.",
+        what: "Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop, an INDEX.md that doesn't match the task files (rebuild with muster index; none yet is fine). Exit 1 if any. A goal past its due date with tasks open is a warning: shown, without failing.",
         options: &[],
         examples: &["muster check", "muster check --queue braindump"],
+    },
+    Command {
+        name: "index",
+        usage: "muster index [--check]",
+        what: "Rebuild INDEX.md, the queue's master list: every goal with its features and tasks, then the tasks under none by stage, the backlog notes, and what's done, each with its stage, priority, type, estimate and a link to its file. Muster rewrites it after every change it makes, so this is for after a hand edit. It's generated: never edit it by hand.",
+        options: &[(
+            "--check",
+            "write nothing; exit 1 if INDEX.md is missing or doesn't match the task files",
+        )],
+        examples: &["muster index", "muster index --check --queue drover"],
     },
     Command {
         name: "add",
@@ -533,6 +543,7 @@ mod tests {
             "file",
             "drop",
             "check",
+            "index",
             "projects",
             "init",
             "help",
@@ -553,7 +564,7 @@ mod tests {
                 "{name}'s examples use it"
             );
         }
-        assert_eq!(COMMANDS.len(), 31);
+        assert_eq!(COMMANDS.len(), 32);
     }
 
     #[test]
@@ -658,6 +669,12 @@ mod tests {
         assert!(set.contains("level|parent|due"), "{set}");
         assert!(set.contains("muster set 0031 parent \"\""), "{set}");
         assert!(command_text("check").unwrap().contains("parent"));
+        // The master list (0018): what index does, its --check, and that check reports a stale one.
+        let index = command_text("index").unwrap();
+        for words in ["INDEX.md", "--check", "never edit", "exit 1"] {
+            assert!(index.contains(words), "{words}: {index}");
+        }
+        assert!(command_text("check").unwrap().contains("INDEX.md"));
         // The app's help names the pane's stage actions.
         let app: String = APP.iter().map(|(k, v)| format!("{k} {v}\n")).collect();
         for word in [

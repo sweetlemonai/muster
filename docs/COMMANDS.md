@@ -75,8 +75,17 @@ Prints the command and its output, verbatim.
 
 `muster help` lists every command, the same list as the app's Help tab. The ones /mu doesn't
 route run as `! muster …` in a session: new, move, stage, set, attach, escalate, inbox, reclaim,
-projects, init, tick, untick (the owner's criteria, task 0028), edit (task 0020), and the backlog's
-shape, file and drop (task 0015). Also coming: `depends:` (task 0019).
+projects, init, tick, untick (the owner's criteria, task 0028), edit (task 0020), the backlog's
+shape, file and drop (task 0015), and index (task 0018). Also coming: `depends:` (task 0019).
+
+The master list (task 0018): `INDEX.md` in the queue folder lists every goal with its features and
+tasks, then the tasks under none by stage, the backlog notes, and what's done (collapsed), each
+with its stage, priority, type, estimate and a link to its file. muster rewrites it after every
+change it makes, under the queue's lock, and only when its text changed. It's generated, so never
+edit it by hand. After a hand edit to a task file, `muster index` rebuilds it, and `muster index
+--check` exits 1 when it's missing or stale. `muster check` and `manifest.py --check` report a
+stale one (a missing one is fine); `manifest.py` reads the sources line at its end and never
+writes the list.
 
 Levels (task 0016): `new --level goal|feature --parent <id> --due YYYY-MM-DD` and `set <id>
 level|parent|due <value>` (an empty parent or due clears it), with the rules checked: a task's

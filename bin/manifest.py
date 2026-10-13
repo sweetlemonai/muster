@@ -150,6 +150,82 @@ def backlog_notes():
     return notes, problems
 
 
+INDEX = "INDEX.md"
+INDEX_STALE = "INDEX.md doesn't match the task files (rebuild with `muster index`)"
+INDEX_SOURCES = re.compile(r"<!-- muster sources: ([0-9a-f]{16}) -->")
+MAX_INDEX_BYTES = 16 * 1024 * 1024
+
+
+def fnv1a(h: int, data: bytes) -> int:
+    """64-bit FNV-1a over `data`, from `h` (index.rs fnv1a)."""
+    for b in data:
+        h = ((h ^ b) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return h
+
+
+def utf8_names(folder: Path) -> list:
+    """The names in a folder that are UTF-8 (the core leaves the others out of the sources too)."""
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return []
+    out = []
+    for name in names:
+        try:
+            name.encode("utf-8")
+        except UnicodeEncodeError:
+            continue
+        out.append(name)
+    return out
+
+
+def index_sources() -> str:
+    """What INDEX.md is made from, worked out as the app's core does (index.rs sources): every
+    task file in the queue folder and its status folders (symlinks followed) and every backlog
+    note (plain files only), by relative path, each as its path, a NUL, its size, a NUL and its
+    bytes (none over 1 MB), hashed with 64-bit FNV-1a."""
+    files = []
+    for prefix, folder in [("", ROOT)] + [(f + "/", ROOT / f) for f in FOLDERS]:
+        for name in utf8_names(folder):
+            if is_task_name(name) and (folder / name).is_file():
+                files.append((prefix + name, folder / name))
+    notes = backlog_dir()
+    for name in utf8_names(notes):
+        p = notes / name
+        if is_note_file(name) and p.is_file() and not p.is_symlink():
+            files.append((notes.name + "/" + name, p))
+    files.sort(key=lambda f: f[0].encode("utf-8"))
+    h = 0xCBF29CE484222325
+    for rel, p in files:
+        try:
+            size = p.stat().st_size
+        except OSError:
+            size = 0
+        data = b""
+        if size <= MAX_NOTE_BYTES:
+            try:
+                data = p.read_bytes()
+            except OSError:
+                data = b""
+        for part in (rel.encode("utf-8"), b"\0", str(size).encode("ascii"), b"\0", data):
+            h = fnv1a(h, part)
+    return f"{h:016x}"
+
+
+def index_problem():
+    """INDEX.md's problem (task 0018), or None: it's there but its last line, the sources it was
+    made from, doesn't name what the files are now. None when there's no INDEX.md yet. Only muster
+    writes it; this never does."""
+    p = ROOT / INDEX
+    if not p.is_symlink() and not p.exists():
+        return None
+    if p.is_symlink() or not p.is_file() or p.stat().st_size > MAX_INDEX_BYTES:
+        return INDEX_STALE
+    lines = p.read_text(encoding="utf-8", errors="replace").rstrip("\n").split("\n")
+    m = INDEX_SOURCES.fullmatch(lines[-1])
+    return None if m and m.group(1) == index_sources() else INDEX_STALE
+
+
 def level_of(fields: dict) -> str:
     """goal, feature or task: `level:`, a task when it has none or one that isn't a level."""
     level = fields.get("level", "").lower()
@@ -321,6 +397,9 @@ def main():
             problems.append(f"{t['path']}: waiting_on {ref.group(1)}, which doesn't exist")
     level_problems, warnings = level_checks(tasks, now.strftime("%Y-%m-%d"))
     problems.extend(level_problems)
+    stale_index = index_problem()
+    if stale_index:
+        problems.append(stale_index)
     for t in tasks:
         del t["bad_level"]
     inbox = sorted(p.name for p in (ROOT / "inbox").glob("*.md"))
