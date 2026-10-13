@@ -9,7 +9,7 @@ const note = (over: Partial<Note>): Note => ({ queue: "muster", file: "n.md", ti
 const task = (over: Partial<Task>): Task => ({
   queue: "muster", id: "0001", title: "T", kind: "task", priority: "normal", status: "inbox", stage: "backlog", blocked: false, stageHistory: [],
   folder: "inbox", path: "inbox/0001-t.md", claimedBy: "", heartbeat: "", waitingOn: "", commit: "", captured: "", questions: [],
-  openQuestions: 0, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTokens: "", estMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", attachments: [], logTail: [], modified: 0, ...over,
+  openQuestions: 0, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [], attachments: [], logTail: [], modified: 0, ...over,
 });
 
 describe("backlog notes on the board", () => {
@@ -49,7 +49,7 @@ describe("backlog notes on the board", () => {
 
   it("prefills File as task from the note", () => {
     expect(fileDraft(note({ title: "Board flickers", text: "Board flickers\n\nmore" }))).toEqual({
-      title: "Board flickers", kind: "task", priority: "normal", body: "Board flickers\n\nmore",
+      title: "Board flickers", kind: "code", priority: "normal", body: "Board flickers\n\nmore",
     });
     expect(fileDraft(note({ title: "", text: "" })).title).toBe("");
   });

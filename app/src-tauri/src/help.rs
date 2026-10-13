@@ -33,19 +33,20 @@ pub struct Help {
 pub const COMMANDS: &[Command] = &[
     Command {
         name: "new",
-        usage: "muster new \"<title>\" [--type bug|task|idea] [--priority high|normal|low] [--tags a,b] [--time 2h] [--tokens 400k] [--body <text>|-]",
-        what: "Create a task in To do. Its id is taken in order under the queue's lock, and it's logged as you.",
+        usage: "muster new \"<title>\" [--type code|bug|chore|tech-debt|spike|design|docs|research] [--priority high|normal|low] [--tags a,b] [--time 2h] [--test-time 30m] [--tokens 400k] [--body <text>|-]",
+        what: "Create a task in Ready. Its id is taken in order under the queue's lock, and it's logged as you. An idea that isn't a task yet goes in the backlog instead (muster add).",
         options: &[
-            ("--type", "bug, task (default) or idea"),
+            ("--type", "code (default), bug, chore, tech-debt, spike, design, docs or research; task still means code"),
             ("--priority", "high, normal (default) or low"),
             ("--tags", "comma-separated: spike, chore, tech-debt, code, docs, design, research, test, perf, security, or your own"),
             ("--time", "estimated agent time: 45m, 2h, 1.5d"),
+            ("--test-time", "estimated test time, the QA agent plus your check: 30m, 1h"),
             ("--tokens", "estimated tokens: 150k, 1.2M"),
-            ("--body", "the description in Markdown; \\n is a line break; - reads it from stdin"),
+            ("--body", "the description in Markdown; \\n is a line break; - reads it from stdin. It can't have a \"## Comments\" line (comments are the tool's)"),
         ],
         examples: &[
-            "muster new \"Board flickers on resize\" --type bug --priority high --tags code --time 1h --tokens 300k",
-            "muster new \"Export as CSV\" --type idea --body \"What: …\\n\\nDone looks like: …\"",
+            "muster new \"Board flickers on resize\" --type bug --priority high --tags code --time 1h --test-time 20m --tokens 300k",
+            "muster new \"Export as CSV\" --type code --body \"What: …\\n\\nDone looks like: …\"",
             "pbpaste | muster new \"From the clipboard\" --body -",
         ],
     },
@@ -155,10 +156,10 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "set",
-        usage: "muster set <id> <priority|type|title|tags|time|tokens> <value>",
-        what: "Change one field, logged with the time and who.",
+        usage: "muster set <id> <priority|type|title|tags|time|test-time|tokens> <value>",
+        what: "Change one field, logged with the time and who. type is one of code, bug, chore, tech-debt, spike, design, docs, research; time is agent time and test-time the QA agent plus your check.",
         options: &[],
-        examples: &["muster set 0007 priority high", "muster set 0007 tags spike,tech-debt", "muster set 0007 tags \"\"", "muster set 0007 time 3h", "muster set 0007 tokens 600k", "muster set 0007 title \"A clearer title\""],
+        examples: &["muster set 0007 priority high", "muster set 0007 type tech-debt", "muster set 0007 tags spike,tech-debt", "muster set 0007 tags \"\"", "muster set 0007 time 3h", "muster set 0007 test-time 45m", "muster set 0007 tokens 600k", "muster set 0007 title \"A clearer title\""],
     },
     Command {
         name: "edit",
@@ -181,6 +182,29 @@ pub const COMMANDS: &[Command] = &[
         what: "Add a line to the task's log (the tool stamps the time).",
         options: &[],
         examples: &["muster note 0007 \"Checked on the Mac, works\""],
+    },
+    Command {
+        name: "comment",
+        usage: "muster comment <id> \"<text>\" | --body <text>|-",
+        what: "Add a comment to a task's thread: under ## Comments, above the Log, stamped with who and when, and logged as commented. Anyone may comment on any task at any stage, one someone else holds included: comments don't touch the write-up, and edit leaves them alone. Lines are kept (each after the first indented in the file); control characters go, at most 4,000 characters, and a line that would read as a stage change is refused.",
+        options: &[
+            ("--body", "the comment instead of the words after the id; \\n is a line break; - reads it from stdin"),
+            ("--as", "who's commenting; default $MUSTER_AS, then $USER"),
+        ],
+        examples: &[
+            "muster comment 0007 \"Tried it on the Mac: the board still flickers once\"",
+            "pbpaste | muster comment 0007 --body -",
+        ],
+    },
+    Command {
+        name: "link",
+        usage: "muster link <id> <https-url> [\"<title>\"] | muster link <id> --remove <n|url>",
+        what: "Add an external link to a task (a spec, a PR, a design), or remove one by its number (from 1) or address. Links are https only, up to 2,000 characters, printable ASCII (percent-encode the rest), without a user name or password; a title has no <, > or ;. At most 20 per task. They're in the front matter as links: title <https://…>; <https://…>, the task pane lists them, and a click opens one in your browser. Logged.",
+        options: &[("--remove", "the link's number (1 is the first) or its address")],
+        examples: &[
+            "muster link 0007 https://github.com/sweetlemonai/muster/pull/12 \"The PR\"",
+            "muster link 0007 --remove 1",
+        ],
     },
     Command {
         name: "tick",
@@ -243,7 +267,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "check",
         usage: "muster check",
-        what: "Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist, a backlog note over 1 MB or that's a symlink. Exit 1 if any.",
+        what: "Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist, a link that isn't a plain https link, a backlog note over 1 MB or that's a symlink. Exit 1 if any.",
         options: &[],
         examples: &["muster check", "muster check --queue braindump"],
     },
@@ -273,13 +297,14 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "file",
-        usage: "muster file <note-file> \"<title>\" [--type bug|task|idea] [--priority high|normal|low] [--tags a,b] [--time 2h] [--tokens 400k] --body <text>|-",
+        usage: "muster file <note-file> \"<title>\" [--type code|bug|chore|tech-debt|spike|design|docs|research] [--priority high|normal|low] [--tags a,b] [--time 2h] [--test-time 30m] [--tokens 400k] --body <text>|-",
         what: "File a shaped backlog note as a task: the next id, in Shaping, with your body after a \"From the backlog\" line quoting the note. The note moves into the task's attachments/<id>/, so nothing is lost; all under the queue's lock, so a note is filed once. Then muster pass <id> --from shaping puts it in Ready (it needs acceptance criteria).",
         options: &[
-            ("--type", "bug, task (default) or idea"),
+            ("--type", "code (default), bug, chore, tech-debt, spike, design, docs or research"),
             ("--priority", "high, normal (default) or low"),
             ("--tags", "comma-separated tags"),
             ("--time", "estimated agent time: 45m, 2h, 1.5d"),
+            ("--test-time", "estimated test time, the QA agent plus your check: 30m, 1h"),
             ("--tokens", "estimated tokens: 150k, 1.2M"),
             ("--body", "the shaped task in Markdown, with ## Acceptance criteria (required); - reads it from stdin"),
         ],
@@ -384,7 +409,7 @@ pub const APP: &[(&str, &str)] = &[
     ("Esc", "close the pane"),
     (
         "⌘↩",
-        "create the task, send the answer, or send to the helper",
+        "create the task, send the answer or the comment, or send to the helper",
     ),
     ("Drag the pane's edge", "resize it (remembered)"),
     (
@@ -418,6 +443,18 @@ pub const APP: &[(&str, &str)] = &[
     (
         "Edit",
         "in a task's pane, beside the description: edit the write-up in place, ⌘S to save, Esc to cancel (twice when you've typed). Refused if the file changed since you opened it, or while someone else holds it in Building (add a note instead); your text stays in the box",
+    ),
+    (
+        "Type",
+        "in a task's pane: the chip shows its type; click it to lay the types out and pick one",
+    ),
+    (
+        "Links",
+        "in a task's pane: its external links (muster link adds them); a click opens one in your browser, https only",
+    ),
+    (
+        "Comments",
+        "in a task's pane, under the description: the thread, oldest first, and a box to add yours (⌘↩ sends). Anyone may comment at any stage, while someone else holds it too",
     ),
     (
         "Board · Table · Timeline",
@@ -511,6 +548,8 @@ mod tests {
             "set",
             "edit",
             "note",
+            "comment",
+            "link",
             "tick",
             "untick",
             "attach",
@@ -543,7 +582,47 @@ mod tests {
                 "{name}'s examples use it"
             );
         }
-        assert_eq!(COMMANDS.len(), 31);
+        assert_eq!(COMMANDS.len(), 33);
+    }
+
+    #[test]
+    fn types_test_time_links_and_comments_are_documented() {
+        let new = command_text("new").unwrap();
+        for words in [
+            "code|bug|chore|tech-debt|spike|design|docs|research",
+            "--test-time",
+            "muster add",
+        ] {
+            assert!(new.contains(words), "{words}: {new}");
+        }
+        assert!(!new.contains("idea]"), "{new}");
+        assert!(command_text("file").unwrap().contains("--test-time"));
+        assert!(command_text("set").unwrap().contains("test-time"));
+        let link = command_text("link").unwrap();
+        for words in [
+            "https only",
+            "--remove",
+            "2,000",
+            "<, > or ;",
+            "links: title <https://…>",
+        ] {
+            assert!(link.contains(words), "{words}: {link}");
+        }
+        let comment = command_text("comment").unwrap();
+        for words in [
+            "## Comments",
+            "--body",
+            "4,000",
+            "stage change",
+            "someone else holds",
+        ] {
+            assert!(comment.contains(words), "{words}: {comment}");
+        }
+        assert!(command_text("check").unwrap().contains("https"));
+        let app: String = APP.iter().map(|(k, v)| format!("{k} {v}\n")).collect();
+        for words in ["Links", "Comments", "the comment", "Type"] {
+            assert!(app.contains(words), "{words}: {app}");
+        }
     }
 
     #[test]

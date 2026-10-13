@@ -10,6 +10,12 @@ export type Question = {
   ownerAnswered: boolean;
 };
 
+/** An external link from the task's `links:` line; `title` is "" when it has none. */
+export type Link = { title: string; url: string };
+
+/** One comment from the task's `## Comments`, as written. `at` is "YYYY-MM-DD HH:MM". */
+export type Comment = { who: string; at: string; text: string };
+
 /** One stage change from the task's log, written by muster. `at` is "YYYY-MM-DD HH:MM". */
 export type StageStep = { at: string; who: string; from: string; to: string };
 
@@ -38,12 +44,20 @@ export type Task = {
   ownerCriteria: Criterion[];
   waitingForOwner: boolean;
   tags: string[];
+  /** Estimates: agent time, test time (the QA agent plus the owner's check) and tokens, as written
+   *  ("2h", "30m", "400k"), and as numbers for totals. */
   estTime: string;
+  estTestTime: string;
   estTokens: string;
   estMinutes: number;
+  estTestMinutes: number;
   estTokenCount: number;
   claimedOn: string;
   doneOn: string;
+  /** External links, in the order written (0017). */
+  links: Link[];
+  /** The comment thread, oldest first (0017). */
+  comments: Comment[];
   attachments: string[];
   logTail: string[];
   modified: number;

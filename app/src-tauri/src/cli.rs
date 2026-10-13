@@ -2,7 +2,7 @@
 //! The queue is `--queue <name|folder>`, else `$MUSTER_ROOT`, else the nearest queue found
 //! from the current folder (a queue itself, or a `tasks/` beside or above it).
 
-use crate::{backlog, ops, projects, queue};
+use crate::{backlog, fields, ops, projects, queue};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
@@ -33,8 +33,8 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--json" => a.json = true,
             "--keep" => a.keep = true,
             "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on"
-            | "--tags" | "--tag" | "--time" | "--tokens" | "--stage" | "--gate" | "--commit"
-            | "--to" | "--from" | "--after" | "--session" => {
+            | "--tags" | "--tag" | "--time" | "--test-time" | "--tokens" | "--stage" | "--gate"
+            | "--commit" | "--to" | "--from" | "--after" | "--session" | "--remove" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -337,16 +337,9 @@ fn list_text(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> String {
             if t.waiting_for_owner {
                 extra.push_str("  [needs you]");
             }
-            if !t.est_time.is_empty() || !t.est_tokens.is_empty() {
-                extra.push_str(&format!(
-                    "  ~{}",
-                    [t.est_time.as_str(), t.est_tokens.as_str()]
-                        .iter()
-                        .filter(|x| !x.is_empty())
-                        .copied()
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                ));
+            let estimate = ops::estimate_text(t);
+            if !estimate.is_empty() {
+                extra.push_str(&format!("  ~{estimate}"));
             }
             if !t.tags.is_empty() {
                 extra.push_str(&format!("  #{}", t.tags.join(" #")));
@@ -355,7 +348,7 @@ fn list_text(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> String {
                 extra.push_str(&format!("  [{} open Q]", t.open_questions));
             }
             out.push_str(&format!(
-                "  {} {:<6} {:<7} {}{extra}\n",
+                "  {} {:<9} {:<7} {}{extra}\n",
                 t.id, t.kind, t.priority, t.title
             ));
         }
@@ -395,6 +388,7 @@ fn new_task(a: &Args, title: &str, body: String) -> ops::NewTask {
             .map(|t| vec![t.clone()])
             .unwrap_or_default(),
         est_time: a.flags.get("time").cloned().unwrap_or_default(),
+        est_test_time: a.flags.get("test-time").cloned().unwrap_or_default(),
         est_tokens: a.flags.get("tokens").cloned().unwrap_or_default(),
     }
 }
@@ -773,6 +767,42 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
             }
             Ok(0)
         }
+        "link" => {
+            let id = need(a, 1, "a task id")?;
+            match a.flags.get("remove") {
+                Some(which) => {
+                    if a.pos.len() > 2 {
+                        return Err("link --remove takes the link's number or address, nothing more (see `muster help`)".into());
+                    }
+                    let gone = fields::remove_link(root, id, which, &me, stamp)?;
+                    println!("{id}: unlinked {}", gone.url);
+                }
+                None => {
+                    let url = need(a, 2, "an https link")?;
+                    let l = fields::add_link(root, id, url, &a.pos[3..].join(" "), &me, stamp)?;
+                    println!("{id}: linked {}", l.url);
+                }
+            }
+            Ok(0)
+        }
+        "comment" => {
+            let id = need(a, 1, "a task id")?;
+            let text = match body_arg(a)? {
+                Some(_) if a.pos.len() > 2 => {
+                    return Err(
+                        "comment takes its text or --body, not both (see `muster help`)".into(),
+                    )
+                }
+                Some(body) => body,
+                None => {
+                    need(a, 2, "the comment")?;
+                    a.pos[2..].join(" ")
+                }
+            };
+            fields::add_comment(root, id, &text, &me, stamp)?;
+            println!("{id}: commented");
+            Ok(0)
+        }
         "attach" => {
             let id = need(a, 1, "a task id")?;
             need(a, 2, "a file")?;
@@ -1048,6 +1078,52 @@ mod tests {
     }
 
     #[test]
+    fn types_and_test_time_on_the_command_line() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let code = |args: &[&str]| {
+            let mut v = sv(args);
+            v.extend(sv(&["--queue", &q, "--as", "owner"]));
+            main(&v)
+        };
+        let t = |id: &str| queue::read_task(d.path(), id).unwrap();
+        assert_eq!(
+            code(&[
+                "new",
+                "Typed",
+                "--type",
+                "tech-debt",
+                "--time",
+                "2h",
+                "--test-time",
+                "30m"
+            ]),
+            0
+        );
+        assert_eq!(
+            (
+                t("0001").kind,
+                t("0001").est_test_time,
+                t("0001").est_test_minutes
+            ),
+            ("tech-debt".to_string(), "30m".to_string(), 30)
+        );
+        assert_eq!(code(&["new", "Old name", "--type", "task"]), 0);
+        assert_eq!(t("0002").kind, "code");
+        // Refused (1): idea is the backlog's now. --test-time takes a value.
+        assert_eq!(code(&["new", "An idea", "--type", "idea"]), 1);
+        assert!(parse(&sv(&["new", "x", "--test-time"]))
+            .unwrap_err()
+            .contains("needs a value"));
+        assert_eq!(code(&["set", "0001", "test-time", "1h"]), 0);
+        assert_eq!(t("0001").est_test_minutes, 60);
+        assert_eq!(code(&["set", "0001", "type", "idea"]), 1);
+        assert_eq!(code(&["set", "0001", "type", "spike"]), 0);
+        assert_eq!(t("0001").kind, "spike");
+        assert!(queue::read_task(d.path(), "0003").is_err(), "nothing made");
+    }
+
+    #[test]
     fn tick_and_untick_the_owners_criteria() {
         let d = tempfile::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
@@ -1203,7 +1279,7 @@ mod tests {
         file(
             "todo/0003-c.md",
             "0003",
-            "status: todo\nstage: shaping",
+            "status: todo\nstage: shaping\nest-time: 2h\nest-test-time: 30m\nest-tokens: 400k",
             "Shaping it",
         );
         file("inbox/0004-d.md", "0004", "status: inbox", "Raw");
@@ -1213,7 +1289,7 @@ mod tests {
         assert!(s.backlog.is_empty());
         assert_eq!(
             text,
-            "Backlog (1)\n  0004 task   normal  Raw\nShaping (1)\n  0003 task   normal  Shaping it\nTesting (1)\n  0002 task   normal  Under test blocked: 0012 the API  #ui\nDone (1)\n  0001 task   normal  Shipped\n"
+            "Backlog (1)\n  0004 code      normal  Raw\nShaping (1)\n  0003 code      normal  Shaping it  ~agent 2h · test 30m · 400k\nTesting (1)\n  0002 code      normal  Under test blocked: 0012 the API  #ui\nDone (1)\n  0001 code      normal  Shipped\n"
         );
         // Backlog notes come first, by file name and title, and only where Backlog is listed.
         for (name, text, secs) in [

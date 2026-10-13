@@ -31,7 +31,7 @@ export function projectCount(counts: Record<string, number>, notes: Note[], queu
 
 /** File as task, prefilled from the note: its first line as the title, its text as the body. */
 export function fileDraft(n: Pick<Note, "title" | "text">) {
-  return { title: n.title, kind: "task", priority: "normal", body: n.text };
+  return { title: n.title, kind: "code", priority: "normal", body: n.text };
 }
 
 /** A note on the board: quieter than a task's card (no id, no stage colour), with its title, "note"

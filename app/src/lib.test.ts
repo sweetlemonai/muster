@@ -8,7 +8,7 @@ import type { Task } from "./types";
 const task = (over: Partial<Task>): Task => ({
   queue: "drover", id: "0001", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
   folder: "todo", path: "todo/0001-t.md", claimedBy: "", heartbeat: "", waitingOn: "", commit: "", captured: "", questions: [],
-  openQuestions: 0, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTokens: "", estMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", attachments: [], logTail: [], modified: 0, ...over,
+  openQuestions: 0, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [], attachments: [], logTail: [], modified: 0, ...over,
 });
 
 describe("stages", () => {
@@ -206,7 +206,7 @@ describe("estimates", () => {
     expect([fmtTokens(450_000), fmtTokens(3_210_000), fmtTokens(900), fmtTokens(0)]).toEqual(["450k tokens", "3.2M tokens", "900 tokens", ""]);
   });
   it("totals open, estimated tasks and says how many are estimated", () => {
-    const t = (m: number, k: number, stage = "ready") => ({ estMinutes: m, estTokenCount: k, stage });
+    const t = (m: number, k: number, stage = "ready") => ({ estMinutes: m, estTestMinutes: 0, estTokenCount: k, stage });
     expect(estimateTotal([t(60, 100_000), t(30, 50_000), t(0, 0), t(600, 0, "done")])).toBe("≈ 1.5 h · 150k tokens left (2 of 3 open tasks estimated)");
     expect(estimateTotal([t(0, 0)])).toBe("");
   });

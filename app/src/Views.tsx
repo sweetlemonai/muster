@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { estimateText } from "./fields";
 import { ago, holder, key, stageLabel, stageOf } from "./lib";
 import type { Task } from "./types";
 import { bars, dayLabel, sortTasks, type SortKey } from "./viewData";
@@ -54,7 +55,7 @@ export function TableView({ tasks, now, multi, openKey, onOpen }: { tasks: Task[
                 {t.blocked && <span className="status-pill blocked">blocked</span>}
               </td>
               <td className="meta">{t.blocked ? t.waitingOn : holder(t)}</td>
-              <td className="meta est-cell">{[t.estTime, t.estTokens].filter(Boolean).join(" · ")}</td>
+              <td className="meta est-cell">{estimateText(t)}</td>
               <td className="meta">{t.captured}</td>
               <td className="meta">{ago(now, t.modified)}</td>
               <td>{t.tags.map((g) => <span key={g} className="tag">#{g}</span>)}</td>

@@ -75,8 +75,9 @@ Prints the command and its output, verbatim.
 
 `muster help` lists every command, the same list as the app's Help tab. The ones /mu doesn't
 route run as `! muster …` in a session: new, move, stage, set, attach, escalate, inbox, reclaim,
-projects, init, tick, untick (the owner's criteria, task 0028), edit (task 0020), and the backlog's
-shape, file and drop (task 0015). Also coming: `depends:` (task 0019).
+projects, init, tick, untick (the owner's criteria, task 0028), edit (task 0020), the backlog's
+shape, file and drop (task 0015), and link and comment (task 0017: a task's external links, and a
+comment thread anyone may add to). Also coming: `depends:` (task 0019).
 
 `bin/task ask|answer|escalate|inbox` is a stand-in that runs the same muster commands, kept for
 scripts and agents that call it. `bin/answer-hook.py` delivers answers into a running session, and

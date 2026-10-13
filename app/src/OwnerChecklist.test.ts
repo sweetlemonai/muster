@@ -9,7 +9,7 @@ const crit = (n: number, ticked: boolean, text = `AC${n}: tried it — verify: o
 const task = (over: Partial<Task>): Task => ({
   queue: "demo", id: "0028", title: "T", kind: "task", priority: "normal", status: "doing", stage: "your-check", blocked: false, stageHistory: [],
   folder: "doing", path: "doing/0028-t.md", claimedBy: "", heartbeat: "", waitingOn: "", commit: "", captured: "", questions: [],
-  openQuestions: 0, ownerCriteria: [], waitingForOwner: true, tags: [], estTime: "", estTokens: "", estMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", attachments: [], logTail: [], modified: 0, ...over,
+  openQuestions: 0, ownerCriteria: [], waitingForOwner: true, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [], attachments: [], logTail: [], modified: 0, ...over,
 });
 const list = (t: Task) => renderToStaticMarkup(createElement(OwnerChecklist, { task: t, busy: false, onTick: () => {} }));
 

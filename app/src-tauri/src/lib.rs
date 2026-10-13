@@ -4,6 +4,7 @@
 
 pub mod backlog;
 pub mod cli;
+pub mod fields;
 pub mod help;
 pub mod helper;
 mod helper_cmds;
@@ -482,6 +483,63 @@ pub(crate) fn save_body(
     ops::edit_body(root, id, body, expected, "owner", stamp)
 }
 
+/// The owner comments on a task (0017): any stage, whoever holds it.
+#[tauri::command]
+async fn add_comment(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+    text: String,
+    stamp: String,
+) -> Result<String, String> {
+    let file = app.config_file.clone();
+    blocking(move || comment(&queue_root(&file, &queue)?, &id, &text, &stamp)).await
+}
+
+/// What `add_comment` does once it has the queue: its arguments checked, then the core's rules.
+pub(crate) fn comment(
+    root: &std::path::Path,
+    id: &str,
+    text: &str,
+    stamp: &str,
+) -> Result<String, String> {
+    check_id(id)?;
+    check_stamp(stamp)?;
+    fields::add_comment(root, id, text, "owner", stamp)
+}
+
+/// Open one of a task's links in the system browser: only an address the task has, and only a
+/// plain https one, run as one argument to `open` (no shell, no new capability).
+#[tauri::command]
+async fn open_link(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+    url: String,
+) -> Result<(), String> {
+    let file = app.config_file.clone();
+    blocking(move || {
+        let url = link_to_open(&queue_root(&file, &queue)?, &id, &url)?;
+        let ok = std::process::Command::new("/usr/bin/open")
+            .arg(&url)
+            .status()
+            .map_err(|e| e.to_string())?
+            .success();
+        if ok {
+            Ok(())
+        } else {
+            Err("couldn't open the link in your browser".into())
+        }
+    })
+    .await
+}
+
+/// What `open_link` opens once it has the queue: its id checked, then the core's rule.
+pub(crate) fn link_to_open(root: &std::path::Path, id: &str, url: &str) -> Result<String, String> {
+    check_id(id)?;
+    fields::link_to_open(root, id, url)
+}
+
 /// Attach files the window holds (pasted or dropped), as data URLs.
 #[tauri::command]
 async fn attach_data(
@@ -733,6 +791,8 @@ pub fn run() {
             shape_note,
             editable_body,
             edit_body,
+            add_comment,
+            open_link,
             attach_data,
             attach_pick,
             helper_cmds::helper_info,
@@ -801,6 +861,55 @@ mod tests {
         assert!(save_body(d.path(), "0007", "# T\n\nAgain.", &opened, t)
             .unwrap_err()
             .contains("changed since you opened it"));
+    }
+
+    #[test]
+    fn the_owners_comment_and_link_check_their_arguments_then_the_rules() {
+        let d = tempfile::tempdir().unwrap();
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir(d.path().join(f)).unwrap();
+        }
+        // Held by someone else: the owner may still comment.
+        std::fs::write(
+            d.path().join("doing/0007-t.md"),
+            "---\nid: 0007\nstage: building\nstatus: doing\nclaimed-by: wt-a\nheartbeat:\nwaiting_on:\nlinks: Spec <https://example.com/spec>; Old <http://example.com>\n---\n\n# T\n\n## Log\n- 2026-10-12 09:00 capture: created\n",
+        )
+        .unwrap();
+        let t = "2026-10-12 14:05";
+        assert_eq!(comment(d.path(), "7", "Hi.", t).unwrap_err(), "bad task id");
+        assert_eq!(
+            comment(d.path(), "0007", "Hi.", "2026-10-12").unwrap_err(),
+            "bad time stamp"
+        );
+        assert!(comment(d.path(), "0007", " ", t)
+            .unwrap_err()
+            .contains("empty"));
+        assert_eq!(
+            comment(d.path(), "0007", "Hi.", t).unwrap(),
+            "doing/0007-t.md"
+        );
+        let task = queue::read_task(d.path(), "0007").unwrap();
+        assert_eq!(
+            (
+                task.comments[0].who.as_str(),
+                task.comments[0].text.as_str()
+            ),
+            ("owner", "Hi.")
+        );
+        assert_eq!(
+            link_to_open(d.path(), "0007", "https://example.com/spec").unwrap(),
+            "https://example.com/spec"
+        );
+        assert_eq!(
+            link_to_open(d.path(), "../7", "https://example.com/spec").unwrap_err(),
+            "bad task id"
+        );
+        assert!(link_to_open(d.path(), "0007", "http://example.com")
+            .unwrap_err()
+            .contains("only https"));
+        assert!(link_to_open(d.path(), "0007", "https://evil.example")
+            .unwrap_err()
+            .contains("no link"));
     }
 
     #[test]

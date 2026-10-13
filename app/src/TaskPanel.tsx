@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import Comments from "./Comments";
 import EditBody from "./EditBody";
+import { splitLog, withoutComments } from "./fields";
+import Links from "./Links";
 import { ago, claimant, earlierStages, heldByOther, isStage, LEASE_SECS, leaseRunOut, nextStage, oneAtATime, passLabel, readFiles, stamp, STAGES, stageLabel, stageOf } from "./lib";
 import Markdown from "./Markdown";
 import OwnerChecklist, { ownerOpen } from "./OwnerChecklist";
 import TagEditor from "./Tags";
+import TypePick from "./TypePick";
 import type { Question, Task } from "./types";
 
 const IMAGE = /\.(png|jpe?g|gif|webp)$/i;
@@ -37,7 +41,9 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
     api.editableBody(task.queue, task.id).then(setEditing, (e) => setEditMsg({ ok: false, text: String(e) }));
   };
 
-  const shown = body ? body.replace(/^---\n[\s\S]*?\n---\n/, "") : "";
+  // The comments show as their own thread, between the write-up and the Log, so they're left out
+  // of the rendering.
+  const [shown, log] = splitLog(body ? withoutComments(body.replace(/^---\n[\s\S]*?\n---\n/, "")) : "");
   const open = task.questions.filter((q) => !q.ticked && q.n !== null);
 
   return (
@@ -70,6 +76,8 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
         </section>
       )}
 
+      <Links task={task} />
+
       {task.attachments.length > 0 && <Attachments task={task} />}
 
       <section className="body">
@@ -101,6 +109,13 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
           </>
         )}
       </section>
+
+      <Comments task={task} onChanged={onChanged} />
+      {log && !raw && editing === null && (
+        <section className="log">
+          <Markdown text={log} />
+        </section>
+      )}
     </div>
   );
 }
@@ -432,14 +447,7 @@ function Controls({ task, nowSecs, onChanged }: { task: Task; nowSecs: number; o
             <option value="low">low</option>
           </select>
         </label>
-        <label>
-          Type
-          <select value={task.kind || "task"} onChange={(e) => void run(() => api.setField(task.queue, task.id, "type", e.target.value, stamp(new Date())), "Type set.")}>
-            <option value="task">task</option>
-            <option value="bug">bug</option>
-            <option value="idea">idea</option>
-          </select>
-        </label>
+        <TypePick value={task.kind} onPick={(k) => void run(() => api.setField(task.queue, task.id, "type", k, stamp(new Date())), "Type set.")} />
         <Estimate task={task} run={run} />
         <button type="button" onClick={() => setTitle(task.title)}>Rename</button>
         <button type="button" onClick={() => void run(() => api.attachPick(task.queue, task.id, stamp(new Date())), "Files attached.")}>Attach…</button>
@@ -477,15 +485,18 @@ function Controls({ task, nowSecs, onChanged }: { task: Task; nowSecs: number; o
   );
 }
 
-/** Estimated agent time and tokens, saved when a field loses focus or on Enter. */
+/** Estimated agent time, test time and tokens, saved when a field loses focus or on Enter. */
 function Estimate({ task, run }: { task: Task; run: (what: () => Promise<unknown>, done: string) => Promise<boolean> }) {
   const [time, setTime] = useState(task.estTime);
+  const [testTime, setTestTime] = useState(task.estTestTime);
   const [tokens, setTokens] = useState(task.estTokens);
   useEffect(() => setTime(task.estTime), [task.estTime]);
+  useEffect(() => setTestTime(task.estTestTime), [task.estTestTime]);
   useEffect(() => setTokens(task.estTokens), [task.estTokens]);
-  const save = (field: "time" | "tokens", value: string, was: string) => {
+  const saved = { time: "Time estimate saved.", "test-time": "Test time estimate saved.", tokens: "Token estimate saved." };
+  const save = (field: "time" | "test-time" | "tokens", value: string, was: string) => {
     if (value.trim() === was) return;
-    void run(() => api.setField(task.queue, task.id, field, value, stamp(new Date())), field === "time" ? "Time estimate saved." : "Token estimate saved.");
+    void run(() => api.setField(task.queue, task.id, field, value, stamp(new Date())), saved[field]);
   };
   const keys = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") (e.target as HTMLInputElement).blur();
@@ -495,6 +506,10 @@ function Estimate({ task, run }: { task: Task; run: (what: () => Promise<unknown
       <label>
         Agent time
         <input value={time} onChange={(e) => setTime(e.target.value)} onBlur={() => save("time", time, task.estTime)} onKeyDown={keys} placeholder="2h" size={5} maxLength={10} />
+      </label>
+      <label title="The QA agent plus your check">
+        Test time
+        <input value={testTime} onChange={(e) => setTestTime(e.target.value)} onBlur={() => save("test-time", testTime, task.estTestTime)} onKeyDown={keys} placeholder="30m" size={5} maxLength={10} />
       </label>
       <label>
         Tokens

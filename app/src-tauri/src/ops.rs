@@ -11,7 +11,44 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub const KINDS: [&str; 3] = ["bug", "task", "idea"];
+/// A task's type (decision 0003, task 0017). `new` and `set` take these; old files may still say
+/// `task` (read as code) or `idea` (kept as it is: an idea belongs in the backlog now).
+pub const KINDS: [&str; 8] = [
+    "code",
+    "bug",
+    "chore",
+    "tech-debt",
+    "spike",
+    "design",
+    "docs",
+    "research",
+];
+
+/// A type as `new` and `set` take it: one of KINDS in any case, `task` for code, `default` when
+/// empty. `idea` is refused: an idea goes in the backlog as a note.
+fn clean_kind(value: &str, default: &'static str) -> Result<&'static str, String> {
+    let v = value.trim();
+    if v.eq_ignore_ascii_case("task") {
+        return Ok("code");
+    }
+    if v.eq_ignore_ascii_case("idea") {
+        return Err(
+            "idea isn't a type any more: put an idea in the backlog with muster add, and shape it into a task from there".into(),
+        );
+    }
+    pick(v, &KINDS, default, "type")
+}
+
+/// A type as read from a task file: lowercase, with the old `task` read as `code`. Anything else
+/// (`idea` in older files) is kept as it is.
+pub fn read_kind(raw: &str) -> String {
+    let k = raw.trim().to_lowercase();
+    if k == "task" {
+        "code".into()
+    } else {
+        k
+    }
+}
 pub const PRIORITIES: [&str; 3] = ["high", "normal", "low"];
 /// Statuses the owner may set. `doing` is a claim, and claims belong to agents.
 pub const OWNER_STATUSES: [&str; 4] = ["inbox", "todo", "blocked", "done"];
@@ -28,6 +65,8 @@ pub struct NewTask {
     pub body: String,
     pub tags: Vec<String>,
     pub est_time: String,
+    /// Test time: the QA agent's and the owner's check, the same format as `est_time`.
+    pub est_test_time: String,
     pub est_tokens: String,
 }
 
@@ -118,6 +157,19 @@ pub fn token_count(t: &str) -> u64 {
         _ => (t, 1.0),
     };
     (num.parse::<f64>().unwrap_or(0.0) * mult).round() as u64
+}
+
+/// A task's estimates in one line, as the card shows them: "agent 2h · test 30m · 400k", with
+/// only the parts it has ("" for none).
+pub fn estimate_text(t: &queue::Task) -> String {
+    let agent = (!t.est_time.is_empty()).then(|| format!("agent {}", t.est_time));
+    let test = (!t.est_test_time.is_empty()).then(|| format!("test {}", t.est_test_time));
+    let tokens = (!t.est_tokens.is_empty()).then(|| t.est_tokens.clone());
+    [agent, test, tokens]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" · ")
 }
 
 /// Tags the app suggests. Any other tag works too.
@@ -288,6 +340,7 @@ pub(crate) struct CleanTask {
     /// The front-matter values with their leading space (" a, b"), or "" for none.
     tags: String,
     est_time: String,
+    est_test_time: String,
     est_tokens: String,
 }
 
@@ -295,13 +348,17 @@ pub(crate) struct CleanTask {
 /// too long.
 pub(crate) fn clean_new(new: &NewTask) -> Result<CleanTask, String> {
     let sp = |v: String| if v.is_empty() { v } else { format!(" {v}") };
+    let title = one_line(&new.title, MAX_TITLE, "the title")?;
+    let body = body_text(&new.body)?;
+    no_comments_heading(&body, "the description")?;
     Ok(CleanTask {
-        title: one_line(&new.title, MAX_TITLE, "the title")?,
-        kind: pick(&new.kind, &KINDS, "task", "type")?,
+        title,
+        kind: clean_kind(&new.kind, "code")?,
         priority: pick(&new.priority, &PRIORITIES, "normal", "priority")?,
-        body: body_text(&new.body)?,
+        body,
         tags: sp(clean_tags(&new.tags)?.join(", ")),
         est_time: sp(clean_time(&new.est_time)?),
+        est_test_time: sp(clean_time(&new.est_test_time)?),
         est_tokens: sp(clean_tokens(&new.est_tokens)?),
     })
 }
@@ -329,9 +386,9 @@ pub(crate) fn create_locked(
     };
     let date = stamp.get(..10).unwrap_or(stamp);
     let (title, kind, priority, tags) = (&t.title, t.kind, t.priority, &t.tags);
-    let (est_time, est_tokens) = (&t.est_time, &t.est_tokens);
+    let (est_time, est_test_time, est_tokens) = (&t.est_time, &t.est_test_time, &t.est_tokens);
     let mut text = format!(
-        "---\nid: {id}\ntype: {kind}\npriority: {priority}\ntags:{tags}\nest-time:{est_time}\nest-tokens:{est_tokens}\nstage: {stage}\nstatus: {status}\ncaptured: {date}\nclaimed-by:\nheartbeat:\nwaiting_on:\ncommit:\n---\n\n# {title}\n\n{details}## Log\n- {stamp} {who}: created\n"
+        "---\nid: {id}\ntype: {kind}\npriority: {priority}\ntags:{tags}\nest-time:{est_time}\nest-test-time:{est_test_time}\nest-tokens:{est_tokens}\nstage: {stage}\nstatus: {status}\ncaptured: {date}\nclaimed-by:\nheartbeat:\nwaiting_on:\ncommit:\n---\n\n# {title}\n\n{details}## Log\n- {stamp} {who}: created\n"
     );
     for line in log {
         text = append_log(&text, line);
@@ -442,18 +499,19 @@ pub fn set_field(
             "priority",
             pick(value, &PRIORITIES, "", "priority")?.to_string(),
         ),
-        "type" | "kind" => ("type", pick(value, &KINDS, "", "type")?.to_string()),
+        "type" | "kind" => ("type", clean_kind(value, "")?.to_string()),
         "title" => ("title", one_line(value, MAX_TITLE, "the title")?),
         "tags" => ("tags", clean_tags(&[value.to_string()])?.join(", ")),
         "time" | "est-time" => ("est-time", clean_time(value)?),
+        "test-time" | "est-test-time" => ("est-test-time", clean_time(value)?),
         "tokens" | "est-tokens" => ("est-tokens", clean_tokens(value)?),
         _ => {
             return Err(format!(
-                "can't set {field:?}: use priority, type, title, tags, time or tokens"
+                "can't set {field:?}: use priority, type, title, tags, time, test-time or tokens"
             ))
         }
     };
-    if val.is_empty() && !matches!(key, "tags" | "est-time" | "est-tokens") {
+    if val.is_empty() && !matches!(key, "tags" | "est-time" | "est-test-time" | "est-tokens") {
         return Err(format!("{field} is empty"));
     }
     let line = free_text_line(
@@ -1509,22 +1567,27 @@ pub fn status_folders() -> &'static [&'static str] {
 }
 
 /// Where a task's write-up is in its text, as (start, end) byte offsets: from the end of the
-/// front matter to the Log's heading (the last `## Log`, the one `queue::log_span` reads), or to
-/// the end when it has no Log. The front matter and the Log are the tool's; this is the rest.
+/// front matter to the tool's `## Comments` heading (`queue::comments_span`), else the Log's
+/// heading (the last `## Log`, the one `queue::log_span` reads), or to the end when it has
+/// neither. The front matter, the Comments and the Log are the tool's; this is the rest.
 fn body_span(text: &str) -> Result<(usize, usize), String> {
     let (_, body) = front_matter(text).ok_or("the task has no front matter")?;
     let start = text.len() - body.len();
-    let end = match queue::log_span(body) {
-        Some((content, _)) => {
-            let through_heading = &body[..content];
-            let before = through_heading
-                .strip_suffix('\n')
-                .unwrap_or(through_heading);
-            start + before.rfind('\n').map_or(0, |i| i + 1)
-        }
-        None => text.len(),
-    };
-    Ok((start, end))
+    let tail = queue::comments_span(body)
+        .map(|(at, _, _)| at)
+        .or_else(|| queue::log_heading(body));
+    Ok((start, tail.map_or(text.len(), |at| start + at)))
+}
+
+/// Refused when a line of `text` is a `## Comments` heading: the section is the tool's
+/// (`muster comment` writes it), so a write-up or a description can't start one.
+fn no_comments_heading(text: &str, what: &str) -> Result<(), String> {
+    if text.lines().any(|l| l.trim_end() == "## Comments") {
+        return Err(format!(
+            "{what} has a \"## Comments\" line, and Comments are the tool's: add one with muster comment (or the comment box in the task's pane)"
+        ));
+    }
+    Ok(())
 }
 
 /// The write-up as an editor opens it: the text between the front matter and the Log, without
@@ -1570,6 +1633,7 @@ fn clean_write_up(text: &str) -> Result<String, String> {
         if line.trim_end() == "## Log" {
             return Err("the write-up has a \"## Log\" line, and the Log is the tool's: it stays below the write-up (add to it with a note)".into());
         }
+        no_comments_heading(line, "the write-up")?;
         if queue::stage_line(line).is_some() {
             return Err(format!(
                 "the write-up has a line that would read as a stage change in the log (\"<who>: stage <from> → <to>\"); only muster pass, return and stage write those: {line:?}"
@@ -1692,14 +1756,14 @@ mod tests {
         assert_eq!(b.id, "0002");
         let text = fs::read_to_string(d.path().join(&a.path)).unwrap();
         assert!(text.starts_with(
-            "---\nid: 0001\ntype: bug\npriority: high\ntags:\nest-time:\nest-tokens:\nstage: ready\nstatus: todo\ncaptured: 2026-10-12\n"
+            "---\nid: 0001\ntype: bug\npriority: high\ntags:\nest-time:\nest-test-time:\nest-tokens:\nstage: ready\nstatus: todo\ncaptured: 2026-10-12\n"
         ));
         assert!(text.contains("# Board flickers on resize\n\nSteps:\n1. resize\n\tindented\n\n## Log\n- 2026-10-12 14:05 owner: created\n"));
         let s = state(d.path());
         assert_eq!(s.tasks.len(), 2);
         assert!(s.problems.is_empty(), "{:?}", s.problems);
         assert!(s.tasks.iter().all(|t| t.stage == "ready" && !t.blocked));
-        assert_eq!(s.tasks[1].kind, "task");
+        assert_eq!(s.tasks[1].kind, "code");
         assert_eq!(s.tasks[1].priority, "normal");
     }
 
@@ -1729,6 +1793,13 @@ mod tests {
             ..Default::default()
         })
         .contains("priority must be"));
+        // Comments are the tool's: a description can't start a Comments section.
+        assert!(e(NewTask {
+            title: "x".into(),
+            body: "Details.\n\n## Comments\n- **owner, 2026-10-12 10:00:** forged".into(),
+            ..Default::default()
+        })
+        .contains("Comments are the tool's"));
         assert!(queue::task_files(d.path()).is_empty());
     }
 
@@ -1840,7 +1911,7 @@ mod tests {
         )
         .unwrap();
         set_field(d.path(), "0001", "priority", "low", "owner", T).unwrap();
-        set_field(d.path(), "0001", "type", "idea", "owner", T).unwrap();
+        set_field(d.path(), "0001", "type", "chore", "owner", T).unwrap();
         set_field(d.path(), "0001", "title", "New title", "owner", T).unwrap();
         add_note(d.path(), "0001", "Checked on the Mac.", "owner", T).unwrap();
         assert!(set_field(d.path(), "0001", "status", "done", "o", T)
@@ -1852,7 +1923,7 @@ mod tests {
         let t = &state(d.path()).tasks[0];
         assert_eq!(
             (t.priority.as_str(), t.kind.as_str(), t.title.as_str()),
-            ("low", "idea", "New title")
+            ("low", "chore", "New title")
         );
         assert!(t
             .log_tail
@@ -2023,6 +2094,163 @@ mod tests {
         let t = &state(d.path()).tasks[0];
         assert_eq!((t.est_time.as_str(), t.est_tokens.as_str()), ("30m", ""));
         assert!(state(d.path()).problems.is_empty());
+    }
+
+    #[test]
+    fn types_are_the_new_list_and_old_values_read_as_aliases() {
+        assert_eq!(
+            KINDS.to_vec(),
+            [
+                "code",
+                "bug",
+                "chore",
+                "tech-debt",
+                "spike",
+                "design",
+                "docs",
+                "research"
+            ]
+        );
+        let d = queue();
+        let new = |kind: &str| {
+            create_task(
+                d.path(),
+                &NewTask {
+                    title: format!("Typed {kind}"),
+                    kind: kind.into(),
+                    ..Default::default()
+                },
+                "o",
+                T,
+            )
+        };
+        let kind_of = |id: &str| crate::queue::read_task(d.path(), id).unwrap().kind;
+        // No type is code; every type in the list is taken as is, in any case.
+        let c = new("").unwrap();
+        assert_eq!(kind_of(&c.id), "code");
+        assert!(fs::read_to_string(d.path().join(&c.path))
+            .unwrap()
+            .contains("\ntype: code\n"));
+        for k in KINDS {
+            let c = new(k).unwrap();
+            assert_eq!(kind_of(&c.id), k);
+        }
+        assert_eq!(kind_of(&new("Tech-Debt").unwrap().id), "tech-debt");
+        // task is the old name for code; idea belongs in the backlog now.
+        assert_eq!(kind_of(&new("task").unwrap().id), "code");
+        let e = new("idea").unwrap_err();
+        assert!(e.contains("backlog") && e.contains("muster add"), "{e}");
+        let e = new("epic").unwrap_err();
+        assert!(
+            e.contains(
+                "type must be one of code, bug, chore, tech-debt, spike, design, docs, research"
+            ),
+            "{e}"
+        );
+        let id = c.id.clone();
+        set_field(d.path(), &id, "type", "chore", "owner", T).unwrap();
+        assert_eq!(kind_of(&id), "chore");
+        set_field(d.path(), &id, "type", "Task", "owner", T).unwrap();
+        assert_eq!(kind_of(&id), "code");
+        assert!(set_field(d.path(), &id, "type", "idea", "owner", T)
+            .unwrap_err()
+            .contains("backlog"));
+        assert_eq!(kind_of(&id), "code");
+        // Old files: task reads as code, idea stays idea, and other fields still change.
+        for (raw, read) in [
+            ("task", "code"),
+            ("Task", "code"),
+            ("idea", "idea"),
+            ("bug", "bug"),
+        ] {
+            let d = queue();
+            put(
+                d.path(),
+                "todo/0001-t.md",
+                &task_text("status: todo", "").replace("type: task", &format!("type: {raw}")),
+            );
+            assert_eq!(only(d.path()).kind, read, "{raw}");
+            set_field(d.path(), "0001", "priority", "high", "owner", T).unwrap();
+            let t = only(d.path());
+            assert_eq!((t.kind.as_str(), t.priority.as_str()), (read, "high"));
+            assert!(state(d.path()).problems.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_time_is_an_estimate_like_agent_time() {
+        let d = queue();
+        let c = create_task(
+            d.path(),
+            &NewTask {
+                title: "Tested".into(),
+                est_time: "2h".into(),
+                est_test_time: " 30 min ".into(),
+                est_tokens: "400k".into(),
+                ..Default::default()
+            },
+            "o",
+            T,
+        )
+        .unwrap();
+        let text = fs::read_to_string(d.path().join(&c.path)).unwrap();
+        assert!(
+            text.contains("\nest-time: 2h\nest-test-time: 30m\nest-tokens: 400k\n"),
+            "{text}"
+        );
+        let t = only(d.path());
+        assert_eq!(
+            (
+                t.est_time.as_str(),
+                t.est_test_time.as_str(),
+                t.est_minutes,
+                t.est_test_minutes
+            ),
+            ("2h", "30m", 120, 30)
+        );
+        let json = serde_json::to_value(&t).unwrap();
+        assert_eq!(
+            (&json["estTestTime"], &json["estTestMinutes"]),
+            (&serde_json::json!("30m"), &serde_json::json!(30))
+        );
+        set_field(d.path(), "0001", "test-time", "1.5h", "owner", T).unwrap();
+        assert_eq!(only(d.path()).est_test_minutes, 90);
+        set_field(d.path(), "0001", "est-test-time", "45m", "owner", T).unwrap();
+        assert_eq!(only(d.path()).est_test_time, "45m");
+        let before = fs::read_to_string(d.path().join(&c.path)).unwrap();
+        assert!(set_field(d.path(), "0001", "test-time", "soon", "owner", T).is_err());
+        assert_eq!(fs::read_to_string(d.path().join(&c.path)).unwrap(), before);
+        set_field(d.path(), "0001", "test-time", "", "owner", T).unwrap();
+        let t = only(d.path());
+        assert_eq!((t.est_test_time.as_str(), t.est_test_minutes), ("", 0));
+        assert!(t
+            .log_tail
+            .last()
+            .unwrap()
+            .ends_with("owner: est-test-time set to "));
+        assert!(create_task(
+            d.path(),
+            &NewTask {
+                title: "Bad".into(),
+                est_test_time: "5w".into(),
+                ..Default::default()
+            },
+            "o",
+            T
+        )
+        .is_err());
+        // A hand-written value that isn't a time reads as no estimate.
+        put(
+            d.path(),
+            "todo/0002-t.md",
+            &task_text("status: todo\nest-test-time: later", "").replace("id: 0001", "id: 0002"),
+        );
+        let t = state(d.path())
+            .tasks
+            .into_iter()
+            .find(|t| t.id == "0002")
+            .unwrap();
+        assert_eq!((t.est_test_time.as_str(), t.est_test_minutes), ("", 0));
     }
 
     #[test]
@@ -4067,6 +4295,73 @@ mod edit_tests {
         let text = format!("---\nid: 0001\n---\n\n{quoted}\n\n{LOG}");
         assert_eq!(editable_body(&text).unwrap(), quoted);
         assert!(editable_body("no front matter").is_err());
+    }
+
+    #[test]
+    fn comments_are_not_the_write_up_and_an_edit_keeps_them() {
+        let d = queue();
+        let p = put(d.path(), "todo", READY, WRITE_UP, "");
+        crate::fields::add_comment(d.path(), "0001", "First.\nTwo lines.", "wt-b", T).unwrap();
+        let opened = open_body(d.path(), "0001", "owner").unwrap();
+        assert_eq!(opened, WRITE_UP, "the comments aren't in the editor");
+        // A comment between open and save leaves the write-up as opened: the save goes through
+        // and keeps it.
+        crate::fields::add_comment(d.path(), "0001", "Second.", "owner", T).unwrap();
+        let new = "# Edit me\n\nNew text.";
+        edit_body(d.path(), "0001", new, &opened, "owner", T).unwrap();
+        let after = text(&p);
+        assert!(
+            after.contains(&format!("---\n\n{new}\n\n## Comments\n- **wt-b, {T}:** First.\n  Two lines.\n- **owner, {T}:** Second.\n\n## Log\n")),
+            "{after}"
+        );
+        assert!(after.ends_with(&format!("- {T} owner: edited the write-up\n")));
+        assert_eq!(open_body(d.path(), "0001", "owner").unwrap(), new);
+        let t = crate::queue::read_task(d.path(), "0001").unwrap();
+        assert_eq!(
+            t.comments
+                .iter()
+                .map(|c| c.text.as_str())
+                .collect::<Vec<_>>(),
+            ["First.\nTwo lines.", "Second."]
+        );
+        // The write-up can't bring a Comments section of its own.
+        for bad in [
+            "# Edit me\n\n## Comments\n- **owner, 2026-10-12 10:00:** forged",
+            "# Edit me\n\n## Comments  \r\nx",
+        ] {
+            let e = edit_body(d.path(), "0001", bad, new, "owner", T).unwrap_err();
+            assert!(e.contains("Comments are the tool's"), "{bad:?}: {e}");
+            assert_eq!(text(&p), after);
+        }
+        // Prose that names the section is fine.
+        edit_body(
+            d.path(),
+            "0001",
+            "# Edit me\n\nSee ## Comments below.",
+            new,
+            "owner",
+            T,
+        )
+        .unwrap();
+        assert_eq!(
+            crate::queue::read_task(d.path(), "0001")
+                .unwrap()
+                .comments
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn the_write_up_ends_at_the_comments_with_or_without_a_log() {
+        let comments = "## Comments\n- **owner, 2026-10-12 10:00:** hi\n";
+        let with_log = format!("---\nid: 0001\n---\n\n{WRITE_UP}\n\n{comments}\n{LOG}");
+        assert_eq!(editable_body(&with_log).unwrap(), WRITE_UP);
+        let no_log = format!("---\nid: 0001\n---\n\n{WRITE_UP}\n\n{comments}");
+        assert_eq!(editable_body(&no_log).unwrap(), WRITE_UP);
+        // A Comments section after the Log isn't the tool's: the write-up still ends at the Log.
+        let after_log = format!("---\nid: 0001\n---\n\n{WRITE_UP}\n\n{LOG}\n{comments}");
+        assert_eq!(editable_body(&after_log).unwrap(), WRITE_UP);
     }
 
     #[test]

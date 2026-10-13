@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import { KINDS } from "./fields";
 import { readFiles, stamp } from "./lib";
 import TagEditor from "./Tags";
 
@@ -12,11 +13,12 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
 }) {
   const [queue, setQueue] = useState(initial);
   const [title, setTitle] = useState("");
-  const [kind, setKind] = useState("task");
+  const [kind, setKind] = useState<string>("code");
   const [priority, setPriority] = useState("normal");
   const [body, setBody] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [estTime, setEstTime] = useState("");
+  const [estTestTime, setEstTestTime] = useState("");
   const [estTokens, setEstTokens] = useState("");
   const [files, setFiles] = useState<[string, string][]>([]);
   const [busy, setBusy] = useState(false);
@@ -49,7 +51,7 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
     setBusy(true);
     setError("");
     try {
-      const c = await api.createTask(queue, { title, kind, priority, body, tags, estTime, estTokens }, files, stamp(new Date()));
+      const c = await api.createTask(queue, { title, kind, priority, body, tags, estTime, estTestTime, estTokens }, files, stamp(new Date()));
       onCreated(queue, c.id);
     } catch (e) {
       setError(String(e));
@@ -89,14 +91,6 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
             </select>
           </label>
           <label>
-            Type
-            <select value={kind} onChange={(e) => setKind(e.target.value)}>
-              <option value="task">Task</option>
-              <option value="bug">Bug</option>
-              <option value="idea">Idea</option>
-            </select>
-          </label>
-          <label>
             Priority
             <select value={priority} onChange={(e) => setPriority(e.target.value)}>
               <option value="high">High</option>
@@ -108,10 +102,20 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
             Agent time
             <input value={estTime} onChange={(e) => setEstTime(e.target.value)} placeholder="2h" size={6} maxLength={10} />
           </label>
+          <label title="The QA agent plus your check">
+            Test time
+            <input value={estTestTime} onChange={(e) => setEstTestTime(e.target.value)} placeholder="30m" size={6} maxLength={10} />
+          </label>
           <label>
             Tokens
             <input value={estTokens} onChange={(e) => setEstTokens(e.target.value)} placeholder="500k" size={6} maxLength={10} />
           </label>
+        </div>
+        <div className="chip-row" role="group" aria-label="Type">
+          <span className="meta">Type</span>
+          {KINDS.map((k) => (
+            <button key={k} type="button" className={kind === k ? "chip on" : "chip"} aria-pressed={kind === k} onClick={() => setKind(k)}>{k}</button>
+          ))}
         </div>
         <input ref={titleRef} className="title-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What's wrong or wanted, in one line" maxLength={200} />
         <TagEditor tags={tags} onChange={setTags} />
