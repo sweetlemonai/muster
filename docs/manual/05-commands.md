@@ -25,7 +25,7 @@ muster new "<title>" [--type code|bug|chore|tech-debt|spike|design|docs|research
 | `--level` | goal, feature or task (default) |
 | `--parent` | the id it sits under: a task's is a feature or a goal, a feature's a goal; a goal has none |
 | `--due` | a goal's date, YYYY-MM-DD |
-| `--human` | the owner's own task, To do → Doing → Done on the Human board (only the owner, --as owner) |
+| `--human` | the owner's own task, To do → Doing → Done, hatched on the board with the You ribbon (only the owner, --as owner) |
 | `--body` | the description in Markdown; \\n is a line break; - reads it from stdin. It can't have a "## Comments" line (comments are the tool's) |
 
 Examples:
@@ -73,7 +73,7 @@ muster list [--search "<words>"] [--stage <s,…>] [--type <t,…>] [--tag <t,�
 | `--type` | code, bug, chore, tech-debt, spike, design, docs or research (task means code) |
 | `--tag` | only tasks with this tag |
 | `--holder` | who holds it in its stage, as the board shows it, without the session (drover/main, wt-a, owner) |
-| `--blocked` | only blocked tasks |
+| `--blocked` | only blocked tasks, those waiting only on the tasks they depend on too |
 | `--sort` | priority (needs you, then high to low; Done last), newest, oldest, changed, estimate or id (the default) |
 | `--status` | the old status: inbox, todo, doing, blocked or done |
 | `--json` | machine-readable: {"tasks": \[…\], "backlog": \[…\]}, for scripts and agents |
@@ -120,7 +120,7 @@ muster show 0007 --json
 
 ### muster set
 
-Change one field, logged with the time and who. type is one of code, bug, chore, tech-debt, spike, design, docs, research; time is agent time and test-time the QA agent plus your check. level, parent and due keep the rules of muster new (a parent that exists at the right level, no loop, a due date only on a goal); a task in Building or Testing, or held, stays a task. An empty parent or due clears it. for is human or ai: who does it (a human task is the owner's own, on the Human board); only a task, and not while it's held, in Building, Testing or Your check; made human in Backlog or Shaping, it moves to Ready (To do).
+Change one field, logged with the time and who. type is one of code, bug, chore, tech-debt, spike, design, docs, research; time is agent time and test-time the QA agent plus your check. level, parent and due keep the rules of muster new (a parent that exists at the right level, no loop, a due date only on a goal); a task in Building or Testing, or held, stays a task. An empty parent or due clears it. for is human or ai: who does it (a human task is the owner's own, hatched on the board with the You ribbon); only a task, and not while it's held, in Building, Testing or Your check; made human in Backlog or Shaping, it moves to Ready (To do).
 
 ```
 muster set <id> <priority|type|title|tags|time|test-time|tokens|level|parent|due|depends|for> <value>

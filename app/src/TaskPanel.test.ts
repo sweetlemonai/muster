@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { TitleEdit } from "./PaneHeader";
 import { ValueChipView } from "./Sidebar";
 import StageTrack from "./StageTrack";
+import { trackSteps } from "./paneData";
 import TaskPanel from "./TaskPanel";
 import type { StageStep, Task } from "./types";
 
@@ -185,6 +186,35 @@ describe("the stage track", () => {
   it("is off while a stage action runs", () => {
     expect(track("ready", true).match(/disabled=""/g)?.length).toBe(7);
     expect(track("ready")).not.toContain("disabled");
+  });
+  it("shows the owner's own task only its three steps, To do · Doing · Done, as the board places it (0022)", () => {
+    const steps = (stage: string) => {
+      const html = renderToStaticMarkup(createElement(StageTrack, { stage, busy: false, onPick: () => {}, human: true }));
+      return [...html.matchAll(/<button type="button" class="(\w+) s-([\w-]+)" aria-pressed="(\w+)"[^>]*title="([^"]*)"[^>]*>.*?<span>([^<]*)<\/span>/g)].map((m) => `${m[1]} ${m[2]} ${m[3]} ${m[5]} · ${m[4].replace(/&#x27;/g, "'")}`);
+    };
+    expect(steps("ready")).toEqual(["cur ready true To do · It's in To do", "next building false Doing · Put it in Doing", "next done false Done · Put it in Done"]);
+    expect(steps("building")).toEqual(["past ready false To do · Put it in To do", "cur building true Doing · It's in Doing", "next done false Done · Put it in Done"]);
+    // A stage it never takes reads as the step the board shows it in, so no click looks like nothing.
+    expect(steps("shaping").map((s) => s.split(" ")[0])).toEqual(["cur", "next", "next"]);
+    expect(steps("your-check").map((s) => s.split(" ")[0])).toEqual(["past", "cur", "next"]);
+    expect(steps("done").map((s) => s.split(" ")[0])).toEqual(["past", "past", "cur"]);
+  });
+  it("moves to the step's stage: To do is Ready, Doing Building, Done Done", () => {
+    expect(trackSteps("shaping", true)).toEqual([
+      { id: "ready", label: "To do", place: "cur" },
+      { id: "building", label: "Doing", place: "next" },
+      { id: "done", label: "Done", place: "next" },
+    ]);
+    expect(trackSteps("testing", false).map((s) => `${s.id} ${s.label} ${s.place}`)).toEqual([
+      "backlog Backlog past", "shaping Shaping past", "ready Ready past", "building Building past", "testing Testing cur", "your-check Your check next", "done Done next",
+    ]);
+  });
+  it("is the pane's track for the owner's own task", () => {
+    const html = pane({ forWho: "human", stage: "building", claimedBy: "owner" }).html;
+    const track = /aria-label="Stage">([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "";
+    expect([...track.matchAll(/<span>([^<]*)<\/span>/g)].map((m) => m[1])).toEqual(["To do", "Doing", "Done"]);
+    const agent = /aria-label="Stage">([\s\S]*?)<\/div>/.exec(pane({ stage: "building" }).html)?.[1] ?? "";
+    expect(agent.match(/<button/g)).toHaveLength(7);
   });
 });
 

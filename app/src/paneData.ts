@@ -1,6 +1,6 @@
 // The task pane's facts (0021), the parts without React: what's live, what waits on the owner,
 // time spent from the stage history, the criteria from the write-up. Tested in paneData.test.ts.
-import { heldByOther, isStage, stageLabel, stageRank, stampMinutes } from "./lib";
+import { boardColumn, heldByOther, isStage, stageLabel, stageRank, STAGES, stampMinutes } from "./lib";
 import { ownerOpen } from "./OwnerChecklist";
 import type { StageStep, Task } from "./types";
 import type { Msg, Undo } from "./useTaskActions";
@@ -100,4 +100,20 @@ export function trackPlace(stage: string, current: string): "past" | "cur" | "ne
   if (!isStage(current)) return "next";
   const a = stageRank(stage), b = stageRank(current);
   return a < b ? "past" : a === b ? "cur" : "next";
+}
+
+/** The owner's own task's steps (0022), each the stage a click puts it in. */
+const HUMAN_STEPS = [
+  { id: "ready", label: "To do" },
+  { id: "building", label: "Doing" },
+  { id: "done", label: "Done" },
+] as const;
+
+/** The stage track's steps: the seven stages, or for the owner's own task only To do · Doing ·
+ *  Done, placed by the column the board shows it in, so a stage it never takes (Shaping, Your
+ *  check) reads as the step it shows in and a click always moves it somewhere you can see. */
+export function trackSteps(stage: string, human: boolean): { id: string; label: string; place: "past" | "cur" | "next" }[] {
+  if (!human) return STAGES.map((s) => ({ id: s.id, label: s.label, place: trackPlace(s.id, stage) }));
+  const at = boardColumn({ stage, forWho: "human" });
+  return HUMAN_STEPS.map((s) => ({ id: s.id, label: s.label, place: trackPlace(s.id, at) }));
 }

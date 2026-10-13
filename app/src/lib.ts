@@ -255,11 +255,22 @@ export function priorityName(p: string): "high" | "normal" | "low" {
   return (["high", "normal", "low"] as const)[PRIORITY[p] ?? 1];
 }
 
-/** Tasks per stage, each column in the board's sort (priority unless the Sort chips say
- *  otherwise). Blocked tasks stay in their stage; an unknown stage goes to Backlog. */
+/** The board column a task sits in: its stage (Backlog for one this window doesn't know). The
+ *  owner's own task (`for: human`, 0022) shares the agents' columns without their stages: To do
+ *  in Ready (a stage before Building too), Doing in Building (Testing and Your check too, which it
+ *  never takes), Done in Done. As human.ts `humanColumn` names them. */
+export function boardColumn(t: Pick<Task, "stage" | "forWho">): StageId {
+  if (t.forWho !== "human") return stageOf(t);
+  if (t.stage === "done") return "done";
+  return stageRank(t.stage) >= stageRank("building") ? "building" : "ready";
+}
+
+/** Tasks per column, each column in the board's sort (priority unless the Sort chips say
+ *  otherwise). Blocked tasks stay in their stage; an unknown stage goes to Backlog; the owner's
+ *  own tasks go where `boardColumn` puts them. */
 export function columns(tasks: Task[], by: BoardSort = "priority"): Record<string, Task[]> {
   const out: Record<string, Task[]> = Object.fromEntries(STAGES.map((s) => [s.id, [] as Task[]]));
-  for (const t of sortBoard(tasks, by)) out[stageOf(t)].push(t);
+  for (const t of sortBoard(tasks, by)) out[boardColumn(t)].push(t);
   return out;
 }
 
@@ -327,14 +338,24 @@ export function claimant(claimedBy: string): string {
   return claimedBy.split(/\s*[(,]/)[0].trim() || claimedBy.trim();
 }
 
+/** What a blocked task waits on, in a few words: its `waiting_on`, else the tasks it's blocked
+ *  by (a block by tasks has no flag, 0024); "" when nothing blocks it. */
+function blockedOn(t: Pick<Task, "blocked" | "blockedKind" | "waitingOn" | "blockedBy">): string {
+  if (!t.blocked && !t.blockedKind) return "";
+  return t.waitingOn || (t.blockedBy ?? []).map((b) => b.id).join(", ") || "something";
+}
+
 /** Recent changes: commits, plus tasks whose files changed, newest first. */
 export function feed(activity: Activity[], tasks: Task[], limit = 60): Activity[] {
-  const touched: Activity[] = tasks.map((t) => ({
-    queue: t.queue,
-    at: t.modified,
-    what: `${t.id} ${t.title} · ${stageLabel(t.stage)}${t.blocked ? `, blocked on ${t.waitingOn || "something"}` : ""}${t.logTail.length ? ` · ${t.logTail[t.logTail.length - 1]}` : ""}`,
-    source: "file",
-  }));
+  const touched: Activity[] = tasks.map((t) => {
+    const on = blockedOn(t);
+    return {
+      queue: t.queue,
+      at: t.modified,
+      what: `${t.id} ${t.title} · ${stageLabel(t.stage)}${on ? `, blocked on ${on}` : ""}${t.logTail.length ? ` · ${t.logTail[t.logTail.length - 1]}` : ""}`,
+      source: "file",
+    };
+  });
   return [...activity, ...touched].sort((a, b) => b.at - a.at).slice(0, limit);
 }
 

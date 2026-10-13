@@ -39,7 +39,7 @@ fn write_queue(root: &Path, tasks: &[Value]) {
         let blocked = !s(t, "waitingOn").is_empty();
         let status = queue::mirror_status(s(t, "stage"), blocked);
         let text = format!(
-            "---\nid: {}\ntype: {}\npriority: {}\nstatus: {status}\nstage: {}\ncaptured: {}\nclaimed-by: {}\nheld-by: {}\nheartbeat:\nwaiting_on: {}\nest-time: {}\ntags: {}\n---\n\n# {}\n\n{}",
+            "---\nid: {}\ntype: {}\npriority: {}\nstatus: {status}\nstage: {}\ncaptured: {}\nclaimed-by: {}\nheld-by: {}\nheartbeat:\nwaiting_on: {}\ndepends: {}\nest-time: {}\ntags: {}\n---\n\n# {}\n\n{}",
             s(t, "id"),
             s(t, "type"),
             s(t, "priority"),
@@ -48,6 +48,7 @@ fn write_queue(root: &Path, tasks: &[Value]) {
             s(t, "claimedBy"),
             s(t, "heldBy"),
             s(t, "waitingOn"),
+            strings(&t["depends"]).join(", "),
             s(t, "estTime"),
             strings(&t["tags"]).join(", "),
             s(t, "title"),
@@ -141,6 +142,25 @@ fn the_core_reads_each_fixture_task_as_the_app_is_told() {
             Some(got.est_minutes),
             want["estMinutes"].as_u64(),
             "{}",
+            got.id
+        );
+    }
+    // Why each is blocked, as the window is told: read with the whole queue, since a block by
+    // tasks is derived from the others (`block::derive`).
+    let state = queue::read_state(
+        &[("q".to_string(), d.path().to_path_buf())],
+        &mut queue::Cache::default(),
+    );
+    for t in tasks {
+        let got = state
+            .tasks
+            .iter()
+            .find(|g| g.id == s(t, "id"))
+            .expect("in the state");
+        assert_eq!(
+            got.blocked_kind,
+            s(&t["parsed"], "blockedKind"),
+            "{} blocked kind",
             got.id
         );
     }

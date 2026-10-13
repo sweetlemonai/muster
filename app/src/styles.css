@@ -28,6 +28,7 @@
   --st-blocked: #F2556F;
   --st-needs: #FB8C3C;
   --st-human: #A08428;
+  --human-hatch: 14%;
   --on-status: #1A1730;
   --err: #C2334F;
   --ok: #177A4B;
@@ -155,33 +156,17 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .column.empty h2 .role { display: none; }
 .age { margin-left: auto; }
 
-/* The owner's own tasks (0022). The You ribbon: the card's own element in its top-right corner,
-   in every card look, with the word so colour isn't the only cue. Inline in rows and nodes. */
-.card.human { position: relative; }
+/* The owner's own tasks (0022), in the same columns as the agents': a faint diagonal hatch in the
+   human gold plus the You ribbon, in every card look (owner, 2026-10-13). The stripes are the gold
+   mixed by --human-hatch into the card's own background (--card-bg: the Tint look's blocked or
+   needs-you wash stays under them), so the words on a stripe keep the contrast themes.test.ts
+   checks; between them the card is as its look and state make it. The ribbon is the
+   card's own element in its top-right corner, with the word so colour isn't the only cue. */
+.card.human { position: relative; background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--st-human) var(--human-hatch), var(--card-bg, var(--surface))) 0 5px, transparent 5px 11px); }
 .card.human .card-top { padding-right: 34px; }
 .you-ribbon { background: var(--st-human); color: var(--on-status); border: 1px solid var(--edge-human, var(--st-human)); font-size: 9.5px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; line-height: 1.4; padding: 0 6px; border-radius: 4px; white-space: nowrap; flex: none; }
 .card .you-ribbon { position: absolute; top: 0; right: 0; z-index: 1; border-radius: 0 0 0 6px; border-top: none; border-right: none; }
-.badge.waits-you { background: var(--st-blocked); color: var(--on-status); }
 
-/* The Human board (0022): compact, above the AI board, always there. From the agents first, then
-   the owner's To do · Doing · Done. An empty column is one line. */
-.human-board { flex: none; margin: 8px 14px 0; border: 1px solid var(--border); border-top: 3px solid var(--st-human); border-radius: var(--radius); background: color-mix(in srgb, var(--surface) 55%, var(--bg)); max-height: 38vh; display: flex; flex-direction: column; min-height: 0; }
-.hb-head { display: flex; align-items: center; gap: 8px; padding: 6px 12px 2px; font-size: 11px; color: var(--muted); }
-.hb-head h2 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text); }
-.hb-cols { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr)); gap: 8px; padding: 4px 8px 8px; overflow: auto; min-height: 0; }
-.hb-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.hb-col h3 { margin: 0; padding: 2px 4px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); font-weight: 600; display: flex; gap: 6px; align-items: baseline; }
-.hb-col.lane h3 { color: var(--gold-text); }
-.hb-col .none { margin: 0 4px; font-size: 11.5px; }
-.hb-item { display: flex; flex-direction: column; gap: 1px; text-align: left; border: 1px solid var(--border); border-left: 3px solid var(--edge, var(--status, var(--border))); background: var(--surface); border-radius: 6px; padding: 3px 7px; font-size: 12px; min-width: 0; }
-.hb-item:hover { border-color: var(--accent); border-left-color: var(--edge, var(--status)); }
-.hb-item.active { outline: 2px solid var(--accent); outline-offset: 1px; }
-.hb-item.lane-item { border-left-color: var(--st-needs); }
-.hb-line { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
-.hb-line .t { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 550; }
-.hb-line .id, .hb-why { color: var(--muted); font-size: 11px; }
-.hb-why { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.board-label { flex: none; margin: 8px 14px 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
 /* In the filter bar's arrange slot: Who pushes itself right, and Group by follows it. */
 .for-filter { display: inline-flex; gap: 4px; align-items: center; margin-left: auto; }
 .for-filter + .group-by { margin-left: 8px; }

@@ -26,6 +26,8 @@ Each card shows, top to bottom:
 - "⚠ 2 vision" while the task has open [vision conflicts](02-concepts.md#the-vision-check);
 - badges: why it's blocked, the kind first ("Blocked on you: …", [Blocked, and why](02-concepts.md#blocked-and-why)); needs you; open questions; files; the estimate; and how long ago it last changed.
 
+**Your own tasks** (for: human: an account, a secret, a decision, a try on a device) sit in the same columns as the agents' tasks: To do in Ready, Doing in Building, Done in Done. Their cards are hatched with faint gold stripes and carry a gold **You** ribbon, in every card look, so they can't be mistaken for the agents' work. What the agents wait on you for stays where it is, as a card marked **needs you**: in Your check, with a question escalated to you, or blocked on you or by a permission. An agent's task that waits on one of your unfinished tasks says "Blocked by tasks: 0041" until you've done it.
+
 The **Sort** chips above the board order each column. The default, **priority**, puts cards that need you first, then high priority, then the lowest id, with Done newest first. Done shows the latest 8, with **Show all** for the rest.
 
 The **Backlog** column starts with the **Add to the backlog…** field: type a line and press ↩ to add it as a note, or Esc to empty it. With more than one project in view, a "to myapp" chip says which project gets it; click it to pick another. Notes come first in the column, as quieter cards marked "note", then the numbered tasks in Backlog.
@@ -34,6 +36,7 @@ Above the board, the filter bar is shared by all four views (Board, Table, Timel
 
 - **The search box** (⌘F from anywhere): words in any order, each found in a task's title, tags, text or holder, and a number finds that id (`19` finds 0019). Matches are marked on cards and rows. Esc clears it, and Esc again leaves the box.
 - **Views:** your saved views as chips; click one to bring back its search, filters and sort, ✕ to delete it. **+ Save view** names the current ones (↩ saves, Esc cancels).
+- **Who** All · You · Agents (board, table and timeline): **You** shows only your own tasks, **Agents** only the agents', **All** both. The backlog's notes show under every choice: they're nobody's yet. The choice is remembered.
 - **Group by** None · Feature · Goal (board, table and graph): one band per feature or goal, with its stage, its progress ("3 of 5 done"), the estimate left and a goal's due date, and the stage columns inside. Tasks under none come last. Click a band's title to open the feature or goal.
 - The estimate left for what's shown, and how many tasks are shown ("24 of 98 tasks"), then **?**, which opens this section.
 - **Filter chips** by group: Stage, Type, Priority, Tags, Held by, Flags (blocked, needs you, open questions), Captured, Changed and Done (today, this week, this month). Each group shows only the values the project's tasks have. Chips in one group mean any of them; groups together mean all.
@@ -65,7 +68,7 @@ Click a card to open its task beside the board. The pane keeps every control in 
 1. **The top line:** the project and how long ago the task changed, and **×** to close.
 2. **The title**, with its id. Click the title to rename it: ↩ saves, Esc keeps the old one. The **?** beside it opens this section.
 3. **The status line:** the stage, why it's blocked (the kind first; each task it's blocked by opens with a click), **LIVE** (the file changed in the last 5 minutes) or how long it's been quiet, who's on it and who held the stages before, the stage's role, and what's waiting on you, or "nothing waiting on you".
-4. **The stage track:** all seven stages, the task's own lit. Click another stage to put the task there. That's your override: it happens at once, and the message under it offers **Undo**. When the move would release someone's claim, the stage's tooltip says whose.
+4. **The stage track:** all seven stages, the task's own lit; for your own task only **To do**, **Doing** and **Done**. Click another stage to put the task there. That's your override: it happens at once, and the message under it offers **Undo**. When the move would release someone's claim, the stage's tooltip says whose.
 5. **Two columns.** The left one shows what this stage needs:
    - Backlog, Shaping and Ready: the acceptance criteria and the estimate.
    - Building and Testing: **Work so far**, the time spent against the estimate, the tokens estimated, and the stage history. The sessions and the tokens they used are in the **Work** section further down.
@@ -107,7 +110,7 @@ The note's text is below the buttons, up to 20 KB.
 
 ## Waiting for you
 
-Every task waiting on you, in one list: questions escalated to you (with the question), tasks blocked on you or by a permission, and tasks in Your check. **Open to answer** opens the task in the pane. The tab's count is the number of tasks.
+Every task waiting on you, in one list: questions escalated to you (with the question), tasks blocked on you or by a permission, and tasks in Your check, then your own tasks to do and doing. **Open to answer** (or **Open**, for your own) opens the task in the pane. The tab's count is the number of tasks, the same needs-you count as the sidebar's.
 
 ## Activity and Problems
 

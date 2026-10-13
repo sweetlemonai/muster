@@ -21,8 +21,11 @@ every screen.
   form) show all their options.
 - **No overlays.** Details, New task and editing open in a docked pane beside the content, which
   shrinks and stays live. Modals only for confirming something destructive.
-- **Side by side over tabs** when two things are used together (the Human and AI boards, a task
-  and its board). Tabs only for things you don't need at the same time.
+- **Side by side over tabs** when two things are used together (a task and its board). Tabs only
+  for things you don't need at the same time.
+- **One board for your work and the agents'** (owner, 2026-10-13: a second board took space from
+  the first): your own tasks sit in the same columns, hatched in gold with the YOU ribbon so they
+  can't be mistaken, and the Who chips (All · You · Agents) show either side alone.
 - **What needs you is always in view:** a visible count and a highlighted place for anything
   waiting on the owner (Your check, escalated questions, blocked on owner, human tasks), on every
   screen, plus the Dock badge.

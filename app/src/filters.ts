@@ -1,5 +1,6 @@
-import { holder, isBoardSort, priorityName, stageLabel, stageOf, STAGES, stamp, type BoardSort } from "./lib";
+import { boardColumn, holder, isBoardSort, priorityName, stageLabel, STAGES, stamp, type BoardSort } from "./lib";
 import { queryWords, searchWords, taskMatches, textMatches } from "./search";
+import { isBlocked } from "./blockWords";
 import { needsYou } from "./human";
 import type { Note, Task } from "./types";
 
@@ -57,7 +58,8 @@ function fixedGroup(id: string, label: string, order: readonly string[], has: Gr
 }
 
 const STATES: Record<string, { label: string; has: (t: Task) => boolean }> = {
-  blocked: { label: "blocked", has: (t) => t.blocked },
+  // Blocked by the flag, or only by the tasks it depends on (0024), as the red card shows.
+  blocked: { label: "blocked", has: isBlocked },
   // The one needs-you definition (0022): an agent's task waiting on the owner, or the owner's own until done.
   "needs-you": { label: "needs you", has: needsYou },
   questions: { label: "open questions", has: (t) => t.openQuestions > 0 },
@@ -86,7 +88,9 @@ function dateGroup(id: string, label: string, verb: string, day: (t: Task) => st
 }
 
 export const GROUPS: Group[] = [
-  fixedGroup("stage", "Stage", STAGES.map((s) => s.id), (t, v) => stageOf(t) === v, stageLabel),
+  // By the column the board shows it in: the owner's own task (0022) sits in Ready, Building or
+  // Done whatever its stage. `muster list --stage` keeps the real stage.
+  fixedGroup("stage", "Stage", STAGES.map((s) => s.id), (t, v) => boardColumn(t) === v, stageLabel),
   listGroup("type", "Type", (t) => [t.kind]),
   fixedGroup("priority", "Priority", ["high", "normal", "low"], (t, v) => priorityName(t.priority) === v, same),
   listGroup("tag", "Tags", (t) => t.tags, (v) => `#${v}`),

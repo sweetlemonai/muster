@@ -16,7 +16,8 @@
 //!   `search` text: its title, tags and body (no front matter), each folded word once, words of
 //!   digits only left out, cut at `MAX_SEARCH_BYTES`. So "flick" finds "flickers".
 //! - Filters: within a group (stages, types, tags, holders) any listed value will do, exactly
-//!   as written; every group given must match. `blocked` keeps blocked tasks only.
+//!   as written; every group given must match. `blocked` keeps blocked tasks only, those blocked
+//!   only by the tasks they depend on included.
 
 use crate::queue::Task;
 use std::cmp::Ordering;
@@ -191,7 +192,9 @@ impl Filter {
             && any(&self.kinds, &|v| t.kind == v)
             && any(&self.tags, &|v| t.tags.iter().any(|g| g == v))
             && any(&self.holders, &|v| holder(t) == v)
-            && (!self.blocked || t.blocked)
+            // Blocked by the flag, or only by the tasks it depends on (`blocked_kind` "tasks",
+            // derived, 0024), as the app's blocked chip and red card (blockWords.ts isBlocked).
+            && (!self.blocked || t.blocked || !t.blocked_kind.is_empty())
             && task_matches(t, &self.words)
     }
 
@@ -530,6 +533,30 @@ mod tests {
             ..Default::default()
         }
         .hides_notes());
+    }
+
+    #[test]
+    fn blocked_keeps_a_task_blocked_only_by_the_tasks_it_depends_on() {
+        // 0024: a block by tasks is derived from `depends:` (no flag, no waiting_on), and the
+        // card shows it red, so `--blocked` keeps it too.
+        let mut tasks = vec![
+            task("id: 0001\nstage: building\nclaimed-by: wt-a", "# A\n"),
+            task("id: 0002\nstage: ready\ndepends: 0001", "# B\n"),
+            task("id: 0003\nstage: ready\ndepends: 0004", "# C\n"),
+            task("id: 0004\nstage: done", "# D\n"),
+        ];
+        crate::block::derive(&mut tasks);
+        assert!(!tasks[1].blocked);
+        let f = Filter {
+            blocked: true,
+            ..Default::default()
+        };
+        let kept: Vec<&str> = tasks
+            .iter()
+            .filter(|t| f.matches(t))
+            .map(|t| t.id.as_str())
+            .collect();
+        assert_eq!(kept, ["0002"]);
     }
 
     #[test]

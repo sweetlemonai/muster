@@ -59,7 +59,7 @@ pub const COMMANDS: &[Command] = &[
             ("--level", "goal, feature or task (default)"),
             ("--parent", "the id it sits under: a task's is a feature or a goal, a feature's a goal; a goal has none"),
             ("--due", "a goal's date, YYYY-MM-DD"),
-            ("--human", "the owner's own task, To do → Doing → Done on the Human board (only the owner, --as owner)"),
+            ("--human", "the owner's own task, To do → Doing → Done, hatched on the board with the You ribbon (only the owner, --as owner)"),
             ("--body", "the description in Markdown; \\n is a line break; - reads it from stdin. It can't have a \"## Comments\" line (comments are the tool's)"),
         ],
         examples: &[
@@ -82,7 +82,7 @@ pub const COMMANDS: &[Command] = &[
             ("--type", "code, bug, chore, tech-debt, spike, design, docs or research (task means code)"),
             ("--tag", "only tasks with this tag"),
             ("--holder", "who holds it in its stage, as the board shows it, without the session (drover/main, wt-a, owner)"),
-            ("--blocked", "only blocked tasks"),
+            ("--blocked", "only blocked tasks, those waiting only on the tasks they depend on too"),
             ("--sort", "priority (needs you, then high to low; Done last), newest, oldest, changed, estimate or id (the default)"),
             ("--status", "the old status: inbox, todo, doing, blocked or done"),
             ("--json", "machine-readable: {\"tasks\": […], \"backlog\": […]}, for scripts and agents"),
@@ -210,7 +210,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "set",
         usage: "muster set <id> <priority|type|title|tags|time|test-time|tokens|level|parent|due|depends|for> <value>",
-        what: "Change one field, logged with the time and who. type is one of code, bug, chore, tech-debt, spike, design, docs, research; time is agent time and test-time the QA agent plus your check. level, parent and due keep the rules of muster new (a parent that exists at the right level, no loop, a due date only on a goal); a task in Building or Testing, or held, stays a task. An empty parent or due clears it. for is human or ai: who does it (a human task is the owner's own, on the Human board); only a task, and not while it's held, in Building, Testing or Your check; made human in Backlog or Shaping, it moves to Ready (To do).",
+        what: "Change one field, logged with the time and who. type is one of code, bug, chore, tech-debt, spike, design, docs, research; time is agent time and test-time the QA agent plus your check. level, parent and due keep the rules of muster new (a parent that exists at the right level, no loop, a due date only on a goal); a task in Building or Testing, or held, stays a task. An empty parent or due clears it. for is human or ai: who does it (a human task is the owner's own, hatched on the board with the You ribbon); only a task, and not while it's held, in Building, Testing or Your check; made human in Backlog or Shaping, it moves to Ready (To do).",
         options: &[],
         examples: &["muster set 0007 priority high", "muster set 0041 for human", "muster set 0007 type tech-debt", "muster set 0007 tags spike,tech-debt", "muster set 0007 tags \"\"", "muster set 0007 time 3h", "muster set 0007 test-time 45m", "muster set 0007 tokens 600k", "muster set 0007 title \"A clearer title\"", "muster set 0031 level feature", "muster set 0032 parent 0031", "muster set 0031 parent \"\"", "muster set 0030 due 2026-12-01", "muster set 0018 depends 0014,0016", "muster set 0018 depends \"\""],
     },
@@ -508,12 +508,16 @@ pub const APP: &[(&str, &str)] = &[
         "in your own task's pane (Human, for: human): Start moves it from To do to Doing, Done finishes it; no gate line, no Testing, no Your check",
     ),
     (
-        "Human board",
-        "above the AI board on the Board view: your own tasks in To do · Doing · Done, and first From the agents: tasks in Your check, questions escalated to you and tasks blocked on you, each opening its task. Its count is the needs-you number in the sidebar and the header",
+        "Your own tasks",
+        "on the same board as the agents' tasks, hatched in gold with the You ribbon, in every card look: To do in Ready, Doing in Building, Done in Done. Who above the Board, Table and Timeline shows All · You · Agents (remembered)",
     ),
     (
         "You",
-        "the gold ribbon on a human task's card or row, wherever human and agents' tasks share a view; Table and Timeline filter Human · AI · All",
+        "the gold ribbon on a human task's card, row or graph node, wherever human and agents' tasks share a view",
+    ),
+    (
+        "needs you",
+        "the orange badge on a card waiting on you, where it is: in Your check, a question escalated to you, blocked on you or by a permission. With your own tasks to do and doing, it's the count in the sidebar and on Waiting for you",
     ),
     (
         "Send back",
@@ -1068,8 +1072,25 @@ mod tests {
         let t = text();
         assert!(t.contains("never claim a human task"), "{t}");
         let app: String = APP.iter().map(|(k, v)| format!("{k} {v}\n")).collect();
-        for words in ["Human board", "From the agents", "Start", "You"] {
+        // One board (owner, 2026-10-13): the owner's own tasks hatched among the agents', the Who
+        // chips, and what waits on them as needs-you cards; no Human board or lane of its own.
+        for words in [
+            "Your own tasks",
+            "same board",
+            "hatched",
+            "All · You · Agents",
+            "Start",
+            "You",
+            "needs you",
+            "Your check",
+            "escalated",
+            "blocked on you",
+        ] {
             assert!(app.contains(words), "{words}: {app}");
+        }
+        for gone in ["Human board", "AI board", "From the agents"] {
+            assert!(!app.contains(gone), "{gone}: {app}");
+            assert!(!text().contains(gone), "{gone} in the commands' help");
         }
     }
 

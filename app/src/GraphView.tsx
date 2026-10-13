@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from "react";
-import { blockSentence } from "./blockWords";
+import { blockSentence, isBlocked } from "./blockWords";
 import { downstream, edgeLit, type Graph, hiddenDeps, layoutGraph, readyToStart, upstream } from "./graph";
 import { isHuman } from "./human";
 import { holder, key, stageLabel, stageOf } from "./lib";
@@ -60,7 +60,7 @@ function Status({ t, ready }: { t: Task; ready: boolean }) {
       <span className="g-stage">{stageLabel(t.stage)}</span>
       {t.priority === "high" && <span className="pri pri-high">high</span>}
       {ready && <span className="g-ready">ready</span>}
-      {t.blocked && <span className="badge blocked">blocked</span>}
+      {isBlocked(t) && <span className="badge blocked">blocked</span>}
       {t.waitingForOwner && <span className="badge warn">needs you</span>}
       {who && <span className="g-who">{who}</span>}
     </>
@@ -123,7 +123,7 @@ function QueueGraph({ name, tasks, all, openKey, onOpen }: { name: string; tasks
               <button
                 key={n.id}
                 type="button"
-                className={`g-node s-${stageOf(t)}${isHuman(t) ? " human" : ""}${t.blocked ? " blocked" : ""}${ready ? " ready" : ""}${role(n.id)}`}
+                className={`g-node s-${stageOf(t)}${isHuman(t) ? " human" : ""}${isBlocked(t) ? " blocked" : ""}${ready ? " ready" : ""}${role(n.id)}`}
                 style={{ left: p.x, top: p.y, width: W, height: H }}
                 onClick={() => onOpen(t)}
                 title={`${t.id} ${t.title}\n${stageLabel(t.stage)}${t.blockedKind ? `\n${blockSentence(t)}` : ""}${t.depends.length ? `\nwaits on ${t.depends.join(", ")}` : ""}`}

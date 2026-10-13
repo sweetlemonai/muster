@@ -444,7 +444,7 @@ pub struct Task {
     /// A `vision:` value that isn't `<n> open` (`check` reports it; such a task isn't counted as
     /// unchecked), else "".
     pub bad_vision: String,
-    /// An agent's task waits on the owner (`needs_owner`): "From the agents" on the Human board.
+    /// An agent's task waits on the owner (`needs_owner`): a needs-you card on the app's board.
     pub waiting_for_owner: bool,
     /// One of FOR_WHO: `for:` from the file, "ai" when it has none (or one that isn't either).
     pub for_who: String,
@@ -802,8 +802,8 @@ fn parse_question(item: &str) -> Question {
 
 /// Does a task wait on the owner (the one definition, 0022; `waiting_for_owner`)? An open question
 /// escalated to them, Your check, or blocked on you or by a permission (`blocked_kind`, 0024: a
-/// person has to act on both; an older `waiting_on: owner …` reads as on you). The Human board's
-/// "From the agents" lane is these, for agents' tasks; the owner's own tasks are on the board itself.
+/// person has to act on both; an older `waiting_on: owner …` reads as on you). The app's needs-you
+/// count is these agents' tasks plus the owner's own tasks not yet done.
 pub fn needs_owner(questions: &[Question], stage: &str, blocked_kind: &str) -> bool {
     questions.iter().any(|q| !q.ticked && q.escalated)
         || stage == "your-check"

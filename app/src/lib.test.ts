@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { humanColumn } from "./human";
 import {
-  ago, checkinLine, claimant, columns, currentCheckin, earlierStages, estimateTotal, feed, fileName, fmtMinutes, fmtTokens, heldByOther, holder, holderOf, inProgress, LEASE_SECS, leaseRunOut,
+  ago, boardColumn, checkinLine, claimant, columns, currentCheckin, earlierStages, estimateTotal, feed, fileName, fmtMinutes, fmtTokens, heldByOther, holder, holderOf, inProgress, LEASE_SECS, leaseRunOut,
   nextStage, ofEstimate, oneAtATime, passLabel, queueTotal, quietCheckin, quietMinutes, shortTokens, splitHolder, stageHolders, stageOf, STAGES, stamp, stampMinutes, startedAgo, whoLine,
 } from "./lib";
 import type { Task } from "./types";
@@ -144,6 +145,27 @@ describe("columns", () => {
     const c = columns([task({ id: "0001", stage: "done", modified: 1 }), task({ id: "0002", stage: "done", status: "blocked", blocked: true, modified: 9 })]);
     expect(c.done.map((t) => t.id)).toEqual(["0002", "0001"]);
   });
+  it("puts the owner's own tasks in the same columns: To do in Ready, Doing in Building, Done in Done (0022)", () => {
+    const stages = ["backlog", "shaping", "ready", "building", "testing", "your-check", "done", "weird"];
+    const c = columns([...stages.map((stage, i) => task({ id: `000${i}`, stage, forWho: "human" })), task({ id: "0010", stage: "shaping" }), task({ id: "0011", stage: "testing" })]);
+    expect(c.ready.map((t) => t.id)).toEqual(["0000", "0001", "0002", "0007"]);
+    expect(c.building.map((t) => t.id)).toEqual(["0003", "0004", "0005"]);
+    expect(c.done.map((t) => t.id)).toEqual(["0006"]);
+    // Never in Backlog, Shaping, Testing or Your check: those are the agents' stages.
+    expect(c.backlog).toEqual([]);
+    expect(c.shaping.map((t) => t.id)).toEqual(["0010"]);
+    expect(c.testing.map((t) => t.id)).toEqual(["0011"]);
+    expect(c["your-check"]).toEqual([]);
+    // Each in the column's sort with the agents' tasks around it.
+    const mixed = columns([task({ id: "0001" }), task({ id: "0002", forWho: "human", priority: "high" }), task({ id: "0003", priority: "low" })]);
+    expect(mixed.ready.map((t) => t.id)).toEqual(["0002", "0001", "0003"]);
+  });
+  it("matches the column the window names the owner's own task by (human.ts humanColumn)", () => {
+    for (const stage of ["backlog", "shaping", "ready", "building", "testing", "your-check", "done", "weird"]) {
+      expect(boardColumn({ stage, forWho: "human" }), stage).toBe({ todo: "ready", doing: "building", done: "done" }[humanColumn(stage)]);
+      expect(boardColumn({ stage, forWho: "ai" }), stage).toBe(stageOf({ stage }));
+    }
+  });
 });
 
 describe("helpers", () => {
@@ -170,6 +192,9 @@ describe("helpers", () => {
     expect(f[0].what).toContain("· Ready ·");
     const b = feed([], [task({ stage: "testing", blocked: true, waitingOn: "0012" })]);
     expect(b[0].what).toBe("0001 T · Testing, blocked on 0012");
+    // Blocked only by the tasks it depends on (0024): no flag, no waiting_on, still blocked.
+    const d = feed([], [task({ blockedKind: "tasks", blockedBy: [{ id: "0041", stage: "ready", holder: "" }, { id: "0042", stage: "building", holder: "wt-a" }] })]);
+    expect(d[0].what).toBe("0001 T · Ready, blocked on 0041, 0042");
   });
 });
 

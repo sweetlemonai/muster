@@ -205,24 +205,38 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   "needs you", open questions, files, who's on it (flagged when quiet for 12 h), what a blocked
   task waits on, and when it last changed. Tasks waiting on the owner sort first. Done shows the
   latest 8.
-- **Human tasks and the Human board** (task 0022): `for: human` makes a task the owner's own
-  (`muster new --human --as owner`, the Human/AI chips in New task, the For chip in the task pane,
-  `muster set <id> for human|ai`). It goes To do (Ready) → Doing (Building) → Done with the pane's
-  Start and Done, no gate line, no Testing, no Your check, no lease. Agents never take one: `claim`
-  refuses it and `next` passes it by; an agent proposes one with `muster add`, and only the owner
-  makes one. On the Board view a compact **Human board** sits above the **AI board** (agents'
-  tasks only): From the agents (tasks in Your check, questions escalated to the owner, tasks
-  blocked on you or by a permission, each opening its task where it is, with the block's
-  sentence), then To do · Doing · Done. Its count
-  (`needsYouCount` in `human.ts`) is the needs-you number in the sidebar and the header. Wherever
-  both kinds share a view (Table, Timeline, Graph, the pane) a human task carries a gold "You"
-  ribbon (`#A08428`, never a stage colour; contrast tested in `themes.test.ts`), and Table and
-  Timeline filter Human · AI · All. An agent's task that depends on a human task shows "blocked by
-  yours" until it's done, and can't be claimed until then. `muster list` marks human tasks
-  `[you]`, INDEX.md "you", and `manifest.py` reads `for`.
+- **Human tasks, on the one board** (task 0022; the owner, 2026-10-13: "human board is taking
+  space from the ai board", so one board, human cards patterned): `for: human` makes a task the
+  owner's own (`muster new --human --as owner`, the Human/AI chips in New task, the For chip in
+  the task pane, `muster set <id> for human|ai`). It goes To do (Ready) → Doing (Building) → Done
+  with the pane's Start and Done, no gate line, no Testing, no Your check, no lease. Agents never
+  take one: `claim` refuses it and `next` passes it by; an agent proposes one with `muster add`,
+  and only the owner makes one. Its card sits in the same stage columns as the agents' tasks
+  (`lib.ts` `boardColumn`: To do in Ready, Doing in Building, Done in Done; never Backlog,
+  Shaping, Testing or Your check), drawn so it can't be mistaken: a faint diagonal hatch in the
+  human gold (`.card.human`, CSS only: stripes of `--st-human` mixed by `--human-hatch`, 14%,
+  `themes.ts` `HUMAN_HATCH`, into the card's own background, so the Tint look's blocked or
+  needs-you wash stays under them) plus the gold "You" ribbon (`#A08428`, never a stage colour),
+  in every card look. `themes.test.ts` holds every card word on a stripe over the plain card to
+  its contrast in every theme and accent (text 7:1; muted, project name and warnings 4.5:1), the
+  title (7:1) and muted words (4.5:1) on a stripe over a blocked or needs-you wash, the hatch
+  visible (CIE76 8+ from the surface), and the gold a hue apart from blocked red and needs-you
+  orange. The ribbon marks human tasks in Table, Timeline, Graph and the pane too; the pane's
+  stage track shows a human task only To do · Doing · Done (`paneData.ts` `trackSteps`), and the
+  Stage filter chips go by the board column. The **Who** chips (All · You · Agents, remembered)
+  sit above the Board, Table and Timeline: You shows only the owner's tasks, Agents only the
+  agents'; backlog notes show under every Who (nobody's yet).
+  What the agents wait on the owner for has no lane of its own: Your check is a column, and
+  escalated questions and blocks on you or by a permission are needs-you cards where they are.
+  `needsYouCount` (`human.ts`: the owner's own tasks to do and doing, plus those) is the one
+  count: sidebar, Waiting for you, the needs-you filter chip, and 0006's Dock badge later. An
+  agent's task that depends on an unfinished human task says "Blocked by tasks: 0041" (0024's
+  sentence; derived, so the blocked chip, `muster list --blocked`, the graph and the activity
+  feed count it as blocked too) and can't be claimed until it's done. `muster list` marks human
+  tasks `[you]`, INDEX.md "you", and `manifest.py` reads `for`.
 - **Waiting for you:** what the agents wait on the owner for (escalated questions, Your check,
   blocked on you or by a permission, `queue::needs_owner`), then the owner's own tasks to do and
-  doing, each opening its task (the Human board's count).
+  doing, each opening its task (`human.ts` `waitingForYou`: the needs-you count's tasks).
 - **Task panel** (loads on first open): the task rendered as Markdown with a Raw switch,
   open questions with an answer box (⌘↩), the files as thumbnails that open large (← → between
   them, Esc to close), who's on it, what it waits on, and the commit.

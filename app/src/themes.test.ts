@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import css from "./styles.css?raw";
-import { ACCENTS, apply, buildingColour, CARD_LOOKS, colourDistance, SAME_AT_A_GLANCE, CARD_TINT, cardChoice, contrast, DEFAULT_CHOICE, edgeColour, HUMAN_COLOUR, mix, NEEDS_COLOUR, PRIORITY_COLOURS, resolve, STAGE_COLOURS, THEMES, variables } from "./themes";
+import { ACCENTS, apply, buildingColour, CARD_LOOKS, colourDistance, SAME_AT_A_GLANCE, CARD_TINT, cardChoice, contrast, DEFAULT_CHOICE, edgeColour, HUMAN_COLOUR, HUMAN_HATCH, mix, NEEDS_COLOUR, PRIORITY_COLOURS, resolve, STAGE_COLOURS, THEMES, variables } from "./themes";
 
 describe("every theme and accent pair is readable (WCAG AA)", () => {
   for (const t of THEMES) {
@@ -119,6 +119,14 @@ describe("the owner's own tasks' gold (0022)", () => {
   it("is never a stage colour: it reads apart from every stage, blocked and needs you at a glance", () => {
     for (const [s, c] of [...Object.entries(STAGE_COLOURS), ["needs", NEEDS_COLOUR]]) expect(colourDistance(HUMAN_COLOUR, c), s).toBeGreaterThanOrEqual(SAME_AT_A_GLANCE);
   });
+  it("is a hue apart from blocked red and needs-you orange, as well as at a glance", () => {
+    const apart = (a: string, b: string) => {
+      const d = Math.abs(hsl(a).h - hsl(b).h) % 360;
+      return Math.min(d, 360 - d);
+    };
+    expect(apart(HUMAN_COLOUR, STAGE_COLOURS.blocked)).toBeGreaterThanOrEqual(40);
+    expect(apart(HUMAN_COLOUR, NEEDS_COLOUR)).toBeGreaterThanOrEqual(20);
+  });
   for (const t of THEMES) {
     it(`${t.name}: the You ribbon's word reads on it, and it stands out on the card`, () => {
       const v = variables(t, ACCENTS[0]);
@@ -126,6 +134,38 @@ describe("the owner's own tasks' gold (0022)", () => {
       expect(contrast(v["--on-status"], v["--st-human"])).toBeGreaterThanOrEqual(4.5);
       // Its border is the edge shade: 3:1 on the plain card and on a tinted one.
       expect(contrast(v["--edge-human"], t.surface)).toBeGreaterThanOrEqual(3);
+    });
+  }
+});
+
+describe("the owner's own task's hatch (0022, owner 2026-10-13: one board, human cards patterned)", () => {
+  // A stripe is the gold mixed by HUMAN_HATCH into the card's own background: the surface, or in
+  // the Tint look the card washed in its colour (blocked, needs you), which stays under the stripes.
+  const stripe = (t: (typeof THEMES)[number], under = t.surface) => mix(HUMAN_COLOUR, under, HUMAN_HATCH);
+  const washed = (t: (typeof THEMES)[number]) => [STAGE_COLOURS.blocked, NEEDS_COLOUR].map((c) => mix(c, t.surface, CARD_TINT[t.mode]));
+  for (const t of THEMES) {
+    for (const a of ACCENTS) {
+      it(`${t.name} × ${a.name}: every word a card shows keeps its contrast on a stripe`, () => {
+        const v = variables(t, a);
+        // The title and other text at 7:1 (AAA), as on the plain card.
+        expect(contrast(v["--text"], stripe(t))).toBeGreaterThanOrEqual(7);
+        // Secondary words: meta (muted), the project name (accent-text), warnings (err).
+        for (const w of ["--muted", "--accent-text", "--err"]) expect(contrast(v[w], stripe(t)), w).toBeGreaterThanOrEqual(4.5);
+        // The You ribbon's border still stands out on it.
+        expect(contrast(v["--edge-human"], stripe(t))).toBeGreaterThanOrEqual(3);
+      });
+      it(`${t.name} × ${a.name}: the title and secondary text keep their contrast on a stripe over a blocked or needs-you wash (Tint)`, () => {
+        const v = variables(t, a);
+        for (const under of washed(t)) {
+          expect(contrast(v["--text"], stripe(t, under)), under).toBeGreaterThanOrEqual(7);
+          expect(contrast(v["--muted"], stripe(t, under)), under).toBeGreaterThanOrEqual(4.5);
+        }
+      });
+    }
+    it(`${t.name}: the hatch can be seen, and the CSS gets the tested amount`, () => {
+      // Faint, but clearly there: a CIE76 distance of 2.3 is just noticeable.
+      expect(colourDistance(stripe(t), t.surface)).toBeGreaterThanOrEqual(8);
+      expect(variables(t, ACCENTS[0])["--human-hatch"]).toBe(`${Math.round(HUMAN_HATCH * 100)}%`);
     });
   }
 });
@@ -221,6 +261,20 @@ describe("the card CSS uses what the tests check (0026)", () => {
     expect(body).toContain("border: 1px solid var(--edge-human, var(--st-human));");
     // It's the card's own element, not a look's variable: no look hides or recolours it.
     for (const l of ["tint", "top", "dot", "outline"]) expect(rule(`:root[data-cards="${l}"] .board .card, .look-${l} .card`).body).not.toContain("human");
+  });
+  it("the owner's own card is hatched in every look: diagonal gold stripes over the card, CSS only (0022)", () => {
+    expect(css).toContain(`--human-hatch: ${Math.round(HUMAN_HATCH * 100)}%;`);
+    const body = rule(".card.human").body;
+    // Stripes of the gold mixed into the card's own background (the tested colours), so a Tint wash stays under them.
+    expect(body).toContain("background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--st-human) var(--human-hatch), var(--card-bg, var(--surface))) 0 5px, transparent 5px 11px);");
+    expect(body).not.toMatch(/url\(/);
+    // It's the card's own rule, after the base card and the states, and no look, state or hover
+    // sets a background image over it: blocked and needs you keep their colour, the hatch its pattern.
+    expect(body.length).toBeGreaterThan(0);
+    expect(rule(".card.human").at).toBeGreaterThan(rule(".card.blocked").at);
+    const others = css.replace(body, "");
+    expect(others.match(/\.card[^{]*\{[^}]*background-image/g) ?? []).toEqual([]);
+    for (const sel of [".card.blocked", ".card.needs-you"]) expect(rule(sel).body).not.toContain("gradient");
   });
   it("blocked takes over from needs you, and both from the stage or priority colour", () => {
     const needs = rule(".card.needs-you");
