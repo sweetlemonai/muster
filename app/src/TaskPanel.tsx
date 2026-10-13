@@ -12,6 +12,8 @@ import PaneHeader from "./PaneHeader";
 import { isFileDrag, logSummary, releasedBy, undoFor } from "./paneData";
 import PickOne, { answeredText } from "./PickOne";
 import { SessionPing } from "./Ping";
+import { reviewStatus, withoutReview } from "./Review";
+import ReviewPanel from "./ReviewPanel";
 import Sidebar from "./Sidebar";
 import StageContent from "./StageContent";
 import StageForms from "./StageForms";
@@ -27,8 +29,8 @@ import { pressed } from "./shortcuts";
 
 /** The task pane (0021, the owner's design D2): title and status first, the stage track, then
  *  two columns (what this stage needs; the next step and the task's settings), the stage forms
- *  under both, the path; then open questions, the write-up, the vision check (0029), the comment
- *  thread (0017) and the Log and, at the bottom, the note bar. */
+ *  under both, the path; then open questions, the write-up, the vision check (0029), the review of
+ *  record (0027), the comment thread (0017) and the Log and, at the bottom, the note bar. */
 export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudge, childTasks, onOpenTask, onOpenView, keys, onOpenAt }: {
   task: Task;
   now: number;
@@ -96,10 +98,12 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
     }
   };
 
-  // The comments show as their own thread, between the write-up and the Log, and the Vision
-  // section in its own place under the write-up (VisionPanel), so both are left out of the rendering.
+  // The comments show as their own thread, between the write-up and the Log, and the Vision and
+  // Review sections in their own places under the write-up (VisionPanel, ReviewPanel), so they're
+  // left out of the rendering.
   const checked = (task.visionOpen ?? null) !== null;
-  const [shown, log] = splitLog(body ? withoutComments(withoutVision(body.replace(/^---\n[\s\S]*?\n---\n/, ""), checked)) : "");
+  const reviewed = (task.reviewRound ?? null) !== null;
+  const [shown, log] = splitLog(body ? withoutComments(withoutReview(withoutVision(body.replace(/^---\n[\s\S]*?\n---\n/, ""), checked), reviewed)) : "");
   const open = task.questions.filter((q) => !q.ticked && q.n !== null);
   const undo = undoFor(a.msg, task.stage);
 
@@ -196,6 +200,9 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
       {/* Standard and Focus fold these to a header each (0038); ADHD shows them as they are. */}
       <Fold label="Vision" summary={visionStatus(task)}>
         <VisionPanel task={task} body={body} onChanged={onChanged} />
+      </Fold>
+      <Fold label="Review" summary={reviewStatus(task)}>
+        <ReviewPanel task={task} body={body} />
       </Fold>
       <Fold label="Work" summary="who worked on it, time and tokens">
         <Work task={task} />

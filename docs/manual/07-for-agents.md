@@ -53,7 +53,24 @@ Why: the board is only useful if it's true. A hand edit can say a task was teste
 
    That releases the claim. The task goes to Testing.
 
+   **Started on its own branch?** `muster start`'s brief lists the lessons the owner accepted for where your task works (from earlier reviews): follow them. In Testing, the engine reviews your branch; findings to fix send the task back to you, in Building, in the same worktree. Answer every one: fix it and say how, or dispute it with why it's wrong, then gate and pass to Testing again:
+
+   ```
+   muster review 0007 --fixed R1 "capped the read at 1 MB" --as wt-a
+   muster review 0007 --dispute R2 "the timeout is set two lines up" --as wt-a
+   ```
+
+   Don't run a second full review of your own: the review of record is the engine's. Run the gate.
+
 ## A testing session
+
+**First, for a task started on its own branch: the review of record.** `muster review 0007` prints the brief: run `/deep-review` on the range it names, in the task's worktree, and record what survives verification (at confidence 75 or more), with a `kind` for each finding and an answer for every finding the builder answered:
+
+```
+muster review 0007 --record - --as qa < review.json
+```
+
+Muster returns the task to Building while anything is open (rounds 1 and 2), blocks it on the owner after round 3, and when it's clean, carries on here. The merge refuses a started task without a clean review at its branch's tip.
 
 It takes a task in Testing, checks each acceptance criterion the way its `verify:` part says, and ticks each one with its proof. Then it passes the task to Your check: `muster pass 0007 --from testing --as qa`. It's never the session that built the task: that pass is refused for the builder, whatever folder it runs from. A coordinator starts a fresh QA subagent with its own `--as` (`muster/qa-0007`) once the builder has passed Building → Testing. Criteria marked `— verify: owner` are left for the owner; that pass doesn't wait for them. If something fails, it sends the task back with what's wrong:
 

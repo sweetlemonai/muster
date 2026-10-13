@@ -110,6 +110,13 @@ export type Task = {
   /** A `vision:` value that isn't a count ("" when fine): a problem the core reports, so the task
    *  isn't also listed as unchecked. */
   badVision?: string;
+  /** The review of record (0027), from the front matter's `review:`: its last round (null before
+   *  the first), the findings its builder still has to answer, and those answered and waiting for
+   *  the next round. Optional so a task from an older core reads as not reviewed. */
+  reviewRound?: number | null;
+  reviewOpen?: number;
+  reviewAnswered?: number;
+  badReview?: string;
   /** It waits on the owner (the core's needs_owner): Your check, a question escalated to them, or
    *  blocked on the owner. On the board it's a needs-you card, and it counts in `needsYouCount`. */
   waitingForOwner: boolean;
@@ -233,6 +240,9 @@ export type QueueInfo = {
   label?: string;
   /** The sidebar heading it goes under (0044): its category, its group, else "Other". */
   category?: string;
+  /** How many lessons from reviews wait for the owner's yes (0027); optional so an older core
+   *  reads as none. */
+  lessonsWaiting?: number;
 };
 
 export type State = {
@@ -269,4 +279,31 @@ export type Project = {
   label?: string;
   /** Its category (0044) as set, "" for none (it goes under its group, else Other). */
   category?: string;
+};
+
+/** A lesson from reviews (0027): a kind of mistake that recurred, as a rule for builders, or one
+ *  that kept proving false, as something reviewers don't flag. The core's `lessons::Lesson`. */
+export type Lesson = {
+  id: string;
+  kind: string;
+  for: "builders" | "reviewers";
+  state: "proposed" | "accepted" | "rejected" | "expired";
+  rule: string;
+  bad: string;
+  good: string;
+  areas: string[];
+  from: string[];
+  proposed: string;
+  decided: string;
+  decidedBy: string;
+  why: string;
+};
+
+/** `muster lessons`: the proposals waiting for the owner, and the live ones. */
+export type LessonListing = {
+  proposed: Lesson[];
+  builders: Lesson[];
+  reviewers: Lesson[];
+  expiredOrRejected: number;
+  file: string;
 };

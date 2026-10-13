@@ -1,5 +1,40 @@
 # Muster — task queue protocol (v2, with stages)
 
+> **The review of record (Muster 0027, 2026-10-13).** A task started on its own branch (0023)
+> is reviewed in Testing by the owner's review engine, and that's the review that counts: builders
+> run the gate, not a second full review. Muster runs no agent. **The tester** (a session that
+> didn't build it, as 0047 says; or the owner) runs `muster review <id>`: the brief names the
+> worktree, the range (merge base..tip the first time, then only the commits since the last round
+> while the branch still has them), the task quoted as data, the builder's answers to re-check, the
+> owner's lessons for the task's area and what not to flag, and the JSON to return. It runs
+> `/deep-review <range>` there (its scan picks the tier: light unless the diff is big or risky) and
+> records what survived verification: `muster review <id> --record - --as <you>`. `head` must be
+> the branch's tip; findings under confidence 75 are refused; each finding gets a `kind` (a short
+> slug, reused across tasks) and, when it teaches one, a `lesson` (rule, bad, good); every finding
+> the builder answered needs an answer (`accept` true or false, with why). Muster numbers findings
+> R1, R2… across rounds, keeps the review in the queue's `reviews/<id>.json` (**never edit it**),
+> writes the task's `## Review` section (tool-written, like Vision: Edit leaves it out) and
+> `review: round <n> · <open> open · <answered> answered`, and logs the round with its tokens.
+> **Then:** with anything but nits open, rounds 1 and 2 return the task to Building, to its
+> builder; round 3 blocks it on the owner instead of a fourth round, with both sides' words on each
+> finding in the section. **The builder** answers every open finding in Building: `muster review
+> <id> --fixed R1 "<how>"` or `--dispute R1 "<why it's wrong>"`, then gates and passes to Testing
+> again (refused while one is unanswered: "2 review findings aren't answered (R1, R2)"). The next round accepts a fix (labelled confirmed) or a dispute (false-positive), or opens
+> it again. **The owner** settles any finding, any time: `muster review <id> --settle R2
+> confirmed|false-positive|wont-fix|open "<why>" --as owner`. **The merge** of a started task
+> (`muster pass <id> --from testing`) is refused without a review clean at the branch's tip
+> ("review the new commits"), before its lock, rebase or gate; its own rebase carries the review
+> to the replayed commits; the owner may merge without one, and the report says which (`review
+> clean at 3f2a9c1 (round 2)` or `no review (the owner's override)`). **Lessons:** a kind confirmed
+> on 2 tasks is proposed as a lesson for builders, one dismissed on 2 tasks as one for reviewers
+> (don't flag). None applies until the owner accepts it: `muster lessons`, then `muster lessons
+> accept --all --as owner` (or name them; `reject L3 "<why>"`), or the app's Lessons to approve
+> at the top of Waiting for you (counted as needing the owner). Accepted builders' lessons are in
+> `muster start`'s brief for tasks whose `touches:` overlap their folders (every one, without
+> touches); at most 40 are live, and one with no finding of its kind for 60 days expires.
+> `reviews/lessons.json` is the truth, `lessons.md` beside the task files its readable copy.
+> Nothing is posted to GitHub (no PR per task for now, VISION.md).
+
 > **A limit on Your check per project (Muster 0050, 2026-10-13).** The owner's review is the
 > bottleneck with parallel sessions, so each project has a limit on how many agents' tasks may wait
 > in Your check: 5 unless the owner sets 1 to 50, or Off, in the app's Settings › Projects (saved
@@ -51,7 +86,8 @@
 >   <old-queue> <repo> [--local|--committed] [--dry-run]` copies every task file (its `stage:` set
 >   from its old stage or status, `status:` dropped, the rest byte for byte; a front matter that
 >   can't be read as it is gets its byte-order mark and CRLF line ends made plain), note, dropped
->   note, attachment, mailbox and `WAITING-FOR-OWNER.md`, writes `migrated-from.txt` with the old
+>   note, attachment, mailbox, review of record (`reviews/`, `lessons.md`, 0027) and
+>   `WAITING-FOR-OWNER.md`, writes `migrated-from.txt` with the old
 >   queue's last commit, gives the new queue the old one's gate, name, label, category, hidden
 >   and Your check limit from the app's `projects.json` (and lists it there when discovery can't find it but
 >   found the old one), and prints what it copied and what it didn't.

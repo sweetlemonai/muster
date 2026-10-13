@@ -4,7 +4,8 @@
 //! Copied, never moved: the old queue is left exactly as it was (its lock aside), for the owner
 //! to retire once they've checked the new one. Every task file goes to `.muster/tasks/` with
 //! `stage:` set from its old stage or status and `status:` dropped; the backlog folder's notes,
-//! dropped notes and anything else in it to `backlog/`; `attachments/` and `mail/` as they are;
+//! dropped notes and anything else in it to `backlog/`; `attachments/`, `mail/`, and the review
+//! of record's `reviews/` and `lessons.md` (0027) as they are;
 //! `WAITING-FOR-OWNER.md`; the old README's front matter at the top of the new README. Anything
 //! else is listed as not copied. Refused while an agent holds a task in Building or Testing, when
 //! the repo already has a `.muster`, when the repo and the old queue overlap, on a folder it can't
@@ -64,6 +65,8 @@ struct Plan {
     backlog_other: usize,
     attachments: usize,
     mail: usize,
+    /// The review of record's files and its lessons (0027): `reviews/` and `lessons.md`.
+    reviews: usize,
     waiting: bool,
     front: String,
     /// The old queue's prefix (0033), stored or the default its keys have now: the new queue's,
@@ -233,6 +236,10 @@ fn plan(old: &Path, known: &[crate::projects::Project]) -> Result<Plan, String> 
             ".git" => {}
             "attachments" => {
                 p.attachments += 1;
+                add(&mut p, rel_path.clone(), path, None, &rel)?;
+            }
+            f if f == layout::REVIEWS || (f == layout::LESSONS && top) => {
+                p.reviews += 1;
                 add(&mut p, rel_path.clone(), path, None, &rel)?;
             }
             "mail" if file == ".lock" => {}
@@ -632,6 +639,12 @@ fn summary(p: &Plan, old: &Path, q: &Path, opts: &Options, dry: bool) -> Vec<Str
         "attachments: {} files; mail: {} files",
         p.attachments, p.mail
     ));
+    if p.reviews > 0 {
+        out.push(format!(
+            "reviews: {} files (the review of record and its lessons) into reviews/ and lessons.md",
+            p.reviews
+        ));
+    }
     let mut kept = vec![
         "config.toml",
         ".gitignore",
@@ -1042,6 +1055,69 @@ mod tests {
             q.to_string_lossy().to_string(),
         ]);
         assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn the_review_of_record_and_its_lessons_are_copied_and_left_in_the_old_queue() {
+        let base = tempfile::tempdir().unwrap();
+        let old = base.path().join("rev/tasks");
+        put(&old, "README.md", "# rev\n");
+        put(&old, "tasks.json", "{}\n");
+        put(&old, "0001-a.md", &task("0001", "stage: ready"));
+        let review = r#"{"task":"0001","head":"abc1234","rounds":[],"findings":[]}"#;
+        let book = r#"{"lessons":[{"id":"L1","kind":"unbounded-output","for":"builders","state":"proposed","rule":"Cap it.","proposed":"2026-10-13 08:00"}]}"#;
+        put(&old, "reviews/0001.json", review);
+        put(&old, "reviews/lessons.json", book);
+        put(&old, "lessons.md", "# Lessons from reviews\n");
+        let before = snapshot(&old);
+        let main = repo(base.path(), "rev");
+        let r = migrate(
+            &old,
+            &main,
+            &Options {
+                local: true,
+                dry_run: false,
+            },
+            &tools(),
+            T,
+        )
+        .unwrap();
+        let q = r.queue;
+        assert_eq!(
+            fs::read_to_string(crate::layout::reviews_dir(&q).join("0001.json")).unwrap(),
+            review
+        );
+        assert_eq!(
+            fs::read_to_string(crate::layout::reviews_dir(&q).join("lessons.json")).unwrap(),
+            book
+        );
+        assert_eq!(
+            fs::read_to_string(crate::layout::lessons_file(&q)).unwrap(),
+            "# Lessons from reviews\n"
+        );
+        assert!(q.ends_with(".muster/") || q.ends_with(".muster"));
+        assert_eq!(
+            crate::lessons::waiting(&q),
+            1,
+            "the copied lessons read in the new queue"
+        );
+        assert!(
+            r.lines.iter().any(|l| l == "reviews: 3 files (the review of record and its lessons) into reviews/ and lessons.md"),
+            "{:?}",
+            r.lines
+        );
+        assert!(
+            !r.lines.iter().any(|l| l.contains("not copied")),
+            "{:?}",
+            r.lines
+        );
+        assert_eq!(snapshot(&old), before, "copied, never moved");
+        // Local: git sees none of it.
+        let status = git(&main, &["status", "--porcelain", "--untracked-files=all"]);
+        assert!(
+            !status.contains("reviews") && !status.contains("lessons"),
+            "{status}"
+        );
     }
 
     #[test]

@@ -174,7 +174,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   the table lacks, on a mode read around it, and on a row nothing reads. Standard: the filter
   groups and Sort behind **Filters (n)**, opened in place; Who and Group by as their value; brief
   cards (who, check-in, branch, tags, parent, estimate and files on the selected card); Vision,
-  Work, and the Log and check-ins folded to a header each. Focus: Building, Testing and Your check
+  Review, Work, and the Log and check-ins folded to a header each. Focus: Building, Testing and Your check
   open, the other columns strips with counts, needs-you and blocked counts (a click opens one until
   the mode changes, in the plain and the grouped board, whose Backlog band folds to its head the
   same way); cards are the title, one status line and blocked, quiet, needs a tester or needs you; the filter bar is a **Search and filters ⌘F** button until ⌘F, and
@@ -340,8 +340,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   - Then two columns. On the left, what the stage needs: work so far, your checklist and the
     history, or the criteria. On the right, a sidebar with the one next step, Send back,
     Block/Unblock, priority and type as one chip each, estimates, tags, files and links.
-  - Under the write-up come the vision check and the comment thread. The note bar stays at the
-    bottom.
+  - Under the write-up come the vision check, the review of record and the comment thread. The
+    note bar stays at the bottom.
 - **Fields** (task 0017):
   - Types are code, bug, chore, tech-debt, spike, design, docs, research.
   - Estimates are agent time, test time and tokens.
@@ -358,6 +358,14 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   - `--resolve Vn` settles one.
   - Shaping → Ready waits while a conflict is open.
   - A change of direction becomes one owner question with the cost of pivoting.
+- **Review of record** (task 0027): the card says where it stands in Building and Testing
+  (`review 1/3 · 2 to fix`, `review 2/3 · 1 to re-check`, `review clean · round 2`, `not reviewed
+  yet` on a started task in Testing; quiet, bolder while findings wait for the builder,
+  `Review.tsx`); the pane's **Review** fold (`ReviewPanel.tsx`) shows the status, **Copy review
+  brief** (the core's brief, loaded on open, a started task only) and the section as sanitized
+  Markdown. **Lessons to approve** leads Waiting for you (`Lessons.tsx`): each proposal in full as
+  plain text, **Reject…** with why, **Accept all** (the core's `decide_lessons` as the owner);
+  the queue's waiting lessons count in the tab's needs-you count, the sidebar's and the Dock's.
 - **Board:** one column per stage, with its role under the name. Blocked cards stay in their stage
   with a rose badge that says why, the kind first ("Blocked on you: …", task 0024), and Your check
   cards count as "needs you". The task pane has a
@@ -628,6 +636,32 @@ request, and on resume a carry-on (and in Building a fresh lease). `muster list`
 **Session states** (task 0048): `muster list --json` gives each task `sessionState` (`working`,
 `needs-input`, `ended`, `unknown`), read from `claude agents --json` for that listing only, under
 the caller's `$HOME`; no other command runs it, a write never does.
+**The review of record** (task 0027, `review.rs`): `muster review <id>` prints the brief for the
+next round of a started task (the range: merge base..tip the first time, then the last reviewed
+commit..tip while the branch still has it; the task quoted as data, the builder's answers to
+re-check, the owner's lessons, the JSON shape) and runs no agent: a session that didn't build it
+runs `/deep-review` on the range and records the result with `--record -` (strict JSON:
+`deny_unknown_fields`, every text one line and capped, `head` must be the branch's tip, every
+answered finding needs an answer, findings under confidence 75 refused). The truth is
+`reviews/<id>.json` in the queue; the task gets a `## Review` section rendered from it (above
+Comments and Log; `muster edit` leaves it out and refuses a new `## Review` line), `review: round
+<n> · <open> open · <answered> answered` in the front matter (`Task::review_round`,
+`review_open`, `review_answered`; a malformed one is a `check` problem) and a log line per change.
+After a record, open findings (not nits) return it to Building (rounds 1 and 2, `ops::return_task`)
+or block it on you (round 3 on, `ops::block_as`), each after the lock is let go. `--fixed` and
+`--dispute` are the holder's in Building (keep the claim alive); `--settle` is the owner's.
+`parallel::merge` calls `review::merge_check` before its lock, rebase and gate (clean at the
+tip, or the owner's override, said in the report) and `review::carry` after each rebase.
+**Lessons** (`lessons.rs`): `reviews/lessons.json` (truth) and `lessons.md` (rendered) in the
+queue (`layout::reviews_dir`, `layout::lessons_file`: `.muster/reviews/` and `.muster/lessons.md`
+in a repo's queue; `muster migrate` copies both, never moves them). `propose_locked` runs under the lock of each record and settle: a `kind` confirmed on 2+
+tasks proposes one for builders, false-positive on 2+ one for reviewers, never one already
+proposed, accepted or rejected. `muster lessons accept|reject` is the owner's (`--as owner`);
+over 40 live, the least recently mattered expire; 60 days without a finding of its kind or an
+acceptance, an accepted one reads as expired. `muster start` prints the live builders' lessons
+whose areas overlap the task's `touches:` (`parallel::touches_overlap`; all of them without
+touches). `QueueInfo::lessons_waiting` feeds the window's needs-you count, the sidebar, Waiting
+for you's Lessons block and the Dock badge (`badge::dock_count`); `muster check` lists it.
 
 ## How the pieces talk
 
@@ -828,3 +862,9 @@ files have one copy per branch, are the next step of 0005. See
    2026-10-12; Muster 0009, Drover 0018).
 5. **Into Drover:** Drover task 0005 (task creator per project) and 0015 (waiting list) are the
    first pieces. The app's screens move into Drover when it's ready.
+6. **Review of record, what's left (0027):** the owner's first real round (AC1). Then what needs
+   the personal layer or GitHub, each the owner's call: the engine's ledgers and `/pr learn` get
+   Muster's labels (they key rows on a PR number, so a task needs a place in their schema);
+   `sweetlemonai/muster` in the engine's `repos` and a token budget for its light tier (no such
+   key today); posting to GitHub as sweetlemonai, with a login check before every post, comes back
+   when PRs do. The review's and lessons' files move into the live state with 0005's store.

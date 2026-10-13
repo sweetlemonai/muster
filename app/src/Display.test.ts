@@ -317,10 +317,10 @@ describe("the task pane's secondary sections in each mode", () => {
     expect(paneSource).toContain('<Fold label="Log and check-ins" summary={logSummary(log && !raw && editing === null ? log : "", task.checkins.length)}>');
   });
 
-  it("folds Vision, Work, and the Log and check-ins in the pane, and leaves the write-up and comments open", () => {
+  it("folds Vision, Review, Work, and the Log and check-ins in the pane, and leaves the write-up and comments open", () => {
     const t = task("0007", { stage: "building", checkins: [{ at: "2026-10-13 04:00", who: "w", pct: 5, text: "start" }] });
     const html = inMode("standard", createElement(TaskPanel, { task: t, now: 0, onClose: () => {}, onChanged: () => {} }));
-    expect([...html.matchAll(/class="fold-head"[^>]*>([^<]*)</g)].map((m) => m[1].trim())).toEqual(["Vision", "Work", "Log and check-ins"]);
+    expect([...html.matchAll(/class="fold-head"[^>]*>([^<]*)</g)].map((m) => m[1].trim())).toEqual(["Vision", "Review", "Work", "Log and check-ins"]);
     expect(html).toContain('data-part="body"');
     expect(html).toMatch(/<div class="fold-body" hidden=""><section class="checkins">/);
     expect(inMode("adhd", createElement(TaskPanel, { task: t, now: 0, onClose: () => {}, onChanged: () => {} }))).toContain('class="checkins"');

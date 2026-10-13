@@ -7,6 +7,7 @@ import { useLook, type CardLines } from "./modes";
 import { sessionWords } from "./sessionState";
 import { Machine, spanText } from "./settingsData";
 import type { Task } from "./types";
+import { ReviewBadge } from "./Review";
 import { VisionBadge } from "./Vision";
 import { nextStep } from "./yourCheck";
 
@@ -19,7 +20,8 @@ const HELD = new Set(["ready", "building", "testing"]);
  *  "Your turn" and the next step instead (0043), then who built and who tested it; in Testing,
  *  "needs a tester" on its own line while a builder still holds it (0047); in Done, when it was
  *  done (0051). A task started in its own worktree (0023) adds its branch and the worktree's
- *  folder. Then, at any stage, its open vision conflicts (0029).
+ *  folder. Then, at any stage, its open vision conflicts (0029), and in Building and Testing where
+ *  its review of record stands (0027).
  *  `lines` is the display mode's (0038): Standard's brief card keeps only what says something is
  *  wrong or waits on you; Focus keeps who's on it, or Your turn, and the alarms (needs a tester
  *  among them: a builder holding Testing isn't work going on). The Done line is
@@ -34,6 +36,7 @@ export default function CardStatus({ t, now, lines = "all" }: { t: Task; now: nu
       {doneLine === "show" && <DoneLine t={t} now={now} />}
       {lines === "all" && <BranchCardLine t={t} />}
       {lines !== "status" && <VisionBadge t={t} />}
+      {lines !== "status" && <ReviewBadge t={t} />}
     </>
   );
 }

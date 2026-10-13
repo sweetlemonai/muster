@@ -468,6 +468,14 @@ pub struct Task {
     /// A `vision:` value that isn't `<n> open` (`check` reports it; such a task isn't counted as
     /// unchecked), else "".
     pub bad_vision: String,
+    /// The review of record (0027), from the front matter's `review: round 2 · 1 open · 0
+    /// answered`: its last round (None before the first), the findings its builder still has to
+    /// answer, and those answered and waiting for the next round.
+    pub review_round: Option<u32>,
+    pub review_open: usize,
+    pub review_answered: usize,
+    /// A `review:` value that isn't one the tool writes (`check` reports it), else "".
+    pub bad_review: String,
     /// An agent's task waits on the owner (`needs_owner`): a needs-you card on the app's board.
     pub waiting_for_owner: bool,
     /// One of FOR_WHO: `for:` from the file, "ai" when it has none (or one that isn't either).
@@ -625,6 +633,8 @@ pub struct QueueInfo {
     pub label: String,
     /// The sidebar heading it goes under (0044): its category, its group, else "Other".
     pub category: String,
+    /// Lessons from reviews proposed and waiting for the owner (0027, `lessons::waiting`).
+    pub lessons_waiting: usize,
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
@@ -1066,6 +1076,12 @@ pub fn parse_task(
     } else {
         Vec::new()
     };
+    let ((review_round, review_open, review_answered), bad_review) =
+        match crate::review::parse_summary(&get("review")) {
+            Some(Some((r, o, a))) => ((Some(r), o, a), String::new()),
+            Some(None) => ((None, 0, 0), String::new()),
+            None => ((None, 0, 0), get("review").chars().take(60).collect()),
+        };
     let waiting_for_owner = needs_owner(&questions, &stage, &blocked_kind);
     let raw_for = get("for").to_lowercase();
     let (for_who, bad_for) = match FOR_WHO.iter().find(|f| **f == raw_for) {
@@ -1183,6 +1199,10 @@ pub fn parse_task(
         vision_open,
         vision_ids,
         bad_vision,
+        review_round,
+        review_open,
+        review_answered,
+        bad_review,
         waiting_for_owner,
         for_who,
         bad_for,
@@ -1484,6 +1504,7 @@ fn read_state_from(
             your_check_limit: Some(crate::check_limit::DEFAULT),
             label: name.clone(),
             category: crate::labels::OTHER.to_string(),
+            lessons_waiting: crate::lessons::waiting(root),
         });
         state.tasks.extend(tasks);
         let notes = crate::backlog::read_notes(name, root, &mut cache.notes, &mut seen);
@@ -1654,6 +1675,12 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str, lease: u64) 
             out.push(format!(
                 "{queue}: {} has vision '{}', which isn't a count of open conflicts (`vision: <n> open`); record a new check",
                 t.path, t.bad_vision
+            ));
+        }
+        if !t.bad_review.is_empty() {
+            out.push(format!(
+                "{queue}: {} has review '{}', which isn't the tool's summary (`review: round 2 · 1 open · 0 answered`); muster review writes it",
+                t.path, t.bad_review
             ));
         }
         if let Some(n) = t.vision_open.filter(|n| *n != t.vision_ids.len()) {

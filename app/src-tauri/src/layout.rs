@@ -72,6 +72,20 @@ pub fn folder_of(root: &Path, path: &Path) -> String {
     }
 }
 
+/// The review of record's folder (0027): each task's `<id>.json` and the lessons' `lessons.json`,
+/// in the queue's folder in both layouts (`.muster/reviews/` in the new one).
+pub const REVIEWS: &str = "reviews";
+/// The lessons' readable copy (0027), in the queue's folder: `.muster/lessons.md` in the new one.
+pub const LESSONS: &str = "lessons.md";
+
+pub fn reviews_dir(root: &Path) -> PathBuf {
+    root.join(REVIEWS)
+}
+
+pub fn lessons_file(root: &Path) -> PathBuf {
+    root.join(LESSONS)
+}
+
 /// The new layout's settings file, in `.muster/`.
 pub const CONFIG: &str = "config.toml";
 

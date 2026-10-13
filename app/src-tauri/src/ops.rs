@@ -1082,6 +1082,10 @@ struct Current {
     /// Open vision conflicts (`vision: <n> open`, 0029) and their ids: they hold Shaping back.
     vision_open: usize,
     vision_ids: Vec<String>,
+    /// Review findings its builder hasn't answered (0027, `review: … <n> open …`) and their ids:
+    /// they hold Building back.
+    review_open: usize,
+    review_ids: Vec<String>,
     /// Who passed it Ready → Building most recently (the builder), if anyone.
     builder: Option<String>,
     /// Who passed it Building → Testing most recently (Testing's holder), if anyone.
@@ -1248,6 +1252,8 @@ fn current(root: &Path, path: &Path, text: &str) -> Result<Current, String> {
         owner_open: items.iter().filter(|c| c.owner && !c.ticked).count(),
         vision_open: t.vision_open.unwrap_or(0),
         vision_ids: t.vision_ids,
+        review_open: t.review_open,
+        review_ids: crate::review::open_in_section(body),
         stage: t.stage,
         blocked: t.blocked,
         waiting_on: t.waiting_on,
@@ -2060,6 +2066,13 @@ fn pass_change(
             return Err(format!(
                 "{id}: {} of the owner's criteria aren't ticked; tick each once you've checked it (muster tick {id} <AC>), then pass it to Done",
                 t.owner_open
+            ))
+        }
+        "building" if t.review_open > 0 => {
+            return Err(crate::review::holds_testing(
+                id,
+                t.review_open,
+                &t.review_ids,
             ))
         }
         "building" if gate.is_empty() => {
@@ -3202,13 +3215,14 @@ fn body_span(text: &str) -> Result<(usize, usize), String> {
     let vision = crate::vision::checked(text)
         .then(|| crate::vision::section_span(body).map(|(at, _)| at))
         .flatten();
+    // The review's section (0027) is the tool's the same way, once it has a round.
+    let review = crate::review::reviewed(text)
+        .then(|| crate::review::section_span(body).map(|(at, _)| at))
+        .flatten();
     let tail = queue::comments_span(body)
         .map(|(at, _, _)| at)
         .or_else(|| queue::log_heading(body));
-    let end = match (vision, tail) {
-        (Some(v), Some(t)) => Some(v.min(t)),
-        (v, t) => v.or(t),
-    };
+    let end = [vision, review, tail].into_iter().flatten().min();
     Ok((start, end.map_or(text.len(), |at| start + at)))
 }
 
@@ -3328,6 +3342,14 @@ pub fn edit_body(
         // would be read as it. The ones the write-up already has (the description's own) stay.
         if crate::vision::checked(&text) && vision_headings(&new_body) > vision_headings(current) {
             return Err("the write-up has a new \"## Vision\" line, and the Vision section is the tool's once the task is checked: record a new check with muster vision".into());
+        }
+        let reviews = |t: &str| {
+            t.lines()
+                .filter(|l| l.trim_end() == crate::review::HEAD)
+                .count()
+        };
+        if crate::review::reviewed(&text) && reviews(&new_body) > reviews(current) {
+            return Err("the write-up has a new \"## Review\" line, and the Review section is the tool's once the task has a review round: muster review writes it".into());
         }
         let head = &text[..start];
         let mut new = if end == text.len() {

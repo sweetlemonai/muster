@@ -280,7 +280,7 @@ describe("the pane's layout by stage (D2)", () => {
   const at = (s: string) => Math.floor(new Date(`${s.replace(" ", "T")}:00`).getTime() / 1000);
   const step = (when: string, from: string, to: string, who = "wt-a (session aaaa1111)"): StageStep => ({ at: when, who, from, to });
   const history = [step("2026-10-12 15:00", "shaping", "ready", "capture"), step("2026-10-12 16:00", "ready", "building")];
-  const after = ["path", "body", "vision", "note-bar"];
+  const after = ["path", "body", "vision", "review", "note-bar"];
   it("Building: title and status, the track, the work so far, then the next step: Pass to Testing", () => {
     const p = pane({ stage: "building", claimedBy: "owner", stageHistory: history, estMinutes: 480, estTime: "1d", estTokenCount: 2_000_000, modified: at("2026-10-12 17:58") }, at("2026-10-12 18:00"));
     expect(p.parts).toEqual(["title", "status", "track", "work", "next-step", "settings", ...after]);
@@ -356,7 +356,7 @@ describe("the pane's layout by stage (D2)", () => {
   });
   it("open questions come between the header and the write-up", () => {
     const p = pane({ questions: [{ n: 1, ticked: false, asker: "wt-a", text: "Which?", escalated: true, ownerAnswered: false }] });
-    expect(p.parts.slice(-5)).toEqual(["path", "questions", "body", "vision", "note-bar"]);
+    expect(p.parts.slice(-6)).toEqual(["path", "questions", "body", "vision", "review", "note-bar"]);
   });
   it("the path and commit stay on one quiet line; files and Attach are always there", () => {
     const p = pane({ commit: "abc1234", attachments: ["shot.png", "notes.txt"] });

@@ -60,9 +60,9 @@ const TABLE = {
   },
   "pane-sections": {
     label: "Task pane",
-    adhd: { how: "open", says: "Vision, Work, the Log and Check-ins open, one under another" },
-    standard: { how: "folded", says: "Vision, Work, and the Log and check-ins folded to a header each", reach: "Click a header to open it" },
-    focus: { how: "folded", says: "Vision, Work, and the Log and check-ins folded to a header each", reach: "Click a header to open it" },
+    adhd: { how: "open", says: "Vision, Review, Work, the Log and Check-ins open, one under another" },
+    standard: { how: "folded", says: "Vision, Review, Work, and the Log and check-ins folded to a header each", reach: "Click a header to open it" },
+    focus: { how: "folded", says: "Vision, Review, Work, and the Log and check-ins folded to a header each", reach: "Click a header to open it" },
   },
   sidebar: {
     label: "Sidebar",

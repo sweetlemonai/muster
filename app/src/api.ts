@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SearchIndex } from "./search";
 import type { SettingsInfo } from "./settingsData";
-import type { Project, State, Work } from "./types";
+import type { LessonListing, Project, State, Work } from "./types";
 import type { AcceptResult } from "./yourCheck";
 
 // The only way the window talks to the core. Queues are named, never given as paths.
@@ -85,6 +85,12 @@ export const api = {
   visionBrief: (queue: string, id: string) => invoke<string>("vision_brief", { queue, id }),
   resolveVision: (queue: string, id: string, which: string, how: string, stamp: string) =>
     invoke<number>("resolve_vision", { queue, id, which, how, stamp }),
+  // The review of record (0027): the next round's brief as text, for the clipboard (a started
+  // task only); the queue's lessons; and the owner's batch on the proposals.
+  reviewBrief: (queue: string, id: string, stamp: string) => invoke<string>("review_brief", { queue, id, stamp }),
+  lessons: (queue: string, stamp: string) => invoke<LessonListing>("lessons", { queue, stamp }),
+  decideLessons: (queue: string, accept: string[], all: boolean, reject: string[], why: string, stamp: string) =>
+    invoke<{ accepted: string[]; rejected: string[]; expired: string[] }>("decide_lessons", { queue, accept, all, reject, why, stamp }),
   // The write-up (between the front matter and the Log) for Edit; refused while someone else
   // holds the task in Building.
   editableBody: (queue: string, id: string) => invoke<string>("editable_body", { queue, id }),

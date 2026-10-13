@@ -19,7 +19,7 @@ budgeted; only `muster` writes state, agents never edit status, claims or times 
 ## Where things live (decision 0003)
 
 - `.muster/` in each repo: `config.toml`, `backlog/`, `tasks/NNNN-slug.md` (never moved),
-  `attachments/`, `INDEX.md`, `lessons.md` (0027). Committed by default, or local.
+  `attachments/`, `INDEX.md`, `lessons.md` and `reviews/` (0027). Committed by default, or local.
 - Live state (stage, claim, lease, blocked, questions, comments, lock) in the repo's shared git
   folder, one copy for every worktree. The write-up (spec, criteria) on the claimant's branch.
 - Today's `<project>/tasks` queues with status folders are the old layout until 0005 migrates them.
@@ -32,7 +32,7 @@ budgeted; only `muster` writes state, agents never edit status, claims or times 
 | Shaping | product + tech + UI agents | criteria, type, parent (0016), estimates (0017), `depends:` (0019), `touches:` (0023), `for:` (0022) | 0015 |
 | Ready | — | claimable when its `depends:` are merged (Your check or Done; a human task's, Done, 0042); `muster ready --parallel` picks a safe set | 0019, 0023 |
 | Building | code agent (or the owner, for `for: human`) | `muster start`: claim (0002) + branch + worktree (0023); lessons for its `touches:` in the brief (0027); gate | 0002, 0023, 0027 |
-| Testing | review engine + QA agent | `pass` opens the PR; the engine reviews it, the builder fixes or disputes (up to 3 rounds); QA verifies each criterion; then merge, clean up the worktree | 0023, 0027 |
+| Testing | review engine + QA agent | the engine reviews the branch on this Mac (`muster review`, a session that didn't build it), the builder fixes or disputes (up to 3 rounds, then the owner); QA verifies each criterion; then merge (needs the review clean at the tip), clean up the worktree | 0023, 0027 |
 | Your check | the owner | try it on main; tick the owner-only criteria (0028); Accept | 0014, 0028 |
 | Done | — | actuals stamped (0017, 0025) | 0017 |
 
@@ -61,5 +61,8 @@ and cost, 0024 why blocked). Appearance holds themes, accents and card looks (00
   human tasks go To do · Doing · Done, on one board with the agents' tasks (To do in Ready, Doing
   in Building, Done in Done), hatched in gold with the YOU ribbon; the Who chips (All · You ·
   Agents) show either side alone (0022).
-- The PR engine (0027) is the review of record; builders run the gate, not a second full review.
-- Review: who posts (owner's account or a bot), where it runs, own stage or part of Testing (0027).
+- **Settled by the owner (2026-10-12, 2026-10-13):** the review engine (0027) is the review of
+  record; builders run the gate, not a second full review. It runs on this Mac, as part of Testing
+  (no new column), on the task's branch before the merge, since there's no PR per task for now;
+  anything it posts to GitHub once PRs come back goes as sweetlemonai, never iMassih (decision
+  0005).

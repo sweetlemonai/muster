@@ -36,6 +36,8 @@ describe("a started task (0023) on the card and in the pane", () => {
     expect(cardLines({ ...STARTED, stage: "testing", heldBy: "qa" })).toEqual([
       ["card-who", "qa"],
       ["card-branch", "task/0031-board-flickers · 0031-board-flickers"],
+      // In Testing, its review of record (0027) hasn't run yet.
+      ["card-review", "not reviewed yet"],
     ]);
     const html = renderToStaticMarkup(createElement(CardStatus, { t: task(STARTED), now: 0 }));
     expect(html).toContain(`title="Worktree: ${STARTED.worktree}"`);

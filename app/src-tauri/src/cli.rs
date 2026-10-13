@@ -4,8 +4,8 @@
 
 use crate::session::{self, Session};
 use crate::{
-    agents, backlog, check_limit, fields, index, ops, pause, ping, projects, queue, search,
-    settings, vision,
+    agents, backlog, check_limit, fields, index, lessons, ops, pause, ping, projects, queue,
+    review, search, settings, vision,
 };
 use std::path::{Path, PathBuf};
 
@@ -89,7 +89,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             | "--commit" | "--to" | "--from" | "--after" | "--session" | "--level" | "--parent"
             | "--due" | "--pct" | "--remove" | "--record" | "--resolve" | "--search"
             | "--holder" | "--sort" | "--at" | "--touches" | "--prefix" | "--pick"
-            | "--no-answer" => {
+            | "--no-answer" | "--fixed" | "--dispute" | "--settle" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -280,11 +280,15 @@ const TARGETED: [&str; 17] = [
     "edit",
 ];
 
-/// Is this command checked like a claim (`check_target`)? The TARGETED ones, and `vision` when it
-/// writes (`--record`, `--resolve`); its brief only reads.
+/// Is this command checked like a claim (`check_target`)? The TARGETED ones, `vision` when it
+/// writes (`--record`, `--resolve`; its brief only reads), `review` when it writes (0027) and
+/// `lessons accept|reject`.
 fn targeted(cmd: &str, a: &Args) -> bool {
+    let writes = |keys: &[&str]| keys.iter().any(|k| a.flags.contains_key(*k));
     TARGETED.contains(&cmd)
-        || (cmd == "vision" && (a.flags.contains_key("record") || a.flags.contains_key("resolve")))
+        || (cmd == "vision" && writes(&["record", "resolve"]))
+        || (cmd == "review" && writes(&["record", "fixed", "dispute", "settle"]))
+        || (cmd == "lessons" && a.pos.len() > 1)
 }
 
 /// The same folder, through symlinks too.
@@ -345,7 +349,8 @@ fn check_target(
 }
 
 /// Commands whose first word after the command is a task (0033: `mu-12`, `MU-12`, `12` or `0012`).
-const TAKES_A_TASK: [&str; 27] = [
+const TAKES_A_TASK: [&str; 28] = [
+    "review",
     "show",
     "move",
     "pass",
@@ -1191,10 +1196,11 @@ fn started_text(root: &Path, prefix: &str, id: &str, s: &crate::parallel::Starte
         s.branch,
         root.join(&s.path).display()
     );
-    if let Ok(t) = queue::read_task(root, id) {
-        if !t.touches.is_empty() {
-            out.push_str(&format!("touches:  {}\n", t.touches.join(", ")));
-        }
+    let touches = queue::read_task(root, id)
+        .map(|t| t.touches)
+        .unwrap_or_default();
+    if !touches.is_empty() {
+        out.push_str(&format!("touches:  {}\n", touches.join(", ")));
     }
     if let Ok(text) = queue::read_body(root, id) {
         let body = queue::front_matter(&text).map(|(_, b)| b).unwrap_or("");
@@ -1210,8 +1216,20 @@ fn started_text(root: &Path, prefix: &str, id: &str, s: &crate::parallel::Starte
             }
         }
     }
+    // What reviews of earlier tasks taught, for where this one works (0027).
+    let book = lessons::load(root).unwrap_or_default();
+    let learned = lessons::for_builders(&book, &review::all(root), &touches, &local_stamp());
+    if !learned.is_empty() {
+        out.push_str("lessons (the owner accepted these from earlier reviews; follow them):\n");
+        for l in &learned {
+            out.push_str(&format!(
+                "  - {}\n",
+                backlog::one_line_name(&lessons::line(l))
+            ));
+        }
+    }
     out.push_str(&format!(
-        "Work in the worktree. Check in every 30 minutes (muster checkin {k} \"…\" --pct <n>); when the gate is green: muster pass {k} --from building --gate \"<the gate's line>\"\n"
+        "Work in the worktree. Check in every 30 minutes (muster checkin {k} \"…\" --pct <n>); when the gate is green: muster pass {k} --from building --gate \"<the gate's line>\". In Testing the engine reviews the branch (muster review {k}); answer what it finds with muster review {k} --fixed or --dispute.\n"
     ));
     out
 }
@@ -1565,6 +1583,13 @@ fn run_on(
             };
             let p = ops::pass_task(root, id, &me(), stamp, &opts)?;
             println!("{}", stage_message(root, prefix, id, &p));
+            // Into Testing on its own branch: the review of record comes first (0027).
+            if queue::read_task(root, id)
+                .is_ok_and(|t| t.stage == "testing" && !t.branch.is_empty())
+            {
+                let k = key(id);
+                println!("next: the review of record, by a session that didn't build it: muster review {k} prints its brief");
+            }
             Ok(0)
         }
         "return" => {
@@ -2003,6 +2028,8 @@ fn run_on(
             Ok(0)
         }
         "vision" => run_vision(a, root, prefix, &me, stamp),
+        "review" => run_review(a, root, prefix, &me, stamp),
+        "lessons" => run_lessons(a, root, &me, stamp),
         "check" => {
             // A claim is quiet past this machine's lease (0036), as `reclaim` judges it; each task
             // with its key (0033).
@@ -2049,6 +2076,15 @@ fn run_on(
                         open.join(", ")
                     );
                 }
+            }
+            // And lessons from reviews waiting for the owner's yes (0027).
+            let lessons = lessons::waiting(root);
+            if lessons > 0 {
+                println!(
+                    "{lessons} lesson{} from reviews wait{} for the owner's yes (muster lessons)",
+                    if lessons == 1 { "" } else { "s" },
+                    if lessons == 1 { "s" } else { "" }
+                );
             }
             let index_line = index_check_line(index::status(root));
             if let Some(l) = &index_line {
@@ -2099,6 +2135,185 @@ fn run_on(
         }
         other => Err(format!("unknown command {other:?} (see `muster help`)")),
     }
+}
+
+/// `muster review` (0027): the brief for the next round of a started task, `--record` the
+/// reviewer's result (`-` reads it from stdin), the builder's `--fixed R1 ["<how>"]` or `--dispute
+/// R1 "<why>"`, or the owner's `--settle R1 <label> "<why>"`.
+fn run_review(
+    a: &Args,
+    root: &Path,
+    prefix: &str,
+    me: &dyn Fn() -> String,
+    stamp: &str,
+) -> Result<i32, String> {
+    let id = need(a, 1, "a task id")?;
+    let k = crate::key::key(prefix, id);
+    let writes: Vec<&str> = ["record", "fixed", "dispute", "settle"]
+        .into_iter()
+        .filter(|f| a.flags.contains_key(*f))
+        .collect();
+    if writes.len() > 1 {
+        return Err(
+            "review takes one of --record, --fixed, --dispute or --settle (see `muster help`)"
+                .into(),
+        );
+    }
+    let still_open = |open: Vec<String>| match open.len() {
+        0 => "nothing open".to_string(),
+        n => format!("{n} still open ({})", open.join(", ")),
+    };
+    let rest = |from: usize| {
+        a.pos
+            .get(from..)
+            .unwrap_or_default()
+            .join(" ")
+            .replace("\\n", " ")
+    };
+    match writes.first().copied() {
+        None => {
+            if a.pos.len() > 2 {
+                return Err(format!(
+                    "review takes one task id; to answer a finding: muster review {k} --fixed R1 \"<how>\" (see `muster help`)"
+                ));
+            }
+            let span = review::span(root, id)?;
+            let b = review::brief(root, id, &span, stamp)?;
+            if a.json {
+                print_json(&b)?;
+            } else {
+                print!("{}", review::brief_text(&b));
+            }
+            Ok(0)
+        }
+        Some("record") => {
+            if a.pos.len() > 2 {
+                return Err("review --record takes the JSON as its value, or - to read it from stdin; nothing after the id (see `muster help`)".into());
+            }
+            let json = match a.flags.get("record").map(String::as_str) {
+                Some("-") => read_capped(std::io::stdin(), "stdin")?,
+                Some(j) => j.to_string(),
+                None => String::new(),
+            };
+            let span = review::span(root, id)?;
+            let r = review::record(root, id, &json, &me(), stamp, &span)?;
+            if a.json {
+                print_json(&r)?;
+            } else {
+                print!("{}", review::recorded_text(&k, &r));
+            }
+            Ok(if r.then_failed.is_empty() { 0 } else { 1 })
+        }
+        Some(flag) if flag == "fixed" || flag == "dispute" => {
+            let which = a.flags.get(flag).map(String::as_str).unwrap_or("");
+            let (reply, word) = if flag == "fixed" {
+                (review::Reply::Fixed, "fixed")
+            } else {
+                need(a, 2, "why it's wrong")?;
+                (review::Reply::Disputed, "disputed")
+            };
+            let open = review::answer(root, id, which, reply, &rest(2), &me(), stamp)?;
+            println!(
+                "{k}: {} answered as {word}; {}. Pass it to Testing once every finding is answered and the gate is green.",
+                which.trim().to_uppercase(),
+                still_open(open)
+            );
+            Ok(0)
+        }
+        Some(_) => {
+            let which = a.flags.get("settle").map(String::as_str).unwrap_or("");
+            let label = need(
+                a,
+                2,
+                "the label: confirmed, false-positive, wont-fix or open",
+            )?;
+            need(a, 3, "why")?;
+            let open = review::settle(root, id, which, label, &rest(3), &me(), stamp)?;
+            println!(
+                "{k}: {} settled as {label}; {}",
+                which.trim().to_uppercase(),
+                still_open(open)
+            );
+            Ok(0)
+        }
+    }
+}
+
+/// `L2`, `l2` or `2`, comma-separated, as `L2`s.
+fn lesson_ids(list: &str) -> Result<Vec<String>, String> {
+    list.split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            let n = s.strip_prefix(['L', 'l']).unwrap_or(s);
+            match n.parse::<u32>() {
+                Ok(v) if n.len() <= 4 && n.bytes().all(|b| b.is_ascii_digit()) => {
+                    Ok(format!("L{v}"))
+                }
+                _ => Err(format!(
+                    "a lesson looks like L2, got {:?}",
+                    s.chars().take(20).collect::<String>()
+                )),
+            }
+        })
+        .collect()
+}
+
+/// `muster lessons` (0027): what waits for the owner and what's live; the owner's `accept
+/// <L1,L2|--all>` and `reject <L1,L2> "<why>"`.
+fn run_lessons(a: &Args, root: &Path, me: &dyn Fn() -> String, stamp: &str) -> Result<i32, String> {
+    let decided = match a.pos.get(1).map(String::as_str) {
+        None => {
+            let l = lessons::listing(root, stamp)?;
+            if a.json {
+                print_json(&l)?;
+            } else {
+                print!("{}", lessons::listing_text(&l));
+            }
+            return Ok(0);
+        }
+        Some("accept") => {
+            let ids = match (a.all, a.pos.get(2)) {
+                (true, None) => Vec::new(),
+                (false, Some(list)) if a.pos.len() == 3 => lesson_ids(list)?,
+                _ => {
+                    return Err(
+                        "lessons accept takes the lessons (L1,L2) or --all (see `muster help`)"
+                            .into(),
+                    )
+                }
+            };
+            lessons::decide(root, &ids, a.all, &[], "", &me(), stamp)?
+        }
+        Some("reject") => {
+            let ids = lesson_ids(need(a, 2, "the lessons to reject (L1,L2)")?)?;
+            need(a, 3, "why")?;
+            let why = a.pos[3..].join(" ").replace("\\n", " ");
+            lessons::decide(root, &[], false, &ids, &why, &me(), stamp)?
+        }
+        Some(other) => {
+            return Err(format!(
+                "lessons takes accept or reject, got {:?} (see `muster help`)",
+                other.chars().take(20).collect::<String>()
+            ))
+        }
+    };
+    if a.json {
+        print_json(&decided)?;
+    } else {
+        let mut parts = Vec::new();
+        for (word, ids) in [
+            ("accepted", &decided.accepted),
+            ("rejected", &decided.rejected),
+            ("expired (over the cap)", &decided.expired),
+        ] {
+            if !ids.is_empty() {
+                parts.push(format!("{word} {}", ids.join(", ")));
+            }
+        }
+        println!("lessons: {}", parts.join("; "));
+    }
+    Ok(0)
 }
 
 /// `muster vision`: one task's brief, `--record` an agent's result (`-` reads it from stdin),
@@ -4169,6 +4384,73 @@ mod tests {
     }
 
     #[test]
+    fn review_and_lessons_usage_refusals_and_exit_codes() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let code = |args: &[&str]| {
+            let mut v = sv(&args[..1]);
+            v.extend(sv(&["--queue", &q, "--as", "qa"]));
+            v.extend(sv(&args[1..]));
+            main(&v)
+        };
+        std::fs::write(
+            d.path().join("doing/0001-plain.md"),
+            "---\nid: 0001\ntype: task\npriority: normal\nstage: testing\nstatus: doing\nclaimed-by:\nheartbeat:\nwaiting_on:\n---\n\n# Plain\n\n## Acceptance criteria\n- [x] AC1: works — verify: command\n\n## Log\n- 2026-10-12 09:00 capture: created\n",
+        )
+        .unwrap();
+        // Usage (2): no id, two writes at once, words after a record, an unknown lessons verb.
+        assert_eq!(code(&["review"]), 2);
+        assert_eq!(
+            code(&["review", "0001", "--fixed", "R1", "--dispute", "R1", "x"]),
+            2
+        );
+        assert_eq!(code(&["review", "0001", "extra"]), 2);
+        assert_eq!(code(&["review", "0001", "--record", "{}", "extra"]), 2);
+        assert_eq!(code(&["review", "0001", "--dispute", "R1"]), 2, "no why");
+        assert_eq!(
+            code(&["review", "0001", "--settle", "R1", "wont-fix"]),
+            2,
+            "no why"
+        );
+        assert_eq!(code(&["lessons", "approve"]), 2);
+        assert_eq!(code(&["lessons", "accept"]), 2, "which, or --all");
+        assert_eq!(code(&["lessons", "reject", "L1"]), 2, "no why");
+        // Refused (1): a task not started on its own branch has nothing to review.
+        assert_eq!(code(&["review", "0001"]), 1);
+        assert_eq!(
+            code(&["review", "0001", "--record", r#"{"head":"abcdef1"}"#]),
+            1
+        );
+        assert_eq!(code(&["review", "0009"]), 1, "no such task");
+        // Lessons: listing reads; deciding is the owner's and needs something waiting.
+        assert_eq!(code(&["lessons"]), 0);
+        assert_eq!(code(&["lessons", "--json"]), 0);
+        assert_eq!(code(&["lessons", "accept", "--all"]), 1, "not the owner");
+        let mut owner = sv(&["lessons", "--queue", &q, "--as", "owner", "accept", "--all"]);
+        assert_eq!(main(&owner), 1, "nothing waiting");
+        owner.truncate(5);
+        owner.extend(sv(&["reject", "L1", "taste"]));
+        assert_eq!(main(&owner), 1, "no lesson L1");
+        assert!(!d.path().join("reviews").exists(), "nothing written");
+    }
+
+    #[test]
+    fn review_and_lessons_are_checked_like_a_claim_only_when_they_write() {
+        let a = |args: &[&str]| parse(&sv(args)).unwrap();
+        assert!(!targeted("review", &a(&["review", "0001"])));
+        for w in [
+            &["review", "0001", "--record", "-"][..],
+            &["review", "0001", "--fixed", "R1"],
+            &["review", "0001", "--dispute", "R1", "why"],
+            &["review", "0001", "--settle", "R1", "open", "why"],
+        ] {
+            assert!(targeted("review", &a(w)), "{w:?}");
+        }
+        assert!(!targeted("lessons", &a(&["lessons"])));
+        assert!(targeted("lessons", &a(&["lessons", "accept", "--all"])));
+    }
+
+    #[test]
     fn vision_is_checked_like_a_claim_only_when_it_writes() {
         let a = |args: &[&str]| parse(&sv(args)).unwrap();
         assert!(!targeted("vision", &a(&["vision", "0001"])));
@@ -4251,6 +4533,105 @@ mod tests {
         assert_eq!(code(&["start"]), 2);
         assert_eq!(code(&["start", "0001", "--here", "--at", "x"]), 2);
         assert_eq!(code(&["release", "0001", "--clean"]), 1, "never started");
+    }
+
+    #[test]
+    fn a_finding_that_recurs_becomes_a_lesson_in_the_next_start_brief_once_the_owner_accepts_it() {
+        use crate::parallel::tests::{commit, fx, task};
+        let f = fx();
+        let run_in = |dir: &Path, args: &[&str]| {
+            let a = parse(&sv(args)).unwrap();
+            run_on(
+                &a,
+                args[0],
+                &f.root,
+                "pj",
+                "2026-10-13 10:00",
+                &no_env,
+                Some(dir),
+            )
+        };
+        let to_testing = |id: &str, who: &str| {
+            let opts = ops::PassOpts {
+                gate: "gate: green (built)".into(),
+                from: Some("building".into()),
+                ..Default::default()
+            };
+            ops::pass_task(&f.root, id, who, "2026-10-13 11:00", &opts).unwrap();
+        };
+        let started = |id: &str| {
+            let t = queue::read_task(&f.root, id).unwrap();
+            started_text(
+                &f.root,
+                "pj",
+                id,
+                &crate::parallel::Started {
+                    worktree: PathBuf::from(&t.worktree),
+                    branch: t.branch.clone(),
+                    path: t.path.clone(),
+                    resumed: false,
+                },
+            )
+        };
+        let finding = r#"{"lens":"correctness","severity":"should","file":"les/x.rs","line":3,"title":"Reads all of the output","scenario":"2 GB → out of memory","kind":"unbounded-output","lesson":{"rule":"Cap every external program's output.","bad":"cmd.output()","good":"take(1 MB)"}}"#;
+        // The same kind of mistake, found and confirmed fixed on two tasks.
+        for (n, who) in [("1", "wt-a"), ("2", "wt-b")] {
+            let id = task(&f.root, &format!("Task {n}"), "les/");
+            assert_eq!(run_in(&f.repo, &["start", &id, "--as", who]), Ok(0));
+            let wt = PathBuf::from(queue::read_task(&f.root, &id).unwrap().worktree);
+            commit(&wt, "les/x.rs", "read all\n", "build");
+            to_testing(&id, who);
+            let head = crate::review::span(&f.root, &id).unwrap().head;
+            let json = format!(r#"{{"head":"{head}","findings":[{finding}]}}"#);
+            assert_eq!(
+                run_in(&f.repo, &["review", &id, "--record", &json, "--as", "qa"]),
+                Ok(0)
+            );
+            assert_eq!(queue::read_task(&f.root, &id).unwrap().stage, "building");
+            assert_eq!(
+                run_in(
+                    &wt,
+                    &["review", &id, "--fixed", "R1", "capped", "at", "1", "MB", "--as", who]
+                ),
+                Ok(0)
+            );
+            commit(&wt, "les/x.rs", "read 1 MB\n", "cap it");
+            to_testing(&id, who);
+            let head = crate::review::span(&f.root, &id).unwrap().head;
+            let json = format!(
+                r#"{{"head":"{head}","answers":[{{"finding":"R1","accept":true,"why":"capped"}}]}}"#
+            );
+            assert_eq!(
+                run_in(&f.repo, &["review", &id, "--record", &json, "--as", "qa"]),
+                Ok(0)
+            );
+        }
+        assert_eq!(
+            lessons::waiting(&f.root),
+            1,
+            "proposed after the second task"
+        );
+        // Proposed isn't accepted: the next start in that area doesn't carry it yet.
+        let c = task(&f.root, "Task 3", "les/c.rs");
+        assert_eq!(run_in(&f.repo, &["start", &c, "--as", "wt-c"]), Ok(0));
+        assert!(!started(&c).contains("lessons"), "{}", started(&c));
+        // Only the owner accepts it, in one batch.
+        assert!(run_in(&f.repo, &["lessons", "accept", "--all", "--as", "wt-c"]).is_err());
+        assert_eq!(
+            run_in(&f.repo, &["lessons", "accept", "--all", "--as", "owner"]),
+            Ok(0)
+        );
+        let d = task(&f.root, "Task 4", "les/");
+        assert_eq!(run_in(&f.repo, &["start", &d, "--as", "wt-d"]), Ok(0));
+        let text = started(&d);
+        assert!(
+            text.contains("lessons (the owner accepted these from earlier reviews; follow them):\n  - L1 (unbounded-output): Cap every external program's output. Bad: cmd.output() Good: take(1 MB)\n"),
+            "{text}"
+        );
+        // Another area's start doesn't get it.
+        let e = task(&f.root, "Task 5", "elsewhere/");
+        assert_eq!(run_in(&f.repo, &["start", &e, "--as", "wt-e"]), Ok(0));
+        assert!(!started(&e).contains("L1"));
     }
 
     #[test]

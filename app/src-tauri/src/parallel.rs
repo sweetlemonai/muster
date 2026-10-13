@@ -257,6 +257,28 @@ pub fn repo_of(dir: &Path) -> Result<Repo, String> {
     })
 }
 
+/// What a review of a started task looks at (0027): where its branch left the local main (their
+/// merge base) and the branch's tip, read from the task's worktree.
+pub(crate) fn branch_span(worktree: &str, branch: &str) -> Result<(String, String), String> {
+    let wt = Path::new(worktree);
+    if worktree.is_empty() || !wt.is_dir() {
+        return Err(format!("its worktree {worktree} is gone"));
+    }
+    let repo = repo_of(wt)?;
+    let head = git(
+        &repo.main,
+        &["rev-parse", "--verify", &format!("refs/heads/{branch}")],
+    )?;
+    let base = git(&repo.main, &["merge-base", &repo.trunk, &head])?;
+    Ok((base, head))
+}
+
+/// Is commit `a` an ancestor of `b` (or `b` itself), in the repo of `worktree`?
+pub(crate) fn is_ancestor(worktree: &str, a: &str, b: &str) -> bool {
+    git_output(Path::new(worktree), &["merge-base", "--is-ancestor", a, b])
+        .is_ok_and(|o| o.status.success())
+}
+
 fn branch_exists(repo: &Repo, branch: &str) -> bool {
     git(
         &repo.main,
@@ -816,7 +838,9 @@ const REGATES: usize = 2;
 /// copy only when it's the same commit; (7) record the merge in the task (worktree and branch
 /// cleared, `commit:` the merge, the report logged) and pass it to Your check: once main has the
 /// merge this is written whatever, and a pass refused meanwhile (blocked, moved) is an error that
-/// says so; (8) name the next task to start. The report and the commit are checked before step 4.
+/// says so; (8) name the next task to start. Before step 1 it needs the review of record clean at
+/// the branch's tip (0027, `review::merge_check`), the owner aside, and each rebase carries that
+/// review to the replayed commits. The report and the commit are checked before step 4.
 /// A refusal before step 4 or a stop at 4 or 5 leaves the worktree, the branch and the task as
 /// they were. `now` gives the local time for each write; `say` gets a line per step done.
 pub fn merge(
@@ -872,6 +896,9 @@ pub fn merge(
             wt.display()
         ));
     }
+    // The review of record (0027): clean at the branch's tip, or the owner's override.
+    let tip = git(&wt, &["rev-parse", "HEAD"])?;
+    let reviewed = crate::review::merge_check(root, id, &tip, who)?;
     // Checked now so a gate isn't run for nothing; checked again under the lock, before the merge.
     main_ready(&repo)?;
 
@@ -883,6 +910,7 @@ pub fn merge(
     let trunk = repo.trunk.clone();
     let mut again = 0;
     let run = loop {
+        let before = git(&wt, &["rev-parse", "HEAD"])?;
         if let Err(e) = git(&wt, &["rebase", &trunk]) {
             let files = conflicted(&wt);
             let aborted = git(&wt, &["rebase", "--abort"]);
@@ -899,6 +927,8 @@ pub fn merge(
             say(format!("rebase on {trunk} conflicts; back to Building"));
             return back_to_building(root, id, &why, who, &now());
         }
+        // The same commits, replayed on main: the review stands for them now.
+        crate::review::carry(root, id, &before, &git(&wt, &["rev-parse", "HEAD"])?)?;
         let onto = git(&repo.main, &["rev-parse", &trunk])?;
         say(format!(
             "rebased {branch} on {trunk} ({})",
@@ -932,7 +962,7 @@ pub fn merge(
     let task = queue::read_task(root, id)?;
     let at = now();
     let report = format!(
-        "merged {branch} into {trunk} as {short} (fast-forward{}) · {} · Building {} · Testing {} · {} check-in{}",
+        "merged {branch} into {trunk} as {short} (fast-forward{}) · {} · {reviewed} · Building {} · Testing {} · {} check-in{}",
         if has_origin { ", pushed to origin" } else { ", not pushed: no origin" },
         run.line,
         // Paused stretches (0045) aren't time spent on it.
@@ -1401,6 +1431,8 @@ pub(crate) mod tests {
         g(dir, &["commit", "-qm", msg]);
     }
 
+    /// Pass `id` Building → Testing as wt-a and, when it was started on a branch, review it clean
+    /// at its tip as qa (0027), as a merge needs.
     pub(crate) fn to_testing(f: &Fx, id: &str) {
         let opts = PassOpts {
             gate: "gate: green (built)".into(),
@@ -1408,6 +1440,16 @@ pub(crate) mod tests {
             ..Default::default()
         };
         ops::pass_task(&f.root, id, "wt-a", "2026-10-13 11:00", &opts).unwrap();
+        if !read(&f.root, id).branch.is_empty() {
+            review_clean(f, id);
+        }
+    }
+
+    /// A clean review round of `id` at its branch's tip, recorded by qa.
+    pub(crate) fn review_clean(f: &Fx, id: &str) {
+        let span = crate::review::span(&f.root, id).unwrap();
+        let json = format!(r#"{{"head":"{}","tier":"light"}}"#, span.head);
+        crate::review::record(&f.root, id, &json, "qa", "2026-10-13 11:30", &span).unwrap();
     }
 
     /// Start `id` as wt-a, commit a change in its worktree, and pass it Building → Testing.
@@ -1909,8 +1951,9 @@ pub(crate) mod tests {
         assert_eq!(
             report,
             format!(
-                "merged {} into main as {} (fast-forward, pushed to origin) · gate: green (fake, 2 steps) · Building 1h 0m · Testing 1h 30m · 1 check-in",
+                "merged {} into main as {} (fast-forward, pushed to origin) · gate: green (fake, 2 steps) · review clean at {} (round 1) · Building 1h 0m · Testing 1h 30m · 1 check-in",
                 s.branch,
+                &merged[..7],
                 &merged[..7]
             )
         );
@@ -2480,6 +2523,87 @@ pub(crate) mod tests {
         assert_eq!(
             (t.built_by.as_str(), t.tested_by.as_str()),
             ("wt-a", "qa-0001")
+        );
+    }
+
+    #[test]
+    fn a_started_task_merges_only_with_a_clean_review_at_its_tip() {
+        let f = fx();
+        let id = task(&f.root, "Reviewed", "v/");
+        let s = start(&f.root, &id, "wt-a", T0, &f.repo, &Place::Default).unwrap();
+        commit(&s.worktree, "v/x.txt", "built\n", "build it");
+        // Into Testing with no review round yet.
+        let opts = PassOpts {
+            gate: "gate: green (built)".into(),
+            from: Some("building".into()),
+            ..Default::default()
+        };
+        ops::pass_task(&f.root, &id, "wt-a", "2026-10-13 11:00", &opts).unwrap();
+        let main_before = g(&f.repo, &["rev-parse", "main"]);
+        let ran = f.base.join("gate-ran");
+        let gate = shell_gate(&f, "marks", &format!("touch '{}'", ran.display()));
+        let e = run_merge(&f, &id, &gate).0.unwrap_err();
+        assert!(
+            e.contains(
+                "pj-1 has no review yet: the review of record runs in Testing (muster review pj-1)"
+            ),
+            "{e}"
+        );
+        assert!(!ran.exists(), "refused before the gate");
+        assert_eq!(g(&f.repo, &["rev-parse", "main"]), main_before);
+        // Reviewed clean at the tip; then a commit the review didn't see.
+        let tip = g(&s.worktree, &["rev-parse", "HEAD"]);
+        let clean = format!(r#"{{"head":"{tip}","tier":"light"}}"#);
+        let span = crate::review::span(&f.root, &id).unwrap();
+        crate::review::record(&f.root, &id, &clean, "qa", "2026-10-13 12:00", &span).unwrap();
+        commit(&s.worktree, "v/y.txt", "more\n", "after the review");
+        let e = run_merge(&f, &id, &gate).0.unwrap_err();
+        assert!(
+            e.contains("review the new commits (muster review pj-1)"),
+            "{e}"
+        );
+        assert!(!ran.exists());
+        // A new round on just that commit, clean: it merges, and the report says so.
+        let span = crate::review::span(&f.root, &id).unwrap();
+        assert_eq!(
+            span.since.as_deref(),
+            Some(tip.as_str()),
+            "only the new commit"
+        );
+        let tip2 = g(&s.worktree, &["rev-parse", "HEAD"]);
+        let clean = format!(r#"{{"head":"{tip2}","tier":"light"}}"#);
+        crate::review::record(&f.root, &id, &clean, "qa", "2026-10-13 12:10", &span).unwrap();
+        // Main moves on, so the merge rebases: the review carries to the replayed commits.
+        commit(&f.repo, "other.txt", "other\n", "main moves");
+        let (r, _) = run_merge(&f, &id, &gate);
+        let Merge::Merged { report, .. } = r.unwrap() else {
+            panic!("not merged")
+        };
+        assert!(
+            report.contains(&format!("· review clean at {} (round 2) ·", &tip2[..7])),
+            "{report}"
+        );
+    }
+
+    #[test]
+    fn the_owner_merges_without_a_review_and_the_report_says_so() {
+        let f = fx();
+        let id = task(&f.root, "Unreviewed", "o/");
+        let s = start(&f.root, &id, "wt-a", T0, &f.repo, &Place::Default).unwrap();
+        commit(&s.worktree, "o/x.txt", "built\n", "build it");
+        let opts = PassOpts {
+            gate: "gate: green (built)".into(),
+            from: Some("building".into()),
+            ..Default::default()
+        };
+        ops::pass_task(&f.root, &id, "wt-a", "2026-10-13 11:00", &opts).unwrap();
+        let r = merge(&f.root, &id, "owner", &noon, &green(&f), &mut |_| {});
+        let Merge::Merged { report, .. } = r.unwrap() else {
+            panic!("not merged")
+        };
+        assert!(
+            report.contains("· no review (the owner's override) ·"),
+            "{report}"
         );
     }
 

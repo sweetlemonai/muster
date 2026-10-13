@@ -17,6 +17,7 @@ pub mod index;
 pub mod key;
 pub mod labels;
 pub mod layout;
+pub mod lessons;
 pub mod migrate;
 pub mod ops;
 pub mod parallel;
@@ -26,6 +27,8 @@ pub mod ping;
 mod ping_cmds;
 pub mod projects;
 pub mod queue;
+pub mod review;
+mod review_cmds;
 pub mod search;
 pub mod session;
 pub mod settings;
@@ -146,7 +149,11 @@ async fn state(
     })
     .await?;
     *app.cache.lock().map_err(|e| e.to_string())? = cache;
-    show_badge(&handle, &app.badge, badge::needs_you_count(&state.tasks));
+    show_badge(
+        &handle,
+        &app.badge,
+        badge::dock_count(&state.tasks, &state.queues),
+    );
     Ok(state)
 }
 
@@ -188,7 +195,7 @@ fn needs_in(
     // `claude agents` at most every 15 s, on its own thread, and never holds this up.
     let sessions = monitor.poll(&s.tasks, s.now);
     agents::apply(&mut s.tasks, &sessions);
-    Ok(badge::needs_you_count(&s.tasks))
+    Ok(badge::dock_count(&s.tasks, &s.queues))
 }
 
 /// Keeps the Dock badge current while the window is hidden and doesn't poll (0006): every
@@ -1375,7 +1382,10 @@ pub fn run() {
             ping_cmds::ask_checkin,
             ping_cmds::message_session,
             pause_cmds::pause_task,
-            pause_cmds::resume_task
+            pause_cmds::resume_task,
+            review_cmds::review_brief,
+            review_cmds::lessons,
+            review_cmds::decide_lessons
         ])
         .run(tauri::generate_context!())
         .expect("error while running Muster");

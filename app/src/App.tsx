@@ -20,6 +20,7 @@ import { applyQuery, dayContext, EMPTY_QUERY, loadViews, notesFor, storeViews, t
 import { indexStamp, needsIndex, queryWords, withSearch, type IndexStamp, type SearchIndex } from "./search";
 import { focusSearchBox, searchView, windowKey } from "./keys";
 import WaitingList from "./WaitingList";
+import { lessonsWaiting } from "./Lessons";
 import Recent from "./Recent";
 import { clampPane, layoutWidth, PANE_DEFAULT, railBeside } from "./paneSize";
 import EffortGroups, { useAcceptResults } from "./EffortGroups";
@@ -254,7 +255,8 @@ export default function App() {
   const unchecked = useMemo(() => visionWarnings(inQueue), [inQueue]);
   // What needs the owner (0022): one count everywhere, and the Waiting tab lists the same tasks,
   // what the agents wait on the owner for first, then the owner's own To do and Doing.
-  const needs = needsYouCount(inQueue);
+  // Lessons from reviews waiting for the owner's yes (0027) count too, and lead the Waiting list.
+  const needs = needsYouCount(inQueue) + lessonsWaiting(state?.queues ?? [], queue);
   const waiting = useMemo(() => waitingForYou(inQueue), [inQueue]);
   // The projects shown with more in Your check than their limit (0050): the board says so.
   const overCheck = useMemo(() => overLimit(state?.queues ?? [], queue), [state, queue]);
@@ -498,7 +500,7 @@ export default function App() {
             </>
           )}
 
-          {view === "waiting" && <WaitingList tasks={waiting} multi={multi} openKey={openKey} onOpen={open} onChanged={() => void refresh()} now={now} />}
+          {view === "waiting" && <WaitingList tasks={waiting} multi={multi} openKey={openKey} onOpen={open} onChanged={() => void refresh()} now={now} queues={state?.queues ?? []} queue={queue} />}
 
           {view === "activity" && (
             <main className="list">

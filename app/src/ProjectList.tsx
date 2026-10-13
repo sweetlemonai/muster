@@ -4,6 +4,7 @@ import { projectCount } from "./Backlog";
 import { SideLimit } from "./CheckLimit";
 import { needsYouCount } from "./human";
 import { byCategory, LABEL_MAX } from "./labels";
+import { lessonsWaiting } from "./Lessons";
 import { inProgress } from "./lib";
 import { useLook } from "./modes";
 import { PAUSE_GLYPH } from "./Pause";
@@ -48,7 +49,7 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
   const full = useLook("sidebar") === "full";
   return (
     <nav className="projects-nav">
-      <ProjectItem name="All" total={tasks.length + notes.length} tasks={tasks} on={current === "all"} onClick={() => onPick("all")} working={sums.working > 0} stalled={sums.stalled > 0 ? `${sums.stalled} stalled` : ""}>
+      <ProjectItem name="All" total={tasks.length + notes.length} tasks={tasks} lessons={lessonsWaiting(queues, "all")} on={current === "all"} onClick={() => onPick("all")} working={sums.working > 0} stalled={sums.stalled > 0 ? `${sums.stalled} stalled` : ""}>
         <SumsLine s={sums} now={now} />
       </ProjectItem>
       {full && <div className="side-label">Projects</div>}
@@ -63,7 +64,7 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
             }
             return (
               <Fragment key={r.name}>
-                <ProjectItem name={r.label} title={r.title} total={totalOf(r)} tasks={r.tasks} on={current === r.name} onClick={() => onPick(r.name)} onRename={onLabel ? () => setEditing(r.name) : undefined} working={r.activity.working > 0} stalled={r.activity.stalled ? "stalled" : ""} alert={<SideLimit q={q} />}>
+                <ProjectItem name={r.label} title={r.title} total={totalOf(r)} tasks={r.tasks} lessons={lessonsWaiting(queues, r.name)} on={current === r.name} onClick={() => onPick(r.name)} onRename={onLabel ? () => setEditing(r.name) : undefined} working={r.activity.working > 0} stalled={r.activity.stalled ? "stalled" : ""} alert={<SideLimit q={q} />}>
                   <ActivityLine a={r.activity} now={now} />
                 </ProjectItem>
                 {/* A stalled project offers to ask its quiet sessions for a check-in (0039), under its
@@ -79,15 +80,15 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
 }
 
 /** One project in the sidebar: its name (its label, 0044) and count, what's in progress, what's
- *  paused (0045) and what needs you (the needs-you count: your own tasks to do and doing, and what
- *  the agents wait on you for), and under them its activity line. Narrowed (Focus, 0038), the
- *  name, the working dot, "stalled" in the attention colour (the activity line's word, or "2
+ *  paused (0045) and what needs you (the needs-you count: your own tasks to do and doing, what the
+ *  agents wait on you for, and the lessons from reviews waiting for your yes, 0027), and under
+ *  them its activity line. Narrowed (Focus, 0038), the name, the working dot, "stalled" in the attention colour (the activity line's word, or "2
  *  stalled" on All), the needs-you count and the paused count. `alert` shows in every mode, under
  *  them: over its Your check limit (0050), how many wait and the limit. With `onRename`, a double
  *  click on the name sets its label. */
-export function ProjectItem({ name, title, total, tasks, on, onClick, onRename, working = false, stalled = "", alert, children }: { name: string; title?: string; total: number; tasks: Task[]; on: boolean; onClick: () => void; onRename?: () => void; working?: boolean; stalled?: string; alert?: ReactNode; children: ReactNode }) {
+export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClick, onRename, working = false, stalled = "", alert, children }: { name: string; title?: string; total: number; tasks: Task[]; lessons?: number; on: boolean; onClick: () => void; onRename?: () => void; working?: boolean; stalled?: string; alert?: ReactNode; children: ReactNode }) {
   const doing = tasks.filter(inProgress).length;
-  const needs = needsYouCount(tasks);
+  const needs = needsYouCount(tasks) + lessons;
   const full = useLook("sidebar") === "full";
   const paused = tasks.filter((t) => t.paused).length;
   return (

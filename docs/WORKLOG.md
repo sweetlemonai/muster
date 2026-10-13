@@ -4,6 +4,39 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — The review of record: the engine reviews a started task's branch in Testing, the builder fixes or disputes, lessons for the next agents (task 0027)
+**Did:** `muster review <id>` prints the brief for the next round of a started task (range:
+merge base..tip, then only the commits since the last round; the task and the builder's answers
+quoted as data; lessons; the JSON shape); the Testing session runs `/deep-review` on it and
+records the result with `--record -`. Rounds 1 and 2 with findings open return the task to its
+builder, round 3 blocks it on the owner; `--fixed`/`--dispute` are the builder's answers (Building
+→ Testing refused until each is answered), `--settle` the owner's. The merge needs the review
+clean at the branch's tip (the owner may override; the report says which) and carries it over
+its own rebase. Findings confirmed (or dismissed) on two tasks propose a lesson; the owner accepts
+or rejects them in one batch (`muster lessons`, or Lessons to approve at the top of Waiting for
+you, counted in needs-you, the sidebar and the Dock); `muster start` prints the accepted ones for
+the task's `touches:`. Card line and the pane's Review fold. Files: `review.rs`, `lessons.rs`,
+`review_cmds.rs` (new); `parallel.rs` (merge gate, carry, `branch_span`), `ops.rs` (write-up
+ends above the section; Building → Testing refusal), `queue.rs` (`review:` fields,
+`lessons_waiting`), `cli.rs`, `help.rs`, `badge.rs`, `lib.rs`; `Review.tsx`, `ReviewPanel.tsx`,
+`Lessons.tsx` (new), `CardStatus`, `TaskPanel`, `WaitingList`, `ProjectList`, `App`, `modes.ts`;
+manual 02, 04, 05, 07; PROTOCOL, AS_BUILT, VISION; `commands/mu.md`, `muster.md` (Not routed).
+**Decided:** Muster runs no agent for the review, the Testing session does, and the merge
+enforces it; round 3 still open goes to the owner instead of a fourth round; the review and the
+lessons live in the queue (`reviews/<id>.json`, `reviews/lessons.json`, `lessons.md`), not on the
+main checkout. Options and why: [decision 0005](decisions/0005-review-of-record-runs-in-the-testing-session.md).
+Nothing posts to GitHub: no PR per task for now (VISION.md).
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`;
+cargo test 498 lib; vitest 1155. Red first: the merge test
+`a_started_task_merges_only_with_a_clean_review_at_its_tip` (merged without a review), the
+start-brief test `a_finding_that_recurs_becomes_a_lesson_in_the_next_start_brief_once_the_owner_accepts_it`
+(no lessons line), `the_builder_passes_back_to_testing_only_once_every_finding_is_answered`
+(passed with findings open). The engine's own `node --test` (unchanged): 149 pass.
+**Open:** AC1 is the owner's (a real round on a real task). Needs the owner or the personal layer:
+the engine's ledgers and `/pr learn` get Muster's labels (their rows key on a PR number);
+`sweetlemonai/muster` in the engine's `repos`; a light-tier token budget (the engine has no such
+key); posting as sweetlemonai with a login check comes back with PRs. In-flight started tasks now
+need a review round before their merge.
 ## 2026-10-13 — Projects get a label you choose and a category that groups the sidebar (task 0044)
 **Did:** each project has a label (what the app calls it, up to 40 characters) and a category (the
 sidebar heading it goes under, up to 24), set in Settings › Projects (a field each per row, saved

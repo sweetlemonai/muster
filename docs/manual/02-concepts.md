@@ -230,6 +230,32 @@ muster vision 0031 --resolve V2 "0019 keeps depends:; 0024 derives blocked by ta
 
 See [muster vision](05-commands.md#muster-vision) (task 0029).
 
+## The review of record
+
+A task started on its own branch (`muster start`) is reviewed in Testing by your own review engine, the one `/deep-review` runs: its lenses and verifiers, with its scan picking the tier (light unless the diff is big or risky). It's the one review that counts: builders run the gate, not a second review of their own. Nothing goes to GitHub; it runs on this Mac, on the branch, before the merge.
+
+Muster doesn't run the agent itself. `muster review <id>` prints the brief for the next round, for a session that didn't build the task: where to run it, which commits to look at (the whole branch the first time, then only what came since the last round), the task, the builder's answers to re-check, the lessons you accepted for that part of the repo, and the JSON to hand back. The session records what survived verification with `muster review <id> --record -`.
+
+The task gets a **Review** section: each finding numbered (R1, R2… across rounds) with its state, and each round with its verdict and the tokens it took. Then:
+
+- **Findings to fix** (anything but nits) send the task back to Building, to its builder. The builder answers each one: **fixed** (`muster review <id> --fixed R1 "<how>"`) or **disputed**, with why it's wrong (`--dispute R1 "<why>"`), then passes it to Testing again.
+- **The next round** re-checks every answer. An accepted fix is labelled **confirmed**; an accepted dispute, **false-positive**; anything not accepted is open again.
+- **After round 3**, if anything is still open, the task doesn't go back a fourth time: it's **blocked on you**, and the Review section has both sides' words on each finding. Settle each one with `muster review <id> --settle R2 false-positive|wont-fix|confirmed|open "<why>" --as owner`, then unblock it or send it back. Settling is also how you change a label later.
+- **Clean**, the merge may go ahead. Merging a started task needs a clean review at the branch's tip, so a commit after the review needs a new round (of just that commit). The merge's own rebase carries the review along. You can merge without one; the merge report says so.
+
+The card says where it stands: "review 1/3 · 2 to fix", "review 2/3 · 1 to re-check", "review clean · round 2", or "not reviewed yet" in Testing.
+
+**Lessons.** Each finding has a kind, a short name for the kind of mistake (`unbounded-output`), the same across tasks. When a kind is confirmed on two tasks, Muster proposes a **lesson**: one line, the rule, a bad and a good example, the findings it came from and the folders it applies to. When a kind is dismissed as a false positive on two tasks, it proposes one for reviewers: what not to flag. Lessons become instructions to agents, and a reviewer wrote them, so nothing applies until you accept it. They wait at the top of **Waiting for you**, where **Accept all** takes the batch and **Reject** turns one down with why (or `muster lessons accept --all --as owner`). Accepted lessons go into `muster start`'s brief for tasks that touch their folders, and into the review brief. At most 40 are live; one that hasn't mattered for 60 days (no finding of its kind) drops out. They're readable in `lessons.md` beside the task files.
+
+```
+muster review mu-27
+pbpaste | muster review mu-27 --record - --as muster/qa-0027
+muster review mu-27 --fixed R1 "capped the read at 1 MB" --as muster/wt-0027
+muster lessons accept --all --as owner
+```
+
+See [muster review](05-commands.md#muster-review) and [muster lessons](05-commands.md#muster-lessons) (task 0027).
+
 ## What needs you
 
 One list, everywhere, of what's waiting on you:
@@ -238,7 +264,8 @@ One list, everywhere, of what's waiting on you:
 - questions **escalated** to you,
 - tasks **blocked on you** or **by a permission**,
 - tasks whose agent's session is **waiting for your input** (a permission prompt, as Claude Code reports it),
-- your own tasks (for: human) to do and doing, except the ones you paused.
+- your own tasks (for: human) to do and doing, except the ones you paused,
+- lessons from reviews waiting for your yes (see [The review of record](#the-review-of-record)).
 
 They're counted on the **Waiting for you** tab, beside each project on the left in orange, and on Muster's icon in the Dock (every project you show), and the agents' ones are marked "needs you" on their cards, which sort to the top of their columns.
 

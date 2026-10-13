@@ -822,6 +822,19 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .vision.has-open h2 small { color: var(--err); }
 .vision .control-row .on { outline: 2px solid var(--accent); outline-offset: 1px; }
 .vision .markdown h3 { font-size: 12px; margin: 10px 0 4px; }
+/* The review of record (0027): where it stands as one of the card's status lines, quiet (it's the
+   agents' work; one that goes to the owner shows as blocked on you), with weight while findings
+   wait for the builder; the pane's Review section as the Vision one. */
+.card-review { font-size: 11px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+.card-review.open { color: var(--text); font-weight: 600; }
+.review h2 small { text-transform: none; letter-spacing: 0; margin-left: 4px; }
+.review .markdown h3 { font-size: 12px; margin: 10px 0 4px; }
+/* Lessons from reviews waiting for the owner (0027), at the top of Waiting for you. */
+.lessons-waiting { border: 1px solid var(--border); border-left: 3px solid var(--st-needs); border-radius: 8px; padding: 10px 12px; margin: 0 0 12px; }
+.lessons-waiting h3 { margin: 0 0 6px; font-size: 13px; }
+.lessons-waiting li { margin: 6px 0; }
+.lessons-waiting .lesson-rule { font-weight: 600; }
+.lessons-waiting .meta { font-size: 11px; }
 /* Reaching the session on a task (0039). Quiet controls, full contrast on hover; a disabled one
    keeps its reason beside it. Under a quiet card a strip joined to its bottom edge (the card is a
    button, so the strip sits beside it, not in it); in the pane one line under the next step; in

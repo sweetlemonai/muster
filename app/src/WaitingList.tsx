@@ -3,11 +3,12 @@ import BlockWhy from "./BlockWhy";
 import EffortGroups from "./EffortGroups";
 import { humanColumn, isHuman } from "./human";
 import { key } from "./lib";
+import LessonsWaiting, { lessonsWaiting } from "./Lessons";
 import { taskKey } from "./taskKey";
 import { isWork } from "./levels";
 import { PausedChip } from "./Pause";
 import PickOne from "./PickOne";
-import type { Task } from "./types";
+import type { QueueInfo, Task } from "./types";
 import YouRibbon from "./YouRibbon";
 import { nextStep } from "./yourCheck";
 import ProjectName from "./ProjectName";
@@ -15,8 +16,9 @@ import ProjectName from "./ProjectName";
 /** Waiting for you: every task waiting on the owner, in the order given. The agents' tasks in
  *  Your check come first, by effort (0043) with each one's next step in full and Accept all in
  *  Just accept; then questions escalated to the owner, blocks on them, sessions waiting for input
- *  in Claude Code (0048) and their own tasks. */
-export default function WaitingList({ tasks, multi, openKey, onOpen, onChanged, now }: {
+ *  in Claude Code (0048) and their own tasks. Above them all, the lessons from reviews waiting for
+ *  the owner's yes (0027) in `queue` ("all": every one of `queues`). */
+export default function WaitingList({ tasks, multi, openKey, onOpen, onChanged, now, queues = [], queue = "all" }: {
   tasks: Task[];
   multi: boolean;
   openKey: string | null;
@@ -24,6 +26,8 @@ export default function WaitingList({ tasks, multi, openKey, onOpen, onChanged, 
   onChanged: () => void;
   /** The state's clock, seconds since 1970 (how long a paused one has been paused). */
   now: number;
+  queues?: QueueInfo[];
+  queue?: string;
 }) {
   // An agent's task in Your check; a goal or feature put there by hand is listed with the rest.
   const inCheck = (t: Task) => !isHuman(t) && isWork(t) && t.stage === "your-check";
@@ -32,7 +36,8 @@ export default function WaitingList({ tasks, multi, openKey, onOpen, onChanged, 
   const item = (t: Task) => <WaitingItem key={key(t)} t={t} now={now} multi={multi} active={openKey === key(t)} onOpen={onOpen} onChanged={onChanged} />;
   return (
     <main className="list waiting-list">
-      {tasks.length === 0 && <p className="empty">Nothing is waiting for you.</p>}
+      <LessonsWaiting queues={queues} queue={queue} onChanged={onChanged} />
+      {tasks.length === 0 && lessonsWaiting(queues, queue) === 0 && <p className="empty">Nothing is waiting for you.</p>}
       {/* With none left in Your check, it still shows what Accept all came to, until the next change. */}
       <EffortGroups tasks={check} place="waiting" renderCard={item} onChanged={onChanged} />
       {rest.length > 0 && (

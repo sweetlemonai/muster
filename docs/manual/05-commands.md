@@ -315,7 +315,7 @@ Move a task on to the next stage, send it back, mark it blocked, or pause it. On
 
 ### muster pass
 
-Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria and no open vision conflict (muster vision). Building → Testing needs the gate's result line and releases your claim. Testing → Your check needs every criterion ticked except the owner's ("— verify: owner"), and a session that didn't build it: the builder (who claimed it, or passed it into Testing; the same --as label, in the same session or with none) is refused, naming who built it, so a fresh QA session with its own --as passes it, or the owner (logged as the owner's override: no separate tester). A tester under another label in the builder's session is let through, and the log says so. Your check → Done needs those ticked too (muster tick). A human task (the owner's own) goes To do (Ready) → Doing (Building) → Done, and only the owner passes it: no gate line, no Testing, no Your check. Refused while it's blocked, when someone else holds it, and into Building (Ready → Building, or the owner's Start) while a task it depends on isn't merged yet, as claim is. A task made with muster start merges when it passes from Testing, in order, stopping at the first failure: one merge at a time per repo; rebase its branch on the local main (a conflict sends it back to Building naming the files); run the project's gate in its worktree (muster projects set \<name\> gate; red sends it back with the gate line), and again if main moved while it ran (twice at most, then it stops: main keeps moving); fast-forward the local main to it (never a merge commit, so main only gets a tree the gate saw), only if the main checkout is clean and on main; push main to origin (never forced: if origin moved, it fetches and stops); remove the worktree (never a runner's, made with start --here) and delete the branch, and origin's copy only when it's the same commit; record the merge (the commit and a report: gate line, time in Building and Testing, check-ins) and pass it to Your check: the record is written even if the task was blocked or moved meanwhile, and then it says so (use muster stage); then it names the next task to start. Nothing is deleted on any failure before main has the merge. Only the command line does this: the app's Pass is refused for such a task.
+Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria and no open vision conflict (muster vision). Building → Testing needs the gate's result line, and every review finding open for the builder answered (muster review), and releases your claim. Testing → Your check needs every criterion ticked except the owner's ("— verify: owner"), and a session that didn't build it: the builder (who claimed it, or passed it into Testing; the same --as label, in the same session or with none) is refused, naming who built it, so a fresh QA session with its own --as passes it, or the owner (logged as the owner's override: no separate tester). A tester under another label in the builder's session is let through, and the log says so. Your check → Done needs those ticked too (muster tick). A human task (the owner's own) goes To do (Ready) → Doing (Building) → Done, and only the owner passes it: no gate line, no Testing, no Your check. Refused while it's blocked, when someone else holds it, and into Building (Ready → Building, or the owner's Start) while a task it depends on isn't merged yet, as claim is. A task made with muster start merges when it passes from Testing, once its review of record is clean at its branch's tip (muster review; the owner may merge without one, and the report says so), in order, stopping at the first failure: one merge at a time per repo; rebase its branch on the local main (a conflict sends it back to Building naming the files); run the project's gate in its worktree (muster projects set \<name\> gate; red sends it back with the gate line), and again if main moved while it ran (twice at most, then it stops: main keeps moving); fast-forward the local main to it (never a merge commit, so main only gets a tree the gate saw), only if the main checkout is clean and on main; push main to origin (never forced: if origin moved, it fetches and stops); remove the worktree (never a runner's, made with start --here) and delete the branch, and origin's copy only when it's the same commit; record the merge (the commit and a report: gate line, the review, time in Building and Testing, check-ins) and pass it to Your check: the record is written even if the task was blocked or moved meanwhile, and then it says so (use muster stage); then it names the next task to start. Nothing is deleted on any failure before main has the merge. Only the command line does this: the app's Pass is refused for such a task.
 
 ```
 muster pass <id> [--from <stage>] [--gate "<gate result line>"] [--commit <sha>]
@@ -756,6 +756,79 @@ muster release 0031 --clean
 muster release 0031 --clean --force --as owner
 ```
 
+## Review
+
+The review of record for a task started on its own branch: the owner's review engine reviews it in Testing, its builder fixes or disputes what it finds, up to 3 rounds, and the merge waits for a clean review. Findings that keep coming back become lessons for the next agents, once the owner accepts them. See [The review of record](02-concepts.md#the-review-of-record).
+
+### muster review
+
+The review of record for a task started on its own branch: in Testing, the owner's review engine (/deep-review, its lenses and verifiers, its tier picked from the diff's size and risk) reviews the branch, the builder fixes or disputes each finding back in Building, up to 3 rounds, then the owner. Muster runs no agent: muster review \<id\> prints the brief for the next round (where to run it, the range: the whole branch since it left main, then only the commits since the last round; the task quoted as data, the builder's answers to re-check, the owner's lessons for its area and what not to flag, the kinds of mistake already named, and the JSON to return). Writes nothing. --record - reads that JSON from stdin (or takes it as its value), from a session that didn't build it (or the owner): head must be the branch's tip; every finding the builder answered needs an answer (an accepted fix is labelled confirmed, an accepted dispute false-positive, the rest open again); new findings are numbered on (R1, R2… across rounds); the round is kept in the queue's reviews/\<id\>.json, the task gets a ## Review section under its write-up (above its Comments and Log) and review: round \<n\> · \<open\> open · \<answered\> answered in its front matter, and a log line with the tokens it took. Then, with anything but nits open, rounds 1 and 2 return it to Building for its builder, and round 3 blocks it on the owner instead of a fourth round; clean, the merge may go ahead. --fixed R1 and --dispute R1 "\<why\>" are the builder's answers, in Building (the holder or the owner; a dispute says why, 500 characters); Building → Testing waits until every open finding but a nit is answered. --settle is the owner's: any finding, any state, also to change a label. Merging a started task (muster pass \<id\> --from testing) needs the review clean at the branch's tip; the owner may merge without one, and the merge report says which. A finding's kind (a short slug) recurring confirmed on 2 tasks proposes a lesson (muster lessons).
+
+```
+muster review <id> [--json] | --record - | --fixed R1 ["<how>"] | --dispute R1 "<why>" | --settle R1 confirmed|false-positive|wont-fix|open "<why>"
+```
+
+| Option | What it does |
+| --- | --- |
+| `--json` | the brief or the record's result as JSON |
+| `--record -` | the reviewer's result, as JSON on stdin; malformed JSON, a head that isn't the branch's tip, a missing answer or a finding under confidence 75 is refused, and nothing changes |
+| `--fixed R1` | the builder: fixed, with how after it (optional) |
+| `--dispute R1` | the builder: it's wrong, with why after it |
+| `--settle R1` | the owner: confirmed, false-positive, wont-fix or open, with why |
+
+Examples:
+
+```
+muster review mu-27
+```
+
+```
+pbpaste | muster review mu-27 --record - --as muster/qa-0027
+```
+
+```
+muster review mu-27 --fixed R1 "capped the read at 1 MB" --as muster/wt-0027
+```
+
+```
+muster review mu-27 --dispute R2 "the timeout is set two lines up" --as muster/wt-0027
+```
+
+```
+muster review mu-27 --settle R2 false-positive "the pipe is bounded" --as owner
+```
+
+### muster lessons
+
+Lessons from reviews: when a kind of mistake is confirmed on 2 tasks, muster proposes a lesson for builders (one line, the rule, a bad and a good example, the findings it came from, the folders it applies to); when a kind is dismissed as a false positive on 2 tasks, one for reviewers (what not to flag). Nothing becomes an instruction without the owner: accept or reject the proposals in one batch, with --as owner. Accepted lessons for builders go into muster start's brief for the tasks whose touches: overlap their folders (every lesson, for a task without touches:), and both kinds into the review brief. At most 40 are live: accepting more expires the ones that mattered least recently, and one with no finding of its kind and no acceptance for 60 days expires on its own (a new finding of its kind brings it back). A rejected kind isn't proposed again. Kept in the queue's reviews/lessons.json, and readable as lessons.md beside the task files (never edit either by hand).
+
+```
+muster lessons [--json] | muster lessons accept <L1,L2|--all> | muster lessons reject <L1,L2> "<why>"
+```
+
+| Option | What it does |
+| --- | --- |
+| `--json` | the listing or the decision as JSON |
+| `--all` | accept: every proposal (minus any you reject in the same batch) |
+
+Examples:
+
+```
+muster lessons
+```
+
+```
+muster lessons accept --all --as owner
+```
+
+```
+muster lessons accept L3,L5 --as owner
+```
+
+```
+muster lessons reject L4 "taste, not a defect" --as owner
+```
+
 ## Questions
 
 Ask in a task without stopping. The answer is written into the task and pushed back to the session that asked. See [Questions and answers](02-concepts.md#questions-and-answers).
@@ -1076,7 +1149,7 @@ muster init ~/playground/germ/main --prefix gm
 
 ### muster migrate
 
-Copy an old queue (\<project\>/tasks, with status folders or flat) into the repo's .muster/, local by default. Every task file goes to tasks/ with stage: set from its old stage or status and status: dropped, the rest kept byte for byte (a front matter it can't read as it is gets its byte-order mark and CRLF line ends made plain); the backlog folder's notes and dropped notes to backlog/; attachments/, mail/ and WAITING-FOR-OWNER.md as they are; the old README's front matter into the new README. Writes config.toml, .gitignore, INDEX.md, tasks.json, and migrated-from.txt with the old queue's last commit, and gives the new queue the old one's gate, name, label, category, hidden and Your check limit from projects.json. Prints what it copied and what it didn't. Copies, never moves: the old queue is left as it was, to retire once muster check is clean. Refuses while an agent holds a task in Building or Testing (it lists them), when .muster/ is there already, when the repo and the old queue overlap, on a folder it can't read, on a task file without front matter it can read, and on two names that would be one file on this Mac (case or accents).
+Copy an old queue (\<project\>/tasks, with status folders or flat) into the repo's .muster/, local by default. Every task file goes to tasks/ with stage: set from its old stage or status and status: dropped, the rest kept byte for byte (a front matter it can't read as it is gets its byte-order mark and CRLF line ends made plain); the backlog folder's notes and dropped notes to backlog/; attachments/, mail/, the review of record's reviews/ and lessons.md, and WAITING-FOR-OWNER.md as they are; the old README's front matter into the new README. Writes config.toml, .gitignore, INDEX.md, tasks.json, and migrated-from.txt with the old queue's last commit, and gives the new queue the old one's gate, name, label, category, hidden and Your check limit from projects.json. Prints what it copied and what it didn't. Copies, never moves: the old queue is left as it was, to retire once muster check is clean. Refuses while an agent holds a task in Building or Testing (it lists them), when .muster/ is there already, when the repo and the old queue overlap, on a folder it can't read, on a task file without front matter it can read, and on two names that would be one file on this Mac (case or accents).
 
 ```
 muster migrate <old-queue> <repo> [--local|--committed] [--dry-run]
@@ -1100,7 +1173,7 @@ muster migrate ~/playground/muster/tasks ~/playground/muster/main
 
 ### muster check
 
-Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet past the lease (12 h unless changed in the app's Settings), blocked with no reason, waiting on a task that doesn't exist, a link that isn't a plain https link, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop, a for that isn't human or ai, a vision count that doesn't match the task's Vision section, an INDEX.md that shows something the task files no longer say (rebuild with muster index; none yet is fine). Exit 1 if any. A goal past its due date with tasks open, a block from before kinds (read as one from what it waits on until it's blocked again with a kind), and an INDEX.md only due a refresh (the files changed outside muster, as Drover's answers do), are warnings: shown, without failing. Also lists, without counting them as problems, what waits on the owner's look, Shaping tasks with no vision check yet, and what parallel sessions left behind: a started task whose worktree is gone, a worktree of a task sent back to Ready, and a worktree on a task/\<id\>- branch whose task is past Testing, each with the command that cleans it.
+Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet past the lease (12 h unless changed in the app's Settings), blocked with no reason, waiting on a task that doesn't exist, a link that isn't a plain https link, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop, a for that isn't human or ai, a vision count that doesn't match the task's Vision section, an INDEX.md that shows something the task files no longer say (rebuild with muster index; none yet is fine). Exit 1 if any. A goal past its due date with tasks open, a block from before kinds (read as one from what it waits on until it's blocked again with a kind), and an INDEX.md only due a refresh (the files changed outside muster, as Drover's answers do), are warnings: shown, without failing. Also lists, without counting them as problems, what waits on the owner's look, lessons from reviews waiting for the owner's yes, Shaping tasks with no vision check yet, and what parallel sessions left behind: a started task whose worktree is gone, a worktree of a task sent back to Ready, and a worktree on a task/\<id\>- branch whose task is past Testing, each with the command that cleans it.
 
 ```
 muster check
@@ -1263,6 +1336,22 @@ Testing found a problem? Send it back with the reason:
 ```
 muster return 0007 "AC2 fails: …"
 ```
+
+A task you started on its own branch is reviewed in Testing by a session that didn't build it: muster review prints the brief (run /deep-review on the range it names) and --record takes the result. Findings to fix send it back to you; answer each, then pass it to Testing again. The merge waits for a clean review:
+
+```
+muster review 0007
+```
+
+```
+muster review 0007 --fixed R1 "capped the read at 1 MB" --as <your branch>
+```
+
+```
+muster review 0007 --dispute R2 "<why it's wrong>" --as <your branch>
+```
+
+muster start's brief lists the lessons the owner accepted for where your task works: follow them.
 
 Found something new? muster add puts a one-liner in the backlog, and a shaping session files it. Something only the owner can do (an account, a secret, a decision) goes the same way: the owner makes it a human task:
 

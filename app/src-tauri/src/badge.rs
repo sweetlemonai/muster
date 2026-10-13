@@ -25,6 +25,12 @@ pub fn needs_you(for_who: &str, stage: &str, waiting_for_owner: bool, paused: bo
     }
 }
 
+/// What the Dock counts: the tasks that need the owner, and the lessons from reviews waiting for
+/// their yes (0027), as the window's needs-you count adds them.
+pub fn dock_count(tasks: &[Task], queues: &[crate::queue::QueueInfo]) -> usize {
+    needs_you_count(tasks) + queues.iter().map(|q| q.lessons_waiting).sum::<usize>()
+}
+
 /// How many tasks need the owner: the count the window's sidebar shows for every project.
 pub fn needs_you_count(tasks: &[Task]) -> usize {
     tasks
@@ -142,6 +148,31 @@ mod tests {
         assert_eq!(s.tasks.len(), 6, "{:?}", s.problems);
         assert_eq!(needs_you_count(&s.tasks), 3);
         assert_eq!(needs_you_count(&[]), 0);
+        assert_eq!(dock_count(&s.tasks, &s.queues), 3, "no lessons waiting");
+        // Two lessons from reviews proposed and waiting for the owner's yes (0027) count too; an
+        // accepted one doesn't.
+        fs::create_dir(d.path().join("reviews")).unwrap();
+        let lesson = |id: &str, state: &str| {
+            format!(
+                r#"{{"id":"{id}","kind":"k-{id}","for":"builders","state":"{state}","rule":"r","proposed":"2026-10-13 10:00"}}"#
+            )
+        };
+        fs::write(
+            d.path().join("reviews/lessons.json"),
+            format!(
+                r#"{{"lessons":[{},{},{}]}}"#,
+                lesson("L1", "proposed"),
+                lesson("L2", "accepted"),
+                lesson("L3", "proposed")
+            ),
+        )
+        .unwrap();
+        let s = crate::queue::read_state(
+            &[("q".into(), d.path().to_path_buf())],
+            &mut crate::queue::Cache::default(),
+        );
+        assert_eq!(s.queues[0].lessons_waiting, 2);
+        assert_eq!(dock_count(&s.tasks, &s.queues), 5);
     }
 
     #[test]
