@@ -1,14 +1,15 @@
-import { STAGES } from "./lib";
-import { trackPlace } from "./paneData";
+import { trackSteps } from "./paneData";
 
-/** The seven stages as one track, the task's own lit. Clicking another stage is the owner's
- *  override (the core's set_stage), with no confirmation: the pane offers Undo instead. Leaving
- *  Building releases the claim: `releases(to)` names whose (someone else's), so the button says so. */
-export default function StageTrack({ stage, busy, onPick, releases = () => "" }: {
+/** The seven stages as one track, the task's own lit; the owner's own task (`human`, 0022) has
+ *  only its three steps, To do · Doing · Done. Clicking another stage is the owner's override
+ *  (the core's set_stage), with no confirmation: the pane offers Undo instead. Leaving Building
+ *  releases the claim: `releases(to)` names whose (someone else's), so the button says so. */
+export default function StageTrack({ stage, busy, onPick, releases = () => "", human = false }: {
   stage: string;
   busy: boolean;
   onPick: (to: string) => void;
   releases?: (to: string) => string;
+  human?: boolean;
 }) {
   return (
     <div className="track-wrap" data-part="track">
@@ -17,19 +18,18 @@ export default function StageTrack({ stage, busy, onPick, releases = () => "" }:
         <span className="meta small">click any stage to move it there</span>
       </div>
       <div className="stage-track" role="group" aria-label="Stage">
-        {STAGES.map((s) => {
-          const place = trackPlace(s.id, stage);
-          const who = place === "cur" ? "" : releases(s.id);
+        {trackSteps(stage, human).map((s) => {
+          const who = s.place === "cur" ? "" : releases(s.id);
           return (
             <button
               key={s.id}
               type="button"
-              className={`${place} s-${s.id}`}
-              aria-pressed={place === "cur"}
+              className={`${s.place} s-${s.id}`}
+              aria-pressed={s.place === "cur"}
               disabled={busy}
-              title={place === "cur" ? `It's in ${s.label}` : `Put it in ${s.label}${who ? ` (releases ${who}'s claim)` : ""}`}
+              title={s.place === "cur" ? `It's in ${s.label}` : `Put it in ${s.label}${who ? ` (releases ${who}'s claim)` : ""}`}
               onClick={() => {
-                if (place !== "cur") onPick(s.id);
+                if (s.place !== "cur") onPick(s.id);
               }}
             >
               <i aria-hidden="true" />

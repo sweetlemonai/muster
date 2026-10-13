@@ -139,9 +139,10 @@ describe("the owner's own tasks' gold (0022)", () => {
 });
 
 describe("the owner's own task's hatch (0022, owner 2026-10-13: one board, human cards patterned)", () => {
-  // A stripe is the gold mixed into the card's surface by HUMAN_HATCH, drawn opaque; between the
-  // stripes the card is as it would be (plain, or the Tint look's wash, tested above).
-  const stripe = (t: (typeof THEMES)[number]) => mix(HUMAN_COLOUR, t.surface, HUMAN_HATCH);
+  // A stripe is the gold mixed by HUMAN_HATCH into the card's own background: the surface, or in
+  // the Tint look the card washed in its colour (blocked, needs you), which stays under the stripes.
+  const stripe = (t: (typeof THEMES)[number], under = t.surface) => mix(HUMAN_COLOUR, under, HUMAN_HATCH);
+  const washed = (t: (typeof THEMES)[number]) => [STAGE_COLOURS.blocked, NEEDS_COLOUR].map((c) => mix(c, t.surface, CARD_TINT[t.mode]));
   for (const t of THEMES) {
     for (const a of ACCENTS) {
       it(`${t.name} × ${a.name}: every word a card shows keeps its contrast on a stripe`, () => {
@@ -152,6 +153,13 @@ describe("the owner's own task's hatch (0022, owner 2026-10-13: one board, human
         for (const w of ["--muted", "--accent-text", "--err"]) expect(contrast(v[w], stripe(t)), w).toBeGreaterThanOrEqual(4.5);
         // The You ribbon's border still stands out on it.
         expect(contrast(v["--edge-human"], stripe(t))).toBeGreaterThanOrEqual(3);
+      });
+      it(`${t.name} × ${a.name}: the title and secondary text keep their contrast on a stripe over a blocked or needs-you wash (Tint)`, () => {
+        const v = variables(t, a);
+        for (const under of washed(t)) {
+          expect(contrast(v["--text"], stripe(t, under)), under).toBeGreaterThanOrEqual(7);
+          expect(contrast(v["--muted"], stripe(t, under)), under).toBeGreaterThanOrEqual(4.5);
+        }
       });
     }
     it(`${t.name}: the hatch can be seen, and the CSS gets the tested amount`, () => {
@@ -257,8 +265,8 @@ describe("the card CSS uses what the tests check (0026)", () => {
   it("the owner's own card is hatched in every look: diagonal gold stripes over the card, CSS only (0022)", () => {
     expect(css).toContain(`--human-hatch: ${Math.round(HUMAN_HATCH * 100)}%;`);
     const body = rule(".card.human").body;
-    // Opaque stripes of the gold mixed into the surface (the tested colour), then the card itself.
-    expect(body).toContain("background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--st-human) var(--human-hatch), var(--surface)) 0 5px, transparent 5px 11px);");
+    // Stripes of the gold mixed into the card's own background (the tested colours), so a Tint wash stays under them.
+    expect(body).toContain("background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--st-human) var(--human-hatch), var(--card-bg, var(--surface))) 0 5px, transparent 5px 11px);");
     expect(body).not.toMatch(/url\(/);
     // It's the card's own rule, after the base card and the states, and no look, state or hover
     // sets a background image over it: blocked and needs you keep their colour, the hatch its pattern.

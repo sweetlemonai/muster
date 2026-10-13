@@ -19,7 +19,7 @@ import FilterBar from "./FilterBar";
 import { applyQuery, dayContext, EMPTY_QUERY, loadViews, notesFor, storeViews, type Query, type SavedView } from "./filters";
 import { indexStamp, needsIndex, queryWords, withSearch, type IndexStamp, type SearchIndex } from "./search";
 import { focusSearchBox, searchView, windowKey } from "./keys";
-import { byWho, FOR_FILTERS, FOR_KEY, type ForFilter, humanColumn, isHuman, needsYouCount, parseForFilter, waitingForYou, whoFiltersOn } from "./human";
+import { byWho, FOR_FILTERS, FOR_KEY, type ForFilter, humanColumn, isHuman, needsYouCount, parseForFilter, waitingForYou, whoFiltersOn, whoShows } from "./human";
 import YouRibbon from "./YouRibbon";
 import { HelpButton, OpenHelp } from "./HelpButton";
 import { HELP_TOPICS, type HelpTopic, type ManualAt } from "./helpTopics";
@@ -199,7 +199,9 @@ export default function App() {
   const waiting = useMemo(() => waitingForYou(inQueue), [inQueue]);
   // The Board, Table and Timeline show both kinds, the owner's own tasks hatched with the You
   // ribbon; the Who chips (All · You · Agents) pick.
-  const viewTasks = useMemo(() => byWho(tasks, who), [tasks, who]);
+  // Backlog notes show under every Who: they're nobody's yet.
+  const queueNotes = useMemo(() => backlogNotes(state?.backlog ?? [], queue), [state, queue]);
+  const { tasks: viewTasks, notes } = useMemo(() => whoShows(tasks, notesFor(queueNotes, query), who), [tasks, queueNotes, query, who]);
   // Goals and features aren't cards in the stage columns: they're the bands, and table rows.
   const work = useMemo(() => tasks.filter(isWork), [tasks]);
   const boardWork = useMemo(() => byWho(work, who), [work, who]);
@@ -213,9 +215,6 @@ export default function App() {
   const openKey = pane?.kind === "task" ? pane.key : null;
   const openTask = openKey ? (state?.tasks ?? []).find((t) => key(t) === openKey) ?? null : null;
   const allNotes = state?.backlog ?? [];
-  const queueNotes = useMemo(() => backlogNotes(state?.backlog ?? [], queue), [state, queue]);
-  // A backlog note is nobody's task yet: only All shows notes, as a filter only tasks have hides them.
-  const notes = useMemo(() => (who === "all" ? notesFor(queueNotes, query) : []), [queueNotes, query, who]);
   // Notes show on the ungrouped board only (Group by bands hold tasks), so only it counts them
   // as hidden. The Board, Table and Timeline also count the tasks their Who chips hide.
   const notesShown = view === "board" && groupBy === "none";

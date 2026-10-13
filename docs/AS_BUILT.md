@@ -214,14 +214,18 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   and only the owner makes one. Its card sits in the same stage columns as the agents' tasks
   (`lib.ts` `boardColumn`: To do in Ready, Doing in Building, Done in Done; never Backlog,
   Shaping, Testing or Your check), drawn so it can't be mistaken: a faint diagonal hatch in the
-  human gold (`.card.human`, CSS only: opaque stripes of `--st-human` mixed into the surface by
-  `--human-hatch`, 14%, `themes.ts` `HUMAN_HATCH`) plus the gold "You" ribbon (`#A08428`, never a
-  stage colour), in every card look. `themes.test.ts` holds every card word on a stripe to its
-  contrast in every theme and accent (text 7:1, muted, project name and warnings 4.5:1), the
-  hatch visible (CIE76 8+ from the surface), and the gold a hue apart from blocked red and
-  needs-you orange. The ribbon marks human tasks in Table, Timeline, Graph and the pane too. The
-  **Who** chips (All · You · Agents, remembered) sit above the Board, Table and Timeline: You
-  shows only the owner's tasks, Agents only the agents'; backlog notes show under All only.
+  human gold (`.card.human`, CSS only: stripes of `--st-human` mixed by `--human-hatch`, 14%,
+  `themes.ts` `HUMAN_HATCH`, into the card's own background, so the Tint look's blocked or
+  needs-you wash stays under them) plus the gold "You" ribbon (`#A08428`, never a stage colour),
+  in every card look. `themes.test.ts` holds every card word on a stripe over the plain card to
+  its contrast in every theme and accent (text 7:1; muted, project name and warnings 4.5:1), the
+  title (7:1) and muted words (4.5:1) on a stripe over a blocked or needs-you wash, the hatch
+  visible (CIE76 8+ from the surface), and the gold a hue apart from blocked red and needs-you
+  orange. The ribbon marks human tasks in Table, Timeline, Graph and the pane too; the pane's
+  stage track shows a human task only To do · Doing · Done (`paneData.ts` `trackSteps`), and the
+  Stage filter chips go by the board column. The **Who** chips (All · You · Agents, remembered)
+  sit above the Board, Table and Timeline: You shows only the owner's tasks, Agents only the
+  agents'; backlog notes show under every Who (nobody's yet).
   What the agents wait on the owner for has no lane of its own: Your check is a column, and
   escalated questions and blocks on you or by a permission are needs-you cards where they are.
   `needsYouCount` (`human.ts`: the owner's own tasks to do and doing, plus those) is the one

@@ -83,6 +83,16 @@ describe("applyQuery", () => {
     expect(run({ filters: { state: ["questions"] } })).toEqual(["0003"]);
     expect(run({ filters: { state: ["blocked", "needs-you"] } })).toEqual(["0002", "0003"]);
   });
+  it("Stage keeps the owner's own task by the column it sits in on the board, not its stage (0022)", () => {
+    const mine = t({ id: "0005", forWho: "human", stage: "shaping" });
+    const doing = t({ id: "0006", forWho: "human", stage: "testing" });
+    expect(run({ filters: { stage: ["ready"] } }, [...tasks, mine, doing])).toEqual(["0002", "0005"]);
+    expect(run({ filters: { stage: ["shaping"] } }, [...tasks, mine, doing])).toEqual([]);
+    expect(run({ filters: { stage: ["building"] } }, [...tasks, mine, doing])).toEqual(["0001", "0006"]);
+    expect(run({ filters: { stage: ["testing"] } }, [...tasks, mine, doing])).toEqual([]);
+    // The chips offer the columns the tasks are in.
+    expect(groupValues(GROUPS.find((g) => g.id === "stage")!, [mine, doing], [], ctx)).toEqual(["ready", "building"]);
+  });
   it("blocked keeps a task blocked only by the tasks it depends on, as its red card says (0024)", () => {
     const waits = t({ id: "0005", depends: ["0001"], blockedKind: "tasks", blockedBy: [{ id: "0001", stage: "building", holder: "drover/main" }] });
     expect(ids(applyQuery([...tasks, waits], q({ filters: { state: ["blocked"] } }), ctx))).toEqual(["0002", "0005"]);

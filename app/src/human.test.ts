@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byWho, FOR_FILTERS, humanColumn, isHuman, needsYou, needsYouCount, parseForFilter, waitingForYou, whoFiltersOn } from "./human";
+import { byWho, FOR_FILTERS, humanColumn, isHuman, needsYou, needsYouCount, parseForFilter, waitingForYou, whoFiltersOn, whoShows } from "./human";
 import { columns } from "./lib";
 import type { Question, Task } from "./types";
 
@@ -58,6 +58,14 @@ describe("one board: the owner's own tasks among the agents' (0022, owner 2026-1
     expect(Object.values(agents).flat().some(isHuman)).toBe(false);
     expect(ids(Object.values(agents).flat()).sort()).toEqual(["0050", "0051", "0052", "0053", "0054"]);
     expect(Object.values(columns(byWho(QUEUE, "all"))).flat()).toHaveLength(QUEUE.length);
+  });
+  it("keeps the backlog's notes under every Who: they're nobody's yet, and a note just added never vanishes", () => {
+    const notes = [{ file: "a.md" }, { file: "b.md" }];
+    for (const f of ["all", "human", "ai"] as const) {
+      const shown = whoShows(QUEUE, notes, f);
+      expect(shown.notes, f).toBe(notes);
+      expect(shown.tasks, f).toEqual(byWho(QUEUE, f));
+    }
   });
   it("has the Who chips on the Board, Table and Timeline", () => {
     expect(["board", "table", "timeline"].every(whoFiltersOn)).toBe(true);

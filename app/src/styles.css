@@ -158,10 +158,11 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 /* The owner's own tasks (0022), in the same columns as the agents': a faint diagonal hatch in the
    human gold plus the You ribbon, in every card look (owner, 2026-10-13). The stripes are the gold
-   mixed into the surface by --human-hatch, opaque, so the words on a stripe keep the contrast
-   themes.test.ts checks; between them the card is as its look and state make it. The ribbon is the
+   mixed by --human-hatch into the card's own background (--card-bg: the Tint look's blocked or
+   needs-you wash stays under them), so the words on a stripe keep the contrast themes.test.ts
+   checks; between them the card is as its look and state make it. The ribbon is the
    card's own element in its top-right corner, with the word so colour isn't the only cue. */
-.card.human { position: relative; background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--st-human) var(--human-hatch), var(--surface)) 0 5px, transparent 5px 11px); }
+.card.human { position: relative; background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--st-human) var(--human-hatch), var(--card-bg, var(--surface))) 0 5px, transparent 5px 11px); }
 .card.human .card-top { padding-right: 34px; }
 .you-ribbon { background: var(--st-human); color: var(--on-status); border: 1px solid var(--edge-human, var(--st-human)); font-size: 9.5px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; line-height: 1.4; padding: 0 6px; border-radius: 4px; white-space: nowrap; flex: none; }
 .card .you-ribbon { position: absolute; top: 0; right: 0; z-index: 1; border-radius: 0 0 0 6px; border-top: none; border-right: none; }

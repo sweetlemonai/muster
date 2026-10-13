@@ -39,7 +39,7 @@ budgeted; only `muster` writes state, agents never edit status, claims or times 
 **Blocked** is a flag on any stage with a kind (0024): by tasks (derived from `depends:`, never
 typed twice), on you, by a permission, by a question, by something outside.
 
-**What needs the owner** is one list everywhere (Human board 0022, the Dock badge 0006, counts):
+**What needs the owner** is one list everywhere (the needs-you count 0022, the Dock badge 0006, counts):
 Your check, escalated questions, blocked on you or by a permission, human tasks, lessons to approve.
 
 ## The app (one place per job)
@@ -57,7 +57,9 @@ and cost, 0024 why blocked). Appearance holds themes, accents and card looks (00
 - Merging after Testing means Done comes after the merge, so decision 0003's "Done rides in the
   PR" changes to: stage and actuals are stamped into the file at merge; Done is a tool commit on
   main that touches only `.muster/`.
-- ~~Human tasks use the same stages~~ **Settled by the owner (2026-10-12):** the Human board has its
-  own columns, To do · Doing · Done, beside the AI board (0022).
+- ~~Human tasks use the same stages~~ **Settled by the owner (2026-10-12, revised 2026-10-13):**
+  human tasks go To do · Doing · Done, on one board with the agents' tasks (To do in Ready, Doing
+  in Building, Done in Done), hatched in gold with the YOU ribbon; the Who chips (All · You ·
+  Agents) show either side alone (0022).
 - The PR engine (0027) is the review of record; builders run the gate, not a second full review.
 - Review: who posts (owner's account or a bot), where it runs, own stage or part of Testing (0027).

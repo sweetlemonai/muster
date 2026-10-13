@@ -3,6 +3,7 @@ import { api } from "./api";
 import Comments from "./Comments";
 import EditBody from "./EditBody";
 import { splitLog, withoutComments } from "./fields";
+import { isHuman } from "./human";
 import { stageLabel, stamp } from "./lib";
 import Markdown from "./Markdown";
 import PaneHeader from "./PaneHeader";
@@ -107,7 +108,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
     >
       <header className="pane-top" onPaste={onPaste}>
         <PaneHeader task={task} now={now} onClose={onClose} onRename={(t) => a.setField("title", t, "Renamed.")} onOpenTask={onOpenTask} />
-        <StageTrack stage={task.stage} busy={a.busy} onPick={a.move} releases={(to) => releasedBy(task, to)} />
+        <StageTrack stage={task.stage} busy={a.busy} onPick={a.move} releases={(to) => releasedBy(task, to)} human={isHuman(task)} />
         <div className="tp-cols">
           <div className="tp-main">
             <StageContent task={task} nowSecs={now} body={body === null ? null : shown} childTasks={childTasks} busy={a.busy} onTick={a.tick} />

@@ -64,3 +64,9 @@ export const whoFiltersOn = (view: string) => view === "board" || view === "tabl
 export function byWho<T extends Pick<Task, "forWho">>(tasks: T[], f: ForFilter): T[] {
   return f === "all" ? tasks : tasks.filter((t) => isHuman(t) === (f === "human"));
 }
+
+/** What a Who choice shows: the tasks it picks, and every backlog note. A note is nobody's yet,
+ *  and hiding it would make one just added vanish (out of sight is out of mind). */
+export function whoShows<T extends Pick<Task, "forWho">, N>(tasks: T[], notes: N[], f: ForFilter): { tasks: T[]; notes: N[] } {
+  return { tasks: byWho(tasks, f), notes };
+}
