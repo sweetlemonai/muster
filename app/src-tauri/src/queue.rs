@@ -302,6 +302,8 @@ pub struct QueueInfo {
 pub struct State {
     pub queues: Vec<QueueInfo>,
     pub tasks: Vec<Task>,
+    /// Every queue's backlog notes (task 0015), newest first.
+    pub backlog: Vec<crate::backlog::Note>,
     pub problems: Vec<String>,
     pub activity: Vec<Activity>,
     pub now: u64,
@@ -357,7 +359,7 @@ pub fn task_files(root: &Path) -> Vec<(String, PathBuf)> {
 }
 
 /// `NNNN-slug.md`. Not a date-named note (`2026-10-12-0900-….md`, what agents drop in inbox/).
-fn is_task_name(name: &str) -> bool {
+pub(crate) fn is_task_name(name: &str) -> bool {
     let b = name.as_bytes();
     let task = name.len() > 8
         && b[..4].iter().all(u8::is_ascii_digit)
@@ -650,6 +652,8 @@ fn list_attachments(root: &Path, id: &str) -> Vec<String> {
 #[derive(Default)]
 pub struct Cache {
     files: HashMap<PathBuf, (u64, u64, Option<Task>)>,
+    /// Backlog notes, the same way: by path, while size and mtime match.
+    pub(crate) notes: HashMap<PathBuf, (u64, u64, crate::backlog::Note)>,
     git: HashMap<PathBuf, (u64, Vec<Activity>)>,
     /// The local time stamp, and the minute (seconds since 1970 / 60) it was read in.
     stamp: Option<(u64, String)>,
@@ -752,8 +756,13 @@ pub fn read_state_at(queues: &[(String, PathBuf)], cache: &mut Cache, stamp: &st
             counts,
         });
         state.tasks.extend(tasks);
+        let notes = crate::backlog::read_notes(name, root, &mut cache.notes, &mut seen);
+        state.problems.extend(notes.problems);
+        state.backlog.extend(notes.notes);
     }
     cache.files.retain(|p, _| seen.contains(p));
+    cache.notes.retain(|p, _| seen.contains(p));
+    crate::backlog::newest_first(&mut state.backlog);
     state.activity.sort_by_key(|a| std::cmp::Reverse(a.at));
     state.activity.truncate(80);
     state

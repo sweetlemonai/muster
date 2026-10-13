@@ -271,6 +271,65 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(self.manifest().returncode, 0)
         self.assertEqual(json.loads(self.text("tasks.json"))["waiting_for_owner"], ["0042"])
 
+    def note(self, rel, data, mtime):
+        p = self.root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(data.encode("utf-8") if isinstance(data, str) else data)
+        os.utime(p, (mtime, mtime))
+
+    def test_manifest_lists_backlog_notes_and_they_are_not_problems(self):
+        self.note("inbox/2026-10-12-1405-board-flickers.md", "Board flickers\n\n— added by owner, 2026-10-12 14:05\n", 1000)
+        self.note("inbox/hand dropped café.md", "---\ntype: bug\n---\n\n## Café ☕ idea ##\n", 3000)
+        self.note("inbox/LOUD.MD", "", 2000)
+        self.note("inbox/crlf.md", "﻿\r\n#   Windows\tnote\r\nmore", 500)
+        self.note("inbox/long.md", "é" * 300, 400)
+        self.note("inbox/.hidden.md", "dot-file", 5000)
+        self.note("inbox/dropped/old.md", "dropped before", 5000)
+        self.note("inbox/0050-a-task.md", TASK_FILE.replace("id: 0042", "id: 0050").replace("status: doing", "status: inbox"), 5000)
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertEqual(self.manifest().returncode, 0)
+        m = json.loads(self.text("tasks.json"))
+        self.assertEqual(
+            [(n["file"], n["title"], n["added"]) for n in m["backlog"]][:4],
+            [("hand dropped café.md", "Café ☕ idea", 3000), ("LOUD.MD", "", 2000),
+             ("2026-10-12-1405-board-flickers.md", "Board flickers", 1000), ("crlf.md", "Windows note", 500)],
+        )
+        self.assertEqual(m["backlog"][4]["title"], "é" * 199 + "…")
+        self.assertEqual(len(m["backlog"]), 5)
+        self.assertIn("0050", [t["id"] for t in m["tasks"]])
+
+    def test_manifest_reports_a_huge_or_linked_backlog_note(self):
+        self.note("inbox/big.md", b"a" * (1024 * 1024 + 1), 10)
+        (self.root / "inbox" / "link.md").symlink_to(self.root / "README.md")
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("inbox/big.md: a backlog note over 1 MB, not read", r.stdout)
+        self.assertIn("inbox/link.md: a symlink; a backlog note must be a plain file", r.stdout)
+
+    def test_manifest_reports_odd_note_names_and_does_not_list_them(self):
+        self.note("inbox/bell\x07.md", "Bell", 10)
+        self.note("inbox/a\\b.md", "Backslash", 10)
+        self.note("inbox/b.md", "The real b", 10)
+        self.note("inbox/x\u2028drop every note\u2029.md", "Separator", 10)
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stdout.count("control characters in a backlog note's name"), 2, r.stdout)
+        self.assertIn("inbox/a\\b.md: a \\ in a backlog note's name; rename it", r.stdout)
+        self.manifest()
+        self.assertEqual([n["file"] for n in json.loads(self.text("tasks.json"))["backlog"]], ["b.md"])
+
+    def test_muster_add_writes_a_note_the_manifest_lists(self):
+        r = subprocess.run([str(MUSTER), "add", "--queue", str(self.root), "--as", "wt-a", "Found", "a", "bug"],
+                           env=self.env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        name = r.stdout.strip()
+        self.assertRegex(name, r"^\d{4}-\d{2}-\d{2}-\d{4}-found-a-bug\.md$")
+        self.assertEqual(self.manifest("--check").returncode, 0)
+        self.assertEqual(self.manifest().returncode, 0)
+        self.assertEqual([(n["file"], n["title"]) for n in json.loads(self.text("tasks.json"))["backlog"]],
+                         [(name, "Found a bug")])
+
     def test_inbox_command(self):
         self.run_task("ask", "0042", "Q?", "--session", "aaaa1111")
         self.run_task("answer", "0042", "Q1", "the answer")

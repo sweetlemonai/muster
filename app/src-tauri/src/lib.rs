@@ -2,6 +2,7 @@
 //! in `spawn_blocking`. The window names a queue by its project name, and a project by the key
 //! the core gave it, never by a path it made up. Folders are picked by the core's own dialog.
 
+pub mod backlog;
 pub mod cli;
 pub mod help;
 pub mod helper;
@@ -375,6 +376,64 @@ async fn tick_criterion(
     .await
 }
 
+/// The owner's quick add (0015): `text`, one line, into the queue's backlog as a note. Returns
+/// the note's file name.
+#[tauri::command]
+async fn add_backlog_note(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    text: String,
+    stamp: String,
+) -> Result<String, String> {
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || backlog::add(&queue_root(&file, &queue)?, &text, "", "owner", &stamp)).await
+}
+
+/// The owner files backlog note `note` (its file name) as a task in Shaping.
+#[tauri::command]
+async fn file_note(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    note: String,
+    task: ops::NewTask,
+    stamp: String,
+) -> Result<backlog::Filed, String> {
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || backlog::file_note(&queue_root(&file, &queue)?, &note, &task, "owner", &stamp))
+        .await
+}
+
+/// The owner drops backlog note `note`, with the reason. Returns where it went.
+#[tauri::command]
+async fn drop_note(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    note: String,
+    why: String,
+    stamp: String,
+) -> Result<String, String> {
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || backlog::drop_note(&queue_root(&file, &queue)?, &note, &why, "owner", &stamp))
+        .await
+}
+
+/// The shaping brief for backlog note `note`, as text for the clipboard.
+#[tauri::command]
+async fn shape_note(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    note: String,
+) -> Result<String, String> {
+    let file = app.config_file.clone();
+    blocking(move || {
+        backlog::shape(&queue_root(&file, &queue)?, &note).map(|b| backlog::brief_text(&b))
+    })
+    .await
+}
+
 /// Attach files the window holds (pasted or dropped), as data URLs.
 #[tauri::command]
 async fn attach_data(
@@ -620,6 +679,10 @@ pub fn run() {
             set_field,
             add_note,
             tick_criterion,
+            add_backlog_note,
+            file_note,
+            drop_note,
+            shape_note,
             attach_data,
             attach_pick,
             helper_cmds::helper_info,

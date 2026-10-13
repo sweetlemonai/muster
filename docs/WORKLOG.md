@@ -2,6 +2,29 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Backlog one-liners, shaped into tasks (task 0015)
+**Did:**
+- Any non-task `.md` in a queue's `inbox/` is a backlog note.
+- `muster add` (and a quick-add field at the top of the Backlog column) writes one.
+- `muster shape` prints a brief for the shaping agents: the note quoted as data, the roles, the docs
+  to read, related tasks and how to file it.
+- `muster file` makes a numbered task in Shaping and moves the note into its attachments.
+- `muster drop` keeps the note in `inbox/dropped/` with the reason.
+- `muster list` shows notes, and `list --json` is now `{tasks, backlog}`.
+- The note pane has File as task, Drop and Copy shaping brief.
+- Main files: `app/src-tauri/src/backlog.rs` (new), `cli.rs`, `ops.rs`, `app/src/{Backlog,NotePanel}.tsx`,
+  `bin/manifest.py`.
+**Fixed (from review):**
+- The brief didn't mark the note as data, and the note could escape its fence.
+- A `\` in a note's name made actions hit a different note.
+- The related-task check matched on the note's own "added by" footer.
+- add/file/drop weren't refused from another project's folder.
+- Four test gaps.
+- Copy didn't write the clipboard inside the click.
+**Verified:** `pnpm check` exit 0 (243 UI, 134 Rust, 9 interop tests), `python3 -I bin/test_task.py` 30 OK,
+also under `TZ=Pacific/Kiritimati`. Reviewed for correctness, security and tests, with one fix round re-reviewed.
+**Open:** the shaping agents themselves run in Drover (0018), and a session shapes by hand until then.
+
 ## 2026-10-12 — The owner's criteria don't block Testing; the owner ticks them in Your check (task 0028)
 **Fixed:** a criterion only the owner can verify ("— verify: owner") couldn't be ticked before
 Your check, and Testing → Your check refused while any criterion was open, so such tasks were

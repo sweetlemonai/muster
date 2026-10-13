@@ -25,7 +25,7 @@ gives one view of everything and checks the queue for problems. The owner reads
 | Manifest + check | `bin/manifest.py` → `tasks.json` | Built, tested. Capture rebuilds it on every commit |
 | Owner's waiting list | `WAITING-FOR-OWNER.md` per queue (by hand); Drover's Home (task 0015) | By hand here. Built in Drover |
 | Attachments | `attachments/<id>/` per queue | In use (screenshots, mockups) |
-| `muster` command line | the app's binary, `bin/muster` shim | Built: new, list, show, move, set, note, attach, answer, check, projects, init, the stage commands pass, return, block, unblock, stage, the claims claim, next, heartbeat, reclaim, and questions ask, escalate, inbox (same rules as the app) |
+| `muster` command line | the app's binary, `bin/muster` shim | Built: new, list, show, move, set, note, attach, answer, check, projects, init, the backlog commands add, shape, file, drop, the stage commands pass, return, block, unblock, stage, the claims claim, next, heartbeat, reclaim, and questions ask, escalate, inbox (same rules as the app) |
 | Commands `/muster`, `/mu` | `docs/COMMANDS.md` | Designed, not built |
 | Desktop app | `app/` (Tauri 2 + React 19, decision 0001) | Built and running: board, new task, task management, waiting for you with answering, files, activity, problems, projects, the AI helper |
 
@@ -90,6 +90,16 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   hands Building back to its last builder. Until 0005, `status:` and the status folder are a mirror
   of the stage for older readers (Drover, `manifest.py`), and `check` reports a stage whose status
   doesn't match, which is what a hand move leaves.
+- **Backlog** (task 0015): any `.md` in the queue's `inbox/` that isn't a numbered task is a
+  backlog note, a one-liner or a whole page, however it got there. Add one with `muster add` or the
+  quick-add field at the top of the Backlog column. Open a note in the docked pane to:
+  - **File as task:** `muster file` makes a numbered task in Shaping and moves the note into its
+    attachments.
+  - **Drop** it: `muster drop`, kept in `inbox/dropped/` with the reason.
+  - **Copy shaping brief:** `muster shape` gives the note, quoted as data, with the roles and the docs
+    to read, related tasks, and the command to file it.
+
+  `muster list` shows notes too. Until 0005 they live in `inbox/`; then in `.muster/backlog/`.
 - **Board:** one column per stage, with its role under the name. Blocked cards stay in their stage
   with a rose "blocked: …" badge, and Your check cards count as "needs you". The task pane has a
   stage picker, Pass to <next> (with the gate line out of Building), Send back with a reason,

@@ -36,6 +36,14 @@ export const api = {
   addNote: (queue: string, id: string, note: string, stamp: string) => invoke<string>("add_note", { queue, id, note, stamp }),
   tickCriterion: (queue: string, id: string, which: string, undo: boolean, stamp: string) =>
     invoke<string>("tick_criterion", { queue, id, which, undo, stamp }),
+  // Backlog notes (0015), named by their file name. Add returns the new note's file name; file
+  // makes a task in Shaping and moves the note into its attachments; drop sets it aside.
+  addBacklogNote: (queue: string, text: string, stamp: string) => invoke<string>("add_backlog_note", { queue, text, stamp }),
+  fileNote: (queue: string, note: string, task: NewTask, stamp: string) =>
+    invoke<{ id: string; path: string; attachment: string }>("file_note", { queue, note, task, stamp }),
+  dropNote: (queue: string, note: string, why: string, stamp: string) => invoke<string>("drop_note", { queue, note, why, stamp }),
+  // The shaping brief as text, for the clipboard.
+  shapeNote: (queue: string, note: string) => invoke<string>("shape_note", { queue, note }),
   // Files the window holds (pasted or dropped) go as [name, data URL]; picking uses the core's dialog.
   attachData: (queue: string, id: string, files: [string, string][], stamp: string) =>
     invoke<string[]>("attach_data", { queue, id, files, stamp }),

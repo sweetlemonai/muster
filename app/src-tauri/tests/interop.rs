@@ -190,6 +190,47 @@ fn queue() -> tempfile::TempDir {
 }
 
 #[test]
+fn backlog_notes_from_muster_pass_the_python_check_and_are_listed() {
+    let d = queue();
+    let base = tempfile::tempdir().unwrap();
+    let q = d.path().to_str().unwrap();
+    let add = |line: &str| {
+        let (code, out) = muster(
+            base.path(),
+            base.path(),
+            &[],
+            &["add", "--queue", q, "--as", "wt-a", line],
+        );
+        assert_eq!(code, 0, "{out}");
+        out.trim().to_string()
+    };
+    let (keep, filed, dropped) = (add("Keep me"), add("File me"), add("Drop me"));
+    let t = "2026-10-12 15:00";
+    let new = muster_lib::ops::NewTask {
+        title: "Filed from the backlog".into(),
+        body: "## Acceptance criteria\n- [ ] AC1: it works — verify: command (true)".into(),
+        ..Default::default()
+    };
+    muster_lib::backlog::file_note(d.path(), &filed, &new, "owner", t).unwrap();
+    muster_lib::backlog::drop_note(d.path(), &dropped, "not needed", "owner", t).unwrap();
+    let (ok, out) = run(d.path(), "manifest.py", &["--check"]);
+    assert!(ok, "{out}");
+    let (ok, out) = run(d.path(), "manifest.py", &[]);
+    assert!(ok, "{out}");
+    let m: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(d.path().join("tasks.json")).unwrap())
+            .unwrap();
+    assert_eq!(m["backlog"].as_array().unwrap().len(), 1);
+    assert_eq!(m["backlog"][0]["file"], keep.as_str());
+    assert_eq!(m["backlog"][0]["title"], "Keep me");
+    assert_eq!(m["tasks"][0]["stage"], "shaping");
+    assert_eq!(
+        m["tasks"][0]["attachments"][0],
+        format!("attachments/0001/{filed}").as_str()
+    );
+}
+
+#[test]
 fn multi_line_text_reads_back_as_written_both_ways() {
     let d = queue();
     std::fs::write(
@@ -434,6 +475,25 @@ fn a_claim_from_another_projects_folder_needs_queue_to_mean_it() {
         (t.stage.as_str(), t.claimed_by.as_str()),
         ("building", "wt-a")
     );
+    // The backlog's writes are checked the same way: add, file and drop.
+    std::fs::write(drover.join("inbox/n.md"), "Drover's note").unwrap();
+    for args in [
+        &["add", "Found it"][..],
+        &["file", "n.md", "Filed", "--body", "x"],
+        &["drop", "n.md", "not needed"],
+    ] {
+        let (code, out) = muster(b, &repo, &env, args);
+        assert_eq!(code, 1, "{args:?}: {out}");
+        assert!(out.contains("pass --queue drover to mean it"), "{out}");
+    }
+    let inbox: Vec<_> = std::fs::read_dir(drover.join("inbox"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name())
+        .collect();
+    assert_eq!(inbox, ["n.md"], "drover's backlog untouched");
+    let (code, out) = muster(b, &repo, &env, &["add", "--queue", "drover", "Meant it"]);
+    assert_eq!(code, 0, "{out}");
 }
 
 #[test]

@@ -101,6 +101,8 @@ Rules:
 - Read and write tasks only with the `muster` command (it's on PATH and already pointed at this queue). Never edit files.
   `muster list`, `muster show <id>`, `muster new \"<title>\" --type bug|task|idea --priority high|normal|low --tags spike,tech-debt --time 2h --tokens 500k --body \"<markdown>\"`,
   `muster note <id> \"<text>\"`, `muster set <id> priority|type|title <value>`, `muster move <id> blocked --on owner`, `muster attach <id> <file>`.
+- A raw one-liner the owner wants kept for later, without enough to write a task yet: `muster add '<one line>'` puts it in the
+  backlog as it is. Don't invent details to make it a task; a shaping session turns it into one.
 - Shell quoting: always wrap the --body text (and titles) in single quotes, never double quotes, so backticks and $ stay plain
   text. Inside them, never type a straight apostrophe; write ’ instead. One `muster` command per Bash call, nothing chained.
   Every command must be on ONE line: write each line break inside --body as the two characters \\n (muster turns them back
@@ -261,6 +263,13 @@ pub fn parse_line(line: &str) -> Vec<Event> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_brief_puts_raw_one_liners_in_the_backlog() {
+        let b = brief("muster", Path::new("/q"));
+        assert!(b.contains("`muster add '<one line>'`"), "{b}");
+        assert!(b.contains("backlog"), "{b}");
+    }
 
     #[test]
     fn args_allow_only_muster_and_reading() {

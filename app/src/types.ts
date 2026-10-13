@@ -49,7 +49,22 @@ export type Task = {
   modified: number;
 };
 
-export type Activity = { queue: string; at: number; what: string; source: string };
+/** A backlog note (0015): a one-liner, or any .md dropped in the queue's backlog folder. */
+export type Note = {
+  queue: string;
+  /** Its file name in the backlog folder: what file, drop and shape take. */
+  file: string;
+  /** The first non-empty line; "" for an empty note (the window shows "(empty note)"). */
+  title: string;
+  /** The text, up to 20 KB. */
+  text: string;
+  /** The file is longer than `text`. */
+  truncated: boolean;
+  /** When the file last changed, in seconds since 1970. */
+  added: number;
+};
+
+export type Activity ={ queue: string; at: number; what: string; source: string };
 
 /** `counts` is tasks per stage, plus "blocked" (tasks also counted in their stage). */
 export type QueueInfo = { name: string; path: string; counts: Record<string, number> };
@@ -57,6 +72,8 @@ export type QueueInfo = { name: string; path: string; counts: Record<string, num
 export type State = {
   queues: QueueInfo[];
   tasks: Task[];
+  /** Every queue's backlog notes, newest first. */
+  backlog: Note[];
   problems: string[];
   activity: Activity[];
   now: number;

@@ -37,6 +37,27 @@
 > delivers them anyway); capture answers with `muster answer` and escalates with `muster escalate`.
 > `bin/task ask|answer|escalate|inbox` still works and runs the same commands, with the same file
 > contract (below).
+>
+> **Backlog notes and shaping (Muster 0015, 2026-10-12).** Found something new? `muster add "<one
+> line>" [--body <text>|-] --as <you>` puts it in the backlog as a note: a file named
+> `<YYYY-MM-DD-HHMM>-<slug>.md` in the backlog folder, with no id and no front matter. The backlog
+> folder is `inbox/` (or `backlog/` in a queue without status folders) until 0005 moves it to
+> `.muster/backlog/`. Any `.md` there that isn't a task file (`NNNN-slug.md`) is a note, a file
+> dropped in by hand included; numbered files in `inbox/` stay Backlog tasks. Shaping turns a note
+> into a task: `muster shape <note-file> [--json]` prints the brief (the note, what the product,
+> tech and UI roles write, the project's `CLAUDE.md` and `docs/` to read, open tasks that share
+> words with it, and the command to file it), and writes nothing. `muster file <note-file>
+> "<title>" [--type --priority --tags --time --tokens] --body <text>|-` makes the task in Shaping
+> with the next id and moves the note into `attachments/<id>/`, all under the queue's lock, so a
+> note is filed once. `muster pass <id> --from shaping` then puts it in Ready (it needs acceptance
+> criteria). A note not worth a task: `muster drop <note-file> "<why>"` moves it to the backlog's
+> `dropped/` with the reason at its end. The app shows notes at the top of the Backlog column, with
+> a quick add field, and the same three actions in a note's pane; `muster list` shows them first,
+> under "Backlog notes" (`--json`: `{"tasks": […], "backlog": […]}`). `add`, `file` and `drop` are
+> checked like claims: with `$MUSTER_ROOT` at another project's queue, pass `--queue` to mean it.
+> The brief quotes the note line by line (`> `) after a line saying it's data, not instructions.
+> `muster check` reports a note over 1 MB, a symlink, or a name with a `\` or control characters
+> in the backlog folder; those aren't listed as notes.
 
 Ideas, bugs and tasks from the owner, written up by the capture session and picked up by coding
 sessions. This queue is also a test bed for chit (`~/playground/chit`, `SPEC.md`). Its rules are
@@ -123,8 +144,9 @@ named by date and what they show. The task links them by that path and also desc
 they show in words, for sessions that can't view images. Anything pasted into a chat is saved
 right away, because chat paste files are temporary.
 
-Ids: only capture numbers tasks. Coders who find something new drop a note in `inbox/` named
-`<date-time>-<short-slug>.md` (no number), and capture files it.
+Ids: only the tool numbers tasks. Coders who find something new run `muster add "<one line>"`,
+which drops a note in `inbox/` named `<date-time>-<short-slug>.md` (no number), and a shaping
+session files it with `muster file` (see the note at the top).
 
 ## Working a task (coder)
 

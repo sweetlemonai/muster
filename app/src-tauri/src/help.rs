@@ -52,12 +52,12 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "list",
         usage: "muster list [--stage <s>] [--status <s>] [--tag <t>] [--json]",
-        what: "Tasks grouped by stage (Backlog, Shaping, Ready, Building, Testing, Your check, Done), with type, priority, what a blocked task waits on, estimate, tags, \"needs you\" and open questions.",
+        what: "Tasks grouped by stage (Backlog, Shaping, Ready, Building, Testing, Your check, Done), with type, priority, what a blocked task waits on, estimate, tags, \"needs you\" and open questions. Backlog notes come first, under Backlog notes, by file name and title (not under a status or tag filter).",
         options: &[
             ("--stage", "backlog, shaping, ready, building, testing, your-check or done"),
             ("--status", "the old status: inbox, todo, doing, blocked or done"),
             ("--tag", "only tasks with this tag"),
-            ("--json", "machine-readable, for scripts and agents"),
+            ("--json", "machine-readable: {\"tasks\": […], \"backlog\": […]}, for scripts and agents"),
         ],
         examples: &["muster list", "muster list --stage ready --tag spike", "muster list --queue drover --json"],
     },
@@ -228,9 +228,57 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "check",
         usage: "muster check",
-        what: "Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist. Exit 1 if any.",
+        what: "Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist, a backlog note over 1 MB or that's a symlink. Exit 1 if any.",
         options: &[],
         examples: &["muster check", "muster check --queue braindump"],
+    },
+    Command {
+        name: "add",
+        usage: "muster add \"<one line>\" [--body <text>|-] [--as <who>]",
+        what: "Drop a one-liner in the backlog, to be shaped into a task later. It's a file in the backlog folder (inbox/ today), named by the time and the line; prints its name. No id, no front matter. Line breaks in the line become spaces, and it's refused over 200 characters; the body, if any, is Markdown up to 50,000. Checked like a claim: with $MUSTER_ROOT at another project's queue, pass --queue to mean it.",
+        options: &[
+            ("--body", "more detail in Markdown; \\n is a line break; - reads it from stdin"),
+            ("--as", "who found it; default $MUSTER_AS, then $USER"),
+        ],
+        examples: &[
+            "muster add \"Board flickers when the pane opens\"",
+            "muster add \"Export as CSV\" --body \"The owner asked for it on the call.\"",
+            "pbpaste | muster add \"From the clipboard\" --body -",
+        ],
+    },
+    Command {
+        name: "shape",
+        usage: "muster shape <note-file> [--json]",
+        what: "The shaping brief for a backlog note: its full text, what the product, tech and UI roles each write, the project's docs to read (CLAUDE.md, docs/VISION.md, docs/DESIGN.md, docs/decisions/), open tasks that share words with it (to catch a duplicate), and the exact muster file command with the task template. Writes nothing.",
+        options: &[("--json", "the same as JSON, for Drover and scripts")],
+        examples: &[
+            "muster shape 2026-10-12-1405-board-flickers.md",
+            "muster shape 2026-10-12-1405-board-flickers.md --json --queue drover",
+        ],
+    },
+    Command {
+        name: "file",
+        usage: "muster file <note-file> \"<title>\" [--type bug|task|idea] [--priority high|normal|low] [--tags a,b] [--time 2h] [--tokens 400k] --body <text>|-",
+        what: "File a shaped backlog note as a task: the next id, in Shaping, with your body after a \"From the backlog\" line quoting the note. The note moves into the task's attachments/<id>/, so nothing is lost; all under the queue's lock, so a note is filed once. Then muster pass <id> --from shaping puts it in Ready (it needs acceptance criteria).",
+        options: &[
+            ("--type", "bug, task (default) or idea"),
+            ("--priority", "high, normal (default) or low"),
+            ("--tags", "comma-separated tags"),
+            ("--time", "estimated agent time: 45m, 2h, 1.5d"),
+            ("--tokens", "estimated tokens: 150k, 1.2M"),
+            ("--body", "the shaped task in Markdown, with ## Acceptance criteria (required); - reads it from stdin"),
+        ],
+        examples: &[
+            "muster file 2026-10-12-1405-board-flickers.md \"Board flickers when the pane opens\" --type bug --time 1h --tokens 300k --body -",
+            "muster file my-idea.md \"Export as CSV\" --body \"**What the owner said:** …\\n\\n## Acceptance criteria\\n- [ ] AC1: …\"",
+        ],
+    },
+    Command {
+        name: "drop",
+        usage: "muster drop <note-file> \"<why>\"",
+        what: "Set a backlog note aside: it moves to the backlog's dropped/ folder with the reason added at its end (one line, 500 characters). It's off the board but kept.",
+        options: &[],
+        examples: &["muster drop 2026-10-12-1405-board-flickers.md \"a duplicate of 0012\""],
     },
     Command {
         name: "projects",
@@ -294,7 +342,8 @@ pub const SESSION: &[Topic] = &[
             "$ muster pass 0007 --as <your branch> --from building --gate \"<the gate's result line>\"",
             "Testing found a problem? Send it back with the reason:",
             "$ muster return 0007 \"AC2 fails: …\"",
-            "Found something new? Drop a note in ../tasks/inbox/, and capture files it.",
+            "Found something new? muster add puts a one-liner in the backlog, and a shaping session files it:",
+            "$ muster add \"<one line>\" --as <your branch>",
         ],
     },
     Topic {
@@ -305,6 +354,10 @@ pub const SESSION: &[Topic] = &[
             "$ muster answer 0007 Q1 \"Use the window\" --as capture",
             "$ muster escalate 0007 Q2 --as capture",
             "$ muster reclaim",
+            "Shapes backlog notes into tasks: the brief says what to read, who writes what, and the command that files it. The note goes into the task's attachments; one not worth a task is dropped with the reason:",
+            "$ muster shape <note-file>",
+            "$ muster file <note-file> \"<title>\" --type bug --time 1h --tokens 300k --body -",
+            "$ muster drop <note-file> \"<why>\"",
             "../tasks/bin/task ask, answer, escalate and inbox still work: they run the same muster commands.",
             "The app's Helper tab does the same job without a separate session.",
         ],
@@ -338,6 +391,14 @@ pub const APP: &[(&str, &str)] = &[
     (
         "Release",
         "in a task's pane, when its card says quiet 12 h+: the holder hasn't been heard from for longer than the lease, so it goes back to Ready, logged as reclaimed",
+    ),
+    (
+        "Add to the backlog…",
+        "the field at the top of the Backlog column: Enter adds the line as a note, Esc clears it",
+    ),
+    (
+        "File as task · Drop · Copy shaping brief",
+        "in a note's pane: file it as a task in Shaping (the note goes into its files), set it aside with the reason, or copy the brief for a shaping session",
     ),
     (
         "Board · Table · Timeline",
@@ -437,6 +498,10 @@ mod tests {
             "answer",
             "escalate",
             "inbox",
+            "add",
+            "shape",
+            "file",
+            "drop",
             "check",
             "projects",
             "init",
@@ -458,7 +523,50 @@ mod tests {
                 "{name}'s examples use it"
             );
         }
-        assert_eq!(COMMANDS.len(), 26);
+        assert_eq!(COMMANDS.len(), 30);
+    }
+
+    #[test]
+    fn the_backlog_commands_and_where_sessions_put_what_they_find() {
+        let t = text();
+        // Found something new: muster add, not a hand-written file.
+        assert!(t.contains("Found something new? muster add"), "{t}");
+        assert!(t.contains("      muster add \"<one line>\""), "{t}");
+        assert!(!t.contains("Drop a note in ../tasks/inbox/"), "{t}");
+        assert!(t.contains("      muster shape "), "{t}");
+        assert!(command_text("add").unwrap().contains("--body"));
+        assert!(command_text("add")
+            .unwrap()
+            .contains("refused over 200 characters"));
+        assert!(!command_text("add").unwrap().contains("cut to"));
+        let list = command_text("list").unwrap();
+        assert!(
+            list.contains("Backlog notes") && list.contains("\"backlog\""),
+            "{list}"
+        );
+        assert!(command_text("shape").unwrap().contains("--json"));
+        let file = command_text("file").unwrap();
+        for opt in [
+            "--type",
+            "--priority",
+            "--tags",
+            "--time",
+            "--tokens",
+            "--body",
+        ] {
+            assert!(file.contains(opt), "{opt}: {file}");
+        }
+        assert!(file.contains("Shaping") && file.contains("attachments"));
+        assert!(command_text("drop").unwrap().contains("dropped/"));
+        let app: String = APP.iter().map(|(k, v)| format!("{k} {v}\n")).collect();
+        for word in [
+            "Add to the backlog",
+            "File as task",
+            "Copy shaping brief",
+            "Drop",
+        ] {
+            assert!(app.contains(word), "{word}: {app}");
+        }
     }
 
     #[test]

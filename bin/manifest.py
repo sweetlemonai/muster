@@ -51,6 +51,101 @@ def mirror_status(stage: str, blocked: bool) -> str:
     return {"backlog": "inbox", "shaping": "todo", "ready": "todo", "done": "done"}.get(stage, "doing")
 
 
+def is_task_name(name: str) -> bool:
+    """`NNNN-slug.md`, not a date-named note (queue.rs is_task_name, on the same bytes)."""
+    b = name.encode("utf-8")
+
+    def digits(s: bytes) -> bool:
+        return len(s) > 0 and all(48 <= c <= 57 for c in s)
+
+    task = len(b) > 8 and digits(b[:4]) and b[4:5] == b"-" and name.endswith(".md")
+    dated = len(b) > 11 and digits(b[5:7]) and b[7:8] == b"-" and digits(b[8:10]) and b[10:11] == b"-"
+    return task and not dated
+
+
+def backlog_dir() -> Path:
+    """Where backlog notes live (backlog.rs backlog_dir): inbox/ in the v2 layout, else backlog/."""
+    return ROOT / ("inbox" if (ROOT / "todo").is_dir() else "backlog")
+
+
+def is_note_file(name: str) -> bool:
+    """A backlog note: `.md` in any case, not a dot-file, not a task file (backlog.rs is_note_file)."""
+    return len(name) > 3 and name[-3:].lower() == ".md" and not name.startswith(".") and not is_task_name(name)
+
+
+NOTE_TEXT_BYTES = 20 * 1024
+MAX_NOTE_BYTES = 1024 * 1024
+# Control characters and the Unicode line/paragraph separators: anything that can break a line.
+CONTROL = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]")
+
+
+def after_front_matter(text: str) -> str:
+    for start in ("---\n", "---\r\n"):
+        if text.startswith(start):
+            rest, pos = text[len(start):], 0
+            for line in re.split(r"(?<=\n)", rest):
+                pos += len(line)
+                if line.rstrip() == "---":
+                    return rest[pos:]
+    return text
+
+
+def heading_text(line: str) -> str:
+    """A line as plain words, heading marks off (backlog.rs heading_text)."""
+    s = CONTROL.sub(" ", line).strip()
+    marks = len(s) - len(s.lstrip("#"))
+    after = s[marks:]
+    if 1 <= marks <= 6 and (after == "" or after[0].isspace()):
+        rest = after.strip()
+        opened = rest.rstrip("#")
+        s = opened.strip() if opened == "" or opened[-1].isspace() else rest
+    return " ".join(s.split())
+
+
+def note_title(text: str) -> str:
+    """The note's first non-empty line, as the app shows it (backlog.rs note_title); "" for none."""
+    if text.startswith("﻿"):
+        text = text[1:]
+    for line in after_front_matter(text).split("\n"):
+        t = heading_text(line[:-1] if line.endswith("\r") else line)
+        if t:
+            return t if len(t) <= 200 else t[:199] + "…"
+    return ""
+
+
+def backlog_notes():
+    """The backlog notes (file, title, added), newest first, and what's wrong with any of them."""
+    notes, problems = [], []
+    folder = backlog_dir()
+    if not folder.is_dir():
+        return notes, problems
+    for p in sorted(folder.iterdir()):
+        if not is_note_file(p.name):
+            continue
+        rel = p.relative_to(ROOT).as_posix()
+        if p.is_symlink():
+            problems.append(f"{rel}: a symlink; a backlog note must be a plain file")
+            continue
+        if not p.is_file():
+            continue
+        if CONTROL.search(p.name):
+            problems.append(f"{rel}: control characters in a backlog note's name; rename it")
+            continue
+        if "\\" in p.name:
+            problems.append(f"{rel}: a \\ in a backlog note's name; rename it")
+            continue
+        st = p.stat()
+        if st.st_size > MAX_NOTE_BYTES:
+            problems.append(f"{rel}: a backlog note over 1 MB, not read")
+            continue
+        with p.open("rb") as f:
+            raw = f.read(NOTE_TEXT_BYTES)
+        text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]", "", raw.decode("utf-8", errors="replace"))
+        notes.append({"file": p.name, "title": note_title(text), "added": int(st.st_mtime)})
+    notes.sort(key=lambda n: (-n["added"], n["file"]))
+    return notes, problems
+
+
 def heartbeat_age(value, now):
     for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d"):
         try:
@@ -64,8 +159,12 @@ def main():
     check_only = "--check" in sys.argv
     now = datetime.now()
     tasks, problems = [], []
+    backlog, note_problems = backlog_notes()
+    problems.extend(note_problems)
     for folder in FOLDERS:
         for path in sorted((ROOT / folder).glob("*.md")):
+            if ROOT / folder == backlog_dir() and not is_task_name(path.name):
+                continue  # a backlog note (task 0015), listed under "backlog"
             rel = path.relative_to(ROOT).as_posix()
             fields, body = front_matter(path.read_text(encoding="utf-8"))
             if fields is None:
@@ -140,6 +239,7 @@ def main():
             "next_id": f"{max((int(i) for i in known if i.isdigit()), default=0) + 1:04d}",
             "counts": {f: sum(t["folder"] == f for t in tasks) for f in FOLDERS},
             "inbox": inbox,
+            "backlog": backlog,
             "waiting_for_owner": [
                 t["id"] for t in tasks
                 if t["escalated_to_owner"] or t["stage"] == "your-check" or t["waiting_on"].startswith("owner")

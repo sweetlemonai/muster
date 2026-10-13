@@ -421,3 +421,23 @@ button:disabled { opacity: 0.45; cursor: default; }
 .criterion .box { flex: none; width: 14px; height: 14px; border: 1.5px solid var(--st-needs); border-radius: 3px; display: inline-grid; place-items: center; font-size: 11px; line-height: 1; transform: translateY(2px); }
 .criterion.ticked { color: var(--muted); }
 .criterion.ticked .box { background: var(--st-needs); color: var(--on-status); }
+/* Backlog notes (0015): the quick add at the top of the Backlog column, quiet note cards above the
+   numbered backlog tasks, and the note's pane. Notes aren't task cards, so the card looks (0026)
+   don't apply to them. */
+.quick-add { display: flex; flex-direction: column; gap: 4px; padding: 2px 8px 6px; }
+.quick-add input { font: inherit; font-size: 12px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; min-width: 0; }
+.quick-add input:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
+.quick-add-to { display: flex; flex-wrap: wrap; gap: 2px; font-size: 11px; }
+.quick-add-to .chip { padding: 1px 8px; }
+.note-card { display: flex; flex-direction: column; gap: 5px; flex: none; text-align: left; background: transparent; border: 1px dashed var(--border); border-radius: var(--radius); padding: 7px 10px; color: var(--text); }
+.note-card:hover { border-color: var(--accent); }
+.note-card.active { outline: 2px solid var(--accent); outline-offset: 2px; }
+.note-card .title { font-weight: 400; overflow-wrap: anywhere; }
+.note-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 11px; color: var(--muted); }
+.badge.note { background: none; border: 1px solid var(--border); }
+.note-file { display: flex; flex-direction: column; gap: 8px; }
+.note-file input, .note-file textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
+.note-file textarea { resize: vertical; min-height: 160px; }
+.note-file .chip-row { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.note-file .chip-row .sep { margin-left: 10px; }
+.note-panel .control-row .on { outline: 2px solid var(--accent); outline-offset: 1px; }

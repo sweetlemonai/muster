@@ -2,7 +2,7 @@
 //! The queue is `--queue <name|folder>`, else `$MUSTER_ROOT`, else the nearest queue found
 //! from the current folder (a queue itself, or a `tasks/` beside or above it).
 
-use crate::{ops, projects, queue};
+use crate::{backlog, ops, projects, queue};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
@@ -125,9 +125,10 @@ fn resolve_queue(
         .ok_or_else(|| "no queue here: pass --queue <name|folder> or set MUSTER_ROOT".into())
 }
 
-/// Commands that claim, hand on or hold a task. A slip of the environment would do them in
-/// another project's queue (it happened: drover's 0022 claimed from muster), so they're checked.
-const TARGETED: [&str; 8] = [
+/// Commands that claim, hand on or hold a task, and the backlog's writes (add, file, drop). A
+/// slip of the environment would do them in another project's queue (it happened: drover's 0022
+/// claimed from muster), so they're checked.
+const TARGETED: [&str; 11] = [
     "claim",
     "next",
     "pass",
@@ -136,6 +137,9 @@ const TARGETED: [&str; 8] = [
     "unblock",
     "stage",
     "heartbeat",
+    "add",
+    "file",
+    "drop",
 ];
 
 /// The same folder, through symlinks too.
@@ -193,6 +197,16 @@ fn claimed_message(root: &Path, id: &str, path: &str) -> String {
         projects::default_name(root),
         root.display(),
         stage_message(root, id, path)
+    )
+}
+
+/// `filed 0031 in muster (Shaping)`: what `muster file` made, and where.
+fn filed_message(root: &Path, f: &backlog::Filed) -> String {
+    format!(
+        "filed {} in {} ({})",
+        f.id,
+        projects::default_name(root),
+        queue::stage_label("shaping")
     )
 }
 
@@ -274,9 +288,40 @@ fn list_filter<'a>(
     out
 }
 
-/// `muster list` as text: a heading per stage in STAGES order, then one line per task.
-fn list_text(tasks: &[&queue::Task]) -> String {
+/// `muster list`'s backlog notes: all of them where Backlog is listed (no filter, or
+/// `--stage backlog`); none under a status or tag filter, which notes don't have.
+fn list_notes<'a>(
+    notes: &'a [backlog::Note],
+    status: Option<&str>,
+    stage: Option<&str>,
+    tag: Option<&str>,
+) -> Vec<&'a backlog::Note> {
+    if status.is_some() || tag.is_some() || stage.is_some_and(|s| s != "backlog") {
+        return Vec::new();
+    }
+    notes.iter().collect()
+}
+
+/// `muster list --json`: the tasks, and the backlog notes beside them.
+fn list_json(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> serde_json::Value {
+    serde_json::json!({ "tasks": tasks, "backlog": notes })
+}
+
+/// `muster list` as text: the backlog notes first (file name and title), then a heading per
+/// stage in STAGES order, then one line per task.
+fn list_text(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> String {
     let mut out = String::new();
+    if !notes.is_empty() {
+        out.push_str(&format!("Backlog notes ({})\n", notes.len()));
+        for n in notes {
+            let title = if n.title.is_empty() {
+                "(empty note)"
+            } else {
+                &n.title
+            };
+            out.push_str(&format!("  {}  {title}\n", n.file));
+        }
+    }
     for st in ops::STAGES {
         let group: Vec<_> = tasks.iter().filter(|t| t.stage == st).collect();
         if group.is_empty() {
@@ -315,6 +360,42 @@ fn list_text(tasks: &[&queue::Task]) -> String {
         }
     }
     out
+}
+
+/// `--body`: the text, `-` for stdin (up to 1 MB), or None when not given. A one-line command can
+/// carry line breaks as `\n` (the helper writes them so, because a permission rule only matches a
+/// command on one line).
+fn body_arg(a: &Args) -> Result<Option<String>, String> {
+    Ok(match a.flags.get("body").map(String::as_str) {
+        Some("-") => {
+            let mut s = String::new();
+            std::io::Read::read_to_string(
+                &mut std::io::Read::take(std::io::stdin(), 1 << 20),
+                &mut s,
+            )
+            .map_err(|e| e.to_string())?;
+            Some(s)
+        }
+        Some(b) => Some(b.replace("\\n", "\n")),
+        None => None,
+    })
+}
+
+/// A new task's fields from the options `new` and `file` share.
+fn new_task(a: &Args, title: &str, body: String) -> ops::NewTask {
+    ops::NewTask {
+        title: title.into(),
+        kind: a.flags.get("type").cloned().unwrap_or_default(),
+        priority: a.flags.get("priority").cloned().unwrap_or_default(),
+        body,
+        tags: a
+            .flags
+            .get("tags")
+            .map(|t| vec![t.clone()])
+            .unwrap_or_default(),
+        est_time: a.flags.get("time").cloned().unwrap_or_default(),
+        est_tokens: a.flags.get("tokens").cloned().unwrap_or_default(),
+    }
 }
 
 fn print_json<T: serde::Serialize>(v: &T) -> Result<(), String> {
@@ -404,34 +485,7 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
     match cmd {
         "new" => {
             let title = need(a, 1, "a title")?;
-            let body = match a.flags.get("body").map(String::as_str) {
-                Some("-") => {
-                    let mut s = String::new();
-                    std::io::Read::read_to_string(
-                        &mut std::io::Read::take(std::io::stdin(), 1 << 20),
-                        &mut s,
-                    )
-                    .map_err(|e| e.to_string())?;
-                    s
-                }
-                // A one-line command can carry line breaks as `\n` (the helper writes them so, because
-                // a permission rule only matches a command on one line).
-                Some(b) => b.replace("\\n", "\n"),
-                None => String::new(),
-            };
-            let new = ops::NewTask {
-                title: title.into(),
-                kind: a.flags.get("type").cloned().unwrap_or_default(),
-                priority: a.flags.get("priority").cloned().unwrap_or_default(),
-                body,
-                tags: a
-                    .flags
-                    .get("tags")
-                    .map(|t| vec![t.clone()])
-                    .unwrap_or_default(),
-                est_time: a.flags.get("time").cloned().unwrap_or_default(),
-                est_tokens: a.flags.get("tokens").cloned().unwrap_or_default(),
-            };
+            let new = new_task(a, title, body_arg(a)?.unwrap_or_default());
             let c = ops::create_task(root, &new, &me, stamp)?;
             if a.json {
                 print_json(&c)?;
@@ -448,16 +502,16 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                 }
             }
             let s = tasks_of(root);
-            let tasks = list_filter(
-                &s.tasks,
+            let (status, tag) = (
                 a.flags.get("status").map(String::as_str),
-                stage.as_deref(),
                 a.flags.get("tag").map(String::as_str),
             );
+            let tasks = list_filter(&s.tasks, status, stage.as_deref(), tag);
+            let notes = list_notes(&s.backlog, status, stage.as_deref(), tag);
             if a.json {
-                print_json(&tasks)?;
+                print_json(&list_json(&notes, &tasks))?;
             } else {
-                print!("{}", list_text(&tasks));
+                print!("{}", list_text(&notes, &tasks));
             }
             Ok(0)
         }
@@ -675,6 +729,44 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
             } else {
                 println!("{}", mail.join("\n"));
             }
+            Ok(0)
+        }
+        "add" => {
+            need(a, 1, "the note (one line)")?;
+            let line = a.pos[1..].join(" ");
+            let body = body_arg(a)?.unwrap_or_default();
+            println!("{}", backlog::add(root, &line, &body, &me, stamp)?);
+            Ok(0)
+        }
+        "shape" => {
+            let b = backlog::shape(root, need(a, 1, "a backlog note's file name")?)?;
+            if a.json {
+                print_json(&b)?;
+            } else {
+                print!("{}", backlog::brief_text(&b));
+            }
+            Ok(0)
+        }
+        "file" => {
+            let note = need(a, 1, "a backlog note's file name")?;
+            need(a, 2, "the task's title")?;
+            let body = body_arg(a)?
+                .ok_or("file needs --body <text>|- with the shaped task (see `muster help`)")?;
+            let new = new_task(a, &a.pos[2..].join(" "), body);
+            let f = backlog::file_note(root, note, &new, &me, stamp)?;
+            if a.json {
+                print_json(&f)?;
+            } else {
+                println!("{}", filed_message(root, &f));
+            }
+            Ok(0)
+        }
+        "drop" => {
+            let note = need(a, 1, "a backlog note's file name")?;
+            need(a, 2, "why it's dropped")?;
+            let why = a.pos[2..].join(" ").replace("\\n", " ");
+            let p = backlog::drop_note(root, note, &why, &me, stamp)?;
+            println!("dropped {note} ({p})");
             Ok(0)
         }
         "check" => {
@@ -958,11 +1050,45 @@ mod tests {
         );
         file("inbox/0004-d.md", "0004", "status: inbox", "Raw");
         let s = tasks_of(d.path());
-        let text = list_text(&list_filter(&s.tasks, None, None, None));
+        let none: Vec<&crate::backlog::Note> = Vec::new();
+        let text = list_text(&none, &list_filter(&s.tasks, None, None, None));
+        assert!(s.backlog.is_empty());
         assert_eq!(
             text,
             "Backlog (1)\n  0004 task   normal  Raw\nShaping (1)\n  0003 task   normal  Shaping it\nTesting (1)\n  0002 task   normal  Under test blocked: 0012 the API  #ui\nDone (1)\n  0001 task   normal  Shipped\n"
         );
+        // Backlog notes come first, by file name and title, and only where Backlog is listed.
+        for (name, text, secs) in [
+            ("inbox/2026-10-12-0900-an-idea.md", "# An idea\n", 2000),
+            ("inbox/blank.md", "", 1000),
+        ] {
+            let p = d.path().join(name);
+            std::fs::write(&p, text).unwrap();
+            std::fs::File::options()
+                .write(true)
+                .open(&p)
+                .unwrap()
+                .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs))
+                .unwrap();
+        }
+        let s = tasks_of(d.path());
+        let notes = |stage: Option<&str>, status: Option<&str>, tag: Option<&str>| {
+            list_notes(&s.backlog, status, stage, tag)
+                .iter()
+                .map(|n| n.file.clone())
+                .collect::<Vec<_>>()
+        };
+        let all = list_notes(&s.backlog, None, None, None);
+        assert!(list_text(&all, &list_filter(&s.tasks, None, None, None)).starts_with(
+            "Backlog notes (2)\n  2026-10-12-0900-an-idea.md  An idea\n  blank.md  (empty note)\nBacklog (1)\n"
+        ));
+        assert_eq!(notes(Some("backlog"), None, None).len(), 2);
+        assert!(notes(Some("ready"), None, None).is_empty());
+        assert!(notes(None, Some("inbox"), None).is_empty());
+        assert!(notes(None, None, Some("ui")).is_empty());
+        let json = list_json(&all, &list_filter(&s.tasks, None, None, None));
+        assert_eq!(json["backlog"].as_array().unwrap().len(), 2);
+        assert_eq!(json["tasks"].as_array().unwrap().len(), 4);
         let ids = |v: Vec<&queue::Task>| v.iter().map(|t| t.id.clone()).collect::<Vec<_>>();
         assert_eq!(
             ids(list_filter(&s.tasks, None, Some("testing"), None)),
@@ -1187,12 +1313,82 @@ mod tests {
             "unblock",
             "stage",
             "heartbeat",
+            "add",
+            "file",
+            "drop",
         ] {
             assert!(TARGETED.contains(&cmd), "{cmd}");
         }
-        for cmd in ["list", "show", "check", "projects", "help"] {
+        for cmd in ["list", "show", "check", "projects", "help", "shape"] {
             assert!(!TARGETED.contains(&cmd), "{cmd}");
         }
+    }
+
+    #[test]
+    fn backlog_add_shape_file_and_drop_with_their_exit_codes() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let code = |args: &[&str]| {
+            let mut v = sv(&args[..1]);
+            v.extend(sv(&["--queue", &q, "--as", "wt-a"]));
+            v.extend(sv(&args[1..]));
+            main(&v)
+        };
+        // A one-liner needs no quotes; the body takes \n like new's.
+        assert_eq!(code(&["add", "Board", "flickers", "on", "resize"]), 0);
+        assert_eq!(code(&["add", "With a body", "--body", "one\\ntwo"]), 0);
+        assert_eq!(code(&["add"]), 2);
+        assert_eq!(code(&["add", "  "]), 1);
+        let notes = tasks_of(d.path()).backlog;
+        let file_of = |title: &str| {
+            notes
+                .iter()
+                .find(|n| n.title == title)
+                .map(|n| n.file.clone())
+                .unwrap()
+        };
+        let (flicker, other) = (file_of("Board flickers on resize"), file_of("With a body"));
+        assert!(notes
+            .iter()
+            .any(|n| n.text.contains("With a body\n\none\ntwo\n")));
+        assert_eq!(code(&["shape", &flicker]), 0);
+        assert_eq!(code(&["shape", &flicker, "--json"]), 0);
+        assert_eq!(code(&["shape"]), 2);
+        assert_eq!(code(&["shape", "gone.md"]), 1);
+        assert_eq!(code(&["file", &flicker]), 2, "no title");
+        assert_eq!(code(&["file", &flicker, "Board flickers"]), 2, "no --body");
+        let criteria = "## Acceptance criteria\\n- [ ] AC1: steady — verify: screenshot";
+        let filed = ["file", &flicker, "Board", "flickers", "--type", "bug"];
+        assert_eq!(code(&[&filed[..], &["--body", criteria]].concat()), 0);
+        assert_eq!(code(&["file", &flicker, "Again", "--body", "x"]), 1, "gone");
+        let t = queue::read_task(d.path(), "0001").unwrap();
+        assert_eq!(
+            (t.stage.as_str(), t.kind.as_str(), t.title.as_str()),
+            ("shaping", "bug", "Board flickers")
+        );
+        assert_eq!(t.attachments, vec![flicker.clone()]);
+        assert_eq!(code(&["pass", "0001", "--from", "shaping"]), 0);
+        assert_eq!(queue::read_task(d.path(), "0001").unwrap().stage, "ready");
+        assert_eq!(code(&["drop", &other]), 2, "no reason");
+        assert_eq!(code(&["drop", &other, "not", "needed"]), 0);
+        assert!(tasks_of(d.path()).backlog.is_empty());
+        assert!(
+            std::fs::read_to_string(d.path().join("inbox/dropped").join(&other))
+                .unwrap()
+                .contains(": not needed\n")
+        );
+        assert_eq!(code(&["check"]), 0);
+        // A note over 1 MB isn't read, and check says so.
+        std::fs::write(d.path().join("inbox/huge.md"), vec![b'a'; 1024 * 1024 + 1]).unwrap();
+        assert_eq!(code(&["check"]), 1);
+        let f = crate::backlog::Filed {
+            id: "0031".into(),
+            path: "todo/0031-x.md".into(),
+            attachment: "n.md".into(),
+        };
+        let base = tempfile::tempdir().unwrap();
+        let (q, _) = project(base.path(), "drover");
+        assert_eq!(filed_message(&q, &f), "filed 0031 in drover (Shaping)");
     }
 
     #[test]

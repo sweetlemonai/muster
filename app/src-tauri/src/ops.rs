@@ -171,7 +171,7 @@ pub struct Created {
     pub path: String,
 }
 
-fn one_line(text: &str, max: usize, what: &str) -> Result<String, String> {
+pub(crate) fn one_line(text: &str, max: usize, what: &str) -> Result<String, String> {
     let t: String = text
         .chars()
         .map(|c| if c.is_control() { ' ' } else { c })
@@ -186,7 +186,7 @@ fn one_line(text: &str, max: usize, what: &str) -> Result<String, String> {
     Ok(t)
 }
 
-fn body_text(text: &str) -> Result<String, String> {
+pub(crate) fn body_text(text: &str) -> Result<String, String> {
     if text.trim().is_empty() {
         return Ok(String::new());
     }
@@ -220,6 +220,11 @@ fn pick<'a>(
 
 /// A file-name slug: lowercase ASCII words, cut at a word boundary under 48 characters.
 pub fn slug(title: &str) -> String {
+    slug_or(title, "task")
+}
+
+/// `slug`, with `fallback` when the text has no ASCII letters or digits at all.
+pub(crate) fn slug_or(title: &str, fallback: &str) -> String {
     let mut out = String::new();
     for word in title
         .to_lowercase()
@@ -235,7 +240,7 @@ pub fn slug(title: &str) -> String {
         out.push_str(word);
     }
     if out.is_empty() {
-        "task".into()
+        fallback.into()
     } else {
         out
     }
@@ -262,7 +267,7 @@ pub fn next_id(root: &Path) -> Result<String, String> {
 }
 
 /// Is this queue laid out with status folders (v2) or flat?
-fn has_status_folders(root: &Path) -> bool {
+pub(crate) fn has_status_folders(root: &Path) -> bool {
     root.join("todo").is_dir()
 }
 
@@ -274,43 +279,82 @@ fn folder_for(root: &Path, status: &str) -> PathBuf {
     }
 }
 
+/// A new task's fields, cleaned by `clean_new`, as `create_locked` writes them.
+pub(crate) struct CleanTask {
+    pub(crate) title: String,
+    kind: &'static str,
+    priority: &'static str,
+    pub(crate) body: String,
+    /// The front-matter values with their leading space (" a, b"), or "" for none.
+    tags: String,
+    est_time: String,
+    est_tokens: String,
+}
+
+/// Clean a new task's fields: refused when the title is empty, a choice isn't one, or a text is
+/// too long.
+pub(crate) fn clean_new(new: &NewTask) -> Result<CleanTask, String> {
+    let sp = |v: String| if v.is_empty() { v } else { format!(" {v}") };
+    Ok(CleanTask {
+        title: one_line(&new.title, MAX_TITLE, "the title")?,
+        kind: pick(&new.kind, &KINDS, "task", "type")?,
+        priority: pick(&new.priority, &PRIORITIES, "normal", "priority")?,
+        body: body_text(&new.body)?,
+        tags: sp(clean_tags(&new.tags)?.join(", ")),
+        est_time: sp(clean_time(&new.est_time)?),
+        est_tokens: sp(clean_tokens(&new.est_tokens)?),
+    })
+}
+
+/// Write task `id` in `stage` (in its status mirror's folder in the v2 layout), logged as created
+/// and then with `log`'s lines. The caller holds the queue's lock and took `id` from `next_id`
+/// under it.
+pub(crate) fn create_locked(
+    root: &Path,
+    id: &str,
+    t: &CleanTask,
+    stage: &str,
+    who: &str,
+    stamp: &str,
+    log: &[String],
+) -> Result<Created, String> {
+    let status = mirror_status(stage, false);
+    let dir = folder_for(root, status);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(format!("{id}-{}.md", slug(&t.title)));
+    let details = if t.body.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n\n", t.body)
+    };
+    let date = stamp.get(..10).unwrap_or(stamp);
+    let (title, kind, priority, tags) = (&t.title, t.kind, t.priority, &t.tags);
+    let (est_time, est_tokens) = (&t.est_time, &t.est_tokens);
+    let mut text = format!(
+        "---\nid: {id}\ntype: {kind}\npriority: {priority}\ntags:{tags}\nest-time:{est_time}\nest-tokens:{est_tokens}\nstage: {stage}\nstatus: {status}\ncaptured: {date}\nclaimed-by:\nheartbeat:\nwaiting_on:\ncommit:\n---\n\n# {title}\n\n{details}## Log\n- {stamp} {who}: created\n"
+    );
+    for line in log {
+        text = append_log(&text, line);
+    }
+    write_atomic(&path, &text)?;
+    let rel = path
+        .strip_prefix(root)
+        .unwrap_or(&path)
+        .to_string_lossy()
+        .to_string();
+    Ok(Created {
+        id: id.to_string(),
+        path: rel,
+    })
+}
+
 /// Create a task in Ready (`todo/`, or the queue folder in the flat layout). `stamp` is local time.
 pub fn create_task(root: &Path, new: &NewTask, who: &str, stamp: &str) -> Result<Created, String> {
     let who = actor(who)?;
-    let title = one_line(&new.title, MAX_TITLE, "the title")?;
-    let kind = pick(&new.kind, &KINDS, "task", "type")?;
-    let priority = pick(&new.priority, &PRIORITIES, "normal", "priority")?;
-    let body = body_text(&new.body)?;
-    let tags = clean_tags(&new.tags)?.join(", ");
-    let tags = if tags.is_empty() {
-        String::new()
-    } else {
-        format!(" {tags}")
-    };
-    let sp = |v: String| if v.is_empty() { v } else { format!(" {v}") };
-    let est_time = sp(clean_time(&new.est_time)?);
-    let est_tokens = sp(clean_tokens(&new.est_tokens)?);
-    let date = &stamp[..stamp.len().min(10)];
+    let t = clean_new(new)?;
     with_lock(root, || {
         let id = next_id(root)?;
-        let dir = folder_for(root, "todo");
-        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let path = dir.join(format!("{id}-{}.md", slug(&title)));
-        let details = if body.is_empty() {
-            String::new()
-        } else {
-            format!("{body}\n\n")
-        };
-        let text = format!(
-            "---\nid: {id}\ntype: {kind}\npriority: {priority}\ntags:{tags}\nest-time:{est_time}\nest-tokens:{est_tokens}\nstage: ready\nstatus: todo\ncaptured: {date}\nclaimed-by:\nheartbeat:\nwaiting_on:\ncommit:\n---\n\n# {title}\n\n{details}## Log\n- {stamp} {who}: created\n"
-        );
-        write_atomic(&path, &text)?;
-        let rel = path
-            .strip_prefix(root)
-            .unwrap_or(&path)
-            .to_string_lossy()
-            .to_string();
-        Ok(Created { id, path: rel })
+        create_locked(root, &id, &t, "ready", &who, stamp, &[])
     })
 }
 
@@ -532,7 +576,7 @@ fn reads_as_stage(line: &str) -> bool {
 /// writer may log stage history, so a line the log's reader would take for a stage change
 /// (`queue::stage_line`, whatever part of it the who and the text make up) is refused. Prose
 /// that only mentions a stage doesn't parse as one, so it's fine.
-fn free_text_line(line: String, what: &str) -> Result<String, String> {
+pub(crate) fn free_text_line(line: String, what: &str) -> Result<String, String> {
     if reads_as_stage(&line) {
         return Err(format!(
             "{what} would read as a stage change in the log (\"<who>: stage <from> → <to>\"); only muster pass, return and stage write those"

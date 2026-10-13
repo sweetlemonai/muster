@@ -54,10 +54,15 @@ override). Claims and their lease (task 0002): `claim` (Ready → Building, one 
 `next` (the top Ready task you may take, by priority then id), `heartbeat` (the holder keeps a
 claim alive), and `reclaim [--after 12h]` (claims quiet past their lease go back to Ready). Questions
 (task 0002): `ask`, `escalate` and `inbox`, beside `answer`. `tick` / `untick` (task 0028): the owner
-ticks the criteria only they verify, in Your check. The slash commands will call it.
+ticks the criteria only they verify, in Your check. The backlog (task 0015): `add` (a one-liner
+into the backlog as a note), `shape` (the shaping brief for a note: its text, the product, tech and
+UI roles, the docs to read, open tasks that may overlap, and the command to file it; `--json` for
+Drover), `file` (the note becomes a task in Shaping, and moves into its attachments), and `drop`
+(the note is set aside in the backlog's `dropped/`, with the reason). The slash commands will call it.
 
 ### Python tools (in `bin/`)
 
 `task ask|answer|escalate|inbox` (a stand-in that runs the `muster` commands with the same
 arguments), the answer hook (reads the mailbox itself, for speed), `manifest.py` (board data +
-`--check`). Still to build: `found` and `triage` (task 0015), `depends:` (task 0019).
+`--check`; it lists backlog notes under `backlog`). Still to build: `depends:` (task 0019).
+`/mu found` and `/mu triage` above will run `muster add` and `muster shape` / `file` / `drop`.

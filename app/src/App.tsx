@@ -1,7 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
-import { ago, columns, estimateTotal, feed, holder, inProgress, key, leaseRunOut, queueTotal, STAGES } from "./lib";
+import { ago, columns, estimateTotal, feed, holder, inProgress, key, leaseRunOut, STAGES } from "./lib";
 import type { State, Task } from "./types";
+import { backlogColumn, backlogNotes, NoteCard, noteKey, projectCount, QuickAdd } from "./Backlog";
 import Projects from "./Projects";
 import NewTask from "./NewTask";
 import Appearance from "./Appearance";
@@ -11,11 +12,12 @@ import logo from "./logo.png";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
 const TaskPanel = lazy(() => import("./TaskPanel"));
+const NotePanel = lazy(() => import("./NotePanel"));
 const Helper = lazy(() => import("./Helper"));
 const HelpView = lazy(() => import("./Help"));
 type View = "board" | "table" | "timeline" | "helper" | "waiting" | "activity" | "problems" | "projects" | "help";
 // One docked pane beside the content, never over it (the owner wants everything in view).
-type Pane = { kind: "task"; key: string } | { kind: "new" } | { kind: "appearance" } | null;
+type Pane = { kind: "task"; key: string } | { kind: "note"; key: string } | { kind: "new" } | { kind: "appearance" } | null;
 const POLL_MS = 2000;
 const PRIORITIES = ["high", "normal", "low"] as const;
 const PANE_KEY = "muster.paneWidth";
@@ -95,6 +97,14 @@ export default function App() {
   const cols = useMemo(() => columns(tasks), [tasks]);
   const openKey = pane?.kind === "task" ? pane.key : null;
   const openTask = openKey ? (state?.tasks ?? []).find((t) => key(t) === openKey) ?? null : null;
+  const allNotes = state?.backlog ?? [];
+  const notes = useMemo(() => backlogNotes(state?.backlog ?? [], queue), [state, queue]);
+  const openNoteKey = pane?.kind === "note" ? pane.key : null;
+  const openNote = openNoteKey ? allNotes.find((n) => noteKey(n) === openNoteKey) ?? null : null;
+  const showTask = (q: string, id: string) => {
+    setView("board");
+    void refresh().then(() => setPane({ kind: "task", key: `${q}/${id}` }));
+  };
   const now = state?.now ?? Math.floor(Date.now() / 1000);
   const multi = queue === "all" && (state?.queues.length ?? 0) > 1;
   const open = (t: Task) => setPane({ kind: "task", key: key(t) });
@@ -118,14 +128,14 @@ export default function App() {
       <aside className="sidebar" aria-label="Projects">
         <div className="brand"><img src={logo} alt="" width={22} height={22} /> Muster</div>
         <nav className="projects-nav">
-          <ProjectItem name="All" total={state?.tasks.length ?? 0} tasks={state?.tasks ?? []} on={queue === "all"} onClick={() => setQueue("all")} />
+          <ProjectItem name="All" total={(state?.tasks.length ?? 0) + allNotes.length} tasks={state?.tasks ?? []} on={queue === "all"} onClick={() => setQueue("all")} />
           <div className="side-label">Projects</div>
           {state?.queues.map((q) => (
             <ProjectItem
               key={q.name}
               name={q.name}
               title={q.path}
-              total={queueTotal(q.counts)}
+              total={projectCount(q.counts, allNotes, q.name)}
               tasks={(state?.tasks ?? []).filter((t) => t.queue === q.name)}
               on={queue === q.name}
               onClick={() => setQueue(q.name)}
@@ -193,26 +203,40 @@ export default function App() {
               </div>
               {view === "table" && <TableView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} />}
               {view === "timeline" && <TimelineView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} />}
-              {view === "board" && <main className="board" style={{ gridTemplateColumns: STAGES.map((s) => ((cols[s.id] ?? []).length ? "minmax(118px, 1fr)" : "44px")).join(" ") }}>
+              {/* Backlog never folds: its quick add is always there. */}
+              {view === "board" && <main className="board" style={{ gridTemplateColumns: STAGES.map((s) => (s.id === "backlog" || (cols[s.id] ?? []).length ? "minmax(118px, 1fr)" : "44px")).join(" ") }}>
                 {STAGES.map((c) => {
                   const list = cols[c.id] ?? [];
                   const shown = c.id === "done" && !showAllDone ? list.slice(0, 8) : list;
+                  const backlog = c.id === "backlog";
+                  const count = list.length + (backlog ? notes.length : 0);
                   return (
-                    <section key={c.id} className={`column col-${c.id}${list.length ? "" : " empty"}`}>
+                    <section key={c.id} className={`column col-${c.id}${count || backlog ? "" : " empty"}`}>
                       <h2 title={c.role ? `${c.label}: ${c.role}` : c.label}>
-                        {c.label} <small>{list.length}</small>
+                        {c.label} <small>{count}</small>
                         {c.role && <span className="role">{c.role}</span>}
                       </h2>
+                      {backlog && state && state.queues.length > 0 && (
+                        <QuickAdd queues={queue === "all" ? state.queues.map((q) => q.name) : [queue]} onAdded={() => void refresh()} />
+                      )}
                       <div className="cards">
-                        {shown.map((t) => (
-                          <Card key={key(t)} t={t} now={now} multi={multi} onOpen={() => open(t)} active={openKey === key(t)} />
-                        ))}
+                        {backlog
+                          ? backlogColumn(notes, list).map((item) =>
+                              item.kind === "note" ? (
+                                <NoteCard key={`note:${noteKey(item.note)}`} n={item.note} now={now} multi={multi} onOpen={() => setPane({ kind: "note", key: noteKey(item.note) })} active={openNoteKey === noteKey(item.note)} />
+                              ) : (
+                                <Card key={key(item.task)} t={item.task} now={now} multi={multi} onOpen={() => open(item.task)} active={openKey === key(item.task)} />
+                              ),
+                            )
+                          : shown.map((t) => (
+                              <Card key={key(t)} t={t} now={now} multi={multi} onOpen={() => open(t)} active={openKey === key(t)} />
+                            ))}
                         {c.id === "done" && list.length > 8 && (
                           <button className="more" onClick={() => setShowAllDone((v) => !v)}>
                             {showAllDone ? "Show fewer" : `Show all ${list.length}`}
                           </button>
                         )}
-                        {list.length === 0 && <p className="none">Nothing here</p>}
+                        {count === 0 && <p className="none">Nothing here</p>}
                       </div>
                     </section>
                   );
@@ -288,15 +312,18 @@ export default function App() {
                 </Suspense>
               )}
               {pane.kind === "task" && !openTask && <p className="none">That task is gone.</p>}
+              {pane.kind === "note" && openNote && (
+                <Suspense fallback={<p className="none">Loading…</p>}>
+                  <NotePanel key={openNoteKey} note={openNote} now={now} onClose={() => setPane(null)} onChanged={refresh} onFiled={showTask} />
+                </Suspense>
+              )}
+              {pane.kind === "note" && !openNote && <p className="none">That note is gone: filed as a task, or dropped.</p>}
               {pane.kind === "new" && state && state.queues.length > 0 && (
                 <NewTask
                   queues={state.queues.map((q) => q.name)}
                   initial={queue !== "all" ? queue : state.queues[0].name}
                   onClose={() => setPane(null)}
-                  onCreated={(q, id) => {
-                    setView("board");
-                    void refresh().then(() => setPane({ kind: "task", key: `${q}/${id}` }));
-                  }}
+                  onCreated={showTask}
                 />
               )}
               {pane.kind === "appearance" && <Appearance onClose={() => setPane(null)} />}

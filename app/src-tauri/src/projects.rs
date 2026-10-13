@@ -272,7 +272,10 @@ fn readme(project: &str, q: &Path) -> String {
          - Waiting on something: `muster block NNNN --on \"<task id|owner|capture> …\"`, then\n  \
          `muster unblock NNNN`. It keeps its stage.\n\
          - Code goes in the project's repo, never in this folder.\n\
-         - New bugs or ideas you find: a note in `inbox/`. Capture writes them up.\n\
+         - New bugs or ideas you find: `muster add \"<one line>\" --as <your branch>` puts a note in the backlog\n  \
+         (`inbox/`; a file dropped there by hand counts too). Shaping turns it into a task: `muster shape <note-file>`\n  \
+         prints the brief, `muster file <note-file> \"<title>\" --body -` files it in Shaping (the note goes into the\n  \
+         task's attachments), and `muster drop <note-file> \"<why>\"` sets it aside.\n\
          - `bin/` holds stand-ins that run Muster's tools on this queue.\n"
     )
 }
@@ -358,9 +361,14 @@ mod tests {
             "muster return",
             "muster block",
             "--gate",
+            "muster add",
+            "muster shape",
+            "muster file",
+            "muster drop",
         ] {
             assert!(readme.contains(cmd), "README names {cmd}: {readme}");
         }
+        assert!(!readme.contains("a note in `inbox/`"), "{readme}");
         assert!(readme.contains(
             "Never move task files or edit `stage:`, `status:`, `claimed-by:` or `heartbeat:` by hand."
         ));
