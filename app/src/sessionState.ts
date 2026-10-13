@@ -1,4 +1,3 @@
-import { stageLabel } from "./lib";
 import type { Task } from "./types";
 
 // Claude Code's word on the session holding a task (0048): the core reads `claude agents --json`
@@ -15,7 +14,8 @@ export const WAITING_IN_CLAUDE = "waiting for input in Claude Code";
 export const ANSWER_FIRST = `${WAITING_IN_CLAUDE}: answer it there first`;
 
 /** The card's and the pane's words for the state: "working", "waiting for input in Claude Code",
- *  "session ended, task still in Building"; "" for unknown. */
+ *  "session ended, task still in Building"; "" for unknown, and for ended outside Building (the
+ *  core never sends that: in Testing the holder is the builder that passed it, agents.rs). */
 export function sessionWords(t: Pick<Task, "stage" | "sessionState">): string {
   switch (t.sessionState) {
     case "working":
@@ -23,14 +23,11 @@ export function sessionWords(t: Pick<Task, "stage" | "sessionState">): string {
     case "needs-input":
       return WAITING_IN_CLAUDE;
     case "ended":
-      return `session ended, task still in ${stageLabel(t.stage)}`;
+      return t.stage === "building" ? "session ended, task still in Building" : "";
     default:
       return "";
   }
 }
-
-/** Claude Code said something about this task's session (working, waiting or ended). */
-export const sessionKnown = (t: Pick<Task, "sessionState">) => t.sessionState === "working" || t.sessionState === "needs-input" || t.sessionState === "ended";
 
 /** Settings > Agents' line (0036): whether the states are read, from the core's summary. */
 export const sessionStatesLine = (summary: string) => `Claude Code's session states: ${summary}`;

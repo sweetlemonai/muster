@@ -41,11 +41,12 @@ function lines(over: Partial<Task>): [string, string][] {
 }
 
 describe("the words for each state", () => {
-  it("working, waiting for input, ended in the task's stage, and nothing for unknown", () => {
+  it("working, waiting for input, ended in Building, and nothing for unknown", () => {
     expect(sessionWords(task({ sessionState: "working" }))).toBe("working");
     expect(sessionWords(task({ sessionState: "needs-input" }))).toBe("waiting for input in Claude Code");
     expect(sessionWords(task({ sessionState: "ended" }))).toBe("session ended, task still in Building");
-    expect(sessionWords(task({ stage: "testing", sessionState: "ended" }))).toBe("session ended, task still in Testing");
+    // In Testing the holder is the builder that passed it: its session ending is the normal course.
+    expect(sessionWords(task({ stage: "testing", sessionState: "ended" }))).toBe("");
     expect(sessionWords(task({ sessionState: "unknown" }))).toBe("");
     expect(sessionWords(task({}))).toBe("");
   });
@@ -68,7 +69,7 @@ describe("the card", () => {
       ["card-quiet calm", "no check-in for 45 min"],
     ]);
     expect(lines({ ...quiet, sessionState: "ended" })[1]).toEqual(["card-session ended", "session ended, task still in Building"]);
-    expect(lines({ stage: "testing", heldBy: A, sessionState: "ended" })[1]).toEqual(["card-session ended", "session ended, task still in Testing"]);
+    expect(lines({ stage: "testing", heldBy: A, sessionState: "ended" }).map(([c]) => c)).toEqual(["card-who"]);
   });
   it("with no state from Claude Code reads exactly as before", () => {
     const before = lines(quiet);

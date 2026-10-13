@@ -42,7 +42,7 @@ working and status idle reads unknown; a repeated session id is its latest entry
 else list order); a run starts its own process group and a timeout kills the group, so a child
 can't outlive it. Tests: `holds_count_across_every_queue_given`, the reworked apply and parse
 tests, the group-kill case in the runner test, the cross-queue case in
-`list_json_carries_each_tasks_session_state_from_claude_code`; each failed before its fix.
+`list_json_carries_each_tasks_session_state_from_claude_code`; each failed before its fix. (5) Nits: `test_commands.py`'s home has `.claude-hg` and `CLAUDE_CONFIG_DIR` points there, so its no-claude guard can fire (a probe that claimed under a real session id and ran `list --json` failed it: `'agents --json --all' != ''`); the window's words say ended only in Building (`sessionState.ts`), and the manual's Concepts gives the Building/Testing rule.
 Verified: `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; cargo test 438 + 4 + 15 + 3, vitest 1036, test_commands 13 OK.
 **Open:** AC6 is the owner's (watch a card while a session works and stops at a permission
 prompt).

@@ -251,16 +251,21 @@ class RoutesRunOnARealQueue(unittest.TestCase):
         # Its prefix stored (0033): muster names its tasks tc-1, tc-2…, whatever projects this Mac has.
         (self.root / "README.md").write_text("---\nprefix: tc\n---\nA Muster queue, for the tests.\n",
                                               encoding="utf-8")
-        # A home of its own (task 0048): `muster list --json` asks Claude Code about stamped
-        # sessions, and these claims are stamped. Its `claude` records every call; none is expected.
+        # A home of its own (task 0048): `muster list --json` asks Claude Code about a claim
+        # stamped with a session, in its account's folder (cc-hg here, which is there). These
+        # claims aren't stamped (the id below isn't a session id, so the labels stay as typed);
+        # one stamped by a route would be read through this `claude`, which records every call.
+        # None is expected.
         self.home = Path(self.tmp.name) / "home"
         bin_dir = self.home / ".local" / "bin"
         bin_dir.mkdir(parents=True)
+        (self.home / ".claude-hg").mkdir()
         self.claude = bin_dir / "claude"
         self.claude.write_text("#!/bin/sh\necho \"$@\" >> \"$0.calls\"\necho '[]'\n", encoding="utf-8")
         self.claude.chmod(0o755)
         self.env = {**os.environ, "MUSTER_ROOT": str(self.root), "MUSTER_AS": "wt-a",
-                    "CLAUDE_CODE_SESSION_ID": "aaaa1111-test", "HOME": str(self.home)}
+                    "CLAUDE_CODE_SESSION_ID": "aaaa1111-test",
+                    "CLAUDE_CONFIG_DIR": str(self.home / ".claude-hg"), "HOME": str(self.home)}
         for k in ("TASKS_ROOT", "MUSTER_BASE"):
             self.env.pop(k, None)
         self.routes = {r["key"]: r for r in rows(ROUTER.read_text(encoding="utf-8"))}
