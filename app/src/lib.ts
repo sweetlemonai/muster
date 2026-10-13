@@ -109,6 +109,46 @@ export function splitHolder(who: string): HolderParts {
   return out.id ? out : none;
 }
 
+/** Is `a` the same holder as `b`? The core's session::same_holder: the same text, or the same
+ *  label with sessions that don't differ (one without a session matches any). */
+export function sameHolder(a: string, b: string): boolean {
+  if (a === b) return true;
+  const x = splitHolder(a);
+  const y = splitHolder(b);
+  return x.label === y.label && (!x.id || !y.id || x.id === y.id);
+}
+
+/** An agent's task in Testing still held by one of its builders (0047, `builders`): a session
+ *  that didn't build it has to test it and pass it on (or the owner). */
+export function needsTester(t: Pick<Task, "stage" | "heldBy" | "builtBy" | "gatedBy" | "forWho">): boolean {
+  const held = t.heldBy.trim();
+  return t.stage === "testing" && t.forWho !== "human" && held !== "" && builders(t).some((b) => sameHolder(held, b));
+}
+
+/** Who built it, as the core's ops::tester_rule counts them: whoever claimed it last and whoever
+ *  last passed it into Testing with the gate's line, the second left out when it's the same
+ *  holder. */
+function builders(t: Pick<Task, "builtBy" | "gatedBy">): string[] {
+  const built = (t.builtBy ?? "").trim();
+  const gated = (t.gatedBy ?? "").trim();
+  return [built, gated && !(built && sameHolder(built, gated)) ? gated : ""].filter(Boolean);
+}
+
+/** A holder in a few words: "you" for the owner, else the name before any brackets. */
+const shortWho = (who: string) => (splitHolder(who).label === "owner" ? "you" : claimant(who));
+
+/** Who built an agent's task and who tested it (0047), from Testing on: "built by wt-a · tested
+ *  by qa-0042" (Your check and Done), "built by wt-a · needs a tester" (Testing, still the
+ *  builder's); "built by wt-a and wt-b" when one claimed it and another gated it in. "" before Testing, for the owner's own task, or with no builder on record. `name`
+ *  shows each holder (short by default; the pane names them in full). */
+export function builtTested(t: Pick<Task, "stage" | "heldBy" | "builtBy" | "gatedBy" | "testedBy" | "forWho">, name: (who: string) => string = shortWho): string {
+  const built = [...new Set(builders(t).map(name))];
+  if (built.length === 0 || t.forWho === "human" || stageRank(t.stage) < stageRank("testing")) return "";
+  const tested = (t.testedBy ?? "").trim();
+  const second = t.stage === "testing" ? (needsTester(t) ? "needs a tester" : "") : tested ? `tested by ${name(tested)}` : "";
+  return [`built by ${built.join(" and ")}`, second].filter(Boolean).join(" · ");
+}
+
 /** The card's who line (0030): who's on it, short: "wt-a · main-29 · wt-0030 · 7b5e8856", the
  *  owner as "you", "" for nobody. A session typed by hand in an older claim still shows. */
 export function whoLine(t: Pick<Task, "stage" | "claimedBy" | "heldBy">): string {

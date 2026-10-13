@@ -149,6 +149,9 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .card-who, .card-checkin, .card-quiet, .card-vision, .card-branch { font-size: 11px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-branch { color: var(--faint); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .card-who { color: var(--muted); }
+/* Who built it, who tested it, and "needs a tester" (0047): quiet, and wrapped rather than cut,
+   so no name is lost in a narrow column. */
+.card-built, .card-tester { font-size: 11px; line-height: 1.35; color: var(--muted); overflow-wrap: anywhere; }
 .card-who.nobody { color: var(--faint); }
 .card-checkin { color: var(--text); opacity: 0.8; }
 .card-quiet { color: var(--err); font-weight: 600; }
@@ -669,6 +672,8 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .task-pane .holder { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
 /* Who's on it in full (0030): a session id is long, so it wraps rather than widening the pane. */
 .task-pane .holders { min-width: 0; overflow-wrap: anywhere; }
+/* Who built it and who tested it (0047): quiet, beside who's on it. */
+.task-pane .built-tested { min-width: 0; overflow-wrap: anywhere; color: var(--muted); }
 .pulse { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--st-building); flex: none; }
 .pulse.idle { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted); }
 .live-badge { font-size: 9.5px; font-weight: 800; letter-spacing: 0.6px; color: var(--on-status); background: var(--st-building); border-radius: 4px; padding: 0 4px; }

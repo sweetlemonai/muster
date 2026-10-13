@@ -47,7 +47,7 @@ Why: the board is only useful if it's true. A hand edit can say a task was teste
 
 ## A testing session
 
-It takes a task in Testing, checks each acceptance criterion the way its `verify:` part says, and ticks each one with its proof. Then it passes the task to Your check: `muster pass 0007 --from testing --as qa`. Criteria marked `— verify: owner` are left for the owner; that pass doesn't wait for them. If something fails, it sends the task back with what's wrong:
+It takes a task in Testing, checks each acceptance criterion the way its `verify:` part says, and ticks each one with its proof. Then it passes the task to Your check: `muster pass 0007 --from testing --as qa`. It's never the session that built the task: that pass is refused for the builder, whatever folder it runs from. A coordinator starts a fresh QA subagent with its own `--as` (`muster/qa-0007`) once the builder has passed Building → Testing. Criteria marked `— verify: owner` are left for the owner; that pass doesn't wait for them. If something fails, it sends the task back with what's wrong:
 
 ```
 muster return 0007 "AC2 fails: the board still flickers once" --as qa

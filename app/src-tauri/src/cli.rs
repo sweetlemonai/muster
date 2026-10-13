@@ -2003,11 +2003,12 @@ mod tests {
         }
         std::fs::write(d.path().join("README.md"), "q").unwrap();
         let q = d.path().to_string_lossy().to_string();
-        let code = |args: &[&str]| {
+        let code_as = |who: &str, args: &[&str]| {
             let mut v = sv(args);
-            v.extend(sv(&["--queue", &q, "--as", "wt-a"]));
+            v.extend(sv(&["--queue", &q, "--as", who]));
             main(&v)
         };
+        let code = |args: &[&str]| code_as("wt-a", args);
         let task = || queue::read_task(d.path(), "0001").unwrap();
         assert_eq!(code(&["new", "Staged"]), 0);
         std::fs::write(
@@ -2078,13 +2079,28 @@ mod tests {
             "moved on since"
         );
         assert_eq!(task().stage, "building");
+        // The builder can't skip its tester with the override (0047); the owner can, and the log
+        // says so.
         assert_eq!(
             code(&["stage", "0001", "your-check", "--from", "building"]),
+            1,
+            "the builder"
+        );
+        assert_eq!(task().stage, "building");
+        assert_eq!(
+            code_as(
+                "owner",
+                &["stage", "0001", "your-check", "--from", "building"]
+            ),
             0
         );
+        assert!(queue::read_body(d.path(), "0001").unwrap().contains(
+            ": stage building → your-check (set; owner's override: no separate tester)\n"
+        ));
         assert!(task().waiting_for_owner);
         assert_eq!(code(&["stage", "0001", "testing"]), 0);
-        assert_eq!(code(&["stage", "0001", "your-check"]), 0);
+        assert_eq!(code(&["stage", "0001", "your-check"]), 1, "the builder");
+        assert_eq!(code_as("owner", &["stage", "0001", "your-check"]), 0);
         assert_eq!(code(&["stage", "0001", "nowhere"]), 1);
         assert_eq!(code(&["stage", "0001"]), 2);
         assert_eq!(code(&["pass", "0001", "--commit", "abc1234"]), 0);

@@ -403,6 +403,14 @@ pub struct Task {
     /// Who holds it in Testing or Your check (`held-by:`, set by `pass`), as Building has
     /// `claimed_by`.
     pub held_by: String,
+    /// Who built it (0047): the last `ready → building (claimed)` stage line's who, or "".
+    pub built_by: String,
+    /// Who passed it Building → Testing with the gate's line most recently (0047): a builder too,
+    /// unlike an override into Testing. "" when nobody has.
+    pub gated_by: String,
+    /// Who passed it into Your check from an earlier stage most recently (its tester, or the
+    /// owner's override), or "".
+    pub tested_by: String,
     /// When the current stage began: the stamp of the latest stage line into it, or "".
     pub stage_since: String,
     /// Every check-in in the log, oldest first (0030).
@@ -1045,9 +1053,31 @@ pub fn parse_task(
         None if raw_level.is_empty() => ("task".to_string(), String::new()),
         None => ("task".to_string(), raw_level.chars().take(40).collect()),
     };
-    let stage_set_by_owner = stage_lines(body)
+    let steps = stage_lines(body);
+    // `(set)`, or `(set; owner's override: no separate tester)` past Testing (0047).
+    let stage_set_by_owner = steps
         .last()
-        .is_some_and(|(_, detail)| *detail == "set");
+        .is_some_and(|(_, detail)| *detail == "set" || detail.starts_with("set; "));
+    let built_by = steps
+        .iter()
+        .rev()
+        .find(|(s, detail)| s.from == "ready" && s.to == "building" && *detail == "claimed")
+        .map(|(s, _)| s.who.clone())
+        .unwrap_or_default();
+    let gated_by = steps
+        .iter()
+        .rev()
+        .find(|(s, detail)| {
+            s.from == "building" && s.to == "testing" && detail.starts_with("gate: ")
+        })
+        .map(|(s, _)| s.who.clone())
+        .unwrap_or_default();
+    let tested_by = steps
+        .iter()
+        .rev()
+        .find(|(s, _)| s.to == "your-check" && s.from != "done")
+        .map(|(s, _)| s.who.clone())
+        .unwrap_or_default();
     let est_test_time = crate::ops::clean_time(&get("est-test-time")).unwrap_or_default();
     let tags: Vec<String> = get("tags")
         .split(',')
@@ -1081,6 +1111,9 @@ pub fn parse_task(
         path: rel,
         claimed_by: get("claimed-by"),
         held_by: get("held-by"),
+        built_by,
+        gated_by,
+        tested_by,
         stage_since,
         checkins,
         checkin_asked: log_lines

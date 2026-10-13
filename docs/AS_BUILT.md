@@ -187,6 +187,17 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   hands Building back to its last builder. Until 0005, `status:` and the status folder are a mirror
   of the stage for older readers (Drover, `manifest.py`), and `check` reports a stage whose status
   doesn't match, which is what a hand move leaves.
+- **The tester isn't the builder** (task 0047): `pass_change` (so `pass`, the merge's
+  `check_merge_pass` before any rebase or gate, and `pass_merged`), `set_stage` and `move_task`
+  (past Testing) refuse the builder of an agent's task, matched by `session::same_holder` against
+  whoever last claimed it (`ready → building (claimed)`) and whoever last passed it into Testing
+  with a gate line. The refusal names the builder and suggests a QA label (`muster/qa-0042`). The
+  owner is always let through, logged `(owner's override: no separate tester)`; another label in
+  a builder's session is let through, logged `(tested under another label in the builder's
+  session)`. The task carries `builtBy`, `gatedBy` and `testedBy` (the last pass into Your check),
+  and the app counts builders as the core does. A Testing card says "needs a tester" on a line of
+  its own while a builder holds it; the Your-check card says "built by … · tested by …", wrapped,
+  never cut; the task pane's status line says the same from Testing on.
 - **Depends, met once merged** (tasks 0019, 0024, 0042): a task's `depends:` hold it back until
   each is merged, which for an agent's task is Your check or Done (work merges into main after
   Testing passes) and for a human task only Done. One rule in `block.rs` (`met_at`, `holds`)

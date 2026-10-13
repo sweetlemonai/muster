@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import CardStatus from "./CardStatus";
 import type { Task } from "./types";
 import { Machine } from "./settingsData";
+import css from "./styles.css?raw";
 
 const task = (over: Partial<Task>): Task => ({
   queue: "demo", id: "0030", title: "T", kind: "task", priority: "normal", status: "doing", stage: "building", blocked: false, stageHistory: [],
@@ -70,6 +71,30 @@ describe("the card's who and progress lines", () => {
       ["card-who", "wt-0030 · 7b5e8856 · started 1 h ago"],
     ]);
     expect(lines({ stage: "your-check", heldBy: "wt-0030 (session 7b5e8856)" })[0]).toEqual(["card-who", "wt-0030 · 7b5e8856"]);
+  });
+  it("in Testing, held by its builder: needs a tester, on a quiet line of its own (0047)", () => {
+    expect(lines({ stage: "testing", heldBy: A, builtBy: A, gatedBy: A, stageSince: "2026-10-12 13:00" })).toEqual([
+      ["card-who", "wt-a · wt-0030 · 7b5e8856 · started 1 h ago"],
+      ["card-tester", "needs a tester"],
+    ]);
+    // Gated into Testing by a session that never claimed it: a builder all the same.
+    expect(lines({ stage: "testing", heldBy: "wt-b", builtBy: A, gatedBy: "wt-b", stageSince: "2026-10-12 13:00" }).at(-1)).toEqual(["card-tester", "needs a tester"]);
+    expect(lines({ stage: "testing", heldBy: "owner", builtBy: A, stageSince: "2026-10-12 13:00" })).toEqual([["card-who", "you · started 1 h ago"]]);
+  });
+  it("in Your check: who built it and who tested it, under the next step (0047)", () => {
+    expect(lines({ stage: "your-check", heldBy: "owner", builtBy: A, testedBy: "qa-0030 (session 99999999)" })).toEqual([
+      ["card-who your-turn", "Your turn"],
+      ["card-next", "Nothing to try: Accept"],
+      ["card-built", "built by wt-a · tested by qa-0030"],
+    ]);
+  });
+  it("never cuts who built it, who tested it or needs a tester: those lines wrap (0047)", () => {
+    const rule = (sel: string) => [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^}]*)\}/g)].filter((m) => m[1].split(",").map((s) => s.trim()).includes(sel)).map((m) => m[2]).join(";");
+    for (const sel of [".card-built", ".card-tester"]) {
+      expect(rule(sel), sel).toContain("color: var(--muted)");
+      expect(rule(sel), sel).not.toMatch(/nowrap|ellipsis/);
+      expect(rule(sel), sel).toContain("overflow-wrap: anywhere");
+    }
   });
   it("in Your check: Your turn, then the next step (0043)", () => {
     expect(lines({ stage: "your-check", heldBy: "owner", stageSince: "2026-10-12 13:00" })).toEqual([

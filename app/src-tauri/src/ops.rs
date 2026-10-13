@@ -1018,12 +1018,20 @@ pub fn move_task(
         if t.stage == stage && !t.blocked {
             return Err(format!("{id} is already in {}", stage_label(stage)));
         }
+        // Like `set_stage`, the move doesn't let a builder skip its tester (0047).
+        let note = tester_rule(id, t, &who, stage)?;
         let mut log = Vec::new();
         if t.blocked {
             log.push(unblocked_line(stamp, &who, &was_waiting(t)));
         }
         if t.stage != stage {
-            log.push(stage_line(stamp, &who, &t.stage, stage, " (set)"));
+            log.push(stage_line(
+                stamp,
+                &who,
+                &t.stage,
+                stage,
+                &with_note(" (set)".into(), note),
+            ));
         }
         Ok(Change {
             stage: stage.to_string(),
@@ -1062,6 +1070,9 @@ struct Current {
     builder: Option<String>,
     /// Who passed it Building → Testing most recently (Testing's holder), if anyone.
     tester: Option<String>,
+    /// Who passed it Building → Testing with the gate's line most recently (a builder, 0047),
+    /// unlike an override into Testing.
+    gated_by: Option<String>,
     /// The claim's lease: the holder's last heartbeat stamp, and the file's modified time.
     heartbeat: String,
     modified: u64,
@@ -1191,11 +1202,8 @@ fn current(root: &Path, path: &Path, text: &str) -> Result<Current, String> {
     let t = queue::parse_task("", root, &folder, path, text, 0)
         .ok_or("the task has no front matter")?;
     let (fields, body) = front_matter(text).ok_or("the task has no front matter")?;
-    let builder = queue::stage_lines(body)
-        .into_iter()
-        .rev()
-        .find(|(s, detail)| s.from == "ready" && s.to == "building" && *detail == "claimed")
-        .map(|(s, _)| s.who);
+    let builder = (!t.built_by.is_empty()).then(|| t.built_by.clone());
+    let gated_by = (!t.gated_by.is_empty()).then(|| t.gated_by.clone());
     let tester = queue::stage_lines(body)
         .into_iter()
         .rev()
@@ -1226,6 +1234,7 @@ fn current(root: &Path, path: &Path, text: &str) -> Result<Current, String> {
         held_by: t.held_by,
         builder,
         tester,
+        gated_by,
         heartbeat: t.heartbeat,
         modified,
         level: t.level,
@@ -1853,6 +1862,60 @@ fn check_seen(id: &str, t: &Current, expected: Option<&str>) -> Result<(), Strin
     }
 }
 
+/// The tester isn't the builder (0047). Moving an agent's task from Testing (or before it) to Your
+/// check or Done is refused when `who` built it: claimed it (Ready → Building) or passed it into
+/// Testing with the gate's line, as `session::same_holder` matches holders. Otherwise, what the
+/// stage line adds: the owner's override (the owner never built an agent's task), or a tester
+/// under another label in a builder's session (a coordinator's subagents share its session id),
+/// so the owner sees it. Nothing for the owner's own task, or one nobody built.
+fn tester_rule(id: &str, t: &Current, who: &str, to: &str) -> Result<Option<&'static str>, String> {
+    let past_testing =
+        stage_index(&t.stage) <= stage_index("testing") && stage_index(to) > stage_index("testing");
+    let builders: Vec<&str> = [&t.builder, &t.gated_by]
+        .into_iter()
+        .flatten()
+        .map(String::as_str)
+        .collect();
+    if t.human || !past_testing || builders.is_empty() {
+        return Ok(None);
+    }
+    if is_owner(who) {
+        return Ok(Some("owner's override: no separate tester"));
+    }
+    if let Some(b) = builders.iter().find(|b| same_holder(b, who)) {
+        return Err(built_it(id, b));
+    }
+    let session = |h: &str| crate::session::split(h).1.map(|s| s.id);
+    let mine = session(who);
+    let shared = mine.is_some() && builders.iter().any(|b| session(b) == mine);
+    Ok(shared.then_some("tested under another label in the builder's session"))
+}
+
+/// The refusal of a builder's pass out of Testing: who built it (the label, and its session when
+/// stamped) and what to do, with a QA label beside the builder's (`muster/wt-0042` → `muster/qa-0042`).
+fn built_it(id: &str, builder: &str) -> String {
+    let (label, stamp) = crate::session::split(builder);
+    let named = match stamp {
+        Some(s) => format!("{label} (session {})", s.id),
+        None => label.to_string(),
+    };
+    let word = label.split_whitespace().next().unwrap_or(label);
+    let qa = match word.rfind('/') {
+        Some(i) => format!("{}qa-{id}", &word[..=i]),
+        None => format!("qa-{id}"),
+    };
+    format!("{id} was built by {named}; a different session tests it: run the QA pass with its own --as (e.g. {qa}), or the owner passes it")
+}
+
+/// A stage line's detail with `note` added: ` (<note>)`, or `; <note>` inside the brackets.
+fn with_note(detail: String, note: Option<&str>) -> String {
+    match (note, detail.strip_suffix(')')) {
+        (None, _) => detail,
+        (Some(n), Some(open)) => format!("{open}; {n})"),
+        (Some(n), None) => format!("{detail} ({n})"),
+    }
+}
+
 /// What a pass does to the task `t` (the rules of `pass_task`, after its inputs are cleaned).
 fn pass_change(
     id: &str,
@@ -1913,6 +1976,8 @@ fn pass_change(
     {
         return Err(format!("{id} is claimed by {}", t.claimed_by));
     }
+    // Out of Testing only by someone who didn't build it (0047), before the criteria are counted.
+    let note = tester_rule(id, t, who, to)?;
     let (items, ticked) = t.criteria;
     let detail = match from {
         // The owner's own task is done when they say so: no gate line, no criteria to tick.
@@ -1973,7 +2038,7 @@ fn pass_change(
             released(t)
         },
         commit: (to == "done" && !commit.is_empty()).then(|| commit.to_string()),
-        log: vec![stage_line(stamp, who, from, to, &detail)],
+        log: vec![stage_line(stamp, who, from, to, &with_note(detail, note))],
     })
 }
 
@@ -2834,6 +2899,8 @@ pub fn set_stage(
         if t.stage == stage {
             return Err(format!("{id} is already in {}", stage_label(stage)));
         }
+        // The override doesn't let a builder skip its tester (0047).
+        let note = tester_rule(id, t, &who, stage)?;
         Ok(Change {
             stage: stage.to_string(),
             blocked: t.blocked,
@@ -2842,7 +2909,13 @@ pub fn set_stage(
             depends: None,
             claimed_by: released(t),
             commit: None,
-            log: vec![stage_line(stamp, &who, &t.stage, stage, " (set)")],
+            log: vec![stage_line(
+                stamp,
+                &who,
+                &t.stage,
+                stage,
+                &with_note(" (set)".into(), note),
+            )],
         })
     })
 }
@@ -4051,16 +4124,17 @@ mod tests {
             commit: "ABC1234".into(),
             ..Default::default()
         };
-        let steps: [(&PassOpts, &str, &str, &str); 6] = [
-            (&no_gate(), "shaping", "todo", ""),
-            (&no_gate(), "ready", "todo", ""),
-            (&no_gate(), "building", "doing", "wt-a"),
-            (&gate, "testing", "doing", ""),
-            (&no_gate(), "your-check", "doing", ""),
-            (&done, "done", "done", ""),
+        // The builder passes it on, except out of Testing: that's a tester's (0047).
+        let steps: [(&PassOpts, &str, &str, &str, &str); 6] = [
+            (&no_gate(), "wt-a", "shaping", "todo", ""),
+            (&no_gate(), "wt-a", "ready", "todo", ""),
+            (&no_gate(), "wt-a", "building", "doing", "wt-a"),
+            (&gate, "wt-a", "testing", "doing", ""),
+            (&no_gate(), "qa", "your-check", "doing", ""),
+            (&done, "wt-a", "done", "done", ""),
         ];
-        for (opts, stage, folder, claim) in steps {
-            let p = pass_task(d.path(), "0001", "wt-a", T, opts).unwrap();
+        for (opts, who, stage, folder, claim) in steps {
+            let p = pass_task(d.path(), "0001", who, T, opts).unwrap();
             assert_eq!(p, format!("{folder}/0001-t.md"));
             let t = only(d.path());
             assert_eq!(
@@ -6259,6 +6333,297 @@ mod tests {
                 other => panic!("{other:?}"),
             }
         }
+    }
+
+    // Task 0047: the tester isn't the builder.
+
+    /// Task 0001 with `criteria`, claimed by `builder` at 10:00 and passed into Testing at 11:00.
+    fn built_with(d: &Path, builder: &str, criteria: &str) {
+        put(
+            d,
+            "todo/0001-t.md",
+            &task_text("status: todo\nclaimed-by:\nwaiting_on:", criteria),
+        );
+        pass_task(d, "0001", builder, "2026-10-12 10:00", &no_gate()).unwrap();
+        pass_task(d, "0001", builder, "2026-10-12 11:00", &gate()).unwrap();
+    }
+    fn testing_file(d: &Path) -> String {
+        fs::read_to_string(d.join("doing/0001-t.md")).unwrap()
+    }
+    fn from_testing() -> PassOpts {
+        PassOpts {
+            from: Some("testing".into()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn pass_from_testing_refuses_the_builder_and_writes_nothing() {
+        let d = queue();
+        built_with(d.path(), A, TICKED);
+        let before = testing_file(d.path());
+        let why = "0001 was built by wt-a (session 7b5e8856); a different session tests it: run the QA pass with its own --as (e.g. qa-0001), or the owner passes it";
+        // The builder's session, from any folder, and its bare label (a terminal with no stamp).
+        for who in [A, "wt-a (main · session 7b5e8856 · cc-hg)", "wt-a"] {
+            assert_eq!(
+                pass_task(d.path(), "0001", who, T, &from_testing()).unwrap_err(),
+                why,
+                "{who}"
+            );
+            assert_eq!(testing_file(d.path()), before, "{who}");
+        }
+        // Without --from too.
+        assert_eq!(
+            pass_task(d.path(), "0001", A, T, &no_gate()).unwrap_err(),
+            why
+        );
+        assert_eq!(testing_file(d.path()), before);
+    }
+
+    #[test]
+    fn an_unstamped_builder_is_its_label_in_any_session() {
+        let d = queue();
+        let builder = "muster/wt-0042 (deps)";
+        built_with(d.path(), builder, TICKED);
+        let before = testing_file(d.path());
+        for who in [builder, "muster/wt-0042 (deps) (session 7b5e8856)"] {
+            assert_eq!(
+                pass_task(d.path(), "0001", who, T, &from_testing()).unwrap_err(),
+                "0001 was built by muster/wt-0042 (deps); a different session tests it: run the QA pass with its own --as (e.g. muster/qa-0001), or the owner passes it",
+                "{who}"
+            );
+        }
+        assert_eq!(testing_file(d.path()), before);
+        pass_task(d.path(), "0001", "muster/qa-0001", T, &from_testing()).unwrap();
+        assert_eq!(only(d.path()).stage, "your-check");
+    }
+
+    #[test]
+    fn a_builder_sent_back_that_passes_again_still_cant_test_it() {
+        let d = queue();
+        built_with(d.path(), A, TICKED);
+        return_task(
+            d.path(),
+            "0001",
+            "AC2 fails",
+            None,
+            "qa",
+            "2026-10-12 12:00",
+        )
+        .unwrap();
+        pass_task(d.path(), "0001", A, "2026-10-12 13:00", &gate()).unwrap();
+        let e = pass_task(d.path(), "0001", A, T, &from_testing()).unwrap_err();
+        assert!(
+            e.starts_with("0001 was built by wt-a (session 7b5e8856);"),
+            "{e}"
+        );
+        // Sent back again, a new session under the label carries on: it built this round, so it
+        // can't test it either, and nor can the session that claimed it.
+        return_task(
+            d.path(),
+            "0001",
+            "AC2 still fails",
+            None,
+            "qa",
+            "2026-10-12 14:00",
+        )
+        .unwrap();
+        let next = "wt-a (session 33333333)";
+        pass_task(d.path(), "0001", next, "2026-10-12 15:00", &gate()).unwrap();
+        let before = testing_file(d.path());
+        let e = pass_task(d.path(), "0001", next, T, &from_testing()).unwrap_err();
+        assert!(
+            e.starts_with("0001 was built by wt-a (session 33333333);"),
+            "{e}"
+        );
+        assert!(pass_task(d.path(), "0001", A, T, &from_testing()).is_err());
+        assert_eq!(testing_file(d.path()), before);
+        pass_task(
+            d.path(),
+            "0001",
+            "qa-0001 (session 99999999)",
+            T,
+            &from_testing(),
+        )
+        .unwrap();
+        assert_eq!(only(d.path()).stage, "your-check");
+    }
+
+    #[test]
+    fn another_label_tests_it_and_the_log_names_builder_and_tester() {
+        let d = queue();
+        built_with(d.path(), A, TICKED);
+        let qa = "qa-0001 (session 99999999)";
+        pass_task(d.path(), "0001", qa, T, &from_testing()).unwrap();
+        let t = only(d.path());
+        assert_eq!(
+            (t.stage.as_str(), t.built_by.as_str(), t.tested_by.as_str()),
+            ("your-check", A, qa)
+        );
+        let text = fs::read_to_string(d.path().join(&t.path)).unwrap();
+        assert!(
+            text.contains(&format!(
+                "- 2026-10-12 10:00 {A}: stage ready → building (claimed)\n"
+            )) && text.ends_with(&format!("- {T} {qa}: stage testing → your-check\n")),
+            "{text}"
+        );
+        // Another session under the builder's label is another holder (`session::same_holder`).
+        let d = queue();
+        built_with(d.path(), A, TICKED);
+        pass_task(
+            d.path(),
+            "0001",
+            "wt-a (session 11111111)",
+            T,
+            &from_testing(),
+        )
+        .unwrap();
+        assert_eq!(only(d.path()).stage, "your-check");
+    }
+
+    #[test]
+    fn another_label_in_the_builders_session_is_accepted_and_the_log_says_so() {
+        let d = queue();
+        built_with(d.path(), A, OWNERS);
+        let sub = "muster/qa-0001 (session 7b5e8856 · cc-hg)";
+        pass_task(d.path(), "0001", sub, T, &from_testing()).unwrap();
+        let t = only(d.path());
+        assert_eq!(
+            (t.stage.as_str(), t.tested_by.as_str()),
+            ("your-check", sub)
+        );
+        let text = fs::read_to_string(d.path().join(&t.path)).unwrap();
+        assert!(
+            text.ends_with(&format!("- {T} {sub}: stage testing → your-check (2 criteria for the owner to verify; tested under another label in the builder's session)\n")),
+            "{text}"
+        );
+        assert!(state(d.path()).problems.is_empty());
+    }
+
+    #[test]
+    fn the_owner_passes_without_a_tester_and_the_log_says_so() {
+        let d = queue();
+        built_with(d.path(), A, TICKED);
+        pass_task(d.path(), "0001", "owner", T, &from_testing()).unwrap();
+        let t = only(d.path());
+        assert_eq!(t.tested_by, "owner");
+        let file = |d: &Path| fs::read_to_string(d.join(&only(d).path)).unwrap();
+        assert!(
+            file(d.path()).ends_with(&format!(
+                "- {T} owner: stage testing → your-check (owner's override: no separate tester)\n"
+            )),
+            "{}",
+            file(d.path())
+        );
+        // `muster stage <id> your-check`, the owner's override, from a session too.
+        return_task(d.path(), "0001", "look again", None, "owner", T).unwrap();
+        let owner = "owner (session 22222222)";
+        set_stage(d.path(), "0001", "your-check", Some("testing"), owner, T).unwrap();
+        assert!(
+            file(d.path()).ends_with(&format!(
+                "- {T} {owner}: stage testing → your-check (set; owner's override: no separate tester)\n"
+            )),
+            "{}",
+            file(d.path())
+        );
+        assert!(state(d.path()).problems.is_empty());
+    }
+
+    #[test]
+    fn the_builder_cant_skip_its_tester_with_the_override() {
+        let d = queue();
+        built_with(d.path(), A, TICKED);
+        let before = testing_file(d.path());
+        for to in ["your-check", "done"] {
+            let e = set_stage(d.path(), "0001", to, None, A, T).unwrap_err();
+            assert!(
+                e.starts_with("0001 was built by wt-a (session 7b5e8856);"),
+                "{e}"
+            );
+        }
+        assert_eq!(testing_file(d.path()), before);
+        // From Building as well, once it's back there.
+        return_task(d.path(), "0001", "rework", None, "qa", T).unwrap();
+        assert!(set_stage(d.path(), "0001", "your-check", None, "wt-a", T).is_err());
+        // Moving it anywhere else, and anyone else's override, are as before.
+        set_stage(d.path(), "0001", "testing", None, "capture", T).unwrap();
+        set_stage(d.path(), "0001", "your-check", None, "capture", T).unwrap();
+        let t = only(d.path());
+        let text = fs::read_to_string(d.path().join(&t.path)).unwrap();
+        assert!(
+            text.ends_with(&format!(
+                "- {T} capture: stage testing → your-check (set)\n"
+            )),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn whoever_gated_it_into_testing_is_a_builder_and_the_task_says_who() {
+        let d = queue();
+        built_with(d.path(), A, TICKED);
+        assert_eq!(only(d.path()).gated_by, A);
+        // Put back in Building by the owner's override with nobody's claim, then gated into
+        // Testing by wt-b: wt-b built this round, though it never claimed it.
+        set_stage(d.path(), "0001", "ready", None, "owner", T).unwrap();
+        set_stage(d.path(), "0001", "building", None, "owner", T).unwrap();
+        assert_eq!(only(d.path()).claimed_by, "");
+        pass_task(d.path(), "0001", "wt-b", "2026-10-12 15:00", &gate()).unwrap();
+        let t = only(d.path());
+        assert_eq!(
+            (t.built_by.as_str(), t.gated_by.as_str(), t.held_by.as_str()),
+            (A, "wt-b", "wt-b")
+        );
+        let before = testing_file(d.path());
+        let e = pass_task(d.path(), "0001", "wt-b", T, &from_testing()).unwrap_err();
+        assert!(e.starts_with("0001 was built by wt-b;"), "{e}");
+        assert_eq!(testing_file(d.path()), before);
+        // An override into Testing gates nothing: the last gated passer stays.
+        return_task(d.path(), "0001", "again", Some("building"), "qa", T).unwrap();
+        set_stage(d.path(), "0001", "testing", None, "capture", T).unwrap();
+        assert_eq!(only(d.path()).gated_by, "wt-b");
+    }
+
+    #[test]
+    fn the_builder_cant_move_it_to_done_and_the_owners_move_is_the_override() {
+        let d = queue();
+        built_with(d.path(), A, TICKED);
+        let before = testing_file(d.path());
+        for who in [A, "wt-a"] {
+            let e = move_task(d.path(), "0001", "done", "", who, T).unwrap_err();
+            assert!(e.starts_with("0001 was built by wt-a"), "{who}: {e}");
+            assert_eq!(testing_file(d.path()), before, "{who}");
+        }
+        move_task(d.path(), "0001", "done", "", "owner", T).unwrap();
+        let t = only(d.path());
+        let text = fs::read_to_string(d.path().join(&t.path)).unwrap();
+        assert!(
+            text.ends_with(&format!(
+                "- {T} owner: stage testing → done (set; owner's override: no separate tester)\n"
+            )),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn with_no_builder_on_record_anyone_passes_and_nothing_is_added() {
+        let d = queue();
+        put(
+            d.path(),
+            "doing/0001-t.md",
+            &task_text(
+                "status: doing\nstage: testing\nclaimed-by:\nwaiting_on:",
+                TICKED,
+            ),
+        );
+        pass_task(d.path(), "0001", "owner", T, &from_testing()).unwrap();
+        let t = only(d.path());
+        assert_eq!((t.built_by.as_str(), t.tested_by.as_str()), ("", "owner"));
+        let text = fs::read_to_string(d.path().join(&t.path)).unwrap();
+        assert!(
+            text.ends_with(&format!("- {T} owner: stage testing → your-check\n")),
+            "{text}"
+        );
     }
 }
 

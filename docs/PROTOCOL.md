@@ -1,5 +1,22 @@
 # Muster — task queue protocol (v2, with stages)
 
+> **The tester isn't the builder (Muster 0047, 2026-10-13).** Testing → Your check is refused
+> when the passer built the task: whoever claimed it last (`ready → building (claimed)`) or passed
+> it into Testing with the gate's line, matched as one holder is (the same `--as` label, in the
+> same session or with no session on either side). Nothing is written, and the refusal names the
+> builder and what to do: `0042 was built by muster/wt-0042 (session 7b5e8856); a different session
+> tests it: run the QA pass with its own --as (e.g. muster/qa-0042), or the owner passes it`. For a
+> started task (0023) the merge checks this first, so a builder's `muster pass <id> --from testing`
+> stops before any rebase, gate or merge. A builder's `muster stage <id> your-check` (or `done`,
+> from Testing or before) and `muster move <id> done` are refused the same way. A coordinator's subagents carry its session id,
+> so a pass under another label in the builder's session is accepted and logged `(tested under
+> another label in the builder's session)`; another session under the builder's label is another
+> holder and passes as usual. The owner never built an agent's task: the owner's pass or override
+> out of Testing is always accepted and logged `(owner's override: no separate tester)`. The card
+> in Testing says "needs a tester" while a builder holds it; the Your-check card and, from Testing
+> on, the task pane say "built by … · tested by …". `muster list --json` carries `builtBy`,
+> `gatedBy` (the last pass into Testing with the gate's line) and `testedBy`.
+
 > **A dependency is met once it's merged (Muster 0042, 2026-10-13).** Work merges into main after
 > Testing passes and then waits in Your check for the owner's look (VISION.md), so the next tasks
 > build on it. A task that `depends:` on an agent's task is free once that task is in **Your check
@@ -41,8 +58,9 @@
 >    (`muster checkin <id> "<done, next>" --pct <n>`). Commit on the task's branch. When the
 >    project's gate is green, `muster pass <id> --from building --gate "<its result line>"`, as
 >    always: nothing is pushed and no PR is opened. The worktree stays for Testing.
-> 4. **Review and fix.** Testing reviews it and ticks each criterion with its proof. A finding the
->    builder must fix is `muster return <id> "<why>"`: back to Building, in the same worktree.
+> 4. **Review and fix.** Testing reviews it and ticks each criterion with its proof, in a session
+>    that isn't the builder (0047). A finding the builder must fix is `muster return <id> "<why>"`:
+>    back to Building, in the same worktree.
 > 5. **Merge: `muster pass <id> --from testing`.** For a started task this pass is the merge, in
 >    order, stopping at the first failure: it takes the repo's merge lock (a flock on
 >    `<git common dir>/muster/merge.lock`, so one merge runs at a time); rebases the branch on the
@@ -137,7 +155,8 @@
 > `muster pass <id> --from <the stage you saw> --as <you>`. `--from` makes a pass refuse if the task
 > has moved on since you looked, and the app always sends it. Ready → Building claims it for you, and Building → Testing needs
 > `--gate "<the gate's result line>"`. Testing → Your check needs every criterion ticked except
-> the owner's (`— verify: owner`, checked in Your check), and Your check → Done needs those too
+> the owner's (`— verify: owner`, checked in Your check), passed by a session that didn't build it
+> (0047, above), and Your check → Done needs those too
 > (the owner ticks them: `muster tick <id> AC2`, or in the task pane) and can take `--commit <sha>`. Send it back with `muster return <id> "<why>"`. Blocked
 > is a flag on any stage, with a kind: `muster block <id> --on <0014,0016|you|permission|question|outside> "<what>"` (see the note on kinds above), then `muster unblock <id>`.
 > The owner or capture can override with `muster stage <id> <stage>`. Until task 0005 moves queues
@@ -382,7 +401,11 @@ session files it with `muster file` (see the note at the top).
 ## Sessions (decision 0004)
 
 - **One session per task.** Build a task in its own fresh session and worktree; that session
-  claims it, checks in and passes it itself, then ends. It never takes a second task.
+  claims it, checks in and passes it Building → Testing itself, then ends. It never takes a
+  second task.
+- **The tester isn't the builder (0047).** A fresh session (a QA subagent with its own `--as`,
+  `muster/qa-0042`) verifies each criterion and passes it out of Testing, which for a started task
+  is the merge; or the owner does. `muster` refuses the builder's pass out of Testing.
 - **Asked for a check-in** (a "Check-in request on task …" from the answer hook, task 0039)?
   Answer with `muster checkin` before anything else. Claim from inside the session, so the claim
   carries its stamp and the owner can reach it.

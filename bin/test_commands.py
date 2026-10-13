@@ -322,11 +322,14 @@ class RoutesRunOnARealQueue(unittest.TestCase):
         self.route("block", "owner: which colour?")
         act("unblock", "--as owner")
         self.route("pass")
-        self.assertEqual(self.muster(["muster", "pass", self.a, "--from", "testing"]).returncode, 0)
+        # The builder (wt-a) can't pass it out of Testing (0047); a QA session does.
+        test = ["muster", "pass", self.a, "--from", "testing"]
+        self.assertEqual(self.muster(test).returncode, 1)
+        self.assertEqual(self.muster(test, MUSTER_AS="qa").returncode, 0)
         self.assertIn("stage: your-check", self.task(self.a))
         act("return", "--as owner")
         self.assertIn(f"owner: stage your-check → testing (returned: {TEXT})", self.task(self.a))
-        self.assertEqual(self.muster(["muster", "pass", self.a, "--from", "testing"]).returncode, 0)
+        self.assertEqual(self.muster(test, MUSTER_AS="qa").returncode, 0)
         act("pass", "--from your-check --as owner", "")
         self.assertIn("stage: done", self.task(self.a))
 

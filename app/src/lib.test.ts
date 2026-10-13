@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { humanColumn } from "./human";
 import {
   ago, boardColumn, checkinLine, claimant, columns, currentCheckin, earlierStages, estimateTotal, feed, fileName, fmtMinutes, fmtTokens, heldByOther, holder, holderOf, inProgress, LEASE_SECS, leaseRunOut,
-  homePath, copiedPath, nextStage, ofEstimate, oneAtATime, passLabel, queueTotal, quietCheckin, quietMinutes, shortTokens, splitHolder, stageHolders, stageOf, STAGES, stamp, stampMinutes, startedAgo, whoLine,
+  builtTested, homePath, copiedPath, needsTester, nextStage, ofEstimate, oneAtATime, passLabel, queueTotal, quietCheckin, quietMinutes, sameHolder, shortTokens, splitHolder, stageHolders, stageOf, STAGES, stamp, stampMinutes, startedAgo, whoLine,
 } from "./lib";
 import type { Task } from "./types";
 
@@ -340,6 +340,52 @@ describe("who's on it, since when, and how far (0030)", () => {
     ]);
     expect(stageHolders(task({ stage: "ready" }))).toEqual([]);
     expect(stageHolders(task({ stage: "building", claimedBy: "wt-b" }))).toEqual([{ stage: "building", who: "wt-b" }]);
+  });
+});
+
+describe("the tester isn't the builder (0047)", () => {
+  const A = "wt-a (wt-0030 · session 7b5e8856 · cc-hg)";
+  it("matches holders as the core does (session.rs same_holder)", () => {
+    expect(sameHolder(A, A)).toBe(true);
+    expect(sameHolder(A, "wt-a (main · session 7b5e8856 · cc-hg)")).toBe(true);
+    expect(sameHolder(A, "wt-a")).toBe(true);
+    expect(sameHolder("wt-a", A)).toBe(true);
+    expect(sameHolder(A, "wt-a (session 11111111)")).toBe(false);
+    expect(sameHolder(A, "wt-b (session 7b5e8856)")).toBe(false);
+    expect(sameHolder("", "wt-a")).toBe(false);
+  });
+  it("a Testing task still held by its builder needs a tester", () => {
+    expect(needsTester(task({ stage: "testing", heldBy: A, builtBy: A }))).toBe(true);
+    // Rebuilt after a return by a new session under the builder's label, which gated it in.
+    expect(needsTester(task({ stage: "testing", heldBy: "wt-a (session 33333333)", builtBy: A, gatedBy: "wt-a (session 33333333)" }))).toBe(true);
+    // The builders are the claimer and the last gated passer, as the core's (ops.rs tester_rule):
+    // back in Building by an override with no claim, then gated in by wt-b; or never claimed.
+    expect(needsTester(task({ stage: "testing", heldBy: "wt-b", builtBy: A, gatedBy: "wt-b" }))).toBe(true);
+    expect(needsTester(task({ stage: "testing", heldBy: "wt-b", gatedBy: "wt-b" }))).toBe(true);
+    // Another session under the claimer's label isn't the claimer (session.rs same_holder).
+    expect(needsTester(task({ stage: "testing", heldBy: "wt-a (session 33333333)", builtBy: A }))).toBe(false);
+    // Put in Testing by an override: its holder didn't build it.
+    expect(needsTester(task({ stage: "testing", heldBy: "capture", builtBy: A, gatedBy: A }))).toBe(false);
+    expect(needsTester(task({ stage: "testing", heldBy: "owner", builtBy: A }))).toBe(false);
+    expect(needsTester(task({ stage: "testing", heldBy: A }))).toBe(false);
+    expect(needsTester(task({ stage: "your-check", heldBy: A, builtBy: A }))).toBe(false);
+    expect(needsTester(task({ stage: "testing", heldBy: "owner", builtBy: "owner", forWho: "human" }))).toBe(false);
+  });
+  it("says who built it and who tested it, short, or that it needs a tester", () => {
+    expect(builtTested(task({ stage: "your-check", builtBy: A, testedBy: "qa-0030 (session 99999999)" }))).toBe("built by wt-a · tested by qa-0030");
+    expect(builtTested(task({ stage: "done", builtBy: A, testedBy: "owner (session 22222222)" }))).toBe("built by wt-a · tested by you");
+    expect(builtTested(task({ stage: "testing", heldBy: A, builtBy: A }))).toBe("built by wt-a · needs a tester");
+    expect(builtTested(task({ stage: "testing", heldBy: "owner", builtBy: A }))).toBe("built by wt-a");
+    expect(builtTested(task({ stage: "your-check", builtBy: A }))).toBe("built by wt-a");
+    expect(builtTested(task({ stage: "your-check", builtBy: A, gatedBy: "wt-a (main · session 7b5e8856 · cc-hg)" }))).toBe("built by wt-a");
+    expect(builtTested(task({ stage: "testing", heldBy: "wt-b", builtBy: A, gatedBy: "wt-b" }))).toBe("built by wt-a and wt-b · needs a tester");
+    expect(builtTested(task({ stage: "your-check", gatedBy: "wt-b", testedBy: "qa" }))).toBe("built by wt-b · tested by qa");
+    // Nobody built it on record, it isn't that far yet, or it's the owner's own task: nothing.
+    expect(builtTested(task({ stage: "your-check", testedBy: "qa" }))).toBe("");
+    expect(builtTested(task({ stage: "building", builtBy: A }))).toBe("");
+    expect(builtTested(task({ stage: "done", builtBy: "owner", testedBy: "owner", forWho: "human" }))).toBe("");
+    // The pane names each in full.
+    expect(builtTested(task({ stage: "your-check", builtBy: A, testedBy: "qa" }), (w) => `[${w}]`)).toBe(`built by [${A}] · tested by [qa]`);
   });
 });
 

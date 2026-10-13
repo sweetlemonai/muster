@@ -41,7 +41,7 @@ A **stage** is the step a task has reached, and each stage has a **role**: the k
 | Shaping | product, tech and UI agents | It needs acceptance criteria, and no open [vision conflict](#the-vision-check). |
 | Ready | none: it waits to be claimed | Passing it claims it for whoever passes it. |
 | Building | a coding agent | It needs the gate's result line: the summary the project's checks print. |
-| Testing | a testing (QA) agent | Every criterion is ticked with its proof, except yours. |
+| Testing | a testing (QA) agent, never the one that built it | Every criterion is ticked with its proof, except yours, and a session that didn't build it passes it on (or you do). |
 | Your check | you | You tick your criteria, then Accept. |
 | Done | none | It can still be sent back. |
 
@@ -126,6 +126,8 @@ A claim has a **lease** of 12 hours, unless you change it on this Mac in the app
 A **check-in** is the holder saying how far it got: `muster checkin 0012 "gate green, writing tests" --pct 60`. The card shows it ("60% · gate green, writing tests · 12 min ago"). Sessions check in at each milestone and at least every 30 minutes, and a card quiet for longer says "no check-in for 45 min". The percentage is the session's own guess.
 
 The **holder** is who the task is with now: the claim in Ready and Building, and `held-by:` in Testing (who passed it there) and Your check (you). The card and the pane's status line show it. The status line adds **LIVE** when the task's file changed in the last 5 minutes (the LIVE window, also in **Settings**, under **Agents**), and "quiet" with how long when it didn't.
+
+**The tester isn't the builder.** The session that built a task (claimed it, or passed it into Testing) can't pass it out of Testing: `muster pass` refuses it, names the builder and says what to do, and a builder's `muster stage <id> your-check` or `muster move <id> done` is refused the same way. A fresh session, such as a QA subagent with its own `--as` (`muster/qa-0042`), checks each criterion and passes it, or you do. Your pass is logged as "owner's override: no separate tester". A coordinator's subagents share its session id, so a tester under another label in the builder's session is let through, and the log says "tested under another label in the builder's session". A Testing card still held by its builder says "needs a tester". The Your-check card says "built by … · tested by …", and so does the task pane's status line from Testing on.
 
 See [Claims](05-commands.md#claims) and decision [0001](../decisions/0001-app-on-drovers-stack.md) (how a quiet claim is told apart; tasks 0002 and 0030).
 

@@ -4,6 +4,48 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — The tester isn't the builder: Testing → Your check refused for the builder (task 0047)
+**Did:** `muster pass` out of Testing is refused when the passer built the task (claimed it last,
+or passed it into Testing with the gate line), matched as one holder (`session::same_holder`):
+nothing is written, and the refusal names the builder and suggests a QA label. The merge of a
+started task checks it first, so a builder's `pass --from testing` stops before any rebase, gate or
+merge; `pass_merged` keeps it too. A builder's `muster stage <id> your-check` (or `done`) is
+refused the same way, and so is `muster move <id> done`. The owner always passes, logged `(owner's override: no separate tester)`; a
+tester under another label in a builder's session (subagents share their coordinator's session
+id) passes, logged `(tested under another label in the builder's session)`. Tasks carry
+`builtBy`, `gatedBy` and `testedBy`, and the app counts builders as the core does (the claimer and
+the last gated passer). The Testing card says "needs a tester" on a quiet line of its own while a
+builder holds it; the Your-check card says "built by … · tested by …", wrapped rather than cut;
+the pane's status line says the same from Testing on.
+Core in `ops.rs` (`tester_rule`, `built_it`), `queue.rs` (the two fields); app in `lib.ts`,
+`CardStatus.tsx`, `PaneHeader.tsx`. PROTOCOL.md (a note, the stages note, the parallel loop,
+Sessions), the manual (Concepts, For agents, and Commands from `muster help pass` and `stage`)
+and AS_BUILT updated.
+**Decided:** a builder is whoever claimed the task last *or* passed it into Testing with the gate
+line, so a new session that rebuilt it under the builder's label after a return can't test it
+either; an override into Testing (`(set)`) doesn't make anyone a builder. The owner's override is
+logged whenever the owner moves a built agent's task past Testing, not only when the builder held
+Testing last: if the owner moves it, no other session tested it.
+**Verified:** `bin/gate`: `gate: green (pnpm check, test_task, test_commands, cargo test
+(Kiritimati))`; cargo test 402 + 4 + 14 + 3 (9 new: the builder refused stamped, unstamped and
+after a return and re-pass, nothing written; another label passes and is logged; another label in
+the builder's session logged so; the owner's pass and `stage` logged as the override; the builder's
+`stage` refused; the builder's merge refused before the rebase, gate or merge with branch, worktree
+and main untouched; `pass_merged` refuses it too), all 9 failing with the rule taken out;
+vitest 944 (`sameHolder`, `needsTester`, `builtTested`, the cards' and pane's lines);
+`test_commands.py` now checks the builder's pass from Testing exits 1 and a QA one 0.
+**Fixed (review):** "needs a tester" and "built by … · tested by …" were cut off by the card's
+one-line ellipsis in a narrow column → "needs a tester" is its own quiet line and `.card-built` /
+`.card-tester` wrap (a CSS test pins it); the app knew only the claimer, so a task gated into
+Testing by a session that never claimed it showed no "needs a tester" → `gatedBy` is serialized
+and `needsTester`/`builtTested` count both builders like `tester_rule`; `muster move <id> done`
+skipped the rule → `move_task` runs it and logs the override like `stage`; the Concepts page's
+LIVE sentence is back with the holder paragraph, and the docs say where "built by · tested by"
+shows (the Your-check card, the pane from Testing on). Re-verified: `gate: green (pnpm check,
+test_task, test_commands, cargo test (Kiritimati))`, cargo test 404, vitest 945.
+**Open:** AC6 (the next agent task reaching Your check shows both in its log) is the owner's to
+check. Coordinators need to start a QA subagent with its own `--as` for each task in Testing.
+
 ## 2026-10-13 — Muster finds queues one level deeper, and About says which it found and which you added (owner)
 **Fixed:** Settings › About said Muster finds every `~/playground/*/tasks` queue on its own and
 listed four persianUtils queues as "found", while twelve more `~/playground/persianUtils/<x>/tasks`
