@@ -8,6 +8,7 @@ import Projects from "./Projects";
 import NewTask from "./NewTask";
 import Appearance from "./Appearance";
 import { CardBand, cardClass } from "./CardLook";
+import { GraphView } from "./GraphView";
 import { TableView, TimelineView } from "./Views";
 import { GroupByChips, GroupedBoard } from "./Groups";
 import { childrenOf, GROUP_KEY, type GroupBy, groupItems, indexTasks, isWork, parentLine, parseGroupBy } from "./levels";
@@ -18,7 +19,7 @@ const TaskPanel = lazy(() => import("./TaskPanel"));
 const NotePanel = lazy(() => import("./NotePanel"));
 const Helper = lazy(() => import("./Helper"));
 const HelpView = lazy(() => import("./Help"));
-type View = "board" | "table" | "timeline" | "helper" | "waiting" | "activity" | "problems" | "projects" | "help";
+type View = "board" | "table" | "timeline" | "graph" | "helper" | "waiting" | "activity" | "problems" | "projects" | "help";
 // One docked pane beside the content, never over it (the owner wants everything in view).
 type Pane = { kind: "task"; key: string } | { kind: "note"; key: string } | { kind: "new" } | { kind: "appearance" } | null;
 const POLL_MS = 2000;
@@ -188,6 +189,7 @@ export default function App() {
             <button className={view === "board" ? "tab on" : "tab"} onClick={() => setView("board")}>Board</button>
             <button className={view === "table" ? "tab on" : "tab"} onClick={() => setView("table")}>Table</button>
             <button className={view === "timeline" ? "tab on" : "tab"} onClick={() => setView("timeline")}>Timeline</button>
+            <button className={view === "graph" ? "tab on" : "tab"} onClick={() => setView("graph")} title="What waits on what">Graph</button>
           </span>
           <button className={view === "helper" ? "tab on" : "tab"} onClick={() => setView("helper")}>Helper</button>
           <button className={view === "waiting" ? "tab on" : "tab"} onClick={() => setView("waiting")}>
@@ -214,7 +216,7 @@ export default function App() {
             <p className="empty">No queues yet. Muster looks for <code>~/playground/*/tasks</code> folders, or add one under Projects.</p>
           )}
 
-          {(view === "board" || view === "table" || view === "timeline") && (
+          {(view === "board" || view === "table" || view === "timeline" || view === "graph") && (
             <>
               <div className="filters" aria-label="Filters">
                 <span className="meta">Priority</span>
@@ -239,6 +241,7 @@ export default function App() {
                 </span>
               </div>
               {view === "table" && <TableView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} groups={tableGroups} by={groupBy} />}
+              {view === "graph" && <GraphView tasks={tasks} all={inQueue} multi={multi} openKey={openKey} onOpen={open} />}
               {view === "timeline" && <TimelineView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} />}
               {view === "board" && groupBy !== "none" && (
                 <GroupedBoard

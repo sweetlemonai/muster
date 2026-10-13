@@ -31,6 +31,8 @@ export type Task = {
   claimedBy: string;
   heartbeat: string;
   waitingOn: string;
+  /** The tasks it waits on (`depends:`, same queue, 0019). */
+  depends: string[];
   commit: string;
   captured: string;
   /** When it was captured to the minute, when the log knows it (0031); else empty. */

@@ -8,7 +8,7 @@ import { TableView } from "./Views";
 
 const task = (over: Partial<Task>): Task => ({
   queue: "muster", id: "0001", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
-  folder: "todo", path: "", claimedBy: "", heartbeat: "", waitingOn: "", commit: "", captured: "", capturedAt: "", blockHistory: [], questions: [],
+  folder: "todo", path: "", claimedBy: "", heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "", capturedAt: "", blockHistory: [], questions: [],
   openQuestions: 0, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTokens: "", estMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", attachments: [], logTail: [], modified: 0,
   level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", ...over,
 });

@@ -39,6 +39,68 @@ def front_matter(text):
     return fields, text[m.end():]
 
 
+def parse_depends(raw: str) -> tuple[list[str], list[str]]:
+    """`depends:` as `[0014, 0016]` or `0014, 0016`: the ids (each once) and anything else."""
+    ids: list[str] = []
+    bad: list[str] = []
+    # Same rules as the core (queue.rs parse_depends): split on comma, space or tab only, and an
+    # id is four ASCII digits.
+    for tok in re.split(r"[, \t]+", raw.strip().lstrip("[").rstrip("]")):
+        if not tok:
+            continue
+        if re.fullmatch(r"[0-9]{4}", tok):
+            if tok not in ids:
+                ids.append(tok)
+        else:
+            bad.append(tok[:24])
+    return ids, bad
+
+
+def dependency_loops(edges: dict[str, list[str]]) -> list[list[str]]:
+    """Sets of two or more tasks that wait on each other, ids sorted (as the core's check)."""
+    index: dict[str, int] = {}
+    low: dict[str, int] = {}
+    stack: list[str] = []
+    on_stack: set[str] = set()
+    loops: list[list[str]] = []
+    for start in sorted(edges):
+        if start in index:
+            continue
+        work = [(start, 0)]
+        while work:
+            v, i = work[-1]
+            if i == 0 and v not in index:
+                index[v] = low[v] = len(index)
+                stack.append(v)
+                on_stack.add(v)
+            out = edges.get(v, [])
+            if i < len(out):
+                work[-1] = (v, i + 1)
+                w = out[i]
+                if w not in edges:
+                    continue
+                if w not in index:
+                    work.append((w, 0))
+                elif w in on_stack:
+                    low[v] = min(low[v], index[w])
+                continue
+            work.pop()
+            if work:
+                p = work[-1][0]
+                low[p] = min(low[p], low[v])
+            if low[v] == index[v]:
+                group = []
+                while True:
+                    w = stack.pop()
+                    on_stack.discard(w)
+                    group.append(w)
+                    if w == v:
+                        break
+                if len(group) > 1:
+                    loops.append(sorted(group))
+    return sorted(loops)
+
+
 def stage_of(fields: dict, folder: str) -> str:
     stage = fields.get("stage", "").lower()
     if stage in STAGES:
@@ -268,6 +330,8 @@ def main():
                 "claimed_by": fields.get("claimed-by", ""),
                 "heartbeat": fields.get("heartbeat", ""),
                 "waiting_on": fields.get("waiting_on", ""),
+                "depends": parse_depends(fields.get("depends", ""))[0],
+                "_bad_depends": parse_depends(fields.get("depends", ""))[1],
                 "commit": fields.get("commit", ""),
                 "tags": [t.strip() for t in fields.get("tags", "").split(",") if t.strip()],
                 "est_time": fields.get("est-time", ""),
@@ -319,6 +383,19 @@ def main():
         ref = re.match(r"(\d{4})\b", t["waiting_on"])
         if ref and ref.group(1) not in known:
             problems.append(f"{t['path']}: waiting_on {ref.group(1)}, which doesn't exist")
+        # Dependencies (0019), as muster check reports them.
+        for b in t.pop("_bad_depends"):
+            problems.append(f"{t['path']}: depends has {b!r}, which isn't a task id")
+        for d in t["depends"]:
+            if d == t["id"]:
+                problems.append(f"{t['path']}: depends on itself")
+            elif d not in known:
+                problems.append(f"{t['path']}: depends on {d}, which doesn't exist")
+    edges: dict[str, list[str]] = {}
+    for t in tasks:  # a duplicate id merges its edges, as the core does
+        edges.setdefault(t["id"], []).extend(d for d in t["depends"] if d != t["id"])
+    for loop in dependency_loops(edges):
+        problems.append(f"{', '.join(loop)} depend on each other in a loop")
     level_problems, warnings = level_checks(tasks, now.strftime("%Y-%m-%d"))
     problems.extend(level_problems)
     for t in tasks:

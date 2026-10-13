@@ -494,3 +494,39 @@ button:disabled { opacity: 0.45; cursor: default; }
 /* Blocked stretches on a timeline bar (0031): hatched in the blocked colour, over the stages. */
 .tl-block { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--st-blocked) 70%, transparent) 0 3px, transparent 3px 7px); border-left: 1px solid var(--st-blocked); border-right: 1px solid var(--st-blocked); pointer-events: none; }
 .tl-nav .chip:nth-child(2) { min-width: 7.5em; }
+
+/* Graph view (0019): what waits on what. Nodes are buttons over an SVG of arrows. */
+.graph-view { flex: 1; overflow: auto; padding: 8px 14px 16px; min-height: 0; }
+.graph-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+.g-legend.ready { border: 1.5px solid var(--ok); border-radius: 4px; padding: 0 4px; }
+.graph-queue { margin-bottom: 18px; }
+.graph-queue h2 { font-size: 13px; margin: 0 0 8px; color: var(--accent-text); }
+.graph-canvas { position: relative; }
+.graph-canvas svg { position: absolute; inset: 0; overflow: visible; }
+.g-edge { fill: none; stroke: var(--faint); stroke-width: 1.5; }
+.g-edge.loop { stroke: var(--err); stroke-dasharray: 4 3; }
+.g-edge.on { stroke: var(--accent); stroke-width: 2.5; }
+.g-edge.dim { opacity: 0.25; }
+.g-head { fill: var(--faint); }
+.g-head-on { fill: var(--accent); }
+.g-node { position: absolute; display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 6px 8px; background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--edge, var(--status, var(--border))); border-radius: var(--radius); overflow: clip; }
+.g-node:hover { border-color: var(--accent); border-left-color: var(--edge, var(--status)); }
+.g-node.ready { box-shadow: inset 0 0 0 1.5px var(--ok); }
+.g-node.blocked { border-left-color: var(--st-blocked); }
+.g-node.sel { outline: 2px solid var(--accent); outline-offset: 2px; }
+.g-node.up { border-color: var(--accent); }
+.g-node.down { border-color: var(--accent); border-style: dashed; border-left-style: solid; }
+.g-rel { color: var(--accent-text); font-weight: 600; }
+.g-who { color: var(--muted); }
+.g-deps { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.g-loose .id { color: var(--muted); }
+.g-loose .g-stage { color: var(--muted); margin-left: 4px; }
+.g-node.dim { opacity: 0.4; }
+/* Done work is quiet, unless it's on the selected task's chain. */
+.g-node.s-done:not(.sel):not(.up):not(.down) { opacity: 0.55; }
+.g-top { display: flex; gap: 6px; align-items: center; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; }
+.g-stage { color: var(--text); }
+.g-ready { color: var(--ok); font-weight: 600; }
+.g-title { font-size: 12px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; min-height: 0; -webkit-box-orient: vertical; overflow: hidden; }
+.graph-loose { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+.g-loose { border: 1px solid var(--border); border-left: 3px solid var(--edge, var(--status, var(--border))); border-radius: 6px; font-size: 12px; }

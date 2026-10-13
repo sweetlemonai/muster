@@ -644,7 +644,54 @@ fn edit_locked(
     }
 }
 
-/// Set priority, type or title.
+/// `depends` for `set`: task ids in this queue, never the task itself, and never closing a loop.
+/// Written as `[0014, 0016]`; empty clears it. The caller holds the queue's lock.
+fn clean_depends(root: &Path, id: &str, value: &str) -> Result<String, String> {
+    let (ids, bad) = queue::parse_depends(value);
+    if let Some(b) = bad.first() {
+        return Err(format!("depends takes task ids like 0014, got {b:?}"));
+    }
+    if ids.iter().any(|d| d == id) {
+        return Err(format!("{id} can't depend on itself"));
+    }
+    if ids.len() > 50 {
+        return Err("depends takes at most 50 tasks".into());
+    }
+    if ids.is_empty() {
+        return Ok(String::new());
+    }
+    let tasks = tasks_now(root);
+    let known: std::collections::HashSet<&str> = tasks.iter().map(|t| t.id.as_str()).collect();
+    if let Some(d) = ids.iter().find(|d| !known.contains(d.as_str())) {
+        return Err(format!("there's no task {d} in this queue"));
+    }
+    // Would the new list close a loop through this task?
+    let mut edges: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+    for t in &tasks {
+        let deps: Vec<&str> = if t.id == id {
+            ids.iter().map(String::as_str).collect()
+        } else {
+            t.depends
+                .iter()
+                .map(String::as_str)
+                .filter(|d| *d != t.id)
+                .collect()
+        };
+        edges.entry(t.id.as_str()).or_default().extend(deps);
+    }
+    if let Some(l) = queue::dependency_loops(&edges)
+        .into_iter()
+        .find(|l| l.iter().any(|x| x == id))
+    {
+        return Err(format!(
+            "that would make a loop: {} would wait on each other",
+            l.join(", ")
+        ));
+    }
+    Ok(format!("[{}]", ids.join(", ")))
+}
+
+/// Set priority, type, title, tags, estimates or depends.
 pub fn set_field(
     root: &Path,
     id: &str,
@@ -667,9 +714,23 @@ pub fn set_field(
         "tags" => ("tags", clean_tags(&[value.to_string()])?.join(", ")),
         "time" | "est-time" => ("est-time", clean_time(value)?),
         "tokens" | "est-tokens" => ("est-tokens", clean_tokens(value)?),
+        // Checked against the other tasks and written under one lock, so two sets at once can't
+        // close a loop between them.
+        "depends" => {
+            return with_lock(root, || {
+                let val = clean_depends(root, id, value)?;
+                let line = free_text_line(
+                    format!("{stamp} {who}: depends set to {val}"),
+                    "the depends",
+                )?;
+                edit_locked(root, id, |_, text| {
+                    Ok((append_log(&set_front(&text, "depends", &val)?, &line), None))
+                })
+            })
+        }
         _ => {
             return Err(format!(
-                "can't set {field:?}: use priority, type, title, tags, time, tokens, level, parent or due"
+                "can't set {field:?}: use priority, type, title, tags, time, tokens, level, parent, due or depends"
             ))
         }
     };
@@ -1105,14 +1166,38 @@ fn is_id(id: &str) -> bool {
     id.len() == 4 && id.bytes().all(|b| b.is_ascii_digit())
 }
 
+/// What `t` still waits on (`depends:` not yet done), among `tasks` (0019). A dependency that
+/// doesn't exist doesn't hold it (check reports it).
+fn waiting_on_deps(t: &queue::Task, tasks: &[queue::Task]) -> Vec<String> {
+    t.depends
+        .iter()
+        .filter(|d| **d != t.id)
+        .filter(|d| tasks.iter().any(|o| o.id == **d && o.stage != "done"))
+        .cloned()
+        .collect()
+}
+
 /// Claim a Ready task for `who`: Ready → Building, as `pass --from ready`, and refused while
-/// `who` already holds another task in Building in this queue. The check and the claim happen
-/// under one lock, so of two claims at once only one can win.
+/// `who` already holds another task in Building in this queue, or while a task it depends on
+/// isn't done. The checks and the claim happen under one lock, so of two claims at once only one
+/// can win.
 pub fn claim_task(root: &Path, id: &str, who: &str, stamp: &str) -> Result<String, String> {
     let who = actor(who)?;
-    // `change` refuses a second claim for `who`, under the same lock as the claim itself.
-    change(root, id, &who, stamp, |t| {
-        pass_change(id, t, &who, stamp, "", "", Some("ready"))
+    with_lock(root, || {
+        let tasks = tasks_now(root);
+        if let Some(t) = tasks.iter().find(|t| t.id == id) {
+            let open = waiting_on_deps(t, &tasks);
+            if !open.is_empty() {
+                return Err(format!(
+                    "{id} depends on {}, not done yet; pick another (muster next)",
+                    open.join(", ")
+                ));
+            }
+        }
+        // `change_locked` refuses a second claim for `who`, under the same lock.
+        change_locked(root, id, &who, stamp, |t| {
+            pass_change(id, t, &who, stamp, "", "", Some("ready"))
+        })
     })
 }
 
@@ -1124,8 +1209,8 @@ fn priority_rank(p: &str) -> u8 {
     }
 }
 
-/// Claim the top Ready task `who` may take: not blocked, not held in Ready by someone else;
-/// high before normal before low, then the lowest id. None when there's nothing to take.
+/// Claim the top Ready task `who` may take: not blocked, not held in Ready by someone else,
+/// everything it depends on done; high before normal before low, then the lowest id. None when there's nothing to take.
 /// Refused while `who` already holds a task in Building here.
 pub fn next_task(root: &Path, who: &str, stamp: &str) -> Result<Option<Claimed>, String> {
     let who = actor(who)?;
@@ -1141,6 +1226,7 @@ pub fn next_task(root: &Path, who: &str, stamp: &str) -> Result<Option<Claimed>,
             .filter(|t| t.stage == "ready" && !t.blocked && is_id(&t.id))
             .filter(|t| t.level == "task")
             .filter(|t| t.claimed_by.is_empty() || t.claimed_by == who)
+            .filter(|t| waiting_on_deps(t, &tasks).is_empty())
             .min_by_key(|t| (priority_rank(&t.priority), t.id.clone()))
         else {
             return Ok(None);
@@ -2448,6 +2534,53 @@ mod tests {
     }
 
     #[test]
+    fn set_depends_checks_ids_itself_and_loops() {
+        let d = queue();
+        for id in ["0001", "0002", "0003"] {
+            put(
+                d.path(),
+                &format!("todo/{id}-t.md"),
+                &task_text("status: todo", "").replace("id: 0001", &format!("id: {id}")),
+            );
+        }
+        set_field(d.path(), "0002", "depends", "0001", "capture", T).unwrap();
+        set_field(d.path(), "0003", "depends", " 0002, 0001 ", "capture", T).unwrap();
+        let text = fs::read_to_string(d.path().join("todo/0003-t.md")).unwrap();
+        assert!(text.contains("\ndepends: [0002, 0001]\n"), "{text}");
+        assert!(
+            text.ends_with("capture: depends set to [0002, 0001]\n"),
+            "{text}"
+        );
+        let before = fs::read_to_string(d.path().join("todo/0001-t.md")).unwrap();
+        for (value, why) in [
+            ("0003", "would make a loop: 0001, 0002, 0003"),
+            ("0001", "can't depend on itself"),
+            ("0009", "no task 0009"),
+            ("next week", "takes task ids"),
+        ] {
+            let e = set_field(d.path(), "0001", "depends", value, "capture", T).unwrap_err();
+            assert!(e.contains(why), "{value}: {e}");
+        }
+        assert_eq!(
+            fs::read_to_string(d.path().join("todo/0001-t.md")).unwrap(),
+            before
+        );
+        // Empty clears it.
+        set_field(d.path(), "0003", "depends", "", "capture", T).unwrap();
+        let t = state(d.path())
+            .tasks
+            .into_iter()
+            .find(|t| t.id == "0003")
+            .unwrap();
+        assert!(t.depends.is_empty());
+        assert!(
+            state(d.path()).problems.is_empty(),
+            "{:?}",
+            state(d.path()).problems
+        );
+    }
+
+    #[test]
     fn pass_ready_to_building_claims_it() {
         let d = queue();
         put(
@@ -2899,6 +3032,78 @@ mod tests {
             fs::read_to_string(d.path().join("todo/0001-t.md")).unwrap(),
             text
         );
+    }
+
+    #[test]
+    fn two_opposite_depends_at_once_never_make_a_loop() {
+        for _ in 0..20 {
+            let d = queue();
+            for id in ["0001", "0002"] {
+                put(
+                    d.path(),
+                    &format!("todo/{id}-t.md"),
+                    &task_text("status: todo", "").replace("id: 0001", &format!("id: {id}")),
+                );
+            }
+            let root = d.path().to_path_buf();
+            let go = std::sync::Arc::new(std::sync::Barrier::new(2));
+            let runs: Vec<_> = [("0001", "0002"), ("0002", "0001")]
+                .into_iter()
+                .map(|(id, dep)| {
+                    let (root, go) = (root.clone(), go.clone());
+                    std::thread::spawn(move || {
+                        go.wait();
+                        set_field(&root, id, "depends", dep, "capture", T)
+                    })
+                })
+                .collect();
+            let results: Vec<_> = runs.into_iter().map(|h| h.join().unwrap()).collect();
+            assert_eq!(
+                results.iter().filter(|r| r.is_ok()).count(),
+                1,
+                "{results:?}"
+            );
+            let refused = results.iter().find_map(|r| r.as_ref().err()).unwrap();
+            assert!(refused.contains("would make a loop"), "{refused}");
+            assert!(
+                state(d.path()).problems.is_empty(),
+                "{:?}",
+                state(d.path()).problems
+            );
+        }
+    }
+
+    #[test]
+    fn claim_and_next_wait_for_what_a_task_depends_on() {
+        let d = queue();
+        let t = |id: &str, fm: &str| task_text(fm, "").replace("id: 0001", &format!("id: {id}"));
+        put(
+            d.path(),
+            "doing/0001-t.md",
+            &t("0001", "status: doing\nstage: building\nclaimed-by: wt-x"),
+        );
+        put(
+            d.path(),
+            "todo/0002-t.md",
+            &t("0002", "status: todo\npriority: high\ndepends: [0001]"),
+        );
+        put(
+            d.path(),
+            "todo/0003-t.md",
+            &t("0003", "status: todo\npriority: low"),
+        );
+        let e = claim_task(d.path(), "0002", "wt-a", T).unwrap_err();
+        assert!(e.contains("depends on 0001, not done yet"), "{e}");
+        // next skips the high-priority 0002 and takes 0003.
+        assert_eq!(next_task(d.path(), "wt-a", T).unwrap().unwrap().id, "0003");
+        // Once 0001 is done, 0002 can be claimed.
+        put(
+            d.path(),
+            "done/0001-t.md",
+            &t("0001", "status: done\nstage: done"),
+        );
+        fs::remove_file(d.path().join("doing/0001-t.md")).unwrap();
+        claim_task(d.path(), "0002", "wt-b", T).unwrap();
     }
 
     #[test]

@@ -392,6 +392,40 @@ class TaskTests(unittest.TestCase):
         self.item("0002", "parent: 0001\nstage: done\nstatus: done", folder="done")
         (self.root / "todo" / "0002-x.md").unlink()
         self.assertNotIn("warning", self.manifest("--check").stdout)
+    def test_manifest_reads_depends_and_checks_it(self):
+        def put(rel: str, id_: str, deps: str) -> None:
+            (self.root / rel).write_text(
+                TASK_FILE.replace("id: 0042", f"id: {id_}").replace("waiting_on:", f"waiting_on:\ndepends: {deps}"))
+        (self.root / "doing" / "0042-something.md").unlink()
+        put("doing/0050-a.md", "0050", "[0051]")
+        put("doing/0051-b.md", "0051", "[0050, 0099]")
+        put("doing/0052-c.md", "0052", "[0052, soon]")
+        put("doing/0053-d.md", "0053", "0050")
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 1)
+        for line in [
+            "0050, 0051 depend on each other in a loop",
+            "doing/0051-b.md: depends on 0099, which doesn't exist",
+            "doing/0052-c.md: depends on itself",
+            "doing/0052-c.md: depends has 'soon', which isn't a task id",
+        ]:
+            self.assertIn(line, r.stdout)
+        self.assertNotIn("0053-d.md", r.stdout)
+        self.manifest()
+        deps = {t["id"]: t["depends"] for t in json.loads(self.text("tasks.json"))["tasks"]}
+        self.assertEqual(deps["0053"], ["0050"])
+        self.assertNotIn("_bad_depends", self.text("tasks.json"))
+
+    def test_manifest_depends_follow_the_cores_rules(self):
+        def put(rel: str, id_: str, deps: str) -> None:
+            (self.root / rel).write_text(
+                TASK_FILE.replace("id: 0042", f"id: {id_}").replace("waiting_on:", f"waiting_on:\ndepends: {deps}"))
+        put("doing/0060-a.md", "0060", "[\u06f0\u06f0\u06f1\u06f4]")  # Persian digits aren't an id
+        put("doing/0061-b.md", "0061", "0042\u00a00060")  # a no-break space doesn't split
+        r = self.manifest("--check")
+        self.assertIn("doing/0060-a.md: depends has '\u06f0\u06f0\u06f1\u06f4', which isn't a task id", r.stdout)
+        self.assertIn("doing/0061-b.md: depends has '0042\\xa00060', which isn't a task id", r.stdout)
+
 
     def test_inbox_command(self):
         self.run_task("ask", "0042", "Q?", "--session", "aaaa1111")

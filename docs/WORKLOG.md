@@ -4,6 +4,24 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-12 — Dependency graph: `depends:` and a Graph tab (task 0019)
+**Did:** tasks have a `depends:` field (ids in the same queue), set with `muster set <id> depends
+0014,0016`, which refuses unknown ids, itself and a loop. `muster check`, the Problems tab and
+`manifest.py --check` flag a bad id, a missing one, itself and loops (Tarjan, iterative). The app
+has a Graph tab beside Board, Table and Timeline: a layered left-to-right layout in our own code
+(longest-path ranks, barycentre sweeps), arrows from a task to what waits on it, ready-to-start
+marked, done dimmed with "Hide done", unlinked tasks in a strip below; selecting a task lights
+its whole up- and downstream. `queue.rs`, `ops.rs`, `help.rs`, `graph.ts`, `GraphView.tsx`,
+`App.tsx`, `styles.css`, `bin/manifest.py`. Muster's queue migrated (0002–0005, 0015–0018,
+0026, 0028); preview in `tasks/attachments/0019/`.
+**Verified:** `pnpm check` green: vitest 120 (12 new), cargo 77 + interop 5, clippy, build;
+`test_task.py` 23 OK; layout of 100 tasks under 50 ms (test); `muster check` clean on the queue.
+**Fixed (review):** `set depends` now checks and writes under one lock (two opposite sets at
+once could have made a loop); `claim` refuses and `next` skips a task whose dependencies aren't
+done; done tasks dim; a filtered-out dependency keeps its task in the graph with "waits on 0002
+(not shown)", and every node says what it waits on and how many wait on it, in words; unlinked
+chips show their state; manifest.py splits and reads ids as the core does.
+**Open:** `ready --parallel` (0023) will read `depends:` too.
 ## 2026-10-12 — Timeline scales: a day in hours, a week, a month (task 0031)
 **Did:** the Timeline has Day · Week · Month chips (saved), ◀ ▶ and Today. Bars come from the
 stage history's stamps: waiting from capture (to the minute when the log knows it, new

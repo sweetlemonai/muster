@@ -320,6 +320,11 @@ pub struct Task {
     /// A `stage:` value that isn't a stage (read as `stage` instead), for `check`.
     #[serde(skip)]
     pub bad_stage: String,
+    /// The tasks it waits on (`depends:`, ids in the same queue, 0019).
+    pub depends: Vec<String>,
+    /// Anything in `depends:` that isn't a task id, for `check`.
+    #[serde(skip)]
+    pub bad_depends: Vec<String>,
     /// The file says its stage (`stage:`), so its status must mirror it, for `check`.
     #[serde(skip)]
     pub stage_set: bool,
@@ -681,6 +686,7 @@ pub fn parse_task(
         status = folder.to_string();
     }
     let waiting_on = get("waiting_on");
+    let (depends, bad_depends) = parse_depends(&get("depends"));
     let raw_stage = get("stage").to_lowercase();
     let stage_set = STAGES.contains(&raw_stage.as_str());
     let (stage, bad_stage) = match STAGES.iter().find(|s| **s == raw_stage) {
@@ -743,6 +749,8 @@ pub fn parse_task(
         blocked,
         stage_history,
         bad_stage,
+        depends,
+        bad_depends,
         stage_set,
         folder: folder.to_string(),
         path: rel,
@@ -919,6 +927,97 @@ pub fn read_state_at(queues: &[(String, PathBuf)], cache: &mut Cache, stamp: &st
     state
 }
 
+/// `depends:` from the front matter, `[0014, 0016]` or `0014, 0016`: the ids (each once, in
+/// order) and anything that isn't one.
+pub fn parse_depends(raw: &str) -> (Vec<String>, Vec<String>) {
+    let inner = raw.trim().trim_start_matches('[').trim_end_matches(']');
+    let mut ids: Vec<String> = Vec::new();
+    let mut bad = Vec::new();
+    for tok in inner
+        .split([',', ' ', '\t'])
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+    {
+        if tok.len() == 4 && tok.bytes().all(|b| b.is_ascii_digit()) {
+            if !ids.iter().any(|i| i == tok) {
+                ids.push(tok.to_string());
+            }
+        } else {
+            bad.push(tok.chars().take(24).collect());
+        }
+    }
+    (ids, bad)
+}
+
+/// Loops in "depends on": each set of tasks that wait on each other (two or more), ids sorted,
+/// loops sorted. A task depending on itself isn't listed here (`check` names it separately).
+pub fn dependency_loops<'a>(edges: &HashMap<&'a str, Vec<&'a str>>) -> Vec<Vec<String>> {
+    // Tarjan's strongly connected components, iterative so a long chain can't overflow the stack.
+    let mut nodes: Vec<&str> = edges.keys().copied().collect();
+    nodes.sort_unstable();
+    let mut index: HashMap<&str, usize> = HashMap::new();
+    let mut low: HashMap<&str, usize> = HashMap::new();
+    let mut on_stack: HashSet<&str> = HashSet::new();
+    let mut stack: Vec<&str> = Vec::new();
+    let mut loops = Vec::new();
+    let mut next = 0;
+    for &start in &nodes {
+        if index.contains_key(start) {
+            continue;
+        }
+        // (node, position in its edge list)
+        let mut work: Vec<(&str, usize)> = vec![(start, 0)];
+        while let Some(&mut (v, ref mut i)) = work.last_mut() {
+            if *i == 0 && !index.contains_key(v) {
+                index.insert(v, next);
+                low.insert(v, next);
+                next += 1;
+                stack.push(v);
+                on_stack.insert(v);
+            }
+            let out = edges.get(v).map(Vec::as_slice).unwrap_or(&[]);
+            if let Some(&w) = out.get(*i) {
+                *i += 1;
+                if !edges.contains_key(w) {
+                    continue; // a dependency on a task that doesn't exist: check names it
+                }
+                if !index.contains_key(w) {
+                    work.push((w, 0));
+                } else if on_stack.contains(w) {
+                    let lw = index[w];
+                    let lv = low.get_mut(v).expect("v was indexed when first visited");
+                    *lv = (*lv).min(lw);
+                }
+                continue;
+            }
+            work.pop();
+            if let Some(&(parent, _)) = work.last() {
+                let lv = low[v];
+                let lp = low
+                    .get_mut(parent)
+                    .expect("parent was indexed before its child");
+                *lp = (*lp).min(lv);
+            }
+            if low[v] == index[v] {
+                let mut group = Vec::new();
+                while let Some(w) = stack.pop() {
+                    on_stack.remove(w);
+                    group.push(w.to_string());
+                    if w == v {
+                        break;
+                    }
+                }
+                if group.len() > 1 {
+                    group.sort();
+                    loops.push(group);
+                }
+            }
+        }
+    }
+    loops.sort();
+    loops
+}
+
 /// What's wrong in a queue's tasks. `now` and `stamp` are the same moment, as seconds since 1970
 /// and as local time (`YYYY-MM-DD HH:MM`), for the claims' lease.
 pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str) -> Vec<String> {
@@ -987,6 +1086,36 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str) -> Vec<Strin
         }
     }
     let known: HashSet<&str> = ids.keys().copied().collect();
+    // Dependencies (0019): ids only, never itself, every one a task here, and no loops.
+    let mut edges: HashMap<&str, Vec<&str>> = HashMap::new();
+    for t in tasks {
+        for b in &t.bad_depends {
+            out.push(format!(
+                "{queue}: {}'s depends has {b:?}, which isn't a task id",
+                t.path
+            ));
+        }
+        for d in &t.depends {
+            if *d == t.id {
+                out.push(format!("{queue}: {} depends on itself", t.path));
+            } else if !known.contains(d.as_str()) {
+                out.push(format!(
+                    "{queue}: {} depends on {d}, which doesn't exist",
+                    t.path
+                ));
+            }
+        }
+        edges
+            .entry(t.id.as_str())
+            .or_default()
+            .extend(t.depends.iter().map(String::as_str).filter(|d| *d != t.id));
+    }
+    for l in dependency_loops(&edges) {
+        out.push(format!(
+            "{queue}: {} depend on each other in a loop",
+            l.join(", ")
+        ));
+    }
     for t in tasks {
         let r: String = t.waiting_on.chars().take(4).collect();
         if r.len() == 4 && r.bytes().all(|b| b.is_ascii_digit()) && !known.contains(r.as_str()) {
@@ -2961,6 +3090,106 @@ mod tests {
                 .captured_at,
             ""
         );
+    }
+
+    #[test]
+    fn depends_reads_ids_and_keeps_the_rest_for_check() {
+        let v = |a: &[&str]| a.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            parse_depends("[0014, 0016]"),
+            (v(&["0014", "0016"]), v(&[]))
+        );
+        assert_eq!(
+            parse_depends("0014,0016 0014"),
+            (v(&["0014", "0016"]), v(&[]))
+        );
+        assert_eq!(parse_depends(""), (v(&[]), v(&[])));
+        assert_eq!(parse_depends("[]"), (v(&[]), v(&[])));
+        assert_eq!(
+            parse_depends("[14, 0016, owner]"),
+            (v(&["0016"]), v(&["14", "owner"]))
+        );
+    }
+
+    #[test]
+    fn dependency_loops_finds_each_loop_once() {
+        let edges = |pairs: &[(&'static str, &[&'static str])]| {
+            pairs
+                .iter()
+                .map(|(k, v)| (*k, v.to_vec()))
+                .collect::<HashMap<&str, Vec<&str>>>()
+        };
+        // A chain, a two-loop, a three-loop with a tail, and an edge to a missing task.
+        let e = edges(&[
+            ("0001", &["0002"]),
+            ("0002", &["0003"]),
+            ("0003", &[]),
+            ("0010", &["0011"]),
+            ("0011", &["0010"]),
+            ("0020", &["0021"]),
+            ("0021", &["0022", "0099"]),
+            ("0022", &["0020"]),
+            ("0023", &["0020"]),
+        ]);
+        assert_eq!(
+            dependency_loops(&e),
+            vec![
+                vec!["0010".to_string(), "0011".into()],
+                vec!["0020".into(), "0021".into(), "0022".into()]
+            ]
+        );
+        assert!(dependency_loops(&edges(&[("0001", &["0002"]), ("0002", &[])])).is_empty());
+    }
+
+    #[test]
+    fn a_long_chain_doesnt_overflow() {
+        let ids: Vec<String> = (0..20_000).map(|i| format!("{i:04}")).collect();
+        let mut e: HashMap<&str, Vec<&str>> = HashMap::new();
+        for w in ids.windows(2) {
+            e.insert(w[0].as_str(), vec![w[1].as_str()]);
+        }
+        e.insert(ids.last().unwrap().as_str(), vec![ids[0].as_str()]);
+        let loops = dependency_loops(&e);
+        assert_eq!(loops.len(), 1);
+        assert_eq!(loops[0].len(), 20_000);
+    }
+
+    #[test]
+    fn check_names_bad_self_missing_and_looping_dependencies() {
+        let d = tempfile::tempdir().unwrap();
+        for f in STATUS_FOLDERS {
+            fs::create_dir(d.path().join(f)).unwrap();
+        }
+        fs::write(d.path().join("README.md"), "q").unwrap();
+        let put = |id: &str, deps: &str| {
+            fs::write(
+                d.path().join(format!("todo/{id}-t.md")),
+                format!("---\nid: {id}\nstatus: todo\ndepends: {deps}\n---\n\n# T\n\n## Log\n"),
+            )
+            .unwrap();
+        };
+        put("0001", "[0002]");
+        put("0002", "[0001, 0009]");
+        put("0003", "[0003, soon]");
+        put("0004", "[0001]");
+        let s = read_state(
+            &[("q".into(), d.path().to_path_buf())],
+            &mut Cache::default(),
+        );
+        let mut p = s.problems.clone();
+        p.sort();
+        assert_eq!(
+            p,
+            vec![
+                "q: 0001, 0002 depend on each other in a loop".to_string(),
+                "q: todo/0002-t.md depends on 0009, which doesn't exist".into(),
+                "q: todo/0003-t.md depends on itself".into(),
+                "q: todo/0003-t.md's depends has \"soon\", which isn't a task id".into(),
+            ]
+        );
+        let t4 = s.tasks.iter().find(|t| t.id == "0004").unwrap();
+        assert_eq!(t4.depends, vec!["0001".to_string()]);
+        assert_eq!(serde_json::to_value(t4).unwrap()["depends"][0], "0001");
     }
 
     #[test]
