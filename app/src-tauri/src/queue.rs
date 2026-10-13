@@ -48,6 +48,9 @@ pub struct Question {
     pub text: String,
     pub escalated: bool,
     pub owner_answered: bool,
+    /// Its options, when it was asked with them (0049, `choices::read`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub choices: Option<crate::choices::Choices>,
 }
 
 /// One stage change from the log: `- <at> <who>: stage <from> → <to>[ (<detail>)]`.
@@ -406,6 +409,14 @@ pub struct Task {
     /// Who holds it in Testing or Your check (`held-by:`, set by `pass`), as Building has
     /// `claimed_by`.
     pub held_by: String,
+    /// Who built it (0047): the last `ready → building (claimed)` stage line's who, or "".
+    pub built_by: String,
+    /// Who passed it Building → Testing with the gate's line most recently (0047): a builder too,
+    /// unlike an override into Testing. "" when nobody has.
+    pub gated_by: String,
+    /// Who passed it into Your check from an earlier stage most recently (its tester, or the
+    /// owner's override), or "".
+    pub tested_by: String,
     /// When the current stage began: the stamp of the latest stage line into it, or "".
     pub stage_since: String,
     /// Every check-in in the log, oldest first (0030).
@@ -874,11 +885,13 @@ fn parse_question(item: &str) -> Question {
         Some(i) => item[i + 3..].trim(),
         None => item,
     };
+    let text = unindent_text(text);
     Question {
         n,
         ticked,
         asker,
-        text: unindent_text(text),
+        choices: crate::choices::read(&text),
+        text,
         escalated: item.contains("Escalated to owner"),
         owner_answered: item.contains("**A (owner"),
     }
@@ -1050,9 +1063,31 @@ pub fn parse_task(
         None if raw_level.is_empty() => ("task".to_string(), String::new()),
         None => ("task".to_string(), raw_level.chars().take(40).collect()),
     };
-    let stage_set_by_owner = stage_lines(body)
+    let steps = stage_lines(body);
+    // `(set)`, or `(set; owner's override: no separate tester)` past Testing (0047).
+    let stage_set_by_owner = steps
         .last()
-        .is_some_and(|(_, detail)| *detail == "set");
+        .is_some_and(|(_, detail)| *detail == "set" || detail.starts_with("set; "));
+    let built_by = steps
+        .iter()
+        .rev()
+        .find(|(s, detail)| s.from == "ready" && s.to == "building" && *detail == "claimed")
+        .map(|(s, _)| s.who.clone())
+        .unwrap_or_default();
+    let gated_by = steps
+        .iter()
+        .rev()
+        .find(|(s, detail)| {
+            s.from == "building" && s.to == "testing" && detail.starts_with("gate: ")
+        })
+        .map(|(s, _)| s.who.clone())
+        .unwrap_or_default();
+    let tested_by = steps
+        .iter()
+        .rev()
+        .find(|(s, _)| s.to == "your-check" && s.from != "done")
+        .map(|(s, _)| s.who.clone())
+        .unwrap_or_default();
     let est_test_time = crate::ops::clean_time(&get("est-test-time")).unwrap_or_default();
     let tags: Vec<String> = get("tags")
         .split(',')
@@ -1087,6 +1122,9 @@ pub fn parse_task(
         path: rel,
         claimed_by: get("claimed-by"),
         held_by: get("held-by"),
+        built_by,
+        gated_by,
+        tested_by,
         stage_since,
         checkins,
         checkin_asked: log_lines
@@ -2142,8 +2180,26 @@ pub fn ask(
     session: &str,
     stamp: &str,
 ) -> Result<Asked, String> {
+    ask_with(root, id, text, &Default::default(), who, session, stamp)
+}
+
+/// `ask`, with the options `choices::clean` checked (none for a question in words) written under
+/// the question as its last lines (`choices::lines`).
+pub fn ask_with(
+    root: &Path,
+    id: &str,
+    text: &str,
+    choices: &crate::choices::Choices,
+    who: &str,
+    session: &str,
+    stamp: &str,
+) -> Result<Asked, String> {
     let who = answerer(who)?;
     let question = clean_text_as(text, "the question")?;
+    let written = match crate::choices::lines(choices) {
+        options if options.is_empty() => question.clone(),
+        options => format!("{question}\n{options}"),
+    };
     let sid = session8(session)?;
     let mail = root.join("mail");
     with_lock(root, || {
@@ -2170,7 +2226,7 @@ pub fn ask(
         let n = next_question(&items)?;
         let item = format!(
             "- [ ] **Q{n} ({who}, session {sid}, {stamp}):** {}\n",
-            indent_text(&question)
+            indent_text(&written)
         );
         let kept = sect.trim_end_matches('\n');
         let new_sect = if kept.trim().is_empty() {
@@ -2384,8 +2440,46 @@ pub fn answer(
     who: &str,
     stamp: &str,
 ) -> Result<Option<String>, String> {
-    let who = answerer(who)?;
     let text = clean_text(text)?;
+    answer_with(root, id, n, who, stamp, |_| Ok(text)).map(|(asker, _)| asker)
+}
+
+/// Answer question `n` of task `id` by picking one of its options (0049): `pick` is a letter or a
+/// number (`choices::which`), and the answer is `(b) <the option's text>`, then `extra` after
+/// " — " when there is any, written, logged and mailed as `answer` does. Refused, with nothing
+/// written, for a pick that isn't one of the options or a question without any. Returns the
+/// asker's session, if one was found, and the answer as written.
+pub fn answer_pick(
+    root: &Path,
+    id: &str,
+    n: u32,
+    pick: &str,
+    extra: &str,
+    who: &str,
+    stamp: &str,
+) -> Result<(Option<String>, String), String> {
+    answer_with(root, id, n, who, stamp, |item| {
+        let choices = parse_question(item)
+            .choices
+            .ok_or_else(|| format!("Q{n} has no options to pick from: answer it in words"))?;
+        let text =
+            crate::choices::answer_text(&choices, pick, extra).map_err(|e| format!("Q{n}: {e}"))?;
+        clean_text(&text)
+    })
+}
+
+/// Answer question `n` of task `id` as `who` with the text `answer_of` makes from the question's
+/// item, under the queue's lock, then drop the asker's mailbox file. Nothing is written when it
+/// refuses. Returns the asker's session, if one was found, and the answer as written.
+fn answer_with(
+    root: &Path,
+    id: &str,
+    n: u32,
+    who: &str,
+    stamp: &str,
+    answer_of: impl FnOnce(&str) -> Result<String, String>,
+) -> Result<(Option<String>, String), String> {
+    let who = answerer(who)?;
     let mail = root.join("mail");
     with_lock(root, || {
         let path = find_task(root, id)?;
@@ -2397,6 +2491,12 @@ pub fn answer(
             .find(|&(a, b)| parse_question(&sect[a..b]).n == Some(n))
             .ok_or(format!("no Q{n} in {id}"))?;
         let item = &sect[a..b];
+        // One answer per question: a second (a double click on a chip) would add a second answer
+        // and mail the asker again.
+        if parse_question(item).ticked {
+            return Err(format!("Q{n} is already answered"));
+        }
+        let text = answer_of(item)?;
         let new_item = format!(
             "{}\n  **A ({who}, {stamp}):** {}",
             item.replacen("- [ ] **Q", "- [x] **Q", 1),
@@ -2435,7 +2535,7 @@ pub fn answer(
             fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
             write_atomic(&dir.join(format!("{id}-Q{n}.md")), &msg)?;
         }
-        Ok(asker)
+        Ok((asker, text))
     })
 }
 
@@ -2534,6 +2634,7 @@ mod tests {
             text: "Which?".into(),
             escalated,
             owner_answered: false,
+            choices: None,
         };
         // 0022's: an open question escalated to the owner, and Your check.
         assert!(needs_owner(&[q(false, true)], "building", ""));
@@ -3479,6 +3580,164 @@ mod tests {
         let t = read_task(d.path(), "0007").unwrap();
         assert_eq!(t.questions.len(), 1);
         assert!(t.stage_history.is_empty());
+    }
+
+    fn lease_choices() -> crate::choices::Choices {
+        crate::choices::clean(
+            &[
+                "Lease 1 h to 7 d".into(),
+                "Any length".into(),
+                "No lease".into(),
+            ],
+            Some("a"),
+            Some("c"),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn ask_with_options_writes_them_as_indented_lines_and_reads_them_back() {
+        let d = plain();
+        let q = "How long may a lease be?\nIt's set in Settings.";
+        let a = ask_with(d.path(), "0007", q, &lease_choices(), "wt-a", "aaaa1111", S).unwrap();
+        assert_eq!(a.n, 1);
+        let b = body_of(d.path(), "0007");
+        assert!(
+            b.contains("## Questions\n- [ ] **Q1 (wt-a, session aaaa1111, 2026-10-12 09:00):** How long may a lease be?\n  It's set in Settings.\n  - (a) Lease 1 h to 7 d (my pick)\n  - (b) Any length\n  - (c) No lease\n  With no answer: (c)\n\n## Log\n"),
+            "{b}"
+        );
+        let t = read_task(d.path(), "0007").unwrap();
+        let c = t.questions[0].choices.clone().expect("read back");
+        assert_eq!(
+            (c.options.len(), c.pick, c.no_answer, c.question.as_str()),
+            (3, Some(0), Some(2), q)
+        );
+        // Escalated, it still has them, with the escalation under the question.
+        escalate(d.path(), "0007", 1, "capture", S).unwrap();
+        let t = read_task(d.path(), "0007").unwrap();
+        let c = t.questions[0].choices.clone().expect("still there");
+        assert_eq!(
+            c.question,
+            format!("{q}\n**Escalated to owner (capture, {S}).**")
+        );
+        assert_eq!(c.options[1], "Any length");
+        // A question without them has none.
+        ask(d.path(), "0007", "Which port?", "wt-a", "aaaa1111", S).unwrap();
+        assert_eq!(
+            read_task(d.path(), "0007").unwrap().questions[1].choices,
+            None
+        );
+    }
+
+    #[test]
+    fn answer_pick_writes_the_options_text_logs_it_and_mails_the_asker() {
+        let d = plain();
+        let q = "How long may a lease be?";
+        ask_with(d.path(), "0007", q, &lease_choices(), "wt-a", "aaaa1111", S).unwrap();
+        let at = "2026-10-12 10:00";
+        let (asker, text) =
+            answer_pick(d.path(), "0007", 1, "B", "but warn\nafter 7 d", "owner", at).unwrap();
+        assert_eq!(asker.as_deref(), Some("aaaa1111"));
+        assert_eq!(text, "(b) Any length — but warn\nafter 7 d");
+        let b = body_of(d.path(), "0007");
+        assert!(
+            b.contains("- [x] **Q1 (wt-a, session aaaa1111, 2026-10-12 09:00):** How long may a lease be?\n  - (a) Lease 1 h to 7 d (my pick)\n  - (b) Any length\n  - (c) No lease\n  With no answer: (c)\n  **A (owner, 2026-10-12 10:00):** (b) Any length — but warn\n  after 7 d\n"),
+            "{b}"
+        );
+        assert!(
+            b.ends_with("- 2026-10-12 10:00 owner: answered Q1\n"),
+            "{b}"
+        );
+        let mail = fs::read_to_string(d.path().join("mail/aaaa1111/0007-Q1.md")).unwrap();
+        assert!(
+            mail.contains("\nAnswer: (b) Any length — but warn\nafter 7 d\n"),
+            "{mail}"
+        );
+        let t = read_task(d.path(), "0007").unwrap();
+        assert!(t.questions[0].ticked && t.questions[0].owner_answered);
+        // A number picks too, and with no extra words it's the option alone.
+        ask_with(
+            d.path(),
+            "0007",
+            "Again?",
+            &lease_choices(),
+            "wt-a",
+            "aaaa1111",
+            S,
+        )
+        .unwrap();
+        let (_, text) = answer_pick(d.path(), "0007", 2, "3", " ", "owner", at).unwrap();
+        assert_eq!(text, "(c) No lease");
+    }
+
+    #[test]
+    fn an_answered_question_refuses_a_second_answer_and_writes_nothing() {
+        // A second click on a chip (review, 0049): one answer per question, one mail.
+        let d = plain();
+        ask_with(
+            d.path(),
+            "0007",
+            "Lease?",
+            &lease_choices(),
+            "wt-a",
+            "aaaa1111",
+            S,
+        )
+        .unwrap();
+        answer_pick(d.path(), "0007", 1, "a", "", "owner", S).unwrap();
+        let mail = d.path().join("mail/aaaa1111/0007-Q1.md");
+        fs::rename(&mail, d.path().join("taken.md")).unwrap();
+        let before = body_of(d.path(), "0007");
+        let later = "2026-10-12 09:01";
+        assert!(answer_pick(d.path(), "0007", 1, "b", "", "owner", later)
+            .unwrap_err()
+            .contains("Q1 is already answered"));
+        assert!(answer(d.path(), "0007", 1, "No, b.", "owner", later)
+            .unwrap_err()
+            .contains("Q1 is already answered"));
+        assert_eq!(body_of(d.path(), "0007"), before);
+        assert_eq!(before.matches("**A (owner").count(), 1);
+        assert_eq!(before.matches("answered Q1").count(), 1);
+        assert!(!mail.exists(), "no second mail");
+    }
+
+    #[test]
+    fn a_bad_pick_or_bad_options_write_nothing() {
+        let d = plain();
+        ask_with(
+            d.path(),
+            "0007",
+            "Lease?",
+            &lease_choices(),
+            "wt-a",
+            "aaaa1111",
+            S,
+        )
+        .unwrap();
+        ask(d.path(), "0007", "Which port?", "wt-a", "aaaa1111", S).unwrap();
+        let before = body_of(d.path(), "0007");
+        let pick = |n: u32, p: &str| answer_pick(d.path(), "0007", n, p, "", "owner", S);
+        assert!(pick(1, "d")
+            .unwrap_err()
+            .contains("\"d\" isn't one of the options"));
+        assert!(pick(1, "0")
+            .unwrap_err()
+            .contains("isn't one of the options"));
+        assert!(pick(2, "a")
+            .unwrap_err()
+            .contains("Q2 has no options to pick from: answer it in words"));
+        assert!(pick(9, "a").unwrap_err().contains("no Q9 in 0007"));
+        assert!(
+            answer_pick(d.path(), "0007", 1, "a", &"x".repeat(4000), "owner", S)
+                .unwrap_err()
+                .contains("longer than 4000")
+        );
+        assert_eq!(body_of(d.path(), "0007"), before);
+        assert!(!d.path().join("mail/aaaa1111").exists(), "no mail");
+        // Free text still answers a question with options.
+        answer(d.path(), "0007", 1, "Something else: 3 d.", "owner", S).unwrap();
+        assert!(body_of(d.path(), "0007")
+            .contains("**A (owner, 2026-10-12 09:00):** Something else: 3 d.\n"));
     }
 
     #[test]

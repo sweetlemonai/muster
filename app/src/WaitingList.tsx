@@ -1,9 +1,11 @@
+import { Fragment } from "react";
 import BlockWhy from "./BlockWhy";
 import EffortGroups from "./EffortGroups";
 import { humanColumn, isHuman } from "./human";
 import { key } from "./lib";
 import { taskKey } from "./taskKey";
 import { isWork } from "./levels";
+import PickOne from "./PickOne";
 import type { Task } from "./types";
 import YouRibbon from "./YouRibbon";
 import { nextStep } from "./yourCheck";
@@ -22,7 +24,7 @@ export default function WaitingList({ tasks, multi, openKey, onOpen, onChanged }
   const inCheck = (t: Task) => !isHuman(t) && isWork(t) && t.stage === "your-check";
   const check = tasks.filter(inCheck);
   const rest = tasks.filter((t) => !inCheck(t));
-  const item = (t: Task) => <WaitingItem key={key(t)} t={t} multi={multi} active={openKey === key(t)} onOpen={onOpen} />;
+  const item = (t: Task) => <WaitingItem key={key(t)} t={t} multi={multi} active={openKey === key(t)} onOpen={onOpen} onChanged={onChanged} />;
   return (
     <main className="list waiting-list">
       {tasks.length === 0 && <p className="empty">Nothing is waiting for you.</p>}
@@ -38,8 +40,9 @@ export default function WaitingList({ tasks, multi, openKey, onOpen, onChanged }
   );
 }
 
-/** One task waiting on the owner: what it is, each thing it waits on them for, and Open. */
-function WaitingItem({ t, multi, active, onOpen }: { t: Task; multi: boolean; active: boolean; onOpen: (t: Task) => void }) {
+/** One task waiting on the owner: what it is, each thing it waits on them for (a pick-one
+ *  question with its options, answered here in one click, 0049), and Open. */
+function WaitingItem({ t, multi, active, onOpen, onChanged }: { t: Task; multi: boolean; active: boolean; onOpen: (t: Task) => void; onChanged: () => void }) {
   const asked = t.questions.filter((q) => !q.ticked && q.escalated);
   // A question or a block as the next step is shown above in its own words.
   const next = t.stage === "your-check" && !isHuman(t) && isWork(t) ? nextStep(t) : null;
@@ -53,7 +56,10 @@ function WaitingItem({ t, multi, active, onOpen }: { t: Task; multi: boolean; ac
       </header>
       {isHuman(t) && <p>Yours to do: {humanColumn(t.stage) === "doing" ? "in Doing. Mark it Done when it is." : "in To do. Start it when you do."}</p>}
       {asked.map((q) => (
-        <p key={q.n ?? q.text}><b>Q{q.n}</b> {q.text}</p>
+        <Fragment key={q.n ?? q.text}>
+          <p><b>Q{q.n}</b> {q.choices ? q.choices.question : q.text}</p>
+          {q.choices && <PickOne task={t} q={q} choices={q.choices} onChanged={onChanged} />}
+        </Fragment>
       ))}
       {(t.blockedKind === "you" || t.blockedKind === "permission") && <p><BlockWhy t={t} /></p>}
       {step && <p className="next-step-line">{`${step.full}${step.more ? ` · ${step.more} more` : ""}`}</p>}

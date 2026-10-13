@@ -2419,6 +2419,57 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn the_builders_merge_is_refused_before_the_rebase_the_gate_or_the_merge() {
+        let f = fx();
+        let id = task(&f.root, "Self-tested", "s/");
+        let s = built(&f, &id, "s/x.txt");
+        // Main moves on, so a rebase would rewrite the branch.
+        commit(&f.repo, "other.txt", "other\n", "main moves");
+        let main_before = g(&f.repo, &["rev-parse", "main"]);
+        let origin_before = g(&f.origin, &["rev-parse", "main"]);
+        let tip = g(&s.worktree, &["rev-parse", "HEAD"]);
+        let file = f.root.join(read(&f.root, &id).path);
+        let before = fs::read_to_string(&file).unwrap();
+        let ran = f.base.join("gate-ran");
+        let gate = shell_gate(&f, "marks", &format!("touch '{}'", ran.display()));
+        let mut said = Vec::new();
+        let e = merge(&f.root, &id, "wt-a", &noon, &gate, &mut |l| said.push(l)).unwrap_err();
+        assert_eq!(
+            e,
+            format!("{id} was built by wt-a; a different session tests it: run the QA pass with its own --as (e.g. qa-{id}), or the owner passes it")
+        );
+        assert!(said.is_empty(), "{said:?}");
+        assert!(!ran.exists(), "the gate never ran");
+        assert_eq!(g(&s.worktree, &["rev-parse", "HEAD"]), tip, "not rebased");
+        assert_eq!(g(&f.repo, &["rev-parse", "main"]), main_before);
+        assert_eq!(g(&f.origin, &["rev-parse", "main"]), origin_before);
+        assert!(s.worktree.is_dir() && has_branch(&f, &s.branch));
+        assert_eq!(fs::read_to_string(&file).unwrap(), before);
+        // A QA session merges it.
+        let merged = merge(&f.root, &id, "qa-0001", &noon, &green(&f), &mut |_| {});
+        assert!(matches!(merged, Ok(Merge::Merged { .. })), "{merged:?}");
+        let t = read(&f.root, &id);
+        assert_eq!(
+            (t.built_by.as_str(), t.tested_by.as_str()),
+            ("wt-a", "qa-0001")
+        );
+    }
+
+    #[test]
+    fn the_merges_own_pass_refuses_the_builder_too() {
+        let f = fx();
+        let id = task(&f.root, "Recorded", "r/");
+        built(&f, &id, "r/x.txt");
+        let e =
+            ops::pass_merged(&f.root, &id, "wt-a", T0, &"a".repeat(40), "merged it").unwrap_err();
+        assert!(
+            e.contains("the pass was refused: 0001 was built by wt-a;"),
+            "{e}"
+        );
+        assert_eq!(read(&f.root, &id).stage, "testing");
+    }
+
+    #[test]
     fn release_lists_what_would_be_lost_and_refuses_it_without_force() {
         let f = fx();
         let id = task(&f.root, "Abandon", "a/");

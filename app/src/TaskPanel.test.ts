@@ -122,6 +122,14 @@ describe("task pane stage controls", () => {
     );
     expect(holders({ stage: "ready" })).toBe("");
   });
+  it("says who built it and who tested it, or that it needs a tester, beside who's on it (0047)", () => {
+    const A = "wt-a (wt-0030 · session 7b5e8856 · cc-hg)";
+    const built = (over: Partial<Task>) => /<span class="built-tested">([\s\S]*?)<\/span>/.exec(pane(over).html)?.[1].replace(/&#x27;/g, "'") ?? "";
+    expect(built({ stage: "your-check", heldBy: "owner", builtBy: A, testedBy: "qa-0030 (session 99999999)" })).toBe(`built by ${A} · tested by qa-0030 (session 99999999)`);
+    expect(built({ stage: "your-check", heldBy: "owner", builtBy: A, testedBy: "owner" })).toBe(`built by ${A} · tested by you`);
+    expect(built({ stage: "testing", heldBy: A, builtBy: A })).toBe(`built by ${A} · needs a tester`);
+    expect(pane({ stage: "building", claimedBy: A, builtBy: A }).html).not.toContain("built-tested");
+  });
   it("lists every check-in in order, the percentage labelled as the session's own estimate", () => {
     const A = "wt-a (session 7b5e8856)";
     const html = pane({ stage: "building", claimedBy: A, checkins: [{ at: "2026-10-12 10:30", who: A, pct: 40, text: "gate green" }, { at: "2026-10-12 11:00", who: A, pct: null, text: "tests next" }] }).html;

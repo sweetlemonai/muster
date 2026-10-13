@@ -8,7 +8,13 @@ export type Question = {
   text: string;
   escalated: boolean;
   ownerAnswered: boolean;
+  /** Its options, when it was asked with them (0049); absent for a question in words. */
+  choices?: Choices;
 };
+
+/** A pick-one question's options, (a) first, with the asker's pick and what it does with no
+ *  answer as indexes into them; `question` is the question without the option lines. */
+export type Choices = { options: string[]; pick: number | null; noAnswer: number | null; question: string };
 
 /** An external link from the task's `links:` line; `title` is "" when it has none. */
 export type Link = { title: string; url: string };
@@ -47,6 +53,13 @@ export type Task = {
   claimedBy: string;
   /** Who holds it in Testing or Your check (`held-by:`), as Building has `claimedBy`. */
   heldBy: string;
+  /** Who built it (0047): the last claim's who (Ready → Building), or "". Optional, like the other
+   *  later fields, so a task without it reads as built by nobody on record. */
+  builtBy?: string;
+  /** Who last passed it Building → Testing with the gate's line (0047), a builder too, or "". */
+  gatedBy?: string;
+  /** Who passed it into Your check most recently: its tester, or the owner's override; or "". */
+  testedBy?: string;
   /** When the current stage began (the latest stage line into it), or "". */
   stageSince: string;
   /** Every check-in in the log, oldest first. */

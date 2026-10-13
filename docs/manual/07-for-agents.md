@@ -34,7 +34,13 @@ Why: the board is only useful if it's true. A hand edit can say a task was teste
    muster ask 0007 "Child webview or a separate window?" --as wt-a
    ```
 
-   The answer is pushed into the session after its next step where the answer hook is installed. Otherwise collect it with `muster inbox`.
+   When the answer is a choice, ask with the options, your pick and what you'll do with no answer, so the owner answers with one click:
+
+   ```
+   muster ask 0007 "Child webview or a separate window?" --option "Child webview" --option "Separate window" --pick a --no-answer a --as wt-a
+   ```
+
+   The answer is pushed into the session after its next step where the answer hook is installed. Otherwise collect it with `muster inbox`. A picked answer reads `(a) Child webview`, then any words the owner added.
 6. **Found something new** that isn't this task? Put it in the backlog: `muster add "<one line>" --as wt-a`.
 7. **Waiting on something** that stops the work: `muster block 0007 --on 0012` (or `--on "owner: …"`, `--on "capture: …"`). Unblock with `muster unblock 0007`.
 8. **Hand it on:** tick the criteria you can prove, each with its proof (`muster edit`, or the write-up in your branch), then pass with the gate's result line, as printed:
@@ -47,7 +53,7 @@ Why: the board is only useful if it's true. A hand edit can say a task was teste
 
 ## A testing session
 
-It takes a task in Testing, checks each acceptance criterion the way its `verify:` part says, and ticks each one with its proof. Then it passes the task to Your check: `muster pass 0007 --from testing --as qa`. Criteria marked `— verify: owner` are left for the owner; that pass doesn't wait for them. If something fails, it sends the task back with what's wrong:
+It takes a task in Testing, checks each acceptance criterion the way its `verify:` part says, and ticks each one with its proof. Then it passes the task to Your check: `muster pass 0007 --from testing --as qa`. It's never the session that built the task: that pass is refused for the builder, whatever folder it runs from. A coordinator starts a fresh QA subagent with its own `--as` (`muster/qa-0007`) once the builder has passed Building → Testing. Criteria marked `— verify: owner` are left for the owner; that pass doesn't wait for them. If something fails, it sends the task back with what's wrong:
 
 ```
 muster return 0007 "AC2 fails: the board still flickers once" --as qa
@@ -75,7 +81,7 @@ muster escalate 0007 Q2 --as capture
 muster reclaim
 ```
 
-An escalated question waits for the owner in the app's **Waiting for you**, and capture adds it to the queue's `WAITING-FOR-OWNER.md`. The app's **Helper** tab does capture's filing job without a separate session.
+An escalated question waits for the owner in the app's **Waiting for you**, and capture adds it to the queue's `WAITING-FOR-OWNER.md`, with its options and the asker's pick when it has them (`muster escalate` prints them). A question with options is answered with `muster answer 0007 Q2 --pick b`. The app's **Helper** tab does capture's filing job without a separate session.
 
 ## In a Claude Code session
 

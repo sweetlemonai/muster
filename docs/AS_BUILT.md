@@ -145,8 +145,10 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     then "36 hidden by filters" and Clear all; it keeps its place when nothing is active. Backlog
     notes follow the search and hide under any filter but a Stage one with Backlog.
   - **Sort:** the board's Sort chips order every column (priority, the default: needs you first,
-    then high to low, Done newest first; newest, oldest, changed, estimate, id), inside each
-    Group by band too. The Table sorts by its columns; the Timeline and Graph keep their own order.
+    then high to low, Done newest finished first by `doneAt`, else `doneOn`, then latest changed,
+    0051, in `muster list --sort priority` too; newest, oldest, changed, estimate, id), inside
+    each Group by band too. The Table sorts by its columns; the Timeline and Graph keep their own
+    order.
   - **Saved views:** + Save view keeps the search, filters and sort under a name, per project, in
     local storage, as a chip; ✕ deletes it.
   - **`muster list --search --stage --type --tag --holder --blocked --sort`** gives the same
@@ -189,6 +191,17 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   hands Building back to its last builder. Until 0005, `status:` and the status folder are a mirror
   of the stage for older readers (Drover, `manifest.py`), and `check` reports a stage whose status
   doesn't match, which is what a hand move leaves.
+- **The tester isn't the builder** (task 0047): `pass_change` (so `pass`, the merge's
+  `check_merge_pass` before any rebase or gate, and `pass_merged`), `set_stage` and `move_task`
+  (past Testing) refuse the builder of an agent's task, matched by `session::same_holder` against
+  whoever last claimed it (`ready → building (claimed)`) and whoever last passed it into Testing
+  with a gate line. The refusal names the builder and suggests a QA label (`muster/qa-0042`). The
+  owner is always let through, logged `(owner's override: no separate tester)`; another label in
+  a builder's session is let through, logged `(tested under another label in the builder's
+  session)`. The task carries `builtBy`, `gatedBy` and `testedBy` (the last pass into Your check),
+  and the app counts builders as the core does. A Testing card says "needs a tester" on a line of
+  its own while a builder holds it; the Your-check card says "built by … · tested by …", wrapped,
+  never cut; the task pane's status line says the same from Testing on.
 - **Depends, met once merged** (tasks 0019, 0024, 0042): a task's `depends:` hold it back until
   each is merged, which for an agent's task is Your check or Done (work merges into main after
   Testing passes) and for a human task only Done. One rule in `block.rs` (`met_at`, `holds`)
@@ -290,6 +303,28 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   sentence; derived, so the blocked chip, `muster list --blocked`, the graph and the activity
   feed count it as blocked too) and can't be claimed until it's done. `muster list` marks human
   tasks `[you]`, INDEX.md "you", and `manifest.py` reads `for`.
+- **Recently finished** (task 0051, `recentData.ts`, `Recent.tsx`): docked at the board's right
+  edge (plain or grouped), always in view, its own scroll; about a quarter of the board's row,
+  200 to 272 px. When the row can't hold the board's 210 px and the rail's 200 px (a narrow
+  window, or a wide pane), the rail goes under the board, full width, at most a third of the
+  window high (`paneSize.ts` `railBeside`, the `stacked` row): moved, never hidden. The pane's
+  widest leaves the content 210 px in every view, counted in the page's pixels under ⌘+ zoom
+  (`clampPane`, `layoutWidth`), so it doesn't change width with the view. In a narrow page it
+  gives way first, below the 360 px you can drag it to, down to 240 px (`PANE_FLOOR`, the `.pane`
+  min-width): the board keeps 210 px while the page is at least 660 px wide (an 820 px window up
+  to 115% zoom, 1000 px at 150%); narrower than that the board gets less (97 px at 820 × 150%),
+  and the pane never runs past the window. What landed on main (the latest
+  Testing → Your check stage line, **merged**) and what moved into Done (`doneAt`, **accepted**;
+  the owner's own task's Done too), each a row of its own, for the project in view (every project
+  with All, each row with its project), whatever the filter bar says. Only what's still finished:
+  a task sent back has no row; goals and features have none. Newest first, grouped by day (Today,
+  Yesterday, then "Sun 11 Oct"), each day with its count; when in words ("4 min ago", "2 h ago",
+  "yesterday 18:20", then the date), the stamp in the tooltip. Chips All · Merged · Accepted,
+  remembered (`muster.recentKind`). The last 7 days, **Show older · n more** adds a week. Each row
+  opens its task in the pane, and its second line says who built it (the session that took it
+  into Building) and its time and tokens (0025's totals, `task_sessions`, read one task at a time
+  for the rows in view and again only when a file changes). Done cards say "done 4 min ago"
+  (`CardStatus.tsx`).
 - **Waiting for you:** what the agents wait on the owner for (escalated questions, Your check,
   blocked on you or by a permission, `queue::needs_owner`), then the owner's own tasks to do and
   doing, each opening its task (`human.ts` `waitingForYou`: the needs-you count's tasks). Your check comes first, by
@@ -326,6 +361,12 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Task panel** (loads on first open): the task rendered as Markdown with a Raw switch,
   open questions with an answer box (⌘↩), the files as thumbnails that open large (← → between
   them, Esc to close), who's on it, what it waits on, and the commit.
+- **Pick-one questions** (task 0049, `choices.rs`, `PickOne.tsx`): a question asked with options
+  shows them as chips in the pane's open questions and in its Waiting for you entry, every option
+  on screen, the asker's pick marked **pick** and "with no answer: a" after them. One click
+  answers (`answer_pick`): the answer is `(b) <the option's text>`, plus the answer box's words
+  after " — " when there are any; the box stays below for something else. Escalated ones keep
+  the orange edge, as before.
 - **Work** (task 0025, below the description and check-ins in the task panel): every Claude Code
   session that worked on the task, found by the `session <8 hex>` in its claim or `held-by` and in
   the who of its log lines (the older `label (session 7b5e8856)` and 0030's stamped
@@ -429,6 +470,13 @@ claim has a **lease**: `heartbeat`, and the holder's notes, passes and questions
 12 h, or this Mac's lease from Settings (0036).
 **Questions:** `muster ask`, `escalate`, `inbox` and `answer` follow the file contract. `bin/task`
 is a stand-in that runs them. The answer hook still reads the mailbox itself, for speed.
+**Pick-one questions** (task 0049): `muster ask <id> "<question>" --option "<text>"…
+[--pick <a|1>] [--no-answer <a|1>]` writes 2 to 6 options (one line, 200 characters each) under
+the question as plain indented lines (`- (a) … (my pick)`, `With no answer: (a)`), so file
+contract v1 readers see text; `muster answer <id> Qn --pick b ["<more>"]` answers with the
+option's text. Refusals (count, length, a pick or fallback that isn't an option, a question
+without options) write nothing. `muster escalate` prints the options for `WAITING-FOR-OWNER.md`.
+`bin/task` passes no options: it asks in words and answers any question in words.
 **Ping** (task 0039): `muster ping <id>` asks the holder's session for a check-in (Building),
 `muster ping <id> "<message>"` sends it a message (Building or Testing), the same rules as the
 app's buttons (`ping.rs`): only the session in the holder's stamp, refused with why otherwise,

@@ -209,7 +209,7 @@ Board, Table, Timeline and Graph share one bar above them, with a search box, fi
 
 **Filter.** Under the search box are the filter groups: **Stage**, **Type**, **Priority**, **Tags**, **Held by**, **Flags** (blocked, needs you, open questions), and **Captured**, **Changed** and **Done** (today, this week, this month). A group shows only the values that the project's tasks have. Click a chip to keep only those tasks. Two chips in one group mean either; chips in different groups must all match. The line below says what's active, with a ✕ on each, how many tasks it hides ("12 hidden by filters"), and **Clear all**.
 
-**Sort.** On the board, the **Sort** chips order each column: **priority** (the default: what needs you first, then high to low, and Done newest first), **newest**, **oldest**, **changed**, **estimate** or **id**. In the **Table**, click a column's header to sort by it, and again to reverse it; the Table remembers its sort between launches. The Timeline is always in date order.
+**Sort.** On the board, the **Sort** chips order each column: **priority** (the default: what needs you first, then high to low, and Done newest finished first), **newest**, **oldest**, **changed**, **estimate** or **id**. In the **Table**, click a column's header to sort by it, and again to reverse it; the Table remembers its sort between launches. The Timeline is always in date order.
 
 **Keep a view:**
 

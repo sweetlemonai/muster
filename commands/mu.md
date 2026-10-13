@@ -35,9 +35,9 @@ mode` is captured, never a claim. Never guess which command was meant.
 | `/mu <id>` | owner | `muster show <id>` | One task in plain words. See "One task". |
 | `/mu waiting` | owner | `muster list`, then `muster show <id>` for each task marked [needs you] | Only what's waiting for you. See "What's waiting". |
 | `/mu add <text>` | owner | `muster add -- '<text>'` | Capture a one-liner in the backlog. See "Capture". |
-| `/mu answer <id> Q<n> <text>` | owner | `muster answer <id> Q<n> --as owner -- '<text>'` | Answer a question; it reaches the agent that asked. See "Answer". |
+| `/mu answer <id> Q<n> <text>` | owner | `muster answer <id> Q<n> --as owner -- '<text>'` | Answer a question; it reaches the agent that asked. One asked with options takes `--pick <letter>`, and the text is then optional. See "Answer". |
 | `/mu <anything else>` | owner | `muster add -- '<all the arguments, as typed>'` | Captured as a backlog one-liner, never run as a command. See "Capture". |
-| `/mu ask <id> <question>` | agent | `muster ask <id> -- '<question>'` | Ask without stopping; the answer is pushed back. |
+| `/mu ask <id> <question>` | agent | `muster ask <id> -- '<question>'` | Ask without stopping; the answer is pushed back. When the answer is a choice, give 2 to 6 `--option '<text>'` (and `--pick`, `--no-answer`) before the question. |
 | `/mu claim <id>` | agent | `muster claim <id>` | Claim a Ready task. |
 | `/mu next` | agent | `muster next` | Claim the top Ready task you may take. |
 | `/mu heartbeat <id>` | agent | `muster heartbeat <id>` | Keep a claim alive. |
@@ -61,10 +61,14 @@ Not routed: `new`, `move`, `stage`, `set`, `attach`, `escalate`, `inbox`, `recla
   space. Put the text after `--` where the table does, so text that starts with `--` stays text.
 - Options go right after the id (for `answer`, right after `Q<n>`), or right after the route word
   for routes with no id (`next`, `list`, `check`). There they (`--as`, `--queue`, `--from`,
-  `--gate`, `--commit`, `--to`, `--stage`, `--tag`, `--status`) pass through unchanged, before the
-  `--`. Everything after them is the text, as typed, even when it holds `--`: `/mu note mu-8 use
-  --verbose` notes "use --verbose". The shape rule still decides the route first. muster refuses
-  an option it doesn't know.
+  `--gate`, `--commit`, `--to`, `--stage`, `--tag`, `--status`, `--option`, `--pick`,
+  `--no-answer`) pass through unchanged, before the `--`. Everything after them is the text, as
+  typed, even when it holds `--`: `/mu note mu-8 use --verbose` notes "use --verbose". The shape
+  rule still decides the route first. muster refuses an option it doesn't know.
+- `--option` may come up to six times, in order, each with one option's text: as typed, in single
+  quotes like free text (`/mu ask mu-7 --option 'A window' --option 'A panel' --pick b Where?`
+  runs `muster ask mu-7 --option 'A window' --option 'A panel' --pick b -- 'Where?'`). `--pick`
+  and `--no-answer` take a letter.
 - Who's acting: `--as` as typed, otherwise muster uses `$MUSTER_AS`, then the user name.
   `/mu answer` adds `--as owner` when no `--as` was typed, so the answer is recorded as the
   owner's.
@@ -86,7 +90,10 @@ on it.
 1. Run `muster list`. Each line marked `[needs you]` is a task waiting for the owner. For each,
    run `muster show <id>` and say why it waits:
    - **A question for you:** an open question (`- [ ]`) marked "Escalated to owner". Explain it
-     by the asking rule. Act: `/mu answer <id> Q<n> <your answer>`.
+     by the asking rule. Act: `/mu answer <id> Q<n> <your answer>`. A question asked with
+     options has them as its last lines (`- (a) …`, the agent's pick marked `(my pick)`, then
+     `With no answer: (a)`): list each by its letter with the pick and the no-answer, and act with
+     `/mu answer <id> Q<n> --pick <letter>` (words after it are added to the answer).
    - **Your check:** the work is done and waits for you to try it. Say what to try: the criteria
      marked `verify: owner`, or else the unticked ones. Act: Accept in the app's task pane, or
      `/mu pass <id> --from your-check --as owner`; or send it back with the reason,
@@ -122,8 +129,9 @@ so.
 ### Answer (`/mu answer <id> Q<n> <text>`)
 
 Say in one line which question was answered, on which task (by title), and whether muster
-delivered it to the session that asked or found none on record. On a refusal (no such question,
-already answered), say what muster said, in plain words.
+delivered it to the session that asked or found none on record, and for a pick, which option.
+On a refusal (no such question, already answered, a pick that isn't one of its options), say what
+muster said, in plain words.
 
 ### Capture (`/mu add <text>`, anything else)
 

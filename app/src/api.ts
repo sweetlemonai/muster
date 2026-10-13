@@ -14,6 +14,9 @@ export const api = {
   image: (queue: string, id: string, name: string) => invoke<string>("image", { queue, id, name }),
   answer: (queue: string, id: string, n: number, text: string, stamp: string) =>
     invoke<string | null>("answer", { queue, id, n, text, stamp }),
+  // A pick-one question (0049) answered with an option's letter, plus any words to add after it.
+  answerPick: (queue: string, id: string, n: number, pick: string, extra: string, stamp: string) =>
+    invoke<string | null>("answer_pick", { queue, id, n, pick, extra, stamp }),
   projects: () => invoke<Project[]>("projects"),
   // Both open the core's folder picker; null when cancelled.
   addProject: () => invoke<string | null>("add_project"),

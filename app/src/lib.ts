@@ -110,6 +110,46 @@ export function splitHolder(who: string): HolderParts {
   return out.id ? out : none;
 }
 
+/** Is `a` the same holder as `b`? The core's session::same_holder: the same text, or the same
+ *  label with sessions that don't differ (one without a session matches any). */
+export function sameHolder(a: string, b: string): boolean {
+  if (a === b) return true;
+  const x = splitHolder(a);
+  const y = splitHolder(b);
+  return x.label === y.label && (!x.id || !y.id || x.id === y.id);
+}
+
+/** An agent's task in Testing still held by one of its builders (0047, `builders`): a session
+ *  that didn't build it has to test it and pass it on (or the owner). */
+export function needsTester(t: Pick<Task, "stage" | "heldBy" | "builtBy" | "gatedBy" | "forWho">): boolean {
+  const held = t.heldBy.trim();
+  return t.stage === "testing" && t.forWho !== "human" && held !== "" && builders(t).some((b) => sameHolder(held, b));
+}
+
+/** Who built it, as the core's ops::tester_rule counts them: whoever claimed it last and whoever
+ *  last passed it into Testing with the gate's line, the second left out when it's the same
+ *  holder. */
+function builders(t: Pick<Task, "builtBy" | "gatedBy">): string[] {
+  const built = (t.builtBy ?? "").trim();
+  const gated = (t.gatedBy ?? "").trim();
+  return [built, gated && !(built && sameHolder(built, gated)) ? gated : ""].filter(Boolean);
+}
+
+/** A holder in a few words: "you" for the owner, else the name before any brackets. */
+const shortWho = (who: string) => (splitHolder(who).label === "owner" ? "you" : claimant(who));
+
+/** Who built an agent's task and who tested it (0047), from Testing on: "built by wt-a · tested
+ *  by qa-0042" (Your check and Done), "built by wt-a · needs a tester" (Testing, still the
+ *  builder's); "built by wt-a and wt-b" when one claimed it and another gated it in. "" before Testing, for the owner's own task, or with no builder on record. `name`
+ *  shows each holder (short by default; the pane names them in full). */
+export function builtTested(t: Pick<Task, "stage" | "heldBy" | "builtBy" | "gatedBy" | "testedBy" | "forWho">, name: (who: string) => string = shortWho): string {
+  const built = [...new Set(builders(t).map(name))];
+  if (built.length === 0 || t.forWho === "human" || stageRank(t.stage) < stageRank("testing")) return "";
+  const tested = (t.testedBy ?? "").trim();
+  const second = t.stage === "testing" ? (needsTester(t) ? "needs a tester" : "") : tested ? `tested by ${name(tested)}` : "";
+  return [`built by ${built.join(" and ")}`, second].filter(Boolean).join(" · ");
+}
+
 /** The card's who line (0030): who's on it, short: "wt-a · main-29 · wt-0030 · 7b5e8856", the
  *  owner as "you", "" for nobody. A session typed by hand in an older claim still shows. */
 export function whoLine(t: Pick<Task, "stage" | "claimedBy" | "heldBy">): string {
@@ -281,7 +321,7 @@ export function columns(tasks: Task[], by: BoardSort = "priority"): Record<strin
 export type BoardSort = "priority" | "newest" | "oldest" | "changed" | "estimate" | "id";
 /** The board's orders within each column, as chips. The Table sorts by its columns instead. */
 export const BOARD_SORTS: { id: BoardSort; label: string; title: string }[] = [
-  { id: "priority", label: "priority", title: "What needs you first, then high to low; Done newest first" },
+  { id: "priority", label: "priority", title: "What needs you first, then high to low; Done newest finished first" },
   { id: "newest", label: "newest", title: "Latest captured first" },
   { id: "oldest", label: "oldest", title: "Earliest captured first" },
   { id: "changed", label: "changed", title: "Latest changed first" },
@@ -295,13 +335,17 @@ const rank = (t: Task) => PRIORITY[t.priority] ?? 1;
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const byPlace = (a: Task, b: Task) => cmp(a.queue, b.queue) || cmp(a.id, b.id);
 const estimated = (t: Task) => t.estMinutes > 0 || t.estTokenCount > 0;
+/** When a task finished, to compare: its move into Done to the minute, else the day the log
+ *  knows (which sorts before that day's times), else "" (last). The core's search.rs `finished`. */
+const finished = (t: Task) => t.doneAt || t.doneOn;
 
 const COMPARE: Record<BoardSort, (a: Task, b: Task) => number> = {
-  // Open work: needs you, then priority. Done (where priority no longer matters): latest first.
+  // Open work: needs you, then priority. Done (where priority no longer matters): latest finished
+  // first (0051), then latest changed.
   priority: (a, b) => {
     const da = a.stage === "done", db = b.stage === "done";
     if (da !== db) return da ? 1 : -1;
-    if (da) return b.modified - a.modified || byPlace(a, b);
+    if (da) return cmp(finished(b), finished(a)) || b.modified - a.modified || byPlace(a, b);
     return Number(b.waitingForOwner) - Number(a.waitingForOwner) || rank(a) - rank(b) || byPlace(a, b);
   },
   // By the day it was captured; the same day, the higher id is the newer. No date goes last.

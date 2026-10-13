@@ -84,7 +84,7 @@ pub const COMMANDS: &[Command] = &[
             ("--tag", "only tasks with this tag"),
             ("--holder", "who holds it in its stage, as the board shows it, without the session (drover/main, wt-a, owner)"),
             ("--blocked", "only blocked tasks, those waiting only on the tasks they depend on too"),
-            ("--sort", "priority (needs you, then high to low; Done last), newest, oldest, changed, estimate or id (the default)"),
+            ("--sort", "priority (needs you, then high to low; Done last, newest finished first), newest, oldest, changed, estimate or id (the default)"),
             ("--status", "the old status: inbox, todo, doing, blocked or done"),
             ("--json", "machine-readable: {\"tasks\": […], \"backlog\": […]}, for scripts and agents"),
         ],
@@ -105,7 +105,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "move",
         usage: "muster move <id> <inbox|todo|blocked|done> [--on \"<what it waits on>\"]",
-        what: "The old way to change a task, kept for scripts: inbox puts it in Backlog, todo in Ready, done in Done (and unblocks it), blocked is muster block. Use pass, return, block and stage instead.",
+        what: "The old way to change a task, kept for scripts: inbox puts it in Backlog, todo in Ready, done in Done (and unblocks it; refused for whoever built the task, as stage is), blocked is muster block. Use pass, return, block and stage instead.",
         options: &[("--on", "for blocked: as muster block's --on, the kind and what it waits on in one (\"you: pick a colour\", \"0012\")")],
         examples: &["muster move 0007 blocked --on \"owner: pick a colour\"", "muster move 0007 todo", "muster move 0007 done"],
     },
@@ -197,7 +197,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "pass",
         usage: "muster pass <id> [--from <stage>] [--gate \"<gate result line>\"] [--commit <sha>]",
-        what: "Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria and no open vision conflict (muster vision). Building → Testing needs the gate's result line and releases your claim. Testing → Your check needs every criterion ticked except the owner's (\"— verify: owner\"); Your check → Done needs those ticked too (muster tick). A human task (the owner's own) goes To do (Ready) → Doing (Building) → Done, and only the owner passes it: no gate line, no Testing, no Your check. Refused while it's blocked, when someone else holds it, and into Building (Ready → Building, or the owner's Start) while a task it depends on isn't merged yet, as claim is. A task made with muster start merges when it passes from Testing, in order, stopping at the first failure: one merge at a time per repo; rebase its branch on the local main (a conflict sends it back to Building naming the files); run the project's gate in its worktree (muster projects set <name> gate; red sends it back with the gate line), and again if main moved while it ran (twice at most, then it stops: main keeps moving); fast-forward the local main to it (never a merge commit, so main only gets a tree the gate saw), only if the main checkout is clean and on main; push main to origin (never forced: if origin moved, it fetches and stops); remove the worktree (never a runner's, made with start --here) and delete the branch, and origin's copy only when it's the same commit; record the merge (the commit and a report: gate line, time in Building and Testing, check-ins) and pass it to Your check: the record is written even if the task was blocked or moved meanwhile, and then it says so (use muster stage); then it names the next task to start. Nothing is deleted on any failure before main has the merge. Only the command line does this: the app's Pass is refused for such a task.",
+        what: "Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria and no open vision conflict (muster vision). Building → Testing needs the gate's result line and releases your claim. Testing → Your check needs every criterion ticked except the owner's (\"— verify: owner\"), and a session that didn't build it: the builder (who claimed it, or passed it into Testing; the same --as label, in the same session or with none) is refused, naming who built it, so a fresh QA session with its own --as passes it, or the owner (logged as the owner's override: no separate tester). A tester under another label in the builder's session is let through, and the log says so. Your check → Done needs those ticked too (muster tick). A human task (the owner's own) goes To do (Ready) → Doing (Building) → Done, and only the owner passes it: no gate line, no Testing, no Your check. Refused while it's blocked, when someone else holds it, and into Building (Ready → Building, or the owner's Start) while a task it depends on isn't merged yet, as claim is. A task made with muster start merges when it passes from Testing, in order, stopping at the first failure: one merge at a time per repo; rebase its branch on the local main (a conflict sends it back to Building naming the files); run the project's gate in its worktree (muster projects set <name> gate; red sends it back with the gate line), and again if main moved while it ran (twice at most, then it stops: main keeps moving); fast-forward the local main to it (never a merge commit, so main only gets a tree the gate saw), only if the main checkout is clean and on main; push main to origin (never forced: if origin moved, it fetches and stops); remove the worktree (never a runner's, made with start --here) and delete the branch, and origin's copy only when it's the same commit; record the merge (the commit and a report: gate line, time in Building and Testing, check-ins) and pass it to Your check: the record is written even if the task was blocked or moved meanwhile, and then it says so (use muster stage); then it names the next task to start. Nothing is deleted on any failure before main has the merge. Only the command line does this: the app's Pass is refused for such a task.",
         options: &[
             ("--from", "the stage you saw it in; refused if it has moved on since (use it, so a repeat never moves it twice)"),
             ("--gate", "Building → Testing: the gate's result line, verbatim"),
@@ -246,7 +246,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "stage",
         usage: "muster stage <id> <stage> [--from <stage>]",
-        what: "Put a task in any stage (the owner's or capture's override), logged as set. Leaving Building releases its claim.",
+        what: "Put a task in any stage (the owner's or capture's override), logged as set. Leaving Building releases its claim. A builder can't use it to skip its tester: from Testing or before to Your check or Done it's refused for whoever built the task, as pass is; the owner's is logged as the owner's override.",
         options: &[("--from", "the stage you saw it in; refused if it has moved on since (use it, so a repeat never moves it twice)")],
         examples: &["muster stage 0007 ready", "muster stage 0007 your-check --from testing"],
     },
@@ -325,28 +325,36 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "ask",
-        usage: "muster ask <id> \"<question>\" [--as <who>] [--session <id>]",
-        what: "Ask a question in a task without stopping: numbered, written under ## Questions, and your session recorded so the answer is pushed to you (the answer hook) or waits in muster inbox. Lists the task's earlier questions, and refuses one that's already answered there.",
+        usage: "muster ask <id> \"<question>\" [--option \"<text>\"]... [--pick <a|1>] [--no-answer <a|1>] [--as <who>] [--session <id>]",
+        what: "Ask a question in a task without stopping: numbered, written under ## Questions, and your session recorded so the answer is pushed to you (the answer hook) or waits in muster inbox. Lists the task's earlier questions, and refuses one that's already answered there. When the answer is a choice, ask with options: 2 to 6, each one line of up to 200 characters, with your pick and what you'll do with no answer. They're written under the question as (a), (b)…, and the owner answers with one click in the app or muster answer --pick.",
         options: &[
+            ("--option", "one option, once for each (2 to 6, in order: the first is a)"),
+            ("--pick", "the option you recommend, by letter or number"),
+            ("--no-answer", "the option you'll take if no answer comes, by letter or number"),
             ("--as", "who's asking (your branch); default $MUSTER_AS, then the folder's git user.name"),
             ("--session", "your session id; default $CLAUDE_CODE_SESSION_ID"),
         ],
         examples: &[
             "muster ask 0007 \"Child webview or a separate window?\" --as wt-a",
+            "muster ask 0007 \"Where does Settings open?\" --option \"A window\" --option \"The side pane\" --pick b --no-answer b",
             "muster ask 0007 -- \"--verbose or --quiet by default?\"",
         ],
     },
     Command {
         name: "answer",
-        usage: "muster answer <id> <Qn> \"<text>\"",
-        what: "Answer a question in a task. It's written under the question, and the agent that asked gets it pushed into its session.",
-        options: &[],
-        examples: &["muster answer 0008 Q2 \"B, the window beside the app\""],
+        usage: "muster answer <id> <Qn> \"<text>\" | muster answer <id> <Qn> --pick <a|1> [\"<more words>\"]",
+        what: "Answer a question in a task. It's written under the question, and the agent that asked gets it pushed into its session. A question asked with options can be answered by picking one: the answer is that option's text, then any words you add. A pick that isn't one of its options is refused, and so is a second answer to a question already answered; any open question can still be answered in words.",
+        options: &[("--pick", "answer with this option, by letter or number")],
+        examples: &[
+            "muster answer 0008 Q2 \"B, the window beside the app\"",
+            "muster answer 0008 Q3 --pick b",
+            "muster answer 0008 Q3 --pick a \"but keep the old one for a week\"",
+        ],
     },
     Command {
         name: "escalate",
         usage: "muster escalate <id> <Qn> [--as capture]",
-        what: "Mark a question \"Escalated to owner\": it shows as waiting for you. Capture then adds it to WAITING-FOR-OWNER.md. Once per question.",
+        what: "Mark a question \"Escalated to owner\": it shows as waiting for you. Capture then adds it to WAITING-FOR-OWNER.md, with its options and the asker's pick when it has them (escalate prints them). Once per question.",
         options: &[("--as", "who takes it to the owner, usually capture")],
         examples: &["muster escalate 0008 Q2 --as capture"],
     },
@@ -966,6 +974,23 @@ mod tests {
         // Command lines stay as typed, in their own blocks.
         assert!(page.contains("\n```\nmuster new \"<title>\" [--type"));
         assert!(page.contains("\n```\n! muster list\n```\n"));
+    }
+
+    #[test]
+    fn pass_and_stage_say_the_tester_isnt_the_builder() {
+        let pass = command_text("pass").unwrap();
+        for words in [
+            "didn't build it",
+            "own --as",
+            "owner's override",
+            "builder's session",
+        ] {
+            assert!(pass.contains(words), "{words}: {pass}");
+        }
+        assert!(command_text("stage").unwrap().contains("skip its tester"));
+        assert!(command_text("move")
+            .unwrap()
+            .contains("whoever built the task"));
     }
 
     #[test]

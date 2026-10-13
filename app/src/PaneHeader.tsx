@@ -1,6 +1,6 @@
 import { Fragment, useContext, useState } from "react";
 import { HelpButton } from "./HelpButton";
-import { ago, holderOf, isStage, splitHolder, stageHolders, stageLabel, stageOf, STAGES, startedAgo } from "./lib";
+import { ago, builtTested, holderOf, isStage, splitHolder, stageHolders, stageLabel, stageOf, STAGES, startedAgo } from "./lib";
 import BlockWhy from "./BlockWhy";
 import { taskKey } from "./taskKey";
 import { isLive, waitingOnYou } from "./paneData";
@@ -83,7 +83,7 @@ const person = (who: string) => (splitHolder(who).label === "owner" ? (who === "
 
 /** Stage, why it's blocked (the kind in bold, each task it's blocked by a link, 0024), who's on it
  *  (in full, session and all; "Your turn" in Your check, 0043), whether it's live and since when,
- *  who held the stages before (0030), its role ("your own task" for a human task, 0022), and what's waiting on the owner
+ *  who held the stages before (0030), who built and who tested it (0047), its role ("your own task" for a human task, 0022), and what's waiting on the owner
  *  (gold) or that nothing is. A goal or feature shows the stage its children give it, and its
  *  level. */
 export function StatusLine({ task, now, onOpenTask }: { task: Task; now: number; onOpenTask?: (id: string) => void }) {
@@ -99,13 +99,14 @@ export function StatusLine({ task, now, onOpenTask }: { task: Task; now: number;
   const yourTurn = task.stage === "your-check" && splitHolder(who).label === "owner";
   const started = startedAgo(task, now);
   const earlier = stageHolders(task).filter((h) => h.stage !== task.stage);
+  const built = builtTested(task, person);
   const live = isLive(task, now, useContext(Machine).liveMinutes * 60);
   const waiting = waitingOnYou(task);
   return (
     <div className="status-line" data-part="status">
       {pill}
       <BlockWhy t={task} onOpenTask={onOpenTask} />
-      {(who || started || earlier.length > 0) && (
+      {(who || started || earlier.length > 0 || built) && (
         <span className="holder">
           {who && (
             <>
@@ -120,6 +121,7 @@ export function StatusLine({ task, now, onOpenTask }: { task: Task; now: number;
               <Fragment key={h.stage}>{who || started || i > 0 ? " · " : ""}{stageLabel(h.stage)}: {person(h.who)}</Fragment>
             ))}
           </span>
+          {built && <span className="built-tested">{built}</span>}
         </span>
       )}
       {role && <span className="meta">{role}</span>}

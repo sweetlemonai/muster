@@ -413,6 +413,64 @@ fn the_hook_delivers_what_muster_wrote_once() {
     assert!(ok && out.contains("no answers waiting"), "{out}");
 }
 
+/// File contract v1 still holds for a question asked with options (0049): to `bin/task`, the
+/// answer hook and `manifest.py` its options are ordinary lines of the question.
+#[test]
+fn a_question_with_options_is_read_and_answered_by_the_python_tools() {
+    let d = queue();
+    std::fs::write(
+        d.path().join("todo/0007-x.md"),
+        "---\nid: 0007\ntype: task\npriority: normal\nstatus: todo\ncaptured: 2026-10-12\nclaimed-by:\nheartbeat:\nwaiting_on:\ncommit:\n---\n\n# Picked\n\n## Log\n- 2026-10-12 captured\n",
+    )
+    .unwrap();
+    let t = "2026-10-12 10:00";
+    let opts: Vec<String> = ["A window", "A panel"].map(String::from).to_vec();
+    let picks = muster_lib::choices::clean(&opts, Some("b"), Some("a")).unwrap();
+    let (q1, q2) = ("Where does it open?", "And the colour?");
+    for q in [q1, q2] {
+        muster_lib::queue::ask_with(d.path(), "0007", q, &picks, "wt", "abcd1234", t).unwrap();
+    }
+    let options = "- (a) A window\n- (b) A panel (my pick)\nWith no answer: (a)";
+    // bin/task answers Q1 in words and reads it back as answered, options and all.
+    let (ok, out) = run(
+        d.path(),
+        "task",
+        &["answer", "0007", "Q1", "Something else."],
+    );
+    assert!(ok, "{out}");
+    let (ok, out) = run(d.path(), "task", &["inbox", "--session", "abcd1234"]);
+    assert!(
+        ok && out.contains(&format!(
+            "Your question: {q1}\n{options}\nAnswer: Something else.\n"
+        )),
+        "{out}"
+    );
+    let (ok, out) = run(
+        d.path(),
+        "task",
+        &["ask", "0007", q1, "--session", "abcd1234"],
+    );
+    assert!(
+        !ok && out.contains(&format!(":** {q1}\n{options}\n**A (capture, ")),
+        "{out}"
+    );
+    // The app picks for Q2, and the hook hands the option's text to the session that asked.
+    let (asker, _) =
+        muster_lib::queue::answer_pick(d.path(), "0007", 2, "a", "", "owner", t).unwrap();
+    assert_eq!(asker.as_deref(), Some("abcd1234"));
+    let out: serde_json::Value = serde_json::from_str(&hook(d.path(), "abcd1234")).unwrap();
+    let ctx = out["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(ctx.contains("\n  - (b) A panel (my pick)\n"), "{ctx}");
+    assert!(ctx.contains("\n  Answer: (a) A window\n"), "{ctx}");
+    let task = muster_lib::queue::read_task(d.path(), "0007").unwrap();
+    assert_eq!((task.questions.len(), task.open_questions), (2, 0));
+    assert!(task.questions.iter().all(|q| q.choices.is_some()));
+    let (ok, out) = run(d.path(), "manifest.py", &["--check"]);
+    assert!(ok, "{out}");
+}
+
 #[test]
 fn bin_task_runs_muster_with_its_arguments_and_exit_codes() {
     let d = queue();
