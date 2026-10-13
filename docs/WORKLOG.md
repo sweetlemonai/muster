@@ -25,6 +25,11 @@ more than its badge → its own-task lists go through `needsYou` too. The card's
 be told" note outlived a resume made elsewhere → the strip's Pause is keyed on `paused`.
 `muster release` (and `--clean`) gave up a paused task → refused with "resume it first", before
 its worktree is touched. Each with a test first, red before the fix.
+**Did (with 0033's keys):** `muster pause mu-42` and `resume` take a key, refusals name it
+("mu-42 is paused …; resume it first: muster resume mu-42", CLI and app), and the stop and
+carry-on mail say it ("The owner paused mu-42 … `muster checkin mu-42 …`"); the mail's file
+names and the hook's own words keep the id, as ping's do. `bin/gate`: `gate: green (pnpm check,
+test_task, test_commands, cargo test (Kiritimati))`.
 **Did:** the owner: "option to pause a task". **Pause** / **Resume** under a card (Backlog through
 Testing) and beside the stage in the pane (optional why, typed in place), and `muster pause <id>
 ["why"]` / `muster resume <id>`. A paused task keeps its stage, claim, worktree and column, shows a

@@ -277,7 +277,7 @@
 > which only muster writes; the log says `<who>: paused (why)` and `<who>: resumed after 2 h`, and a
 > note that would read as either is refused. **Its session is told:** in Building or Testing the
 > holder's session (its stamp, as a ping reaches it) gets `mail/<session8>/<id>-pause.md`, "The
-> owner paused 0042: stop at a safe point, check in what's done and next, and end your turn" (in
+> owner paused mu-42: stop at a safe point, check in what's done and next, and end your turn" (in
 > Testing, a note instead of a check-in), the reason quoted as the owner's note; logged `; asked
 > session 7b5e8856 to stop`. Resume writes `<id>-resume.md`, "carry on from your last check-in"
 > (one waiting per task: the newer of the two replaces the older), and in Building starts the
