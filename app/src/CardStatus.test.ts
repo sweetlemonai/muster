@@ -22,7 +22,7 @@ const A = "wt-a (wt-0030 · session 7b5e8856 · cc-hg)";
 /** The card's lines as [class, text]. */
 function lines(over: Partial<Task>, now = NOW): [string, string][] {
   const html = renderToStaticMarkup(createElement(CardStatus, { t: task(over), now }));
-  return [...html.matchAll(/<span class="([^"]+)">([^<]*)<\/span>/g)].map((m) => [m[1], m[2].replace(/&#x27;/g, "'")]);
+  return [...html.matchAll(/<span class="([^"]+)"[^>]*>([^<]*)<\/span>/g)].map((m) => [m[1], m[2].replace(/&#x27;/g, "'")]);
 }
 
 describe("the card's who and progress lines", () => {
@@ -61,5 +61,15 @@ describe("the card's who and progress lines", () => {
     expect(lines({ stage: "ready" })).toEqual([["card-who nobody", "nobody on it"]]);
     expect(lines({ stage: "ready", claimedBy: "wt-b" })).toEqual([["card-who", "wt-b"]]);
     for (const stage of ["backlog", "shaping", "done"]) expect(lines({ stage, claimedBy: A, heldBy: A })).toEqual([]);
+  });
+  it("adds open vision conflicts (0029) as one more line, at any stage, and nothing without them", () => {
+    expect(lines({ stage: "shaping", visionOpen: 2, visionIds: ["V1", "V2"] })).toEqual([["card-vision", "⚠ 2 vision"]]);
+    expect(lines({ ...building, visionOpen: 1, visionIds: ["V3"] })).toEqual([
+      ["card-who", "wt-a · wt-0030 · 7b5e8856 · started 2 h ago"],
+      ["card-vision", "⚠ 1 vision"],
+    ]);
+    for (const visionOpen of [0, null, undefined]) expect(lines({ stage: "shaping", visionOpen })).toEqual([]);
+    const html = renderToStaticMarkup(createElement(CardStatus, { t: task({ stage: "shaping", visionOpen: 2 }), now: NOW }));
+    expect(html).toContain("can&#x27;t pass from Shaping to Ready");
   });
 });

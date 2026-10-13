@@ -402,6 +402,14 @@ pub struct Task {
     /// The criteria only the owner verifies (`— verify: owner`), ticked or not, for the task
     /// pane's checklist in Your check (0028).
     pub owner_criteria: Vec<Criterion>,
+    /// The vision check (0029): its open conflicts, by the front matter's `vision: <n> open`; None
+    /// before the first check. While it's above 0 the task can't pass from Shaping to Ready.
+    pub vision_open: Option<usize>,
+    /// The open conflicts' ids (V1, V2…) in its Vision section, once checked.
+    pub vision_ids: Vec<String>,
+    /// A `vision:` value that isn't `<n> open` (`check` reports it; such a task isn't counted as
+    /// unchecked), else "".
+    pub bad_vision: String,
     pub waiting_for_owner: bool,
     pub tags: Vec<String>,
     /// Estimates ("2h", "400k"), and the same as numbers for totals. Agent time is `est_time`;
@@ -839,6 +847,15 @@ pub fn parse_task(
         .into_iter()
         .filter(|c| c.owner)
         .collect();
+    let (vision_open, bad_vision) = match crate::vision::parse_count(&get("vision")) {
+        Some(n) => (n, String::new()),
+        None => (None, get("vision").chars().take(40).collect()),
+    };
+    let vision_ids = if vision_open.is_some() {
+        crate::vision::open_ids(body)
+    } else {
+        Vec::new()
+    };
     let waiting_for_owner = questions.iter().any(|q| !q.ticked && q.escalated)
         || stage == "your-check"
         || (blocked && waiting_on.to_lowercase().starts_with("owner"));
@@ -904,6 +921,9 @@ pub fn parse_task(
         questions,
         open_questions,
         owner_criteria,
+        vision_open,
+        vision_ids,
+        bad_vision,
         waiting_for_owner,
         done_on,
         claimed_on,
@@ -1212,6 +1232,19 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str) -> Vec<Strin
                 "{queue}: {} is claimed but hasn't been heard from in {} h",
                 t.path,
                 quiet / 60
+            ));
+        }
+        if !t.bad_vision.is_empty() {
+            out.push(format!(
+                "{queue}: {} has vision '{}', which isn't a count of open conflicts (`vision: <n> open`); record a new check",
+                t.path, t.bad_vision
+            ));
+        }
+        if let Some(n) = t.vision_open.filter(|n| *n != t.vision_ids.len()) {
+            out.push(format!(
+                "{queue}: {} says vision {n} open but its Vision section has {} open (edited by hand? record a new check)",
+                t.path,
+                t.vision_ids.len()
             ));
         }
         if t.status == "blocked" && t.waiting_on.is_empty() {
@@ -1682,7 +1715,7 @@ pub fn session8(session: &str) -> Result<String, String> {
 
 /// The first `## Questions` section's content: (start, end) byte offsets, from the line after
 /// the heading to the next `## ` line or the end.
-fn questions_span(body: &str) -> Option<(usize, usize)> {
+pub(crate) fn questions_span(body: &str) -> Option<(usize, usize)> {
     let mut start = None;
     let mut pos = 0;
     for line in body.split_inclusive('\n') {
@@ -1777,12 +1810,7 @@ pub fn ask(
                 return Err(format!("already answered in {id}:\n{shown}"));
             }
         }
-        let highest = items.iter().filter_map(|q| q.n).max().unwrap_or(0);
-        let count = u32::try_from(items.len()).unwrap_or(u32::MAX);
-        let n = highest
-            .max(count)
-            .checked_add(1)
-            .ok_or("the task has too many questions")?;
+        let n = next_question(&items)?;
         let item = format!(
             "- [ ] **Q{n} ({who}, session {sid}, {stamp}):** {}\n",
             indent_text(&question)
@@ -1823,6 +1851,95 @@ pub fn ask(
             .collect();
         Ok(Asked { n, earlier })
     })
+}
+
+/// The number the next question in a task gets: one past the highest, and past the count, so old
+/// unnumbered questions are counted too.
+fn next_question(items: &[Question]) -> Result<u32, String> {
+    let highest = items.iter().filter_map(|q| q.n).max().unwrap_or(0);
+    let count = u32::try_from(items.len()).unwrap_or(u32::MAX);
+    highest
+        .max(count)
+        .checked_add(1)
+        .ok_or_else(|| "the task has too many questions".to_string())
+}
+
+/// A question the tool asks the owner, not a session (the vision check's change of direction,
+/// 0029), added to the task `text`: numbered on from its questions, written in `## Questions`
+/// (lines after the first indented, contract rule 3) and already "Escalated to owner", so it waits
+/// for the owner like any escalated question. No session asked it, so its answer stays in the
+/// task. `about` says where it comes from, beside who and when. Returns the new text and the
+/// question's number; the caller holds the lock and writes the file.
+pub(crate) fn add_owner_question(
+    text: &str,
+    who: &str,
+    about: &str,
+    question: &str,
+    stamp: &str,
+) -> Result<(String, u32), String> {
+    let body = with_questions(text);
+    let (start, end) = questions_span(&body).ok_or("the task's Questions section is gone")?;
+    let sect = &body[start..end];
+    let items: Vec<Question> = question_items(sect)
+        .into_iter()
+        .map(|(a, b)| parse_question(&sect[a..b]))
+        .collect();
+    let n = next_question(&items)?;
+    let item = format!(
+        "- [ ] **Q{n} ({who}, {about}, {stamp}):** {}\n  **Escalated to owner ({who}, {stamp}).**\n",
+        indent_text(question.trim())
+    );
+    let kept = sect.trim_end_matches('\n');
+    let new_sect = if kept.trim().is_empty() {
+        format!("{item}\n")
+    } else {
+        format!("{kept}\n{item}\n")
+    };
+    Ok((format!("{}{new_sect}{}", &body[..start], &body[end..]), n))
+}
+
+/// Was a question with this asker part asked by the tool with `about` (`<who>, <about>, <stamp>`,
+/// as `add_owner_question` writes it)? A session's question has its session there instead.
+fn asked_by_tool(asker: &str, about: &str) -> bool {
+    let parts: Vec<&str> = asker.rsplitn(3, ", ").collect();
+    parts.len() == 3 && parts[1] == about && crate::ops::stamp_minutes(parts[0]).is_some()
+}
+
+/// Close the open questions the tool asked with `about` (`add_owner_question`): each is ticked
+/// with `answer` under it as `who`'s answer, so it leaves the owner's list. Answered questions and
+/// every session's question stay as they are. Returns the new text and the closed questions'
+/// numbers; the caller holds the lock and writes the file.
+pub(crate) fn close_owner_questions(
+    text: &str,
+    about: &str,
+    who: &str,
+    stamp: &str,
+    answer: &str,
+) -> (String, Vec<u32>) {
+    let Some((start, end)) = questions_span(text) else {
+        return (text.to_string(), Vec::new());
+    };
+    let sect = &text[start..end];
+    let mut out = String::new();
+    let mut last = 0;
+    let mut closed = Vec::new();
+    for (a, b) in question_items(sect) {
+        let item = &sect[a..b];
+        let q = parse_question(item);
+        if q.ticked || !asked_by_tool(&q.asker, about) {
+            continue;
+        }
+        out.push_str(&sect[last..a]);
+        out.push_str(&format!(
+            "{}\n  **A ({who}, {stamp}):** {}",
+            item.replacen("- [ ] **Q", "- [x] **Q", 1),
+            indent_text(answer)
+        ));
+        last = b;
+        closed.extend(q.n);
+    }
+    out.push_str(&sect[last..]);
+    (format!("{}{out}{}", &text[..start], &text[end..]), closed)
 }
 
 /// Mark question `n` of task `id` "Escalated to owner" (capture takes it to the owner), once.
@@ -1991,7 +2108,9 @@ pub(crate) fn hold_lock<T>(
     result
 }
 
-/// Contract rule 4: `mail/asks.json`, else `session xxxxxxxx` in the question line.
+/// Contract rule 4: `mail/asks.json`, else `session xxxxxxxx` in the question line's asker part
+/// (`**Q3 (<who>, session <id>, <stamp>):**`). Only there: the question's own text is anyone's,
+/// so a session it names never gets the answer, and a question with none there gets no mailbox.
 fn asker_session(mail: &Path, id: &str, n: u32, item: &str) -> Option<String> {
     let valid = |s: &str| {
         s.len() == 8
@@ -2007,8 +2126,9 @@ fn asker_session(mail: &Path, id: &str, n: u32, item: &str) -> Option<String> {
             }
         }
     }
-    let i = item.find("session ")? + 8;
-    let s: String = item[i..].chars().take(8).collect();
+    let asker = parse_question(item).asker;
+    let i = asker.find("session ")? + 8;
+    let s: String = asker[i..].chars().take(8).collect();
     valid(&s).then_some(s)
 }
 

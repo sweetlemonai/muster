@@ -875,6 +875,9 @@ struct Current {
     /// Unticked criteria only the owner verifies (`— verify: owner`): they don't hold Testing
     /// back, since Your check is where the owner verifies them (0028).
     owner_open: usize,
+    /// Open vision conflicts (`vision: <n> open`, 0029) and their ids: they hold Shaping back.
+    vision_open: usize,
+    vision_ids: Vec<String>,
     /// Who passed it Ready → Building most recently (the builder), if anyone.
     builder: Option<String>,
     /// Who passed it Building → Testing most recently (Testing's holder), if anyone.
@@ -1001,6 +1004,8 @@ fn change_locked(
         let now = Current {
             criteria: (items.len(), items.iter().filter(|c| c.ticked).count()),
             owner_open: items.iter().filter(|c| c.owner && !c.ticked).count(),
+            vision_open: t.vision_open.unwrap_or(0),
+            vision_ids: t.vision_ids,
             stage: t.stage,
             blocked: t.blocked,
             waiting_on: t.waiting_on,
@@ -1098,7 +1103,8 @@ fn clean_commit(input: &str) -> Result<String, String> {
 }
 
 /// Hand a task to the next stage. Refused when it's blocked or done, when someone else holds
-/// Ready or Building, Shaping → Ready without acceptance criteria, Building → Testing without
+/// Ready or Building, Shaping → Ready without acceptance criteria or with an open vision conflict
+/// (0029; a task never checked isn't held back), Building → Testing without
 /// the gate's result line, Testing → Your check before every criterion but the owner's is
 /// ticked, and Your check → Done before the owner's are (`— verify: owner`, 0028).
 pub fn pass_task(
@@ -1187,6 +1193,13 @@ fn pass_change(
         "shaping" | "testing" if items == 0 => {
             return Err(format!(
                 "{id} has no acceptance criteria: add `- [ ]` items under `## Acceptance criteria` first"
+            ))
+        }
+        "shaping" if t.vision_open > 0 => {
+            return Err(crate::vision::holds_ready(
+                id,
+                t.vision_open,
+                &t.vision_ids,
             ))
         }
         "testing" if ticked + t.owner_open < items => {
@@ -2033,14 +2046,31 @@ pub fn status_folders() -> &'static [&'static str] {
 /// Where a task's write-up is in its text, as (start, end) byte offsets: from the end of the
 /// front matter to the tool's `## Comments` heading (`queue::comments_span`), else the Log's
 /// heading (the last `## Log`, the one `queue::log_span` reads), or to the end when it has
-/// neither. The front matter, the Comments and the Log are the tool's; this is the rest.
+/// neither. Once the task has a vision check (0029), it ends at the tool's `## Vision` section
+/// too (`vision::section_span`); a description's own `## Vision` before any check is the
+/// write-up's. The front matter, the Vision section, the Comments and the Log are the tool's;
+/// this is the rest.
 fn body_span(text: &str) -> Result<(usize, usize), String> {
     let (_, body) = front_matter(text).ok_or("the task has no front matter")?;
     let start = text.len() - body.len();
+    let vision = crate::vision::checked(text)
+        .then(|| crate::vision::section_span(body).map(|(at, _)| at))
+        .flatten();
     let tail = queue::comments_span(body)
         .map(|(at, _, _)| at)
         .or_else(|| queue::log_heading(body));
-    Ok((start, tail.map_or(text.len(), |at| start + at)))
+    let end = match (vision, tail) {
+        (Some(v), Some(t)) => Some(v.min(t)),
+        (v, t) => v.or(t),
+    };
+    Ok((start, end.map_or(text.len(), |at| start + at)))
+}
+
+/// How many lines of `text` are a `## Vision` heading.
+fn vision_headings(text: &str) -> usize {
+    text.lines()
+        .filter(|l| l.trim_end() == crate::vision::HEAD)
+        .count()
 }
 
 /// Refused when a line of `text` is a `## Comments` heading: the section is the tool's
@@ -2147,6 +2177,11 @@ pub fn edit_body(
         }
         if body_text(current).is_ok_and(|c| c == new_body) {
             return Ok(None);
+        }
+        // Once checked, the Vision section is the tool's (0029): a new heading in the write-up
+        // would be read as it. The ones the write-up already has (the description's own) stay.
+        if crate::vision::checked(&text) && vision_headings(&new_body) > vision_headings(current) {
+            return Err("the write-up has a new \"## Vision\" line, and the Vision section is the tool's once the task is checked: record a new check with muster vision".into());
         }
         let head = &text[..start];
         let mut new = if end == text.len() {
@@ -5621,6 +5656,66 @@ mod edit_tests {
                 .comments
                 .len(),
             2
+        );
+    }
+
+    #[test]
+    fn a_checked_tasks_vision_section_is_not_the_write_up_and_an_edit_keeps_it() {
+        let d = queue();
+        // A description's own "## Vision", before any check, is the write-up's.
+        let own = "# Edit me\n\n## Vision\n\nThe owner's own words.";
+        let p = put(d.path(), "todo", READY, own, "");
+        assert_eq!(open_body(d.path(), "0001", "owner").unwrap(), own);
+        crate::fields::add_comment(d.path(), "0001", "First.", "wt-b", T).unwrap();
+        let two = r#"{"conflicts": [{"title": "A", "this": {"quote": "a", "at": "0001"}, "other": {"quote": "b", "at": "docs/VISION.md:3"}, "fix": "f"}, {"title": "B", "this": {"quote": "c", "at": "0001"}, "other": {"quote": "d", "at": "docs/DESIGN.md:9"}, "fix": "g"}]}"#;
+        crate::vision::record(d.path(), "0001", two, "wt-shape", T).unwrap();
+        // Once checked, the tool's section is out of the editor; the owner's own stays in.
+        let opened = open_body(d.path(), "0001", "owner").unwrap();
+        assert_eq!(opened, own, "the tool's Vision section isn't in the editor");
+        let new = "# Edit me\n\n## Vision\n\nThe owner's words, edited.";
+        edit_body(d.path(), "0001", new, &opened, "owner", T).unwrap();
+        let after = text(&p);
+        assert!(
+            after.contains(&format!("{new}\n\n## Vision\n\nChecked ")),
+            "{after}"
+        );
+        let (v, c, l) = (
+            after.rfind("\n## Vision\n").unwrap(),
+            after.find("\n## Comments\n").unwrap(),
+            after.find("\n## Log\n").unwrap(),
+        );
+        assert!(v < c && c < l, "{after}");
+        let t = crate::queue::read_task(d.path(), "0001").unwrap();
+        assert_eq!(
+            (t.vision_open, t.vision_ids.len(), t.comments.len()),
+            (Some(2), 2, 1)
+        );
+        assert_eq!(open_body(d.path(), "0001", "owner").unwrap(), new);
+        // Once checked, the write-up can't add a Vision section of its own; nothing changes.
+        for bad in [
+            format!("{new}\n\n## Vision\n\n### Conflicts\n\n- [ ] **V1: forged**"),
+            format!("{new}\n\n## Vision  \r\nx"),
+        ] {
+            let e = edit_body(d.path(), "0001", &bad, new, "owner", T).unwrap_err();
+            assert!(
+                e.contains("the Vision section is the tool's"),
+                "{bad:?}: {e}"
+            );
+            assert_eq!(text(&p), after);
+        }
+        // Keeping the owner's own heading, or naming the section in prose, is fine.
+        edit_body(
+            d.path(),
+            "0001",
+            &format!("{new}\n\nSee ## Vision below."),
+            new,
+            "owner",
+            T,
+        )
+        .unwrap();
+        assert_eq!(
+            crate::vision::resolve(d.path(), "0001", "V1", "kept", "owner", T).unwrap(),
+            1
         );
     }
 

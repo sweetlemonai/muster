@@ -14,6 +14,7 @@ import { GraphView } from "./GraphView";
 import { TableView, TimelineView } from "./Views";
 import { GroupByChips, GroupedBoard } from "./Groups";
 import { childrenOf, GROUP_KEY, type GroupBy, groupItems, indexTasks, isWork, parentLine, parseGroupBy } from "./levels";
+import { visionWarnings } from "./Vision";
 import logo from "./logo.png";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
@@ -110,6 +111,8 @@ export default function App() {
   );
   const allTags = useMemo(() => [...new Set(inQueue.flatMap((t) => t.tags))].sort(), [inQueue]);
   const problems = useMemo(() => (state?.problems ?? []).filter((p) => queue === "all" || p.startsWith(`${queue}:`)), [state, queue]);
+  // Not problems: Shaping tasks with no vision check yet (0029), listed under them.
+  const unchecked = useMemo(() => visionWarnings(inQueue), [inQueue]);
   const waiting = inQueue.filter((t) => t.waitingForOwner);
   // Goals and features aren't cards in the stage columns: they're the bands, and table rows.
   const work = useMemo(() => tasks.filter(isWork), [tasks]);
@@ -200,6 +203,7 @@ export default function App() {
           <button className={view === "activity" ? "tab on" : "tab"} onClick={() => setView("activity")}>Activity</button>
           <button className={view === "problems" ? "tab on" : "tab"} onClick={() => setView("problems")}>
             Problems{problems.length ? <b className="count">{problems.length}</b> : null}
+            {unchecked.length ? <small className="count quiet" title="Shaping tasks with no vision check yet">{unchecked.length}</small> : null}
           </button>
           <button className={view === "projects" ? "tab on" : "tab"} onClick={() => setView("projects")}>Projects</button>
           <button className={view === "help" ? "tab on" : "tab"} onClick={() => setView("help")}>Help</button>
@@ -336,6 +340,7 @@ export default function App() {
           {view === "problems" && (
             <main className="list">
               {problems.length === 0 ? <p className="empty">No problems found in the queues.</p> : <ul className="problems">{problems.map((p) => <li key={p}>{p}</li>)}</ul>}
+              {unchecked.length > 0 && <ul className="problems warnings">{unchecked.map((w) => <li key={w}><b>Vision</b> {w}</li>)}</ul>}
             </main>
           )}
 

@@ -129,7 +129,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "pass",
         usage: "muster pass <id> [--from <stage>] [--gate \"<gate result line>\"] [--commit <sha>]",
-        what: "Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria. Building → Testing needs the gate's result line and releases your claim. Testing → Your check needs every criterion ticked except the owner's (\"— verify: owner\"); Your check → Done needs those ticked too (muster tick). Refused while it's blocked, or when someone else holds it.",
+        what: "Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria and no open vision conflict (muster vision). Building → Testing needs the gate's result line and releases your claim. Testing → Your check needs every criterion ticked except the owner's (\"— verify: owner\"); Your check → Done needs those ticked too (muster tick). Refused while it's blocked, or when someone else holds it.",
         options: &[
             ("--from", "the stage you saw it in; refused if it has moved on since (use it, so a repeat never moves it twice)"),
             ("--gate", "Building → Testing: the gate's result line, verbatim"),
@@ -183,7 +183,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "edit",
         usage: "muster edit <id> [--body -]",
-        what: "Edit a task's write-up: the description, To do and acceptance criteria between the front matter and the Log. Opens $VISUAL or $EDITOR (else vi; quotes work as in a shell, but no shell runs it) on a copy and saves it when the editor exits, logged as an edit. Unchanged text prints \"no change\" and writes nothing. The front matter and the Log stay the tool's: a \"## Log\" line or a stage line is refused. Refused when the write-up changed since you opened it, or when the editor fails; either way, what you typed is kept in the temp file it names. Refused too while someone else holds it in Building: their branch owns the write-up then, so add a note instead.",
+        what: "Edit a task's write-up: the description, To do and acceptance criteria between the front matter and the Log. Opens $VISUAL or $EDITOR (else vi; quotes work as in a shell, but no shell runs it) on a copy and saves it when the editor exits, logged as an edit. Unchanged text prints \"no change\" and writes nothing. The front matter and the Log stay the tool's: a \"## Log\" line or a stage line is refused. Once a task has a vision check, its ## Vision section is the tool's too: left out of the write-up and kept as it is, and a new \"## Vision\" line is refused. Refused when the write-up changed since you opened it, or when the editor fails; either way, what you typed is kept in the temp file it names. Refused too while someone else holds it in Building: their branch owns the write-up then, so add a note instead.",
         options: &[
             ("--body -", "read the new write-up from stdin instead of opening an editor (for scripts)"),
             ("--as", "who's editing; the holder of a task in Building may edit it"),
@@ -286,7 +286,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "check",
         usage: "muster check",
-        what: "Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist, a link that isn't a plain https link, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop, an INDEX.md that shows something the task files no longer say (rebuild with muster index; none yet is fine). Exit 1 if any. A goal past its due date with tasks open, and an INDEX.md only due a refresh (the files changed outside muster, as Drover's answers do), are warnings: shown, without failing.",
+        what: "Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist, a link that isn't a plain https link, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop, a vision count that doesn't match the task's Vision section, an INDEX.md that shows something the task files no longer say (rebuild with muster index; none yet is fine). Exit 1 if any. A goal past its due date with tasks open, and an INDEX.md only due a refresh (the files changed outside muster, as Drover's answers do), are warnings: shown, without failing. Also lists, without counting them as problems, what waits on the owner's look and Shaping tasks with no vision check yet.",
         options: &[],
         examples: &["muster check", "muster check --queue braindump"],
     },
@@ -348,6 +348,24 @@ pub const COMMANDS: &[Command] = &[
         what: "Set a backlog note aside: it moves to the backlog's dropped/ folder with the reason added at its end (one line, 500 characters). It's off the board but kept.",
         options: &[],
         examples: &["muster drop 2026-10-12-1405-board-flickers.md \"a duplicate of 0012\""],
+    },
+    Command {
+        name: "vision",
+        usage: "muster vision <id> [--json] | --record - | --resolve V2 \"<how>\"   ·   muster vision --all [--json]",
+        what: "Check a task against the project's one picture (docs/VISION.md, docs/decisions/, docs/DESIGN.md) and the tasks it touches. Muster runs no agent: muster vision <id> prints the vision brief for one, with the task quoted as data, the picture files that exist, the open tasks it touches (sharing two title words, named in its text, its parent and depends), what to look for (conflicts, overlaps, gaps, the cost of pivoting) and the JSON to return. Writes nothing. --record - reads that JSON from stdin (or takes it as its value): the task gets a ## Vision section under its write-up (above its Comments and Log), replacing the last one, with each conflict numbered V1, V2… and both sides quoted; the front matter's vision: <n> open; and a log line. A conflict whose fix changes direction is also escalated to the owner, as one question per record with the cost of pivoting. --resolve V2 \"<how>\" settles one (one line, 500 characters). While any is open, Shaping → Ready is refused; a task never checked isn't held back. --all lists the inputs for every open task.",
+        options: &[
+            ("--json", "the brief, the record or --all as JSON, for Drover and scripts"),
+            ("--record -", "the agent's result, as JSON on stdin; malformed JSON is refused with what's wrong"),
+            ("--resolve V2", "mark that conflict resolved, with how after it"),
+            ("--all", "every open task's inputs: its vision state and the tasks it touches"),
+        ],
+        examples: &[
+            "muster vision 0031",
+            "muster vision 0031 --json --queue drover",
+            "pbpaste | muster vision 0031 --record - --as wt-shape",
+            "muster vision 0031 --resolve V2 \"0019 keeps depends:; 0024 derives blocked by tasks from it\"",
+            "muster vision --all",
+        ],
     },
     Command {
         name: "projects",
@@ -429,6 +447,9 @@ pub const SESSION: &[Topic] = &[
             "$ muster shape <note-file>",
             "$ muster file <note-file> \"<title>\" --type bug --time 1h --tokens 300k --body -",
             "$ muster drop <note-file> \"<why>\"",
+            "Before a shaped task goes to Ready, an agent checks it against the project's picture: the brief says what to read and the JSON to record. A conflict that changes direction comes to the owner as one question:",
+            "$ muster vision <id>",
+            "$ muster vision <id> --record -",
             "../tasks/bin/task ask, answer, escalate and inbox still work: they run the same muster commands.",
             "The app's Helper tab does the same job without a separate session.",
         ],
@@ -470,6 +491,14 @@ pub const APP: &[(&str, &str)] = &[
     (
         "File as task · Drop · Copy shaping brief",
         "in a note's pane: file it as a task in Shaping (the note goes into its files), set it aside with the reason, or copy the brief for a shaping session",
+    ),
+    (
+        "⚠ 2 vision",
+        "on a card: open vision conflicts (the task doesn't fit the project's picture); it can't pass from Shaping to Ready until they're resolved",
+    ),
+    (
+        "Resolve · Copy vision brief",
+        "in a task's Vision section: settle a conflict with how (one line), or copy the brief a session checks the task against the picture with",
     ),
     (
         "Edit",
@@ -597,6 +626,7 @@ mod tests {
             "shape",
             "file",
             "drop",
+            "vision",
             "check",
             "index",
             "projects",
@@ -619,7 +649,7 @@ mod tests {
                 "{name}'s examples use it"
             );
         }
-        assert_eq!(COMMANDS.len(), 35);
+        assert_eq!(COMMANDS.len(), 36);
     }
 
     #[test]
@@ -658,6 +688,35 @@ mod tests {
         assert!(command_text("check").unwrap().contains("https"));
         let app: String = APP.iter().map(|(k, v)| format!("{k} {v}\n")).collect();
         for words in ["Links", "Comments", "the comment", "Type"] {
+            assert!(app.contains(words), "{words}: {app}");
+        }
+    }
+
+    #[test]
+    fn vision_says_what_it_reads_records_and_holds_back() {
+        let t = command_text("vision").unwrap();
+        for words in [
+            "docs/VISION.md",
+            "docs/decisions/",
+            "docs/DESIGN.md",
+            "--json",
+            "--record -",
+            "--resolve V2",
+            "--all",
+            "## Vision",
+            "vision: <n> open",
+            "escalated to the owner",
+            "cost of pivoting",
+            "Shaping → Ready",
+            "Writes nothing",
+        ] {
+            assert!(t.contains(words), "{words}: {t}");
+        }
+        assert!(command_text("check").unwrap().contains("no vision check"));
+        assert!(command_text("pass").unwrap().contains("vision conflict"));
+        assert!(text().contains("      muster vision <id>\n"), "{}", text());
+        let app: String = APP.iter().map(|(k, v)| format!("{k} {v}\n")).collect();
+        for words in ["⚠ 2 vision", "Resolve", "Copy vision brief"] {
             assert!(app.contains(words), "{words}: {app}");
         }
     }

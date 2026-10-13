@@ -57,6 +57,14 @@ export type Task = {
   questions: Question[];
   openQuestions: number;
   ownerCriteria: Criterion[];
+  /** The vision check (0029): open conflicts, or null before the first check. Over 0, it can't
+   *  pass from Shaping to Ready. */
+  visionOpen?: number | null;
+  /** The open conflicts' ids (V1, V2…), once checked. */
+  visionIds?: string[];
+  /** A `vision:` value that isn't a count ("" when fine): a problem the core reports, so the task
+   *  isn't also listed as unchecked. */
+  badVision?: string;
   waitingForOwner: boolean;
   tags: string[];
   /** Estimates: agent time, test time (the QA agent plus the owner's check) and tokens, as written

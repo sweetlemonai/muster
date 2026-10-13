@@ -144,7 +144,7 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .badge.warn { background: var(--st-needs); color: var(--on-status); }
 /* Who's on it and how far (0030): quiet lines, one each, cut with an ellipsis; the full text is
    in the task pane. A session gone quiet takes the attention colour. */
-.card-who, .card-checkin, .card-quiet { font-size: 11px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-who, .card-checkin, .card-quiet, .card-vision { font-size: 11px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-who { color: var(--muted); }
 .card-who.nobody { color: var(--faint); }
 .card-checkin { color: var(--text); opacity: 0.8; }
@@ -629,3 +629,16 @@ button:disabled { opacity: 0.45; cursor: default; }
 .comment .markdown > :first-child { margin-top: 0; }
 .comment .markdown > :last-child { margin-bottom: 0; }
 .comment-box textarea { margin-top: 0; }
+
+/* The vision check (0029): open conflicts as one of the card's status lines (CardStatus, sized
+   like the others), in the colour of what's broken; the pane's Vision section quiet until a
+   conflict is open; Problems' Vision lines as warnings. */
+.card-vision { color: var(--err); font-weight: 600; }
+.panel section.vision.has-open { border-left: 3px solid var(--st-blocked); }
+.vision h2 small { text-transform: none; letter-spacing: 0; margin-left: 4px; }
+.vision.has-open h2 small { color: var(--err); }
+.vision .control-row .on { outline: 2px solid var(--accent); outline-offset: 1px; }
+.vision .markdown h3 { font-size: 12px; margin: 10px 0 4px; }
+.count.quiet { background: none; border: 1px solid var(--border); color: var(--muted); }
+.problems.warnings li { color: var(--muted); }
+.problems.warnings b { color: var(--text); font-weight: 600; margin-right: 4px; }

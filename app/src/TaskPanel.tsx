@@ -13,12 +13,14 @@ import StageForms from "./StageForms";
 import StageTrack from "./StageTrack";
 import type { Question, Task } from "./types";
 import { useTaskActions } from "./useTaskActions";
+import { withoutVision } from "./Vision";
+import VisionPanel from "./VisionPanel";
 import { anyDirty, withPart } from "./writeUp";
 
 /** The task pane (0021, the owner's design D2): title and status first, the stage track, then
  *  two columns (what this stage needs; the next step and the task's settings), the stage forms
- *  under both, the path; then open questions, the write-up, the comment thread (0017) and the
- *  Log and, at the bottom, the note bar. */
+ *  under both, the path; then open questions, the write-up, the vision check (0029), the comment
+ *  thread (0017) and the Log and, at the bottom, the note bar. */
 export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudge, childTasks }: {
   task: Task;
   now: number;
@@ -74,9 +76,10 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
     }
   };
 
-  // The comments show as their own thread, between the write-up and the Log, so they're left out
-  // of the rendering.
-  const [shown, log] = splitLog(body ? withoutComments(body.replace(/^---\n[\s\S]*?\n---\n/, "")) : "");
+  // The comments show as their own thread, between the write-up and the Log, and the Vision
+  // section in its own place under the write-up (VisionPanel), so both are left out of the rendering.
+  const checked = (task.visionOpen ?? null) !== null;
+  const [shown, log] = splitLog(body ? withoutComments(withoutVision(body.replace(/^---\n[\s\S]*?\n---\n/, ""), checked)) : "");
   const open = task.questions.filter((q) => !q.ticked && q.n !== null);
   const undo = undoFor(a.msg, task.stage);
 
@@ -161,6 +164,8 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
           </>
         )}
       </section>
+
+      <VisionPanel task={task} body={body} onChanged={onChanged} />
 
       <Comments task={task} onChanged={onChanged} onDirty={commentDirty} nudge={nudge} />
       {log && !raw && editing === null && (

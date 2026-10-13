@@ -122,6 +122,28 @@
 > `## Questions` goes above the Comments. Decision 0003 keeps new comments in the live state and
 > writes them into the file at each stage change; until task 0005 builds that state, they're written
 > to the file straight away.
+>
+> **Vision check (Muster 0029, 2026-10-12).** Before a shaped task goes to Ready, an agent checks
+> it against the project's one picture (`docs/VISION.md`, `docs/decisions/`, `docs/DESIGN.md`) and
+> the tasks it touches. Muster runs no agent: `muster vision <id> [--json]` prints the brief (the
+> task quoted as data, the picture files, the open tasks it touches by title words, ids named in
+> its text, its `parent:` and `depends:`, what to look for, and the JSON to return) and writes
+> nothing. `muster vision <id> --record - --as <you>` takes that JSON on stdin: unknown fields and
+> malformed JSON are refused with what's wrong, and every text is cleaned to one line and capped.
+> The tool writes the task's `## Vision` section under the write-up, above its Comments and Log
+> (replacing the last one), with the conflicts numbered V1, V2… and both sides quoted, plus
+> `vision: <n> open` in the front matter and a log line; INDEX.md shows "⚠ 2 vision" on its line.
+> A conflict whose fix changes direction (a decision, the spine, a design rule, an owner's answer)
+> carries a pivot: its cost-of-pivoting table goes in the section, and the record asks the owner
+> one escalated question with all of them and the recommendation. No session asked it, so it
+> carries your label without the session stamp and the answer stays in the task. Settle a
+> conflict with `muster vision <id> --resolve V2 "<how>"`. **`muster pass <id> --from shaping`
+> refuses while a conflict is open;** overlaps and gaps never hold it, and a task never checked
+> isn't held back (`muster check` lists Shaping tasks with no check, as a warning). **Don't edit
+> the Vision section or `vision:` by hand:** `muster check` reports a count that doesn't match the
+> section. Once a task is checked, `muster edit` and the app's Edit leave the section out of the
+> write-up and keep it as it is, and refuse a write-up that adds a `## Vision` line (a
+> description's own `## Vision` from before the first check stays editable). `muster vision --all` lists every open task's inputs for a whole-queue check.
 
 Ideas, bugs and tasks from the owner, written up by the capture session and picked up by coding
 sessions. This queue is also a test bed for chit (`~/playground/chit`, `SPEC.md`). Its rules are

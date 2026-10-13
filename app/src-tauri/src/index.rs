@@ -172,8 +172,9 @@ fn stage_name(stage: &str) -> String {
 }
 
 /// One task's line: id, linked title, level (goals and features), stage (and what a blocked one
-/// waits on), the tasks it depends on that are still `open`, progress and due date, priority,
-/// type (tasks), estimate (`muster list`'s text), and how many comments it has.
+/// waits on), the tasks it depends on that are still `open`, its open vision conflicts, progress
+/// and due date, priority, type (tasks), estimate (`muster list`'s text), and how many comments
+/// it has.
 fn line(t: &Task, open: &HashSet<&str>) -> String {
     let title = match md_text(&t.title, 200) {
         s if s.is_empty() => "(untitled)".to_string(),
@@ -204,6 +205,10 @@ fn line(t: &Task, open: &HashSet<&str>) -> String {
         .collect();
     if !waits.is_empty() {
         parts.push(format!("waits on {}", md_text(&waits.join(", "), 400)));
+    }
+    // Open vision conflicts (0029): they hold it in Shaping, as the card's badge says.
+    if let Some(n) = t.vision_open.filter(|n| *n > 0) {
+        parts.push(format!("⚠ {n} vision"));
     }
     if let Some(p) = t.progress.as_ref().filter(|_| t.level != "task") {
         parts.push(format!("{} of {} done", p.done, p.total));
@@ -906,6 +911,65 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
         assert!(line_of(&s).ends_with(" · 1 comment"), "{}", line_of(&s));
         s.tasks[0].comments.push(c("two"));
         assert!(line_of(&s).ends_with(" · 2 comments"), "{}", line_of(&s));
+    }
+
+    #[test]
+    fn a_line_shows_open_vision_conflicts_and_is_quiet_without_them() {
+        let d = queue();
+        let p = d.path();
+        let log = "- 2026-10-12 09:00 capture: created\n";
+        task(p, "todo/0001-a.md", "0001", "stage: shaping", "A", log);
+        task(p, "todo/0002-b.md", "0002", "stage: ready", "B", log);
+        let mut s = state(p);
+        s.tasks.sort_by(|a, b| a.id.cmp(&b.id));
+        s.tasks[0].depends = vec!["0002".into()];
+        let line_of = |s: &State| {
+            index_md(s, "p")
+                .lines()
+                .find(|l| l.starts_with("- 0001 "))
+                .unwrap()
+                .to_string()
+        };
+        // Never checked, or checked with none open: nothing.
+        for open in [None, Some(0)] {
+            s.tasks[0].vision_open = open;
+            assert!(!line_of(&s).contains("vision"), "{}", line_of(&s));
+        }
+        s.tasks[0].vision_open = Some(2);
+        assert!(
+            line_of(&s).contains(" · Shaping · waits on 0002 · ⚠ 2 vision · normal · "),
+            "{}",
+            line_of(&s)
+        );
+    }
+
+    #[test]
+    fn a_vision_record_and_resolve_keep_the_list_current() {
+        let d = queue();
+        let p = d.path();
+        let t = "2026-10-12 14:05";
+        let n = ops::NewTask {
+            title: "Checked".into(),
+            ..Default::default()
+        };
+        ops::create_task(p, &n, "owner", t).unwrap();
+        let first = || {
+            fs::read_to_string(p.join(FILE))
+                .unwrap()
+                .lines()
+                .find(|l| l.starts_with("- 0001 "))
+                .unwrap()
+                .to_string()
+        };
+        let two = r#"{"conflicts": [{"title": "A", "this": {"quote": "a", "at": "0001"}, "other": {"quote": "b", "at": "docs/VISION.md:3"}, "fix": "f"}, {"title": "B", "this": {"quote": "c", "at": "0001"}, "other": {"quote": "d", "at": "docs/DESIGN.md:9"}, "fix": "g"}]}"#;
+        crate::vision::record(p, "0001", two, "wt-shape", t).unwrap();
+        assert!(first().contains(" · ⚠ 2 vision · "), "{}", first());
+        assert_eq!(status(p), Status::Current);
+        crate::vision::resolve(p, "0001", "V1", "kept the spine", "owner", t).unwrap();
+        assert!(first().contains(" · ⚠ 1 vision · "), "{}", first());
+        crate::vision::resolve(p, "0001", "V2", "dropped it", "owner", t).unwrap();
+        assert!(!first().contains("vision"), "{}", first());
+        assert_eq!(status(p), Status::Current);
     }
 
     #[test]
