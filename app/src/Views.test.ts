@@ -9,7 +9,7 @@ import { TimelineChart, TimelineControls } from "./Views";
 
 const t = (over: Partial<Task>): Task => ({
   queue: "q", id: "0001", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [], folder: "todo", path: "", claimedBy: "", heldBy: "", stageSince: "", checkins: [],
-  heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "2026-10-14", capturedAt: "", blockHistory: [], questions: [], openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: false,
+  heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "2026-10-14", capturedAt: "", doneAt: "", blockHistory: [], questions: [], openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: false,
   tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [], attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", ...over,
 });
 const step = (at: string, from: string, to: string) => ({ at, who: "agent", from, to });
@@ -26,10 +26,10 @@ describe("the timeline's scale chips", () => {
   });
   it("steps back and forward, goes back to the current period, and names the window", () => {
     const words = (html: string) => [...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]).slice(3);
-    expect(words(controls("day"))).toEqual(["◀", "Today", "▶"]);
+    expect(words(controls("day"))).toEqual(["◀", "Now", "▶"]);
     expect(words(controls("week"))).toEqual(["◀", "This week", "▶"]);
     expect(words(controls("month"))).toEqual(["◀", "This month", "▶"]);
-    expect(controls("day")).toMatch(/disabled=""[^>]*>Today</);
+    expect(controls("day")).toMatch(/disabled=""[^>]*>Now</);
     expect(controls("day", -1)).not.toContain("disabled");
     expect(controls("week")).toContain("12 – 18 Oct 2026");
   });
@@ -51,15 +51,17 @@ describe("the timeline chart", () => {
   };
   const ticks = (html: string) => [...html.matchAll(/<span class="tl-tick( now)?"[^>]*>([^<]*)<\/span>/g)].map((m) => `${m[2]}${m[1] ? "*" : ""}`);
   it("labels the axis in hours at Day, weekdays at Week and dates at Month, marking now", () => {
-    expect(ticks(chart("day"))).toEqual(Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, "0")}${h === 17 ? "*" : ""}`));
+    // The last 24 hours: 21:00 the day before to 21:00, the weekday where the day changes.
+    const hours = ["21", "22", "23", "Wed", ...Array.from({ length: 20 }, (_, h) => String(h + 1).padStart(2, "0"))];
+    expect(ticks(chart("day"))).toEqual(hours.map((l) => (l === "17" ? "17*" : l)));
     expect(ticks(chart("week"))).toEqual(["Mon 12", "Tue 13", "Wed 14*", "Thu 15", "Fri 16", "Sat 17", "Sun 18"]);
     const month = ticks(chart("month"));
     expect([month.length, month[0], month[13], month[30]]).toEqual([31, "1", "14*", "31"]);
   });
-  it("draws each stage as its own segment in its colour, waiting in the quiet tint", () => {
+  it("draws each stage as its own segment in its colour, from when work started", () => {
     const html = chart("day");
     const bar = /<span class="tl-bar s-done[^"]*"[^>]*>([\s\S]*?)<span class="tl-bar-text">/.exec(html)?.[1] ?? "";
-    expect([...bar.matchAll(/class="tl-seg ([^"]+)"/g)].map((m) => m[1])).toEqual(["waiting fuzzy", "s-building", "s-testing"]);
+    expect([...bar.matchAll(/class="tl-seg ([^"]+)"/g)].map((m) => m[1])).toEqual(["s-building", "s-testing"]);
     expect(bar).toContain('title="Building 14 Oct 13:00 – 15:00"');
     expect(html).toMatch(/class="tl-bar s-building open blocked"/);
   });
@@ -69,7 +71,7 @@ describe("the timeline chart", () => {
     expect(html).toMatch(/<button class="tl-row active"[^>]*><span class="tl-label"> ?<span class="id">0032<\/span> Still going/);
   });
   it("draws the now line where now is, and none in a window without it", () => {
-    expect(chart("day")).toMatch(new RegExp(`class="tl-now" style="left:${(((17 * 60 + 20) / 1440) * 100).toFixed(3)}%"`));
+    expect(chart("day")).toMatch(new RegExp(`class="tl-now" style="left:${(((20 * 60 + 20) / 1440) * 100).toFixed(3)}%"`));
     expect(chart("day", -1)).not.toContain('class="tl-now"');
     expect(chart("day", -1)).not.toContain("tl-row");
   });

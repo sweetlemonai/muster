@@ -233,6 +233,20 @@ fn log_stamp(line: &str) -> Option<(String, &str)> {
     Some((format!("{date} 00:00"), after))
 }
 
+/// When a task last moved into Done, to the minute, from its log: a stage line `… → done` or a
+/// hand `moved … → done`; "" when the log only has a date or none (0031's timeline).
+pub fn done_at(log_lines: &[&str]) -> String {
+    log_lines
+        .iter()
+        .rev()
+        .find_map(|l| {
+            let (at, rest) = log_stamp(l)?;
+            let timed = l.get(12..13) == Some(" ") && l.get(15..16) == Some(":");
+            (timed && rest.contains("→ done")).then_some(at)
+        })
+        .unwrap_or_default()
+}
+
 /// Block and unblock lines of a log, as spans (see `Task::block_history`).
 pub fn block_history(log_lines: &[&str]) -> Vec<BlockSpan> {
     let mut out: Vec<BlockSpan> = Vec::new();
@@ -397,6 +411,8 @@ pub struct Task {
     /// When it was blocked, oldest first: from the log's `blocked on …` (or a hand `moved … →
     /// blocked`) to the next `unblocked`; `to` is empty while it still is (0031's timeline).
     pub block_history: Vec<BlockSpan>,
+    /// When it moved into Done, to the minute, from the log (`done_at`); empty when unknown.
+    pub done_at: String,
     pub questions: Vec<Question>,
     pub open_questions: usize,
     /// The criteria only the owner verifies (`— verify: owner`), ticked or not, for the task
@@ -803,6 +819,7 @@ pub fn parse_task(
         .then(|| d.to_string())
     };
     let block_history = block_history(&log_lines);
+    let done_at = done_at(&log_lines);
     let captured_at = log_lines
         .first()
         .filter(|l| stage_line(l).is_none())
@@ -937,6 +954,7 @@ pub fn parse_task(
         captured: get("captured"),
         captured_at,
         block_history,
+        done_at,
         questions,
         open_questions,
         owner_criteria,
@@ -3584,6 +3602,27 @@ mod tests {
         );
         assert_eq!(at("2026-10-12", "- 2026-10-12 1x:04 capture\n"), "");
         assert_eq!(at("2026-10-12", ""), "");
+    }
+
+    #[test]
+    fn done_at_is_the_last_timed_move_into_done() {
+        assert_eq!(
+            done_at(&[
+                "- 2026-10-12 04:47 capture: created",
+                "- 2026-10-12 04:55 capture: moved todo → done",
+            ]),
+            "2026-10-12 04:55"
+        );
+        assert_eq!(
+            done_at(&["- 2026-10-12 18:32 wt-a: stage your-check → done (commit abc1234)"]),
+            "2026-10-12 18:32"
+        );
+        // Date only, or never moved to done: unknown.
+        assert_eq!(done_at(&["- 2026-10-12 capture: moved todo → done"]), "");
+        assert_eq!(
+            done_at(&["- 2026-10-12 09:00 wt-a: stage ready → building (claimed)"]),
+            ""
+        );
     }
 
     #[test]

@@ -66,20 +66,26 @@ export function wallMinutes(d: Date): number {
 export type Segment = { stage: StageId | "waiting"; from: number; to: number; fuzzy: boolean };
 /** A task on the timeline: from `start` to `end`, the working part from `work` (= `end` when it
  *  never left waiting). `timed` when it comes from the stage history, else from dates only. */
-export type Span = { task: Task; start: number; work: number; end: number; open: boolean; timed: boolean; segments: Segment[]; blocks: { from: number; to: number }[] };
+export type Span = {
+  task: Task; start: number; work: number; end: number; open: boolean; timed: boolean; segments: Segment[]; blocks: { from: number; to: number }[];
+  /** When the work finished (into Your check or Done); `end` when it's still going. */
+  finish: number;
+};
 
 const WORKING = new Set<string>(["building", "testing", "your-check"]);
 const dayStart = (date: string) => {
   const d = dayNumber(date);
   return d === null ? null : d * DAY;
 };
-const changedDay = (t: Task) => Math.floor(wallMinutes(new Date(t.modified * 1000)) / DAY) * DAY;
 
-/** One task's span and segments at wall-clock minute `now`. */
-export function taskSpan(t: Task, now: number): Span {
-  // To the minute when the log knows it, else the capture day (a fuzzy start).
-  const exact = t.capturedAt ? stampMinutes(t.capturedAt) : null;
-  const captured = exact ?? dayStart(t.captured) ?? changedDay(t);
+/** One task's work on the timeline at wall-clock minute `now` (owner, 2026-10-13: "hour based,
+ *  each task when started and finished"): from when work started (its first move into Building,
+ *  Testing, Your check or Done) to when it finished (into Your check or Done), one segment per
+ *  stage it held; while it waits in Your check, that segment runs on to now as a quiet tail
+ *  (drawn thin). Time before the start isn't drawn. A task done before stage history was logged
+ *  runs from its logged capture to its logged done time. Null when work hasn't started, or the
+ *  log has no times for it. */
+export function taskSpan(t: Task, now: number): Span | null {
   const steps = t.stageHistory
     .flatMap((s) => {
       const at = stampMinutes(s.at);
@@ -91,48 +97,41 @@ export function taskSpan(t: Task, now: number): Span {
   const push = (stage: Segment["stage"], from: number, to: number, fuzzy: boolean) => {
     if (to > from) segments.push({ stage, from, to, fuzzy });
   };
-  let start = captured, end: number;
-  if (steps.length) {
-    start = Math.min(captured, steps[0].at);
-    let cur: StageId | "waiting" = "waiting", since = start, fuzzy = exact === null || start < captured;
-    // A history that starts mid-work (claimed by hand before the tools logged stages): the
-    // first stage began on the claim day, if that fits, else at capture.
-    if (WORKING.has(steps[0].from)) {
-      const claim = dayStart(t.claimedOn);
-      since = claim !== null && claim >= start && claim <= steps[0].at ? claim : start;
-      push("waiting", start, since, exact === null);
-      cur = steps[0].from;
-    }
-    for (const s of steps) {
-      // Backlog, Shaping and Ready before the first claim are all waiting.
-      if (cur === "waiting" && !WORKING.has(s.to) && s.to !== "done") continue;
-      if (cur !== "done") push(cur, since, s.at, fuzzy);
-      cur = s.to;
-      since = s.at;
-      fuzzy = false;
-    }
-    if (open) {
-      end = Math.max(now, since);
-      push(cur === "done" ? stageOf(t) : cur, since, end, fuzzy);
-    } else if (cur === "done") {
-      end = since;
-    } else {
-      // Done by hand without a logged step: to the end of its done day (or change day).
-      end = Math.max(since, (dayStart(t.doneOn) ?? changedDay(t)) + DAY);
-      push(cur, since, end, true);
-    }
-  } else {
-    // Dates only: whole days, waiting until the claim day, then in the task's stage colour.
-    end = open ? Math.max(now, captured) : Math.max(captured, dayStart(t.doneOn) ?? changedDay(t)) + DAY;
+  const exactCapture = t.capturedAt ? stampMinutes(t.capturedAt) : null;
+  const doneAt = t.doneAt ? stampMinutes(t.doneAt) : null;
+  let start: number, end: number;
+  const first = steps.findIndex((s) => WORKING.has(s.to) || s.to === "done");
+  if (steps.length && WORKING.has(steps[0].from)) {
+    // A history that starts mid-work (claimed by hand before the tools logged stages): from the
+    // claim day when that fits (fuzzy), else from the first logged step.
     const claim = dayStart(t.claimedOn);
-    const stage = stageOf(t);
-    const worked = WORKING.has(stage) || stage === "done";
-    if (claim !== null && claim >= captured && claim < end) {
-      push("waiting", captured, claim, true);
-      push(stage, claim, end, true);
-    } else push(worked ? stage : "waiting", captured, end, true);
+    start = claim !== null && claim <= steps[0].at ? claim : steps[0].at;
+    let cur: StageId = steps[0].from as StageId, since = start, fuzzy = start !== steps[0].at;
+    for (const s of steps) {
+      if (cur !== "done") push(cur, since, s.at, fuzzy);
+      [cur, since, fuzzy] = [s.to as StageId, s.at, false];
+    }
+    end = open ? Math.max(now, since) : since;
+    if (open) push(cur, since, end, false);
+  } else if (first >= 0) {
+    start = steps[first].at;
+    let cur: StageId = steps[first].to as StageId, since = start;
+    for (const s of steps.slice(first + 1)) {
+      if (cur !== "done") push(cur, since, s.at, false);
+      [cur, since] = [s.to as StageId, s.at];
+    }
+    end = open ? Math.max(now, since) : since;
+    if (open) push(cur, since, end, false);
+  } else if (!open && exactCapture !== null && doneAt !== null && doneAt >= exactCapture) {
+    // Done before stages were logged: captured and done, both to the minute.
+    [start, end] = [exactCapture, doneAt];
+    push("done", start, Math.max(end, start + 1), false);
+    end = Math.max(end, start + 1);
+  } else {
+    return null;
   }
-  const work = segments.find((g) => g.stage !== "waiting")?.from ?? end;
+  // Finished: the last move into Your check or Done (the work is done; what follows is the tail).
+  const finish = [...steps].reverse().find((s) => s.to === "your-check" || s.to === "done")?.at ?? end;
   // Blocked stretches, clipped to the bar; one still open runs to its end.
   const blocks = (t.blockHistory ?? []).flatMap((b) => {
     const from = stampMinutes(b.from);
@@ -141,14 +140,22 @@ export function taskSpan(t: Task, now: number): Span {
     const a = Math.max(from, start), z = Math.min(to, end);
     return z > a ? [{ from: a, to: z }] : [];
   });
-  return { task: t, start, work, end, open, timed: steps.length > 0, segments, blocks };
+  return { task: t, start, work: start, end, open, timed: steps.length > 0, segments, blocks, finish };
 }
 
-/** Every task's span, earliest first. */
-export function spans(tasks: Task[], now: number): Span[] {
-  return tasks
-    .map((t) => taskSpan(t, now))
-    .sort((a, b) => a.start - b.start || a.task.queue.localeCompare(b.task.queue) || a.task.id.localeCompare(b.task.id));
+/** The tasks with work to show, earliest start first, and how many have none yet (not started,
+ *  or no times in the log). */
+export function spans(tasks: Task[], now: number): Span[] & { notStarted?: number } {
+  const out: Span[] & { notStarted?: number } = [];
+  let none = 0;
+  for (const t of tasks) {
+    const s = taskSpan(t, now);
+    if (s) out.push(s);
+    else none++;
+  }
+  out.sort((a, b) => a.start - b.start || a.task.queue.localeCompare(b.task.queue) || a.task.id.localeCompare(b.task.id));
+  out.notStarted = none;
+  return out;
 }
 
 export type TimeWindow = { from: number; to: number };
@@ -156,7 +163,13 @@ export type TimeWindow = { from: number; to: number };
 /** The window `offset` days, weeks (Monday to Sunday) or months away from the one holding `now`. */
 export function timeWindow(scale: Scale, now: number, offset: number): TimeWindow {
   const day = Math.floor(now / DAY);
-  if (scale === "day") return { from: (day + offset) * DAY, to: (day + offset + 1) * DAY };
+  // Day is the last 24 hours, not the calendar day (owner, 2026-10-13: just after midnight the
+  // calendar day was nearly empty): from 20 hours before the current hour to 4 hours after it,
+  // so now sits near the right with room ahead; ◀ ▶ move by 24 hours.
+  if (scale === "day") {
+    const hour = Math.floor(now / 60) * 60 + offset * DAY;
+    return { from: hour - 20 * 60, to: hour + 4 * 60 };
+  }
   const date = new Date(day * 86400000);
   if (scale === "week") {
     const monday = day - ((date.getUTCDay() + 6) % 7) + offset * 7;
@@ -181,7 +194,10 @@ const shortDate = (m: number) => {
 export function windowLabel(scale: Scale, w: TimeWindow): string {
   const a = dateOf(w.from), b = dateOf(w.to - DAY);
   if (scale === "month") return `${MONTHS[a.getUTCMonth()]} ${a.getUTCFullYear()}`;
-  if (scale === "day") return `${WEEKDAYS[a.getUTCDay()]} ${shortDate(w.from)} ${a.getUTCFullYear()}`;
+  if (scale === "day") {
+    const at = (m: number) => `${WEEKDAYS[dateOf(m).getUTCDay()]} ${shortDate(m)} ${clock(m)}`;
+    return `${at(w.from)} – ${at(w.to)}`;
+  }
   const end = `${shortDate(w.to - DAY)} ${b.getUTCFullYear()}`;
   if (a.getUTCFullYear() !== b.getUTCFullYear()) return `${shortDate(w.from)} ${a.getUTCFullYear()} – ${end}`;
   return a.getUTCMonth() === b.getUTCMonth() ? `${a.getUTCDate()} – ${end}` : `${shortDate(w.from)} – ${end}`;
@@ -197,7 +213,9 @@ export function axis(scale: Scale, w: TimeWindow, now: number): Tick[] {
   const out: Tick[] = [];
   for (let at = w.from; at < w.to; at += step) {
     const d = dateOf(at);
-    const label = scale === "day" ? pad2((at - w.from) / 60) : scale === "week" ? `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()}` : String(d.getUTCDate());
+    // Day: the clock hour, and the weekday at midnight so the change of day shows.
+    const hour = Math.floor((((at % DAY) + DAY) % DAY) / 60);
+    const label = scale === "day" ? (hour === 0 ? WEEKDAYS[d.getUTCDay()] : pad2(hour)) : scale === "week" ? `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()}` : String(d.getUTCDate());
     out.push({ at, left: (at - w.from) / len, width: step / len, label, current: now >= at && now < at + step });
   }
   return out;

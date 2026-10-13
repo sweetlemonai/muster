@@ -418,7 +418,8 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .tl-bar.open { border-top-right-radius: 3px; border-bottom-right-radius: 3px; }
 .tl-bar.clip-start { border-left: none; border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .tl-bar.clip-end { border-right: none; border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.tl-bar.needs-you { box-shadow: 0 0 0 2px var(--st-needs); }
+/* Waiting for you shows as the dotted tail (owner, 2026-10-13), not a box round the whole bar. */
+.tl-bar.needs-you { box-shadow: none; }
 .tl-bar.blocked { border-style: dashed; border-color: var(--st-blocked); }
 .tl-seg { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--status) 75%, var(--surface)); }
 .tl-seg.waiting { background: color-mix(in srgb, var(--muted) 14%, var(--surface)); }
@@ -680,3 +681,7 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .count.quiet { background: none; border: 1px solid var(--border); color: var(--muted); }
 .problems.warnings li { color: var(--muted); }
 .problems.warnings b { color: var(--text); font-weight: 600; margin-right: 4px; }
+/* Work only (owner, 2026-10-13): the wait for your check after the work finished is a thin dotted
+   tail, not a bar. */
+.tl-seg.s-your-check { top: 35%; bottom: 35%; background: repeating-linear-gradient(90deg, var(--st-your-check) 0 4px, transparent 4px 7px); opacity: 0.9; }
+.tl-not-started { margin: 8px 0 0; }

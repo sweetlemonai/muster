@@ -106,7 +106,7 @@ function Row({ t, now, multi, active, onOpen, words }: { t: Task; now: number; m
 }
 
 const SCALE_KEY = "muster.timelineScale";
-const CURRENT: Record<Scale, string> = { day: "Today", week: "This week", month: "This month" };
+const CURRENT: Record<Scale, string> = { day: "Now", week: "This week", month: "This month" };
 /** Pixels per slot: an hour at Day, a quarter day at Week, a day at Month. */
 const SLOT_PX: Record<Scale, number> = { day: 40, week: 32, month: 30 };
 const pct = (x: number) => `${(x * 100).toFixed(3)}%`;
@@ -131,11 +131,15 @@ export function TimelineView({ tasks, now, multi, openKey, onOpen, words }: { ta
       <TimelineControls scale={scale} offset={offset} label={windowLabel(scale, win)} onScale={pick} onStep={(d) => setOffset((o) => o + d)} onToday={() => setOffset(0)} />
       <div className="tl-scroll">
         <TimelineChart scale={scale} rows={rows} ticks={ticks} now={nowAt(win, at)} multi={multi} openKey={openKey} onOpen={onOpen} words={words} />
-        {rows.length === 0 && <p className="empty">{tasks.length ? `No task falls ${scale === "day" ? "on this day" : `in this ${scale}`}.` : "No tasks match."}</p>}
+        {rows.length === 0 && <p className="empty">{tasks.length ? `No work ${scale === "day" ? "in these 24 hours" : `in this ${scale}`}.` : "No tasks match."}</p>}
+        {(list.notStarted ?? 0) > 0 && (
+          <p className="meta tl-not-started">{list.notStarted} {list.notStarted === 1 ? "task hasn't" : "tasks haven't"} started yet (or the log has no times for them), so they aren't drawn.</p>
+        )}
         <p className="meta tl-legend">
-          A bar starts in a quiet tint while the task waits to be claimed, then shows each stage it was in, in that stage's colour,
-          from the times muster logged. A faded start means only the day is known (older tasks, dates only). The line is now; open
-          tasks run to it. Day shows hours, Week quarter days (a short task fills one), Month days. A dashed red edge means blocked.
+          Each bar is a task's work: it starts when the task was claimed and ends when the work finished (it reached Your check or
+          Done), one segment per stage in that stage's colour, from the times muster logged. The thin dotted tail after it is the
+          time it has waited for your check. Tasks still being worked run to the now line. Hatching is time blocked. Day is the
+          last 24 hours; Week shows quarter days, Month days.
         </p>
       </div>
     </main>

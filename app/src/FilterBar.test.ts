@@ -8,7 +8,7 @@ import type { Task } from "./types";
 
 const t = (over: Partial<Task>): Task => ({
   queue: "q", id: "0001", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [], folder: "todo", path: "", claimedBy: "", heldBy: "", stageSince: "", checkins: [],
-  heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "2026-10-01", capturedAt: "", blockHistory: [], questions: [], openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: false,
+  heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "2026-10-01", capturedAt: "", doneAt: "", blockHistory: [], questions: [], openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: false,
   tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [],
   attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", search: "", ...over,
 });
@@ -124,7 +124,11 @@ describe("the views highlight what the search matched", () => {
     // The timeline remembers its scale in local storage, which tests run without.
     vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {} });
     try {
-      const html = renderToStaticMarkup(createElement(TimelineView, { tasks: list, now: NOW, multi: false, openKey: null, onOpen: () => {}, words: ["board", "19"] }));
+      // The timeline draws work, so the task needs a start (0031 follow-up): claimed a day before now.
+      const at = new Date((NOW - 86400) * 1000);
+      const stamp = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")} 09:00`;
+      const started = list.map((x) => ({ ...x, stage: "building", stageHistory: [{ at: stamp, who: "a", from: "ready", to: "building" }] }));
+      const html = renderToStaticMarkup(createElement(TimelineView, { tasks: started, now: NOW, multi: false, openKey: null, onOpen: () => {}, words: ["board", "19"] }));
       expect(html).toContain("<mark>Board</mark> flickers");
       expect(html).toContain('<span class="id"><mark>0019</mark></span>');
     } finally {

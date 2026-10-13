@@ -4,6 +4,28 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Timeline shows work: from when a task started to when it finished (0031 follow-up)
+**Fixed:** the owner: "it should be hour based, each task when started and finished". Bars
+started at capture (mostly a date, so midnight) and ran to now, so waiting drowned the work.
+Now a bar starts when the task was claimed into Building and ends when it reached Your check or
+Done, one segment per stage; the wait for the owner's check is a thin dotted tail; work not
+started isn't drawn but counted ("14 tasks haven't started yet"). Old done tasks with only a
+logged capture and done time draw between the two.
+**Found:** the times themselves were off for today's tasks: the main session passed its
+builders' tasks on in batches after merging, so "finished" was the queue update, not the work
+(0031 shows 00:04 for work done at 23:34). From now on builders pass their own tasks and check in.
+
+## 2026-10-13 — Timeline: Day is the last 24 hours; done tasks end at their logged time (0031 follow-up)
+**Fixed:** the owner's screenshot just after midnight: the Day scale showed the calendar day, so
+it was nearly empty, and done tasks from before stage history (0011–0013) ran into the next day.
+Cause: for a task with only dates, the end was `max(capture, done day) + 1 day`, which with the
+exact capture time became capture + 24 h. Now the core reads the done time from the log
+(`done_at`: the last timed `→ done` line), the fallback ends with the done day, and Day shows
+the 24 hours from 20 h before the current hour to 4 h after it (◀ ▶ move a day; "Now" comes
+back), with clock hours on the axis and the weekday where the day changes.
+**Verified:** `pnpm check` green (vitest 345, cargo 192 + interop 12), `test_task.py` OK.
+
+
 ## 2026-10-13 — Who worked on a task and what it cost: sessions, tokens, time, live (task 0025)
 **Did:** the task pane has a Work section: every session that held or logged on the task, with
 stage, start, end (or live), minutes and tokens, read from the transcripts on this Mac
