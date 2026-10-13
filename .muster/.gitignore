@@ -1,0 +1,4 @@
+# Muster: a local queue (config.toml says local = true). Only config.toml is committed.
+*
+!.gitignore
+!config.toml

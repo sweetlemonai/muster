@@ -4,6 +4,16 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Muster's own queue moved into `muster/main/.muster/` (task 0005, AC5)
+**Did:** `muster migrate ~/playground/muster/tasks ~/playground/muster/main` (local): 51 tasks, 8 notes,
+50 attachments, 2 mail files; keys stay mu-N (prefix in `.muster/config.toml`). Gate `bin/gate` set on
+the new queue. The old queue is marked `RETIRED.md` (left in place; renaming it was not allowed from this
+session). Drover's waiting list catches up in dr-25.
+**Decided:** the owner chose to migrate now (WAITING-FOR-OWNER #5, option a).
+**Verified:** `muster check --queue …/.muster` clean (warnings only); `muster projects` lists it found.
+**Open:** worktree agents need `~/playground/muster/main/.muster` in the sandbox write list (owner);
+hide or move aside `~/playground/muster/tasks` (shows as muster-2).
+
 ## 2026-10-13 — Decision 0006: the four parts, idea → task → run → gate (owner: yes to all)
 **Decided:** the owner took all four PIPELINE.md picks: planning lives in GenIdea (0041 moves
 there), Drover lanes show Muster's stages for Muster tasks, one gate kit in the personal layer,

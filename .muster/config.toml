@@ -1,0 +1,6 @@
+# Muster's settings for this project (decision 0003). Other tools may add their own keys.
+# local = true: the queue stays on this Mac. .muster/.gitignore keeps everything but this
+# file out of git, and every worktree of the repo uses the main checkout's .muster/.
+local = true
+# prefix: what this queue's task keys start with (mu in mu-12).
+prefix = "mu"
