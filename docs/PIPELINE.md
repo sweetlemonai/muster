@@ -1,7 +1,7 @@
 # Idea → Task → Run → Gate → Done: the four parts
 
-**Status: proposed (2026-10-13), waiting for the owner's yes.** Once agreed, the choices below
-become decision records, and VISION.md points here.
+**Status: accepted (2026-10-13).** The owner said yes to all four choices: decision
+`docs/decisions/0006-four-parts-idea-task-run-gate.md`.
 
 The owner, 2026-10-13: "in general we need agent orchestration, or think of idea -> task ->
 execution -> gates -> done. Execution is Drover, task is Muster, idea is the third part and gates

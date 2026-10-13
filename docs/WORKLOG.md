@@ -4,6 +4,12 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Decision 0006: the four parts, idea → task → run → gate (owner: yes to all)
+**Decided:** the owner took all four PIPELINE.md picks: planning lives in GenIdea (0041 moves
+there), Drover lanes show Muster's stages for Muster tasks, one gate kit in the personal layer,
+Muster's stage names everywhere. Record: `docs/decisions/0006-four-parts-idea-task-run-gate.md`;
+PIPELINE.md marked accepted; VISION.md points to it.
+
 ## 2026-10-13 — The review of record: the engine reviews a started task's branch in Testing, the builder fixes or disputes, lessons for the next agents (task 0027)
 **Did:** `muster review <id>` prints the brief for the next round of a started task (range:
 merge base..tip, then only the commits since the last round; the task and the builder's answers
