@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import css from "./styles.css?raw";
-import { ACCENTS, apply, CARD_LOOKS, CARD_TINT, cardChoice, contrast, DEFAULT_CHOICE, edgeColour, luminance, mix, NEEDS_COLOUR, PRIORITY_COLOURS, resolve, STAGE_COLOURS, THEMES, variables } from "./themes";
+import { ACCENTS, apply, buildingColour, CARD_LOOKS, colourDistance, SAME_AT_A_GLANCE, CARD_TINT, cardChoice, contrast, DEFAULT_CHOICE, edgeColour, mix, NEEDS_COLOUR, PRIORITY_COLOURS, resolve, STAGE_COLOURS, THEMES, variables } from "./themes";
 
 describe("every theme and accent pair is readable (WCAG AA)", () => {
   for (const t of THEMES) {
@@ -47,19 +47,39 @@ describe("stage colours", () => {
     expect(Object.keys(STAGE_COLOURS)).toEqual(["backlog", "shaping", "ready", "building", "testing", "your-check", "done", "blocked"]);
     expect(new Set(Object.values(STAGE_COLOURS)).size).toBe(8);
   });
-  it("are never orange or blue (those belong to other apps)", () => {
-    for (const [stage, c] of Object.entries(STAGE_COLOURS)) {
-      const { h, s } = hsl(c);
-      if (s < 0.2) continue; // grey
-      expect(h >= 15 && h <= 38, `${stage} ${c} is orange`).toBe(false);
-      expect(h >= 195 && h <= 245, `${stage} ${c} is blue`).toBe(false);
-    }
+  it("are the colours people know: blue ready, amber testing, orange for you, green done, red blocked", () => {
+    const hue = (s: string) => hsl(STAGE_COLOURS[s]).h;
+    expect(hue("ready")).toBeGreaterThan(195);
+    expect(hue("ready")).toBeLessThan(225);
+    expect(hue("testing")).toBeGreaterThan(38);
+    expect(hue("testing")).toBeLessThan(50);
+    expect(hue("your-check")).toBeGreaterThan(18);
+    expect(hue("your-check")).toBeLessThan(32);
+    expect(hue("done")).toBeGreaterThan(130);
+    expect(hue("done")).toBeLessThan(165);
+    expect(hue("blocked") > 340 || hue("blocked") < 10).toBe(true);
+    expect(hsl(STAGE_COLOURS.backlog).s).toBeLessThan(0.2);
+    expect(NEEDS_COLOUR).toBe(STAGE_COLOURS["your-check"]);
   });
-  it("Shaping and Ready are violet, Ready the stronger; Building and Testing teal, Testing the lighter", () => {
-    for (const s of ["shaping", "ready"]) expect(hsl(STAGE_COLOURS[s]).h).toBeGreaterThan(245);
-    for (const s of ["building", "testing"]) expect(Math.abs(hsl(STAGE_COLOURS[s]).h - 174)).toBeLessThan(10);
-    expect(luminance(STAGE_COLOURS.ready)).toBeLessThan(luminance(STAGE_COLOURS.shaping));
-    expect(luminance(STAGE_COLOURS.testing)).toBeGreaterThan(luminance(STAGE_COLOURS.building));
+  it("no two read as the same at a glance", () => {
+    const e = Object.entries(STAGE_COLOURS);
+    for (let i = 0; i < e.length; i++)
+      for (let j = i + 1; j < e.length; j++) expect(colourDistance(e[i][1], e[j][1]), `${e[i][0]} ~ ${e[j][0]}`).toBeGreaterThanOrEqual(SAME_AT_A_GLANCE);
+  });
+  it("Building takes the accent, unless the accent would pass for another stage", () => {
+    const by = Object.fromEntries(ACCENTS.map((a) => [a.id, buildingColour(a)]));
+    expect(by.violet).toEqual({ colour: ACCENTS.find((a) => a.id === "violet")!.dark[0], clashes: "" });
+    expect(by.rose.clashes).toBe("blocked");
+    expect(by.gold.clashes).toBe("testing");
+    expect(by.green.clashes).toBe("done");
+    expect(by.graphite.clashes).toBe("backlog");
+    for (const a of ACCENTS) {
+      const b = by[a.id];
+      // Whatever Building ends up as, it's distinct from every other stage.
+      for (const [s, c] of Object.entries(STAGE_COLOURS)) if (s !== "building") expect(colourDistance(b.colour, c), `${a.id} vs ${s}`).toBeGreaterThanOrEqual(SAME_AT_A_GLANCE);
+      expect(b.clashes ? b.colour : a.dark[0]).toBe(b.colour);
+      expect(variables(THEMES[0], a)["--st-building"]).toBe(b.colour);
+    }
   });
 });
 
@@ -120,16 +140,11 @@ describe("card looks (0026)", () => {
   it("words on the Top bar band read on every colour it can take", () => {
     for (const [k, c] of fills) expect(contrast("#1A1730", c), k).toBeGreaterThanOrEqual(4.5);
   });
-  it("priority colours are distinct, apart from blocked and needs you, and never orange or blue", () => {
+  it("priority colours are distinct, and apart from blocked and needs you", () => {
     const all = Object.values(PRIORITY_COLOURS);
     expect(new Set(all).size).toBe(3);
     expect(all).not.toContain(STAGE_COLOURS.blocked);
     expect(all).not.toContain(NEEDS_COLOUR);
-    for (const c of all) {
-      const [r, g, b] = [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
-      expect(b > r && b > g && r < 120, `${c} reads as blue`).toBe(false);
-      expect(r > 200 && g > 100 && g < 190 && b < 100, `${c} reads as orange`).toBe(false);
-    }
   });
   it("an edge keeps a colour that already stands out, and keeps its hue when it has to change", () => {
     expect(edgeColour("#8B6CF0", "#1C1930", "dark")).toBe("#8B6CF0");

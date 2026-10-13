@@ -1,7 +1,10 @@
 # Muster — work log
 
+
+
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+<<<<<<< HEAD
 ## 2026-10-13 — Parallel workers: slash commands (0003), editing (0020), goals and features (0016)
 **Did:** three tasks built at once by workers on their own branches (task/0003, task/0020, task/0016),
 each reviewed and fixed on its branch, then merged into main one by one, with the gate after each merge:
@@ -22,6 +25,19 @@ each reviewed and fixed on its branch, then merged into main one by one, with th
 - 0020's comments wait for 0017.
 - `/mu` needs the owner's yes to go into the personal layer.
 
+||||||| parent of 0c219bc (Memorable stage colours; Building uses the accent (task 0034))
+=======
+## 2026-10-12 — Memorable stage colours; Building uses the accent (task 0034)
+**Decided:** the owner asked for colours people know, "not our made up rules": Ready blue,
+Building the accent, Testing amber, Your check (and "needs you") orange, Done green, Blocked red,
+Backlog grey, Shaping light cyan. The old "stage colours are never orange or blue" rule is gone;
+accents keep theirs (that one tells the apps apart). An accent that would pass for another stage
+(rose, gold, green, graphite, teal) leaves Building violet, and Appearance says why.
+**Did:** `themes.ts` (STAGE_COLOURS, `colourDistance`, `buildingColour`), `styles.css` defaults,
+`Appearance.tsx` note, `AS_BUILT.md`. Preview: `tasks/attachments/0034/`.
+**Verified:** `pnpm check` green (vitest 233); every stage pair at colour distance ≥ 30; dark words
+on every stage colour AA; edges 3:1 (0026's tests).
+>>>>>>> 0c219bc (Memorable stage colours; Building uses the accent (task 0034))
 ## 2026-10-13 — Backlog one-liners, shaped into tasks (task 0015)
 **Did:**
 - Any non-task `.md` in a queue's `inbox/` is a backlog note.

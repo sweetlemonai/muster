@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CardLookPicker } from "./CardLook";
-import { ACCENTS, apply, cardChoice, type Choice, DEFAULT_CHOICE, load, resolve, save, THEMES, variables } from "./themes";
+import { stageLabel } from "./lib";
+import { ACCENTS, apply, buildingColour, cardChoice, type Choice, DEFAULT_CHOICE, load, resolve, save, THEMES, variables } from "./themes";
 
 /** Theme, accent and card look, applied live while the board stays in view beside it. */
 export default function Appearance({ onClose }: { onClose: () => void }) {
@@ -64,7 +65,12 @@ export default function Appearance({ onClose }: { onClose: () => void }) {
             </button>
           ))}
         </div>
-        <p className="meta">Blue and orange are left out: they belong to 127, Drover and Braindump. Every theme and accent pair passes WCAG AA.</p>
+        <p className="meta">
+          Building shows in the accent colour.
+          {buildingColour(current.accent).clashes &&
+            ` ${current.accent.name} would look like ${stageLabel(buildingColour(current.accent).clashes)}, so Building stays violet.`}
+        </p>
+        <p className="meta">Blue and orange are left out of the accents: they belong to 127, Drover and Braindump. Every theme and accent pair passes WCAG AA.</p>
       </section>
       <section>
         <h2>Cards</h2>

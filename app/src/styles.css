@@ -19,14 +19,14 @@
   --on-accent: #FFFFFF;
   /* Stage colours, as themes.ts STAGE_COLOURS sets them (tested there). */
   --st-backlog: #8E8AA6;
-  --st-shaping: #B9A6F7;
-  --st-ready: #8B6CF0;
-  --st-building: #2EC4B6;
-  --st-testing: #8ADFD6;
-  --st-your-check: #F5C04A;
+  --st-shaping: #7FD4D6;
+  --st-ready: #5EA8F8;
+  --st-building: #8B6CF0;
+  --st-testing: #F7C948;
+  --st-your-check: #FB8C3C;
   --st-done: #4CC38A;
-  --st-blocked: #F0647D;
-  --st-needs: #F5C04A;
+  --st-blocked: #F2556F;
+  --st-needs: #FB8C3C;
   --on-status: #1A1730;
   --err: #C2334F;
   --ok: #177A4B;

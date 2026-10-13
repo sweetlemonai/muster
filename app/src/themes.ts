@@ -44,23 +44,25 @@ const STATUS_TEXT: Record<Mode, { err: string; ok: string; gold: string }> = {
 };
 
 // Stage colours (and the blocked flag's), the same in every theme: column strips, card edges,
-// pills and timeline bars. Words on them use --on-status. Grey, violet (Ready the stronger),
-// teal (Testing the lighter), gold for the owner, green, rose; never orange or blue.
+// pills and timeline bars. Words on them use --on-status. Colours people know from boards (0034):
+// grey backlog, slate shaping, blue ready, Building the accent (violet unless the accent would
+// pass for another stage, see buildingColour), amber testing, orange for the owner, green done,
+// red blocked.
 export const STAGE_COLOURS: Record<string, string> = {
   backlog: "#8E8AA6",
-  shaping: "#B9A6F7",
-  ready: "#8B6CF0",
-  building: "#2EC4B6",
-  testing: "#8ADFD6",
-  "your-check": "#F5C04A",
+  shaping: "#7FD4D6",
+  ready: "#5EA8F8",
+  building: "#8B6CF0",
+  testing: "#F7C948",
+  "your-check": "#FB8C3C",
   done: "#4CC38A",
-  blocked: "#F0647D",
+  blocked: "#F2556F",
 };
 const ON_STATUS = "#1A1730";
-/** "Needs you" (Your check, escalations), as styles.css's --st-needs. */
-export const NEEDS_COLOUR = "#F5C04A";
-// Priority colours, for cards coloured by priority: magenta for high (gold means "needs you" and
-// rose means blocked), violet for normal, grey for low. Never orange or blue.
+/** "Needs you" (Your check, escalations): the Your check orange, as styles.css's --st-needs. */
+export const NEEDS_COLOUR = STAGE_COLOURS["your-check"];
+// Priority colours, for cards coloured by priority: magenta for high (orange means "needs you" and
+// red means blocked), violet for normal, grey for low.
 export const PRIORITY_COLOURS: Record<string, string> = { high: "#E879C9", normal: "#8B6CF0", low: "#8E8AA6" };
 
 /** How a card shows its colour (0026). Picked in Appearance; applied as CSS only. */
@@ -99,6 +101,34 @@ export function contrast(a: string, b: string): number {
   const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
   return (x + 0.05) / (y + 0.05);
 }
+/** CIE76 colour distance (in Lab): under about 20, two colours read as the same at a glance. */
+export function colourDistance(a: string, b: string): number {
+  const lab = (hex: string) => {
+    const lin = [0, 2, 4]
+      .map((i) => parseInt(hex.replace("#", "").slice(i, i + 2), 16) / 255)
+      .map((x) => (x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
+    const [x, y, z] = [
+      (0.4124 * lin[0] + 0.3576 * lin[1] + 0.1805 * lin[2]) / 0.95047,
+      0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2],
+      (0.0193 * lin[0] + 0.1192 * lin[1] + 0.9505 * lin[2]) / 1.08883,
+    ].map((v) => (v > 0.008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116));
+    return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+  };
+  const [p, q] = [lab(a), lab(b)];
+  return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+}
+/** Below this distance, a Building accent would pass for another stage. */
+export const SAME_AT_A_GLANCE = 30;
+
+/** Building's colour for an accent: the accent's bright shade, unless it would pass for another
+ *  stage, blocked or "needs you" (then violet, and `clashes` names what it looked like). */
+export function buildingColour(accent: Accent): { colour: string; clashes: string } {
+  const candidate = accent.dark[0];
+  const others = Object.entries(STAGE_COLOURS).filter(([s]) => s !== "building");
+  const near = others.find(([, c]) => colourDistance(candidate, c) < SAME_AT_A_GLANCE);
+  return near ? { colour: STAGE_COLOURS.building, clashes: near[0] } : { colour: candidate, clashes: "" };
+}
+
 /** a mixed into b by t (0..1), as hex. */
 export function mix(a: string, b: string, t: number): string {
   const p = (h: string) => [0, 2, 4].map((i) => parseInt(h.replace("#", "").slice(i, i + 2), 16));
@@ -130,6 +160,7 @@ export function variables(theme: Theme, accent: Accent): Record<string, string> 
   const onAccent = contrast(theme.text, acc) >= contrast(theme.bg, acc) ? theme.text : theme.bg;
   const st = STATUS_TEXT[theme.mode];
   const edge = (c: string) => edgeColour(c, [theme.surface, mix(c, theme.surface, CARD_TINT[theme.mode])], theme.mode);
+  const stages: Record<string, string> = { ...STAGE_COLOURS, building: buildingColour(accent).colour };
   return {
     "--bg": theme.bg,
     "--surface": theme.surface,
@@ -149,11 +180,11 @@ export function variables(theme: Theme, accent: Accent): Record<string, string> 
     "--err": st.err,
     "--ok": st.ok,
     "--gold-text": st.gold,
-    ...Object.fromEntries(Object.entries(STAGE_COLOURS).map(([s, c]) => [`--st-${s}`, c])),
+    ...Object.fromEntries(Object.entries(stages).map(([s, c]) => [`--st-${s}`, c])),
     "--on-status": ON_STATUS,
     // Card looks (0026): edges at 3:1 on the card, priority colours, and the tint amount.
     // An edge sits on the plain card and, in the Tint look, on the card washed in its own colour.
-    ...Object.fromEntries(Object.entries(STAGE_COLOURS).map(([s, c]) => [`--edge-${s}`, edge(c)])),
+    ...Object.fromEntries(Object.entries(stages).map(([s, c]) => [`--edge-${s}`, edge(c)])),
     "--st-needs": NEEDS_COLOUR,
     "--edge-needs": edge(NEEDS_COLOUR),
     ...Object.fromEntries(Object.entries(PRIORITY_COLOURS).map(([p, c]) => [`--pri-${p}`, c])),
