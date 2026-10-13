@@ -229,3 +229,6 @@ By hand, if the command isn't available:
   answer in the file.
 - Any role may append to `## Questions` and `## Log` of any task, claimed or not. Nothing else
   in a claimed task is touched by anyone but its owner (and the owner human).
+- While another session holds a task in Building, the owner human edits through a note, not
+  the write-up: `muster edit` and the app's Edit refuse it, since the write-up belongs to the
+  holder's branch until they pass it on (task 0020, decision 0003).

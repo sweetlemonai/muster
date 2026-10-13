@@ -408,7 +408,7 @@ fn section<'a>(body: &'a str, name: &str) -> Option<&'a str> {
 /// Where the Log's lines are: the content of the LAST `## Log` section, as (start, end) byte
 /// offsets. The tool only ever appends there (`append_log`), so a `## Log` line quoted in a
 /// description or an answer above it is just text: it can't forge or hide stage history.
-fn log_span(text: &str) -> Option<(usize, usize)> {
+pub(crate) fn log_span(text: &str) -> Option<(usize, usize)> {
     let mut start = None;
     let mut pos = 0;
     for line in text.split_inclusive('\n') {

@@ -185,6 +185,13 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .lightbox img { max-width: 100%; max-height: calc(100% - 40px); object-fit: contain; border-radius: 6px; }
 .lightbox p { color: #ddd; font-size: 12px; }
 .body-bar { display: flex; gap: 4px; margin-bottom: 8px; }
+.body-bar .edit { margin-left: auto; border-color: var(--border); color: var(--text); }
+.write-up-edit { display: flex; flex-direction: column; gap: 6px; }
+.write-up-edit textarea { width: 100%; min-height: 50vh; box-sizing: border-box; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); background: var(--bg); border: 1px solid var(--accent); border-radius: 6px; padding: 10px; resize: vertical; }
+.edit-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.edit-bar button { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 6px; padding: 4px 12px; }
+.edit-bar .primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.edit-bar button:disabled { opacity: 0.5; }
 .raw { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg); padding: 10px; border-radius: 6px; }
 
 .markdown { overflow-wrap: anywhere; }

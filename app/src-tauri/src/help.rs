@@ -161,6 +161,21 @@ pub const COMMANDS: &[Command] = &[
         examples: &["muster set 0007 priority high", "muster set 0007 tags spike,tech-debt", "muster set 0007 tags \"\"", "muster set 0007 time 3h", "muster set 0007 tokens 600k", "muster set 0007 title \"A clearer title\""],
     },
     Command {
+        name: "edit",
+        usage: "muster edit <id> [--body -]",
+        what: "Edit a task's write-up: the description, To do and acceptance criteria between the front matter and the Log. Opens $VISUAL or $EDITOR (else vi; quotes work as in a shell, but no shell runs it) on a copy and saves it when the editor exits, logged as an edit. Unchanged text prints \"no change\" and writes nothing. The front matter and the Log stay the tool's: a \"## Log\" line or a stage line is refused. Refused when the write-up changed since you opened it, or when the editor fails; either way, what you typed is kept in the temp file it names. Refused too while someone else holds it in Building: their branch owns the write-up then, so add a note instead.",
+        options: &[
+            ("--body -", "read the new write-up from stdin instead of opening an editor (for scripts)"),
+            ("--as", "who's editing; the holder of a task in Building may edit it"),
+        ],
+        examples: &[
+            "muster edit 0007",
+            "EDITOR=\"code --wait\" muster edit 0007",
+            "VISUAL='\"/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl\" -w' muster edit 0007",
+            "pbpaste | muster edit 0007 --body -",
+        ],
+    },
+    Command {
         name: "note",
         usage: "muster note <id> \"<text>\"",
         what: "Add a line to the task's log (the tool stamps the time).",
@@ -401,6 +416,10 @@ pub const APP: &[(&str, &str)] = &[
         "in a note's pane: file it as a task in Shaping (the note goes into its files), set it aside with the reason, or copy the brief for a shaping session",
     ),
     (
+        "Edit",
+        "in a task's pane, beside the description: edit the write-up in place, ⌘S to save, Esc to cancel (twice when you've typed). Refused if the file changed since you opened it, or while someone else holds it in Building (add a note instead); your text stays in the box",
+    ),
+    (
         "Board · Table · Timeline",
         "three views of the same tasks, with the same priority and tag filters",
     ),
@@ -490,6 +509,7 @@ mod tests {
             "unblock",
             "stage",
             "set",
+            "edit",
             "note",
             "tick",
             "untick",
@@ -523,7 +543,7 @@ mod tests {
                 "{name}'s examples use it"
             );
         }
-        assert_eq!(COMMANDS.len(), 30);
+        assert_eq!(COMMANDS.len(), 31);
     }
 
     #[test]
@@ -566,6 +586,27 @@ mod tests {
             "Drop",
         ] {
             assert!(app.contains(word), "{word}: {app}");
+        }
+    }
+
+    #[test]
+    fn edit_says_who_may_edit_and_how() {
+        let t = command_text("edit").unwrap();
+        for words in [
+            "$VISUAL",
+            "$EDITOR",
+            "vi",
+            "--body -",
+            "no change",
+            "changed since you opened it",
+            "holds it in Building",
+            "add a note instead",
+        ] {
+            assert!(t.contains(words), "{words}: {t}");
+        }
+        let app: String = APP.iter().map(|(k, v)| format!("{k} {v}\n")).collect();
+        for words in ["Edit", "⌘S", "Esc", "add a note instead"] {
+            assert!(app.contains(words), "{words}: {app}");
         }
     }
 

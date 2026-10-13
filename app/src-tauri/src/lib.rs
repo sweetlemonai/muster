@@ -434,6 +434,54 @@ async fn shape_note(
     .await
 }
 
+/// The write-up the owner's Edit opens: refused while someone else holds the task in Building.
+#[tauri::command]
+async fn editable_body(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+) -> Result<String, String> {
+    check_id(&id)?;
+    let file = app.config_file.clone();
+    blocking(move || open_to_edit(&queue_root(&file, &queue)?, &id)).await
+}
+
+/// The owner saves an edited write-up. `expected` is the text Edit opened: refused if the file's
+/// is different now. None when the text is unchanged (nothing written).
+#[tauri::command]
+async fn edit_body(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+    body: String,
+    expected: String,
+    stamp: String,
+) -> Result<Option<String>, String> {
+    check_id(&id)?;
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || save_body(&queue_root(&file, &queue)?, &id, &body, &expected, &stamp)).await
+}
+
+/// What `editable_body` does once it has the queue: its id checked, then the core's rule.
+pub(crate) fn open_to_edit(root: &std::path::Path, id: &str) -> Result<String, String> {
+    check_id(id)?;
+    ops::open_body(root, id, "owner")
+}
+
+/// What `edit_body` does once it has the queue: its arguments checked, then the core's rules.
+pub(crate) fn save_body(
+    root: &std::path::Path,
+    id: &str,
+    body: &str,
+    expected: &str,
+    stamp: &str,
+) -> Result<Option<String>, String> {
+    check_id(id)?;
+    check_stamp(stamp)?;
+    ops::edit_body(root, id, body, expected, "owner", stamp)
+}
+
 /// Attach files the window holds (pasted or dropped), as data URLs.
 #[tauri::command]
 async fn attach_data(
@@ -683,6 +731,8 @@ pub fn run() {
             file_note,
             drop_note,
             shape_note,
+            editable_body,
+            edit_body,
             attach_data,
             attach_pick,
             helper_cmds::helper_info,
@@ -715,6 +765,42 @@ mod tests {
         ] {
             assert!(check_stamp(bad).is_err(), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn the_owners_edit_checks_its_arguments_then_the_rules() {
+        let d = tempfile::tempdir().unwrap();
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir(d.path().join(f)).unwrap();
+        }
+        let file = d.path().join("todo/0007-t.md");
+        std::fs::write(
+            &file,
+            "---\nid: 0007\nstage: ready\nstatus: todo\nclaimed-by:\nwaiting_on:\n---\n\n# T\n\nOld.\n\n## Log\n- 2026-10-12 09:00 capture: created\n",
+        )
+        .unwrap();
+        let t = "2026-10-12 14:05";
+        let opened = open_to_edit(d.path(), "0007").unwrap();
+        assert_eq!(opened, "# T\n\nOld.");
+        assert_eq!(open_to_edit(d.path(), "../7").unwrap_err(), "bad task id");
+        assert_eq!(
+            save_body(d.path(), "7", "# T\n\nNew.", &opened, t).unwrap_err(),
+            "bad task id"
+        );
+        assert_eq!(
+            save_body(d.path(), "0007", "# T\n\nNew.", &opened, "2026-10-12").unwrap_err(),
+            "bad time stamp"
+        );
+        assert_eq!(
+            save_body(d.path(), "0007", "# T\n\nNew.", &opened, t).unwrap(),
+            Some("todo/0007-t.md".to_string())
+        );
+        assert!(std::fs::read_to_string(&file)
+            .unwrap()
+            .ends_with("- 2026-10-12 14:05 owner: edited the write-up\n"));
+        assert!(save_body(d.path(), "0007", "# T\n\nAgain.", &opened, t)
+            .unwrap_err()
+            .contains("changed since you opened it"));
     }
 
     #[test]
