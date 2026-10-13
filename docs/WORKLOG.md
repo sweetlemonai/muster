@@ -4,6 +4,20 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Visual QA of Your check tasks; /mu in every session; owner decisions
+**Did:** ran the on-screen criteria myself (owner: "QA doesn't need me, run it yourself"): a headless
+build of the app with a mocked Tauri backend fed read-only by the real queues, Playwright shots in
+`.claude/work/qa-0033/` (not committed). Ticked mu-38 AC4, mu-44 AC4, mu-45 AC5, mu-46 AC4,
+mu-49 AC5, mu-50 AC5, mu-51 AC4, each with a proof note. `/mu` and `/muster` linked into the personal
+layer (symlinks to `commands/`) and every playground repo; Muster's gate set to `bin/gate`.
+**Decided:** owner, via questions: notification plugin yes (0006), keep Muster's look (0006), migrate
+the queue now (0005), PIPELINE.md yes to all four, 0027 settings all off and a round-3 finding goes to
+the builder once first. Hatched cards' contrast: fix the text, keep the wash (backlog note).
+**Open:** mu-47 AC6 fails (QA ran in the builder's own session under another label); mu-48 AC6 fails
+(`claude agents --json --all` reports a live session as failed, interactive ones not at all); mu-6
+waits on the notification task; layout defects (Settings › Projects table, pane status column, graph
+chips, table header, Focus Ready strip) sent to muster-lead to queue.
+
 ## 2026-10-13 — Muster's own queue moved into `muster/main/.muster/` (task 0005, AC5)
 **Did:** `muster migrate ~/playground/muster/tasks ~/playground/muster/main` (local): 51 tasks, 8 notes,
 50 attachments, 2 mail files; keys stay mu-N (prefix in `.muster/config.toml`). Gate `bin/gate` set on
