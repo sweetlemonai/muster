@@ -36,7 +36,7 @@ to have a solid color code"). `themes.ts` holds the values; tests keep them apar
 
 | Colour | Means | Nothing else uses it for |
 |---|---|---|
-| grey · light cyan · blue | Backlog · Shaping · Ready | tags, types |
+| grey · blue · cyan | Backlog · Shaping · Ready (cyan stays well apart from Building's violet) | tags, types |
 | the accent (violet by default) | Building, and selection or focus | tags |
 | amber | Testing | |
 | orange | Your check and "needs you" (the same thing: waiting on the owner) | priority |

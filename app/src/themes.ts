@@ -45,13 +45,13 @@ const STATUS_TEXT: Record<Mode, { err: string; ok: string; gold: string }> = {
 
 // Stage colours (and the blocked flag's), the same in every theme: column strips, card edges,
 // pills and timeline bars. Words on them use --on-status. Colours people know from boards (0034):
-// grey backlog, slate shaping, blue ready, Building the accent (violet unless the accent would
+// grey backlog, blue shaping, cyan ready (well apart from Building: owner, 2026-10-13), Building the accent (violet unless the accent would
 // pass for another stage, see buildingColour), amber testing, orange for the owner, green done,
 // red blocked.
 export const STAGE_COLOURS: Record<string, string> = {
   backlog: "#8E8AA6",
-  shaping: "#7FD4D6",
-  ready: "#5EA8F8",
+  shaping: "#64A2F2",
+  ready: "#22C3D6",
   building: "#8B6CF0",
   testing: "#F7C948",
   "your-check": "#FB8C3C",

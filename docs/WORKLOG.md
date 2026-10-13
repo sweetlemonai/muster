@@ -4,6 +4,12 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Ready is cyan, well apart from Building
+**Fixed:** the owner: "ready and building colors are too close" (blue next to violet, distance 47
+though past the general check). Ready is now cyan (88 from violet Building, 60+ from every
+accent's Building), Shaping blue. A test keeps Ready and Building at least 60 apart.
+**Verified:** `pnpm check` green.
+
 ## 2026-10-13 — The Table remembers its sort
 **Did:** the owner: "tables should save what I sorted it last". The Table's sort column and
 direction are saved (local storage) and restored on start; anything unreadable falls back to

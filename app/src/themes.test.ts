@@ -49,8 +49,11 @@ describe("stage colours", () => {
   });
   it("are the colours people know: blue ready, amber testing, orange for you, green done, red blocked", () => {
     const hue = (s: string) => hsl(STAGE_COLOURS[s]).h;
-    expect(hue("ready")).toBeGreaterThan(195);
-    expect(hue("ready")).toBeLessThan(225);
+    // Ready is cyan: far from Building's violet (owner, 2026-10-13: "ready and building colors are too close").
+    expect(hue("ready")).toBeGreaterThan(180);
+    expect(hue("ready")).toBeLessThan(195);
+    expect(colourDistance(STAGE_COLOURS.ready, STAGE_COLOURS.building)).toBeGreaterThanOrEqual(60);
+    for (const a of ACCENTS) expect(colourDistance(STAGE_COLOURS.ready, buildingColour(a).colour), a.id).toBeGreaterThanOrEqual(60);
     expect(hue("testing")).toBeGreaterThan(38);
     expect(hue("testing")).toBeLessThan(50);
     expect(hue("your-check")).toBeGreaterThan(18);

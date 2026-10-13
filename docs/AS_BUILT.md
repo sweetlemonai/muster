@@ -56,7 +56,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Look** (Muster task 0010): a violet palette (accent `#8B6CF0` dark and `#6D4AE0` light, with
   violet-tinted backgrounds and surfaces), chosen because orange belongs to Drover and Braindump
   and blue to 127. Stage colours (task 0034, colours people know from boards): Backlog grey,
-  Shaping light cyan, Ready blue, Building the accent (violet when the accent would pass for
+  Shaping blue, Ready cyan, Building the accent (violet when the accent would pass for
   another stage), Testing amber, Your check and "needs you" orange, Done green, Blocked red. No
   two stages are closer than a colour distance of 30. Contrast is checked to WCAG AA. Dark
   buttons use dark text on violet. In the light theme, status colours are fills behind dark

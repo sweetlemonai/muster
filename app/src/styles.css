@@ -19,8 +19,8 @@
   --on-accent: #FFFFFF;
   /* Stage colours, as themes.ts STAGE_COLOURS sets them (tested there). */
   --st-backlog: #8E8AA6;
-  --st-shaping: #7FD4D6;
-  --st-ready: #5EA8F8;
+  --st-shaping: #64A2F2;
+  --st-ready: #22C3D6;
   --st-building: #8B6CF0;
   --st-testing: #F7C948;
   --st-your-check: #FB8C3C;
