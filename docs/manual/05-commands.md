@@ -744,7 +744,7 @@ muster ask 0007 -- "--verbose or --quiet by default?"
 
 ### muster answer
 
-Answer a question in a task. It's written under the question, and the agent that asked gets it pushed into its session. A question asked with options can be answered by picking one: the answer is that option's text, then any words you add. A pick that isn't one of its options is refused; any question can still be answered in words.
+Answer a question in a task. It's written under the question, and the agent that asked gets it pushed into its session. A question asked with options can be answered by picking one: the answer is that option's text, then any words you add. A pick that isn't one of its options is refused, and so is a second answer to a question already answered; any open question can still be answered in words.
 
 ```
 muster answer <id> <Qn> "<text>" | muster answer <id> <Qn> --pick <a|1> ["<more words>"]

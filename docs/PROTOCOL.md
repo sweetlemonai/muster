@@ -480,8 +480,9 @@ file contract below see ordinary text:
 A question written that way by hand has options too. A pick writes the answer
 `**A (owner, …):** (b) <the option's text>`, then any extra words after " — ", logs
 `answered Q3` and puts it in your mailbox like any answer, so you get the chosen option's text.
-A pick that isn't one of the options is refused, and any question can still be answered in words
-("something else"). Capture lists the options and the pick in `WAITING-FOR-OWNER.md` when it
+A pick that isn't one of the options is refused, and any open question can still be answered in
+words ("something else"). A question that's already answered (ticked) refuses a second answer,
+picked or in words, with nothing written and no second mail: one question, one answer. Capture lists the options and the pick in `WAITING-FOR-OWNER.md` when it
 escalates one (`muster escalate` prints them).
 
 ### File contract (v1): for tools that write answers without running `bin/task`

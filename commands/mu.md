@@ -35,7 +35,7 @@ mode` is captured, never a claim. Never guess which command was meant.
 | `/mu add <text>` | owner | `muster add -- '<text>'` | Capture a one-liner in the backlog. See "Capture". |
 | `/mu answer <id> Q<n> <text>` | owner | `muster answer <id> Q<n> --as owner -- '<text>'` | Answer a question; it reaches the agent that asked. One asked with options takes `--pick <letter>`, and the text is then optional. See "Answer". |
 | `/mu <anything else>` | owner | `muster add -- '<all the arguments, as typed>'` | Captured as a backlog one-liner, never run as a command. See "Capture". |
-| `/mu ask <id> <question>` | agent | `muster ask <id> -- '<question>'` | Ask without stopping; the answer is pushed back. |
+| `/mu ask <id> <question>` | agent | `muster ask <id> -- '<question>'` | Ask without stopping; the answer is pushed back. When the answer is a choice, give 2 to 6 `--option '<text>'` (and `--pick`, `--no-answer`) before the question. |
 | `/mu claim <id>` | agent | `muster claim <id>` | Claim a Ready task. |
 | `/mu next` | agent | `muster next` | Claim the top Ready task you may take. |
 | `/mu heartbeat <id>` | agent | `muster heartbeat <id>` | Keep a claim alive. |
@@ -59,10 +59,14 @@ Not routed: `new`, `move`, `stage`, `set`, `attach`, `escalate`, `inbox`, `recla
   space. Put the text after `--` where the table does, so text that starts with `--` stays text.
 - Options go right after the id (for `answer`, right after `Q<n>`), or right after the route word
   for routes with no id (`next`, `list`, `check`). There they (`--as`, `--queue`, `--from`,
-  `--gate`, `--commit`, `--to`, `--stage`, `--tag`, `--status`, `--pick`) pass through unchanged, before the
-  `--`. Everything after them is the text, as typed, even when it holds `--`: `/mu note 0008 use
-  --verbose` notes "use --verbose". The shape rule still decides the route first. muster refuses
-  an option it doesn't know.
+  `--gate`, `--commit`, `--to`, `--stage`, `--tag`, `--status`, `--option`, `--pick`,
+  `--no-answer`) pass through unchanged, before the `--`. Everything after them is the text, as
+  typed, even when it holds `--`: `/mu note 0008 use --verbose` notes "use --verbose". The shape
+  rule still decides the route first. muster refuses an option it doesn't know.
+- `--option` may come up to six times, in order, each with one option's text: as typed, in single
+  quotes like free text (`/mu ask 0007 --option 'A window' --option 'A panel' --pick b Where?`
+  runs `muster ask 0007 --option 'A window' --option 'A panel' --pick b -- 'Where?'`). `--pick`
+  and `--no-answer` take a letter.
 - Who's acting: `--as` as typed, otherwise muster uses `$MUSTER_AS`, then the user name.
   `/mu answer` adds `--as owner` when no `--as` was typed, so the answer is recorded as the
   owner's.

@@ -22,6 +22,28 @@ export function answeredText(asker: string | null): string {
     : "Answered, and written in the task. No asking session on record, so it waits there.";
 }
 
+type Result = { ok: boolean; text: string } | null;
+type Send = (queue: string, id: string, n: number, pick: string, extra: string, stamp: string) => Promise<string | null>;
+
+/** What a click on option `i` does: sends the pick through `send` (the core's `answer_pick`), as
+ *  of `at`, and says what came of it. The core's refusal (a pick already answered) is the text. */
+export async function sendPick(send: Send, task: Task, q: Question, i: number, extra: string, at: Date): Promise<{ ok: boolean; text: string }> {
+  const [queue, id, n, pick, words] = pickArgs(task, q, i, extra);
+  if (n === null) return { ok: false, text: "This question has no number, so it can't be answered here." };
+  try {
+    return { ok: true, text: answeredText(await send(queue, id, n, pick, words, stamp(at))) };
+  } catch (e) {
+    return { ok: false, text: String(e) };
+  }
+}
+
+/** Are the chips off? While a pick is on its way, and for good once one is answered (the list
+ *  may not have refreshed yet, and a second click must not send a second answer); a refusal
+ *  leaves them on to try another. */
+export function chipsOff(s: { busy: boolean; result: Result }, n: number | null): boolean {
+  return s.busy || s.result?.ok === true || n === null;
+}
+
 /** A pick-one question's options as chips, every one on screen (a place for choosing,
  *  docs/DESIGN.md), the asker's pick marked "pick", then what it does with no answer. One click
  *  answers with that option, plus `extra` (the answer box's words) when there are any. */
@@ -34,21 +56,18 @@ export default function PickOne({ task, q, choices, extra = "", onAnswered, onCh
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [result, setResult] = useState<Result>(null);
+  const off = chipsOff({ busy, result }, q.n);
   const send = async (i: number) => {
-    const [queue, id, n, pick, words] = pickArgs(task, q, i, extra);
-    if (n === null || busy) return;
+    if (off) return;
     setBusy(true);
     setResult(null);
-    try {
-      const asker = await api.answerPick(queue, id, n, pick, words, stamp(new Date()));
-      setResult({ ok: true, text: answeredText(asker) });
+    const r = await sendPick(api.answerPick, task, q, i, extra, new Date());
+    setResult(r);
+    setBusy(false);
+    if (r.ok) {
       onAnswered?.();
       onChanged();
-    } catch (e) {
-      setResult({ ok: false, text: String(e) });
-    } finally {
-      setBusy(false);
     }
   };
   return (
@@ -58,7 +77,7 @@ export default function PickOne({ task, q, choices, extra = "", onAnswered, onCh
           key={i}
           type="button"
           className={`chip pick-chip${choices.pick === i ? " mine" : ""}`}
-          disabled={busy || q.n === null}
+          disabled={off}
           title={`Answer Q${q.n} with (${letter(i)})${extra.trim() ? ", followed by the words in the box" : ""}`}
           onClick={() => void send(i)}
         >

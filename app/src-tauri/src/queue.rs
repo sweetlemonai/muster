@@ -2448,6 +2448,11 @@ fn answer_with(
             .find(|&(a, b)| parse_question(&sect[a..b]).n == Some(n))
             .ok_or(format!("no Q{n} in {id}"))?;
         let item = &sect[a..b];
+        // One answer per question: a second (a double click on a chip) would add a second answer
+        // and mail the asker again.
+        if parse_question(item).ticked {
+            return Err(format!("Q{n} is already answered"));
+        }
         let text = answer_of(item)?;
         let new_item = format!(
             "{}\n  **A ({who}, {stamp}):** {}",
@@ -3617,6 +3622,37 @@ mod tests {
         .unwrap();
         let (_, text) = answer_pick(d.path(), "0007", 2, "3", " ", "owner", at).unwrap();
         assert_eq!(text, "(c) No lease");
+    }
+
+    #[test]
+    fn an_answered_question_refuses_a_second_answer_and_writes_nothing() {
+        // A second click on a chip (review, 0049): one answer per question, one mail.
+        let d = plain();
+        ask_with(
+            d.path(),
+            "0007",
+            "Lease?",
+            &lease_choices(),
+            "wt-a",
+            "aaaa1111",
+            S,
+        )
+        .unwrap();
+        answer_pick(d.path(), "0007", 1, "a", "", "owner", S).unwrap();
+        let mail = d.path().join("mail/aaaa1111/0007-Q1.md");
+        fs::rename(&mail, d.path().join("taken.md")).unwrap();
+        let before = body_of(d.path(), "0007");
+        let later = "2026-10-12 09:01";
+        assert!(answer_pick(d.path(), "0007", 1, "b", "", "owner", later)
+            .unwrap_err()
+            .contains("Q1 is already answered"));
+        assert!(answer(d.path(), "0007", 1, "No, b.", "owner", later)
+            .unwrap_err()
+            .contains("Q1 is already answered"));
+        assert_eq!(body_of(d.path(), "0007"), before);
+        assert_eq!(before.matches("**A (owner").count(), 1);
+        assert_eq!(before.matches("answered Q1").count(), 1);
+        assert!(!mail.exists(), "no second mail");
     }
 
     #[test]

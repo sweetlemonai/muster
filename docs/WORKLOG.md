@@ -29,9 +29,18 @@ options: it still asks in words and answers any question in words.
 interop `a_question_with_options_is_read_and_answered_by_the_python_tools`, Python
 `test_a_question_with_options_is_plain_text_to_bin_task_and_muster_answers_it_by_pick` and
 `test_a_question_with_options_is_answered_by_its_pick`, and `PickOne.test.ts` (6).
+**Fixed (review):** a second click on a chip (the chips came back on after a pick until the next
+poll, and the pane and the Waiting list each had their own) added a second answer, logged it twice
+and mailed the asker again → `answer_with` refuses a ticked question ("Q1 is already answered"),
+for a pick and an answer in words alike, writing nothing and sending no mail, and the chips stay
+off once a pick is answered (`chipsOff`; the click goes through `sendPick`, now tested without a
+DOM). `/mu ask … --option 'A window' --pick b Where?` put the flags into the question → the
+router's pass-through list has `--option` (repeatable, single-quoted) and `--no-answer`, and its
+ask row says so. New tests: `an_answered_question_refuses_a_second_answer_and_writes_nothing`
+(fails without the check), `sendPick` and `chipsOff` in `PickOne.test.ts`, and
+`test_the_ask_route_passes_options_through_before_the_question` (fails on the old router).
 **Open:** AC5 is the owner's: answer a real question with options by clicking a chip and see the
-asking session receive the chosen text. The chip's click wiring isn't unit-tested (the tests run
-without a DOM); `pickArgs` is.
+asking session receive the chosen text.
 
 ## 2026-10-13 — The tester isn't the builder: Testing → Your check refused for the builder (task 0047)
 **Did:** `muster pass` out of Testing is refused when the passer built the task (claimed it last,

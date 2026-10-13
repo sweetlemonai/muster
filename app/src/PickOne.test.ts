@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { answeredText, letter, pickArgs } from "./PickOne";
+import { answeredText, chipsOff, letter, pickArgs, sendPick } from "./PickOne";
 import TaskPanel from "./TaskPanel";
 import type { Question, Task } from "./types";
 import WaitingList from "./WaitingList";
@@ -77,6 +77,27 @@ describe("what a click sends", () => {
     expect(pickArgs(t, LEASE, 1, "  but warn after 7 d ")).toEqual(["demo", "0007", 2, "b", "but warn after 7 d"]);
     expect(pickArgs(t, LEASE, 0, "")).toEqual(["demo", "0007", 2, "a", ""]);
     expect([0, 1, 2, 3, 4, 5].map(letter).join("")).toBe("abcdef");
+  });
+  it("sends the pick to the core once and says what came of it (review: one click, one answer)", async () => {
+    const calls: unknown[][] = [];
+    const ok = async (...args: unknown[]) => (calls.push(args), "aaaa1111");
+    const at = new Date(2026, 9, 13, 9, 30);
+    expect(await sendPick(ok, task({}), LEASE, 2, " now ", at)).toEqual({ ok: true, text: "Answered. The asking agent gets it after its next step." });
+    expect(calls).toEqual([["demo", "0007", 2, "c", "now", "2026-10-13 09:30"]]);
+    const refused = async () => {
+      throw "Q2 is already answered";
+    };
+    expect(await sendPick(refused, task({}), LEASE, 0, "", at)).toEqual({ ok: false, text: "Q2 is already answered" });
+    expect(await sendPick(ok, task({}), { ...LEASE, n: null }, 0, "", at)).toEqual({ ok: false, text: "This question has no number, so it can't be answered here." });
+    expect(calls.length).toBe(1);
+  });
+  it("keeps the chips off once a pick is answered, and while one is on its way", () => {
+    expect(chipsOff({ busy: false, result: null }, 2)).toBe(false);
+    expect(chipsOff({ busy: true, result: null }, 2)).toBe(true);
+    expect(chipsOff({ busy: false, result: { ok: true, text: "Answered." } }, 2)).toBe(true);
+    // A refusal leaves them on, to try another.
+    expect(chipsOff({ busy: false, result: { ok: false, text: "no" } }, 2)).toBe(false);
+    expect(chipsOff({ busy: false, result: null }, null)).toBe(true);
   });
   it("says whether the asking session gets it", () => {
     expect(answeredText("aaaa1111")).toBe("Answered. The asking agent gets it after its next step.");
