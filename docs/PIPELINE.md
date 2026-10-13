@@ -73,6 +73,43 @@ per project, local with no telemetry, plain files with git
 4. **One set of words** across the four (GenIdea's idea states, Muster's stages, Drover's steps).
    *Pick: Muster's stage names everywhere a task shows.*
 
+## Learning, both ways (proposed 2026-10-13)
+
+The owner: "so the reviewer can be part of the whole ecosystem, integrated learning, 2 way
+learning also: idea -> tasks -> code -> review -> gates -> deploy". Read as six steps over the
+four parts: **idea** (GenIdea) → **task** (Muster) → **code** (Drover's sessions) → **review**
+and **gate** (the shared proof tools) → **deploy** (a release: build, sign, publish, per app).
+
+- **Forward, what was learned rides along:** every step's output carries the lessons that apply
+  to it. A recurring review finding becomes a lesson (owner's yes, decision 0005); lessons for a
+  task's area go into the builder's brief (`muster start`); lessons about *decisions* ("we keep
+  forgetting offline behaviour") go back to GenIdea, so its interview asks about them up front.
+- **Backward, each step scores the one before:**
+  - review → code: findings the builder fixed (real) or won a dispute on (false alarm);
+  - gate → review: a gate failure after a clean review is something the review missed;
+  - deploy → everything: a bug found after release is traced to the step that should have
+    caught it (idea, task criteria, review lens, gate), and each gets the miss;
+  - task → idea: a task that needed a decision the sealed idea didn't make is a gap in the
+    interview (GenIdea's probe gets it).
+- **One record:** every outcome is a row with the idea id, task key, branch, lens, step and
+  verdict, written by the step that saw it, read by all. The engine's ledger
+  (`~/playground/.claude/reviews/`) and Muster's reviews and lessons are its first two sources;
+  the importer the review builder designed (`import-muster.mjs`, rows with `task:` instead of a PR
+  number) is the first bridge. Owner's rule kept: nothing becomes an instruction to agents
+  without the owner's yes, in batches.
+- **Not now:** labels into `/pr learn` and Muster in the engine's repos wait (decision 0005,
+  confirmed); this section is the target they grow into.
+
+## The reviewer on GitHub (proposed 2026-10-13)
+
+The owner: "added to github with an app to be a reviewer like coderabbit". The engine already
+serves every repo on this Mac (`/pr`, `/deep-review`); what's missing is its own identity on PRs.
+Shape: a **GitHub App under sweetlemonai** (e.g. "sweetlemon-review"), private key in the
+Keychain, posting as `sweetlemon-review[bot]`; **no server and no third party**: this Mac polls
+the listed repos for new or updated PRs and reviews them locally (reviews happen while the Mac is
+on); it never approves or merges, reviews only listed repos, never uses iMassih. Creating the app
+is outward-facing: it waits for the owner's go.
+
 ## Notes
 
 - GenIdea's researcher runs `claude --tools "WebSearch,WebFetch" --dangerously-skip-permissions`

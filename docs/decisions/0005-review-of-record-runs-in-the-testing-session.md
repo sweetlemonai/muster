@@ -12,7 +12,8 @@ no PR per task for now, posting only as sweetlemonai; the rest is the builder's 
   as JSON (`muster review <id> --record -`). Muster checks it (strict shape, `head` is the
   branch's tip, every answered finding answered), stores it and moves the task on.
 - **Round 3 still open goes to the owner,** blocked on you, instead of a fourth round. Rounds 1
-  and 2 return the task to its builder. Nits never hold anything.
+  and 2 return the task to its builder. A finding first raised in round 3 goes to the builder once
+  (fix or dispute) before it reaches the owner (owner, 2026-10-13). Nits never hold anything.
 - **The merge needs a clean review at the branch's tip.** A commit after the review needs a new
   round, of just that commit; the merge's own rebase carries the review to the replayed commits
   (the same commits, the gate runs after). The owner may merge without one, and the report says so.
@@ -24,6 +25,13 @@ no PR per task for now, posting only as sweetlemonai; the rest is the builder's 
 - **Lessons need the owner's yes**, in one batch, since a reviewer wrote them and they become
   instructions; a kind must recur on two tasks to be proposed, and a rejected kind isn't proposed
   again.
+
+## Confirmed by the owner (2026-10-13)
+
+After the full context: **no auto-run for now** (the Testing session runs the review; starting it
+automatically comes with 0009's dispatcher); **labels don't feed `/pr learn` yet** and Muster isn't
+in the engine's repos until PRs return; round-3 findings go to the builder first. The learning
+across the whole chain is designed in `docs/PIPELINE.md` ("Learning, both ways").
 
 ## Options considered
 

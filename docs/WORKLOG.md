@@ -4,6 +4,14 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Review settings settled; learning both ways and a GitHub reviewer designed
+**Decided:** after the full context the owner took the picks: no auto-run of the review for now,
+labels not into `/pr learn` yet, Muster not in the engine's repos until PRs return, round-3
+findings go to the builder first (decision 0005 amended). Nothing in the engine changed.
+**Did:** PIPELINE.md gets "Learning, both ways" (idea → task → code → review → gate → deploy:
+lessons ride forward, each step scores the one before, one record) and "The reviewer on GitHub"
+(a GitHub App posting as a bot, run from this Mac by polling; waits for the owner's go).
+
 ## 2026-10-13 — Visual QA of Your check tasks; /mu in every session; owner decisions
 **Did:** ran the on-screen criteria myself (owner: "QA doesn't need me, run it yourself"): a headless
 build of the app with a mocked Tauri backend fed read-only by the real queues, Playwright shots in
