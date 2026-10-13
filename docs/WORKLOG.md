@@ -4,6 +4,21 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-12 — Timeline scales: a day in hours, a week, a month (task 0031)
+**Did:** the Timeline has Day · Week · Month chips (saved), ◀ ▶ and Today. Bars come from the
+stage history's stamps: waiting from capture (to the minute when the log knows it, new
+`captured_at`), then one segment per stage in its colour, blocked stretches hatched (new
+`block_history`, from the log's block and unblock lines), and a now line. Week and Month snap to
+quarter days and days. `viewData.ts` (pure, tested), `Views.tsx`, `queue.rs`, `styles.css`,
+`AS_BUILT.md`. Built by an implementer agent; capture time, blocked spans and review fixes by the
+main session. Preview: `tasks/attachments/0031/`.
+**Decided:** time is wall-clock minutes (local stamps read as UTC), so days are always 24 h; a
+span across a clock change is off by that hour.
+**Fixed (review):** blocked spans (spec AC2) were missing; the controls' tests only checked
+labels (now they press the buttons); a timing test could fail a busy gate (best of 5); ▶ moved
+when the scale changed; a first log line that's a claim was taken for the capture time.
+**Verified:** `pnpm check` green: vitest 268, cargo 115 + interop 8; mutation (◀/▶ swapped) caught.
+
 ## 2026-10-13 — Parallel workers: slash commands (0003), editing (0020), goals and features (0016)
 **Did:** three tasks built at once by workers on their own branches (task/0003, task/0020, task/0016),
 each reviewed and fixed on its branch, then merged into main one by one, with the gate after each merge:

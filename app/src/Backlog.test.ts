@@ -8,7 +8,7 @@ import type { Note, Task } from "./types";
 const note = (over: Partial<Note>): Note => ({ queue: "muster", file: "n.md", title: "A note", text: "A note", truncated: false, added: 0, ...over });
 const task = (over: Partial<Task>): Task => ({
   queue: "muster", id: "0001", title: "T", kind: "task", priority: "normal", status: "inbox", stage: "backlog", blocked: false, stageHistory: [],
-  folder: "inbox", path: "inbox/0001-t.md", claimedBy: "", heartbeat: "", waitingOn: "", commit: "", captured: "", questions: [],
+  folder: "inbox", path: "inbox/0001-t.md", claimedBy: "", heartbeat: "", waitingOn: "", commit: "", captured: "", capturedAt: "", blockHistory: [], questions: [],
   openQuestions: 0, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTokens: "", estMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", attachments: [], logTail: [], modified: 0,
   level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "backlog", ...over,
 });

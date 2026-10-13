@@ -146,6 +146,73 @@ pub fn stage_lines(body: &str) -> Vec<(StageStep, &str)> {
         .unwrap_or_default()
 }
 
+/// A stretch a task was blocked, as `YYYY-MM-DD HH:MM` stamps (a date-only line reads as 00:00);
+/// `to` is empty while it still is.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockSpan {
+    pub from: String,
+    pub to: String,
+}
+
+/// The stamp a log line starts with (`- YYYY-MM-DD HH:MM …` or `- YYYY-MM-DD …`), to the minute,
+/// and the rest of the line.
+fn log_stamp(line: &str) -> Option<(String, &str)> {
+    let rest = line.strip_prefix("- ")?;
+    let date = rest.get(..10)?;
+    let b = date.as_bytes();
+    if !(b[4] == b'-'
+        && b[7] == b'-'
+        && date
+            .bytes()
+            .enumerate()
+            .all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit()))
+    {
+        return None;
+    }
+    let after = rest.get(10..)?;
+    if let Some(t) = after.get(1..6).filter(|t| {
+        let tb = t.as_bytes();
+        after.starts_with(' ')
+            && tb[2] == b':'
+            && t.bytes()
+                .enumerate()
+                .all(|(i, c)| i == 2 || c.is_ascii_digit())
+    }) {
+        return Some((format!("{date} {t}"), after.get(6..).unwrap_or("")));
+    }
+    Some((format!("{date} 00:00"), after))
+}
+
+/// Block and unblock lines of a log, as spans (see `Task::block_history`).
+pub fn block_history(log_lines: &[&str]) -> Vec<BlockSpan> {
+    let mut out: Vec<BlockSpan> = Vec::new();
+    for l in log_lines {
+        let Some((at, rest)) = log_stamp(l) else {
+            continue;
+        };
+        let Some((_, what)) = rest.split_once(": ") else {
+            continue;
+        };
+        let open = out.last().is_some_and(|b| b.to.is_empty());
+        if what.starts_with("blocked on")
+            || (what.starts_with("moved ") && what.contains("→ blocked"))
+        {
+            if !open {
+                out.push(BlockSpan {
+                    from: at,
+                    to: String::new(),
+                });
+            }
+        } else if what.starts_with("unblocked") && open {
+            if let Some(b) = out.last_mut() {
+                b.to = at;
+            }
+        }
+    }
+    out
+}
+
 /// One acceptance criterion: a `- [ ]` / `- [x]` line at the start of a line under
 /// `## Acceptance criteria`, with its indented continuation lines.
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -263,6 +330,12 @@ pub struct Task {
     pub waiting_on: String,
     pub commit: String,
     pub captured: String,
+    /// When it was captured to the minute (`YYYY-MM-DD HH:MM`), from the log's first line when
+    /// that line is stamped on the capture day; empty when only the date is known (0031).
+    pub captured_at: String,
+    /// When it was blocked, oldest first: from the log's `blocked on …` (or a hand `moved … →
+    /// blocked`) to the next `unblocked`; `to` is empty while it still is (0031's timeline).
+    pub block_history: Vec<BlockSpan>,
     pub questions: Vec<Question>,
     pub open_questions: usize,
     /// The criteria only the owner verifies (`— verify: owner`), ticked or not, for the task
@@ -574,6 +647,29 @@ pub fn parse_task(
                 .all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit()))
         .then(|| d.to_string())
     };
+    let block_history = block_history(&log_lines);
+    let captured_at = log_lines
+        .first()
+        .filter(|l| stage_line(l).is_none())
+        .and_then(|l| l.get(2..18))
+        .filter(|st| {
+            let b = st.as_bytes();
+            b[4] == b'-'
+                && b[7] == b'-'
+                && b[10] == b' '
+                && b[13] == b':'
+                && st
+                    .bytes()
+                    .enumerate()
+                    .all(|(i, c)| matches!(i, 4 | 7 | 10 | 13) || c.is_ascii_digit())
+        })
+        .filter(|st| {
+            let day = &st[..10];
+            let captured = get("captured");
+            captured.is_empty() || captured == day
+        })
+        .map(str::to_string)
+        .unwrap_or_default();
     let claimed_on = log_lines
         .iter()
         .find(|l| l.to_lowercase().contains("claimed"))
@@ -655,6 +751,8 @@ pub fn parse_task(
         waiting_on,
         commit: get("commit"),
         captured: get("captured"),
+        captured_at,
+        block_history,
         questions,
         open_questions,
         owner_criteria,
@@ -2789,6 +2887,80 @@ mod tests {
         assert_eq!(json["ownerCriteria"][0]["label"], "AC2");
         assert_eq!(json["ownerCriteria"][0]["owner"], true);
         assert!(json["ownerCriteria"][0].get("at").is_none());
+    }
+
+    #[test]
+    fn captured_at_comes_from_the_first_log_line_on_the_capture_day() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("todo/0001-t.md");
+        let at = |captured: &str, log: &str| {
+            let text = format!(
+                "---\nid: 0001\nstatus: todo\ncaptured: {captured}\n---\n\n# T\n\n## Log\n{log}"
+            );
+            parse_task("q", d.path(), "todo", &path, &text, 0)
+                .unwrap()
+                .captured_at
+        };
+        assert_eq!(
+            at("2026-10-12", "- 2026-10-12 15:04 capture: created\n"),
+            "2026-10-12 15:04"
+        );
+        assert_eq!(
+            at("", "- 2026-10-12 15:04 capture: created\n"),
+            "2026-10-12 15:04"
+        );
+        // Date only, another day, or not a stamp: unknown.
+        assert_eq!(at("2026-10-12", "- 2026-10-12 captured\n"), "");
+        assert_eq!(
+            at("2026-10-11", "- 2026-10-12 15:04 capture: created\n"),
+            ""
+        );
+        assert_eq!(at("2026-10-12", "- 2026-10-12 1x:04 capture\n"), "");
+        assert_eq!(at("2026-10-12", ""), "");
+    }
+
+    #[test]
+    fn block_history_pairs_blocks_with_unblocks() {
+        let lines = [
+            "- 2026-10-12 capture: created",
+            "- 2026-10-12 15:05 capture: moved todo → blocked (waiting on 0014)",
+            "- 2026-10-12 22:02 capture: unblocked (was waiting on 0014)",
+            "- 2026-10-12 22:10 wt-a: note about being blocked on nothing",
+            "- 2026-10-12 23:00 wt-a: blocked on 0002 — merge",
+            "- 2026-10-12 23:01 wt-a: blocked on 0002 again (ignored: already open)",
+        ];
+        let span = |f: &str, t: &str| BlockSpan {
+            from: f.into(),
+            to: t.into(),
+        };
+        assert_eq!(
+            block_history(&lines),
+            vec![
+                span("2026-10-12 15:05", "2026-10-12 22:02"),
+                span("2026-10-12 23:00", "")
+            ]
+        );
+        // A date-only line reads as midnight; an unblock without a block is ignored.
+        assert_eq!(
+            block_history(&[
+                "- 2026-10-11 capture: unblocked",
+                "- 2026-10-11 capture: blocked on owner"
+            ]),
+            vec![span("2026-10-11 00:00", "")]
+        );
+    }
+
+    #[test]
+    fn captured_at_skips_a_first_line_that_is_a_stage_change() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("doing/0001-t.md");
+        let text = "---\nid: 0001\nstatus: doing\ncaptured: 2026-10-12\n---\n\n# T\n\n## Log\n- 2026-10-12 16:59 wt-a: stage ready → building (claimed)\n";
+        assert_eq!(
+            parse_task("q", d.path(), "doing", &path, text, 0)
+                .unwrap()
+                .captured_at,
+            ""
+        );
     }
 
     #[test]

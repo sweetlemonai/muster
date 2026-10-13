@@ -33,6 +33,10 @@ export type Task = {
   waitingOn: string;
   commit: string;
   captured: string;
+  /** When it was captured to the minute, when the log knows it (0031); else empty. */
+  capturedAt: string;
+  /** When it was blocked: `from`/`to` stamps, `to` empty while it still is (0031). */
+  blockHistory: { from: string; to: string }[];
   questions: Question[];
   openQuestions: number;
   ownerCriteria: Criterion[];

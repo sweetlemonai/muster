@@ -1,7 +1,10 @@
 import { useMemo, useState } from "react";
 import { ago, holder, key, stageLabel, stageOf } from "./lib";
 import type { Task } from "./types";
-import { bars, dayLabel, sortTasks, type SortKey } from "./viewData";
+import {
+  axis, layout, nowAt, parseScale, SCALES, segmentTitle, sortTasks, spans, timeWindow, wallMinutes, windowLabel,
+  type Placed, type Scale, type SortKey, type Tick,
+} from "./viewData";
 import { BandHead } from "./Groups";
 import { estimateLeft, type Group, type GroupBy, isWork, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
 
@@ -98,48 +101,117 @@ function Row({ t, now, multi, active, onOpen }: { t: Task; now: number; multi: b
   );
 }
 
-/** Each task as a bar from capture to done (or today); the darker part is from the claim on. */
+const SCALE_KEY = "muster.timelineScale";
+const CURRENT: Record<Scale, string> = { day: "Today", week: "This week", month: "This month" };
+/** Pixels per slot: an hour at Day, a quarter day at Week, a day at Month. */
+const SLOT_PX: Record<Scale, number> = { day: 40, week: 32, month: 30 };
+const pct = (x: number) => `${(x * 100).toFixed(3)}%`;
+
+/** Each task as a bar in a day, week or month: waiting, then each stage it held, with a now line. */
 export function TimelineView({ tasks, now, multi, openKey, onOpen }: { tasks: Task[]; now: number; multi: boolean; openKey: string | null; onOpen: (t: Task) => void }) {
-  const today = Math.floor(now / 86400);
-  const { bars: list, from, to } = useMemo(() => bars(tasks, today), [tasks, today]);
-  const days = to - from + 1;
-  const dayW = Math.max(28, Math.min(90, Math.floor(900 / days)));
-  const ticks = Array.from({ length: days }, (_, i) => from + i);
+  const [scale, setScale] = useState<Scale>(() => parseScale(localStorage.getItem(SCALE_KEY)));
+  const [offset, setOffset] = useState(0);
+  // Wall-clock minutes (viewData's unit); changes once a minute, not on every poll.
+  const at = wallMinutes(new Date(now * 1000));
+  const list = useMemo(() => spans(tasks, at), [tasks, at]);
+  const win = useMemo(() => timeWindow(scale, at, offset), [scale, at, offset]);
+  const rows = useMemo(() => layout(list, win, scale), [list, win, scale]);
+  const ticks = useMemo(() => axis(scale, win, at), [scale, win, at]);
+  const pick = (s: Scale) => {
+    setScale(s);
+    setOffset(0);
+    localStorage.setItem(SCALE_KEY, s);
+  };
   return (
     <main className="timeline">
-      <div className="tl-grid" style={{ ["--day" as string]: `${dayW}px`, ["--days" as string]: String(days) }}>
-        <div className="tl-head">
-          <span className="tl-label meta">{list.length} tasks</span>
-          <span className="tl-track">
-            {ticks.map((d) => (
-              <span key={d} className={d === today ? "tl-tick today" : "tl-tick"} style={{ left: (d - from) * dayW }}>{dayLabel(d)}</span>
-            ))}
-          </span>
-        </div>
-        {list.map((b) => (
-          <button key={key(b.task)} className={openKey === key(b.task) ? "tl-row active" : "tl-row"} onClick={() => onOpen(b.task)}>
+      <TimelineControls scale={scale} offset={offset} label={windowLabel(scale, win)} onScale={pick} onStep={(d) => setOffset((o) => o + d)} onToday={() => setOffset(0)} />
+      <div className="tl-scroll">
+        <TimelineChart scale={scale} rows={rows} ticks={ticks} now={nowAt(win, at)} multi={multi} openKey={openKey} onOpen={onOpen} />
+        {rows.length === 0 && <p className="empty">{tasks.length ? `No task falls ${scale === "day" ? "on this day" : `in this ${scale}`}.` : "No tasks match."}</p>}
+        <p className="meta tl-legend">
+          A bar starts in a quiet tint while the task waits to be claimed, then shows each stage it was in, in that stage's colour,
+          from the times muster logged. A faded start means only the day is known (older tasks, dates only). The line is now; open
+          tasks run to it. Day shows hours, Week quarter days (a short task fills one), Month days. A dashed red edge means blocked.
+        </p>
+      </div>
+    </main>
+  );
+}
+
+/** The scale chips (all three always visible) and the ◀ current ▶ stepper, with the window's name. */
+export function TimelineControls({ scale, offset, label, onScale, onStep, onToday }: {
+  scale: Scale; offset: number; label: string; onScale: (s: Scale) => void; onStep: (by: number) => void; onToday: () => void;
+}) {
+  return (
+    <div className="tl-controls" role="toolbar" aria-label="Timeline scale">
+      <span className="meta">Scale</span>
+      {SCALES.map((s) => (
+        <button key={s.id} className={s.id === scale ? "chip on" : "chip"} aria-pressed={s.id === scale} onClick={() => onScale(s.id)}>
+          {s.label}
+        </button>
+      ))}
+      <span className="tl-nav">
+        <button className="chip" onClick={() => onStep(-1)} title={`Previous ${scale}`} aria-label={`Previous ${scale}`}>◀</button>
+        <button className="chip" onClick={onToday} disabled={offset === 0}>{CURRENT[scale]}</button>
+        <button className="chip" onClick={() => onStep(1)} title={`Next ${scale}`} aria-label={`Next ${scale}`}>▶</button>
+        <span className="tl-window">{label}</span>
+      </span>
+    </div>
+  );
+}
+
+/** The axis, one row per placed bar (label left, bar with its segments), and the now line. */
+export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen }: {
+  scale: Scale; rows: Placed[]; ticks: Tick[]; now: number | null; multi: boolean; openKey: string | null; onOpen: (t: Task) => void;
+}) {
+  const slotPx = SLOT_PX[scale];
+  const slots = ticks.length * (scale === "week" ? 4 : 1);
+  const style = { ["--track" as string]: `${slots * slotPx}px`, ["--major" as string]: `${scale === "week" ? slotPx * 4 : slotPx}px`, ["--minor" as string]: `${slotPx}px` };
+  return (
+    <div className={`tl-grid tl-${scale}`} style={style}>
+      <div className="tl-head">
+        <span className="tl-label meta">{rows.length} {rows.length === 1 ? "task" : "tasks"}</span>
+        <span className="tl-track">
+          {ticks.map((k) => (
+            <span key={k.at} className={k.current ? "tl-tick now" : "tl-tick"} style={{ left: pct(k.left), width: pct(k.width) }}>{k.label}</span>
+          ))}
+        </span>
+      </div>
+      {rows.map((p) => {
+        const t = p.span.task;
+        return (
+          <button key={key(t)} className={openKey === key(t) ? "tl-row active" : "tl-row"} onClick={() => onOpen(t)}>
             <span className="tl-label">
-              {multi && <span className="q">{b.task.queue}</span>} <span className="id">{b.task.id}</span> {b.task.title}
+              {multi && <span className="q">{t.queue}</span>} <span className="id">{t.id}</span> {t.title}
             </span>
             <span className="tl-track">
-              <span className="tl-today" style={{ left: (today - from) * dayW + dayW / 2 }} />
               <span
-                className={`tl-bar s-${stageOf(b.task)}${b.open ? " open" : ""}${b.task.blocked ? " blocked" : ""}${b.task.waitingForOwner ? " needs-you" : ""}`}
-                style={{ left: (b.start - from) * dayW + 3, width: (b.end - b.start + 1) * dayW - 6 }}
-                title={`${stageLabel(b.task.stage)}${b.task.blocked ? `, blocked on ${b.task.waitingOn || "something"}` : ""} · captured ${b.task.captured}${b.task.claimedOn ? ` · started ${b.task.claimedOn}` : ""}${b.task.doneOn ? ` · done ${b.task.doneOn}` : ""}`}
+                className={`tl-bar s-${stageOf(t)}${p.span.open ? " open" : ""}${t.blocked ? " blocked" : ""}${t.waitingForOwner ? " needs-you" : ""}${p.clipStart ? " clip-start" : ""}${p.clipEnd ? " clip-end" : ""}`}
+                style={{ left: pct(p.left), width: pct(p.width) }}
+                title={`${stageLabel(t.stage)}${t.blocked ? `, blocked on ${t.waitingOn || "something"}` : ""} · captured ${t.captured}${t.claimedOn ? ` · started ${t.claimedOn}` : ""}${t.doneOn ? ` · done ${t.doneOn}` : ""}${p.span.timed ? "" : " · dates only"}`}
               >
-                {b.work !== null && <span className="tl-work" style={{ left: (b.work - b.start) * dayW, right: 0 }} />}
-                <span className="tl-bar-text">{stageLabel(b.task.stage)}{b.task.blocked ? " · blocked" : ""}{b.task.priority === "high" ? " · high" : ""}</span>
+                {p.segments.map((g) => (
+                  <span
+                    key={g.seg.from}
+                    className={`tl-seg ${g.seg.stage === "waiting" ? "waiting" : `s-${g.seg.stage}`}${g.seg.fuzzy ? " fuzzy" : ""}`}
+                    style={{ left: pct(g.left), width: pct(g.width) }}
+                    title={segmentTitle(g.seg)}
+                  />
+                ))}
+                {p.blocks.map((b) => (
+                  <span key={`b${b.left}`} className="tl-block" style={{ left: pct(b.left), width: pct(b.width) }} title="Blocked" />
+                ))}
+                <span className="tl-bar-text">{stageLabel(t.stage)}{t.blocked ? " · blocked" : ""}{t.priority === "high" ? " · high" : ""}</span>
               </span>
             </span>
           </button>
-        ))}
-      </div>
-      {list.length === 0 && <p className="empty">No tasks match.</p>}
-      <p className="meta tl-legend">
-        A bar runs from the day a task was captured to the day it was done, or to today while it's open. The darker part starts
-        the day an agent claimed it. Dates come from the task files and their logs.
-      </p>
-    </main>
+        );
+      })}
+      {now !== null && (
+        <span className="tl-now-layer" aria-hidden="true">
+          <span className="tl-now" style={{ left: pct(now) }} />
+        </span>
+      )}
+    </div>
   );
 }

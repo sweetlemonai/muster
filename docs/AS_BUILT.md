@@ -75,10 +75,14 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Filters:** above the board, by priority and by tag, with a "24 of 98 tasks" count.
 - **Three views of a project:** **Board** (the kanban below), **Table** (every task as a row:
   project, id, title, type, priority, status, who's on it or what it waits on, captured, changed,
-  tags; click a header to sort) and **Timeline** (each task as a bar from the day it was captured
-  to the day it was done, or to today while open; the darker part starts the day it was claimed;
-  a line marks today). All three share the priority and tag filters and open tasks in the docked
-  pane.
+  tags; click a header to sort) and **Timeline** (0031: scale chips Day · Week · Month, Week by
+  default and remembered, with ◀ ▶ and a way back to the current period. Day is one day in hours,
+  Week seven days in quarter days, Month the calendar month in days. Each task's bar is waiting
+  (captured → first claim) in a quiet tint, then one segment per stage it held, in the stage
+  colour, from the stage history's stamps; tasks with dates only fall back to whole days with a
+  faded start. A now line runs across the chart and open tasks run to it. Bars are worked out in
+  `viewData.ts` in wall-clock minutes, so a clock change doesn't bend them). All three share the
+  priority and tag filters and open tasks in the docked pane.
 - **Help** (tab): every `muster` command with usage, options and examples (click to copy), how to
   use Muster inside a Claude Code session (you, agents, capture), and the app's keys. It's the
   same list `muster help` prints (`help.rs`, with a test that fails if a command isn't documented).
