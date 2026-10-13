@@ -4,6 +4,16 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — `.muster/`: a shared prefix routes to the new queue; a literal-string prefix is read (task 0005)
+**Fixed (review):**
+- **Key routing:** after a migrate, the old queue and the repo's `.muster/` both have the prefix until the old one is retired. A key named from outside both (`muster claim mu-3`) could land in the old queue, because `owner()` took the first project listed. Now `key::owner_of` prefers the `.muster` queue.
+- **`muster check`:** names the other project that has the prefix, as a warning (`key::shared_prefix`). The migrate summary says "the old queue keeps prefix mu until you retire it; keys go to the new queue".
+- **`config_prefix_in`:** reads a TOML literal string, `prefix = 'xy'`. Before, it was ignored and the first-write pin overwrote it with the default, changing every key.
+
+**Verified:** each test failed first.
+- New: `a_prefix_the_old_queue_and_its_muster_share_routes_keys_to_the_muster_and_check_says_so`. The old queue is found and the new one added, so the old one is listed first; `owner_of` still picks `.muster`, and the check line on either queue names the other.
+- Extended: the config test (`'xy'`, plus a mismatched pair left as is) and the v2 migrate summary.
+
 ## 2026-10-13 — `.muster/` migrate and hook: last review round (task 0005)
 **Fixed (review):**
 - **carry_over:** a migrated queue that discovery can't find (`<base>/g/p/main/.muster`) is now added to `projects.json` whenever the old queue was listed, even with no gate, name or hidden to carry. Before, it vanished once the old queue was retired.

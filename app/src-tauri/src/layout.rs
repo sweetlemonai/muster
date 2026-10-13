@@ -158,8 +158,10 @@ pub fn config_prefix_in(text: &str) -> Option<String> {
         .rev()
         .find(|(_, k, _)| *k == "prefix")
         .map(|(_, _, v)| {
-            v.strip_prefix('"')
-                .and_then(|v| v.strip_suffix('"'))
+            // A basic string ("mu") or a literal one ('mu'), the quotes a matching pair.
+            ['"', '\'']
+                .iter()
+                .find_map(|q| v.strip_prefix(*q).and_then(|v| v.strip_suffix(*q)))
                 .unwrap_or(v)
                 .to_string()
         })
@@ -561,6 +563,49 @@ pub(crate) mod resolve {
     }
 
     #[test]
+    fn a_prefix_the_old_queue_and_its_muster_share_routes_keys_to_the_muster_and_check_says_so() {
+        let base = tempfile::tempdir().unwrap();
+        let b = base.path().canonicalize().unwrap();
+        // After `muster migrate`, before the old queue is retired: both have prefix mu. The old
+        // one is found (two levels down); the new one, three levels down, was added.
+        let old = b.join("g/p/tasks");
+        fs::create_dir_all(old.join("todo")).unwrap();
+        fs::write(old.join("README.md"), "---\nprefix: mu\n---\nq\n").unwrap();
+        let main = repo(&b, "g/p");
+        let (q, _) = crate::projects::init(&main, true, Some("mu"), &[]).unwrap();
+        let config = crate::projects::Config {
+            added: vec![q.to_string_lossy().to_string()],
+            ..Default::default()
+        };
+        let list = crate::projects::list(&b, &config);
+        let with_mu: Vec<&str> = list
+            .iter()
+            .filter(|p| p.prefix == "mu")
+            .map(|p| p.source.as_str())
+            .collect();
+        assert_eq!(
+            with_mu,
+            vec!["found", "added"],
+            "the old one is listed first"
+        );
+        let owner = crate::key::owner_of(&list, "mu").unwrap();
+        assert_eq!(
+            Path::new(&owner.path),
+            q.as_path(),
+            "keys go to the .muster queue"
+        );
+        // `muster check` on either names the other, as a warning.
+        for (root, other) in [(&q, &old), (&old, &q)] {
+            let line = crate::key::shared_prefix(&list, root, "mu").expect("shared");
+            assert!(crate::queue::is_warning(&line), "{line}");
+            assert!(line.contains(&other.display().to_string()), "{line}");
+            assert!(line.contains("retire"), "{line}");
+        }
+        let alone = crate::projects::list(&b, &Default::default());
+        assert_eq!(crate::key::shared_prefix(&alone, &old, "mu"), None);
+    }
+
+    #[test]
     fn init_writes_a_committed_queue_when_asked_from_any_folder_of_the_repo_and_never_twice() {
         let base = tempfile::tempdir().unwrap();
         let main = repo(base.path(), "proj");
@@ -808,6 +853,12 @@ pub(crate) mod resolve {
         }
         // The prefix (0033), quoted or not, the top level only.
         assert_eq!(config_prefix_in("prefix = mu\n").as_deref(), Some("mu"));
+        // A TOML literal string is a prefix too, never overwritten by a default.
+        assert_eq!(config_prefix_in("prefix = 'xy'\n").as_deref(), Some("xy"));
+        assert_eq!(
+            config_prefix_in("prefix = 'xy\"\n").as_deref(),
+            Some("'xy\"")
+        );
         assert_eq!(config_prefix_in("[t]\nprefix = \"mu\"\n"), None);
         for (text, want) in [
             ("local = true\n", "local = true\nprefix = \"ab\"\n"),

@@ -648,6 +648,10 @@ fn summary(p: &Plan, old: &Path, q: &Path, opts: &Options, dry: bool) -> Vec<Str
         "prefix: {}, kept in config.toml, so the task keys stay {}-1, {}-2…",
         p.prefix, p.prefix, p.prefix
     ));
+    out.push(format!(
+        "the old queue keeps prefix {} until you retire it; keys go to the new queue",
+        p.prefix
+    ));
     if !p.front.is_empty() {
         out.push("README.md keeps the old README's front matter (but its prefix)".into());
     }
@@ -936,6 +940,7 @@ mod tests {
             "attachments: 2 files; mail: 2 files",
             "README.md keeps the old README's front matter (but its prefix)",
             "prefix: mu, kept in config.toml",
+            "the old queue keeps prefix mu until you retire it; keys go to the new queue",
             "note: todo/0010-crlf.md: its byte-order mark taken off and its front matter's CRLF line ends made LF",
             "note: blocked/0006-why.md: blocked without saying on what",
             "note: todo/0009-odd.md: stage \"someday\" isn't a stage; set to ready",

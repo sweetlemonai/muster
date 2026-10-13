@@ -371,6 +371,46 @@ pub fn prefix_in(root: &Path, list: &[projects::Project]) -> String {
     prefix_beside(&projects::default_name(root), &taken)
 }
 
+/// The project of `list` a key's `prefix` names. When two have it (an old queue not retired yet
+/// after `muster migrate` gave its prefix to the repo's `.muster/`), the `.muster` one: that's
+/// where the tasks are now, wherever the list puts it.
+pub fn owner_of<'a>(list: &'a [projects::Project], prefix: &str) -> Option<&'a projects::Project> {
+    let with: Vec<&projects::Project> =
+        list.iter().filter(|p| p.ok && p.prefix == prefix).collect();
+    with.iter()
+        .find(|p| crate::layout::is_muster(Path::new(&p.path)))
+        .or(with.first())
+        .copied()
+}
+
+/// What `muster check` says when another project of `list` has `root`'s prefix too (an old queue
+/// not retired yet after `muster migrate` gave its prefix to the repo's `.muster/`): a warning
+/// naming them and where its keys go. None when no other project has it.
+pub fn shared_prefix(list: &[projects::Project], root: &Path, prefix: &str) -> Option<String> {
+    let others: Vec<&projects::Project> = list
+        .iter()
+        .filter(|p| p.ok && p.prefix == prefix && !same_folder(Path::new(&p.path), root))
+        .collect();
+    if others.is_empty() {
+        return None;
+    }
+    let names: Vec<String> = others
+        .iter()
+        .map(|p| format!("{} ({})", p.name, p.path))
+        .collect();
+    let goes = match owner_of(list, prefix) {
+        Some(o) if crate::layout::is_muster(Path::new(&o.path)) => format!(
+            "keys with it go to the .muster queue ({}); retire the old queue once it's checked",
+            o.path
+        ),
+        _ => "keys with it go to the first; retire one, or give it another prefix (muster projects set <name> prefix <p>)".to_string(),
+    };
+    Some(format!(
+        "{prefix}: warning: the prefix {prefix} is also {}'s: {goes}",
+        names.join(", ")
+    ))
+}
+
 /// Refuse `p` for the project at `root` when it isn't a prefix or another project has it.
 pub fn check_new_prefix(p: &str, root: &Path, list: &[projects::Project]) -> Result<(), String> {
     check_prefix(p)?;

@@ -49,7 +49,8 @@
 >   in Building or Testing (it lists them), when `.muster/` is there already, when the repo and the
 >   old queue overlap, on a folder it can't read, on a task file without front matter it can read,
 >   and on two names that would be one file on this Mac (they differ only in case or accents).
->   Retire the old queue once `muster check` on the new one is clean.
+>   Retire the old queue once `muster check` on the new one is clean. Until then both have the
+>   prefix: a key goes to the `.muster` queue, and `muster check` warns that the prefix is shared.
 
 > **The tester isn't the builder (Muster 0047, 2026-10-13).** Testing → Your check is refused
 > when the passer built the task: whoever claimed it last (`ready → building (claimed)`) or passed

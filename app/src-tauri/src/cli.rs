@@ -354,11 +354,7 @@ fn key_queue(
     cwd: Option<&Path>,
     known: &dyn Fn() -> Vec<(String, PathBuf)>,
 ) -> Result<(PathBuf, Source), String> {
-    let owner = || {
-        crate::key::known()
-            .into_iter()
-            .find(|p| p.ok && p.prefix == prefix)
-    };
+    let owner = || crate::key::owner_of(&crate::key::known(), prefix).cloned();
     if let Some(q) = flag {
         let (root, source) = resolve_queue(Some(q), None, None, known)?;
         let has = crate::key::prefix_for(&root);
@@ -1986,6 +1982,11 @@ fn run_on(
             }
             let index_line = index_check_line(index::status(root));
             if let Some(l) = &index_line {
+                println!("{l}");
+            }
+            // A prefix another project has too (0005: an old queue not retired yet after a
+            // migrate), and where its keys go: a warning, the exit code ignores it.
+            if let Some(l) = crate::key::shared_prefix(&crate::key::known(), root, prefix) {
                 println!("{l}");
             }
             // Warnings (a goal past its due date, a list due a refresh) are shown but don't fail
