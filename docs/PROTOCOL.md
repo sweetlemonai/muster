@@ -9,7 +9,7 @@
 > owner's lessons for the task's area and what not to flag, and the JSON to return. It runs
 > `/deep-review <range>` there (its scan picks the tier: light unless the diff is big or risky) and
 > records what survived verification: `muster review <id> --record - --as <you>`. `head` must be
-> the branch's tip; findings under confidence 75 are refused; each finding gets a `kind` (a short
+> the branch's tip; a finding without a `confidence`, or under 75, is refused; each finding gets a `kind` (a short
 > slug, reused across tasks) and, when it teaches one, a `lesson` (rule, bad, good); every finding
 > the builder answered needs an answer (`accept` true or false, with why). Muster numbers findings
 > R1, R2… across rounds, keeps the review in the queue's `reviews/<id>.json` (**never edit it**),
@@ -23,7 +23,9 @@
 > it again. **The owner** settles any finding, any time: `muster review <id> --settle R2
 > confirmed|false-positive|wont-fix|open "<why>" --as owner`. **The merge** of a started task
 > (`muster pass <id> --from testing`) is refused without a review clean at the branch's tip
-> ("review the new commits"), before its lock, rebase or gate; its own rebase carries the review
+> ("review the new commits"), before its lock, rebase or gate, and again before each rebase (a
+> commit that landed while it waited for another merge); a commit made while its gate runs stops
+> it too, unmerged; its own rebase carries the review
 > to the replayed commits; the owner may merge without one, and the report says which (`review
 > clean at 3f2a9c1 (round 2)` or `no review (the owner's override)`). **Lessons:** a kind confirmed
 > on 2 tasks is proposed as a lesson for builders, one dismissed on 2 tasks as one for reviewers
@@ -31,7 +33,10 @@
 > accept --all --as owner` (or name them; `reject L3 "<why>"`), or the app's Lessons to approve
 > at the top of Waiting for you (counted as needing the owner). Accepted builders' lessons are in
 > `muster start`'s brief for tasks whose `touches:` overlap their folders (every one, without
-> touches); at most 40 are live, and one with no finding of its kind for 60 days expires.
+> touches); at most 40 are live, and one with no finding of its kind for 60 days expires; one the
+> cap expired is proposed again only once its kind is found again. The app's Accept all accepts the
+> lessons it shows, by id. A round after a dispute only (no new commit) has nothing to diff: its
+> brief says to re-check each answer at the head.
 > `reviews/lessons.json` is the truth, `lessons.md` beside the task files its readable copy.
 > Nothing is posted to GitHub (no PR per task for now, VISION.md).
 

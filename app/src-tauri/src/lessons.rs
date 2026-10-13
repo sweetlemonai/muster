@@ -73,6 +73,10 @@ pub struct Lesson {
     /// Why the owner rejected it, or why it expired.
     #[serde(default)]
     pub why: String,
+    /// When the cap expired it (state `expired`), "" otherwise: its kind is proposed again only
+    /// once a finding of it comes after this.
+    #[serde(default)]
+    pub expired: String,
 }
 
 fn path(root: &Path) -> PathBuf {
@@ -247,10 +251,16 @@ pub(crate) fn propose_locked(root: &Path, stamp: &str) -> Result<Vec<Lesson>, St
         let mut tasks: Vec<&str> = found.iter().map(|(t, _)| *t).collect();
         tasks.sort();
         tasks.dedup();
+        let latest = found.iter().map(|(_, f)| f.found_at()).max().unwrap_or("");
         let known = book.lessons.iter().any(|l| {
             l.kind == kind
                 && l.for_who == for_who
-                && matches!(l.state.as_str(), "proposed" | "accepted" | "rejected")
+                && match l.state.as_str() {
+                    "proposed" | "accepted" | "rejected" => true,
+                    // Expired by the cap: back only when its kind was found again since.
+                    "expired" => latest <= l.expired.as_str(),
+                    _ => false,
+                }
         });
         if tasks.len() < RECUR || known {
             continue;
@@ -382,6 +392,7 @@ pub fn decide(
         for (_, id) in live.into_iter().take(over) {
             if let Some(l) = book.lessons.iter_mut().find(|l| l.id == id) {
                 l.state = "expired".into();
+                l.expired = stamp.into();
                 l.why = format!("over the cap of {MAX_LIVE}: it mattered least recently");
                 done.expired.push(id);
             }
@@ -391,11 +402,37 @@ pub fn decide(
     })
 }
 
+/// The waiting count by `lessons.json`'s path, with the size and time it was read at: the window
+/// asks on every poll, and an unchanged file isn't parsed again (as task files are cached).
+type Seen = (u64, std::time::SystemTime, usize);
+static WAITING: std::sync::Mutex<BTreeMap<PathBuf, Seen>> = std::sync::Mutex::new(BTreeMap::new());
+
 /// How many proposals wait for the owner.
 pub fn waiting(root: &Path) -> usize {
-    load(root)
+    let p = path(root);
+    let Some((len, at)) = fs::metadata(&p)
+        .ok()
+        .and_then(|m| Some((m.len(), m.modified().ok()?)))
+    else {
+        return 0;
+    };
+    if let Some(&(l, a, n)) = WAITING
+        .lock()
+        .ok()
+        .and_then(|c| c.get(&p).copied())
+        .as_ref()
+    {
+        if (l, a) == (len, at) {
+            return n;
+        }
+    }
+    let n = load(root)
         .map(|b| b.lessons.iter().filter(|l| l.state == "proposed").count())
-        .unwrap_or(0)
+        .unwrap_or(0);
+    if let Ok(mut c) = WAITING.lock() {
+        c.insert(p, (len, at, n));
+    }
+    n
 }
 
 /// One lesson in `lessons.md`.
@@ -805,6 +842,100 @@ mod tests {
         assert!(
             md.contains("rejected 2026-10-13 12:10: taste, not a defect"),
             "{md}"
+        );
+    }
+
+    #[test]
+    fn the_waiting_count_is_read_again_only_when_lessons_json_changes() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path();
+        assert_eq!(waiting(root), 0, "no file");
+        fs::create_dir_all(crate::layout::reviews_dir(root)).unwrap();
+        let file = path(root);
+        let book = |n: usize| {
+            let ls: Vec<String> = (1..=n)
+                .map(|i| format!(r#"{{"id":"L{i}","kind":"k{i}","for":"builders","state":"proposed","rule":"r","proposed":"2026-10-13 10:00"}}"#))
+                .collect();
+            format!(r#"{{"lessons":[{}]}}"#, ls.join(","))
+        };
+        fs::write(&file, book(1)).unwrap();
+        assert_eq!(waiting(root), 1);
+        // The same size and time: the poll doesn't parse it again (garbage of the same length
+        // still reads as 1).
+        let at = fs::metadata(&file).unwrap().modified().unwrap();
+        let same = "x".repeat(book(1).len());
+        fs::write(&file, &same).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&file)
+            .unwrap()
+            .set_modified(at)
+            .unwrap();
+        assert_eq!(waiting(root), 1);
+        // Changed: read again.
+        fs::write(&file, book(2)).unwrap();
+        assert_eq!(waiting(root), 2);
+        fs::remove_file(&file).unwrap();
+        assert_eq!(waiting(root), 0);
+    }
+
+    #[test]
+    fn a_lesson_the_cap_expired_isnt_proposed_again_until_its_kind_comes_back() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path();
+        // 41 kinds, each confirmed on two tasks.
+        let mut items = Vec::new();
+        for k in 1..=MAX_LIVE + 1 {
+            let kind = format!("kind-{k:02}");
+            let at = format!("2026-10-{:02} 10:00", 1 + k % 28);
+            items.push(found(
+                "0001",
+                &format!("R{k}"),
+                &kind,
+                "confirmed",
+                "a.rs",
+                &at,
+            ));
+            items.push(found(
+                "0002",
+                &format!("R{k}"),
+                &kind,
+                "confirmed",
+                "a.rs",
+                &at,
+            ));
+        }
+        write(root, &items);
+        assert_eq!(
+            propose_locked(root, "2026-10-29 10:00").unwrap().len(),
+            MAX_LIVE + 1
+        );
+        let done = decide(root, &[], true, &[], "", "owner", "2026-10-29 11:00").unwrap();
+        assert_eq!(done.expired.len(), 1, "41 accepted, one over the cap");
+        // The next record proposes nothing: the expired one isn't back.
+        assert!(propose_locked(root, "2026-10-29 12:00").unwrap().is_empty());
+        assert!(propose_locked(root, "2026-10-29 13:00").unwrap().is_empty());
+        // A new finding of its kind after it expired brings it back as a proposal.
+        let kind = load(root)
+            .unwrap()
+            .lessons
+            .iter()
+            .find(|l| l.state == "expired")
+            .map(|l| l.kind.clone())
+            .unwrap();
+        items.push(found(
+            "0003",
+            "R1",
+            &kind,
+            "confirmed",
+            "a.rs",
+            "2026-10-30 09:00",
+        ));
+        write(root, &items);
+        let again = propose_locked(root, "2026-10-30 10:00").unwrap();
+        assert_eq!(
+            again.iter().map(|l| l.kind.as_str()).collect::<Vec<_>>(),
+            [kind.as_str()]
         );
     }
 

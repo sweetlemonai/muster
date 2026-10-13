@@ -297,6 +297,8 @@ export type Lesson = {
   decided: string;
   decidedBy: string;
   why: string;
+  /** When the cap expired it, "" otherwise. */
+  expired?: string;
 };
 
 /** `muster lessons`: the proposals waiting for the owner, and the live ones. */

@@ -13,6 +13,13 @@ export function lessonsWaiting(queues: Pick<QueueInfo, "name" | "lessonsWaiting"
   return queues.filter((q) => queue === "all" || q.name === queue).reduce((n, q) => n + (q.lessonsWaiting ?? 0), 0);
 }
 
+/** What Accept all accepts: the lessons on screen, by id. Never "every proposal": one proposed
+ *  after the list was read would become an instruction unseen (the core refuses an id that's no
+ *  longer a proposal). */
+export function acceptAll(shown: Pick<Lesson, "id">[]): string[] {
+  return shown.map((l) => l.id);
+}
+
 /** "for builders · app/src-tauri/src/ · from 0027 R1, 0031 R2". */
 export function lessonMeta(l: Pick<Lesson, "kind" | "for" | "areas" | "from">): string {
   return [
@@ -58,12 +65,12 @@ function QueueLessons({ queue, label, count, multi, onChanged }: { queue: string
       live = false;
     };
   }, [queue, count]);
-  const decide = (accept: boolean, reject: string[], reason: string) =>
+  const decide = (accept: string[], reject: string[], reason: string) =>
     void once(async () => {
       setBusy(true);
       setMsg(null);
       try {
-        const done = await api.decideLessons(queue, [], accept, reject, reason, stamp(new Date()));
+        const done = await api.decideLessons(queue, accept, false, reject, reason, stamp(new Date()));
         const said = [
           done.accepted.length ? `Accepted ${done.accepted.join(", ")}` : "",
           done.rejected.length ? `rejected ${done.rejected.join(", ")}` : "",
@@ -104,7 +111,7 @@ function QueueLessons({ queue, label, count, multi, onChanged }: { queue: string
                 className="control-row"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  if (why.trim()) decide(false, [l.id], why);
+                  if (why.trim()) decide([], [l.id], why);
                 }}
               >
                 <input autoFocus value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Why it shouldn't become a rule, in one line" aria-label={`Why ${l.id} is rejected`} maxLength={500} />
@@ -120,7 +127,7 @@ function QueueLessons({ queue, label, count, multi, onChanged }: { queue: string
         ))}
       </ul>
       <div className="control-row">
-        <button type="button" className="primary" disabled={busy || lessons.length === 0} onClick={() => decide(true, [], "")}>
+        <button type="button" className="primary" disabled={busy || lessons.length === 0} onClick={() => decide(acceptAll(lessons), [], "")}>
           {`Accept all ${lessons.length}`}
         </button>
       </div>

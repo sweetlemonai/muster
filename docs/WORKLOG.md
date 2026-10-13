@@ -37,6 +37,31 @@ the engine's ledgers and `/pr learn` get Muster's labels (their rows key on a PR
 `sweetlemonai/muster` in the engine's `repos`; a light-tier token budget (the engine has no such
 key); posting as sweetlemonai with a login check comes back with PRs. In-flight started tasks now
 need a review round before their merge.
+**Fixed (review):** (1) a commit made while the merge waited for its lock, or while its gate ran,
+was fast-forwarded onto main unreviewed with the report saying "review clean" → the review is
+checked again before each rebase, `carry` refuses a head the review doesn't stand for, and a
+branch that moved during the gate stops the merge, nothing merged (`parallel.rs`, `review.rs`).
+(2) A lesson the cap of 40 expired was proposed again on every record → it counts as known until
+a finding of its kind comes after its expiry (`expired:` stamp, `lessons.rs`). (3) The app's
+Accept all sent "every proposal", so one proposed after the list was read became an instruction
+unseen → it sends the ids shown (`acceptAll`, `Lessons.tsx`). (4) A record or settle saved the
+review before proposing lessons and writing the task, so a `lessons.json` that didn't read left
+the review a round ahead and a retry refused → everything refusable is worked out before the first
+write, and a failed proposal is said (on the task's log and the command's output) without undoing
+the round. (5) The Review section's "Clean" sentence no longer names a head the merge's rebase
+moves. (6) A finding without a `confidence` skipped the 75 floor → required. Also: a round after a
+dispute only (no new commit) gave an empty `H..H` range → the brief says to re-check each answer at
+the head; `lessons::waiting` (every window poll) parses `lessons.json` again only when its size or
+time changes. Tests, each failing first except (4) (whose test needs the new `lessons_failed`
+field): `a_commit_landing_while_the_merge_waits_for_its_lock_is_refused_not_merged`,
+`a_commit_made_while_the_gate_runs_is_refused_not_merged`,
+`a_lesson_the_cap_expired_isnt_proposed_again_until_its_kind_comes_back`, Review.test.ts "are
+accepted as shown, by id…", `a_lessons_file_that_doesnt_read_never_undoes_a_record_or_a_settle`,
+the missing-confidence case in `a_record_is_refused_with_nothing_written_when_it_doesnt_fit`, the
+dispute-only brief in `the_brief_names_the_range_the_answers_to_recheck_and_the_shape`,
+`the_waiting_count_is_read_again_only_when_lessons_json_changes`.
+Verified: `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; cargo
+test 551 lib.
 ## 2026-10-13 — Projects get a label you choose and a category that groups the sidebar (task 0044)
 **Did:** each project has a label (what the app calls it, up to 40 characters) and a category (the
 sidebar heading it goes under, up to 24), set in Settings › Projects (a field each per row, saved

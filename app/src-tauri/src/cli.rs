@@ -4573,7 +4573,7 @@ mod tests {
                 },
             )
         };
-        let finding = r#"{"lens":"correctness","severity":"should","file":"les/x.rs","line":3,"title":"Reads all of the output","scenario":"2 GB → out of memory","kind":"unbounded-output","lesson":{"rule":"Cap every external program's output.","bad":"cmd.output()","good":"take(1 MB)"}}"#;
+        let finding = r#"{"lens":"correctness","severity":"should","confidence":90,"file":"les/x.rs","line":3,"title":"Reads all of the output","scenario":"2 GB → out of memory","kind":"unbounded-output","lesson":{"rule":"Cap every external program's output.","bad":"cmd.output()","good":"take(1 MB)"}}"#;
         // The same kind of mistake, found and confirmed fixed on two tasks.
         for (n, who) in [("1", "wt-a"), ("2", "wt-b")] {
             let id = task(&f.root, &format!("Task {n}"), "les/");

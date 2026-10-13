@@ -2,7 +2,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { withoutComments } from "./fields";
-import LessonsWaiting, { lessonMeta, lessonsWaiting } from "./Lessons";
+import LessonsWaiting, { acceptAll, lessonMeta, lessonsWaiting } from "./Lessons";
+import lessonsSource from "./Lessons.tsx?raw";
 import { reviewBadge, ReviewBadge, reviewSection, reviewSpan, reviewStatus, withoutReview } from "./Review";
 import ReviewPanel from "./ReviewPanel";
 import TaskPanel from "./TaskPanel";
@@ -107,6 +108,13 @@ describe("lessons waiting for the owner", () => {
       "unbounded-output · for builders · app/src-tauri/src/ · from 0027 R1, 0031 R2",
     );
     expect(lessonMeta({ kind: "style-taste", for: "reviewers", areas: [], from: [] })).toBe("style-taste · for reviewers: don't flag");
+  });
+  it("are accepted as shown, by id: one proposed after the list was read waits for the next look", () => {
+    expect(acceptAll([{ id: "L1" }, { id: "L3" }])).toEqual(["L1", "L3"]);
+    expect(acceptAll([])).toEqual([]);
+    expect(lessonsSource).toContain("decide(acceptAll(lessons), [], \"\")");
+    expect(lessonsSource).toContain("api.decideLessons(queue, accept, false, reject,");
+    expect(lessonsSource).not.toMatch(/decideLessons\([^)]*\btrue\b/);
   });
   it("lead Waiting for you, which isn't empty while they wait", () => {
     const html = renderToStaticMarkup(createElement(WaitingList, { tasks: [], multi: false, openKey: null, onOpen: () => {}, onChanged: () => {}, now: 0, queues, queue: "muster" }));

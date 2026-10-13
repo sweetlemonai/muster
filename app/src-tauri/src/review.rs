@@ -445,10 +445,7 @@ fn next_words(key: &str, r: &Review) -> String {
             ids_text(&answered)
         )
     } else {
-        format!(
-            "Clean: the merge may go ahead at {} (`muster pass {key} --from testing`).",
-            short(&r.head)
-        )
+        format!("Clean: the merge may go ahead (`muster pass {key} --from testing`).")
     }
 }
 
@@ -656,8 +653,8 @@ struct RawFinding {
     id: Option<String>,
     lens: String,
     severity: String,
-    #[serde(default)]
-    confidence: Option<f64>,
+    /// Required: the floor (`MIN_CONFIDENCE`) holds only for a finding that says how sure it is.
+    confidence: f64,
     file: String,
     #[serde(default)]
     line: Option<u32>,
@@ -774,13 +771,12 @@ fn finding(i: usize, f: &RawFinding) -> Result<Finding, String> {
             f.severity.chars().take(20).collect::<String>()
         ));
     }
-    if let Some(c) = f.confidence {
-        if c < MIN_CONFIDENCE {
-            return Err(format!(
-                "{} is {c}: record only findings you're at least {MIN_CONFIDENCE} sure of (the rest go in couldNotVerify)",
-                at("confidence")
-            ));
-        }
+    let c = f.confidence;
+    if !c.is_finite() || !(MIN_CONFIDENCE..=100.0).contains(&c) {
+        return Err(format!(
+            "{} is {c}: record only findings you're at least {MIN_CONFIDENCE} sure of, up to 100 (the rest go in couldNotVerify)",
+            at("confidence")
+        ));
     }
     let file = ops::one_line(&f.file, MAX_FILE, &at("file"))?;
     let kind = match f.kind.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
@@ -903,8 +899,17 @@ pub struct Span {
 }
 
 impl Span {
-    /// `from..head`: the new commits, or the whole branch.
+    /// No commit since the last round (the builder only disputed): nothing to diff, only answers
+    /// to re-check at the head.
+    pub fn nothing_new(&self) -> bool {
+        self.since.as_deref() == Some(self.head.as_str())
+    }
+
+    /// `from..head`: the new commits, or the whole branch; the head alone when nothing is new.
     pub fn range(&self) -> String {
+        if self.nothing_new() {
+            return self.head.clone();
+        }
         format!(
             "{}..{}",
             self.since.as_deref().unwrap_or(&self.base),
@@ -950,6 +955,52 @@ pub struct Recorded {
     pub then_failed: String,
     /// Lessons proposed to the owner by this record (L3…).
     pub proposed: Vec<String>,
+    /// Why no lessons could be proposed this time (the record stands; the next one tries again).
+    pub lessons_failed: String,
+}
+
+/// After a review change is written: propose the lessons it makes due, and add a line per
+/// proposal (or one saying it couldn't) to the task's log, `text` being what was written. Never
+/// undoes the change: a proposal that fails (`lessons.json` doesn't read) is said and left for the
+/// next record, which proposes from every review again. Returns the proposals and the failure.
+fn propose_after(
+    root: &Path,
+    path: &Path,
+    text: &str,
+    who: &str,
+    stamp: &str,
+) -> (Vec<String>, String) {
+    let (lines, ids, failed) = match lessons::propose_locked(root, stamp) {
+        Ok(ls) => (
+            ls.iter()
+                .map(|l| {
+                    format!(
+                        "{stamp} {who}: proposed lesson {} ({}) to the owner",
+                        l.id, l.kind
+                    )
+                })
+                .collect::<Vec<_>>(),
+            ls.iter().map(|l| l.id.clone()).collect(),
+            String::new(),
+        ),
+        Err(e) => {
+            let failed = format!("couldn't propose lessons ({e}); the next record tries again");
+            (
+                vec![format!("{stamp} {who}: {}", one(&failed))],
+                Vec::new(),
+                failed,
+            )
+        }
+    };
+    if !lines.is_empty() {
+        let mut new = text.to_string();
+        for l in &lines {
+            new = append_log(&new, l);
+        }
+        // The change is written already; a log line that can't be added doesn't undo it.
+        let _ = write_atomic(path, &new);
+    }
+    (ids, failed)
 }
 
 /// Refused unless `who` may record a round on task `t`: it's in Testing, started, not paused or
@@ -1124,7 +1175,7 @@ pub fn record(
         if let Some(tk) = rec.tokens {
             what.push(format!("{} tokens", tokens_text(tk)));
         }
-        let mut log = vec![ops::free_text_line(
+        let log = vec![ops::free_text_line(
             format!(
                 "{stamp} {who}: review round {n}{} at {}: {}",
                 if rec.tier.is_empty() {
@@ -1137,21 +1188,11 @@ pub fn record(
             ),
             "who (--as)",
         )?];
-        let new = task_text(root, &path, &text, &r, &[], &who, stamp)?;
+        // Everything that can be refused is worked out before the first write.
+        let new = task_text(root, &path, &text, &r, &log, &who, stamp)?;
         save(root, id, &r)?;
-        let proposed = lessons::propose_locked(root, stamp)?;
-        for l in &proposed {
-            log.push(format!(
-                "{stamp} {who}: proposed lesson {} ({}) to the owner",
-                l.id, l.kind
-            ));
-            done.proposed.push(l.id.clone());
-        }
-        let mut new = new;
-        for l in &log {
-            new = append_log(&new, l);
-        }
         write_atomic(&path, &new)?;
+        (done.proposed, done.lessons_failed) = propose_after(root, &path, &new, &who, stamp);
         Ok(done)
     })?;
     // The task goes on, with the lock let go: return and block take it themselves.
@@ -1224,6 +1265,9 @@ pub fn recorded_text(key: &str, r: &Recorded) -> String {
             "Proposed to the owner: lesson {} (muster lessons).\n",
             ids_text(&r.proposed)
         ));
+    }
+    if !r.lessons_failed.is_empty() {
+        out.push_str(&format!("{}\n", r.lessons_failed));
     }
     out
 }
@@ -1365,29 +1409,34 @@ pub fn settle(
             what: format!("settled as {label}"),
             text: why.clone(),
         });
-        let mut log = vec![ops::free_text_line(
+        let log = vec![ops::free_text_line(
             format!("{stamp} {who}: review: settled {which} as {label}: {why}"),
             "why",
         )?];
-        save(root, id, &r)?;
-        for l in lessons::propose_locked(root, stamp)? {
-            log.push(format!(
-                "{stamp} {who}: proposed lesson {} ({}) to the owner",
-                l.id, l.kind
-            ));
-        }
+        // Everything that can be refused is worked out before the first write.
         let new = task_text(root, &path, &body, &r, &log, &who, stamp)?;
+        save(root, id, &r)?;
         write_atomic(&path, &new)?;
+        propose_after(root, &path, &new, &who, stamp);
         Ok(r.open_ids())
     })
 }
 
 // ---- The merge ----
 
+/// What `merge_check` found: the merge report's words for the review, and whether a clean review
+/// stands for the tip (so the merge carries it over its rebase and checks it again), or the
+/// owner merges without one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MergeReview {
+    pub words: String,
+    pub stands: bool,
+}
+
 /// May started task `id` merge at its branch's tip `head`, as `who`? A review clean at that
 /// commit: nothing open, nothing answered and not re-checked. The owner may merge without one;
-/// the merge report says so. Returns the report's words for the review.
-pub fn merge_check(root: &Path, id: &str, head: &str, who: &str) -> Result<String, String> {
+/// the merge report says so.
+pub fn merge_check(root: &Path, id: &str, head: &str, who: &str) -> Result<MergeReview, String> {
     let r = load(root, id)?;
     let key = crate::key::key(&crate::key::prefix_for(root), id);
     let problem = match &r {
@@ -1410,32 +1459,36 @@ pub fn merge_check(root: &Path, id: &str, head: &str, who: &str) -> Result<Strin
         Some(_) => None,
     };
     match (problem, &r) {
-        (None, Some(r)) => Ok(format!(
-            "review clean at {} (round {})",
-            short(&r.head),
-            r.round()
-        )),
-        (Some(_), _) if is_owner(who) => Ok(match &r {
-            None => "no review (the owner's override)".to_string(),
-            Some(_) => format!("review not clean at {} (the owner's override)", short(head)),
+        (None, Some(r)) => Ok(MergeReview {
+            words: format!("review clean at {} (round {})", short(&r.head), r.round()),
+            stands: true,
+        }),
+        (Some(_), _) if is_owner(who) => Ok(MergeReview {
+            words: match &r {
+                None => "no review (the owner's override)".to_string(),
+                Some(_) => format!("review not clean at {} (the owner's override)", short(head)),
+            },
+            stands: false,
         }),
         (Some(p), _) => Err(p),
         (None, None) => Err(format!("{key} has no review yet")),
     }
 }
 
-/// The merge rebased task `id`'s branch from `old` to `new` without a conflict: a review that
-/// stood for `old` now stands for `new`, the same commits replayed on the local main. Does
-/// nothing otherwise.
+/// The merge rebased task `id`'s branch from `old` to `new` without a conflict: the review that
+/// stood for `old` now stands for `new`, the same commits replayed on the local main. Refused when
+/// no review stands for `old` (a commit it didn't see), so nothing unreviewed is carried.
 pub fn carry(root: &Path, id: &str, old: &str, new: &str) -> Result<(), String> {
-    if old == new {
-        return Ok(());
-    }
     with_lock(root, || {
-        let Some(mut r) = load(root, id)? else {
-            return Ok(());
-        };
+        let mut r = load(root, id)?.ok_or_else(|| format!("{id} has no review to carry"))?;
         if r.head != old {
+            return Err(format!(
+                "{id}'s review is of {}, not {}: review the new commits (muster review {id}), then merge",
+                short(&r.head),
+                short(old)
+            ));
+        }
+        if old == new {
             return Ok(());
         }
         r.head = new.to_string();
@@ -1558,7 +1611,11 @@ pub fn brief(root: &Path, id: &str, span: &Span, now: &str) -> Result<Brief, Str
         lessons: lines(lessons::for_builders(&book, &reviews, &t.touches, now)),
         dont_flag: lines(lessons::for_reviewers(&book, &reviews, now)),
         kinds: lessons::kinds(&book, &reviews),
-        run: format!("/deep-review {range}"),
+        run: if span.nothing_new() {
+            "no engine run: read each answered finding's files at head in the worktree, and accept each answer or not".into()
+        } else {
+            format!("/deep-review {range}")
+        },
         shape: SHAPE.into(),
         record: format!("muster review {key} --queue {q} --record -"),
         then: format!("muster pass {key} --from testing --queue {q}"),
@@ -1584,6 +1641,11 @@ fn listed_line(l: &Listed) -> String {
 /// The brief as text, for a session's prompt.
 pub fn brief_text(b: &Brief) -> String {
     let whole = match &b.span.since {
+        Some(_) if b.span.nothing_new() => format!(
+            "no commits since round {}: re-check each answer below at head {}",
+            b.round - 1,
+            short(&b.span.head)
+        ),
         Some(_) => format!("only the commits since round {}", b.round - 1),
         None => "the whole branch since it left main".to_string(),
     };
@@ -1969,11 +2031,11 @@ mod tests {
             "{body}"
         );
         assert!(
-            body.contains("Clean: the merge may go ahead at 2222222"),
+            body.contains("Clean: the merge may go ahead (`muster pass pj-1 --from testing`)."),
             "{body}"
         );
         assert_eq!(
-            merge_check(d.path(), &id, HEAD2, "qa").unwrap(),
+            merge_check(d.path(), &id, HEAD2, "qa").unwrap().words,
             "review clean at 2222222 (round 2)"
         );
     }
@@ -2131,6 +2193,13 @@ mod tests {
             &span(HEAD1, None)
         )
         .contains("75"));
+        // Every finding says how sure it is: one that doesn't can't be held to the floor.
+        assert!(e(
+            &ok.replace("\"confidence\":90,", ""),
+            "qa",
+            &span(HEAD1, None)
+        )
+        .contains("missing field `confidence`"));
         assert!(e(
             &ok.replace("\"should\"", "\"major\""),
             "qa",
@@ -2185,7 +2254,10 @@ mod tests {
             .contains("has no review yet"));
         assert_eq!(
             merge_check(d.path(), &id, HEAD1, "owner").unwrap(),
-            "no review (the owner's override)"
+            MergeReview {
+                words: "no review (the owner's override)".into(),
+                stands: false
+            }
         );
         record(
             d.path(),
@@ -2198,16 +2270,82 @@ mod tests {
         .unwrap();
         assert_eq!(
             merge_check(d.path(), &id, HEAD1, "qa").unwrap(),
-            "review clean at 1111111 (round 1)"
+            MergeReview {
+                words: "review clean at 1111111 (round 1)".into(),
+                stands: true
+            }
         );
         assert!(merge_check(d.path(), &id, HEAD2, "qa")
             .unwrap_err()
             .contains("review the new commits"));
-        // A rebase by the merge carries it to the replayed commit; any other head doesn't.
-        carry(d.path(), &id, HEAD2, BASE).unwrap();
+        // A rebase by the merge carries it to the replayed commit; from any other head (a commit
+        // the review didn't see) it's refused.
+        assert!(carry(d.path(), &id, HEAD2, BASE)
+            .unwrap_err()
+            .contains("review the new commits"));
         assert_eq!(load(d.path(), &id).unwrap().unwrap().head, HEAD1);
         carry(d.path(), &id, HEAD1, HEAD2).unwrap();
         assert!(merge_check(d.path(), &id, HEAD2, "qa").is_ok());
+    }
+
+    #[test]
+    fn a_lessons_file_that_doesnt_read_never_undoes_a_record_or_a_settle() {
+        let d = queue();
+        let id = in_testing(d.path(), "app/");
+        fs::create_dir_all(crate::layout::reviews_dir(d.path())).unwrap();
+        let broken = crate::layout::reviews_dir(d.path()).join("lessons.json");
+        fs::write(&broken, "{not json").unwrap();
+        let json = rec(
+            HEAD1,
+            &[finding_json(
+                "Unbounded output",
+                "unbounded-output",
+                "should",
+            )],
+            "",
+        );
+        let r = record(
+            d.path(),
+            &id,
+            &json,
+            "qa",
+            "2026-10-13 12:00",
+            &span(HEAD1, None),
+        )
+        .unwrap();
+        assert!(
+            r.lessons_failed.contains("couldn't propose lessons"),
+            "{r:?}"
+        );
+        assert_eq!(r.then, "returned");
+        // The round is in the review and in the task, once; the task says why no lessons.
+        assert_eq!(load(d.path(), &id).unwrap().unwrap().round(), 1);
+        let t = task(d.path(), &id);
+        assert_eq!((t.review_round, t.review_open), (Some(1), 1));
+        let body = text(d.path(), &id);
+        assert!(body.contains("qa: couldn't propose lessons"), "{body}");
+        assert!(recorded_text("pj-1", &r).contains("the next record tries again"));
+        // The owner's settle stands too.
+        settle(
+            d.path(),
+            &id,
+            "R1",
+            "wont-fix",
+            "not now",
+            "owner",
+            "2026-10-13 12:30",
+        )
+        .unwrap();
+        assert_eq!(
+            load(d.path(), &id).unwrap().unwrap().findings[0].state,
+            "wont-fix"
+        );
+        assert!(text(d.path(), &id).contains("owner: review: settled R1 as wont-fix: not now"));
+        assert_eq!(
+            fs::read_to_string(&broken).unwrap(),
+            "{not json",
+            "left for the owner to see"
+        );
     }
 
     #[test]
@@ -2339,5 +2477,18 @@ mod tests {
             "the builder's words are quoted as data: {t}"
         );
         assert!(t.contains("unbounded-output"), "kinds in use: {t}");
+        // A dispute only, no new commit: nothing to diff, the answers to re-check at head.
+        let b = brief(d.path(), &id, &span(HEAD1, Some(HEAD1)), "2026-10-13 13:00").unwrap();
+        let t = brief_text(&b);
+        assert!(
+            !t.contains(&format!("{HEAD1}..{HEAD1}")),
+            "no empty range: {t}"
+        );
+        assert!(t.contains("no commits since round 1"), "{t}");
+        assert!(
+            t.contains("re-check each answer below at head 1111111"),
+            "{t}"
+        );
+        assert!(!t.contains("/deep-review"), "{t}");
     }
 }

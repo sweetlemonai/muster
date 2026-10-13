@@ -839,8 +839,9 @@ const REGATES: usize = 2;
 /// cleared, `commit:` the merge, the report logged) and pass it to Your check: once main has the
 /// merge this is written whatever, and a pass refused meanwhile (blocked, moved) is an error that
 /// says so; (8) name the next task to start. Before step 1 it needs the review of record clean at
-/// the branch's tip (0027, `review::merge_check`), the owner aside, and each rebase carries that
-/// review to the replayed commits. The report and the commit are checked before step 4.
+/// the branch's tip (0027, `review::merge_check`), the owner aside; before each rebase it checks
+/// again (a commit that landed while it waited for the lock wasn't reviewed), each rebase carries
+/// that review to the replayed commits, and a commit made while the gate ran stops it. The report and the commit are checked before step 4.
 /// A refusal before step 4 or a stop at 4 or 5 leaves the worktree, the branch and the task as
 /// they were. `now` gives the local time for each write; `say` gets a line per step done.
 pub fn merge(
@@ -898,7 +899,8 @@ pub fn merge(
     }
     // The review of record (0027): clean at the branch's tip, or the owner's override.
     let tip = git(&wt, &["rev-parse", "HEAD"])?;
-    let reviewed = crate::review::merge_check(root, id, &tip, who)?;
+    let review = crate::review::merge_check(root, id, &tip, who)?;
+    let reviewed = review.words.clone();
     // Checked now so a gate isn't run for nothing; checked again under the lock, before the merge.
     main_ready(&repo)?;
 
@@ -911,6 +913,11 @@ pub fn merge(
     let mut again = 0;
     let run = loop {
         let before = git(&wt, &["rev-parse", "HEAD"])?;
+        // A commit that landed while the merge waited for its lock, or during the last gate,
+        // hasn't been reviewed: refused, nothing rebased.
+        if review.stands {
+            crate::review::merge_check(root, id, &before, who)?;
+        }
         if let Err(e) = git(&wt, &["rebase", &trunk]) {
             let files = conflicted(&wt);
             let aborted = git(&wt, &["rebase", "--abort"]);
@@ -928,7 +935,10 @@ pub fn merge(
             return back_to_building(root, id, &why, who, &now());
         }
         // The same commits, replayed on main: the review stands for them now.
-        crate::review::carry(root, id, &before, &git(&wt, &["rev-parse", "HEAD"])?)?;
+        let after = git(&wt, &["rev-parse", "HEAD"])?;
+        if review.stands {
+            crate::review::carry(root, id, &before, &after)?;
+        }
         let onto = git(&repo.main, &["rev-parse", &trunk])?;
         say(format!(
             "rebased {branch} on {trunk} ({})",
@@ -941,6 +951,15 @@ pub fn merge(
             return back_to_building(root, id, &why, who, &now());
         }
         say(run.line.clone());
+        // What lands is what the gate saw: a commit made while it ran stops the merge.
+        let now_at = git(&wt, &["rev-parse", "HEAD"])?;
+        if now_at != after {
+            return Err(format!(
+                "{branch} moved while the gate ran (the gate saw {}, it's at {} now): nothing was merged or deleted; review and gate the new commits, then pass again",
+                after.chars().take(7).collect::<String>(),
+                now_at.chars().take(7).collect::<String>()
+            ));
+        }
         if git(&repo.main, &["rev-parse", &trunk])? == onto {
             break run;
         }
@@ -2582,6 +2601,70 @@ pub(crate) mod tests {
         assert!(
             report.contains(&format!("· review clean at {} (round 2) ·", &tip2[..7])),
             "{report}"
+        );
+    }
+
+    #[test]
+    fn a_commit_landing_while_the_merge_waits_for_its_lock_is_refused_not_merged() {
+        let f = fx();
+        let id = task(&f.root, "Waits", "w/");
+        let s = built(&f, &id, "w/x.txt");
+        // Another merge holds the repo's lock.
+        let dir = f.repo.join(".git/muster");
+        fs::create_dir_all(&dir).unwrap();
+        let held = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(dir.join("merge.lock"))
+            .unwrap();
+        held.lock().unwrap();
+        let main_before = g(&f.repo, &["rev-parse", "main"]);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (root, task_id, gate) = (f.root.clone(), id.clone(), green(&f));
+        let merging = std::thread::spawn(move || {
+            merge(&root, &task_id, "qa", &noon, &gate, &mut |l| {
+                let _ = tx.send(l);
+            })
+        });
+        let said = rx.recv_timeout(std::time::Duration::from_secs(20)).unwrap();
+        assert!(said.starts_with("waiting for another merge"), "{said}");
+        // Reviewed at T; a commit C lands while it waits.
+        commit(
+            &s.worktree,
+            "w/late.txt",
+            "unreviewed\n",
+            "after the review",
+        );
+        held.unlock().unwrap();
+        let e = merging.join().unwrap().unwrap_err();
+        assert!(e.contains("review the new commits"), "{e}");
+        assert_eq!(
+            g(&f.repo, &["rev-parse", "main"]),
+            main_before,
+            "nothing merged"
+        );
+        assert!(has_branch(&f, &s.branch) && s.worktree.is_dir());
+    }
+
+    #[test]
+    fn a_commit_made_while_the_gate_runs_is_refused_not_merged() {
+        let f = fx();
+        let id = task(&f.root, "Gated", "q/");
+        let s = built(&f, &id, "q/x.txt");
+        let main_before = g(&f.repo, &["rev-parse", "main"]);
+        let wt = s.worktree.display().to_string();
+        let gate = shell_gate(
+            &f,
+            "commits",
+            &format!("echo late > '{wt}/q/late.txt' && git -C '{wt}' add -A && git -C '{wt}' -c user.name=T -c user.email=t@example.com -c commit.gpgsign=false commit -qm late"),
+        );
+        let e = run_merge(&f, &id, &gate).0.unwrap_err();
+        assert!(e.contains("while the gate ran"), "{e}");
+        assert_eq!(
+            g(&f.repo, &["rev-parse", "main"]),
+            main_before,
+            "nothing merged"
         );
     }
 
