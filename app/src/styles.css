@@ -514,8 +514,6 @@ button:disabled { opacity: 0.45; cursor: default; }
 .stage-block .owner-checklist { margin: 0; }
 .wline { display: flex; gap: 6px; align-items: baseline; margin: 0; }
 .wline .lbl { width: 48px; flex: none; }
-.task-pane .bar { display: block; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
-.task-pane .bar i { display: block; height: 100%; background: var(--accent); }
 .task-pane .history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
 .task-pane .history li { display: flex; gap: 8px; }
 .h-when { flex: none; width: 74px; color: var(--muted); font-variant-numeric: tabular-nums; }

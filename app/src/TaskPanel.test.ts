@@ -123,6 +123,20 @@ describe("the stage track", () => {
     ]);
     expect(text(html)).toBe("Stage click any stage to move it there Backlog Shaping Ready Building Testing Your check Done");
   });
+  it("says which moves release someone else's claim on Building", () => {
+    const titles = (html: string) => [...html.matchAll(/class="(\w+) s-[\w-]+" aria-pressed="\w+"[^>]*title="([^"]*)"/g)].map((m) => m[2].replace(/&#x27;/g, "'"));
+    expect(titles(pane({ stage: "building", claimedBy: "drover/main (session 3fba2222)" }).html)).toEqual([
+      "Put it in Backlog (releases drover/main's claim)",
+      "Put it in Shaping (releases drover/main's claim)",
+      "Put it in Ready (releases drover/main's claim)",
+      "It's in Building",
+      "Put it in Testing (releases drover/main's claim)",
+      "Put it in Your check (releases drover/main's claim)",
+      "Put it in Done (releases drover/main's claim)",
+    ]);
+    expect(pane({ stage: "building", claimedBy: "owner" }).html).not.toContain("releases");
+    expect(pane({ stage: "ready", claimedBy: "drover/main (session 3fba2222)" }).html).not.toContain("releases");
+  });
   it("is off while a stage action runs", () => {
     expect(track("ready", true).match(/disabled=""/g)?.length).toBe(7);
     expect(track("ready")).not.toContain("disabled");
@@ -173,11 +187,16 @@ describe("the pane's layout by stage (D2)", () => {
     expect(p.parts).toEqual(["title", "status", "track", "work", "next-step", "settings", ...after]);
     expect(p.primary).toEqual(["Pass to Testing"]);
     const work = text(part(p.html, "work"));
-    expect(work).toContain("Time 2 h in Building and Testing · of 1 d estimated");
+    expect(work).toContain("Time 2 h in Building and Testing · estimate 1 d of agent time");
     expect(work).toContain("Tokens 2M tokens estimated · used: with 0025");
     expect(work).toContain("Sessions: coming with 0025");
     expect(work).toContain("10-12 16:00 Ready → Building · wt-a 10-12 15:00 Shaping → Ready · capture");
-    expect(p.html).toContain('aria-label="25% of the time estimate"');
+    // Wall-clock time and agent time aren't the same unit: no bar pretends to compare them.
+    expect(p.html).not.toContain("of the time estimate");
+  });
+  it("Building for a day of wall-clock time reads in 24-hour days, the estimate in agent days", () => {
+    const p = pane({ stage: "building", claimedBy: "owner", stageHistory: [step("2026-10-11 10:00", "ready", "building")], estMinutes: 480 }, at("2026-10-12 12:00"));
+    expect(text(part(p.html, "work"))).toContain("Time 1 d 2 h in Building and Testing · estimate 1 d of agent time");
   });
   it("Building with nothing to time says so, and makes nothing up", () => {
     const work = text(part(pane({ stage: "building", claimedBy: "owner" }).html, "work"));

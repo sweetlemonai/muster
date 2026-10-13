@@ -713,7 +713,8 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
         "stage" => {
             let id = need(a, 1, "a task id")?;
             let stage = need(a, 2, "a stage")?;
-            let p = ops::set_stage(root, id, stage, &me, stamp)?;
+            let from = a.flags.get("from").map(String::as_str);
+            let p = ops::set_stage(root, id, stage, from, &me, stamp)?;
             println!("{}", stage_message(root, id, &p));
             Ok(0)
         }
@@ -1168,8 +1169,19 @@ mod tests {
         assert!(queue::read_body(d.path(), "0001")
             .unwrap()
             .contains("wt-a: stage testing → building (returned: AC1 fails)"));
-        assert_eq!(code(&["stage", "0001", "your-check"]), 0);
+        assert_eq!(
+            code(&["stage", "0001", "your-check", "--from", "testing"]),
+            1,
+            "moved on since"
+        );
+        assert_eq!(task().stage, "building");
+        assert_eq!(
+            code(&["stage", "0001", "your-check", "--from", "building"]),
+            0
+        );
         assert!(task().waiting_for_owner);
+        assert_eq!(code(&["stage", "0001", "testing"]), 0);
+        assert_eq!(code(&["stage", "0001", "your-check"]), 0);
         assert_eq!(code(&["stage", "0001", "nowhere"]), 1);
         assert_eq!(code(&["stage", "0001"]), 2);
         assert_eq!(code(&["pass", "0001", "--commit", "abc1234"]), 0);

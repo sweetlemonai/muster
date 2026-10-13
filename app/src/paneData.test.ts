@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { criteriaSection, isLive, LIVE_SECS, timeInWork, trackPlace, undoFor, waitingOnYou } from "./paneData";
+import { criteriaSection, fmtWall, isFileDrag, isLive, LIVE_SECS, releasedBy, timeInWork, trackMove, trackPlace, undoFor, waitingOnYou } from "./paneData";
 import { stampMinutes } from "./lib";
 import type { Question, StageStep, Task } from "./types";
 
@@ -78,6 +78,46 @@ describe("time in Building and Testing, from the stage history", () => {
   it("never counts backwards (a clock change, a hand edit)", () => {
     const h = [step("2026-10-12 17:00", "ready", "building"), step("2026-10-12 16:00", "building", "testing")];
     expect(timeInWork(h, "testing", now)).toBe(120);
+  });
+});
+
+describe("wall-clock time, in 24-hour days (the estimate stays in 8-hour agent days)", () => {
+  it("in Building since 18:00 yesterday, at 10:00 today: 16 h", () => {
+    const h = [step("2026-10-12 18:00", "ready", "building")];
+    expect(fmtWall(timeInWork(h, "building", stampMinutes("2026-10-13 10:00"))!)).toBe("16 h");
+  });
+  it("minutes, then hours, then 24-hour days", () => {
+    expect([0, 1, 45, 59, 60, 90, 23 * 60 + 54, 24 * 60, 25 * 60, 49 * 60 + 30].map(fmtWall)).toEqual([
+      "under a minute", "1 min", "45 min", "59 min", "1 h", "1.5 h", "23.9 h", "1 d", "1 d 1 h", "2 d 1.5 h",
+    ]);
+  });
+});
+
+describe("a move on the track", () => {
+  const held = task({ stage: "building", claimedBy: "drover/main (session 3fba2222)" });
+  it("out of Building held by someone else releases their claim: said so, and no Undo", () => {
+    expect(releasedBy(held, "testing")).toBe("drover/main");
+    expect(trackMove(held, "testing")).toEqual({ done: "Put in Testing. drover/main's claim on Building was released.", undo: undefined });
+  });
+  it("any other move offers Undo back to where it was", () => {
+    expect(releasedBy(task({ stage: "building", claimedBy: "owner" }), "testing")).toBe("");
+    expect(trackMove(task({ stage: "building", claimedBy: "owner" }), "testing")).toEqual({ done: "Put in Testing.", undo: { back: "building", to: "testing" } });
+    expect(releasedBy(task({ stage: "ready", claimedBy: "wt-a" }), "shaping")).toBe("");
+    expect(trackMove(task({ stage: "ready", claimedBy: "wt-a" }), "shaping").undo).toEqual({ back: "ready", to: "shaping" });
+    expect(releasedBy(held, "building")).toBe("");
+  });
+  it("from a stage the window doesn't know: no Undo", () => {
+    expect(trackMove(task({ stage: "reviewing" }), "ready")).toEqual({ done: "Put in Ready.", undo: undefined });
+  });
+});
+
+describe("drags the pane takes", () => {
+  it("only drags that carry files; text goes to the box it's dropped on", () => {
+    expect(isFileDrag(["Files"])).toBe(true);
+    expect(isFileDrag(["text/uri-list", "Files"])).toBe(true);
+    expect(isFileDrag(["text/plain"])).toBe(false);
+    expect(isFileDrag(["text/plain", "text/html"])).toBe(false);
+    expect(isFileDrag([])).toBe(false);
   });
 });
 

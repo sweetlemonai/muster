@@ -957,13 +957,30 @@ pub fn pass_task(
         one_line(&opts.gate, 500, "the gate line")?
     };
     let commit = clean_commit(&opts.commit)?;
-    let expected = match opts.from.as_deref().map(str::trim) {
-        Some(s) if !s.is_empty() => Some(pick(s, &STAGES, "", "stage")?),
-        _ => None,
-    };
+    let expected = seen_stage(opts.from.as_deref())?;
     change(root, id, &who, stamp, |t| {
         pass_change(id, t, &who, stamp, &gate, &commit, expected)
     })
+}
+
+/// The stage a caller says it saw the task in (`--from`, the window's): None when not given.
+fn seen_stage(from: Option<&str>) -> Result<Option<&'static str>, String> {
+    match from.map(str::trim) {
+        Some(s) if !s.is_empty() => Ok(Some(pick(s, &STAGES, "", "stage")?)),
+        _ => Ok(None),
+    }
+}
+
+/// Refuses a change made from a stage the task has since left (a double click, a stale window).
+fn check_seen(id: &str, t: &Current, expected: Option<&str>) -> Result<(), String> {
+    match expected.filter(|s| *s != t.stage) {
+        Some(seen) => Err(format!(
+            "{id} is now in {}, not {}; it moved on since you looked",
+            stage_label(&t.stage),
+            stage_label(seen)
+        )),
+        None => Ok(()),
+    }
 }
 
 /// What a pass does to the task `t` (the rules of `pass_task`, after its inputs are cleaned).
@@ -976,13 +993,7 @@ fn pass_change(
     commit: &str,
     expected: Option<&str>,
 ) -> Result<Change, String> {
-    if let Some(seen) = expected.filter(|s| *s != t.stage) {
-        return Err(format!(
-            "{id} is now in {}, not {}; it moved on since you looked",
-            stage_label(&t.stage),
-            stage_label(seen)
-        ));
-    }
+    check_seen(id, t, expected)?;
     if t.blocked {
         let on = if t.waiting_on.is_empty() {
             "something it doesn't name"
@@ -1516,11 +1527,13 @@ pub fn unblock_task(root: &Path, id: &str, who: &str, stamp: &str) -> Result<Str
 }
 
 /// The owner's (or capture's) override: put a task in any stage, logged with `(set)`. Leaving
-/// Building releases its claim; the blocked flag stays.
+/// Building releases its claim; the blocked flag stays. `from` is the stage the caller saw it in:
+/// when given, the move is refused if the task has moved on since (as `pass_task`).
 pub fn set_stage(
     root: &Path,
     id: &str,
     stage: &str,
+    from: Option<&str>,
     who: &str,
     stamp: &str,
 ) -> Result<String, String> {
@@ -1529,7 +1542,9 @@ pub fn set_stage(
     if stage.is_empty() {
         return Err(format!("stage must be one of {}", STAGES.join(", ")));
     }
+    let expected = seen_stage(from)?;
     change(root, id, &who, stamp, |t| {
+        check_seen(id, t, expected)?;
         if t.stage == stage {
             return Err(format!("{id} is already in {}", stage_label(stage)));
         }
@@ -2706,7 +2721,7 @@ mod tests {
         );
         let t = only(d.path());
         assert_eq!((t.stage.as_str(), t.claimed_by.as_str()), ("shaping", ""));
-        set_stage(d.path(), "0001", "backlog", "owner", T).unwrap();
+        set_stage(d.path(), "0001", "backlog", None, "owner", T).unwrap();
         assert!(r(None, "x").unwrap_err().contains("no stage before"));
     }
 
@@ -2808,7 +2823,7 @@ mod tests {
         let t = only(d.path());
         assert_eq!((t.stage.as_str(), t.blocked), ("ready", true));
         // Returning or setting keeps the flag even with nothing in waiting_on.
-        set_stage(d.path(), "0001", "shaping", "owner", T).unwrap();
+        set_stage(d.path(), "0001", "shaping", None, "owner", T).unwrap();
         let t = only(d.path());
         assert_eq!(
             (t.stage.as_str(), t.status.as_str(), t.blocked),
@@ -2829,17 +2844,17 @@ mod tests {
             "doing/0001-t.md",
             &task_text("status: doing\nclaimed-by: wt-a\nwaiting_on:", ""),
         );
-        assert!(set_stage(d.path(), "0001", "building", "owner", T)
+        assert!(set_stage(d.path(), "0001", "building", None, "owner", T)
             .unwrap_err()
             .contains("already in Building"));
-        assert!(set_stage(d.path(), "0001", "qa", "owner", T)
+        assert!(set_stage(d.path(), "0001", "qa", None, "owner", T)
             .unwrap_err()
             .contains("stage must be one of"));
-        assert!(set_stage(d.path(), "0001", "", "owner", T)
+        assert!(set_stage(d.path(), "0001", "", None, "owner", T)
             .unwrap_err()
             .contains("stage must be one of"));
         assert_eq!(
-            set_stage(d.path(), "0001", "Your-Check", "owner", T).unwrap(),
+            set_stage(d.path(), "0001", "Your-Check", None, "owner", T).unwrap(),
             "doing/0001-t.md"
         );
         let t = only(d.path());
@@ -2851,9 +2866,46 @@ mod tests {
         let text = fs::read_to_string(d.path().join("doing/0001-t.md")).unwrap();
         assert!(text.ends_with("owner: stage building → your-check (set)\n"));
         assert_eq!(
-            set_stage(d.path(), "0001", "done", "owner", T).unwrap(),
+            set_stage(d.path(), "0001", "done", None, "owner", T).unwrap(),
             "done/0001-t.md"
         );
+    }
+
+    #[test]
+    fn set_stage_with_from_refuses_a_task_that_moved_on() {
+        let d = queue();
+        put(
+            d.path(),
+            "doing/0001-t.md",
+            &task_text("status: doing\nclaimed-by: wt-a\nwaiting_on:", ""),
+        );
+        // Seen in Testing, but it's in Building: refused, nothing written.
+        let before = fs::read_to_string(d.path().join("doing/0001-t.md")).unwrap();
+        assert_eq!(
+            set_stage(d.path(), "0001", "your-check", Some("testing"), "owner", T).unwrap_err(),
+            "0001 is now in Building, not Testing; it moved on since you looked"
+        );
+        // Even when it already sits where the move would put it.
+        assert!(
+            set_stage(d.path(), "0001", "building", Some("ready"), "owner", T)
+                .unwrap_err()
+                .contains("it moved on since you looked")
+        );
+        assert!(set_stage(d.path(), "0001", "ready", Some("qa"), "owner", T)
+            .unwrap_err()
+            .contains("stage must be one of"));
+        assert_eq!(
+            fs::read_to_string(d.path().join("doing/0001-t.md")).unwrap(),
+            before
+        );
+        // Seen where it is (any case, padded): it moves, and releases the claim as before.
+        set_stage(d.path(), "0001", "testing", Some(" Building "), "owner", T).unwrap();
+        let t = only(d.path());
+        assert_eq!((t.stage.as_str(), t.claimed_by.as_str()), ("testing", ""));
+        // None or empty: the old override, whatever stage it's in.
+        set_stage(d.path(), "0001", "ready", None, "owner", T).unwrap();
+        set_stage(d.path(), "0001", "shaping", Some(""), "owner", T).unwrap();
+        assert_eq!(only(d.path()).stage, "shaping");
     }
 
     #[test]
@@ -3000,10 +3052,10 @@ mod tests {
             ("building", "wt-b")
         );
         // The owner's override into Building isn't a claim: the builder stays wt-b.
-        set_stage(d.path(), "0001", "ready", "owner", T).unwrap();
-        set_stage(d.path(), "0001", "building", "owner", T).unwrap();
+        set_stage(d.path(), "0001", "ready", None, "owner", T).unwrap();
+        set_stage(d.path(), "0001", "building", None, "owner", T).unwrap();
         assert_eq!(only(d.path()).claimed_by, "");
-        set_stage(d.path(), "0001", "testing", "owner", T).unwrap();
+        set_stage(d.path(), "0001", "testing", None, "owner", T).unwrap();
         return_task(d.path(), "0001", "again", None, "qa", T).unwrap();
         assert_eq!(only(d.path()).claimed_by, "wt-b");
     }
@@ -3533,7 +3585,7 @@ mod tests {
             ("wt-a", "2026-10-13 09:00")
         );
         // Nobody holds it any more: no heartbeat.
-        set_stage(d.path(), "0001", "ready", "owner", T).unwrap();
+        set_stage(d.path(), "0001", "ready", None, "owner", T).unwrap();
         assert_eq!(
             heartbeat_task(d.path(), "0001", "wt-a", T).unwrap_err(),
             "0001 is in Ready, not Building; only a claim in Building has a lease to keep alive"
@@ -3873,7 +3925,7 @@ mod tests {
         assert_eq!(task_of(d.path(), "0003").stage, "testing");
         // The owner may hold several.
         pass_task(d.path(), "0005", "owner", T, &no_gate()).unwrap();
-        set_stage(d.path(), "0002", "ready", "owner", T).unwrap();
+        set_stage(d.path(), "0002", "ready", None, "owner", T).unwrap();
         claim_task(d.path(), "0002", "owner", T).unwrap();
         assert_eq!(
             next_task(d.path(), "owner", T).unwrap(),
@@ -4260,7 +4312,7 @@ mod tests {
         );
         pass_task(d.path(), "0004", "capture", T, &no_gate()).unwrap();
         assert_eq!(task_of(d.path(), "0004").stage, "shaping");
-        set_stage(d.path(), "0001", "your-check", "owner", T).unwrap();
+        set_stage(d.path(), "0001", "your-check", None, "owner", T).unwrap();
         let s = state(d.path());
         let shown = |id: &str| {
             s.tasks

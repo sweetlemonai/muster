@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "./api";
 import { isStage, nextStage, oneAtATime, readFiles, stageLabel, stamp } from "./lib";
+import { trackMove } from "./paneData";
 import type { Task } from "./types";
 
 export type StageForm = "gate" | "back" | "block";
@@ -72,9 +73,13 @@ export function useTaskActions(task: Task, onChanged: () => void) {
     unblock: () => void stageRun(() => api.unblockTask(task.queue, task.id, now()), "Unblocked."),
     release: () => void stageRun(() => api.reclaimTask(task.queue, task.id, now()), "Released: back in Ready."),
     /** The owner's override from the track: no confirmation, an Undo in the message instead
-     *  (none for the undo itself, or from a stage the window doesn't know). */
-    setStage: (to: string, undoable: boolean) =>
-      void stageRun(() => api.setStage(task.queue, task.id, to, now()), `Put in ${stageLabel(to)}.`, undoable && isStage(task.stage) ? { back: task.stage, to } : undefined),
+     *  (see trackMove). It says the stage it was clicked in, so a stale window is refused. */
+    move: (to: string) => {
+      const { done, undo } = trackMove(task, to);
+      void stageRun(() => api.setStage(task.queue, task.id, to, isStage(task.stage) ? task.stage : null, now()), done, undo);
+    },
+    /** Undo a move: back where it was, refused if it has moved on from where the move put it. */
+    undo: (u: Undo) => void stageRun(() => api.setStage(task.queue, task.id, u.back, u.to, now()), `Put back in ${stageLabel(u.back)}.`),
     tick: (which: string, undo: boolean) => void stageRun(() => api.tickCriterion(task.queue, task.id, which, undo, now()), `${undo ? "Unticked" : "Ticked"} ${which}.`),
     setField: (field: string, value: string, done: string) => void run(() => api.setField(task.queue, task.id, field, value, now()), done),
     note: (text: string) => void run(() => api.addNote(task.queue, task.id, text, now()), "Note added to the log."),

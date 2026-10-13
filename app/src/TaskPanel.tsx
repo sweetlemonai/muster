@@ -4,7 +4,7 @@ import EditBody from "./EditBody";
 import { stageLabel, stamp } from "./lib";
 import Markdown from "./Markdown";
 import PaneHeader from "./PaneHeader";
-import { undoFor } from "./paneData";
+import { isFileDrag, releasedBy, undoFor } from "./paneData";
 import Sidebar from "./Sidebar";
 import StageContent from "./StageContent";
 import StageForms from "./StageForms";
@@ -69,12 +69,15 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
     <div
       className={`panel task-pane${over ? " drop" : ""}`}
       aria-label={`Task ${task.id}`}
+      // Only file drags are the pane's: text dragged into the editor or an answer box drops there.
       onDragOver={(e) => {
+        if (!isFileDrag(e.dataTransfer.types)) return;
         e.preventDefault();
         setOver(true);
       }}
       onDragLeave={() => setOver(false)}
       onDrop={(e) => {
+        if (!isFileDrag(e.dataTransfer.types)) return;
         e.preventDefault();
         setOver(false);
         a.attachFiles(e.dataTransfer.files);
@@ -82,7 +85,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
     >
       <header className="pane-top" onPaste={onPaste}>
         <PaneHeader task={task} now={now} onClose={onClose} onRename={(t) => a.setField("title", t, "Renamed.")} />
-        <StageTrack stage={task.stage} busy={a.busy} onPick={(to) => a.setStage(to, true)} />
+        <StageTrack stage={task.stage} busy={a.busy} onPick={a.move} releases={(to) => releasedBy(task, to)} />
         <div className="tp-cols">
           <div className="tp-main">
             <StageContent task={task} nowSecs={now} body={body === null ? null : shown} childTasks={childTasks} busy={a.busy} onTick={a.tick} />
@@ -94,7 +97,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
           <p className={a.msg.ok ? "ok small pane-msg" : "err small pane-msg"} role="status">
             {a.msg.text}
             {undo && (
-              <button type="button" className="undo" disabled={a.busy} onClick={() => a.setStage(undo.back, false)}>
+              <button type="button" className="undo" disabled={a.busy} onClick={() => a.undo(undo)}>
                 Undo: back to {stageLabel(undo.back)}
               </button>
             )}

@@ -2,7 +2,7 @@ import { claimant, fmtMinutes, fmtTokens, stageLabel, stamp, stampMinutes } from
 import { estimateLeft, isWork, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
 import Markdown from "./Markdown";
 import OwnerChecklist from "./OwnerChecklist";
-import { criteriaSection, timeInWork } from "./paneData";
+import { criteriaSection, fmtWall, timeInWork } from "./paneData";
 import type { Task } from "./types";
 
 /** The task pane's left column: what this stage needs. Building and Testing: the work so far.
@@ -54,18 +54,18 @@ export default function StageContent({ task, nowSecs, body, childTasks, busy, on
 function WorkSoFar({ task, nowSecs }: { task: Task; nowSecs: number }) {
   const spent = timeInWork(task.stageHistory, task.stage, stampMinutes(stamp(new Date(nowSecs * 1000))));
   const est = task.estMinutes;
-  const share = spent !== null && est > 0 ? Math.min(100, Math.round((spent / est) * 100)) : null;
+  // Time spent is wall-clock (24-hour days); the estimate is agent time (8-hour days). Both are
+  // named for what they are, and nothing pretends to compare them.
   return (
     <div className="stage-block" data-part="work">
       <span className="lbl">Work so far</span>
       <p className="wline">
         <span className="lbl">Time</span>
         <span className="small">
-          {spent === null ? "not timed: no move into Building in the log" : `${spent < 1 ? "under a minute" : fmtMinutes(spent)} in Building and Testing`}
-          {est > 0 ? ` · of ${fmtMinutes(est)} estimated` : " · no time estimate"}
+          {spent === null ? "not timed: no move into Building in the log" : `${fmtWall(spent)} in Building and Testing`}
+          {est > 0 ? ` · estimate ${fmtMinutes(est)} of agent time` : " · no time estimate"}
         </span>
       </p>
-      {share !== null && <span className="bar" role="img" aria-label={`${share}% of the time estimate`}><i style={{ width: `${share}%` }} /></span>}
       {task.estTokenCount > 0 && (
         <p className="wline">
           <span className="lbl">Tokens</span>

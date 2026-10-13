@@ -297,20 +297,31 @@ pub(crate) fn release(
     ops::reclaim_task(root, id, ops::LEASE_MINUTES, "owner", stamp, now_secs)
 }
 
-/// The owner's override: put a task in any stage.
+/// The owner's override: put a task in any stage. `from`, when given, is the stage the window
+/// showed: refused if the task has moved on since.
 #[tauri::command]
 async fn set_stage(
     app: tauri::State<'_, AppState>,
     queue: String,
     id: String,
     stage: String,
+    from: Option<String>,
     stamp: String,
 ) -> Result<String, String> {
     check_id(&id)?;
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
-    blocking(move || ops::set_stage(&queue_root(&file, &queue)?, &id, &stage, "owner", &stamp))
-        .await
+    blocking(move || {
+        ops::set_stage(
+            &queue_root(&file, &queue)?,
+            &id,
+            &stage,
+            from.as_deref(),
+            "owner",
+            &stamp,
+        )
+    })
+    .await
 }
 
 #[tauri::command]
