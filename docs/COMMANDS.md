@@ -53,7 +53,12 @@ the reason), `block --on` / `unblock` (a flag, the task keeps its stage), and `s
 override). Claims and their lease (task 0002): `claim` (Ready → Building, one claim per holder),
 `next` (the top Ready task you may take, by priority then id), `heartbeat` (the holder keeps a
 claim alive), and `reclaim [--after 12h]` (claims quiet past their lease go back to Ready). Questions
-(task 0002): `ask`, `escalate` and `inbox`, beside `answer`. The slash commands will call it.
+(task 0002): `ask`, `escalate` and `inbox`, beside `answer`. Editing (task 0020): `edit` opens
+`$VISUAL` or `$EDITOR` (else `vi`) on a task's write-up, everything between the front matter and the
+Log, and saves it when the editor exits (`--body -` takes it from stdin). Refused if the write-up
+changed since it was opened, if it carries a `## Log` or stage line, and while someone else holds
+the task in Building (their branch owns the write-up then, decision 0003: add a note instead). The
+app's task pane has the same Edit beside the description. The slash commands will call it.
 
 ### Python tools (in `bin/`)
 

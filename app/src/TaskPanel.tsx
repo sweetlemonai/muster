@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import EditBody from "./EditBody";
 import { ago, claimant, earlierStages, heldByOther, isStage, LEASE_SECS, leaseRunOut, nextStage, oneAtATime, passLabel, readFiles, stamp, STAGES, stageLabel, stageOf } from "./lib";
 import Markdown from "./Markdown";
 import TagEditor from "./Tags";
@@ -11,6 +12,11 @@ export default function TaskPanel({ task, now, onClose, onChanged }: { task: Tas
   const [body, setBody] = useState<string | null>(null);
   const [raw, setRaw] = useState(false);
   const [error, setError] = useState("");
+  // The write-up Edit opened, while the editor is open; what the last edit came to.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editMsg, setEditMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // Bumped after a save, so the text reloads even within the second the file last changed.
+  const [saves, setSaves] = useState(0);
 
   // Reload the text when the file changes (its modified time moves).
   useEffect(() => {
@@ -22,7 +28,12 @@ export default function TaskPanel({ task, now, onClose, onChanged }: { task: Tas
     return () => {
       live = false;
     };
-  }, [task.queue, task.id, task.modified]);
+  }, [task.queue, task.id, task.modified, saves]);
+
+  const startEdit = () => {
+    setEditMsg(null);
+    api.editableBody(task.queue, task.id).then(setEditing, (e) => setEditMsg({ ok: false, text: String(e) }));
+  };
 
   const shown = body ? body.replace(/^---\n[\s\S]*?\n---\n/, "") : "";
   const open = task.questions.filter((q) => !q.ticked && q.n !== null);
@@ -60,13 +71,31 @@ export default function TaskPanel({ task, now, onClose, onChanged }: { task: Tas
       {task.attachments.length > 0 && <Attachments task={task} />}
 
       <section className="body">
-        <div className="body-bar">
-          <button className={raw ? "tab" : "tab on"} onClick={() => setRaw(false)}>Rendered</button>
-          <button className={raw ? "tab on" : "tab"} onClick={() => setRaw(true)}>Raw</button>
-        </div>
-        {error && <p className="err">{error}</p>}
-        {body === null && !error && <p className="none">Loading…</p>}
-        {body !== null && (raw ? <pre className="raw">{body}</pre> : <Markdown text={shown} />)}
+        {editing !== null ? (
+          <EditBody
+            task={task}
+            opened={editing}
+            onClose={() => setEditing(null)}
+            onSaved={(text) => {
+              setEditing(null);
+              setEditMsg({ ok: true, text });
+              setSaves((n) => n + 1);
+              onChanged();
+            }}
+          />
+        ) : (
+          <>
+            <div className="body-bar">
+              <button className={raw ? "tab" : "tab on"} onClick={() => setRaw(false)}>Rendered</button>
+              <button className={raw ? "tab on" : "tab"} onClick={() => setRaw(true)}>Raw</button>
+              <button className="tab edit" onClick={startEdit} title="Edit the description, To do and criteria here (⌘S saves, Esc cancels)">Edit</button>
+            </div>
+            {editMsg && <p className={editMsg.ok ? "ok small" : "err small"}>{editMsg.text}</p>}
+            {error && <p className="err">{error}</p>}
+            {body === null && !error && <p className="none">Loading…</p>}
+            {body !== null && (raw ? <pre className="raw">{body}</pre> : <Markdown text={shown} />)}
+          </>
+        )}
       </section>
     </div>
   );

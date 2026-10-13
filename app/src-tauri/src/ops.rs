@@ -1386,6 +1386,134 @@ pub fn status_folders() -> &'static [&'static str] {
     &STATUS_FOLDERS
 }
 
+/// Where a task's write-up is in its text, as (start, end) byte offsets: from the end of the
+/// front matter to the Log's heading (the last `## Log`, the one `queue::log_span` reads), or to
+/// the end when it has no Log. The front matter and the Log are the tool's; this is the rest.
+fn body_span(text: &str) -> Result<(usize, usize), String> {
+    let (_, body) = front_matter(text).ok_or("the task has no front matter")?;
+    let start = text.len() - body.len();
+    let end = match queue::log_span(body) {
+        Some((content, _)) => {
+            let through_heading = &body[..content];
+            let before = through_heading
+                .strip_suffix('\n')
+                .unwrap_or(through_heading);
+            start + before.rfind('\n').map_or(0, |i| i + 1)
+        }
+        None => text.len(),
+    };
+    Ok((start, end))
+}
+
+/// The write-up as an editor opens it: the text between the front matter and the Log, without
+/// the blank lines around it.
+pub fn editable_body(text: &str) -> Result<String, String> {
+    let (start, end) = body_span(text)?;
+    Ok(text[start..end].trim_matches(['\n', '\r']).to_string())
+}
+
+/// Who holds `t` in Building, when that's someone other than `who`. While they do, its write-up
+/// belongs to their branch (decision 0003), so nobody else edits it.
+fn write_up_holder(t: &queue::Task, who: &str) -> Option<String> {
+    (t.stage == "building" && !t.claimed_by.is_empty() && t.claimed_by != who)
+        .then(|| t.claimed_by.clone())
+}
+
+fn held_by(holder: &str) -> String {
+    format!("{holder} holds it; add a note instead (the write-up is theirs while they build it)")
+}
+
+/// The write-up of task `id` for `who` to edit; refused while someone else holds it in Building.
+pub fn open_body(root: &Path, id: &str, who: &str) -> Result<String, String> {
+    let who = actor(who)?;
+    let path = find_task(root, id)?;
+    let text = queue::read_body(root, id)?;
+    let t = queue::parse_task("", root, &queue::folder_of(root, &path), &path, &text, 0)
+        .ok_or("the task has no front matter")?;
+    if let Some(holder) = write_up_holder(&t, &who) {
+        return Err(held_by(&holder));
+    }
+    editable_body(&text)
+}
+
+/// A new write-up, cleaned like a new task's description (control characters out, newline and
+/// tab kept, trimmed, 50 000 characters at most). Refused when it's empty, has no `# ` title line,
+/// or has a line the tool would read as its own: a `## Log` heading or a stage change.
+fn clean_write_up(text: &str) -> Result<String, String> {
+    let t = body_text(text)?;
+    if t.is_empty() {
+        return Err("the write-up is empty".into());
+    }
+    for line in t.lines() {
+        if line.trim_end() == "## Log" {
+            return Err("the write-up has a \"## Log\" line, and the Log is the tool's: it stays below the write-up (add to it with a note)".into());
+        }
+        if queue::stage_line(line).is_some() {
+            return Err(format!(
+                "the write-up has a line that would read as a stage change in the log (\"<who>: stage <from> → <to>\"); only muster pass, return and stage write those: {line:?}"
+            ));
+        }
+    }
+    if !t.lines().any(|l| l.starts_with("# ")) {
+        return Err("the write-up needs its \"# <title>\" line".into());
+    }
+    Ok(t)
+}
+
+/// Replace task `id`'s write-up (between the front matter and the Log) with `new_body`, as
+/// `who`, under the queue's lock. `expected` is the write-up the editor opened (`open_body`): if
+/// the file's is different now, the edit is refused and nothing changes. Refused too while
+/// someone else holds the task in Building. The front matter and every Log line stay as they
+/// are; the edit is logged. Returns the task's relative path, or None when the text is the same.
+pub fn edit_body(
+    root: &Path,
+    id: &str,
+    new_body: &str,
+    expected: &str,
+    who: &str,
+    stamp: &str,
+) -> Result<Option<String>, String> {
+    let who = actor(who)?;
+    let new_body = clean_write_up(new_body)?;
+    with_lock(root, || {
+        let path = find_task(root, id)?;
+        let text = queue::read_body(root, id)?;
+        let t = queue::parse_task("", root, &queue::folder_of(root, &path), &path, &text, 0)
+            .ok_or("the task has no front matter")?;
+        if let Some(holder) = write_up_holder(&t, &who) {
+            return Err(held_by(&holder));
+        }
+        let (start, end) = body_span(&text)?;
+        let current = text[start..end].trim_matches(['\n', '\r']);
+        if current != expected {
+            return Err(format!(
+                "{id} changed since you opened it, so nothing was saved; open it again to edit what's there now"
+            ));
+        }
+        if body_text(current).is_ok_and(|c| c == new_body) {
+            return Ok(None);
+        }
+        let head = &text[..start];
+        let mut new = if end == text.len() {
+            format!("{head}\n{new_body}\n")
+        } else {
+            format!("{head}\n{new_body}\n\n{}", &text[end..])
+        };
+        new = append_log(&new, &format!("{stamp} {who}: edited the write-up"));
+        // The holder's edit keeps its claim alive.
+        if t.stage == "building" && t.claimed_by == who {
+            new = set_front(&new, "heartbeat", stamp)?;
+        }
+        write_atomic(&path, &new)?;
+        Ok(Some(
+            path.strip_prefix(root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .to_string(),
+        ))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3335,5 +3463,332 @@ mod tests {
         fs::remove_file(d.path().join("todo/0001-t.md")).unwrap();
         reclaim_task(d.path(), "0002", 720, "owner", "2026-10-12 14:06", now).unwrap();
         assert_eq!(task_of(d.path(), "0002").stage, "ready");
+    }
+}
+
+#[cfg(test)]
+mod edit_tests {
+    use super::*;
+
+    const T: &str = "2026-10-12 14:05";
+    const WRITE_UP: &str =
+        "# Edit me\n\nThe old description.\n\n## Acceptance criteria\n- [ ] AC1: one";
+    const LOG: &str = "## Log\n- 2026-10-12 09:00 capture: created\n- 2026-10-12 09:30 capture: stage shaping → ready\n- 2026-10-12 09:40 wt-a: a note\n";
+    const READY: &str = "stage: ready\nstatus: todo\nclaimed-by:\nheartbeat:\nwaiting_on:";
+
+    fn queue() -> tempfile::TempDir {
+        let d = tempfile::tempdir().unwrap();
+        for f in STATUS_FOLDERS {
+            fs::create_dir(d.path().join(f)).unwrap();
+        }
+        fs::write(d.path().join("README.md"), "q").unwrap();
+        d
+    }
+
+    /// Task 0001 in `folder`: front matter with `fm`, the write-up, the Log, then `tail`.
+    fn put(d: &Path, folder: &str, fm: &str, write_up: &str, tail: &str) -> PathBuf {
+        let p = d.join(folder).join("0001-t.md");
+        let text = format!(
+            "---\nid: 0001\ntype: task\npriority: normal\n{fm}\n---\n\n{write_up}\n\n{LOG}{tail}"
+        );
+        fs::write(&p, text).unwrap();
+        p
+    }
+    fn text(p: &Path) -> String {
+        fs::read_to_string(p).unwrap()
+    }
+    /// The file from the Log's heading on.
+    fn from_log(text: &str) -> &str {
+        &text[text.rfind("## Log").unwrap()..]
+    }
+    /// The front matter, both `---` lines included.
+    fn front(text: &str) -> &str {
+        &text[..text[4..].find("\n---\n").unwrap() + 9]
+    }
+
+    #[test]
+    fn edits_only_the_write_up_and_logs_it() {
+        let d = queue();
+        let tail = "\n## Comments\n- kept as is\n";
+        let p = put(d.path(), "todo", READY, WRITE_UP, tail);
+        let before = text(&p);
+        let opened = open_body(d.path(), "0001", "owner").unwrap();
+        assert_eq!(opened, WRITE_UP);
+        let new = "# Edit me\n\nThe new description, with a list:\n- one\n\t- indented\n\n## Questions\n- [ ] **Q1 (owner, session aaaa1111, 2026-10-12 10:00):** Which colour?\n\n## Acceptance criteria\n- [x] AC1: one\n- [ ] AC2: two";
+        let path = edit_body(d.path(), "0001", new, &opened, "owner", T).unwrap();
+        assert_eq!(path.as_deref(), Some("todo/0001-t.md"));
+        let after = text(&p);
+        assert_eq!(front(&after), front(&before), "front matter untouched");
+        assert_eq!(
+            from_log(&after),
+            format!("## Log\n- 2026-10-12 09:00 capture: created\n- 2026-10-12 09:30 capture: stage shaping → ready\n- 2026-10-12 09:40 wt-a: a note\n- {T} owner: edited the write-up\n{tail}"),
+            "every Log line kept, the edit logged, what follows the Log kept"
+        );
+        assert_eq!(
+            after,
+            format!("{}\n{new}\n\n{}", front(&before), from_log(&after))
+        );
+        assert_eq!(open_body(d.path(), "0001", "owner").unwrap(), new);
+        let t = crate::queue::read_task(d.path(), "0001").unwrap();
+        assert_eq!(t.stage_history.len(), 1);
+        assert_eq!(crate::queue::criteria(&after), (2, 1));
+        assert_eq!(t.questions.len(), 1);
+        assert_eq!((t.stage.as_str(), t.title.as_str()), ("ready", "Edit me"));
+    }
+
+    #[test]
+    fn refuses_when_the_write_up_changed_since_it_was_opened() {
+        let d = queue();
+        let p = put(d.path(), "todo", READY, WRITE_UP, "");
+        let opened = open_body(d.path(), "0001", "owner").unwrap();
+        // A note only adds to the Log: the write-up the editor opened is still the file's.
+        add_note(d.path(), "0001", "checked", "wt-b", T).unwrap();
+        edit_body(
+            d.path(),
+            "0001",
+            "# Edit me\n\nFirst edit.",
+            &opened,
+            "owner",
+            T,
+        )
+        .unwrap();
+        // The write-up changed meanwhile: a second editor, still on the old text, is refused.
+        let before = text(&p);
+        let e = edit_body(
+            d.path(),
+            "0001",
+            "# Edit me\n\nSecond.",
+            &opened,
+            "owner",
+            T,
+        )
+        .unwrap_err();
+        assert!(e.contains("changed since you opened it"), "{e}");
+        assert_eq!(text(&p), before, "nothing written");
+    }
+
+    #[test]
+    fn unchanged_text_writes_nothing() {
+        let d = queue();
+        let p = put(d.path(), "todo", READY, WRITE_UP, "");
+        let before = text(&p);
+        let opened = open_body(d.path(), "0001", "owner").unwrap();
+        for same in [
+            opened.clone(),
+            format!("\n{opened}\n\n"),
+            format!("{opened}\u{7}"),
+        ] {
+            assert_eq!(
+                edit_body(d.path(), "0001", &same, &opened, "owner", T).unwrap(),
+                None
+            );
+        }
+        assert_eq!(text(&p), before);
+    }
+
+    #[test]
+    fn cleans_the_text_and_refuses_what_the_tool_owns() {
+        let d = queue();
+        let p = put(d.path(), "todo", READY, WRITE_UP, "");
+        let before = text(&p);
+        let opened = open_body(d.path(), "0001", "owner").unwrap();
+        let refused = |new: &str, want: &str| {
+            let e = edit_body(d.path(), "0001", new, &opened, "owner", T).unwrap_err();
+            assert!(e.contains(want), "{new:?}: {e}");
+            assert_eq!(text(&p), before, "{new:?} wrote");
+        };
+        refused("# T\n\nfine\n## Log\n- planted", "the Log is the tool's");
+        refused("# T\n\n## Log   \nx", "the Log is the tool's");
+        refused("# T\r\n\r\n## Log\r\nx", "the Log is the tool's");
+        refused(
+            "# T\n\n- 2026-10-12 15:00 evil: stage ready → building (claimed)",
+            "stage change",
+        );
+        refused("  \n\t\n", "empty");
+        refused("Just a description, no title line", "# ");
+        refused(
+            &format!("# T\n\n{}", "x".repeat(MAX_BODY)),
+            "longer than 50000",
+        );
+        // Prose that only mentions the Log or a stage is fine; CRLF becomes LF, control
+        // characters go, tabs stay.
+        let new = "# T\r\n\r\nSee ## Log below.\r\nMoved it ready → building by hand.\u{1b}[31m\r\n\tcode";
+        edit_body(d.path(), "0001", new, &opened, "owner", T).unwrap();
+        assert_eq!(
+            open_body(d.path(), "0001", "owner").unwrap(),
+            "# T\n\nSee ## Log below.\nMoved it ready → building by hand.[31m\n\tcode"
+        );
+    }
+
+    #[test]
+    fn unicode_counts_characters_not_bytes() {
+        let d = queue();
+        let p = put(d.path(), "todo", READY, WRITE_UP, "");
+        let opened = open_body(d.path(), "0001", "owner").unwrap();
+        // 50 000 characters exactly, most of them four bytes long.
+        let head = "# کار 🚀 e\u{301}\n\n";
+        let new = format!("{head}{}", "🚀".repeat(MAX_BODY - head.chars().count()));
+        assert_eq!(new.chars().count(), MAX_BODY);
+        edit_body(d.path(), "0001", &new, &opened, "owner", T).unwrap();
+        assert_eq!(open_body(d.path(), "0001", "owner").unwrap(), new);
+        assert_eq!(
+            crate::queue::read_task(d.path(), "0001").unwrap().title,
+            "کار 🚀 e\u{301}"
+        );
+        assert!(text(&p).ends_with(&format!("- {T} owner: edited the write-up\n")));
+    }
+
+    #[test]
+    fn a_task_someone_else_holds_in_building_is_theirs_to_edit() {
+        let d = queue();
+        let held =
+            "stage: building\nstatus: doing\nclaimed-by: wt-a\nheartbeat: 2026-10-12 09:00\nwaiting_on:";
+        let p = put(d.path(), "doing", held, WRITE_UP, "");
+        let before = text(&p);
+        let e = open_body(d.path(), "0001", "owner").unwrap_err();
+        assert!(e.contains("wt-a holds it; add a note instead"), "{e}");
+        let e =
+            edit_body(d.path(), "0001", "# Edit me\n\nMine.", WRITE_UP, "owner", T).unwrap_err();
+        assert!(e.contains("wt-a holds it; add a note instead"), "{e}");
+        assert_eq!(text(&p), before);
+        // Blocked, it keeps its claim, and the write-up stays the holder's.
+        let blocked =
+            "stage: building\nstatus: blocked\nclaimed-by: wt-a\nheartbeat:\nwaiting_on: owner";
+        put(d.path(), "doing", blocked, WRITE_UP, "");
+        assert!(
+            edit_body(d.path(), "0001", "# Edit me\n\nMine.", WRITE_UP, "owner", T)
+                .unwrap_err()
+                .contains("wt-a holds it")
+        );
+        // The holder edits it, and that keeps the claim alive.
+        put(d.path(), "doing", held, WRITE_UP, "");
+        edit_body(
+            d.path(),
+            "0001",
+            "# Edit me\n\nThe holder's.",
+            WRITE_UP,
+            "wt-a",
+            T,
+        )
+        .unwrap();
+        let t = crate::queue::read_task(d.path(), "0001").unwrap();
+        assert_eq!((t.heartbeat.as_str(), t.claimed_by.as_str()), (T, "wt-a"));
+        assert!(text(&p).ends_with(&format!("- {T} wt-a: edited the write-up\n")));
+        // The owner's own claim, and a task nobody holds, edit normally.
+        let mine = "stage: building\nstatus: doing\nclaimed-by: owner\nheartbeat:\nwaiting_on:";
+        put(d.path(), "doing", mine, WRITE_UP, "");
+        edit_body(
+            d.path(),
+            "0001",
+            "# Edit me\n\nThe owner's.",
+            WRITE_UP,
+            "owner",
+            T,
+        )
+        .unwrap();
+        fs::remove_file(&p).unwrap();
+        put(d.path(), "todo", READY, WRITE_UP, "");
+        edit_body(
+            d.path(),
+            "0001",
+            "# Edit me\n\nAnyone's.",
+            WRITE_UP,
+            "owner",
+            T,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_task_without_a_log_gets_one_and_the_flat_layout_works() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("0001-t.md");
+        fs::write(
+            &p,
+            "---\nid: 0001\nstatus: todo\n---\n\n# Bare\n\nNo log yet.\n",
+        )
+        .unwrap();
+        let opened = open_body(d.path(), "0001", "owner").unwrap();
+        assert_eq!(opened, "# Bare\n\nNo log yet.");
+        let path = edit_body(
+            d.path(),
+            "0001",
+            "# Bare\n\nNow logged.",
+            &opened,
+            "owner",
+            T,
+        )
+        .unwrap();
+        assert_eq!(path.as_deref(), Some("0001-t.md"));
+        assert_eq!(
+            text(&p),
+            format!("---\nid: 0001\nstatus: todo\n---\n\n# Bare\n\nNow logged.\n\n## Log\n- {T} owner: edited the write-up\n")
+        );
+    }
+
+    #[test]
+    fn crlf_task_files_keep_their_log() {
+        let d = queue();
+        let p = d.path().join("todo/0001-t.md");
+        let log = "## Log\r\n- 2026-10-12 09:00 capture: created\r\n";
+        fs::write(
+            &p,
+            format!(
+                "---\nid: 0001\n{READY}\n---\n\r\n# Windows\r\n\r\nLines end in CRLF.\r\n\r\n{log}"
+            ),
+        )
+        .unwrap();
+        let opened = open_body(d.path(), "0001", "owner").unwrap();
+        assert_eq!(opened, "# Windows\r\n\r\nLines end in CRLF.");
+        edit_body(
+            d.path(),
+            "0001",
+            "# Windows\n\nNow LF.",
+            &opened,
+            "owner",
+            T,
+        )
+        .unwrap();
+        let after = text(&p);
+        assert!(
+            after.ends_with(&format!(
+                "---\n\n# Windows\n\nNow LF.\n\n{log}- {T} owner: edited the write-up\n"
+            )),
+            "{after:?}"
+        );
+    }
+
+    #[test]
+    fn the_write_up_ends_at_the_last_log() {
+        // A Log quoted in the description is text; the tool's Log is the last one.
+        let quoted = "# Q\n\nThe template:\n\n## Log\n- 2026-01-01 00:00 x: stage ready → done";
+        let text = format!("---\nid: 0001\n---\n\n{quoted}\n\n{LOG}");
+        assert_eq!(editable_body(&text).unwrap(), quoted);
+        assert!(editable_body("no front matter").is_err());
+    }
+
+    #[test]
+    fn two_saves_from_one_opened_text_at_once_one_wins() {
+        let d = queue();
+        let p = put(d.path(), "todo", READY, WRITE_UP, "");
+        let saves: Vec<_> = (0..2)
+            .map(|i| {
+                let root = d.path().to_path_buf();
+                std::thread::spawn(move || {
+                    let new = format!("# Edit me\n\nSave {i}.");
+                    edit_body(&root, "0001", &new, WRITE_UP, "owner", T)
+                })
+            })
+            .collect();
+        let results: Vec<_> = saves.into_iter().map(|h| h.join().unwrap()).collect();
+        assert_eq!(
+            results.iter().filter(|r| r.is_ok()).count(),
+            1,
+            "{results:?}"
+        );
+        assert!(results.iter().any(|r| r
+            .as_ref()
+            .is_err_and(|e| e.contains("changed since you opened it"))));
+        assert_eq!(text(&p).matches("edited the write-up").count(), 1);
     }
 }

@@ -325,6 +325,77 @@ fn print_json<T: serde::Serialize>(v: &T) -> Result<(), String> {
     Ok(())
 }
 
+/// The most text `edit` takes from stdin or the editor's file.
+const MAX_EDIT_BYTES: u64 = 1 << 20;
+
+/// Text from `r`, at most 1 MB, as UTF-8.
+fn read_capped(r: impl std::io::Read, what: &str) -> Result<String, String> {
+    let mut buf = Vec::new();
+    std::io::Read::read_to_end(&mut r.take(MAX_EDIT_BYTES + 1), &mut buf)
+        .map_err(|e| format!("{what}: {e}"))?;
+    if buf.len() as u64 > MAX_EDIT_BYTES {
+        return Err(format!("{what} is over 1 MB"));
+    }
+    String::from_utf8(buf).map_err(|_| format!("{what} isn't UTF-8 text"))
+}
+
+/// The editor `edit` runs: `$VISUAL`, else `$EDITOR`, else `vi`, split on whitespace into the
+/// program and its arguments. No shell runs it, so `code --wait` works and quoting doesn't.
+fn editor_command(visual: Option<String>, editor: Option<String>) -> Vec<String> {
+    [visual, editor]
+        .into_iter()
+        .flatten()
+        .map(|v| v.split_whitespace().map(String::from).collect::<Vec<_>>())
+        .find(|words| !words.is_empty())
+        .unwrap_or_else(|| vec!["vi".into()])
+}
+
+/// Open the editor on a private temp copy of `text`; returns what it holds once the editor exits
+/// cleanly, and the copy's path (the caller removes it, or keeps it when the save is refused).
+fn edit_in_editor(id: &str, text: &str) -> Result<(String, PathBuf), String> {
+    use std::io::Write;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    let file = std::env::temp_dir().join(format!(
+        "muster-edit-{id}-{}-{nanos}.md",
+        std::process::id()
+    ));
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
+    let mut f = opts
+        .open(&file)
+        .map_err(|e| format!("can't make a temp file to edit in: {e}"))?;
+    let written = f
+        .write_all(format!("{text}\n").as_bytes())
+        .and_then(|()| f.sync_all());
+    drop(f);
+    let gone = |e: String| {
+        let _ = std::fs::remove_file(&file);
+        e
+    };
+    written.map_err(|e| gone(format!("can't write the temp file to edit in: {e}")))?;
+    let cmd = editor_command(std::env::var("VISUAL").ok(), std::env::var("EDITOR").ok());
+    let status = std::process::Command::new(&cmd[0])
+        .args(&cmd[1..])
+        .arg(&file)
+        .status()
+        .map_err(|e| gone(format!("couldn't run the editor {:?}: {e}", cmd[0])))?;
+    if !status.success() {
+        return Err(gone(format!(
+            "the editor exited with {status}; nothing was saved"
+        )));
+    }
+    let new = std::fs::File::open(&file)
+        .map_err(|e| e.to_string())
+        .and_then(|f| read_capped(f, "the edited text"))
+        .map_err(gone)?;
+    Ok((new, file))
+}
+
 /// Runs a command; returns the process exit code (0 ok, 1 refused or failed, 2 usage).
 pub fn main(argv: &[String]) -> i32 {
     match run(argv) {
@@ -551,6 +622,39 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                 stamp,
             )?;
             println!("{id}: noted");
+            Ok(0)
+        }
+        "edit" => {
+            let id = need(a, 1, "a task id")?;
+            let from_stdin = match a.flags.get("body").map(String::as_str) {
+                None => false,
+                Some("-") => true,
+                Some(_) => return Err("edit takes --body - (the new text on stdin), or no --body to open $VISUAL or $EDITOR (see `muster help`)".into()),
+            };
+            // Refused here (someone else holds it) before anything is typed.
+            let opened = ops::open_body(root, id, &me)?;
+            let (new, copy) = if from_stdin {
+                (read_capped(std::io::stdin(), "stdin")?, None)
+            } else {
+                let (text, file) = edit_in_editor(id, &opened)?;
+                (text, Some(file))
+            };
+            let saved = ops::edit_body(root, id, &new, &opened, &me, stamp);
+            match (&saved, &copy) {
+                (Err(e), Some(file)) => {
+                    return Err(format!("{e}\nyour text is kept in {}", file.display()))
+                }
+                (_, Some(file)) => {
+                    // Saved or unchanged, the copy has done its job; one left behind is only a
+                    // private file in the temp folder, so it doesn't fail the edit.
+                    let _ = std::fs::remove_file(file);
+                }
+                _ => {}
+            }
+            match saved? {
+                Some(p) => println!("{id}: edited ({p})"),
+                None => println!("{id}: no change"),
+            }
             Ok(0)
         }
         "attach" => {
@@ -1159,6 +1263,48 @@ mod tests {
                 q.display()
             )
         );
+    }
+
+    #[test]
+    fn the_editor_comes_from_visual_then_editor_then_vi_split_without_a_shell() {
+        let s = |v: &str| Some(v.to_string());
+        assert_eq!(
+            editor_command(s("code --wait"), s("nano")),
+            ["code", "--wait"]
+        );
+        assert_eq!(editor_command(None, s("  nano  -w ")), ["nano", "-w"]);
+        assert_eq!(
+            editor_command(s(" "), s("nano")),
+            ["nano"],
+            "blank is unset"
+        );
+        assert_eq!(editor_command(None, None), ["vi"]);
+        // No shell: `;` and `$(…)` are just words handed to the program.
+        assert_eq!(
+            editor_command(s("vi; rm -rf ~ $(x)"), None),
+            ["vi;", "rm", "-rf", "~", "$(x)"]
+        );
+    }
+
+    #[test]
+    fn edit_refuses_before_opening_an_editor() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let code = |who: &str, args: &[&str]| {
+            let mut v = sv(args);
+            v.extend(sv(&["--queue", &q, "--as", who]));
+            main(&v)
+        };
+        assert_eq!(code("owner", &["new", "Held"]), 0);
+        assert_eq!(code("wt-a", &["claim", "0001"]), 0);
+        let before = queue::read_body(d.path(), "0001").unwrap();
+        // Someone else holds it: refused (1) before any editor runs; usage (2) for the rest.
+        assert_eq!(code("owner", &["edit", "0001"]), 1);
+        assert_eq!(code("owner", &["edit"]), 2);
+        assert_eq!(code("owner", &["edit", "0001", "--body", "new text"]), 2);
+        assert_eq!(queue::read_body(d.path(), "0001").unwrap(), before);
+        let e = run(&sv(&["edit", "0001", "--queue", &q, "--as", "owner"])).unwrap_err();
+        assert!(e.contains("wt-a holds it; add a note instead"), "{e}");
     }
 
     #[test]

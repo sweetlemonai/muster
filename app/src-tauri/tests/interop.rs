@@ -470,3 +470,169 @@ fn an_answer_through_bin_task_cannot_forge_stage_history() {
     );
     assert_eq!(whos(&task), ["wt-a", "wt-a", "qa"]);
 }
+
+/// `muster <args> --queue <root>` with `input` on stdin and `env` set ($VISUAL and $EDITOR only
+/// when given), from a folder outside any queue.
+fn muster_in(root: &Path, env: &[(&str, &str)], args: &[&str], input: &str) -> (i32, String) {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_muster"));
+    cmd.args(args)
+        .arg("--queue")
+        .arg(root)
+        .current_dir(std::env::temp_dir())
+        .env_remove("MUSTER_ROOT")
+        .env_remove("TASKS_ROOT")
+        .env_remove("MUSTER_AS")
+        .env_remove("VISUAL")
+        .env_remove("EDITOR")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let mut child = cmd.spawn().expect("muster runs");
+    let mut stdin = child.stdin.take().expect("stdin is piped");
+    // A command refused before it reads stdin may have closed it already: what it printed and
+    // its exit code are what the tests check, so a broken pipe here is no failure.
+    let _ = stdin.write_all(input.as_bytes());
+    drop(stdin);
+    let out = child.wait_with_output().expect("muster finishes");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    (out.status.code().unwrap_or(-1), text)
+}
+
+fn new_task(root: &Path, title: &str, body: &str) {
+    muster_lib::ops::create_task(
+        root,
+        &muster_lib::ops::NewTask {
+            title: title.into(),
+            body: body.into(),
+            ..Default::default()
+        },
+        "capture",
+        "2026-10-12 09:00",
+    )
+    .unwrap();
+}
+
+#[test]
+fn edit_takes_the_new_write_up_from_stdin() {
+    let d = queue();
+    new_task(d.path(), "Edit me", "The old text.");
+    let file = d.path().join("todo/0001-edit-me.md");
+    let edit = |input: &str| {
+        muster_in(
+            d.path(),
+            &[],
+            &["edit", "0001", "--as", "owner", "--body", "-"],
+            input,
+        )
+    };
+    let new = "# Edit me\r\n\r\nThe new text: کار 🚀\r\n\r\n## Acceptance criteria\r\n- [ ] AC1: it shows\r\n";
+    let (code, out) = edit(new);
+    assert_eq!(
+        (code, out.as_str()),
+        (0, "0001: edited (todo/0001-edit-me.md)\n")
+    );
+    let (code, shown) = muster_in(d.path(), &[], &["show", "0001"], "");
+    assert_eq!(code, 0, "{shown}");
+    assert!(
+        shown.contains("\n# Edit me\n\nThe new text: کار 🚀\n\n## Acceptance criteria\n- [ ] AC1: it shows\n\n## Log\n- 2026-10-12 09:00 capture: created\n- "),
+        "{shown}"
+    );
+    assert!(shown.ends_with(" owner: edited the write-up\n"), "{shown}");
+    // The same text again: nothing written.
+    let before = std::fs::read_to_string(&file).unwrap();
+    assert_eq!(edit(new), (0, "0001: no change\n".to_string()));
+    // Refusals exit 1 and leave the file alone.
+    let (code, out) = edit("# Edit me\n\n## Log\n- 2026-10-12 15:00 evil: stage ready → done\n");
+    assert!(code == 1 && out.contains("the Log is the tool's"), "{out}");
+    let (code, out) = edit("");
+    assert!(code == 1 && out.contains("empty"), "{out}");
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), before);
+    // Someone else's claim: refused before reading stdin.
+    let (code, _) = muster_in(d.path(), &[], &["claim", "0001", "--as", "wt-a"], "");
+    assert_eq!(code, 0);
+    let (code, out) = edit("# Edit me\n\nMine now.\n");
+    assert!(
+        code == 1 && out.contains("wt-a holds it; add a note instead"),
+        "{out}"
+    );
+}
+
+#[test]
+fn edit_opens_visual_or_editor_on_the_write_up_without_a_shell() {
+    let d = queue();
+    new_task(d.path(), "In the editor", "Before.");
+    let file = d.path().join("todo/0001-in-the-editor.md");
+    let tools = tempfile::tempdir().unwrap();
+    let seen = tools.path().join("seen.md");
+    // The editor: keeps what it was opened on and where, writes the new text, and with $CLOBBER
+    // rewrites the task's write-up meanwhile, as an agent might.
+    let script = tools.path().join("editor.sh");
+    std::fs::write(
+        &script,
+        "cp \"$1\" \"$SEEN\"\nprintf '%s' \"$1\" > \"$SEEN.path\"\nprintf '# In the editor\\n\\nAfter.\\n' > \"$1\"\nif [ -n \"$CLOBBER\" ]; then printf -- '---\\nid: 0001\\nstage: ready\\nstatus: todo\\n---\\n\\n# Someone else\\n\\n## Log\\n- x\\n' > \"$CLOBBER\"; fi\n",
+    )
+    .unwrap();
+    let editor = format!("/bin/sh {}", script.display());
+    let seen_s = seen.display().to_string();
+    let temp_of = || {
+        std::path::PathBuf::from(
+            std::fs::read_to_string(tools.path().join("seen.md.path")).unwrap(),
+        )
+    };
+    let edit =
+        |env: &[(&str, &str)]| muster_in(d.path(), env, &["edit", "0001", "--as", "owner"], "");
+    // $EDITOR with an argument, as words: no shell runs it.
+    let (code, out) = edit(&[("EDITOR", &editor), ("SEEN", &seen_s)]);
+    assert_eq!(
+        (code, out.as_str()),
+        (0, "0001: edited (todo/0001-in-the-editor.md)\n")
+    );
+    assert_eq!(
+        std::fs::read_to_string(&seen).unwrap(),
+        "# In the editor\n\nBefore.\n"
+    );
+    assert!(!temp_of().exists(), "the temp copy is removed");
+    assert!(std::fs::read_to_string(&file)
+        .unwrap()
+        .contains("\n# In the editor\n\nAfter.\n\n## Log\n"));
+    // $VISUAL wins over $EDITOR; an editor that changes nothing writes nothing.
+    let before = std::fs::read_to_string(&file).unwrap();
+    let (code, out) = edit(&[("VISUAL", "true"), ("EDITOR", &editor), ("SEEN", &seen_s)]);
+    assert_eq!((code, out.as_str()), (0, "0001: no change\n"));
+    // An editor that fails saves nothing.
+    let (code, out) = edit(&[("EDITOR", "false")]);
+    assert!(code == 1 && out.contains("the editor exited"), "{out}");
+    let (code, out) = edit(&[("EDITOR", "/no/such/editor")]);
+    assert!(
+        code == 1 && out.contains("couldn't run the editor"),
+        "{out}"
+    );
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), before);
+    // The write-up changed while the editor was open: refused, and the typed text is kept.
+    let file_s = file.display().to_string();
+    let (code, out) = edit(&[("EDITOR", &editor), ("SEEN", &seen_s), ("CLOBBER", &file_s)]);
+    assert!(
+        code == 1 && out.contains("changed since you opened it"),
+        "{out}"
+    );
+    let kept = temp_of();
+    assert!(
+        out.contains(&format!("your text is kept in {}", kept.display())),
+        "{out}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&kept).unwrap(),
+        "# In the editor\n\nAfter.\n"
+    );
+    std::fs::remove_file(&kept).unwrap();
+    assert!(std::fs::read_to_string(&file)
+        .unwrap()
+        .contains("# Someone else"));
+}

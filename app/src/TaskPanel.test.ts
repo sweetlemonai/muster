@@ -58,6 +58,12 @@ describe("task pane stage controls", () => {
     // The owner's own quiet claim: Pass stays the primary action, Release sits beside it.
     expect(pane({ ...held, claimedBy: "owner" }, late).buttons).toEqual(["Pass to Testing", "Release", "Send back", "Block"]);
   });
+  it("has Edit beside the description, in every stage and whoever holds it", () => {
+    for (const over of [{ stage: "backlog" }, { stage: "building", claimedBy: "drover/main (session 3fba2222)" }, { stage: "done" }]) {
+      const bar = /<div class="body-bar">([\s\S]*?)<\/div>/.exec(pane(over).html)?.[1] ?? "";
+      expect([...bar.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1])).toEqual(["Rendered", "Raw", "Edit"]);
+    }
+  });
   it("a stage it doesn't know: shown as is, only the picker and Block", () => {
     const p = pane({ stage: "reviewing" });
     expect(p.line).toBe("reviewing (unknown)");

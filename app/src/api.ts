@@ -34,6 +34,13 @@ export const api = {
   setField: (queue: string, id: string, field: string, value: string, stamp: string) =>
     invoke<string>("set_field", { queue, id, field, value, stamp }),
   addNote: (queue: string, id: string, note: string, stamp: string) => invoke<string>("add_note", { queue, id, note, stamp }),
+  // The write-up (between the front matter and the Log) for Edit; refused while someone else
+  // holds the task in Building.
+  editableBody: (queue: string, id: string) => invoke<string>("editable_body", { queue, id }),
+  // Save it. `expected` is what Edit opened: refused if the file's write-up changed since. Null
+  // when the text is unchanged (nothing written), else the task's path.
+  editBody: (queue: string, id: string, body: string, expected: string, stamp: string) =>
+    invoke<string | null>("edit_body", { queue, id, body, expected, stamp }),
   // Files the window holds (pasted or dropped) go as [name, data URL]; picking uses the core's dialog.
   attachData: (queue: string, id: string, files: [string, string][], stamp: string) =>
     invoke<string[]>("attach_data", { queue, id, files, stamp }),
