@@ -903,7 +903,7 @@ fn ready_cmd(a: &Args, root: &Path) -> Result<i32, String> {
         return Err("ready takes --parallel and how many, nothing more (see `muster help`)".into());
     }
     let (set, left) = if a.parallel {
-        let p = crate::parallel::parallel_set(&s.tasks, n, &[]);
+        let p = crate::parallel::ready_parallel(&s.tasks, n);
         (p.set, p.left)
     } else {
         (crate::parallel::ready(&s.tasks), Vec::new())

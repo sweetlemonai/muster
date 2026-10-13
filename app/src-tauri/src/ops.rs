@@ -1267,14 +1267,15 @@ pub struct PassOpts {
     pub from: Option<String>,
 }
 
-/// A git commit id: 7 to 40 hex characters, kept lowercase. Empty is fine (none given).
+/// A git commit id: 7 to 64 hex characters (a SHA-1 or a SHA-256 repo's), kept lowercase. Empty
+/// is fine (none given).
 fn clean_commit(input: &str) -> Result<String, String> {
     let c = input.trim().to_lowercase();
-    if c.is_empty() || ((7..=40).contains(&c.len()) && c.bytes().all(|b| b.is_ascii_hexdigit())) {
+    if c.is_empty() || ((7..=64).contains(&c.len()) && c.bytes().all(|b| b.is_ascii_hexdigit())) {
         Ok(c)
     } else {
         Err(format!(
-            "commit must be a git commit id (7 to 40 hex characters), got {input:?}"
+            "commit must be a git commit id (7 to 64 hex characters), got {input:?}"
         ))
     }
 }
@@ -1343,8 +1344,55 @@ pub fn pass_merged(
     commit: &str,
     report: &str,
 ) -> Result<String, String> {
+    let (commit, line) = check_merge_facts(who, stamp, commit, report)?;
+    let who = actor(who)?;
+    with_lock(root, || {
+        // The merge is on main whatever the pass says: try the pass, then record the facts
+        // either way, so a task that moved or was blocked meanwhile still says it's merged.
+        let passed = change_locked(root, id, &who, stamp, |t| {
+            pass_change(id, t, &who, stamp, "", "", Some("testing"))
+        });
+        let path = edit_locked(root, id, |_, text| {
+            let mut new = set_front(&text, "worktree", "")?;
+            new = set_front(&new, "branch", "")?;
+            new = clear_front(&new, "worktree-runner")?;
+            new = set_front(&new, "commit", &commit)?;
+            Ok((append_log(&new, &line), None))
+        })?;
+        passed.map_err(|why| {
+            let stage = queue::read_task(root, id)
+                .map(|t| {
+                    let blocked = if t.blocked {
+                        format!(", blocked on {}", t.waiting_on)
+                    } else {
+                        String::new()
+                    };
+                    format!("{}{blocked}", stage_label(&t.stage))
+                })
+                .unwrap_or_else(|_| "unreadable".into());
+            format!(
+                "merged into main as {}; the task is {stage}: use muster stage {id} your-check once it's settled (the pass was refused: {why})",
+                commit.chars().take(7).collect::<String>()
+            )
+        })?;
+        Ok(path)
+    })
+}
+
+/// The merge's facts as `pass_merged` will write them, checked before anything is merged: the
+/// commit (7 to 64 hex characters) and the report's log line (one line, nothing that reads as a
+/// stage change or a check-in). Returns both, cleaned.
+pub fn check_merge_facts(
+    who: &str,
+    stamp: &str,
+    commit: &str,
+    report: &str,
+) -> Result<(String, String), String> {
     let who = actor(who)?;
     let commit = clean_commit(commit)?;
+    if commit.is_empty() {
+        return Err("the merge has no commit".into());
+    }
     let line = free_text_line(
         format!(
             "{stamp} {who}: {}",
@@ -1352,28 +1400,30 @@ pub fn pass_merged(
         ),
         "the merge report",
     )?;
-    with_lock(root, || {
-        change_locked(root, id, &who, stamp, |t| {
-            if t.branch.is_empty() {
-                return Err(format!(
-                    "{id} wasn't started on its own branch (muster start)"
-                ));
-            }
-            pass_change(id, t, &who, stamp, "", "", Some("testing"))
-        })?;
-        edit_locked(root, id, |_, text| {
-            let mut new = set_front(&text, "worktree", "")?;
-            new = set_front(&new, "branch", "")?;
-            new = set_front(&new, "commit", &commit)?;
-            Ok((append_log(&new, &line), None))
-        })
-    })
+    Ok((commit, line))
+}
+
+/// Drop a front-matter field (a no-op when it isn't there).
+fn clear_front(text: &str, key: &str) -> Result<String, String> {
+    let rest = text
+        .strip_prefix("---\n")
+        .ok_or("the task has no front matter")?;
+    let end = rest
+        .find("\n---\n")
+        .ok_or("the task's front matter isn't closed")?;
+    let prefix = format!("{key}:");
+    let kept: Vec<&str> = rest[..end]
+        .lines()
+        .filter(|l| !l.starts_with(&prefix))
+        .collect();
+    Ok(format!("---\n{}{}", kept.join("\n"), &rest[end..]))
 }
 
 /// `muster start`'s claim (0023): Ready → Building for `who` by `claim_task`'s rules (one claim
 /// per holder, everything it depends on done), with the worktree and branch recorded and logged,
 /// all under one lock. The git side is made before this; if the claim is refused, the caller
-/// removes it again.
+/// removes it again. `runner`: the worktree is one a runner made (`start --here`), recorded as
+/// `worktree-runner: yes` so muster never removes it.
 pub fn start_task(
     root: &Path,
     id: &str,
@@ -1381,11 +1431,13 @@ pub fn start_task(
     stamp: &str,
     worktree: &str,
     branch: &str,
+    runner: bool,
 ) -> Result<String, String> {
     let who = actor(who)?;
     let line = free_text_line(
         format!(
-            "{stamp} {who}: started in worktree {} on branch {}",
+            "{stamp} {who}: started in {}worktree {} on branch {}",
+            if runner { "the runner's " } else { "" },
             one_line(worktree, 1000, "the worktree")?,
             one_line(branch, 200, "the branch")?
         ),
@@ -1413,6 +1465,11 @@ pub fn start_task(
         edit_locked(root, id, |_, text| {
             let mut new = set_front(&text, "worktree", worktree)?;
             new = set_front(&new, "branch", branch)?;
+            new = if runner {
+                set_front(&new, "worktree-runner", "yes")?
+            } else {
+                clear_front(&new, "worktree-runner")?
+            };
             Ok((append_log(&new, &line), None))
         })
     })
@@ -1487,6 +1544,7 @@ pub fn release_task(
         edit_locked(root, id, |_, text| {
             let mut new = set_front(&text, "worktree", "")?;
             new = set_front(&new, "branch", "")?;
+            new = clear_front(&new, "worktree-runner")?;
             new = set_front(&new, "claimed-by", "")?;
             Ok((append_log(&new, &line), None))
         })

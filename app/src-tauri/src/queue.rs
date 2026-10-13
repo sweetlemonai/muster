@@ -493,6 +493,8 @@ pub struct Task {
     /// release clears them; "" for a task that wasn't started that way.
     pub worktree: String,
     pub branch: String,
+    /// The worktree is a runner's (`start --here`, `worktree-runner: yes`): muster never removes it.
+    pub worktree_runner: bool,
     /// The latest merge report from its log (`merged task/… into main as …`), or "".
     pub merge_report: String,
 }
@@ -1041,6 +1043,7 @@ pub fn parse_task(
         touches: parse_touches(&get("touches")),
         worktree: get("worktree"),
         branch: get("branch"),
+        worktree_runner: get("worktree-runner") == "yes",
         merge_report: log_lines
             .iter()
             .rev()

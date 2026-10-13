@@ -307,7 +307,7 @@ Move a task on to the next stage, send it back, or mark it blocked. Only these c
 
 ### muster pass
 
-Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria and no open vision conflict (muster vision). Building → Testing needs the gate's result line and releases your claim. Testing → Your check needs every criterion ticked except the owner's ("— verify: owner"); Your check → Done needs those ticked too (muster tick). A human task (the owner's own) goes To do (Ready) → Doing (Building) → Done, and only the owner passes it: no gate line, no Testing, no Your check. Refused while it's blocked, or when someone else holds it. A task made with muster start merges when it passes from Testing, in order, stopping at the first failure: one merge at a time per repo; rebase its branch on the local main (a conflict sends it back to Building naming the files); run the project's gate in its worktree (muster projects set \<name\> gate; red sends it back with the gate line); merge into the local main (a fast-forward when it can, else a merge commit), only if the main checkout is clean and on main; push main to origin (never forced: if origin moved, it fetches and stops); remove the worktree and delete the branch once it's on main; Your check, with the merge commit and a report logged (gate line, time in Building and Testing, check-ins); then it names the next task to start. Nothing is deleted on any failure. Only the command line does this: the app's Pass is refused for such a task.
+Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria and no open vision conflict (muster vision). Building → Testing needs the gate's result line and releases your claim. Testing → Your check needs every criterion ticked except the owner's ("— verify: owner"); Your check → Done needs those ticked too (muster tick). A human task (the owner's own) goes To do (Ready) → Doing (Building) → Done, and only the owner passes it: no gate line, no Testing, no Your check. Refused while it's blocked, or when someone else holds it. A task made with muster start merges when it passes from Testing, in order, stopping at the first failure: one merge at a time per repo; rebase its branch on the local main (a conflict sends it back to Building naming the files); run the project's gate in its worktree (muster projects set \<name\> gate; red sends it back with the gate line), and again if main moved while it ran (twice at most, then it stops: main keeps moving); fast-forward the local main to it (never a merge commit, so main only gets a tree the gate saw), only if the main checkout is clean and on main; push main to origin (never forced: if origin moved, it fetches and stops); remove the worktree (never a runner's, made with start --here) and delete the branch, and origin's copy only when it's the same commit; record the merge (the commit and a report: gate line, time in Building and Testing, check-ins) and pass it to Your check: the record is written even if the task was blocked or moved meanwhile, and then it says so (use muster stage); then it names the next task to start. Nothing is deleted on any failure before main has the merge. Only the command line does this: the app's Pass is refused for such a task.
 
 ```
 muster pass <id> [--from <stage>] [--gate "<gate result line>"] [--commit <sha>]
@@ -594,7 +594,7 @@ muster reclaim --after 1d --queue drover
 
 ### muster ready
 
-The tasks a session could start now: in Ready, not blocked, nobody's claim, an agent's (never a human task), everything they depend on done; high priority first, then the lowest id. With --parallel, up to n of them (default 3) that are safe side by side: none depends on another, and what they touch doesn't overlap. A task says where it works in touches: (folders and globs, set at shaping or with muster set \<id\> touches); two entries overlap when the part before the first wildcard of one starts the other's (app/src overlaps app/src/TaskPanel\*), and a task without touches never pairs. Then the ones left out, with why.
+The tasks a session could start now: in Ready, not blocked, nobody's claim, an agent's (never a human task), everything they depend on done; high priority first, then the lowest id. With --parallel, up to n of them (default 3) that are safe side by side, and beside the tasks already in Building or Testing: none depends on another, and what they touch doesn't overlap. A task says where it works in touches: (folders and globs, set at shaping or with muster set \<id\> touches); two entries overlap when the part before the first wildcard of one starts the other's (app/src overlaps app/src/TaskPanel\*), and a task without touches never pairs. Then the ones left out, with why.
 
 ```
 muster ready [--parallel [<n>]] [--json]
@@ -630,7 +630,7 @@ muster start <id> [--at <path>|--here]
 | Option | What it does |
 | --- | --- |
 | `--at` | where to make the worktree instead (a path that doesn't exist yet) |
-| `--here` | use the worktree you're in (one a runner like a Drover lane made, with nothing uncommitted): it's switched to the task's branch |
+| `--here` | use the worktree you're in (one a runner like a Drover lane made, with nothing uncommitted): it's switched to the task's branch, and it stays the runner's: muster never removes it |
 | `--as` | who you are; default $MUSTER\_AS, then the folder's git user.name |
 
 Examples:
@@ -649,7 +649,7 @@ muster start 0031 --at ~/wt/0031 --as wt-a
 
 ### muster release
 
-Give up a started task: back to Ready with its claim released, its worktree removed and its branch deleted (the local one; a branch pushed to origin stays, and so does its work). It first lists what that would lose (uncommitted files in the worktree, commits on no other branch) and refuses it unless --force. Works when the worktree is already gone too. In Building only its holder or the owner releases it.
+Give up a started task: back to Ready with its claim released, its worktree removed and its branch deleted (the local one; a branch pushed to origin stays, and so does its work). It first lists what that would lose (uncommitted files in the worktree, commits on no other branch) and refuses it unless --force. Works when the worktree is already gone too. A runner's worktree (start --here) is never removed: it's left detached with its files, and only the branch goes. In Building only its holder or the owner releases it.
 
 ```
 muster release <id> --clean [--force]

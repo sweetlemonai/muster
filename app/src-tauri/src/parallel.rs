@@ -142,6 +142,12 @@ pub fn running<'a>(tasks: &'a [Task], except: &str) -> Vec<&'a Task> {
         .collect()
 }
 
+/// `ready --parallel n`: up to `n` tasks safe together and beside every task already in Building
+/// or Testing.
+pub fn ready_parallel(tasks: &[Task], n: usize) -> Pick<'_> {
+    parallel_set(tasks, n, &running(tasks, ""))
+}
+
 /// The next task to start after `merged` (step 8 of the merge): the first `parallel_set` would
 /// take beside the tasks still running.
 pub fn next_after<'a>(tasks: &'a [Task], merged: &str) -> Option<&'a Task> {
@@ -384,34 +390,61 @@ pub fn run_gate(argv: &[String], dir: &Path) -> Result<GateRun, String> {
     } else {
         PathBuf::from(prog)
     };
-    let out = Command::new(&program)
-        .args(&argv[1..])
-        .current_dir(dir)
-        .stdin(Stdio::null())
+    let out = gate_command(&program, argv, dir)
         .output()
         .map_err(|e| format!("couldn't run the gate {prog:?}: {e}"))?;
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
-    let said = stdout
-        .lines()
-        .chain(stderr.lines())
-        .map(str::trim)
-        .rfind(|l| l.to_ascii_lowercase().starts_with("gate"))
-        .map(|l| l.chars().take(300).collect::<String>());
-    let ok = out.status.success();
-    let line = match said {
-        Some(l) => l,
-        None if ok => format!("gate: green ({})", argv.join(" ")),
-        None => format!("gate: RED ({} exited with {})", argv.join(" "), out.status),
+    let gate_lines = |text: &str| -> Vec<String> {
+        text.lines()
+            .map(str::trim)
+            .filter(|l| l.to_ascii_lowercase().starts_with("gate"))
+            .map(|l| l.chars().take(300).collect())
+            .collect()
+    };
+    let (out_lines, err_lines) = (gate_lines(&stdout), gate_lines(&stderr));
+    // Any gate line saying RED, in either stream, makes the run red.
+    let red_line = out_lines
+        .iter()
+        .chain(err_lines.iter())
+        .rfind(|l| l.contains("RED"))
+        .cloned();
+    let ok = out.status.success() && red_line.is_none();
+    // The result line is stdout's last, stderr's only when stdout has none; a red run never
+    // reports a green line.
+    let said = out_lines.last().or(err_lines.last()).cloned();
+    let line = match (said, red_line) {
+        (Some(l), _) if ok || l.contains("RED") => l,
+        (_, Some(red)) => red,
+        (Some(l), None) => format!(
+            "gate: RED ({} exited with {}; it said: {l})",
+            argv.join(" "),
+            out.status
+        ),
+        (None, None) if ok => format!("gate: green ({})", argv.join(" ")),
+        (None, None) => format!("gate: RED ({} exited with {})", argv.join(" "), out.status),
     };
     let line = ops::one_line(&line, 300, "the gate line")?;
     let combined = format!("{stdout}\n{stderr}");
     let tail: Vec<&str> = combined.lines().filter(|l| !l.trim().is_empty()).collect();
     Ok(GateRun {
-        green: ok && !line.contains("RED"),
+        green: ok,
         tail: tail[tail.len().saturating_sub(15)..].join("\n"),
         line,
     })
+}
+
+/// The gate as a process: `program` with `argv`'s arguments, in `dir`, with no stdin, and without
+/// the queue variables (`MUSTER_ROOT`, `TASKS_ROOT`), so muster in a gate's tests can't write to
+/// the queue this merge runs on.
+fn gate_command(program: &Path, argv: &[String], dir: &Path) -> Command {
+    let mut cmd = Command::new(program);
+    cmd.args(argv.get(1..).unwrap_or_default())
+        .current_dir(dir)
+        .env_remove("MUSTER_ROOT")
+        .env_remove("TASKS_ROOT")
+        .stdin(Stdio::null());
+    cmd
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -527,7 +560,8 @@ pub fn start(
         }
     };
     let wt_text = utf8(&worktree)?.to_string();
-    match ops::start_task(root, id, who, stamp, &wt_text, &branch) {
+    let runner = matches!(place, Place::Here);
+    match ops::start_task(root, id, who, stamp, &wt_text, &branch, runner) {
         Ok(path) => Ok(Started {
             worktree,
             branch,
@@ -651,7 +685,15 @@ fn resume(
     let path = if mine {
         t.path.clone()
     } else {
-        ops::start_task(root, id, who, stamp, &t.worktree, &t.branch)?
+        ops::start_task(
+            root,
+            id,
+            who,
+            stamp,
+            &t.worktree,
+            &t.branch,
+            t.worktree_runner,
+        )?
     };
     Ok(Started {
         worktree: wt,
@@ -755,16 +797,23 @@ fn main_ready(repo: &Repo) -> Result<(), String> {
     Ok(())
 }
 
+/// How many more times a merge rebases and gates when main moved during the gate.
+const REGATES: usize = 2;
+
 /// `muster pass <id> --from testing` for a started task (0023), in order, stopping at the first
 /// failure: (1) take the repo's merge lock; (2) rebase the branch on the local main, and on a
 /// conflict abort it and return the task to Building naming the files; (3) run the gate in the
-/// worktree, and on red return it with the gate line; (4) merge into the local main (a
-/// fast-forward when it can, else a merge commit), only if the main checkout is clean and on main;
-/// (5) push main to origin, plainly (rejected: fetch, say so, stop); (6) remove the worktree and
-/// delete the branch (and its remote one), once the branch is on main; (7) pass it to Your check
-/// with the merge commit and the report logged; (8) name the next task to start. A refusal before
-/// step 4 or a stop at 4 or 5 leaves the worktree, the branch and the task as they were. `now`
-/// gives the local time for each write; `say` gets a line per step done.
+/// worktree, and on red return it with the gate line; if main moved while it ran, rebase and gate
+/// again (twice at most, then stop: "main keeps moving"), so main only ever gets a tree the gate
+/// saw; (4) fast-forward the local main to the branch, only if the main checkout is clean and on
+/// main (never a merge commit); (5) push main to origin, plainly (rejected: fetch, say so, stop);
+/// (6) remove the worktree (never a runner's, `start --here`) and delete the branch, and origin's
+/// copy only when it's the same commit; (7) record the merge in the task (worktree and branch
+/// cleared, `commit:` the merge, the report logged) and pass it to Your check: once main has the
+/// merge this is written whatever, and a pass refused meanwhile (blocked, moved) is an error that
+/// says so; (8) name the next task to start. The report and the commit are checked before step 4.
+/// A refusal before step 4 or a stop at 4 or 5 leaves the worktree, the branch and the task as
+/// they were. `now` gives the local time for each write; `say` gets a line per step done.
 pub fn merge(
     root: &Path,
     id: &str,
@@ -824,72 +873,90 @@ pub fn merge(
     // 1. One merge at a time in this repo.
     let _lock = merge_lock(&repo, say)?;
 
-    // 2. Rebase on the local main.
+    // 2 and 3. Rebase on the local main, then the gate in the worktree; again if main moved
+    // while the gate ran, so what lands is what the gate saw.
     let trunk = repo.trunk.clone();
-    if let Err(e) = git(&wt, &["rebase", &trunk]) {
-        let files = conflicted(&wt);
-        let aborted = git(&wt, &["rebase", "--abort"]);
-        if files.is_empty() {
+    let mut again = 0;
+    let run = loop {
+        if let Err(e) = git(&wt, &["rebase", &trunk]) {
+            let files = conflicted(&wt);
+            let aborted = git(&wt, &["rebase", "--abort"]);
+            if files.is_empty() {
+                return Err(format!(
+                    "the rebase on {trunk} failed: {e}{}. Nothing was merged or deleted",
+                    aborted.err().map(|a| format!(" ({a})")).unwrap_or_default()
+                ));
+            }
+            let why = format!(
+                "rebase on {trunk} conflicts in {}: rebase {branch} on {trunk} in its worktree, resolve them, and pass it again",
+                name_files(&files)
+            );
+            say(format!("rebase on {trunk} conflicts; back to Building"));
+            return back_to_building(root, id, &why, who, &now());
+        }
+        let onto = git(&repo.main, &["rev-parse", &trunk])?;
+        say(format!(
+            "rebased {branch} on {trunk} ({})",
+            onto.chars().take(7).collect::<String>()
+        ));
+        let run = run_gate(gate, &wt)?;
+        if !run.green {
+            say(format!("{}\n{}", run.line, run.tail));
+            let why = format!("gate after the rebase on {trunk}: {}", run.line);
+            return back_to_building(root, id, &why, who, &now());
+        }
+        say(run.line.clone());
+        if git(&repo.main, &["rev-parse", &trunk])? == onto {
+            break run;
+        }
+        if again == REGATES {
             return Err(format!(
-                "the rebase on {trunk} failed: {e}{}. Nothing was merged or deleted",
-                aborted.err().map(|a| format!(" ({a})")).unwrap_or_default()
+                "main keeps moving; pass again ({trunk} moved during each of {} gate runs, so nothing the gate saw could land). Nothing was merged or deleted",
+                REGATES + 1
             ));
         }
-        let why = format!(
-            "rebase on {trunk} conflicts in {}: rebase {branch} on {trunk} in its worktree, resolve them, and pass it again",
-            name_files(&files)
-        );
-        say(format!("rebase on {trunk} conflicts; back to Building"));
-        return back_to_building(root, id, &why, who, &now());
-    }
-    let onto = git(&repo.main, &["rev-parse", "--short", &trunk])?;
-    say(format!("rebased {branch} on {trunk} ({onto})"));
+        again += 1;
+        say("main moved during the gate; rebasing on it and running the gate again".into());
+    };
 
-    // 3. The gate, in the worktree.
-    let run = run_gate(gate, &wt)?;
-    if !run.green {
-        say(format!("{}\n{}", run.line, run.tail));
-        let why = format!("gate after the rebase on {trunk}: {}", run.line);
-        return back_to_building(root, id, &why, who, &now());
-    }
-    say(run.line.clone());
-
-    // 4. Into the local main.
-    main_ready(&repo)?;
-    let message = format!("Merge {branch}");
-    // --ff whatever merge.ff says: a fast-forward when it can be, else a merge commit.
-    if let Err(e) = git(
-        &repo.main,
-        &["merge", "--ff", "--no-edit", "-m", &message, &branch],
-    ) {
-        let files = conflicted(&repo.main);
-        let _ = git(&repo.main, &["merge", "--abort"]);
-        if files.is_empty() {
-            return Err(format!(
-                "the merge into {trunk} failed: {e}. Nothing was deleted"
-            ));
-        }
-        let why = format!(
-            "{trunk} moved during the gate and the merge conflicts in {}: rebase {branch} on {trunk}, resolve them, and pass it again",
-            name_files(&files)
-        );
-        return back_to_building(root, id, &why, who, &now());
-    }
-    let commit = git(&repo.main, &["rev-parse", "HEAD"])?;
-    // A fast-forward leaves main at the branch's own tip; a merge commit is a new one.
-    let ff = git(&repo.main, &["rev-parse", &branch]).is_ok_and(|tip| tip == commit);
+    // The facts the task will record, checked before anything lands. Only a fast-forward lands,
+    // so the merge commit is the branch's tip.
+    let commit = git(&wt, &["rev-parse", "HEAD"])?;
     let short: String = commit.chars().take(7).collect();
+    let has_origin = git(&repo.main, &["remote", "get-url", "origin"]).is_ok();
+    let task = queue::read_task(root, id)?;
+    let at = now();
+    let report = format!(
+        "merged {branch} into {trunk} as {short} (fast-forward{}) · {} · Building {} · Testing {} · {} check-in{}",
+        if has_origin { ", pushed to origin" } else { ", not pushed: no origin" },
+        run.line,
+        duration_text(minutes_in(&task.stage_history, "building", &at)),
+        duration_text(minutes_in(&task.stage_history, "testing", &at)),
+        task.checkins.len(),
+        if task.checkins.len() == 1 { "" } else { "s" },
+    );
+    ops::check_merge_facts(who, &at, &commit, &report)?;
+
+    // 4. Fast-forward the local main: never a merge commit, never a tree the gate didn't see.
+    main_ready(&repo)?;
+    if let Err(e) = git(&repo.main, &["merge", "--ff-only", "--no-edit", &branch]) {
+        let _ = git(&repo.main, &["merge", "--abort"]);
+        return Err(format!(
+            "the fast-forward of {trunk} to {branch} failed: {e}. Nothing was merged or deleted: fix what it says and pass again"
+        ));
+    }
+    if git(&repo.main, &["rev-parse", "HEAD"])? != commit {
+        return Err(format!(
+            "{trunk} isn't at {short} after the fast-forward; look at {} before passing again. Nothing was deleted",
+            repo.main.display()
+        ));
+    }
     say(format!(
-        "merged {branch} into {trunk} as {short}{}",
-        if ff {
-            " (fast-forward)"
-        } else {
-            " (merge commit)"
-        }
+        "merged {branch} into {trunk} as {short} (fast-forward)"
     ));
 
     // 5. Push main, plainly. Never forced.
-    let pushed = if git(&repo.main, &["remote", "get-url", "origin"]).is_ok() {
+    if has_origin {
         let out = git_output(&repo.main, &["push", "origin", &trunk])?;
         if !out.status.success() {
             let stderr = String::from_utf8_lossy(&out.stderr);
@@ -909,55 +976,62 @@ pub fn merge(
             });
         }
         say(format!("pushed {trunk} to origin"));
-        true
     } else {
         say(format!("no origin remote: {trunk} isn't pushed"));
-        false
-    };
-
-    // 6. Clean up, only once the branch is on main.
-    if git(
-        &repo.main,
-        &["merge-base", "--is-ancestor", &branch, &trunk],
-    )
-    .is_err()
-    {
-        return Err(format!(
-            "{branch} isn't on {trunk} after the merge, so nothing was deleted; look at {}",
-            repo.main.display()
-        ));
     }
+
+    // 6. Clean up, now the branch is on main. A runner's worktree stays (it's theirs): it's
+    // let go of the branch so the branch can go.
     let mut notes = Vec::new();
-    match git(&repo.main, &["worktree", "remove", utf8(&wt)?]) {
-        Ok(_) => say(format!("removed the worktree {}", wt.display())),
-        Err(e) => notes.push(format!("the worktree {} is still there: {e}", wt.display())),
+    let local_tip = git(&repo.main, &["rev-parse", &format!("refs/heads/{branch}")])?;
+    if t.worktree_runner {
+        match git(&wt, &["switch", "--detach", &commit]) {
+            Ok(_) => say(format!(
+                "left the worktree {}: it's the runner's (now on {short}, detached)",
+                wt.display()
+            )),
+            Err(e) => notes.push(format!(
+                "the runner's worktree {} is still on {branch}: {e}",
+                wt.display()
+            )),
+        }
+    } else {
+        match git(&repo.main, &["worktree", "remove", utf8(&wt)?]) {
+            Ok(_) => say(format!("removed the worktree {}", wt.display())),
+            Err(e) => notes.push(format!("the worktree {} is still there: {e}", wt.display())),
+        }
     }
     match git(&repo.main, &["branch", "-d", &branch]) {
         Ok(_) => say(format!("deleted the branch {branch}")),
         Err(e) => notes.push(format!("the branch {branch} is still there: {e}")),
     }
-    let remote = format!("refs/remotes/origin/{branch}");
-    if git(&repo.main, &["rev-parse", "--verify", "--quiet", &remote]).is_ok() {
-        match git(&repo.main, &["push", "origin", "--delete", &branch]) {
-            Ok(_) => say(format!("deleted origin's {branch}")),
-            Err(e) => notes.push(format!("origin's {branch} is still there: {e}")),
+    if has_origin {
+        // Only origin's copy that is this very commit: anything else is work this merge didn't
+        // take, so it stays.
+        let head = format!("refs/heads/{branch}");
+        match git(&repo.main, &["ls-remote", "origin", &head]) {
+            Ok(listed) => {
+                let remote_tip = listed.split_whitespace().next().unwrap_or("").to_string();
+                if remote_tip.is_empty() {
+                } else if remote_tip == local_tip {
+                    match git(&repo.main, &["push", "origin", "--delete", &branch]) {
+                        Ok(_) => say(format!("deleted origin's {branch}")),
+                        Err(e) => notes.push(format!("origin's {branch} is still there: {e}")),
+                    }
+                } else {
+                    notes.push(format!(
+                        "origin's {branch} is at {} and the merged one was at {}, so it's kept",
+                        remote_tip.chars().take(7).collect::<String>(),
+                        local_tip.chars().take(7).collect::<String>()
+                    ));
+                }
+            }
+            Err(e) => notes.push(format!("couldn't look for origin's {branch}: {e}")),
         }
     }
 
-    // 7. Your check, with the report.
-    let stamp = now();
-    let task = queue::read_task(root, id)?;
-    let report = format!(
-        "merged {branch} into {trunk} as {short} ({}{}) · {} · Building {} · Testing {} · {} check-in{}",
-        if ff { "fast-forward" } else { "merge commit" },
-        if pushed { ", pushed to origin" } else { ", not pushed: no origin" },
-        run.line,
-        duration_text(minutes_in(&task.stage_history, "building", &stamp)),
-        duration_text(minutes_in(&task.stage_history, "testing", &stamp)),
-        task.checkins.len(),
-        if task.checkins.len() == 1 { "" } else { "s" },
-    );
-    let path = ops::pass_merged(root, id, who, &stamp, &commit, &report)?;
+    // 7. The merge is on main: the task records it whatever happens to the pass.
+    let path = ops::pass_merged(root, id, who, &now(), &commit, &report)?;
 
     // 8. What's next.
     let state = queue::read_state(
@@ -1006,7 +1080,9 @@ pub fn release(
             "{id}'s worktree is the main checkout; release never removes that"
         ));
     }
-    let dirty = if present {
+    // A runner's worktree is never removed, so what's uncommitted in it isn't lost.
+    let runner = present && t.worktree_runner;
+    let dirty = if present && !runner {
         uncommitted(&wt)?
     } else {
         Vec::new()
@@ -1026,7 +1102,15 @@ pub fn release(
         return Err(lines.join("\n"));
     }
     let mut removed = Vec::new();
-    if present {
+    if runner {
+        // Let go of the branch (detached where it is, uncommitted files carried along) so the
+        // branch can go; the worktree is its runner's to remove.
+        git(&wt, &["switch", "--detach"])?;
+        lines.push(format!(
+            "left the worktree {}: it's the runner's (now detached)",
+            wt.display()
+        ));
+    } else if present {
         let w = utf8(&wt)?;
         let args: Vec<&str> = if dirty.is_empty() {
             vec!["worktree", "remove", w]
@@ -1471,6 +1555,38 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn ready_parallel_keeps_clear_of_the_tasks_already_running() {
+        let f = fx();
+        let r = &f.root;
+        let run = task(r, "Running", "app/src");
+        let testing = task(r, "In testing", "bin/");
+        let near = task(r, "Overlaps the running one", "app/src/Card*");
+        let after = task(r, "Overlaps the tested one", "bin/gate");
+        let free = task(r, "Free", "docs/");
+        ops::claim_task(r, &run, "wt-a", T0).unwrap();
+        ops::claim_task(r, &testing, "wt-b", T0).unwrap();
+        let opts = PassOpts {
+            gate: "gate: green".into(),
+            from: Some("building".into()),
+            ..Default::default()
+        };
+        ops::pass_task(r, &testing, "wt-b", T0, &opts).unwrap();
+        let s = state(r);
+        let pick = ready_parallel(&s.tasks, 3);
+        assert_eq!(ids(&pick.set), [free.as_str()]);
+        let why = |id: &str| {
+            pick.left
+                .iter()
+                .find(|(t, _)| t.id == id)
+                .unwrap()
+                .1
+                .clone()
+        };
+        assert_eq!(why(&near), format!("touches overlap {run}"));
+        assert_eq!(why(&after), format!("touches overlap {testing}"));
+    }
+
+    #[test]
     fn start_makes_the_branch_and_worktree_and_records_them() {
         let f = fx();
         let id = task(&f.root, "Board flickers on resize", "app/src/Board*");
@@ -1707,40 +1823,314 @@ pub(crate) mod tests {
             said.iter().any(|l| l.starts_with("removed the worktree")),
             "{said:?}"
         );
-        // Main moved on during the gate (the owner committed): a merge commit, still pushed.
-        let id2 = task(&f.root, "Second", "s/");
-        let s2 = start(&f.root, &id2, "wt-a", T0, &f.repo, &Place::Default).unwrap();
-        commit(&s2.worktree, "s/y.txt", "y\n", "second");
-        to_testing(&f, &id2);
-        let owner = f.base.join("owner-commits");
-        fs::write(
-            &owner,
-            format!(
-                "#!/bin/sh\ncd '{}' || exit 1\necho z > z.txt\ngit add z.txt\ngit commit -qm owner\necho 'gate: green (and the owner committed)'\n",
-                f.repo.display()
-            ),
+    }
+
+    /// A gate that runs `body` (shell lines) before saying green.
+    fn shell_gate(f: &Fx, name: &str, body: &str) -> Vec<String> {
+        script(
+            &f.base,
+            name,
+            &format!("{body}\necho 'gate: green ({name})'"),
+            0,
         )
-        .unwrap();
-        fs::set_permissions(&owner, fs::Permissions::from_mode(0o755)).unwrap();
-        let (r, _) = run_merge(&f, &id2, &[owner.to_str().unwrap().to_string()]);
+    }
+
+    /// Lines that commit `file` to the main checkout, once (`once` set) or on every run.
+    fn owner_commits(f: &Fx, file: &str, text: &str, once: bool) -> String {
+        let marker = f.base.join(format!("{file}.done"));
+        let guard = if once {
+            format!("[ -e '{m}' ] || {{ touch '{m}'; ", m = marker.display())
+        } else {
+            "{ ".to_string()
+        };
+        format!(
+            "{guard}( cd '{}' && printf '{text}' >> {file} && git add {file} && git commit -qm owner{file} ) >/dev/null; }}",
+            f.repo.display()
+        )
+    }
+
+    #[test]
+    fn main_moving_during_the_gate_rebases_and_gates_again_and_lands_only_fast_forwards() {
+        let f = fx();
+        // Once: rebased and gated again, then a fast-forward onto the owner's commit.
+        let id = task(&f.root, "Moves once", "s/");
+        let s = built(&f, &id, "s/y.txt");
+        let gate = shell_gate(&f, "once", &owner_commits(&f, "z.txt", "z", true));
+        let (r, said) = run_merge(&f, &id, &gate);
         let Merge::Merged {
             commit: merged,
             report,
             ..
         } = r.unwrap()
         else {
-            panic!("not merged")
+            panic!("not merged: {said:?}")
         };
         assert!(
-            report.contains("(merge commit, pushed to origin)"),
+            said.iter()
+                .any(|l| l.contains("main moved during the gate")),
+            "{said:?}"
+        );
+        assert!(
+            report.contains("(fast-forward, pushed to origin)"),
             "{report}"
         );
         assert_eq!(
             g(&f.repo, &["log", "-1", "--format=%s", &merged]),
-            format!("Merge {}", s2.branch)
+            "build it"
+        );
+        assert_eq!(
+            g(
+                &f.repo,
+                &["log", "-1", "--format=%s", &format!("{merged}^")]
+            ),
+            "ownerz.txt"
+        );
+        assert_eq!(
+            g(&f.repo, &["rev-list", "--merges", "--count", "main"]),
+            "0"
         );
         assert_eq!(g(&f.origin, &["rev-parse", "main"]), merged);
-        assert!(!s2.worktree.exists());
+        assert!(!s.worktree.exists());
+        // Every time: it stops after rebasing and gating twice more, nothing merged or deleted.
+        let id = task(&f.root, "Moves always", "t/");
+        let s = built(&f, &id, "t/y.txt");
+        let gate = shell_gate(&f, "always", &owner_commits(&f, "w.txt", "w$$", false));
+        let (r, _) = run_merge(&f, &id, &gate);
+        let e = r.unwrap_err();
+        assert!(e.starts_with("main keeps moving; pass again"), "{e}");
+        assert_eq!(read(&f.root, &id).stage, "testing");
+        assert!(s.worktree.is_dir() && has_branch(&f, &s.branch));
+        assert!(!g(&f.repo, &["branch", "--contains", &s.branch]).contains("main"));
+        // A conflicting commit on main during the gate: the second rebase sends it back.
+        let id = task(&f.root, "Conflicts later", "README.md");
+        let s = start(&f.root, &id, "wt-a", T0, &f.repo, &Place::Default).unwrap();
+        commit(&s.worktree, "README.md", "one\nTASK\nthree\n", "task edit");
+        to_testing(&f, &id);
+        let main_moved = f.base.join("conflict-gate");
+        fs::write(
+            &main_moved,
+            format!(
+                "#!/bin/sh\n[ -e '{m}.done' ] || {{ touch '{m}.done'; ( cd '{r}' && printf 'one\\nMAIN\\nthree\\n' > README.md && git commit -qam 'main edit' ) >/dev/null; }}\necho 'gate: green'\n",
+                m = main_moved.display(),
+                r = f.repo.display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&main_moved, fs::Permissions::from_mode(0o755)).unwrap();
+        let (r, _) = run_merge(&f, &id, &[main_moved.to_str().unwrap().to_string()]);
+        let Merge::Returned(why) = r.unwrap() else {
+            panic!("not returned")
+        };
+        assert!(
+            why.starts_with("rebase on main conflicts in README.md"),
+            "{why}"
+        );
+        assert_eq!(read(&f.root, &id).stage, "building");
+        assert!(!f.repo.join(".git/MERGE_HEAD").exists());
+        let rebasing = g(&s.worktree, &["rev-parse", "--git-path", "rebase-merge"]);
+        assert!(
+            !s.worktree.join(rebasing).exists(),
+            "no rebase left in progress"
+        );
+        assert_eq!(
+            g(&f.repo, &["status", "--porcelain", "--untracked-files=no"]),
+            ""
+        );
+        assert_eq!(g(&s.worktree, &["status", "--porcelain"]), "");
+        assert!(s.worktree.is_dir() && has_branch(&f, &s.branch));
+    }
+
+    #[test]
+    fn a_merge_that_lands_is_recorded_even_when_the_pass_is_refused_meanwhile() {
+        let f = fx();
+        let id = task(&f.root, "Blocked midway", "b/");
+        let s = built(&f, &id, "b/x.txt");
+        // The gate blocks the task while it runs (as `muster block` would).
+        let file = f.root.join(read(&f.root, &id).path);
+        let gate = shell_gate(
+            &f,
+            "blocks",
+            &format!(
+                "sed -i '' 's/^waiting_on:$/waiting_on: owner: which colour?/' '{}'",
+                file.display()
+            ),
+        );
+        let tip = g(&s.worktree, &["rev-parse", "HEAD"]);
+        let e = run_merge(&f, &id, &gate).0.unwrap_err();
+        assert!(
+            e.starts_with(&format!(
+                "merged into main as {}; the task is Testing",
+                &tip[..7]
+            )),
+            "{e}"
+        );
+        assert!(e.contains("muster stage") && !e.contains("release"), "{e}");
+        assert_eq!(g(&f.repo, &["rev-parse", "main"]), tip);
+        assert_eq!(g(&f.origin, &["rev-parse", "main"]), tip);
+        assert!(!s.worktree.exists() && !has_branch(&f, &s.branch));
+        let t = read(&f.root, &id);
+        assert_eq!(
+            (
+                t.stage.as_str(),
+                t.blocked,
+                t.worktree.as_str(),
+                t.branch.as_str(),
+                t.commit.as_str()
+            ),
+            ("testing", true, "", "", tip.as_str())
+        );
+        assert!(t.merge_report.starts_with(&format!(
+            "merged {} into main as {}",
+            s.branch,
+            &tip[..7]
+        )));
+        // Nothing for check to send to release --clean.
+        assert!(stale(&state(&f.root).tasks, std::slice::from_ref(&f.repo)).is_empty());
+    }
+
+    #[test]
+    fn merge_facts_are_checked_before_the_merge() {
+        assert!(
+            ops::check_merge_facts("qa", T0, &"a".repeat(64), "merged task/0001-x into main")
+                .is_ok()
+        );
+        assert!(ops::check_merge_facts("qa", T0, &"a".repeat(40), "merged task/0001-x").is_ok());
+        assert!(ops::check_merge_facts("qa", T0, &"a".repeat(65), "merged task/0001-x").is_err());
+        assert!(ops::check_merge_facts("qa", T0, "abc", "merged task/0001-x").is_err());
+        assert!(ops::check_merge_facts("qa", T0, &"a".repeat(7), "stage testing → done").is_err());
+    }
+
+    #[test]
+    fn an_untracked_file_in_main_that_the_branch_adds_stops_it_and_keeps_everything() {
+        let f = fx();
+        let id = task(&f.root, "Adds a file", "new/");
+        let s = built(&f, &id, "new/file.txt");
+        fs::create_dir_all(f.repo.join("new")).unwrap();
+        fs::write(f.repo.join("new/file.txt"), "the owner's own\n").unwrap();
+        let head = g(&f.repo, &["rev-parse", "HEAD"]);
+        let e = run_merge(&f, &id, &green(&f)).0.unwrap_err();
+        assert!(e.contains("Nothing was merged or deleted"), "{e}");
+        assert_eq!(g(&f.repo, &["rev-parse", "HEAD"]), head);
+        assert_eq!(
+            fs::read_to_string(f.repo.join("new/file.txt")).unwrap(),
+            "the owner's own\n"
+        );
+        assert_eq!(read(&f.root, &id).stage, "testing");
+        assert!(s.worktree.is_dir() && has_branch(&f, &s.branch));
+        assert!(!f.repo.join(".git/MERGE_HEAD").exists());
+    }
+
+    #[test]
+    fn with_no_origin_it_merges_says_so_and_cleans_up() {
+        let f = fx();
+        g(&f.repo, &["remote", "remove", "origin"]);
+        let id = task(&f.root, "Local only", "l/");
+        let s = built(&f, &id, "l/x.txt");
+        let (r, said) = run_merge(&f, &id, &green(&f));
+        let Merge::Merged { report, .. } = r.unwrap() else {
+            panic!("not merged")
+        };
+        assert!(
+            report.contains("(fast-forward, not pushed: no origin)"),
+            "{report}"
+        );
+        assert!(
+            said.iter()
+                .any(|l| l == "no origin remote: main isn't pushed"),
+            "{said:?}"
+        );
+        assert!(!s.worktree.exists() && !has_branch(&f, &s.branch));
+        assert_eq!(read(&f.root, &id).stage, "your-check");
+    }
+
+    #[test]
+    fn a_runners_worktree_is_never_removed_only_its_branch() {
+        let f = fx();
+        let lane = f.base.join("lane");
+        g(
+            &f.repo,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "lane-1",
+                lane.to_str().unwrap(),
+            ],
+        );
+        let id = task(&f.root, "In a lane", "lane/");
+        let s = start(&f.root, &id, "wt-a", T0, &lane, &Place::Here).unwrap();
+        assert!(read(&f.root, &id).worktree_runner);
+        commit(&lane, "lane/x.txt", "x\n", "lane work");
+        to_testing(&f, &id);
+        let (r, said) = run_merge(&f, &id, &green(&f));
+        let Merge::Merged { notes, .. } = r.unwrap() else {
+            panic!("not merged")
+        };
+        assert!(notes.is_empty(), "{notes:?}");
+        assert!(
+            said.iter()
+                .any(|l| l.contains("left the worktree") && l.contains("the runner's")),
+            "{said:?}"
+        );
+        assert!(
+            lane.join("lane/x.txt").is_file(),
+            "the runner's worktree stays"
+        );
+        assert!(!has_branch(&f, &s.branch));
+        assert!(!read(&f.root, &id).worktree_runner);
+        // release --clean leaves a runner's worktree too, and its uncommitted files.
+        let id = task(&f.root, "Given up in a lane", "lane2/");
+        let s = start(&f.root, &id, "wt-a", T0, &lane, &Place::Here).unwrap();
+        fs::write(lane.join("wip.txt"), "mine").unwrap();
+        let lines = release(&f.root, &id, "wt-a", T0, false, None).unwrap();
+        assert!(lines.last().unwrap().contains("back in Ready"), "{lines:?}");
+        assert!(lane.join("wip.txt").is_file() && !has_branch(&f, &s.branch));
+    }
+
+    #[test]
+    fn origins_task_branch_is_deleted_only_when_it_matches_the_local_one() {
+        let f = fx();
+        let id = task(&f.root, "Pushed early", "p/");
+        let s = start(&f.root, &id, "wt-a", T0, &f.repo, &Place::Default).unwrap();
+        commit(&s.worktree, "p/x.txt", "x\n", "first");
+        g(&s.worktree, &["push", "-q", "origin", &s.branch]);
+        commit(&s.worktree, "p/y.txt", "y\n", "second");
+        to_testing(&f, &id);
+        let (r, _) = run_merge(&f, &id, &green(&f));
+        let Merge::Merged { notes, .. } = r.unwrap() else {
+            panic!("not merged")
+        };
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(
+            notes[0].contains("origin's task/0001-pushed-early") && notes[0].contains("kept"),
+            "{notes:?}"
+        );
+        assert!(git(
+            &f.origin,
+            &[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                &format!("refs/heads/{}", s.branch)
+            ]
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn the_gate_never_sees_the_queue_variables() {
+        let cmd = gate_command(Path::new("bin/gate"), &["bin/gate".into()], Path::new("/x"));
+        let removed: Vec<_> = cmd
+            .get_envs()
+            .filter(|(_, v)| v.is_none())
+            .map(|(k, _)| k.to_string_lossy().to_string())
+            .collect();
+        assert!(
+            removed.contains(&"MUSTER_ROOT".to_string())
+                && removed.contains(&"TASKS_ROOT".to_string()),
+            "{removed:?}"
+        );
     }
 
     #[test]
@@ -2086,6 +2476,36 @@ pub(crate) mod tests {
         assert!(!run_gate(&red, &dir).unwrap().green);
         let liar = script(&dir, "liar", "echo 'gate: green'", 3);
         assert!(!run_gate(&liar, &dir).unwrap().green);
+        // The line is stdout's last, stderr's only when stdout has none; RED anywhere is red.
+        let mixed = script(
+            &dir,
+            "mixed",
+            "echo 'gate: RED (x)'\necho 'gate: green (y)' >&2",
+            0,
+        );
+        let r = run_gate(&mixed, &dir).unwrap();
+        assert_eq!((r.green, r.line.as_str()), (false, "gate: RED (x)"));
+        let both = script(
+            &dir,
+            "both",
+            "echo 'gate: green (a)'\necho 'gate: green (b)' >&2",
+            0,
+        );
+        assert_eq!(run_gate(&both, &dir).unwrap().line, "gate: green (a)");
+        let err_red = script(
+            &dir,
+            "errred",
+            "echo 'gate: green (a)'\necho 'gate: RED (z)' >&2",
+            0,
+        );
+        let r = run_gate(&err_red, &dir).unwrap();
+        assert_eq!(
+            (r.green, r.line.as_str()),
+            (false, "gate: RED (z)"),
+            "a red run never reports a green line"
+        );
+        let only_err = script(&dir, "onlyerr", "echo 'gate: green (e)' >&2", 0);
+        assert_eq!(run_gate(&only_err, &dir).unwrap().line, "gate: green (e)");
         assert!(run_gate(&[], &dir).is_err());
         assert!(run_gate(&["bin/missing".into()], &dir)
             .unwrap_err()

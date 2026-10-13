@@ -6,7 +6,8 @@
 >
 > 1. **Pick.** `muster ready --parallel` lists up to 3 tasks (`--parallel <n>` for more) that are
 >    safe side by side: claimable now (Ready, not blocked, nobody's claim, an agent's, everything
->    they depend on done), none depending on another, and their `touches:` not overlapping. A task
+>    they depend on done), none depending on another or on a task in Building or Testing, and
+>    their `touches:` not overlapping each other's or those of the tasks in Building or Testing. A task
 >    says where it works in `touches:` (folders and globs, comma-separated, set at shaping with
 >    `muster file … --touches` or `muster set <id> touches "app/src/TaskPanel*, docs/"`); two
 >    entries overlap when the part of one before its first wildcard starts the other's, and **a
@@ -28,25 +29,33 @@
 >    order, stopping at the first failure: it takes the repo's merge lock (a flock on
 >    `<git common dir>/muster/merge.lock`, so one merge runs at a time); rebases the branch on the
 >    local main (**a conflict aborts the rebase and returns the task to Building with the files
->    named**); runs the project's gate in the worktree (**red returns it with the gate line**);
->    merges into the local main (a fast-forward when it can, else a merge commit
->    `Merge task/<id>-…`), only if the main checkout is clean and on main, else it stops with "the
->    main checkout isn't clean" or "isn't on main"; pushes main to origin, plainly (if origin
->    moved, it fetches and stops: "origin moved; rebase main and pass again"); removes the worktree
->    and deletes the branch (and origin's copy of it) once the branch is on main; passes it to Your
->    check with `commit:` set to the merge commit and a report logged (`merged task/… into main as
->    <sha> · <gate line> · Building 2h 10m · Testing 35m · 4 check-ins`); and names the next task
->    to start that doesn't clash with the tasks still in Building or Testing. On any stop nothing
->    is deleted: fix what it says and pass again. It's never forced. The project's gate is the
+>    named**); runs the project's gate in the worktree (**red returns it with the gate line**;
+>    any gate line saying RED is red), without `MUSTER_ROOT` or `TASKS_ROOT`; if main moved while
+>    the gate ran, rebases and gates again, twice at most, then stops with "main keeps moving;
+>    pass again", so **main only ever gets a tree the gate saw**; fast-forwards the local main
+>    to the branch (never a merge commit), only if the main checkout is clean and on main, else it
+>    stops with "the main checkout isn't clean" or "isn't on main"; pushes main to origin, plainly
+>    (if origin moved, it fetches and stops: "origin moved; rebase main and pass again"); removes
+>    the worktree (never a runner's, made with `--here`: that one is left, detached) and deletes
+>    the branch, and origin's copy only when it's the same commit; records the merge in the task
+>    (`commit:` the merge, the report logged: `merged task/… into main as <sha> · <gate line> ·
+>    Building 2h 10m · Testing 35m · 4 check-ins`) and passes it to Your check. Once main has the
+>    merge the record is written whatever: if the task was blocked or moved meanwhile, it keeps its
+>    stage and the command says "merged into main as <sha>; the task is <stage>: use muster
+>    stage". Last, it names the next task to start that doesn't clash with the tasks still in
+>    Building or Testing. On any stop before main has the merge nothing is deleted: fix what it says
+>    and pass again. It's never forced. The project's gate is the
 >    command in the app's `projects.json`, set with `muster projects set <name> gate "<command>"`
 >    and run as words, without a shell (this repo's: `bin/gate`); with none set, nothing merges.
 >    The app's Pass is refused for a started task in Testing: the merge runs from the command line.
->    The worktree is removed, so run the pass from outside it (the main checkout is fine).
+>    The worktree is removed (unless it's a runner's), so run the pass from outside it (the main
+>    checkout is fine).
 > 6. **Next.** Start the task it named, or stop when it says there's none.
 >
 > **Giving up:** `muster release <id> --clean` puts the task back in Ready, removes its worktree
 > and deletes its local branch, after listing what that would lose; uncommitted files or commits
-> on no other branch refuse it without `--force`. **Left behind:** `muster check` lists a started
+> on no other branch refuse it without `--force`. A runner's worktree (`--here`) is never
+> removed: it's left detached, its files as they are, and only the branch goes. **Left behind:** `muster check` lists a started
 > task whose worktree is gone, a worktree of a task sent back to Ready, and a worktree on a
 > `task/<id>-…` branch whose task is past Testing, each with the command that cleans it. Never
 > delete a worktree or a branch by hand while its task is in Building or Testing.
