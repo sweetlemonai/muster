@@ -1,7 +1,9 @@
 # Idea → Task → Run → Gate → Done: the four parts
 
 **Status: accepted (2026-10-13).** The owner said yes to all four choices: decision
-`docs/decisions/0006-four-parts-idea-task-run-gate.md`.
+`docs/decisions/0006-four-parts-idea-task-run-gate.md`. **Then changed who owns idea (decision
+0007): idea and task are both Muster's; GenIdea is ported into Muster, not a separate part.** Read
+"GenIdea" below as "Muster's idea step (ported from GenIdea)".
 
 The owner, 2026-10-13: "in general we need agent orchestration, or think of idea -> task ->
 execution -> gates -> done. Execution is Drover, task is Muster, idea is the third part and gates

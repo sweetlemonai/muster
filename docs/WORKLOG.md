@@ -4,6 +4,12 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Decision 0007: one ecosystem; Muster owns idea and task
+**Decided:** the owner: "idea and task are in muster, code is the drover, review is review engine
+and gates and deploy we build afterward. all in one ecosystem". Replaces 0006's "planning lives in
+GenIdea": mu-41 reopened in Muster, GenIdea's queue (gi-1) removed, GenIdea becomes the source the
+idea step is ported from. Record: `docs/decisions/0007-one-ecosystem-muster-owns-idea-and-task.md`.
+
 ## 2026-10-13 — Review settings settled; learning both ways and a GitHub reviewer designed
 **Decided:** after the full context the owner took the picks: no auto-run of the review for now,
 labels not into `/pr learn` yet, Muster not in the engine's repos until PRs return, round-3
