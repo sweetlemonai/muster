@@ -37,9 +37,17 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 `cd app && pnpm install && pnpm release:build`; develop: `pnpm app`).
 
 - **Projects sidebar** (left): All and every queue (`~/playground/*/tasks` plus ones added by
-  hand), each with its task count, how many need you (gold) and how many are in progress
-  (teal), and **+ Project** at the bottom. The header keeps only the views, New task and
-  Appearance, on one line.
+  hand), each with its task count, how many need you (orange) and how many are in progress
+  (the Building colour), and **+ Project** at the bottom. The header keeps only the views, New task and
+  Appearance, on one line. Under each name, quietly (0037, `activity.ts`): the Building-colour
+  dot and "2 working" (tasks with a live session, or a check-in or heartbeat in the last 30
+  minutes; never in Done, and in Your check only while live), or **stalled** in the attention
+  colour (work in Building, not blocked and not the owner's, and nothing in the project for over
+  30 minutes), and the last activity ("now", "12 min ago", "3 h ago", "yesterday", "5 days ago":
+  the newest stage change, check-in, heartbeat, file change, queue commit or live transcript).
+  The All row sums projects: "3 working · 1 stalled". Chips above the list order it: **Working**
+  (default: working projects first, then by last activity), **A–Z**, **Needs you** (most waiting
+  first, then as Working), remembered in `localStorage` (`muster.sidebarOrder`).
 - **Projects** (tab, or **+ Project** next to the project chips): every project with its folder, task count and where it came from (found
   in `~/playground`, or added). **New queue…** picks a project folder and creates its `tasks/`:
   status folders, README with the rules, `WAITING-FOR-OWNER.md`, the tools' stand-ins in `bin/`,
@@ -191,7 +199,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Board:** one column per stage, with its role under the name. Blocked cards stay in their stage
   with a rose "blocked: …" badge, and Your check cards count as "needs you". The task pane has a
   stage picker, Pass to <next> (with the gate line out of Building), Send back with a reason,
-  Block/Unblock, and Accept / Send back in Your check. Only one action runs at a time. Cards show the id, title, type, priority (on every card: HIGH filled gold, normal outlined, low faint), tags,
+  Block/Unblock, and Accept / Send back in Your check. Only one action runs at a time. Cards show the id, title, type, priority (on every card: HIGH filled magenta, normal outlined, low faint), tags,
   "needs you", open questions, files, who's on it (flagged when quiet for 12 h), what a blocked
   task waits on, and when it last changed. Tasks waiting on the owner sort first. Done shows the
   latest 8.

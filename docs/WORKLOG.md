@@ -4,6 +4,18 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Projects sidebar: which are being worked on now (task 0037)
+**Did:** each project row says "N working" (a live session, or a check-in or heartbeat within
+30 minutes on a task someone holds), "stalled" (work in Building, nothing for 30 minutes), and
+when it last moved ("12 min ago", "yesterday"); order chips Working / A–Z / Needs you,
+remembered; the All row sums projects ("3 working · 1 stalled"). `activity.ts` (pure, tested),
+`ProjectList.tsx`. Built by an implementer agent that claimed, checked in and passed it itself.
+**Fixed (review):** rows swapped places twice a minute when two projects' activity fell in the
+same minute (the order now holds unless the order chosen, the projects, the working set or the
+counts change); a task handed back to Ready or blocked still read as working for 30 minutes;
+"yesterday" meant 24–48 hours, now the previous calendar day.
+**Verified:** `pnpm check` green.
+
 ## 2026-10-13 — Text size for the whole window
 **Did:** the owner: "option to zoom in the help page and all pages". ⌘+ ⌘− ⌘0 and a Text size
 row in Appearance (90–150%), remembered, for everything in the window including the manual.

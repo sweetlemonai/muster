@@ -1,11 +1,12 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import { mayLeave } from "./writeUp";
-import { ago, columns, estimateTotal, feed, inProgress, key, STAGES } from "./lib";
+import { ago, columns, estimateTotal, feed, key, STAGES } from "./lib";
 import { estimateText } from "./fields";
 import type { State, Task } from "./types";
-import { backlogColumn, backlogNotes, NoteCard, noteKey, projectCount, QuickAdd } from "./Backlog";
+import { backlogColumn, backlogNotes, NoteCard, noteKey, QuickAdd } from "./Backlog";
 import Projects from "./Projects";
+import ProjectList from "./ProjectList";
 import NewTask from "./NewTask";
 import Appearance from "./Appearance";
 import { CardBand, cardClass, LiveDot } from "./CardLook";
@@ -274,21 +275,7 @@ export default function App() {
     <div className="app shell">
       <aside className="sidebar" aria-label="Projects">
         <div className="brand"><img src={logo} alt="" width={22} height={22} /> Muster</div>
-        <nav className="projects-nav">
-          <ProjectItem name="All" total={(state?.tasks.length ?? 0) + allNotes.length} tasks={state?.tasks ?? []} on={queue === "all"} onClick={() => setQueue("all")} />
-          <div className="side-label">Projects</div>
-          {state?.queues.map((q) => (
-            <ProjectItem
-              key={q.name}
-              name={q.name}
-              title={q.path}
-              total={projectCount(q.counts, allNotes, q.name)}
-              tasks={(state?.tasks ?? []).filter((t) => t.queue === q.name)}
-              on={queue === q.name}
-              onClick={() => setQueue(q.name)}
-            />
-          ))}
-        </nav>
+        <ProjectList queues={state?.queues ?? []} tasks={state?.tasks ?? []} notes={allNotes} activity={state?.activity ?? []} now={now} current={queue} onPick={setQueue} />
         <button className="side-add" onClick={() => setView("projects")} title="New or existing project queue">+ Project</button>
       </aside>
       <div className="main-col">
@@ -511,23 +498,6 @@ export default function App() {
       </div>
     </div>
     </OpenHelp.Provider>
-  );
-}
-
-/** One project in the sidebar: its name and count, what's in progress and what needs you (the
- *  Human board's count: your own tasks to do and doing, and what the agents wait on you for). */
-function ProjectItem({ name, title, total, tasks, on, onClick }: { name: string; title?: string; total: number; tasks: Task[]; on: boolean; onClick: () => void }) {
-  const doing = tasks.filter(inProgress).length;
-  const needs = needsYouCount(tasks);
-  return (
-    <button className={on ? "side-item on" : "side-item"} onClick={onClick} title={title}>
-      <span className="side-name">{name}</span>
-      <span className="side-badges">
-        {needs > 0 && <span className="count warn" title={`${needs} need you`}>{needs}</span>}
-        {doing > 0 && <span className="side-doing" title={`${doing} in progress (Building or Testing)`}>{doing}</span>}
-        <small>{total}</small>
-      </span>
-    </button>
   );
 }
 
