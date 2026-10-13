@@ -36,6 +36,18 @@
 > delivers them anyway); capture answers with `muster answer` and escalates with `muster escalate`.
 > `bin/task ask|answer|escalate|inbox` still works and runs the same commands, with the same file
 > contract (below).
+>
+> **Goals, features and tasks (Muster 0016, 2026-10-12).** `level: goal | feature | task` in the
+> front matter (none is a task) and `parent: <id>`; a goal may have `due: YYYY-MM-DD`. Only the
+> tool writes them: `muster new "<title>" --level goal|feature --parent <id> --due <date>` and
+> `muster set <id> level|parent|due <value>` (empty clears a parent or due). A task's parent is a
+> feature or a goal, a feature's is a goal, a goal has none; anything else is refused. Agents build
+> only tasks: `claim`, `next` and `pass` never take a goal or feature into Building (`next` passes
+> over them). A goal's or feature's stage is shown from its tasks (Done when all are, In progress
+> once one is past Ready, else Ready) unless it's being shaped or the owner set it with `muster
+> stage`. `muster check` and `manifest.py --check` report a parent that doesn't exist, one at the
+> wrong level and a loop, and warn about a goal past its due date with tasks open (a warning doesn't
+> fail the check).
 
 Ideas, bugs and tasks from the owner, written up by the capture session and picked up by coding
 sessions. This queue is also a test bed for chit (`~/playground/chit`, `SPEC.md`). Its rules are

@@ -29,6 +29,12 @@ pub struct NewTask {
     pub tags: Vec<String>,
     pub est_time: String,
     pub est_tokens: String,
+    /// goal, feature or task (empty is a task).
+    pub level: String,
+    /// The id of the feature or goal it sits under, or empty.
+    pub parent: String,
+    /// A goal's date, `YYYY-MM-DD`, or empty.
+    pub due: String,
 }
 
 /// Agent time: a number and m, h or d ("45m", "1.5h", "2d"). Empty is fine (no estimate).
@@ -291,7 +297,11 @@ pub fn create_task(root: &Path, new: &NewTask, who: &str, stamp: &str) -> Result
     let est_time = sp(clean_time(&new.est_time)?);
     let est_tokens = sp(clean_tokens(&new.est_tokens)?);
     let date = &stamp[..stamp.len().min(10)];
+    let (level, parent, due) = clean_link(new)?;
     with_lock(root, || {
+        if !parent.is_empty() {
+            parent_fits(level, &parent, &tasks_now(root))?;
+        }
         let id = next_id(root)?;
         let dir = folder_for(root, "todo");
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -304,6 +314,13 @@ pub fn create_task(root: &Path, new: &NewTask, who: &str, stamp: &str) -> Result
         let text = format!(
             "---\nid: {id}\ntype: {kind}\npriority: {priority}\ntags:{tags}\nest-time:{est_time}\nest-tokens:{est_tokens}\nstage: ready\nstatus: todo\ncaptured: {date}\nclaimed-by:\nheartbeat:\nwaiting_on:\ncommit:\n---\n\n# {title}\n\n{details}## Log\n- {stamp} {who}: created\n"
         );
+        // Level, parent and due only when given: a file without them is a task on its own.
+        let mut text = text;
+        for (key, value) in [("level", level), ("parent", &parent), ("due", &due)] {
+            if !value.is_empty() && !(key == "level" && value == "task") {
+                text = set_front(&text, key, value)?;
+            }
+        }
         write_atomic(&path, &text)?;
         let rel = path
             .strip_prefix(root)
@@ -311,6 +328,182 @@ pub fn create_task(root: &Path, new: &NewTask, who: &str, stamp: &str) -> Result
             .to_string_lossy()
             .to_string();
         Ok(Created { id, path: rel })
+    })
+}
+
+/// A new task's level, parent and due date, cleaned and checked on their own (the parent's
+/// level is checked under the lock): a goal has no parent, and only a goal has a due date.
+fn clean_link(new: &NewTask) -> Result<(&'static str, String, String), String> {
+    let level = pick(new.level.trim(), &queue::LEVELS, "task", "level")?;
+    let parent = clean_parent(&new.parent)?;
+    let due = clean_due(&new.due)?;
+    if level == "goal" && !parent.is_empty() {
+        return Err(parent_rule("goal").into());
+    }
+    if level != "goal" && !due.is_empty() {
+        return Err("only a goal has a due date".into());
+    }
+    Ok((level, parent, due))
+}
+
+/// A parent: a task id, or empty for none.
+fn clean_parent(input: &str) -> Result<String, String> {
+    let p = input.trim();
+    if p.is_empty() || is_id(p) {
+        Ok(p.to_string())
+    } else {
+        Err(format!(
+            "parent must be a task id (four digits), got {:?}",
+            p.chars().take(40).collect::<String>()
+        ))
+    }
+}
+
+/// A due date: `YYYY-MM-DD` that exists, or empty for none.
+fn clean_due(input: &str) -> Result<String, String> {
+    let d = input.trim();
+    if d.is_empty() || queue::is_date(d) {
+        Ok(d.to_string())
+    } else {
+        Err(format!(
+            "due must be a date (YYYY-MM-DD), got {:?}",
+            d.chars().take(40).collect::<String>()
+        ))
+    }
+}
+
+/// Where a level may sit (decision 0003: Goal → Feature → Task).
+fn parent_rule(level: &str) -> &'static str {
+    match level {
+        "goal" => "a goal has no parent",
+        "feature" => "a feature's parent is a goal",
+        _ => "a task's parent is a feature or a goal",
+    }
+}
+
+/// May an item of `level` sit under one of `parent_level`?
+fn fits_under(level: &str, parent_level: &str) -> bool {
+    matches!(
+        (level, parent_level),
+        ("feature", "goal") | ("task", "goal" | "feature")
+    )
+}
+
+/// Refused unless task `parent` exists in `tasks` and an item of `level` may sit under it.
+fn parent_fits(level: &str, parent: &str, tasks: &[queue::Task]) -> Result<(), String> {
+    let p = tasks
+        .iter()
+        .find(|t| t.id == parent)
+        .ok_or_else(|| format!("no task {parent}"))?;
+    if fits_under(level, &p.level) {
+        Ok(())
+    } else if level == "goal" {
+        Err(parent_rule(level).into())
+    } else {
+        Err(format!("{}; {parent} is a {}", parent_rule(level), p.level))
+    }
+}
+
+/// `muster set <id> level|parent|due <value>`, by the rules `create_task` keeps, under the lock
+/// and against every task as it is now: the parent exists and may hold it, and it isn't already
+/// under this one (a loop); a new level still fits its parent and its children; only a goal has a
+/// due date. An empty parent or due clears it. Logged.
+fn set_link(
+    root: &Path,
+    id: &str,
+    field: &str,
+    value: &str,
+    who: &str,
+    stamp: &str,
+) -> Result<String, String> {
+    let who = actor(who)?;
+    let (key, val) = match field {
+        "level" => {
+            let level = pick(value.trim(), &queue::LEVELS, "", "level")?;
+            if level.is_empty() {
+                return Err("level is empty".into());
+            }
+            ("level", level.to_string())
+        }
+        "parent" => ("parent", clean_parent(value)?),
+        _ => ("due", clean_due(value)?),
+    };
+    let line = if val.is_empty() {
+        format!("{stamp} {who}: {key} cleared")
+    } else {
+        format!("{stamp} {who}: {key} set to {val}")
+    };
+    let line = free_text_line(line, &format!("the {key}"))?;
+    with_lock(root, || {
+        find_task(root, id)?;
+        let tasks = tasks_now(root);
+        let me = tasks
+            .iter()
+            .find(|t| t.id == id)
+            .ok_or_else(|| format!("task {id} has no front matter"))?;
+        match key {
+            "level" => {
+                if val != "goal" && !me.due.is_empty() {
+                    return Err(format!("clear {id}'s due date first; only a goal has one"));
+                }
+                let under = tasks.iter().find(|t| t.id == me.parent);
+                let parent_ok = match under {
+                    _ if me.parent.is_empty() => true,
+                    _ if val == "goal" => false,
+                    Some(p) => fits_under(&val, &p.level),
+                    None => true,
+                };
+                if !parent_ok {
+                    return Err(format!(
+                        "can't make {id} a {val}: it's under {}, and {}",
+                        me.parent,
+                        parent_rule(&val)
+                    ));
+                }
+                let child = tasks
+                    .iter()
+                    .find(|c| c.parent == id && c.id != id && !fits_under(&c.level, &val));
+                if let Some(c) = child {
+                    return Err(format!(
+                        "can't make {id} a {val}: {} ({}) is under it, and {}",
+                        c.id,
+                        c.level,
+                        parent_rule(&c.level)
+                    ));
+                }
+            }
+            "parent" if !val.is_empty() => {
+                if val == id {
+                    return Err(format!("{id} can't be its own parent"));
+                }
+                parent_fits(&me.level, &val, &tasks)?;
+                // Up from the new parent: reaching this task again would close a loop.
+                let mut at = val.clone();
+                let mut seen = std::collections::HashSet::new();
+                while let Some(t) = tasks.iter().find(|t| t.id == at) {
+                    if t.parent == id {
+                        return Err(format!(
+                            "{id} under {val} would make a loop: {} is under {id}",
+                            t.id
+                        ));
+                    }
+                    if t.parent.is_empty() || !seen.insert(t.id.clone()) {
+                        break;
+                    }
+                    at = t.parent.clone();
+                }
+            }
+            "due" if !val.is_empty() && me.level != "goal" => {
+                return Err(format!(
+                    "only a goal has a due date; {id} is a {}",
+                    me.level
+                ));
+            }
+            _ => {}
+        }
+        edit_locked(root, id, |_, text| {
+            Ok((append_log(&set_front(&text, key, &val)?, &line), None))
+        })
     })
 }
 
@@ -392,6 +585,9 @@ pub fn set_field(
     who: &str,
     stamp: &str,
 ) -> Result<String, String> {
+    if matches!(field, "level" | "parent" | "due") {
+        return set_link(root, id, field, value, who, stamp);
+    }
     let who = actor(who)?;
     let (key, val) = match field {
         "priority" => (
@@ -405,7 +601,7 @@ pub fn set_field(
         "tokens" | "est-tokens" => ("est-tokens", clean_tokens(value)?),
         _ => {
             return Err(format!(
-                "can't set {field:?}: use priority, type, title, tags, time or tokens"
+                "can't set {field:?}: use priority, type, title, tags, time, tokens, level, parent or due"
             ))
         }
     };
@@ -491,6 +687,8 @@ struct Current {
     /// The claim's lease: the holder's last heartbeat stamp, and the file's modified time.
     heartbeat: String,
     modified: u64,
+    /// goal, feature or task: only tasks go through Building and Testing.
+    level: String,
 }
 
 /// What a stage change writes.
@@ -595,6 +793,7 @@ fn change_locked(
             builder,
             heartbeat: t.heartbeat,
             modified,
+            level: t.level,
         };
         let c = f(&now)?;
         // A claim is held Building, not blocked. One per holder (the owner may hold several),
@@ -722,6 +921,12 @@ fn pass_change(
     let Some(&to) = STAGES.get(stage_index(from) + 1) else {
         return Err(format!("{id} is done; there's no stage after Done"));
     };
+    if to == "building" && t.level != "task" {
+        return Err(format!(
+            "{id} is a {}; its tasks are what agents build",
+            t.level
+        ));
+    }
     if !gate.is_empty() && from != "building" {
         return Err("--gate is only for passing Building → Testing".into());
     }
@@ -844,6 +1049,7 @@ pub fn next_task(root: &Path, who: &str, stamp: &str) -> Result<Option<Claimed>,
         let Some(top) = tasks
             .iter()
             .filter(|t| t.stage == "ready" && !t.blocked && is_id(&t.id))
+            .filter(|t| t.level == "task")
             .filter(|t| t.claimed_by.is_empty() || t.claimed_by == who)
             .min_by_key(|t| (priority_rank(&t.priority), t.id.clone()))
         else {
@@ -3335,5 +3541,259 @@ mod tests {
         fs::remove_file(d.path().join("todo/0001-t.md")).unwrap();
         reclaim_task(d.path(), "0002", 720, "owner", "2026-10-12 14:06", now).unwrap();
         assert_eq!(task_of(d.path(), "0002").stage, "ready");
+    }
+
+    /// Create a task with a level, parent and due date, as the owner, at `T`.
+    fn new_at(
+        d: &Path,
+        title: &str,
+        level: &str,
+        parent: &str,
+        due: &str,
+    ) -> Result<Created, String> {
+        let n = NewTask {
+            title: title.into(),
+            level: level.into(),
+            parent: parent.into(),
+            due: due.into(),
+            ..Default::default()
+        };
+        create_task(d, &n, "owner", T)
+    }
+
+    #[test]
+    fn creates_goals_features_and_tasks_under_their_parents() {
+        let d = queue();
+        let g = new_at(d.path(), "Ship 1.0", "Goal", "", " 2026-12-01 ").unwrap();
+        let f = new_at(d.path(), "Stage track", "feature", "0001", "").unwrap();
+        let t = new_at(d.path(), "Pass button", "", "0002", "").unwrap();
+        new_at(d.path(), "Release notes", "task", " 0001 ", "").unwrap();
+        assert_eq!(
+            (g.id.as_str(), f.id.as_str(), t.id.as_str()),
+            ("0001", "0002", "0003")
+        );
+        let text = fs::read_to_string(d.path().join(&g.path)).unwrap();
+        assert!(
+            text.contains("\ncommit:\nlevel: goal\ndue: 2026-12-01\n---\n"),
+            "{text}"
+        );
+        let text = fs::read_to_string(d.path().join(&f.path)).unwrap();
+        assert!(
+            text.contains("\ncommit:\nlevel: feature\nparent: 0001\n---\n"),
+            "{text}"
+        );
+        // A task writes no level (none is a task).
+        let text = fs::read_to_string(d.path().join(&t.path)).unwrap();
+        assert!(text.contains("\ncommit:\nparent: 0002\n---\n"), "{text}");
+        let s = state(d.path());
+        assert!(s.problems.is_empty(), "{:?}", s.problems);
+        let got: Vec<_> = s
+            .tasks
+            .iter()
+            .map(|t| format!("{} {} {} {}", t.id, t.level, t.parent, t.due))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                "0001 goal  2026-12-01",
+                "0002 feature 0001 ",
+                "0003 task 0002 ",
+                "0004 task 0001 "
+            ]
+        );
+        assert_eq!(s.tasks[0].progress.as_ref().map(|p| p.total), Some(2));
+    }
+
+    #[test]
+    fn create_refuses_a_parent_or_due_against_the_rules() {
+        let d = queue();
+        new_at(d.path(), "Goal", "goal", "", "").unwrap();
+        new_at(d.path(), "Feature", "feature", "0001", "").unwrap();
+        new_at(d.path(), "Task", "", "0002", "").unwrap();
+        let before: Vec<_> = queue::task_files(d.path());
+        for (level, parent, due, want) in [
+            (
+                "feature",
+                "0002",
+                "",
+                "a feature's parent is a goal; 0002 is a feature",
+            ),
+            (
+                "task",
+                "0003",
+                "",
+                "a task's parent is a feature or a goal; 0003 is a task",
+            ),
+            ("goal", "0001", "", "a goal has no parent"),
+            ("task", "0099", "", "no task 0099"),
+            (
+                "task",
+                "30",
+                "",
+                "parent must be a task id (four digits), got \"30\"",
+            ),
+            ("epic", "", "", "level must be one of goal, feature, task"),
+            (
+                "feature",
+                "0001",
+                "2026-12-01",
+                "only a goal has a due date",
+            ),
+            (
+                "goal",
+                "",
+                "soon",
+                "due must be a date (YYYY-MM-DD), got \"soon\"",
+            ),
+            ("goal", "", "2026-02-30", "due must be a date"),
+        ] {
+            let e = new_at(d.path(), "x", level, parent, due).unwrap_err();
+            assert!(e.contains(want), "{level} {parent} {due}: {e}");
+        }
+        assert_eq!(queue::task_files(d.path()), before, "nothing written");
+    }
+
+    #[test]
+    fn sets_level_parent_and_due_by_the_same_rules() {
+        let d = queue();
+        new_at(d.path(), "Goal", "goal", "", "").unwrap();
+        new_at(d.path(), "Feature", "feature", "0001", "").unwrap();
+        new_at(d.path(), "Task", "", "0002", "").unwrap();
+        new_at(d.path(), "Loose", "", "", "").unwrap();
+        let set =
+            |id: &str, field: &str, value: &str| set_field(d.path(), id, field, value, "owner", T);
+        set("0004", "parent", "0002").unwrap();
+        assert_eq!(task_of(d.path(), "0004").parent, "0002");
+        assert!(
+            file_of(d.path(), "0004").ends_with("- 2026-10-12 14:05 owner: parent set to 0002\n")
+        );
+        set("0004", "parent", "").unwrap();
+        assert_eq!(task_of(d.path(), "0004").parent, "");
+        assert!(file_of(d.path(), "0004").ends_with("- 2026-10-12 14:05 owner: parent cleared\n"));
+        set("0004", "level", "Feature").unwrap();
+        set("0004", "parent", "0001").unwrap();
+        assert_eq!(
+            (
+                task_of(d.path(), "0004").level,
+                task_of(d.path(), "0004").parent
+            ),
+            ("feature".to_string(), "0001".to_string())
+        );
+        set("0001", "due", "2027-01-15").unwrap();
+        assert_eq!(task_of(d.path(), "0001").due, "2027-01-15");
+        assert!(file_of(d.path(), "0001").ends_with("owner: due set to 2027-01-15\n"));
+        assert!(
+            state(d.path()).problems.is_empty(),
+            "{:?}",
+            state(d.path()).problems
+        );
+        let files: Vec<_> = ["0001", "0002", "0003", "0004"]
+            .iter()
+            .map(|id| file_of(d.path(), id))
+            .collect();
+        for (id, field, value, want) in [
+            ("0003", "due", "2026-12-01", "only a goal has a due date; 0003 is a task"),
+            ("0001", "level", "feature", "clear 0001's due date first; only a goal has one"),
+            ("0002", "level", "task", "can't make 0002 a task: 0003 (task) is under it, and a task's parent is a feature or a goal"),
+            ("0003", "level", "goal", "can't make 0003 a goal: it's under 0002, and a goal has no parent"),
+            ("0003", "level", "feature", "can't make 0003 a feature: it's under 0002, and a feature's parent is a goal"),
+            ("0003", "level", "epic", "level must be one of goal, feature, task"),
+            ("0003", "level", "", "level is empty"),
+            ("0001", "parent", "0003", "a goal has no parent"),
+            ("0003", "parent", "0003", "0003 can't be its own parent"),
+            ("0003", "parent", "0099", "no task 0099"),
+            ("0003", "parent", "0004x", "parent must be a task id"),
+            ("0004", "parent", "0002", "a feature's parent is a goal; 0002 is a feature"),
+            ("0003", "due", "tomorrow", "due must be a date"),
+            ("0009", "parent", "0001", "no task 0009"),
+        ] {
+            let e = set(id, field, value).unwrap_err();
+            assert!(e.contains(want), "{id} {field} {value}: {e}");
+        }
+        let after: Vec<_> = ["0001", "0002", "0003", "0004"]
+            .iter()
+            .map(|id| file_of(d.path(), id))
+            .collect();
+        assert_eq!(after, files, "refusals leave the files alone");
+        set("0001", "due", "").unwrap();
+        assert_eq!(task_of(d.path(), "0001").due, "");
+        // A loop through a parent written by hand is refused too.
+        put_task(
+            d.path(),
+            "todo",
+            "0005",
+            "level: goal\nparent: 0006\nstage: ready\nstatus: todo",
+        );
+        put_task(d.path(), "todo", "0006", "stage: ready\nstatus: todo");
+        assert_eq!(
+            set("0006", "parent", "0005").unwrap_err(),
+            "0006 under 0005 would make a loop: 0005 is under 0006"
+        );
+    }
+
+    #[test]
+    fn goals_and_features_are_never_built() {
+        let d = queue();
+        put_task(
+            d.path(),
+            "todo",
+            "0001",
+            &format!("level: feature\n{}", ready_fm("high")),
+        );
+        put_task(
+            d.path(),
+            "todo",
+            "0002",
+            &format!("level: Goal\n{}", ready_fm("high")),
+        );
+        put_task(
+            d.path(),
+            "todo",
+            "0003",
+            &format!("parent: 0001\n{}", ready_fm("low")),
+        );
+        let before = file_of(d.path(), "0001");
+        assert_eq!(
+            claim_task(d.path(), "0001", "wt-a", T).unwrap_err(),
+            "0001 is a feature; its tasks are what agents build"
+        );
+        assert_eq!(
+            pass_task(d.path(), "0002", "owner", T, &no_gate()).unwrap_err(),
+            "0002 is a goal; its tasks are what agents build"
+        );
+        assert_eq!(file_of(d.path(), "0001"), before);
+        // next passes over them for the task under them, though they come first by priority.
+        assert_eq!(
+            next_task(d.path(), "wt-a", T)
+                .unwrap()
+                .map(|c| c.id)
+                .as_deref(),
+            Some("0003")
+        );
+        assert_eq!(next_task(d.path(), "wt-b", T).unwrap(), None);
+        // They're shaped like tasks, and the owner may still set their stage.
+        put_task(
+            d.path(),
+            "inbox",
+            "0004",
+            "level: feature\npriority: normal\nstage: backlog\nstatus: inbox",
+        );
+        pass_task(d.path(), "0004", "capture", T, &no_gate()).unwrap();
+        assert_eq!(task_of(d.path(), "0004").stage, "shaping");
+        set_stage(d.path(), "0001", "your-check", "owner", T).unwrap();
+        let s = state(d.path());
+        let shown = |id: &str| {
+            s.tasks
+                .iter()
+                .find(|t| t.id == id)
+                .map(|t| t.shown_stage.clone())
+        };
+        assert_eq!(
+            shown("0001").as_deref(),
+            Some("your-check"),
+            "the owner's override"
+        );
+        assert_eq!(shown("0002").as_deref(), Some("ready"));
+        assert_eq!(shown("0004").as_deref(), Some("shaping"));
     }
 }

@@ -24,6 +24,9 @@ pub const STAGES: [&str; 7] = [
     "your-check",
     "done",
 ];
+/// Goal → Feature → Task (decision 0003), highest first. `level:` in the front matter; a file
+/// without one is a task.
+pub const LEVELS: [&str; 3] = ["goal", "feature", "task"];
 pub(crate) const MAX_TASK_BYTES: u64 = 1024 * 1024;
 const MAX_ANSWER_CHARS: usize = 4000;
 const MAX_IMAGE_BYTES: u64 = 15 * 1024 * 1024;
@@ -204,6 +207,36 @@ pub struct Task {
     pub attachments: Vec<String>,
     pub log_tail: Vec<String>,
     pub modified: u64,
+    /// One of LEVELS: `level:` from the file, "task" when it has none (or one that isn't a level).
+    pub level: String,
+    /// A `level:` value that isn't a level (read as a task), for `check`.
+    #[serde(skip)]
+    pub bad_level: String,
+    /// The id of the feature or goal this sits under (`parent:`), or "".
+    pub parent: String,
+    /// A goal's date (`due:`, `YYYY-MM-DD`), or "".
+    pub due: String,
+    /// Roll-ups, filled by `rollup` once every task of the queue is read (goals and features
+    /// only): the ids whose parent this is, and its tasks' progress.
+    pub children: Vec<String>,
+    pub progress: Option<Progress>,
+    /// The stage to show: a task's own; for a goal or feature, the one its tasks give it
+    /// ("ready", "in-progress" or "done"), unless it's being shaped or the owner set it.
+    pub shown_stage: String,
+    /// The last stage change was the owner's override (`(set)`), so a goal or feature shows it.
+    #[serde(skip)]
+    pub stage_set_by_owner: bool,
+}
+
+/// A goal's or feature's tasks (its descendants of level task): how many are done, of how many,
+/// and the estimates of the ones still open, summed.
+#[derive(Serialize, Clone, Debug, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Progress {
+    pub done: usize,
+    pub total: usize,
+    pub est_minutes: u64,
+    pub est_token_count: u64,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -506,7 +539,24 @@ pub fn parse_task(
     } else {
         String::new()
     };
+    let raw_level = get("level").to_lowercase();
+    let (level, bad_level) = match LEVELS.iter().find(|l| **l == raw_level) {
+        Some(l) => (l.to_string(), String::new()),
+        None if raw_level.is_empty() => ("task".to_string(), String::new()),
+        None => ("task".to_string(), raw_level.chars().take(40).collect()),
+    };
+    let stage_set_by_owner = stage_lines(body)
+        .last()
+        .is_some_and(|(_, detail)| *detail == "set");
     Some(Task {
+        level,
+        bad_level,
+        parent: get("parent").chars().take(40).collect(),
+        due: get("due").chars().take(40).collect(),
+        children: Vec::new(),
+        progress: None,
+        shown_stage: stage.clone(),
+        stage_set_by_owner,
         queue: queue.to_string(),
         id,
         title,
@@ -660,6 +710,9 @@ pub fn read_state_at(queues: &[(String, PathBuf)], cache: &mut Cache, stamp: &st
         state
             .problems
             .extend(problems(name, &tasks, state.now, stamp));
+        rollup(&mut tasks);
+        let today = stamp.get(..10).unwrap_or("");
+        state.problems.extend(level_problems(name, &tasks, today));
         for t in &tasks {
             *counts.entry(t.stage.clone()).or_default() += 1;
             if t.blocked {
@@ -755,6 +808,175 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str) -> Vec<Strin
                 "{queue}: {} waits on {r}, which doesn't exist",
                 t.path
             ));
+        }
+    }
+    out.sort();
+    out
+}
+
+/// The goals' and features' roll-ups, once every task of a queue is read: their children (by
+/// `parent:` in this queue), their tasks' progress and open estimates, and the stage they show
+/// (`Task::shown_stage`): Done when every one of their tasks is (and they have one), In progress
+/// once any is past Ready, else Ready. One being shaped (Backlog, Shaping), or whose stage the
+/// owner set, shows its own. Loops and wrong levels are `level_problems`' to report; here each
+/// task is counted once, so a loop can't make it go round.
+pub fn rollup(tasks: &mut [Task]) {
+    let mut index: HashMap<&str, usize> = HashMap::new();
+    for (i, t) in tasks.iter().enumerate() {
+        index.entry(t.id.as_str()).or_insert(i);
+    }
+    let mut kids: Vec<Vec<usize>> = vec![Vec::new(); tasks.len()];
+    for (i, t) in tasks.iter().enumerate() {
+        match index.get(t.parent.as_str()) {
+            Some(&p) if p != i && !t.parent.is_empty() => kids[p].push(i),
+            _ => {}
+        }
+    }
+    let ready = STAGES.iter().position(|s| *s == "ready").unwrap_or(0);
+    for g in 0..tasks.len() {
+        if tasks[g].level == "task" {
+            continue;
+        }
+        let mut progress = Progress::default();
+        let mut started = false;
+        let mut seen = HashSet::from([g]);
+        let mut stack = kids[g].clone();
+        while let Some(i) = stack.pop() {
+            if !seen.insert(i) {
+                continue;
+            }
+            stack.extend(&kids[i]);
+            let t = &tasks[i];
+            if t.level != "task" {
+                continue;
+            }
+            progress.total += 1;
+            if t.stage == "done" {
+                progress.done += 1;
+            } else {
+                progress.est_minutes = progress.est_minutes.saturating_add(t.est_minutes);
+                progress.est_token_count =
+                    progress.est_token_count.saturating_add(t.est_token_count);
+            }
+            started |= STAGES.iter().position(|s| *s == t.stage).unwrap_or(0) > ready;
+        }
+        let mut children: Vec<String> = kids[g].iter().map(|&i| tasks[i].id.clone()).collect();
+        children.sort();
+        let t = &mut tasks[g];
+        let shaping = matches!(t.stage.as_str(), "backlog" | "shaping");
+        if !shaping && !t.stage_set_by_owner {
+            t.shown_stage = if progress.total > 0 && progress.done == progress.total {
+                "done"
+            } else if started {
+                "in-progress"
+            } else {
+                "ready"
+            }
+            .to_string();
+        }
+        t.children = children;
+        t.progress = Some(progress);
+    }
+}
+
+/// How a warning line starts after its queue's name: it's shown with the problems, but `muster
+/// check` doesn't fail on it.
+const WARNING: &str = "warning: ";
+
+/// Is this line of `State::problems` a warning (`level_problems`' late goal)?
+pub fn is_warning(line: &str) -> bool {
+    line.split_once(": ")
+        .is_some_and(|(_, rest)| rest.starts_with(WARNING))
+}
+
+/// A `YYYY-MM-DD` date that exists.
+pub fn is_date(d: &str) -> bool {
+    d.len() == 10 && crate::ops::stamp_minutes(&format!("{d} 00:00")).is_some()
+}
+
+/// What's wrong with a queue's levels and parent links, after `rollup`: a level that isn't one, a
+/// parent that doesn't exist or is at the wrong level (a task's is a feature or a goal, a
+/// feature's a goal, a goal has none), parents that go round in a loop, a due that isn't a date,
+/// and, as a warning, a goal past its due date (before `today`, `YYYY-MM-DD`) with tasks open.
+pub fn level_problems(queue: &str, tasks: &[Task], today: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut index: HashMap<&str, &Task> = HashMap::new();
+    for t in tasks {
+        index.entry(t.id.as_str()).or_insert(t);
+    }
+    for t in tasks {
+        if !t.bad_level.is_empty() {
+            out.push(format!(
+                "{queue}: {} has level '{}', which isn't a level (read as task)",
+                t.path, t.bad_level
+            ));
+        }
+        if !t.parent.is_empty() {
+            let p = &t.parent;
+            match (
+                t.level.as_str(),
+                index.get(p.as_str()).map(|p| p.level.as_str()),
+            ) {
+                ("goal", _) => out.push(format!(
+                    "{queue}: {} is a goal with a parent ({p}); a goal has none",
+                    t.path
+                )),
+                (_, None) => out.push(format!(
+                    "{queue}: {} has parent {p}, which doesn't exist",
+                    t.path
+                )),
+                ("feature", Some(pl)) if pl != "goal" => out.push(format!(
+                    "{queue}: {} is a feature under {pl} {p}; a feature's parent is a goal",
+                    t.path
+                )),
+                ("task", Some("task")) => out.push(format!(
+                    "{queue}: {} is a task under task {p}; a task's parent is a feature or a goal",
+                    t.path
+                )),
+                _ => {}
+            }
+        }
+        if !t.due.is_empty() && !is_date(&t.due) {
+            out.push(format!(
+                "{queue}: {} has due '{}', which isn't a date (YYYY-MM-DD)",
+                t.path, t.due
+            ));
+        } else if t.level == "goal" && is_date(&t.due) && t.due.as_str() < today {
+            if let Some(p) = t.progress.as_ref().filter(|p| p.done < p.total) {
+                out.push(format!(
+                    "{queue}: {WARNING}{} is past its due date ({}) with {} of {} tasks open",
+                    t.path,
+                    t.due,
+                    p.total - p.done,
+                    p.total
+                ));
+            }
+        }
+    }
+    // Each loop once, from its lowest id.
+    let mut loops: HashSet<Vec<&str>> = HashSet::new();
+    for start in tasks {
+        let mut path: Vec<&str> = vec![start.id.as_str()];
+        let mut cur = start;
+        while let Some(p) = index
+            .get(cur.parent.as_str())
+            .filter(|_| !cur.parent.is_empty())
+        {
+            if let Some(at) = path.iter().position(|id| *id == p.id) {
+                let mut ring = path[at..].to_vec();
+                let low = (0..ring.len()).min_by_key(|&i| ring[i]).unwrap_or(0);
+                ring.rotate_left(low);
+                if loops.insert(ring.clone()) {
+                    out.push(format!(
+                        "{queue}: parents go round in a loop: {} → {}",
+                        ring.join(" → "),
+                        ring[0]
+                    ));
+                }
+                break;
+            }
+            path.push(p.id.as_str());
+            cur = p;
         }
     }
     out.sort();
@@ -2128,6 +2350,225 @@ mod tests {
         assert!(read_mail(&d.path().join("mail/aaaa1111"))
             .unwrap_err()
             .contains("aaaa1111"));
+    }
+
+    /// A flat queue of items `(id, front-matter lines)`, each titled "Item <id>".
+    fn levels_queue(items: &[(&str, &str)]) -> tempfile::TempDir {
+        let d = tempfile::tempdir().unwrap();
+        for (id, fm) in items {
+            fs::write(
+                d.path().join(format!("{id}-x.md")),
+                format!("---\nid: {id}\ntype: task\npriority: normal\n{fm}\n---\n\n# Item {id}\n\n## Log\n- 2026-10-12 09:00 capture: created\n"),
+            )
+            .unwrap();
+        }
+        d
+    }
+    fn levels_state(d: &tempfile::TempDir) -> State {
+        read_state_at(
+            &[("p".into(), d.path().to_path_buf())],
+            &mut Cache::default(),
+            "2026-10-12 14:05",
+        )
+    }
+    const READY: &str = "stage: ready\nstatus: todo";
+    const BUILDING: &str = "stage: building\nstatus: doing\nclaimed-by: wt-a";
+    const DONE: &str = "stage: done\nstatus: done";
+
+    #[test]
+    fn reads_level_parent_and_due_and_serializes_them_camel_case() {
+        let t = parse_one(
+            &TASK.replace(
+                "status: doing",
+                "status: doing\nlevel: Feature\nparent: 0030\ndue: 2026-11-01",
+            ),
+            "",
+        );
+        assert_eq!(
+            (t.level.as_str(), t.parent.as_str(), t.due.as_str()),
+            ("feature", "0030", "2026-11-01")
+        );
+        // No level is a task; an unknown one is read as a task, and `check` says so.
+        let t = parse_one(TASK, "");
+        assert_eq!(
+            (t.level.as_str(), t.parent.as_str(), t.due.as_str()),
+            ("task", "", "")
+        );
+        let v = serde_json::to_value(&t).unwrap();
+        assert_eq!(
+            (v["level"].as_str(), v["parent"].as_str()),
+            (Some("task"), Some(""))
+        );
+        assert_eq!(v["due"], "");
+        assert_eq!(v["children"], serde_json::json!([]));
+        assert!(v["progress"].is_null());
+        assert_eq!(v["shownStage"], "building");
+        let t = parse_one(
+            &TASK.replace("status: doing", "status: doing\nlevel: epic"),
+            "",
+        );
+        assert_eq!((t.level.as_str(), t.bad_level.as_str()), ("task", "epic"));
+        let v = serde_json::to_value(&t).unwrap();
+        assert!(v.get("badLevel").is_none() && v.get("bad_level").is_none());
+    }
+
+    #[test]
+    fn goals_and_features_roll_up_their_tasks() {
+        let d = levels_queue(&[
+            ("0001", &format!("level: goal\ndue: 2026-12-01\n{READY}")),
+            ("0002", &format!("level: feature\nparent: 0001\n{READY}")),
+            ("0003", &format!("level: feature\nparent: 0001\n{READY}")),
+            (
+                "0004",
+                &format!("parent: 0002\nest-time: 1h\nest-tokens: 100k\n{DONE}"),
+            ),
+            (
+                "0005",
+                &format!("parent: 0002\nest-time: 2h\nest-tokens: 200k\n{BUILDING}"),
+            ),
+            ("0006", &format!("parent: 0001\nest-time: 30m\n{READY}")),
+            ("0007", &format!("est-time: 5h\n{READY}")),
+        ]);
+        let s = levels_state(&d);
+        assert!(s.problems.is_empty(), "{:?}", s.problems);
+        let t = |id: &str| s.tasks.iter().find(|t| t.id == id).unwrap().clone();
+        let p = |id: &str| t(id).progress.unwrap();
+        assert_eq!(t("0002").children, ["0004", "0005"]);
+        assert_eq!(
+            p("0002"),
+            Progress {
+                done: 1,
+                total: 2,
+                est_minutes: 120,
+                est_token_count: 200_000
+            }
+        );
+        // A goal counts the tasks under its features and its own tasks.
+        assert_eq!(t("0001").children, ["0002", "0003", "0006"]);
+        assert_eq!(
+            p("0001"),
+            Progress {
+                done: 1,
+                total: 3,
+                est_minutes: 150,
+                est_token_count: 200_000
+            }
+        );
+        assert_eq!(
+            p("0003"),
+            Progress {
+                done: 0,
+                total: 0,
+                est_minutes: 0,
+                est_token_count: 0
+            }
+        );
+        // Shown stage: In progress once a task is past Ready; Ready with none started.
+        assert_eq!(t("0002").shown_stage, "in-progress");
+        assert_eq!(t("0001").shown_stage, "in-progress");
+        assert_eq!(t("0003").shown_stage, "ready", "no tasks yet");
+        // Tasks have no roll-up and show their own stage.
+        assert_eq!(
+            (
+                t("0005").progress,
+                t("0005").children.len(),
+                t("0005").shown_stage.as_str()
+            ),
+            (None, 0, "building")
+        );
+        let v = serde_json::to_value(t("0001")).unwrap();
+        assert_eq!(
+            v["progress"],
+            serde_json::json!({"done": 1, "total": 3, "estMinutes": 150, "estTokenCount": 200_000})
+        );
+        assert_eq!(v["children"], serde_json::json!(["0002", "0003", "0006"]));
+    }
+
+    #[test]
+    fn a_parent_is_done_when_all_its_tasks_are_and_the_owners_stage_wins() {
+        let d = levels_queue(&[
+            ("0001", &format!("level: goal\n{READY}")),
+            ("0002", &format!("level: feature\nparent: 0001\n{READY}")),
+            ("0003", &format!("parent: 0002\n{DONE}")),
+            ("0004", &format!("parent: 0001\n{DONE}")),
+            // Untouched by the tool in Ready, though its tasks wait: Ready.
+            ("0005", &format!("level: feature\n{READY}")),
+            ("0006", &format!("parent: 0005\n{READY}")),
+            // Still being shaped: shown as it is.
+            ("0007", "level: feature\nstage: shaping\nstatus: todo"),
+            ("0008", &format!("parent: 0007\n{BUILDING}")),
+        ]);
+        // The owner put 0009 in Your check by hand (`muster stage`): shown as set.
+        let set = "---\nid: 0009\nlevel: feature\nstage: your-check\nstatus: doing\n---\n\n# Item 0009\n\n## Log\n- 2026-10-12 10:00 owner: stage ready → your-check (set)\n";
+        fs::write(d.path().join("0009-x.md"), set).unwrap();
+        fs::write(
+            d.path().join("0010-x.md"),
+            format!("---\nid: 0010\nparent: 0009\n{READY}\n---\n# Item 0010\n"),
+        )
+        .unwrap();
+        let s = levels_state(&d);
+        assert!(s.problems.is_empty(), "{:?}", s.problems);
+        let shown = |id: &str| {
+            s.tasks
+                .iter()
+                .find(|t| t.id == id)
+                .unwrap()
+                .shown_stage
+                .clone()
+        };
+        assert_eq!(shown("0002"), "done");
+        assert_eq!(shown("0001"), "done");
+        assert_eq!(shown("0005"), "ready");
+        assert_eq!(shown("0007"), "shaping");
+        assert_eq!(shown("0009"), "your-check");
+        // The file's stage is left as it is: only the display is derived.
+        let goal = s.tasks.iter().find(|t| t.id == "0001").unwrap();
+        assert_eq!(
+            (goal.stage.as_str(), goal.status.as_str()),
+            ("ready", "todo")
+        );
+    }
+
+    #[test]
+    fn check_finds_missing_parents_wrong_levels_loops_and_late_goals() {
+        let d = levels_queue(&[
+            ("0001", &format!("level: goal\ndue: 2026-10-01\n{READY}")),
+            ("0002", &format!("level: feature\nparent: 0001\n{READY}")),
+            ("0003", &format!("parent: 0002\n{READY}")),
+            // A task under a task, a feature under a feature, a goal with a parent.
+            ("0004", &format!("parent: 0003\n{READY}")),
+            ("0005", &format!("level: feature\nparent: 0002\n{READY}")),
+            ("0006", &format!("level: goal\nparent: 0001\n{READY}")),
+            ("0007", &format!("parent: 0099\n{READY}")),
+            // 0008 and 0009 are each other's parent.
+            ("0008", &format!("level: feature\nparent: 0009\n{READY}")),
+            ("0009", &format!("level: feature\nparent: 0008\n{READY}")),
+            ("0010", &format!("level: epic\n{READY}")),
+            ("0011", &format!("level: goal\ndue: next week\n{READY}")),
+            // Past due, but all its work is done: fine. Due later with work open: fine.
+            ("0012", &format!("level: goal\ndue: 2026-10-01\n{READY}")),
+            ("0013", &format!("parent: 0012\n{DONE}")),
+            ("0014", &format!("level: goal\ndue: 2026-10-12\n{READY}")),
+            ("0015", &format!("parent: 0014\n{READY}")),
+        ]);
+        let s = levels_state(&d);
+        assert_eq!(
+            s.problems,
+            [
+                "p: 0004-x.md is a task under task 0003; a task's parent is a feature or a goal",
+                "p: 0005-x.md is a feature under feature 0002; a feature's parent is a goal",
+                "p: 0006-x.md is a goal with a parent (0001); a goal has none",
+                "p: 0007-x.md has parent 0099, which doesn't exist",
+                "p: 0008-x.md is a feature under feature 0009; a feature's parent is a goal",
+                "p: 0009-x.md is a feature under feature 0008; a feature's parent is a goal",
+                "p: 0010-x.md has level 'epic', which isn't a level (read as task)",
+                "p: 0011-x.md has due 'next week', which isn't a date (YYYY-MM-DD)",
+                "p: parents go round in a loop: 0008 → 0009 → 0008",
+                "p: warning: 0001-x.md is past its due date (2026-10-01) with 2 of 2 tasks open",
+            ]
+        );
+        assert!(is_warning(s.problems.last().unwrap()));
+        assert!(!is_warning(&s.problems[0]));
     }
 
     #[test]

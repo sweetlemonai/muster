@@ -6,6 +6,8 @@ import Projects from "./Projects";
 import NewTask from "./NewTask";
 import Appearance from "./Appearance";
 import { TableView, TimelineView } from "./Views";
+import { GroupByChips, GroupedBoard } from "./Groups";
+import { GROUP_KEY, type GroupBy, groupItems, indexTasks, isWork, parentLine, parseGroupBy } from "./levels";
 import logo from "./logo.png";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
@@ -66,6 +68,16 @@ function usePaneWidth(): [number, (w: number) => void] {
   return [w, set];
 }
 
+/** Group by for the board and the table, remembered between launches. */
+function useGroupBy(): [GroupBy, (g: GroupBy) => void] {
+  const [g, setG] = useState<GroupBy>(() => parseGroupBy(localStorage.getItem(GROUP_KEY)));
+  const set = useCallback((v: GroupBy) => {
+    setG(v);
+    localStorage.setItem(GROUP_KEY, v);
+  }, []);
+  return [g, set];
+}
+
 export default function App() {
   const { state, error, at, refresh } = useQueues();
   const [queue, setQueue] = useState("all");
@@ -75,6 +87,7 @@ export default function App() {
   const [prio, setPrio] = useState<string[]>([]);
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [width, setWidth] = usePaneWidth();
+  const [groupBy, setGroupBy] = useGroupBy();
 
   useEffect(() => {
     if (queue !== "all" && state && !state.queues.some((q) => q.name === queue)) setQueue("all");
@@ -91,7 +104,12 @@ export default function App() {
   const allTags = useMemo(() => [...new Set(inQueue.flatMap((t) => t.tags))].sort(), [inQueue]);
   const problems = useMemo(() => (state?.problems ?? []).filter((p) => queue === "all" || p.startsWith(`${queue}:`)), [state, queue]);
   const waiting = inQueue.filter((t) => t.waitingForOwner);
-  const cols = useMemo(() => columns(tasks), [tasks]);
+  // Goals and features aren't cards in the stage columns: they're the bands, and table rows.
+  const work = useMemo(() => tasks.filter(isWork), [tasks]);
+  const cols = useMemo(() => columns(work), [work]);
+  const index = useMemo(() => indexTasks(state?.tasks ?? []), [state]);
+  const boardGroups = useMemo(() => (groupBy === "none" ? [] : groupItems(work, inQueue, groupBy)), [groupBy, work, inQueue]);
+  const tableGroups = useMemo(() => (groupBy === "none" ? undefined : groupItems(tasks, inQueue, groupBy)), [groupBy, tasks, inQueue]);
   const openKey = pane?.kind === "task" ? pane.key : null;
   const openTask = openKey ? (state?.tasks ?? []).find((t) => key(t) === openKey) ?? null : null;
   const now = state?.now ?? Math.floor(Date.now() / 1000);
@@ -185,14 +203,25 @@ export default function App() {
                 {(prio.length > 0 || tagFilter.length > 0) && (
                   <button className="chip" onClick={() => { setPrio([]); setTagFilter([]); }}>Clear</button>
                 )}
-                <span className="meta right">
-                  {estimateTotal(tasks) && <span className="est-total">{estimateTotal(tasks)} · </span>}
+                {view !== "timeline" && <GroupByChips value={groupBy} onChange={setGroupBy} />}
+                <span className={view !== "timeline" ? "meta" : "meta right"}>
+                  {estimateTotal(work) && <span className="est-total">{estimateTotal(work)} · </span>}
                   {tasks.length === inQueue.length ? `${tasks.length} tasks` : `${tasks.length} of ${inQueue.length} tasks`}
                 </span>
               </div>
-              {view === "table" && <TableView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} />}
+              {view === "table" && <TableView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} groups={tableGroups} by={groupBy} />}
               {view === "timeline" && <TimelineView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} />}
-              {view === "board" && <main className="board" style={{ gridTemplateColumns: STAGES.map((s) => ((cols[s.id] ?? []).length ? "minmax(118px, 1fr)" : "44px")).join(" ") }}>
+              {view === "board" && groupBy !== "none" && (
+                <GroupedBoard
+                  groups={boardGroups}
+                  by={groupBy}
+                  multi={multi}
+                  openKey={openKey}
+                  onOpen={open}
+                  renderCard={(t) => <Card t={t} now={now} multi={multi} parent={parentLine(t, index)} onOpen={() => open(t)} active={openKey === key(t)} />}
+                />
+              )}
+              {view === "board" && groupBy === "none" && <main className="board" style={{ gridTemplateColumns: STAGES.map((s) => ((cols[s.id] ?? []).length ? "minmax(118px, 1fr)" : "44px")).join(" ") }}>
                 {STAGES.map((c) => {
                   const list = cols[c.id] ?? [];
                   const shown = c.id === "done" && !showAllDone ? list.slice(0, 8) : list;
@@ -204,7 +233,7 @@ export default function App() {
                       </h2>
                       <div className="cards">
                         {shown.map((t) => (
-                          <Card key={key(t)} t={t} now={now} multi={multi} onOpen={() => open(t)} active={openKey === key(t)} />
+                          <Card key={key(t)} t={t} now={now} multi={multi} parent={parentLine(t, index)} onOpen={() => open(t)} active={openKey === key(t)} />
                         ))}
                         {c.id === "done" && list.length > 8 && (
                           <button className="more" onClick={() => setShowAllDone((v) => !v)}>
@@ -354,7 +383,7 @@ function Splitter({ width, onWidth }: { width: number; onWidth: (w: number) => v
   );
 }
 
-function Card({ t, now, multi, onOpen, active }: { t: Task; now: number; multi: boolean; onOpen: () => void; active: boolean }) {
+function Card({ t, now, multi, parent, onOpen, active }: { t: Task; now: number; multi: boolean; parent: string; onOpen: () => void; active: boolean }) {
   const stale = leaseRunOut(t, now);
   const who = holder(t);
   const priority = t.priority || "normal";
@@ -367,6 +396,7 @@ function Card({ t, now, multi, onOpen, active }: { t: Task; now: number; multi: 
         <span className={`pri pri-${priority}`} title={`Priority: ${priority}`}>{priority}</span>
       </span>
       <span className="title">{t.title || "(no title)"}</span>
+      {parent && <span className="parent-line">{parent}</span>}
       {t.tags.length > 0 && (
         <span className="tags">
           {t.tags.map((g) => <span key={g} className="tag">#{g}</span>)}

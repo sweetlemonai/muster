@@ -165,6 +165,7 @@ fn tasks_made_by_the_app_pass_the_python_check() {
         tags: vec!["spike".into()],
         est_time: "2h".into(),
         est_tokens: "400k".into(),
+        ..Default::default()
     };
     let c = muster_lib::ops::create_task(d.path(), &new, "owner", t).unwrap();
     muster_lib::ops::attach(d.path(), &c.id, "shot.png", b"png", "owner", t).unwrap();
@@ -177,6 +178,65 @@ fn tasks_made_by_the_app_pass_the_python_check() {
         &["ask", &c.id, "Which build?", "--session", "abcd1234"],
     );
     assert!(ok, "bin/task works on an app-made task: {out}");
+}
+
+#[test]
+fn goals_features_and_parents_read_the_same_both_ways() {
+    let d = queue();
+    let t = "2026-10-12 15:00";
+    let new = |title: &str, level: &str, parent: &str, due: &str| {
+        let n = muster_lib::ops::NewTask {
+            title: title.into(),
+            level: level.into(),
+            parent: parent.into(),
+            due: due.into(),
+            ..Default::default()
+        };
+        muster_lib::ops::create_task(d.path(), &n, "owner", t).unwrap()
+    };
+    new("Ship 1.0", "goal", "", "2099-12-01");
+    new("Stage track", "feature", "0001", "");
+    let task = new("Pass button", "", "0002", "");
+    let (ok, out) = run(d.path(), "manifest.py", &[]);
+    assert!(ok, "{out}");
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(d.path().join("tasks.json")).unwrap())
+            .unwrap();
+    let got: Vec<String> = manifest["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| format!("{} {} {} {}", x["id"], x["level"], x["parent"], x["due"]))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            "\"0001\" \"goal\" \"\" \"2099-12-01\"",
+            "\"0002\" \"feature\" \"0001\" \"\"",
+            "\"0003\" \"task\" \"0002\" \"\""
+        ]
+    );
+    // A parent gone missing (written by hand): both checks say so.
+    let p = d.path().join(&task.path);
+    let text = std::fs::read_to_string(&p).unwrap();
+    std::fs::write(&p, text.replace("parent: 0002", "parent: 0099")).unwrap();
+    let (code, out) = run_code(d.path(), "manifest.py", &["--check"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("todo/0003-pass-button.md: parent 0099, which doesn't exist"),
+        "{out}"
+    );
+    let s = muster_lib::queue::read_state(
+        &[("q".into(), d.path().to_path_buf())],
+        &mut muster_lib::queue::Cache::default(),
+    );
+    assert!(
+        s.problems
+            .iter()
+            .any(|p| p == "q: todo/0003-pass-button.md has parent 0099, which doesn't exist"),
+        "{:?}",
+        s.problems
+    );
 }
 
 /// A fresh queue in the v2 layout (status folders and a README).

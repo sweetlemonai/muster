@@ -53,10 +53,18 @@ the reason), `block --on` / `unblock` (a flag, the task keeps its stage), and `s
 override). Claims and their lease (task 0002): `claim` (Ready → Building, one claim per holder),
 `next` (the top Ready task you may take, by priority then id), `heartbeat` (the holder keeps a
 claim alive), and `reclaim [--after 12h]` (claims quiet past their lease go back to Ready). Questions
-(task 0002): `ask`, `escalate` and `inbox`, beside `answer`. The slash commands will call it.
+(task 0002): `ask`, `escalate` and `inbox`, beside `answer`. Levels (task 0016): `new --level
+goal|feature --parent <id> --due YYYY-MM-DD` and `set <id> level|parent|due <value>` (an empty
+parent or due clears it), with the rules checked: a task's parent is a feature or a goal, a
+feature's a goal, a goal has none, no loops, and only a goal has a due date. `claim`, `next` and
+`pass` never take a goal or a feature into Building. `check` reports a missing or wrong-level
+parent and a loop, and warns (without failing) about a goal past its due date with tasks open. The
+slash commands will call it.
 
 ### Python tools (in `bin/`)
 
 `task ask|answer|escalate|inbox` (a stand-in that runs the `muster` commands with the same
 arguments), the answer hook (reads the mailbox itself, for speed), `manifest.py` (board data +
-`--check`). Still to build: `found` and `triage` (task 0015), `depends:` (task 0019).
+`--check`, which reads `level`, `parent` and `due` into `tasks.json` and checks them as `muster
+check` does, warnings in their own list). Still to build: `found` and `triage` (task 0015),
+`depends:` (task 0019).

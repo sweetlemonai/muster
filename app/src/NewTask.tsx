@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { readFiles, stamp } from "./lib";
 import TagEditor from "./Tags";
+import { LEVELS } from "./levels";
 
 /** New task, in the docked pane beside the board: title, type, priority, tags, description, files. */
 export default function NewTask({ queues, initial, onClose, onCreated }: {
@@ -18,6 +19,8 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
   const [tags, setTags] = useState<string[]>([]);
   const [estTime, setEstTime] = useState("");
   const [estTokens, setEstTokens] = useState("");
+  const [level, setLevel] = useState<string>("task");
+  const [parent, setParent] = useState("");
   const [files, setFiles] = useState<[string, string][]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -49,7 +52,9 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
     setBusy(true);
     setError("");
     try {
-      const c = await api.createTask(queue, { title, kind, priority, body, tags, estTime, estTokens }, files, stamp(new Date()));
+      // A goal has no parent; the core refuses one, so none is sent.
+      const link = { level, parent: level === "goal" ? "" : parent.trim(), due: "" };
+      const c = await api.createTask(queue, { title, kind, priority, body, tags, estTime, estTokens, ...link }, files, stamp(new Date()));
       onCreated(queue, c.id);
     } catch (e) {
       setError(String(e));
@@ -111,6 +116,25 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
           <label>
             Tokens
             <input value={estTokens} onChange={(e) => setEstTokens(e.target.value)} placeholder="500k" size={6} maxLength={10} />
+          </label>
+        </div>
+        <div className="row level-pick" role="group" aria-label="Level">
+          <span className="meta">Level</span>
+          {LEVELS.map((l) => (
+            <button key={l.id} type="button" className={level === l.id ? "chip on" : "chip"} aria-pressed={level === l.id} onClick={() => setLevel(l.id)}>
+              {l.label}
+            </button>
+          ))}
+          <label className="parent-field" title={level === "goal" ? "A goal has no parent" : "The id of the feature or goal it sits under"}>
+            Parent
+            <input
+              value={level === "goal" ? "" : parent}
+              onChange={(e) => setParent(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              placeholder={level === "goal" ? "none" : "0030"}
+              size={5}
+              inputMode="numeric"
+              disabled={level === "goal"}
+            />
           </label>
         </div>
         <input ref={titleRef} className="title-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What's wrong or wanted, in one line" maxLength={200} />

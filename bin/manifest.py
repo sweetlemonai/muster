@@ -21,6 +21,8 @@ FOLDERS = ["inbox", "todo", "doing", "blocked", "done"]
 # The rules live in the app's core (ops.rs); this only reads them.
 STAGES = ["backlog", "shaping", "ready", "building", "testing", "your-check", "done"]
 LEGACY_STAGE = {"inbox": "backlog", "todo": "ready", "doing": "building", "blocked": "ready", "done": "done"}
+# Goal → Feature → Task (decision 0003); a file without `level:` is a task.
+LEVELS = ["goal", "feature", "task"]
 STALE_HOURS = 12
 
 
@@ -49,6 +51,85 @@ def mirror_status(stage: str, blocked: bool) -> str:
     if blocked:
         return "blocked"
     return {"backlog": "inbox", "shaping": "todo", "ready": "todo", "done": "done"}.get(stage, "doing")
+
+
+def level_of(fields: dict) -> str:
+    """goal, feature or task: `level:`, a task when it has none or one that isn't a level."""
+    level = fields.get("level", "").lower()
+    return level if level in LEVELS else "task"
+
+
+def is_date(value: str) -> bool:
+    """A `YYYY-MM-DD` date that exists."""
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return False
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return False
+    return True
+
+
+def level_checks(tasks: list, today: str) -> tuple:
+    """(problems, warnings) of the queue's levels and parent links, as the core's
+    queue::level_problems finds them: a level that isn't one, a parent that doesn't exist or is at
+    the wrong level, parents in a loop, a due that isn't a date, and (a warning) a goal past its
+    due date with tasks open. `today` is YYYY-MM-DD."""
+    problems, warnings = [], []
+    by_id = {}
+    for t in tasks:
+        by_id.setdefault(t["id"], t)
+    kids = {}
+    for t in tasks:
+        if t["parent"] and t["parent"] in by_id and t["parent"] != t["id"]:
+            kids.setdefault(t["parent"], []).append(t)
+    for t in tasks:
+        rel, level, parent = t["path"], t["level"], t["parent"]
+        if t["bad_level"]:
+            problems.append(f"{rel}: level '{t['bad_level']}' isn't a level (read as task)")
+        if parent:
+            above = by_id.get(parent)
+            if level == "goal":
+                problems.append(f"{rel}: a goal with a parent ({parent}); a goal has none")
+            elif above is None:
+                problems.append(f"{rel}: parent {parent}, which doesn't exist")
+            elif level == "feature" and above["level"] != "goal":
+                problems.append(f"{rel}: a feature under {above['level']} {parent}; a feature's parent is a goal")
+            elif level == "task" and above["level"] == "task":
+                problems.append(f"{rel}: a task under task {parent}; a task's parent is a feature or a goal")
+        due = t["due"]
+        if due and not is_date(due):
+            problems.append(f"{rel}: due '{due}' isn't a date (YYYY-MM-DD)")
+        elif level == "goal" and due and due < today:
+            # Its tasks: every descendant of level task, each once.
+            seen, stack, total, done = {t["id"]}, list(kids.get(t["id"], [])), 0, 0
+            while stack:
+                c = stack.pop()
+                if c["id"] in seen:
+                    continue
+                seen.add(c["id"])
+                stack.extend(kids.get(c["id"], []))
+                if c["level"] == "task":
+                    total += 1
+                    done += c["stage"] == "done"
+            if done < total:
+                warnings.append(f"{rel}: past its due date ({due}) with {total - done} of {total} tasks open")
+    loops = set()
+    for start in tasks:
+        path, cur = [start["id"]], start
+        while cur["parent"] and cur["parent"] in by_id:
+            up = by_id[cur["parent"]]
+            if up["id"] in path:
+                ring = path[path.index(up["id"]):]
+                low = ring.index(min(ring))
+                ring = ring[low:] + ring[:low]
+                if tuple(ring) not in loops:
+                    loops.add(tuple(ring))
+                    problems.append(f"parents go round in a loop: {' → '.join(ring)} → {ring[0]}")
+                break
+            path.append(up["id"])
+            cur = up
+    return problems, warnings
 
 
 def heartbeat_age(value, now):
@@ -99,7 +180,12 @@ def main():
                     p.relative_to(ROOT).as_posix()
                     for p in (ROOT / "attachments" / fields.get("id", "-")).glob("*.*")
                 ) if (ROOT / "attachments" / fields.get("id", "-")).is_dir() else [],
+                "level": level_of(fields),
+                "parent": fields.get("parent", ""),
+                "due": fields.get("due", ""),
             }
+            raw_level = fields.get("level", "").lower()
+            t["bad_level"] = raw_level[:40] if raw_level and raw_level not in LEVELS else ""
             tasks.append(t)
             if t["status"] != folder:
                 problems.append(f"{rel}: status '{t['status']}' but it's in {folder}/")
@@ -132,6 +218,10 @@ def main():
         ref = re.match(r"(\d{4})\b", t["waiting_on"])
         if ref and ref.group(1) not in known:
             problems.append(f"{t['path']}: waiting_on {ref.group(1)}, which doesn't exist")
+    level_problems, warnings = level_checks(tasks, now.strftime("%Y-%m-%d"))
+    problems.extend(level_problems)
+    for t in tasks:
+        del t["bad_level"]
     inbox = sorted(p.name for p in (ROOT / "inbox").glob("*.md"))
     if not check_only:
         manifest = {
@@ -146,6 +236,7 @@ def main():
             ],
             "tasks": tasks,
             "problems": problems,
+            "warnings": warnings,
         }
         # Write a temp file and rename it, so a reader never sees a half-written manifest.
         tmp = ROOT / f".tasks.json.{os.getpid()}.tmp"
@@ -153,6 +244,9 @@ def main():
         os.replace(tmp, ROOT / "tasks.json")
     for p in problems:
         print("problem:", p)
+    # Warnings (a goal past its due date) are shown but don't fail --check.
+    for w in warnings:
+        print("warning:", w)
     if check_only and problems:
         sys.exit(1)
 
