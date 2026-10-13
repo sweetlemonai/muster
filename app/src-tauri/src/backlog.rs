@@ -119,13 +119,14 @@ fn heading_text(line: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Control characters out, except line breaks and tabs.
 /// A control character, or a Unicode line or paragraph separator: anything a renderer may show
 /// as a new line. A note's name with one can't be quoted safely in a command, so it's refused.
 fn breaks_a_line(c: char) -> bool {
     c.is_control() || c == '\u{2028}' || c == '\u{2029}'
 }
 
+/// Control characters out, except line breaks and tabs; Unicode line and paragraph separators
+/// become line breaks.
 fn clean_text(text: &str) -> String {
     text.chars()
         .map(|c| {

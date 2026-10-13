@@ -277,6 +277,11 @@ class TaskTests(unittest.TestCase):
         p.write_bytes(data.encode("utf-8") if isinstance(data, str) else data)
         os.utime(p, (mtime, mtime))
 
+    def test_manifest_titles_a_note_like_the_app_across_line_separators(self):
+        self.note("inbox/sep.md", "one\u2028two\u2029three", 10)
+        self.manifest()
+        self.assertEqual([n["title"] for n in json.loads(self.text("tasks.json"))["backlog"]], ["one"])
+
     def test_manifest_lists_backlog_notes_and_they_are_not_problems(self):
         self.note("inbox/2026-10-12-1405-board-flickers.md", "Board flickers\n\n— added by owner, 2026-10-12 14:05\n", 1000)
         self.note("inbox/hand dropped café.md", "---\ntype: bug\n---\n\n## Café ☕ idea ##\n", 3000)

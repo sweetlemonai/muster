@@ -141,6 +141,8 @@ def backlog_notes():
         with p.open("rb") as f:
             raw = f.read(NOTE_TEXT_BYTES)
         text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]", "", raw.decode("utf-8", errors="replace"))
+        # Line and paragraph separators are line breaks, as in backlog.rs clean_text.
+        text = re.sub("[\u2028\u2029]", "\n", text)
         notes.append({"file": p.name, "title": note_title(text), "added": int(st.st_mtime)})
     notes.sort(key=lambda n: (-n["added"], n["file"]))
     return notes, problems
