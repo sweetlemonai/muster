@@ -4,6 +4,31 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Muster finds queues one level deeper, and About says which it found and which you added (owner)
+**Fixed:** Settings › About said Muster finds every `~/playground/*/tasks` queue on its own and
+listed four persianUtils queues as "found", while twelve more `~/playground/persianUtils/<x>/tasks`
+queues weren't shown at all (owner: "how? it doesn't???") → `queue::discover` looked one level
+down only, the four came from `added` in projects.json, and About listed every active queue under
+"found" without asking where each came from → `discover` now looks at `<base>/*/tasks` and
+`<base>/*/*/tasks` and no further, keeps only folders that pass `projects::looks_like_queue`, skips
+`.*`, `_*`, `node_modules`, `worktrees`, `*.worktrees`, `target` and `dist`, follows a symlink only
+while it stays inside the base, and finds a queue reached by two paths once. A nested queue is
+named by its own folder (`colors`, "-2" on a clash) and `Project` carries its `group`
+(`persianUtils`) for task 0044. A queue both found and added shows once, as found. About lists
+"Found on their own (~/playground/<project>/tasks and one level deeper)", then "Added by you" (or
+"none"), each path through `HomePath` (`~/`, the real path as tooltip and on copy).
+`muster projects` marks each line found or added. Projects' intro, the empty board, help.rs, the
+manual (02, 03, 04, 05) and AS_BUILT say the same. The `dump`/`probe` examples read
+`projects::active`.
+**Verified:** `pnpm check` green after the rebase onto a58e10b (tsc, vitest 959, vite build,
+cargo fmt, clippy -D warnings, cargo test 398 + 4 + 14 + 3); `python3 -I bin/test_task.py` 48 OK;
+`python3 -I bin/test_commands.py` 11 OK. New tests: `discovers_queues_one_level_deeper_and_no_further`,
+`discovery_skips_hidden_archived_and_build_folders`, `discovery_stays_inside_the_base_through_symlinks`,
+`a_queue_one_level_deeper_is_named_by_its_own_folder_and_keeps_its_group`,
+`a_queue_both_found_and_added_shows_once_as_found`, `projects_says_which_queues_were_found_and_which_were_added`,
+and About's three. `muster projects` on this Mac: 19 queues, all found (braindump, drover, muster
+and 16 persianUtils), `harness/c3-docs/tasks` left out.
+
 ## 2026-10-13 — Appearance only in Settings, Help only in the header; paths shown with ~ (owner)
 **Did:** the owner: "remove appearance from top header since it is now under the settings", and
 why Help was both in Settings and outside it. The header's one-click **Appearance** is gone

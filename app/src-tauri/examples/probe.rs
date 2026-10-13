@@ -1,7 +1,7 @@
 //! Prints what the app would show for the real queues: `cargo run --example probe`.
 fn main() {
     let base = std::path::PathBuf::from(std::env::var("HOME").unwrap()).join("playground");
-    let queues = muster_lib::queue::discover(&base);
+    let queues = muster_lib::projects::active(&base, &muster_lib::projects::Config::default());
     let t = std::time::Instant::now();
     let mut cache = muster_lib::queue::Cache::default();
     let s = muster_lib::queue::read_state(&queues, &mut cache);

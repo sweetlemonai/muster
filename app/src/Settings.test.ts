@@ -9,6 +9,7 @@ import appSource from "./App.tsx?raw";
 import { GateCell } from "./Projects";
 import Settings, { AboutView, AgentsView, SpanSetting, withModel } from "./Settings";
 import { DEFAULT_MACHINE, machineOf, SETTINGS_GROUPS, type SettingsInfo, spanInput, spanText } from "./settingsData";
+import type { Project } from "./types";
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
 
@@ -158,29 +159,71 @@ describe("Agents", () => {
   });
 });
 
+const project = (name: string, path: string, source: Project["source"], more: Partial<Project> = {}): Project => ({
+  key: path,
+  name,
+  path,
+  source,
+  group: "",
+  hidden: false,
+  ok: true,
+  gate: "",
+  ...more,
+});
+const PROJECTS: Project[] = [
+  project("drover", "/Users/someone/playground/drover/tasks", "found"),
+  project("colors", "/Users/someone/playground/persianUtils/colors/tasks", "found", { group: "persianUtils" }),
+  project("old", "/Users/someone/playground/old/tasks", "found", { hidden: true }),
+  project("notes", "/Volumes/Work/notes/tasks", "added"),
+  project("gone", "/Users/someone/elsewhere/tasks", "added", { ok: false }),
+];
+const about = (projects: Project[] | null, error = "") => text(renderToStaticMarkup(createElement(AboutView, { info: INFO, projects, error })));
+
 describe("About", () => {
   it("shows the version, where the settings are kept, and every folder it reads", () => {
-    const t = text(renderToStaticMarkup(createElement(AboutView, { info: INFO, queues: QUEUES })));
+    const t = about(PROJECTS);
     expect(t).toContain("Muster 0.1.0");
     expect(t).toContain("~/Library/Application Support/ai.sweetlemon.muster projects.json");
     expect(t).toContain("settings.json");
     expect(t).toContain("helper/");
-    expect(t).toContain("Queues found on their own: ~/playground /*/tasks");
-    expect(t).toContain("muster: ~/playground/muster/tasks");
-    expect(t).toContain("drover: ~/playground/drover/tasks");
     expect(t).toContain("Session transcripts: ~/.claude/projects");
     expect(t).toContain("Session transcripts: ~/.claude-mg/projects");
     expect(t).toContain("nothing is sent anywhere");
   });
   it("shows paths under home with ~, never the user's name; the real path is the tooltip", () => {
-    const html = renderToStaticMarkup(createElement(AboutView, { info: INFO, queues: QUEUES }));
+    const html = renderToStaticMarkup(createElement(AboutView, { info: INFO, projects: PROJECTS }));
     expect(text(html)).not.toContain("/Users/someone");
     const titles = [...html.matchAll(/title="([^"]*)"/g)].map((m) => m[1]);
-    for (const p of [INFO.configDir, INFO.base, ...QUEUES.map((q) => q.path), ...INFO.transcripts]) expect(titles).toContain(p);
+    for (const p of [INFO.configDir, ...PROJECTS.map((q) => q.path), ...INFO.transcripts]) expect(titles).toContain(p);
   });
   it("leaves a path outside home as it is", () => {
-    const t = text(renderToStaticMarkup(createElement(AboutView, { info: { ...INFO, transcripts: ["/Volumes/Work/.claude/projects"] }, queues: [] })));
+    const t = text(renderToStaticMarkup(createElement(AboutView, { info: { ...INFO, transcripts: ["/Volumes/Work/.claude/projects"] }, projects: [] })));
     expect(t).toContain("Session transcripts: /Volumes/Work/.claude/projects");
+  });
+
+  it("says which queues it found on its own and which you added, with home paths as ~ (owner, 2026-10-13)", () => {
+    const t = about(PROJECTS);
+    expect(t).toContain("Found on their own (~/playground/<project>/tasks and one level deeper)");
+    expect(t).not.toContain("*/tasks");
+    const found = t.slice(t.indexOf("Found on their own"), t.indexOf("Added by you"));
+    const added = t.slice(t.indexOf("Added by you"), t.indexOf("Session transcripts"));
+    expect(found).toContain("drover: ~/playground/drover/tasks");
+    expect(found).toContain("colors: ~/playground/persianUtils/colors/tasks");
+    expect(found).toContain("old: ~/playground/old/tasks (hidden, not read)");
+    expect(found).not.toContain("notes");
+    expect(added).toContain("notes: /Volumes/Work/notes/tasks");
+    expect(added).toContain("gone: ~/elsewhere/tasks (not a queue any more)");
+    expect(added).not.toContain("drover");
+    expect(t).not.toContain("/Users/someone/playground/drover");
+  });
+
+  it("says so plainly when you added none, found none, or the list isn't there", () => {
+    const onlyFound = about(PROJECTS.filter((p) => p.source === "found"));
+    expect(onlyFound).toContain("Added by you: none. Add a queue kept anywhere else in Projects.");
+    const onlyAdded = about(PROJECTS.filter((p) => p.source === "added"));
+    expect(onlyAdded).toContain("~/playground/<project>/tasks and one level deeper): none");
+    expect(about(null)).toContain("Loading the projects…");
+    expect(about(null, "boom")).toContain("Can't read the projects: boom");
   });
 });
 

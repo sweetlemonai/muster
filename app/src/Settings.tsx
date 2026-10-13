@@ -5,8 +5,9 @@ import { AccountPicker } from "./Helper";
 import { HelpButton } from "./HelpButton";
 import { HomePath } from "./HomePath";
 import Projects from "./Projects";
+import { homePath } from "./lib";
 import { DEFAULT_MACHINE, SETTINGS_GROUPS, type SettingsGroup, type SettingsInfo, spanInput, spanText } from "./settingsData";
-import type { QueueInfo } from "./types";
+import type { Project, QueueInfo } from "./types";
 
 /** Settings (0036): one place for Appearance, Projects, Agents and About. A view in the
  *  header's row, never a window: the groups are a docked list on the left, and the open group's
@@ -49,7 +50,7 @@ export default function Settings({ group, onGroup, queues, onChanged }: {
         {g.id === "appearance" && <Appearance />}
         {g.id === "projects" && <Projects queues={queues} home={info?.home ?? ""} onChanged={onChanged} />}
         {g.id === "agents" && <Agents info={info} queues={queues} onInfo={setInfo} onChanged={onChanged} />}
-        {g.id === "about" && (info ? <AboutView info={info} queues={queues} /> : !error && <p className="none">Loading…</p>)}
+        {g.id === "about" && (info ? <About info={info} /> : !error && <p className="none">Loading…</p>)}
       </section>
     </div>
   );
@@ -209,8 +210,40 @@ export function SpanSetting({ label, minutes, def, bounds, what, onSet }: {
   );
 }
 
-/** About: the version, where this Mac's settings are kept, and every folder the app reads. */
-export function AboutView({ info, queues }: { info: SettingsInfo; queues: QueueInfo[] }) {
+/** About with the projects as the core lists them, asked again each time About opens. */
+function About({ info }: { info: SettingsInfo }) {
+  const [projects, setProjects] = useState<Project[] | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let live = true;
+    api.projects().then(
+      (l) => live && setProjects(l),
+      (e: unknown) => live && setError(String(e)),
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+  return <AboutView info={info} projects={projects} error={error} />;
+}
+
+/** One project in About's lists: its name and folder, and whether it's read. */
+function AboutProject({ p, home }: { p: Project; home: string }) {
+  const note = p.hidden ? " (hidden, not read)" : !p.ok ? " (not a queue any more)" : "";
+  return (
+    <li>
+      {p.name}: <HomePath className="path" path={p.path} home={home} />{note}
+    </li>
+  );
+}
+
+/** About: the version, where this Mac's settings are kept, and every folder the app reads, with
+ *  the queues it found on its own apart from the ones the owner added. `projects` is null while
+ *  they load. */
+export function AboutView({ info, projects, error = "" }: { info: SettingsInfo; projects: Project[] | null; error?: string }) {
+  const found = projects?.filter((p) => p.source === "found") ?? [];
+  const added = projects?.filter((p) => p.source === "added") ?? [];
+  const where = `${homePath(info.base, info.home)}/<project>/tasks`;
   return (
     <div className="settings-sections">
       <section>
@@ -229,11 +262,25 @@ export function AboutView({ info, queues }: { info: SettingsInfo; queues: QueueI
       </section>
       <section>
         <h2>What it reads</h2>
+        {error && <p className="err" role="alert">Can't read the projects: {error}</p>}
+        {projects === null && !error && <p className="none">Loading the projects…</p>}
+        {projects && (
+          <>
+            <p>Found on their own ({where} and one level deeper){found.length === 0 && ": none."}</p>
+            {found.length > 0 && (
+              <ul className="about-list">
+                {found.map((p) => <AboutProject key={p.key} p={p} home={info.home} />)}
+              </ul>
+            )}
+            <p>Added by you{added.length === 0 && ": none. Add a queue kept anywhere else in Projects."}</p>
+            {added.length > 0 && (
+              <ul className="about-list">
+                {added.map((p) => <AboutProject key={p.key} p={p} home={info.home} />)}
+              </ul>
+            )}
+          </>
+        )}
         <ul className="about-list">
-          <li>Queues found on their own: <span className="path"><HomePath path={info.base} home={info.home} />/*/tasks</span></li>
-          {queues.map((q) => (
-            <li key={q.path}>{q.name}: <HomePath className="path" path={q.path} home={info.home} /></li>
-          ))}
           {info.transcripts.map((f) => (
             <li key={f}>Session transcripts: <HomePath className="path" path={f} home={info.home} /></li>
           ))}

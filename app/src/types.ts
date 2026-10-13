@@ -208,7 +208,12 @@ export type Project = {
   key: string;
   name: string;
   path: string;
+  /** Found on its own (`~/playground/<project>/tasks`, or one level deeper), or added by the
+   *  owner. A queue that is both is found. */
   source: "found" | "added";
+  /** The folder holding a found queue's project one level deeper (`persianUtils` for
+   *  `~/playground/persianUtils/colors/tasks`); "" for the rest. */
+  group: string;
   hidden: boolean;
   ok: boolean;
   /** The project's gate command (0023), "" when none is set; set with `muster projects set`. */

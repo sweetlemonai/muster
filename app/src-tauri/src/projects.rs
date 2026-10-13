@@ -1,6 +1,7 @@
-//! Which queues the app shows: the ones found under `~/playground/*/tasks`, plus ones the owner
-//! added from anywhere, minus the ones they hid, each with an optional display name. Saved as
-//! `projects.json` in the app's config folder. Creating a queue writes Muster's layout into a new
+//! Which queues the app shows: the ones found under `~/playground/*/tasks` and one level deeper
+//! (`~/playground/*/*/tasks`, `queue::discover`), plus ones the owner added from anywhere, minus
+//! the ones they hid, each with an optional display name. Saved as `projects.json` in the app's
+//! config folder. Creating a queue writes Muster's layout into a new
 //! `tasks/` folder, never inside a git work tree, and never over an existing folder.
 
 use crate::queue;
@@ -31,8 +32,12 @@ pub struct Project {
     pub key: String,
     pub name: String,
     pub path: String,
-    /// "found" (under ~/playground) or "added".
+    /// "found" (under ~/playground, one level deeper too) or "added". A queue that is both shows
+    /// once, as found.
     pub source: String,
+    /// The folder that holds a found queue's project one level deeper (`persianUtils` for
+    /// `~/playground/persianUtils/colors/tasks`); "" for the rest.
+    pub group: String,
     pub hidden: bool,
     /// The folder still looks like a Muster queue.
     pub ok: bool,
@@ -83,7 +88,7 @@ pub fn default_name(dir: &Path) -> String {
 pub fn list(base: &Path, config: &Config) -> Vec<Project> {
     let hidden: HashSet<&str> = config.hidden.iter().map(String::as_str).collect();
     let mut out: Vec<Project> = Vec::new();
-    let mut push = |path: PathBuf, source: &str| {
+    let mut push = |path: PathBuf, source: &str, group: String| {
         let key = path.to_string_lossy().to_string();
         if out.iter().any(|p| p.key == key) {
             return;
@@ -100,13 +105,14 @@ pub fn list(base: &Path, config: &Config) -> Vec<Project> {
             path: key.clone(),
             key,
             source: source.to_string(),
+            group,
         });
     };
-    for (_, p) in queue::discover(base) {
-        push(p, "found");
+    for f in queue::discover(base) {
+        push(f.path, "found", f.group);
     }
     for a in &config.added {
-        push(PathBuf::from(a), "added");
+        push(PathBuf::from(a), "added", String::new());
     }
     let mut seen: HashMap<String, usize> = HashMap::new();
     for p in &mut out {
@@ -360,6 +366,69 @@ mod tests {
         let a = active(base.path(), &c);
         assert_eq!(a.len(), 1);
         assert_eq!(a[0].0, "work");
+    }
+
+    #[test]
+    fn a_queue_one_level_deeper_is_named_by_its_own_folder_and_keeps_its_group() {
+        let base = tempfile::tempdir().unwrap();
+        make_queue(&base.path().join("colors/tasks"));
+        make_queue(&base.path().join("persianUtils/colors/tasks"));
+        make_queue(&base.path().join("persianUtils/fonts/tasks"));
+        let l = list(base.path(), &Config::default());
+        let got: Vec<(&str, &str, &str)> = l
+            .iter()
+            .map(|p| (p.name.as_str(), p.group.as_str(), p.source.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("colors", "", "found"),
+                ("colors-2", "persianUtils", "found"),
+                ("fonts", "persianUtils", "found"),
+            ]
+        );
+        let json = serde_json::to_value(&l[1]).unwrap();
+        assert_eq!(json["group"], "persianUtils");
+        assert_eq!(json["source"], "found");
+        // An added queue has no group, wherever it is.
+        let elsewhere = tempfile::tempdir().unwrap();
+        let other = elsewhere.path().join("grp/sheets/tasks");
+        make_queue(&other);
+        let mut c = Config::default();
+        add(&mut c, base.path(), &other).unwrap();
+        let added = list(base.path(), &c).pop().unwrap();
+        assert_eq!(
+            (
+                added.name.as_str(),
+                added.group.as_str(),
+                added.source.as_str()
+            ),
+            ("sheets", "", "added")
+        );
+    }
+
+    #[test]
+    fn a_queue_both_found_and_added_shows_once_as_found() {
+        let dir = tempfile::tempdir().unwrap();
+        // Keys are folders as written; the owner's added ones are canonical, so is this base.
+        let base = dir.path().canonicalize().unwrap();
+        let q = base.join("persianUtils/ai/tasks");
+        make_queue(&q);
+        let c = Config {
+            added: vec![q.to_string_lossy().to_string()],
+            ..Config::default()
+        };
+        let l = list(&base, &c);
+        assert_eq!(l.len(), 1, "{l:?}");
+        assert_eq!(
+            (
+                l[0].name.as_str(),
+                l[0].group.as_str(),
+                l[0].source.as_str()
+            ),
+            ("ai", "persianUtils", "found")
+        );
+        assert_eq!(active(&base, &c).len(), 1);
     }
 
     #[test]

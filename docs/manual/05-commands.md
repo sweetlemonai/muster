@@ -951,7 +951,7 @@ Find the queues Muster knows, start one for a project, check a queue for problem
 
 ### muster projects
 
-Every queue Muster knows: found under ~/playground and added in the app, with each one's gate. projects set \<name\> gate stores the project's gate command in the app's projects.json: what a merge runs in a task's worktree (muster pass \<id\> --from testing). It's split into words like a shell would, quotes and all, but no shell runs it, so a pipe or a cd is just a word: point it at a script in the repo (bin/gate) for anything more. "" clears it; with no gate, nothing merges.
+Every queue Muster knows, each marked found (at ~/playground/\<project\>/tasks, or one level deeper) or added (in the app), with its gate. projects set \<name\> gate stores the project's gate command in the app's projects.json: what a merge runs in a task's worktree (muster pass \<id\> --from testing). It's split into words like a shell would, quotes and all, but no shell runs it, so a pipe or a cd is just a word: point it at a script in the repo (bin/gate) for anything more. "" clears it; with no gate, nothing merges.
 
 ```
 muster projects [--json] | muster projects set <name> gate "<command>"

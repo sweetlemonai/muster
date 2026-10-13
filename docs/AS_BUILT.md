@@ -36,8 +36,8 @@ gives one view of everything and checks the queue for problems. The owner reads
 Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muster.app` (build:
 `cd app && pnpm install && pnpm release:build`; develop: `pnpm app`).
 
-- **Projects sidebar** (left): All and every queue (`~/playground/*/tasks` plus ones added by
-  hand), each with its task count, how many need you (orange) and how many are in progress
+- **Projects sidebar** (left): All and every queue (found at `~/playground/*/tasks` and one level deeper,
+  `~/playground/*/*/tasks`, plus ones added by hand), each with its task count, how many need you (orange) and how many are in progress
   (the Building colour), and **+ Project** at the bottom (Settings, at Projects). The header keeps only the views, New task and
   Appearance, on one line. Under each name, quietly (0037, `activity.ts`): the Building-colour
   dot and "2 working" (tasks with a live session, or a check-in or heartbeat in the last 30
@@ -62,7 +62,13 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   reason. Not built: the optional auto-nudge after 45 quiet minutes, off by default; it can now
   go in Settings → Agents (0036).
 - **Projects** (in Settings, or **+ Project** under the project list): every project with its folder, task count and where it came from (found
-  in `~/playground`, or added). **New queue…** picks a project folder and creates its `tasks/`:
+  in `~/playground`, or added). Discovery (`queue::discover`) looks at `<project>/tasks` and one
+  level deeper, `<group>/<project>/tasks`, and no further; it passes over folders named `.*`, `_*`,
+  `node_modules`, `worktrees`, `*.worktrees`, `target` and `dist`, follows a symlink only while it
+  stays inside `~/playground`, and keeps only folders with a `README.md` and `todo/` (or
+  `tasks.json`). A nested queue is named by its own project folder and carries its group (the
+  folder above it). A queue both found and added shows once, as found. `muster projects` marks
+  each line found or added. **New queue…** picks a project folder and creates its `tasks/`:
   status folders, README with the rules, `WAITING-FOR-OWNER.md`, the tools' stand-ins in `bin/`,
   and its own git with a first commit. It refuses inside a git repo, and refuses if `tasks/`
   already exists. **Add existing queue…** picks any queue folder. Rename, Hide/Show, and Remove
@@ -86,7 +92,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   the default, field by field. **Projects** also shows each project's gate command (0023),
   read-only, with the `muster projects set` line when none is set. Your check's view buttons
   (0043) open Settings for Appearance, Projects and Settings. **About** shows the version, the
-  settings folder and its files, and every folder the app reads.
+  settings folder and its files, and every folder the app reads: the queues found on their own,
+  then the ones added by you (or that there are none), with paths under the home folder as `~/`.
 - **Themes and accents** (Settings' Appearance): 7 themes (Violet night, Violet day, Graphite,
   Midnight, Paper, Snow, High contrast), with Match the Mac picking one dark and one light, and 6
   accents (Violet, Teal, Rose, Gold, Green, Graphite). No blue, no orange. They apply live and are

@@ -163,7 +163,7 @@ One place for how the app looks and works on this Mac: **Settings** in the top r
 Every project Muster shows, with its folder, task count and **Gate**: the command a merge runs in a task's worktree (see [Run parallel sessions in worktrees](03-tutorials.md#run-parallel-sessions-in-worktrees)). A merge never runs without one, so a project with none says so, with the line that sets it: `muster projects set <project> gate "<command>"`. The command line is the one place to set it.
 
 - **New queue…** picks a project's folder and makes its queue there, like `muster init`.
-- **Add existing queue…** picks a queue kept outside `~/playground`.
+- **Add existing queue…** picks a queue kept anywhere else. Muster finds the ones at `~/playground/<project>/tasks` on its own, and one level deeper (`~/playground/<group>/<project>/tasks`), but not in folders starting with `.` or `_`, or in `node_modules`, `worktrees`, `target` or `dist`.
 - **Rename** a project, **Hide** or **Show** it, and **Remove** one you added.
 
 None of them deletes files. A project marked "not a queue any more" points at a folder that no longer has a queue's `README.md` and `todo/` folder.
@@ -182,7 +182,7 @@ Type a span the way `muster reclaim --after` takes it: `30m`, `2h`, `1.25h` or `
 
 - **Version:** the app's version.
 - **Settings on this Mac:** the app's settings folder (`~/Library/Application Support/ai.sweetlemon.muster`) and what's in it: `projects.json` (the projects you added, hid or renamed), `settings.json` (the claim lease and the LIVE window) and `helper/` (the helper's account, model and conversations). Appearance, text size, Group by, saved views and the pane's width are kept by the window itself.
-- **What it reads:** where it finds queues on its own (`~/playground/*/tasks`), each project's folder, and the folders of the Claude Code session transcripts. All of it is read on this Mac and nothing is sent anywhere; only what you write to the helper goes to Anthropic, through your own Claude Code.
+- **What it reads:** the queues it found on its own (at `~/playground/<project>/tasks`, and one level deeper), then the ones you added (or that you added none), each with its folder, and the folders of the Claude Code session transcripts. All of it is read on this Mac and nothing is sent anywhere; only what you write to the helper goes to Anthropic, through your own Claude Code.
 
 ## Colours
 

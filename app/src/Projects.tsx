@@ -46,7 +46,8 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
         {msg && <span className={msg.ok ? "ok" : "err"}>{msg.text}</span>}
       </div>
       <p className="meta">
-        Muster finds every <code>~/playground/*/tasks</code> queue on its own. Add queues kept anywhere else, or start one for a
+        Muster finds the queues at <code>~/playground/&lt;project&gt;/tasks</code> on its own, and one level deeper
+        (<code>~/playground/&lt;group&gt;/&lt;project&gt;/tasks</code>). Add queues kept anywhere else, or start one for a
         project: pick the project's folder (the one that holds its repo, not the repo itself) and Muster creates its{" "}
         <code>tasks/</code> folder with the rules, the tools and its own git history. Removing or hiding a project never deletes files.
       </p>

@@ -893,7 +893,7 @@ pub(crate) struct SettingsInfo {
     home: String,
     /// The app's config folder: projects.json, settings.json and the helper's folder.
     config_dir: String,
-    /// Where queues are found on their own (`<base>/*/tasks`).
+    /// Where queues are found on their own (`<base>/*/tasks` and `<base>/*/*/tasks`).
     base: String,
     /// The session transcripts' folders (0025).
     transcripts: Vec<String>,

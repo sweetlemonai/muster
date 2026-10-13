@@ -8,7 +8,7 @@ A **queue** is the folder that holds one project's tasks: one Markdown file per 
 
 Why a folder of files: you, every agent and every tool can read a task with nothing but a text editor, and git keeps its history. The queue stays outside the code repo so a code commit can't sweep it up.
 
-In the app, the projects are listed down the left side, with **All** at the top. The app finds every `~/playground/*/tasks` folder on its own; add a queue kept anywhere else in **Settings**, under **Projects**. Inside a queue, the folders `inbox/`, `todo/`, `doing/`, `blocked/` and `done/` mirror each task's stage for older tools. Don't move files between them yourself.
+In the app, the projects are listed down the left side, with **All** at the top. The app finds every queue at `~/playground/<project>/tasks` on its own, and one level deeper (`~/playground/<group>/<project>/tasks`); add a queue kept anywhere else in **Settings**, under **Projects**. Inside a queue, the folders `inbox/`, `todo/`, `doing/`, `blocked/` and `done/` mirror each task's stage for older tools. Don't move files between them yourself.
 
 Commands: `muster projects` lists the queues, and `muster init <project-folder>` starts one. Every command takes `--queue <name>`; without it, `muster` uses the queue of the folder you're in. See [Projects and the queue](05-commands.md#projects-and-the-queue).
 

@@ -330,7 +330,7 @@ export default function App() {
       <div className="workspace">
         <div className="content">
           {state && state.queues.length === 0 && (
-            <p className="empty">No queues yet. Muster looks for <code>~/playground/*/tasks</code> folders, or add one in Settings, under Projects.</p>
+            <p className="empty">No queues yet. Muster looks for <code>~/playground/&lt;project&gt;/tasks</code> folders, and one level deeper, or add one in Settings, under Projects.</p>
           )}
 
           {(view === "board" || view === "table" || view === "timeline" || view === "graph") && (

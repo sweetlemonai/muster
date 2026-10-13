@@ -757,6 +757,24 @@ fn edit_in_editor(id: &str, text: &str) -> Result<(String, PathBuf), String> {
     Ok((new.map_err(gone)?, file))
 }
 
+/// One line of `muster projects`: the name, where it came from (found under ~/playground, or
+/// added in the app), the folder, whether it's hidden or no longer a queue, and its gate.
+fn project_line(p: &projects::Project) -> String {
+    let state = if p.hidden {
+        " (hidden)"
+    } else if !p.ok {
+        " (not a queue)"
+    } else {
+        ""
+    };
+    let gate = if p.gate.is_empty() {
+        String::new()
+    } else {
+        format!("  gate: {}", p.gate)
+    };
+    format!("{:<16} {:<6} {}{state}{gate}", p.name, p.source, p.path)
+}
+
 /// `muster projects set <name> gate "<command>"` (0023), on `config`: the command must split into
 /// words the way the gate will be run (no shell), one argument (quoted), empty to clear it.
 /// Returns what to print.
@@ -1011,20 +1029,8 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
             if a.json {
                 print_json(&list)?;
             } else {
-                for p in list {
-                    let state = if p.hidden {
-                        " (hidden)"
-                    } else if !p.ok {
-                        " (not a queue)"
-                    } else {
-                        ""
-                    };
-                    let gate = if p.gate.is_empty() {
-                        String::new()
-                    } else {
-                        format!("  gate: {}", p.gate)
-                    };
-                    println!("{:<16} {}{state}{gate}", p.name, p.path);
+                for p in &list {
+                    println!("{}", project_line(p));
                 }
             }
             Ok(0)
@@ -3317,6 +3323,33 @@ mod tests {
         assert_eq!(queue::read_task(&f.root, &other).unwrap().stage, "ready");
         // check lists nothing left behind, and passes.
         assert_eq!(run_in(&f.repo, &["check"]), Ok(0));
+    }
+
+    #[test]
+    fn projects_says_which_queues_were_found_and_which_were_added() {
+        let base = tempfile::tempdir().unwrap();
+        let (top, _) = project(base.path(), "drover");
+        let (nested, _) = project(&base.path().join("persianUtils"), "colors");
+        let elsewhere = tempfile::tempdir().unwrap();
+        let (added, _) = project(elsewhere.path(), "notes");
+        let mut c = projects::Config::default();
+        projects::add(&mut c, base.path(), &added).unwrap();
+        c.gate
+            .insert(top.to_string_lossy().to_string(), "bin/gate".into());
+        c.hidden.push(nested.to_string_lossy().to_string());
+        let lines: Vec<String> = projects::list(base.path(), &c)
+            .iter()
+            .map(project_line)
+            .collect();
+        let added = added.canonicalize().unwrap();
+        assert_eq!(
+            lines,
+            vec![
+                format!("drover           found  {}  gate: bin/gate", top.display()),
+                format!("colors           found  {} (hidden)", nested.display()),
+                format!("notes            added  {}", added.display()),
+            ]
+        );
     }
 
     #[test]
