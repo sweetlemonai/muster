@@ -12,7 +12,7 @@ The app reads the queues every 2 seconds while its window is visible, and stops 
 
 ## The projects sidebar
 
-**All** shows every project together. Below it is each project, with three numbers: an orange one for the tasks that need you, one in the Building colour for tasks in Building or Testing, and the total, notes included. Click a project to see only its tasks. **+ Project** at the bottom opens [Settings](#settings) at [Projects](#projects).
+**All** shows every project together. Below it is each project, with its numbers: an orange one for the tasks that need you, one in the Building colour for tasks in Building or Testing, "⏸ 2" in grey when some are [paused](02-concepts.md#paused), and the total, notes included. Click a project to see only its tasks. **+ Project** at the bottom opens [Settings](#settings) at [Projects](#projects).
 
 Under a stalled project is **Ask all quiet sessions for a check-in**, with how many it can reach: it asks each quiet card's session, as the card's own button does. It's shown off, with why, when none of its quiet claims has a session to reach, and it says how many it can't reach.
 
@@ -25,7 +25,9 @@ Each card shows, top to bottom:
 - the project (when you're looking at All), the id, a small dot while a session is working on it (its transcript changed in the last 5 minutes, the [LIVE window](#agents)), the type, and the priority: **HIGH** filled in magenta, normal outlined, low faint;
 - the title, the feature or goal it's under, and its tags;
 - who's on it and how long ago they started, their latest check-in ("60% · gate green, writing tests · 12 min ago"), and a warning when they've gone quiet ("quiet 12 h+" past the [claim lease](#agents), "no check-in for 45 min"). After you ask for a check-in, "asked 2 min ago" takes the check-in's place until one comes. In Your check: **Your turn** and the next step (see [Your check](#your-check));
+- a paused task's grey **⏸ Paused** chip with when and why ("Paused 2 h ago · the design changes first"); a paused card is never quiet or red ([Paused](02-concepts.md#paused));
 - under a quiet card, **Ask for a check-in**: it puts a request in the session's mailbox, and the answer hook hands it over after that session's next tool call. A claim with no session stamp (made before stamps, or outside Claude Code) can't be reached: the button is shown off, with why ("ask its session to re-claim");
+- under every card from Backlog through Testing, **Pause**, and under a paused one **Resume**: one click, no dialog;
 - "⚠ 2 vision" while the task has open [vision conflicts](02-concepts.md#the-vision-check);
 - badges: why it's blocked, the kind first ("Blocked on you: …", [Blocked, and why](02-concepts.md#blocked-and-why)); needs you; open questions; files; the estimate; and how long ago it last changed.
 
@@ -44,7 +46,7 @@ Above the board, the filter bar is shared by all four views (Board, Table, Timel
 - **Who** All · You · Agents (board, table and timeline): **You** shows only your own tasks, **Agents** only the agents', **All** both. The backlog's notes show under every choice: they're nobody's yet. The choice is remembered.
 - **Group by** None · Feature · Goal (board, table and graph): one band per feature or goal, with its stage, its progress ("3 of 5 done"), the estimate left and a goal's due date, and the stage columns inside. The **Backlog** band comes first, "Backlog · not in a feature yet" (or goal): the **Add to the backlog…** field, every backlog note, then the Backlog tasks under no feature or goal. It's there even with nothing in it. Other tasks under none come last. Click a band's title to open the feature or goal.
 - The estimate left for what's shown, and how many tasks are shown ("24 of 98 tasks"), then **?**, which opens this section.
-- **Filter chips** by group: Stage, Type, Priority, Tags, Held by, Flags (blocked, needs you, open questions), Captured, Changed and Done (today, this week, this month). Each group shows only the values the project's tasks have. Chips in one group mean any of them; groups together mean all.
+- **Filter chips** by group: Stage, Type, Priority, Tags, Held by, Flags (blocked, paused, needs you, open questions), Captured, Changed and Done (today, this week, this month). Each group shows only the values the project's tasks have. Chips in one group mean any of them; groups together mean all.
 - **Sort** (board only): priority, newest, oldest, changed, estimate or id.
 - **The active line:** each search word and filter in use, with ✕ to remove it, how many tasks they hide, and **Clear all**. With none, it says "No filters: every task shows".
 
@@ -58,7 +60,7 @@ Every task as a row: the project (when you're looking at All), id, title, type, 
 
 Each task's work as a bar across time, with **Scale** chips: **Day** is the last 24 hours in hours, **Week** is Monday to Sunday in quarter days, and **Month** is the calendar month in days. Week is the default, and the scale you pick is remembered. ◀ and ▶ step back or forward a day, a week or a month, and the button between them (**Now**, **This week** or **This month**) jumps back. The name of the period shown is beside them.
 
-A bar starts when the work started, at the task's first move into Building or a later stage, and ends when the work finished, when it reached Your check or Done. It has one stretch for each stage it was in, in that stage's colour, from the times `muster` logged. While a task waits in Your check, a thin dotted tail runs on from its bar to now. Tasks still being worked run up to the vertical line, which is now. Hatching is time spent blocked. A faded start means only the day the work started is known, as for older tasks. Point at a bar or a stretch for its dates, and click a row to open the task.
+A bar starts when the work started, at the task's first move into Building or a later stage, and ends when the work finished, when it reached Your check or Done. It has one stretch for each stage it was in, in that stage's colour, from the times `muster` logged. While a task waits in Your check, a thin dotted tail runs on from its bar to now. Tasks still being worked run up to the vertical line, which is now. Red hatching is time spent blocked, grey hatching time paused (it isn't counted as work). A faded start means only the day the work started is known, as for older tasks. Point at a bar or a stretch for its dates, and click a row to open the task.
 
 Tasks whose work hasn't started, or whose log has no times, aren't drawn; a line under the chart says how many. The search's words are marked in the rows. See [Read the graph and the timeline](03-tutorials.md#read-the-graph-and-the-timeline).
 
@@ -87,7 +89,7 @@ Click a card to open its task beside the board. The pane keeps every control in 
 
 1. **The top line:** the project and how long ago the task changed, and **×** to close.
 2. **The title**, with its id. Click the title to rename it: ↩ saves, Esc keeps the old one. The **?** beside it opens this section.
-3. **The status line:** the stage, why it's blocked (the kind first; each task it's blocked by opens with a click), **LIVE** (the file changed in the last 5 minutes, the [LIVE window](#agents)) or how long it's been quiet, who's on it ("Your turn" in Your check) and who held the stages before, the stage's role, and what's waiting on you, or "nothing waiting on you".
+3. **The status line:** the stage, **Paused** with when and why, **Pause** (with a "why (optional)" box beside it; ↩ pauses too) or **Resume**, why it's blocked (the kind first; each task it's blocked by opens with a click), **LIVE** (the file changed in the last 5 minutes, the [LIVE window](#agents)) or how long it's been quiet, who's on it ("Your turn" in Your check) and who held the stages before, the stage's role, and what's waiting on you, or "nothing waiting on you".
 4. **The stage track:** all seven stages, the task's own lit; for your own task only **To do**, **Doing** and **Done**. Click another stage to put the task there. That's your override: it happens at once, and the message under it offers **Undo**. When the move would release someone's claim, the stage's tooltip says whose.
 5. **Two columns.** The left one shows what this stage needs:
    - Backlog, Shaping and Ready: the acceptance criteria and the estimate.
@@ -96,7 +98,7 @@ Click a card to open its task beside the board. The pane keeps every control in 
    - Done: the history.
    - A goal or feature: its tasks and their stages, its progress and the estimate left.
 
-   The right one is the **Next step**: the one primary button, **Pass to** the next stage (**Accept** in Your check), then **Send back** and **Block** or **Unblock**. **Release** shows when the holder has been quiet past the [claim lease](#agents), 12 hours unless you changed it. If someone else holds the task in Building, there's no Pass: only they can pass it, and the pane says so. Under the next step are the task's settings: **Priority** and **Type** show their value as a chip (click it to lay out the choices), **Est** has agent time, test time and tokens (↩ or leaving the field saves), then **Tags**, **Files** (images as thumbnails that open large; **+ Attach** picks more) and **Links** (a click opens one in your browser, https only).
+   The right one is the **Next step**: the one primary button, **Pass to** the next stage (**Accept** in Your check), then **Send back** and **Block** or **Unblock**. **Release** shows when the holder has been quiet past the [claim lease](#agents), 12 hours unless you changed it. If someone else holds the task in Building, there's no Pass: only they can pass it, and the pane says so. While it's paused, Pass is off until you resume it. Under the next step are the task's settings: **Priority** and **Type** show their value as a chip (click it to lay out the choices), **Est** has agent time, test time and tokens (↩ or leaving the field saves), then **Tags**, **Files** (images as thumbnails that open large; **+ Attach** picks more) and **Links** (a click opens one in your browser, https only).
 6. **The stage forms**, under both columns, when one is open: the gate's result line for Pass to Testing, **Send back** with where to and why, or **Block** with what it waits on. The core's answer, or its refusal, shows under them.
 7. **Session**, in Building and Testing while an agent's session holds the task: **Ask for a check-in** (Building; "asked 2 min ago" beside it until one comes) and a one-line box, **Message the session working on this**, with a count ("120/500": at most 500 characters, and Send is off past that), and **Send**. Both reach only the session in the holder's stamp, through its mailbox, after its next tool call, and both are logged on the task. The message arrives quoted as your note, not as instructions. When the session can't be reached, they're shown off, with why.
 8. **The path line:** the commit that shipped it, and the task's file.
@@ -210,5 +212,6 @@ One colour, one meaning, everywhere. A stage's colour only ever means that stage
 | Green | Done |
 | Red | Blocked, and errors |
 | Magenta | High priority |
+| Muted grey outline with ⏸ | Paused (a state, not a stage) |
 
 Priority has colours of its own, never a stage's: high is magenta (a filled chip), normal a light slate (an outlined chip) and low grey (faint text). They colour the cards when Appearance's **Cards** is set to show priority. Tags and types are neutral, outlined labels: they never take a stage's colour, so a bug is marked by the word "bug", not by red. The rules are in [DESIGN.md](../DESIGN.md#the-colour-code).

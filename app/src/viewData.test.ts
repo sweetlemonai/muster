@@ -265,7 +265,7 @@ describe("timeline layout", () => {
     const tail = t({ id: "tail", captured: "2026-10-13", stage: "done", stageHistory: [step("2026-10-13 22:00", "ready", "building"), step("2026-10-14 00:05", "building", "done")] });
     const [p] = place("day", [tail]);
     expect([p.left, p.width, p.clipStart]).toEqual([0, 15 / DAY, true]);
-    const late: Span = { task: t({ id: "late" }), start: D(14) + 1435, work: D(14) + 1435, end: D(14) + 1438, open: true, timed: true, segments: [{ stage: "building", from: D(14) + 1435, to: D(14) + 1438, fuzzy: false }], blocks: [], finish: D(14) + 1438 };
+    const late: Span = { task: t({ id: "late" }), start: D(14) + 1435, work: D(14) + 1435, end: D(14) + 1438, open: true, timed: true, segments: [{ stage: "building", from: D(14) + 1435, to: D(14) + 1438, fuzzy: false }], blocks: [], pauses: [], finish: D(14) + 1438 };
     const [q] = layout([late], CAL_DAY, "day");
     expect(q.left + q.width).toBeCloseTo(1);
     expect(q.width).toBeCloseTo(15 / DAY);
@@ -329,6 +329,35 @@ describe("blocked stretches (0031)", () => {
       expect(b.left).toBeGreaterThan(0);
       expect(b.left + b.width).toBeLessThanOrEqual(1);
     }
+  });
+});
+
+describe("paused stretches (0045)", () => {
+  const building = (pauseHistory: Task["pauseHistory"], paused = "") =>
+    t({ captured: "2026-10-14", capturedAt: "2026-10-14 08:00", stage: "building", paused, pauseHistory, stageHistory: [step("2026-10-14 09:00", "ready", "building")] });
+  it("keeps a pause that ended, and runs one still on to the end of the bar", () => {
+    expect(taskSpan(building([{ from: "2026-10-14 10:00", to: "2026-10-14 12:00" }]), NOW)!.pauses).toEqual([
+      { from: stampMinutes("2026-10-14 10:00"), to: stampMinutes("2026-10-14 12:00") },
+    ]);
+    const s = taskSpan(building([{ from: "2026-10-14 16:00", to: "" }], "2026-10-14 16:00"), NOW)!;
+    expect(s.pauses).toEqual([{ from: stampMinutes("2026-10-14 16:00"), to: s.end }]);
+  });
+  it("drops pauses outside the bar and bad stamps; none without a history", () => {
+    expect(taskSpan(building([{ from: "2026-10-01 10:00", to: "2026-10-02 10:00" }, { from: "nope", to: "" }]), NOW)!.pauses).toEqual([]);
+    expect(taskSpan(building(undefined), NOW)!.pauses).toEqual([]);
+  });
+  it("places them on the bar at every scale, within it", () => {
+    for (const scale of ["day", "week", "month"] as const) {
+      const [p] = layout([taskSpan(building([{ from: "2026-10-14 10:00", to: "2026-10-14 14:00" }]), NOW)!], timeWindow(scale, NOW, 0), scale);
+      expect(p.pauses).toHaveLength(1);
+      expect(p.pauses[0].left).toBeGreaterThan(0);
+      expect(p.pauses[0].left + p.pauses[0].width).toBeLessThanOrEqual(1);
+    }
+  });
+  it("says it's paused in the bar's tooltip", () => {
+    expect(barTitle(t({ captured: "2026-10-14", stage: "building", paused: "2026-10-14 10:00", pausedWhy: "later" }), true)).toBe(
+      "Building · paused: later · captured 2026-10-14",
+    );
   });
 });
 

@@ -61,6 +61,15 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   without a session stamp, or in Testing for a check-in, shows the button disabled with the
   reason. Not built: the optional auto-nudge after 45 quiet minutes, off by default; it can now
   go in Settings → Agents (0036).
+- **Pause and Resume** (0045, `pause.rs`, `pause_cmds.rs`, `Pause.tsx`): **Pause** or **Resume**
+  in the strip under a card (Backlog through Testing; the strip a quiet card's Ask for a check-in
+  shares) and beside the stage in the pane's status line, with an optional why typed in place. A
+  paused task keeps its stage, claim and column and shows the grey **⏸ Paused** chip with "2 h ago
+  · why" (never red, never a stage colour); its claim isn't quiet and its lease doesn't run (the
+  card's flags, Release, the sidebar's stalled), Pass is off with why, the timeline hatches its
+  paused stretches grey (`pauseHistory`), the Flags filter has **paused**, and the sidebar row
+  counts them ("⏸ 2"). In Building or Testing the holder's session is told through its mailbox
+  (`<id>-pause.md`, `<id>-resume.md`); the pane says whether it was.
 - **Projects** (in Settings, or **+ Project** under the project list): every project with its folder, task count and where it came from (found
   in `~/playground`, or added). Discovery (`queue::discover`) looks at `<project>/tasks` and one
   level deeper, `<group>/<project>/tasks`, and no further; it passes over folders named `.*`, `_*`,
@@ -503,6 +512,11 @@ without options) write nothing. `muster escalate` prints the options for `WAITIN
 `muster ping <id> "<message>"` sends it a message (Building or Testing), the same rules as the
 app's buttons (`ping.rs`): only the session in the holder's stamp, refused with why otherwise,
 logged on the task.
+**Pause** (task 0045): `muster pause <id> ["<why>"]` and `muster resume <id>`, the app's rules
+(`pause.rs`): Backlog through Testing; while paused, `claim`, `next`, `start`, `ready` and every
+pass refuse it and `reclaim` skips it; the holder's session in Building or Testing gets a stop
+request, and on resume a carry-on (and in Building a fresh lease). `muster list` marks it
+`[paused since …]`, INDEX.md "paused".
 
 ## How the pieces talk
 
@@ -607,6 +621,9 @@ Live claims go in the repo's shared git folder. See
   installed sees a check-in request or message only when it runs `muster inbox`, and a claim
   with no session stamp can't be reached at all. Nothing asks quiet sessions on its own yet: the
   auto-nudge setting isn't built; its place is Settings → Agents (0036).
+- **A pause reaches a session only through the answer hook** (0045), like a ping: a session
+  that has ended its turn gets the stop or carry-on request on its next prompt. Who may pause or
+  resume isn't limited to the owner, as with block and unblock.
 
 ## What's left (in order)
 

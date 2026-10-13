@@ -242,16 +242,22 @@ pub fn shared_counts(tasks: &[Task], id: &str) -> std::collections::HashMap<Stri
     out
 }
 
+/// `offset` is local time minus UTC, in seconds (`utc_offset`): the log's stamps are local, the
+/// transcripts' UTC.
 pub fn work(
     reader: &Reader,
     task: &Task,
     body: &str,
     now: u64,
     shared: &std::collections::HashMap<String, usize>,
+    offset: i64,
 ) -> Work {
     let refs = sessions(&[&task.claimed_by, &task.held_by], task.holder(), body);
     let ids: Vec<String> = refs.iter().map(|s| s.id.clone()).collect();
-    let usages = reader.usages(&ids, now);
+    let mut usages = reader.usages(&ids, now);
+    for u in usages.iter_mut() {
+        skip_paused(u, &task.pause_history, offset, now);
+    }
     let sum = transcripts::actuals(&usages);
     let totals = Totals {
         sessions: refs.len(),
@@ -312,7 +318,43 @@ pub fn for_task(reader: &Reader, root: &Path, id: &str, now: u64) -> Result<Work
         &mut queue::Cache::default(),
     )
     .tasks;
-    Ok(work(reader, &task, &body, now, &shared_counts(&all, id)))
+    Ok(work(
+        reader,
+        &task,
+        &body,
+        now,
+        &shared_counts(&all, id),
+        utc_offset(),
+    ))
+}
+
+/// A session's minutes without the task's paused stretches (0045): what of them falls between its
+/// first and last stamp. Its tokens stay as they are: a paused session spends none. `offset` as
+/// `work` takes it.
+fn skip_paused(u: &mut Usage, pauses: &[crate::pause::PauseSpan], offset: i64, now: u64) {
+    let (Some(start), Some(end)) = (u.start, u.end) else {
+        return;
+    };
+    let local = |secs: u64| {
+        (i64::try_from(secs)
+            .unwrap_or(i64::MAX)
+            .saturating_add(offset))
+            / 60
+    };
+    let paused = crate::pause::paused_within(pauses, local(start), local(end), local(now));
+    u.minutes = u.minutes.saturating_sub(u64::try_from(paused).unwrap_or(0));
+}
+
+/// This Mac's local time minus UTC, in seconds, from the clock (`date`, as the log's stamps are
+/// made), to the nearest quarter hour, which every time zone is a multiple of.
+fn utc_offset() -> i64 {
+    let now = i64::try_from(queue::now_secs()).unwrap_or(0);
+    let Some(local) = crate::ops::stamp_minutes(&queue::local_stamp()) else {
+        return 0;
+    };
+    let quarter = 15 * 60;
+    let diff = local * 60 - now;
+    (diff + quarter / 2).div_euclid(quarter) * quarter
 }
 
 /// Session `session`'s transcript as Markdown, only for a session that worked on task `id`: the
@@ -623,6 +665,53 @@ waiting_on:
         let json = serde_json::to_string(&w).unwrap();
         assert!(json.contains("\"id\":\"7b5e8856\"") && json.contains("\"cacheRead\":50000"));
         assert!(!json.contains(".claude") && !json.contains(h.path().to_str().unwrap()));
+    }
+
+    #[test]
+    fn paused_time_is_left_out_of_a_sessions_minutes() {
+        // 0045: A worked 08:00–08:30 UTC; the task was paused 08:10–08:20 local, at UTC+2 that
+        // is 10:10–10:20 in the log. B (10:50–11:00 UTC) overlaps nothing.
+        let text = TASK.replace(
+            "- 2026-10-12 11:00 muster",
+            "- 2026-10-12 10:10 owner: paused (lunch); asked session 7b5e8856 to stop\n- 2026-10-12 10:20 owner: resumed after 10 min\n- 2026-10-12 11:00 muster",
+        );
+        let task = queue::parse_task(
+            "",
+            Path::new("/q"),
+            "doing",
+            Path::new("/q/doing/0025-s.md"),
+            &text,
+            0,
+        )
+        .unwrap();
+        let h = home();
+        transcripts(h.path());
+        let reader = Reader::new(h.path());
+        let shared = std::collections::HashMap::new();
+        let w = work(&reader, &task, body(&text), NOW, &shared, 2 * 3600);
+        assert_eq!((w.rows[0].usage.minutes, w.rows[1].usage.minutes), (20, 10));
+        assert_eq!(w.totals.minutes, 30);
+        // Tokens aren't time: they stay what the transcript says.
+        assert_eq!(w.totals.total_tokens, 69516);
+        // In UTC the same stamps miss A's stretch entirely.
+        let w = work(&reader, &task, body(&text), NOW, &shared, 0);
+        assert_eq!(w.totals.minutes, 40);
+        // Still paused: it runs to now, so A's whole tail after 08:10 is left out.
+        let open = TASK.replace(
+            "- 2026-10-12 11:00 muster",
+            "- 2026-10-12 10:10 owner: paused\n- 2026-10-12 11:00 muster",
+        );
+        let task = queue::parse_task(
+            "",
+            Path::new("/q"),
+            "doing",
+            Path::new("/q/doing/0025-s.md"),
+            &open,
+            0,
+        )
+        .unwrap();
+        let w = work(&reader, &task, body(&open), NOW, &shared, 2 * 3600);
+        assert_eq!((w.rows[0].usage.minutes, w.rows[1].usage.minutes), (10, 0));
     }
 
     #[test]

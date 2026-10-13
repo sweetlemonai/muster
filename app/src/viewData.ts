@@ -83,6 +83,8 @@ export type Segment = { stage: StageId | "waiting"; from: number; to: number; fu
  *  never left waiting). `timed` when it comes from the stage history, else from dates only. */
 export type Span = {
   task: Task; start: number; work: number; end: number; open: boolean; timed: boolean; segments: Segment[]; blocks: { from: number; to: number; kind: string }[];
+  /** Paused stretches (0045), drawn hatched grey: time paused isn't time worked. */
+  pauses: { from: number; to: number }[];
   /** When the work finished (into Your check or Done); `end` when it's still going. */
   finish: number;
 };
@@ -155,13 +157,23 @@ export function taskSpan(t: Task, now: number): Span | null {
     const a = Math.max(from, start), z = Math.min(to, end);
     return z > a ? [{ from: a, to: z, kind: b.kind ?? "" }] : [];
   });
-  return { task: t, start, work: start, end, open, timed: steps.length > 0, segments, blocks, finish };
+  // Paused stretches (0045), clipped the same way.
+  const pauses = (t.pauseHistory ?? []).flatMap((p) => {
+    const from = stampMinutes(p.from);
+    const to = p.to ? stampMinutes(p.to) : end;
+    if (from === null || to === null) return [];
+    const a = Math.max(from, start), z = Math.min(to, end);
+    return z > a ? [{ from: a, to: z }] : [];
+  });
+  return { task: t, start, work: start, end, open, timed: steps.length > 0, segments, blocks, pauses, finish };
 }
 
-/** A timeline bar's tooltip: the stage, why it's blocked (0024), and its days. */
+/** A timeline bar's tooltip: the stage, that it's paused and why (0045), why it's blocked (0024),
+ *  and its days. */
 export function barTitle(t: Task, timed: boolean): string {
   const why = blockSentence(t);
-  return `${stageLabel(t.stage)}${why ? ` · ${why}` : ""} · captured ${t.captured}${t.claimedOn ? ` · started ${t.claimedOn}` : ""}${t.doneOn ? ` · done ${t.doneOn}` : ""}${timed ? "" : " · dates only"}`;
+  const paused = t.paused ? ` · paused${t.pausedWhy ? `: ${t.pausedWhy}` : ""}` : "";
+  return `${stageLabel(t.stage)}${paused}${why ? ` · ${why}` : ""} · captured ${t.captured}${t.claimedOn ? ` · started ${t.claimedOn}` : ""}${t.doneOn ? ` · done ${t.doneOn}` : ""}${timed ? "" : " · dates only"}`;
 }
 
 /** The tasks with work to show, earliest start first, and how many have none yet (not started,
@@ -260,7 +272,7 @@ export function segmentTitle(g: Segment): string {
 
 /** A bar placed in a window: `left` and `width` as fractions of the window, its segments as
  *  fractions of the bar. `clipStart`/`clipEnd` when it runs on past the window's edge. */
-export type Placed = { span: Span; left: number; width: number; clipStart: boolean; clipEnd: boolean; segments: { seg: Segment; left: number; width: number }[]; blocks: { left: number; width: number; kind: string }[] };
+export type Placed = { span: Span; left: number; width: number; clipStart: boolean; clipEnd: boolean; segments: { seg: Segment; left: number; width: number }[]; blocks: { left: number; width: number; kind: string }[]; pauses: { left: number; width: number }[] };
 
 /** Linear map of `m` from [a, b] onto [da, db]; the end when the range is empty. */
 const lerp = (a: number, b: number, da: number, db: number, m: number) => (m >= b ? db : da + ((m - a) * (db - da)) / (b - a));
@@ -299,12 +311,19 @@ export function layout(list: Span[], w: TimeWindow, scale: Scale): Placed[] {
         if (z > a) blocks.push({ left: (a - c0) / (c2 - c0), width: (z - a) / (c2 - c0), kind: b.kind });
       }
     }
+    const pauses: Placed["pauses"] = [];
+    if (c2 > c0) {
+      for (const g of s.pauses) {
+        const a = Math.max(map(g.from), c0), z = Math.min(map(g.to), c2);
+        if (z > a) pauses.push({ left: (a - c0) / (c2 - c0), width: (z - a) / (c2 - c0) });
+      }
+    }
     let left = (c0 - w.from) / len, width = (c2 - c0) / len;
     if (width < minWidth) {
       width = minWidth;
       left = Math.min(left, 1 - minWidth);
     }
-    out.push({ span: s, left, width, clipStart: d0 < w.from, clipEnd: d2 > w.to, segments, blocks });
+    out.push({ span: s, left, width, clipStart: d0 < w.from, clipEnd: d2 > w.to, segments, blocks, pauses });
   }
   return out;
 }

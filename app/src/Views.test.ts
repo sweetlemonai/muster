@@ -135,4 +135,12 @@ describe("the timeline's controls do what they say", () => {
     const html = renderToStaticMarkup(h(TimelineChart, { scale: "day", rows: layout(spans([task], NOW), win, "day"), ticks: axis("day", win, NOW), now: nowAt(win, NOW), multi: false, openKey: null, onOpen: () => {} }));
     expect(html.match(/class="tl-block"/g)).toHaveLength(1);
   });
+  it("draws a paused stretch hatched grey, apart from a block, and says paused on the bar", () => {
+    const task = t({ stage: "building", paused: "2026-10-14 10:00", pauseHistory: [{ from: "2026-10-14 10:00", to: "" }], stageHistory: [step("2026-10-14 09:00", "ready", "building")] });
+    const win = timeWindow("day", NOW, 0);
+    const html = renderToStaticMarkup(h(TimelineChart, { scale: "day", rows: layout(spans([task], NOW), win, "day"), ticks: axis("day", win, NOW), now: nowAt(win, NOW), multi: false, openKey: null, onOpen: () => {} }));
+    expect(html.match(/class="tl-pause"/g)).toHaveLength(1);
+    expect(html).not.toContain("tl-block");
+    expect(html).toContain("Building · paused");
+  });
 });

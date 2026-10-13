@@ -7,12 +7,13 @@ import { isLive, waitingOnYou } from "./paneData";
 import { Machine } from "./settingsData";
 import { isWork, levelLabel, shownStageClass, shownStageLabel } from "./levels";
 import { isHuman } from "./human";
+import { PanePause, PausedChip } from "./Pause";
 import type { Task } from "./types";
 import YouRibbon from "./YouRibbon";
 
 /** The top of the task pane: where it is and when it changed, the title (click to rename it in
  *  place), and the status line. */
-export default function PaneHeader({ task, now, onClose, onRename, onOpenTask }: { task: Task; now: number; onClose: () => void; onRename: (title: string) => void; onOpenTask?: (id: string) => void }) {
+export default function PaneHeader({ task, now, onClose, onRename, onOpenTask, pause }: { task: Task; now: number; onClose: () => void; onRename: (title: string) => void; onOpenTask?: (id: string) => void; pause?: PauseProps }) {
   const [title, setTitle] = useState<string | null>(null);
   const since = ago(now, task.modified);
   return (
@@ -41,10 +42,13 @@ export default function PaneHeader({ task, now, onClose, onRename, onOpenTask }:
           }}
         />
       )}
-      <StatusLine task={task} now={now} onOpenTask={onOpenTask} />
+      <StatusLine task={task} now={now} onOpenTask={onOpenTask} pause={pause} />
     </>
   );
 }
+
+/** The pane's Pause and Resume (0045), run through the pane's actions. */
+type PauseProps = { busy: boolean; onPause: (why: string) => Promise<boolean>; onResume: () => void };
 
 /** The title as a text box, in its own place: Enter or Save saves, Esc or Cancel keeps the old one. */
 export function TitleEdit({ value, onChange, onSave, onCancel }: { value: string; onChange: (v: string) => void; onSave: () => void; onCancel: () => void }) {
@@ -81,12 +85,13 @@ export function TitleEdit({ value, onChange, onSave, onCancel }: { value: string
  *  the short one). */
 const person = (who: string) => (splitHolder(who).label === "owner" ? (who === "owner" ? "you" : `you, ${who}`) : who);
 
-/** Stage, why it's blocked (the kind in bold, each task it's blocked by a link, 0024), who's on it
+/** Stage, Paused with when and why and the Pause or Resume beside it (0045), why it's blocked (the
+ *  kind in bold, each task it's blocked by a link, 0024), who's on it
  *  (in full, session and all; "Your turn" in Your check, 0043), whether it's live and since when,
  *  who held the stages before (0030), who built and who tested it (0047), its role ("your own task" for a human task, 0022), and what's waiting on the owner
  *  (gold) or that nothing is. A goal or feature shows the stage its children give it, and its
  *  level. */
-export function StatusLine({ task, now, onOpenTask }: { task: Task; now: number; onOpenTask?: (id: string) => void }) {
+export function StatusLine({ task, now, onOpenTask, pause }: { task: Task; now: number; onOpenTask?: (id: string) => void; pause?: PauseProps }) {
   const work = isWork(task);
   const known = isStage(task.stage);
   const pill = work
@@ -105,6 +110,8 @@ export function StatusLine({ task, now, onOpenTask }: { task: Task; now: number;
   return (
     <div className="status-line" data-part="status">
       {pill}
+      <PausedChip t={task} now={now} />
+      {pause && work && <PanePause task={task} busy={pause.busy} onPause={pause.onPause} onResume={pause.onResume} />}
       <BlockWhy t={task} onOpenTask={onOpenTask} />
       {(who || started || earlier.length > 0 || built) && (
         <span className="holder">

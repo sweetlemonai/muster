@@ -91,6 +91,10 @@ export const api = {
   // holder's claim has no session stamp.
   askCheckin: (queue: string, id: string, stamp: string) => invoke<Pinged>("ask_checkin", { queue, id, stamp }),
   messageSession: (queue: string, id: string, text: string, stamp: string) => invoke<Pinged>("message_session", { queue, id, text, stamp }),
+  // Pause or resume a task (0045), as the owner: it keeps its stage and claim; in Building or
+  // Testing its session is asked to stop, or to carry on. `why` may be "".
+  pauseTask: (queue: string, id: string, why: string, stamp: string) => invoke<Paused>("pause_task", { queue, id, why, stamp }),
+  resumeTask: (queue: string, id: string, stamp: string) => invoke<Paused>("resume_task", { queue, id, stamp }),
   // Opens one of the task's links in the browser: the core opens only an address the task has, and only https.
   openLink: (queue: string, id: string, url: string) => invoke<void>("open_link", { queue, id, url }),
   // Files the window holds (pasted or dropped) go as [name, data URL]; picking uses the core's dialog.
@@ -113,6 +117,9 @@ export const api = {
 
 /** What a ping reached: the session's short id, and the task's path. */
 export type Pinged = { session: string; path: string };
+/** What a pause or resume did: the session it told ("" for none), or why none could be ("" when
+ *  nobody works on it in its stage). */
+export type Paused = { path: string; session: string; unreached: string };
 
 export type HelperLine = { role: "owner" | "helper" | "system"; kind: string; text: string; at: number };
 export type AccountInfo = { name: string; loggedIn: boolean | null; plan: string };

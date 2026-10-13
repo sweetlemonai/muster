@@ -3,7 +3,7 @@
 //! from the current folder (a queue itself, or a `tasks/` beside or above it).
 
 use crate::session::{self, Session};
-use crate::{backlog, fields, index, ops, ping, projects, queue, search, settings, vision};
+use crate::{backlog, fields, index, ops, pause, ping, projects, queue, search, settings, vision};
 use std::path::{Path, PathBuf};
 
 /// The environment a command reads its caller from (`std::env::var`, or a test's own).
@@ -186,8 +186,8 @@ fn resolve_queue(
 /// Commands that claim, hand on or hold a task, rewrite its write-up, and the backlog's writes
 /// (add, file, drop). A slip of the environment would do them in another project's queue (it
 /// happened: drover's 0022 claimed from muster), so they're checked. `start` and `release` (0023)
-/// claim and give up too.
-const TARGETED: [&str; 15] = [
+/// claim and give up too, and `pause` and `resume` (0045) hold and free one.
+const TARGETED: [&str; 17] = [
     "claim",
     "next",
     "start",
@@ -196,6 +196,8 @@ const TARGETED: [&str; 15] = [
     "return",
     "block",
     "unblock",
+    "pause",
+    "resume",
     "stage",
     "heartbeat",
     "checkin",
@@ -261,7 +263,7 @@ fn check_target(
 }
 
 /// Commands whose first word after the command is a task (0033: `mu-12`, `MU-12`, `12` or `0012`).
-const TAKES_A_TASK: [&str; 25] = [
+const TAKES_A_TASK: [&str; 27] = [
     "show",
     "move",
     "pass",
@@ -287,6 +289,8 @@ const TAKES_A_TASK: [&str; 25] = [
     "escalate",
     "vision",
     "ping",
+    "pause",
+    "resume",
 ];
 
 /// Where the task is in `a.pos` for this command, when it takes one and was given it.
@@ -698,6 +702,9 @@ fn list_text(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> String {
             }
             if !t.blocked_kind.is_empty() {
                 extra.push_str(&format!(" [{}]", crate::block::sentence_of(t, true)));
+            }
+            if !t.paused.is_empty() {
+                extra.push_str(&format!("  [paused since {}]", t.paused));
             }
             if t.waiting_for_owner {
                 extra.push_str("  [needs you]");
@@ -1413,6 +1420,29 @@ fn run_on(
             let id = need(a, 1, "a task id")?;
             let p = ops::unblock_task(root, id, &me(), stamp)?;
             println!("{}", stage_message(root, prefix, id, &p));
+            Ok(0)
+        }
+        "pause" | "resume" => {
+            let id = need(a, 1, "a task id")?;
+            let p = if cmd == "pause" {
+                pause::pause(root, id, &a.pos[2..].join(" "), &me(), stamp)?
+            } else {
+                pause::resume(root, id, &me(), stamp)?
+            };
+            println!("{}: {cmd}d ({})", key(id), p.path);
+            if !p.session.is_empty() {
+                let ask = if cmd == "pause" {
+                    "to stop"
+                } else {
+                    "to carry on"
+                };
+                println!(
+                    "Asked session {} {ask}: it arrives after that session's next tool call.",
+                    p.session
+                );
+            } else if !p.unreached.is_empty() {
+                println!("Its session can't be told: {}.", p.unreached);
+            }
             Ok(0)
         }
         "stage" => {
@@ -3353,6 +3383,63 @@ mod tests {
         assert_eq!(code_in(&q, &owner, &["ping", "0002"]), 1);
         assert_eq!(code_in(&q, &owner, &["ping", "0002", "hello"]), 1);
         assert_eq!(code_in(&q, &owner, &["ping"]), 2, "no id");
+    }
+
+    #[test]
+    fn pause_and_resume_a_task_its_session_told_each_time() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let owner = [("MUSTER_AS", "owner")];
+        let session = [
+            ("MUSTER_AS", "wt-a"),
+            (
+                "CLAUDE_CODE_SESSION_ID",
+                "7b5e8856-c9c8-45ec-aa03-c0ddbf1d4394",
+            ),
+        ];
+        assert_eq!(code_in(&q, &owner, &["new", "Stamped"]), 0);
+        assert_eq!(code_in(&q, &session, &["claim", "0001"]), 0);
+        // The reason is every word after the id.
+        assert_eq!(
+            code_in(&q, &owner, &["pause", "0001", "the", "design", "changes"]),
+            0
+        );
+        let t = queue::read_task(d.path(), "0001").unwrap();
+        assert_eq!(
+            (t.stage.as_str(), t.paused_why.as_str()),
+            ("building", "the design changes")
+        );
+        assert!(d.path().join("mail/7b5e8856/0001-pause.md").exists());
+        assert_eq!(code_in(&q, &owner, &["pause", "0001"]), 1, "already paused");
+        assert_eq!(code_in(&q, &session, &["pass", "0001", "--gate", "g"]), 1);
+        assert_eq!(code_in(&q, &owner, &["list"]), 0);
+        assert_eq!(code_in(&q, &owner, &["resume", "0001"]), 0);
+        assert!(d.path().join("mail/7b5e8856/0001-resume.md").exists());
+        assert!(queue::read_task(d.path(), "0001")
+            .unwrap()
+            .paused
+            .is_empty());
+        assert_eq!(code_in(&q, &owner, &["resume", "0001"]), 1, "not paused");
+        assert_eq!(code_in(&q, &owner, &["pause"]), 2, "no id");
+        assert_eq!(code_in(&q, &owner, &["resume"]), 2, "no id");
+        // By its key too (0033), and what it refuses with names the task by its key.
+        std::fs::write(d.path().join("README.md"), "---\nprefix: mu\n---\n\nq").unwrap();
+        assert_eq!(code_in(&q, &owner, &["pause", "mu-1", "later"]), 0);
+        assert_eq!(
+            queue::read_task(d.path(), "0001").unwrap().paused_why,
+            "later"
+        );
+        assert_eq!(code_in(&q, &owner, &["pause", "MU-1"]), 1, "already paused");
+        let since = queue::read_task(d.path(), "0001").unwrap().paused;
+        assert_eq!(
+            crate::key::name_tasks(d.path(), &pause::refusal("0001", &since), &[]),
+            format!("mu-1 is paused (since {since}); resume it first: muster resume mu-1")
+        );
+        assert_eq!(code_in(&q, &owner, &["resume", "mu-1"]), 0);
+        assert!(queue::read_task(d.path(), "0001")
+            .unwrap()
+            .paused
+            .is_empty());
     }
 
     #[test]

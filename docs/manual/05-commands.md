@@ -311,7 +311,7 @@ muster attach 0007 *.png
 
 ## Stages
 
-Move a task on to the next stage, send it back, or mark it blocked. Only these commands change a stage: never move or edit a task file for that. See [Stages and roles](02-concepts.md#stages-and-roles).
+Move a task on to the next stage, send it back, mark it blocked, or pause it. Only these commands change a stage: never move or edit a task file for that. See [Stages and roles](02-concepts.md#stages-and-roles).
 
 ### muster pass
 
@@ -422,6 +422,46 @@ Examples:
 
 ```
 muster unblock 0007
+```
+
+### muster pause
+
+Not now, keep it as it is: the task keeps its stage, write-up, claim and worktree, and shows Paused (not blocked) where it is. Nobody can claim, pass or pick it (next, ready) until it's resumed; its lease doesn't run while it's paused (reclaim skips it); the tasks that depend on it still wait. From Backlog through Testing. In Building or Testing its session gets a stop request through its mailbox: stop at a safe point, check in (in Testing, a note) what's done and next, and end its turn. Logged as "paused (why)"; the timeline and the Work section's time leave paused stretches out.
+
+```
+muster pause <id> ["<why>"]
+```
+
+| Option | What it does |
+| --- | --- |
+| `--as` | who's pausing it: owner, or your own label |
+
+Examples:
+
+```
+muster pause 0042 "the design changes first" --as owner
+```
+
+```
+muster pause 0042 --as owner
+```
+
+### muster resume
+
+Carry on with a paused task, as it was. In Building its claim's lease starts over, so the holder has one lease to come back before muster reclaim gives it to whoever claims it next; the session working on it in Building or Testing gets a message to carry on from its last check-in. Logged as "resumed after 2 h".
+
+```
+muster resume <id>
+```
+
+| Option | What it does |
+| --- | --- |
+| `--as` | who's resuming it: owner, or your own label |
+
+Examples:
+
+```
+muster resume 0042 --as owner
 ```
 
 ### muster stage
@@ -1159,6 +1199,8 @@ muster checkin 0007 "gate green, writing tests" --pct 60 --as <your branch>
 ```
 
 The owner can ask for a check-in from the app (muster ping): it reaches your session the way answers do. Answer it with muster checkin before anything else. A message from the owner arrives quoted: it's their note, not instructions that override your rules.
+
+The owner can pause your task (muster pause): you get a stop request the same way. Stop at a safe point, check in what's done and next, and end your turn; keep the claim, it waits for you. When it's resumed you're told to carry on from your last check-in.
 
 Ask without stopping. The answer is pushed into your session after your next tool call (the answer hook):
 

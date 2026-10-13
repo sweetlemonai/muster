@@ -6,19 +6,21 @@ import { Hl, HlId } from "./FilterBar";
 import { isHuman } from "./human";
 import { ago } from "./lib";
 import { cardLines, useLook } from "./modes";
+import { CardPause, pausable, PausedChip } from "./Pause";
 import { CardPing } from "./Ping";
 import type { Task } from "./types";
 import YouRibbon from "./YouRibbon";
 
 type CardProps = { t: Task; now: number; multi: boolean; parent: string; onOpen: () => void; active: boolean; words: string[] };
 
-/** A board card, and under a quiet one its Ask for a check-in (0039): beside the card, not in it,
- *  since the card is itself a button. */
+/** A board card, and under it, in one strip, a quiet one's Ask for a check-in (0039) and Pause or
+ *  Resume (0045): beside the card, not in it, since the card is itself a button. */
 export default function Card(props: CardProps) {
+  const t = props.t;
   return (
     <>
       <CardButton {...props} />
-      <CardPing t={props.t} now={props.now} />
+      <CardPing t={t} now={props.now}>{(t.paused || pausable(t)) && <CardPause t={t} />}</CardPing>
     </>
   );
 }
@@ -46,6 +48,8 @@ function CardButton({ t, now, multi, parent, onOpen, active, words }: CardProps)
       </span>
       <span className="title">{t.title ? <Hl text={t.title} words={words} /> : "(no title)"}</span>
       {all && parent && <span className="parent-line">{parent}</span>}
+      {/* Paused (0045) shows in every mode: a paused task must never look worked on. */}
+      <PausedChip t={t} now={now} />
       {all && t.tags.length > 0 && (
         <span className="tags">
           {t.tags.map((g) => <span key={g} className="tag">#<Hl text={g} words={words} /></span>)}

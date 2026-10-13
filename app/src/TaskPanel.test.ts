@@ -32,7 +32,7 @@ function pane(over: Partial<Task>, now = 0, childTasks?: Task[]) {
 
 describe("task pane stage controls", () => {
   it("shows the stage with its role", () => {
-    expect(pane({ stage: "building", claimedBy: "owner" }).line).toBe("Building LIVE on it: you code agent nothing waiting on you");
+    expect(pane({ stage: "building", claimedBy: "owner" }).line).toBe("Building Pause LIVE on it: you code agent nothing waiting on you");
     expect(pane({ stage: "your-check" }).line).toBe("Your check LIVE Your turn owner Waiting on you: accept or send back");
   });
   it("passes to the next stage, and Backlog can't be sent back", () => {
@@ -151,8 +151,8 @@ describe("task pane stage controls", () => {
 describe("the status line", () => {
   const held = { stage: "building", claimedBy: "drover/main (session 3fba2222)", modified: 1000 };
   it("who's on it, live while the file changed in the last 5 minutes", () => {
-    expect(pane(held, 1000 + 60).line).toBe("Building LIVE on it: drover/main (session 3fba2222) code agent nothing waiting on you");
-    expect(pane(held, 1000 + 3 * 3600).line).toBe("Building quiet 3 h · on it: drover/main (session 3fba2222) code agent nothing waiting on you");
+    expect(pane(held, 1000 + 60).line).toBe("Building Pause LIVE on it: drover/main (session 3fba2222) code agent nothing waiting on you");
+    expect(pane(held, 1000 + 3 * 3600).line).toBe("Building Pause quiet 3 h · on it: drover/main (session 3fba2222) code agent nothing waiting on you");
   });
   it("the project and when the file changed lead the pane", () => {
     expect(text(/<div class="topline">([\s\S]*?)<\/div>/.exec(pane(held, 1000 + 3 * 3600).html)?.[1] ?? "")).toBe("demo · changed 3 h ago ×");
@@ -162,13 +162,13 @@ describe("the status line", () => {
     const A = "wt-a (wt-0030 · session 7b5e8856 · cc-hg)";
     const now = new Date(2026, 9, 12, 14, 5).getTime() / 1000;
     const p = pane({ stage: "testing", heldBy: A, stageSince: "2026-10-12 12:05", modified: now - 60, stageHistory: [{ at: "2026-10-12 10:00", who: A, from: "ready", to: "building" }] }, now);
-    expect(p.line).toBe(`Testing LIVE on it: ${A} · started 2 h ago · Building: ${A} QA agent nothing waiting on you`);
+    expect(p.line).toBe(`Testing Pause LIVE on it: ${A} · started 2 h ago · Building: ${A} QA agent nothing waiting on you`);
     // Done: nobody on it, the stages' holders still named, no live mark.
     const done = pane({ stage: "done", stageHistory: [{ at: "2026-10-12 10:00", who: A, from: "ready", to: "building" }] }, now);
     expect(done.line).toBe(`Done Building: ${A} · Your check: you nothing waiting on you`);
   });
   it("a claim left on a stage nobody holds isn't shown", () => {
-    expect(pane({ ...held, stage: "testing" }, 1000).line).toBe("Testing QA agent nothing waiting on you");
+    expect(pane({ ...held, stage: "testing" }, 1000).line).toBe("Testing Pause QA agent nothing waiting on you");
   });
   it("what's waiting on the owner, in gold", () => {
     const crit = (n: number, ticked: boolean) => ({ n, label: `AC${n}`, text: "x — verify: owner", ticked, owner: true });
@@ -458,8 +458,8 @@ describe("the owner's own task in the pane (0022)", () => {
   });
   it("says it's yours, with the You ribbon by the project and its role in the status line", () => {
     const p = pane({ forWho: "human" });
-    expect(p.line).toBe("Ready your own task nothing waiting on you");
-    expect(pane({ forWho: "human", stage: "building", claimedBy: "owner" }).line).toBe("Building LIVE on it: you your own task nothing waiting on you");
+    expect(p.line).toBe("Ready Pause your own task nothing waiting on you");
+    expect(pane({ forWho: "human", stage: "building", claimedBy: "owner" }).line).toBe("Building Pause LIVE on it: you your own task nothing waiting on you");
     expect(p.html).toContain('<span class="you-ribbon"');
     expect(pane({}).html).not.toContain("you-ribbon");
   });

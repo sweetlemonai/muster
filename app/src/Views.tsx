@@ -158,7 +158,8 @@ export function TimelineView({ tasks, now, multi, openKey, onOpen, words }: { ta
         <p className="meta tl-legend">
           Each bar is a task's work: it starts when the task was claimed and ends when the work finished (it reached Your check or
           Done), one segment per stage in that stage's colour, from the times muster logged. The thin dotted tail after it is the
-          time it has waited for your check. Tasks still being worked run to the now line. Hatching is time blocked. Day is the
+          time it has waited for your check. Tasks still being worked run to the now line. Red hatching is time blocked, grey
+          hatching time paused (not counted as work). Day is the
           last 24 hours; Week shows quarter days, Month days.
         </p>
       </div>
@@ -232,7 +233,10 @@ export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen,
                 {p.blocks.map((b) => (
                   <span key={`b${b.left}`} className="tl-block" style={{ left: pct(b.left), width: pct(b.width) }} title={blockLead(b.kind)} />
                 ))}
-                <span className="tl-bar-text">{stageLabel(t.stage)}{isBlocked(t) ? " · blocked" : ""}{t.priority === "high" ? " · high" : ""}</span>
+                {p.pauses.map((g) => (
+                  <span key={`p${g.left}`} className="tl-pause" style={{ left: pct(g.left), width: pct(g.width) }} />
+                ))}
+                <span className="tl-bar-text">{stageLabel(t.stage)}{t.paused ? " · paused" : ""}{isBlocked(t) ? " · blocked" : ""}{t.priority === "high" ? " · high" : ""}</span>
               </span>
             </span>
           </button>

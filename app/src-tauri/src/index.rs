@@ -168,7 +168,7 @@ fn stage_name(stage: &str) -> String {
 }
 
 /// One task's line: its key (0033; the id when it has no prefix), linked title, level (goals and features), "you" for the owner's own task,
-/// stage, why it's blocked (the block's sentence, 0024), the tasks it depends on that are still
+/// stage, "paused" (0045), why it's blocked (the block's sentence, 0024), the tasks it depends on that are still
 /// `open` (unless that sentence names them), its open vision conflicts, progress and due date,
 /// priority, type (tasks), estimate (`muster list`'s text), and how many comments it has.
 fn line(t: &Task, open: &crate::block::Open) -> String {
@@ -190,6 +190,10 @@ fn line(t: &Task, open: &crate::block::Open) -> String {
         parts.push("you".into());
     }
     parts.push(stage_name(&t.shown_stage));
+    // Paused by the owner (0045): it keeps its stage, so the word goes beside it.
+    if !t.paused.is_empty() {
+        parts.push("paused".into());
+    }
     let why = crate::block::sentence_of(t, false);
     if !why.is_empty() {
         parts.push(md_text(&why, 400));
@@ -1061,6 +1065,15 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
             text.contains(
                 "- 0001 [Buy the domain](todo/0001-a.md) · you · Ready · Blocked by outside: the registrar's reply · ⚠ 1 vision · normal · code\n"
             ),
+            "{text}"
+        );
+        // Paused (0045): beside its stage.
+        for t in s.tasks.iter_mut().filter(|t| t.id == "0001") {
+            t.paused = "2026-10-13 10:00".into();
+        }
+        let text = index_md(&s, "p");
+        assert!(
+            text.contains("- 0001 [Buy the domain](todo/0001-a.md) · you · Ready · paused · Blocked by outside"),
             "{text}"
         );
     }

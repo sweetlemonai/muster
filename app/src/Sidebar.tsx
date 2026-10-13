@@ -85,8 +85,8 @@ function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a: TaskAc
         <button
           type="button"
           className="primary"
-          disabled={task.blocked || a.busy || yoursOpen}
-          title={yoursOpen ? "Tick yours in the checklist first" : undefined}
+          disabled={task.blocked || Boolean(task.paused) || a.busy || yoursOpen}
+          title={task.paused ? "Paused: resume it first" : yoursOpen ? "Tick yours in the checklist first" : undefined}
           onClick={a.pass}
         >
           {pass}
@@ -120,6 +120,7 @@ function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a: TaskAc
         </p>
       )}
       {showPass && task.blocked && <p className="meta small">{blockSentence(task) || "Blocked on something it doesn't name"}. Unblock it to pass it on.</p>}
+      {showPass && task.paused && <p className="meta small">Paused: resume it (beside its stage, above) to pass it on.</p>}
       {!showPass && !stale && !holder && <p className="meta small">{nothingNext(task)}</p>}
     </div>
   );

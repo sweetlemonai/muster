@@ -122,7 +122,14 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
       }}
     >
       <header className="pane-top" onPaste={onPaste}>
-        <PaneHeader task={task} now={now} onClose={onClose} onRename={(t) => a.setField("title", t, "Renamed.")} onOpenTask={onOpenTask} />
+        <PaneHeader
+          task={task}
+          now={now}
+          onClose={onClose}
+          onRename={(t) => a.setField("title", t, "Renamed.")}
+          onOpenTask={onOpenTask}
+          pause={{ busy: a.busy, onPause: a.pause, onResume: a.resume }}
+        />
         <StageTrack stage={task.stage} busy={a.busy} onPick={a.move} releases={(to) => releasedBy(task, to)} human={isHuman(task)} />
         <div className="tp-cols">
           <div className="tp-main">

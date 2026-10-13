@@ -70,6 +70,19 @@ muster block 0012 --on 0014,0016
 
 The card, the table, the timeline and the task pane say why in words, the kind first: "Blocked on you: which colour for the button?", "Blocked by tasks: mu-14 (Building, codex), mu-16 (Ready)". In the pane each task's key opens that task. A task blocked on you or by a permission also counts as waiting for you. `muster unblock 0012` lets it go on. In the task pane, use **Block** (pick the kind from its chips) and **Unblock**.
 
+## Paused
+
+**Paused** means "not now, keep it as it is". You pause a task from Backlog through Testing, with a reason if you like, and resume it when it's time:
+
+```
+muster pause 0042 "the design changes first"
+muster resume 0042
+```
+
+A paused task keeps its stage, its write-up, whoever holds it and its worktree, and it stays in its column with a grey **Paused** chip: "Paused 2 h ago · the design changes first". It isn't blocked: it isn't red and doesn't wait on anything. While it's paused nobody can claim it, pass it or pick it next, and its holder's lease doesn't run out. Tasks that depend on it still wait for it.
+
+If a session is working on it (Building or Testing), that session is asked, through its mailbox, to stop at a safe point, check in what's done and next, and end its turn. When you resume it, the session is told to carry on from its last check-in, and in Building its claim gets a fresh lease: if that session doesn't come back within one lease, whoever claims it next can have it. The log says `owner: paused (why)` and `owner: resumed after 2 h`. Paused time is hatched grey on the timeline and isn't counted as work time.
+
 ## Goals, features and tasks
 
 Tasks can be grouped in two **levels** above them:

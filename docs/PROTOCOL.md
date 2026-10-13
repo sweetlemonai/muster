@@ -262,6 +262,29 @@
 > `delivered/` unasked (`muster inbox` still shows it). Only `muster ping` writes an ask line: a note that
 > would read as one is refused. Messages stay on this Mac.
 
+> **Pausing a task (Muster 0045, 2026-10-13).** "Not now, keep it as it is": `muster pause <id>
+> ["<why>"]` (the app's **Pause**, under a card and beside the stage in the task pane) and `muster
+> resume <id>` (**Resume**). From Backlog through Testing. A paused task keeps its stage, write-up,
+> claim and worktree, and the board keeps it in its column with a grey **Paused** chip ("2 h ago ·
+> why"); it isn't blocked, so it's never red and waits on nothing. **Nobody can claim, pass or
+> pick it** (`claim`, `next`, `start`, `ready`, `pass` and the merge's pass refuse it: "0042 is
+> paused (since …); resume it first"); its holder may still check in and note. **Its lease doesn't
+> run** (`reclaim`, Release, `muster check` and `manifest.py --check` skip it), and the tasks that
+> depend on it still wait. The front matter says it, `paused: <stamp>` and `paused-why: <why>`,
+> which only muster writes; the log says `<who>: paused (why)` and `<who>: resumed after 2 h`, and a
+> note that would read as either is refused. **Its session is told:** in Building or Testing the
+> holder's session (its stamp, as a ping reaches it) gets `mail/<session8>/<id>-pause.md`, "The
+> owner paused 0042: stop at a safe point, check in what's done and next, and end your turn" (in
+> Testing, a note instead of a check-in), the reason quoted as the owner's note; logged `; asked
+> session 7b5e8856 to stop`. Resume writes `<id>-resume.md`, "carry on from your last check-in"
+> (one waiting per task: the newer of the two replaces the older), and in Building starts the
+> claim's lease over, so the holder has one lease to come back before `reclaim` gives it to whoever
+> claims it next. The hook hands either over only while it still stands (still paused, or still
+> resumed) and the session still works on it; otherwise it's set aside in `delivered/`. **A
+> session told to stop** checks in what's done and next, ends its turn and keeps the claim. Paused
+> stretches are drawn hatched grey on the timeline and left out of the Work section's minutes and
+> the merge report's Building and Testing times.
+
 > **Task fields: type, estimates, links, comments (Muster 0017, 2026-10-12).** `type:` is one of
 > code, bug, chore, tech-debt, spike, design, docs, research (`muster new --type`, `muster set <id>
 > type`). An old `type: task` reads as code, and an old `type: idea` stays as it is, but `new` and
@@ -428,7 +451,9 @@ and `tasks.json`, which scripts read, keep ids.
   `muster/qa-0042`) verifies each criterion and passes it out of Testing, which for a started task
   is the merge; or the owner does. `muster` refuses the builder's pass out of Testing.
 - **Asked for a check-in** (a "Check-in request on task …" from the answer hook, task 0039)?
-  Answer with `muster checkin` before anything else. Claim from inside the session, so the claim
+  Answer with `muster checkin` before anything else.
+- **Paused** ("Pause on task …", task 0045)? Stop at a safe point, check in what's done and next
+  (a note in Testing), and end your turn. Keep the claim; "Resume on task …" means carry on. Claim from inside the session, so the claim
   carries its stamp and the owner can reach it.
 - **Coordinators stay thin:** they read `muster list --json` and builders' short reports, merge,
   and talk to other coordinators; subagents read the code.
@@ -534,7 +559,9 @@ sees another version falls back to writing only the task file.
    question and the answer. `bin/answer-hook.py` delivers it to that session as is, and moves it
    to `mail/<session8>/delivered/`. The same mailbox carries the owner's check-in requests
    (`<task>-checkin.md`) and messages (`<task>-note-<nnnn>.md`), which only `muster ping` and the
-   app write (see "Reaching a working session" above); the hook hands those over first.
+   app write (see "Reaching a working session" above), and stop and carry-on requests
+   (`<task>-pause.md`, `<task>-resume.md`), which only `muster pause` and `resume` and the app
+   write (see "Pausing a task"); the hook hands those over first.
 
 By hand, if the command isn't available:
 

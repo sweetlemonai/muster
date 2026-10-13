@@ -4,6 +4,7 @@ import { projectCount } from "./Backlog";
 import { needsYouCount } from "./human";
 import { inProgress } from "./lib";
 import { useLook } from "./modes";
+import { PAUSE_GLYPH } from "./Pause";
 import { QuietPing } from "./Ping";
 import type { Activity, Note, QueueInfo, Task } from "./types";
 
@@ -32,7 +33,7 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
   const shown = memo.current.names.flatMap((n) => byName.get(n) ?? []);
   const sums = useMemo(() => sumActivity(rows.map((r) => r.activity)), [rows]);
   const counts = useMemo(() => new Map(queues.map((q) => [q.name, q.counts])), [queues]);
-  // Focus (0038) narrows the sidebar to the names, the working dot, stalled and the needs-you count;
+  // Focus (0038) narrows the sidebar to the names, the working dot, stalled and the needs-you and paused counts;
   // a stalled project keeps its Ask all quiet sessions under it.
   const full = useLook("sidebar") === "full";
   return (
@@ -56,14 +57,16 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
   );
 }
 
-/** One project in the sidebar: its name and count, what's in progress and what needs you (the
- *  needs-you count: your own tasks to do and doing, and what the agents wait on you for), and
- *  under them its activity line. Narrowed (Focus, 0038), the name, the working dot, "stalled" in the
- *  attention colour (the activity line's word, or "2 stalled" on All) and the needs-you count. */
+/** One project in the sidebar: its name and count, what's in progress, what's paused (0045) and
+ *  what needs you (the needs-you count: your own tasks to do and doing, and what the agents wait
+ *  on you for), and under them its activity line. Narrowed (Focus, 0038), the name, the working
+ *  dot, "stalled" in the attention colour (the activity line's word, or "2 stalled" on All), the
+ *  needs-you count and the paused count. */
 export function ProjectItem({ name, title, total, tasks, on, onClick, working = false, stalled = "", children }: { name: string; title?: string; total: number; tasks: Task[]; on: boolean; onClick: () => void; working?: boolean; stalled?: string; children: ReactNode }) {
   const doing = tasks.filter(inProgress).length;
   const needs = needsYouCount(tasks);
   const full = useLook("sidebar") === "full";
+  const paused = tasks.filter((t) => t.paused).length;
   return (
     <button className={on ? "side-item on" : "side-item"} onClick={onClick} title={title}>
       <span className="side-line">
@@ -73,6 +76,7 @@ export function ProjectItem({ name, title, total, tasks, on, onClick, working = 
         <span className="side-badges">
           {needs > 0 && <span className="count warn" title={`${needs} need you`}>{needs}</span>}
           {full && doing > 0 && <span className="side-doing" title={`${doing} in progress (Building or Testing)`}>{doing}</span>}
+          {paused > 0 && <span className="side-paused" title={`${paused} paused`}>{`${PAUSE_GLYPH} ${paused}`}</span>}
           {full && <small>{total}</small>}
         </span>
       </span>

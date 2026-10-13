@@ -621,6 +621,16 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .rollup-panel .children .id { color: var(--muted); }
 /* Blocked stretches on a timeline bar (0031): hatched in the blocked colour, over the stages. */
 .tl-block { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--st-blocked) 70%, transparent) 0 3px, transparent 3px 7px); border-left: 1px solid var(--st-blocked); border-right: 1px solid var(--st-blocked); pointer-events: none; }
+/* Paused (0045): neutral grey, never a stage colour or the blocked red. */
+.card-paused { font-size: 11px; line-height: 1.35; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.paused-chip { display: inline-block; border: 1px solid var(--muted); color: var(--muted); border-radius: 4px; padding: 0 5px; font-size: 10.5px; font-weight: 600; line-height: 15px; }
+.status-line .card-paused { font-size: 12px; }
+.side-paused { color: var(--muted); font-size: 11px; }
+.pane-pause { display: inline-flex; gap: 4px; align-items: center; }
+.pane-pause input { width: 9em; font-size: 12px; padding: 1px 6px; }
+.pause-btn { border: 1px solid var(--border); background: none; color: var(--muted); border-radius: 6px; padding: 0 7px; font-size: 11.5px; line-height: 18px; }
+.pause-btn:not(:disabled):hover, .pause-btn:focus-visible { color: var(--text); border-color: var(--muted); }
+.tl-pause { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--muted) 55%, transparent) 0 3px, var(--surface) 3px 7px); border-left: 1px solid var(--muted); border-right: 1px solid var(--muted); pointer-events: none; }
 .tl-nav .chip:nth-child(2) { min-width: 7.5em; }
 
 /* Graph view (0019): what waits on what. Nodes are buttons over an SVG of arrows. */

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { api } from "./api";
 import { isHuman } from "./human";
 import { holderOf, quietCheckin, splitHolder, stamp } from "./lib";
@@ -14,11 +14,13 @@ import type { Task } from "./types";
 type Result = { ok: boolean; text: string } | null;
 
 /** "Ask for a check-in" under a quiet card (the "no check-in for N min" flag), beside the card
- *  rather than inside it, since the card is itself a button. Nothing on a card that isn't quiet. */
-export function CardPing({ t, now }: { t: Task; now: number }) {
+ *  rather than inside it, since the card is itself a button. Nothing on a card that isn't quiet,
+ *  unless the card has other controls for the same strip (`children`: Pause, 0045). */
+export function CardPing({ t, now, children }: { t: Task; now: number; children?: ReactNode }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  if (quietCheckin(t, now) === null) return null;
+  const quiet = quietCheckin(t, now) !== null;
+  if (!quiet && !children) return null;
   const why = cantAsk(t);
   const ask = async () => {
     setBusy(true);
@@ -33,16 +35,21 @@ export function CardPing({ t, now }: { t: Task; now: number }) {
   };
   return (
     <div className="card-ping" data-part="card-ping">
-      <button
-        type="button"
-        disabled={why !== "" || busy}
-        title={why || "Writes to its session's mailbox: it gets the request after its next tool call, and the card says when you asked until it checks in"}
-        onClick={() => void ask()}
-      >
-        Ask for a check-in
-      </button>
-      {why && <span className="why">{why}</span>}
-      {error && <span className="err">{error}</span>}
+      {quiet && (
+        <>
+          <button
+            type="button"
+            disabled={why !== "" || busy}
+            title={why || "Writes to its session's mailbox: it gets the request after its next tool call, and the card says when you asked until it checks in"}
+            onClick={() => void ask()}
+          >
+            Ask for a check-in
+          </button>
+          {why && <span className="why">{why}</span>}
+          {error && <span className="err">{error}</span>}
+        </>
+      )}
+      {children}
     </div>
   );
 }

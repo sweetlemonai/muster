@@ -65,12 +65,13 @@ fn is_id(id: &str) -> bool {
     id.len() == 4 && id.bytes().all(|b| b.is_ascii_digit())
 }
 
-/// Could a session start `t` now? A task (not a goal or feature) in Ready, not blocked, nobody's
-/// claim on it, an agent's (never for: human), and everything it depends on merged, in Your check
+/// Could a session start `t` now? A task (not a goal or feature) in Ready, not blocked or paused
+/// (0045), nobody's claim on it, an agent's (never for: human), and everything it depends on merged, in Your check
 /// or Done (0042, `block::holds`; a dependency that doesn't exist doesn't hold it, as with `claim`).
 pub fn claimable(t: &Task, tasks: &[Task]) -> bool {
     t.stage == "ready"
         && !t.blocked
+        && t.paused.is_empty()
         && is_id(&t.id)
         && t.level == "task"
         && !t.is_human()
@@ -736,23 +737,7 @@ pub enum Merge {
 /// Minutes `history` spent in `stage`, the open stretch counted to `now` (all
 /// `YYYY-MM-DD HH:MM`).
 pub fn minutes_in(history: &[StageStep], stage: &str, now: &str) -> i64 {
-    let mut total = 0;
-    let mut since: Option<i64> = None;
-    for s in history {
-        let at = ops::stamp_minutes(&s.at);
-        if s.from == stage {
-            if let (Some(a), Some(b)) = (since.take(), at) {
-                total += (b - a).max(0);
-            }
-        }
-        if s.to == stage {
-            since = at;
-        }
-    }
-    if let (Some(a), Some(b)) = (since, ops::stamp_minutes(now)) {
-        total += (b - a).max(0);
-    }
-    total
+    crate::pause::working_minutes(history, &[], stage, now)
 }
 
 /// `2h 10m`, `35m`.
@@ -940,8 +925,9 @@ pub fn merge(
         "merged {branch} into {trunk} as {short} (fast-forward{}) · {} · Building {} · Testing {} · {} check-in{}",
         if has_origin { ", pushed to origin" } else { ", not pushed: no origin" },
         run.line,
-        duration_text(minutes_in(&task.stage_history, "building", &at)),
-        duration_text(minutes_in(&task.stage_history, "testing", &at)),
+        // Paused stretches (0045) aren't time spent on it.
+        duration_text(crate::pause::working_minutes(&task.stage_history, &task.pause_history, "building", &at)),
+        duration_text(crate::pause::working_minutes(&task.stage_history, &task.pause_history, "testing", &at)),
         task.checkins.len(),
         if task.checkins.len() == 1 { "" } else { "s" },
     );

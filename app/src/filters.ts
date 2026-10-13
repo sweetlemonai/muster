@@ -60,6 +60,8 @@ function fixedGroup(id: string, label: string, order: readonly string[], has: Gr
 const STATES: Record<string, { label: string; has: (t: Task) => boolean }> = {
   // Blocked by the flag, or only by the tasks it depends on (0024), as the red card shows.
   blocked: { label: "blocked", has: isBlocked },
+  // Paused by the owner (0045): it keeps its stage, so only this finds them all.
+  paused: { label: "paused", has: (t) => Boolean(t.paused) },
   // The one needs-you definition (0022): an agent's task waiting on the owner, or the owner's own until done.
   "needs-you": { label: "needs you", has: needsYou },
   questions: { label: "open questions", has: (t) => t.openQuestions > 0 },

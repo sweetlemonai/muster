@@ -70,7 +70,7 @@ have their own short sets below. Every other section here applies in all three.
   needs a tester or needs you when it is.
 - **No filter bar until ⌘F,** only a button in its place, and the bar stays while a search or
   filter is on, so nothing is hidden without saying so.
-- **The sidebar narrows** to the project names, the working dot, stalled and the needs-you count;
+- **The sidebar narrows** to the project names, the working dot, stalled and the needs-you and paused counts;
   a stalled project keeps its Ask for a check-in.
 - **Recently finished folds to a strip** with its name and count beside the board, opened in place
   with a click: finished work isn't what needs doing now, but it stays one click away.
@@ -91,6 +91,7 @@ to have a solid color code"). `themes.ts` holds the values; tests keep them apar
 | red | Blocked, and errors | a task's type (a bug is the word "bug") |
 | magenta | High priority (a filled chip); normal is an outlined grey chip, low faint text | stages |
 | neutral grey, outlined | tags and types: labels, not states | |
+| muted text grey, outlined, with ⏸ | Paused (0045): a calm state, never a stage's fill or the blocked red | |
 
 A stage colour only ever says a stage. Words carry everything else.
 

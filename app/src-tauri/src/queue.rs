@@ -446,6 +446,13 @@ pub struct Task {
     /// When it was blocked, oldest first: from the log's `blocked on …` (or a hand `moved … →
     /// blocked`) to the next `unblocked`; `to` is empty while it still is (0031's timeline).
     pub block_history: Vec<BlockSpan>,
+    /// Paused by the owner (0045): when (`paused:`, a tool stamp), "" when it isn't; and why
+    /// (`paused-why:`), "" when no reason was given.
+    pub paused: String,
+    pub paused_why: String,
+    /// When it was paused, oldest first, from the log's `paused` and `resumed` lines
+    /// (`pause::history`); `to` is empty while it still is.
+    pub pause_history: Vec<crate::pause::PauseSpan>,
     /// When it moved into Done, to the minute, from the log (`done_at`); empty when unknown.
     pub done_at: String,
     pub questions: Vec<Question>,
@@ -1142,6 +1149,9 @@ pub fn parse_task(
         captured: get("captured"),
         captured_at,
         block_history,
+        paused: get("paused"),
+        paused_why: get("paused-why"),
+        pause_history: crate::pause::history(&log_lines),
         done_at,
         questions,
         open_questions,
@@ -1581,9 +1591,9 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str, lease: u64) 
             ));
         }
         // The lease `muster reclaim` uses: since the heartbeat, else since the file changed. The
-        // owner's own task (for: human) has none.
+        // owner's own task (for: human) has none, and a paused one's doesn't run (0045).
         let quiet = crate::ops::quiet_minutes(&t.heartbeat, t.modified, stamp, now);
-        if building && !t.is_human() && quiet > lease {
+        if building && !t.is_human() && t.paused.is_empty() && quiet > lease {
             out.push(format!(
                 "{queue}: {} is claimed but hasn't been heard from in {} h",
                 t.path,

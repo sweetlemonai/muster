@@ -90,6 +90,13 @@ export type Task = {
   /** When it was blocked: `from`/`to` stamps, `to` empty while it still is (0031), and the
    *  block's kind ("" for a hand move, 0024). */
   blockHistory: { from: string; to: string; kind?: string }[];
+  /** Paused by the owner (0045): since when ("YYYY-MM-DD HH:MM"), "" when it isn't, and why ("" for
+   *  no reason). It keeps its stage and claim; nobody claims or passes it until it's resumed. The
+   *  core always sends these; optional so a task without them reads as not paused. */
+  paused?: string;
+  pausedWhy?: string;
+  /** When it was paused: `from`/`to` stamps, `to` empty while it still is. */
+  pauseHistory?: { from: string; to: string }[];
   questions: Question[];
   openQuestions: number;
   ownerCriteria: Criterion[];

@@ -77,7 +77,7 @@ pub fn reads_as_ask(line: &str) -> bool {
 }
 
 /// Who's asking, as the session reads it: "The owner", else the label without its stamp.
-fn asker(who: &str) -> String {
+pub(crate) fn asker(who: &str) -> String {
     if session::is_owner(who) {
         "The owner".to_string()
     } else {
@@ -87,7 +87,7 @@ fn asker(who: &str) -> String {
 
 /// `--as "<label>"` for the holder's label when it's plain enough to quote safely in a shell
 /// (letters, digits, spaces and `._/()-`), else "" (the session knows its own label).
-fn as_option(holder: &str) -> String {
+pub(crate) fn as_option(holder: &str) -> String {
     let label = session::split(holder).0.trim();
     let plain = !label.is_empty()
         && label.chars().count() <= 100
@@ -127,7 +127,7 @@ pub fn clean_message(text: &str) -> Result<String, String> {
 }
 
 /// The task's title, from the file.
-fn title_of(text: &str) -> String {
+pub(crate) fn title_of(text: &str) -> String {
     text.lines()
         .find_map(|l| l.strip_prefix("# "))
         .unwrap_or("")
@@ -138,7 +138,10 @@ fn title_of(text: &str) -> String {
 }
 
 /// The task at `id`, its text and its parsed form, for a caller holding the lock.
-fn holder_task(root: &Path, id: &str) -> Result<(std::path::PathBuf, String, queue::Task), String> {
+pub(crate) fn holder_task(
+    root: &Path,
+    id: &str,
+) -> Result<(std::path::PathBuf, String, queue::Task), String> {
     let path = find_task(root, id)?;
     let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let t = queue::parse_task("", root, &queue::folder_of(root, &path), &path, &text, 0)
@@ -146,7 +149,7 @@ fn holder_task(root: &Path, id: &str) -> Result<(std::path::PathBuf, String, que
     Ok((path, text, t))
 }
 
-fn rel(root: &Path, path: &Path) -> String {
+pub(crate) fn rel(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or(path)
         .to_string_lossy()

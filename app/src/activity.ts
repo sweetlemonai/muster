@@ -7,7 +7,7 @@ import type { Activity, Task } from "./types";
 // of the polled state and its clock (`now`, seconds since 1970), so the sidebar recomputes them
 // every poll without reading anything else.
 
-export type ActivityTask = Pick<Task, "stage" | "blocked" | "blockedKind" | "claimedBy" | "heldBy" | "live" | "heartbeat" | "checkins" | "stageHistory" | "stageSince" | "modified">;
+export type ActivityTask = Pick<Task, "stage" | "blocked" | "blockedKind" | "claimedBy" | "heldBy" | "live" | "heartbeat" | "checkins" | "stageHistory" | "stageSince" | "modified" | "paused">;
 
 /** A project now: how many of its tasks are being worked on, whether its work in Building has
  *  gone quiet, and minutes since anything happened in it (null when nothing says). */
@@ -76,8 +76,9 @@ export function isWorking(t: ActivityTask, now: number): boolean {
 }
 
 /** Work in Building that should be moving: held by a session, not waiting (blocked, by tasks
- *  too), not the owner's own (the owner doesn't check in). lib.ts quietCheckin's rule for a card. */
-const activeClaim = (t: ActivityTask) => t.stage === "building" && !isBlocked(t) && splitHolder(t.claimedBy.trim()).label !== "owner";
+ *  too), not paused (0045), not the owner's own (the owner doesn't check in). lib.ts
+ *  quietCheckin's rule for a card. */
+const activeClaim = (t: ActivityTask) => t.stage === "building" && !isBlocked(t) && !t.paused && splitHolder(t.claimedBy.trim()).label !== "owner";
 
 /** A project's activity from its tasks and its queue's newest commit (seconds, 0 for none).
  *  Stalled: work in Building and nothing at all in the project for over 30 minutes. */

@@ -1097,6 +1097,8 @@ struct Current {
     /// Whom it holds back as a dependency (0042, `block::holds`): tasks not started yet, and
     /// tasks under way.
     kept_back: (bool, bool),
+    /// When the owner paused it (0045, `paused:`), "" when it isn't: nobody passes it then.
+    paused: String,
 }
 
 /// What a stage change writes.
@@ -1160,6 +1162,11 @@ pub(crate) fn free_text_line(line: String, what: &str) -> Result<String, String>
     if crate::ping::reads_as_ask(&line) {
         return Err(format!(
             "{what} would read as a check-in request in the log (\"<who>: asked for a check-in …\"); only muster ping writes those"
+        ));
+    }
+    if crate::pause::reads_as_pause(&line) {
+        return Err(format!(
+            "{what} would read as a pause or resume in the log (\"<who>: paused …\"); only muster pause and resume write those"
         ));
     }
     Ok(line)
@@ -1250,6 +1257,7 @@ fn current(root: &Path, path: &Path, text: &str) -> Result<Current, String> {
         modified,
         level: t.level,
         branch: t.branch,
+        paused: t.paused,
     })
 }
 
@@ -1715,7 +1723,7 @@ pub fn check_merge_facts(
 }
 
 /// Drop a front-matter field (a no-op when it isn't there).
-fn clear_front(text: &str, key: &str) -> Result<String, String> {
+pub(crate) fn clear_front(text: &str, key: &str) -> Result<String, String> {
     let rest = text
         .strip_prefix("---\n")
         .ok_or("the task has no front matter")?;
@@ -1945,6 +1953,9 @@ fn pass_change(
     expected: Option<&str>,
 ) -> Result<Change, String> {
     check_seen(id, t, expected)?;
+    if !t.paused.is_empty() {
+        return Err(crate::pause::refusal(id, &t.paused));
+    }
     if t.blocked {
         let on = if t.waiting_on.is_empty() {
             "something it doesn't name"
@@ -2200,7 +2211,7 @@ pub fn next_task(root: &Path, who: &str, stamp: &str) -> Result<Option<Claimed>,
         }
         let Some(top) = tasks
             .iter()
-            .filter(|t| t.stage == "ready" && !t.blocked && is_id(&t.id))
+            .filter(|t| t.stage == "ready" && !t.blocked && t.paused.is_empty() && is_id(&t.id))
             .filter(|t| t.level == "task")
             // The owner's own tasks are never an agent's to take (0022).
             .filter(|t| !t.is_human() || is_owner(&who))
@@ -2450,6 +2461,12 @@ fn release_change(
             t.waiting_on
         ));
     }
+    if !t.paused.is_empty() {
+        return Err(format!(
+            "{id} is paused (since {}); its lease doesn't run while it is",
+            t.paused
+        ));
+    }
     let quiet = quiet_minutes(&t.heartbeat, t.modified, stamp, now_secs);
     if quiet <= lease {
         return Err(format!(
@@ -2498,6 +2515,7 @@ pub fn reclaim(
         let quiet = tasks_now(root).into_iter().filter(|t| {
             t.stage == "building"
                 && t.blocked_kind.is_empty()
+                && t.paused.is_empty()
                 && !t.is_human()
                 && !t.claimed_by.is_empty()
                 && quiet_minutes(&t.heartbeat, t.modified, stamp, now_secs) > lease

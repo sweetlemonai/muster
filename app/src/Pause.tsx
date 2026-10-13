@@ -1,0 +1,101 @@
+import { useState } from "react";
+import { api } from "./api";
+import { agoText, minutesSince, stamp } from "./lib";
+import type { Task } from "./types";
+
+// Pausing a task (0045): "not now, keep it as it is". The core decides (pause.rs): a paused task
+// keeps its stage, claim and place on the board, nobody claims or passes it, and its session is
+// asked to stop. It isn't blocked, so it's never red: a calm grey chip with the pause glyph
+// (docs/DESIGN.md: neutral, not a stage colour).
+
+/** The stages a task can be paused in (pause::PAUSABLE): Backlog through Testing. */
+const PAUSABLE = new Set(["backlog", "shaping", "ready", "building", "testing"]);
+/** The pause glyph, drawn as text (not the emoji). */
+export const PAUSE_GLYPH = "⏸︎";
+
+/** Can it be paused now: in Backlog through Testing, and not already. */
+export const pausable = (t: Pick<Task, "stage" | "paused">) => PAUSABLE.has(t.stage) && !t.paused;
+
+/** "2 h ago · the design changes first": when it was paused, and why when it says; "" when it
+ *  isn't paused. */
+export function pausedText(t: Pick<Task, "paused" | "pausedWhy">, now: number): string {
+  if (!t.paused) return "";
+  const m = minutesSince(t.paused, now);
+  const when = m === null ? `since ${t.paused}` : agoText(m);
+  return t.pausedWhy ? `${when} · ${t.pausedWhy}` : when;
+}
+
+/** The Paused chip and when and why, on a card and in the pane; nothing for a task that isn't. */
+export function PausedChip({ t, now }: { t: Task; now: number }) {
+  if (!t.paused) return null;
+  return (
+    <span className="card-paused" title={`Paused since ${t.paused}: nobody claims or passes it until it's resumed`}>
+      <span className="paused-chip">{`${PAUSE_GLYPH} Paused`}</span> {pausedText(t, now)}
+    </span>
+  );
+}
+
+/** Pause or Resume under a card, one click: Pause from Backlog through Testing, Resume on a paused
+ *  one, nothing otherwise. It goes in the card's strip (Ping's CardPing), beside the card, since
+ *  the card is itself a button. */
+export function CardPause({ t }: { t: Task }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const paused = Boolean(t.paused);
+  if (!paused && !pausable(t)) return null;
+  const go = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      if (paused) await api.resumeTask(t.queue, t.id, stamp(new Date()));
+      else await api.pauseTask(t.queue, t.id, "", stamp(new Date()));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <button
+        type="button"
+        disabled={busy}
+        title={paused ? "Carry on as it was; its session is told to carry on" : "Not now: it keeps its place and claim, nobody works it, and its session is asked to stop"}
+        onClick={() => void go()}
+      >
+        {paused ? "Resume" : "Pause"}
+      </button>
+      {error && <span className="err">{error}</span>}
+    </>
+  );
+}
+
+/** The pane header's Pause (with an optional why, typed in place) or Resume. */
+export function PanePause({ task, busy, onPause, onResume }: { task: Task; busy: boolean; onPause: (why: string) => Promise<boolean>; onResume: () => void }) {
+  const [why, setWhy] = useState("");
+  if (task.paused) {
+    return (
+      <button type="button" className="pause-btn" disabled={busy} title="Carry on as it was; its session is told to carry on" onClick={onResume}>
+        Resume
+      </button>
+    );
+  }
+  if (!pausable(task)) return null;
+  return (
+    <form
+      className="pane-pause"
+      onSubmit={(e) => {
+        e.preventDefault();
+        // The why stays in the box when the core refuses it.
+        void onPause(why).then((ok) => {
+          if (ok) setWhy("");
+        });
+      }}
+    >
+      <button type="submit" className="pause-btn" disabled={busy} title="Not now: it keeps its place and claim, nobody works it, and its session is asked to stop">
+        Pause
+      </button>
+      <input value={why} onChange={(e) => setWhy(e.target.value)} placeholder="why (optional)" aria-label="Why pause it (optional)" />
+    </form>
+  );
+}

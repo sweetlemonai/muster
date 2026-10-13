@@ -489,6 +489,8 @@ def main():
                 # Who holds Testing or Your check (muster writes it, 0030); Building has claimed_by.
                 "held_by": fields.get("held-by", ""),
                 "heartbeat": fields.get("heartbeat", ""),
+                # Paused by the owner (0045): when, else "". Its lease doesn't run meanwhile.
+                "paused": fields.get("paused", ""),
                 "waiting_on": fields.get("waiting_on", ""),
                 "depends": parse_depends(fields.get("depends", ""))[0],
                 "_bad_depends": parse_depends(fields.get("depends", ""))[1],
@@ -543,8 +545,9 @@ def main():
                 problems.append(f"{rel}: in doing/ with no claimed-by")
             if folder == "blocked" and not t["waiting_on"]:
                 problems.append(f"{rel}: blocked with no waiting_on")
-            # The owner doing their own task (for: human) has no lease, so no stale heartbeat.
-            if building and t["heartbeat"] and t["for"] != "human":
+            # The owner doing their own task (for: human) has no lease, so no stale heartbeat, and
+            # a paused one's doesn't run (0045).
+            if building and t["heartbeat"] and t["for"] != "human" and not t["paused"]:
                 age = heartbeat_age(t["heartbeat"], now)
                 if age is not None and age > STALE_HOURS:
                     problems.append(f"{rel}: heartbeat {age:.0f} h old (stale after {STALE_HOURS} h)")

@@ -14,6 +14,8 @@ pub mod index;
 pub mod key;
 pub mod ops;
 pub mod parallel;
+pub mod pause;
+mod pause_cmds;
 pub mod ping;
 mod ping_cmds;
 pub mod projects;
@@ -1219,7 +1221,9 @@ pub fn run() {
             helper_cmds::helper_send,
             helper_cmds::helper_login,
             ping_cmds::ask_checkin,
-            ping_cmds::message_session
+            ping_cmds::message_session,
+            pause_cmds::pause_task,
+            pause_cmds::resume_task
         ])
         .run(tauri::generate_context!())
         .expect("error while running Muster");

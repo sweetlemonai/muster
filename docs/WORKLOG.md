@@ -4,6 +4,32 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Pause a task: it keeps its place and claim, nobody works it, its session is told (task 0045)
+**Did:** the owner: "option to pause a task". **Pause** / **Resume** under a card (Backlog through
+Testing) and beside the stage in the pane (optional why, typed in place), and `muster pause <id>
+["why"]` / `muster resume <id>`. A paused task keeps its stage, claim, worktree and column, shows a
+grey **⏸ Paused** chip ("2 h ago · why"), never red; claim, next, start, ready and every pass
+refuse it, reclaim and the quiet checks skip it, dependents still wait. In Building or Testing the
+holder's session gets a stop request (`mail/<session8>/<id>-pause.md`) and on resume a carry-on
+(`<id>-resume.md`), handed over by `bin/answer-hook.py` only while it still stands; resume gives a
+Building claim a fresh lease. Logged `paused (why)` / `resumed after 2 h`; the timeline hatches
+paused stretches grey, and the Work section's minutes and the merge report's stage times leave
+them out. Flags filter **paused**, sidebar "⏸ n", `muster list` `[paused since …]`, INDEX.md
+"paused", `manifest.py` reads `paused`. Core in `pause.rs` (+ `pause_cmds.rs`), small hooks in
+`ops.rs` (pass, next, reclaim, notes), `queue.rs`, `parallel.rs`, `work.rs`; app in `Pause.tsx`.
+PROTOCOL.md, the manual (02, 04, 05, 07), AS_BUILT and the /mu "Not routed" line updated.
+**Decided:** paused is front matter (`paused:`, `paused-why:`) plus log lines, not a block kind,
+so it's never red and never "waiting on"; the stop and carry-on requests are their own mailbox
+files (not notes), framed by the hook as requests, one waiting per task.
+**Verified:** `bin/gate`: `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`.
+New tests: 11 in `pause.rs` (keeps its place and resume restores it; claim, start, next, ready and
+pass refused; lease never runs out and resume gives one lease; dependents wait; mailbox stop and
+carry-on, Testing's note; no session told before Building; refusals; notes can't forge the lines;
+log stretches; stage time without pauses), `pause_cmds.rs`, the CLI, INDEX.md, `work.rs` (session
+minutes); 2 new Python tests and one extended (hook delivers and sets aside stop and carry-on; manifest's stale heartbeat);
+17 vitest (chip, card and pane buttons, filter, sidebar count, not stalled, timeline). The core and
+hook tests were red before the change. Not checked live in the app: AC5 (pause and resume a real
+task with a session on it) is the owner's.
 ## 2026-10-13 — Display modes: ADHD, Standard and Focus, in Settings and on ⌘. (task 0038)
 **Did:** Settings › Display picks ADHD (default, today's screens), Standard or Focus: three chips
 and a table of every element by mode, current column lit; applied at once, kept in

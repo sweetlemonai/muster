@@ -38,7 +38,7 @@ const TABLE = {
     label: "Card lines",
     adhd: { how: "all", says: "Who and since when, the check-in, branch, tags, parent, estimate, files and age on every card" },
     standard: { how: "selected", says: "Title, kind, priority, age and anything wrong; who, the check-in, tags, estimate and the rest on the selected card", reach: "Select the card" },
-    focus: { how: "status", says: "Title and one status line, and blocked, quiet or needs you when it is", reach: "Open the card: the task pane has it all" },
+    focus: { how: "status", says: "Title and one status line, and blocked, paused, quiet or needs you when it is", reach: "Open the card: the task pane has it all" },
   },
   "done-line": {
     label: "Done line",
@@ -68,7 +68,7 @@ const TABLE = {
     label: "Sidebar",
     adhd: { how: "full", says: "Projects with their counts, the order chips and each one's activity line" },
     standard: { how: "full", says: "Projects with their counts, the order chips and each one's activity line" },
-    focus: { how: "narrow", says: "Project names, the working dot, stalled and the needs-you count; a stalled project keeps its Ask for a check-in", reach: "Leave Focus: ⌘. or the mode chip in the header" },
+    focus: { how: "narrow", says: "Project names, the working dot, stalled and the needs-you and paused counts; a stalled project keeps its Ask for a check-in", reach: "Leave Focus: ⌘. or the mode chip in the header" },
   },
 } as const satisfies Record<string, Entry>;
 

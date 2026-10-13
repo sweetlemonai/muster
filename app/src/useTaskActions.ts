@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api } from "./api";
+import { api, type Paused } from "./api";
 import { isStage, nextStage, oneAtATime, readFiles, stageLabel, stamp } from "./lib";
 import { isHuman } from "./human";
 import { trackMove } from "./paneData";
@@ -23,11 +23,12 @@ export function useTaskActions(task: Task, onChanged: () => void) {
   const [once] = useState(oneAtATime);
   const [busy, setBusy] = useState(false);
 
-  /** Runs one change; the core's refusal is shown as is. True when it went through. */
-  const run = async (what: () => Promise<unknown>, done: string, undo?: Undo) => {
+  /** Runs one change; the core's refusal is shown as is. True when it went through. `done` may
+   *  read what the core returned. */
+  const run = async <T,>(what: () => Promise<T>, done: string | ((r: T) => string), undo?: Undo) => {
     try {
-      await what();
-      setMsg({ ok: true, text: done, undo });
+      const r = await what();
+      setMsg({ ok: true, text: typeof done === "string" ? done : done(r), undo });
       onChanged();
       return true;
     } catch (e) {
@@ -35,7 +36,7 @@ export function useTaskActions(task: Task, onChanged: () => void) {
       return false;
     }
   };
-  const stageRun = (what: () => Promise<unknown>, done: string, undo?: Undo) =>
+  const stageRun = <T,>(what: () => Promise<T>, done: string | ((r: T) => string), undo?: Undo) =>
     once(async () => {
       setBusy(true);
       try {
@@ -82,6 +83,9 @@ export function useTaskActions(task: Task, onChanged: () => void) {
       submit(() => api.blockTask(task.queue, task.id, kind, detail, now()), kind === "tasks" ? "Blocked by those tasks: added to its depends." : "Blocked. It keeps its stage."),
     unblock: () => void stageRun(() => api.unblockTask(task.queue, task.id, now()), "Unblocked."),
     release: () => void stageRun(() => api.reclaimTask(task.queue, task.id, now()), "Released: back in Ready."),
+    /** Pause (0045), with an optional why: true once the core took it. */
+    pause: (why: string) => stageRun(() => api.pauseTask(task.queue, task.id, why, now()), (p) => pausedMsg(p, true)),
+    resume: () => void stageRun(() => api.resumeTask(task.queue, task.id, now()), (p) => pausedMsg(p, false)),
     /** The owner's override from the track: no confirmation, an Undo in the message instead
      *  (see trackMove). It says the stage it was clicked in, so a stale window is refused. */
     move: (to: string) => {
@@ -106,3 +110,10 @@ export function useTaskActions(task: Task, onChanged: () => void) {
 }
 
 export type TaskActions = ReturnType<typeof useTaskActions>;
+
+/** What the pane says after a pause or resume: what it means, and whether its session was told. */
+export function pausedMsg(p: Paused, paused: boolean): string {
+  const head = paused ? "Paused: it keeps its place and claim, and nobody works it until you resume it." : "Resumed: it carries on as it was.";
+  if (p.session) return `${head} Session ${p.session} is asked to ${paused ? "stop at a safe point" : "carry on"} after its next tool call.`;
+  return p.unreached ? `${head} Its session can't be told: ${p.unreached}.` : head;
+}

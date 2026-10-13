@@ -204,9 +204,10 @@ export const CHECKIN_MINUTES = 30;
 /** Minutes a session holding a Building task has been quiet, when that's past CHECKIN_MINUTES:
  *  since its last check-in or heartbeat (a check-in is one). Null when it isn't, when it's
  *  blocked (waiting, by tasks too), held by the owner (who doesn't check in), or held by nobody. */
-export function quietCheckin(t: Pick<Task, "stage" | "blocked" | "blockedKind" | "claimedBy" | "heartbeat" | "modified">, now: number): number | null {
+export function quietCheckin(t: Pick<Task, "stage" | "blocked" | "blockedKind" | "claimedBy" | "heartbeat" | "modified" | "paused">, now: number): number | null {
   const who = t.claimedBy.trim();
-  if (t.stage !== "building" || t.blocked || t.blockedKind || !who || splitHolder(who).label === "owner") return null;
+  // Paused (0045): stopping is what it was asked to do.
+  if (t.stage !== "building" || t.blocked || t.blockedKind || t.paused || !who || splitHolder(who).label === "owner") return null;
   const m = quietMinutes(t, now);
   return m > CHECKIN_MINUTES ? m : null;
 }
@@ -265,8 +266,9 @@ export function quietMinutes(t: Pick<Task, "heartbeat" | "modified">, now: numbe
 /** A claim whose lease ran out, exactly what the core's reclaim takes: held, in Building, not
  *  blocked (that's waiting, by tasks too), not the owner's own task (`for: human`, which has no
  *  lease), and quiet for longer than the lease: `leaseMinutes`, this machine's from Settings (0036). */
-export function leaseRunOut(t: Pick<Task, "stage" | "blocked" | "blockedKind" | "claimedBy" | "heartbeat" | "modified" | "forWho">, now: number, leaseMinutes = LEASE_SECS / 60): boolean {
-  return t.stage === "building" && !t.blocked && !t.blockedKind && t.forWho !== "human" && t.claimedBy.trim() !== "" && quietMinutes(t, now) > leaseMinutes;
+export function leaseRunOut(t: Pick<Task, "stage" | "blocked" | "blockedKind" | "claimedBy" | "heartbeat" | "modified" | "forWho" | "paused">, now: number, leaseMinutes = LEASE_SECS / 60): boolean {
+  // A paused claim's lease doesn't run (0045), as the core's reclaim judges it.
+  return t.stage === "building" && !t.blocked && !t.blockedKind && !t.paused && t.forWho !== "human" && t.claimedBy.trim() !== "" && quietMinutes(t, now) > leaseMinutes;
 }
 
 /** Runs one action at a time: a call made while one is in flight is dropped (false), so a
