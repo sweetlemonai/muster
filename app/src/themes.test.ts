@@ -187,6 +187,28 @@ describe("the card CSS uses what the tests check (0026)", () => {
   });
 });
 
+describe("the task pane's CSS (0021) follows the theme", () => {
+  const start = css.indexOf("/* Task pane (0021");
+  const block = css.slice(start);
+  it("is there", () => {
+    expect(start).toBeGreaterThan(0);
+    expect(block).toContain(".stage-track");
+  });
+  it("names no colour of its own: every colour is a theme variable every theme sets (or the stage's)", () => {
+    expect(block).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i);
+    const themed = new Set([...Object.keys(variables(THEMES[0], ACCENTS[0])), "--status"]);
+    const used = new Set([...block.matchAll(/var\((--[\w-]+)/g)].map((m) => m[1]));
+    expect(used.size).toBeGreaterThan(5);
+    for (const v of used) expect(themed.has(v), v).toBe(true);
+  });
+  it("its gold \"waiting on you\" words, live badge and track reads are the tested pairs", () => {
+    expect(block).toContain(".task-pane .needs { color: var(--gold-text);");
+    expect(block).toContain(".live-badge { font-size: 9.5px; font-weight: 800; letter-spacing: 0.6px; color: var(--on-status); background: var(--st-building);");
+    // Words on the track and the sidebar's labels use text or muted, never faint (placeholders only).
+    expect(block).not.toContain("var(--faint)");
+  });
+});
+
 describe("apply() puts the card look on the page (0026)", () => {
   afterEach(() => vi.unstubAllGlobals());
   const page = () => {
