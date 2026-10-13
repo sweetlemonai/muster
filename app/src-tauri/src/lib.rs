@@ -1098,6 +1098,23 @@ async fn set_setting(
     .await
 }
 
+/// Change a project's Your check limit (0050) to a number from 1 to 50, `off`, or empty for the
+/// default. The project is one the window shows; the core checks the value; the next poll uses it.
+#[tauri::command]
+async fn set_your_check_limit(
+    handle: tauri::AppHandle,
+    project: String,
+    value: String,
+) -> Result<(), String> {
+    blocking(move || {
+        let app = handle.state::<AppState>();
+        queue_root(&app.config_file, &project)?;
+        let _guard = app.config.lock().map_err(|e| e.to_string())?;
+        settings::set_your_check_limit(&app.settings_file, &project, &value).map(|_| ())
+    })
+    .await
+}
+
 /// Change projects.json under the lock: load, edit, save.
 fn edit_config<T>(
     app: &AppState,
@@ -1273,6 +1290,7 @@ pub fn run() {
             projects,
             settings_info,
             set_setting,
+            set_your_check_limit,
             add_project,
             create_project,
             rename_project,
@@ -1617,7 +1635,9 @@ mod tests {
             serde_json::to_string(&info_for(&file, "0.1.0", &reader, "on (1 account)".into()))
                 .unwrap();
         assert!(
-            json.contains(r#""settings":{"leaseMinutes":720,"liveMinutes":15}"#),
+            json.contains(
+                r#""settings":{"leaseMinutes":720,"liveMinutes":15,"yourCheckLimits":{}}"#
+            ),
             "{json}"
         );
         assert!(

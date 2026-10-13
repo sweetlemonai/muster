@@ -14,7 +14,7 @@ The app reads the queues every 2 seconds while its window is visible, and stops 
 
 ## The projects sidebar
 
-**All** shows every project together. Below it is each project, with its numbers: an orange one for the tasks that need you, one in the Building colour for tasks in Building or Testing, "⏸ 2" in grey when some are [paused](02-concepts.md#paused), and the total, notes included. Click a project to see only its tasks. **+ Project** at the bottom opens [Settings](#settings) at [Projects](#projects).
+**All** shows every project together. Below it is each project, with its numbers: an orange one for the tasks that need you, one in the Building colour for tasks in Building or Testing, "⏸ 2" in grey when some are [paused](02-concepts.md#paused), and the total, notes included. Click a project to see only its tasks. **+ Project** at the bottom opens [Settings](#settings) at [Projects](#projects). A project with more waiting in Your check than its [limit](#your-check) says so under its name, in orange: "7 in Your check, limit 5".
 
 Under a stalled project is **Ask all quiet sessions for a check-in**, with how many it can reach: it asks each quiet card's session, as the card's own button does. It's shown off, with why, when none of its quiet claims has a session to reach, and it says how many it can't reach and how many wait for input in Claude Code. A project counts as working while Claude Code says one of its sessions is working, and not while its only active session waits for input or has ended.
 
@@ -84,6 +84,8 @@ The column is grouped by how much each task asks of you, always in this order, e
 - **Needs a session:** an open criterion mentions a session, a terminal or a command, so you'll run something outside the app.
 
 A criterion can set its own effort with `— effort: look` or `— effort: session`, before or after its `— verify: owner`. With Group by on, each band's Your check column is grouped the same way, and its Accept all takes that band's tasks. [Waiting for you](#waiting-for-you) groups its Your check tasks the same way.
+
+**The limit.** Your review is what holds parallel work up, so each project has a limit on how many of the agents' tasks may wait in Your check: 5 unless you change it in [Settings › Projects](#projects). Your own tasks don't count. Past it, the column's count reads "7 of 5" in orange, and the line under its header says "Over your limit of 5: check these before more start." (that line always has its place, so the cards don't move when it comes). With **All** projects, each project is checked against its own limit and the line names the ones over: "Over your limit in muster (7 of 5) and drover (9 of 8): …". With Group by on, the line sits above the bands. The sessions hear it too: `muster next`, `muster start`, `muster ready --parallel` and `muster list` print "muster: 7 tasks wait in Your check (limit 5): the owner's review is the bottleneck." It only warns: nothing is refused, and the commands still do their work. Accept all is the quick way back under it.
 
 ## The task pane
 
@@ -180,6 +182,7 @@ Every project Muster shows, with its **Prefix** (what its tasks' keys start with
 - **Add existing queue…** picks a queue kept anywhere else. Muster finds the ones at `~/playground/<project>/tasks` on its own, and one level deeper (`~/playground/<group>/<project>/tasks`), but not in folders starting with `.` or `_`, or in `node_modules`, `worktrees`, `target` or `dist`.
 - **Rename** a project, **Hide** or **Show** it, and **Remove** one you added.
 - **Set** beside a prefix changes it: 2 to 4 lowercase letters that no other project has (`muster projects set <project> prefix <p>` does the same). Why one is refused shows under the field. The task files keep their ids, so nothing moves, but the old keys stop finding its tasks.
+- **Your check:** the project's [limit](#your-check) with how many wait now ("limit 5 · 7 waiting", orange when over). **Off** turns the warning off; type a number from 1 to 50 and **Set** (or ↩) to change it, or to turn it back on. The board uses it at once. It's saved on this Mac in `settings.json` by the project's name (renaming a project starts it at 5 again), and `muster` reads the same file. A hidden project shows none.
 
 None of them deletes files. A project marked "not a queue any more" points at a folder that no longer has a queue's `README.md` and `todo/` folder.
 
@@ -197,7 +200,7 @@ Type a span the way `muster reclaim --after` takes it: `30m`, `2h`, `1.25h` or `
 ### About
 
 - **Version:** the app's version.
-- **Settings on this Mac:** the app's settings folder (`~/Library/Application Support/ai.sweetlemon.muster`) and what's in it: `projects.json` (the projects you added, hid or renamed), `settings.json` (the claim lease and the LIVE window) and `helper/` (the helper's account, model and conversations). Appearance, the display mode, text size, Group by, saved views and the pane's width are kept by the window itself.
+- **Settings on this Mac:** the app's settings folder (`~/Library/Application Support/ai.sweetlemon.muster`) and what's in it: `projects.json` (the projects you added, hid or renamed), `settings.json` (the claim lease, the LIVE window and each project's Your check limit) and `helper/` (the helper's account, model and conversations). Appearance, the display mode, text size, Group by, saved views and the pane's width are kept by the window itself.
 - **What it reads:** the queues it found on its own (at `~/playground/<project>/tasks`, and one level deeper), then the ones you added (or that you added none), each with its folder, and the folders of the Claude Code session transcripts. All of it is read on this Mac and nothing is sent anywhere; only what you write to the helper goes to Anthropic, through your own Claude Code.
 
 ## Colours

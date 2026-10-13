@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
+import { LimitCell } from "./CheckLimit";
 import { HomePath } from "./HomePath";
 import { queueTotal } from "./lib";
 import type { Project, QueueInfo } from "./types";
@@ -54,6 +55,12 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
     const q = queues.find((x) => x.path === p.path);
     return q ? queueTotal(q.counts) : null;
   };
+  // The Your check limit (0050) of a project the board reads; a hidden one has none in use.
+  const limit = (p: Project) => {
+    const q = !p.hidden && p.ok ? queues.find((x) => x.path === p.path) : undefined;
+    if (!q) return "—";
+    return <LimitCell key={`${p.key}-${q.yourCheckLimit}`} q={q} onSet={(v) => void act(() => api.setYourCheckLimit(q.name, v))} />;
+  };
 
   return (
     <div className="projects">
@@ -71,7 +78,7 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
       {list === null && <p className="none">Loading…</p>}
       <table className="projects-table">
         <thead>
-          <tr><th>Project</th><th title="What its tasks' keys start with: mu in mu-12">Prefix</th><th>Folder</th><th>Tasks</th><th>Gate</th><th></th></tr>
+          <tr><th>Project</th><th title="What its tasks' keys start with: mu in mu-12">Prefix</th><th>Folder</th><th>Tasks</th><th>Your check</th><th>Gate</th><th></th></tr>
         </thead>
         <tbody>
           {list?.map((p) => (
@@ -112,6 +119,7 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
               </td>
               <td className="path"><HomePath path={p.path} home={home} /></td>
               <td>{p.hidden || !p.ok ? "—" : total(p) ?? "…"}</td>
+              <td>{limit(p)}</td>
               <td><GateCell name={p.name} gate={p.gate ?? ""} /></td>
               <td className="actions">
                 <button onClick={() => { setEditing(p.key); setName(p.name); }}>Rename</button>

@@ -125,6 +125,35 @@ fn machine_settings(env: Env) -> settings::Settings {
         .unwrap_or_default()
 }
 
+/// The line `next`, `start`, `ready --parallel` and `list` print on stderr when more waits in Your
+/// check than the project's limit allows (0050), or None. It only warns: nothing is refused. The
+/// limit is kept by the project's name as the app shows it, looked up only when one is set.
+fn your_check_line(root: &Path, tasks: &[queue::Task], env: Env) -> Option<String> {
+    let s = machine_settings(env);
+    let limit = if s.your_check_limits.is_empty() {
+        Some(settings::YOUR_CHECK_LIMIT)
+    } else {
+        s.your_check_limit(&project_name(root))
+    };
+    settings::over_line(settings::waiting(tasks), limit)
+}
+
+/// `your_check_line` on stderr, for `next` and `start`: the queue read again, as they read it.
+fn warn_your_check(root: &Path, prefix: &str, env: Env) {
+    if let Some(l) = your_check_line(root, &keyed(root, prefix).tasks, env) {
+        eprintln!("{l}");
+    }
+}
+
+/// The name the app shows for the queue at `root`: projects.json's, else its folder's.
+fn project_name(root: &Path) -> String {
+    projects::list(&base(), &projects::load(&config_file()))
+        .into_iter()
+        .find(|p| same_folder(Path::new(&p.path), root))
+        .map(|p| p.name)
+        .unwrap_or_else(|| projects::default_name(root))
+}
+
 fn home() -> PathBuf {
     PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
 }
@@ -741,9 +770,12 @@ fn list_json(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> serde_json::Va
 }
 
 /// `muster list` as text: the backlog notes first (file name and title), then a heading per
-/// stage in STAGES order, then one line per task, by its key (0033).
-fn list_text(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> String {
-    let mut out = String::new();
+/// stage in STAGES order, then one line per task, by its key (0033). In two parts, cut after Your
+/// check, so the over-limit line (0050), on stderr, shows under it in a terminal.
+fn list_parts(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> (String, String) {
+    let mut head = String::new();
+    let mut tail = String::new();
+    let mut out = &mut head;
     let key = |t: &queue::Task| crate::key::key(&t.prefix, &t.id);
     let width = tasks.iter().map(|t| key(t).len()).max().unwrap_or(0);
     if !notes.is_empty() {
@@ -761,6 +793,9 @@ fn list_text(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> String {
         let group: Vec<_> = tasks.iter().filter(|t| t.stage == st).collect();
         if group.is_empty() {
             continue;
+        }
+        if st == "done" {
+            out = &mut tail;
         }
         out.push_str(&format!("{} ({})\n", ops::stage_label(st), group.len()));
         for t in group {
@@ -803,7 +838,7 @@ fn list_text(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> String {
             ));
         }
     }
-    out
+    (head, tail)
 }
 
 /// What `muster check` says about INDEX.md, in the problems' form (`q:` like `tasks_of`'s): a
@@ -1177,7 +1212,7 @@ fn ready_line(t: &queue::Task) -> String {
 
 /// `muster ready [--parallel [N]] [--json]` (0023): the tasks a session could start now, or with
 /// --parallel up to N (default 3) safe together, and the ones left out with why.
-fn ready_cmd(a: &Args, root: &Path, prefix: &str) -> Result<i32, String> {
+fn ready_cmd(a: &Args, root: &Path, prefix: &str, env: Env) -> Result<i32, String> {
     let s = keyed(root, prefix);
     let n = match (a.parallel, a.pos.get(1)) {
         (_, None) => 3,
@@ -1196,6 +1231,10 @@ fn ready_cmd(a: &Args, root: &Path, prefix: &str) -> Result<i32, String> {
         return Err("ready takes --parallel and how many, nothing more (see `muster help`)".into());
     }
     let (set, left) = if a.parallel {
+        // Planning parallel sessions (0023): say first when the owner's review is the bottleneck.
+        if let Some(l) = your_check_line(root, &s.tasks, env) {
+            eprintln!("{l}");
+        }
         let p = crate::parallel::ready_parallel(&s.tasks, n);
         (p.set, p.left)
     } else {
@@ -1439,10 +1478,19 @@ fn run_on(
             }
             let tasks = list_filter(&s.tasks, &q);
             let notes = list_notes(&s.backlog, &q);
+            let over = your_check_line(root, &s.tasks, env);
             if a.json {
                 print_json(&list_json(&notes, &tasks))?;
+                if let Some(l) = over {
+                    eprintln!("{l}");
+                }
             } else {
-                print!("{}", list_text(&notes, &tasks));
+                let (head, tail) = list_parts(&notes, &tasks);
+                print!("{head}");
+                if let Some(l) = over {
+                    eprintln!("{l}");
+                }
+                print!("{tail}");
             }
             Ok(0)
         }
@@ -1720,6 +1768,7 @@ fn run_on(
         }
         "next" => {
             let me = me();
+            warn_your_check(root, prefix, env);
             match ops::next_task(root, &me, stamp)? {
                 Some(c) => {
                     println!("{}", claimed_message(root, prefix, &c.id, &c.path));
@@ -1749,11 +1798,12 @@ fn run_on(
             };
             let cwd =
                 cwd.ok_or("can't read the current folder: run start from the project's repo")?;
+            warn_your_check(root, prefix, env);
             let s = crate::parallel::start(root, id, &me(), stamp, cwd, &place)?;
             print!("{}", started_text(root, prefix, id, &s));
             Ok(0)
         }
-        "ready" => ready_cmd(a, root, prefix),
+        "ready" => ready_cmd(a, root, prefix, env),
         "release" => {
             let id = need(a, 1, "a task id")?;
             if !a.clean {
@@ -2152,6 +2202,166 @@ mod tests {
             machine_settings(&|_: &str| Some(String::new())),
             settings::Settings::default()
         );
+    }
+
+    /// `muster list` as text, whole.
+    fn list_text(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> String {
+        let (head, tail) = list_parts(notes, tasks);
+        head + &tail
+    }
+
+    /// A queue with `checking` agents' tasks in Your check, the owner's own and a feature there
+    /// too (neither counts), one task Ready and one Done.
+    fn checking_queue(checking: usize) -> tempfile::TempDir {
+        let d = v2_queue();
+        let file = |id: String, fm: &str| {
+            std::fs::write(
+                d.path().join(format!("doing/{id}-t.md")),
+                format!("---\nid: {id}\ntype: task\npriority: normal\n{fm}\n---\n\n# T\n\n## Log\n- 2026-10-12 09:00 capture: created\n"),
+            )
+            .unwrap();
+        };
+        for n in 0..checking {
+            file(format!("{:04}", n + 10), "status: doing\nstage: your-check");
+        }
+        file("0001".into(), "status: todo\nstage: ready");
+        file("0002".into(), "status: done\nstage: done");
+        file(
+            "0003".into(),
+            "status: doing\nstage: your-check\nfor: human",
+        );
+        file(
+            "0004".into(),
+            "status: doing\nstage: your-check\nlevel: feature",
+        );
+        d
+    }
+
+    /// An environment whose $HOME has a settings.json saying `json`.
+    fn home_with(json: &str) -> (tempfile::TempDir, String) {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home
+            .path()
+            .join("Library/Application Support/ai.sweetlemon.muster");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(settings::FILE), json).unwrap();
+        let h = home.path().to_string_lossy().to_string();
+        (home, h)
+    }
+
+    #[test]
+    fn the_your_check_line_shows_only_over_the_projects_limit() {
+        let over = |n: usize, env: Env| {
+            let d = checking_queue(n);
+            your_check_line(d.path(), &tasks_of(d.path()).tasks, env)
+        };
+        // No settings: the default, 5.
+        assert_eq!(over(5, &no_env), None, "at the limit");
+        assert_eq!(
+            over(6, &no_env).as_deref(),
+            Some("muster: 6 tasks wait in Your check (limit 5): the owner's review is the bottleneck.")
+        );
+        // The project's own limit, by the name the app shows (here its folder's).
+        let d = checking_queue(3);
+        let name = projects::default_name(d.path());
+        let tasks = tasks_of(d.path()).tasks;
+        let with = |json: String| {
+            let (_home, h) = home_with(&json);
+            your_check_line(d.path(), &tasks, &move |k: &str| {
+                (k == "HOME").then(|| h.clone())
+            })
+        };
+        assert_eq!(
+            with(format!(r#"{{"yourCheckLimits": {{"{name}": 2}}}}"#)).as_deref(),
+            Some("muster: 3 tasks wait in Your check (limit 2): the owner's review is the bottleneck.")
+        );
+        assert_eq!(
+            with(format!(r#"{{"yourCheckLimits": {{"{name}": 3}}}}"#)),
+            None
+        );
+        assert_eq!(
+            with(format!(r#"{{"yourCheckLimits": {{"{name}": "off"}}}}"#)),
+            None
+        );
+        // Another project's limit leaves this one at 5.
+        assert_eq!(
+            with(r#"{"yourCheckLimits": {"elsewhere": 1}}"#.into()),
+            None
+        );
+        let d = checking_queue(40);
+        let name = projects::default_name(d.path());
+        let (_home, h) = home_with(&format!(r#"{{"yourCheckLimits": {{"{name}": "off"}}}}"#));
+        let env = move |k: &str| (k == "HOME").then(|| h.clone());
+        assert_eq!(
+            your_check_line(d.path(), &tasks_of(d.path()).tasks, &env),
+            None,
+            "off"
+        );
+    }
+
+    #[test]
+    fn over_the_limit_the_commands_still_do_their_work_with_the_same_exit_codes() {
+        let d = checking_queue(7);
+        let q = d.path().to_string_lossy().to_string();
+        let code = |args: &[&str]| {
+            let mut v = sv(args);
+            v.extend(sv(&["--queue", &q, "--as", "wt-a"]));
+            main(&v)
+        };
+        assert!(your_check_line(d.path(), &tasks_of(d.path()).tasks, &no_env).is_some());
+        assert_eq!(code(&["list"]), 0);
+        assert_eq!(code(&["list", "--json"]), 0);
+        assert_eq!(code(&["ready", "--parallel"]), 0);
+        assert_eq!(code(&["ready", "--parallel", "2", "--json"]), 0);
+        assert_eq!(code(&["next"]), 0, "claims 0001");
+        assert_eq!(
+            queue::read_task(d.path(), "0001").unwrap().stage,
+            "building"
+        );
+        assert_eq!(
+            code(&["next"]),
+            1,
+            "one claim per holder, as without the limit"
+        );
+        // list cuts its text after Your check, where the line goes.
+        let s = tasks_of(d.path());
+        let all = list_filter(&s.tasks, &lq(None, None, None));
+        let (head, tail) = list_parts(&[], &all);
+        assert!(head.contains("Your check (9)\n"), "{head}");
+        assert!(!head.contains("Done ("), "{head}");
+        assert!(tail.starts_with("Done (1)\n"), "{tail}");
+        // Without Done, everything is above the line.
+        let open: Vec<_> = all.iter().copied().filter(|t| t.stage != "done").collect();
+        assert_eq!(list_parts(&[], &open).1, "");
+    }
+
+    #[test]
+    fn start_over_the_limit_still_starts() {
+        use crate::parallel::tests::{fx, task};
+        let f = fx();
+        let id = task(&f.root, "Started anyway", "cli/");
+        for n in 10..17 {
+            std::fs::write(
+                f.root.join(format!("doing/00{n}-t.md")),
+                format!("---\nid: 00{n}\nstatus: doing\nstage: your-check\n---\n\n# T\n"),
+            )
+            .unwrap();
+        }
+        assert!(your_check_line(&f.root, &tasks_of(&f.root).tasks, &no_env).is_some());
+        let a = parse(&sv(&["start", &id, "--as", "wt-a"])).unwrap();
+        assert_eq!(
+            run_on(
+                &a,
+                "start",
+                &f.root,
+                "pj",
+                "2026-10-13 10:00",
+                &no_env,
+                Some(&f.repo),
+            ),
+            Ok(0)
+        );
+        assert_eq!(queue::read_task(&f.root, &id).unwrap().stage, "building");
     }
 
     /// `list --status --stage --tag`, as the options give it.

@@ -4,6 +4,30 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — A limit on Your check per project: the board and the commands warn, never block (task 0050)
+**Did:** each project has a Your check limit, 5 unless set to 1–50 or Off in Settings › Projects
+(saved in `settings.json` as `yourCheckLimits`, by project name; a bad value reads as 5). Only
+agents' tasks count (not goals, features or `for: human`). Over it, the board's Your check header
+reads "7 of 5" in orange with "Over your limit of 5: check these before more start." under it
+(All projects names each project over; with Group by the line sits above the bands); the sidebar
+row says "7 in Your check, limit 5"; `muster next`, `start`, `ready --parallel` and `list` print
+"muster: 7 tasks wait in Your check (limit 5): the owner's review is the bottleneck." on stderr
+and still do their work with the same exit codes. Files: `settings.rs` (limits, `waiting`,
+`over_line`, `set_your_check_limit`), `queue.rs` (`QueueInfo.yourCheck`, `yourCheckLimit`),
+`lib.rs` (`set_your_check_limit`), `cli.rs`, `help.rs`, `yourCheckLimit.ts`, `CheckLimit.tsx`,
+small hooks in `App.tsx`, `ProjectList.tsx`, `Projects.tsx`, `api.ts`, `types.ts`, `styles.css`;
+manual 04 and 05, PROTOCOL.md, AS_BUILT.md.
+**Decided:** the core counts and resolves the limit and sends both per queue, so the app and the
+CLI can't disagree; over means more than the limit, not equal. One project's header shows its
+whole pile ("7 of 5") even when filters show fewer cards; All keeps the column's count, orange,
+and names the projects in the line. The line's place under the header is always kept (two short
+lines) so cards never move; above Group by's bands it shows only while over. `list` cuts its
+stdout after Your check and prints the line to stderr between, so it lands under the heading in a
+terminal and pipes stay clean. Limits are keyed by the name the app shows, so a rename starts at 5.
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; new
+Rust tests in settings.rs, queue.rs and cli.rs (exit codes over the limit for next, list,
+ready --parallel and start), vitest `yourCheckLimit.test.ts`, `CheckLimit.test.ts`.
+**Open:** AC5 is the owner's look in the running app (not run here).
 ## 2026-10-13 — `.muster/`: a shared prefix routes to the new queue; a literal-string prefix is read (task 0005)
 **Fixed (review):**
 - **Key routing:** after a migrate, the old queue and the repo's `.muster/` both have the prefix until the old one is retired. A key named from outside both (`muster claim mu-3`) could land in the old queue, because `owner()` took the first project listed. Now `key::owner_of` prefers the `.muster` queue.

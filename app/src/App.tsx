@@ -21,6 +21,8 @@ import WaitingList from "./WaitingList";
 import Recent from "./Recent";
 import { clampPane, layoutWidth, PANE_DEFAULT, railBeside } from "./paneSize";
 import EffortGroups, { useAcceptResults } from "./EffortGroups";
+import { CheckCount, OverLine } from "./CheckLimit";
+import { overLimit } from "./yourCheckLimit";
 import type { NamedView } from "./yourCheck";
 import { byWho, FOR_FILTERS, FOR_KEY, type ForFilter, needsYouCount, parseForFilter, waitingForYou, whoFiltersOn, whoShows } from "./human";
 import { HelpButton, OpenHelp } from "./HelpButton";
@@ -252,6 +254,8 @@ export default function App() {
   // what the agents wait on the owner for first, then the owner's own To do and Doing.
   const needs = needsYouCount(inQueue);
   const waiting = useMemo(() => waitingForYou(inQueue), [inQueue]);
+  // The projects shown with more in Your check than their limit (0050): the board says so.
+  const overCheck = useMemo(() => overLimit(state?.queues ?? [], queue), [state, queue]);
   // The Board, Table and Timeline show both kinds, the owner's own tasks hatched with the You
   // ribbon; the Who chips (All · You · Agents) pick.
   // Backlog notes show under every Who: they're nobody's yet.
@@ -419,6 +423,7 @@ export default function App() {
               {view === "graph" && <GraphView tasks={tasks} all={inQueue} multi={multi} openKey={openKey} onOpen={open} />}
               {view === "timeline" && <TimelineView tasks={viewTasks} now={now} multi={multi} openKey={openKey} onOpen={open} words={words} />}
               {/* Recently finished (0051) is docked at the board's right edge, grouped or not; under it when the row is too narrow for both. */}
+              {view === "board" && groupBy !== "none" && overCheck.length > 0 && <OverLine over={overCheck} queue={queue} />}
               {view === "board" && <div className={railSide ? "board-row" : "board-row stacked"}>
               {groupBy !== "none" && (
                 <GroupedBoard
@@ -436,7 +441,7 @@ export default function App() {
               )}
               {/* Backlog never folds, its quick add is always there, except in Focus (0038), which folds
                   every column but Building, Testing and Your check to a strip that opens with a click. */}
-              {groupBy === "none" && <main className="board" style={{ gridTemplateColumns: STAGES.map((s) => ((s.id === "backlog" || (cols[s.id] ?? []).length || (s.id === "your-check" && boardResult)) && columnFoldOf.of(s.id) !== "folded" ? "minmax(118px, 1fr)" : "44px")).join(" ") }}>
+              {groupBy === "none" && <main className="board" style={{ gridTemplateColumns: STAGES.map((s) => ((s.id === "backlog" || (cols[s.id] ?? []).length || (s.id === "your-check" && (boardResult || overCheck.length > 0))) && columnFoldOf.of(s.id) !== "folded" ? "minmax(118px, 1fr)" : "44px")).join(" ") }}>
                 {STAGES.map((c) => {
                   const list = cols[c.id] ?? [];
                   const shown = c.id === "done" && !showAllDone ? list.slice(0, 8) : list;
@@ -445,11 +450,14 @@ export default function App() {
                   // Your check stays open while Accept all's result line has something to say (0043).
                   const kept = c.id === "your-check" && boardResult;
                   const fold = columnFoldOf.of(c.id);
+                  // Over its limit (0050), Your check stays open to say so.
+                  const over = c.id === "your-check" && overCheck.length > 0;
                   return (
-                    <section key={c.id} className={`column col-${c.id}${fold === "folded" ? " folded" : count || backlog || kept ? "" : " empty"}`}>
-                      <ColumnHead stage={c} count={count} needs={needsYouCount(list)} blocked={blockedCount(list)} fold={fold} onFold={() => columnFoldOf.toggle(c.id)}>
+                    <section key={c.id} className={`column col-${c.id}${fold === "folded" ? " folded" : count || backlog || kept || over ? "" : " empty"}`}>
+                      <ColumnHead stage={c} count={count} countNode={c.id === "your-check" ? <CheckCount count={count} over={overCheck} queue={queue} /> : undefined} needs={needsYouCount(list)} blocked={blockedCount(list)} fold={fold} onFold={() => columnFoldOf.toggle(c.id)}>
                         {c.role && <span className="role">{c.role}</span>}
                       </ColumnHead>
+                      {c.id === "your-check" && <OverLine over={overCheck} queue={queue} />}
                       {backlog && fold !== "folded" && quickAdd}
                       <div className="cards">
                         {backlog

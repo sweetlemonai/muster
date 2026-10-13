@@ -68,7 +68,7 @@ const TABLE = {
     label: "Sidebar",
     adhd: { how: "full", says: "Projects with their counts, the order chips and each one's activity line" },
     standard: { how: "full", says: "Projects with their counts, the order chips and each one's activity line" },
-    focus: { how: "narrow", says: "Project names, the working dot, stalled and the needs-you and paused counts; a stalled project keeps its Ask for a check-in", reach: "Leave Focus: ⌘. or the mode chip in the header" },
+    focus: { how: "narrow", says: "Project names, the working dot, stalled and the needs-you and paused counts, and a project over its Your check limit says so; a stalled project keeps its Ask for a check-in", reach: "Leave Focus: ⌘. or the mode chip in the header" },
   },
 } as const satisfies Record<string, Entry>;
 

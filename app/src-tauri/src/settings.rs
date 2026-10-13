@@ -1,10 +1,12 @@
-//! Per-machine settings that both the app and `muster` read (task 0036): the claim lease and the
-//! LIVE window. Saved as `settings.json` beside `projects.json` in the app's config folder
+//! Per-machine settings that both the app and `muster` read (task 0036): the claim lease, the
+//! LIVE window and each project's Your check limit (0050). Saved as `settings.json` beside
+//! `projects.json` in the app's config folder
 //! (`~/Library/Application Support/ai.sweetlemon.muster/`). A missing or broken file, or a value
 //! out of bounds, reads as the default, field by field: a bad setting never stops the tools.
 
 use crate::{ops, queue, transcripts};
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -21,14 +23,37 @@ pub const LIVE_MIN: u64 = 1;
 pub const LIVE_MAX: u64 = 60;
 /// The default LIVE window, in minutes.
 pub const LIVE_MINUTES: u64 = transcripts::LIVE_SECS / 60;
+/// The Your check limit's bounds, in tasks, and its default (0050).
+pub const YOUR_CHECK_MIN: usize = 1;
+pub const YOUR_CHECK_MAX: usize = 50;
+pub const YOUR_CHECK_LIMIT: usize = 5;
 
-#[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+/// A project's Your check limit (0050): how many tasks may wait for the owner's check before
+/// Muster warns, or Off. Saved as the number, or `"off"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Limit {
+    At(usize),
+    Off,
+}
+
+impl Serialize for Limit {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Limit::At(n) => s.serialize_u64(*n as u64),
+            Limit::Off => s.serialize_str("off"),
+        }
+    }
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     /// A claim quiet for longer than this can be released to Ready (`muster reclaim`, Release).
     pub lease_minutes: u64,
     /// A session (the card's dot) or a task file (the pane's LIVE) that changed this recently is live.
     pub live_minutes: u64,
+    /// The Your check limit by project name (0050); a project not in it has the default.
+    pub your_check_limits: BTreeMap<String, Limit>,
 }
 
 impl Default for Settings {
@@ -36,6 +61,7 @@ impl Default for Settings {
         Settings {
             lease_minutes: ops::LEASE_MINUTES,
             live_minutes: LIVE_MINUTES,
+            your_check_limits: BTreeMap::new(),
         }
     }
 }
@@ -45,6 +71,34 @@ impl Settings {
     pub fn live_secs(&self) -> u64 {
         self.live_minutes * 60
     }
+
+    /// The project's Your check limit: its own, else the default; None when it's Off.
+    pub fn your_check_limit(&self, project: &str) -> Option<usize> {
+        match self.your_check_limits.get(project) {
+            Some(Limit::At(n)) => Some(*n),
+            Some(Limit::Off) => None,
+            None => Some(YOUR_CHECK_LIMIT),
+        }
+    }
+}
+
+/// How many tasks wait in Your check, as the limit counts them (0050): agents' tasks, not goals
+/// or features (theirs roll up from their tasks) and not the owner's own (`for: human`), which
+/// skip Your check.
+pub fn waiting(tasks: &[queue::Task]) -> usize {
+    tasks
+        .iter()
+        .filter(|t| t.stage == "your-check" && t.level == "task" && !t.is_human())
+        .count()
+}
+
+/// What `next`, `start`, `ready --parallel` and `list` say on stderr when more than `limit` tasks
+/// wait in Your check (0050); None within it or with the limit Off. It never refuses anything.
+pub fn over_line(waiting: usize, limit: Option<usize>) -> Option<String> {
+    let limit = limit?;
+    (waiting > limit).then(|| {
+        format!("muster: {waiting} tasks wait in Your check (limit {limit}): the owner's review is the bottleneck.")
+    })
 }
 
 /// A whole number of minutes within `min..=max`, or None.
@@ -65,7 +119,27 @@ pub fn load(file: &Path) -> Settings {
         lease_minutes: bounded(v.get("leaseMinutes"), LEASE_MIN, LEASE_MAX)
             .unwrap_or(d.lease_minutes),
         live_minutes: bounded(v.get("liveMinutes"), LIVE_MIN, LIVE_MAX).unwrap_or(d.live_minutes),
+        // Project by project: a bad entry is left out, so that project has the default.
+        your_check_limits: v
+            .get("yourCheckLimits")
+            .and_then(serde_json::Value::as_object)
+            .map(|m| {
+                m.iter()
+                    .filter_map(|(name, v)| Some((name.clone(), limit(v)?)))
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
+}
+
+/// A saved Your check limit: a whole number within the bounds, or `"off"`.
+fn limit(v: &serde_json::Value) -> Option<Limit> {
+    if v.as_str() == Some("off") {
+        return Some(Limit::Off);
+    }
+    bounded(Some(v), YOUR_CHECK_MIN as u64, YOUR_CHECK_MAX as u64)
+        .and_then(|n| usize::try_from(n).ok())
+        .map(Limit::At)
 }
 
 fn save(file: &Path, s: &Settings) -> Result<(), String> {
@@ -151,6 +225,37 @@ pub fn set(file: &Path, name: &str, value: &str) -> Result<Settings, String> {
     Ok(s)
 }
 
+/// Change `project`'s Your check limit (0050) to a number from 1 to 50 or `off` (any case);
+/// empty is the default, so its entry goes. Returns the settings now in force.
+pub fn set_your_check_limit(file: &Path, project: &str, value: &str) -> Result<Settings, String> {
+    let project = project.trim();
+    if project.is_empty() {
+        return Err("which project? the name is empty".into());
+    }
+    let limit = match value.trim().to_lowercase().as_str() {
+        "" => None,
+        "off" => Some(Limit::Off),
+        n => Some(
+            n.parse::<usize>()
+                .ok()
+                .filter(|n| (YOUR_CHECK_MIN..=YOUR_CHECK_MAX).contains(n))
+                .map(Limit::At)
+                .ok_or_else(|| {
+                    format!(
+                        "the Your check limit can be from {YOUR_CHECK_MIN} to {YOUR_CHECK_MAX}, or off, not {value:?}"
+                    )
+                })?,
+        ),
+    };
+    let mut s = load(file);
+    match limit {
+        Some(l) => s.your_check_limits.insert(project.to_string(), l),
+        None => s.your_check_limits.remove(project),
+    };
+    save(file, &s)?;
+    Ok(s)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,7 +294,8 @@ mod tests {
             load(&f),
             Settings {
                 lease_minutes: 720,
-                live_minutes: 10
+                live_minutes: 10,
+                ..Settings::default()
             }
         );
         fs::write(&f, r#"{"leaseMinutes": 120, "liveMinutes": 61}"#).unwrap();
@@ -197,7 +303,8 @@ mod tests {
             load(&f),
             Settings {
                 lease_minutes: 120,
-                live_minutes: 5
+                live_minutes: 5,
+                ..Settings::default()
             }
         );
         // The bounds themselves are fine.
@@ -206,7 +313,8 @@ mod tests {
             load(&f),
             Settings {
                 lease_minutes: 60,
-                live_minutes: 60
+                live_minutes: 60,
+                ..Settings::default()
             }
         );
         fs::write(&f, r#"{"leaseMinutes": 10080, "liveMinutes": 1}"#).unwrap();
@@ -214,7 +322,8 @@ mod tests {
             load(&f),
             Settings {
                 lease_minutes: 10080,
-                live_minutes: 1
+                live_minutes: 1,
+                ..Settings::default()
             }
         );
     }
@@ -229,14 +338,16 @@ mod tests {
             set(&f, "live", " 10 m ").unwrap(),
             Settings {
                 lease_minutes: 120,
-                live_minutes: 10
+                live_minutes: 10,
+                ..Settings::default()
             }
         );
         assert_eq!(
             load(&f),
             Settings {
                 lease_minutes: 120,
-                live_minutes: 10
+                live_minutes: 10,
+                ..Settings::default()
             },
             "remembered"
         );
@@ -291,6 +402,149 @@ mod tests {
             before,
             "a refused change writes nothing"
         );
+    }
+
+    #[test]
+    fn the_your_check_limit_is_5_per_project_unless_set() {
+        let s = Settings::default();
+        assert!(s.your_check_limits.is_empty());
+        assert_eq!(s.your_check_limit("muster"), Some(5));
+        let d = tempfile::tempdir().unwrap();
+        let f = file(&d);
+        fs::create_dir_all(f.parent().unwrap()).unwrap();
+        fs::write(
+            &f,
+            r#"{"leaseMinutes": 120, "yourCheckLimits": {"muster": 8, "drover": "off", "germ": 1, "hood": 50}}"#,
+        )
+        .unwrap();
+        let s = load(&f);
+        assert_eq!(s.lease_minutes, 120);
+        assert_eq!(s.your_check_limit("muster"), Some(8));
+        assert_eq!(s.your_check_limit("drover"), None, "off");
+        assert_eq!(s.your_check_limit("germ"), Some(1));
+        assert_eq!(s.your_check_limit("hood"), Some(50));
+        assert_eq!(s.your_check_limit("chit"), Some(5), "not set: the default");
+    }
+
+    #[test]
+    fn a_bad_your_check_limit_reads_as_the_default_and_keeps_the_rest() {
+        let d = tempfile::tempdir().unwrap();
+        let f = file(&d);
+        fs::create_dir_all(f.parent().unwrap()).unwrap();
+        fs::write(
+            &f,
+            r#"{"liveMinutes": 10, "yourCheckLimits": {"a": 0, "b": 51, "c": -1, "d": 2.5, "e": "5", "f": "OFF", "g": null, "h": true, "i": [3], "ok": 7}}"#,
+        )
+        .unwrap();
+        let s = load(&f);
+        assert_eq!(s.live_minutes, 10, "the other settings stay");
+        for p in ["a", "b", "c", "d", "e", "f", "g", "h", "i"] {
+            assert_eq!(s.your_check_limit(p), Some(5), "{p}");
+        }
+        assert_eq!(s.your_check_limit("ok"), Some(7));
+        assert_eq!(s.your_check_limits.len(), 1, "only the good one is kept");
+        for broken in [r#"{"yourCheckLimits": 5}"#, r#"{"yourCheckLimits": "off"}"#] {
+            fs::write(&f, broken).unwrap();
+            assert_eq!(load(&f), Settings::default(), "{broken}");
+        }
+    }
+
+    #[test]
+    fn set_your_check_limit_takes_1_to_50_or_off_and_empty_is_the_default() {
+        let d = tempfile::tempdir().unwrap();
+        let f = file(&d);
+        set(&f, "lease", "2h").unwrap();
+        let s = set_your_check_limit(&f, "muster", " 8 ").unwrap();
+        assert_eq!(s.your_check_limit("muster"), Some(8));
+        assert_eq!(s.lease_minutes, 120, "the rest kept");
+        assert_eq!(
+            set_your_check_limit(&f, "drover", "Off")
+                .unwrap()
+                .your_check_limit("drover"),
+            None
+        );
+        // Saved as the number or "off", which is how the file reads them back.
+        let saved: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&f).unwrap()).unwrap();
+        assert_eq!(
+            saved["yourCheckLimits"],
+            serde_json::json!({"drover": "off", "muster": 8})
+        );
+        assert_eq!(load(&f).your_check_limit("drover"), None);
+        assert_eq!(load(&f).your_check_limit("muster"), Some(8));
+        // The bounds, and empty for the default (its entry goes).
+        assert_eq!(
+            set_your_check_limit(&f, "muster", "1")
+                .unwrap()
+                .your_check_limit("muster"),
+            Some(1)
+        );
+        assert_eq!(
+            set_your_check_limit(&f, "muster", "50")
+                .unwrap()
+                .your_check_limit("muster"),
+            Some(50)
+        );
+        let s = set_your_check_limit(&f, "muster", "").unwrap();
+        assert_eq!(s.your_check_limit("muster"), Some(5));
+        assert!(!s.your_check_limits.contains_key("muster"));
+    }
+
+    #[test]
+    fn set_your_check_limit_refuses_the_rest_and_keeps_the_file() {
+        let d = tempfile::tempdir().unwrap();
+        let f = file(&d);
+        set_your_check_limit(&f, "muster", "8").unwrap();
+        let before = fs::read_to_string(&f).unwrap();
+        for bad in ["0", "51", "-1", "2.5", "five", "on", "1e1"] {
+            assert_eq!(
+                set_your_check_limit(&f, "muster", bad).unwrap_err(),
+                format!("the Your check limit can be from 1 to 50, or off, not {bad:?}")
+            );
+        }
+        assert_eq!(
+            set_your_check_limit(&f, " ", "5").unwrap_err(),
+            "which project? the name is empty"
+        );
+        assert_eq!(fs::read_to_string(&f).unwrap(), before);
+    }
+
+    /// A task of `level`, `for` and `stage`, as the queue reads it.
+    fn task(id: &str, stage: &str, level: &str, for_who: &str) -> queue::Task {
+        let text =
+            format!("---\nid: {id}\nstage: {stage}\nlevel: {level}\nfor: {for_who}\n---\n\n# T\n");
+        queue::parse_task("q", Path::new("/q"), "", Path::new("/q/x.md"), &text, 0).unwrap()
+    }
+
+    #[test]
+    fn only_agents_tasks_waiting_in_your_check_count() {
+        let tasks = [
+            task("0001", "your-check", "task", "ai"),
+            task("0002", "your-check", "task", "ai"),
+            // The owner's own task, a feature and a goal don't count; nor do other stages.
+            task("0003", "your-check", "task", "human"),
+            task("0004", "your-check", "feature", "ai"),
+            task("0005", "your-check", "goal", "ai"),
+            task("0006", "testing", "task", "ai"),
+            task("0007", "done", "task", "ai"),
+        ];
+        assert_eq!(waiting(&tasks), 2);
+        assert_eq!(waiting(&[]), 0);
+    }
+
+    #[test]
+    fn the_over_line_says_how_many_and_the_limit_only_when_over() {
+        assert_eq!(
+            over_line(7, Some(5)).as_deref(),
+            Some("muster: 7 tasks wait in Your check (limit 5): the owner's review is the bottleneck.")
+        );
+        assert_eq!(
+            over_line(6, Some(5)).unwrap(),
+            "muster: 6 tasks wait in Your check (limit 5): the owner's review is the bottleneck."
+        );
+        assert_eq!(over_line(5, Some(5)), None, "at the limit isn't over");
+        assert_eq!(over_line(0, Some(5)), None);
+        assert_eq!(over_line(40, None), None, "off");
     }
 
     #[test]

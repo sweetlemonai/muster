@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useRef, useState, type ReactNode } from "react";
 import { lastLabel, loadOrder, nextOrder, type OrderMemo, projectRows, SIDEBAR_ORDERS, storeOrder, sumActivity, type ProjectActivity, type SidebarOrder, type Sums } from "./activity";
 import { projectCount } from "./Backlog";
+import { SideLimit } from "./CheckLimit";
 import { needsYouCount } from "./human";
 import { inProgress } from "./lib";
 import { useLook } from "./modes";
@@ -45,7 +46,7 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
       {full && <OrderChips value={order} onChange={pick} />}
       {shown.map((r) => (
         <Fragment key={r.name}>
-          <ProjectItem name={r.name} title={r.title} total={projectCount(counts.get(r.name) ?? {}, notes, r.name)} tasks={r.tasks} on={current === r.name} onClick={() => onPick(r.name)} working={r.activity.working > 0} stalled={r.activity.stalled ? "stalled" : ""}>
+          <ProjectItem name={r.name} title={r.title} total={projectCount(counts.get(r.name) ?? {}, notes, r.name)} tasks={r.tasks} on={current === r.name} onClick={() => onPick(r.name)} working={r.activity.working > 0} stalled={r.activity.stalled ? "stalled" : ""} alert={<SideLimit q={queues.find((q) => q.name === r.name)} />}>
             <ActivityLine a={r.activity} now={now} />
           </ProjectItem>
           {/* A stalled project offers to ask its quiet sessions for a check-in (0039), under its
@@ -61,8 +62,9 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
  *  what needs you (the needs-you count: your own tasks to do and doing, and what the agents wait
  *  on you for), and under them its activity line. Narrowed (Focus, 0038), the name, the working
  *  dot, "stalled" in the attention colour (the activity line's word, or "2 stalled" on All), the
- *  needs-you count and the paused count. */
-export function ProjectItem({ name, title, total, tasks, on, onClick, working = false, stalled = "", children }: { name: string; title?: string; total: number; tasks: Task[]; on: boolean; onClick: () => void; working?: boolean; stalled?: string; children: ReactNode }) {
+ *  needs-you count and the paused count. `alert` shows in every mode, under them: over its Your
+ *  check limit (0050), how many wait and the limit. */
+export function ProjectItem({ name, title, total, tasks, on, onClick, working = false, stalled = "", alert, children }: { name: string; title?: string; total: number; tasks: Task[]; on: boolean; onClick: () => void; working?: boolean; stalled?: string; alert?: ReactNode; children: ReactNode }) {
   const doing = tasks.filter(inProgress).length;
   const needs = needsYouCount(tasks);
   const full = useLook("sidebar") === "full";
@@ -81,6 +83,7 @@ export function ProjectItem({ name, title, total, tasks, on, onClick, working = 
         </span>
       </span>
       {full && children}
+      {alert}
     </button>
   );
 }

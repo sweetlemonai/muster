@@ -31,9 +31,12 @@ export function FoldCounts({ needs, blocked }: { needs: number; blocked: number 
 
 /** A board column's head. A column the mode folds is a button: its name, count, needs-you and
  *  blocked counts on a thin strip, and a click opens the column there (or folds it back). */
-export function ColumnHead({ stage, count, needs, blocked, fold, onFold, children }: {
+export function ColumnHead({ stage, count, countNode, needs, blocked, fold, onFold, children }: {
   stage: { id: string; label: string; role: string };
   count: number;
+  /** The count as shown, when it says more than the number (Your check over its limit, 0050:
+   *  "7 of 5"); in every mode, on a folded strip too. */
+  countNode?: ReactNode;
   /** How many in the column wait on the owner, and how many are blocked: said on the strip,
    *  since its cards don't show. */
   needs: number;
@@ -47,7 +50,7 @@ export function ColumnHead({ stage, count, needs, blocked, fold, onFold, childre
   if (fold === "fixed") {
     return (
       <h2 title={title}>
-        {stage.label} <small>{count}</small>
+        {stage.label} {countNode ?? <small>{count}</small>}
         {children}
       </h2>
     );
@@ -56,7 +59,7 @@ export function ColumnHead({ stage, count, needs, blocked, fold, onFold, childre
   return (
     <h2 title={title}>
       <button type="button" className="col-fold" aria-expanded={!folded} onClick={onFold} title={folded ? `Open ${stage.label}: Focus folds it` : `Fold ${stage.label} back to its strip, as Focus has it`}>
-        {stage.label} <small>{count}</small>
+        {stage.label} {countNode ?? <small>{count}</small>}
         <FoldCounts needs={needs} blocked={blocked} />
       </button>
     </h2>

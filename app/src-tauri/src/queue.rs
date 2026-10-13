@@ -616,6 +616,10 @@ pub struct QueueInfo {
     /// Its tasks' prefix (0033), as `Task::prefix`.
     pub prefix: String,
     pub counts: HashMap<String, usize>,
+    /// How many tasks wait in Your check as its limit counts them (0050, `settings::waiting`).
+    pub your_check: usize,
+    /// Its Your check limit from this machine's settings; None when it's Off.
+    pub your_check_limit: Option<usize>,
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
@@ -1417,7 +1421,7 @@ fn read_state_from(
 ) -> State {
     let mut state = State {
         now: now_secs(),
-        settings: *settings,
+        settings: settings.clone(),
         ..Default::default()
     };
     let mut seen = HashSet::new();
@@ -1471,6 +1475,8 @@ fn read_state_from(
             path: root.to_string_lossy().to_string(),
             prefix,
             counts,
+            your_check: crate::settings::waiting(&tasks),
+            your_check_limit: settings.your_check_limit(name),
         });
         state.tasks.extend(tasks);
         let notes = crate::backlog::read_notes(name, root, &mut cache.notes, &mut seen);
@@ -3428,6 +3434,59 @@ mod tests {
     }
 
     #[test]
+    fn each_queue_says_how_many_wait_in_your_check_and_its_limit() {
+        let a = queue();
+        let b = queue();
+        let check = |root: &Path, id: &str, extra: &str| {
+            fs::write(
+                root.join(format!("doing/{id}-t.md")),
+                format!("---\nid: {id}\nstatus: doing\nstage: your-check\n{extra}---\n\n# T\n"),
+            )
+            .unwrap();
+        };
+        for id in ["0001", "0002", "0003"] {
+            check(a.path(), id, "");
+        }
+        // The owner's own and a feature don't count.
+        check(a.path(), "0004", "for: human\n");
+        check(a.path(), "0005", "level: feature\n");
+        check(b.path(), "0001", "");
+        let q = [
+            ("a".to_string(), a.path().to_path_buf()),
+            ("b".to_string(), b.path().to_path_buf()),
+        ];
+        let mut settings = crate::settings::Settings::default();
+        settings
+            .your_check_limits
+            .insert("a".into(), crate::settings::Limit::At(2));
+        settings
+            .your_check_limits
+            .insert("b".into(), crate::settings::Limit::Off);
+        let s = read_state_at_with(&q, &mut Cache::default(), "2026-10-12 09:00", &settings);
+        let info = |n: &str| s.queues.iter().find(|q| q.name == n).unwrap();
+        assert_eq!(
+            (info("a").your_check, info("a").your_check_limit),
+            (3, Some(2))
+        );
+        assert_eq!(
+            (info("b").your_check, info("b").your_check_limit),
+            (1, None)
+        );
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(
+            json.contains(r#""yourCheck":3,"yourCheckLimit":2"#),
+            "{json}"
+        );
+        assert!(
+            json.contains(r#""yourCheck":1,"yourCheckLimit":null"#),
+            "{json}"
+        );
+        // Not set: the default, 5.
+        let s = read_state_at(&q, &mut Cache::default(), "2026-10-12 09:00");
+        assert_eq!(s.queues[0].your_check_limit, Some(5));
+    }
+
+    #[test]
     fn state_judges_a_claims_lease_at_the_time_given() {
         let d = queue();
         fs::write(
@@ -3449,6 +3508,7 @@ mod tests {
         let short = crate::settings::Settings {
             lease_minutes: 120,
             live_minutes: 10,
+            ..Default::default()
         };
         let s = read_state_at_with(&q, &mut Cache::default(), "2026-10-12 03:01", &short);
         assert_eq!(
@@ -3461,7 +3521,7 @@ mod tests {
         assert_eq!(s.settings, short);
         assert!(serde_json::to_string(&s)
             .unwrap()
-            .contains(r#""settings":{"leaseMinutes":120,"liveMinutes":10}"#));
+            .contains(r#""settings":{"leaseMinutes":120,"liveMinutes":10,"yourCheckLimits":{}}"#));
         assert_eq!(
             quiet("2026-10-12 03:01"),
             0,

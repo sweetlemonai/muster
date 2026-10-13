@@ -31,6 +31,8 @@ export const api = {
   // name (`lease` or `live`) to a span like 12h or 5m, empty for the default; the core checks it.
   settingsInfo: () => invoke<SettingsInfo>("settings_info"),
   setSetting: (name: "lease" | "live", value: string) => invoke<SettingsInfo>("set_setting", { name, value }),
+  // A project's Your check limit (0050): 1 to 50, "off", or "" for the default (5).
+  setYourCheckLimit: (project: string, value: string) => invoke<void>("set_your_check_limit", { project, value }),
   createTask: (queue: string, task: NewTask, files: [string, string][], stamp: string) =>
     invoke<{ id: string; path: string }>("create_task", { queue, task, files, stamp }),
   // Stages: each returns the task's new path. The core refuses what its rules don't allow, with
