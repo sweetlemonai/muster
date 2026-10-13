@@ -1,10 +1,11 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { backlogNotes, NoteCard, QuickAdd } from "./Backlog";
 import { GroupByChips, GroupedBoard } from "./Groups";
 import { groupItems, isWork } from "./levels";
 import type { BoardSort } from "./lib";
-import type { Task } from "./types";
+import type { Note, Task } from "./types";
 import { TableView } from "./Views";
 
 const task = (over: Partial<Task>): Task => ({
@@ -95,6 +96,88 @@ describe("grouped board", () => {
   });
   it("says so when nothing matches", () => {
     const html = renderToStaticMarkup(createElement(GroupedBoard, { groups: [], by: "feature", sort: "priority", multi: false, openKey: null, onOpen: () => {}, renderCard: () => null }));
+    expect(html).toContain("No tasks match.");
+  });
+});
+
+describe("the grouped board's Backlog band (task 0046)", () => {
+  const note = (over: Partial<Note>): Note => ({ queue: "muster", file: "n.md", title: "A note", text: "A note", truncated: false, added: 0, ...over });
+  // Two backlog tasks: one with no feature or goal (the band's), one under feature 0002 (its band's).
+  const items = [...all, task({ id: "0008", title: "Loose idea", stage: "backlog" }), task({ id: "0009", title: "Featured idea", parent: "0002", stage: "backlog" }), task({ id: "0010", title: "Older idea", stage: "backlog", priority: "high" })];
+  const notes = backlogNotes([note({ file: "old.md", title: "Old note", added: 10 }), note({ file: "new.md", title: "Board flickers", added: 30 })], "all");
+  function grouped(by: "feature" | "goal", shown: Note[] = notes, words: string[] = [], list: Task[] = items) {
+    return renderToStaticMarkup(
+      createElement(GroupedBoard, {
+        groups: groupItems(list.filter(isWork), list, by), by, sort: "priority", multi: false, openKey: null, onOpen: () => {},
+        renderCard: (t: Task) => createElement("i", { className: "card-stub" }, `${t.id}`),
+        backlog: {
+          notes: shown,
+          renderNote: (n: Note) => createElement(NoteCard, { key: n.file, n, now: 0, multi: false, active: false, onOpen: () => {}, words }),
+          quickAdd: createElement(QuickAdd, { queues: ["muster"], onAdded: () => {} }),
+        },
+      }),
+    );
+  }
+  /** The Backlog band: its heading, whether the quick add leads it, and its items in order. */
+  function backlogBand(html: string) {
+    const b = /<section class="band backlog-band">([\s\S]*?)<\/section><\/div><\/section>/.exec(html)?.[1] ?? "";
+    const head = (/<div class="band-head">([\s\S]*?)<\/div>/.exec(b)?.[1] ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const quickAddFirst = /^<div class="band-head">[\s\S]*?<\/div><div class="board band-board backlog-board"><section class="column col-backlog"><div class="quick-add">/.test(b);
+    const order = [...b.matchAll(/class="note-card"[^>]*title="([^"]+)"|card-stub">(\d+)</g)].map((m) => m[1] ?? m[2]);
+    return { head, quickAddFirst, order, none: b.includes("Nothing here") };
+  }
+
+  it("by feature: comes first, the quick add, the notes newest first, then the backlog tasks with no feature", () => {
+    const html = grouped("feature");
+    expect(html.indexOf("backlog-band")).toBeGreaterThan(-1);
+    expect(html.indexOf("backlog-band")).toBeLessThan(html.indexOf('<section class="band">'));
+    expect(backlogBand(html)).toEqual({ head: "Backlog · not in a feature yet 4 items", quickAddFirst: true, order: ["new.md", "old.md", "0010", "0008"], none: false });
+    // The featured backlog task stays in its feature's band; No feature keeps the loose tasks in later stages.
+    expect(bands(html)).toEqual([
+      "Feature 0002 Stage track In progress 1 of 2 done ≈ 2 h · 200k tokens left | backlog: 0009 | building: 0005 | done: 0004",
+      "Feature 0003 Empty one Ready no tasks yet | No tasks yet",
+      "No feature 2 items | ready: 0006,0007",
+    ]);
+  });
+
+  it("by goal: titled for goals, with the backlog tasks under no goal", () => {
+    const html = grouped("goal");
+    expect(backlogBand(html)).toEqual({ head: "Backlog · not in a goal yet 4 items", quickAddFirst: true, order: ["new.md", "old.md", "0010", "0008"], none: false });
+    expect(bands(html)).toEqual([
+      "Goal 0001 Ship 1.0 In progress 1 of 3 done ≈ 2.5 h · 200k tokens left due 2026-12-01 | backlog: 0009 | ready: 0006 | building: 0005 | done: 0004",
+      "No goal 1 item | ready: 0007",
+    ]);
+  });
+
+  it("is drawn with its quick add when there are no notes and no backlog tasks", () => {
+    const html = grouped("feature", [], [], all);
+    expect(backlogBand(html)).toEqual({ head: "Backlog · not in a feature yet 0 items", quickAddFirst: true, order: [], none: true });
+    expect(html).toContain('placeholder="Add to the backlog…"');
+  });
+
+  it("shows a note added from its quick add once the refresh brings it", () => {
+    const before = grouped("feature", []);
+    expect(backlogBand(before).order).toEqual(["0010", "0008"]);
+    const added = backlogNotes([note({ file: "2026-10-13-0316-fix-it.md", title: "Fix it", added: 50 })], "all");
+    expect(backlogBand(grouped("feature", added)).order).toEqual(["2026-10-13-0316-fix-it.md", "0010", "0008"]);
+  });
+
+  it("marks the search's words in the note titles", () => {
+    const html = grouped("feature", notes.slice(0, 1), ["flick"]);
+    expect(html).toContain('<span class="title">Board <mark>flick</mark>ers</span>');
+  });
+
+  it("takes the place of No feature when every loose task is in Backlog, and doesn't say nothing matches", () => {
+    const list = [task({ id: "0001", title: "Loose idea", stage: "backlog" })];
+    const html = grouped("feature", [], [], list);
+    expect(backlogBand(html).order).toEqual(["0001"]);
+    expect(bands(html)).toEqual([]);
+    expect(html).not.toContain("No tasks match.");
+  });
+
+  it("says nothing matches below the band when no task does", () => {
+    const html = grouped("feature", notes, [], []);
+    expect(backlogBand(html).order).toEqual(["new.md", "old.md"]);
     expect(html).toContain("No tasks match.");
   });
 });

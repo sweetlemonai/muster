@@ -204,7 +204,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   or goal, a feature under a goal. Goals and features are never claimed or built: their stage comes
   from their children (Done only when every child is), and they roll up "n of m done" and the open
   estimate. **Group by** None · Feature · Goal (chips above the board and table) gives one band per
-  parent, with the stage columns inside. Cards show their parent. `check` reports missing parents,
+  parent, with the stage columns inside, after a Backlog band (0046) with the quick add, the backlog
+  notes and the Backlog tasks under no parent. Cards show their parent. `check` reports missing parents,
   wrong levels and loops, and warns about late goals.
 - **Editing** (task 0020, part 1): **Edit** beside the description turns it into a text box in place.
   ⌘S saves, Esc twice discards, and nothing typed is lost when you switch cards. `muster edit` does

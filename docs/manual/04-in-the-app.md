@@ -33,14 +33,14 @@ Each card shows, top to bottom:
 
 The **Sort** chips above the board order each column. The default, **priority**, puts cards that need you first, then high priority, then the lowest id, with Done newest first. Done shows the latest 8, with **Show all** for the rest.
 
-The **Backlog** column starts with the **Add to the backlog…** field: type a line and press ↩ to add it as a note, or Esc to empty it. With more than one project in view, a "to myapp" chip says which project gets it; click it to pick another. Notes come first in the column, as quieter cards marked "note", then the numbered tasks in Backlog.
+The **Backlog** column starts with the **Add to the backlog…** field: type a line and press ↩ to add it as a note, or Esc to empty it. With more than one project in view, a "to myapp" chip says which project gets it; click it to pick another. Notes come first in the column, as quieter cards marked "note", then the numbered tasks in Backlog. With **Group by** on, the same field and notes lead the board in its Backlog band.
 
 Above the board, the filter bar is shared by all four views (Board, Table, Timeline and Graph). Nothing in it folds away:
 
 - **The search box** (⌘F from anywhere): words in any order, each found in a task's title, tags, text or holder, and a number finds that id (`19` finds 0019). Matches are marked on cards and rows. Esc clears it, and Esc again leaves the box.
 - **Views:** your saved views as chips; click one to bring back its search, filters and sort, ✕ to delete it. **+ Save view** names the current ones (↩ saves, Esc cancels).
 - **Who** All · You · Agents (board, table and timeline): **You** shows only your own tasks, **Agents** only the agents', **All** both. The backlog's notes show under every choice: they're nobody's yet. The choice is remembered.
-- **Group by** None · Feature · Goal (board, table and graph): one band per feature or goal, with its stage, its progress ("3 of 5 done"), the estimate left and a goal's due date, and the stage columns inside. Tasks under none come last. Click a band's title to open the feature or goal.
+- **Group by** None · Feature · Goal (board, table and graph): one band per feature or goal, with its stage, its progress ("3 of 5 done"), the estimate left and a goal's due date, and the stage columns inside. The **Backlog** band comes first, "Backlog · not in a feature yet" (or goal): the **Add to the backlog…** field, every backlog note, then the Backlog tasks under no feature or goal. It's there even with nothing in it. Other tasks under none come last. Click a band's title to open the feature or goal.
 - The estimate left for what's shown, and how many tasks are shown ("24 of 98 tasks"), then **?**, which opens this section.
 - **Filter chips** by group: Stage, Type, Priority, Tags, Held by, Flags (blocked, needs you, open questions), Captured, Changed and Done (today, this week, this month). Each group shows only the values the project's tasks have. Chips in one group mean any of them; groups together mean all.
 - **Sort** (board only): priority, newest, oldest, changed, estimate or id.

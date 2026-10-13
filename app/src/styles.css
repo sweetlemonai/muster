@@ -590,6 +590,11 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .band-title .id { color: var(--muted); font-weight: 400; }
 .band > .none { margin: 0 12px 10px; }
 .band-board { flex: none; overflow: visible; padding: 0 8px 8px; }
+/* The grouped board's Backlog band (0046): one grey Backlog column, its quick add on top and its
+   cards side by side. */
+.backlog-board { grid-template-columns: 1fr; }
+.backlog-board .quick-add { padding-top: 8px; max-width: 420px; }
+.backlog-board .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); align-items: start; overflow: visible; }
 .parent-line { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tasks-table tr.group-row { cursor: default; }
 .tasks-table .group-row td, .tasks-table tbody tr.group-row:hover td { background: var(--tint); padding: 0; }

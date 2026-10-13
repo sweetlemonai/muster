@@ -2,8 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { api } from "./api";
 import { mayLeave } from "./writeUp";
 import { ago, columns, estimateTotal, feed, key, STAGES } from "./lib";
-import type { State, Task } from "./types";
-import { backlogColumn, backlogNotes, NoteCard, noteKey, QuickAdd } from "./Backlog";
+import type { Note, State, Task } from "./types";
+import { backlogColumn, backlogNotes, hiddenCount, NoteCard, noteKey, QuickAdd } from "./Backlog";
 import ProjectList from "./ProjectList";
 import NewTask from "./NewTask";
 import Card from "./Card";
@@ -226,10 +226,10 @@ export default function App() {
   const openKey = pane?.kind === "task" ? pane.key : null;
   const openTask = openKey ? (state?.tasks ?? []).find((t) => key(t) === openKey) ?? null : null;
   const allNotes = state?.backlog ?? [];
-  // Notes show on the ungrouped board only (Group by bands hold tasks), so only it counts them
-  // as hidden. The Board, Table and Timeline also count the tasks their Who chips hide.
-  const notesShown = view === "board" && groupBy === "none";
-  const hidden = inQueue.length - shownCount + (notesShown ? queueNotes.length - notes.length : 0);
+  // Notes show on the board, grouped or not (Group by draws them in its Backlog band, 0046), so
+  // only it counts them as hidden. The Board, Table and Timeline also count the tasks their Who
+  // chips hide.
+  const hidden = hiddenCount(view, { all: inQueue.length, shown: shownCount }, { all: queueNotes.length, shown: notes.length });
   const openNoteKey = pane?.kind === "note" ? pane.key : null;
   const openNote = openNoteKey ? allNotes.find((n) => noteKey(n) === openNoteKey) ?? null : null;
   const showTask = (q: string, id: string) => {
@@ -259,6 +259,11 @@ export default function App() {
   const card = (t: Task) => (
     <Card key={key(t)} t={t} now={now} multi={multi} parent={parentLine(t, index)} onOpen={() => open(t)} active={openKey === key(t)} words={words} />
   );
+  const noteCard = (n: Note) => (
+    <NoteCard key={`note:${noteKey(n)}`} n={n} now={now} multi={multi} onOpen={() => setPane({ kind: "note", key: noteKey(n) })} active={openNoteKey === noteKey(n)} words={words} />
+  );
+  // The Backlog's one-line capture, on the plain board and in the grouped board's Backlog band.
+  const quickAdd = state && state.queues.length > 0 ? <QuickAdd queues={queue === "all" ? state.queues.map((q) => q.name) : [queue]} onAdded={() => void refresh()} /> : null;
   // A view an owner criterion names, from its button in Your check (0043). Each is a tab, and the
   // task stays open beside it; Appearance and Projects are groups of Settings (0036).
   const openView = (v: NamedView) => {
@@ -376,6 +381,7 @@ export default function App() {
                   onOpen={open}
                   renderCard={card}
                   onChanged={() => void refresh()}
+                  backlog={quickAdd ? { notes, renderNote: noteCard, quickAdd } : undefined}
                 />
               )}
               {/* Backlog never folds: its quick add is always there. */}
@@ -393,14 +399,12 @@ export default function App() {
                         {c.label} <small>{count}</small>
                         {c.role && <span className="role">{c.role}</span>}
                       </h2>
-                      {backlog && state && state.queues.length > 0 && (
-                        <QuickAdd queues={queue === "all" ? state.queues.map((q) => q.name) : [queue]} onAdded={() => void refresh()} />
-                      )}
+                      {backlog && quickAdd}
                       <div className="cards">
                         {backlog
                           ? backlogColumn(notes, list).map((item) =>
                               item.kind === "note" ? (
-                                <NoteCard key={`note:${noteKey(item.note)}`} n={item.note} now={now} multi={multi} onOpen={() => setPane({ kind: "note", key: noteKey(item.note) })} active={openNoteKey === noteKey(item.note)} words={words} />
+                                noteCard(item.note)
                               ) : (
                                 <Card key={key(item.task)} t={item.task} now={now} multi={multi} parent={parentLine(item.task, index)} onOpen={() => open(item.task)} active={openKey === key(item.task)} words={words} />
                               ),

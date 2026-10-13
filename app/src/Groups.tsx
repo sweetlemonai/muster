@@ -1,7 +1,8 @@
 import { Fragment, type ReactNode } from "react";
-import { type BoardSort, columns, key, STAGES } from "./lib";
+import { backlogColumn, noteKey } from "./Backlog";
+import { boardColumn, type BoardSort, columns, key, STAGES } from "./lib";
 import { estimateLeft, type Group, GROUP_BYS, type GroupBy, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
-import type { Task } from "./types";
+import type { Note, Task } from "./types";
 import EffortGroups, { useAcceptResults } from "./EffortGroups";
 
 /** Group by: None · Feature · Goal, on screen above the board and the table, the current one lit. */
@@ -51,9 +52,48 @@ export function BandHead({ group, by, multi, active, onOpen }: {
   );
 }
 
+/** What the grouped board's Backlog band shows besides its tasks (0046). */
+export type BacklogBandParts = {
+  /** The notes in view, newest first (`backlogNotes`), after the search and the filters. */
+  notes: Note[];
+  renderNote: (n: Note) => ReactNode;
+  /** The quick add, as at the top of the plain board's Backlog column. */
+  quickAdd: ReactNode;
+};
+
+/** The first band (0046): the quick add, the notes, then the Backlog tasks with no feature or goal,
+ *  as the plain board's Backlog column shows them. Notes have no parent, so no other band holds
+ *  them. Drawn with nothing in it too, so the quick add never disappears. */
+function BacklogBand({ by, parts, tasks, renderCard }: { by: "feature" | "goal"; parts: BacklogBandParts; tasks: Task[]; renderCard: (t: Task) => ReactNode }) {
+  const items = backlogColumn(parts.notes, tasks);
+  return (
+    <section className="band backlog-band">
+      <div className="band-head">
+        <span className="band-title">{`Backlog · not in a ${by} yet`}</span>
+        <span className="meta">{items.length} {items.length === 1 ? "item" : "items"}</span>
+      </div>
+      <div className="board band-board backlog-board">
+        <section className="column col-backlog">
+          {parts.quickAdd}
+          <div className="cards">
+            {items.map((item) =>
+              item.kind === "note"
+                ? <Fragment key={`note:${noteKey(item.note)}`}>{parts.renderNote(item.note)}</Fragment>
+                : <Fragment key={key(item.task)}>{renderCard(item.task)}</Fragment>,
+            )}
+            {items.length === 0 && <p className="none">Nothing here</p>}
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
 /** The board grouped: one band per feature or goal, the stage columns inside each, each column
- *  in the board's sort (task 0032). Goals and features are the bands, never cards in the columns. */
-export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderCard, onChanged }: {
+ *  in the board's sort (task 0032). Goals and features are the bands, never cards in the columns.
+ *  With `backlog`, the Backlog band comes first and takes the Backlog tasks of the last band
+ *  (No feature or No goal), which then holds the rest. */
+export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderCard, onChanged, backlog }: {
   groups: Group[];
   by: "feature" | "goal";
   sort: BoardSort;
@@ -63,12 +103,18 @@ export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderC
   renderCard: (t: Task) => ReactNode;
   /** With it, each band's Your check column is grouped by effort, with Accept all (0043). */
   onChanged?: () => void;
+  backlog?: BacklogBandParts;
 }) {
   const results = useAcceptResults();
+  const loose = backlog ? groups.find((g) => !g.head) : undefined;
+  const looseBacklog = loose ? columns(loose.items, sort).backlog : [];
+  const rest = loose ? loose.items.filter((t) => boardColumn(t) !== "backlog") : [];
+  const bands = loose ? groups.flatMap((g) => (g !== loose ? [g] : rest.length ? [{ head: null, items: rest }] : [])) : groups;
   return (
     <main className="bands">
-      {groups.length === 0 && <p className="empty">No tasks match.</p>}
-      {groups.map((g) => {
+      {backlog && <BacklogBand by={by} parts={backlog} tasks={looseBacklog} renderCard={renderCard} />}
+      {bands.length === 0 && looseBacklog.length === 0 && <p className="empty">No tasks match.</p>}
+      {bands.map((g) => {
         const cols = columns(g.items, sort);
         // The band's Your check keeps its place while Accept all's result line has something to say.
         const place = `band:${g.head ? key(g.head) : "none"}`;

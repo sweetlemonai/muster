@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { backlogColumn, backlogNotes, fileDraft, NoteCard, noteTitle, projectCount, QuickAdd, quickAddKey } from "./Backlog";
+import { backlogColumn, backlogNotes, fileDraft, hiddenCount, NoteCard, noteTitle, projectCount, QuickAdd, quickAddKey } from "./Backlog";
 import { columns } from "./lib";
 import type { Note, Task } from "./types";
 
@@ -39,6 +39,17 @@ describe("backlog notes on the board", () => {
     const items = backlogColumn(backlogNotes([note({ file: "x.md", added: 1 }), note({ file: "y.md", added: 2 })], "all"), cols.backlog);
     expect(items.map((i) => (i.kind === "note" ? i.note.file : i.task.id))).toEqual(["y.md", "x.md", "0003", "0002"]);
     expect(backlogColumn([], [])).toEqual([]);
+  });
+
+  it("counts the notes the search hides on the board, grouped or not, as hidden (task 0046)", () => {
+    const tasks = { all: 10, shown: 7 };
+    const notes = { all: 4, shown: 1 };
+    // Group by doesn't change it: the grouped board lists the notes in its Backlog band.
+    expect(hiddenCount("board", tasks, notes)).toBe(6);
+    expect(hiddenCount("board", tasks, { all: 4, shown: 4 })).toBe(3);
+    expect(hiddenCount("board", { all: 0, shown: 0 }, { all: 2, shown: 0 })).toBe(2);
+    // The Table, Timeline and Graph don't list notes, so they don't count them.
+    for (const v of ["table", "timeline", "graph"]) expect(hiddenCount(v, tasks, notes)).toBe(3);
   });
 
   it("counts a project's notes with its tasks in the sidebar", () => {

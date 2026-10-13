@@ -4,6 +4,18 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Group by Feature or Goal keeps the backlog notes and the quick add in view (task 0046)
+**Fixed:** with Group by on, the backlog notes and the **Add to the backlog…** field disappeared →
+they were drawn only in the plain board's Backlog column, and the bands hold tasks, so notes (no
+parent) fell out → the grouped board starts with a **Backlog** band ("Backlog · not in a feature
+yet", or goal): the quick add, the notes newest first, then the Backlog tasks under no feature or
+goal, which leave No feature. Drawn even when empty. The filter bar's hidden count now counts the
+notes the search hides on the grouped board too (`hiddenCount` in `Backlog.tsx`). `Groups.tsx`,
+`App.tsx` (board only), `styles.css`; the manual (04) and AS_BUILT updated.
+**Verified:** `bin/gate`: `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; vitest
+946 tests, 8 new (7 Backlog band renders by feature and by goal, empty, after an add, search marks,
+no-match; 1 hidden count), red before the fix. Not checked live in the app: AC4 is the owner's.
+
 ## 2026-10-13 — Ping a working session from the app: ask for a check-in, or send a message (task 0039)
 **Did:** the owner, on two cards saying "no check-in for 36 min": "how to ping them back from the
 app". **Ask for a check-in** under a quiet card, in the task pane's new **Session** strip and, for
