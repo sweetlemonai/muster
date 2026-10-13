@@ -4,6 +4,21 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — How Muster compares: OpenSpec, Spec Kit, Beads, Linear, agent boards
+**Did:** the owner asked what OpenSpec and similar tools do. Deep research (7 web researchers, a
+citation audit) over spec-driven tools, agent task files, trackers with agents, hosted agents
+and parallel-worktree boards: `docs/research/2026-10-13-agent-task-tools.md`. Muster's own ground:
+stage moves that need proof, answers pushed into the asking session, the vision check, cost per
+task from local transcripts, no telemetry. Worth adopting: the tester isn't the builder, reading
+Claude Code's agent states, stop and pick-one questions, "what's true now" pages, a clarify pass
+in Shaping, a work-in-progress limit. Each went to the backlog as a note, not built.
+**Fixed:** merging 0035/0037 onto 0022: the sidebar counted "needs you" without the owner's own
+tasks (0037 moved the row out of App.tsx) → it uses 0022's `needsYouCount`; the commands page
+was regenerated for 0022's commands.
+**Verified:** 12 of 14 audited claims as written, one corrected (Factory: "in order", not
+"serially"); merge gate: `pnpm check` exit 0 (vitest 712, cargo test 313 + 13), both Python
+suites OK.
+
 ## 2026-10-13 — Projects sidebar: which are being worked on now (task 0037)
 **Did:** each project row says "N working" (a live session, or a check-in or heartbeat within
 30 minutes on a task someone holds), "stalled" (work in Building, nothing for 30 minutes), and
