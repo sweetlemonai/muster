@@ -121,6 +121,31 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Slash commands** (task 0003): `commands/muster.md` and `commands/mu.md` route `/mu <word>` to
   one `muster` command each. They may run only the commands they route. Anything else is captured
   as a backlog one-liner. They're installed into the personal layer only with the owner's yes.
+- **The task pane** (task 0021, the owner's design D2):
+  - The title (rename in place) and status line come first: stage, who's on it and since when,
+    LIVE, blocked, and what waits on you.
+  - Then the seven-stage track: click to move, with undo. It refuses if the task moved since.
+  - Then two columns. On the left, what the stage needs: work so far, your checklist and the
+    history, or the criteria. On the right, a sidebar with the one next step, Send back,
+    Block/Unblock, priority and type as one chip each, estimates, tags, files and links.
+  - Under the write-up come the vision check and the comment thread. The note bar stays at the
+    bottom.
+- **Fields** (task 0017):
+  - Types are code, bug, chore, tech-debt, spike, design, docs, research.
+  - Estimates are agent time, test time and tokens.
+  - `links:` hold https links, opened only if the task has them.
+  - Comments live in a tool-written `## Comments` section (`muster comment`), and Edit never
+    rewrites them.
+- **INDEX.md** (task 0018): one generated list per queue, regenerated after every write. Goals,
+  features and tasks by stage, each with its estimate, what it waits on, comments and open vision
+  conflicts, then backlog notes and Done. `muster index` rebuilds it, and `check` flags a stale one.
+- **Vision check** (task 0029):
+  - `muster vision <id>` prints the brief.
+  - `--record -` stores an agent's findings as a `## Vision` section with V-numbered conflicts, and
+    the section isn't editable once the task is checked.
+  - `--resolve Vn` settles one.
+  - Shaping → Ready waits while a conflict is open.
+  - A change of direction becomes one owner question with the cost of pivoting.
 - **Board:** one column per stage, with its role under the name. Blocked cards stay in their stage
   with a rose "blocked: …" badge, and Your check cards count as "needs you". The task pane has a
   stage picker, Pass to <next> (with the gate line out of Building), Send back with a reason,

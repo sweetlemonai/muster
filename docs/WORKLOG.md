@@ -4,6 +4,34 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Pane header D2 (0021), fields and comments (0017), INDEX.md (0018), vision check (0029)
+**Did:** four tasks built in parallel on their own branches, each reviewed with one fix round, then
+merged into main one at a time (each merge resolved against the other session's 0019, 0030 and 0031):
+- 0021: your D2 header. Title and status first, the stage track, the stage's content beside a
+  sidebar with the next step.
+- 0017: the new type list, test-time estimates, https-only links, and a comment thread under the
+  write-up.
+- 0018: `INDEX.md`, regenerated after every write. A change made outside muster is only a refresh
+  warning.
+- 0029: `muster vision`, a brief for an agent to check a task against VISION.md, decisions and
+  DESIGN.md. It records conflicts, holds Shaping → Ready while any is open, and turns a change of
+  direction into one owner question with the cost of pivoting.
+**Fixed (from reviews):**
+- Time spent showed three times too long (agent-day vs clock-day).
+- An undo after a track move could leave Building unheld or override an agent's move. Fixed
+  with `stage --from`.
+- The drop zone swallowed text drops.
+- Answers from Drover would have failed `check` on `INDEX.md`.
+- Agent text in a vision question could route the owner's answer to a mailbox.
+- Repeated checks piled up owner questions.
+**Verified:** after the last merge, `pnpm check` exit 0 (437 UI, 258 Rust, 13 interop tests),
+`python3 -I bin/test_task.py` 38 OK, `bin/test_commands.py` 10 OK, also under `TZ=Pacific/Kiritimati`.
+The release app was rebuilt.
+**Open:**
+- Not seen in a real window: the D2 layout in light and dark, links opening, and the comment
+  box's Esc guard.
+- Your check reads "you owner" in the status line (wording).
+
 ## 2026-10-12 — Who's on it, since when, how far: session stamps, held-by, check-ins (task 0030)
 **Did:** `muster` stamps who acts with the session (`wt-a (wt-0030 · session 7b5e8856 · cc-hg)`:
 checkout folder name, short session id, account label; `session.rs`). A holder is its label plus
