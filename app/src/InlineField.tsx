@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from "react";
+import { type FieldEvent, fieldShows, fieldStep, idleField } from "./fieldSteps";
 import { pressed } from "./shortcuts";
 
 /** How long typing rests before a field saves what's typed. */
 export const SAVE_AFTER_MS = 400;
 
 /** A one-line field that's always there and saves as you type (0044): after a short rest, and at
- *  once on ↩ or on leaving it. Esc puts back what it held when you came in, and saves that.
- *  `options` lay out under it as chips while it has focus, and a click on one picks it. What the
- *  core refuses shows under it. */
+ *  once on ↩ or on leaving it. Esc puts back what it held when you came in, and saves that. Left,
+ *  it shows what it sent until that save settles (`onSave` resolves once what it saved is loaded
+ *  back), so the old value never flashes. `options` lay out under it as chips while it has focus,
+ *  and a click on one picks it. What the core refuses shows under it. The timing is fieldSteps.ts. */
 export default function InlineField({ value, onSave, max, placeholder, label, options = [] }: {
-  /** What's saved; the field shows it whenever it doesn't have focus. */
+  /** What's saved; the field shows it whenever it doesn't have focus and no save is out. */
   value: string;
   onSave: (v: string) => Promise<unknown>;
   max: number;
@@ -18,83 +20,69 @@ export default function InlineField({ value, onSave, max, placeholder, label, op
   label: string;
   options?: string[];
 }) {
-  // What's typed while the field has focus; null shows the saved value.
-  const [draft, setDraft] = useState<string | null>(null);
+  const [field, setField] = useState(() => idleField(value));
   const [error, setError] = useState("");
+  // The state the next event steps from (events can come before a render), the rest timer, and
+  // whether the field is still on the page.
+  const now = useRef(field);
   const timer = useRef(0);
-  // The latest text, the last one sent, and the one the field held when focus came in.
-  const latest = useRef(value);
-  const sent = useRef(value);
-  const before = useRef(value);
+  const mounted = useRef(true);
   const save = useRef(onSave);
   save.current = onSave;
-  const send = (v: string) => {
-    window.clearTimeout(timer.current);
-    timer.current = 0;
-    if (v === sent.current) return;
-    sent.current = v;
-    save.current(v).then(
-      () => setError(""),
-      (e: unknown) => setError(String(e)),
-    );
+  const run = (e: FieldEvent, input?: HTMLInputElement) => {
+    const s = fieldStep(now.current, e);
+    now.current = s.field;
+    if (mounted.current) setField(s.field);
+    if (s.schedule || !s.field.waiting) window.clearTimeout(timer.current);
+    if (s.schedule) timer.current = window.setTimeout(() => run({ kind: "rest" }), SAVE_AFTER_MS);
+    if (s.save !== null) {
+      const text = s.save;
+      save.current(text).then(
+        () => mounted.current && setError(""),
+        (err: unknown) => mounted.current && setError(String(err)),
+      ).finally(() => {
+        if (mounted.current) run({ kind: "saved", text });
+      });
+    }
+    if (s.blur) input?.blur();
   };
   // Leaving the page while a save waits sends it, so nothing typed is lost.
-  useEffect(
-    () => () => {
-      if (timer.current) {
-        window.clearTimeout(timer.current);
-        if (latest.current !== sent.current) void save.current(latest.current).catch(() => undefined);
-      }
-    },
-    [],
-  );
-  const pick = (v: string) => {
-    latest.current = v;
-    setDraft(v);
-    send(v);
-  };
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      run({ kind: "unmount" });
+    };
+    // Once, on mount and unmount: the step reads only refs.
+  }, []);
+  const shows = fieldShows(field, value);
   return (
     <span className="inline-field">
       <input
-        value={draft ?? value}
+        value={shows}
         maxLength={max}
         placeholder={placeholder}
         aria-label={label}
-        onFocus={() => {
-          before.current = value;
-          sent.current = value;
-          latest.current = value;
-          setDraft(value);
-        }}
-        onChange={(e) => {
-          const v = e.target.value;
-          latest.current = v;
-          setDraft(v);
-          window.clearTimeout(timer.current);
-          timer.current = window.setTimeout(() => send(v), SAVE_AFTER_MS);
-        }}
+        onFocus={() => run({ kind: "arrive", value })}
+        onChange={(e) => run({ kind: "type", text: e.target.value })}
         onKeyDown={(e) => {
           if (pressed(e, "label-save")) {
             e.preventDefault();
-            e.currentTarget.blur();
+            run({ kind: "enter" }, e.currentTarget);
           }
           if (pressed(e, "label-revert")) {
             // Esc here puts the field back, not the pane away.
             e.stopPropagation();
-            pick(before.current);
-            e.currentTarget.blur();
+            run({ kind: "escape" }, e.currentTarget);
           }
         }}
-        onBlur={() => {
-          send(latest.current);
-          setDraft(null);
-        }}
+        onBlur={() => run({ kind: "blur" })}
       />
-      {draft !== null && options.length > 0 && (
+      {field.focused && options.length > 0 && (
         <span className="inline-options" role="group" aria-label={`Pick for ${label}`}>
           {options.map((o) => (
             // Picked without taking focus from the field, so the chips stay until it's left.
-            <button key={o} type="button" className={o === draft ? "chip on" : "chip"} aria-pressed={o === draft} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(o)}>
+            <button key={o} type="button" className={o === shows ? "chip on" : "chip"} aria-pressed={o === shows} onMouseDown={(e) => e.preventDefault()} onClick={() => run({ kind: "pick", text: o })}>
               {o}
             </button>
           ))}

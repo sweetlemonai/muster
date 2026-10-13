@@ -3,7 +3,7 @@ import { api } from "./api";
 import { LimitCell } from "./CheckLimit";
 import { HomePath } from "./HomePath";
 import InlineField from "./InlineField";
-import { CATEGORY_MAX, categoriesOf, LABEL_MAX, OTHER } from "./labels";
+import { CATEGORY_MAX, LABEL_MAX, OTHER, otherCategories } from "./labels";
 import { queueTotal } from "./lib";
 import type { Project, QueueInfo } from "./types";
 
@@ -51,12 +51,12 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
       setPrefixError(String(e));
     }
   };
-  // A label or category saved as it's typed: the list and the window show it at once.
+  // A label or category saved as it's typed: the window shows it at once, and the save settles
+  // once the list has it, so the field shows what it sent until then (InlineField).
   const saved = () => {
-    void load();
     onChanged();
+    return load();
   };
-  const categories = categoriesOf(queues);
   const total = (p: Project) => {
     const q = queues.find((x) => x.path === p.path);
     return q ? queueTotal(q.counts) : null;
@@ -90,7 +90,7 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
           {list?.map((p) => (
             <tr key={p.key} className={p.hidden ? "dim" : ""}>
               <td><NameCell p={p} onSave={(v) => api.setProjectLabel(p.key, v).then(saved)} /></td>
-              <td><CategoryCell p={p} categories={categories} onSave={(v) => api.setProjectCategory(p.key, v).then(saved)} /></td>
+              <td><CategoryCell p={p} categories={otherCategories(queues, p.path)} onSave={(v) => api.setProjectCategory(p.key, v).then(saved)} /></td>
               <td>
                 <PrefixCell
                   name={p.name}
@@ -138,7 +138,7 @@ export function NameCell({ p, onSave }: { p: Project; onSave: (label: string) =>
 }
 
 /** A project's category (0044), the sidebar heading it goes under, set in place and saved as it's
- *  typed: a new one, or one of `categories` (every shown project's), laid out as chips under the
+ *  typed: a new one, or one of `categories` (the other shown projects'), laid out as chips under the
  *  field while it has focus. Empty puts it under its group's heading (a queue one level deeper),
  *  else Other, which the field shows greyed. */
 export function CategoryCell({ p, categories, onSave }: { p: Project; categories: string[]; onSave: (category: string) => Promise<unknown> }) {

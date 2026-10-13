@@ -31,8 +31,19 @@ The core sends both as shown (`QueueInfo.label`, `category`) so the window doesn
 fallbacks; `Project` sends them as set, for the fields. The window's title is set by the core from
 the project's name (`show_project_title`), so the window never sends text for it. No collapsing of
 headings: they're always open (DESIGN.md).
+**Fixed (review):** pointing at a sidebar name showed only "Double-click to change the label",
+hiding the row's real name and folder → the name's tooltip is the row's, with the hint under it.
+Leaving a Settings field showed the old value until the save and reload finished → the field
+shows what it sent until that save settles, and Settings' save settles once the list is loaded
+back. The category chips came from every project, this one too, so a half-typed category became a
+chip and the row reflowed → they're the other projects' categories (`otherCategories`). The Helper's
+sentence named the project by its folder → by its label. A poll could reorder the sidebar under a
+label being edited in place, and the move would blur the field and save half a label → the order
+holds while a row is edited (`nextOrder`'s `hold`: a new project goes last). The field's timing
+(save after a rest, ↩, Esc, leaving, leaving the page) is now pure steps in `fieldSteps.ts`, tested
+without a DOM.
 **Verified:** `bin/gate` → `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`.
-New tests: `labels.rs` (cleaning, bad entries dropped, saved and read back, broken file, name kept
+New tests: `fieldSteps.test.ts` (review), `labels.rs` (cleaning, bad entries dropped, saved and read back, broken file, name kept
 for commands, the state's label and category, the window title), `projects.rs` (migrate carries
 both), `cli.rs` (the projects line), `labels.test.ts`, `activity.test.ts` (A–Z by label, order
 recomputed on a label change), `ProjectList.test.ts` (headings, totals, order within, tooltip,

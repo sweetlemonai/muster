@@ -34,14 +34,15 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
   const rows = useMemo(() => projectRows(queues, tasks, activity, now), [queues, tasks, activity, now]);
   // The order holds between polls unless what defines it changed (nextOrder), so rows don't jump.
   const memo = useRef<OrderMemo | null>(null);
-  memo.current = nextOrder(memo.current, rows, order);
+  // The project whose label is being set in place, by its name: while it is, the order holds, so
+  // the field never moves under the caret (which would leave it, and save half a label).
+  const [editing, setEditing] = useState<string | null>(null);
+  memo.current = nextOrder(memo.current, rows, order, editing !== null);
   const byName = new Map(rows.map((r) => [r.name, r]));
   const shown = memo.current.names.flatMap((n) => byName.get(n) ?? []);
   const sums = useMemo(() => sumActivity(rows.map((r) => r.activity)), [rows]);
   const counts = useMemo(() => new Map(queues.map((q) => [q.name, q.counts])), [queues]);
   const totalOf = (r: ProjectRow) => projectCount(counts.get(r.name) ?? {}, notes, r.name);
-  // The project whose label is being set in place, by its name.
-  const [editing, setEditing] = useState<string | null>(null);
   // Focus (0038) narrows the sidebar to the names, the working dot, stalled and the needs-you and paused counts;
   // a stalled project keeps its Ask all quiet sessions under it.
   const full = useLook("sidebar") === "full";
@@ -93,7 +94,7 @@ export function ProjectItem({ name, title, total, tasks, on, onClick, onRename, 
     <button className={on ? "side-item on" : "side-item"} onClick={onClick} title={title}>
       <span className="side-line">
         {!full && working && <i className="dot side-dot" title={`Being worked on now: ${WORKING_HINT}`} />}
-        <span className="side-name" title={onRename ? "Double-click to change the label" : undefined} onDoubleClick={onRename}>{name}</span>
+        <span className="side-name" title={onRename ? (title ? `${title}\n${RENAME_HINT}` : RENAME_HINT) : undefined} onDoubleClick={onRename}>{name}</span>
         {!full && stalled && <span className="side-stalled" title={`Stalled: ${STALLED_HINT}`}>{stalled}</span>}
         <span className="side-badges">
           {needs > 0 && <span className="count warn" title={`${needs} need you`}>{needs}</span>}
@@ -180,6 +181,7 @@ export function SideLabelEdit({ name, label, onSave, onDone }: { name: string; l
   );
 }
 
+const RENAME_HINT = "Double-click to change the label";
 const WORKING_HINT = "a live session, or a check-in or heartbeat in the last 30 minutes";
 const STALLED_HINT = "work in Building, but nothing for over 30 minutes: no check-in, heartbeat, stage change, commit or file change";
 

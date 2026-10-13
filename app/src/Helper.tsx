@@ -131,7 +131,7 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
           </select>
         </label>
         <span className="meta">
-          Tell it ideas, bugs and tasks. It files them in {queue}'s queue, checks for duplicates, and asks when something's unclear.
+          Tell it ideas, bugs and tasks. It files them in {labelOf(labels, queue)}'s queue, checks for duplicates, and asks when something's unclear.
           {info && <> Account: ~/{info.account}. Model: {info.model}.</>}
         </span>
         <span className="spacer" />

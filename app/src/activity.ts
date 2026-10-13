@@ -185,9 +185,17 @@ export function orderProjects<T extends Ranked>(rows: T[], by: SidebarOrder): T[
 /** The order the sidebar shows, kept between polls so rows don't jump (docs/DESIGN.md: nothing
  *  jumps; review, 2026-10-13): it's worked out again only when what defines it changes: the
  *  order chosen, the projects listed and their labels (0044), which projects are working, and, in
- *  Needs you order, the counts. Activity minutes ticking on don't move a row. */
+ *  Needs you order, the counts. Activity minutes ticking on don't move a row. `hold` keeps the
+ *  order as it is while a label is edited in place (0044 review): a new project goes last, a gone
+ *  one goes, and nothing else moves until it's let go. */
 export type OrderMemo = { by: SidebarOrder; names: string[]; key: string };
-export function nextOrder(prev: OrderMemo | null, rows: (Ranked & { activity: ProjectActivity })[], by: SidebarOrder): OrderMemo {
+export function nextOrder(prev: OrderMemo | null, rows: (Ranked & { activity: ProjectActivity })[], by: SidebarOrder, hold = false): OrderMemo {
+  if (hold && prev) {
+    const now = new Set(rows.map((r) => r.name));
+    const kept = prev.names.filter((n) => now.has(n));
+    const added = orderProjects(rows.filter((r) => !prev.names.includes(r.name)), by).map((r) => r.name);
+    return { ...prev, names: [...kept, ...added] };
+  }
   const names = rows.map((r) => `${r.name}\n${r.label ?? ""}`).sort();
   const working = rows.filter((r) => r.activity.working > 0).map((r) => r.name).sort();
   const needs = by === "needs" ? rows.map((r) => `${r.name}:${r.needs}`).sort() : [];

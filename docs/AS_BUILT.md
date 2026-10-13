@@ -74,9 +74,10 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   order chips order within each heading, and A–Z goes by the label. Double-clicking a row's name
   puts a field in its place (`SideLabelEdit`): ↩ or leaving it saves, Esc keeps it, the folder's
   name typed back is no label. Settings › Projects has a label field (the real name small under
-  it) and a category field per row, saved as you type (`InlineField`: after 400 ms, at once on ↩
-  or blur; Esc puts back what it held and saves that), the categories in use as chips under the
-  field while it has focus. `set_project_label` and `set_project_category` replace
+  it) and a category field per row, saved as you type (`InlineField`, its timing in `fieldSteps.ts`:
+  after 400 ms, at once on ↩ or blur; Esc puts back what it held and saves that; left, it shows
+  what it sent until the save settles), the other projects' categories as chips under the field
+  while it has focus. The sidebar's order holds while a label is edited in place. `set_project_label` and `set_project_category` replace
   `rename_project`: the old `names` are still read, so a project renamed before keeps that name in
   commands, but the window no longer sets them. `carry_over` (0005's migrate) carries both.
 - **Reaching a working session** (0039, `ping.rs`, `Ping.tsx`, `reach.ts`): **Ask for a

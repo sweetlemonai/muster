@@ -10,6 +10,7 @@ import PaneHeader from "./PaneHeader";
 import ProjectName from "./ProjectName";
 import { keyIndex } from "./taskKey";
 import type { Note, Task } from "./types";
+import Helper from "./Helper";
 import { TableView } from "./Views";
 import WaitingList from "./WaitingList";
 
@@ -51,6 +52,14 @@ describe("a project's name where a task names it (0044)", () => {
     expect(table).toContain('title="Muster — the queue · mu-12"');
     const pane = html(createElement(PaneHeader, { task: task({}), now: 0, onClose: () => {}, onRename: () => {} }));
     expect(pane).toContain('<b class="qname" title="muster">Muster — the queue</b>');
+  });
+});
+
+describe("the Helper beside its project picker (0044, review)", () => {
+  it("says which project's queue it files in by the label", () => {
+    const h = html(createElement(Helper, { queues: ["muster", "drover"], initial: "muster", onChanged: () => {} }));
+    expect(h).toContain("It files them in Muster — the queue&#x27;s queue");
+    expect(h).toContain('<option value="muster" selected="">Muster — the queue</option>');
   });
 });
 

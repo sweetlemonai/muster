@@ -194,7 +194,8 @@ describe("labels and categories in the sidebar (0044)", () => {
     const html = render();
     const muster = html.split('<button class="side-item').find((r) => r.includes('side-name" title=')  && r.includes(">Muster<")) ?? "";
     expect(muster).toContain('title="muster · /p/muster/tasks"');
-    expect(muster).toContain('<span class="side-name" title="Double-click to change the label">Muster</span>');
+    // The name keeps the row's tooltip, where the pointer is (review): the real name first.
+    expect(muster).toContain('<span class="side-name" title="muster · /p/muster/tasks\nDouble-click to change the label">Muster</span>');
   });
   it("keeps the headings and their needs-you counts in Focus's narrow sidebar", () => {
     const html = render("focus");

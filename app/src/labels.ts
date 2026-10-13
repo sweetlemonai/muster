@@ -55,7 +55,13 @@ export function byCategory<T extends { category: string }>(rows: T[]): CategoryG
   return [...groups.keys()].sort(byHeading).map((name) => ({ name, rows: groups.get(name) ?? [] }));
 }
 
-/** The categories to pick from in Settings › Projects: every shown project's, A–Z, Other last. */
+/** Every shown project's category, A–Z, Other last. */
 export function categoriesOf(queues: Pick<QueueInfo, "category">[]): string[] {
   return [...new Set(queues.map((q) => q.category?.trim() || OTHER))].sort(byHeading);
+}
+
+/** The categories a project's field offers in Settings › Projects: the other shown projects', so
+ *  what's being typed (saved as it's typed) never becomes a chip and the chips don't move. */
+export function otherCategories(queues: Pick<QueueInfo, "path" | "category">[], path: string): string[] {
+  return categoriesOf(queues.filter((q) => q.path !== path));
 }

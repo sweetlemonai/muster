@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byCategory, categoriesOf, keyTitle, labelOf, labelsOf, OTHER } from "./labels";
+import { byCategory, categoriesOf, keyTitle, labelOf, labelsOf, OTHER, otherCategories } from "./labels";
 
 describe("project labels (0044)", () => {
   it("call a project by its label, else by its name", () => {
@@ -37,5 +37,10 @@ describe("categories (0044)", () => {
   });
   it("offer every shown project's category once, Other last, a queue without one in Other", () => {
     expect(categoriesOf([{ category: "Tools" }, { category: "Other" }, { category: "Apps" }, { category: "Tools" }, {}])).toEqual(["Apps", "Tools", "Other"]);
+  });
+  it("offer a row only the other projects' categories, so what it's typing never becomes a chip (review)", () => {
+    const queues = [{ path: "/a", category: "Ap" }, { path: "/b", category: "Tools" }, { path: "/c", category: "Apps" }];
+    expect(otherCategories(queues, "/a")).toEqual(["Apps", "Tools"]);
+    expect(otherCategories(queues, "/z")).toEqual(["Ap", "Apps", "Tools"]);
   });
 });

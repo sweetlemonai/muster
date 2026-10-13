@@ -255,6 +255,13 @@ describe("review fixes (2026-10-13)", () => {
     // A label set or changed (0044): worked out again, by the label.
     const az = nextOrder(null, [row("zeta", 0, 1), row("alpha", 0, 1)], "az");
     expect(nextOrder(az, [row("zeta", 0, 1), { ...row("alpha", 0, 1), label: "Zulu" }], "az").names).toEqual(["zeta", "alpha"]);
+    // Held while a label is edited in place (review): nothing moves, a new project goes last, a
+    // gone one goes; once let go, it's worked out again.
+    const held = nextOrder(first, [row("zeta", 0, 40), row("alpha", 1, 0), row("beta", 1, 0)], "working", true);
+    expect(held.names).toEqual(["zeta", "alpha", "beta"]);
+    expect(nextOrder(held, [row("alpha", 1, 0)], "working", true).names).toEqual(["alpha"]);
+    expect(nextOrder(held, [row("zeta", 0, 40), row("alpha", 1, 0), row("beta", 1, 0)], "working").names).toEqual(["alpha", "beta", "zeta"]);
+    expect(nextOrder(null, [row("zeta", 0, 1), row("alpha", 0, 1)], "az", true).names).toEqual(["alpha", "zeta"]);
     // In Needs you order, a change in the counts moves rows.
     const needs = nextOrder(null, [row("a", 0, 5, 1), row("b", 0, 5, 0)], "needs");
     expect(nextOrder(needs, [row("a", 0, 5, 0), row("b", 0, 5, 2)], "needs").names).toEqual(["b", "a"]);
