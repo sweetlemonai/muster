@@ -4,6 +4,51 @@ Muster is a task list for work that AI agents do for you. You say what you want 
 
 This page is the whole idea on one screen. The other pages go deeper: [Concepts](02-concepts.md) explains each idea, [Tutorials](03-tutorials.md) walks through real work step by step, and [In the app](04-in-the-app.md) explains every button.
 
+## The problem
+
+Coding agents can now build real features on their own. One person can have several of them
+working at once. The hard part stops being the code and becomes the running of it: what each
+agent is doing, what it's waiting for, whether its work is done, and which questions really
+need you.
+
+Run that with a chat window per agent, and the state lives in your head. You forget which
+session had which task, you answer the same question twice, two agents start the same work,
+and "done" means whatever the agent said.
+
+Muster is where that work lives instead: every task, who's on it, what stage it's in, what it's
+waiting on, what it cost, and what needs you. Agents and you read and change the same list,
+under the same rules.
+
+## Why an ordinary board doesn't work for agents
+
+Jira, Linear and Trello are built for people. People remember yesterday, update a card when
+they feel like it, ask a colleague when stuck, and rarely grab the same ticket. Agents are
+different in each of those ways:
+
+| A board for people assumes… | With agents… | So Muster… |
+| --- | --- | --- |
+| The person remembers the context. | Every session starts from nothing. | puts everything in the task: what and why, the criteria for done, the decisions, the log. |
+| People move cards honestly. | An agent will say "done" when it isn't. | only lets the tool move a task, and only when the rule for that step is met: the checks' result to leave Building, every criterion ticked with its proof to leave Testing. |
+| Two people rarely take the same ticket. | Several agents start at the same second. | makes a claim one locked step: exactly one wins, and a claim that goes quiet expires. |
+| You can ask a colleague. | An agent can't walk over to your desk. | lets it ask in the task and keep working; the answer is pushed into its session. Only questions that are really yours reach you. |
+| Effort is story points. | Effort is tokens and minutes. | records both, from the sessions' own transcripts, against the estimate. |
+| You can see who's working. | Sessions are invisible. | stamps each step with the session that took it, and shows check-ins, "working now" and "stalled". |
+| Tickets are written once and drift. | Agents write many tasks fast, and they can contradict each other. | checks every new task against the project's one picture (the vision check) and tells you what changing course would cost. |
+| The board is a website. | Agents work with files and commands. | keeps tasks as plain files with their own git history, and gives agents a command line, `muster`. |
+
+## The big picture
+
+```
+you: one line ──▶ shaping agents ──▶ coding agent ──▶ testing agent ──▶ you: try it ──▶ done
+                  (task, criteria,    (claims it,      (ticks each
+                   estimate, checks    checks in,       criterion
+                   it fits the plan)   runs the gate)   with proof)
+```
+
+Your attention is the scarce thing, so Muster spends it carefully. Everything that needs you is
+in one place (**Waiting for you**, the orange cards, the count in the sidebar), everything else
+carries on without you, and you can see at a glance what is moving and what has stopped.
+
 ## Two ways in, one set of rules
 
 You use Muster in two places:
