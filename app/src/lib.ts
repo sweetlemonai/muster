@@ -114,6 +114,11 @@ export function queueTotal(counts: Record<string, number>): number {
 
 const PRIORITY: Record<string, number> = { high: 0, P0: 0, P1: 0, normal: 1, P2: 1, low: 2, P3: 2 };
 
+/** A priority as high, normal or low, reading P0–P3 the way the board sorts them; anything else is normal. */
+export function priorityName(p: string): "high" | "normal" | "low" {
+  return (["high", "normal", "low"] as const)[PRIORITY[p] ?? 1];
+}
+
 /** Tasks per stage. Blocked tasks stay in their stage; an unknown stage goes to Backlog.
  *  Waiting-for-owner first, then priority, then id; Done newest first. */
 export function columns(tasks: Task[]): Record<string, Task[]> {

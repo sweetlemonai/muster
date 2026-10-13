@@ -2,6 +2,24 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-12 — Card looks in Appearance (task 0026)
+**Did:** Appearance has a Cards section: five looks (Stripe, the default, now 5px; Tint; Top bar,
+a band naming the stage or priority; Dot; Outline), each with a live preview of a plain, a
+needs-you and a blocked card, and "Colour shows: Stage | Priority". Saved with the theme, applied
+as `data-cards` / `data-card-colour` on the page, CSS only. Blocked and needs you take over the
+colour in every look. Edges are darkened or lightened per theme to 3:1 on the card (the old 3px
+stripe was about 1.5:1 in Testing teal and Your-check gold on light themes). `themes.ts`,
+`CardLook.tsx`, `Appearance.tsx`, `styles.css`, `App.tsx` (the card), `lib.ts` (`priorityName`,
+so P0–P3 colour the way the board sorts them). Preview: `tasks/attachments/0026/`.
+**Fixed (review):** `overflow: hidden` on the card would have squashed a full column instead of
+scrolling (now `overflow: clip` and `flex: none`); hover coloured three sides in four looks;
+the Tint wash put the project name and a bug's label under AA on dark themes (dark tint now 8%).
+**Decided:** Stripe stays the default (continuity); the owner can pick another in Appearance.
+**Verified:** `pnpm check` green: vitest 221 passed (82 new), cargo 72 + interop 5, clippy and
+build clean. Two reviewers (correctness, tests); every finding fixed; mutations of `edgeColour`,
+the tint, `apply()` and blocked-over-needs each fail the tests.
+**Open:** the owner looks at the looks (AC1, AC2). Built in a worktree; merges into main once the
+session holding 0002 commits its working tree.
 ## 2026-10-12 — Claims, lease and questions in the tool (task 0002)
 **Did:**
 - `muster claim` and `muster next` give one claim per holder (the owner is exempt), checked
@@ -28,6 +46,7 @@ Newest first. What changed, and how it was checked. The current state is in `AS_
 (correctness, concurrency, tests, security), with two fix rounds, each re-reviewed.
 **Open:** nothing runs `muster reclaim` on a schedule yet. Claims still go in the task file until
 0005 moves live state into `.git/muster/`.
+||||||| parent of f8eefb2 (Card looks in Appearance: stripe, tint, top bar, dot, outline (task 0026))
 
 ## 2026-10-12 — One picture: tasks checked for conflicts, VISION.md, vision check queued
 **Did:** read every open task (0002–0029) against decision 0003 and wrote `docs/VISION.md`: the

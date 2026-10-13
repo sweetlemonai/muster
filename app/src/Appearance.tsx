@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { ACCENTS, apply, type Choice, load, resolve, save, THEMES, variables } from "./themes";
+import { CardLookPicker } from "./CardLook";
+import { ACCENTS, apply, cardChoice, type Choice, DEFAULT_CHOICE, load, resolve, save, THEMES, variables } from "./themes";
 
-/** Theme and accent, applied live while the board stays in view beside it. */
+/** Theme, accent and card look, applied live while the board stays in view beside it. */
 export default function Appearance({ onClose }: { onClose: () => void }) {
   const [c, setC] = useState<Choice>(load);
   useEffect(() => {
@@ -66,8 +67,23 @@ export default function Appearance({ onClose }: { onClose: () => void }) {
         <p className="meta">Blue and orange are left out: they belong to 127, Drover and Braindump. Every theme and accent pair passes WCAG AA.</p>
       </section>
       <section>
-        <button onClick={() => setC({ theme: "violet-night", accent: "violet", matchSystem: true, light: "violet-day", dark: "violet-night" })}>Back to Muster's violet</button>
+        <h2>Cards</h2>
+        <CardLookPicker {...pickerProps(c, setC)} />
+        <p className="meta">Blocked and "needs you" take over the colour in every look, and keep their words on the card.</p>
+      </section>
+      <section>
+        <button onClick={() => setC((p) => ({ ...DEFAULT_CHOICE, cards: p.cards, cardColour: p.cardColour }))}>Back to Muster's violet</button>
       </section>
     </div>
   );
+}
+
+function pickerProps(c: Choice, setC: (f: (p: Choice) => Choice) => void) {
+  const { cards, cardColour } = cardChoice(c);
+  return {
+    look: cards,
+    colour: cardColour,
+    onLook: (l: Choice["cards"]) => setC((p) => ({ ...p, cards: l })),
+    onColour: (k: Choice["cardColour"]) => setC((p) => ({ ...p, cardColour: k })),
+  };
 }

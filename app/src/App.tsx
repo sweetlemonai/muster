@@ -5,6 +5,7 @@ import type { State, Task } from "./types";
 import Projects from "./Projects";
 import NewTask from "./NewTask";
 import Appearance from "./Appearance";
+import { CardBand, cardClass } from "./CardLook";
 import { TableView, TimelineView } from "./Views";
 import logo from "./logo.png";
 
@@ -359,7 +360,8 @@ function Card({ t, now, multi, onOpen, active }: { t: Task; now: number; multi: 
   const who = holder(t);
   const priority = t.priority || "normal";
   return (
-    <button className={`card${active ? " active" : ""}${t.waitingForOwner ? " needs-you" : ""}`} onClick={onOpen}>
+    <button className={cardClass(t, active)} onClick={onOpen}>
+      <CardBand t={t} />
       <span className="card-top">
         {multi && <span className="q">{t.queue}</span>}
         <span className="id">{t.id}</span>

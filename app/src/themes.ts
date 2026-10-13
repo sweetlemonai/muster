@@ -57,6 +57,38 @@ export const STAGE_COLOURS: Record<string, string> = {
   blocked: "#F0647D",
 };
 const ON_STATUS = "#1A1730";
+/** "Needs you" (Your check, escalations), as styles.css's --st-needs. */
+export const NEEDS_COLOUR = "#F5C04A";
+// Priority colours, for cards coloured by priority: magenta for high (gold means "needs you" and
+// rose means blocked), violet for normal, grey for low. Never orange or blue.
+export const PRIORITY_COLOURS: Record<string, string> = { high: "#E879C9", normal: "#8B6CF0", low: "#8E8AA6" };
+
+/** How a card shows its colour (0026). Picked in Appearance; applied as CSS only. */
+export type CardLook = "stripe" | "tint" | "top" | "dot" | "outline";
+export const CARD_LOOKS: { id: CardLook; name: string; hint: string }[] = [
+  { id: "stripe", name: "Stripe", hint: "A bar down the left edge" },
+  { id: "tint", name: "Tint", hint: "The whole card washed in the colour" },
+  { id: "top", name: "Top bar", hint: "A band across the top that names it" },
+  { id: "dot", name: "Dot", hint: "A quiet card with a dot by the id" },
+  { id: "outline", name: "Outline", hint: "The border in the colour" },
+];
+/** What the card colour means: the stage it's in, or its priority. */
+export type CardColour = "stage" | "priority";
+/** How much of the colour a tinted card takes, per mode (tested for text contrast). */
+export const CARD_TINT: Record<Mode, number> = { dark: 0.08, light: 0.12 };
+
+/** The colour as an edge (stripe, border, dot) on the given backgrounds: itself when it stands
+ *  out at 3:1 on every one, else darkened (light themes) or lightened (dark themes) until it does.
+ *  Mixing toward black or white keeps the hue. */
+export function edgeColour(c: string, backgrounds: string | string[], mode: Mode): string {
+  const on = typeof backgrounds === "string" ? [backgrounds] : backgrounds;
+  const toward = mode === "light" ? "#000000" : "#FFFFFF";
+  for (let t = 1; t > 0; t -= 0.05) {
+    const e = mix(c, toward, t);
+    if (on.every((b) => contrast(e, b) >= 3)) return e;
+  }
+  return toward;
+}
 
 export function luminance(hex: string): number {
   const h = hex.replace("#", "");
@@ -74,8 +106,15 @@ export function mix(a: string, b: string, t: number): string {
   return "#" + x.map((v, i) => Math.round(v * t + y[i] * (1 - t)).toString(16).padStart(2, "0")).join("").toUpperCase();
 }
 
-export type Choice = { theme: string; accent: string; matchSystem: boolean; light: string; dark: string };
-export const DEFAULT_CHOICE: Choice = { theme: "violet-night", accent: "violet", matchSystem: true, light: "violet-day", dark: "violet-night" };
+export type Choice = { theme: string; accent: string; matchSystem: boolean; light: string; dark: string; cards: CardLook; cardColour: CardColour };
+export const DEFAULT_CHOICE: Choice = { theme: "violet-night", accent: "violet", matchSystem: true, light: "violet-day", dark: "violet-night", cards: "stripe", cardColour: "stage" };
+
+/** The card look and colour, with anything unknown (an old or hand-edited setting) falling back. */
+export function cardChoice(choice: Partial<Choice>): { cards: CardLook; cardColour: CardColour } {
+  const cards = CARD_LOOKS.some((l) => l.id === choice.cards) ? (choice.cards as CardLook) : DEFAULT_CHOICE.cards;
+  const cardColour = choice.cardColour === "priority" ? "priority" : "stage";
+  return { cards, cardColour };
+}
 
 export function resolve(choice: Choice, systemDark: boolean): { theme: Theme; accent: Accent } {
   const id = choice.matchSystem ? (systemDark ? choice.dark : choice.light) : choice.theme;
@@ -90,6 +129,7 @@ export function variables(theme: Theme, accent: Accent): Record<string, string> 
   const [acc, strong] = accent[theme.mode];
   const onAccent = contrast(theme.text, acc) >= contrast(theme.bg, acc) ? theme.text : theme.bg;
   const st = STATUS_TEXT[theme.mode];
+  const edge = (c: string) => edgeColour(c, [theme.surface, mix(c, theme.surface, CARD_TINT[theme.mode])], theme.mode);
   return {
     "--bg": theme.bg,
     "--surface": theme.surface,
@@ -111,6 +151,14 @@ export function variables(theme: Theme, accent: Accent): Record<string, string> 
     "--gold-text": st.gold,
     ...Object.fromEntries(Object.entries(STAGE_COLOURS).map(([s, c]) => [`--st-${s}`, c])),
     "--on-status": ON_STATUS,
+    // Card looks (0026): edges at 3:1 on the card, priority colours, and the tint amount.
+    // An edge sits on the plain card and, in the Tint look, on the card washed in its own colour.
+    ...Object.fromEntries(Object.entries(STAGE_COLOURS).map(([s, c]) => [`--edge-${s}`, edge(c)])),
+    "--st-needs": NEEDS_COLOUR,
+    "--edge-needs": edge(NEEDS_COLOUR),
+    ...Object.fromEntries(Object.entries(PRIORITY_COLOURS).map(([p, c]) => [`--pri-${p}`, c])),
+    ...Object.fromEntries(Object.entries(PRIORITY_COLOURS).map(([p, c]) => [`--edge-pri-${p}`, edge(c)])),
+    "--card-tint": `${Math.round(CARD_TINT[theme.mode] * 100)}%`,
   };
 }
 
@@ -131,4 +179,7 @@ export function apply(c: Choice) {
   const root = document.documentElement;
   for (const [k, v] of Object.entries(variables(theme, accent))) root.style.setProperty(k, v);
   root.style.colorScheme = theme.mode;
+  const { cards, cardColour } = cardChoice(c);
+  root.dataset.cards = cards;
+  root.dataset.cardColour = cardColour;
 }

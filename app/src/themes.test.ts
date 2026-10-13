@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { ACCENTS, contrast, DEFAULT_CHOICE, luminance, mix, resolve, STAGE_COLOURS, THEMES, variables } from "./themes";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import css from "./styles.css?raw";
+import { ACCENTS, apply, CARD_LOOKS, CARD_TINT, cardChoice, contrast, DEFAULT_CHOICE, edgeColour, luminance, mix, NEEDS_COLOUR, PRIORITY_COLOURS, resolve, STAGE_COLOURS, THEMES, variables } from "./themes";
 
 describe("every theme and accent pair is readable (WCAG AA)", () => {
   for (const t of THEMES) {
@@ -77,5 +78,131 @@ describe("choices", () => {
   });
   it("mix", () => {
     expect(mix("#FFFFFF", "#000000", 0.5)).toBe("#808080");
+  });
+});
+
+describe("card looks (0026)", () => {
+  // Every colour a card can take: each stage, blocked, needs you, and each priority.
+  const fills: [string, string][] = [
+    ...Object.entries(STAGE_COLOURS),
+    ["needs", NEEDS_COLOUR],
+    ...Object.entries(PRIORITY_COLOURS).map(([p, c]): [string, string] => [`pri-${p}`, c]),
+  ];
+  for (const t of THEMES) {
+    for (const a of ACCENTS) {
+      it(`${t.name} × ${a.name}: edges stand out at 3:1 on the card (stripe, outline, dot)`, () => {
+        const v = variables(t, a);
+        for (const [k] of fills) {
+          const edge = v[`--edge-${k}`];
+          expect(edge, k).toMatch(/^#[0-9A-F]{6}$/);
+          expect(contrast(edge, t.surface), `${k} on ${t.name}`).toBeGreaterThanOrEqual(3);
+        }
+      });
+    }
+    for (const a of ACCENTS) {
+      it(`${t.name} × ${a.name}: every word a card shows reads on every tinted card (AA)`, () => {
+        const v = variables(t, a);
+        for (const [k, c] of fills) {
+          const tinted = mix(c, t.surface, CARD_TINT[t.mode]);
+          // Title and meta (text, muted), the project name (.q, accent-text), a bug's kind (.kind.bug, err).
+          for (const w of ["--text", "--muted", "--accent-text", "--err"]) expect(contrast(v[w], tinted), `${w} on ${k}`).toBeGreaterThanOrEqual(4.5);
+          // The Tint look's border is the edge colour: 3:1 on the tinted card too.
+          expect(contrast(v[`--edge-${k}`], tinted), `edge on tinted ${k}`).toBeGreaterThanOrEqual(3);
+        }
+      });
+    }
+    it(`${t.name}: the tint amount and "needs you" colour the CSS uses are the tested ones`, () => {
+      const v = variables(t, ACCENTS[0]);
+      expect(v["--card-tint"]).toBe(`${Math.round(CARD_TINT[t.mode] * 100)}%`);
+      expect(v["--st-needs"]).toBe(NEEDS_COLOUR);
+    });
+  }
+  it("words on the Top bar band read on every colour it can take", () => {
+    for (const [k, c] of fills) expect(contrast("#1A1730", c), k).toBeGreaterThanOrEqual(4.5);
+  });
+  it("priority colours are distinct, apart from blocked and needs you, and never orange or blue", () => {
+    const all = Object.values(PRIORITY_COLOURS);
+    expect(new Set(all).size).toBe(3);
+    expect(all).not.toContain(STAGE_COLOURS.blocked);
+    expect(all).not.toContain(NEEDS_COLOUR);
+    for (const c of all) {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+      expect(b > r && b > g && r < 120, `${c} reads as blue`).toBe(false);
+      expect(r > 200 && g > 100 && g < 190 && b < 100, `${c} reads as orange`).toBe(false);
+    }
+  });
+  it("an edge keeps a colour that already stands out, and keeps its hue when it has to change", () => {
+    expect(edgeColour("#8B6CF0", "#1C1930", "dark")).toBe("#8B6CF0");
+    const gold = edgeColour("#F5C04A", "#FFFFFF", "light");
+    expect(gold).not.toBe("#F5C04A");
+    expect(contrast(gold, "#FFFFFF")).toBeGreaterThanOrEqual(3);
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(gold.slice(i, i + 2), 16));
+    expect(r).toBeGreaterThan(g);
+    expect(g).toBeGreaterThan(b);
+  });
+  it("five looks, stripe by default, coloured by stage", () => {
+    expect(CARD_LOOKS.map((l) => l.id)).toEqual(["stripe", "tint", "top", "dot", "outline"]);
+    expect([DEFAULT_CHOICE.cards, DEFAULT_CHOICE.cardColour]).toEqual(["stripe", "stage"]);
+  });
+  it("an old or hand-edited setting falls back to the defaults", () => {
+    expect(cardChoice({})).toEqual({ cards: "stripe", cardColour: "stage" });
+    expect(cardChoice({ cards: "neon" as never, cardColour: "mood" as never })).toEqual({ cards: "stripe", cardColour: "stage" });
+    expect(cardChoice({ cards: "dot", cardColour: "priority" })).toEqual({ cards: "dot", cardColour: "priority" });
+  });
+});
+
+describe("the card CSS uses what the tests check (0026)", () => {
+  const rule = (selector: string) => {
+    const i = css.indexOf(`${selector} {`);
+    expect(i, selector).toBeGreaterThanOrEqual(0);
+    return { at: i, body: css.slice(i, css.indexOf("}", i)) };
+  };
+  it("the Tint look washes the card in its fill by --card-tint, over the surface (as mix() in the tests)", () => {
+    expect(css).toContain("--card-bg: color-mix(in srgb, var(--card-fill) var(--card-tint, 8%), var(--surface));");
+  });
+  it("the Tint look's border is the edge colour", () => {
+    expect(css).toContain("--card-tint-border: var(--card-c);");
+  });
+  it("the band is the fill with the status word colour", () => {
+    expect(rule(".card-band").body).toContain("background: var(--card-fill); color: var(--on-status);");
+  });
+  it("the page's own needs-you colour before apply() matches", () => {
+    expect(css).toContain(`--st-needs: ${NEEDS_COLOUR};`);
+  });
+  it("blocked takes over from needs you, and both from the stage or priority colour", () => {
+    const needs = rule(".card.needs-you");
+    const blocked = rule(".card.blocked");
+    expect(blocked.at).toBeGreaterThan(needs.at);
+    expect(blocked.body).toContain("--card-fill: var(--st-blocked); --card-c: var(--edge-blocked");
+    expect(needs.body).toContain("--card-fill: var(--st-needs); --card-c: var(--edge-needs");
+    expect(rule(".card").body).toBeTruthy();
+    expect(css).toContain(".card { --card-fill: var(--base-fill); --card-c: var(--base-edge); }");
+  });
+  it("each look only sets variables, never the stage colour directly", () => {
+    for (const l of ["tint", "top", "dot", "outline"]) {
+      const body = rule(`:root[data-cards="${l}"] .board .card, .look-${l} .card`).body;
+      expect(body, l).not.toContain("--status");
+      for (const decl of body.slice(body.indexOf("{") + 1).split(";").map((d: string) => d.trim()).filter(Boolean)) expect(decl.startsWith("--"), `${l}: ${decl}`).toBe(true);
+    }
+  });
+});
+
+describe("apply() puts the card look on the page (0026)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const page = () => {
+    const root = { style: { setProperty: () => {}, colorScheme: "" }, dataset: {} as Record<string, string> };
+    vi.stubGlobal("document", { documentElement: root });
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: true }) });
+    return root;
+  };
+  it("as the attributes the board CSS selects on", () => {
+    const root = page();
+    apply({ ...DEFAULT_CHOICE, cards: "tint", cardColour: "priority" });
+    expect(root.dataset).toEqual({ cards: "tint", cardColour: "priority" });
+  });
+  it("falls back for unknown values", () => {
+    const root = page();
+    apply({ ...DEFAULT_CHOICE, cards: "neon" as never, cardColour: "mood" as never });
+    expect(root.dataset).toEqual({ cards: "stripe", cardColour: "stage" });
   });
 });

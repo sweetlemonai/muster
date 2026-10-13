@@ -82,13 +82,13 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 .board { flex: 1; display: grid; grid-template-columns: repeat(5, minmax(170px, 1fr)); gap: 10px; padding: 8px 14px 12px; overflow: auto; min-height: 0; }
 .column { display: flex; flex-direction: column; min-height: 0; background: color-mix(in srgb, var(--surface) 55%, var(--bg)); border: 1px solid var(--border); border-top: 3px solid var(--status, var(--border)); border-radius: var(--radius); }
-.col-backlog, .s-backlog { --status: var(--st-backlog); }
-.col-shaping, .s-shaping { --status: var(--st-shaping); }
-.col-ready, .s-ready { --status: var(--st-ready); }
-.col-building, .s-building { --status: var(--st-building); }
-.col-testing, .s-testing { --status: var(--st-testing); }
-.col-your-check, .s-your-check { --status: var(--st-your-check); }
-.col-done, .s-done { --status: var(--st-done); }
+.col-backlog, .s-backlog { --status: var(--st-backlog); --edge: var(--edge-backlog, var(--st-backlog)); }
+.col-shaping, .s-shaping { --status: var(--st-shaping); --edge: var(--edge-shaping, var(--st-shaping)); }
+.col-ready, .s-ready { --status: var(--st-ready); --edge: var(--edge-ready, var(--st-ready)); }
+.col-building, .s-building { --status: var(--st-building); --edge: var(--edge-building, var(--st-building)); }
+.col-testing, .s-testing { --status: var(--st-testing); --edge: var(--edge-testing, var(--st-testing)); }
+.col-your-check, .s-your-check { --status: var(--st-your-check); --edge: var(--edge-your-check, var(--st-your-check)); }
+.col-done, .s-done { --status: var(--st-done); --edge: var(--edge-done, var(--st-done)); }
 .column h2::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--status); margin-right: 6px; vertical-align: 1px; }
 .column h2 { margin: 0; padding: 10px 12px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
 .column h2 small { font-weight: 400; }
@@ -96,11 +96,41 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .none { color: var(--muted); font-size: 12px; margin: 6px 4px; }
 .more { background: none; border: none; color: var(--muted); font-size: 12px; }
 
-.card { display: flex; flex-direction: column; gap: 6px; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 10px; }
-.card:hover { border-color: var(--accent); }
-.card { border-left: 3px solid var(--status, var(--border)); }
-.card.active { outline: 2px solid var(--accent); }
-.card.needs-you { border-left-color: var(--st-needs); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--st-needs) 45%, transparent); }
+/* clip, not hidden: a scroll container's flex min-size is 0, so a full column would squash its
+   cards instead of scrolling. flex: none keeps every card its own height either way. */
+.card { display: flex; flex-direction: column; gap: 6px; text-align: left; border-radius: var(--radius); padding: 9px 10px; overflow: clip; flex: none; }
+/* Card looks (0026). The card's colour: its stage (from the column), or its priority, and blocked
+   or needs you on top. --card-fill is the colour as a fill, --card-c the same colour as an edge
+   (3:1 on the card, from themes.ts edgeColour). Each look below only sets variables. */
+.card { --base-fill: var(--status, var(--border)); --base-edge: var(--edge, var(--base-fill)); }
+.card.p-high { --pri-fill: var(--pri-high, #E879C9); --pri-edge: var(--edge-pri-high, var(--pri-fill)); }
+.card.p-normal { --pri-fill: var(--pri-normal, #8B6CF0); --pri-edge: var(--edge-pri-normal, var(--pri-fill)); }
+.card.p-low { --pri-fill: var(--pri-low, #8E8AA6); --pri-edge: var(--edge-pri-low, var(--pri-fill)); }
+:root[data-card-colour="priority"] .board .card, .look-by-priority .card { --base-fill: var(--pri-fill); --base-edge: var(--pri-edge); }
+.card { --card-fill: var(--base-fill); --card-c: var(--base-edge); }
+.card.needs-you { --card-fill: var(--st-needs); --card-c: var(--edge-needs, var(--st-needs)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--st-needs) 45%, transparent); }
+.card.blocked { --card-fill: var(--st-blocked); --card-c: var(--edge-blocked, var(--st-blocked)); }
+.card {
+  background: var(--card-bg, var(--surface));
+  border: var(--card-bw, 1px) solid var(--card-hover, var(--card-border, var(--border)));
+  border-left: var(--card-left-w, 5px) solid var(--card-left, var(--card-c));
+}
+.card:hover { --card-hover: var(--accent); }
+.card.active { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card-band { display: var(--card-band, none); margin: -9px -10px 0; padding: 2px 10px; background: var(--card-fill); color: var(--on-status); font-size: 10px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; }
+.card-band .by-pri { display: none; }
+:root[data-card-colour="priority"] .board .card-band .by-stage, .look-by-priority .card-band .by-stage { display: none; }
+:root[data-card-colour="priority"] .board .card-band .by-pri, .look-by-priority .card-band .by-pri { display: inline; }
+.card-top::before { content: ""; display: var(--card-dot, none); width: 9px; height: 9px; border-radius: 50%; background: var(--card-c); flex: none; }
+/* Stripe is the default (no setting needed). */
+:root[data-cards="tint"] .board .card, .look-tint .card {
+  --card-left-w: 1px; --card-left: var(--card-hover, var(--card-tint-border)); --card-border: var(--card-tint-border);
+  --card-tint-border: var(--card-c);
+  --card-bg: color-mix(in srgb, var(--card-fill) var(--card-tint, 8%), var(--surface));
+}
+:root[data-cards="top"] .board .card, .look-top .card { --card-left-w: 1px; --card-left: var(--card-hover, var(--border)); --card-band: block; }
+:root[data-cards="dot"] .board .card, .look-dot .card { --card-left-w: 1px; --card-left: var(--card-hover, var(--border)); --card-dot: inline-block; }
+:root[data-cards="outline"] .board .card, .look-outline .card { --card-bw: 2px; --card-left-w: 2px; --card-left: var(--card-hover, var(--card-c)); --card-border: var(--card-c); }
 .card-top, .card-bottom { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 11px; color: var(--muted); }
 .title { font-weight: 550; line-height: 1.3; }
 .id { font-variant-numeric: tabular-nums; }
@@ -284,6 +314,15 @@ button:disabled { opacity: 0.45; cursor: default; }
 .swatch .preview i { display: block; width: 28px; height: 6px; border-radius: 3px; }
 .swatch .preview b { display: block; height: 4px; border-radius: 2px; width: 80%; }
 .swatch-name { font-size: 12px; }
+.looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; margin-bottom: 8px; }
+.look { border: 1px solid var(--border); border-radius: 8px; background: var(--bg); padding: 6px; display: flex; flex-direction: column; gap: 6px; text-align: left; }
+.look.on { outline: 2px solid var(--accent); }
+.look-preview { display: flex; flex-direction: column; gap: 4px; }
+.look-preview .card { padding: 4px 6px; gap: 0; font-size: 10px; }
+.look-preview .card-band { margin: -4px -6px 2px; padding: 0 6px; font-size: 8px; }
+.look-preview .card-top { font-size: 10px; color: var(--text); flex-wrap: nowrap; white-space: nowrap; }
+.look-preview .card-top .id { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.look-colour { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
 .accents { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .accent { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--border); background: var(--bg); border-radius: 999px; padding: 3px 12px 3px 6px; }
 .accent.on { outline: 2px solid var(--accent); }

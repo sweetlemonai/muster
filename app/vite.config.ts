@@ -7,5 +7,6 @@ export default defineConfig({
   clearScreen: false,
   server: { port: 1450, strictPort: true, host: "127.0.0.1", watch: { ignored: ["**/src-tauri/**"] } },
   build: { target: "safari16" },
-  test: { environment: "node", include: ["src/**/*.test.ts"] },
+  // css: the card-look tests read styles.css (?raw) to check it uses what they test (0026).
+  test: { environment: "node", include: ["src/**/*.test.ts"], css: { include: [/styles\.css/] } },
 });
