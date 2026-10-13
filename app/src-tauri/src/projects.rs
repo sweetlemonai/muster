@@ -254,7 +254,8 @@ fn set_prefix_where(
     let root = Path::new(&p.path);
     Some(
         crate::key::check_new_prefix(prefix, root, &all)
-            .and_then(|()| crate::key::store_prefix(root, prefix))
+            // Under the queue's lock, which brings INDEX.md up to date with the new keys.
+            .and_then(|()| queue::with_lock(root, || crate::key::store_prefix(root, prefix)))
             .map(|()| p.key.clone()),
     )
 }

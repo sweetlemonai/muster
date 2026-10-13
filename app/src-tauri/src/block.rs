@@ -819,7 +819,7 @@ mod tests {
         );
         assert_eq!(sentence_of(&t, true), "Blocked by tasks: 0002, 0003, 0001");
         assert!(last_log(p, "0004")
-            .ends_with("wt-a: blocked on tasks: 0003, 0001 (after the API lands)"));
+            .ends_with("wt-a: blocked on tasks: bk-3, bk-1 (after the API lands)"));
         let file = fs::read_to_string(p.join("todo/0004-t.md")).unwrap();
         assert!(file.contains("\ndepends: [0002, 0003, 0001]\n"), "{file}");
         assert!(!file.contains("blocked-kind"), "{file}");
@@ -914,7 +914,7 @@ mod tests {
         assert!(t.blocked && t.questions[0].ticked);
         assert!(
             t.log_tail.last().unwrap().ends_with(
-                "capture: Q1 answered, still blocked: wt-a already holds 0002 in Building; one claim per holder, so they pass, return or block it first"
+                "capture: Q1 answered, still blocked: wt-a already holds bk-2 in Building; one claim per holder, so they pass, return or block it first"
             ),
             "{:?}",
             t.log_tail
@@ -956,7 +956,7 @@ mod tests {
         set_stage(p, "0001", "done", None, "owner", "2026-10-13 10:00").unwrap();
         let t = task(p, "0003");
         assert_eq!(sentence_of(&t, false), "Blocked by tasks: 0002 (Ready)");
-        assert!(last_log(p, "0003").ends_with("wt-a: blocked on tasks: 0001, 0002"));
+        assert!(last_log(p, "0003").ends_with("wt-a: blocked on tasks: bk-1, bk-2"));
         pass_task(p, "0002", "wt-b", T, &PassOpts::default()).unwrap();
         set_stage(p, "0002", "done", None, "owner", "2026-10-13 11:00").unwrap();
         let t = task(p, "0003");
@@ -1084,7 +1084,7 @@ mod tests {
             .log_tail
             .last()
             .unwrap()
-            .ends_with("depends set to [0001, 0003]"));
+            .ends_with("depends set to [bk-1, bk-3]"));
         // 0001 done by hand, outside muster: 0003's span closes at the last change it shows.
         let f = p.join("todo/0001-t.md");
         let text = fs::read_to_string(&f)
@@ -1166,7 +1166,7 @@ mod tests {
             t.log_tail
                 .last()
                 .unwrap()
-                .ends_with("capture: blocked on tasks: 0001"),
+                .ends_with("capture: blocked on tasks: bk-1"),
             "{:?}",
             t.log_tail
         );

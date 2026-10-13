@@ -7,7 +7,7 @@ import type { QueueInfo, Task } from "./types";
 // task and queue (`prefix`).
 
 const DIGITS = /^[0-9]+$/;
-const PREFIX = /^[a-z]{2,4}$/;
+const TYPED_PREFIX = /^[A-Za-z]{2,4}$/;
 
 /** `mu-12` for task `0012` of the project with the prefix `mu`. Without a prefix, or for an id
  *  that isn't digits, the id as it is. */
@@ -30,11 +30,13 @@ export type Typed = { prefix: string | null; id: string };
 export function parseKey(input: string): Typed | null {
   const s = input.trim();
   const dash = s.indexOf("-");
-  const prefix = dash < 0 ? null : s.slice(0, dash).toLowerCase();
+  // Checked as typed, ASCII letters only, before lowercasing: toLowerCase turns some other
+  // letters into ASCII ones (the Kelvin sign into k), which the core's to_ascii_lowercase doesn't.
+  const typed = dash < 0 ? null : s.slice(0, dash);
   const number = dash < 0 ? s : s.slice(dash + 1);
   if (!number || number.length > 4 || !DIGITS.test(number)) return null;
-  if (prefix !== null && !PREFIX.test(prefix)) return null;
-  return { prefix, id: number.padStart(4, "0") };
+  if (typed !== null && !TYPED_PREFIX.test(typed)) return null;
+  return { prefix: typed === null ? null : typed.toLowerCase(), id: number.padStart(4, "0") };
 }
 
 /** Each project's prefix to its queue's name, for finding the task a key names. */

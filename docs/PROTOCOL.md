@@ -390,13 +390,15 @@ queue wherever you are (`muster show br-7` from Muster's folder finds Braindump'
 prefix is 2 to 4 lowercase letters, stored in the queue's `README.md` front matter (`prefix: mu`)
 until task 0005 moves it to `.muster/config.toml` (`key.rs` reads it in one place). Without one,
 it's the first 2 letters of the project's name, or 3, then 4, when another project Muster knows
-starts the same (both take more); a stored one is kept. `muster init --prefix <p>`, `muster
-projects set <name> prefix <p>` and the app's Settings › Projects set it, and refuse one that
-isn't 2 to 4 lowercase letters or that another project has; `muster init` and New queue store
-the default. What muster prints names tasks by their keys, and so do the lines it writes to
-a task's log from now on (`unblocked: mu-14 done`, `mu-17 went back to Building`), INDEX.md,
-what `muster check` reports and what muster refuses with (`you already hold mu-12`); file names
-stay as they are. `manifest.py` and `tasks.json`, which scripts read, keep ids.
+starts the same (both take more); a stored one is kept, and muster stores the default the first
+time it writes to the queue, so its keys don't move when another project comes along. `muster
+init --prefix <p>`, `muster projects set <name> prefix <p>` and the app's Settings › Projects
+set it, and refuse one that isn't 2 to 4 lowercase letters or that another project has;
+`muster init` and New queue store the default. What muster prints names tasks by their keys, and
+so do the lines it writes to a task's log from now on (`unblocked: mu-14 done`, `mu-17 went
+back to Building`, `blocked on tasks: mu-14, mu-16`), INDEX.md, what `muster check` reports and
+what muster refuses with (`you already hold mu-12`); file names stay as they are. `manifest.py`
+and `tasks.json`, which scripts read, keep ids.
 
 ## Sessions (decision 0004)
 

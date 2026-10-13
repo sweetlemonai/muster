@@ -7,6 +7,7 @@ import TagEditor from "./Tags";
 import { LEVELS } from "./levels";
 import { HelpButton } from "./HelpButton";
 import { pressed } from "./shortcuts";
+import { parseKey } from "./taskKey";
 
 /** Who does a new task (0022), as a chip pair: an agent (the default) or you. */
 export const FOR_CHOICES = [
@@ -14,11 +15,27 @@ export const FOR_CHOICES = [
   { id: "ai", label: "AI", hint: "An agent's: on the board as usual" },
 ] as const;
 
+/** The Parent field (0033): its key (`mu-30`, `MU-30`) or number (`30`, `0030`) as the id the core
+ *  takes; "" for none. Another project's key, or something that isn't a task, says why. */
+export function parentRequest(typed: string, prefix: string | undefined): { ok: true; id: string } | { ok: false; why: string } {
+  const t = typed.trim();
+  if (!t) return { ok: true, id: "" };
+  const example = prefix ? `${prefix}-30 or 30` : "30";
+  const k = parseKey(t);
+  if (!k) return { ok: false, why: `A parent is a feature or goal of this project: ${example}` };
+  if (k.prefix !== null && prefix && k.prefix !== prefix) {
+    return { ok: false, why: `${t} is another project's task: a parent is in this one (${example})` };
+  }
+  return { ok: true, id: k.id };
+}
+
 /** New task, in the docked pane beside the board: who does it, title, type, priority, tags,
  *  description, files. */
-export default function NewTask({ queues, initial, onClose, onCreated }: {
+export default function NewTask({ queues, initial, prefixes = {}, onClose, onCreated }: {
   queues: string[];
   initial: string;
+  /** Each queue's prefix (0033), for the Parent field's keys. */
+  prefixes?: Record<string, string>;
   onClose: () => void;
   onCreated: (queue: string, id: string) => void;
 }) {
@@ -57,13 +74,18 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
       setError(String(e));
     }
   };
+  // A goal has no parent; the core refuses one, so none is sent.
+  const parentAsked = parentRequest(level === "goal" ? "" : parent, prefixes[queue]);
   const submit = async () => {
     if (!title.trim() || !queue) return;
+    if (!parentAsked.ok) {
+      setError(parentAsked.why);
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      // A goal has no parent; the core refuses one, so none is sent.
-      const link = { level, parent: level === "goal" ? "" : parent.trim(), due: "" };
+      const link = { level, parent: parentAsked.id, due: "" };
       const c = await api.createTask(queue, { title, kind, priority, body, tags, estTime, estTestTime, estTokens, ...link, forWho: level === "task" ? forWho : "ai" }, files, stamp(new Date()));
       onCreated(queue, c.id);
     } catch (e) {
@@ -157,17 +179,17 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
               {l.label}
             </button>
           ))}
-          <label className="parent-field" title={level === "goal" ? "A goal has no parent" : "The id of the feature or goal it sits under"}>
+          <label className="parent-field" title={level === "goal" ? "A goal has no parent" : "The feature or goal it sits under, by its key or number"}>
             Parent
             <input
               value={level === "goal" ? "" : parent}
-              onChange={(e) => setParent(e.target.value.replace(/\D/g, "").slice(0, 4))}
-              placeholder={level === "goal" ? "none" : "0030"}
-              size={5}
-              inputMode="numeric"
+              onChange={(e) => setParent(e.target.value.slice(0, 12))}
+              placeholder={level === "goal" ? "none" : prefixes[queue] ? `${prefixes[queue]}-30` : "30"}
+              size={7}
               disabled={level === "goal"}
             />
           </label>
+          {!parentAsked.ok && <span className="err small" role="alert">{parentAsked.why}</span>}
         </div>
         <div className="chip-row" role="group" aria-label="Type">
           <span className="meta">Type</span>

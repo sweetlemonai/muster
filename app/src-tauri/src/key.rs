@@ -99,6 +99,34 @@ pub fn same_project_ids(
     Ok((!ids.is_empty()).then_some(ids))
 }
 
+/// The tasks a block's `--on` starts with (`mu-14, mu-16 waiting for review`, `14,16`), as their
+/// ids, and the words after them as they were typed: the words up to the first that isn't a task
+/// of `project` (`prefix`), split at commas and spaces. None when it doesn't start with a task;
+/// refused when one names another project.
+pub fn leading_tasks(
+    value: &str,
+    prefix: &str,
+    project: &str,
+) -> Result<Option<(Vec<String>, String)>, String> {
+    let mut ids = Vec::new();
+    let mut rest = value.trim_start();
+    loop {
+        let word_end = rest.find([',', ' ', '\t', '\n']).unwrap_or(rest.len());
+        let word = &rest[..word_end];
+        let Some(t) = parse(word).filter(|_| !word.is_empty()) else {
+            break;
+        };
+        if t.prefix.as_deref().is_some_and(|p| p != prefix) {
+            return Err(format!(
+                "{word} isn't a task of {project} ({prefix}): depends, parents and blocks name tasks in the same project"
+            ));
+        }
+        ids.push(t.id);
+        rest = rest[word_end..].trim_start_matches([',', ' ', '\t', '\n']);
+    }
+    Ok((!ids.is_empty()).then(|| (ids, rest.trim_end().to_string())))
+}
+
 /// What the core says (a refusal, an error), with each task of the queue at `root` it names by
 /// its id (`0012`) named by its key (`mu-12`): what a command prints and the window shows. Only
 /// ids of tasks that are there, plus `also` (what the command was given), standing alone: not in a
@@ -269,6 +297,16 @@ pub fn store_prefix(root: &Path, prefix: &str) -> Result<(), String> {
     queue::write_atomic(&file, &text)
 }
 
+/// Store the queue's current prefix when it has none stored, so its keys stay what they are now
+/// whatever projects come along later. Called under the queue's lock by every write. A queue
+/// with no README.md is left alone, and a README that can't be written only means the default
+/// is worked out again next time: the write itself goes on either way.
+pub fn pin_prefix(root: &Path) {
+    if stored_prefix(root).is_none() && root.join("README.md").is_file() {
+        let _ = store_prefix(root, &prefix_for(root));
+    }
+}
+
 fn same_folder(a: &Path, b: &Path) -> bool {
     let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
     canon(a) == canon(b)
@@ -404,6 +442,30 @@ mod tests {
             "{:?}",
             plain.problems
         );
+    }
+
+    #[test]
+    fn a_block_starts_with_its_tasks_and_the_rest_is_the_reason() {
+        let on = |v: &str| leading_tasks(v, "mu", "muster");
+        let got = |ids: &[&str], rest: &str| {
+            Some((
+                ids.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                rest.to_string(),
+            ))
+        };
+        assert_eq!(on("mu-2, mu-3").unwrap(), got(&["0002", "0003"], ""));
+        assert_eq!(on("2, 3").unwrap(), got(&["0002", "0003"], ""));
+        assert_eq!(on("0014,0016").unwrap(), got(&["0014", "0016"], ""));
+        assert_eq!(
+            on(" MU-2 ,3 waiting for review, then 4 ").unwrap(),
+            got(&["0002", "0003"], "waiting for review, then 4")
+        );
+        assert_eq!(on("you: pick a colour").unwrap(), None);
+        assert_eq!(on("question Q2").unwrap(), None);
+        assert_eq!(on("").unwrap(), None);
+        assert!(on("mu-2, br-7")
+            .unwrap_err()
+            .contains("br-7 isn't a task of muster (mu)"));
     }
 
     #[test]
@@ -605,6 +667,28 @@ mod tests {
             store_prefix(none.path(), "ab").is_err(),
             "no README to store it in"
         );
+    }
+
+    #[test]
+    fn the_first_write_pins_the_default_prefix() {
+        let d = tempfile::tempdir().unwrap();
+        let q = d.path().join("zqxpin/tasks");
+        let readme = "# zqxpin — task queue\n\nThe rules.\n";
+        queue_at(&q, readme);
+        let default = prefix_for(&q);
+        assert_eq!(stored_prefix(&q), None);
+        queue::with_lock(&q, || Ok(())).unwrap();
+        assert_eq!(stored_prefix(&q).as_deref(), Some(default.as_str()));
+        let text = std::fs::read_to_string(q.join("README.md")).unwrap();
+        assert_eq!(text, format!("---\nprefix: {default}\n---\n\n{readme}"));
+        // Once stored, a write leaves it be, and so does a refused one.
+        queue::with_lock(&q, || Err::<(), _>("refused".to_string())).unwrap_err();
+        let again = std::fs::read_to_string(q.join("README.md")).unwrap();
+        assert_eq!(again, text);
+        // A queue with no README has nowhere to keep it, and isn't given one.
+        let flat = tempfile::tempdir().unwrap();
+        queue::with_lock(flat.path(), || Ok(())).unwrap();
+        assert!(!flat.path().join("README.md").exists());
     }
 
     #[test]

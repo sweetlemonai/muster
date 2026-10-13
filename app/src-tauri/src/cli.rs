@@ -336,10 +336,9 @@ fn task_lists(a: &mut Args, cmd: &str, prefix: &str, project: &str) -> Result<()
             a.flags.insert("parent".into(), i.join(", "));
         }
     }
-    // `--on 0014,0016 [what]`: only its first word can be tasks.
+    // `--on mu-14, 16 [what]`: the tasks it starts with, then what it says about them.
     if let Some(on) = a.flags.get("on") {
-        let (head, rest) = on.trim().split_once(' ').unwrap_or((on.trim(), ""));
-        if let Some(i) = ids(head)? {
+        if let Some((i, rest)) = crate::key::leading_tasks(on, prefix, project)? {
             let joined = i.join(",");
             let on = if rest.is_empty() {
                 joined

@@ -686,6 +686,12 @@ fn set_link(
     };
     let line = if val.is_empty() {
         format!("{stamp} {who}: {key} cleared")
+    } else if key == "parent" {
+        // By its key in the log (0033); its id in the front matter.
+        format!(
+            "{stamp} {who}: parent set to {}",
+            keys_of(root, std::slice::from_ref(&val))
+        )
     } else {
         format!("{stamp} {who}: {key} set to {val}")
     };
@@ -930,8 +936,13 @@ pub fn set_field(
         "depends" => {
             return with_lock(root, || {
                 let val = clean_depends(root, id, value)?;
+                // By their keys in the log; `[0014, 0016]` in the front matter.
+                let shown = match queue::parse_depends(&val).0 {
+                    ids if ids.is_empty() => val.clone(),
+                    ids => format!("[{}]", keys_of(root, &ids)),
+                };
                 let line = free_text_line(
-                    format!("{stamp} {who}: depends set to {val}"),
+                    format!("{stamp} {who}: depends set to {shown}"),
                     "the depends",
                 )?;
                 // Blocked only by tasks before, and nothing open left in the new list: say it's
@@ -1282,8 +1293,9 @@ fn change_locked(
                     already_holds(&held)
                 } else {
                     format!(
-                        "{} already holds {held} in Building; one claim per holder, so they pass, return or block it first",
-                        c.claimed_by
+                        "{} already holds {} in Building; one claim per holder, so they pass, return or block it first",
+                        c.claimed_by,
+                        keys_of(root, &[held])
                     )
                 });
             }
@@ -2026,6 +2038,16 @@ fn holding(tasks: &[queue::Task], who: &str, except: &str) -> Option<String> {
         .map(|t| t.id.clone())
 }
 
+/// Tasks of the queue at `root` as a log line names them (0033): by their keys, `mu-14, mu-16`.
+/// The front matter keeps their ids.
+fn keys_of(root: &Path, ids: &[String]) -> String {
+    let prefix = crate::key::prefix_for(root);
+    ids.iter()
+        .map(|d| crate::key::key(&prefix, d))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn already_holds(id: &str) -> String {
     format!("you already hold {id}; pass, return or block it first")
 }
@@ -2663,7 +2685,10 @@ fn block_on_tasks(
     };
     // Checked before the lock, so a line that would read as a stage change is refused first.
     free_text_line(
-        format!("{stamp} {who}: blocked on tasks: {}{why}", ids.join(", ")),
+        format!(
+            "{stamp} {who}: blocked on tasks: {}{why}",
+            keys_of(root, &ids)
+        ),
         "the reason",
     )?;
     with_lock(root, || {
@@ -2709,7 +2734,10 @@ fn block_on_tasks(
                 })
             });
         }
-        let line = format!("{stamp} {who}: blocked on tasks: {}{why}", ids.join(", "));
+        let line = format!(
+            "{stamp} {who}: blocked on tasks: {}{why}",
+            keys_of(root, &ids)
+        );
         let mut all = me.depends.clone();
         all.extend(ids.iter().filter(|d| !me.depends.contains(d)).cloned());
         let depends = clean_depends(root, id, &all.join(", "))?;
@@ -3218,7 +3246,8 @@ mod tests {
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }
-        fs::write(d.path().join("README.md"), "q").unwrap();
+        // Its prefix stored (0033): new log lines name other tasks by their keys, op-1.
+        fs::write(d.path().join("README.md"), "---\nprefix: op\n---\nq").unwrap();
         d
     }
     const T: &str = "2026-10-12 14:05";
@@ -3971,7 +4000,7 @@ mod tests {
         let text = fs::read_to_string(d.path().join("todo/0003-t.md")).unwrap();
         assert!(text.contains("\ndepends: [0002, 0001]\n"), "{text}");
         assert!(
-            text.ends_with("capture: depends set to [0002, 0001]\n"),
+            text.ends_with("capture: depends set to [op-2, op-1]\n"),
             "{text}"
         );
         let before = fs::read_to_string(d.path().join("todo/0001-t.md")).unwrap();
@@ -5558,7 +5587,7 @@ mod tests {
         );
         assert_eq!(
             unblock_task(d.path(), "0001", "owner", T).unwrap_err(),
-            "wt-a already holds 0002 in Building; one claim per holder, so they pass, return or block it first"
+            "wt-a already holds op-2 in Building; one claim per holder, so they pass, return or block it first"
         );
         assert!(task_of(d.path(), "0001").blocked);
         // A return to the builder who now holds another task: refused too.
@@ -5567,7 +5596,7 @@ mod tests {
         claim_task(d.path(), "0004", "wt-b", T).unwrap();
         assert!(return_task(d.path(), "0003", "AC1 fails", None, "qa", T)
             .unwrap_err()
-            .starts_with("wt-b already holds 0004 in Building"));
+            .starts_with("wt-b already holds op-4 in Building"));
         assert_eq!(task_of(d.path(), "0003").stage, "testing");
         // The owner may hold several.
         pass_task(d.path(), "0005", "owner", T, &no_gate()).unwrap();
@@ -5793,7 +5822,7 @@ mod tests {
         set("0004", "parent", "0002").unwrap();
         assert_eq!(task_of(d.path(), "0004").parent, "0002");
         assert!(
-            file_of(d.path(), "0004").ends_with("- 2026-10-12 14:05 owner: parent set to 0002\n")
+            file_of(d.path(), "0004").ends_with("- 2026-10-12 14:05 owner: parent set to op-2\n")
         );
         set("0004", "parent", "").unwrap();
         assert_eq!(task_of(d.path(), "0004").parent, "");
@@ -6283,7 +6312,8 @@ mod edit_tests {
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }
-        fs::write(d.path().join("README.md"), "q").unwrap();
+        // Its prefix stored (0033), so nothing here hangs on the projects this Mac knows.
+        fs::write(d.path().join("README.md"), "---\nprefix: oq\n---\nq").unwrap();
         d
     }
 

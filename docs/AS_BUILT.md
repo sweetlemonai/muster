@@ -447,7 +447,8 @@ owner ◀────────────┘ WAITING-FOR-OWNER.md    └─ 
   shown and typed as `mu-12`, its project's prefix and its number; files, `depends:` and ids in
   JSON keep `0012`. The prefix is 2 to 4 lowercase letters in the queue's README.md front matter
   (`prefix: mu`, read only by `key::stored_prefix`), else the first 2 letters of the project's
-  name (3 or 4 when another project Muster knows starts the same). Every command takes `mu-12`,
+  name (3 or 4 when another project Muster knows starts the same), stored by the first write
+  under the queue's lock (`key::pin_prefix`) so it stays. Every command takes `mu-12`,
   `MU-12`, `12` or `0012`; another project's key runs in its queue (refused against a `--queue`
   that names another). Cards, rows, the timeline, the graph, the pane, the parent line, the
   activity feed, `muster list`/`show`, what commands print, branches (`task/mu-12-slug`) and new

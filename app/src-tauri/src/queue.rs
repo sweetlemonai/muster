@@ -2441,9 +2441,12 @@ pub fn answer(
 
 /// Run `f` holding the queue's lock (an exclusive flock on `mail/.lock`, file contract rule 1),
 /// then, still holding it, bring INDEX.md up to date (task 0018). Every write muster makes to a
-/// queue goes through here, so this is the one place the master list follows the files.
+/// queue goes through here, so this is the one place the master list follows the files. A queue
+/// with no stored prefix gets its default stored first (0033, `key::pin_prefix`), so its keys
+/// don't move when another project comes along.
 pub fn with_lock<T>(root: &Path, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
     hold_lock(root, || {
+        crate::key::pin_prefix(root);
         let result = f();
         // The change is made (or refused) either way, so a list that can't be written never
         // turns it into an error: `muster check` reports the stale list instead.

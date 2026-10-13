@@ -290,3 +290,48 @@ fn refusals_and_the_check_name_tasks_by_their_keys() {
         "{index}"
     );
 }
+
+#[test]
+fn blocks_on_several_tasks_and_new_log_lines_name_them_by_key() {
+    let w = World::new();
+    for t in ["One", "Two", "Three", "Four"] {
+        w.ok(&["new", t]);
+    }
+    w.ok(&["new", "Feature", "--level", "feature"]);
+    let log_of = |id: &str| w.file("muster", id);
+    // Keys, with a comma and a space between them.
+    w.ok(&["block", "mu-3", "--on", "mu-1, mu-2"]);
+    let f = log_of("0003");
+    assert!(f.contains("\ndepends: [0001, 0002]\n"), "{f}");
+    assert!(f.contains("wt-a: blocked on tasks: mu-1, mu-2\n"), "{f}");
+    // Numbers, and the words after them are the reason.
+    w.ok(&["block", "mu-4", "--on", "1, 2 waiting for review"]);
+    let f = log_of("0004");
+    assert!(f.contains("\ndepends: [0001, 0002]\n"), "{f}");
+    assert!(
+        f.contains("wt-a: blocked on tasks: mu-1, mu-2 (waiting for review)\n"),
+        "{f}"
+    );
+    // Setting depends and a parent logs keys; the front matter keeps ids.
+    w.ok(&["set", "mu-2", "depends", "mu-1"]);
+    let f = log_of("0002");
+    assert!(f.contains("\ndepends: [0001]\n"), "{f}");
+    assert!(f.contains("wt-a: depends set to [mu-1]\n"), "{f}");
+    w.ok(&["set", "mu-1", "parent", "mu-5"]);
+    let f = log_of("0001");
+    assert!(f.contains("\nparent: 0005\n"), "{f}");
+    assert!(f.contains("wt-a: parent set to mu-5\n"), "{f}");
+}
+
+#[test]
+fn a_new_prefix_rewrites_the_master_list_at_once() {
+    let w = World::new();
+    w.ok(&["new", "Listed"]);
+    let index = || std::fs::read_to_string(w.queue("muster").join("INDEX.md")).unwrap();
+    assert!(index().contains("- mu-1 [Listed]"), "{}", index());
+    w.ok(&["projects", "set", "muster", "prefix", "mx"]);
+    assert!(index().contains("- mx-1 [Listed]"), "{}", index());
+    let (code, out) = w.run(&["check"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(!out.contains("INDEX.md"), "{out}");
+}

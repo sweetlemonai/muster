@@ -274,11 +274,11 @@ fn task_key(root: &Path, id: &str) -> String {
     crate::key::key(&crate::key::prefix_for(root), id)
 }
 
-/// A branch muster made for task `id`: `task/<key>-…` (0033: `task/mu-12-…`), or `task/<id>-…`
-/// from before keys, so nothing else is ever deleted by a hand-edited `branch:`.
+/// A branch muster made for task `id`: `task/<key>-…` (0033: `task/mu-12-…`) with whatever prefix
+/// the project had when it started, or `task/<id>-…` from before keys, so nothing else is ever
+/// deleted by a hand-edited `branch:`. `key` is what the message calls the task.
 fn task_branch(id: &str, key: &str, branch: &str) -> Result<(), String> {
-    let ok = (branch.starts_with(&format!("task/{key}-"))
-        || branch.starts_with(&format!("task/{id}-")))
+    let ok = branch_task(branch).is_some_and(|b| b == id)
         && branch.len() < 200
         && !branch.contains("..")
         && branch
@@ -1168,20 +1168,22 @@ fn worktrees(repo: &Repo) -> Vec<(PathBuf, String)> {
     out
 }
 
-/// The task a branch muster made is for: `task/mu-12-…` (0033) as its prefix and id, or
-/// `task/0012-…` from before keys as its id alone.
-fn branch_task(branch: &str) -> Option<(Option<String>, String)> {
+/// The id of the task a branch muster made is for: `task/mu-12-…` (0033, whatever the prefix) or
+/// `task/0012-…` from before keys. A project's prefix can change after a start, so only the
+/// number names the task.
+fn branch_task(branch: &str) -> Option<String> {
     let rest = branch.strip_prefix("task/")?;
     if let Some(id) = rest
         .get(..4)
         .filter(|i| is_id(i) && rest.get(4..5) == Some("-"))
     {
-        return Some((None, id.to_string()));
+        return Some(id.to_string());
     }
     let (prefix, after) = rest.split_once('-')?;
     let (number, _) = after.split_once('-')?;
-    let t = crate::key::parse(&format!("{prefix}-{number}"))?;
-    Some((t.prefix, t.id))
+    crate::key::parse(&format!("{prefix}-{number}"))
+        .filter(|t| t.prefix.is_some())
+        .map(|t| t.id)
 }
 
 /// What `muster check` lists for 0023, none of it failing the check: claims whose worktree is gone,
@@ -1237,14 +1239,10 @@ pub fn stale(tasks: &[Task], extra: &[PathBuf]) -> Vec<String> {
     }
     for repo in &repos {
         for (path, branch) in worktrees(repo) {
-            let Some((prefix, id)) = branch_task(&branch) else {
+            let Some(id) = branch_task(&branch) else {
                 continue;
             };
-            let ours = |t: &&Task| {
-                t.id == id
-                    && (t.prefix.is_empty() || prefix.as_ref().is_none_or(|p| *p == t.prefix))
-            };
-            let Some(t) = tasks.iter().find(ours) else {
+            let Some(t) = tasks.iter().find(|t| t.id == id) else {
                 continue;
             };
             let current =
@@ -2164,6 +2162,38 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_new_prefix_still_finds_the_branch_a_task_was_started_on() {
+        let f = fx();
+        let id = task(&f.root, "Renamed later", "r/");
+        let s = start(&f.root, &id, "wt-a", T0, &f.repo, &Place::Default).unwrap();
+        assert_eq!(s.branch, "task/pj-1-renamed-later");
+        let done = task(&f.root, "Done by hand later", "d/");
+        let sd = start(&f.root, &done, "wt-b", T0, &f.repo, &Place::Default).unwrap();
+        ops::set_stage(&f.root, &done, "done", None, "owner", T0).unwrap();
+        crate::key::store_prefix(&f.root, "pk").unwrap();
+        // check still knows whose worktree each is, by the task's number.
+        let keyed = queue::read_state_keyed(
+            &[("p".into(), f.root.clone())],
+            &mut queue::Cache::default(),
+            &crate::settings::Settings::default(),
+            &|_| "pk".to_string(),
+        );
+        let lines = stale(&keyed.tasks, std::slice::from_ref(&f.repo));
+        assert_eq!(lines.len(), 1, "{lines:#?}");
+        assert!(
+            lines[0].starts_with(&format!(
+                "stale worktree {} (branch {}): pk-2 is Done",
+                sd.worktree.display(),
+                sd.branch
+            )),
+            "{lines:#?}"
+        );
+        let lines = release(&f.root, &id, "wt-a", T0, false, None).unwrap();
+        assert!(lines.last().unwrap().contains("back in Ready"), "{lines:?}");
+        assert!(!has_branch(&f, &s.branch));
+    }
+
+    #[test]
     fn origins_task_branch_is_deleted_only_when_it_matches_the_local_one() {
         let f = fx();
         let id = task(&f.root, "Pushed early", "p/");
@@ -2617,11 +2647,14 @@ pub(crate) mod tests {
             task_branch("0001", "mu-1", "task/0001-x").is_ok(),
             "from before keys"
         );
+        assert!(
+            task_branch("0001", "mus-1", "task/mu-1-x").is_ok(),
+            "from before a new prefix"
+        );
         for bad in [
             "main",
             "task/0002-x",
             "task/mu-2-x",
-            "task/br-1-x",
             "task/mu-10-x",
             "task/0001-x y",
             "task/0001-../main",
@@ -2629,9 +2662,9 @@ pub(crate) mod tests {
         ] {
             assert!(task_branch("0001", "mu-1", bad).is_err(), "{bad}");
         }
-        let named = |p: Option<&str>, id: &str| Some((p.map(String::from), id.to_string()));
-        assert_eq!(branch_task("task/mu-12-board"), named(Some("mu"), "0012"));
-        assert_eq!(branch_task("task/0012-board"), named(None, "0012"));
+        assert_eq!(branch_task("task/mu-12-board").as_deref(), Some("0012"));
+        assert_eq!(branch_task("task/mus-12-board").as_deref(), Some("0012"));
+        assert_eq!(branch_task("task/0012-board").as_deref(), Some("0012"));
         for not in [
             "main",
             "task/mu-board",

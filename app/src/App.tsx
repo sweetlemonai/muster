@@ -496,6 +496,7 @@ export default function App() {
               {pane.kind === "new" && state && state.queues.length > 0 && (
                 <NewTask
                   queues={state.queues.map((q) => q.name)}
+                  prefixes={Object.fromEntries(state.queues.map((q) => [q.name, q.prefix ?? ""]))}
                   initial={queue !== "all" ? queue : state.queues[0].name}
                   onClose={() => setPane(null)}
                   onCreated={showTask}
