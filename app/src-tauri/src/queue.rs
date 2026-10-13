@@ -27,6 +27,10 @@ pub const STAGES: [&str; 7] = [
 /// Goal → Feature → Task (decision 0003), highest first. `level:` in the front matter; a file
 /// without one is a task.
 pub const LEVELS: [&str; 3] = ["goal", "feature", "task"];
+/// Who does a task (0022): `for:` in the front matter. An agent (`ai`, what a file without one
+/// is), or the owner (`human`): the owner's own to-do, To do (Ready) → Doing (Building) → Done,
+/// which agents never take.
+pub const FOR_WHO: [&str; 2] = ["ai", "human"];
 pub(crate) const MAX_TASK_BYTES: u64 = 1024 * 1024;
 /// The queue's master list, INDEX.md (task 0018).
 pub use crate::index::index_md;
@@ -426,7 +430,13 @@ pub struct Task {
     /// A `vision:` value that isn't `<n> open` (`check` reports it; such a task isn't counted as
     /// unchecked), else "".
     pub bad_vision: String,
+    /// An agent's task waits on the owner (`needs_owner`): "From the agents" on the Human board.
     pub waiting_for_owner: bool,
+    /// One of FOR_WHO: `for:` from the file, "ai" when it has none (or one that isn't either).
+    pub for_who: String,
+    /// A `for:` value that isn't one of FOR_WHO (read as ai), for `check`.
+    #[serde(skip)]
+    pub bad_for: String,
     pub tags: Vec<String>,
     /// Estimates ("2h", "400k"), and the same as numbers for totals. Agent time is `est_time`;
     /// `est_test_time` is the QA agent's and the owner's check (task 0017).
@@ -492,6 +502,11 @@ pub struct Progress {
 }
 
 impl Task {
+    /// The owner's own task (`for: human`, 0022), which agents never take.
+    pub fn is_human(&self) -> bool {
+        self.for_who == "human"
+    }
+
     /// Who's on it in its stage: the claim in Ready and Building, `held-by` in Testing and Your
     /// check (the owner's when it names nobody), nobody elsewhere.
     pub fn holder(&self) -> &str {
@@ -771,6 +786,15 @@ fn parse_question(item: &str) -> Question {
     }
 }
 
+/// Does a task wait on the owner (the one definition, 0022; `waiting_for_owner`)? An open question
+/// escalated to them, Your check, or blocked on the owner. The Human board's "From the agents"
+/// lane is these, for agents' tasks; the owner's own tasks are on the board itself.
+pub fn needs_owner(questions: &[Question], stage: &str, blocked: bool, waiting_on: &str) -> bool {
+    questions.iter().any(|q| !q.ticked && q.escalated)
+        || stage == "your-check"
+        || (blocked && waiting_on.to_lowercase().starts_with("owner"))
+}
+
 pub fn parse_task(
     queue: &str,
     root: &Path,
@@ -886,9 +910,13 @@ pub fn parse_task(
     } else {
         Vec::new()
     };
-    let waiting_for_owner = questions.iter().any(|q| !q.ticked && q.escalated)
-        || stage == "your-check"
-        || (blocked && waiting_on.to_lowercase().starts_with("owner"));
+    let waiting_for_owner = needs_owner(&questions, &stage, blocked, &waiting_on);
+    let raw_for = get("for").to_lowercase();
+    let (for_who, bad_for) = match FOR_WHO.iter().find(|f| **f == raw_for) {
+        Some(f) => (f.to_string(), String::new()),
+        None if raw_for.is_empty() => ("ai".to_string(), String::new()),
+        None => ("ai".to_string(), raw_for.chars().take(40).collect()),
+    };
     let attachments = list_attachments(root, &id);
     let rel = path
         .strip_prefix(root)
@@ -962,6 +990,8 @@ pub fn parse_task(
         vision_ids,
         bad_vision,
         waiting_for_owner,
+        for_who,
+        bad_for,
         done_on,
         claimed_on,
         est_minutes: crate::ops::time_minutes(
@@ -1318,9 +1348,16 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str) -> Vec<Strin
                 t.path
             ));
         }
-        // The lease `muster reclaim` uses: since the heartbeat, else since the file changed.
+        if !t.bad_for.is_empty() {
+            out.push(format!(
+                "{queue}: {} has for '{}', which isn't ai or human (read as ai)",
+                t.path, t.bad_for
+            ));
+        }
+        // The lease `muster reclaim` uses: since the heartbeat, else since the file changed. The
+        // owner's own task (for: human) has none.
         let quiet = crate::ops::quiet_minutes(&t.heartbeat, t.modified, stamp, now);
-        if building && quiet > crate::ops::LEASE_MINUTES {
+        if building && !t.is_human() && quiet > crate::ops::LEASE_MINUTES {
             out.push(format!(
                 "{queue}: {} is claimed but hasn't been heard from in {} h",
                 t.path,

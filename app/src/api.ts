@@ -49,8 +49,9 @@ export const api = {
   // Backlog notes (0015), named by their file name. Add returns the new note's file name; file
   // makes a task in Shaping and moves the note into its attachments; drop sets it aside.
   addBacklogNote: (queue: string, text: string, stamp: string) => invoke<string>("add_backlog_note", { queue, text, stamp }),
-  // A filed note is a task on its own: its level, parent and due are set afterwards (`muster set`).
-  fileNote: (queue: string, note: string, task: Omit<NewTask, "level" | "parent" | "due">, stamp: string) =>
+  // A filed note is an agent's task on its own: its level, parent, due and who does it are set
+  // afterwards (`muster set`, or the task pane).
+  fileNote: (queue: string, note: string, task: Omit<NewTask, "level" | "parent" | "due" | "forWho">, stamp: string) =>
     invoke<{ id: string; path: string; attachment: string }>("file_note", { queue, note, task, stamp }),
   dropNote: (queue: string, note: string, why: string, stamp: string) => invoke<string>("drop_note", { queue, note, why, stamp }),
   // The shaping brief as text, for the clipboard.
@@ -89,4 +90,4 @@ export type HelperLine = { role: "owner" | "helper" | "system"; kind: string; te
 export type AccountInfo = { name: string; loggedIn: boolean | null; plan: string };
 export type HelperInfo = { claude: string | null; accounts: AccountInfo[]; account: string; running: boolean; lines: HelperLine[] };
 
-export type NewTask = { title: string; kind: string; priority: string; body: string; tags: string[]; estTime: string; estTestTime: string; estTokens: string; level: string; parent: string; due: string };
+export type NewTask = { title: string; kind: string; priority: string; body: string; tags: string[]; estTime: string; estTestTime: string; estTokens: string; level: string; parent: string; due: string; forWho: string };

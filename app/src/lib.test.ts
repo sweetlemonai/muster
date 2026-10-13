@@ -7,7 +7,7 @@ import type { Task } from "./types";
 
 const task = (over: Partial<Task>): Task => ({
   queue: "drover", id: "0001", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
-  folder: "todo", path: "todo/0001-t.md", claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "", capturedAt: "", doneAt: "",
+  folder: "todo", path: "todo/0001-t.md", claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], forWho: "ai", commit: "", captured: "", capturedAt: "", doneAt: "",
   blockHistory: [], questions: [], openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [],
   attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", search: "", ...over,
 });
@@ -34,6 +34,21 @@ describe("stages", () => {
     expect(passLabel("your-check")).toBe("Accept");
     expect(passLabel("done")).toBeNull();
     expect(passLabel("weird")).toBeNull();
+  });
+  it("takes the owner's own task To do → Doing → Done: Start, then Done, no Testing (0022)", () => {
+    expect(nextStage("ready", true)?.id).toBe("building");
+    for (const s of ["building", "testing", "your-check"]) expect(nextStage(s, true)?.id, s).toBe("done");
+    expect(nextStage("done", true)).toBeNull();
+    expect(nextStage("weird", true)).toBeNull();
+    expect(passLabel("ready", true)).toBe("Start");
+    expect(passLabel("building", true)).toBe("Done");
+    expect(passLabel("your-check", true)).toBe("Done");
+    // From Backlog or Shaping (an override put it there) the owner's Start goes straight to Doing.
+    expect(nextStage("backlog", true)?.id).toBe("building");
+    expect(nextStage("shaping", true)?.id).toBe("building");
+    expect(passLabel("backlog", true)).toBe("Start");
+    expect(passLabel("shaping", true)).toBe("Start");
+    expect(passLabel("done", true)).toBeNull();
   });
   it("lists the stages a task can be sent back to, nearest first", () => {
     expect(earlierStages("testing").map((s) => s.id)).toEqual(["building", "ready", "shaping", "backlog"]);
@@ -209,6 +224,9 @@ describe("lease (the core's ops::reclaim rule)", () => {
     expect(leaseRunOut(task({ ...old, blocked: true, waitingOn: "owner" }), now)).toBe(false);
     expect(leaseRunOut(task({ ...old, claimedBy: " " }), now)).toBe(false);
     expect(leaseRunOut(task({ ...old, stage: "testing" }), now)).toBe(false);
+    // The owner's own task (0022) has no lease, as the core's reclaim leaves it.
+    expect(leaseRunOut(task({ ...old, claimedBy: "owner", forWho: "human" }), now)).toBe(false);
+    expect(leaseRunOut(task({ ...old, claimedBy: "owner" }), now)).toBe(true);
     expect(LEASE_SECS).toBe(12 * 3600);
   });
 });

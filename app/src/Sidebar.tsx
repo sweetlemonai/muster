@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { KINDS } from "./fields";
 import { claimant, earlierStages, heldByOther, isStage, LEASE_SECS, leaseRunOut, passLabel, stageLabel } from "./lib";
+import { isHuman } from "./human";
 import { isWork } from "./levels";
 import Links from "./Links";
 import { ownerOpen } from "./OwnerChecklist";
@@ -12,7 +13,7 @@ import type { TaskActions } from "./useTaskActions";
 const IMAGE = /\.(png|jpe?g|gif|webp)$/i;
 
 /** The task pane's right column: the next step as the one primary button, then Send back and
- *  Block or Unblock; under a rule, priority and type (the current value; click to choose),
+ *  Block or Unblock; under a rule, priority, type and who does it (the current value; click to choose),
  *  the estimate, tags, files and the task's links (0017). Every control is always in the same place. */
 export default function Sidebar({ task, nowSecs, a }: { task: Task; nowSecs: number; a: TaskActions }) {
   return (
@@ -28,6 +29,19 @@ export default function Sidebar({ task, nowSecs, a }: { task: Task; nowSecs: num
           {/* The core's types (0017); an old file's idea still shows, as the one pressed. */}
           <ValueChip label="Type" value={task.kind || "no type"} options={KINDS} onPick={(v) => a.setField("type", v, "Type set.")} />
         </div>
+        {/* Who does it (0022): a task is the owner's own (human) or an agent's (ai). Goals and
+            features are their tasks' sum, nobody's to do. */}
+        {isWork(task) && (
+          <div className="kv">
+            <span className="lbl">For</span>
+            <ValueChip
+              label="For"
+              value={isHuman(task) ? "human" : "ai"}
+              options={["human", "ai"]}
+              onPick={(v) => a.setField("for", v, v === "human" ? "It's yours to do now: on the Human board." : "It's the agents' now: on the AI board.")}
+            />
+          </div>
+        )}
         {/* Three fields (agent time, test time, tokens) need the column's width: label above. */}
         <div className="kv stack">
           <span className="lbl">Est</span>
@@ -45,16 +59,18 @@ export default function Sidebar({ task, nowSecs, a }: { task: Task; nowSecs: num
 }
 
 /** The next step for this stage, and the two ways off it. A goal or feature is passed on only
- *  while it's shaped (it never goes into or through Building) and has no claim to release. */
+ *  while it's shaped (it never goes into or through Building) and has no claim to release. The
+ *  owner's own task (0022) is Start in To do and Done in Doing. */
 function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a: TaskActions }) {
-  const pass = passLabel(task.stage);
+  const human = isHuman(task);
+  const pass = passLabel(task.stage, human);
   const back = earlierStages(task.stage);
   const holder = heldByOther(task);
   const shapedOnly = !isWork(task);
   // A claim nobody has heard from past the lease: the owner may give it back to Ready.
   const stale = !shapedOnly && leaseRunOut(task, nowSecs);
   const showPass = pass !== null && !holder && (!shapedOnly || task.stage === "backlog" || task.stage === "shaping");
-  const yoursOpen = task.stage === "your-check" && ownerOpen(task) > 0;
+  const yoursOpen = !human && task.stage === "your-check" && ownerOpen(task) > 0;
   return (
     <div className="next-step" role="group" aria-label="Next step" data-part="next-step">
       <span className="lbl">Next step</span>

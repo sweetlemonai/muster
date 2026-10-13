@@ -171,10 +171,10 @@ fn stage_name(stage: &str) -> String {
     }
 }
 
-/// One task's line: id, linked title, level (goals and features), stage (and what a blocked one
-/// waits on), the tasks it depends on that are still `open`, its open vision conflicts, progress
-/// and due date, priority, type (tasks), estimate (`muster list`'s text), and how many comments
-/// it has.
+/// One task's line: id, linked title, level (goals and features), "you" for the owner's own task,
+/// stage (and what a blocked one waits on), the tasks it depends on that are still `open`, its
+/// open vision conflicts, progress and due date, priority, type (tasks), estimate (`muster
+/// list`'s text), and how many comments it has.
 fn line(t: &Task, open: &HashSet<&str>) -> String {
     let title = match md_text(&t.title, 200) {
         s if s.is_empty() => "(untitled)".to_string(),
@@ -187,6 +187,10 @@ fn line(t: &Task, open: &HashSet<&str>) -> String {
     )];
     if t.level != "task" {
         parts.push(level_name(&t.level));
+    }
+    // The owner's own task (for: human, 0022).
+    if t.is_human() {
+        parts.push("you".into());
     }
     let mut stage = stage_name(&t.shown_stage);
     if t.blocked {
@@ -970,6 +974,67 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
         crate::vision::resolve(p, "0001", "V2", "dropped it", "owner", t).unwrap();
         assert!(!first().contains("vision"), "{}", first());
         assert_eq!(status(p), Status::Current);
+    }
+
+    #[test]
+    fn a_human_task_is_marked_you_and_an_agents_task_waiting_on_it_says_so() {
+        // 0022: the owner's own tasks say "you"; agents' tasks say nothing extra.
+        let d = queue();
+        let p = d.path();
+        let log = "- 2026-10-12 09:00 capture: created\n";
+        task(
+            p,
+            "todo/0001-a.md",
+            "0001",
+            "stage: ready\nfor: human",
+            "Buy the domain",
+            log,
+        );
+        task(
+            p,
+            "todo/0002-b.md",
+            "0002",
+            "stage: ready\ndepends: [0001]",
+            "Set up DNS",
+            log,
+        );
+        task(
+            p,
+            "todo/0003-c.md",
+            "0003",
+            "stage: ready\nfor: ai",
+            "Agent work",
+            log,
+        );
+        let mut s = state(p);
+        let text = index_md(&s, "p");
+        assert!(
+            text.contains(
+                "- 0001 [Buy the domain](todo/0001-a.md) · you · Ready · normal · code\n"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains(
+                "- 0002 [Set up DNS](todo/0002-b.md) · Ready · waits on 0001 · normal · code\n"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains("- 0003 [Agent work](todo/0003-c.md) · Ready · normal · code\n"),
+            "{text}"
+        );
+        // Both marks on one line: the owner's own task with open vision conflicts (0029).
+        for t in s.tasks.iter_mut().filter(|t| t.id == "0001") {
+            t.vision_open = Some(1);
+        }
+        let text = index_md(&s, "p");
+        assert!(
+            text.contains(
+                "- 0001 [Buy the domain](todo/0001-a.md) · you · Ready · ⚠ 1 vision · normal · code\n"
+            ),
+            "{text}"
+        );
     }
 
     #[test]

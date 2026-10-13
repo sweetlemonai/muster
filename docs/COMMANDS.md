@@ -105,7 +105,15 @@ due date. `claim`, `next` and `pass` never take a goal or a feature into Buildin
 missing or wrong-level parent and a loop, and warns (without failing) about a goal past its due date
 with tasks open.
 
+Human tasks (task 0022): `new "<title>" --human` (the owner only: `--as owner`) makes the owner's
+own task, `for: human`, and `set <id> for human|ai` switches who does one while nobody is on it.
+`claim` refuses a human task for anyone but the owner and `next` passes it by; `pass` takes it To
+do (Ready) → Doing (Building) → Done, with no gate line. An agent proposes one with `add`. `list`
+marks human tasks `[you]` and INDEX.md says "you"; bare `/mu` and `/mu waiting` list the ones not
+done after what waits on the owner, with the `/mu pass <id> --from ready --as owner` that starts
+one.
+
 `bin/task ask|answer|escalate|inbox` is a stand-in that runs the same muster commands, kept for
 scripts and agents that call it. `bin/answer-hook.py` delivers answers into a running session, and
-`bin/manifest.py` writes the board data (`--check` checks it, and reads `level`, `parent` and `due`
-into `tasks.json` and checks them as `muster check` does, warnings in their own list).
+`bin/manifest.py` writes the board data (`--check` checks it, and reads `level`, `parent`, `due`
+and `for` into `tasks.json` and checks them as `muster check` does, warnings in their own list).

@@ -7,7 +7,7 @@ import type { Task } from "./types";
 
 const task = (id: string, depends: string[] = [], over: Partial<Task> = {}): Task => ({
   queue: "muster", id, title: `Task ${id}`, kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
-  folder: "todo", path: `todo/${id}-t.md`, claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends, commit: "", captured: "", capturedAt: "", doneAt: "", blockHistory: [], questions: [],
+  folder: "todo", path: `todo/${id}-t.md`, claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends, forWho: "ai", commit: "", captured: "", capturedAt: "", doneAt: "", blockHistory: [], questions: [],
   openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [], attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", ...over,
 });
 // Muster's own chain (0019's AC2): 0014 → 0015, 0016, 0017; 0016 → 0018; 0002 → 0005 → 0004.
@@ -154,6 +154,13 @@ describe("GraphView", () => {
     const html = renderToStaticMarkup(createElement(GraphView, { tasks: [task("0009")], all, multi: false, openKey: null, onOpen: () => {} }));
     expect(html).toContain("Nothing linked among the tasks shown");
     expect(html).not.toContain("No task here depends on another yet");
+  });
+  it("sets the owner's own tasks apart with the You ribbon, as a node and as a chip (0022)", () => {
+    const tasks = [task("0001", [], { forWho: "human" }), task("0002", ["0001"]), task("0003", [], { forWho: "human" }), task("0004")];
+    const html = view(null, tasks);
+    expect(html).toMatch(/class="g-node s-ready human ready"[^>]*><span class="g-top"><span class="id">0001<\/span><span class="you-ribbon"[^>]*>You<\/span>/);
+    expect(html).toMatch(/class="chip g-loose s-ready human"[^>]*><span class="id">0003<\/span><span class="you-ribbon"/);
+    expect(html.match(/class="you-ribbon"/g)).toHaveLength(2);
   });
   it("says how to start when nothing is linked", () => {
     expect(view(null, [task("0001"), task("0002")])).toContain("No task here depends on another yet.");

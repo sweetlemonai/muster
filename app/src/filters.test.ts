@@ -3,11 +3,12 @@ import {
   activeItems, applyQuery, dayContext, deleteView, EMPTY_QUERY, GROUPS, groupValues, hiddenLine, isActive, loadViews, MAX_VIEWS, removeFilter, sameQuery, saveView, storeViews,
   notesFor, toggleFilter, viewsKey, type Query, type SavedView,
 } from "./filters";
+import { needsYouCount } from "./human";
 import type { Note, Task } from "./types";
 
 const t = (over: Partial<Task>): Task => ({
   queue: "q", id: "0001", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [], folder: "todo", path: "", claimedBy: "", heldBy: "", stageSince: "", checkins: [],
-  heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "", capturedAt: "", doneAt: "", blockHistory: [], questions: [], openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: false,
+  heartbeat: "", waitingOn: "", depends: [], forWho: "ai", commit: "", captured: "", capturedAt: "", doneAt: "", blockHistory: [], questions: [], openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: false,
   tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [],
   attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", search: "", ...over,
 });
@@ -81,6 +82,12 @@ describe("applyQuery", () => {
     expect(run({ filters: { state: ["needs-you"] } })).toEqual(["0003"]);
     expect(run({ filters: { state: ["questions"] } })).toEqual(["0003"]);
     expect(run({ filters: { state: ["blocked", "needs-you"] } })).toEqual(["0002", "0003"]);
+  });
+  it("needs you is the Human board's count: the owner's own tasks until done, too (0022)", () => {
+    const mine = [t({ id: "0005", forWho: "human", stage: "ready" }), t({ id: "0006", forWho: "human", stage: "building" }), t({ id: "0007", forWho: "human", stage: "done" })];
+    const shown = applyQuery([...tasks, ...mine], q({ filters: { state: ["needs-you"] } }), ctx);
+    expect(ids(shown)).toEqual(["0003", "0005", "0006"]);
+    expect(shown).toHaveLength(needsYouCount([...tasks, ...mine]));
   });
   it("dates: today, this week, this month", () => {
     expect(run({ filters: { captured: ["today"] } })).toEqual(["0001"]);

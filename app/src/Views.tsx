@@ -9,6 +9,8 @@ import {
 import { BandHead } from "./Groups";
 import { estimateLeft, type Group, type GroupBy, isWork, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
 import { Hl, HlId } from "./FilterBar";
+import { isHuman } from "./human";
+import YouRibbon from "./YouRibbon";
 
 const COLS: { key: SortKey; label: string }[] = [
   { key: "queue", label: "Project" },
@@ -100,6 +102,7 @@ function Row({ t, now, multi, active, onOpen, words }: { t: Task; now: number; m
       {multi && <td className="q">{t.queue}</td>}
       <td className="id"><HlId id={t.id} words={words} /></td>
       <td className="t-title">
+        {isHuman(t) && <YouRibbon />}
         {parentLevel && <span className="badge level">{levelLabel(t.level)}</span>}
         {t.waitingForOwner && <span className="badge warn">needs you</span>} <Hl text={t.title} words={words} />
         {parentLevel && <span className="meta rollup">{progressText(t.progress)}</span>}
@@ -207,6 +210,7 @@ export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen,
         return (
           <button key={key(t)} className={openKey === key(t) ? "tl-row active" : "tl-row"} onClick={() => onOpen(t)}>
             <span className="tl-label">
+              {isHuman(t) && <YouRibbon />}
               {multi && <span className="q">{t.queue}</span>} <span className="id"><HlId id={t.id} words={words} /></span> <Hl text={t.title} words={words} />
             </span>
             <span className="tl-track">

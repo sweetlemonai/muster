@@ -1,5 +1,6 @@
 import { holder, isBoardSort, priorityName, stageLabel, stageOf, STAGES, stamp, type BoardSort } from "./lib";
 import { queryWords, searchWords, taskMatches, textMatches } from "./search";
+import { needsYou } from "./human";
 import type { Note, Task } from "./types";
 
 // The filter bar's model (task 0032): a search, filters by group, and the board's sort. A group
@@ -57,7 +58,8 @@ function fixedGroup(id: string, label: string, order: readonly string[], has: Gr
 
 const STATES: Record<string, { label: string; has: (t: Task) => boolean }> = {
   blocked: { label: "blocked", has: (t) => t.blocked },
-  "needs-you": { label: "needs you", has: (t) => t.waitingForOwner },
+  // The one needs-you definition (0022): an agent's task waiting on the owner, or the owner's own until done.
+  "needs-you": { label: "needs you", has: needsYou },
   questions: { label: "open questions", has: (t) => t.openQuestions > 0 },
 };
 const SPANS: Record<string, { label: string; from: keyof DayContext }> = {

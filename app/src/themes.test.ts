@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import css from "./styles.css?raw";
-import { ACCENTS, apply, buildingColour, CARD_LOOKS, colourDistance, SAME_AT_A_GLANCE, CARD_TINT, cardChoice, contrast, DEFAULT_CHOICE, edgeColour, mix, NEEDS_COLOUR, PRIORITY_COLOURS, resolve, STAGE_COLOURS, THEMES, variables } from "./themes";
+import { ACCENTS, apply, buildingColour, CARD_LOOKS, colourDistance, SAME_AT_A_GLANCE, CARD_TINT, cardChoice, contrast, DEFAULT_CHOICE, edgeColour, HUMAN_COLOUR, mix, NEEDS_COLOUR, PRIORITY_COLOURS, resolve, STAGE_COLOURS, THEMES, variables } from "./themes";
 
 describe("every theme and accent pair is readable (WCAG AA)", () => {
   for (const t of THEMES) {
@@ -104,11 +104,38 @@ describe("choices", () => {
   });
 });
 
+describe("the owner's own tasks' gold (0022)", () => {
+  const hsl = (hex: string) => {
+    const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(1 + i, 3 + i), 16) / 255);
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    return { h: d === 0 ? 0 : max === r ? 60 * (((g - b) / d + 6) % 6) : max === g ? 60 * ((b - r) / d + 2) : 60 * ((r - g) / d + 4), s: d / (1 - Math.abs(max + min - 1)) };
+  };
+  it("is a gold", () => {
+    const { h, s } = hsl(HUMAN_COLOUR);
+    expect(h).toBeGreaterThan(38);
+    expect(h).toBeLessThan(56);
+    expect(s).toBeGreaterThan(0.5);
+  });
+  it("is never a stage colour: it reads apart from every stage, blocked and needs you at a glance", () => {
+    for (const [s, c] of [...Object.entries(STAGE_COLOURS), ["needs", NEEDS_COLOUR]]) expect(colourDistance(HUMAN_COLOUR, c), s).toBeGreaterThanOrEqual(SAME_AT_A_GLANCE);
+  });
+  for (const t of THEMES) {
+    it(`${t.name}: the You ribbon's word reads on it, and it stands out on the card`, () => {
+      const v = variables(t, ACCENTS[0]);
+      expect(v["--st-human"]).toBe(HUMAN_COLOUR);
+      expect(contrast(v["--on-status"], v["--st-human"])).toBeGreaterThanOrEqual(4.5);
+      // Its border is the edge shade: 3:1 on the plain card and on a tinted one.
+      expect(contrast(v["--edge-human"], t.surface)).toBeGreaterThanOrEqual(3);
+    });
+  }
+});
+
 describe("card looks (0026)", () => {
-  // Every colour a card can take: each stage, blocked, needs you, and each priority.
+  // Every colour a card can take: each stage, blocked, needs you, the owner's gold, and each priority.
   const fills: [string, string][] = [
     ...Object.entries(STAGE_COLOURS),
     ["needs", NEEDS_COLOUR],
+    ["human", HUMAN_COLOUR],
     ...Object.entries(PRIORITY_COLOURS).map(([p, c]): [string, string] => [`pri-${p}`, c]),
   ];
   for (const t of THEMES) {
@@ -186,6 +213,14 @@ describe("the card CSS uses what the tests check (0026)", () => {
   });
   it("the page's own needs-you colour before apply() matches", () => {
     expect(css).toContain(`--st-needs: ${NEEDS_COLOUR};`);
+  });
+  it("the You ribbon is the owner's gold with the status word colour, edged, in every look (0022)", () => {
+    expect(css).toContain(`--st-human: ${HUMAN_COLOUR};`);
+    const body = rule(".you-ribbon").body;
+    expect(body).toContain("background: var(--st-human); color: var(--on-status);");
+    expect(body).toContain("border: 1px solid var(--edge-human, var(--st-human));");
+    // It's the card's own element, not a look's variable: no look hides or recolours it.
+    for (const l of ["tint", "top", "dot", "outline"]) expect(rule(`:root[data-cards="${l}"] .board .card, .look-${l} .card`).body).not.toContain("human");
   });
   it("blocked takes over from needs you, and both from the stage or priority colour", () => {
     const needs = rule(".card.needs-you");

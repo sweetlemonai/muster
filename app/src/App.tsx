@@ -19,6 +19,9 @@ import FilterBar, { Hl, HlId } from "./FilterBar";
 import { applyQuery, dayContext, EMPTY_QUERY, loadViews, notesFor, storeViews, type Query, type SavedView } from "./filters";
 import { indexStamp, needsIndex, queryWords, withSearch, type IndexStamp, type SearchIndex } from "./search";
 import { focusSearchBox, searchView, windowKey } from "./keys";
+import HumanBoard from "./HumanBoard";
+import { byWho, FOR_FILTERS, FOR_KEY, type ForFilter, humanBoard, humanColumn, isHuman, needsYouCount, parseForFilter, waitsOnYou } from "./human";
+import YouRibbon from "./YouRibbon";
 import logo from "./logo.png";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
@@ -139,6 +142,16 @@ function useSavedViews(project: string): [SavedView[], (views: SavedView[]) => v
   return [stored.project === project ? stored.views : [], set];
 }
 
+/** Table's and Timeline's Human · AI · All filter (0022), remembered between launches. */
+function useForFilter(): [ForFilter, (f: ForFilter) => void] {
+  const [f, setF] = useState<ForFilter>(() => parseForFilter(localStorage.getItem(FOR_KEY)));
+  const set = useCallback((v: ForFilter) => {
+    setF(v);
+    localStorage.setItem(FOR_KEY, v);
+  }, []);
+  return [f, set];
+}
+
 export default function App() {
   const { state, error, at, refresh } = useQueues();
   const [queue, setQueue] = useState("all");
@@ -151,6 +164,7 @@ export default function App() {
   const [focusSearch, setFocusSearch] = useState(0);
   const [width, setWidth] = usePaneWidth();
   const [groupBy, setGroupBy] = useGroupBy();
+  const [who, setWho] = useForFilter();
 
   useEffect(() => {
     if (queue !== "all" && state && !state.queues.some((q) => q.name === queue)) setQueue("all");
@@ -167,23 +181,35 @@ export default function App() {
   const problems = useMemo(() => (state?.problems ?? []).filter((p) => queue === "all" || p.startsWith(`${queue}:`)), [state, queue]);
   // Not problems: Shaping tasks with no vision check yet (0029), listed under them.
   const unchecked = useMemo(() => visionWarnings(inQueue), [inQueue]);
-  const waiting = inQueue.filter((t) => t.waitingForOwner);
-  // Goals and features aren't cards in the stage columns: they're the bands, and table rows.
+  // What needs the owner (0022): one count everywhere, and the Waiting tab lists the same tasks,
+  // From the agents first, then the owner's own To do and Doing.
+  const needs = needsYouCount(inQueue);
+  const waiting = useMemo(() => {
+    const b = humanBoard(inQueue);
+    return [...b.lane, ...b.todo, ...b.doing];
+  }, [inQueue]);
+  // Goals and features aren't cards in the stage columns: they're the bands, and table rows. The
+  // AI board is the agents' tasks; the owner's own are on the Human board above it.
   const work = useMemo(() => tasks.filter(isWork), [tasks]);
+  const aiWork = useMemo(() => byWho(work, "ai"), [work]);
   // Each column in the Sort chips' order, in the plain board and inside every Group by band.
-  const cols = useMemo(() => columns(work, query.sort), [work, query.sort]);
+  const cols = useMemo(() => columns(aiWork, query.sort), [aiWork, query.sort]);
   const index = useMemo(() => indexTasks(state?.tasks ?? []), [state]);
-  const boardGroups = useMemo(() => (groupBy === "none" ? [] : groupItems(work, inQueue, groupBy, tasks)), [groupBy, work, inQueue, tasks]);
-  const tableGroups = useMemo(() => (groupBy === "none" ? undefined : groupItems(tasks, inQueue, groupBy)), [groupBy, tasks, inQueue]);
+  const boardGroups = useMemo(() => (groupBy === "none" ? [] : groupItems(aiWork, inQueue, groupBy, tasks)), [groupBy, aiWork, inQueue, tasks]);
+  // Table and Timeline show both kinds, each human task with its You ribbon; Human · AI · All picks.
+  const viewTasks = useMemo(() => byWho(tasks, who), [tasks, who]);
+  const tableGroups = useMemo(() => (groupBy === "none" ? undefined : groupItems(viewTasks, inQueue, groupBy)), [groupBy, viewTasks, inQueue]);
+  const whoFilters = view === "table" || view === "timeline";
+  const shownCount = whoFilters ? viewTasks.length : tasks.length;
   const openKey = pane?.kind === "task" ? pane.key : null;
   const openTask = openKey ? (state?.tasks ?? []).find((t) => key(t) === openKey) ?? null : null;
   const allNotes = state?.backlog ?? [];
   const queueNotes = useMemo(() => backlogNotes(state?.backlog ?? [], queue), [state, queue]);
   const notes = useMemo(() => notesFor(queueNotes, query), [queueNotes, query]);
   // Notes show on the ungrouped board only (Group by bands hold tasks), so only it counts them
-  // as hidden.
+  // as hidden. Table and Timeline also count the tasks their Who chips hide.
   const notesShown = view === "board" && groupBy === "none";
-  const hidden = inQueue.length - tasks.length + (notesShown ? queueNotes.length - notes.length : 0);
+  const hidden = inQueue.length - shownCount + (notesShown ? queueNotes.length - notes.length : 0);
   const openNoteKey = pane?.kind === "note" ? pane.key : null;
   const openNote = openNoteKey ? allNotes.find((n) => noteKey(n) === openNoteKey) ?? null : null;
   const showTask = (q: string, id: string) => {
@@ -263,8 +289,8 @@ export default function App() {
             <button className={view === "graph" ? "tab on" : "tab"} onClick={() => setView("graph")} title="What waits on what">Graph</button>
           </span>
           <button className={view === "helper" ? "tab on" : "tab"} onClick={() => setView("helper")}>Helper</button>
-          <button className={view === "waiting" ? "tab on" : "tab"} onClick={() => setView("waiting")}>
-            Waiting for you{waiting.length ? <b className="count warn">{waiting.length}</b> : null}
+          <button className={view === "waiting" ? "tab on" : "tab"} onClick={() => setView("waiting")} title="Your own tasks and what the agents wait on you for: the Human board's count">
+            Waiting for you{needs ? <b className="count warn">{needs}</b> : null}
           </button>
           <button className={view === "activity" ? "tab on" : "tab"} onClick={() => setView("activity")}>Activity</button>
           <button className={view === "problems" ? "tab on" : "tab"} onClick={() => setView("problems")}>
@@ -298,17 +324,35 @@ export default function App() {
                 sortable={view === "board"}
                 views={views}
                 onViews={setViews}
-                shown={tasks.length}
+                shown={shownCount}
                 total={inQueue.length}
                 hidden={hidden}
                 estimate={estimateTotal(work)}
-                arrange={view !== "timeline" ? <GroupByChips value={groupBy} onChange={setGroupBy} /> : undefined}
+                arrange={
+                  <>
+                    {whoFilters && (
+                      <span className="for-filter" role="group" aria-label="Who does it">
+                        <span className="meta sep">Who</span>
+                        {FOR_FILTERS.map((f) => (
+                          <button key={f.id} className={who === f.id ? "chip on" : "chip"} aria-pressed={who === f.id} onClick={() => setWho(f.id)}>
+                            {f.label}
+                          </button>
+                        ))}
+                      </span>
+                    )}
+                    {view !== "timeline" && <GroupByChips value={groupBy} onChange={setGroupBy} />}
+                  </>
+                }
                 searchRef={searchRef}
               />
               {indexError && <p className="err small" role="alert">Search can't read the tasks' text: {indexError}</p>}
-              {view === "table" && <TableView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} groups={tableGroups} by={groupBy} words={words} />}
+              {view === "table" && <TableView tasks={viewTasks} now={now} multi={multi} openKey={openKey} onOpen={open} groups={tableGroups} by={groupBy} words={words} />}
               {view === "graph" && <GraphView tasks={tasks} all={inQueue} multi={multi} openKey={openKey} onOpen={open} />}
-              {view === "timeline" && <TimelineView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} words={words} />}
+              {view === "timeline" && <TimelineView tasks={viewTasks} now={now} multi={multi} openKey={openKey} onOpen={open} words={words} />}
+              {/* The Human board sits above the AI board, both in view (docs/DESIGN.md). It shows
+                  everything that needs the owner, whatever the filters, so nothing waiting is hidden. */}
+              {view === "board" && <HumanBoard tasks={inQueue} multi={multi} openKey={openKey} onOpen={open} />}
+              {view === "board" && <h2 className="board-label">AI board</h2>}
               {view === "board" && groupBy !== "none" && (
                 <GroupedBoard
                   groups={boardGroups}
@@ -317,7 +361,7 @@ export default function App() {
                   multi={multi}
                   openKey={openKey}
                   onOpen={open}
-                  renderCard={(t) => <Card t={t} now={now} multi={multi} parent={parentLine(t, index)} onOpen={() => open(t)} active={openKey === key(t)} words={words} />}
+                  renderCard={(t) => <Card t={t} now={now} multi={multi} parent={parentLine(t, index)} waitsOn={waitsOnYou(t, index)} onOpen={() => open(t)} active={openKey === key(t)} words={words} />}
                 />
               )}
               {/* Backlog never folds: its quick add is always there. */}
@@ -342,11 +386,11 @@ export default function App() {
                               item.kind === "note" ? (
                                 <NoteCard key={`note:${noteKey(item.note)}`} n={item.note} now={now} multi={multi} onOpen={() => setPane({ kind: "note", key: noteKey(item.note) })} active={openNoteKey === noteKey(item.note)} words={words} />
                               ) : (
-                                <Card key={key(item.task)} t={item.task} now={now} multi={multi} parent={parentLine(item.task, index)} onOpen={() => open(item.task)} active={openKey === key(item.task)} words={words} />
+                                <Card key={key(item.task)} t={item.task} now={now} multi={multi} parent={parentLine(item.task, index)} waitsOn={waitsOnYou(item.task, index)} onOpen={() => open(item.task)} active={openKey === key(item.task)} words={words} />
                               ),
                             )
                           : shown.map((t) => (
-                              <Card key={key(t)} t={t} now={now} multi={multi} parent={parentLine(t, index)} onOpen={() => open(t)} active={openKey === key(t)} words={words} />
+                              <Card key={key(t)} t={t} now={now} multi={multi} parent={parentLine(t, index)} waitsOn={waitsOnYou(t, index)} onOpen={() => open(t)} active={openKey === key(t)} words={words} />
                             ))}
                         {c.id === "done" && list.length > 8 && (
                           <button className="more" onClick={() => setShowAllDone((v) => !v)}>
@@ -369,15 +413,16 @@ export default function App() {
                 <article key={key(t)} className={openKey === key(t) ? "waiting active" : "waiting"}>
                   <header>
                     <button className="link" onClick={() => open(t)}>
-                      {multi && <span className="q">{t.queue}</span>} {t.id} · {t.title}
+                      {isHuman(t) && <YouRibbon />} {multi && <span className="q">{t.queue}</span>} {t.id} · {t.title}
                     </button>
                   </header>
+                  {isHuman(t) && <p>Yours to do: {humanColumn(t.stage) === "doing" ? "in Doing. Mark it Done when it is." : "in To do. Start it when you do."}</p>}
                   {t.questions.filter((q) => !q.ticked && q.escalated).map((q) => (
                     <p key={q.n ?? q.text}><b>Q{q.n}</b> {q.text}</p>
                   ))}
                   {t.blocked && t.waitingOn.toLowerCase().startsWith("owner") && <p>Blocked on you: {t.waitingOn}</p>}
                   {t.stage === "your-check" && <p>In Your check: accept it, or send it back with what's wrong.</p>}
-                  <button onClick={() => open(t)}>Open to answer</button>
+                  <button onClick={() => open(t)}>{isHuman(t) ? "Open" : "Open to answer"}</button>
                 </article>
               ))}
             </main>
@@ -454,10 +499,11 @@ export default function App() {
   );
 }
 
-/** One project in the sidebar: its name and count, what's in progress and what needs you. */
+/** One project in the sidebar: its name and count, what's in progress and what needs you (the
+ *  Human board's count: your own tasks to do and doing, and what the agents wait on you for). */
 function ProjectItem({ name, title, total, tasks, on, onClick }: { name: string; title?: string; total: number; tasks: Task[]; on: boolean; onClick: () => void }) {
   const doing = tasks.filter(inProgress).length;
-  const needs = tasks.filter((t) => t.waitingForOwner).length;
+  const needs = needsYouCount(tasks);
   return (
     <button className={on ? "side-item on" : "side-item"} onClick={onClick} title={title}>
       <span className="side-name">{name}</span>
@@ -500,10 +546,13 @@ function Splitter({ width, onWidth }: { width: number; onWidth: (w: number) => v
   );
 }
 
-function Card({ t, now, multi, parent, onOpen, active, words }: { t: Task; now: number; multi: boolean; parent: string; onOpen: () => void; active: boolean; words: string[] }) {
+/** A board card. `waitsOn`: the owner's own tasks it depends on that aren't done (0022), shown as
+ *  blocked by them until they are. */
+function Card({ t, now, multi, parent, waitsOn = [], onOpen, active, words }: { t: Task; now: number; multi: boolean; parent: string; waitsOn?: string[]; onOpen: () => void; active: boolean; words: string[] }) {
   const priority = t.priority || "normal";
   return (
     <button className={cardClass(t, active)} onClick={onOpen}>
+      {isHuman(t) && <YouRibbon />}
       <CardBand t={t} />
       <span className="card-top">
         {multi && <span className="q">{t.queue}</span>}
@@ -522,6 +571,7 @@ function Card({ t, now, multi, parent, onOpen, active, words }: { t: Task; now: 
       <CardStatus t={t} now={now} />
       <span className="card-bottom">
         {t.blocked && <span className="badge blocked">blocked{t.waitingOn ? `: ${t.waitingOn}` : ""}</span>}
+        {waitsOn.length > 0 && <span className="badge waits-you" title="It can't start until your task is done">blocked by yours: {waitsOn.join(", ")}</span>}
         {t.waitingForOwner && <span className="badge warn">needs you</span>}
         {t.openQuestions > 0 && <span className="badge">{t.openQuestions} open Q</span>}
         {t.attachments.length > 0 && <span className="badge">{t.attachments.length} file{t.attachments.length === 1 ? "" : "s"}</span>}

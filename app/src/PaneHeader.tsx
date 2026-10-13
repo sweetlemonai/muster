@@ -2,7 +2,9 @@ import { Fragment, useState } from "react";
 import { ago, holderOf, isStage, splitHolder, stageHolders, stageLabel, stageOf, STAGES, startedAgo } from "./lib";
 import { isLive, waitingOnYou } from "./paneData";
 import { isWork, levelLabel, shownStageClass, shownStageLabel } from "./levels";
+import { isHuman } from "./human";
 import type { Task } from "./types";
+import YouRibbon from "./YouRibbon";
 
 /** The top of the task pane: where it is and when it changed, the title (click to rename it in
  *  place), and the status line. */
@@ -13,6 +15,7 @@ export default function PaneHeader({ task, now, onClose, onRename }: { task: Tas
     <>
       <div className="topline">
         <span className="meta">
+          {isHuman(task) && <><YouRibbon />{" "}</>}
           <b className="qname">{task.queue}</b> · changed {since === "now" ? "just now" : `${since} ago`}
         </span>
         <button type="button" className="close" onClick={onClose} aria-label="Close">×</button>
@@ -74,7 +77,8 @@ export function TitleEdit({ value, onChange, onSave, onCancel }: { value: string
 const person = (who: string) => (splitHolder(who).label === "owner" ? (who === "owner" ? "you" : `you, ${who}`) : who);
 
 /** Stage, blocked and what it waits on, who's on it (in full, session and all), whether it's live
- *  and since when, who held the stages before (0030), its role, and what's waiting on the owner
+ *  and since when, who held the stages before (0030), its role ("your own task" for a human
+ *  task, 0022), and what's waiting on the owner
  *  (gold) or that nothing is. A goal or feature shows the stage its children give it, and its
  *  level. */
 export function StatusLine({ task, now }: { task: Task; now: number }) {
@@ -83,7 +87,8 @@ export function StatusLine({ task, now }: { task: Task; now: number }) {
   const pill = work
     ? <span className={`status-pill s-${stageOf(task)}`}>{known ? stageLabel(task.stage) : `${task.stage || "no stage"} (unknown)`}</span>
     : <span className={`status-pill s-${shownStageClass(task)}`}>{shownStageLabel(task)}</span>;
-  const role = work ? (known ? STAGES.find((s) => s.id === task.stage)?.role : "") : levelLabel(task.level);
+  // The owner's own task (0022) is theirs in every stage, whatever the stage's usual role.
+  const role = work ? (known ? (isHuman(task) ? "your own task" : STAGES.find((s) => s.id === task.stage)?.role) : "") : levelLabel(task.level);
   const who = holderOf(task);
   const started = startedAgo(task, now);
   const earlier = stageHolders(task).filter((h) => h.stage !== task.stage);

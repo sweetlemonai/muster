@@ -27,15 +27,23 @@ export const stageRank = (stage: string) => Math.max(0, stageIndex(stage));
 /** "Your check"; an unknown stage reads as Backlog, like the board shows it. */
 export const stageLabel = (stage: string) => STAGES[stageRank(stage)].label;
 
-/** The stage `pass` leads to, or null from Done (or an unknown stage). */
-export function nextStage(stage: string): Stage | null {
+/** The stage `pass` leads to, or null from Done (or an unknown stage). The owner's own task
+ *  (`human`, 0022) has no Testing or Your check: from Building on, it goes to Done, and before
+ *  Building the owner's Start takes it to Building (the core's pass_change, as the owner). */
+export function nextStage(stage: string, human = false): Stage | null {
   const i = stageIndex(stage);
-  return i < 0 ? null : STAGES[i + 1] ?? null;
+  if (i < 0) return null;
+  if (human && i >= stageIndex("building") && i < STAGES.length - 1) return STAGES[STAGES.length - 1];
+  if (human && i < stageIndex("building")) return STAGES[stageIndex("building")];
+  return STAGES[i + 1] ?? null;
 }
-/** The pass button's words: "Pass to Testing", and "Accept" in Your check. */
-export function passLabel(stage: string): string | null {
-  const next = nextStage(stage);
+/** The pass button's words: "Pass to Testing", and "Accept" in Your check; for the owner's own
+ *  task, Start (To do → Doing) and Done. */
+export function passLabel(stage: string, human = false): string | null {
+  const next = nextStage(stage, human);
   if (!next) return null;
+  if (human && next.id === "building") return "Start";
+  if (human && next.id === "done") return "Done";
   return stage === "your-check" ? "Accept" : `Pass to ${next.label}`;
 }
 /** Where `return` can send a task: every earlier stage, the nearest (the default) first. */
@@ -214,9 +222,10 @@ export function quietMinutes(t: Pick<Task, "heartbeat" | "modified">, now: numbe
 }
 
 /** A claim whose lease ran out, exactly what the core's reclaim takes: held, in Building, not
- *  blocked (that's waiting), and quiet for longer than the lease. */
-export function leaseRunOut(t: Pick<Task, "stage" | "blocked" | "claimedBy" | "heartbeat" | "modified">, now: number): boolean {
-  return t.stage === "building" && !t.blocked && t.claimedBy.trim() !== "" && quietMinutes(t, now) > LEASE_SECS / 60;
+ *  blocked (that's waiting), not the owner's own task (`for: human`, which has no lease), and
+ *  quiet for longer than the lease. */
+export function leaseRunOut(t: Pick<Task, "stage" | "blocked" | "claimedBy" | "heartbeat" | "modified" | "forWho">, now: number): boolean {
+  return t.stage === "building" && !t.blocked && t.forWho !== "human" && t.claimedBy.trim() !== "" && quietMinutes(t, now) > LEASE_SECS / 60;
 }
 
 /** Runs one action at a time: a call made while one is in flight is dropped (false), so a

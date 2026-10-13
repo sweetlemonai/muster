@@ -17,6 +17,10 @@ describe("cardClass", () => {
     expect([pri("P0"), pri("P1"), pri("P2"), pri("P3")]).toEqual(["card p-high", "card p-high", "card p-normal", "card p-low"]);
     expect(pri("urgent")).toBe("card p-normal");
   });
+  it("marks the owner's own task, and only theirs (0022)", () => {
+    expect(cardClass({ priority: "high", blocked: false, waitingForOwner: false, forWho: "human" }, false)).toBe("card p-high human");
+    expect(cardClass({ priority: "high", blocked: false, waitingForOwner: false, forWho: "ai" }, false)).toBe("card p-high");
+  });
 });
 
 describe("the Top bar band", () => {
@@ -52,6 +56,11 @@ describe("Appearance's Cards picker", () => {
     expect(html.match(/card p-[a-z]+[^"]* s-/g)).toHaveLength(5 * SAMPLES.length);
     expect(html.match(/ needs-you s-your-check/g)).toHaveLength(5);
     expect(html.match(/ blocked s-ready/g)).toHaveLength(5);
+  });
+  it("previews the owner's own task with its You ribbon in every look (0022)", () => {
+    const html = picker("tint", "stage");
+    expect(html.match(/ human s-ready/g)).toHaveLength(5);
+    expect(html.match(/<span class="you-ribbon"[^>]*>You<\/span>/g)).toHaveLength(5);
   });
   it("previews follow what the colour shows", () => {
     expect(picker("dot", "priority").match(/look-by-priority/g)).toHaveLength(5);

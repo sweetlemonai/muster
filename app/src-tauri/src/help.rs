@@ -33,8 +33,8 @@ pub struct Help {
 pub const COMMANDS: &[Command] = &[
     Command {
         name: "new",
-        usage: "muster new \"<title>\" [--type code|bug|chore|tech-debt|spike|design|docs|research] [--priority high|normal|low] [--tags a,b] [--time 2h] [--test-time 30m] [--tokens 400k] [--level goal|feature] [--parent <id>] [--due YYYY-MM-DD] [--body <text>|-]",
-        what: "Create a task in Ready. Its id is taken in order under the queue's lock, and it's logged as you. With --level it's a goal (an outcome, may have a due date) or a feature (groups tasks); agents build only tasks. An idea that isn't a task yet goes in the backlog instead (muster add).",
+        usage: "muster new \"<title>\" [--type code|bug|chore|tech-debt|spike|design|docs|research] [--priority high|normal|low] [--tags a,b] [--time 2h] [--test-time 30m] [--tokens 400k] [--level goal|feature] [--parent <id>] [--due YYYY-MM-DD] [--human] [--body <text>|-]",
+        what: "Create a task in Ready. Its id is taken in order under the queue's lock, and it's logged as you. With --level it's a goal (an outcome, may have a due date) or a feature (groups tasks); agents build only tasks. With --human it's the owner's own to do (for: human): only the owner makes one, and agents never take it; an agent that finds something only the owner can do proposes it with muster add. An idea that isn't a task yet goes in the backlog instead (muster add).",
         options: &[
             ("--type", "code (default), bug, chore, tech-debt, spike, design, docs or research; task still means code"),
             ("--priority", "high, normal (default) or low"),
@@ -45,10 +45,12 @@ pub const COMMANDS: &[Command] = &[
             ("--level", "goal, feature or task (default)"),
             ("--parent", "the id it sits under: a task's is a feature or a goal, a feature's a goal; a goal has none"),
             ("--due", "a goal's date, YYYY-MM-DD"),
+            ("--human", "the owner's own task, To do → Doing → Done on the Human board (only the owner, --as owner)"),
             ("--body", "the description in Markdown; \\n is a line break; - reads it from stdin. It can't have a \"## Comments\" line (comments are the tool's)"),
         ],
         examples: &[
             "muster new \"Board flickers on resize\" --type bug --priority high --tags code --time 1h --test-time 20m --tokens 300k",
+            "muster new \"Buy the domain\" --human --as owner",
             "muster new \"Export as CSV\" --type code --body \"What: …\\n\\nDone looks like: …\"",
             "pbpaste | muster new \"From the clipboard\" --body -",
             "muster new \"Ship 1.0\" --level goal --due 2026-12-01",
@@ -59,7 +61,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "list",
         usage: "muster list [--search \"<words>\"] [--stage <s,…>] [--type <t,…>] [--tag <t,…>] [--holder <who,…>] [--blocked] [--sort <order>] [--status <s>] [--json]",
-        what: "Tasks grouped by stage (Backlog, Shaping, Ready, Building, Testing, Your check, Done), with type, priority, what a blocked task waits on, estimate, tags, \"needs you\" and open questions. Backlog notes come first, under Backlog notes, by file name and title (not under a filter only tasks have). Search, filters and sort follow the app's rules, so the same query lists the same tasks. Several values in one option (ready,building) mean any of them; options together mean all of them.",
+        what: "Tasks grouped by stage (Backlog, Shaping, Ready, Building, Testing, Your check, Done), with type, priority, [you] on the owner's own tasks (for: human), what a blocked task waits on, estimate, tags, \"needs you\" and open questions. Backlog notes come first, under Backlog notes, by file name and title (not under a filter only tasks have). Search, filters and sort follow the app's rules, so the same query lists the same tasks. Several values in one option (ready,building) mean any of them; options together mean all of them.",
         options: &[
             ("--search", "words in any order, case and accents aside, each in the id (19 finds 0019), title, tags, text or holder; a word of digits only is an id"),
             ("--stage", "backlog, shaping, ready, building, testing, your-check or done"),
@@ -95,14 +97,14 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "claim",
         usage: "muster claim <id> [--as <who>]",
-        what: "Take a Ready task: it moves to Building, held by you, with its lease started (heartbeat). Inside a Claude Code session muster adds the session to who you are (name, short id, checkout, account), so you never type it. Refused while you already hold another task in Building in this queue (pass, return or block that first), when it's blocked, or when it isn't in Ready any more. Says which queue it claimed in.",
+        what: "Take a Ready task: it moves to Building, held by you, with its lease started (heartbeat). Inside a Claude Code session muster adds the session to who you are (name, short id, checkout, account), so you never type it. Refused while you already hold another task in Building in this queue (pass, return or block that first), when it's blocked, when a task it depends on isn't done, when it isn't in Ready any more, and for a human task (the owner's own) unless you're the owner. Says which queue it claimed in.",
         options: &[("--as", "who you are (your branch or worktree); default $MUSTER_AS, then the folder's git user.name")],
         examples: &["muster claim 0007 --as wt-a", "muster claim 0007 --as wt-a --queue drover"],
     },
     Command {
         name: "next",
         usage: "muster next [--as <who>]",
-        what: "Claim the top Ready task you may take: not blocked, not held by someone else; high priority first, then normal, then low, then the lowest id. Prints \"nothing ready\" and exits 1 when there's none. Refused while you already hold a task in Building.",
+        what: "Claim the top Ready task you may take: not blocked, not held by someone else, everything it depends on done, and never a human task (the owner's own) unless you're the owner; high priority first, then normal, then low, then the lowest id. Prints \"nothing ready\" and exits 1 when there's none. Refused while you already hold a task in Building.",
         options: &[("--as", "who you are; default $MUSTER_AS, then the folder's git user.name")],
         examples: &["muster next --as wt-a", "muster next --as wt-a --queue muster"],
     },
@@ -139,7 +141,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "pass",
         usage: "muster pass <id> [--from <stage>] [--gate \"<gate result line>\"] [--commit <sha>]",
-        what: "Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria and no open vision conflict (muster vision). Building → Testing needs the gate's result line and releases your claim. Testing → Your check needs every criterion ticked except the owner's (\"— verify: owner\"); Your check → Done needs those ticked too (muster tick). Refused while it's blocked, or when someone else holds it.",
+        what: "Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria and no open vision conflict (muster vision). Building → Testing needs the gate's result line and releases your claim. Testing → Your check needs every criterion ticked except the owner's (\"— verify: owner\"); Your check → Done needs those ticked too (muster tick). A human task (the owner's own) goes To do (Ready) → Doing (Building) → Done, and only the owner passes it: no gate line, no Testing, no Your check. Refused while it's blocked, or when someone else holds it.",
         options: &[
             ("--from", "the stage you saw it in; refused if it has moved on since (use it, so a repeat never moves it twice)"),
             ("--gate", "Building → Testing: the gate's result line, verbatim"),
@@ -150,6 +152,7 @@ pub const COMMANDS: &[Command] = &[
             "muster pass 0007 --as wt-a --from ready",
             "muster pass 0007 --as wt-a --from building --gate \"gate full: green (9 steps)\"",
             "muster pass 0007 --from your-check --commit 3f2a9c1",
+            "muster pass 0041 --from ready --as owner",
         ],
     },
     Command {
@@ -185,10 +188,10 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "set",
-        usage: "muster set <id> <priority|type|title|tags|time|test-time|tokens|level|parent|due|depends> <value>",
-        what: "Change one field, logged with the time and who. type is one of code, bug, chore, tech-debt, spike, design, docs, research; time is agent time and test-time the QA agent plus your check. level, parent and due keep the rules of muster new (a parent that exists at the right level, no loop, a due date only on a goal); a task in Building or Testing, or held, stays a task. An empty parent or due clears it.",
+        usage: "muster set <id> <priority|type|title|tags|time|test-time|tokens|level|parent|due|depends|for> <value>",
+        what: "Change one field, logged with the time and who. type is one of code, bug, chore, tech-debt, spike, design, docs, research; time is agent time and test-time the QA agent plus your check. level, parent and due keep the rules of muster new (a parent that exists at the right level, no loop, a due date only on a goal); a task in Building or Testing, or held, stays a task. An empty parent or due clears it. for is human or ai: who does it (a human task is the owner's own, on the Human board); only a task, and not while it's held, in Building, Testing or Your check; made human in Backlog or Shaping, it moves to Ready (To do).",
         options: &[],
-        examples: &["muster set 0007 priority high", "muster set 0007 type tech-debt", "muster set 0007 tags spike,tech-debt", "muster set 0007 tags \"\"", "muster set 0007 time 3h", "muster set 0007 test-time 45m", "muster set 0007 tokens 600k", "muster set 0007 title \"A clearer title\"", "muster set 0031 level feature", "muster set 0032 parent 0031", "muster set 0031 parent \"\"", "muster set 0030 due 2026-12-01", "muster set 0018 depends 0014,0016", "muster set 0018 depends \"\""],
+        examples: &["muster set 0007 priority high", "muster set 0041 for human", "muster set 0007 type tech-debt", "muster set 0007 tags spike,tech-debt", "muster set 0007 tags \"\"", "muster set 0007 time 3h", "muster set 0007 test-time 45m", "muster set 0007 tokens 600k", "muster set 0007 title \"A clearer title\"", "muster set 0031 level feature", "muster set 0032 parent 0031", "muster set 0031 parent \"\"", "muster set 0030 due 2026-12-01", "muster set 0018 depends 0014,0016", "muster set 0018 depends \"\""],
     },
     Command {
         name: "edit",
@@ -296,7 +299,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "check",
         usage: "muster check",
-        what: "Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist, a link that isn't a plain https link, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop, a vision count that doesn't match the task's Vision section, an INDEX.md that shows something the task files no longer say (rebuild with muster index; none yet is fine). Exit 1 if any. A goal past its due date with tasks open, and an INDEX.md only due a refresh (the files changed outside muster, as Drover's answers do), are warnings: shown, without failing. Also lists, without counting them as problems, what waits on the owner's look and Shaping tasks with no vision check yet.",
+        what: "Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist, a link that isn't a plain https link, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop, a for that isn't human or ai, a vision count that doesn't match the task's Vision section, an INDEX.md that shows something the task files no longer say (rebuild with muster index; none yet is fine). Exit 1 if any. A goal past its due date with tasks open, and an INDEX.md only due a refresh (the files changed outside muster, as Drover's answers do), are warnings: shown, without failing. Also lists, without counting them as problems, what waits on the owner's look and Shaping tasks with no vision check yet.",
         options: &[],
         examples: &["muster check", "muster check --queue braindump"],
     },
@@ -424,7 +427,7 @@ pub const SESSION: &[Topic] = &[
             "Read the queue's README.md first: ../tasks/README.md from the project's repo.",
             "A task moves through stages: Backlog (anyone), Shaping (product, tech and UI agents), Ready (claimable), Building (code agent), Testing (QA agent), Your check (the owner), Done. Only muster changes a stage: never move or edit task files for that.",
             "Never edit stage:, status:, claimed-by: or heartbeat: by hand. Only muster writes them.",
-            "Claim with muster, under your branch name, in the queue of the project you're in (it says which queue it claimed in). One claim per session: take the top Ready task, or a given one:",
+            "Claim with muster, under your branch name, in the queue of the project you're in (it says which queue it claimed in). One claim per session: take the top Ready task, or a given one. Agents never claim a human task ([you] in muster list): that's the owner's own to do:",
             "$ muster next --as <your branch>",
             "$ muster claim 0007 --as <your branch>",
             "On long work, keep the claim alive. A claim with no heartbeat for 12 h goes back to Ready (muster reclaim). Your notes and passes count too:",
@@ -441,7 +444,7 @@ pub const SESSION: &[Topic] = &[
             "$ muster pass 0007 --as <your branch> --from building --gate \"<the gate's result line>\"",
             "Testing found a problem? Send it back with the reason:",
             "$ muster return 0007 \"AC2 fails: …\"",
-            "Found something new? muster add puts a one-liner in the backlog, and a shaping session files it:",
+            "Found something new? muster add puts a one-liner in the backlog, and a shaping session files it. Something only the owner can do (an account, a secret, a decision) goes the same way: the owner makes it a human task:",
             "$ muster add \"<one line>\" --as <your branch>",
         ],
     },
@@ -478,6 +481,18 @@ pub const APP: &[(&str, &str)] = &[
     (
         "Pass to <next stage>",
         "in a task's pane: hand it on (from Building it asks for the gate's result line); in Your check the button reads Accept and marks it Done",
+    ),
+    (
+        "Start · Done",
+        "in your own task's pane (Human, for: human): Start moves it from To do to Doing, Done finishes it; no gate line, no Testing, no Your check",
+    ),
+    (
+        "Human board",
+        "above the AI board on the Board view: your own tasks in To do · Doing · Done, and first From the agents: tasks in Your check, questions escalated to you and tasks blocked on you, each opening its task. Its count is the needs-you number in the sidebar and the header",
+    ),
+    (
+        "You",
+        "the gold ribbon on a human task's card or row, wherever human and agents' tasks share a view; Table and Timeline filter Human · AI · All",
     ),
     (
         "Send back",
@@ -780,6 +795,40 @@ mod tests {
             "Drop",
         ] {
             assert!(app.contains(word), "{word}: {app}");
+        }
+    }
+
+    #[test]
+    fn human_tasks_are_documented() {
+        // 0022: the owner's own tasks, made by the owner, never taken by agents.
+        let new = command_text("new").unwrap();
+        for words in [
+            "--human",
+            "only the owner",
+            "muster add",
+            "muster new \"Buy the domain\" --human --as owner",
+        ] {
+            assert!(new.contains(words), "{words}: {new}");
+        }
+        let set = command_text("set").unwrap();
+        for words in ["|for>", "human or ai", "muster set 0041 for human"] {
+            assert!(set.contains(words), "{words}: {set}");
+        }
+        for name in ["claim", "next"] {
+            let c = command_text(name).unwrap();
+            assert!(c.contains("human task"), "{name}: {c}");
+        }
+        let pass = command_text("pass").unwrap();
+        for words in ["human task", "To do", "Doing", "Done", "no gate line"] {
+            assert!(pass.contains(words), "{words}: {pass}");
+        }
+        assert!(command_text("list").unwrap().contains("[you]"));
+        assert!(command_text("check").unwrap().contains("for"));
+        let t = text();
+        assert!(t.contains("never claim a human task"), "{t}");
+        let app: String = APP.iter().map(|(k, v)| format!("{k} {v}\n")).collect();
+        for words in ["Human board", "From the agents", "Start", "You"] {
+            assert!(app.contains(words), "{words}: {app}");
         }
     }
 

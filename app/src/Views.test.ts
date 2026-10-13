@@ -5,11 +5,11 @@ import { describe, expect, it, vi } from "vitest";
 import { stampMinutes } from "./lib";
 import type { Task } from "./types";
 import { axis, layout, nowAt, spans, timeWindow, type Scale } from "./viewData";
-import { TimelineChart, TimelineControls } from "./Views";
+import { TableView, TimelineChart, TimelineControls } from "./Views";
 
 const t = (over: Partial<Task>): Task => ({
   queue: "q", id: "0001", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [], folder: "todo", path: "", claimedBy: "", heldBy: "", stageSince: "", checkins: [],
-  heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "2026-10-14", capturedAt: "", doneAt: "", blockHistory: [], questions: [], openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: false,
+  heartbeat: "", waitingOn: "", depends: [], forWho: "ai", commit: "", captured: "2026-10-14", capturedAt: "", doneAt: "", blockHistory: [], questions: [], openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: false,
   tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [], attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", ...over,
 });
 const step = (at: string, from: string, to: string) => ({ at, who: "agent", from, to });
@@ -69,6 +69,18 @@ describe("the timeline chart", () => {
     const html = chart("week");
     expect(html).toMatch(/<button class="tl-row"[^>]*><span class="tl-label"> ?<span class="id">0031<\/span> Timeline scales<\/span>/);
     expect(html).toMatch(/<button class="tl-row active"[^>]*><span class="tl-label"> ?<span class="id">0032<\/span> Still going/);
+  });
+  it("marks the owner's own task with the You ribbon, and only theirs (0022)", () => {
+    // The Timeline shows work from when it started: both are in Building (Doing, for the owner's).
+    const started = { stage: "building", stageHistory: [step("2026-10-14 13:00", "ready", "building")] };
+    const mixed = [t({ id: "0041", title: "Buy the domain", forWho: "human", ...started }), t({ id: "0042", title: "Agent work", ...started })];
+    const win = timeWindow("week", NOW, 0);
+    const html = renderToStaticMarkup(createElement(TimelineChart, { scale: "week", rows: layout(spans(mixed, NOW), win, "week"), ticks: axis("week", win, NOW), now: nowAt(win, NOW), multi: false, openKey: null, onOpen: () => {} }));
+    expect(html).toMatch(/<span class="tl-label"><span class="you-ribbon"[^>]*>You<\/span> ?<span class="id">0041<\/span> Buy the domain<\/span>/);
+    expect(html).toMatch(/<span class="tl-label"> ?<span class="id">0042<\/span> Agent work<\/span>/);
+    const table = renderToStaticMarkup(createElement(TableView, { tasks: mixed, now: 0, multi: false, openKey: null, onOpen: () => {}, words: [] }));
+    expect(table.match(/class="you-ribbon"/g)).toHaveLength(1);
+    expect(table).toMatch(/<td class="t-title"><span class="you-ribbon"[^>]*>You<\/span>[^<]*Buy the domain/);
   });
   it("draws the now line where now is, and none in a window without it", () => {
     expect(chart("day")).toMatch(new RegExp(`class="tl-now" style="left:${(((20 * 60 + 20) / 1440) * 100).toFixed(3)}%"`));

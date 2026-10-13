@@ -48,6 +48,8 @@ export type Task = {
   waitingOn: string;
   /** The tasks it waits on (`depends:`, same queue, 0019). */
   depends: string[];
+  /** Who does it (`for:`, 0022): "human" is the owner's own task, "ai" an agent's (every older one). */
+  forWho: string;
   commit: string;
   captured: string;
   /** When it was captured to the minute, when the log knows it (0031); else empty. */
@@ -67,6 +69,8 @@ export type Task = {
   /** A `vision:` value that isn't a count ("" when fine): a problem the core reports, so the task
    *  isn't also listed as unchecked. */
   badVision?: string;
+  /** It waits on the owner (the core's needs_owner): Your check, a question escalated to them, or
+   *  blocked on the owner. An agent's task like this is in the Human board's "From the agents". */
   waitingForOwner: boolean;
   tags: string[];
   /** Estimates: agent time, test time (the QA agent plus the owner's check) and tokens, as written
