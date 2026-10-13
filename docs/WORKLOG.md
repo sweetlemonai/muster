@@ -4,6 +4,35 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Pick-one questions: agents ask with options, the owner answers with one click (task 0049)
+**Did:** `muster ask <id> "<q>" --option "<text>"… [--pick b] [--no-answer a]` writes 2 to 6
+options under the question as plain indented lines (`- (a) … (my pick)`, `With no answer: (a)`),
+so `bin/task`, Drover and `manifest.py` see ordinary text; they're read back from those lines
+(`choices.rs`), a question written that way by hand included. `muster answer <id> Qn --pick b
+["<more>"]` writes `(b) <the option's text> — <more>`, logs `answered Qn` and mails it to the
+asker like any answer (`queue::answer_pick`, sharing `answer_with` with `answer`). The task pane's
+open questions and the Waiting for you entry show the options as chips (`PickOne.tsx`): every
+option, the pick marked "pick", "with no answer: a"; one click answers (the pane adds the box's
+words), and the box still answers in words. `muster escalate` prints the options for
+`WAITING-FOR-OWNER.md`. PROTOCOL.md, `muster help ask|answer|escalate`, the manual (02, 04, 05,
+07), `/muster` and `/mu` (act with `--pick`), and AS_BUILT say so.
+**Decided:** options live in the question's text, not a new section or field, so file contract
+v1 holds without a version bump; the core gives the app the question without its option lines
+(`choices.question`). Refused with nothing written: fewer than 2 or more than 6 options, an option
+over 200 characters, empty, a duplicate or ending in "(my pick)", a pick or fallback that isn't an
+option, `--pick` without options, a pick on a question without options. `bin/task` passes no
+options: it still asks in words and answers any question in words.
+**Verified:** `bin/gate`: gate: green (pnpm check, test_task, test_commands, cargo test
+(Kiritimati)). New tests: `choices::tests` (5), `ask_with_options_writes_them_as_indented_lines_and_reads_them_back`,
+`answer_pick_writes_the_options_text_logs_it_and_mails_the_asker`, `a_bad_pick_or_bad_options_write_nothing`,
+`ask_with_options_and_answer_with_pick_on_the_command_line`, `options_text_lists_each_option_with_the_pick_and_the_fallback`,
+interop `a_question_with_options_is_read_and_answered_by_the_python_tools`, Python
+`test_a_question_with_options_is_plain_text_to_bin_task_and_muster_answers_it_by_pick` and
+`test_a_question_with_options_is_answered_by_its_pick`, and `PickOne.test.ts` (6).
+**Open:** AC5 is the owner's: answer a real question with options by clicking a chip and see the
+asking session receive the chosen text. The chip's click wiring isn't unit-tested (the tests run
+without a DOM); `pickArgs` is.
+
 ## 2026-10-13 — The tester isn't the builder: Testing → Your check refused for the builder (task 0047)
 **Did:** `muster pass` out of Testing is refused when the passer built the task (claimed it last,
 or passed it into Testing with the gate line), matched as one holder (`session::same_holder`):

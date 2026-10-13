@@ -34,7 +34,13 @@ Why: the board is only useful if it's true. A hand edit can say a task was teste
    muster ask 0007 "Child webview or a separate window?" --as wt-a
    ```
 
-   The answer is pushed into the session after its next step where the answer hook is installed. Otherwise collect it with `muster inbox`.
+   When the answer is a choice, ask with the options, your pick and what you'll do with no answer, so the owner answers with one click:
+
+   ```
+   muster ask 0007 "Child webview or a separate window?" --option "Child webview" --option "Separate window" --pick a --no-answer a --as wt-a
+   ```
+
+   The answer is pushed into the session after its next step where the answer hook is installed. Otherwise collect it with `muster inbox`. A picked answer reads `(a) Child webview`, then any words the owner added.
 6. **Found something new** that isn't this task? Put it in the backlog: `muster add "<one line>" --as wt-a`.
 7. **Waiting on something** that stops the work: `muster block 0007 --on 0012` (or `--on "owner: …"`, `--on "capture: …"`). Unblock with `muster unblock 0007`.
 8. **Hand it on:** tick the criteria you can prove, each with its proof (`muster edit`, or the write-up in your branch), then pass with the gate's result line, as printed:
@@ -75,7 +81,7 @@ muster escalate 0007 Q2 --as capture
 muster reclaim
 ```
 
-An escalated question waits for the owner in the app's **Waiting for you**, and capture adds it to the queue's `WAITING-FOR-OWNER.md`. The app's **Helper** tab does capture's filing job without a separate session.
+An escalated question waits for the owner in the app's **Waiting for you**, and capture adds it to the queue's `WAITING-FOR-OWNER.md`, with its options and the asker's pick when it has them (`muster escalate` prints them). A question with options is answered with `muster answer 0007 Q2 --pick b`. The app's **Helper** tab does capture's filing job without a separate session.
 
 ## In a Claude Code session
 

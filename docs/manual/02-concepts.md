@@ -156,6 +156,14 @@ muster ask 0012 "Flicker on resize too, or only on open?" --as wt-a
 
 The question is numbered (Q1, Q2…) and written under `## Questions`, and `muster` records which session asked. The **capture** session, the one that writes tasks up for you, answers what it can and **escalates** the rest to you. An escalated question shows in **Waiting for you** and in the task pane, with a box to answer it (⌘↩ sends).
 
+When the answer is a choice, the agent asks with **options** (2 to 6), its **pick** and what it does with **no answer**:
+
+```
+muster ask 0012 "Fix the flicker now or after the redesign?" --option "Now, in this task" --option "After the redesign (0020)" --pick a --no-answer a --as wt-a
+```
+
+The options show as chips under the question, the agent's pick marked **pick**. One click answers with that option; the box below still takes "something else", or words to add to a pick. In a terminal: `muster answer 0012 Q1 --pick b`.
+
 Your answer is written into the task and handed to the session that asked. Where the **answer hook** is installed (a Claude Code hook that ships with Muster), the answer appears in that session after its next step, without it looking. Without the hook, the session runs `muster inbox`. Why: an agent never stops to wait, and every answer ends up in the file, where the next session finds it.
 
 See [Questions](05-commands.md#questions), the tutorial [Answer an agent's question](03-tutorials.md#answer-an-agents-question), and [PROTOCOL.md](../PROTOCOL.md#questions-and-answers).

@@ -26,6 +26,8 @@ struct Args {
     here: bool,
     clean: bool,
     force: bool,
+    /// `ask --option <text>`, once per option, in order (0049).
+    options: Vec<String>,
 }
 
 /// Options and positionals; after `--`, everything is positional (text that starts with `--`).
@@ -43,6 +45,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         here: false,
         clean: false,
         force: false,
+        options: vec![],
     };
     let mut it = argv.iter();
     let mut rest = false;
@@ -63,11 +66,14 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--here" => a.here = true,
             "--clean" => a.clean = true,
             "--force" => a.force = true,
+            "--option" => a
+                .options
+                .push(it.next().ok_or("--option needs a value")?.clone()),
             "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on"
             | "--tags" | "--tag" | "--time" | "--test-time" | "--tokens" | "--stage" | "--gate"
             | "--commit" | "--to" | "--from" | "--after" | "--session" | "--level" | "--parent"
             | "--due" | "--pct" | "--remove" | "--record" | "--resolve" | "--search"
-            | "--holder" | "--sort" | "--at" | "--touches" => {
+            | "--holder" | "--sort" | "--at" | "--touches" | "--pick" | "--no-answer" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -280,6 +286,23 @@ fn question_number(q: &str) -> Result<u32, String> {
     digits
         .parse()
         .map_err(|_| format!("question must look like Q3, got {q:?}"))
+}
+
+/// A question's options as `ask` and `escalate` print them: one indented line each, the asker's
+/// pick marked, then what it does with no answer.
+fn options_text(c: &crate::choices::Choices) -> String {
+    let mut out = String::new();
+    for (i, o) in c.options.iter().enumerate() {
+        let mine = if c.pick == Some(i) { "  ← pick" } else { "" };
+        out.push_str(&format!("  ({}) {o}{mine}\n", crate::choices::letter(i)));
+    }
+    if let Some(i) = c.no_answer {
+        out.push_str(&format!(
+            "  With no answer: ({})\n",
+            crate::choices::letter(i)
+        ));
+    }
+    out
 }
 
 /// The session asking or collecting answers: `--session`, else `$CLAUDE_CODE_SESSION_ID`.
@@ -1318,10 +1341,21 @@ fn run_on(
             let id = need(a, 1, "a task id")?;
             let q = need(a, 2, "a question like Q2")?;
             let n = question_number(q)?;
-            let asker = queue::answer(root, id, n, &a.pos[3..].join(" "), &label(), stamp)?;
+            let text = a.pos[3..].join(" ");
+            let (asker, how) = match a.flags.get("pick") {
+                Some(pick) => {
+                    let (asker, written) =
+                        queue::answer_pick(root, id, n, pick, &text, &label(), stamp)?;
+                    (asker, format!(" with {written}"))
+                }
+                None => (
+                    queue::answer(root, id, n, &text, &label(), stamp)?,
+                    String::new(),
+                ),
+            };
             match asker {
-                Some(s) => println!("{id}: answered {q}; delivered to session {s}"),
-                None => println!("{id}: answered {q}; no asking session on record"),
+                Some(s) => println!("{id}: answered {q}{how}; delivered to session {s}"),
+                None => println!("{id}: answered {q}{how}; no asking session on record"),
             }
             Ok(0)
         }
@@ -1441,10 +1475,16 @@ fn run_on(
         "ask" => {
             let id = need(a, 1, "a task id")?;
             need(a, 2, "the question")?;
-            let asked = queue::ask(
+            let choices = crate::choices::clean(
+                &a.options,
+                a.flags.get("pick").map(String::as_str),
+                a.flags.get("no-answer").map(String::as_str),
+            )?;
+            let asked = queue::ask_with(
                 root,
                 id,
                 &a.pos[2..].join(" "),
+                &choices,
                 &label(),
                 &session(a, env),
                 stamp,
@@ -1453,6 +1493,9 @@ fn run_on(
                 "asked Q{} on {id}. The answer will be delivered to this session.",
                 asked.n
             );
+            if !choices.options.is_empty() {
+                print!("{}", options_text(&choices));
+            }
             if !asked.earlier.is_empty() {
                 println!("\nQuestions on this task so far (check that yours isn't answered here):");
                 for (answered, line) in &asked.earlier {
@@ -1466,7 +1509,18 @@ fn run_on(
             let id = need(a, 1, "a task id")?;
             let n = question_number(need(a, 2, "a question like Q2")?)?;
             queue::escalate(root, id, n, &label(), stamp)?;
-            println!("escalated Q{n} on {id}; add it to WAITING-FOR-OWNER.md");
+            // The question is written either way: a failed re-read only leaves its options out.
+            let choices = queue::read_task(root, id)
+                .ok()
+                .and_then(|t| t.questions.into_iter().find(|q| q.n == Some(n)))
+                .and_then(|q| q.choices);
+            match choices {
+                Some(c) => print!(
+                    "escalated Q{n} on {id}; add it to WAITING-FOR-OWNER.md with its options:\n{}",
+                    options_text(&c)
+                ),
+                None => println!("escalated Q{n} on {id}; add it to WAITING-FOR-OWNER.md"),
+            }
             Ok(0)
         }
         "inbox" => {
@@ -2489,6 +2543,113 @@ mod tests {
         let t = queue::read_task(d.path(), "0001").unwrap();
         assert_eq!((t.questions.len(), t.open_questions), (1, 0));
         assert!(t.questions[0].escalated && t.questions[0].owner_answered);
+    }
+
+    #[test]
+    fn ask_with_options_and_answer_with_pick_on_the_command_line() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let code = |args: &[&str]| {
+            let mut v = sv(&args[..1]);
+            v.extend(sv(&["--queue", &q]));
+            v.extend(sv(&args[1..]));
+            main(&v)
+        };
+        assert_eq!(code(&["new", "Picked", "--as", "owner"]), 0);
+        let me = ["--as", "wt-a", "--session", "abcd1234"];
+        let ask = |extra: &[&str]| {
+            code(
+                &[
+                    &["ask", "0001"],
+                    &me[..],
+                    extra,
+                    &["--", "How long may a lease be?"],
+                ]
+                .concat(),
+            )
+        };
+        let body = || queue::read_body(d.path(), "0001").unwrap();
+        // Refused, with nothing written: one option, seven, one too long, a pick or fallback that
+        // isn't one, a pick without options.
+        let before = body();
+        let long = "x".repeat(201);
+        for bad in [
+            &["--option", "only"][..],
+            &[
+                "--option", "1", "--option", "2", "--option", "3", "--option", "4", "--option",
+                "5", "--option", "6", "--option", "7",
+            ],
+            &["--option", "a", "--option", &long],
+            &["--option", "a", "--option", "b", "--pick", "c"],
+            &["--option", "a", "--option", "b", "--no-answer", "3"],
+            &["--pick", "a"],
+        ] {
+            assert_eq!(ask(bad), 1, "{bad:?}");
+        }
+        assert_eq!(body(), before);
+        assert!(!d.path().join("mail/asks.json").exists());
+        let opts = [
+            "--option",
+            "1 h to 7 d",
+            "--option",
+            "Any length",
+            "--option",
+            "No lease",
+        ];
+        assert_eq!(
+            ask(&[&opts[..], &["--pick", "a", "--no-answer", "C"]].concat()),
+            0
+        );
+        assert!(
+            body().contains(":** How long may a lease be?\n  - (a) 1 h to 7 d (my pick)\n  - (b) Any length\n  - (c) No lease\n  With no answer: (c)\n"),
+            "{}",
+            body()
+        );
+        // Escalated, then answered by picking: a bad pick is refused with nothing written.
+        assert_eq!(code(&["escalate", "0001", "Q1", "--as", "capture"]), 0);
+        let before = body();
+        assert_eq!(
+            code(&["answer", "0001", "Q1", "--pick", "d", "--as", "owner"]),
+            1
+        );
+        assert_eq!(body(), before);
+        assert!(!d.path().join("mail/abcd1234").exists());
+        assert_eq!(
+            code(&["answer", "0001", "Q1", "--pick", "b", "--as", "owner", "--", "but", "warn"]),
+            0
+        );
+        assert!(body().contains("  **A (owner, "), "{}", body());
+        assert!(
+            body().contains("):** (b) Any length — but warn\n"),
+            "{}",
+            body()
+        );
+        let mail = std::fs::read_to_string(d.path().join("mail/abcd1234/0001-Q1.md")).unwrap();
+        assert!(
+            mail.contains("\nAnswer: (b) Any length — but warn\n"),
+            "{mail}"
+        );
+        // A question in words has no options to pick.
+        assert_eq!(
+            code(&[&["ask", "0001"], &me[..], &["--", "Which port?"]].concat()),
+            0
+        );
+        assert_eq!(
+            code(&["answer", "0001", "Q2", "--pick", "a", "--as", "owner"]),
+            1
+        );
+        assert_eq!(code(&["answer", "0001", "Q2", "5173", "--as", "owner"]), 0);
+    }
+
+    #[test]
+    fn options_text_lists_each_option_with_the_pick_and_the_fallback() {
+        let c = crate::choices::clean(&sv(&["One", "Two"]), Some("b"), Some("a")).unwrap();
+        assert_eq!(
+            options_text(&c),
+            "  (a) One\n  (b) Two  ← pick\n  With no answer: (a)\n"
+        );
+        let c = crate::choices::clean(&sv(&["One", "Two"]), None, None).unwrap();
+        assert_eq!(options_text(&c), "  (a) One\n  (b) Two\n");
     }
 
     #[test]

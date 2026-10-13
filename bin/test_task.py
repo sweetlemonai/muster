@@ -704,6 +704,38 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("can't run muster", r.stderr)
 
+    def test_a_question_with_options_is_plain_text_to_bin_task_and_muster_answers_it_by_pick(self):
+        # 0049: options are indented lines of the question (file contract v1), so a question
+        # written that way by hand has them too.
+        (self.root / "doing" / "0042-something.md").write_text(TASK_FILE.replace(
+            "## Log\n",
+            "## Questions\n"
+            "- [ ] **Q1 (wt-a, session aaaa1111, 2026-10-11 10:00):** Where does it open?\n"
+            "  - (a) A window\n  - (b) A panel (my pick)\n  With no answer: (a)\n"
+            "- [ ] **Q2 (wt-a, session aaaa1111, 2026-10-11 10:05):** And the colour?\n"
+            "  - (a) Violet\n  - (b) Orange\n\n## Log\n"),
+            encoding="utf-8")
+        self.run_task("answer", "0042", "Q1", "Something else: a sheet.")
+        t = self.text("doing/0042-something.md")
+        self.assertIn("  With no answer: (a)\n  **A (capture, ", t)
+        self.assertIn("Your question: Where does it open?\n- (a) A window\n- (b) A panel (my pick)\n"
+                      "With no answer: (a)\nAnswer: Something else: a sheet.\n",
+                      self.run_task("inbox", "--session", "aaaa1111").stdout)
+        r = self.muster("answer", "0042", "Q2", "--pick", "c", "--as", "owner")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("isn't one of the options", r.stderr)
+        self.assertNotIn("- [x] **Q2", self.text("doing/0042-something.md"))
+        r = self.muster("answer", "0042", "Q2", "--pick", "b", "--as", "owner", "--", "but", "warm")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("answered Q2 with (b) Orange — but warm; delivered to session aaaa1111", r.stdout)
+        self.assertIn("  - (b) Orange\n  **A (owner, ", self.text("doing/0042-something.md"))
+        ctx = json.loads(self.hook("aaaa1111"))["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("  Your question: And the colour?\n  - (a) Violet\n  - (b) Orange\n"
+                      "  Answer: (b) Orange — but warm\n", ctx)
+        self.assertEqual(self.manifest().returncode, 0)
+        tasks = {x["id"]: x for x in json.loads(self.text("tasks.json"))["tasks"]}
+        self.assertEqual(tasks["0042"]["open_questions"], 0)
+
     def test_the_hook_reads_mail_written_by_muster_even_when_kept_first(self):
         self.run_task("ask", "0042", "Which port?", "--session", "aaaa1111")
         self.run_task("answer", "0042", "Q1", "5173", "--as", "owner")

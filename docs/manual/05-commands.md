@@ -714,14 +714,17 @@ Ask in a task without stopping. The answer is written into the task and pushed b
 
 ### muster ask
 
-Ask a question in a task without stopping: numbered, written under ## Questions, and your session recorded so the answer is pushed to you (the answer hook) or waits in muster inbox. Lists the task's earlier questions, and refuses one that's already answered there.
+Ask a question in a task without stopping: numbered, written under ## Questions, and your session recorded so the answer is pushed to you (the answer hook) or waits in muster inbox. Lists the task's earlier questions, and refuses one that's already answered there. When the answer is a choice, ask with options: 2 to 6, each one line of up to 200 characters, with your pick and what you'll do with no answer. They're written under the question as (a), (b)…, and the owner answers with one click in the app or muster answer --pick.
 
 ```
-muster ask <id> "<question>" [--as <who>] [--session <id>]
+muster ask <id> "<question>" [--option "<text>"]... [--pick <a|1>] [--no-answer <a|1>] [--as <who>] [--session <id>]
 ```
 
 | Option | What it does |
 | --- | --- |
+| `--option` | one option, once for each (2 to 6, in order: the first is a) |
+| `--pick` | the option you recommend, by letter or number |
+| `--no-answer` | the option you'll take if no answer comes, by letter or number |
 | `--as` | who's asking (your branch); default $MUSTER\_AS, then the folder's git user.name |
 | `--session` | your session id; default $CLAUDE\_CODE\_SESSION\_ID |
 
@@ -732,16 +735,24 @@ muster ask 0007 "Child webview or a separate window?" --as wt-a
 ```
 
 ```
+muster ask 0007 "Where does Settings open?" --option "A window" --option "The side pane" --pick b --no-answer b
+```
+
+```
 muster ask 0007 -- "--verbose or --quiet by default?"
 ```
 
 ### muster answer
 
-Answer a question in a task. It's written under the question, and the agent that asked gets it pushed into its session.
+Answer a question in a task. It's written under the question, and the agent that asked gets it pushed into its session. A question asked with options can be answered by picking one: the answer is that option's text, then any words you add. A pick that isn't one of its options is refused; any question can still be answered in words.
 
 ```
-muster answer <id> <Qn> "<text>"
+muster answer <id> <Qn> "<text>" | muster answer <id> <Qn> --pick <a|1> ["<more words>"]
 ```
+
+| Option | What it does |
+| --- | --- |
+| `--pick` | answer with this option, by letter or number |
 
 Examples:
 
@@ -749,9 +760,17 @@ Examples:
 muster answer 0008 Q2 "B, the window beside the app"
 ```
 
+```
+muster answer 0008 Q3 --pick b
+```
+
+```
+muster answer 0008 Q3 --pick a "but keep the old one for a week"
+```
+
 ### muster escalate
 
-Mark a question "Escalated to owner": it shows as waiting for you. Capture then adds it to WAITING-FOR-OWNER.md. Once per question.
+Mark a question "Escalated to owner": it shows as waiting for you. Capture then adds it to WAITING-FOR-OWNER.md, with its options and the asker's pick when it has them (escalate prints them). Once per question.
 
 ```
 muster escalate <id> <Qn> [--as capture]

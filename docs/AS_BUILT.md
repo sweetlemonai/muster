@@ -335,6 +335,12 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Task panel** (loads on first open): the task rendered as Markdown with a Raw switch,
   open questions with an answer box (⌘↩), the files as thumbnails that open large (← → between
   them, Esc to close), who's on it, what it waits on, and the commit.
+- **Pick-one questions** (task 0049, `choices.rs`, `PickOne.tsx`): a question asked with options
+  shows them as chips in the pane's open questions and in its Waiting for you entry, every option
+  on screen, the asker's pick marked **pick** and "with no answer: a" after them. One click
+  answers (`answer_pick`): the answer is `(b) <the option's text>`, plus the answer box's words
+  after " — " when there are any; the box stays below for something else. Escalated ones keep
+  the orange edge, as before.
 - **Work** (task 0025, below the description and check-ins in the task panel): every Claude Code
   session that worked on the task, found by the `session <8 hex>` in its claim or `held-by` and in
   the who of its log lines (the older `label (session 7b5e8856)` and 0030's stamped
@@ -437,6 +443,13 @@ claim has a **lease**: `heartbeat`, and the holder's notes, passes and questions
 12 h, or this Mac's lease from Settings (0036).
 **Questions:** `muster ask`, `escalate`, `inbox` and `answer` follow the file contract. `bin/task`
 is a stand-in that runs them. The answer hook still reads the mailbox itself, for speed.
+**Pick-one questions** (task 0049): `muster ask <id> "<question>" --option "<text>"…
+[--pick <a|1>] [--no-answer <a|1>]` writes 2 to 6 options (one line, 200 characters each) under
+the question as plain indented lines (`- (a) … (my pick)`, `With no answer: (a)`), so file
+contract v1 readers see text; `muster answer <id> Qn --pick b ["<more>"]` answers with the
+option's text. Refusals (count, length, a pick or fallback that isn't an option, a question
+without options) write nothing. `muster escalate` prints the options for `WAITING-FOR-OWNER.md`.
+`bin/task` passes no options: it asks in words and answers any question in words.
 **Ping** (task 0039): `muster ping <id>` asks the holder's session for a check-in (Building),
 `muster ping <id> "<message>"` sends it a message (Building or Testing), the same rules as the
 app's buttons (`ping.rs`): only the session in the holder's stamp, refused with why otherwise,

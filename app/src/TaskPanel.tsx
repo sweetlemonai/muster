@@ -8,6 +8,7 @@ import { stageLabel, stamp } from "./lib";
 import Markdown from "./Markdown";
 import PaneHeader from "./PaneHeader";
 import { isFileDrag, releasedBy, undoFor } from "./paneData";
+import PickOne, { answeredText } from "./PickOne";
 import { SessionPing } from "./Ping";
 import Sidebar from "./Sidebar";
 import StageContent from "./StageContent";
@@ -240,7 +241,7 @@ function AnswerBox({ task, q, onChanged }: { task: Task; q: Question; onChanged:
     try {
       const asker = await api.answer(task.queue, task.id, q.n, text, stamp(new Date()));
       setState("done");
-      setMsg(asker ? "Answered. The asking agent gets it after its next step." : "Answered, and written in the task. No asking session on record, so it waits there.");
+      setMsg(answeredText(asker));
       setText("");
       onChanged();
     } catch (e) {
@@ -254,11 +255,12 @@ function AnswerBox({ task, q, onChanged }: { task: Task; q: Question; onChanged:
         <b>Q{q.n}</b> <span className="asker">{q.asker}</span>
         {q.escalated && <span className="badge warn">for you</span>}
       </p>
-      <Markdown text={q.text} />
+      <Markdown text={q.choices ? q.choices.question : q.text} />
+      {q.choices && <PickOne task={task} q={q} choices={q.choices} extra={text} onAnswered={() => setText("")} onChanged={onChanged} />}
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="Your answer (⌘↩ to send)"
+        placeholder={q.choices ? "Something else, or words to add to a pick (⌘↩ sends them as your answer)" : "Your answer (⌘↩ to send)"}
         rows={3}
         maxLength={4000}
         onKeyDown={(e) => {

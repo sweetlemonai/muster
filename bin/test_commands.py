@@ -356,6 +356,19 @@ class RoutesRunOnARealQueue(unittest.TestCase):
             self.assertEqual(r.returncode, 0, f"{argv}\n{r.stdout}{r.stderr}")
             self.assertIn(f"stage: {stage}", self.task(mine))
 
+    def test_a_question_with_options_is_answered_by_its_pick(self):
+        # 0049: What's waiting's act hint for a question with options, through the answer route.
+        r = self.muster(["muster", "ask", self.a, "--option", "Violet", "--option", "Orange",
+                         "--pick", "a", "--", "Which colour?"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        part = ROUTER.read_text(encoding="utf-8").split("### What's waiting", 1)[1].split("\n### ", 1)[0]
+        self.assertIn("`/mu answer <id> Q<n> --pick <letter>`", part)
+        [cmd] = commands_of(self.routes["answer"])
+        argv = render(cmd.replace("<id>", "<id> --pick b", 1), self.a, "")
+        r = self.muster(argv)
+        self.assertEqual(r.returncode, 0, f"{argv}\n{r.stdout}{r.stderr}")
+        self.assertIn("):** (b) Orange\n", self.task(self.a))
+
     def test_add_runs_or_says_it_isnt_built(self):
         # The router stops on `unknown command "add"`: that must be what muster says without it.
         for key in ("add", "<other>"):

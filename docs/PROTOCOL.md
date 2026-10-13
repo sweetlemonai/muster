@@ -452,6 +452,38 @@ and put in your session's mailbox. A Claude Code hook (`bin/answer-hook.py`, on 
 UserPromptSubmit and SessionStart) hands it to you after your next tool call, mid-work. You
 don't have to re-read anything to see it. Without the hook, run `$T inbox` between steps.
 
+**When the answer is a choice, ask with options (Muster 0049, 2026-10-13).** Every question for
+the owner says what, why, the options, your pick and what happens with no answer. Make the
+options real options rather than prose, so the owner answers with one click in the app (the
+task pane's Questions and the Waiting for you list show them as chips) or with
+`muster answer <id> Qn --pick b` in a terminal:
+
+```sh
+muster ask 0016 "Child webview or a separate window for phase 2?" --as <your branch> \
+  --option "Child webview: one window, shares the app's state" \
+  --option "Separate window: simpler, but state goes over IPC" --pick a --no-answer a
+```
+
+2 to 6 options, each one line of up to 200 characters (cleaned like question text). `--pick` is
+your recommendation and `--no-answer` what you'll do if no answer comes; each is optional and must
+name an option, by letter or number. Anything else is refused with nothing written. The options
+go under the question as plain indented lines, the last lines of the question, so readers of the
+file contract below see ordinary text:
+
+```markdown
+- [ ] **Q3 (wt-a, session aaaa1111, 2026-10-13 09:00):** Child webview or a separate window?
+  - (a) Child webview: one window, shares the app's state (my pick)
+  - (b) Separate window: simpler, but state goes over IPC
+  With no answer: (a)
+```
+
+A question written that way by hand has options too. A pick writes the answer
+`**A (owner, …):** (b) <the option's text>`, then any extra words after " — ", logs
+`answered Q3` and puts it in your mailbox like any answer, so you get the chosen option's text.
+A pick that isn't one of the options is refused, and any question can still be answered in words
+("something else"). Capture lists the options and the pick in `WAITING-FOR-OWNER.md` when it
+escalates one (`muster escalate` prints them).
+
 ### File contract (v1): for tools that write answers without running `bin/task`
 
 `tasks.json` is replaced atomically (temp file + rename), so it's never seen half-written.

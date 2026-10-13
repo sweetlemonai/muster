@@ -4,6 +4,7 @@
 
 pub mod backlog;
 pub mod block;
+pub mod choices;
 pub mod cli;
 pub mod fields;
 pub mod help;
@@ -171,6 +172,27 @@ async fn answer(
     let file = app.config_file.clone();
     blocking(move || queue::answer(&queue_root(&file, &queue)?, &id, n, &text, "owner", &stamp))
         .await
+}
+
+/// The owner answers question `n` by picking one of its options (0049): `pick` is its letter,
+/// `extra` any words to add after it. Returns the asking session, if one was found.
+#[tauri::command]
+async fn answer_pick(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+    n: u32,
+    pick: String,
+    extra: String,
+    stamp: String,
+) -> Result<Option<String>, String> {
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || {
+        let root = queue_root(&file, &queue)?;
+        queue::answer_pick(&root, &id, n, &pick, &extra, "owner", &stamp).map(|(asker, _)| asker)
+    })
+    .await
 }
 
 pub(crate) fn check_stamp(stamp: &str) -> Result<(), String> {
@@ -1095,6 +1117,7 @@ pub fn run() {
             task_body,
             image,
             answer,
+            answer_pick,
             projects,
             settings_info,
             set_setting,

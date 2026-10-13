@@ -101,7 +101,7 @@ Click a card to open its task beside the board. The pane keeps every control in 
 
 Below that come, in order:
 
-- the **open questions**, each with a box to answer it (⌘↩ sends);
+- the **open questions**, each with a box to answer it (⌘↩ sends). A question asked with options shows every option as a chip, the agent's pick marked **pick** and what it does with no answer after them ("with no answer: a"). Click a chip to answer with that option, plus whatever is in the box; the box alone answers with something else;
 - the **write-up**, with **Rendered**, **Raw** and **Edit**;
 - **Vision**: where the [vision check](02-concepts.md#the-vision-check) stands ("not checked", "no open conflicts" or "2 open conflicts"), a **Resolve V1** button for each open conflict (say how it was settled, in one line), **Copy vision brief** for a session, and the findings the check recorded;
 - **Work**: every Claude Code session that worked on the task, with the stage, when it started and ended (or **live**), its time and tokens; the totals against the estimates; a guess at how far along it is; and **View** on a row to read that session's transcript below. The transcripts are read on this Mac and not sent anywhere. See [Estimates, sessions and cost](02-concepts.md#estimates-sessions-and-cost);
@@ -129,7 +129,7 @@ The note's text is below the buttons, up to 20 KB.
 
 ## Waiting for you
 
-Every task waiting on you, in one list. Tasks in Your check come first, grouped as the [Your check](#your-check) column is (Just accept with **Accept all**, One look, Needs a session), each with its next step in full. Then **Questions, blocks and your own tasks**: questions escalated to you (with the question), tasks blocked on you or by a permission, and your own tasks to do and doing. **Open** or **Open to answer** opens the task in the pane. The tab's count is the number of tasks, the same needs-you count as the sidebar's.
+Every task waiting on you, in one list. Tasks in Your check come first, grouped as the [Your check](#your-check) column is (Just accept with **Accept all**, One look, Needs a session), each with its next step in full. Then **Questions, blocks and your own tasks**: questions escalated to you (with the question, and its options as chips that answer in one click), tasks blocked on you or by a permission, and your own tasks to do and doing. **Open** or **Open to answer** opens the task in the pane. The tab's count is the number of tasks, the same needs-you count as the sidebar's.
 
 ## Activity and Problems
 

@@ -8,7 +8,13 @@ export type Question = {
   text: string;
   escalated: boolean;
   ownerAnswered: boolean;
+  /** Its options, when it was asked with them (0049); absent for a question in words. */
+  choices?: Choices;
 };
+
+/** A pick-one question's options, (a) first, with the asker's pick and what it does with no
+ *  answer as indexes into them; `question` is the question without the option lines. */
+export type Choices = { options: string[]; pick: number | null; noAnswer: number | null; question: string };
 
 /** An external link from the task's `links:` line; `title` is "" when it has none. */
 export type Link = { title: string; url: string };
