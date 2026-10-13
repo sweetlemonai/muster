@@ -4,6 +4,14 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — The four parts: idea → task → run → gate (proposal)
+**Did:** the owner: "idea -> task -> execution -> gates -> done; execution is Drover, task is
+Muster, idea is the third part and gates (QA, visual QA) the fourth". Mapped what exists (GenIdea
+in `germ`, Drover, the gate tools in the personal layer, braindump and choopan) and wrote
+`docs/PIPELINE.md`: what each part owns, the hand-offs between them, where each research finding
+goes, and four choices for the owner, each with a pick.
+**Open:** the owner's yes on PIPELINE.md's four choices, then decision records and tasks.
+
 ## 2026-10-13 — How Muster compares: OpenSpec, Spec Kit, Beads, Linear, agent boards
 **Did:** the owner asked what OpenSpec and similar tools do. Deep research (7 web researchers, a
 citation audit) over spec-driven tools, agent task files, trackers with agents, hosted agents
