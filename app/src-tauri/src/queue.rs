@@ -501,6 +501,33 @@ pub struct Task {
     /// One of those sessions' transcripts changed in the last 5 minutes (0025). Set by the app's
     /// state read (`work::mark_live`); false wherever nothing set it.
     pub live: bool,
+    /// The folders and globs it works in (`touches:`, 0023), which `ready --parallel` keeps apart.
+    pub touches: Vec<String>,
+    /// Where `muster start` put it (0023): its git worktree and branch, until the merge or a
+    /// release clears them; "" for a task that wasn't started that way.
+    pub worktree: String,
+    pub branch: String,
+    /// The worktree is a runner's (`start --here`, `worktree-runner: yes`): muster never removes it.
+    pub worktree_runner: bool,
+    /// The latest merge report from its log (`merged task/… into main as …`), or "".
+    pub merge_report: String,
+}
+
+/// `touches:` from the front matter: a comma list of folders and globs, each trimmed.
+pub fn parse_touches(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+/// The text of a tool-written merge report line (`- <at> <who>: merged task/…`), from `merged`.
+pub fn merge_report_line(line: &str) -> Option<&str> {
+    let rest = line.strip_prefix("- ")?;
+    stamp_shaped(rest.get(..16)?).then_some(())?;
+    let at = rest.find(": merged task/")?;
+    Some(&rest[at + 2..])
 }
 
 /// A goal's or feature's tasks (its descendants of level task): how many are done, of how many,
@@ -1045,6 +1072,16 @@ pub fn parse_task(
         search,
         session_ids: Vec::new(),
         live: false,
+        touches: parse_touches(&get("touches")),
+        worktree: get("worktree"),
+        branch: get("branch"),
+        worktree_runner: get("worktree-runner") == "yes",
+        merge_report: log_lines
+            .iter()
+            .rev()
+            .find_map(|l| merge_report_line(l))
+            .unwrap_or_default()
+            .to_string(),
     };
     // The sessions its log names, and any its claim or `held-by` names.
     task.session_ids = crate::work::session_ids(&[&task.claimed_by, &task.held_by], body);

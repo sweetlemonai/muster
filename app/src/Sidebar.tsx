@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { blockSentence } from "./blockWords";
+import { BranchPane } from "./Branch";
 import { KINDS } from "./fields";
 import { claimant, earlierStages, heldByOther, isStage, LEASE_SECS, leaseRunOut, passLabel, stageLabel } from "./lib";
 import { isHuman } from "./human";
@@ -15,7 +16,8 @@ const IMAGE = /\.(png|jpe?g|gif|webp)$/i;
 
 /** The task pane's right column: the next step as the one primary button, then Send back and
  *  Block or Unblock; under a rule, priority, type and who does it (the current value; click to choose),
- *  the estimate, tags, files and the task's links (0017). Every control is always in the same place. */
+ *  a started task's branch and worktree or its merge (0023), the estimate, tags, files and the
+ *  task's links (0017). Every control is always in the same place. */
 export default function Sidebar({ task, nowSecs, a }: { task: Task; nowSecs: number; a: TaskActions }) {
   return (
     <aside className="tp-side" aria-label="Actions and settings">
@@ -43,6 +45,8 @@ export default function Sidebar({ task, nowSecs, a }: { task: Task; nowSecs: num
             />
           </div>
         )}
+        {/* A task started in its own worktree (0023): where; after the merge, the commit and report. */}
+        <BranchPane task={task} />
         {/* Three fields (agent time, test time, tokens) need the column's width: label above. */}
         <div className="kv stack">
           <span className="lbl">Est</span>

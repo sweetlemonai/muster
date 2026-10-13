@@ -21,6 +21,11 @@ struct Args {
     /// `--blocked`: `list` keeps blocked tasks only.
     blocked: bool,
     human: bool,
+    /// `ready --parallel [N]`, `start --here`, `release --clean [--force]` (0023).
+    parallel: bool,
+    here: bool,
+    clean: bool,
+    force: bool,
 }
 
 /// Options and positionals; after `--`, everything is positional (text that starts with `--`).
@@ -34,6 +39,10 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         all: false,
         blocked: false,
         human: false,
+        parallel: false,
+        here: false,
+        clean: false,
+        force: false,
     };
     let mut it = argv.iter();
     let mut rest = false;
@@ -50,11 +59,15 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--all" => a.all = true,
             "--blocked" => a.blocked = true,
             "--human" => a.human = true,
+            "--parallel" => a.parallel = true,
+            "--here" => a.here = true,
+            "--clean" => a.clean = true,
+            "--force" => a.force = true,
             "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on"
             | "--tags" | "--tag" | "--time" | "--test-time" | "--tokens" | "--stage" | "--gate"
             | "--commit" | "--to" | "--from" | "--after" | "--session" | "--level" | "--parent"
             | "--due" | "--pct" | "--remove" | "--record" | "--resolve" | "--search"
-            | "--holder" | "--sort" => {
+            | "--holder" | "--sort" | "--at" | "--touches" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -147,10 +160,13 @@ fn resolve_queue(
 
 /// Commands that claim, hand on or hold a task, rewrite its write-up, and the backlog's writes
 /// (add, file, drop). A slip of the environment would do them in another project's queue (it
-/// happened: drover's 0022 claimed from muster), so they're checked.
-const TARGETED: [&str; 13] = [
+/// happened: drover's 0022 claimed from muster), so they're checked. `start` and `release` (0023)
+/// claim and give up too.
+const TARGETED: [&str; 15] = [
     "claim",
     "next",
+    "start",
+    "release",
     "pass",
     "return",
     "block",
@@ -590,6 +606,7 @@ fn new_task(a: &Args, title: &str, body: String) -> ops::NewTask {
         est_time: a.flags.get("time").cloned().unwrap_or_default(),
         est_test_time: a.flags.get("test-time").cloned().unwrap_or_default(),
         est_tokens: a.flags.get("tokens").cloned().unwrap_or_default(),
+        touches: a.flags.get("touches").cloned().unwrap_or_default(),
         ..Default::default()
     }
 }
@@ -724,6 +741,209 @@ fn edit_in_editor(id: &str, text: &str) -> Result<(String, PathBuf), String> {
     Ok((new.map_err(gone)?, file))
 }
 
+/// `muster projects set <name> gate "<command>"` (0023), on `config`: the command must split into
+/// words the way the gate will be run (no shell), one argument (quoted), empty to clear it.
+/// Returns what to print.
+fn set_project_gate(
+    a: &Args,
+    config: &mut projects::Config,
+    base: &Path,
+) -> Result<String, String> {
+    let name = need(a, 2, "a project name")?;
+    let field = need(a, 3, "the field to set (gate)")?;
+    if field != "gate" {
+        return Err(format!(
+            "projects set takes gate, not {field:?} (see `muster help`)"
+        ));
+    }
+    let cmd = need(a, 4, "the gate command, in quotes (\"\" clears it)")?;
+    if a.pos.len() > 5 {
+        return Err(
+            "put the gate command in quotes: muster projects set <name> gate \"<command>\" (see `muster help`)"
+                .into(),
+        );
+    }
+    if !cmd.trim().is_empty() {
+        split_words(cmd).ok_or_else(|| {
+            format!("the gate command has an unclosed quote or a trailing backslash: {cmd:?}")
+        })?;
+    }
+    projects::set_gate(config, base, name, cmd)?;
+    Ok(if cmd.trim().is_empty() {
+        format!("{name}: gate cleared")
+    } else {
+        format!("{name}: gate set to {}", cmd.trim())
+    })
+}
+
+/// The gate command as words, from the project's `gate` (None when it has none).
+fn gate_words(project: &str, gate: &str) -> Result<Vec<String>, String> {
+    if gate.trim().is_empty() {
+        return Err(format!(
+            "no gate set for {project}, and a merge never runs without one: muster projects set {project} gate \"<command>\" (a script in the repo, like bin/gate, works)"
+        ));
+    }
+    split_words(gate)
+        .filter(|w| !w.is_empty())
+        .ok_or_else(|| format!("{project}'s gate {gate:?} has an unclosed quote: set it again"))
+}
+
+/// `muster pass <id> --from testing` for a started task (0023): the merge, with `gate` (the
+/// project's name and gate command) run in its worktree. Prints each step; 1 when it went back to
+/// Building.
+fn merge_cmd(
+    a: &Args,
+    root: &Path,
+    id: &str,
+    who: &str,
+    gate: Option<(String, String)>,
+) -> Result<i32, String> {
+    if a.flags.contains_key("gate") || a.flags.contains_key("commit") {
+        return Err(format!(
+            "{id} merges when it passes from Testing: the gate runs itself, and the merge commit is recorded; leave --gate and --commit out (see `muster help`)"
+        ));
+    }
+    let (project, gate) = gate.unwrap_or_else(|| (projects::default_name(root), String::new()));
+    let argv = gate_words(&project, &gate)?;
+    println!("{id}: merging into main (gate: {})", argv.join(" "));
+    let mut say = |line: String| println!("{line}");
+    match crate::parallel::merge(root, id, who, &local_stamp, &argv, &mut say)? {
+        crate::parallel::Merge::Returned(why) => {
+            println!("{id}: back in Building: {why}");
+            Ok(1)
+        }
+        crate::parallel::Merge::Merged {
+            commit: _,
+            report,
+            path,
+            notes,
+            next,
+        } => {
+            for n in &notes {
+                println!("left behind: {n} (muster check lists it)");
+            }
+            println!("{}", stage_message(root, id, &path));
+            println!("{id}: {report}");
+            match next {
+                Some((n, title)) => println!("next: {n} {title}: muster start {n}"),
+                None => {
+                    println!("next: nothing else ready that's safe beside the tasks still running")
+                }
+            }
+            Ok(0)
+        }
+    }
+}
+
+/// What `muster start` prints: where, the stage, and the brief (the task file, what it touches,
+/// its criteria), then what to do.
+fn started_text(root: &Path, id: &str, s: &crate::parallel::Started) -> String {
+    let mut out = format!(
+        "{} {id} in {} ({})\n{}\nworktree: {}\nbranch:   {}\nbrief:    {}\n",
+        if s.resumed { "picked up" } else { "started" },
+        projects::default_name(root),
+        root.display(),
+        stage_message(root, id, &s.path),
+        s.worktree.display(),
+        s.branch,
+        root.join(&s.path).display()
+    );
+    if let Ok(t) = queue::read_task(root, id) {
+        if !t.touches.is_empty() {
+            out.push_str(&format!("touches:  {}\n", t.touches.join(", ")));
+        }
+    }
+    if let Ok(text) = queue::read_body(root, id) {
+        let body = queue::front_matter(&text).map(|(_, b)| b).unwrap_or("");
+        let items = queue::criteria_items(body);
+        if !items.is_empty() {
+            out.push_str("criteria:\n");
+            for c in items {
+                out.push_str(&format!(
+                    "  - [{}] {}\n",
+                    if c.ticked { "x" } else { " " },
+                    c.text
+                ));
+            }
+        }
+    }
+    out.push_str(&format!(
+        "Work in the worktree. Check in every 30 minutes (muster checkin {id} \"…\" --pct <n>); when the gate is green: muster pass {id} --from building --gate \"<the gate's line>\"\n"
+    ));
+    out
+}
+
+/// One line per task for `muster ready`: id, priority, title, and what it touches.
+fn ready_line(t: &queue::Task) -> String {
+    let touches = if t.touches.is_empty() {
+        "no touches".to_string()
+    } else {
+        format!("touches: {}", t.touches.join(", "))
+    };
+    format!("  {} {:<7} {}  [{touches}]\n", t.id, t.priority, t.title)
+}
+
+/// `muster ready [--parallel [N]] [--json]` (0023): the tasks a session could start now, or with
+/// --parallel up to N (default 3) safe together, and the ones left out with why.
+fn ready_cmd(a: &Args, root: &Path) -> Result<i32, String> {
+    let s = tasks_of(root);
+    let n = match (a.parallel, a.pos.get(1)) {
+        (_, None) => 3,
+        (true, Some(v)) => v
+            .parse::<usize>()
+            .ok()
+            .filter(|n| (1..=20).contains(n))
+            .ok_or_else(|| format!("--parallel takes how many, 1 to 20, got {v:?}"))?,
+        (false, Some(_)) => {
+            return Err(
+                "ready takes no id; how many goes after --parallel (see `muster help`)".into(),
+            )
+        }
+    };
+    if a.pos.len() > 2 {
+        return Err("ready takes --parallel and how many, nothing more (see `muster help`)".into());
+    }
+    let (set, left) = if a.parallel {
+        let p = crate::parallel::ready_parallel(&s.tasks, n);
+        (p.set, p.left)
+    } else {
+        (crate::parallel::ready(&s.tasks), Vec::new())
+    };
+    if a.json {
+        let tasks: Vec<_> = set.iter().map(|t| task_json(t)).collect();
+        let left: Vec<_> = left
+            .iter()
+            .map(|(t, why)| serde_json::json!({ "id": t.id, "why": why }))
+            .collect();
+        print_json(&serde_json::json!({ "tasks": tasks, "left": left }))?;
+        return Ok(0);
+    }
+    if set.is_empty() {
+        println!(
+            "nothing ready to start in {} ({})",
+            projects::default_name(root),
+            root.display()
+        );
+        return Ok(0);
+    }
+    let mut out = if a.parallel {
+        format!("Can start together ({} of up to {n}):\n", set.len())
+    } else {
+        format!("Ready to start ({}):\n", set.len())
+    };
+    for t in &set {
+        out.push_str(&ready_line(t));
+    }
+    if !left.is_empty() {
+        out.push_str("Not with them:\n");
+        for (t, why) in &left {
+            out.push_str(&format!("  {} {}: {why}\n", t.id, t.title));
+        }
+    }
+    print!("{out}");
+    Ok(0)
+}
+
 /// Runs a command; returns the process exit code (0 ok, 1 refused or failed, 2 usage).
 pub fn main(argv: &[String]) -> i32 {
     main_with(argv, &|k: &str| std::env::var(k).ok())
@@ -764,6 +984,13 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
             Ok(0)
         }
         "projects" => {
+            if a.pos.get(1).map(String::as_str) == Some("set") {
+                let file = config_file();
+                let mut c = projects::load(&file);
+                println!("{}", set_project_gate(&a, &mut c, &base())?);
+                projects::save(&file, &c)?;
+                return Ok(0);
+            }
             let list = projects::list(&base(), &projects::load(&config_file()));
             if a.json {
                 print_json(&list)?;
@@ -776,7 +1003,12 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
                     } else {
                         ""
                     };
-                    println!("{:<16} {}{state}", p.name, p.path);
+                    let gate = if p.gate.is_empty() {
+                        String::new()
+                    } else {
+                        format!("  gate: {}", p.gate)
+                    };
+                    println!("{:<16} {}{state}{gate}", p.name, p.path);
                 }
             }
             Ok(0)
@@ -882,6 +1114,14 @@ fn run_on(
         }
         "pass" => {
             let id = need(a, 1, "a task id")?;
+            // A started task (0023) passing from Testing is the merge.
+            let from = a.flags.get("from").map(|f| f.trim().to_lowercase());
+            let started = queue::read_task(root, id)
+                .is_ok_and(|t| t.stage == "testing" && !t.branch.is_empty());
+            if started && from.as_deref().is_none_or(|f| f == "testing") {
+                let gate = projects::gate_of(&base(), &projects::load(&config_file()), root);
+                return merge_cmd(a, root, id, &me(), gate);
+            }
             let opts = ops::PassOpts {
                 gate: a.flags.get("gate").cloned().unwrap_or_default(),
                 commit: a.flags.get("commit").cloned().unwrap_or_default(),
@@ -1086,6 +1326,37 @@ fn run_on(
                 }
             }
         }
+        "start" => {
+            let id = need(a, 1, "a task id")?;
+            let place = match (a.flags.get("at"), a.here) {
+                (Some(_), true) => {
+                    return Err(
+                        "start takes --at <path> or --here, not both (see `muster help`)".into(),
+                    )
+                }
+                (Some(p), false) => crate::parallel::Place::At(PathBuf::from(p)),
+                (None, true) => crate::parallel::Place::Here,
+                (None, false) => crate::parallel::Place::Default,
+            };
+            let cwd =
+                cwd.ok_or("can't read the current folder: run start from the project's repo")?;
+            let s = crate::parallel::start(root, id, &me(), stamp, cwd, &place)?;
+            print!("{}", started_text(root, id, &s));
+            Ok(0)
+        }
+        "ready" => ready_cmd(a, root),
+        "release" => {
+            let id = need(a, 1, "a task id")?;
+            if !a.clean {
+                return Err(format!(
+                    "release takes --clean: it gives {id} back to Ready and removes its worktree and branch (to send it back and keep them: muster return) (see `muster help`)"
+                ));
+            }
+            for line in crate::parallel::release(root, id, &me(), stamp, a.force, cwd)? {
+                println!("{line}");
+            }
+            Ok(0)
+        }
         "heartbeat" => {
             let id = need(a, 1, "a task id")?;
             ops::heartbeat_task(root, id, &me(), stamp)?;
@@ -1214,6 +1485,15 @@ fn run_on(
             }
             // Not problems either: the vision check is the shaper's job (0029).
             for w in vision::unchecked(&s.tasks) {
+                println!("{w}");
+            }
+            // Nor what parallel sessions left behind (0023): each line says how to clean it. The
+            // repo looked in is the one `check` runs in, when it's this queue's project's.
+            let here: Vec<PathBuf> = cwd
+                .filter(|c| queue_of(c).is_some_and(|q| same_folder(&q, root)))
+                .map(|c| vec![c.to_path_buf()])
+                .unwrap_or_default();
+            for w in crate::parallel::stale(&s.tasks, &here) {
                 println!("{w}");
             }
             // Not problems: what waits on the owner's look (0028). The exit code ignores them.
@@ -2799,5 +3079,196 @@ mod tests {
         assert_eq!(s.len(), 16);
         assert_eq!(&s[4..5], "-");
         assert_eq!(&s[10..11], " ");
+    }
+
+    #[test]
+    fn touches_ready_start_and_release_parse_and_say_what_they_need() {
+        let a = parse(&sv(&["ready", "--parallel", "2", "--json"])).unwrap();
+        assert!(a.parallel && a.json);
+        assert_eq!(a.pos, ["ready", "2"]);
+        let a = parse(&sv(&["start", "0007", "--here"])).unwrap();
+        assert!(a.here);
+        let a = parse(&sv(&["start", "0007", "--at", "../wt"])).unwrap();
+        assert_eq!(a.flags.get("at").map(String::as_str), Some("../wt"));
+        let a = parse(&sv(&["release", "0007", "--clean", "--force"])).unwrap();
+        assert!(a.clean && a.force);
+        assert!(parse(&sv(&["start", "0007", "--at"]))
+            .unwrap_err()
+            .contains("needs a value"));
+        for cmd in ["start", "release"] {
+            assert!(TARGETED.contains(&cmd), "{cmd}");
+        }
+        assert!(!TARGETED.contains(&"ready"));
+        // touches: at new, file and set; cleaned, and refused outside the repo.
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let code = |args: &[&str]| {
+            let mut v = sv(&args[..1]);
+            v.extend(sv(&["--queue", &q, "--as", "owner"]));
+            v.extend(sv(&args[1..]));
+            main(&v)
+        };
+        assert_eq!(
+            code(&["new", "Panel", "--touches", "./app/src/TaskPanel*, docs/"]),
+            0
+        );
+        let t = || queue::read_task(d.path(), "0001").unwrap();
+        assert_eq!(t().touches, ["app/src/TaskPanel*", "docs/"]);
+        assert_eq!(
+            code(&["set", "0001", "touches", "bin/gate,bin/gate , app/"]),
+            0
+        );
+        assert_eq!(t().touches, ["bin/gate", "app/"]);
+        assert_eq!(code(&["set", "0001", "touches", "../elsewhere"]), 1);
+        assert_eq!(code(&["set", "0001", "touches", "/etc"]), 1);
+        assert_eq!(code(&["set", "0001", "touches", "a#b"]), 1);
+        assert_eq!(code(&["set", "0001", "touches", ""]), 0);
+        assert!(t().touches.is_empty());
+        assert!(queue::read_body(d.path(), "0001")
+            .unwrap()
+            .contains("owner: touches set to bin/gate, app/"));
+        // ready: exit 0 with or without a set; how many is 1 to 20, after --parallel only.
+        assert_eq!(code(&["ready"]), 0);
+        assert_eq!(code(&["ready", "--parallel"]), 0);
+        assert_eq!(code(&["ready", "--parallel", "2", "--json"]), 0);
+        assert_eq!(code(&["ready", "--parallel", "0"]), 1);
+        assert_eq!(code(&["ready", "--parallel", "many"]), 1);
+        assert_eq!(code(&["ready", "3"]), 2);
+        assert_eq!(code(&["ready", "--parallel", "3", "4"]), 2);
+        // release needs --clean; start and release need a task.
+        assert_eq!(code(&["release", "0001"]), 2);
+        assert_eq!(code(&["release"]), 2);
+        assert_eq!(code(&["start"]), 2);
+        assert_eq!(code(&["start", "0001", "--here", "--at", "x"]), 2);
+        assert_eq!(code(&["release", "0001", "--clean"]), 1, "never started");
+    }
+
+    #[test]
+    fn start_merge_and_release_from_the_command_line() {
+        use crate::parallel::tests::{commit, fx, g, green, task, to_testing};
+        let f = fx();
+        let id = task(&f.root, "From the CLI", "cli/");
+        let run_in = |dir: &Path, args: &[&str]| {
+            let a = parse(&sv(args)).unwrap();
+            run_on(&a, args[0], &f.root, "2026-10-13 10:00", &no_env, Some(dir))
+        };
+        assert_eq!(run_in(&f.repo, &["start", &id, "--as", "wt-a"]), Ok(0));
+        let t = queue::read_task(&f.root, &id).unwrap();
+        let wt = PathBuf::from(&t.worktree);
+        assert!(wt.is_dir() && t.branch == "task/0001-from-the-cli");
+        let text = started_text(
+            &f.root,
+            &id,
+            &crate::parallel::Started {
+                worktree: wt.clone(),
+                branch: t.branch.clone(),
+                path: t.path.clone(),
+                resumed: false,
+            },
+        );
+        assert!(text.starts_with(&format!(
+            "started 0001 in proj ({})\n0001: Building (doing/0001-from-the-cli.md)\nworktree: {}\nbranch:   task/0001-from-the-cli\nbrief:    {}\ntouches:  cli/\ncriteria:\n  - [x] AC1: works — verify: command\n",
+            f.root.display(),
+            wt.display(),
+            f.root.join("doing/0001-from-the-cli.md").display()
+        )), "{text}");
+        commit(&wt, "cli/x.txt", "x\n", "cli");
+        to_testing(&f, &id);
+        // From Testing, with no gate set for the project: refused, nothing touched.
+        let a = parse(&sv(&["pass", &id, "--from", "testing"])).unwrap();
+        let e = merge_cmd(&a, &f.root, &id, "qa", None).unwrap_err();
+        assert!(
+            e.contains("no gate set for proj") && e.contains("muster projects set proj gate"),
+            "{e}"
+        );
+        let e = merge_cmd(&a, &f.root, &id, "qa", Some(("proj".into(), "  ".into()))).unwrap_err();
+        assert!(e.contains("no gate set"), "{e}");
+        let with_gate = parse(&sv(&["pass", &id, "--from", "testing", "--gate", "x"])).unwrap();
+        assert!(merge_cmd(
+            &with_gate,
+            &f.root,
+            &id,
+            "qa",
+            Some(("proj".into(), "true".into()))
+        )
+        .unwrap_err()
+        .contains("leave --gate and --commit out"));
+        assert_eq!(queue::read_task(&f.root, &id).unwrap().stage, "testing");
+        // With the project's gate (quoted words, no shell): merged, pushed, cleaned, next named.
+        let gate = format!("'{}'", green(&f)[0]);
+        assert_eq!(
+            merge_cmd(&a, &f.root, &id, "qa", Some(("proj".into(), gate))),
+            Ok(0)
+        );
+        let t = queue::read_task(&f.root, &id).unwrap();
+        assert_eq!((t.stage.as_str(), t.worktree.as_str()), ("your-check", ""));
+        assert!(!wt.exists());
+        assert_eq!(
+            g(&f.origin, &["rev-parse", "main"]),
+            g(&f.repo, &["rev-parse", "main"])
+        );
+        // Release from the command line: back to Ready with the worktree gone.
+        let other = task(&f.root, "Given up", "gone/");
+        assert_eq!(run_in(&f.repo, &["start", &other, "--as", "wt-b"]), Ok(0));
+        let owt = PathBuf::from(queue::read_task(&f.root, &other).unwrap().worktree);
+        assert_eq!(
+            run_in(&f.repo, &["release", &other, "--clean", "--as", "wt-b"]),
+            Ok(0)
+        );
+        assert!(!owt.exists());
+        assert_eq!(queue::read_task(&f.root, &other).unwrap().stage, "ready");
+        // check lists nothing left behind, and passes.
+        assert_eq!(run_in(&f.repo, &["check"]), Ok(0));
+    }
+
+    #[test]
+    fn the_projects_gate_is_set_checked_and_cleared() {
+        let base = tempfile::tempdir().unwrap();
+        let (q, _) = project(base.path(), "proj");
+        let mut c = projects::Config::default();
+        let set = |c: &mut projects::Config, args: &[&str]| {
+            set_project_gate(&parse(&sv(args)).unwrap(), c, base.path())
+        };
+        assert_eq!(
+            set(
+                &mut c,
+                &["projects", "set", "proj", "gate", "bin/gate --fast"]
+            ),
+            Ok("proj: gate set to bin/gate --fast".into())
+        );
+        let (name, gate) = projects::gate_of(base.path(), &c, &q).unwrap();
+        assert_eq!((name.as_str(), gate.as_str()), ("proj", "bin/gate --fast"));
+        assert_eq!(gate_words(&name, &gate).unwrap(), ["bin/gate", "--fast"]);
+        assert_eq!(projects::list(base.path(), &c)[0].gate, "bin/gate --fast");
+        // Refused: unclosed quotes, a second word outside the quotes, another field, no project.
+        for (args, says) in [
+            (
+                &["projects", "set", "proj", "gate", "\"bin/gate"][..],
+                "unclosed quote",
+            ),
+            (
+                &["projects", "set", "proj", "gate", "bin/gate", "fast"][..],
+                "in quotes",
+            ),
+            (&["projects", "set", "proj", "name", "x"][..], "takes gate"),
+            (
+                &["projects", "set", "nope", "gate", "x"][..],
+                "no project named",
+            ),
+            (&["projects", "set", "proj", "gate", "a\nb"][..], "one line"),
+            (&["projects", "set", "proj"][..], "missing"),
+        ] {
+            let e = set(&mut c, args).unwrap_err();
+            assert!(e.contains(says), "{args:?}: {e}");
+        }
+        assert_eq!(c.gate.len(), 1, "a refusal changes nothing");
+        assert_eq!(
+            set(&mut c, &["projects", "set", "proj", "gate", ""]),
+            Ok("proj: gate cleared".into())
+        );
+        assert!(c.gate.is_empty());
+        assert!(gate_words("proj", "")
+            .unwrap_err()
+            .contains("no gate set for proj"));
     }
 }

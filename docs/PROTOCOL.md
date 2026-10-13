@@ -1,5 +1,65 @@
 # Muster — task queue protocol (v2, with stages)
 
+> **Parallel sessions: one worktree per task (Muster 0023, 2026-10-13).** Several sessions can
+> work one queue at once, each on its own task in its own git worktree. "Work Muster's queue in
+> parallel-safe worktrees" means this loop:
+>
+> 1. **Pick.** `muster ready --parallel` lists up to 3 tasks (`--parallel <n>` for more) that are
+>    safe side by side: claimable now (Ready, not blocked, nobody's claim, an agent's, everything
+>    they depend on done), none depending on another or on a task in Building or Testing, and
+>    their `touches:` not overlapping each other's or those of the tasks in Building or Testing. A task
+>    says where it works in `touches:` (folders and globs, comma-separated, set at shaping with
+>    `muster file … --touches` or `muster set <id> touches "app/src/TaskPanel*, docs/"`); two
+>    entries overlap when the part of one before its first wildcard starts the other's, and **a
+>    task without `touches:` never pairs**. Take one no other session is on.
+> 2. **Start.** From the project's repo: `muster start <id> --as <you>`. It claims the task by
+>    `claim`'s rules, makes a branch `task/<id>-<slug>` from the local main's commit (the main
+>    checkout may be dirty: only its commit is used) and a worktree for it at
+>    `<project>/worktrees/<repo>/<id>-<slug>` (`--at <path>` for another place, `--here` when a
+>    runner already put you in a worktree of your own: it's switched to the task's branch), records
+>    both as `worktree:` and `branch:` in the task, and prints them with the brief: the task file,
+>    what it touches, its criteria. Work in that worktree only.
+> 3. **Build.** Check in at each milestone and at least every 30 minutes
+>    (`muster checkin <id> "<done, next>" --pct <n>`). Commit on the task's branch. When the
+>    project's gate is green, `muster pass <id> --from building --gate "<its result line>"`, as
+>    always: nothing is pushed and no PR is opened. The worktree stays for Testing.
+> 4. **Review and fix.** Testing reviews it and ticks each criterion with its proof. A finding the
+>    builder must fix is `muster return <id> "<why>"`: back to Building, in the same worktree.
+> 5. **Merge: `muster pass <id> --from testing`.** For a started task this pass is the merge, in
+>    order, stopping at the first failure: it takes the repo's merge lock (a flock on
+>    `<git common dir>/muster/merge.lock`, so one merge runs at a time); rebases the branch on the
+>    local main (**a conflict aborts the rebase and returns the task to Building with the files
+>    named**); runs the project's gate in the worktree (**red returns it with the gate line**;
+>    any gate line saying RED is red), without `MUSTER_ROOT` or `TASKS_ROOT`; if main moved while
+>    the gate ran, rebases and gates again, twice at most, then stops with "main keeps moving;
+>    pass again", so **main only ever gets a tree the gate saw**; fast-forwards the local main
+>    to the branch (never a merge commit), only if the main checkout is clean and on main, else it
+>    stops with "the main checkout isn't clean" or "isn't on main"; pushes main to origin, plainly
+>    (if origin moved, it fetches and stops: "origin moved; rebase main and pass again"); removes
+>    the worktree (never a runner's, made with `--here`: that one is left, detached) and deletes
+>    the branch, and origin's copy only when it's the same commit; records the merge in the task
+>    (`commit:` the merge, the report logged: `merged task/… into main as <sha> · <gate line> ·
+>    Building 2h 10m · Testing 35m · 4 check-ins`) and passes it to Your check. Once main has the
+>    merge the record is written whatever: if the task was blocked or moved meanwhile, it keeps its
+>    stage and the command says "merged into main as <sha>; the task is <stage>: use muster
+>    stage". Last, it names the next task to start that doesn't clash with the tasks still in
+>    Building or Testing. On any stop before main has the merge nothing is deleted: fix what it says
+>    and pass again. It's never forced. The project's gate is the
+>    command in the app's `projects.json`, set with `muster projects set <name> gate "<command>"`
+>    and run as words, without a shell (this repo's: `bin/gate`); with none set, nothing merges.
+>    The app's Pass is refused for a started task in Testing: the merge runs from the command line.
+>    The worktree is removed (unless it's a runner's), so run the pass from outside it (the main
+>    checkout is fine).
+> 6. **Next.** Start the task it named, or stop when it says there's none.
+>
+> **Giving up:** `muster release <id> --clean` puts the task back in Ready, removes its worktree
+> and deletes its local branch, after listing what that would lose; uncommitted files or commits
+> on no other branch refuse it without `--force`. A runner's worktree (`--here`) is never
+> removed: it's left detached, its files as they are, and only the branch goes. **Left behind:** `muster check` lists a started
+> task whose worktree is gone, a worktree of a task sent back to Ready, and a worktree on a
+> `task/<id>-…` branch whose task is past Testing, each with the command that cleans it. Never
+> delete a worktree or a branch by hand while its task is in Building or Testing.
+
 > **Human tasks (Muster 0022, 2026-10-13).** `for: human` in the front matter makes a task the
 > owner's own: something only they can do (an account, a secret, a decision, a try on a device).
 > **Agents never claim one**: `muster claim` refuses it ("0041 is the owner's to do") and

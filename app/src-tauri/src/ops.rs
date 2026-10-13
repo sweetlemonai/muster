@@ -77,6 +77,8 @@ pub struct NewTask {
     pub due: String,
     /// Who does it (0022): `human` (the owner) or `ai`; empty is ai.
     pub for_who: String,
+    /// The folders and globs it works in (0023), a comma list; empty is none said.
+    pub touches: String,
 }
 
 /// Agent time: a number and m, h or d ("45m", "1.5h", "2d"). Empty is fine (no estimate).
@@ -358,6 +360,8 @@ pub(crate) struct CleanTask {
     due: String,
     /// Who does it (0022): ai unless `create_task` makes it the owner's.
     for_who: &'static str,
+    /// `touches:` as written (0023), or "" for none.
+    touches: String,
 }
 
 /// Clean a new task's fields: refused when the title is empty, a choice isn't one, or a text is
@@ -380,7 +384,49 @@ pub(crate) fn clean_new(new: &NewTask) -> Result<CleanTask, String> {
         parent: String::new(),
         due: String::new(),
         for_who: "ai",
+        touches: clean_touches(&new.touches)?,
     })
+}
+
+/// The most entries `touches:` takes, and the longest one.
+const MAX_TOUCHES: usize = 20;
+const MAX_TOUCH: usize = 200;
+
+/// `touches:` (0023): folders and globs in the repo, comma-separated (`app/src/TaskPanel*,
+/// docs/PROTOCOL.md`), written `a, b`; empty clears it. Each is relative to the repo (no leading
+/// `/`, no `..`), a leading `./` is dropped, and none holds a control character or `#`.
+pub fn clean_touches(value: &str) -> Result<String, String> {
+    let mut out: Vec<String> = Vec::new();
+    for raw in value.split(',') {
+        let t = raw.trim();
+        let t = t.strip_prefix("./").unwrap_or(t);
+        if t.is_empty() {
+            continue;
+        }
+        let shown: String = t.chars().take(40).collect();
+        if t.chars().any(|c| c.is_control() || c == '#') {
+            return Err(format!(
+                "touches takes folders and globs without control characters or #, got {shown:?}"
+            ));
+        }
+        if t.starts_with('/') || t.split('/').any(|part| part == "..") {
+            return Err(format!(
+                "touches takes folders and globs inside the repo (no leading / or ..), got {shown:?}"
+            ));
+        }
+        if t.chars().count() > MAX_TOUCH {
+            return Err(format!(
+                "a touches entry is longer than {MAX_TOUCH} characters: {shown:?}…"
+            ));
+        }
+        if !out.iter().any(|o| o == t) {
+            out.push(t.to_string());
+        }
+    }
+    if out.len() > MAX_TOUCHES {
+        return Err(format!("touches takes at most {MAX_TOUCHES} entries"));
+    }
+    Ok(out.join(", "))
 }
 
 /// Write task `id` in `stage` (in its status mirror's folder in the v2 layout), logged as created
@@ -417,6 +463,7 @@ pub(crate) fn create_locked(
         ("parent", t.parent.as_str()),
         ("due", t.due.as_str()),
         ("for", t.for_who),
+        ("touches", t.touches.as_str()),
     ] {
         let default = (key == "level" && value == "task") || (key == "for" && value == "ai");
         if !value.is_empty() && !default {
@@ -877,6 +924,7 @@ pub fn set_field(
         "time" | "est-time" => ("est-time", clean_time(value)?),
         "test-time" | "est-test-time" => ("est-test-time", clean_time(value)?),
         "tokens" | "est-tokens" => ("est-tokens", clean_tokens(value)?),
+        "touches" => ("touches", clean_touches(value)?),
         // Checked against the other tasks and written under one lock, so two sets at once can't
         // close a loop between them.
         "depends" => {
@@ -907,11 +955,16 @@ pub fn set_field(
         }
         _ => {
             return Err(format!(
-                "can't set {field:?}: use priority, type, title, tags, time, test-time, tokens, level, parent, due, depends or for"
+                "can't set {field:?}: use priority, type, title, tags, time, test-time, tokens, touches, level, parent, due, depends or for"
             ))
         }
     };
-    if val.is_empty() && !matches!(key, "tags" | "est-time" | "est-test-time" | "est-tokens") {
+    if val.is_empty()
+        && !matches!(
+            key,
+            "tags" | "est-time" | "est-test-time" | "est-tokens" | "touches"
+        )
+    {
         return Err(format!("{field} is empty"));
     }
     let line = free_text_line(
@@ -1013,6 +1066,9 @@ struct Current {
     level: String,
     /// The owner's own task (`for: human`): To do → Doing → Done, never an agent's.
     human: bool,
+    /// The branch `muster start` made for it (0023), or "": passing such a task from Testing is
+    /// the merge's (`parallel::merge`), not a plain pass.
+    branch: String,
 }
 
 /// What a stage change writes.
@@ -1118,6 +1174,49 @@ fn change(
     with_lock(root, || change_locked(root, id, who, stamp, f))
 }
 
+/// The task in `text` (its file at `path`) as a stage change sees it.
+fn current(root: &Path, path: &Path, text: &str) -> Result<Current, String> {
+    let folder = queue::folder_of(root, path);
+    let t = queue::parse_task("", root, &folder, path, text, 0)
+        .ok_or("the task has no front matter")?;
+    let (fields, body) = front_matter(text).ok_or("the task has no front matter")?;
+    let builder = queue::stage_lines(body)
+        .into_iter()
+        .rev()
+        .find(|(s, detail)| s.from == "ready" && s.to == "building" && *detail == "claimed")
+        .map(|(s, _)| s.who);
+    let tester = queue::stage_lines(body)
+        .into_iter()
+        .rev()
+        .find(|(s, _)| s.from == "building" && s.to == "testing")
+        .map(|(s, _)| s.who);
+    let modified = fs::metadata(path)
+        .map(|m| queue::mtime_secs(&m))
+        .map_err(|e| e.to_string())?;
+    let items = queue::criteria_items(body);
+    let human = t.is_human();
+    Ok(Current {
+        human,
+        criteria: (items.len(), items.iter().filter(|c| c.ticked).count()),
+        owner_open: items.iter().filter(|c| c.owner && !c.ticked).count(),
+        vision_open: t.vision_open.unwrap_or(0),
+        vision_ids: t.vision_ids,
+        stage: t.stage,
+        blocked: t.blocked,
+        waiting_on: t.waiting_on,
+        blocked_kind: fields.get("blocked-kind").cloned().unwrap_or_default(),
+        depends: t.depends,
+        claimed_by: t.claimed_by,
+        held_by: t.held_by,
+        builder,
+        tester,
+        heartbeat: t.heartbeat,
+        modified,
+        level: t.level,
+        branch: t.branch,
+    })
+}
+
 /// `change` for a caller that already holds the queue's lock.
 fn change_locked(
     root: &Path,
@@ -1128,45 +1227,8 @@ fn change_locked(
 ) -> Result<String, String> {
     let mut finished = false;
     let path = edit_locked(root, id, |path, text| {
-        let folder = queue::folder_of(root, path);
-        let t = queue::parse_task("", root, &folder, path, &text, 0)
-            .ok_or("the task has no front matter")?;
-        let (_, body) = front_matter(&text).ok_or("the task has no front matter")?;
-        let builder = queue::stage_lines(body)
-            .into_iter()
-            .rev()
-            .find(|(s, detail)| s.from == "ready" && s.to == "building" && *detail == "claimed")
-            .map(|(s, _)| s.who);
-        let tester = queue::stage_lines(body)
-            .into_iter()
-            .rev()
-            .find(|(s, _)| s.from == "building" && s.to == "testing")
-            .map(|(s, _)| s.who);
+        let now = current(root, path, &text)?;
         let (fields, _) = front_matter(&text).ok_or("the task has no front matter")?;
-        let modified = fs::metadata(path)
-            .map(|m| queue::mtime_secs(&m))
-            .map_err(|e| e.to_string())?;
-        let items = queue::criteria_items(body);
-        let human = t.is_human();
-        let now = Current {
-            human,
-            criteria: (items.len(), items.iter().filter(|c| c.ticked).count()),
-            owner_open: items.iter().filter(|c| c.owner && !c.ticked).count(),
-            vision_open: t.vision_open.unwrap_or(0),
-            vision_ids: t.vision_ids,
-            stage: t.stage,
-            blocked: t.blocked,
-            waiting_on: t.waiting_on,
-            blocked_kind: fields.get("blocked-kind").cloned().unwrap_or_default(),
-            depends: t.depends,
-            claimed_by: t.claimed_by,
-            held_by: t.held_by,
-            builder,
-            tester,
-            heartbeat: t.heartbeat,
-            modified,
-            level: t.level,
-        };
         let mut c = f(&now)?;
         // The owner's own task in Building is the owner's, however it got there (an override, a
         // return): never "Building with no claim", and never an agent's claim (review C4).
@@ -1377,14 +1439,15 @@ pub struct PassOpts {
     pub from: Option<String>,
 }
 
-/// A git commit id: 7 to 40 hex characters, kept lowercase. Empty is fine (none given).
+/// A git commit id: 7 to 64 hex characters (a SHA-1 or a SHA-256 repo's), kept lowercase. Empty
+/// is fine (none given).
 fn clean_commit(input: &str) -> Result<String, String> {
     let c = input.trim().to_lowercase();
-    if c.is_empty() || ((7..=40).contains(&c.len()) && c.bytes().all(|b| b.is_ascii_hexdigit())) {
+    if c.is_empty() || ((7..=64).contains(&c.len()) && c.bytes().all(|b| b.is_ascii_hexdigit())) {
         Ok(c)
     } else {
         Err(format!(
-            "commit must be a git commit id (7 to 40 hex characters), got {input:?}"
+            "commit must be a git commit id (7 to 64 hex characters), got {input:?}"
         ))
     }
 }
@@ -1412,7 +1475,253 @@ pub fn pass_task(
     let commit = clean_commit(&opts.commit)?;
     let expected = seen_stage(opts.from.as_deref())?;
     change(root, id, &who, stamp, |t| {
+        if t.stage == "testing" && !t.branch.is_empty() {
+            return Err(started_pass(id, &t.branch));
+        }
         pass_change(id, t, &who, stamp, &gate, &commit, expected)
+    })
+}
+
+/// Why a started task (0023) isn't passed from Testing like any other: that pass is the merge.
+fn started_pass(id: &str, branch: &str) -> String {
+    format!(
+        "{id} was started on its own branch ({branch}), so passing it from Testing merges it into main: run muster pass {id} --from testing from a terminal or a session"
+    )
+}
+
+/// Refused, with why, unless a pass from Testing of a started task (0023) would be accepted now
+/// as `who` (every criterion but the owner's ticked, not blocked, still in Testing). Writes
+/// nothing: the merge checks this before it rebases, gates and merges, so a pass that would be
+/// refused never merges.
+pub fn check_merge_pass(root: &Path, id: &str, who: &str) -> Result<(), String> {
+    let who = actor(who)?;
+    let path = find_task(root, id)?;
+    let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let t = current(root, &path, &text)?;
+    if t.branch.is_empty() {
+        return Err(format!(
+            "{id} wasn't started on its own branch (muster start)"
+        ));
+    }
+    pass_change(id, &t, &who, "", "", "", Some("testing")).map(|_| ())
+}
+
+/// The merge's pass (0023): Testing → Your check as `pass` makes it, then, under the same lock,
+/// the worktree and branch cleared, `commit:` set to the merge commit, and the report logged.
+pub fn pass_merged(
+    root: &Path,
+    id: &str,
+    who: &str,
+    stamp: &str,
+    commit: &str,
+    report: &str,
+) -> Result<String, String> {
+    let (commit, line) = check_merge_facts(who, stamp, commit, report)?;
+    let who = actor(who)?;
+    with_lock(root, || {
+        // The merge is on main whatever the pass says: try the pass, then record the facts
+        // either way, so a task that moved or was blocked meanwhile still says it's merged.
+        let passed = change_locked(root, id, &who, stamp, |t| {
+            pass_change(id, t, &who, stamp, "", "", Some("testing"))
+        });
+        let path = edit_locked(root, id, |_, text| {
+            let mut new = set_front(&text, "worktree", "")?;
+            new = set_front(&new, "branch", "")?;
+            new = clear_front(&new, "worktree-runner")?;
+            new = set_front(&new, "commit", &commit)?;
+            Ok((append_log(&new, &line), None))
+        })?;
+        passed.map_err(|why| {
+            let stage = queue::read_task(root, id)
+                .map(|t| {
+                    let blocked = if t.blocked {
+                        format!(", blocked on {}", t.waiting_on)
+                    } else {
+                        String::new()
+                    };
+                    format!("{}{blocked}", stage_label(&t.stage))
+                })
+                .unwrap_or_else(|_| "unreadable".into());
+            format!(
+                "merged into main as {}; the task is {stage}: use muster stage {id} your-check once it's settled (the pass was refused: {why})",
+                commit.chars().take(7).collect::<String>()
+            )
+        })?;
+        Ok(path)
+    })
+}
+
+/// The merge's facts as `pass_merged` will write them, checked before anything is merged: the
+/// commit (7 to 64 hex characters) and the report's log line (one line, nothing that reads as a
+/// stage change or a check-in). Returns both, cleaned.
+pub fn check_merge_facts(
+    who: &str,
+    stamp: &str,
+    commit: &str,
+    report: &str,
+) -> Result<(String, String), String> {
+    let who = actor(who)?;
+    let commit = clean_commit(commit)?;
+    if commit.is_empty() {
+        return Err("the merge has no commit".into());
+    }
+    let line = free_text_line(
+        format!(
+            "{stamp} {who}: {}",
+            one_line(report, 1500, "the merge report")?
+        ),
+        "the merge report",
+    )?;
+    Ok((commit, line))
+}
+
+/// Drop a front-matter field (a no-op when it isn't there).
+fn clear_front(text: &str, key: &str) -> Result<String, String> {
+    let rest = text
+        .strip_prefix("---\n")
+        .ok_or("the task has no front matter")?;
+    let end = rest
+        .find("\n---\n")
+        .ok_or("the task's front matter isn't closed")?;
+    let prefix = format!("{key}:");
+    let kept: Vec<&str> = rest[..end]
+        .lines()
+        .filter(|l| !l.starts_with(&prefix))
+        .collect();
+    Ok(format!("---\n{}{}", kept.join("\n"), &rest[end..]))
+}
+
+/// `muster start`'s claim (0023): Ready → Building for `who` by `claim_task`'s rules (one claim
+/// per holder, everything it depends on done), with the worktree and branch recorded and logged,
+/// all under one lock. The git side is made before this; if the claim is refused, the caller
+/// removes it again. `runner`: the worktree is one a runner made (`start --here`), recorded as
+/// `worktree-runner: yes` so muster never removes it.
+pub fn start_task(
+    root: &Path,
+    id: &str,
+    who: &str,
+    stamp: &str,
+    worktree: &str,
+    branch: &str,
+    runner: bool,
+) -> Result<String, String> {
+    let who = actor(who)?;
+    let line = free_text_line(
+        format!(
+            "{stamp} {who}: started in {}worktree {} on branch {}",
+            if runner { "the runner's " } else { "" },
+            one_line(worktree, 1000, "the worktree")?,
+            one_line(branch, 200, "the branch")?
+        ),
+        "the worktree",
+    )?;
+    with_lock(root, || {
+        let tasks = tasks_now(root);
+        if let Some(t) = tasks.iter().find(|t| t.id == id) {
+            if t.is_human() {
+                return Err(format!(
+                    "{id} is the owner's to do; a human task isn't built in a worktree"
+                ));
+            }
+            let open = waiting_on_deps(t, &tasks);
+            if !open.is_empty() {
+                return Err(format!(
+                    "{id} depends on {}, not done yet; pick another (muster ready --parallel)",
+                    open.join(", ")
+                ));
+            }
+        }
+        change_locked(root, id, &who, stamp, |t| {
+            pass_change(id, t, &who, stamp, "", "", Some("ready"))
+        })?;
+        edit_locked(root, id, |_, text| {
+            let mut new = set_front(&text, "worktree", worktree)?;
+            new = set_front(&new, "branch", branch)?;
+            new = if runner {
+                set_front(&new, "worktree-runner", "yes")?
+            } else {
+                clear_front(&new, "worktree-runner")?
+            };
+            Ok((append_log(&new, &line), None))
+        })
+    })
+}
+
+/// Refused unless `who` may release task `id`'s worktree (`release --clean`, 0023): it was
+/// started (a branch on record), it's in Ready, Building or Testing, and in Building it's
+/// `who`'s claim or `who` is the owner. Writes nothing.
+pub fn check_release(root: &Path, id: &str, who: &str) -> Result<(), String> {
+    let who = actor(who)?;
+    let path = find_task(root, id)?;
+    let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let t = current(root, &path, &text)?;
+    release_rules(id, &t, &who)
+}
+
+fn release_rules(id: &str, t: &Current, who: &str) -> Result<(), String> {
+    if t.branch.is_empty() {
+        return Err(format!(
+            "{id} has no worktree or branch on record (it wasn't started with muster start)"
+        ));
+    }
+    if !matches!(t.stage.as_str(), "ready" | "building" | "testing") {
+        return Err(format!(
+            "{id} is in {}; release takes a task back to Ready from Building or Testing",
+            stage_label(&t.stage)
+        ));
+    }
+    if t.stage == "building"
+        && !t.claimed_by.is_empty()
+        && !holds(&t.claimed_by, who, t.human)
+        && !is_owner(who)
+    {
+        return Err(format!(
+            "{id} is claimed by {}; only they or the owner release it",
+            t.claimed_by
+        ));
+    }
+    Ok(())
+}
+
+/// `release --clean`'s write (0023), once the worktree and branch are gone: back to Ready with the
+/// claim released (logged as a stage change) and the worktree and branch cleared. A task already
+/// in Ready only has them cleared, with a log line.
+pub fn release_task(
+    root: &Path,
+    id: &str,
+    who: &str,
+    stamp: &str,
+    what: &str,
+) -> Result<String, String> {
+    let who = actor(who)?;
+    let what = one_line(what, 500, "what was removed")?;
+    let line = free_text_line(format!("{stamp} {who}: released: {what}"), "the release")?;
+    with_lock(root, || {
+        let path = find_task(root, id)?;
+        let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        let t = current(root, &path, &text)?;
+        release_rules(id, &t, &who)?;
+        if t.stage != "ready" {
+            change_locked(root, id, &who, stamp, |t| {
+                Ok(Change {
+                    stage: "ready".into(),
+                    blocked: t.blocked,
+                    waiting_on: t.waiting_on.clone(),
+                    blocked_kind: t.blocked_kind.clone(),
+                    depends: None,
+                    claimed_by: String::new(),
+                    commit: None,
+                    log: vec![stage_line(stamp, &who, &t.stage, "ready", " (released)")],
+                })
+            })?;
+        }
+        edit_locked(root, id, |_, text| {
+            let mut new = set_front(&text, "worktree", "")?;
+            new = set_front(&new, "branch", "")?;
+            new = clear_front(&new, "worktree-runner")?;
+            new = set_front(&new, "claimed-by", "")?;
+            Ok((append_log(&new, &line), None))
+        })
     })
 }
 

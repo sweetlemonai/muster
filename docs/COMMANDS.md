@@ -77,8 +77,26 @@ Prints the command and its output, verbatim.
 route run as `! muster …` in a session: new, move, stage, set, attach, escalate, inbox, reclaim,
 checkin (task 0030), projects, init, tick, untick (the owner's criteria, task 0028), edit (task
 0020), the backlog's shape, file and drop (task 0015), link and comment (task 0017: a task's
-external links, and a comment thread anyone may add to), index (task 0018), and vision (a task
-checked against the project's picture, task 0029).
+external links, and a comment thread anyone may add to), index (task 0018), vision (a task
+checked against the project's picture, task 0029), and ready, start and release (parallel
+sessions, task 0023).
+
+Parallel sessions (task 0023): `ready [--parallel [<n>]] [--json]` lists the tasks a session could
+start now, or up to n (default 3) safe side by side: none depends on another, and their `touches:`
+(folders and globs, `new`/`file --touches`, `set <id> touches`) don't overlap; a task without
+touches never pairs. `start <id> [--at <path>|--here]` claims one with a branch `task/<id>-<slug>`
+from the local main and a worktree at `<project>/worktrees/<repo>/<id>-<slug>`, both recorded in the
+task. `pass <id> --from testing` of a started task is the merge: one at a time per repo, rebase on
+the local main, the project's gate in the worktree (`projects set <name> gate "<command>"`, run as
+words without a shell; this repo's is `bin/gate`; again if main moved while it ran, twice at
+most), a fast-forward of the local main when its checkout is clean and on main (never a merge
+commit, so main only gets a tree the gate saw), a plain push of main to origin, then the worktree
+(never a runner's, `--here`) and branch removed, Your check with the merge commit and a report,
+and the next task to start. A conflict or a red gate returns it to Building; nothing is deleted on
+any failure before main has the merge, and nothing is ever force-pushed. `ready --parallel` keeps
+clear of the tasks already in Building or Testing too.
+`release <id> --clean [--force]` gives one up, listing what would be lost first. `/mu pass` runs
+`muster pass` as typed, so it merges too.
 
 Who's on it (task 0030): `checkin <id> "<what's done, what's next>" [--pct <0-100>]` is the holder
 saying how far along it is, which renews the claim too. Inside a session every command stamps the

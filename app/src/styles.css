@@ -146,7 +146,8 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .badge.warn { background: var(--st-needs); color: var(--on-status); }
 /* Who's on it and how far (0030): quiet lines, one each, cut with an ellipsis; the full text is
    in the task pane. A session gone quiet takes the attention colour. */
-.card-who, .card-checkin, .card-quiet, .card-vision { font-size: 11px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-who, .card-checkin, .card-quiet, .card-vision, .card-branch { font-size: 11px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-branch { color: var(--faint); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .card-who { color: var(--muted); }
 .card-who.nobody { color: var(--faint); }
 .card-checkin { color: var(--text); opacity: 0.8; }
@@ -678,6 +679,9 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .tp-side .next-step .primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 650; padding: 4px 8px; }
 .tp-side .next-step .primary:not(:disabled):hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--on-accent); }
 .side-settings { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
+.branch-pane { display: flex; flex-direction: column; gap: 4px; }
+.branch-pane code { overflow-wrap: anywhere; }
+.branch-pane .merge-report { margin: 0; overflow-wrap: anywhere; }
 .task-pane .kv { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 20px; }
 .task-pane .kv > .lbl { width: 52px; flex: none; }
 .task-pane .kv.stack { flex-direction: column; align-items: flex-start; gap: 3px; }
