@@ -6,6 +6,7 @@ pub mod agents;
 pub mod backlog;
 pub mod badge;
 pub mod block;
+pub mod check_limit;
 pub mod choices;
 pub mod cli;
 pub mod fields;
@@ -119,7 +120,8 @@ async fn state(
         let mut cache = cache;
         // Read every poll, so a change in Settings (or by hand) applies at the next one.
         let settings = settings::load(&settings_file);
-        let list = projects::list(&base(), &projects::load(&file));
+        let config = projects::load(&file);
+        let list = projects::list(&base(), &config);
         // Each project's prefix, for its tasks' keys (0033).
         let prefix_of = |name: &str| {
             list.iter()
@@ -129,6 +131,8 @@ async fn state(
         };
         let mut s =
             queue::read_state_keyed(&projects::shown(&list), &mut cache, &settings, &prefix_of);
+        // Each project's Your check limit (0050), kept by folder beside its gate.
+        check_limit::apply(&config.your_check, &mut s.queues);
         // The cards' live dot: file times only, about a millisecond for 50 sessions.
         reader.set_live_secs(settings.live_secs());
         work::mark_live(&mut s.tasks, &reader, s.now);
@@ -1098,19 +1102,20 @@ async fn set_setting(
     .await
 }
 
-/// Change a project's Your check limit (0050) to a number from 1 to 50, `off`, or empty for the
-/// default. The project is one the window shows; the core checks the value; the next poll uses it.
+/// Change a project's Your check limit (0050), by its key (queue folder), to a number from 1 to
+/// 50, `off`, or empty for the default. The core checks the value; the next poll uses it.
 #[tauri::command]
 async fn set_your_check_limit(
     handle: tauri::AppHandle,
-    project: String,
+    key: String,
     value: String,
 ) -> Result<(), String> {
     blocking(move || {
         let app = handle.state::<AppState>();
-        queue_root(&app.config_file, &project)?;
-        let _guard = app.config.lock().map_err(|e| e.to_string())?;
-        settings::set_your_check_limit(&app.settings_file, &project, &value).map(|_| ())
+        edit_config(&app, |c| {
+            known_key(c, &key)?;
+            check_limit::set(&mut c.your_check, &key, &value)
+        })
     })
     .await
 }
@@ -1635,9 +1640,7 @@ mod tests {
             serde_json::to_string(&info_for(&file, "0.1.0", &reader, "on (1 account)".into()))
                 .unwrap();
         assert!(
-            json.contains(
-                r#""settings":{"leaseMinutes":720,"liveMinutes":15,"yourCheckLimits":{}}"#
-            ),
+            json.contains(r#""settings":{"leaseMinutes":720,"liveMinutes":15}"#),
             "{json}"
         );
         assert!(

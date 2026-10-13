@@ -21,7 +21,7 @@ import WaitingList from "./WaitingList";
 import Recent from "./Recent";
 import { clampPane, layoutWidth, PANE_DEFAULT, railBeside } from "./paneSize";
 import EffortGroups, { useAcceptResults } from "./EffortGroups";
-import { CheckCount, OverLine } from "./CheckLimit";
+import { CheckCount, ColumnLine, OverLine } from "./CheckLimit";
 import { overLimit } from "./yourCheckLimit";
 import type { NamedView } from "./yourCheck";
 import { byWho, FOR_FILTERS, FOR_KEY, type ForFilter, needsYouCount, parseForFilter, waitingForYou, whoFiltersOn, whoShows } from "./human";
@@ -423,7 +423,7 @@ export default function App() {
               {view === "graph" && <GraphView tasks={tasks} all={inQueue} multi={multi} openKey={openKey} onOpen={open} />}
               {view === "timeline" && <TimelineView tasks={viewTasks} now={now} multi={multi} openKey={openKey} onOpen={open} words={words} />}
               {/* Recently finished (0051) is docked at the board's right edge, grouped or not; under it when the row is too narrow for both. */}
-              {view === "board" && groupBy !== "none" && overCheck.length > 0 && <OverLine over={overCheck} queue={queue} />}
+              {view === "board" && <OverLine over={overCheck} queue={queue} />}
               {view === "board" && <div className={railSide ? "board-row" : "board-row stacked"}>
               {groupBy !== "none" && (
                 <GroupedBoard
@@ -435,6 +435,7 @@ export default function App() {
                   onOpen={open}
                   renderCard={card}
                   onChanged={() => void refresh()}
+                  limit={{ over: overCheck, queue }}
                   backlog={quickAdd ? { notes, renderNote: noteCard, quickAdd } : undefined}
                   fold={columnFoldOf}
                 />
@@ -457,7 +458,7 @@ export default function App() {
                       <ColumnHead stage={c} count={count} countNode={c.id === "your-check" ? <CheckCount count={count} over={overCheck} queue={queue} /> : undefined} needs={needsYouCount(list)} blocked={blockedCount(list)} fold={fold} onFold={() => columnFoldOf.toggle(c.id)}>
                         {c.role && <span className="role">{c.role}</span>}
                       </ColumnHead>
-                      {c.id === "your-check" && <OverLine over={overCheck} queue={queue} />}
+                      {c.id === "your-check" && <ColumnLine over={overCheck} queue={queue} />}
                       {backlog && fold !== "folded" && quickAdd}
                       <div className="cards">
                         {backlog

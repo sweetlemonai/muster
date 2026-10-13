@@ -423,25 +423,29 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     a button per view it names (Board, Table, Timeline, Graph, Appearance in any case; Helper,
     Waiting for you, Activity, Problems, Projects, Help only capitalized). Ticked ones follow with
     **Untick**.
-- **A limit on Your check per project** (task 0050, `settings.rs`, `yourCheckLimit.ts`,
-  `CheckLimit.tsx`): `settings.json`'s `yourCheckLimits` maps a project's name (as the app shows
-  it) to 1–50 or `"off"`; a project not in it, or with a bad value, has 5. The core counts each
-  queue's waiting tasks (`settings::waiting`: stage your-check, level task, not `for: human`) and
-  sends it with the resolved limit in the state (`QueueInfo.yourCheck`, `yourCheckLimit`, null for
-  off). Over the limit (more than it, not equal), the plain board's Your check header reads "7 of
-  5" (the project's whole pile, whatever the filters show) in orange text and the line under it
-  says "Over your limit of 5: check these before more start."; that line's place (two lines of
-  11 px) is always there in the open column. In All projects the header keeps the column's count,
-  orange when any project is over, and the line names each project over with its own count and
-  limit. Over, the column stays open even when a filter empties it. With Group by, the line sits
-  above the bands, only while over. The sidebar row of a project over says "7 in Your check, limit
-  5" under its activity line. Settings › Projects has a Your check column: "limit 5 · 7 waiting",
-  an **Off** chip and a 1–50 field with **Set** (`set_your_check_limit`, checked by the core;
-  the board refreshes at once); a hidden project shows "—". On the command line `next`, `start`
-  and `ready --parallel` print `muster: 7 tasks wait in Your check (limit 5): the owner's review is
-  the bottleneck.` on stderr before their work, and `list` prints it between its Your check and
-  Done groups (stdout is cut there, `list_parts`); with `--json` it goes on stderr after the JSON.
-  Exit codes don't change. The CLI reads the name from projects.json only when a limit is set.
+- **A limit on Your check per project** (task 0050, `check_limit.rs`, `yourCheckLimit.ts`,
+  `CheckLimit.tsx`): `projects.json`'s `yourCheck` maps a queue folder (the project's key, as
+  `gate`, `names` and `hidden` do) to 1–50 or `"off"`, so a rename keeps it and two projects shown
+  under one name keep their own; a folder not in it, or with a bad value, has 5, and a bad value
+  never stops the rest of the file loading (`check_limit::read_limits`). The core counts each
+  queue's waiting tasks (`check_limit::waiting`: stage your-check, level task, not `for: human`)
+  and sends it with the limit in the state (`QueueInfo.yourCheck`, `yourCheckLimit`, null for off;
+  the `state` command fills the limit from projects.json with `check_limit::apply`). Over the limit
+  (more than it, not equal), the Your check header reads "7 of 5" (the project's whole pile,
+  whatever the filters show) in `--needs-text` (the orange on dark themes, #A84300 on light ones:
+  4.5:1), on the plain board and in each Group by band. Under the plain board's header a short
+  line ("Over your limit of 5", or "2 projects over limit" in All; at most 24 characters) has a
+  reserved two-line place; above the board, plain or grouped, a full-width line with a reserved
+  one-line place says "Over your limit of 5: check these before more start." or, in All, names
+  each project over with its count and limit. Over, the column stays open even when a filter
+  empties it. The sidebar row of a project over says "7 in Your check, limit 5" under its activity
+  line. Settings › Projects has a Your check column: "limit 5 · 7 waiting", an **Off** chip and a
+  1–50 field with **Set** (`set_your_check_limit` by the project's key, checked by the core; the
+  board refreshes at once); a hidden project shows "—". On the command line `next`, `start` and
+  `ready --parallel` print `muster: 7 tasks wait in Your check (limit 5): the owner's review is the
+  bottleneck.` on stderr before their work, and `list` prints it between its Your check and Done
+  groups (stdout is cut there, `list_parts`); with `--json` it goes on stderr after the JSON. Exit
+  codes don't change. The CLI finds the queue's entry by folder, through symlinks too.
 - **Task panel** (loads on first open): the task rendered as Markdown with a Raw switch,
   open questions with an answer box (⌘↩), the files as thumbnails that open large (← → between
   them, Esc to close), who's on it, what it waits on, and the commit.

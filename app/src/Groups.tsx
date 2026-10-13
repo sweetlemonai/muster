@@ -8,6 +8,8 @@ import EffortGroups, { useAcceptResults } from "./EffortGroups";
 import { needsYouCount } from "./human";
 import { blockedCount, ChoiceChips, ColumnHead, FoldCounts } from "./ModeViews";
 import type { ColumnFolds } from "./modes";
+import { CheckCount } from "./CheckLimit";
+import type { Over } from "./yourCheckLimit";
 
 /** Group by: None · Feature · Goal, on screen above the board and the table, the current one lit. */
 export function GroupByChips({ value, onChange }: { value: GroupBy; onChange: (g: GroupBy) => void }) {
@@ -100,7 +102,7 @@ function BacklogBand({ by, parts, tasks, renderCard, fold }: { by: "feature" | "
  *  in the board's sort (task 0032). Goals and features are the bands, never cards in the columns.
  *  With `backlog`, the Backlog band comes first and takes the Backlog tasks of the last band
  *  (No feature or No goal), which then holds the rest. */
-export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderCard, onChanged, backlog, fold }: {
+export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderCard, onChanged, backlog, fold, limit }: {
   groups: Group[];
   by: "feature" | "goal";
   sort: BoardSort;
@@ -113,6 +115,8 @@ export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderC
   backlog?: BacklogBandParts;
   /** The columns the display mode folds (Focus, 0038), the same in every band as on the board. */
   fold?: ColumnFolds;
+  /** The projects over their Your check limit (0050): each band's Your check header says N of L. */
+  limit?: { over: Over[]; queue: string };
 }) {
   const results = useAcceptResults();
   const loose = backlog ? groups.find((g) => !g.head) : undefined;
@@ -140,7 +144,7 @@ export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderC
                   const folded = fold?.of(c.id) ?? "fixed";
                   return (
                     <section key={c.id} className={`column col-${c.id}${folded === "folded" ? " folded" : list.length || kept(c.id) ? "" : " empty"}`}>
-                      <ColumnHead stage={c} count={list.length} needs={needsYouCount(list)} blocked={blockedCount(list)} fold={folded} onFold={() => fold?.toggle(c.id)} />
+                      <ColumnHead stage={c} count={list.length} countNode={c.id === "your-check" && limit ? <CheckCount count={list.length} over={limit.over} queue={limit.queue} /> : undefined} needs={needsYouCount(list)} blocked={blockedCount(list)} fold={folded} onFold={() => fold?.toggle(c.id)} />
                       <div className="cards">
                         {c.id === "your-check" && onChanged && (list.length > 0 || kept(c.id))
                           ? <EffortGroups tasks={list} place={place} renderCard={renderCard} onChanged={onChanged} />

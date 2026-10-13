@@ -43,7 +43,19 @@ export function checkCount(count: number, over: Over[], queue: string): { text: 
   return { text: String(count), over: true, title: `Over the limit in ${named(over)}` };
 }
 
-/** The line under the Your check header; "" within the limit. */
+/** The longest the column's own line gets: it has two short lines of room in a narrow column. */
+export const COLUMN_LINE_MAX = 24;
+
+/** The short line under the Your check header, to fit its reserved two lines at any column
+ *  width: "Over your limit of 5", or in All projects "2 projects over limit" (the names are in
+ *  the line above the board); "" within the limit. */
+export function columnLine(over: Over[], queue: string): string {
+  if (over.length === 0) return "";
+  if (queue !== "all") return `Over your limit of ${over[0].limit}`;
+  return `${over.length} ${over.length === 1 ? "project" : "projects"} over limit`;
+}
+
+/** The full line above the board; "" within the limit. */
 export function overLine(over: Over[], queue: string): string {
   if (over.length === 0) return "";
   const where = queue === "all" ? ` in ${named(over)}` : ` of ${over[0].limit}`;

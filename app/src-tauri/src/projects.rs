@@ -22,6 +22,10 @@ pub struct Config {
     /// The project's gate command by queue folder (0023): what a merge runs in the task's
     /// worktree, split into words without a shell (`bin/gate`, `make check`).
     pub gate: HashMap<String, String>,
+    /// The Your check limit by queue folder (0050, `check_limit`): a number, or "off". A bad
+    /// entry is left out when read, and never stops the rest of the file loading.
+    #[serde(deserialize_with = "crate::check_limit::read_limits")]
+    pub your_check: HashMap<String, crate::check_limit::Limit>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]

@@ -6,16 +6,17 @@ Newest first. What changed, and how it was checked. The current state is in `AS_
 
 ## 2026-10-13 — A limit on Your check per project: the board and the commands warn, never block (task 0050)
 **Did:** each project has a Your check limit, 5 unless set to 1–50 or Off in Settings › Projects
-(saved in `settings.json` as `yourCheckLimits`, by project name; a bad value reads as 5). Only
+(saved in `projects.json` as `yourCheck`, by queue folder; a bad value reads as 5). Only
 agents' tasks count (not goals, features or `for: human`). Over it, the board's Your check header
 reads "7 of 5" in orange with "Over your limit of 5: check these before more start." under it
 (All projects names each project over; with Group by the line sits above the bands); the sidebar
 row says "7 in Your check, limit 5"; `muster next`, `start`, `ready --parallel` and `list` print
 "muster: 7 tasks wait in Your check (limit 5): the owner's review is the bottleneck." on stderr
-and still do their work with the same exit codes. Files: `settings.rs` (limits, `waiting`,
-`over_line`, `set_your_check_limit`), `queue.rs` (`QueueInfo.yourCheck`, `yourCheckLimit`),
+and still do their work with the same exit codes. Files: `check_limit.rs` (limits, `waiting`,
+`over_line`, `set`), `projects.rs` (the `yourCheck` field), `queue.rs` (`QueueInfo.yourCheck`, `yourCheckLimit`),
 `lib.rs` (`set_your_check_limit`), `cli.rs`, `help.rs`, `yourCheckLimit.ts`, `CheckLimit.tsx`,
-small hooks in `App.tsx`, `ProjectList.tsx`, `Projects.tsx`, `api.ts`, `types.ts`, `styles.css`;
+small hooks in `App.tsx`, `Groups.tsx`, `ProjectList.tsx`, `Projects.tsx`, `api.ts`, `types.ts`,
+`themes.ts` (`--needs-text`), `styles.css`;
 manual 04 and 05, PROTOCOL.md, AS_BUILT.md.
 **Decided:** the core counts and resolves the limit and sends both per queue, so the app and the
 CLI can't disagree; over means more than the limit, not equal. One project's header shows its
@@ -23,9 +24,21 @@ whole pile ("7 of 5") even when filters show fewer cards; All keeps the column's
 and names the projects in the line. The line's place under the header is always kept (two short
 lines) so cards never move; above Group by's bands it shows only while over. `list` cuts its
 stdout after Your check and prints the line to stderr between, so it lands under the heading in a
-terminal and pipes stay clean. Limits are keyed by the name the app shows, so a rename starts at 5.
+terminal and pipes stay clean.
+**Fixed (review):** the grouped board's line mounted only while over, so the bands jumped when the
+pile crossed the limit, and band headers still showed their plain count → the full sentence now
+sits in a full-width line above the board (plain or grouped) whose one-line place is always kept,
+and each band's Your check header says "7 of 5". The column's line (two reserved lines) wrapped to
+3–4 lines in a narrow column, and All's grew with names → it now says only "Over your limit of 5"
+or "2 projects over limit" (at most 24 characters, tested); the names are in the line above. The
+orange words read about 4:1 on light themes → `--needs-text` (#A84300 light, #FB8C3C dark) from
+`themes.ts`, in the 4.5:1 test on bg, surface and popover. Limits were keyed by display name, so a
+rename lost them and two same-named projects shared one → decided (coordinator): kept in
+`projects.json` by queue folder beside the gate, so 0005's carry_over can move them; the CLI finds
+the entry by folder (through symlinks) instead of looking up the name; settings.rs is back as it was.
 **Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; new
-Rust tests in settings.rs, queue.rs and cli.rs (exit codes over the limit for next, list,
+Rust tests in check_limit.rs (a rename keeps the limit; same-named projects keep their own; a bad
+entry never loses the rest of projects.json), queue.rs and cli.rs (exit codes over the limit for next, list,
 ready --parallel and start), vitest `yourCheckLimit.test.ts`, `CheckLimit.test.ts`.
 **Open:** AC5 is the owner's look in the running app (not run here).
 ## 2026-10-13 — `.muster/`: a shared prefix routes to the new queue; a literal-string prefix is read (task 0005)

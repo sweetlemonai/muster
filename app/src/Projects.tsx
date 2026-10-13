@@ -59,7 +59,7 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
   const limit = (p: Project) => {
     const q = !p.hidden && p.ok ? queues.find((x) => x.path === p.path) : undefined;
     if (!q) return "—";
-    return <LimitCell key={`${p.key}-${q.yourCheckLimit}`} q={q} onSet={(v) => void act(() => api.setYourCheckLimit(q.name, v))} />;
+    return <LimitCell key={`${p.key}-${q.yourCheckLimit}`} q={q} onSet={(v) => void act(() => api.setYourCheckLimit(p.key, v))} />;
   };
 
   return (

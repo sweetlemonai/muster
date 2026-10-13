@@ -4,7 +4,8 @@
 
 use crate::session::{self, Session};
 use crate::{
-    agents, backlog, fields, index, ops, pause, ping, projects, queue, search, settings, vision,
+    agents, backlog, check_limit, fields, index, ops, pause, ping, projects, queue, search,
+    settings, vision,
 };
 use std::path::{Path, PathBuf};
 
@@ -127,31 +128,22 @@ fn machine_settings(env: Env) -> settings::Settings {
 
 /// The line `next`, `start`, `ready --parallel` and `list` print on stderr when more waits in Your
 /// check than the project's limit allows (0050), or None. It only warns: nothing is refused. The
-/// limit is kept by the project's name as the app shows it, looked up only when one is set.
-fn your_check_line(root: &Path, tasks: &[queue::Task], env: Env) -> Option<String> {
-    let s = machine_settings(env);
-    let limit = if s.your_check_limits.is_empty() {
-        Some(settings::YOUR_CHECK_LIMIT)
-    } else {
-        s.your_check_limit(&project_name(root))
-    };
-    settings::over_line(settings::waiting(tasks), limit)
+/// limit is projects.json's for the queue's folder (`config`), 5 unless set.
+fn your_check_line(
+    root: &Path,
+    tasks: &[queue::Task],
+    config: &projects::Config,
+) -> Option<String> {
+    let limit = check_limit::limit_for(&config.your_check, root);
+    check_limit::over_line(check_limit::waiting(tasks), limit)
 }
 
 /// `your_check_line` on stderr, for `next` and `start`: the queue read again, as they read it.
-fn warn_your_check(root: &Path, prefix: &str, env: Env) {
-    if let Some(l) = your_check_line(root, &keyed(root, prefix).tasks, env) {
+fn warn_your_check(root: &Path, prefix: &str) {
+    let config = projects::load(&config_file());
+    if let Some(l) = your_check_line(root, &keyed(root, prefix).tasks, &config) {
         eprintln!("{l}");
     }
-}
-
-/// The name the app shows for the queue at `root`: projects.json's, else its folder's.
-fn project_name(root: &Path) -> String {
-    projects::list(&base(), &projects::load(&config_file()))
-        .into_iter()
-        .find(|p| same_folder(Path::new(&p.path), root))
-        .map(|p| p.name)
-        .unwrap_or_else(|| projects::default_name(root))
 }
 
 fn home() -> PathBuf {
@@ -1212,7 +1204,7 @@ fn ready_line(t: &queue::Task) -> String {
 
 /// `muster ready [--parallel [N]] [--json]` (0023): the tasks a session could start now, or with
 /// --parallel up to N (default 3) safe together, and the ones left out with why.
-fn ready_cmd(a: &Args, root: &Path, prefix: &str, env: Env) -> Result<i32, String> {
+fn ready_cmd(a: &Args, root: &Path, prefix: &str) -> Result<i32, String> {
     let s = keyed(root, prefix);
     let n = match (a.parallel, a.pos.get(1)) {
         (_, None) => 3,
@@ -1232,7 +1224,7 @@ fn ready_cmd(a: &Args, root: &Path, prefix: &str, env: Env) -> Result<i32, Strin
     }
     let (set, left) = if a.parallel {
         // Planning parallel sessions (0023): say first when the owner's review is the bottleneck.
-        if let Some(l) = your_check_line(root, &s.tasks, env) {
+        if let Some(l) = your_check_line(root, &s.tasks, &projects::load(&config_file())) {
             eprintln!("{l}");
         }
         let p = crate::parallel::ready_parallel(&s.tasks, n);
@@ -1478,7 +1470,7 @@ fn run_on(
             }
             let tasks = list_filter(&s.tasks, &q);
             let notes = list_notes(&s.backlog, &q);
-            let over = your_check_line(root, &s.tasks, env);
+            let over = your_check_line(root, &s.tasks, &projects::load(&config_file()));
             if a.json {
                 print_json(&list_json(&notes, &tasks))?;
                 if let Some(l) = over {
@@ -1768,7 +1760,7 @@ fn run_on(
         }
         "next" => {
             let me = me();
-            warn_your_check(root, prefix, env);
+            warn_your_check(root, prefix);
             match ops::next_task(root, &me, stamp)? {
                 Some(c) => {
                     println!("{}", claimed_message(root, prefix, &c.id, &c.path));
@@ -1798,12 +1790,12 @@ fn run_on(
             };
             let cwd =
                 cwd.ok_or("can't read the current folder: run start from the project's repo")?;
-            warn_your_check(root, prefix, env);
+            warn_your_check(root, prefix);
             let s = crate::parallel::start(root, id, &me(), stamp, cwd, &place)?;
             print!("{}", started_text(root, prefix, id, &s));
             Ok(0)
         }
-        "ready" => ready_cmd(a, root, prefix, env),
+        "ready" => ready_cmd(a, root, prefix),
         "release" => {
             let id = need(a, 1, "a task id")?;
             if !a.clean {
@@ -2237,63 +2229,49 @@ mod tests {
         d
     }
 
-    /// An environment whose $HOME has a settings.json saying `json`.
-    fn home_with(json: &str) -> (tempfile::TempDir, String) {
-        let home = tempfile::tempdir().unwrap();
-        let dir = home
-            .path()
-            .join("Library/Application Support/ai.sweetlemon.muster");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(settings::FILE), json).unwrap();
-        let h = home.path().to_string_lossy().to_string();
-        (home, h)
+    /// projects.json with the queue at `root` limited to `value` (as Settings › Projects sets it).
+    fn limited(root: &Path, value: &str) -> projects::Config {
+        let mut c = projects::Config::default();
+        check_limit::set(&mut c.your_check, &root.to_string_lossy(), value).unwrap();
+        c
     }
 
     #[test]
     fn the_your_check_line_shows_only_over_the_projects_limit() {
-        let over = |n: usize, env: Env| {
+        let none = projects::Config::default();
+        let over = |n: usize| {
             let d = checking_queue(n);
-            your_check_line(d.path(), &tasks_of(d.path()).tasks, env)
+            your_check_line(d.path(), &tasks_of(d.path()).tasks, &none)
         };
-        // No settings: the default, 5.
-        assert_eq!(over(5, &no_env), None, "at the limit");
+        // Nothing set: the default, 5.
+        assert_eq!(over(5), None, "at the limit");
         assert_eq!(
-            over(6, &no_env).as_deref(),
+            over(6).as_deref(),
             Some("muster: 6 tasks wait in Your check (limit 5): the owner's review is the bottleneck.")
         );
-        // The project's own limit, by the name the app shows (here its folder's).
+        // The queue folder's own limit.
         let d = checking_queue(3);
-        let name = projects::default_name(d.path());
         let tasks = tasks_of(d.path()).tasks;
-        let with = |json: String| {
-            let (_home, h) = home_with(&json);
-            your_check_line(d.path(), &tasks, &move |k: &str| {
-                (k == "HOME").then(|| h.clone())
-            })
-        };
+        let with = |v: &str| your_check_line(d.path(), &tasks, &limited(d.path(), v));
         assert_eq!(
-            with(format!(r#"{{"yourCheckLimits": {{"{name}": 2}}}}"#)).as_deref(),
+            with("2").as_deref(),
             Some("muster: 3 tasks wait in Your check (limit 2): the owner's review is the bottleneck.")
         );
+        assert_eq!(with("3"), None);
+        assert_eq!(with("off"), None);
+        // Another folder's limit leaves this one at 5.
+        let other = checking_queue(0);
         assert_eq!(
-            with(format!(r#"{{"yourCheckLimits": {{"{name}": 3}}}}"#)),
-            None
-        );
-        assert_eq!(
-            with(format!(r#"{{"yourCheckLimits": {{"{name}": "off"}}}}"#)),
-            None
-        );
-        // Another project's limit leaves this one at 5.
-        assert_eq!(
-            with(r#"{"yourCheckLimits": {"elsewhere": 1}}"#.into()),
+            your_check_line(d.path(), &tasks, &limited(other.path(), "1")),
             None
         );
         let d = checking_queue(40);
-        let name = projects::default_name(d.path());
-        let (_home, h) = home_with(&format!(r#"{{"yourCheckLimits": {{"{name}": "off"}}}}"#));
-        let env = move |k: &str| (k == "HOME").then(|| h.clone());
         assert_eq!(
-            your_check_line(d.path(), &tasks_of(d.path()).tasks, &env),
+            your_check_line(
+                d.path(),
+                &tasks_of(d.path()).tasks,
+                &limited(d.path(), "off")
+            ),
             None,
             "off"
         );
@@ -2308,7 +2286,12 @@ mod tests {
             v.extend(sv(&["--queue", &q, "--as", "wt-a"]));
             main(&v)
         };
-        assert!(your_check_line(d.path(), &tasks_of(d.path()).tasks, &no_env).is_some());
+        assert!(your_check_line(
+            d.path(),
+            &tasks_of(d.path()).tasks,
+            &projects::Config::default()
+        )
+        .is_some());
         assert_eq!(code(&["list"]), 0);
         assert_eq!(code(&["list", "--json"]), 0);
         assert_eq!(code(&["ready", "--parallel"]), 0);
@@ -2347,7 +2330,12 @@ mod tests {
             )
             .unwrap();
         }
-        assert!(your_check_line(&f.root, &tasks_of(&f.root).tasks, &no_env).is_some());
+        assert!(your_check_line(
+            &f.root,
+            &tasks_of(&f.root).tasks,
+            &projects::Config::default()
+        )
+        .is_some());
         let a = parse(&sv(&["start", &id, "--as", "wt-a"])).unwrap();
         assert_eq!(
             run_on(

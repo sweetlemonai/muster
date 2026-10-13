@@ -38,9 +38,11 @@ export const ACCENTS: Accent[] = [
 ];
 
 // Status colours: fills in both modes; in light themes coloured words use the darker *-text shades.
-const STATUS_TEXT: Record<Mode, { err: string; ok: string; gold: string }> = {
-  dark: { err: "#F0647D", ok: "#4CC38A", gold: "#F5C04A" },
-  light: { err: "#C2334F", ok: "#177A4B", gold: "#8A6A00" },
+const STATUS_TEXT: Record<Mode, { err: string; ok: string; gold: string; needs: string }> = {
+  // `needs`: words in the needs-you orange (the Your check limit, 0050). The orange itself on dark
+  // surfaces; a darker shade of it on light ones, where #FB8C3C reads at only about 2.4:1.
+  dark: { err: "#F0647D", ok: "#4CC38A", gold: "#F5C04A", needs: "#FB8C3C" },
+  light: { err: "#C2334F", ok: "#177A4B", gold: "#8A6A00", needs: "#A84300" },
 };
 
 // Stage colours (and the blocked flag's), the same in every theme: column strips, card edges,
@@ -189,6 +191,7 @@ export function variables(theme: Theme, accent: Accent): Record<string, string> 
     "--err": st.err,
     "--ok": st.ok,
     "--gold-text": st.gold,
+    "--needs-text": st.needs,
     ...Object.fromEntries(Object.entries(stages).map(([s, c]) => [`--st-${s}`, c])),
     "--on-status": ON_STATUS,
     // Card looks (0026): edges at 3:1 on the card, priority colours, and the tint amount.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { QueueInfo } from "./types";
-import { checkCount, LIMIT_DEFAULT, limitText, overLimit, overLine, sideLimit } from "./yourCheckLimit";
+import { checkCount, COLUMN_LINE_MAX, columnLine, LIMIT_DEFAULT, limitText, overLimit, overLine, sideLimit } from "./yourCheckLimit";
 
 const q = (name: string, yourCheck: number, yourCheckLimit: number | null | undefined): QueueInfo => ({ name, path: `/p/${name}/tasks`, counts: {}, yourCheck, yourCheckLimit });
 
@@ -37,6 +37,19 @@ describe("the Your check limit (0050)", () => {
     expect(overLine(over, "all")).toBe("Over your limit in muster (7 of 5) and drover (9 of 8): check these before more start.");
     expect(overLine(overLimit([q("muster", 7, 5), q("germ", 1, 5)], "all"), "all")).toBe("Over your limit in muster (7 of 5): check these before more start.");
     expect(overLine(overLimit([q("a", 2, 1), q("b", 3, 1), q("c", 4, 1)], "all"), "all")).toBe("Over your limit in a (2 of 1), b (3 of 1) and c (4 of 1): check these before more start.");
+  });
+
+  it("the column's own line is short enough for its reserved two lines; the full sentence goes above the board", () => {
+    expect(columnLine(overLimit([q("muster", 7, 5)], "muster"), "muster")).toBe("Over your limit of 5");
+    expect(columnLine(overLimit([q("muster", 7, 5)], "all"), "all")).toBe("1 project over limit");
+    expect(columnLine(overLimit([q("a", 2, 1), q("b", 3, 1)], "all"), "all")).toBe("2 projects over limit");
+    expect(columnLine([], "muster")).toBe("");
+    // The longest it can be: the largest limit, or many projects with long names (names never go in it).
+    const long = Array.from({ length: 120 }, (_, i) => q(`a-very-long-project-name-${i}`, 60, 50));
+    for (const [over, queue] of [[overLimit([q("x", 60, 50)], "x"), "x"], [overLimit(long, "all"), "all"]] as const) {
+      expect(columnLine(over, queue).length).toBeLessThanOrEqual(COLUMN_LINE_MAX);
+    }
+    expect(COLUMN_LINE_MAX).toBeLessThanOrEqual(24);
   });
 
   it("the sidebar says it on an over row only", () => {

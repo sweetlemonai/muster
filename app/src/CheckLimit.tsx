@@ -1,10 +1,10 @@
 import { useState } from "react";
 import type { QueueInfo } from "./types";
-import { checkCount, LIMIT_DEFAULT, LIMIT_MAX, LIMIT_MIN, limitText, type Over, overLine, sideLimit } from "./yourCheckLimit";
+import { checkCount, columnLine, LIMIT_DEFAULT, LIMIT_MAX, LIMIT_MIN, limitText, type Over, overLine, sideLimit } from "./yourCheckLimit";
 
-// The Your check limit's places (0050): the column's count and the line under its header, the
-// sidebar row's line, and the setting in Settings › Projects. Words in the Your check orange,
-// never a badge or an overlay.
+// The Your check limit's places (0050): the line above the board, the column's count and its
+// short line, the sidebar row's line, and the setting in Settings › Projects. Words in the needs-you
+// orange, never a badge or an overlay.
 
 /** The Your check column's count: "7 of 5" in orange over the limit, else the plain count. */
 export function CheckCount({ count, over, queue }: { count: number; over: Over[]; queue: string }) {
@@ -12,11 +12,17 @@ export function CheckCount({ count, over, queue }: { count: number; over: Over[]
   return c.over ? <small className="over-limit" title={c.title}>{c.text}</small> : <small>{c.text}</small>;
 }
 
-/** The line under the Your check header. Always there, empty within the limit, so the cards
- *  under it never move when it comes or goes. */
+/** The line above the board, plain or grouped: the whole sentence, with each project over in
+ *  All projects. Always there, empty within the limit, so the board never moves when it comes. */
 export function OverLine({ over, queue }: { over: Over[]; queue: string }) {
   const text = overLine(over, queue);
-  return <p className={text ? "limit-line over-limit" : "limit-line"} role="status">{text}</p>;
+  return <p className={text ? "limit-board over-limit" : "limit-board"} role="status">{text}</p>;
+}
+
+/** The short line under the Your check header, in its reserved two lines; empty within the limit. */
+export function ColumnLine({ over, queue }: { over: Over[]; queue: string }) {
+  const text = columnLine(over, queue);
+  return <p className={text ? "limit-line over-limit" : "limit-line"}>{text}</p>;
 }
 
 /** A sidebar row's line when its project is over its limit; nothing within it. */

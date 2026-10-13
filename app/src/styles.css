@@ -33,6 +33,7 @@
   --err: #C2334F;
   --ok: #177A4B;
   --gold-text: #8A6A00;
+  --needs-text: #A84300;
   --radius: 8px;
   color-scheme: light dark;
   font: 13px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
@@ -55,6 +56,7 @@
     --err: #F0647D;
     --ok: #4CC38A;
     --gold-text: #F5C04A;
+    --needs-text: #FB8C3C;
   }
 }
 * { box-sizing: border-box; }
@@ -935,13 +937,14 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .rail-fold:hover, .rail-fold:focus-visible { color: var(--text); background: var(--tint); }
 .rail-fold small { margin: 4px; text-transform: none; letter-spacing: 0; }
 .rail-unfold { margin-left: 8px; font-size: 10.5px; padding: 0 7px; text-transform: none; letter-spacing: 0; }
-/* The Your check limit (0050): words in the Your check orange. The line under the column's header
-   always has its place, so nothing moves when it comes or goes. */
-.over-limit { color: color-mix(in srgb, var(--st-needs) 70%, var(--text)); font-weight: 600; }
+/* The Your check limit (0050): words in the needs-you orange (--needs-text, 4.5:1). The column's
+   short line (two lines) and the line above the board (one) always have their places, so nothing
+   moves when they come or go. */
+.over-limit { color: var(--needs-text); font-weight: 600; }
 .column h2 small.over-limit { font-weight: 600; }
-.limit-line { margin: 0 12px 4px; min-height: calc(2 * 1.35em); font-size: 11px; line-height: 1.35; }
+.limit-line { margin: 0 12px 4px; min-height: calc(2 * 1.35em); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
 .column.empty .limit-line { display: none; }
-.content > .limit-line { margin: 6px 14px 0; min-height: 0; }
+.limit-board { margin: 4px 14px 0; min-height: 1.35em; font-size: 12px; line-height: 1.35; }
 .side-limit { display: block; font-size: 11px; line-height: 1.35; }
 .limit-cell { display: flex; flex-direction: column; gap: 2px; }
 .limit-edit { display: flex; align-items: center; gap: 4px; }

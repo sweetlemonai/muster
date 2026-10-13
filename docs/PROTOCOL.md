@@ -3,8 +3,8 @@
 > **A limit on Your check per project (Muster 0050, 2026-10-13).** The owner's review is the
 > bottleneck with parallel sessions, so each project has a limit on how many agents' tasks may wait
 > in Your check: 5 unless the owner sets 1 to 50, or Off, in the app's Settings › Projects (saved
-> in this Mac's `settings.json` as `yourCheckLimits`, by the project's name as the app shows it; a
-> missing or bad value reads as 5). Goals, features and the owner's own tasks (`for: human`) don't
+> in this Mac's `projects.json` as `yourCheck`, by queue folder like the gate, so a rename keeps
+> it; a missing or bad value reads as 5). Goals, features and the owner's own tasks (`for: human`) don't
 > count. Past the limit, `muster next`, `muster start` and `muster ready --parallel` print one line
 > on stderr first, and `muster list` prints it under the Your check heading: `muster: 7 tasks wait
 > in Your check (limit 5): the owner's review is the bottleneck.` It only warns: every command

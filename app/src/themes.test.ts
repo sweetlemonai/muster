@@ -26,7 +26,11 @@ describe("every theme and accent pair is readable (WCAG AA)", () => {
     }
     it(`${t.name}: coloured status words`, () => {
       const v = variables(t, ACCENTS[0]);
-      for (const k of ["--err", "--ok", "--gold-text"]) expect(contrast(v[k], t.surface)).toBeGreaterThanOrEqual(4.5);
+      for (const k of ["--err", "--ok", "--gold-text", "--needs-text"]) expect(contrast(v[k], t.surface), k).toBeGreaterThanOrEqual(4.5);
+      // Needs-you words (the Your check limit, 0050) sit on the board, the sidebar and Settings too.
+      for (const surface of [t.bg, t.popover]) expect(contrast(v["--needs-text"], surface)).toBeGreaterThanOrEqual(4.5);
+      // Still the needs-you orange: the same hue family, the colour itself where it reads.
+      if (t.mode === "dark") expect(v["--needs-text"]).toBe(NEEDS_COLOUR);
     });
     it(`${t.name}: words on stage colours (pills, badges)`, () => {
       const v = variables(t, ACCENTS[0]);

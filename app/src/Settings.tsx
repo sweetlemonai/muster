@@ -262,8 +262,8 @@ export function AboutView({ info, projects, error = "" }: { info: SettingsInfo; 
         <h2>Settings on this Mac</h2>
         <p><HomePath className="path" path={info.configDir} home={info.home} /></p>
         <ul className="about-list">
-          <li><code>projects.json</code>: the projects you added, hid or renamed</li>
-          <li><code>settings.json</code>: the claim lease, the LIVE window and each project's Your check limit; the muster command reads it too</li>
+          <li><code>projects.json</code>: the projects you added, hid or renamed, their gates and Your check limits</li>
+          <li><code>settings.json</code>: the claim lease and the LIVE window; the muster command reads it too</li>
           <li><code>helper/</code>: the helper's account, model and conversations</li>
         </ul>
         <p className="meta">Appearance, the display mode, text size, Group by, saved views and the pane's width are kept by the window itself, on this Mac.</p>
