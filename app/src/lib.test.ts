@@ -222,6 +222,7 @@ describe("lease (the core's ops::reclaim rule)", () => {
     // Blocked (waiting), nobody holding it, or another stage: no lease.
     const old = { ...held, heartbeat: "2026-10-01 10:00" };
     expect(leaseRunOut(task({ ...old, blocked: true, waitingOn: "owner" }), now)).toBe(false);
+    expect(leaseRunOut(task({ ...old, blockedKind: "tasks" }), now)).toBe(false);
     expect(leaseRunOut(task({ ...old, claimedBy: " " }), now)).toBe(false);
     expect(leaseRunOut(task({ ...old, stage: "testing" }), now)).toBe(false);
     // The owner's own task (0022) has no lease, as the core's reclaim leaves it.
@@ -281,6 +282,8 @@ describe("who's on it, since when, and how far (0030)", () => {
     expect(quietCheckin({ ...held, heartbeat: "", modified: now - 3600 }, now)).toBe(60);
     // Waiting isn't going quiet, the owner doesn't check in, and only Building is worked on.
     expect(quietCheckin(task({ ...held, heartbeat: "2026-10-12 10:00", blocked: true, waitingOn: "owner" }), now)).toBeNull();
+    // Blocked by tasks it depends on (0024) is waiting too, with no flag.
+    expect(quietCheckin(task({ ...held, heartbeat: "2026-10-12 10:00", blockedKind: "tasks" }), now)).toBeNull();
     expect(quietCheckin({ ...held, heartbeat: "2026-10-12 10:00", claimedBy: "owner" }, now)).toBeNull();
     expect(quietCheckin({ ...held, heartbeat: "2026-10-12 10:00", stage: "testing" }, now)).toBeNull();
     expect(quietCheckin({ ...held, heartbeat: "2026-10-12 10:00", claimedBy: "" }, now)).toBeNull();

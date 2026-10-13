@@ -104,6 +104,8 @@ describe("a project's activity", () => {
   });
   it("isn't stalled for work that's blocked (waiting) or the owner's own, or with nothing in Building", () => {
     expect(projectActivity([building({ heartbeat: at(10, 0), blocked: true })], 0, NOW).stalled).toBe(false);
+    // Blocked by tasks it depends on (0024, no flag) is waiting too.
+    expect(projectActivity([building({ heartbeat: at(10, 0), blockedKind: "tasks" })], 0, NOW).stalled).toBe(false);
     expect(projectActivity([building({ heartbeat: at(10, 0), claimedBy: "owner" })], 0, NOW).stalled).toBe(false);
     expect(projectActivity([task({ stage: "testing", modified: secs(10, 0) })], 0, NOW).stalled).toBe(false);
   });
@@ -227,6 +229,7 @@ describe("review fixes (2026-10-13)", () => {
     expect(isWorking({ ...base, stage: "building", claimedBy: "wt-a" }, now)).toBe(true);
     expect(isWorking({ ...base, stage: "ready" }, now)).toBe(false); // handed back
     expect(isWorking({ ...base, stage: "building", claimedBy: "wt-a", blocked: true }, now)).toBe(false); // waiting
+    expect(isWorking({ ...base, stage: "building", claimedBy: "wt-a", blockedKind: "tasks" }, now)).toBe(false); // waiting on tasks (0024)
     expect(isWorking({ ...base, stage: "testing", heldBy: "qa" }, now)).toBe(true);
     expect(isWorking({ ...base, stage: "testing" }, now)).toBe(false);
     expect(isWorking({ ...base, stage: "ready", live: true }, now)).toBe(true); // a live session still counts

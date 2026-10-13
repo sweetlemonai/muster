@@ -140,7 +140,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Stages** (task 0014, decision 0003): Backlog, Shaping (product, tech and UI agents), Ready,
   Building (code agent), Testing (QA agent), Your check (the owner), Done. `stage:` in the file is
   the truth, written only by `muster`. A stage change is logged as `<time> <who>: stage <from> → <to>`,
-  and those lines are the stage history. Blocked is a flag (`waiting_on`) that keeps the task in its
+  and those lines are the stage history. Blocked is a flag (`waiting_on`, with its kind in
+  `blocked-kind:`, task 0024) that keeps the task in its
   stage. `pass` moves it on, refusing when the task is blocked, when someone else holds it, or when it
   has moved since you looked (`--from`). It also refuses Building → Testing without the gate's line,
   and Testing → Your check with any criterion unticked. `return` sends it back with a reason and
@@ -197,7 +198,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   - Shaping → Ready waits while a conflict is open.
   - A change of direction becomes one owner question with the cost of pivoting.
 - **Board:** one column per stage, with its role under the name. Blocked cards stay in their stage
-  with a rose "blocked: …" badge, and Your check cards count as "needs you". The task pane has a
+  with a rose badge that says why, the kind first ("Blocked on you: …", task 0024), and Your check
+  cards count as "needs you". The task pane has a
   stage picker, Pass to <next> (with the gate line out of Building), Send back with a reason,
   Block/Unblock, and Accept / Send back in Your check. Only one action runs at a time. Cards show the id, title, type, priority (on every card: HIGH filled magenta, normal outlined, low faint), tags,
   "needs you", open questions, files, who's on it (flagged when quiet for 12 h), what a blocked
@@ -210,7 +212,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   refuses it and `next` passes it by; an agent proposes one with `muster add`, and only the owner
   makes one. On the Board view a compact **Human board** sits above the **AI board** (agents'
   tasks only): From the agents (tasks in Your check, questions escalated to the owner, tasks
-  blocked on the owner, each opening its task where it is), then To do · Doing · Done. Its count
+  blocked on you or by a permission, each opening its task where it is, with the block's
+  sentence), then To do · Doing · Done. Its count
   (`needsYouCount` in `human.ts`) is the needs-you number in the sidebar and the header. Wherever
   both kinds share a view (Table, Timeline, Graph, the pane) a human task carries a gold "You"
   ribbon (`#A08428`, never a stage colour; contrast tested in `themes.test.ts`), and Table and
@@ -218,8 +221,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   yours" until it's done, and can't be claimed until then. `muster list` marks human tasks
   `[you]`, INDEX.md "you", and `manifest.py` reads `for`.
 - **Waiting for you:** what the agents wait on the owner for (escalated questions, Your check,
-  blocked on the owner), then the owner's own tasks to do and doing, each opening its task (the
-  Human board's count).
+  blocked on you or by a permission, `queue::needs_owner`), then the owner's own tasks to do and
+  doing, each opening its task (the Human board's count).
 - **Task panel** (loads on first open): the task rendered as Markdown with a Raw switch,
   open questions with an answer box (⌘↩), the files as thumbnails that open large (← → between
   them, Esc to close), who's on it, what it waits on, and the commit.
@@ -311,7 +314,7 @@ options and examples (`--json` for scripts).
 ```
 muster new "Board flickers on resize" --type bug --priority high --body "Steps: …"
 muster list [--status todo] [--json]      muster show 0007 [--json]
-muster move 0007 blocked --on owner       muster set 0007 priority low
+muster block 0007 --on you "pick a colour" muster set 0007 priority low
 muster note 0007 "Checked on the Mac"     muster attach 0007 shot.png
 muster answer 0007 Q2 "Use 5173"          muster check      muster projects      muster init ~/playground/x
 ```

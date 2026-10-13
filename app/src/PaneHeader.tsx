@@ -1,6 +1,7 @@
 import { Fragment, useState } from "react";
 import { HelpButton } from "./HelpButton";
 import { ago, holderOf, isStage, splitHolder, stageHolders, stageLabel, stageOf, STAGES, startedAgo } from "./lib";
+import BlockWhy from "./BlockWhy";
 import { isLive, waitingOnYou } from "./paneData";
 import { isWork, levelLabel, shownStageClass, shownStageLabel } from "./levels";
 import { isHuman } from "./human";
@@ -9,7 +10,7 @@ import YouRibbon from "./YouRibbon";
 
 /** The top of the task pane: where it is and when it changed, the title (click to rename it in
  *  place), and the status line. */
-export default function PaneHeader({ task, now, onClose, onRename }: { task: Task; now: number; onClose: () => void; onRename: (title: string) => void }) {
+export default function PaneHeader({ task, now, onClose, onRename, onOpenTask }: { task: Task; now: number; onClose: () => void; onRename: (title: string) => void; onOpenTask?: (id: string) => void }) {
   const [title, setTitle] = useState<string | null>(null);
   const since = ago(now, task.modified);
   return (
@@ -38,7 +39,7 @@ export default function PaneHeader({ task, now, onClose, onRename }: { task: Tas
           }}
         />
       )}
-      <StatusLine task={task} now={now} />
+      <StatusLine task={task} now={now} onOpenTask={onOpenTask} />
     </>
   );
 }
@@ -78,12 +79,12 @@ export function TitleEdit({ value, onChange, onSave, onCancel }: { value: string
  *  the short one). */
 const person = (who: string) => (splitHolder(who).label === "owner" ? (who === "owner" ? "you" : `you, ${who}`) : who);
 
-/** Stage, blocked and what it waits on, who's on it (in full, session and all), whether it's live
- *  and since when, who held the stages before (0030), its role ("your own task" for a human
- *  task, 0022), and what's waiting on the owner
+/** Stage, why it's blocked (the kind in bold, each task it's blocked by a link, 0024), who's on it
+ *  (in full, session and all), whether it's live and since when, who held the stages before
+ *  (0030), its role ("your own task" for a human task, 0022), and what's waiting on the owner
  *  (gold) or that nothing is. A goal or feature shows the stage its children give it, and its
  *  level. */
-export function StatusLine({ task, now }: { task: Task; now: number }) {
+export function StatusLine({ task, now, onOpenTask }: { task: Task; now: number; onOpenTask?: (id: string) => void }) {
   const work = isWork(task);
   const known = isStage(task.stage);
   const pill = work
@@ -99,7 +100,7 @@ export function StatusLine({ task, now }: { task: Task; now: number }) {
   return (
     <div className="status-line" data-part="status">
       {pill}
-      {task.blocked && <span className="status-pill blocked">blocked{task.waitingOn ? `: ${task.waitingOn}` : ""}</span>}
+      <BlockWhy t={task} onOpenTask={onOpenTask} />
       {(who || started || earlier.length > 0) && (
         <span className="holder">
           {who && (

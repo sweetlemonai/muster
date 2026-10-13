@@ -12,6 +12,12 @@ describe("cardClass", () => {
     expect(cardClass({ priority: "high", blocked: false, waitingForOwner: false }, false)).toBe("card p-high");
     expect(cardClass({ priority: "", blocked: true, waitingForOwner: true }, true)).toBe("card p-normal active needs-you blocked");
   });
+  it("is blocked by the tasks it depends on too, with no flag (0024)", () => {
+    expect(cardClass({ priority: "low", blocked: false, blockedKind: "tasks", waitingForOwner: false }, false)).toBe("card p-low blocked");
+    expect(cardClass({ priority: "low", blocked: false, blockedKind: "", waitingForOwner: false }, false)).toBe("card p-low");
+    const html = renderToStaticMarkup(createElement(CardBand, { t: { stage: "ready", blocked: false, blockedKind: "tasks", waitingForOwner: false, priority: "" } }));
+    expect(text(html, "by-stage")).toBe("Blocked");
+  });
   it("reads P0–P3 as the board sorts them, and anything unknown as normal", () => {
     const pri = (priority: string) => cardClass({ priority, blocked: false, waitingForOwner: false }, false);
     expect([pri("P0"), pri("P1"), pri("P2"), pri("P3")]).toEqual(["card p-high", "card p-high", "card p-normal", "card p-low"]);

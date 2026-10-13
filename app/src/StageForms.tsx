@@ -1,6 +1,7 @@
 import { useState } from "react";
+import { BLOCK_KINDS, type BlockKind, blockRequest } from "./blockWords";
 import { earlierStages } from "./lib";
-import type { Task } from "./types";
+import type { Question, Task } from "./types";
 import type { TaskActions } from "./useTaskActions";
 
 /** The open stage form, full width under both columns: the gate line out of Building, Send back
@@ -9,7 +10,7 @@ import type { TaskActions } from "./useTaskActions";
 export default function StageForms({ task, a }: { task: Task; a: TaskActions }) {
   if (a.form === "gate" && task.stage === "building") return <GateForm a={a} />;
   if (a.form === "back" && earlierStages(task.stage).length > 0) return <BackForm task={task} a={a} />;
-  if (a.form === "block" && !task.blocked) return <BlockForm a={a} />;
+  if (a.form === "block" && !task.blocked) return <BlockForm task={task} a={a} />;
   return null;
 }
 
@@ -59,20 +60,95 @@ function BackForm({ task, a }: { task: Task; a: TaskActions }) {
   );
 }
 
-function BlockForm({ a }: { a: TaskActions }) {
-  const [waitingOn, setWaitingOn] = useState("");
+/** Block: why, on a row of chips, then the detail that kind needs (0024). What's typed for each
+ *  kind is kept while the owner tries the others. */
+function BlockForm({ task, a }: { task: Task; a: TaskActions }) {
+  const [kind, setKind] = useState<BlockKind | null>(null);
+  const [details, setDetails] = useState<Partial<Record<BlockKind, string>>>({});
+  const detail = kind ? (details[kind] ?? "") : "";
+  return (
+    <BlockFormView
+      kind={kind}
+      detail={detail}
+      questions={task.questions}
+      busy={a.busy}
+      onKind={setKind}
+      onDetail={(d) => {
+        if (kind) setDetails((all) => ({ ...all, [kind]: d }));
+      }}
+      onSubmit={() => {
+        const r = kind ? blockRequest(kind, detail) : null;
+        if (r?.ok) a.block(r.kind, r.detail);
+      }}
+      onCancel={a.close}
+    />
+  );
+}
+
+/** The Block form as drawn: the five kinds always on screen (no dropdown), the chosen one
+ *  pressed, and under it, in the same place, the detail: task ids (they go into its depends), the
+ *  task's open questions as chips, or a line of words. Block waits for what the kind needs. */
+export function BlockFormView({ kind, detail, questions, busy, onKind, onDetail, onSubmit, onCancel }: {
+  kind: BlockKind | null;
+  detail: string;
+  questions: Question[];
+  busy: boolean;
+  onKind: (k: BlockKind) => void;
+  onDetail: (d: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  const ready = kind !== null && blockRequest(kind, detail).ok;
+  const need = BLOCK_KINDS.find((k) => k.id === kind)?.need ?? "";
+  const open = questions.filter((q) => !q.ticked && q.n !== null);
   return (
     <form
-      className="control-row stage-form"
+      className="stage-form block-form"
       data-part="form"
       onSubmit={(e) => {
         e.preventDefault();
-        if (waitingOn.trim()) a.block(waitingOn);
+        if (ready) onSubmit();
       }}
     >
-      <input autoFocus value={waitingOn} onChange={(e) => setWaitingOn(e.target.value)} placeholder="Waiting on: a task id (0012), owner, or capture, then a few words" aria-label="What it's waiting on" maxLength={200} />
-      <button type="submit" disabled={a.busy || !waitingOn.trim()}>Block</button>
-      <button type="button" onClick={a.close}>Cancel</button>
+      <div className="chip-row" role="group" aria-label="Blocked by">
+        <span className="lbl">Blocked by</span>
+        {BLOCK_KINDS.map((k) => (
+          <button key={k.id} type="button" className={k.id === kind ? "chip on" : "chip"} aria-pressed={k.id === kind} onClick={() => onKind(k.id)}>
+            {k.label}
+          </button>
+        ))}
+      </div>
+      <div className="control-row">
+        {kind === null && <span className="meta small">Pick why it's blocked, then say what it waits on.</span>}
+        {kind === "question" && (open.length > 0 ? (
+          <div className="chip-row" role="group" aria-label="The open question it waits on">
+            {open.map((q) => {
+              const id = `Q${q.n}`;
+              return (
+                <button key={id} type="button" className={detail === id ? "chip on" : "chip"} aria-pressed={detail === id} title={q.text} onClick={() => onDetail(id)}>
+                  {id} {q.text.split("\n")[0].slice(0, 60)}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <span className="meta small">No open question in this task: ask one first, then block on it.</span>
+        ))}
+        {kind !== null && kind !== "question" && (
+          <input
+            key={kind}
+            autoFocus
+            value={detail}
+            onChange={(e) => onDetail(e.target.value)}
+            placeholder={need}
+            aria-label={need}
+            maxLength={200}
+          />
+        )}
+        <button type="submit" disabled={busy || !ready}>Block</button>
+        <button type="button" onClick={onCancel}>Cancel</button>
+      </div>
+      {kind === "tasks" && <p className="meta small">They're added to its depends: it shows blocked by them until they're all done, then clears by itself.</p>}
     </form>
   );
 }

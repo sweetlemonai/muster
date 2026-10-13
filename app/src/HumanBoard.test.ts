@@ -22,7 +22,8 @@ describe("the Human board (0022)", () => {
     task("0043", { forWho: "human", stage: "done", title: "Sign up" }),
     task("0050", { stage: "your-check", waitingForOwner: true, title: "Try the header" }),
     task("0051", { stage: "building", questions: [q(2, "Child webview or a window?")], waitingForOwner: true, title: "Pane" }),
-    task("0052", { blocked: true, waitingOn: "owner: which colour?", waitingForOwner: true, title: "Theme" }),
+    // As the core sends a block on you (0024): its kind, and the detail after "owner:".
+    task("0052", { blocked: true, waitingOn: "owner: which colour?", blockedKind: "you", blockDetail: "which colour?", waitingForOwner: true, title: "Theme" }),
     task("0053", { stage: "building", claimedBy: "wt-b", title: "Agent work" }),
   ];
   it("shows From the agents first, then To do · Doing · Done, each with its count", () => {
@@ -39,10 +40,17 @@ describe("the Human board (0022)", () => {
     expect(items.map((m) => text(m[3]))).toEqual([
       "0050 Try the header Your check In Your check: accept it, or send it back",
       "0051 Pane Building Q2: Child webview or a window?",
-      "0052 Theme Ready Blocked on you: owner: which colour?",
+      "0052 Theme Ready Blocked on you: which colour?",
     ]);
     // Agents' work that doesn't wait on you isn't on the Human board at all.
     expect(html).not.toContain("Agent work");
+  });
+  it("says why the owner's own task is blocked, in the block's words (0024)", () => {
+    const own = (over: Partial<Task>) => task("0060", { forWho: "human", title: "Renew the cert", ...over });
+    const why = (t: Task) => [...board([t]).matchAll(/<span class="hb-why">([^<]*)<\/span>/g)].map((m) => m[1]);
+    expect(why(own({ blocked: true, blockedKind: "outside", blockDetail: "the registrar's reply" }))).toEqual(["Blocked by outside: the registrar&#x27;s reply"]);
+    expect(why(own({ blockedKind: "tasks", blockedBy: [{ id: "0014", stage: "building", holder: "wt-a" }] }))).toEqual(["Blocked by tasks: 0014"]);
+    expect(why(own({}))).toEqual([]);
   });
   it("collapses to one line per column when there's nothing, but never hides", () => {
     const html = board([]);

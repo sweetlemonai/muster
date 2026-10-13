@@ -3,6 +3,7 @@
 //! the core gave it, never by a path it made up. Folders are picked by the core's own dialog.
 
 pub mod backlog;
+pub mod block;
 pub mod cli;
 pub mod fields;
 pub mod help;
@@ -289,18 +290,31 @@ async fn return_task(
     .await
 }
 
+/// The owner blocks a task (0024): `kind` is tasks, you, permission, question or outside, and
+/// `detail` what it waits on (task ids, a question's number, or words). `ops::block_as` checks both.
 #[tauri::command]
 async fn block_task(
     app: tauri::State<'_, AppState>,
     queue: String,
     id: String,
-    on: String,
+    kind: String,
+    detail: String,
     stamp: String,
 ) -> Result<String, String> {
     check_id(&id)?;
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
-    blocking(move || ops::block_task(&queue_root(&file, &queue)?, &id, &on, "owner", &stamp)).await
+    blocking(move || {
+        ops::block_as(
+            &queue_root(&file, &queue)?,
+            &id,
+            &kind,
+            &detail,
+            "owner",
+            &stamp,
+        )
+    })
+    .await
 }
 
 #[tauri::command]

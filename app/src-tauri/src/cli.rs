@@ -336,16 +336,17 @@ fn tasks_of(root: &Path) -> queue::State {
 /// The change is already written, so a failed re-read only shortens the message: it never
 /// turns a done change into an error.
 fn stage_message(root: &Path, id: &str, path: &str) -> String {
-    match queue::read_task(root, id) {
-        Ok(t) => {
-            let blocked = if t.blocked {
-                format!(", blocked: {}", t.waiting_on)
+    match ops::tasks_now(root).into_iter().find(|t| t.id == id) {
+        Some(t) => {
+            let why = crate::block::sentence_of(&t, false);
+            let blocked = if why.is_empty() {
+                why
             } else {
-                String::new()
+                format!(", {why}")
             };
             format!("{id}: {}{blocked} ({path})", queue::stage_label(&t.stage))
         }
-        Err(_) => format!("{id}: changed ({path})"),
+        None => format!("{id}: changed ({path})"),
     }
 }
 
@@ -513,8 +514,8 @@ fn list_text(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> String {
             if t.is_human() {
                 extra.push_str("  [you]");
             }
-            if t.blocked {
-                extra.push_str(&format!(" blocked: {}", t.waiting_on));
+            if !t.blocked_kind.is_empty() {
+                extra.push_str(&format!(" [{}]", crate::block::sentence_of(t, true)));
             }
             if t.waiting_for_owner {
                 extra.push_str("  [needs you]");
@@ -901,11 +902,19 @@ fn run_on(
         }
         "block" => {
             let id = need(a, 1, "a task id")?;
-            let on = a
-                .flags
-                .get("on")
-                .ok_or("block needs --on \"<task id|owner|capture> …\" (see `muster help`)")?;
-            let p = ops::block_task(root, id, on, &me(), stamp)?;
+            let on = a.flags.get("on").ok_or(
+                "block needs --on <0014,0016|you|permission|question|outside> and what it waits on (see `muster help`)",
+            )?;
+            // The kind, and what it waits on: the rest of --on, then the words after the id.
+            let (kind, mut detail) = crate::block::split_on(on);
+            let more = a.pos.get(2..).unwrap_or_default().join(" ");
+            if !more.trim().is_empty() {
+                if !detail.is_empty() {
+                    detail.push(' ');
+                }
+                detail.push_str(&more);
+            }
+            let p = ops::block_as(root, id, &kind, &detail, &me(), stamp)?;
             println!("{}", stage_message(root, id, &p));
             Ok(0)
         }
@@ -1386,6 +1395,109 @@ mod tests {
             .contains("unknown option"));
     }
 
+    /// `muster block <id> --on <kind> "<what>"` (0024): each kind, the old owner and capture, task
+    /// ids into depends, and the refusals with their exit codes (1 refused, 2 usage).
+    #[test]
+    fn block_takes_a_kind_and_what_it_waits_on() {
+        let d = tempfile::tempdir().unwrap();
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir(d.path().join(f)).unwrap();
+        }
+        std::fs::write(d.path().join("README.md"), "q").unwrap();
+        let q = d.path().to_string_lossy().to_string();
+        let code = |args: &[&str]| {
+            let mut v = sv(args);
+            v.extend(sv(&["--queue", &q, "--as", "wt-a"]));
+            main(&v)
+        };
+        for title in ["One", "Two", "Three"] {
+            assert_eq!(code(&["new", title]), 0);
+        }
+        assert_eq!(
+            code(&["ask", "0001", "Which port?", "--session", "aaaa1111"]),
+            0
+        );
+        let t = |id: &str| {
+            ops::tasks_now(d.path())
+                .into_iter()
+                .find(|t| t.id == id)
+                .unwrap()
+        };
+        let why = |id: &str| crate::block::sentence_of(&t(id), false);
+        // Usage: no --on.
+        assert_eq!(code(&["block", "0001"]), 2);
+        // Refused: an unknown kind, a missing detail, a question that isn't there or is closed.
+        assert_eq!(code(&["block", "0001", "--on", "someday", "x"]), 1);
+        assert_eq!(code(&["block", "0001", "--on", "you"]), 1);
+        assert_eq!(code(&["block", "0001", "--on", "outside", " "]), 1);
+        assert_eq!(code(&["block", "0001", "--on", "question", "Q5"]), 1);
+        assert_eq!(
+            code(&["block", "0001", "--on", "question", "which port"]),
+            1
+        );
+        assert_eq!(code(&["block", "0001", "--on", "0099"]), 1);
+        assert!(!t("0001").blocked);
+        // Each kind, the detail after --on's value or in it.
+        assert_eq!(
+            code(&["block", "0001", "--on", "you", "set the API key"]),
+            0
+        );
+        assert_eq!(why("0001"), "Blocked on you: set the API key");
+        assert_eq!(
+            code(&[
+                "block",
+                "0001",
+                "--on",
+                "permission",
+                "write to ~/x/tasks (sandbox)"
+            ]),
+            0
+        );
+        assert_eq!(
+            why("0001"),
+            "Blocked by permission: write to ~/x/tasks (sandbox)"
+        );
+        assert_eq!(code(&["block", "0001", "--on", "question", "Q1"]), 0);
+        assert_eq!(why("0001"), "Blocked by a question: Q1, waiting on capture");
+        assert_eq!(code(&["block", "0001", "--on", "outside: Apple review"]), 0);
+        assert_eq!(why("0001"), "Blocked by outside: Apple review");
+        // The old words still work, as you and question.
+        assert_eq!(code(&["block", "0001", "--on", "owner: which colour?"]), 0);
+        assert_eq!(why("0001"), "Blocked on you: which colour?");
+        assert_eq!(code(&["block", "0001", "--on", "capture", "Q1"]), 0);
+        assert_eq!(why("0001"), "Blocked by a question: Q1, waiting on capture");
+        assert_eq!(
+            code(&["block", "0001", "--on", "capture", "Q1"]),
+            1,
+            "the same block"
+        );
+        // Task ids go into depends, with no flag.
+        assert_eq!(code(&["block", "0003", "--on", "0001,0002"]), 0);
+        let three = t("0003");
+        assert_eq!((three.blocked, three.depends.len()), (false, 2));
+        assert_eq!(why("0003"), "Blocked by tasks: 0001 (Ready), 0002 (Ready)");
+        assert_eq!(
+            code(&["block", "0003", "--on", "0001"]),
+            1,
+            "already waits on it"
+        );
+        assert_eq!(code(&["unblock", "0003"]), 1, "it clears by itself");
+        assert_eq!(code(&["unblock", "0001"]), 0);
+        // The help says it all.
+        let help = crate::help::command_text("block").unwrap();
+        for k in [
+            "you",
+            "permission",
+            "question",
+            "outside",
+            "0014,0016",
+            "owner",
+            "capture",
+        ] {
+            assert!(help.contains(k), "{k}: {help}");
+        }
+    }
+
     #[test]
     fn runs_against_a_queue_folder() {
         let d = tempfile::tempdir().unwrap();
@@ -1412,7 +1524,10 @@ mod tests {
             .unwrap()
             .contains("line one\nline two"));
         assert_eq!(ok(&["set", "0001", "priority", "low"]), 0);
-        assert_eq!(ok(&["move", "0001", "blocked", "--on", "owner"]), 0);
+        assert_eq!(
+            ok(&["move", "0001", "blocked", "--on", "owner: pick a colour"]),
+            0
+        );
         assert_eq!(ok(&["list"]), 0);
         assert_eq!(ok(&["check"]), 0);
         assert_eq!(
@@ -1678,7 +1793,7 @@ mod tests {
         assert!(s.backlog.is_empty());
         assert_eq!(
             text,
-            "Backlog (1)\n  0004 code      normal  Raw\nShaping (1)\n  0003 code      normal  Shaping it  ~agent 2h · test 30m · 400k\nTesting (1)\n  0002 code      normal  Under test blocked: 0012 the API  #ui\nDone (1)\n  0001 code      normal  Shipped\n"
+            "Backlog (1)\n  0004 code      normal  Raw\nShaping (1)\n  0003 code      normal  Shaping it  ~agent 2h · test 30m · 400k\nTesting (1)\n  0002 code      normal  Under test [Blocked by tasks: 0012]  #ui\nDone (1)\n  0001 code      normal  Shipped\n"
         );
         // Backlog notes come first, by file name and title, and only where Backlog is listed.
         for (name, text, secs) in [
@@ -1729,7 +1844,7 @@ mod tests {
         // After a change: the stage, and what it waits on; a failed re-read still says it changed.
         assert_eq!(
             stage_message(d.path(), "0002", "blocked/0002-b.md"),
-            "0002: Testing, blocked: 0012 the API (blocked/0002-b.md)"
+            "0002: Testing, Blocked by tasks: 0012 (blocked/0002-b.md)"
         );
         assert_eq!(
             stage_message(d.path(), "0009", "doing/0009-x.md"),

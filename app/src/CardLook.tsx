@@ -4,16 +4,17 @@ import type { Task } from "./types";
 import YouRibbon from "./YouRibbon";
 
 /** A board card's classes: its priority (for colour by priority), and the states that take over
- *  its colour in every look: blocked, needs you; the selected one; and `human` for the owner's own
- *  task (0022), which carries the You ribbon in every look. */
-export function cardClass(t: Pick<Task, "priority" | "blocked" | "waitingForOwner"> & { forWho?: string }, active: boolean): string {
-  return `card p-${priorityName(t.priority)}${active ? " active" : ""}${t.waitingForOwner ? " needs-you" : ""}${t.blocked ? " blocked" : ""}${t.forWho === "human" ? " human" : ""}`;
+ *  its colour in every look: blocked (by the flag or by tasks it depends on, 0024), needs you; the
+ *  selected one; and `human` for the owner's own task (0022), which carries the You ribbon in every
+ *  look. */
+export function cardClass(t: Pick<Task, "priority" | "blocked" | "blockedKind" | "waitingForOwner"> & { forWho?: string }, active: boolean): string {
+  return `card p-${priorityName(t.priority)}${active ? " active" : ""}${t.waitingForOwner ? " needs-you" : ""}${t.blocked || t.blockedKind ? " blocked" : ""}${t.forWho === "human" ? " human" : ""}`;
 }
 
 /** The band the Top bar look shows (0026): what the card's colour means, by stage or by priority.
  *  Hidden in the other looks; the column, badges and priority chip say the same in words. */
-export function CardBand({ t }: { t: Pick<Task, "stage" | "blocked" | "waitingForOwner" | "priority"> }) {
-  const flag = t.blocked ? "Blocked" : t.waitingForOwner ? "Needs you" : "";
+export function CardBand({ t }: { t: Pick<Task, "stage" | "blocked" | "blockedKind" | "waitingForOwner" | "priority"> }) {
+  const flag = t.blocked || t.blockedKind ? "Blocked" : t.waitingForOwner ? "Needs you" : "";
   return (
     <span className="card-band" aria-hidden="true">
       <span className="by-stage">{flag || stageLabel(t.stage)}</span>

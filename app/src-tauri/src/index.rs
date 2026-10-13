@@ -172,9 +172,9 @@ fn stage_name(stage: &str) -> String {
 }
 
 /// One task's line: id, linked title, level (goals and features), "you" for the owner's own task,
-/// stage (and what a blocked one waits on), the tasks it depends on that are still `open`, its
-/// open vision conflicts, progress and due date, priority, type (tasks), estimate (`muster
-/// list`'s text), and how many comments it has.
+/// stage, why it's blocked (the block's sentence, 0024), the tasks it depends on that are still
+/// `open` (unless that sentence names them), its open vision conflicts, progress and due date,
+/// priority, type (tasks), estimate (`muster list`'s text), and how many comments it has.
 fn line(t: &Task, open: &HashSet<&str>) -> String {
     let title = match md_text(&t.title, 200) {
         s if s.is_empty() => "(untitled)".to_string(),
@@ -192,22 +192,19 @@ fn line(t: &Task, open: &HashSet<&str>) -> String {
     if t.is_human() {
         parts.push("you".into());
     }
-    let mut stage = stage_name(&t.shown_stage);
-    if t.blocked {
-        stage.push_str(", blocked");
-        let on = md_text(&t.waiting_on, 80);
-        if !on.is_empty() {
-            stage.push_str(&format!(": {on}"));
-        }
+    parts.push(stage_name(&t.shown_stage));
+    let why = crate::block::sentence_of(t, false);
+    if !why.is_empty() {
+        parts.push(md_text(&why, 400));
     }
-    parts.push(stage);
     let waits: Vec<&str> = t
         .depends
         .iter()
         .map(String::as_str)
         .filter(|d| *d != t.id && open.contains(d))
         .collect();
-    if !waits.is_empty() {
+    // Blocked by tasks already names them, with their stage.
+    if !waits.is_empty() && t.blocked_kind != "tasks" {
         parts.push(format!("waits on {}", md_text(&waits.join(", "), 400)));
     }
     // Open vision conflicts (0029): they hold it in Shaping, as the card's badge says.
@@ -458,6 +455,7 @@ fn read(root: &Path) -> State {
             queue::parse_task("", root, &folder, &path, &text, 0)
         })
         .collect();
+    crate::block::derive(&mut tasks);
     queue::rollup(&mut tasks);
     let notes = backlog::read_notes("", root, &mut HashMap::new(), &mut HashSet::new());
     State {
@@ -656,8 +654,8 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
 
 - 0001 [Ship 1.0](todo/0001-ship.md) · Goal · In progress · 0 of 2 done · due 2026-12-01 · high
   - 0002 [Stage track](todo/0002-track.md) · Feature · In progress · 0 of 1 done · normal
-    - 0003 [Pass button](doing/0003-pass.md) · Building · waits on 0004 · normal · bug · est agent 2h · test 30m · 400k
-  - 0004 [Waiting](blocked/0004-wait.md) · Testing, blocked: 0012 the API · normal · code
+    - 0003 [Pass button](doing/0003-pass.md) · Building · Blocked by tasks: 0004 (Testing) · normal · bug · est agent 2h · test 30m · 400k
+  - 0004 [Waiting](blocked/0004-wait.md) · Testing · Blocked by tasks: 0012 · normal · code
 
 ## Tasks without a goal or feature
 
@@ -853,10 +851,13 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
         s.tasks[0].priority = "[p](x)".into();
         s.tasks[0].kind = "|t|".into();
         s.tasks[0].blocked = true;
-        s.tasks[0].waiting_on = "owner: <b>now</b>".into();
+        s.tasks[0].blocked_kind = "you".into();
+        s.tasks[0].block_detail = "<b>now</b> [x](y)".into();
         let text = index_md(&s, "p");
         assert!(
-            text.contains("· Ready, blocked: owner: \\<b\\>now\\</b\\> · \\[p\\](x) · \\|t\\|\n"),
+            text.contains(
+                "· Ready · Blocked on you: \\<b\\>now\\</b\\> \\[x\\](y) · \\[p\\](x) · \\|t\\|\n"
+            ),
             "{text}"
         );
     }
@@ -1014,9 +1015,11 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
             ),
             "{text}"
         );
+        // Waiting on the owner's task reads as a block by tasks (0024), which names it with its
+        // stage, so there's no second "waits on".
         assert!(
             text.contains(
-                "- 0002 [Set up DNS](todo/0002-b.md) · Ready · waits on 0001 · normal · code\n"
+                "- 0002 [Set up DNS](todo/0002-b.md) · Ready · Blocked by tasks: 0001 (Ready) · normal · code\n"
             ),
             "{text}"
         );
@@ -1032,6 +1035,19 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
         assert!(
             text.contains(
                 "- 0001 [Buy the domain](todo/0001-a.md) · you · Ready · ⚠ 1 vision · normal · code\n"
+            ),
+            "{text}"
+        );
+        // All three on one line: "you", why it's blocked (0024) and the vision mark.
+        for t in s.tasks.iter_mut().filter(|t| t.id == "0001") {
+            t.blocked = true;
+            t.blocked_kind = "outside".into();
+            t.block_detail = "the registrar's reply".into();
+        }
+        let text = index_md(&s, "p");
+        assert!(
+            text.contains(
+                "- 0001 [Buy the domain](todo/0001-a.md) · you · Ready · Blocked by outside: the registrar's reply · ⚠ 1 vision · normal · code\n"
             ),
             "{text}"
         );
@@ -1175,7 +1191,7 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
         };
         ops::set_field(p, "0002", "depends", "0001", "owner", t).unwrap();
         assert!(
-            second().contains(" · Ready · waits on 0001 · "),
+            second().contains(" · Ready · Blocked by tasks: 0001 (Ready) · "),
             "{}",
             second()
         );

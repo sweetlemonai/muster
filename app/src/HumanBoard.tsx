@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { blockSentence, isBlocked } from "./blockWords";
 import { HUMAN_COLUMNS, humanBoard, laneLines, needsYouCount, type HumanColumn } from "./human";
 import { key, priorityName, stageLabel, stageOf } from "./lib";
 import type { Task } from "./types";
@@ -44,7 +45,7 @@ export default function HumanBoard({ tasks, multi, openKey, onOpen }: { tasks: T
               {list.map((t) => (
                 <button key={key(t)} type="button" className={`hb-item s-${stageOf(t)}${openKey === key(t) ? " active" : ""}`} onClick={() => onOpen(t)}>
                   <Line t={t} multi={multi} />
-                  {t.blocked && <span className="hb-why">blocked: {t.waitingOn || "something it doesn't name"}</span>}
+                  {isBlocked(t) && <span className="hb-why">{blockSentence(t, true)}</span>}
                 </button>
               ))}
               {c.id === "done" && total > DONE_SHOWN && (

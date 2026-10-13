@@ -1,3 +1,4 @@
+import { blockSentence } from "./blockWords";
 import { key, priorityName, stageRank } from "./lib";
 import type { Task } from "./types";
 
@@ -25,7 +26,7 @@ export function humanColumn(stage: string): HumanColumn {
 }
 
 /** An agent's task that waits on the owner (the core's needs_owner: Your check, a question
- *  escalated to them, blocked on the owner): the Human board's "From the agents" lane. */
+ *  escalated to them, blocked on you or by a permission): the Human board's "From the agents" lane. */
 export const fromTheAgents = (t: Pick<Task, "forWho" | "waitingForOwner">) => !isHuman(t) && t.waitingForOwner;
 
 /** Does this task need the owner? Their own task until it's done, or an agent's waiting on them. */
@@ -62,8 +63,8 @@ export function humanBoard(tasks: Task[]): HumanBoard {
 }
 
 /** Why a lane item waits on the owner, one line each: Your check, each open question escalated to
- *  them (its first line), and a block on the owner with what it says. */
-export function laneLines(t: Pick<Task, "stage" | "questions" | "blocked" | "waitingOn">): string[] {
+ *  them (its first line), and a block on you or by a permission in its sentence (0024). */
+export function laneLines(t: Pick<Task, "stage" | "questions" | "blockedKind" | "blockDetail" | "blockedBy">): string[] {
   const out: string[] = [];
   if (t.stage === "your-check") out.push("In Your check: accept it, or send it back");
   for (const q of t.questions) {
@@ -71,7 +72,7 @@ export function laneLines(t: Pick<Task, "stage" | "questions" | "blocked" | "wai
     const first = q.text.split("\n").find((l) => l.trim())?.trim() ?? "";
     out.push(`Q${q.n ?? "?"}: ${first}`);
   }
-  if (t.blocked && t.waitingOn.trim().toLowerCase().startsWith("owner")) out.push(`Blocked on you: ${t.waitingOn}`);
+  if (t.blockedKind === "you" || t.blockedKind === "permission") out.push(blockSentence(t));
   return out;
 }
 

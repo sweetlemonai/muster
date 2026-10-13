@@ -105,7 +105,7 @@ pub const COMMANDS: &[Command] = &[
         name: "move",
         usage: "muster move <id> <inbox|todo|blocked|done> [--on \"<what it waits on>\"]",
         what: "The old way to change a task, kept for scripts: inbox puts it in Backlog, todo in Ready, done in Done (and unblocks it), blocked is muster block. Use pass, return, block and stage instead.",
-        options: &[("--on", "for blocked: a task id (0012), owner, or capture, and a few words")],
+        options: &[("--on", "for blocked: as muster block's --on, the kind and what it waits on in one (\"you: pick a colour\", \"0012\")")],
         examples: &["muster move 0007 blocked --on \"owner: pick a colour\"", "muster move 0007 todo", "muster move 0007 done"],
     },
     Command {
@@ -181,15 +181,22 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "block",
-        usage: "muster block <id> --on \"<task id|owner|capture> …\"",
-        what: "Mark a task blocked. It stays in its stage and keeps its claim; the card shows what it waits on. Blocked is a flag, not a stage.",
-        options: &[("--on", "starts with a task id (0012), owner or capture, then a few words")],
-        examples: &["muster block 0007 --on 0012", "muster block 0007 --on \"owner: which colour?\""],
+        usage: "muster block <id> --on <0014,0016|you|permission|question|outside> [\"<what it waits on>\"]",
+        what: "Mark a task blocked, and say why: the card, the table, the timeline and the task pane say it in words, the kind first (\"Blocked on you: …\"). It stays in its stage and keeps its claim; blocked is a flag, not a stage. Task ids go into its depends instead of a flag: it shows blocked by them until they're all done, and clears by itself then (logged). A block on a question clears when it's answered. You, permission and outside stay until muster unblock. Blocked on you or by a permission counts as waiting for you. Refused: an unknown kind, no detail, a question that isn't open in the task.",
+        options: &[("--on", "the kind, then what it waits on (in --on after the kind, or after it): task ids 0014,0016 (added to depends); you \"<what you have to do or decide>\"; permission \"<what access, and where to grant it>\"; question Q2 (an open question in this task); outside \"<a third party, a service, a release>\". owner … and capture … still work, as you and question")],
+        examples: &[
+            "muster block 0007 --on 0012,0014",
+            "muster block 0007 --on you \"set the API key in the Keychain\"",
+            "muster block 0007 --on permission \"write to ~/playground/x/tasks (sandbox): grant in the layer's write list\"",
+            "muster block 0007 --on question Q2",
+            "muster block 0007 --on outside \"Apple review\"",
+            "muster block 0007 --on \"owner: which colour?\"",
+        ],
     },
     Command {
         name: "unblock",
         usage: "muster unblock <id>",
-        what: "Clear the blocked flag. The task carries on in its stage.",
+        what: "Clear the blocked flag (on you, by a permission, a question or outside). The task carries on in its stage. A block on tasks has no flag: it clears by itself once they're done.",
         options: &[],
         examples: &["muster unblock 0007"],
     },
@@ -313,7 +320,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "check",
         usage: "muster check",
-        what: "Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist, a link that isn't a plain https link, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop, a for that isn't human or ai, a vision count that doesn't match the task's Vision section, an INDEX.md that shows something the task files no longer say (rebuild with muster index; none yet is fine). Exit 1 if any. A goal past its due date with tasks open, and an INDEX.md only due a refresh (the files changed outside muster, as Drover's answers do), are warnings: shown, without failing. Also lists, without counting them as problems, what waits on the owner's look and Shaping tasks with no vision check yet.",
+        what: "Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist, a link that isn't a plain https link, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop, a for that isn't human or ai, a vision count that doesn't match the task's Vision section, an INDEX.md that shows something the task files no longer say (rebuild with muster index; none yet is fine). Exit 1 if any. A goal past its due date with tasks open, a block from before kinds (read as one from what it waits on until it's blocked again with a kind), and an INDEX.md only due a refresh (the files changed outside muster, as Drover's answers do), are warnings: shown, without failing. Also lists, without counting them as problems, what waits on the owner's look and Shaping tasks with no vision check yet.",
         options: &[],
         examples: &["muster check", "muster check --queue braindump"],
     },
@@ -514,7 +521,7 @@ pub const APP: &[(&str, &str)] = &[
     ),
     (
         "Block · Unblock",
-        "in a task's pane: it waits on a task id, owner or capture, and keeps its stage",
+        "in a task's pane: pick why on the chips (tasks, you, permission, question, outside) and say what it waits on; it keeps its stage. The card, table, timeline and pane say why, the kind first",
     ),
     (
         "Stage picker",

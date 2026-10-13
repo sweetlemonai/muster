@@ -18,7 +18,7 @@ export const SLASH: { route: string; who: "owner" | "agent" | "system"; what: st
   { route: "/mu note <id> <text>", who: "agent", what: "A line in the task's log" },
   { route: "/mu pass <id> …", who: "agent", what: "Hand the task on to the next stage" },
   { route: "/mu return <id> <why>", who: "agent", what: "Send it back a stage, with the reason" },
-  { route: "/mu block <id> <on what>", who: "agent", what: "Mark it blocked on a task, the owner or capture" },
+  { route: "/mu block <id> <on what>", who: "agent", what: "Mark it blocked, and why: tasks, you, a permission, a question or outside" },
   { route: "/mu unblock <id>", who: "agent", what: "Clear the blocked flag" },
   { route: "/mu list [--stage <s>]", who: "system", what: "Tasks by stage" },
   { route: "/mu check", who: "system", what: "Problems in the queue" },

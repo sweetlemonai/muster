@@ -280,7 +280,7 @@ class TaskTests(unittest.TestCase):
             TASK_FILE.replace("id: 0042", "id: 0044").replace("status: doing", "status: doing\nstage: reviewing"))
         (self.root / "blocked" / "0045-b.md").write_text(
             TASK_FILE.replace("id: 0042", "id: 0045")
-            .replace("status: doing", "status: blocked\nstage: testing").replace("waiting_on:", "waiting_on: 0042"))
+            .replace("status: doing", "status: blocked\nstage: testing").replace("waiting_on:", "waiting_on: Apple review\nblocked-kind: outside"))
         r = self.manifest("--check")
         self.assertEqual(r.returncode, 1)
         self.assertIn("doing/0042-something.md: says stage ready but status doing (moved by hand? use `muster stage`)", r.stdout)
@@ -532,6 +532,41 @@ class TaskTests(unittest.TestCase):
         r = self.manifest("--check")
         self.assertIn("doing/0060-a.md: depends has '\u06f0\u06f0\u06f1\u06f4', which isn't a task id", r.stdout)
         self.assertIn("doing/0061-b.md: depends has '0042\\xa00060', which isn't a task id", r.stdout)
+
+    def test_manifest_reads_why_a_task_is_blocked(self):
+        # Task 0024: blocked-kind: next to waiting_on, as muster writes it; an old file's kind read
+        # from waiting_on (and warned about, as muster check does); blocked by tasks from depends.
+        def put(folder: str, id_: str, fm: str) -> None:
+            (self.root / folder / f"{id_}-b.md").write_text(
+                TASK_FILE.replace("id: 0042", f"id: {id_}").replace("waiting_on:\n", "")
+                .replace("status: doing", fm).replace("claimed-by: wt-a (session aaaa1111)\n", "claimed-by:\n"))
+        put("blocked", "0050", "status: blocked\nstage: ready\nwaiting_on: write to ~/x\nblocked-kind: permission")
+        put("blocked", "0051", "status: blocked\nstage: ready\nwaiting_on: Q1\nblocked-kind: question")
+        put("blocked", "0052", "status: blocked\nstage: ready\nwaiting_on: Owner: pick a colour")
+        put("blocked", "0053", "status: blocked\nstage: ready\nwaiting_on: 2026 budget\nblocked-kind: outside")
+        put("todo", "0054", "status: todo\nstage: ready\ndepends: [0050]")
+        put("todo", "0055", "status: todo\nstage: ready\ndepends: [0056]")
+        put("done", "0056", "status: done\nstage: done")
+        # As muster writes a block on you or a question since: the old words first, for Drover.
+        put("blocked", "0057", "status: blocked\nstage: ready\nwaiting_on: owner: pick\nblocked-kind: you")
+        put("blocked", "0058", "status: blocked\nstage: ready\nwaiting_on: capture: Q1\nblocked-kind: question")
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn(
+            "warning: blocked/0052-b.md: blocked on 'Owner: pick a colour' without a kind, read as you;"
+            " block it again with one to confirm", r.stdout)
+        self.assertEqual(r.stdout.count("without a kind"), 1, r.stdout)
+        # A typed block's words are never read as a task id.
+        self.assertNotIn("2026", r.stdout)
+        self.assertEqual(self.manifest().returncode, 0)
+        manifest = json.loads(self.text("tasks.json"))
+        kinds = {t["id"]: t["blocked_kind"] for t in manifest["tasks"]}
+        self.assertEqual(
+            {k: kinds[k] for k in ("0042", "0050", "0051", "0052", "0053", "0054", "0055", "0056", "0057", "0058")},
+            {"0042": "", "0050": "permission", "0051": "question", "0052": "you", "0053": "outside",
+             "0054": "tasks", "0055": "", "0056": "", "0057": "you", "0058": "question"})
+        # Blocked on you or by a permission waits on the owner; a question, outside or tasks don't.
+        self.assertEqual(sorted(manifest["waiting_for_owner"]), ["0050", "0052", "0057"])
 
     def test_manifest_carries_the_holder_of_testing_and_your_check(self):
         # muster writes held-by: for Testing and Your check (0030), beside Building's claimed-by.

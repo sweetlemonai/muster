@@ -69,7 +69,7 @@ The router is built (task 0003) but not installed yet: it goes into the personal
 | `/mu note <id> <text>` | agent | A line in the task's log |
 | `/mu pass <id> …` | agent | Hand the task on to the next stage |
 | `/mu return <id> <why>` | agent | Send it back a stage, with the reason |
-| `/mu block <id> <on what>` | agent | Mark it blocked on a task, the owner or capture |
+| `/mu block <id> <on what>` | agent | Mark it blocked, and why: tasks, you, a permission, a question or outside |
 | `/mu unblock <id>` | agent | Clear the blocked flag |
 | `/mu list [--stage <s>]` | system | Tasks by stage |
 | `/mu check` | system | Problems in the queue |

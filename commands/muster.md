@@ -42,7 +42,7 @@ mode` is captured, never a claim. Never guess which command was meant.
 | `/mu note <id> <text>` | agent | `muster note <id> -- '<text>'` | A line in the task's log. |
 | `/mu pass <id> …` | agent | `muster pass <id> …` | Hand on to the next stage, with the options as typed (from, gate line, commit). |
 | `/mu return <id> <why>` | agent | `muster return <id> -- '<why>'` | Send back a stage, with the reason (`--to <stage>` passes through). |
-| `/mu block <id> <on what>` | agent | `muster block <id> --on '<on what>'` | Mark it blocked; the reason starts with a task id, owner or capture. |
+| `/mu block <id> <on what>` | agent | `muster block <id> --on '<on what>'` | Mark it blocked, and why: the text starts with task ids (0014,0016: added to its depends), you, permission, question Q2 or outside, then what it waits on (owner and capture still work). |
 | `/mu unblock <id>` | agent | `muster unblock <id>` | Clear the blocked flag. |
 | `/mu list [--stage <s>]` | system | `muster list [--stage <s>]` | Tasks by stage. |
 | `/mu check` | system | `muster check` | Problems in the queue. |
@@ -89,9 +89,12 @@ on it.
      marked `verify: owner`, or else the unticked ones. Act: Accept in the app's task pane, or
      `/mu pass <id> --from your-check --as owner`; or send it back with the reason,
      `/mu return <id> --as owner <why>`. With no answer it stays in Your check.
-   - **Blocked on you:** it waits on the owner (its waiting-on starts with "owner"). Say what it
-     needs from you, in plain words. With no answer it stays blocked. Act: once it's settled,
+   - **Blocked on you:** it waits on the owner (`muster list` says "Blocked on you: …"). Say what
+     it needs from you, in plain words. With no answer it stays blocked. Act: once it's settled,
      `/mu unblock <id> --as owner`.
+   - **Blocked by permission:** access the agent lacks (`muster list` says "Blocked by
+     permission: …"). Say what to grant and where, in plain words. With no answer it stays
+     blocked. Act: once it's granted, `/mu unblock <id> --as owner`.
 
    Then each line marked `[you]` that isn't under Done: a **task of yours**, one only you can do
    (a human task: an account, a secret, a decision, a try on a device). Agents never take these.

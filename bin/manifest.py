@@ -117,6 +117,29 @@ def kind_of(raw: str) -> str:
     return "code" if kind == "task" else kind
 
 
+# Why a task is blocked (task 0024, the app core's block.rs): `blocked-kind:` holds one of these,
+# next to `waiting_on` (the detail). A block on tasks is never written: it's read from depends.
+TYPED_KINDS = ["you", "permission", "question", "outside"]
+
+
+def after_word(text: str, word: str) -> bool:
+    """Does `text` start with `word` (any case), not followed by a letter or digit? (block.rs)"""
+    return text[:len(word)].lower() == word and not (text[len(word):len(word) + 1].isalnum())
+
+
+def guess_kind(waiting_on: str) -> str:
+    """The kind an old `waiting_on` reads as (block.rs guess): owner → you, capture → question,
+    a task id → tasks, anything else → outside."""
+    w = waiting_on.strip()
+    if after_word(w, "owner"):
+        return "you"
+    if after_word(w, "capture"):
+        return "question"
+    if w[:4].isascii() and w[:4].isdigit() and len(w) >= 4 and not w[4:5].isalnum():
+        return "tasks"
+    return "outside"
+
+
 def mirror_status(stage: str, blocked: bool) -> str:
     """The old status a stage and the blocked flag mean (ops.rs/queue.rs mirror_status)."""
     if blocked:
@@ -402,7 +425,7 @@ def heartbeat_age(value, now):
 def main():
     check_only = "--check" in sys.argv
     now = datetime.now()
-    tasks, problems = [], []
+    tasks, problems, block_warnings = [], [], []
     backlog, note_problems = backlog_notes()
     problems.extend(note_problems)
     for folder in FOLDERS:
@@ -462,6 +485,15 @@ def main():
                 problems.append(f"{rel}: status '{t['status']}' but it's in {folder}/")
             raw_stage = fields.get("stage", "").lower()
             blocked = bool(t["waiting_on"]) or t["status"] == "blocked"
+            # Why it's blocked (0024): the typed kind, or what an old waiting_on reads as (warned
+            # about until it's blocked again with one); "tasks" from depends is filled in below.
+            typed = fields.get("blocked-kind", "").lower()
+            t["blocked_kind"] = (typed if typed in TYPED_KINDS else guess_kind(t["waiting_on"])) if blocked else ""
+            t["_kind_guessed"] = blocked and typed not in TYPED_KINDS
+            if t["_kind_guessed"]:
+                block_warnings.append(
+                    f"{rel}: blocked on {t['waiting_on'][:80]!r} without a kind, read as {t['blocked_kind']};"
+                    f" block it again with one to confirm")
             if raw_stage in STAGES and mirror_status(raw_stage, blocked) != t["status"]:
                 problems.append(f"{rel}: says stage {raw_stage} but status {t['status']} (moved by hand? use `muster stage`)")
             elif raw_stage and raw_stage not in STAGES:
@@ -486,10 +518,18 @@ def main():
         if len(paths) > 1:
             problems.append(f"id {i} used twice: {', '.join(paths)}")
     known = set(ids)
+    # Any file with that id not done holds a task that depends on it (as `muster claim` reads it).
+    open_ids = {t["id"] for t in tasks if t["stage"] != "done"}
     for t in tasks:
-        ref = re.match(r"(\d{4})\b", t["waiting_on"])
+        # Only an old block names a task in waiting_on; a typed one's words are just words.
+        ref = re.match(r"(\d{4})\b", t["waiting_on"]) if t["_kind_guessed"] else None
         if ref and ref.group(1) not in known:
             problems.append(f"{t['path']}: waiting_on {ref.group(1)}, which doesn't exist")
+        del t["_kind_guessed"]
+        # Blocked by tasks (0024): not flagged, not done, and something it depends on isn't done.
+        if not t["blocked_kind"] and t["stage"] != "done" and any(
+                d != t["id"] and d in open_ids for d in t["depends"]):
+            t["blocked_kind"] = "tasks"
         # Dependencies (0019), as muster check reports them.
         for b in t.pop("_bad_depends"):
             problems.append(f"{t['path']}: depends has {b!r}, which isn't a task id")
@@ -504,6 +544,7 @@ def main():
     for loop in dependency_loops(edges):
         problems.append(f"{', '.join(loop)} depend on each other in a loop")
     level_problems, warnings = level_checks(tasks, now.strftime("%Y-%m-%d"))
+    warnings.extend(block_warnings)
     problems.extend(level_problems)
     index_problem, index_warning = index_check()
     if index_problem:
@@ -523,7 +564,8 @@ def main():
             "backlog": backlog,
             "waiting_for_owner": [
                 t["id"] for t in tasks
-                if t["escalated_to_owner"] or t["stage"] == "your-check" or t["waiting_on"].startswith("owner")
+                if t["escalated_to_owner"] or t["stage"] == "your-check"
+                or t["blocked_kind"] in ("you", "permission")
             ],
             "tasks": tasks,
             "problems": problems,

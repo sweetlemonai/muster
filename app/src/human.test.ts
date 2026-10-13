@@ -21,7 +21,8 @@ const QUEUE = [
   mine("0045", { stage: "backlog" }),
   task("0050", { stage: "your-check", waitingForOwner: true }),
   task("0051", { stage: "building", claimedBy: "wt-a", questions: [question(2, "Child webview or a window?")], openQuestions: 1, waitingForOwner: true }),
-  task("0052", { blocked: true, waitingOn: "owner: which colour?", waitingForOwner: true }),
+  // As the core sends a block on you (0024): its kind, and the detail after "owner:".
+  task("0052", { blocked: true, waitingOn: "owner: which colour?", blockedKind: "you", blockDetail: "which colour?", waitingForOwner: true }),
   task("0053", { stage: "building", claimedBy: "wt-b" }),
   task("0054", { blocked: true, waitingOn: "0041 the domain" }),
 ];
@@ -70,7 +71,12 @@ describe("the Human board", () => {
   it("says why each lane item waits on the owner, in words", () => {
     expect(laneLines(QUEUE[5])).toEqual(["In Your check: accept it, or send it back"]);
     expect(laneLines(QUEUE[6])).toEqual(["Q2: Child webview or a window?"]);
-    expect(laneLines(QUEUE[7])).toEqual(["Blocked on you: owner: which colour?"]);
+    expect(laneLines(QUEUE[7])).toEqual(["Blocked on you: which colour?"]);
+    // A block by a permission waits on the owner too (0024); one by tasks, a question or outside doesn't.
+    expect(laneLines(task("0001", { blocked: true, blockedKind: "permission", blockDetail: "repo write, in Settings → Tokens" }))).toEqual([
+      "Blocked by permission: repo write, in Settings → Tokens",
+    ]);
+    for (const blockedKind of ["tasks", "question", "outside"]) expect(laneLines(task("0001", { blocked: true, blockedKind, blockDetail: "x" }))).toEqual([]);
     // An answered or not-escalated question isn't the owner's; a long one shows its first line.
     const t = task("0001", { questions: [question(1, "done", { ticked: true }), question(2, "agents'", { escalated: false }), question(3, "First line\n\nmore")] });
     expect(laneLines(t)).toEqual(["Q3: First line"]);

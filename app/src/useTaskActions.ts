@@ -78,7 +78,8 @@ export function useTaskActions(task: Task, onChanged: () => void) {
       passFrom("", done);
     },
     sendBack: (why: string, to: string) => submit(() => api.returnTask(task.queue, task.id, why, to, now()), `Sent back to ${stageLabel(to)}.`),
-    block: (on: string) => submit(() => api.blockTask(task.queue, task.id, on, now()), "Blocked. It keeps its stage."),
+    block: (kind: string, detail: string) =>
+      submit(() => api.blockTask(task.queue, task.id, kind, detail, now()), kind === "tasks" ? "Blocked by those tasks: added to its depends." : "Blocked. It keeps its stage."),
     unblock: () => void stageRun(() => api.unblockTask(task.queue, task.id, now()), "Unblocked."),
     release: () => void stageRun(() => api.reclaimTask(task.queue, task.id, now()), "Released: back in Ready."),
     /** The owner's override from the track: no confirmation, an Undo in the message instead

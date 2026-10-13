@@ -19,6 +19,10 @@ export type Comment = { who: string; at: string; text: string };
 /** One stage change from the task's log, written by muster. `at` is "YYYY-MM-DD HH:MM". */
 export type StageStep = { at: string; who: string; from: string; to: string };
 
+/** A task another is blocked by (0024): its id, stage ("" when there's no such task) and who's on
+ *  it (the label, without the session). */
+export type BlockedBy = { id: string; stage: string; holder: string };
+
 /** A holder's check-in from the log (0030). `pct` is the session's own estimate, 0–100, or null. */
 export type Checkin = { at: string; who: string; pct: number | null; text: string };
 
@@ -46,6 +50,14 @@ export type Task = {
   checkins: Checkin[];
   heartbeat: string;
   waitingOn: string;
+  /** Why it's blocked (0024): "tasks" (derived from `depends:`), "you", "permission", "question"
+   *  or "outside"; "" when nothing blocks it. The core always sends these three; they're optional
+   *  so a task without them reads as not blocked. */
+  blockedKind?: string;
+  /** What the block says (a question's number, what you have to do, …). */
+  blockDetail?: string;
+  /** The tasks it's blocked by, with their stage and who's on them. */
+  blockedBy?: BlockedBy[];
   /** The tasks it waits on (`depends:`, same queue, 0019). */
   depends: string[];
   /** Who does it (`for:`, 0022): "human" is the owner's own task, "ai" an agent's (every older one). */
@@ -56,8 +68,9 @@ export type Task = {
   capturedAt: string;
   /** When it was moved to Done, to the minute, from the log; empty when not known. */
   doneAt: string;
-  /** When it was blocked: `from`/`to` stamps, `to` empty while it still is (0031). */
-  blockHistory: { from: string; to: string }[];
+  /** When it was blocked: `from`/`to` stamps, `to` empty while it still is (0031), and the
+   *  block's kind ("" for a hand move, 0024). */
+  blockHistory: { from: string; to: string; kind?: string }[];
   questions: Question[];
   openQuestions: number;
   ownerCriteria: Criterion[];

@@ -53,15 +53,20 @@ Why stages: each kind of work gets its own worker and its own check, and you onl
 
 **Blocked** means a task is waiting for something. It isn't a stage: a blocked task stays in its stage, keeps whoever holds it, and can't be passed on until it's unblocked.
 
-You block a task by saying what it waits on. The reason starts with a task id, `owner` (you) or `capture` (the session that writes tasks up for you), then a few words:
+You block a task by saying what kind of wait it is, and what it waits on. There are five kinds:
+
+- **tasks**: other tasks have to be done first. Their ids go into its `depends:`, so it's written once, and it clears by itself when they're all Done.
+- **you**: you have to do or decide something.
+- **permission**: the agent lacks some access; say what, and where to grant it.
+- **question**: an open question in the task. It clears when the question is answered.
+- **outside**: a third party, a service, a release.
 
 ```
-muster block 0012 --on "owner: which colour for the button?"
+muster block 0012 --on you "which colour for the button?"
+muster block 0012 --on 0014,0016
 ```
 
-The card shows a red "blocked: owner: which colour for the button?" badge, and a task blocked on `owner` also counts as waiting for you. `muster unblock 0012` lets it go on. In the task pane, use **Block** and **Unblock**.
-
-**Coming (task 0024):** blocked says why in kinds (by other tasks, by you, by a permission, by a question, by something outside), and a task blocked by the tasks it depends on is worked out from them, never typed twice.
+The card, the table, the timeline and the task pane say why in words, the kind first: "Blocked on you: which colour for the button?", "Blocked by tasks: 0014 (Building, codex), 0016 (Ready)". In the pane each task id opens that task. A task blocked on you or by a permission also counts as waiting for you. `muster unblock 0012` lets it go on. In the task pane, use **Block** (pick the kind from its chips) and **Unblock**.
 
 ## Goals, features and tasks
 
@@ -198,7 +203,7 @@ One list, everywhere, of what's waiting on you:
 
 - tasks in **Your check**,
 - questions **escalated** to you,
-- tasks **blocked on `owner`**.
+- tasks **blocked on you** or **by a permission**.
 
 They're counted on the **Waiting for you** tab and beside each project on the left, in orange, and marked "needs you" on their cards, which sort to the top of their columns. **Coming (task 0022):** tasks only you can do, on a board of your own beside the agents'.
 

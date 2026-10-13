@@ -24,7 +24,7 @@ Each card shows, top to bottom:
 - the title, the feature or goal it's under, and its tags;
 - who's on it and how long ago they started, their latest check-in ("60% · gate green, writing tests · 12 min ago"), and a warning when they've gone quiet ("quiet 12 h+", "no check-in for 45 min");
 - "⚠ 2 vision" while the task has open [vision conflicts](02-concepts.md#the-vision-check);
-- badges: blocked, with what it waits on; needs you; open questions; files; the estimate; and how long ago it last changed.
+- badges: why it's blocked, the kind first ("Blocked on you: …", [Blocked, and why](02-concepts.md#blocked-and-why)); needs you; open questions; files; the estimate; and how long ago it last changed.
 
 The **Sort** chips above the board order each column. The default, **priority**, puts cards that need you first, then high priority, then the lowest id, with Done newest first. Done shows the latest 8, with **Show all** for the rest.
 
@@ -64,7 +64,7 @@ Click a card to open its task beside the board. The pane keeps every control in 
 
 1. **The top line:** the project and how long ago the task changed, and **×** to close.
 2. **The title**, with its id. Click the title to rename it: ↩ saves, Esc keeps the old one. The **?** beside it opens this section.
-3. **The status line:** the stage, blocked and what it waits on, **LIVE** (the file changed in the last 5 minutes) or how long it's been quiet, who's on it and who held the stages before, the stage's role, and what's waiting on you, or "nothing waiting on you".
+3. **The status line:** the stage, why it's blocked (the kind first; each task it's blocked by opens with a click), **LIVE** (the file changed in the last 5 minutes) or how long it's been quiet, who's on it and who held the stages before, the stage's role, and what's waiting on you, or "nothing waiting on you".
 4. **The stage track:** all seven stages, the task's own lit. Click another stage to put the task there. That's your override: it happens at once, and the message under it offers **Undo**. When the move would release someone's claim, the stage's tooltip says whose.
 5. **Two columns.** The left one shows what this stage needs:
    - Backlog, Shaping and Ready: the acceptance criteria and the estimate.
@@ -107,7 +107,7 @@ The note's text is below the buttons, up to 20 KB.
 
 ## Waiting for you
 
-Every task waiting on you, in one list: questions escalated to you (with the question), tasks blocked on you, and tasks in Your check. **Open to answer** opens the task in the pane. The tab's count is the number of tasks.
+Every task waiting on you, in one list: questions escalated to you (with the question), tasks blocked on you or by a permission, and tasks in Your check. **Open to answer** opens the task in the pane. The tab's count is the number of tasks.
 
 ## Activity and Problems
 

@@ -1,3 +1,4 @@
+import { isBlocked } from "./blockWords";
 import { needsYouCount } from "./human";
 import { CHECKIN_MINUTES, splitHolder, stamp, stampMinutes } from "./lib";
 import type { Activity, Task } from "./types";
@@ -6,7 +7,7 @@ import type { Activity, Task } from "./types";
 // of the polled state and its clock (`now`, seconds since 1970), so the sidebar recomputes them
 // every poll without reading anything else.
 
-export type ActivityTask = Pick<Task, "stage" | "blocked" | "claimedBy" | "heldBy" | "live" | "heartbeat" | "checkins" | "stageHistory" | "stageSince" | "modified">;
+export type ActivityTask = Pick<Task, "stage" | "blocked" | "blockedKind" | "claimedBy" | "heldBy" | "live" | "heartbeat" | "checkins" | "stageHistory" | "stageSince" | "modified">;
 
 /** A project now: how many of its tasks are being worked on, whether its work in Building has
  *  gone quiet, and minutes since anything happened in it (null when nothing says). */
@@ -58,9 +59,10 @@ function workingAt(t: ActivityTask, wall: number | null): boolean {
   if (t.stage === "done") return false;
   if (t.live) return true;
   // A heartbeat or check-in counts only while someone holds the task and it isn't waiting: in
-  // Building with a claim, or in Testing with a holder. A task handed back to Ready, blocked, or
-  // in Your check keeps its last heartbeat, which isn't anyone working (review, 2026-10-13).
-  const held = !t.blocked && ((t.stage === "building" && t.claimedBy.trim() !== "") || (t.stage === "testing" && (t.heldBy ?? "").trim() !== ""));
+  // Building with a claim, or in Testing with a holder. A task handed back to Ready, blocked (by
+  // tasks too, 0024), or in Your check keeps its last heartbeat, which isn't anyone working
+  // (review, 2026-10-13).
+  const held = !isBlocked(t) && ((t.stage === "building" && t.claimedBy.trim() !== "") || (t.stage === "testing" && (t.heldBy ?? "").trim() !== ""));
   if (!held) return false;
   const m = sinceBeat(t, wall);
   return m !== null && m <= CHECKIN_MINUTES;
@@ -73,9 +75,9 @@ export function isWorking(t: ActivityTask, now: number): boolean {
   return workingAt(t, wallMinutes(now));
 }
 
-/** Work in Building that should be moving: held by a session, not waiting (blocked), not the
- *  owner's own (the owner doesn't check in). lib.ts quietCheckin's rule for a card. */
-const activeClaim = (t: ActivityTask) => t.stage === "building" && !t.blocked && splitHolder(t.claimedBy.trim()).label !== "owner";
+/** Work in Building that should be moving: held by a session, not waiting (blocked, by tasks
+ *  too), not the owner's own (the owner doesn't check in). lib.ts quietCheckin's rule for a card. */
+const activeClaim = (t: ActivityTask) => t.stage === "building" && !isBlocked(t) && splitHolder(t.claimedBy.trim()).label !== "owner";
 
 /** A project's activity from its tasks and its queue's newest commit (seconds, 0 for none).
  *  Stalled: work in Building and nothing at all in the project for over 30 minutes. */

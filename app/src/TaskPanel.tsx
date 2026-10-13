@@ -23,7 +23,7 @@ import { pressed } from "./shortcuts";
  *  two columns (what this stage needs; the next step and the task's settings), the stage forms
  *  under both, the path; then open questions, the write-up, the vision check (0029), the comment
  *  thread (0017) and the Log and, at the bottom, the note bar. */
-export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudge, childTasks }: {
+export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudge, childTasks, onOpenTask }: {
   task: Task;
   now: number;
   onClose: () => void;
@@ -34,6 +34,8 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
   nudge?: number;
   /** A goal's or feature's children, as far as the window has them. */
   childTasks?: Task[];
+  /** Open another task of this queue in the pane, by id (the tasks a block names, 0024). */
+  onOpenTask?: (id: string) => void;
 }) {
   const [dirtyParts, setDirtyParts] = useState<Record<string, boolean>>({});
   const editDirty = useCallback((d: boolean) => setDirtyParts((p) => withPart(p, "edit", d)), []);
@@ -104,7 +106,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
       }}
     >
       <header className="pane-top" onPaste={onPaste}>
-        <PaneHeader task={task} now={now} onClose={onClose} onRename={(t) => a.setField("title", t, "Renamed.")} />
+        <PaneHeader task={task} now={now} onClose={onClose} onRename={(t) => a.setField("title", t, "Renamed.")} onOpenTask={onOpenTask} />
         <StageTrack stage={task.stage} busy={a.busy} onPick={a.move} releases={(to) => releasedBy(task, to)} />
         <div className="tp-cols">
           <div className="tp-main">
