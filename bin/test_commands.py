@@ -141,10 +141,14 @@ class CommandFiles(unittest.TestCase):
                 self.assertNotIn(": ", v, k)
                 self.assertNotIn(" #", v, k)
                 self.assertNotIn(v[0], "[]{}*&!|>'%@`,?:-", k)
-        tools = {t.strip() for t in fm["allowed-tools"].split(",")}
-        self.assertIn("Bash(muster:*)", tools)
-        self.assertEqual(tools - {"Bash(muster:*)"} - READ_ONLY, set(),
-                         "only muster and read-only tools")
+        # One prefix per routed muster command, never Bash(muster:*): attach, init, set, move
+        # and stage stay the owner's.
+        tools = [t.strip() for t in fm["allowed-tools"].split(",")]
+        self.assertEqual(len(tools), len(set(tools)), "a tool twice")
+        routed = set().union(*ROUTES.values())
+        self.assertEqual(set(tools), {f"Bash(muster {c}:*)" for c in routed} | READ_ONLY)
+        for c in ("attach", "init", "set", "move", "stage"):
+            self.assertNotIn(c, routed)
         self.assertIn("$ARGUMENTS", self.router)
 
     def test_router_has_exactly_the_routes(self):
@@ -181,15 +185,30 @@ class CommandFiles(unittest.TestCase):
             if r["muster"] - built:
                 self.assertTrue(r["unbuilt"], f"say which task builds it: {r['line']}")
 
-    def test_router_names_no_unknown_command_in_its_hint(self):
-        # The fallback's hint lists the muster commands /mu doesn't route.
-        m = re.search(r"^Not routed: (.+)$", self.router, re.M)
+    def test_every_muster_command_is_routed_or_not_routed(self):
+        # The "Not routed" line: the built commands /mu doesn't route, then the ones a task is
+        # building, which may not be in this muster yet.
+        m = re.search(r"^Not routed: (.+); being built \(task \d{4}\): (.+)$", self.router, re.M)
         self.assertIsNotNone(m, "the Not routed line")
-        names = set(re.findall(r"`([a-z]+)`", m.group(1)))
-        self.assertTrue(names)
-        self.assertEqual(names - help_commands(), set())
+        built = set(re.findall(r"`([a-z]+)`", m.group(1)))
+        planned = set(re.findall(r"`([a-z]+)`", m.group(2)))
+        self.assertTrue(built and planned)
+        self.assertEqual(planned, {"shape", "file", "drop"})
+        cmds = help_commands()
         routed = set().union(*ROUTES.values())
-        self.assertEqual(names & routed, set(), "a routed command isn't 'not routed'")
+        self.assertEqual(built - cmds, set(), "not routed but not in muster either")
+        self.assertEqual((built | planned) & routed, set(), "a routed command isn't 'not routed'")
+        self.assertEqual(cmds - routed, (built | planned) & cmds,
+                         "every muster command is routed or listed as not routed")
+
+    def test_owner_actions_say_owner(self):
+        # What's waiting tells the owner how to act; those commands act as the owner, with the
+        # options right after the id.
+        part = self.router.split("### What's waiting", 1)[1].split("\n### ", 1)[0]
+        acts = re.findall(r"`(/mu (?:pass|unblock|return) <id>[^`]*)`", part)
+        self.assertEqual({a.split()[1] for a in acts}, {"pass", "unblock", "return"}, acts)
+        for a in acts:
+            self.assertRegex(a, r"^/mu \w+ <id>( --[a-z-]+ [^ ]+)* --as owner\b", a)
 
 
 def quote(text: str) -> str:
@@ -242,7 +261,8 @@ class RoutesRunOnARealQueue(unittest.TestCase):
                               text=True, env={**self.env, **env})
 
     def new(self, title: str) -> str:
-        r = self.muster(["muster", "new", title])
+        body = "## Acceptance criteria\\n- [x] AC1: synthetic, ticked\\n"  # muster reads \n
+        r = self.muster(["muster", "new", title, "--body", body])
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout.split()[0]
 
@@ -279,6 +299,28 @@ class RoutesRunOnARealQueue(unittest.TestCase):
         self.assertIn(f"claimed {self.b}", self.route("next", MUSTER_AS="wt-b")[0].stdout)
         self.route("check")
         self.route("help")
+
+    def test_owner_actions_run(self):
+        # The owner's act hints: the route's command with the options right after the id.
+        def act(key: str, opts: str, text: str = TEXT) -> str:
+            [cmd] = commands_of(self.routes[key])
+            # The options are the act's own: pass's "…" is them, not a gate line.
+            argv = render(cmd.replace(" …", "").replace("<id>", "<id> " + opts, 1), self.a, text)
+            r = self.muster(argv)
+            self.assertEqual(r.returncode, 0, f"{argv}\n{r.stdout}{r.stderr}")
+            return r.stdout
+
+        self.route("claim")
+        self.route("block", "owner: which colour?")
+        act("unblock", "--as owner")
+        self.route("pass")
+        self.assertEqual(self.muster(["muster", "pass", self.a, "--from", "testing"]).returncode, 0)
+        self.assertIn("stage: your-check", self.task(self.a))
+        act("return", "--as owner")
+        self.assertIn(f"owner: stage your-check → testing (returned: {TEXT})", self.task(self.a))
+        self.assertEqual(self.muster(["muster", "pass", self.a, "--from", "testing"]).returncode, 0)
+        act("pass", "--from your-check --as owner", "")
+        self.assertIn("stage: done", self.task(self.a))
 
     def test_add_runs_or_says_it_isnt_built(self):
         # The router stops on `unknown command "add"`: that must be what muster says without it.

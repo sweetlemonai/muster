@@ -16,6 +16,15 @@ the router's absolute path, which differs between this repo and the personal lay
 `bin/test_commands.py` keeps the two byte for byte equal and checks this page against the router
 and against `muster help --json`.
 
+**What it may run:** its `allowed-tools` name one prefix per routed command (`Bash(muster list:*)`,
+`Bash(muster claim:*)`, …), plus Read, Glob and Grep, rather than `Bash(muster:*)`. A slash
+command runs those without asking, so a mis-parsed line or text in a task file can't make it
+`attach` a file from anywhere on the Mac, `init` a queue, or `set`, `move` or `stage` a task. Those
+stay the owner's, with `! muster …`.
+
+Options go right after the id (for `answer`, right after `Q<n>`), or right after the route word
+when there's no id. Everything after them is text.
+
 **Installed:** not yet. They go in the personal layer (`~/playground/.claude/commands/`), so every
 repo gets them, once the owner says yes (asked in `WAITING-FOR-OWNER.md`).
 
@@ -66,7 +75,8 @@ Prints the command and its output, verbatim.
 
 `muster help` lists every command, the same list as the app's Help tab. The ones /mu doesn't
 route run as `! muster …` in a session: new, move, stage, set, attach, escalate, inbox, reclaim,
-projects and init. Being built: add and shape (task 0015), `depends:` (task 0019).
+projects and init, and shape, file and drop once they're built. Being built (task 0015): add,
+shape, file and drop. Also coming: `depends:` (task 0019).
 
 `bin/task ask|answer|escalate|inbox` is a stand-in that runs the same muster commands, kept for
 scripts and agents that call it. `bin/answer-hook.py` delivers answers into a running session, and
