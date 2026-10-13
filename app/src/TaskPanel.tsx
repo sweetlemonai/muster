@@ -8,6 +8,7 @@ import { stageLabel, stamp } from "./lib";
 import Markdown from "./Markdown";
 import PaneHeader from "./PaneHeader";
 import { isFileDrag, releasedBy, undoFor } from "./paneData";
+import { SessionPing } from "./Ping";
 import Sidebar from "./Sidebar";
 import StageContent from "./StageContent";
 import StageForms from "./StageForms";
@@ -119,6 +120,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
           <Sidebar task={task} nowSecs={now} a={a} />
         </div>
         <StageForms task={task} a={a} />
+        <SessionPing task={task} now={now} onChanged={onChanged} />
         {a.msg && (
           <p className={a.msg.ok ? "ok small pane-msg" : "err small pane-msg"} role="status">
             {a.msg.text}

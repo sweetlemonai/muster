@@ -48,6 +48,9 @@ export type Task = {
   stageSince: string;
   /** Every check-in in the log, oldest first. */
   checkins: Checkin[];
+  /** When the session on it was last asked for a check-in (0039), "YYYY-MM-DD HH:MM", or "". The
+   *  core always sends it; optional so a task without it reads as never asked. */
+  checkinAsked?: string;
   heartbeat: string;
   waitingOn: string;
   /** Why it's blocked (0024): "tasks" (derived from `depends:`), "you", "permission", "question"

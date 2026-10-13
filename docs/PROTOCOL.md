@@ -218,6 +218,29 @@
 > ("60% · gate green, writing tests · 12 min ago"). The percentage is your own estimate. A card
 > quiet for longer than 30 minutes says "no check-in for 45 min". A note, title or reason that would
 > read as a check-in is refused, like one that would read as a stage change.
+>
+> **Reaching a working session (Muster 0039, 2026-10-13).** The owner can ask the session holding
+> a task for a check-in, or send it a message: the app's **Ask for a check-in** (under a quiet card,
+> in the task pane, and **Ask all quiet sessions for a check-in** under a stalled project), the
+> pane's **Message the session working on this**, or `muster ping <id> ["<message>"]`. Both reach
+> only the session in the holder's stamp (`claimed-by:` in Building, `held-by:` in Testing), through
+> its mailbox, as answers do: `mail/<session8>/<id>-checkin.md` (one waiting per task; asking again
+> before it's delivered replaces it) and `mail/<session8>/<id>-note-<nnnn>.md` (numbered from 0001,
+> so name order is sending order). A check-in request is
+> Building's only (`muster checkin` works there). A holder without a stamp (a claim from before
+> stamps, or made outside Claude Code) can't be reached: refused with "this claim has no session to
+> reach; ask its session to re-claim", and the app shows the button disabled with that reason. Each
+> is logged on the task: `<who>: asked for a check-in (session 7b5e8856)`, and `<who>: messaged
+> session 7b5e8856: <the message on one line>`. The card shows "asked 2 min ago" in the check-in's
+> place until a check-in of that Building stage comes. A message is at most 500 characters, with
+> control characters taken out like an answer's (newlines kept; Unicode line and paragraph
+> separators become newlines), and every line goes out quoted
+> (`> `) under a line saying it's the sender's note, never instructions. **A session that gets a
+> check-in request answers with `muster checkin` before anything else**, then checks in every 30
+> minutes; the answer hook's own words say so. The hook hands a check-in request over only while
+> the task is still in Building and claimed by that session; one that has moved on is set aside in
+> `delivered/` unasked (`muster inbox` still shows it). Only `muster ping` writes an ask line: a note that
+> would read as one is refused. Messages stay on this Mac.
 
 > **Task fields: type, estimates, links, comments (Muster 0017, 2026-10-12).** `type:` is one of
 > code, bug, chore, tech-debt, spike, design, docs, research (`muster new --type`, `muster set <id>
@@ -360,6 +383,9 @@ session files it with `muster file` (see the note at the top).
 
 - **One session per task.** Build a task in its own fresh session and worktree; that session
   claims it, checks in and passes it itself, then ends. It never takes a second task.
+- **Asked for a check-in** (a "Check-in request on task …" from the answer hook, task 0039)?
+  Answer with `muster checkin` before anything else. Claim from inside the session, so the claim
+  carries its stamp and the owner can reach it.
 - **Coordinators stay thin:** they read `muster list --json` and builders' short reports, merge,
   and talk to other coordinators; subagents read the code.
 - **Hand off at about 150k context**, coordinator or builder: write the state (check-in, notes,
@@ -429,7 +455,9 @@ sees another version falls back to writing only the task file.
 5. **Mailbox:** write `mail/<session8>/<task>-Q<n>.md`, either the mailbox or typing it into a live
    session, never both (so it isn't delivered twice),, plain UTF-8 text, naming the task, the
    question and the answer. `bin/answer-hook.py` delivers it to that session as is, and moves it
-   to `mail/<session8>/delivered/`.
+   to `mail/<session8>/delivered/`. The same mailbox carries the owner's check-in requests
+   (`<task>-checkin.md`) and messages (`<task>-note-<nnnn>.md`), which only `muster ping` and the
+   app write (see "Reaching a working session" above); the hook hands those over first.
 
 By hand, if the command isn't available:
 

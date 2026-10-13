@@ -286,6 +286,13 @@ describe("the pane's layout by stage (D2)", () => {
     // Wall-clock time and agent time aren't the same unit: no bar pretends to compare them.
     expect(p.html).not.toContain("of the time estimate");
   });
+  it("Building with a session on it: the strip to reach that session under the next step (0039)", () => {
+    const p = pane({ stage: "building", claimedBy: "wt-a (session aaaa1111)" });
+    expect(p.parts).toEqual(["title", "status", "track", "work", "next-step", "settings", "ping", ...after]);
+    expect(text(part(p.html, "ping"))).toContain("Session Ask for a check-in 0/500 Send It reaches session aaaa1111 after its next tool call, quoted as your note.");
+    // A claim without a session stamp: the same strip, its buttons off, with why.
+    expect(text(part(pane({ stage: "building", claimedBy: "wt-a" }).html, "ping"))).toContain("this claim has no session to reach; ask its session to re-claim");
+  });
   it("Building for a day of wall-clock time reads in 24-hour days, the estimate in agent days", () => {
     const p = pane({ stage: "building", claimedBy: "owner", stageHistory: [step("2026-10-11 10:00", "ready", "building")], estMinutes: 480 }, at("2026-10-12 12:00"));
     expect(text(part(p.html, "work"))).toContain("Time 1 d 2 h in Building and Testing · estimate 1 d of agent time");

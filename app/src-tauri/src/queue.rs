@@ -407,6 +407,9 @@ pub struct Task {
     pub stage_since: String,
     /// Every check-in in the log, oldest first (0030).
     pub checkins: Vec<Checkin>,
+    /// When the session working on it was last asked for a check-in (0039): the stamp of the
+    /// log's latest `asked for a check-in` line (`ping::asked_line`), or "".
+    pub checkin_asked: String,
     pub heartbeat: String,
     pub waiting_on: String,
     /// Why it's blocked (0024): you, permission, question or outside from `blocked-kind:` (in a
@@ -1034,6 +1037,11 @@ pub fn parse_task(
         held_by: get("held-by"),
         stage_since,
         checkins,
+        checkin_asked: log_lines
+            .iter()
+            .rev()
+            .find_map(|l| crate::ping::asked_line(l))
+            .unwrap_or_default(),
         heartbeat: get("heartbeat"),
         waiting_on,
         blocked_kind,

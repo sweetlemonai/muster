@@ -4,6 +4,32 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Ping a working session from the app: ask for a check-in, or send a message (task 0039)
+**Did:** the owner, on two cards saying "no check-in for 36 min": "how to ping them back from the
+app". **Ask for a check-in** under a quiet card, in the task pane's new **Session** strip and, for
+a stalled project, **Ask all quiet sessions for a check-in** in the sidebar; **Message the session
+working on this** in the pane; `muster ping <id> ["<message>"]` on the command line. Each writes to
+the holder's session mailbox (`mail/<session8>/<id>-checkin.md`, `<id>-note-<nnnn>.md`) and logs it;
+`bin/answer-hook.py` hands it over after that session's next tool call, check-in requests first
+with the hook's own words to answer with `muster checkin`, messages quoted as the owner's note
+(500 characters, control characters out). The card says "asked 2 min ago" until a check-in comes.
+A holder without a session stamp shows the button disabled with why. Core in `ping.rs` (+
+`ping_cmds.rs`), app in `Ping.tsx` and `reach.ts`; PROTOCOL.md, the manual (04, 05, 07) and
+AS_BUILT updated.
+**Verified:** `pnpm check` green (tsc, vitest 744 tests, vite build, cargo fmt, clippy -D
+warnings, cargo test 343 + 13 + 3); `python3 -I bin/test_task.py` 44 OK (4 new: the hook delivers
+a check-in request and a quoted message, both with answers, and refuses a claim without a stamp);
+`python3 -I bin/test_commands.py` 11 OK.
+**Fixed (review):** U+2028/U+2029 in a message could break out of its quote → they become line
+breaks in the core and the hook, each part quoted; note-10 was delivered before note-9 → message
+files are numbered `0001`…; the pane's maxLength counted UTF-16 units and cut pastes → a live
+"N/500" in characters, Send off past it; a check-in request waiting while the task left Building
+asked for a `muster checkin` that fails → the hook sets it aside unless the task is still in
+Building and claimed by that session.
+**Open:** the optional auto-nudge after 45 quiet minutes (off by default) isn't built; it can now
+go in Settings → Agents (0036). AC1's live
+check in one real session is the owner's.
+
 ## 2026-10-13 — Settings: one place for appearance, projects, agents, help and about (task 0036)
 **Did:** **Settings** is a view in the header's row: the groups (Appearance, Projects, Agents,
 Help, About) docked on the left, the open group's settings on the right (`Settings.tsx`,

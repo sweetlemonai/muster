@@ -761,6 +761,24 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .vision.has-open h2 small { color: var(--err); }
 .vision .control-row .on { outline: 2px solid var(--accent); outline-offset: 1px; }
 .vision .markdown h3 { font-size: 12px; margin: 10px 0 4px; }
+/* Reaching the session on a task (0039). Quiet controls, full contrast on hover; a disabled one
+   keeps its reason beside it. Under a quiet card a strip joined to its bottom edge (the card is a
+   button, so the strip sits beside it, not in it); in the pane one line under the next step; in
+   the sidebar a line under a stalled project. "asked 2 min ago" is a quiet card line. */
+.card-asked { font-size: 11px; line-height: 1.35; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-ping { flex: none; display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; margin-top: -8px; padding: 3px 8px 4px; border: 1px solid var(--border); border-top: 0; border-radius: 0 0 8px 8px; background: var(--surface); font-size: 11px; }
+.card-ping button, .session-ping button, .side-ping button { border: 1px solid var(--border); background: none; color: var(--muted); border-radius: 6px; padding: 0 7px; font-size: 11.5px; line-height: 18px; white-space: nowrap; }
+.card-ping button:not(:disabled):hover, .session-ping button:not(:disabled):hover, .side-ping button:not(:disabled):hover,
+.card-ping button:focus-visible, .session-ping button:focus-visible, .side-ping button:focus-visible { color: var(--text); border-color: var(--muted); }
+.card-ping .why, .side-ping .why { color: var(--muted); overflow-wrap: anywhere; }
+.session-ping { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.session-ping .lbl { font-size: 11px; color: var(--muted); }
+.session-ping .ping-msg { display: flex; gap: 6px; flex: 1; min-width: 220px; }
+.session-ping .ping-msg input { flex: 1; min-width: 0; font: inherit; font-size: 12px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; }
+.session-ping > p { flex-basis: 100%; }
+.session-ping .ping-count { align-self: center; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.session-ping .ping-count.err { color: var(--err); font-weight: 600; }
+.side-ping { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; margin: 0 8px 4px; font-size: 11px; }
 .count.quiet { background: none; border: 1px solid var(--border); color: var(--muted); }
 .problems.warnings li { color: var(--muted); }
 .problems.warnings b { color: var(--text); font-weight: 600; margin-right: 4px; }

@@ -1,8 +1,9 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useMemo, useRef, useState, type ReactNode } from "react";
 import { lastLabel, loadOrder, nextOrder, type OrderMemo, projectRows, SIDEBAR_ORDERS, storeOrder, sumActivity, type ProjectActivity, type SidebarOrder, type Sums } from "./activity";
 import { projectCount } from "./Backlog";
 import { needsYouCount } from "./human";
 import { inProgress } from "./lib";
+import { QuietPing } from "./Ping";
 import type { Activity, Note, QueueInfo, Task } from "./types";
 
 /** The sidebar's projects (0037): All first, then the order chips and one row per queue, each
@@ -38,9 +39,14 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
       <div className="side-label">Projects</div>
       <OrderChips value={order} onChange={pick} />
       {shown.map((r) => (
-        <ProjectItem key={r.name} name={r.name} title={r.title} total={projectCount(counts.get(r.name) ?? {}, notes, r.name)} tasks={r.tasks} on={current === r.name} onClick={() => onPick(r.name)}>
-          <ActivityLine a={r.activity} now={now} />
-        </ProjectItem>
+        <Fragment key={r.name}>
+          <ProjectItem name={r.name} title={r.title} total={projectCount(counts.get(r.name) ?? {}, notes, r.name)} tasks={r.tasks} on={current === r.name} onClick={() => onPick(r.name)}>
+            <ActivityLine a={r.activity} now={now} />
+          </ProjectItem>
+          {/* A stalled project offers to ask its quiet sessions for a check-in (0039), under its
+              row, since the row is itself a button. */}
+          {r.activity.stalled && <QuietPing tasks={r.tasks} now={now} />}
+        </Fragment>
       ))}
     </nav>
   );

@@ -48,6 +48,19 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   The All row sums projects: "3 working · 1 stalled". Chips above the list order it: **Working**
   (default: working projects first, then by last activity), **A–Z**, **Needs you** (most waiting
   first, then as Working), remembered in `localStorage` (`muster.sidebarOrder`).
+- **Reaching a working session** (0039, `ping.rs`, `Ping.tsx`, `reach.ts`): **Ask for a
+  check-in** under a quiet card ("no check-in for N min"; a strip joined to the card's bottom,
+  since the card is a button), in the task pane's **Session** strip (Building and Testing, an
+  agent's task the owner doesn't hold) beside **Message the session working on this** (one line,
+  500 characters), and **Ask all quiet sessions for a check-in (n)** under a stalled project in
+  the sidebar. Each goes through the core to the holder's session mailbox
+  (`mail/<session8>/<id>-checkin.md`, `<id>-note-<nnnn>.md`) and is logged on the task; the answer
+  hook hands it over after that session's next tool call, check-in requests first, messages
+  quoted as the owner's note. The card shows "asked 2 min ago" in the check-in's place until a
+  check-in of that Building stage comes (`checkinAsked`, from the log's ask line). A holder
+  without a session stamp, or in Testing for a check-in, shows the button disabled with the
+  reason. Not built: the optional auto-nudge after 45 quiet minutes, off by default; it can now
+  go in Settings → Agents (0036).
 - **Projects** (in Settings, or **+ Project** under the project list): every project with its folder, task count and where it came from (found
   in `~/playground`, or added). **New queue…** picks a project folder and creates its `tasks/`:
   status folders, README with the rules, `WAITING-FOR-OWNER.md`, the tools' stand-ins in `bin/`,
@@ -400,6 +413,10 @@ claim has a **lease**: `heartbeat`, and the holder's notes, passes and questions
 12 h, or this Mac's lease from Settings (0036).
 **Questions:** `muster ask`, `escalate`, `inbox` and `answer` follow the file contract. `bin/task`
 is a stand-in that runs them. The answer hook still reads the mailbox itself, for speed.
+**Ping** (task 0039): `muster ping <id>` asks the holder's session for a check-in (Building),
+`muster ping <id> "<message>"` sends it a message (Building or Testing), the same rules as the
+app's buttons (`ping.rs`): only the session in the holder's stamp, refused with why otherwise,
+logged on the task.
 
 ## How the pieces talk
 
@@ -488,6 +505,10 @@ Live claims go in the repo's shared git folder. See
   task isn't built.
 - **Reclaim runs when someone runs it:** `muster reclaim` or Release on a card. No scheduler runs
   it yet. A crashed session's claim waits until then.
+- **A ping reaches a session only through the answer hook** (0039): a session without the hook
+  installed sees a check-in request or message only when it runs `muster inbox`, and a claim
+  with no session stamp can't be reached at all. Nothing asks quiet sessions on its own yet: the
+  auto-nudge setting isn't built; its place is Settings → Agents (0036).
 
 ## What's left (in order)
 

@@ -128,7 +128,7 @@ function span(m: number): string {
   return `${Math.floor(m / 1440)} d`;
 }
 /** "12 min ago", or "just now" under a minute. */
-const agoText = (m: number) => (m < 1 ? "just now" : `${span(m)} ago`);
+export const agoText = (m: number) => (m < 1 ? "just now" : `${span(m)} ago`);
 
 /** Wall-clock minutes from a tool stamp to `now` (seconds since 1970), as quietMinutes counts
  *  them; null when `at` isn't a stamp. */

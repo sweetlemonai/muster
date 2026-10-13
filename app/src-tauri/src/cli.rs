@@ -3,7 +3,7 @@
 //! from the current folder (a queue itself, or a `tasks/` beside or above it).
 
 use crate::session::{self, Session};
-use crate::{backlog, fields, index, ops, projects, queue, search, settings, vision};
+use crate::{backlog, fields, index, ops, ping, projects, queue, search, settings, vision};
 use std::path::{Path, PathBuf};
 
 /// The environment a command reads its caller from (`std::env::var`, or a test's own).
@@ -1386,6 +1386,18 @@ fn run_on(
             let pct = a.flags.get("pct").map(String::as_str).unwrap_or("");
             ops::checkin_task(root, id, &text, pct, &me(), stamp)?;
             println!("{id}: checked in; heartbeat {stamp}");
+            Ok(0)
+        }
+        "ping" => {
+            let id = need(a, 1, "a task id")?;
+            if a.pos.len() > 2 {
+                let p = ping::message(root, id, &a.pos[2..].join(" "), &me(), stamp)?;
+                println!("{id}: message sent to session {}", p.session);
+            } else {
+                let p = ping::ask_checkin(root, id, &me(), stamp)?;
+                println!("{id}: asked session {} for a check-in", p.session);
+            }
+            println!("It arrives after that session's next tool call.");
             Ok(0)
         }
         "reclaim" => {
@@ -2866,6 +2878,46 @@ mod tests {
         );
         assert_eq!(code("wt-a", &["show", "0001"]), 0);
         assert_eq!(code("wt-a", &["list"]), 0);
+    }
+
+    #[test]
+    fn ping_asks_for_a_check_in_or_sends_a_message_to_the_holders_session() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let owner = [("MUSTER_AS", "owner")];
+        let session = [
+            ("MUSTER_AS", "wt-a"),
+            (
+                "CLAUDE_CODE_SESSION_ID",
+                "7b5e8856-c9c8-45ec-aa03-c0ddbf1d4394",
+            ),
+        ];
+        for title in ["Stamped", "Unstamped"] {
+            assert_eq!(code_in(&q, &owner, &["new", title]), 0);
+        }
+        assert_eq!(code_in(&q, &session, &["claim", "0001"]), 0);
+        assert_eq!(code_in(&q, &[("MUSTER_AS", "wt-b")], &["claim", "0002"]), 0);
+        let boxed = d.path().join("mail/7b5e8856");
+        // No text: a check-in request.
+        assert_eq!(code_in(&q, &owner, &["ping", "0001"]), 0);
+        assert!(std::fs::read_to_string(boxed.join("0001-checkin.md"))
+            .unwrap()
+            .contains("run `muster checkin 0001 "));
+        // Text: a message, every word of it.
+        assert_eq!(
+            code_in(&q, &owner, &["ping", "0001", "look", "at", "the", "test"]),
+            0
+        );
+        assert!(std::fs::read_to_string(boxed.join("0001-note-0001.md"))
+            .unwrap()
+            .contains("> look at the test\n"));
+        let body = queue::read_body(d.path(), "0001").unwrap();
+        assert!(body.contains(" owner: asked for a check-in (session 7b5e8856)\n"));
+        assert!(body.contains(" owner: messaged session 7b5e8856: look at the test\n"));
+        // A claim without a session stamp: refused, with why.
+        assert_eq!(code_in(&q, &owner, &["ping", "0002"]), 1);
+        assert_eq!(code_in(&q, &owner, &["ping", "0002", "hello"]), 1);
+        assert_eq!(code_in(&q, &owner, &["ping"]), 2, "no id");
     }
 
     #[test]

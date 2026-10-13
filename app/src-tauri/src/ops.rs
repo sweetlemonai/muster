@@ -1135,6 +1135,11 @@ pub(crate) fn free_text_line(line: String, what: &str) -> Result<String, String>
             "{what} would read as a check-in in the log (\"<who>: check-in …\"); only muster checkin writes those"
         ));
     }
+    if crate::ping::reads_as_ask(&line) {
+        return Err(format!(
+            "{what} would read as a check-in request in the log (\"<who>: asked for a check-in …\"); only muster ping writes those"
+        ));
+    }
     Ok(line)
 }
 

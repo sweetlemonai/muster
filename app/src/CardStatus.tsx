@@ -1,6 +1,7 @@
 import { useContext } from "react";
 import { BranchCardLine } from "./Branch";
 import { checkinLine, currentCheckin, holderOf, leaseRunOut, quietCheckin, quietText, splitHolder, startedAgo, whoLine } from "./lib";
+import { askedText } from "./reach";
 import { Machine, spanText } from "./settingsData";
 import type { Task } from "./types";
 import { VisionBadge } from "./Vision";
@@ -42,6 +43,8 @@ function HeldLines({ t, now }: { t: Task; now: number }) {
   const who = whoLine(t);
   const started = startedAgo(t, now);
   const checkin = currentCheckin(t);
+  // Asked for a check-in (0039): it says when in the check-in's place until one comes.
+  const asked = askedText(t, now);
   const quiet = quietCheckin(t, now);
   // This machine's lease (Settings, 0036), as the core's reclaim judges it.
   const lease = useContext(Machine).leaseMinutes;
@@ -50,7 +53,7 @@ function HeldLines({ t, now }: { t: Task; now: number }) {
   return (
     <>
       <span className={who ? "card-who" : "card-who nobody"}>{[who || "nobody on it", started].filter(Boolean).join(" · ")}</span>
-      {checkin && <span className="card-checkin">{checkinLine(checkin, now)}</span>}
+      {asked ? <span className="card-asked">{asked}</span> : checkin && <span className="card-checkin">{checkinLine(checkin, now)}</span>}
       {flag && <span className="card-quiet">{flag}</span>}
     </>
   );

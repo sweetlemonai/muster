@@ -14,6 +14,8 @@ The app reads the queues every 2 seconds while its window is visible, and stops 
 
 **All** shows every project together. Below it is each project, with three numbers: an orange one for the tasks that need you, one in the Building colour for tasks in Building or Testing, and the total, notes included. Click a project to see only its tasks. **+ Project** at the bottom opens [Settings](#settings) at [Projects](#projects).
 
+Under a stalled project is **Ask all quiet sessions for a check-in**, with how many it can reach: it asks each quiet card's session, as the card's own button does. It's shown off, with why, when none of its quiet claims has a session to reach, and it says how many it can't reach.
+
 ## The board
 
 One column per stage, with the stage's role under its name. An empty column shrinks to a slim strip with its name written down it, so every stage stays in view even with the pane open.
@@ -22,7 +24,8 @@ Each card shows, top to bottom:
 
 - the project (when you're looking at All), the id, a small dot while a session is working on it (its transcript changed in the last 5 minutes, the [LIVE window](#agents)), the type, and the priority: **HIGH** filled in magenta, normal outlined, low faint;
 - the title, the feature or goal it's under, and its tags;
-- who's on it and how long ago they started, their latest check-in ("60% · gate green, writing tests · 12 min ago"), and a warning when they've gone quiet ("quiet 12 h+" past the [claim lease](#agents), "no check-in for 45 min"). In Your check: **Your turn** and the next step (see [Your check](#your-check));
+- who's on it and how long ago they started, their latest check-in ("60% · gate green, writing tests · 12 min ago"), and a warning when they've gone quiet ("quiet 12 h+" past the [claim lease](#agents), "no check-in for 45 min"). After you ask for a check-in, "asked 2 min ago" takes the check-in's place until one comes. In Your check: **Your turn** and the next step (see [Your check](#your-check));
+- under a quiet card, **Ask for a check-in**: it puts a request in the session's mailbox, and the answer hook hands it over after that session's next tool call. A claim with no session stamp (made before stamps, or outside Claude Code) can't be reached: the button is shown off, with why ("ask its session to re-claim");
 - "⚠ 2 vision" while the task has open [vision conflicts](02-concepts.md#the-vision-check);
 - badges: why it's blocked, the kind first ("Blocked on you: …", [Blocked, and why](02-concepts.md#blocked-and-why)); needs you; open questions; files; the estimate; and how long ago it last changed.
 
@@ -93,7 +96,8 @@ Click a card to open its task beside the board. The pane keeps every control in 
 
    The right one is the **Next step**: the one primary button, **Pass to** the next stage (**Accept** in Your check), then **Send back** and **Block** or **Unblock**. **Release** shows when the holder has been quiet past the [claim lease](#agents), 12 hours unless you changed it. If someone else holds the task in Building, there's no Pass: only they can pass it, and the pane says so. Under the next step are the task's settings: **Priority** and **Type** show their value as a chip (click it to lay out the choices), **Est** has agent time, test time and tokens (↩ or leaving the field saves), then **Tags**, **Files** (images as thumbnails that open large; **+ Attach** picks more) and **Links** (a click opens one in your browser, https only).
 6. **The stage forms**, under both columns, when one is open: the gate's result line for Pass to Testing, **Send back** with where to and why, or **Block** with what it waits on. The core's answer, or its refusal, shows under them.
-7. **The path line:** the commit that shipped it, and the task's file.
+7. **Session**, in Building and Testing while an agent's session holds the task: **Ask for a check-in** (Building; "asked 2 min ago" beside it until one comes) and a one-line box, **Message the session working on this**, with a count ("120/500": at most 500 characters, and Send is off past that), and **Send**. Both reach only the session in the holder's stamp, through its mailbox, after its next tool call, and both are logged on the task. The message arrives quoted as your note, not as instructions. When the session can't be reached, they're shown off, with why.
+8. **The path line:** the commit that shipped it, and the task's file.
 
 Below that come, in order:
 

@@ -80,6 +80,11 @@ export const api = {
     invoke<string | null>("edit_body", { queue, id, body, expected, stamp }),
   // A comment (0017), as the owner, at any stage; returns the task's path.
   addComment: (queue: string, id: string, text: string, stamp: string) => invoke<string>("add_comment", { queue, id, text, stamp }),
+  // Reach the session holding a task (0039), as the owner, through its mailbox: ask it for a
+  // check-in (Building), or send it a message (Building or Testing). Refused, with why, when the
+  // holder's claim has no session stamp.
+  askCheckin: (queue: string, id: string, stamp: string) => invoke<Pinged>("ask_checkin", { queue, id, stamp }),
+  messageSession: (queue: string, id: string, text: string, stamp: string) => invoke<Pinged>("message_session", { queue, id, text, stamp }),
   // Opens one of the task's links in the browser: the core opens only an address the task has, and only https.
   openLink: (queue: string, id: string, url: string) => invoke<void>("open_link", { queue, id, url }),
   // Files the window holds (pasted or dropped) go as [name, data URL]; picking uses the core's dialog.
@@ -99,6 +104,9 @@ export const api = {
   helperSend: (queue: string, message: string, files: [string, string][], stamp: string) =>
     invoke<void>("helper_send", { queue, message, files, stamp }),
 };
+
+/** What a ping reached: the session's short id, and the task's path. */
+export type Pinged = { session: string; path: string };
 
 export type HelperLine = { role: "owner" | "helper" | "system"; kind: string; text: string; at: number };
 export type AccountInfo = { name: string; loggedIn: boolean | null; plan: string };
