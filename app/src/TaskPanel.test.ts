@@ -7,6 +7,7 @@ import StageTrack from "./StageTrack";
 import { trackSteps } from "./paneData";
 import TaskPanel from "./TaskPanel";
 import type { StageStep, Task } from "./types";
+import { Machine } from "./settingsData";
 
 const task = (over: Partial<Task>): Task => ({
   queue: "demo", id: "0007", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
@@ -32,7 +33,7 @@ function pane(over: Partial<Task>, now = 0, childTasks?: Task[]) {
 describe("task pane stage controls", () => {
   it("shows the stage with its role", () => {
     expect(pane({ stage: "building", claimedBy: "owner" }).line).toBe("Building LIVE on it: you code agent nothing waiting on you");
-    expect(pane({ stage: "your-check" }).line).toBe("Your check LIVE on it: you owner Waiting on you: accept or send back");
+    expect(pane({ stage: "your-check" }).line).toBe("Your check LIVE Your turn owner Waiting on you: accept or send back");
   });
   it("passes to the next stage, and Backlog can't be sent back", () => {
     expect(pane({ stage: "backlog" }).buttons).toEqual(["Pass to Shaping", "Block"]);
@@ -54,7 +55,7 @@ describe("task pane stage controls", () => {
   });
   it("a blocked task keeps its stage; Pass waits for Unblock", () => {
     const p = pane({ stage: "your-check", blocked: true, status: "blocked", waitingOn: "pick a colour", blockedKind: "you", blockDetail: "pick a colour" });
-    expect(p.line).toBe("Your check Blocked on you : pick a colour LIVE on it: you owner Waiting on you: accept or send back · blocked on you");
+    expect(p.line).toBe("Your check Blocked on you : pick a colour LIVE Your turn owner Waiting on you: accept or send back · blocked on you");
     expect(p.html).toContain('<span class="status-pill blocked block-why"><b>Blocked on you</b>: pick a colour</span>');
     expect(p.buttons).toEqual(["Accept (disabled)", "Send back", "Unblock"]);
     expect(p.html).toContain("Blocked on you: pick a colour. Unblock it to pass it on.");
@@ -86,6 +87,21 @@ describe("task pane stage controls", () => {
     expect(own.buttons).toEqual(["Pass to Testing", "Release", "Send back", "Block"]);
     expect(own.primary).toEqual(["Pass to Testing"]);
   });
+  it("judges Release and LIVE by this machine's settings (0036)", () => {
+    const held = { stage: "building", claimedBy: "drover/main (session 3fba2222)", heartbeat: "", modified: 0 };
+    const withSettings = (now: number) =>
+      renderToStaticMarkup(
+        createElement(Machine.Provider, { value: { leaseMinutes: 90, liveMinutes: 10 } }, createElement(TaskPanel, { task: task(held), now, onClose: () => {}, onChanged: () => {} })),
+      );
+    // 91 minutes quiet: past a 90-minute lease.
+    const late = withSettings(91 * 60);
+    expect(part(late, "next-step")).toContain(">Release</button>");
+    expect(text(late)).toContain("drover/main hasn't been heard from for 1 h 30 min. Release puts it back in Ready");
+    expect(part(withSettings(90 * 60), "next-step")).not.toContain(">Release</button>");
+    // LIVE for 10 minutes after the file changed.
+    expect(text(part(withSettings(9 * 60), "status"))).toContain("LIVE");
+    expect(text(part(withSettings(10 * 60), "status"))).not.toContain("LIVE");
+  });
   it("has Edit beside the description, in every stage and whoever holds it", () => {
     for (const over of [{ stage: "backlog" }, { stage: "building", claimedBy: "drover/main (session 3fba2222)" }, { stage: "done" }]) {
       const bar = /<div class="body-bar">([\s\S]*?)<\/div>/.exec(pane(over).html)?.[1] ?? "";
@@ -102,7 +118,7 @@ describe("task pane stage controls", () => {
     const holders = (over: Partial<Task>) => /<span class="holders">([\s\S]*?)<\/span>/.exec(pane(over, now).html)?.[1].replace(/<[^>]+>/g, "").replace(/&#x27;/g, "'") ?? "";
     expect(holders({ stage: "testing", heldBy: A, stageHistory: history, stageSince: "2026-10-12 12:05" })).toBe(`on it: ${A} · started 2 h ago · Building: ${A}`);
     expect(holders({ stage: "your-check", heldBy: "owner", stageHistory: [...history, { at: "2026-10-12 13:00", who: "qa", from: "testing", to: "your-check" }] })).toBe(
-      `on it: you · Building: ${A} · Testing: ${A}`,
+      `Your turn · Building: ${A} · Testing: ${A}`,
     );
     expect(holders({ stage: "ready" })).toBe("");
   });
@@ -270,6 +286,13 @@ describe("the pane's layout by stage (D2)", () => {
     // Wall-clock time and agent time aren't the same unit: no bar pretends to compare them.
     expect(p.html).not.toContain("of the time estimate");
   });
+  it("Building with a session on it: the strip to reach that session under the next step (0039)", () => {
+    const p = pane({ stage: "building", claimedBy: "wt-a (session aaaa1111)" });
+    expect(p.parts).toEqual(["title", "status", "track", "work", "next-step", "settings", "ping", ...after]);
+    expect(text(part(p.html, "ping"))).toContain("Session Ask for a check-in 0/500 Send It reaches session aaaa1111 after its next tool call, quoted as your note.");
+    // A claim without a session stamp: the same strip, its buttons off, with why.
+    expect(text(part(pane({ stage: "building", claimedBy: "wt-a" }).html, "ping"))).toContain("this claim has no session to reach; ask its session to re-claim");
+  });
   it("Building for a day of wall-clock time reads in 24-hour days, the estimate in agent days", () => {
     const p = pane({ stage: "building", claimedBy: "owner", stageHistory: [step("2026-10-11 10:00", "ready", "building")], estMinutes: 480 }, at("2026-10-12 12:00"));
     expect(text(part(p.html, "work"))).toContain("Time 1 d 2 h in Building and Testing · estimate 1 d of agent time");
@@ -287,6 +310,15 @@ describe("the pane's layout by stage (D2)", () => {
     expect(p.primary).toEqual(["Accept"]);
     expect(p.html).toContain('aria-label="Yours to verify"');
     expect(text(part(p.html, "history"))).toMatch(/^History from the log, newest first 10-12 17:40 Testing → Your check · qa 10-12 17:00 Building → Testing/);
+  });
+  it("Your check lists the open criteria first, each with Tick and the views it names (0043)", () => {
+    const crit = (n: number, ticked: boolean, words: string) => ({ n, label: `AC${n}`, text: `AC${n}: ${words} — verify: owner`, ticked, owner: true });
+    const t = task({ stage: "your-check", ownerCriteria: [crit(1, true, "it builds"), crit(2, false, "the owner opens the Graph and checks the chain")] });
+    const html = renderToStaticMarkup(createElement(TaskPanel, { task: t, now: 0, onClose: () => {}, onChanged: () => {}, onOpenView: () => {} }));
+    const rows = [...html.matchAll(/<li class="(criterion[^"]*)">([\s\S]*?)<\/li>/g)].map((m) => `${m[1]}: ${text(m[2])}`);
+    expect(rows).toEqual(["criterion: AC2 the owner opens the Graph and checks the chain One look Tick Open Graph", "criterion ticked: ✓ AC1 it builds Untick"]);
+    // The checklist comes first in the pane's columns, before the history and the next step.
+    expect(pane({ stage: "your-check", ownerCriteria: t.ownerCriteria }).parts.slice(3, 6)).toEqual(["checklist", "history", "next-step"]);
   });
   it("Your check with none of the criteria the owner's says so", () => {
     expect(text(part(pane({ stage: "your-check" }).html, "checklist"))).toBe("Your checklist None of the criteria are yours to verify. Accept it, or send it back.");

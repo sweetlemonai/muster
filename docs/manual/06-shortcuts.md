@@ -7,9 +7,9 @@ Every keyboard shortcut in the app, and the slash commands for Claude Code. This
 | Keys | What it does | Where |
 | --- | --- | --- |
 | ⌘N | Open New task in the pane beside the board | Anywhere in the window |
-| Esc | Close the pane: a task, a note, New task or Appearance | Anywhere while the pane is open, except in the search box or a view's name, which take Esc for themselves |
+| Esc | Close the pane: a task, a note or New task | Anywhere while the pane is open, except in the search box or a view's name, which take Esc for themselves |
 | ⌘F | Put the caret in the search box, with its words selected so typing replaces them. Ctrl+F is left to text fields, where it moves the caret | Anywhere in the window. From a tab without a search box, it opens the board first |
-| ⌘+ | Make everything larger: the board, the panes and the manual (the size is remembered; also in Appearance → Text size) | Anywhere in the window |
+| ⌘+ | Make everything larger: the board, the panes and the manual (the size is remembered; also in Settings, Appearance, Text size) | Anywhere in the window |
 | ⌘− | Make everything smaller | Anywhere in the window |
 | ⌘0 | Back to 100% | Anywhere in the window |
 | ← → | Widen or narrow the pane by 40 pixels (the width is remembered) | The pane's edge, once Tab has put the focus on it |
@@ -47,6 +47,7 @@ Every keyboard shortcut in the app, and the slash commands for Claude Code. This
 | --- | --- | --- |
 | ↩ | Add the line to the backlog as a note | Add to the backlog…, at the top of the Backlog column |
 | Esc | Empty the field | Add to the backlog…, at the top of the Backlog column |
+| Esc | Don't accept them: nothing changes | Accept all's confirm, in Your check's Just accept group (the board and Waiting for you) |
 
 ## Slash commands in Claude Code
 

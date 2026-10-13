@@ -13,10 +13,13 @@ pub mod index;
 pub mod key;
 pub mod ops;
 pub mod parallel;
+pub mod ping;
+mod ping_cmds;
 pub mod projects;
 pub mod queue;
 pub mod search;
 pub mod session;
+pub mod settings;
 pub mod transcripts;
 pub mod vision;
 pub mod work;
@@ -31,9 +34,11 @@ pub(crate) struct AppState {
     cache: Mutex<queue::Cache>,
     /// Running helper turns, by queue name.
     pub(crate) helpers: Mutex<HashMap<String, std::process::Child>>,
-    /// Serializes changes to projects.json.
+    /// Serializes changes to projects.json and settings.json.
     config: Mutex<()>,
     pub(crate) config_file: PathBuf,
+    /// This machine's settings (0036), beside projects.json; `muster` reads the same file.
+    settings_file: PathBuf,
     /// Session transcripts under the home folder (0025), read and cached off the main thread.
     transcripts: Arc<transcripts::Reader>,
 }
@@ -78,13 +83,16 @@ pub(crate) async fn blocking<T: Send + 'static>(
 #[tauri::command]
 async fn state(app: tauri::State<'_, AppState>) -> Result<queue::State, String> {
     let file = app.config_file.clone();
+    let settings_file = app.settings_file.clone();
     // The cache is small and the read is quick on a warm cache; take it inside the blocking task.
     let cache = std::mem::take(&mut *app.cache.lock().map_err(|e| e.to_string())?);
     let reader = app.transcripts.clone();
     let (state, cache) = blocking(move || {
         let mut cache = cache;
+        // Read every poll, so a change in Settings (or by hand) applies at the next one.
+        let settings = settings::load(&settings_file);
         let list = projects::list(&base(), &projects::load(&file));
-        let mut s = queue::read_state(&projects::shown(&list), &mut cache);
+        let mut s = queue::read_state_with(&projects::shown(&list), &mut cache, &settings);
         // Each project's prefix, for its tasks' keys (0033).
         key::apply(&mut s, |name| {
             list.iter()
@@ -93,6 +101,7 @@ async fn state(app: tauri::State<'_, AppState>) -> Result<queue::State, String> 
                 .unwrap_or_default()
         });
         // The cards' live dot: file times only, about a millisecond for 50 sessions.
+        reader.set_live_secs(settings.live_secs());
         work::mark_live(&mut s.tasks, &reader, s.now);
         Ok((s, cache))
     })
@@ -274,6 +283,93 @@ async fn pass_task(
     .await
 }
 
+/// What Accept all did in one queue (0043): the ids it accepted, in order, and each it refused
+/// with the core's reason.
+#[derive(serde::Serialize, Debug, Default, PartialEq)]
+pub(crate) struct AcceptAll {
+    pub accepted: Vec<String>,
+    pub refused: Vec<(String, String)>,
+}
+
+/// Accept all (0043): the owner accepts each task the window listed under "Just accept", as
+/// Accept does (Done, with the commit the merge recorded), one after the other.
+#[tauri::command]
+async fn accept_all(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    ids: Vec<String>,
+    stamp: String,
+) -> Result<AcceptAll, String> {
+    let file = app.config_file.clone();
+    blocking(move || accept_all_in(&queue_root(&file, &queue)?, &ids, &stamp)).await
+}
+
+/// What `accept_all` does once it has the queue: every argument checked before anything is
+/// touched, then each task passed from Your check as the owner, as Accept does. The core's rules
+/// decide: one of the owner's criteria still open, a block, or a task that has left Your check
+/// is refused with the reason and the rest go on. Each accepted task's log gets its stage line.
+pub(crate) fn accept_all_in(
+    root: &std::path::Path,
+    ids: &[String],
+    stamp: &str,
+) -> Result<AcceptAll, String> {
+    for id in ids {
+        check_id(id)?;
+    }
+    check_stamp(stamp)?;
+    let opts = ops::PassOpts {
+        from: Some("your-check".into()),
+        ..ops::PassOpts::default()
+    };
+    let mut out = AcceptAll::default();
+    for id in ids {
+        if let Some(why) = queue::read_task(root, id)
+            .ok()
+            .and_then(|t| not_just_accept(&t))
+        {
+            out.refused.push((id.clone(), why));
+            continue;
+        }
+        match ops::pass_task(root, id, "owner", stamp, &opts) {
+            Ok(_) => out.accepted.push(id.clone()),
+            Err(why) => out.refused.push((id.clone(), why)),
+        }
+    }
+    Ok(out)
+}
+
+/// Why Accept all leaves a task alone that a single Accept would take: it's a goal or a feature
+/// (Accept all is for tasks), or a question escalated to the owner is still open. Read just before
+/// the pass; the pass itself rechecks the stage, the owner's criteria and blocks under the lock. A
+/// task that can't be read goes on to the pass, which says why.
+fn not_just_accept(t: &queue::Task) -> Option<String> {
+    if t.level != "task" {
+        return Some(format!(
+            "{} is a {}; Accept all takes tasks only",
+            t.id, t.level
+        ));
+    }
+    let open: Vec<String> = t
+        .questions
+        .iter()
+        .filter(|q| !q.ticked && q.escalated)
+        .map(|q| q.n.map_or_else(|| "Q?".to_string(), |n| format!("Q{n}")))
+        .collect();
+    (!open.is_empty()).then(|| {
+        format!(
+            "{} has {} for the owner ({}); answer {} first",
+            t.id,
+            if open.len() == 1 {
+                "a question"
+            } else {
+                "questions"
+            },
+            open.join(", "),
+            if open.len() == 1 { "it" } else { "them" }
+        )
+    })
+}
+
 /// The owner sends a task back one stage, or to the earlier stage `to`, with the reason.
 #[tauri::command]
 async fn return_task(
@@ -352,20 +448,32 @@ async fn reclaim_task(
     check_id(&id)?;
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
-    blocking(move || release(&queue_root(&file, &queue)?, &id, &stamp, queue::now_secs())).await
+    let settings_file = app.settings_file.clone();
+    blocking(move || {
+        let lease = settings::load(&settings_file).lease_minutes;
+        release(
+            &queue_root(&file, &queue)?,
+            &id,
+            &stamp,
+            queue::now_secs(),
+            lease,
+        )
+    })
+    .await
 }
 
 /// What `reclaim_task` does once it has the queue: its arguments checked, then the core's rule,
-/// with the default lease (the one the card's "quiet 12 h+" shows).
+/// with this machine's lease of `lease` minutes (the one the card's "quiet 12 h+" shows).
 pub(crate) fn release(
     root: &std::path::Path,
     id: &str,
     stamp: &str,
     now_secs: u64,
+    lease: u64,
 ) -> Result<String, String> {
     check_id(id)?;
     check_stamp(stamp)?;
-    ops::reclaim_task(root, id, ops::LEASE_MINUTES, "owner", stamp, now_secs)
+    ops::reclaim_task(root, id, lease, "owner", stamp, now_secs)
 }
 
 /// The owner's override: put a task in any stage. `from`, when given, is the stage the window
@@ -468,9 +576,13 @@ async fn task_sessions(
 ) -> Result<work::Work, String> {
     check_id(&id)?;
     let file = app.config_file.clone();
+    let settings_file = app.settings_file.clone();
     let reader = app.transcripts.clone();
-    blocking(move || work::for_task(&reader, &queue_root(&file, &queue)?, &id, queue::now_secs()))
-        .await
+    blocking(move || {
+        reader.set_live_secs(settings::load(&settings_file).live_secs());
+        work::for_task(&reader, &queue_root(&file, &queue)?, &id, queue::now_secs())
+    })
+    .await
 }
 
 /// One of a task's sessions' transcripts, folded to Markdown for the task pane (0025). Only a
@@ -776,6 +888,74 @@ async fn projects(app: tauri::State<'_, AppState>) -> Result<Vec<projects::Proje
     blocking(move || Ok(projects::list(&base(), &projects::load(&file)))).await
 }
 
+/// What Settings shows (0036): this machine's settings with their bounds, and for About the
+/// version, the config folder and the folders the app reads.
+#[derive(serde::Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SettingsInfo {
+    settings: settings::Settings,
+    /// The lease's and the LIVE window's bounds, in minutes: [least, most].
+    lease_bounds: [u64; 2],
+    live_bounds: [u64; 2],
+    version: String,
+    /// The home folder: the window shows paths under it as `~/…`.
+    home: String,
+    /// The app's config folder: projects.json, settings.json and the helper's folder.
+    config_dir: String,
+    /// Where queues are found on their own (`<base>/*/tasks` and `<base>/*/*/tasks`).
+    base: String,
+    /// The session transcripts' folders (0025).
+    transcripts: Vec<String>,
+}
+
+fn info_for(
+    settings_file: &std::path::Path,
+    version: &str,
+    reader: &transcripts::Reader,
+) -> SettingsInfo {
+    let shown = |p: &std::path::Path| p.to_string_lossy().to_string();
+    SettingsInfo {
+        settings: settings::load(settings_file),
+        lease_bounds: [settings::LEASE_MIN, settings::LEASE_MAX],
+        live_bounds: [settings::LIVE_MIN, settings::LIVE_MAX],
+        version: version.to_string(),
+        home: shown(&home()),
+        config_dir: settings_file.parent().map(shown).unwrap_or_default(),
+        base: shown(&base()),
+        transcripts: reader.folders().iter().map(|p| shown(p)).collect(),
+    }
+}
+
+#[tauri::command]
+async fn settings_info(handle: tauri::AppHandle) -> Result<SettingsInfo, String> {
+    let version = handle.package_info().version.to_string();
+    blocking(move || {
+        let app = handle.state::<AppState>();
+        Ok(info_for(&app.settings_file, &version, &app.transcripts))
+    })
+    .await
+}
+
+/// Change one of this machine's settings, `lease` or `live`, to a span like `12h` or `5m` (empty
+/// is the default). The core checks the name, the units and the bounds; the next poll uses it.
+#[tauri::command]
+async fn set_setting(
+    handle: tauri::AppHandle,
+    name: String,
+    value: String,
+) -> Result<SettingsInfo, String> {
+    let version = handle.package_info().version.to_string();
+    blocking(move || {
+        let app = handle.state::<AppState>();
+        {
+            let _guard = app.config.lock().map_err(|e| e.to_string())?;
+            settings::set(&app.settings_file, &name, &value)?;
+        }
+        Ok(info_for(&app.settings_file, &version, &app.transcripts))
+    })
+    .await
+}
+
 /// Change projects.json under the lock: load, edit, save.
 fn edit_config<T>(
     app: &AppState,
@@ -843,24 +1023,6 @@ async fn create_project(handle: tauri::AppHandle) -> Result<Option<String>, Stri
         let known = projects::list(&base(), &projects::load(&app.config_file));
         let (q, _) = projects::create(&dir, &tools(), None, &known)?;
         edit_config(&app, |c| projects::add(c, &base(), &q)).map(Some)
-    })
-    .await
-}
-
-/// Set a project's prefix (0033), stored with its queue: refused when it isn't 2 to 4 lowercase
-/// letters or another project has it.
-#[tauri::command]
-async fn set_project_prefix(
-    handle: tauri::AppHandle,
-    key: String,
-    prefix: String,
-) -> Result<(), String> {
-    blocking(move || {
-        let app = handle.state::<AppState>();
-        // Under the config lock, so two changes can't both take one prefix.
-        let _guard = app.config.lock().map_err(|e| e.to_string())?;
-        let c = projects::load(&app.config_file);
-        projects::set_prefix_by_key(&c, &base(), &key, prefix.trim()).map(|_| ())
     })
     .await
 }
@@ -933,6 +1095,7 @@ pub fn run() {
                 config: Mutex::new(()),
                 transcripts: Arc::new(transcripts::Reader::new(home())),
                 config_file: dir.join("projects.json"),
+                settings_file: dir.join(settings::FILE),
             });
             Ok(())
         })
@@ -944,15 +1107,17 @@ pub fn run() {
             image,
             answer,
             projects,
+            settings_info,
+            set_setting,
             add_project,
             create_project,
             rename_project,
-            set_project_prefix,
             hide_project,
             remove_project,
             create_task,
             move_task,
             pass_task,
+            accept_all,
             return_task,
             block_task,
             unblock_task,
@@ -977,10 +1142,13 @@ pub fn run() {
             attach_pick,
             helper_cmds::helper_info,
             helper_cmds::helper_set_account,
+            helper_cmds::helper_set_model,
             helper_cmds::helper_reset,
             helper_cmds::helper_stop,
             helper_cmds::helper_send,
-            helper_cmds::helper_login
+            helper_cmds::helper_login,
+            ping_cmds::ask_checkin,
+            ping_cmds::message_session
         ])
         .run(tauri::generate_context!())
         .expect("error while running Muster");
@@ -1103,6 +1271,196 @@ mod tests {
     }
 
     #[test]
+    fn accept_all_accepts_exactly_the_just_accept_tasks_each_logged() {
+        let d = tempfile::tempdir().unwrap();
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir(d.path().join(f)).unwrap();
+        }
+        let write = |file: &str, id: &str, stage: &str, criteria: &str| {
+            let text = format!(
+                "---\nid: {id}\nstage: {stage}\nstatus: doing\nclaimed-by:\nheld-by:\nwaiting_on:\ncommit: abc1234\n---\n\n# T\n\n## Acceptance criteria\n- [x] AC1: built — verify: command\n{criteria}\n## Log\n- 2026-10-12 09:00 capture: created\n"
+            );
+            std::fs::write(d.path().join(file), &text).unwrap();
+            text
+        };
+        // None of the owner's; the owner's all ticked; one of theirs open; still in Testing.
+        write("doing/0001-t.md", "0001", "your-check", "");
+        write(
+            "doing/0002-t.md",
+            "0002",
+            "your-check",
+            "- [x] AC2: tried it — verify: owner\n",
+        );
+        let open = write(
+            "doing/0003-t.md",
+            "0003",
+            "your-check",
+            "- [ ] AC2: tried it — verify: owner\n",
+        );
+        let testing = write("doing/0004-t.md", "0004", "testing", "");
+        let t = "2026-10-13 10:00";
+
+        // Arguments first: one bad id or stamp and nothing is touched.
+        assert_eq!(
+            accept_all_in(d.path(), &["0001".into(), "../7".into()], t).unwrap_err(),
+            "bad task id"
+        );
+        assert_eq!(
+            accept_all_in(d.path(), &["0001".into()], "2026-10-13").unwrap_err(),
+            "bad time stamp"
+        );
+        assert_eq!(
+            queue::read_task(d.path(), "0001").unwrap().stage,
+            "your-check"
+        );
+        assert_eq!(
+            accept_all_in(d.path(), &[], t).unwrap(),
+            AcceptAll::default()
+        );
+
+        let ids: Vec<String> = ["0001", "0002", "0003", "0004", "0001"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let r = accept_all_in(d.path(), &ids, t).unwrap();
+        assert_eq!(r.accepted, ["0001", "0002"]);
+        let refused: Vec<&str> = r.refused.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(refused, ["0003", "0004", "0001"]);
+        assert!(
+            r.refused[0].1.contains("owner's criteria aren't ticked"),
+            "{r:?}"
+        );
+        assert!(
+            r.refused[1].1.contains("is now in Testing, not Your check"),
+            "{r:?}"
+        );
+        // Asked twice in one go, it's accepted once.
+        assert!(
+            r.refused[2].1.contains("is now in Done, not Your check"),
+            "{r:?}"
+        );
+        for id in ["0001", "0002"] {
+            let task = queue::read_task(d.path(), id).unwrap();
+            // Done, with the commit the merge recorded, and one log line: the stage move.
+            assert_eq!(
+                (task.stage.as_str(), task.commit.as_str()),
+                ("done", "abc1234")
+            );
+            let file = d.path().join(&task.path);
+            assert!(file.starts_with(d.path().join("done")), "{file:?}");
+            let text = std::fs::read_to_string(file).unwrap();
+            let log = text.split("## Log\n").nth(1).unwrap();
+            assert_eq!(
+                log,
+                "- 2026-10-12 09:00 capture: created\n- 2026-10-13 10:00 owner: stage your-check → done\n",
+                "{id}"
+            );
+        }
+        // The refused ones are as they were.
+        assert_eq!(
+            std::fs::read_to_string(d.path().join("doing/0003-t.md")).unwrap(),
+            open
+        );
+        assert_eq!(
+            std::fs::read_to_string(d.path().join("doing/0004-t.md")).unwrap(),
+            testing
+        );
+    }
+
+    #[test]
+    fn accept_all_leaves_goals_features_and_open_questions_for_the_owner() {
+        let d = tempfile::tempdir().unwrap();
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir(d.path().join(f)).unwrap();
+        }
+        let write = |id: &str, front: &str, questions: &str| {
+            let text = format!(
+                "---\nid: {id}\nstage: your-check\nstatus: doing\nclaimed-by:\nheld-by:\nwaiting_on:\ncommit:\n{front}---\n\n# T\n\n## Questions\n{questions}\n## Acceptance criteria\n- [x] AC1: built — verify: command\n\n## Log\n- 2026-10-12 09:00 capture: created\n"
+            );
+            std::fs::write(d.path().join(format!("doing/{id}-t.md")), &text).unwrap();
+            text
+        };
+        let escalated = "- [ ] **Q1 (wt-a, colour, 2026-10-12 09:00):** Which colour?\n  **Escalated to owner (capture, 2026-10-12 09:05).**\n";
+        let answered = "- [x] **Q1 (wt-a, colour, 2026-10-12 09:00):** Which colour?\n  **Escalated to owner (capture, 2026-10-12 09:05).**\n";
+        let asked_agent = "- [ ] **Q1 (wt-a, colour, 2026-10-12 09:00):** Which colour?\n";
+        let goal = write("0001", "level: goal\n", "");
+        let feature = write("0002", "level: feature\n", "");
+        let open_q = write("0003", "", escalated);
+        // An answered question, or one only for an agent, isn't the owner's to do.
+        write("0004", "", answered);
+        write("0005", "", asked_agent);
+        let ids: Vec<String> = ["0001", "0002", "0003", "0004", "0005"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let r = accept_all_in(d.path(), &ids, "2026-10-13 10:00").unwrap();
+        assert_eq!(r.accepted, ["0004", "0005"]);
+        assert_eq!(
+            r.refused,
+            [
+                (
+                    "0001".to_string(),
+                    "0001 is a goal; Accept all takes tasks only".to_string()
+                ),
+                (
+                    "0002".to_string(),
+                    "0002 is a feature; Accept all takes tasks only".to_string()
+                ),
+                (
+                    "0003".to_string(),
+                    "0003 has a question for the owner (Q1); answer it first".to_string()
+                ),
+            ]
+        );
+        for (id, before) in [("0001", goal), ("0002", feature), ("0003", open_q)] {
+            assert_eq!(
+                std::fs::read_to_string(d.path().join(format!("doing/{id}-t.md"))).unwrap(),
+                before,
+                "{id}"
+            );
+        }
+    }
+
+    #[test]
+    fn settings_info_shows_the_settings_their_bounds_and_where_things_are() {
+        let home = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(home.path().join(".claude/projects")).unwrap();
+        let dir = home
+            .path()
+            .join("Library/Application Support/ai.sweetlemon.muster");
+        let file = dir.join(settings::FILE);
+        let reader = transcripts::Reader::new(home.path());
+        let info = info_for(&file, "0.1.0", &reader);
+        // Nothing saved yet: the defaults.
+        assert_eq!(info.settings, settings::Settings::default());
+        assert_eq!(
+            (info.lease_bounds, info.live_bounds),
+            ([60, 10080], [1, 60])
+        );
+        assert_eq!(info.version, "0.1.0");
+        assert_eq!(info.config_dir, dir.to_string_lossy());
+        assert_eq!(info.transcripts.len(), 1);
+        assert!(
+            info.transcripts[0].ends_with(".claude/projects"),
+            "{:?}",
+            info.transcripts
+        );
+        settings::set(&file, "live", "15m").unwrap();
+        let json = serde_json::to_string(&info_for(&file, "0.1.0", &reader)).unwrap();
+        assert!(
+            json.contains(r#""settings":{"leaseMinutes":720,"liveMinutes":15}"#),
+            "{json}"
+        );
+        assert!(
+            json.contains(r#""leaseBounds":[60,10080],"liveBounds":[1,60]"#),
+            "{json}"
+        );
+        // The home folder, so the window can show paths under it as `~/…`.
+        assert_eq!(info.home, super::home().to_string_lossy());
+        assert!(json.contains(r#""home":"#), "{json}");
+    }
+
+    #[test]
     fn release_checks_its_arguments_then_the_lease() {
         let d = tempfile::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
@@ -1114,25 +1472,30 @@ mod tests {
         )
         .unwrap();
         let now = queue::now_secs();
+        let lease = settings::Settings::default().lease_minutes;
         assert_eq!(
-            release(d.path(), "7", "2026-10-13 10:00", now).unwrap_err(),
+            release(d.path(), "7", "2026-10-13 10:00", now, lease).unwrap_err(),
             "bad task id"
         );
         assert_eq!(
-            release(d.path(), "0007", "2026-10-13T10:00", now).unwrap_err(),
+            release(d.path(), "0007", "2026-10-13T10:00", now, lease).unwrap_err(),
             "bad time stamp"
         );
-        assert!(release(d.path(), "0007", "2026-10-12 21:59", now)
+        assert!(release(d.path(), "0007", "2026-10-12 21:59", now, lease)
+            .unwrap_err()
+            .contains("lease hasn't run out"));
+        // This machine's lease (0036): 2 h releases it sooner.
+        assert!(release(d.path(), "0007", "2026-10-12 12:00", now, 120)
             .unwrap_err()
             .contains("lease hasn't run out"));
         assert_eq!(
-            release(d.path(), "0007", "2026-10-12 22:01", now).unwrap(),
+            release(d.path(), "0007", "2026-10-12 12:01", now, 120).unwrap(),
             "todo/0007-t.md"
         );
         let t = queue::read_task(d.path(), "0007").unwrap();
         assert_eq!((t.stage.as_str(), t.claimed_by.as_str()), ("ready", ""));
         assert!(t.log_tail.last().unwrap().ends_with(
-            "owner: stage building → ready (reclaimed from wt-a (no heartbeat for 12 h))"
+            "owner: stage building → ready (reclaimed from wt-a (no heartbeat for 2 h))"
         ));
     }
 }

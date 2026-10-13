@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { humanColumn } from "./human";
 import {
   ago, boardColumn, checkinLine, claimant, columns, currentCheckin, earlierStages, estimateTotal, feed, fileName, fmtMinutes, fmtTokens, heldByOther, holder, holderOf, inProgress, LEASE_SECS, leaseRunOut,
-  nextStage, ofEstimate, oneAtATime, passLabel, queueTotal, quietCheckin, quietMinutes, shortTokens, splitHolder, stageHolders, stageOf, STAGES, stamp, stampMinutes, startedAgo, whoLine,
+  homePath, copiedPath, nextStage, ofEstimate, oneAtATime, passLabel, queueTotal, quietCheckin, quietMinutes, shortTokens, splitHolder, stageHolders, stageOf, STAGES, stamp, stampMinutes, startedAgo, whoLine,
 } from "./lib";
 import type { Task } from "./types";
 
@@ -258,6 +258,16 @@ describe("lease (the core's ops::reclaim rule)", () => {
     expect(leaseRunOut(task({ ...old, claimedBy: "owner" }), now)).toBe(true);
     expect(LEASE_SECS).toBe(12 * 3600);
   });
+  it("uses this machine's lease from Settings when given (0036)", () => {
+    const now = at("2026-10-12 14:05");
+    const held = { stage: "building", claimedBy: "wt-a (session aaaa1111)", modified: now };
+    // Two hours quiet: within the default 12 h, past a 1-hour lease, not past 2 h exactly.
+    const twoHours = task({ ...held, heartbeat: "2026-10-12 12:05" });
+    expect(leaseRunOut(twoHours, now)).toBe(false);
+    expect(leaseRunOut(twoHours, now, 60)).toBe(true);
+    expect(leaseRunOut(twoHours, now, 120)).toBe(false);
+    expect(leaseRunOut(twoHours, now, 119)).toBe(true);
+  });
 });
 
 describe("who's on it, since when, and how far (0030)", () => {
@@ -367,5 +377,51 @@ describe("work against an estimate (0025)", () => {
     expect(ofEstimate("3 h", "2 h", 150)).toBe("3 h of 2 h (150%)");
     expect(ofEstimate("40 min", "", null)).toBe("40 min");
     expect(ofEstimate("40 min", "2 h", null)).toBe("40 min");
+  });
+});
+
+describe("homePath: a path under the home folder shown as ~ (owner, 2026-10-13)", () => {
+  const home = "/Users/someone";
+  it("shortens a path under home, and home itself", () => {
+    expect(homePath("/Users/someone/playground/muster/tasks", home)).toBe("~/playground/muster/tasks");
+    expect(homePath("/Users/someone/Library/Application Support/ai.sweetlemon.muster", home)).toBe("~/Library/Application Support/ai.sweetlemon.muster");
+    expect(homePath("/Users/someone", home)).toBe("~");
+    expect(homePath("/Users/someone/", home)).toBe("~/");
+  });
+  it("takes home with or without a trailing slash", () => {
+    expect(homePath("/Users/someone/.claude/projects", "/Users/someone/")).toBe("~/.claude/projects");
+    expect(homePath("/Users/someone/.claude/projects", "/Users/someone//")).toBe("~/.claude/projects");
+    expect(homePath("/Users/someone", "/Users/someone/")).toBe("~");
+  });
+  it("leaves a path not under home as it is", () => {
+    expect(homePath("/Volumes/Work/tasks", home)).toBe("/Volumes/Work/tasks");
+    // A sibling whose name starts with home's isn't under it.
+    expect(homePath("/Users/someone2/tasks", home)).toBe("/Users/someone2/tasks");
+    expect(homePath("/Users", home)).toBe("/Users");
+    expect(homePath("relative/Users/someone/x", home)).toBe("relative/Users/someone/x");
+  });
+  it("shortens nothing when home is unknown or the root", () => {
+    expect(homePath("/Users/someone/x", "")).toBe("/Users/someone/x");
+    expect(homePath("/Users/someone/x", "/")).toBe("/Users/someone/x");
+  });
+  it("copying a shown path, or part of it, gives the real path's characters", () => {
+    const full = "/Users/someone/playground/x";
+    const shown = homePath(full, home);
+    const within = (start: number, end: number) => copiedPath(shown, full, { text: shown.slice(start, end), start, end });
+    expect(within(0, shown.length)).toBe(full);
+    // From the ~ to partway: the home part comes along.
+    expect(within(0, 12)).toBe("/Users/someone/playground");
+    // After the ~: the same characters as shown.
+    expect(within(2, 12)).toBe("playground");
+    expect(within(1, 1)).toBe("");
+    expect(within(0, 0)).toBe("");
+  });
+  it("copying the whole path from outside it (a triple click) gives the real path; anything else is left alone", () => {
+    const full = "/Users/someone/playground/x";
+    const shown = homePath(full, home);
+    expect(copiedPath(shown, full, { text: `${shown}\n` })).toBe(full);
+    expect(copiedPath(shown, full, { text: `Settings ${shown}` })).toBeNull();
+    // A path that wasn't shortened copies as selected.
+    expect(copiedPath("/Volumes/x", "/Volumes/x", { text: "Volumes", start: 1, end: 8 })).toBeNull();
   });
 });

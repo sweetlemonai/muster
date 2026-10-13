@@ -123,18 +123,31 @@ Rules:
     )
 }
 
-/// The command line for one turn. `resume` continues the project's conversation.
-pub fn args(message: &str, brief: &str, resume: Option<&str>) -> Vec<String> {
+/// The models the helper can use, picked in Settings (0036). Filing tasks doesn't need the
+/// biggest model (decision 0007 in Drover: cheaper models for asks that don't make code), so
+/// Sonnet, the first, is the default.
+pub const MODELS: [&str; 3] = ["sonnet", "haiku", "opus"];
+pub const DEFAULT_MODEL: &str = MODELS[0];
+
+/// `model` when it's one of `MODELS` exactly, else the default.
+pub fn model_or_default(model: &str) -> &'static str {
+    MODELS
+        .into_iter()
+        .find(|m| *m == model)
+        .unwrap_or(DEFAULT_MODEL)
+}
+
+/// The command line for one turn with `model` (one of `MODELS`; anything else is the default).
+/// `resume` continues the project's conversation.
+pub fn args(message: &str, brief: &str, resume: Option<&str>, model: &str) -> Vec<String> {
     let mut a: Vec<String> = vec![
         "-p".into(),
         message.into(),
         "--output-format".into(),
         "stream-json".into(),
         "--verbose".into(),
-        // Filing tasks doesn't need the biggest model (decision 0007 in Drover: cheaper models
-        // for asks that don't make code).
         "--model".into(),
-        "sonnet".into(),
+        model_or_default(model).into(),
         // Restricted: the account's own settings files are ignored, file tools stay inside the
         // project folder, and only the tools named here exist. Of those, the allow-list decides:
         // `muster` and reading run, anything else is refused without asking. Checked live: a
@@ -272,8 +285,25 @@ mod tests {
     }
 
     #[test]
+    fn the_model_is_the_one_picked_in_settings_sonnet_by_default() {
+        let model = |m: &str| {
+            let a = args("hi", "b", None, m);
+            let at = a.iter().position(|x| x == "--model").unwrap();
+            a[at + 1].clone()
+        };
+        assert_eq!(model("haiku"), "haiku");
+        assert_eq!(model("opus"), "opus");
+        assert_eq!(model("sonnet"), "sonnet");
+        // Anything else (an old or hand-edited helper.json) is the default, never passed through.
+        assert_eq!(model(""), "sonnet");
+        assert_eq!(model("--dangerously-skip-permissions"), "sonnet");
+        assert_eq!(model("Opus"), "sonnet");
+        assert_eq!(MODELS[0], DEFAULT_MODEL);
+    }
+
+    #[test]
     fn args_allow_only_muster_and_reading() {
-        let a = args("hi", "brief", Some("abc"));
+        let a = args("hi", "brief", Some("abc"), "sonnet");
         assert_eq!(&a[..2], &["-p", "hi"]);
         let allowed = a.iter().position(|x| x == "--allowedTools").unwrap();
         assert_eq!(
@@ -290,7 +320,7 @@ mod tests {
             .iter()
             .any(|x| x == "Write" || x == "Edit" || x == "WebFetch"));
         assert_eq!(&a[a.len() - 2..], &["--resume", "abc"]);
-        assert!(!args("hi", "b", None).contains(&"--resume".to_string()));
+        assert!(!args("hi", "b", None, "sonnet").contains(&"--resume".to_string()));
         let mode = a.iter().position(|x| x == "--permission-mode").unwrap();
         assert_eq!(a[mode + 1], "dontAsk");
     }

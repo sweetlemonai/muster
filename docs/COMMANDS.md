@@ -76,7 +76,7 @@ Prints the command and its output, verbatim.
 
 `muster help` lists every command, the same list as the app's Help tab. The ones /mu doesn't
 route run as `! muster …` in a session: new, move, stage, set, attach, escalate, inbox, reclaim,
-checkin (task 0030), projects, init, tick, untick (the owner's criteria, task 0028), edit (task
+checkin (task 0030), ping (task 0039), projects, init, tick, untick (the owner's criteria, task 0028), edit (task
 0020), the backlog's shape, file and drop (task 0015), link and comment (task 0017: a task's
 external links, and a comment thread anyone may add to), index (task 0018), vision (a task
 checked against the project's picture, task 0029), and ready, start and release (parallel
@@ -100,7 +100,8 @@ clear of the tasks already in Building or Testing too.
 `muster pass` as typed, so it merges too.
 
 Who's on it (task 0030): `checkin <id> "<what's done, what's next>" [--pct <0-100>]` is the holder
-saying how far along it is, which renews the claim too. Inside a session every command stamps the
+saying how far along it is, which renews the claim too. `ping <id> ["<message>"]` (task 0039) asks
+the holder's session for a check-in, or sends it a message, through its mailbox. Inside a session every command stamps the
 session next to `--as`; with no `--as` the actor is `$MUSTER_AS`, then the folder's git user.name,
 never the login name.
 

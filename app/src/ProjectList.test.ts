@@ -115,6 +115,14 @@ describe("the sidebar", () => {
     expect(row(html, "muster")).toContain('class="side-stalled"');
     expect(when(row(html, "muster"))).toBe("2 h ago");
   });
+  it("under a stalled project, asks its quiet sessions for a check-in; disabled with why when none can be reached (0039)", () => {
+    const html = render();
+    const pings = [...html.matchAll(/<div class="side-ping">([\s\S]*?)<\/div>/g)].map((m) => plain(m[1].replace(/></g, "> <")));
+    // Only muster is stalled; its one quiet claim has no session stamp.
+    expect(pings).toEqual(["Ask all quiet sessions for a check-in none of its quiet claims has a session to reach"]);
+    expect(html).toMatch(/<button type="button" disabled="">Ask all quiet sessions for a check-in<\/button>/);
+    expect(html.indexOf('class="side-ping"')).toBeGreaterThan(html.indexOf('side-name">muster<'));
+  });
   it("keeps the counts it had: needs you, in progress and the total", () => {
     const html = render();
     expect(row(html, "alpha")).toContain('<span class="count warn" title="1 need you">1</span>');

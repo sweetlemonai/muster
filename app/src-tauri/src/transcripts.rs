@@ -15,6 +15,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -165,6 +166,8 @@ struct Index {
 /// from several threads, and none holds a lock while it reads a file.
 pub struct Reader {
     home: PathBuf,
+    /// The LIVE window in seconds: `LIVE_SECS` unless the settings say otherwise (0036).
+    live_secs: AtomicU64,
     index: Mutex<Index>,
     cache: Mutex<Cache>,
 }
@@ -192,8 +195,20 @@ impl Reader {
         Reader {
             home: home.into(),
             index: Mutex::new(Index::default()),
+            live_secs: AtomicU64::new(LIVE_SECS),
             cache: Mutex::new(Cache::default()),
         }
+    }
+
+    /// Set the LIVE window, in seconds (the per-machine setting, 0036); every live check after
+    /// this uses it.
+    pub fn set_live_secs(&self, secs: u64) {
+        self.live_secs.store(secs, Ordering::Relaxed);
+    }
+
+    /// The folders the transcripts are read from, for Settings' About (0036).
+    pub fn folders(&self) -> Vec<PathBuf> {
+        self.projects_dirs()
     }
 
     /// The account folders' `projects` folders, each once: `.claude-hg/projects` is often a link
@@ -393,12 +408,13 @@ impl Reader {
     }
 
     /// Whether the transcript at `main`, or one of its subagents', changed in the last
-    /// `LIVE_SECS` before `now`. Only file times are read.
+    /// LIVE window (`set_live_secs`) before `now`. Only file times are read.
     fn live_at(&self, main: &Path, now: u64) -> bool {
+        let window = self.live_secs.load(Ordering::Relaxed);
         let fresh = |p: &Path| {
             fs::metadata(p)
                 .and_then(|m| m.modified())
-                .is_ok_and(|t| now.saturating_sub(secs(t)) <= LIVE_SECS)
+                .is_ok_and(|t| now.saturating_sub(secs(t)) <= window)
         };
         fresh(main) || Self::subagents(main).0.iter().any(|p| fresh(p))
     }
@@ -1085,6 +1101,29 @@ pub(crate) mod tests {
         assert!(r.live("7b5e8856", NOW + 1));
         // A file time ahead of the clock still reads as live, not as an error.
         assert!(r.live("7b5e8856", NOW - 100));
+    }
+
+    #[test]
+    fn the_live_window_is_the_one_set_on_the_reader() {
+        let h = home();
+        write(
+            h.path(),
+            ".claude",
+            A,
+            &[reply("m", "2026-10-12T10:00:00Z", 1, 0, 0, 0)],
+            NOW,
+        );
+        let r = Reader::new(h.path());
+        // Settings' LIVE window (0036): 10 minutes.
+        r.set_live_secs(600);
+        assert!(r.live("7b5e8856", NOW + 600));
+        assert!(r.usage("7b5e8856", NOW + 600).live);
+        assert!(r.live_set(["7b5e8856"], NOW + 600).contains("7b5e8856"));
+        assert!(!r.live("7b5e8856", NOW + 601));
+        // 1 minute.
+        r.set_live_secs(60);
+        assert!(!r.live("7b5e8856", NOW + 61));
+        assert!(r.live_set(["7b5e8856"], NOW + 61).is_empty());
     }
 
     #[test]

@@ -25,6 +25,8 @@ LEGACY_STAGE = {"inbox": "backlog", "todo": "ready", "doing": "building", "block
 LEVELS = ["goal", "feature", "task"]
 # Who does it (0022): `for:` is ai (an agent; also a file without one) or human (the owner's own).
 FOR_WHO = ["ai", "human"]
+# A heartbeat older than this is stale: the default claim lease, 12 h. The lease set in the app's
+# Settings (0036, settings.json) is not read here; `muster check` and `muster reclaim` follow it.
 STALE_HOURS = 12
 
 

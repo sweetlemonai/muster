@@ -130,7 +130,7 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
         </label>
         <span className="meta">
           Tell it ideas, bugs and tasks. It files them in {queue}'s queue, checks for duplicates, and asks when something's unclear.
-          {info && <> Account: ~/{info.account}.</>}
+          {info && <> Account: ~/{info.account}. Model: {info.model}.</>}
         </span>
         <span className="spacer" />
         <button onClick={() => { setPicking(true); void reload(); }} disabled={running}>Change account</button>
@@ -230,7 +230,8 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
   );
 }
 
-function AccountPicker({ info, onPicked, onRefresh, onCancel }: {
+/** The helper's accounts, each with whether it's logged in: in the Helper tab and in Settings' Agents (0036). */
+export function AccountPicker({ info, onPicked, onRefresh, onCancel }: {
   info: HelperInfo;
   onPicked: (a: string) => void;
   onRefresh: () => void;

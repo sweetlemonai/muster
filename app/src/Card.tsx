@@ -5,15 +5,29 @@ import { estimateText } from "./fields";
 import { Hl, HlId } from "./FilterBar";
 import { isHuman } from "./human";
 import { ago } from "./lib";
+import { CardPing } from "./Ping";
 import type { Task } from "./types";
 import YouRibbon from "./YouRibbon";
 
-/** A board card. The owner's own task (0022) is hatched in the human gold and carries the You
+type CardProps = { t: Task; now: number; multi: boolean; parent: string; onOpen: () => void; active: boolean; words: string[] };
+
+/** A board card, and under a quiet one its Ask for a check-in (0039): beside the card, not in it,
+ *  since the card is itself a button. */
+export default function Card(props: CardProps) {
+  return (
+    <>
+      <CardButton {...props} />
+      <CardPing t={props.t} now={props.now} />
+    </>
+  );
+}
+
+/** The card itself. The owner's own task (0022) is hatched in the human gold and carries the You
  *  ribbon, in the same columns as the agents' tasks. Why it's blocked is 0024's one sentence (by
  *  tasks too: an agent's task waiting on the owner's unfinished one says "Blocked by tasks: 0041");
  *  one waiting on the owner (Your check, an escalated question, blocked on you or by a permission)
  *  is a needs-you card. */
-export default function Card({ t, now, multi, parent, onOpen, active, words }: { t: Task; now: number; multi: boolean; parent: string; onOpen: () => void; active: boolean; words: string[] }) {
+function CardButton({ t, now, multi, parent, onOpen, active, words }: CardProps) {
   const priority = t.priority || "normal";
   return (
     <button className={cardClass(t, active)} onClick={onOpen}>

@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SearchIndex } from "./search";
+import type { SettingsInfo } from "./settingsData";
 import type { Project, State, Work } from "./types";
+import type { AcceptResult } from "./yourCheck";
 
 // The only way the window talks to the core. Queues are named, never given as paths.
 export const api = {
@@ -17,11 +19,12 @@ export const api = {
   addProject: () => invoke<string | null>("add_project"),
   createProject: () => invoke<string | null>("create_project"),
   renameProject: (key: string, name: string) => invoke<void>("rename_project", { key, name }),
-  // What its tasks' keys start with (0033), 2 to 4 lowercase letters; refused when another
-  // project has it.
-  setProjectPrefix: (key: string, prefix: string) => invoke<void>("set_project_prefix", { key, prefix }),
   hideProject: (key: string, hidden: boolean) => invoke<void>("hide_project", { key, hidden }),
   removeProject: (key: string) => invoke<void>("remove_project", { key }),
+  // This machine's settings (0036) with their bounds, and what Settings' About shows. Set one by
+  // name (`lease` or `live`) to a span like 12h or 5m, empty for the default; the core checks it.
+  settingsInfo: () => invoke<SettingsInfo>("settings_info"),
+  setSetting: (name: "lease" | "live", value: string) => invoke<SettingsInfo>("set_setting", { name, value }),
   createTask: (queue: string, task: NewTask, files: [string, string][], stamp: string) =>
     invoke<{ id: string; path: string }>("create_task", { queue, task, files, stamp }),
   // Stages: each returns the task's new path. The core refuses what its rules don't allow, with
@@ -29,6 +32,9 @@ export const api = {
   // since. `gate` only for Building → Testing, `commit` only for Your check → Done.
   passTask: (queue: string, id: string, from: string, gate: string, commit: string, stamp: string) =>
     invoke<string>("pass_task", { queue, id, from, gate, commit, stamp }),
+  // Accept all (0043): each id passed from Your check to Done as Accept does, in order; what the
+  // core refused comes back with why, and the rest still go.
+  acceptAll: (queue: string, ids: string[], stamp: string) => invoke<AcceptResult>("accept_all", { queue, ids, stamp }),
   // `to` is an earlier stage; null sends it back one.
   returnTask: (queue: string, id: string, why: string, to: string | null, stamp: string) =>
     invoke<string>("return_task", { queue, id, why, to, stamp }),
@@ -74,6 +80,11 @@ export const api = {
     invoke<string | null>("edit_body", { queue, id, body, expected, stamp }),
   // A comment (0017), as the owner, at any stage; returns the task's path.
   addComment: (queue: string, id: string, text: string, stamp: string) => invoke<string>("add_comment", { queue, id, text, stamp }),
+  // Reach the session holding a task (0039), as the owner, through its mailbox: ask it for a
+  // check-in (Building), or send it a message (Building or Testing). Refused, with why, when the
+  // holder's claim has no session stamp.
+  askCheckin: (queue: string, id: string, stamp: string) => invoke<Pinged>("ask_checkin", { queue, id, stamp }),
+  messageSession: (queue: string, id: string, text: string, stamp: string) => invoke<Pinged>("message_session", { queue, id, text, stamp }),
   // Opens one of the task's links in the browser: the core opens only an address the task has, and only https.
   openLink: (queue: string, id: string, url: string) => invoke<void>("open_link", { queue, id, url }),
   // Files the window holds (pasted or dropped) go as [name, data URL]; picking uses the core's dialog.
@@ -84,6 +95,8 @@ export const api = {
   help: () => invoke<{ commandsPage?: unknown }>("help"),
   helperInfo: (queue: string) => invoke<HelperInfo>("helper_info", { queue }),
   helperSetAccount: (account: string) => invoke<void>("helper_set_account", { account }),
+  // One of HelperInfo's `models`, from the helper's next turn (0036).
+  helperSetModel: (model: string) => invoke<void>("helper_set_model", { model }),
   // Opens Terminal on that account's own `claude auth login`.
   helperLogin: (account: string) => invoke<void>("helper_login", { account }),
   helperReset: (queue: string) => invoke<void>("helper_reset", { queue }),
@@ -92,8 +105,11 @@ export const api = {
     invoke<void>("helper_send", { queue, message, files, stamp }),
 };
 
+/** What a ping reached: the session's short id, and the task's path. */
+export type Pinged = { session: string; path: string };
+
 export type HelperLine = { role: "owner" | "helper" | "system"; kind: string; text: string; at: number };
 export type AccountInfo = { name: string; loggedIn: boolean | null; plan: string };
-export type HelperInfo = { claude: string | null; accounts: AccountInfo[]; account: string; running: boolean; lines: HelperLine[] };
+export type HelperInfo = { claude: string | null; accounts: AccountInfo[]; account: string; model: string; models: string[]; running: boolean; lines: HelperLine[] };
 
 export type NewTask = { title: string; kind: string; priority: string; body: string; tags: string[]; estTime: string; estTestTime: string; estTokens: string; level: string; parent: string; due: string; forWho: string };

@@ -1,17 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
+import { HomePath } from "./HomePath";
 import { queueTotal } from "./lib";
-import { HelpButton } from "./HelpButton";
 import type { Project, QueueInfo } from "./types";
 
-export default function Projects({ queues, onChanged }: { queues: QueueInfo[]; onChanged: () => void }) {
+/** Settings' Projects group (0036): every project with its folder and task count, New queue and
+ *  Add existing. A folder under `home` shows as `~/…`. */
+export default function Projects({ queues, home, onChanged }: { queues: QueueInfo[]; home: string; onChanged: () => void }) {
   const [list, setList] = useState<Project[] | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [name, setName] = useState("");
-  // The project whose prefix (0033) is being changed, and what's typed.
-  const [prefixOf, setPrefixOf] = useState<string | null>(null);
-  const [prefix, setPrefix] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -40,22 +39,22 @@ export default function Projects({ queues, onChanged }: { queues: QueueInfo[]; o
   };
 
   return (
-    <main className="list projects">
+    <div className="projects">
       <div className="projects-bar">
         <button onClick={() => void act(api.createProject, "Queue created and added.")}>New queue…</button>
         <button onClick={() => void act(api.addProject, "Queue added.")}>Add existing queue…</button>
         {msg && <span className={msg.ok ? "ok" : "err"}>{msg.text}</span>}
-        <HelpButton topic="projects" />
       </div>
       <p className="meta">
-        Muster finds every <code>~/playground/*/tasks</code> queue on its own. Add queues kept anywhere else, or start one for a
+        Muster finds the queues at <code>~/playground/&lt;project&gt;/tasks</code> on its own, and one level deeper
+        (<code>~/playground/&lt;group&gt;/&lt;project&gt;/tasks</code>). Add queues kept anywhere else, or start one for a
         project: pick the project's folder (the one that holds its repo, not the repo itself) and Muster creates its{" "}
         <code>tasks/</code> folder with the rules, the tools and its own git history. Removing or hiding a project never deletes files.
       </p>
       {list === null && <p className="none">Loading…</p>}
       <table className="projects-table">
         <thead>
-          <tr><th>Project</th><th title="What its tasks' keys start with: mu-12">Prefix</th><th>Folder</th><th>Tasks</th><th></th></tr>
+          <tr><th>Project</th><th>Folder</th><th>Tasks</th><th>Gate</th><th></th></tr>
         </thead>
         <tbody>
           {list?.map((p) => (
@@ -80,27 +79,11 @@ export default function Projects({ queues, onChanged }: { queues: QueueInfo[]; o
                   {!p.ok && <span className="err"> · not a queue any more</span>}
                 </div>
               </td>
-              <td className="prefix">
-                {prefixOf === p.key ? (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      setPrefixOf(null);
-                      const next = prefix.trim();
-                      void act(() => api.setProjectPrefix(p.key, next), `Prefix set: its tasks are ${next}-1, ${next}-2…`);
-                    }}
-                  >
-                    <input autoFocus value={prefix} onChange={(e) => setPrefix(e.target.value)} maxLength={4} size={5} aria-label={`${p.name}'s prefix`} placeholder="2–4 letters" />
-                  </form>
-                ) : (
-                  <code>{p.prefix}</code>
-                )}
-              </td>
-              <td className="path" title={p.path}>{p.path}</td>
+              <td className="path"><HomePath path={p.path} home={home} /></td>
               <td>{p.hidden || !p.ok ? "—" : total(p) ?? "…"}</td>
+              <td><GateCell name={p.name} gate={p.gate ?? ""} /></td>
               <td className="actions">
                 <button onClick={() => { setEditing(p.key); setName(p.name); }}>Rename</button>
-                {p.ok && <button onClick={() => { setPrefixOf(p.key); setPrefix(p.prefix); }} title="What its tasks' keys start with (mu-12): 2 to 4 lowercase letters, no other project's">Prefix</button>}
                 <button onClick={() => void act(() => api.hideProject(p.key, !p.hidden))}>{p.hidden ? "Show" : "Hide"}</button>
                 {p.source === "added" && <button onClick={() => void act(() => api.removeProject(p.key))}>Remove</button>}
               </td>
@@ -108,6 +91,17 @@ export default function Projects({ queues, onChanged }: { queues: QueueInfo[]; o
           ))}
         </tbody>
       </table>
-    </main>
+    </div>
+  );
+}
+
+/** A project's gate command (0023), shown as it is: a merge runs it in the task's worktree, and
+ *  never runs without one. Set with `muster projects set`, the one place that checks it. */
+export function GateCell({ name, gate }: { name: string; gate: string }) {
+  if (gate) return <code className="path">{gate}</code>;
+  return (
+    <span className="meta">
+      none: merges wait for one. <code>muster projects set {name} gate "&lt;command&gt;"</code>
+    </span>
   );
 }

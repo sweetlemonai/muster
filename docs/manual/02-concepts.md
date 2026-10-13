@@ -8,7 +8,7 @@ A **queue** is the folder that holds one project's tasks: one Markdown file per 
 
 Why a folder of files: you, every agent and every tool can read a task with nothing but a text editor, and git keeps its history. The queue stays outside the code repo so a code commit can't sweep it up.
 
-In the app, the projects are listed down the left side, with **All** at the top. The app finds every `~/playground/*/tasks` folder on its own; add a queue kept anywhere else under **Projects**. Inside a queue, the folders `inbox/`, `todo/`, `doing/`, `blocked/` and `done/` mirror each task's stage for older tools. Don't move files between them yourself.
+In the app, the projects are listed down the left side, with **All** at the top. The app finds every queue at `~/playground/<project>/tasks` on its own, and one level deeper (`~/playground/<group>/<project>/tasks`); add a queue kept anywhere else in **Settings**, under **Projects**. Inside a queue, the folders `inbox/`, `todo/`, `doing/`, `blocked/` and `done/` mirror each task's stage for older tools. Don't move files between them yourself.
 
 Commands: `muster projects` lists the queues, and `muster init <project-folder>` starts one. Every command takes `--queue <name>`; without it, `muster` uses the queue of the folder you're in. See [Projects and the queue](05-commands.md#projects-and-the-queue).
 
@@ -18,7 +18,7 @@ Commands: `muster projects` lists the queues, and `muster init <project-folder>`
 
 A **task** is one piece of work small enough for one agent to build. Its file is named by its id and title, like `0012-board-flickers-when-the-pane-opens.md`. The id is four digits, given out in order by `muster`, so two tasks never share one.
 
-Everywhere you see a task, it's named by its **key**: its project's prefix and its number, like `mu-12` for Muster's `0012`. Type either one: `muster show mu-12`, `muster show 12` and `muster show 0012` find the same task, and `muster show br-7` finds Braindump's task 7 from any folder. The file keeps its id, so nothing is renamed. A project's prefix is 2 to 4 lowercase letters: the first two of its name unless another project starts the same, or the one you set in **Projects** or with `muster projects set <name> prefix <p>`. A key written in a task's text links to that task in the app.
+Everywhere you see a task, it's named by its **key**: its project's prefix and its number, like `mu-12` for Muster's `0012`. Type either one: `muster show mu-12`, `muster show 12` and `muster show 0012` find the same task, and `muster show br-7` finds Braindump's task 7 from any folder. The file keeps its id, so nothing is renamed. A project's prefix is 2 to 4 lowercase letters: the first two of its name unless another project starts the same, or the one you set with `muster projects set <name> prefix <p>`. A key written in a task's text links to that task in the app.
 
 The file has four parts:
 
@@ -123,11 +123,11 @@ A **claim** says who is building a task. A coding session takes a Ready task wit
 
 Who is acting is the `--as` name, usually the session's branch or worktree. Inside a Claude Code session, `muster` adds the session itself (its short id, its folder and its account), so you see `wt-0030 (main-29 · session 7b5e8856 · cc-hg)` without anyone typing it.
 
-A claim has a **lease** of 12 hours. Everything the holder does through `muster` (a note, a question, a pass, a check-in or `muster heartbeat`) renews it. A claim nobody has heard from for longer can be released: `muster reclaim` puts every such task back in Ready, and the task pane shows **Release** on one. That way a session that crashed never holds a task forever.
+A claim has a **lease** of 12 hours, unless you change it on this Mac in the app's **Settings**, under **Agents** (from 1 hour to 7 days; the `muster` command uses the same one). Everything the holder does through `muster` (a note, a question, a pass, a check-in or `muster heartbeat`) renews it. A claim nobody has heard from for longer can be released: `muster reclaim` puts every such task back in Ready, and the task pane shows **Release** on one. That way a session that crashed never holds a task forever.
 
 A **check-in** is the holder saying how far it got: `muster checkin 0012 "gate green, writing tests" --pct 60`. The card shows it ("60% · gate green, writing tests · 12 min ago"). Sessions check in at each milestone and at least every 30 minutes, and a card quiet for longer says "no check-in for 45 min". The percentage is the session's own guess.
 
-The **holder** is who the task is with now: the claim in Ready and Building, and `held-by:` in Testing (who passed it there) and Your check (you). The card and the pane's status line show it. The status line adds **LIVE** when the task's file changed in the last 5 minutes, and "quiet" with how long when it didn't.
+The **holder** is who the task is with now: the claim in Ready and Building, and `held-by:` in Testing (who passed it there) and Your check (you). The card and the pane's status line show it. The status line adds **LIVE** when the task's file changed in the last 5 minutes (the LIVE window, also in **Settings**, under **Agents**), and "quiet" with how long when it didn't.
 
 See [Claims](05-commands.md#claims) and decision [0001](../decisions/0001-app-on-drovers-stack.md) (how a quiet claim is told apart; tasks 0002 and 0030).
 
@@ -135,7 +135,9 @@ See [Claims](05-commands.md#claims) and decision [0001](../decisions/0001-app-on
 
 An acceptance criterion ends with how it's verified. `— verify: command (pnpm test)` means a command proves it; an agent ticks it with the proof. `— verify: owner (open a task and watch the board)` means only you can judge it: it's **your criterion**.
 
-Testing passes a task to Your check without your criteria ticked: they're yours to tick. In **Your check** the task pane shows **Your checklist**. Try each thing, click it to tick it, then click **Accept**, and the task is Done. Accept stays off until all of yours are ticked. A criterion verified by "command (test) and owner" isn't yours alone: the agent ticks it with the command's proof.
+Testing passes a task to Your check without your criteria ticked: they're yours to tick. In **Your check** the card names the next one to try, and the task pane shows **Your checklist**, the open ones first. Try each thing, click its **Tick**, then click **Accept**, and the task is Done. Accept stays off until all of yours are ticked. A criterion verified by "command (test) and owner" isn't yours alone: the agent ticks it with the command's proof.
+
+Each task in Your check also has an **effort**, from your criteria still open: **Just accept** (none, and no question or block waiting on you), **Needs a session** (one mentions a session, a terminal or a command) or **One look** (the rest, a question for you or a block on you included). A criterion can say its own with `— effort: look` or `— effort: session`. The board and Waiting for you group Your check by it, and **Accept all** accepts the Just accept ones at once ([Your check](04-in-the-app.md#your-check)).
 
 ```
 muster tick 0012 AC2
@@ -179,7 +181,7 @@ The task pane's **Work** section shows what it found:
 - a guess at how far along the task is, from its ticked criteria and its stage, labelled as a guess;
 - **View** on a row, which opens that session's transcript below the rows: one line per prompt, reply and tool call.
 
-A card shows a small dot beside its id while one of its sessions is working, meaning its transcript changed in the last 5 minutes. A session that ran on another Mac shows as "not on this Mac". A session that also worked on other tasks is counted in full on each, and the section says so, so the task's own cost is lower than shown.
+A card shows a small dot beside its id while one of its sessions is working, meaning its transcript changed in the last 5 minutes (the LIVE window). A session that ran on another Mac shows as "not on this Mac". A session that also worked on other tasks is counted in full on each, and the section says so, so the task's own cost is lower than shown.
 
 See [The task pane](04-in-the-app.md#the-task-pane) (task 0025).
 

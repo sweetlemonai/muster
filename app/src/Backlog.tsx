@@ -25,6 +25,13 @@ export function backlogColumn(notes: Note[], tasks: Task[]): BacklogItem[] {
   return [...notes.map((note) => ({ kind: "note" as const, note })), ...tasks.map((task) => ({ kind: "task" as const, task }))];
 }
 
+/** The filter bar's hidden count: the tasks the filters (and the Who chips) hide, plus on the board
+ *  the notes they hide. The board lists the notes with Group by on too, in its Backlog band (0046);
+ *  the Table, Timeline and Graph don't list them, so they don't count them. */
+export function hiddenCount(view: string, tasks: { all: number; shown: number }, notes: { all: number; shown: number }): number {
+  return tasks.all - tasks.shown + (view === "board" ? notes.all - notes.shown : 0);
+}
+
 /** A project's count in the sidebar: its tasks in every stage, plus its backlog notes. */
 export function projectCount(counts: Record<string, number>, notes: Note[], queue: string): number {
   return queueTotal(counts) + notes.filter((n) => n.queue === queue).length;

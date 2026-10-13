@@ -4,6 +4,144 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Muster finds queues one level deeper, and About says which it found and which you added (owner)
+**Fixed:** Settings › About said Muster finds every `~/playground/*/tasks` queue on its own and
+listed four persianUtils queues as "found", while twelve more `~/playground/persianUtils/<x>/tasks`
+queues weren't shown at all (owner: "how? it doesn't???") → `queue::discover` looked one level
+down only, the four came from `added` in projects.json, and About listed every active queue under
+"found" without asking where each came from → `discover` now looks at `<base>/*/tasks` and
+`<base>/*/*/tasks` and no further, keeps only folders that pass `projects::looks_like_queue`, skips
+`.*`, `_*`, `node_modules`, `worktrees`, `*.worktrees`, `target` and `dist`, follows a symlink only
+while it stays inside the base, and finds a queue reached by two paths once. A nested queue is
+named by its own folder (`colors`, "-2" on a clash) and `Project` carries its `group`
+(`persianUtils`) for task 0044. A queue both found and added shows once, as found. About lists
+"Found on their own (~/playground/<project>/tasks and one level deeper)", then "Added by you" (or
+"none"), each path through `HomePath` (`~/`, the real path as tooltip and on copy).
+`muster projects` marks each line found or added. Projects' intro, the empty board, help.rs, the
+manual (02, 03, 04, 05) and AS_BUILT say the same. The `dump`/`probe` examples read
+`projects::active`.
+**Verified:** `pnpm check` green after the rebase onto a58e10b (tsc, vitest 959, vite build,
+cargo fmt, clippy -D warnings, cargo test 398 + 4 + 14 + 3); `python3 -I bin/test_task.py` 48 OK;
+`python3 -I bin/test_commands.py` 11 OK. New tests: `discovers_queues_one_level_deeper_and_no_further`,
+`discovery_skips_hidden_archived_and_build_folders`, `discovery_stays_inside_the_base_through_symlinks`,
+`a_queue_one_level_deeper_is_named_by_its_own_folder_and_keeps_its_group`,
+`a_queue_both_found_and_added_shows_once_as_found`, `projects_says_which_queues_were_found_and_which_were_added`,
+and About's three. `muster projects` on this Mac: 19 queues, all found (braindump, drover, muster
+and 16 persianUtils), `harness/c3-docs/tasks` left out.
+
+## 2026-10-13 — Appearance only in Settings, Help only in the header; paths shown with ~ (owner)
+**Did:** the owner: "remove appearance from top header since it is now under the settings", and
+why Help was both in Settings and outside it. The header's one-click **Appearance** is gone
+(`AppearanceShortcut.tsx` deleted), so Settings › Appearance is the only place; no key opened it,
+so no shortcut changed. Settings' **Help** group (links into the manual) is gone too: the
+header's Help tab, which every ? opens, is the manual's one place (`settingsData.ts`,
+`Settings.tsx`, the unused `settings` help topic and `.settings-links` CSS). Settings shows paths
+under the home folder as `~/…` (About, the Agents settings file, Projects' folders), with the
+real path in the tooltip and on the clipboard when copied: `homePath` and `copiedPath` in
+`lib.ts`, `HomePath.tsx`, and `home` in the core's `settings_info`. Manual (04) and AS_BUILT
+updated.
+**Verified:** `pnpm check` green (tsc, vitest 949 tests, vite build, cargo fmt, clippy -D
+warnings, cargo test 391 + 4 + 14 + 3); new tests: the header has no Appearance button and
+Settings still has the group; no Help group, the Help tab still opens the manual; `homePath`
+under home, home itself, home with and without a trailing slash, a sibling like
+`/Users/someone2` and a path outside home left as is, empty or `/` home; copying all or part of
+a shown path; About shows no user name and keeps the full paths as tooltips.
+`python3 -I bin/test_task.py` 48 OK, `python3 -I bin/test_commands.py` 11 OK.
+
+## 2026-10-13 — Group by Feature or Goal keeps the backlog notes and the quick add in view (task 0046)
+**Fixed:** with Group by on, the backlog notes and the **Add to the backlog…** field disappeared →
+they were drawn only in the plain board's Backlog column, and the bands hold tasks, so notes (no
+parent) fell out → the grouped board starts with a **Backlog** band ("Backlog · not in a feature
+yet", or goal): the quick add, the notes newest first, then the Backlog tasks under no feature or
+goal, which leave No feature. Drawn even when empty. The filter bar's hidden count now counts the
+notes the search hides on the grouped board too (`hiddenCount` in `Backlog.tsx`). `Groups.tsx`,
+`App.tsx` (board only), `styles.css`; the manual (04) and AS_BUILT updated.
+**Verified:** `bin/gate`: `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; vitest
+946 tests, 8 new (7 Backlog band renders by feature and by goal, empty, after an add, search marks,
+no-match; 1 hidden count), red before the fix. Not checked live in the app: AC4 is the owner's.
+
+## 2026-10-13 — Ping a working session from the app: ask for a check-in, or send a message (task 0039)
+**Did:** the owner, on two cards saying "no check-in for 36 min": "how to ping them back from the
+app". **Ask for a check-in** under a quiet card, in the task pane's new **Session** strip and, for
+a stalled project, **Ask all quiet sessions for a check-in** in the sidebar; **Message the session
+working on this** in the pane; `muster ping <id> ["<message>"]` on the command line. Each writes to
+the holder's session mailbox (`mail/<session8>/<id>-checkin.md`, `<id>-note-<nnnn>.md`) and logs it;
+`bin/answer-hook.py` hands it over after that session's next tool call, check-in requests first
+with the hook's own words to answer with `muster checkin`, messages quoted as the owner's note
+(500 characters, control characters out). The card says "asked 2 min ago" until a check-in comes.
+A holder without a session stamp shows the button disabled with why. Core in `ping.rs` (+
+`ping_cmds.rs`), app in `Ping.tsx` and `reach.ts`; PROTOCOL.md, the manual (04, 05, 07) and
+AS_BUILT updated.
+**Verified:** `pnpm check` green (tsc, vitest 744 tests, vite build, cargo fmt, clippy -D
+warnings, cargo test 343 + 13 + 3); `python3 -I bin/test_task.py` 44 OK (4 new: the hook delivers
+a check-in request and a quoted message, both with answers, and refuses a claim without a stamp);
+`python3 -I bin/test_commands.py` 11 OK.
+**Fixed (review):** U+2028/U+2029 in a message could break out of its quote → they become line
+breaks in the core and the hook, each part quoted; note-10 was delivered before note-9 → message
+files are numbered `0001`…; the pane's maxLength counted UTF-16 units and cut pastes → a live
+"N/500" in characters, Send off past it; a check-in request waiting while the task left Building
+asked for a `muster checkin` that fails → the hook sets it aside unless the task is still in
+Building and claimed by that session.
+**Open:** the optional auto-nudge after 45 quiet minutes (off by default) isn't built; it can now
+go in Settings → Agents (0036). AC1's live
+check in one real session is the owner's.
+
+## 2026-10-13 — Settings: one place for appearance, projects, agents, help and about (task 0036)
+**Did:** **Settings** is a view in the header's row: the groups (Appearance, Projects, Agents,
+Help, About) docked on the left, the open group's settings on the right (`Settings.tsx`,
+`settingsData.ts`, whose `SETTINGS_GROUPS` is where 0038's display modes and 0006's notifications
+go). The header's **Appearance** opens it at Appearance in one click and **+ Project** at
+Projects; the Appearance pane and the Projects tab are gone, their contents moved in. **Agents**
+has the helper's account and its model (Sonnet by default, or Haiku or Opus, in `helper.json`),
+the claim lease (12 h, 1 h to 7 d) and the LIVE window (5 min, 1 min to 1 h). Those two are
+per machine in `settings.json` beside `projects.json` (`settings.rs`): `muster reclaim` with no
+`--after` and `muster check` read it, and the app reads it every poll for Release, the card's
+"quiet" and dot, and the pane's LIVE. Missing, broken or out-of-bounds values are the defaults.
+**About** shows the version, the settings folder and every folder the app reads. The manual's In
+the app page has a Settings section; other pages point there; the Commands page was regenerated.
+**Fixed (review round 1):** "1.25h" saved as 72 min → spans went through estimates' one-decimal
+cleaning → `settings::span_minutes` reads the raw text, and `reclaim --after` uses it too. Agents
+jumped when the accounts loaded → Claims come first. The model chip lit only after a refetch →
+it lights when the core saves it. Esc's shortcut text still named Appearance. The CLI unit tests
+read this Mac's settings.json → the CLI reads it under the caller's `$HOME` (none in tests). The
+queue README template said 12 h → "longer than the lease"; `manifest.py`'s STALE_HOURS stays the
+default 12 h, and its comment says so.
+**Fitted to main** (rebased onto 0022's rework, 0023, 0042, 0043): the cards' lease and LIVE
+window reach 0043's Card and Your turn lines through the same context; Your check's **Open
+Appearance** and **Open Projects** open Settings at that group, and a criterion naming Settings
+gets **Open Settings**; Settings › Projects shows each project's 0023 gate command, read-only
+(the command line stays the one place to set it).
+**Decided:** bounds and a settable helper model went to the owner as 0036 Q1 with pick (a); built
+as (a) while it waits.
+**Verified:** `pnpm check` exit 0 (vitest 748, cargo test 341 + 14 + 3, clippy and fmt clean,
+build), `python3 -I bin/test_task.py` OK (40), `python3 -I bin/test_commands.py` OK (11). A test
+with a 1-hour lease in `settings.json` makes `muster check` and `muster reclaim` release a claim
+quiet for 2 hours that the default 12 h leaves alone.
+**Open:** the owner's answer to 0036 Q1; the Settings screen not yet looked at in the running app.
+
+## 2026-10-13 — Your check says what to do: next step, effort groups, Accept all (task 0043)
+**Did:** the owner, on 21 tasks in Your check: "not clear what I need to do about it". Each Your
+check card now says **Your turn** (the pane too, instead of "on it: you") and its next step, the
+first open owner criterion as an instruction ("Try: group the board by Feature and check a goal's
+progress") or "Nothing to try: Accept". The Your check column (each band's too) and Waiting for
+you group by effort: Just accept, One look, Needs a session (an open criterion mentions a session,
+terminal or command; `— effort: look|session` overrides). **Accept all** in Just accept names the
+tasks in place, then a second click sends them to a new core command, `accept_all` (lib.rs), which
+passes each from Your check as Accept does, logged, and reports what it refused. The pane's
+checklist lists open owner criteria first with Tick and a button per view they name. Logic in
+`yourCheck.ts`; `EffortGroups.tsx`, `WaitingList.tsx` (moved out of App.tsx); manual's In the app
+(new Your check section), Concepts, AS_BUILT, shortcuts page (Esc cancels the confirm).
+**Fixed (review round 1):** Accept all could take a goal or feature, or a task with a question
+escalated to the owner, which a single Accept never offers → `justAccept` and the Waiting list take
+tasks only, an open escalated question or a block on the owner is owner work (One look; the next
+step says "Answer Q2: …" or "Unblock: …"), and `accept_all_in` refuses both too. The confirm takes
+the focus and its Esc is a window capture listener (never closes the pane). "Your turn" is a filled
+chip (orange text was ~2.4:1 on light themes). The result line is kept by place outside the column,
+so it outlives an emptied column and goes on the next change; refusals drop the id and `muster` hints.
+**Verified:** `pnpm check` exit 0, both Python suites OK (counts in the 0043 pass). The core test
+`accept_all_accepts_exactly_the_just_accept_tasks_each_logged` fails when the from-Your-check
+check is dropped (a Testing task gets moved). AC5 is the owner's.
+
 ## 2026-10-13 — A dependency is met once it's merged: Your check counts, not only Done (task 0042)
 **Did:** the owner settled that work merges after Testing and waits in Your check so the next
 tasks build on it, but the core still held dependents until Done (0005 couldn't be claimed with

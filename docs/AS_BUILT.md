@@ -36,9 +36,9 @@ gives one view of everything and checks the queue for problems. The owner reads
 Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muster.app` (build:
 `cd app && pnpm install && pnpm release:build`; develop: `pnpm app`).
 
-- **Projects sidebar** (left): All and every queue (`~/playground/*/tasks` plus ones added by
-  hand), each with its task count, how many need you (orange) and how many are in progress
-  (the Building colour), and **+ Project** at the bottom. The header keeps only the views, New task and
+- **Projects sidebar** (left): All and every queue (found at `~/playground/*/tasks` and one level deeper,
+  `~/playground/*/*/tasks`, plus ones added by hand), each with its task count, how many need you (orange) and how many are in progress
+  (the Building colour), and **+ Project** at the bottom (Settings, at Projects). The header keeps only the views, New task and
   Appearance, on one line. Under each name, quietly (0037, `activity.ts`): the Building-colour
   dot and "2 working" (tasks with a live session, or a check-in or heartbeat in the last 30
   minutes; never in Done, and in Your check only while live), or **stalled** in the attention
@@ -48,15 +48,53 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   The All row sums projects: "3 working · 1 stalled". Chips above the list order it: **Working**
   (default: working projects first, then by last activity), **A–Z**, **Needs you** (most waiting
   first, then as Working), remembered in `localStorage` (`muster.sidebarOrder`).
-- **Projects** (tab, or **+ Project** next to the project chips): every project with its prefix, folder, task count and where it came from (found
-  in `~/playground`, or added). **New queue…** picks a project folder and creates its `tasks/`:
+- **Reaching a working session** (0039, `ping.rs`, `Ping.tsx`, `reach.ts`): **Ask for a
+  check-in** under a quiet card ("no check-in for N min"; a strip joined to the card's bottom,
+  since the card is a button), in the task pane's **Session** strip (Building and Testing, an
+  agent's task the owner doesn't hold) beside **Message the session working on this** (one line,
+  500 characters), and **Ask all quiet sessions for a check-in (n)** under a stalled project in
+  the sidebar. Each goes through the core to the holder's session mailbox
+  (`mail/<session8>/<id>-checkin.md`, `<id>-note-<nnnn>.md`) and is logged on the task; the answer
+  hook hands it over after that session's next tool call, check-in requests first, messages
+  quoted as the owner's note. The card shows "asked 2 min ago" in the check-in's place until a
+  check-in of that Building stage comes (`checkinAsked`, from the log's ask line). A holder
+  without a session stamp, or in Testing for a check-in, shows the button disabled with the
+  reason. Not built: the optional auto-nudge after 45 quiet minutes, off by default; it can now
+  go in Settings → Agents (0036).
+- **Projects** (in Settings, or **+ Project** under the project list): every project with its folder, task count and where it came from (found
+  in `~/playground`, or added). Discovery (`queue::discover`) looks at `<project>/tasks` and one
+  level deeper, `<group>/<project>/tasks`, and no further; it passes over folders named `.*`, `_*`,
+  `node_modules`, `worktrees`, `*.worktrees`, `target` and `dist`, follows a symlink only while it
+  stays inside `~/playground`, and keeps only folders with a `README.md` and `todo/` (or
+  `tasks.json`). A nested queue is named by its own project folder and carries its group (the
+  folder above it). A queue both found and added shows once, as found. `muster projects` marks
+  each line found or added. **New queue…** picks a project folder and creates its `tasks/`:
   status folders, README with the rules, `WAITING-FOR-OWNER.md`, the tools' stand-ins in `bin/`,
   and its own git with a first commit. It refuses inside a git repo, and refuses if `tasks/`
   already exists. **Add existing queue…** picks any queue folder. Rename, Hide/Show, and Remove
-  (added ones only) never touch files; **Prefix** sets its tasks' keys (0033), stored with the
-  queue, refused when it's bad or another project's, and New queue stores the default. Saved in `~/Library/Application Support/ai.sweetlemon.muster/projects.json`.
+  (added ones only) never touch files; New queue stores the queue's default prefix (0033). Saved in `~/Library/Application Support/ai.sweetlemon.muster/projects.json`.
   Folders are picked by the core's own dialog, so the window never hands the core a path.
-- **Themes and accents** (Appearance, docked): 7 themes (Violet night, Violet day, Graphite,
+- **Settings** (task 0036, `Settings.tsx`, `settingsData.ts`, `settings.rs`): a view in the header's
+  row (never a window), its groups docked on the left (Appearance, Projects, Agents, About;
+  `SETTINGS_GROUPS` is where later groups such as display modes and notifications go), the open
+  group's settings on the right. Appearance is only here and Help only in the header: on the
+  owner's word (2026-10-13) the header's one-click Appearance button and Settings' Help group
+  (links into the manual, which the Help tab and every ? already open) were removed; the old
+  Appearance pane and Projects tab are gone, their contents moved here. Paths under the home
+  folder (About, the Agents settings file, Projects' folders) show as `~/…` (`homePath` in
+  `lib.ts`, `HomePath.tsx`; the core sends `home` in `settings_info`), the real path in the
+  tooltip and on the clipboard when copied. **Agents** has the
+  helper's account and model, the **claim lease** (default 12 h, 1 h to 7 d) and the **LIVE
+  window** (default 5 min, 1 min to 1 h), typed as `30m`, `2h`, `1d` and checked by the core.
+  Both are saved per machine in `settings.json` beside `projects.json`; `muster reclaim` (with
+  no `--after`) and `muster check` read the same file, the app reads it on every poll (Release,
+  the card's "quiet" and dot, the pane's LIVE), and a missing, broken or out-of-bounds value is
+  the default, field by field. **Projects** also shows each project's gate command (0023),
+  read-only, with the `muster projects set` line when none is set. Your check's view buttons
+  (0043) open Settings for Appearance, Projects and Settings. **About** shows the version, the
+  settings folder and its files, and every folder the app reads: the queues found on their own,
+  then the ones added by you (or that there are none), with paths under the home folder as `~/`.
+- **Themes and accents** (Settings' Appearance): 7 themes (Violet night, Violet day, Graphite,
   Midnight, Paper, Snow, High contrast), with Match the Mac picking one dark and one light, and 6
   accents (Violet, Teal, Rose, Gold, Green, Graphite). No blue, no orange. They apply live and are
   remembered. Default: Muster's violet, following the Mac. A test checks every theme and accent
@@ -76,7 +114,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   `#2E1F66`→`#170F38` gradient) is ready if the owner prefers it. `dock-preview-drover-a-drover-b.png`
   shows both next to Drover's. The earlier dog-face mark and its recolourings are in
   `attachments/0006/`.
-- **Layout: nothing covers the board.** A task, New task and Appearance open in one pane docked
+- **Layout: nothing covers the board.** A task, a backlog note and New task open in one pane docked
   beside the content, with the board still visible and live beside it (the owner: "need to have
   everything in front of my eyes"). Drag the edge to resize it; the width is remembered. Esc
   closes it.
@@ -178,7 +216,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   or goal, a feature under a goal. Goals and features are never claimed or built: their stage comes
   from their children (Done only when every child is), and they roll up "n of m done" and the open
   estimate. **Group by** None · Feature · Goal (chips above the board and table) gives one band per
-  parent, with the stage columns inside. Cards show their parent. `check` reports missing parents,
+  parent, with the stage columns inside, after a Backlog band (0046) with the quick add, the backlog
+  notes and the Backlog tasks under no parent. Cards show their parent. `check` reports missing parents,
   wrong levels and loops, and warns about late goals.
 - **Editing** (task 0020, part 1): **Edit** beside the description turns it into a text box in place.
   ⌘S saves, Esc twice discards, and nothing typed is lost when you switch cards. `muster edit` does
@@ -251,7 +290,37 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   tasks `[you]`, INDEX.md "you", and `manifest.py` reads `for`.
 - **Waiting for you:** what the agents wait on the owner for (escalated questions, Your check,
   blocked on you or by a permission, `queue::needs_owner`), then the owner's own tasks to do and
-  doing, each opening its task (`human.ts` `waitingForYou`: the needs-you count's tasks).
+  doing, each opening its task (`human.ts` `waitingForYou`: the needs-you count's tasks). Your check comes first, by
+  effort (`WaitingList.tsx`, task 0043).
+- **Your check says what to do** (task 0043, `yourCheck.ts`, `EffortGroups.tsx`):
+  - Each Your check card says **Your turn** (not "on it: owner"; the pane's status line too) and
+    its next step: the first open owner criterion as an instruction ("Try: …", or "Check: …"
+    when it isn't written as something the owner does), cut to 90 characters with the whole in
+    its tooltip and the pane, "· n more", or "Nothing to try: Accept".
+  - The next step is, in order: an open question escalated to the owner ("Answer Q2: …"), a
+    block on them or by a permission ("Unblock: …"), the first open owner criterion, else
+    "Nothing to try: Accept".
+  - Effort is derived from the open owner criteria: any mentioning a session, terminal or command
+    (whole words) → Needs a session; any other open one, an open escalated question or a block on
+    the owner → One look; else Just accept. `— effort: look|session`
+    on a criterion overrides it, and its words leave it out.
+  - The board's Your check column (each band's too, with Group by) and Waiting for you group by
+    effort, in that order, each with its count; an empty group keeps its heading.
+  - **Accept all** in Just accept: the first click freezes the tasks shown (tasks only, not
+    blocked) and names them in place, with the focus on Cancel; the second sends them to the
+    core's `accept_all` (lib.rs, one call per project), which checks every id and the stamp first, then passes each from Your check as the
+    owner, as Accept does (`ops::pass_task` with `from: your-check`, so the commit the merge
+    recorded stays). The core's rules refuse an open owner criterion, a block or a task that moved
+    on, and `accept_all_in` also refuses a goal or feature and an open escalated question (read
+    just before each pass), with the reason, and the rest go on. Each accepted task's log gets its
+    stage line. Esc cancels the confirm (a capture listener, so it never closes the pane), and
+    the focus goes back to the button. The result line is kept by place (board, band, Waiting for
+    you) outside the column, so it outlives an emptied column, and goes on the next change
+    (`staleResult`). Refusals read without the leading id or `muster` hints.
+  - The pane's checklist lists the open owner criteria first, each with its effort, **Tick** and
+    a button per view it names (Board, Table, Timeline, Graph, Appearance in any case; Helper,
+    Waiting for you, Activity, Problems, Projects, Help only capitalized). Ticked ones follow with
+    **Untick**.
 - **Task panel** (loads on first open): the task rendered as Markdown with a Raw switch,
   open questions with an answer box (⌘↩), the files as thumbnails that open large (← → between
   them, Esc to close), who's on it, what it waits on, and the commit.
@@ -300,7 +369,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **What the app writes**, all through the core's rules, under the queue's lock, logged with the
   time and "owner": new tasks (and their ids), status moves, priority, type and title, log notes,
   attachments, answers to questions, and new queues (`New queue…`). Its own settings go in
-  `projects.json`, and the helper's transcripts in its settings folder. **The app never claims a
+  `projects.json` and `settings.json`, and the helper's transcripts in its settings folder. **The app never claims a
   task.** Claims belong to the agents doing the work.
 - **Activity:** queue commits and changed task files, newest first. **Problems:** the same
   checks as `manifest.py --check`, done natively.
@@ -318,7 +387,8 @@ folded "steps" line, never file edits.
 
 - It runs your own `claude` with the account you pick once (decision 0002), in restricted mode:
   only `muster` and read-only tools, file reading inside the project folder, and anything else
-  refused. Router and token variables are stripped. Model: Sonnet.
+  refused. Router and token variables are stripped. Model: Sonnet, or Haiku or Opus picked in
+  Settings (0036; saved in `helper/helper.json`, and anything else there reads as Sonnet).
 - **Accounts:** the picker shows each `~/.claude*` folder's login (from `claude auth status`, no model
   call), with **Change account** any time. An account that only works through a shell command
   with a token (like `cc-hg`) isn't logged in on its own: the helper says so in plain words and
@@ -353,9 +423,14 @@ muster answer 0007 Q2 "Use 5173"          muster check      muster projects     
 per holder (`--as`), and says which queue it claimed in. A claim made in a queue that came from
 `MUSTER_ROOT` but isn't the current folder's own queue is refused unless `--queue` says so. The
 claim has a **lease**: `heartbeat`, and the holder's notes, passes and questions, renew it, and
-`muster reclaim` (or **Release** on a stale card) returns a claim quiet for 12 h to Ready.
+`muster reclaim` (or **Release** on a stale card) returns a claim quiet past the lease to Ready:
+12 h, or this Mac's lease from Settings (0036).
 **Questions:** `muster ask`, `escalate`, `inbox` and `answer` follow the file contract. `bin/task`
 is a stand-in that runs them. The answer hook still reads the mailbox itself, for speed.
+**Ping** (task 0039): `muster ping <id>` asks the holder's session for a check-in (Building),
+`muster ping <id> "<message>"` sends it a message (Building or Testing), the same rules as the
+app's buttons (`ping.rs`): only the session in the holder's stamp, refused with why otherwise,
+logged on the task.
 
 ## How the pieces talk
 
@@ -454,6 +529,10 @@ Live claims go in the repo's shared git folder. See
   task isn't built.
 - **Reclaim runs when someone runs it:** `muster reclaim` or Release on a card. No scheduler runs
   it yet. A crashed session's claim waits until then.
+- **A ping reaches a session only through the answer hook** (0039): a session without the hook
+  installed sees a check-in request or message only when it runs `muster inbox`, and a claim
+  with no session stamp can't be reached at all. Nothing asks quiet sessions on its own yet: the
+  auto-nudge setting isn't built; its place is Settings → Agents (0036).
 
 ## What's left (in order)
 

@@ -4,7 +4,7 @@ What goes wrong most often, what it means, and what to do. The quoted messages a
 
 ## A claim looks stale
 
-A card in Building that says **quiet 12 h+** belongs to a session nobody has heard from for longer than the 12-hour lease: it probably crashed or was closed. Open the task and click **Release**, and it goes back to Ready, logged as reclaimed, for another session to take. `muster reclaim` releases every such claim in the queue at once; `muster reclaim --after 1d` waits longer.
+A card in Building that says **quiet 12 h+** belongs to a session nobody has heard from for longer than the lease (12 hours, unless changed in **Settings**, under **Agents**): it probably crashed or was closed. Open the task and click **Release**, and it goes back to Ready, logged as reclaimed, for another session to take. `muster reclaim` releases every such claim in the queue at once; `muster reclaim --after 1d` waits longer.
 
 "no check-in for 45 min" is only a nudge: the session hasn't said how it's going for a while. It still holds the task. A blocked task never counts as quiet, since it's waiting.
 
@@ -50,7 +50,7 @@ The Helper's own conversations are kept by the app, one file per project, in `~/
 
 "no queue here: pass --queue <name|folder> or set MUSTER_ROOT" means the folder you're in isn't a queue and has no `tasks/` queue beside it or beside a folder above it. Either `cd` into the project, or name the queue: `muster list --queue myapp` (`muster projects` lists the names) or `--queue ~/path/to/tasks`.
 
-"no queue named …" means that name isn't a project Muster knows. Check `muster projects`, or add the queue under **Projects** in the app.
+"no queue named …" means that name isn't a project Muster knows. Check `muster projects`, or add the queue in the app's **Settings**, under **Projects**.
 
 ## muster says another project's queue
 
@@ -74,4 +74,4 @@ A git worktree finds its project's queue on its own, as long as the queue sits b
 
 ## The app says it can't read the queues
 
-Point at "Can't read the queues", top right, to see the error. A queue whose folder was moved or deleted shows as "not a queue any more" under **Projects**: hide it, or remove it if you added it. **Problems** lists what `muster check` finds wrong inside the queues.
+Point at "Can't read the queues", top right, to see the error. A queue whose folder was moved or deleted shows as "not a queue any more" in **Settings**, under **Projects**: hide it, or remove it if you added it. **Problems** lists what `muster check` finds wrong inside the queues.

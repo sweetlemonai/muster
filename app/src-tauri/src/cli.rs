@@ -3,7 +3,7 @@
 //! from the current folder (a queue itself, or a `tasks/` beside or above it).
 
 use crate::session::{self, Session};
-use crate::{backlog, fields, index, ops, projects, queue, search, vision};
+use crate::{backlog, fields, index, ops, ping, projects, queue, search, settings, vision};
 use std::path::{Path, PathBuf};
 
 /// The environment a command reads its caller from (`std::env::var`, or a test's own).
@@ -86,6 +86,22 @@ pub fn local_stamp() -> String {
 
 pub fn config_file() -> PathBuf {
     home().join("Library/Application Support/ai.sweetlemon.muster/projects.json")
+}
+
+/// This machine's settings (0036): `settings.json` beside `projects.json` under the caller's
+/// `$HOME`, which the app writes and both read. The defaults without a home (a test's empty
+/// environment), so nothing on this Mac changes what a test sees.
+fn machine_settings(env: Env) -> settings::Settings {
+    env("HOME")
+        .filter(|h| !h.is_empty())
+        .map(|h| {
+            settings::load(
+                &Path::new(&h)
+                    .join("Library/Application Support/ai.sweetlemon.muster")
+                    .join(settings::FILE),
+            )
+        })
+        .unwrap_or_default()
 }
 
 fn home() -> PathBuf {
@@ -238,7 +254,7 @@ fn check_target(
 }
 
 /// Commands whose first word after the command is a task (0033: `mu-12`, `MU-12`, `12` or `0012`).
-const TAKES_A_TASK: [&str; 24] = [
+const TAKES_A_TASK: [&str; 25] = [
     "show",
     "move",
     "pass",
@@ -263,6 +279,7 @@ const TAKES_A_TASK: [&str; 24] = [
     "ask",
     "escalate",
     "vision",
+    "ping",
 ];
 
 /// Where the task is in `a.pos` for this command, when it takes one and was given it.
@@ -873,6 +890,28 @@ fn edit_in_editor(id: &str, text: &str) -> Result<(String, PathBuf), String> {
     Ok((new.map_err(gone)?, file))
 }
 
+/// One line of `muster projects`: the name, its prefix (0033), where it came from (found under
+/// ~/playground, or added in the app), the folder, whether it's hidden or no longer a queue, and
+/// its gate.
+fn project_line(p: &projects::Project) -> String {
+    let state = if p.hidden {
+        " (hidden)"
+    } else if !p.ok {
+        " (not a queue)"
+    } else {
+        ""
+    };
+    let gate = if p.gate.is_empty() {
+        String::new()
+    } else {
+        format!("  gate: {}", p.gate)
+    };
+    format!(
+        "{:<16} {:<4} {:<6} {}{state}{gate}",
+        p.name, p.prefix, p.source, p.path
+    )
+}
+
 /// `muster projects set <name> gate "<command>"` (0023), on `config`: the command must split into
 /// words the way the gate will be run (no shell), one argument (quoted), empty to clear it.
 /// Returns what to print.
@@ -1163,20 +1202,8 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
             if a.json {
                 print_json(&list)?;
             } else {
-                for p in list {
-                    let state = if p.hidden {
-                        " (hidden)"
-                    } else if !p.ok {
-                        " (not a queue)"
-                    } else {
-                        ""
-                    };
-                    let gate = if p.gate.is_empty() {
-                        String::new()
-                    } else {
-                        format!("  gate: {}", p.gate)
-                    };
-                    println!("{:<16} {:<4}  {}{state}{gate}", p.name, p.prefix, p.path);
+                for p in &list {
+                    println!("{}", project_line(p));
                 }
             }
             Ok(0)
@@ -1573,9 +1600,26 @@ fn run_on(
             println!("{}: checked in; heartbeat {stamp}", key(id));
             Ok(0)
         }
+        "ping" => {
+            let id = need(a, 1, "a task id")?;
+            if a.pos.len() > 2 {
+                let p = ping::message(root, id, &a.pos[2..].join(" "), &me(), stamp)?;
+                println!("{}: message sent to session {}", key(id), p.session);
+            } else {
+                let p = ping::ask_checkin(root, id, &me(), stamp)?;
+                println!("{}: asked session {} for a check-in", key(id), p.session);
+            }
+            println!("It arrives after that session's next tool call.");
+            Ok(0)
+        }
         "reclaim" => {
+            // --after, else this machine's lease (0036; 12 h unless changed in Settings).
             let after = a.flags.get("after").map(String::as_str).unwrap_or("");
-            let lease = ops::lease_minutes(after)?;
+            let lease = if after.trim().is_empty() {
+                machine_settings(env).lease_minutes
+            } else {
+                ops::lease_minutes(after)?
+            };
             let r = ops::reclaim(root, lease, &me(), stamp, queue::now_secs())?;
             if a.json {
                 print_json(&r)?;
@@ -1591,9 +1635,9 @@ fn run_on(
                 }
                 if r.released.is_empty() && r.failed.is_empty() {
                     let within = if after.trim().is_empty() {
-                        ops::LEASE
+                        settings::span_text(lease)
                     } else {
-                        after
+                        after.to_string()
                     };
                     println!("nothing to release: every claim in Building was heard from within {within}");
                 }
@@ -1687,7 +1731,14 @@ fn run_on(
         }
         "vision" => run_vision(a, root, prefix, &me, stamp),
         "check" => {
-            let s = keyed(root, prefix);
+            // A claim is quiet past this machine's lease (0036), as `reclaim` judges it; each task
+            // with its key (0033).
+            let mut s = queue::read_state_with(
+                &[("q".into(), root.to_path_buf())],
+                &mut queue::Cache::default(),
+                &machine_settings(env),
+            );
+            crate::key::apply(&mut s, |_| prefix.to_string());
             for p in &s.problems {
                 println!("{p}");
             }
@@ -1865,6 +1916,26 @@ mod tests {
     }
     fn run(argv: &[String]) -> Result<i32, String> {
         run_with(argv, &no_env)
+    }
+
+    /// The lease and LIVE window come from the caller's $HOME (0036), so these tests, which give
+    /// no environment, use the defaults whatever this Mac's settings.json says.
+    #[test]
+    fn settings_come_from_the_callers_home_and_are_the_defaults_without_one() {
+        assert_eq!(machine_settings(&no_env), settings::Settings::default());
+        let home = tempfile::tempdir().unwrap();
+        let dir = home
+            .path()
+            .join("Library/Application Support/ai.sweetlemon.muster");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(settings::FILE), r#"{"leaseMinutes": 90}"#).unwrap();
+        let h = home.path().to_string_lossy().to_string();
+        let env = move |k: &str| (k == "HOME").then(|| h.clone());
+        assert_eq!(machine_settings(&env).lease_minutes, 90);
+        assert_eq!(
+            machine_settings(&|_: &str| Some(String::new())),
+            settings::Settings::default()
+        );
     }
 
     /// `list --status --stage --tag`, as the options give it.
@@ -3051,6 +3122,46 @@ mod tests {
     }
 
     #[test]
+    fn ping_asks_for_a_check_in_or_sends_a_message_to_the_holders_session() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let owner = [("MUSTER_AS", "owner")];
+        let session = [
+            ("MUSTER_AS", "wt-a"),
+            (
+                "CLAUDE_CODE_SESSION_ID",
+                "7b5e8856-c9c8-45ec-aa03-c0ddbf1d4394",
+            ),
+        ];
+        for title in ["Stamped", "Unstamped"] {
+            assert_eq!(code_in(&q, &owner, &["new", title]), 0);
+        }
+        assert_eq!(code_in(&q, &session, &["claim", "0001"]), 0);
+        assert_eq!(code_in(&q, &[("MUSTER_AS", "wt-b")], &["claim", "0002"]), 0);
+        let boxed = d.path().join("mail/7b5e8856");
+        // No text: a check-in request.
+        assert_eq!(code_in(&q, &owner, &["ping", "0001"]), 0);
+        assert!(std::fs::read_to_string(boxed.join("0001-checkin.md"))
+            .unwrap()
+            .contains("run `muster checkin 0001 "));
+        // Text: a message, every word of it.
+        assert_eq!(
+            code_in(&q, &owner, &["ping", "0001", "look", "at", "the", "test"]),
+            0
+        );
+        assert!(std::fs::read_to_string(boxed.join("0001-note-0001.md"))
+            .unwrap()
+            .contains("> look at the test\n"));
+        let body = queue::read_body(d.path(), "0001").unwrap();
+        assert!(body.contains(" owner: asked for a check-in (session 7b5e8856)\n"));
+        assert!(body.contains(" owner: messaged session 7b5e8856: look at the test\n"));
+        // A claim without a session stamp: refused, with why.
+        assert_eq!(code_in(&q, &owner, &["ping", "0002"]), 1);
+        assert_eq!(code_in(&q, &owner, &["ping", "0002", "hello"]), 1);
+        assert_eq!(code_in(&q, &owner, &["ping"]), 2, "no id");
+    }
+
+    #[test]
     fn list_and_show_say_who_is_on_it_and_the_latest_check_in() {
         let d = v2_queue();
         let file = |id: &str, fm: &str, log: &str| {
@@ -3465,6 +3576,36 @@ mod tests {
         assert_eq!(queue::read_task(&f.root, &other).unwrap().stage, "ready");
         // check lists nothing left behind, and passes.
         assert_eq!(run_in(&f.repo, &["check"]), Ok(0));
+    }
+
+    #[test]
+    fn projects_says_which_queues_were_found_and_which_were_added() {
+        let base = tempfile::tempdir().unwrap();
+        let (top, _) = project(base.path(), "drover");
+        let (nested, _) = project(&base.path().join("persianUtils"), "colors");
+        let elsewhere = tempfile::tempdir().unwrap();
+        let (added, _) = project(elsewhere.path(), "notes");
+        let mut c = projects::Config::default();
+        projects::add(&mut c, base.path(), &added).unwrap();
+        c.gate
+            .insert(top.to_string_lossy().to_string(), "bin/gate".into());
+        c.hidden.push(nested.to_string_lossy().to_string());
+        let lines: Vec<String> = projects::list(base.path(), &c)
+            .iter()
+            .map(project_line)
+            .collect();
+        let added = added.canonicalize().unwrap();
+        assert_eq!(
+            lines,
+            vec![
+                format!(
+                    "drover           dr   found  {}  gate: bin/gate",
+                    top.display()
+                ),
+                format!("colors           co   found  {} (hidden)", nested.display()),
+                format!("notes            no   added  {}", added.display()),
+            ]
+        );
     }
 
     #[test]

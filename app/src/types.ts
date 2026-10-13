@@ -51,6 +51,9 @@ export type Task = {
   stageSince: string;
   /** Every check-in in the log, oldest first. */
   checkins: Checkin[];
+  /** When the session on it was last asked for a check-in (0039), "YYYY-MM-DD HH:MM", or "". The
+   *  core always sends it; optional so a task without it reads as never asked. */
+  checkinAsked?: string;
   heartbeat: string;
   waitingOn: string;
   /** Why it's blocked (0024): "tasks" (derived from `depends:`), "you", "permission", "question"
@@ -200,15 +203,26 @@ export type State = {
   problems: string[];
   activity: Activity[];
   now: number;
+  /** This machine's settings the core judged by (0036), in minutes; read with settingsData's
+   *  machineOf, which falls back to the defaults. */
+  settings?: { leaseMinutes: number; liveMinutes: number };
 };
 
 export type Project = {
   key: string;
   name: string;
   path: string;
+  /** Found on its own (`~/playground/<project>/tasks`, or one level deeper), or added by the
+   *  owner. A queue that is both is found. */
   source: "found" | "added";
+  /** The folder holding a found queue's project one level deeper (`persianUtils` for
+   *  `~/playground/persianUtils/colors/tasks`); "" for the rest. */
+  group: string;
   hidden: boolean;
   ok: boolean;
-  /** What its tasks' keys start with (0033): stored with its queue, or its default. */
-  prefix: string;
+  /** The project's gate command (0023), "" when none is set; set with `muster projects set`. */
+  gate?: string;
+  /** What its tasks' keys start with (0033): stored with its queue, or its default. The core
+   *  always sends it. */
+  prefix?: string;
 };

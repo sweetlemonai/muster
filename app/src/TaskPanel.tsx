@@ -9,6 +9,7 @@ import Markdown from "./Markdown";
 import { taskKey, taskOfHref } from "./taskKey";
 import PaneHeader from "./PaneHeader";
 import { isFileDrag, releasedBy, undoFor } from "./paneData";
+import { SessionPing } from "./Ping";
 import Sidebar from "./Sidebar";
 import StageContent from "./StageContent";
 import StageForms from "./StageForms";
@@ -19,13 +20,14 @@ import { withoutVision } from "./Vision";
 import VisionPanel from "./VisionPanel";
 import { anyDirty, withPart } from "./writeUp";
 import Work from "./Work";
+import type { NamedView } from "./yourCheck";
 import { pressed } from "./shortcuts";
 
 /** The task pane (0021, the owner's design D2): title and status first, the stage track, then
  *  two columns (what this stage needs; the next step and the task's settings), the stage forms
  *  under both, the path; then open questions, the write-up, the vision check (0029), the comment
  *  thread (0017) and the Log and, at the bottom, the note bar. */
-export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudge, childTasks, onOpenTask, keys, onOpenAt }: {
+export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudge, childTasks, onOpenTask, onOpenView, keys, onOpenAt }: {
   task: Task;
   now: number;
   onClose: () => void;
@@ -38,6 +40,8 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
   childTasks?: Task[];
   /** Open another task of this queue in the pane, by id (the tasks a block names, 0024). */
   onOpenTask?: (id: string) => void;
+  /** Open a view an owner criterion names, from its button in Your check (0043). */
+  onOpenView?: (v: NamedView) => void;
   /** Each project's prefix to its queue (0033): a key written in the text links to its task, which
    *  `onOpenAt` opens, in whichever project it is. */
   keys?: Map<string, string>;
@@ -120,11 +124,12 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
         <StageTrack stage={task.stage} busy={a.busy} onPick={a.move} releases={(to) => releasedBy(task, to)} human={isHuman(task)} />
         <div className="tp-cols">
           <div className="tp-main">
-            <StageContent task={task} nowSecs={now} body={body === null ? null : shown} childTasks={childTasks} busy={a.busy} onTick={a.tick} />
+            <StageContent task={task} nowSecs={now} body={body === null ? null : shown} childTasks={childTasks} busy={a.busy} onTick={a.tick} onView={onOpenView} />
           </div>
           <Sidebar task={task} nowSecs={now} a={a} />
         </div>
         <StageForms task={task} a={a} />
+        <SessionPing task={task} now={now} onChanged={onChanged} />
         {a.msg && (
           <p className={a.msg.ok ? "ok small pane-msg" : "err small pane-msg"} role="status">
             {a.msg.text}

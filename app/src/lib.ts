@@ -129,7 +129,7 @@ function span(m: number): string {
   return `${Math.floor(m / 1440)} d`;
 }
 /** "12 min ago", or "just now" under a minute. */
-const agoText = (m: number) => (m < 1 ? "just now" : `${span(m)} ago`);
+export const agoText = (m: number) => (m < 1 ? "just now" : `${span(m)} ago`);
 
 /** Wall-clock minutes from a tool stamp to `now` (seconds since 1970), as quietMinutes counts
  *  them; null when `at` isn't a stamp. */
@@ -224,9 +224,9 @@ export function quietMinutes(t: Pick<Task, "heartbeat" | "modified">, now: numbe
 
 /** A claim whose lease ran out, exactly what the core's reclaim takes: held, in Building, not
  *  blocked (that's waiting, by tasks too), not the owner's own task (`for: human`, which has no
- *  lease), and quiet for longer than the lease. */
-export function leaseRunOut(t: Pick<Task, "stage" | "blocked" | "blockedKind" | "claimedBy" | "heartbeat" | "modified" | "forWho">, now: number): boolean {
-  return t.stage === "building" && !t.blocked && !t.blockedKind && t.forWho !== "human" && t.claimedBy.trim() !== "" && quietMinutes(t, now) > LEASE_SECS / 60;
+ *  lease), and quiet for longer than the lease: `leaseMinutes`, this machine's from Settings (0036). */
+export function leaseRunOut(t: Pick<Task, "stage" | "blocked" | "blockedKind" | "claimedBy" | "heartbeat" | "modified" | "forWho">, now: number, leaseMinutes = LEASE_SECS / 60): boolean {
+  return t.stage === "building" && !t.blocked && !t.blockedKind && t.forWho !== "human" && t.claimedBy.trim() !== "" && quietMinutes(t, now) > leaseMinutes;
 }
 
 /** Runs one action at a time: a call made while one is in flight is dropped (false), so a
@@ -423,4 +423,27 @@ export function shortTokens(n: number): string {
  *  when there's no estimate. */
 export function ofEstimate(actual: string, estimate: string, pct: number | null): string {
   return estimate && pct !== null ? `${actual} of ${estimate} (${pct}%)` : actual;
+}
+
+/** A path as the window shows it (owner, 2026-10-13): under the home folder, `~/…`, so the
+ *  user's name stays off the screen. Only for display: the real path stays in the tooltip and is
+ *  what's copied (`copiedPath`). `home` with or without a trailing slash; empty or "/" shortens
+ *  nothing. */
+export function homePath(p: string, home: string): string {
+  const h = home.replace(/\/+$/, "");
+  if (!h) return p;
+  if (p === h) return "~";
+  return p.startsWith(`${h}/`) ? `~${p.slice(h.length)}` : p;
+}
+
+/** What copying a path shown by `homePath` puts on the clipboard: the real path's characters, with
+ *  the home folder in place of a selected `~`. `start` and `end` are the selection's offsets in
+ *  `shown` when both ends are inside it; without them, only a selection of the whole path (a
+ *  triple click) is taken. Null leaves the copy as the browser makes it. */
+export function copiedPath(shown: string, full: string, sel: { text: string; start?: number; end?: number }): string | null {
+  if (shown === full) return null;
+  if (sel.start === undefined || sel.end === undefined) return sel.text.trim() === shown ? full : null;
+  if (sel.end <= sel.start) return "";
+  const extra = full.length - shown.length;
+  return full.slice(sel.start === 0 ? 0 : sel.start + extra, sel.end + extra);
 }

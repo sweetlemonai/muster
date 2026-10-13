@@ -410,6 +410,9 @@ pub struct Task {
     pub stage_since: String,
     /// Every check-in in the log, oldest first (0030).
     pub checkins: Vec<Checkin>,
+    /// When the session working on it was last asked for a check-in (0039): the stamp of the
+    /// log's latest `asked for a check-in` line (`ping::asked_line`), or "".
+    pub checkin_asked: String,
     pub heartbeat: String,
     pub waiting_on: String,
     /// Why it's blocked (0024): you, permission, question or outside from `blocked-kind:` (in a
@@ -604,6 +607,9 @@ pub struct State {
     pub problems: Vec<String>,
     pub activity: Vec<Activity>,
     pub now: u64,
+    /// The per-machine settings the state was judged by (0036): the lease for the quiet claims,
+    /// and the LIVE window the app's live marks use.
+    pub settings: crate::settings::Settings,
 }
 
 pub fn now_secs() -> u64 {
@@ -613,24 +619,70 @@ pub fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
-/// Queues under `<base>/*/tasks` that look like Muster queues (a README plus a status
-/// folder or a manifest). The name is the project folder's name.
-pub fn discover(base: &Path) -> Vec<(String, PathBuf)> {
-    let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir(base) else {
-        return out;
+/// A queue found under the base.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Found {
+    /// The queue folder, spelled under the base as given.
+    pub path: PathBuf,
+    /// For a queue one level deeper (`<base>/<group>/<project>/tasks`), the folder that holds its
+    /// project; "" for `<base>/<project>/tasks`.
+    pub group: String,
+}
+
+/// Queues at `<base>/*/tasks` and `<base>/*/*/tasks` that look like Muster queues
+/// (`projects::looks_like_queue`), sorted by folder. Two levels and no further. Folders named
+/// `.*`, `_*`, `node_modules`, `worktrees`, `*.worktrees`, `target` or `dist` are passed over,
+/// and a symlink is followed only while it stays inside the base: one that leads out of it, or
+/// back to the base itself, isn't. A queue reached by two paths is found once, by the first.
+pub fn discover(base: &Path) -> Vec<Found> {
+    let Ok(root) = fs::canonicalize(base) else {
+        return Vec::new();
     };
-    for e in entries.flatten() {
-        let q = e.path().join("tasks");
-        let looks = q.join("README.md").is_file()
-            && (q.join("todo").is_dir() || q.join("tasks.json").is_file());
-        if looks {
-            let name = e.file_name().to_string_lossy().to_string();
-            out.push((name, q));
+    let mut candidates = Vec::new();
+    for (group, dir) in subfolders(base, &root) {
+        candidates.push((dir.join("tasks"), String::new()));
+        for (_, inner) in subfolders(&dir, &root) {
+            candidates.push((inner.join("tasks"), group.clone()));
         }
     }
-    out.sort();
-    out
+    candidates.sort();
+    let mut seen = HashSet::new();
+    candidates
+        .into_iter()
+        .filter(|(path, _)| crate::projects::looks_like_queue(path))
+        .filter_map(|(path, group)| {
+            let real = inside(&path, &root)?;
+            seen.insert(real).then_some(Found { path, group })
+        })
+        .collect()
+}
+
+/// The folders in `dir` (itself inside `root`) that discovery looks into, as (name, path): real
+/// folders, and symlinks to folders inside `root`, without the names it skips.
+fn subfolders(dir: &Path, root: &Path) -> Vec<(String, PathBuf)> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            let skipped = name.starts_with('.')
+                || name.starts_with('_')
+                || name.ends_with(".worktrees")
+                || ["node_modules", "worktrees", "target", "dist"].contains(&name.as_str());
+            let kind = e.file_type().ok()?;
+            let path = e.path();
+            let looked_into = kind.is_dir() || (kind.is_symlink() && inside(&path, root).is_some());
+            (!skipped && looked_into).then_some((name, path))
+        })
+        .collect()
+}
+
+/// `path`'s real folder, when it is a folder strictly inside `root` (itself canonical).
+fn inside(path: &Path, root: &Path) -> Option<PathBuf> {
+    let real = fs::canonicalize(path).ok()?;
+    (real != root && real.starts_with(root) && real.is_dir()).then_some(real)
 }
 
 /// Every task file of a queue: (folder it's in, path). The folder is "" for the flat layout.
@@ -1037,6 +1089,11 @@ pub fn parse_task(
         held_by: get("held-by"),
         stage_since,
         checkins,
+        checkin_asked: log_lines
+            .iter()
+            .rev()
+            .find_map(|l| crate::ping::asked_line(l))
+            .unwrap_or_default(),
         heartbeat: get("heartbeat"),
         waiting_on,
         blocked_kind,
@@ -1223,16 +1280,36 @@ pub fn search_index(queues: &[(String, PathBuf)], cache: &mut Cache) -> HashMap<
 }
 
 pub fn read_state(queues: &[(String, PathBuf)], cache: &mut Cache) -> State {
+    read_state_with(queues, cache, &crate::settings::Settings::default())
+}
+
+/// `read_state` with this machine's settings (0036): a claim is quiet past `settings`' lease.
+pub fn read_state_with(
+    queues: &[(String, PathBuf)],
+    cache: &mut Cache,
+    settings: &crate::settings::Settings,
+) -> State {
     let stamp = cache.stamp_at(now_secs());
-    read_state_at(queues, cache, &stamp)
+    read_state_at_with(queues, cache, &stamp, settings)
 }
 
 /// `read_state` with the local time given: `stamp` (`YYYY-MM-DD HH:MM`) is "now" for the claims'
 /// heartbeats, so tests that stamp a claim at a fixed time judge its lease at that time, not at
 /// whatever the wall clock says. File times are still judged by the real clock.
 pub fn read_state_at(queues: &[(String, PathBuf)], cache: &mut Cache, stamp: &str) -> State {
+    read_state_at_with(queues, cache, stamp, &crate::settings::Settings::default())
+}
+
+/// `read_state_at` with this machine's settings.
+pub fn read_state_at_with(
+    queues: &[(String, PathBuf)],
+    cache: &mut Cache,
+    stamp: &str,
+    settings: &crate::settings::Settings,
+) -> State {
     let mut state = State {
         now: now_secs(),
+        settings: *settings,
         ..Default::default()
     };
     let mut seen = HashSet::new();
@@ -1259,9 +1336,13 @@ pub fn read_state_at(queues: &[(String, PathBuf)], cache: &mut Cache, stamp: &st
             }
         }
         crate::block::derive(&mut tasks);
-        state
-            .problems
-            .extend(problems(name, &tasks, state.now, stamp));
+        state.problems.extend(problems(
+            name,
+            &tasks,
+            state.now,
+            stamp,
+            settings.lease_minutes,
+        ));
         rollup(&mut tasks);
         let today = stamp.get(..10).unwrap_or("");
         state.problems.extend(level_problems(name, &tasks, today));
@@ -1383,8 +1464,8 @@ pub fn dependency_loops<'a>(edges: &HashMap<&'a str, Vec<&'a str>>) -> Vec<Vec<S
 }
 
 /// What's wrong in a queue's tasks. `now` and `stamp` are the same moment, as seconds since 1970
-/// and as local time (`YYYY-MM-DD HH:MM`), for the claims' lease.
-pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str) -> Vec<String> {
+/// and as local time (`YYYY-MM-DD HH:MM`), for the claims' lease of `lease` minutes.
+pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str, lease: u64) -> Vec<String> {
     let mut out = Vec::new();
     let mut ids: HashMap<&str, Vec<&str>> = HashMap::new();
     for t in tasks {
@@ -1434,7 +1515,7 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str) -> Vec<Strin
         // The lease `muster reclaim` uses: since the heartbeat, else since the file changed. The
         // owner's own task (for: human) has none.
         let quiet = crate::ops::quiet_minutes(&t.heartbeat, t.modified, stamp, now);
-        if building && !t.is_human() && quiet > crate::ops::LEASE_MINUTES {
+        if building && !t.is_human() && quiet > lease {
             out.push(format!(
                 "{queue}: {} is claimed but hasn't been heard from in {} h",
                 t.path,
@@ -3145,10 +3226,16 @@ mod tests {
             // Exactly the lease: not yet.
             held("0004", "2026-10-12 02:05", now - 99 * 3600),
         ];
-        let quiet: Vec<_> = problems("p", &tasks, now, stamp)
+        let quiet: Vec<_> = problems("p", &tasks, now, stamp, crate::ops::LEASE_MINUTES)
             .into_iter()
             .filter(|p| p.contains("heard from"))
             .collect();
+        // A shorter lease from the settings (0036): 0002, an hour quiet, is quiet past 30 min.
+        let short: Vec<_> = problems("p", &tasks, now, stamp, 30)
+            .into_iter()
+            .filter(|p| p.contains("heard from"))
+            .collect();
+        assert_eq!(short.len(), 4, "{short:?}");
         assert_eq!(
             quiet,
             [
@@ -3176,6 +3263,28 @@ mod tests {
         };
         assert_eq!(quiet("2026-10-12 13:00"), 0);
         assert_eq!(quiet("2026-10-12 13:01"), 1);
+        // With this machine's settings (0036): a 2-hour lease, and the state says which it used.
+        let short = crate::settings::Settings {
+            lease_minutes: 120,
+            live_minutes: 10,
+        };
+        let s = read_state_at_with(&q, &mut Cache::default(), "2026-10-12 03:01", &short);
+        assert_eq!(
+            s.problems
+                .iter()
+                .filter(|p| p.contains("heard from"))
+                .count(),
+            1
+        );
+        assert_eq!(s.settings, short);
+        assert!(serde_json::to_string(&s)
+            .unwrap()
+            .contains(r#""settings":{"leaseMinutes":120,"liveMinutes":10}"#));
+        assert_eq!(
+            quiet("2026-10-12 03:01"),
+            0,
+            "the default lease is still 12 h"
+        );
     }
 
     #[test]
@@ -3992,6 +4101,109 @@ mod tests {
         fs::create_dir_all(base.path().join("other/tasks")).unwrap();
         let found = discover(base.path());
         assert_eq!(found.len(), 1);
-        assert_eq!(found[0].0, "proj");
+        assert_eq!(found[0].path, q);
+        assert_eq!(found[0].group, "");
+    }
+
+    fn make_queue(q: &Path) {
+        fs::create_dir_all(q.join("todo")).unwrap();
+        fs::write(q.join("README.md"), "q").unwrap();
+    }
+
+    /// The relative paths and groups of what `discover` found, in order.
+    fn found_in(base: &Path) -> Vec<(String, String)> {
+        discover(base)
+            .into_iter()
+            .map(|f| {
+                let rel = f.path.strip_prefix(base).unwrap();
+                (rel.to_string_lossy().to_string(), f.group)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn discovers_queues_one_level_deeper_and_no_further() {
+        let base = tempfile::tempdir().unwrap();
+        let b = base.path();
+        make_queue(&b.join("proj/tasks"));
+        make_queue(&b.join("persianUtils/colors/tasks"));
+        make_queue(&b.join("persianUtils/fonts/tasks"));
+        // A manifest instead of todo/ counts too.
+        fs::create_dir_all(b.join("manifest/tasks")).unwrap();
+        fs::write(b.join("manifest/tasks/README.md"), "q").unwrap();
+        fs::write(b.join("manifest/tasks/tasks.json"), "{}").unwrap();
+        // Not queues: a tasks/ folder without the README and todo/ (or the manifest).
+        fs::create_dir_all(b.join("harness/c3-docs/tasks")).unwrap();
+        fs::write(b.join("harness/c3-docs/tasks/notes.md"), "n").unwrap();
+        fs::create_dir_all(b.join("persianUtils/ui/tasks/todo")).unwrap();
+        fs::create_dir_all(b.join("lonely/tasks")).unwrap();
+        fs::write(b.join("lonely/tasks/README.md"), "q").unwrap();
+        // Two levels down is as far as it looks.
+        make_queue(&b.join("a/b/c/tasks"));
+        // A file where a folder would be is passed over.
+        fs::write(b.join("file.txt"), "x").unwrap();
+        assert_eq!(
+            found_in(b),
+            vec![
+                ("manifest/tasks".to_string(), String::new()),
+                ("persianUtils/colors/tasks".into(), "persianUtils".into()),
+                ("persianUtils/fonts/tasks".into(), "persianUtils".into()),
+                ("proj/tasks".into(), String::new()),
+            ]
+        );
+    }
+
+    #[test]
+    fn discovery_skips_hidden_archived_and_build_folders() {
+        let base = tempfile::tempdir().unwrap();
+        let b = base.path();
+        for skipped in [
+            ".hidden",
+            "_arch",
+            "__del",
+            "node_modules",
+            "worktrees",
+            "chit.worktrees",
+            "target",
+            "dist",
+        ] {
+            make_queue(&b.join(skipped).join("tasks"));
+            make_queue(&b.join(skipped).join("inner/tasks"));
+            make_queue(&b.join("group").join(skipped).join("tasks"));
+        }
+        make_queue(&b.join("group/kept/tasks"));
+        assert_eq!(
+            found_in(b),
+            vec![("group/kept/tasks".to_string(), "group".to_string())]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discovery_stays_inside_the_base_through_symlinks() {
+        use std::os::unix::fs::symlink;
+        let outside = tempfile::tempdir().unwrap();
+        let o = outside.path();
+        make_queue(&o.join("away/tasks"));
+        make_queue(&o.join("grp/deep/tasks"));
+        make_queue(&o.join("q"));
+        let base = tempfile::tempdir().unwrap();
+        let b = base.path();
+        make_queue(&b.join("real/tasks"));
+        // Out of the base: a project folder, a group folder and a tasks folder.
+        symlink(o.join("away"), b.join("away")).unwrap();
+        symlink(o.join("grp"), b.join("grp")).unwrap();
+        fs::create_dir(b.join("proj")).unwrap();
+        symlink(o.join("q"), b.join("proj/tasks")).unwrap();
+        // Back to the base itself, and to a folder inside it: no loop, and no queue twice.
+        symlink(b, b.join("loop")).unwrap();
+        symlink(b.join("real"), b.join("zz-alias")).unwrap();
+        assert_eq!(found_in(b), vec![("real/tasks".to_string(), String::new())]);
+    }
+
+    #[test]
+    fn discovery_of_a_missing_base_finds_nothing() {
+        let base = tempfile::tempdir().unwrap();
+        assert!(discover(&base.path().join("nope")).is_empty());
     }
 }

@@ -318,7 +318,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 /* Layout: the content and one docked pane side by side. Nothing covers the board. */
 .workspace { flex: 1; display: flex; min-height: 0; }
 .content { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.content > .list, .content > .helper, .content > .projects { overflow-y: auto; }
+.content > .list, .content > .helper { overflow-y: auto; }
 .pane { flex: none; min-width: 360px; max-width: calc(100vw - 420px); background: var(--surface); border-left: 1px solid var(--border); overflow-y: auto; display: flex; flex-direction: column; }
 .splitter { flex: none; width: 6px; cursor: col-resize; background: transparent; margin-right: -3px; margin-left: -3px; z-index: 2; }
 .splitter:hover, .splitter:focus-visible { background: var(--accent); opacity: 0.6; outline: none; }
@@ -527,10 +527,34 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 /* Your check: the criteria only the owner verifies (0028). */
 .owner-checklist { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
 .criterion { display: flex; gap: 8px; align-items: baseline; text-align: left; background: none; border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; color: var(--text); }
-.criterion:hover { border-color: var(--accent); }
 .criterion .box { flex: none; width: 14px; height: 14px; border: 1.5px solid var(--st-needs); border-radius: 3px; display: inline-grid; place-items: center; font-size: 11px; line-height: 1; transform: translateY(2px); }
 .criterion.ticked { color: var(--muted); }
 .criterion.ticked .box { background: var(--st-needs); color: var(--on-status); }
+/* Your check says what to do (0043): the open criteria first, each with its effort, Tick and the
+   views it names; the card's Your turn and next step; the column and Waiting for you by effort,
+   with Accept all and its confirm in place. */
+.criteria-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.criterion .words { flex: 1; min-width: 0; }
+.criterion .effort { flex: none; font-size: 11px; white-space: nowrap; }
+.crit-actions { flex: none; display: flex; flex-wrap: wrap; gap: 4px; }
+.crit-actions button { font-size: 11.5px; padding: 1px 8px; border-radius: 5px; border: 1px solid var(--border); background: none; color: var(--muted); }
+.crit-actions button:hover, .crit-actions button:focus-visible { color: var(--text); border-color: var(--accent); }
+.crit-actions .tick[aria-pressed="false"] { border-color: var(--st-needs); color: var(--text); }
+.card-who.your-turn, .holders .your-turn { background: var(--st-needs); color: var(--on-status); font-weight: 600; border-radius: 4px; padding: 0 6px; align-self: flex-start; }
+.card-next { font-size: 11px; line-height: 1.35; color: var(--text); overflow-wrap: anywhere; }
+.effort-group { display: flex; flex-direction: column; gap: 8px; }
+.effort-head { margin: 2px 2px 0; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+.effort-head small { font-weight: 400; }
+.effort-group.empty .effort-head { color: var(--faint); font-weight: 400; }
+.accept-all-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; }
+.accept-all { background: none; border: 1px solid var(--st-needs); border-radius: 6px; padding: 2px 10px; color: var(--text); font-size: 12px; }
+.accept-all:hover, .accept-all:focus-visible { background: color-mix(in srgb, var(--st-needs) 16%, transparent); }
+.accept-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.accept-confirm button { border: 1px solid var(--border); border-radius: 6px; padding: 2px 10px; background: none; color: var(--text); font-size: 12px; }
+.accept-confirm .primary { background: var(--st-needs); border-color: var(--st-needs); color: var(--on-status); }
+.waiting-list .effort-group { gap: 0; margin-bottom: 16px; }
+.waiting-list .effort-head { font-size: 12px; margin: 0 0 8px; }
+.waiting-list .accept-all-bar { margin-bottom: 10px; }
 /* Backlog notes (0015): the quick add at the top of the Backlog column, quiet note cards above the
    numbered backlog tasks, and the note's pane. Notes aren't task cards, so the card looks (0026)
    don't apply to them. */
@@ -566,6 +590,11 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .band-title .id { color: var(--muted); font-weight: 400; }
 .band > .none { margin: 0 12px 10px; }
 .band-board { flex: none; overflow: visible; padding: 0 8px 8px; }
+/* The grouped board's Backlog band (0046): one grey Backlog column, its quick add on top and its
+   cards side by side. */
+.backlog-board { grid-template-columns: 1fr; }
+.backlog-board .quick-add { padding-top: 8px; max-width: 420px; }
+.backlog-board .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); align-items: start; overflow: visible; }
 .parent-line { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tasks-table tr.group-row { cursor: default; }
 .tasks-table .group-row td, .tasks-table tbody tr.group-row:hover td { background: var(--tint); padding: 0; }
@@ -737,6 +766,24 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .vision.has-open h2 small { color: var(--err); }
 .vision .control-row .on { outline: 2px solid var(--accent); outline-offset: 1px; }
 .vision .markdown h3 { font-size: 12px; margin: 10px 0 4px; }
+/* Reaching the session on a task (0039). Quiet controls, full contrast on hover; a disabled one
+   keeps its reason beside it. Under a quiet card a strip joined to its bottom edge (the card is a
+   button, so the strip sits beside it, not in it); in the pane one line under the next step; in
+   the sidebar a line under a stalled project. "asked 2 min ago" is a quiet card line. */
+.card-asked { font-size: 11px; line-height: 1.35; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-ping { flex: none; display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; margin-top: -8px; padding: 3px 8px 4px; border: 1px solid var(--border); border-top: 0; border-radius: 0 0 8px 8px; background: var(--surface); font-size: 11px; }
+.card-ping button, .session-ping button, .side-ping button { border: 1px solid var(--border); background: none; color: var(--muted); border-radius: 6px; padding: 0 7px; font-size: 11.5px; line-height: 18px; white-space: nowrap; }
+.card-ping button:not(:disabled):hover, .session-ping button:not(:disabled):hover, .side-ping button:not(:disabled):hover,
+.card-ping button:focus-visible, .session-ping button:focus-visible, .side-ping button:focus-visible { color: var(--text); border-color: var(--muted); }
+.card-ping .why, .side-ping .why { color: var(--muted); overflow-wrap: anywhere; }
+.session-ping { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.session-ping .lbl { font-size: 11px; color: var(--muted); }
+.session-ping .ping-msg { display: flex; gap: 6px; flex: 1; min-width: 220px; }
+.session-ping .ping-msg input { flex: 1; min-width: 0; font: inherit; font-size: 12px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; }
+.session-ping > p { flex-basis: 100%; }
+.session-ping .ping-count { align-self: center; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.session-ping .ping-count.err { color: var(--err); font-weight: 600; }
+.side-ping { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; margin: 0 8px 4px; font-size: 11px; }
 .count.quiet { background: none; border: 1px solid var(--border); color: var(--muted); }
 .problems.warnings li { color: var(--muted); }
 .problems.warnings b { color: var(--text); font-weight: 600; margin-right: 4px; }
@@ -744,3 +791,29 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
    tail, not a bar. */
 .tl-seg.s-your-check { top: 35%; bottom: 35%; background: repeating-linear-gradient(90deg, var(--st-your-check) 0 4px, transparent 4px 7px); opacity: 0.9; }
 .tl-not-started { margin: 8px 0 0; }
+
+/* Settings (0036): a view, never a window. The groups are a docked list on the left, the open
+   group's settings beside it, all of them at once. */
+.settings { flex: 1; display: flex; min-height: 0; }
+.settings-groups { flex: none; width: 216px; overflow-y: auto; padding: 12px 10px; border-right: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 55%, var(--bg)); display: flex; flex-direction: column; gap: 2px; }
+.settings-group { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; border: none; background: none; color: var(--text); padding: 6px 10px; border-radius: 6px; font-weight: 550; }
+.settings-group small { font-weight: 400; font-size: 11.5px; color: var(--muted); }
+.settings-group:hover, .settings-group:focus-visible { background: var(--tint); }
+.settings-group.on { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.settings-body { flex: 1; min-width: 0; overflow-y: auto; padding-bottom: 24px; }
+.settings-head { padding: 14px 24px 10px; border-bottom: 1px solid var(--border); }
+.settings-head h1 { font-size: 16px; margin: 0; }
+.settings-head p { margin: 2px 0 0; }
+.settings-body > .err, .settings-body > .none, .settings-body > .projects { margin: 0; padding: 12px 24px; max-width: 980px; }
+.settings-sections { max-width: 980px; }
+.settings-sections > section { padding: 12px 24px; border-bottom: 1px solid var(--border); }
+.settings-sections h2 { font-size: 13px; margin: 0 0 8px; }
+.settings-sections section > button, .setting-edit button { border: 1px solid var(--border); background: var(--bg); border-radius: 6px; padding: 4px 12px; }
+.setting { margin-bottom: 14px; }
+.setting-line { display: flex; gap: 8px; align-items: baseline; margin: 0 0 2px; }
+.setting-value { font-weight: 600; }
+.setting-edit { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.setting-edit input { font: inherit; width: 8ch; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); }
+.about-list { margin: 6px 0; padding-left: 18px; }
+.about-list li { margin-bottom: 4px; }
+.settings .path { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); overflow-wrap: anywhere; }
