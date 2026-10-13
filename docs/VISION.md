@@ -55,7 +55,7 @@ and cost, 0024 why blocked). Appearance holds themes, accents and card looks (00
 - Merging after Testing means Done comes after the merge, so decision 0003's "Done rides in the
   PR" changes to: stage and actuals are stamped into the file at merge; Done is a tool commit on
   main that touches only `.muster/`.
-- Human tasks use the same stages with the owner in Building (skipping Testing and Your check),
-  rather than a separate To do / Doing / Done.
+- ~~Human tasks use the same stages~~ **Settled by the owner (2026-10-12):** the Human board has its
+  own columns, To do · Doing · Done, beside the AI board (0022).
 - The PR engine (0027) is the review of record; builders run the gate, not a second full review.
 - Review: who posts (owner's account or a bot), where it runs, own stage or part of Testing (0027).
