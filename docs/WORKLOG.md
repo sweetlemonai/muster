@@ -2,6 +2,14 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-12 — Tag editor shows only the task's own tags
+**Did:** the tag editor (task panel and New task) shows only the tags on the task, each with ×
+to remove. The suggested tags complete as you type in "+ tag" (a native `datalist`, minus the
+ones already on), and the box disables at the core's 8-tag cap. `app/src/Tags.tsx`, tests in
+`app/src/Tags.test.ts`. Owner's note in task 0006.
+**Verified:** `pnpm check` green: vitest 108 passed (7 new), cargo test 68 + 3 passed, clippy and
+build clean.
+
 ## 2026-10-12 — Design rules for the whole app; tasks 0019–0023 filed
 **Decided:** the owner has ADHD, and out of sight is out of mind. Every screen shows its options
 (no menus, popovers, short-choice dropdowns, or tabs for things used together), but keeps them out
