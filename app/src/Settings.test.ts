@@ -6,7 +6,7 @@ import { HELP_TOPICS } from "./helpTopics";
 import { headings } from "./manual";
 import inTheApp from "../../docs/manual/04-in-the-app.md?raw";
 import appSource from "./App.tsx?raw";
-import { GateCell, PrefixCell } from "./Projects";
+import { CategoryCell, GateCell, NameCell, PrefixCell } from "./Projects";
 import Settings, { AboutView, AgentsView, SpanSetting, withModel } from "./Settings";
 import { DEFAULT_MACHINE, machineOf, SETTINGS_GROUPS, type SettingsInfo, spanInput, spanText } from "./settingsData";
 import type { Project } from "./types";
@@ -107,6 +107,38 @@ describe("Settings (0036)", () => {
     expect(refused).toContain('<p class="err small" role="alert">braindump has br');
     expect(refused).toContain('value="br"');
     expect(text(settings("projects"))).toContain("Prefix");
+  });
+
+  it("sets each project's label in place (0044), the real name small under it, empty showing the name", () => {
+    const p: Project = { key: "/p/muster/tasks", name: "muster", path: "/p/muster/tasks", source: "found", group: "", hidden: false, ok: true, label: "Muster" };
+    const cell = (over: Partial<Project> = {}) => renderToStaticMarkup(createElement(NameCell, { p: { ...p, ...over }, onSave: async () => {} }));
+    const html = cell();
+    expect(html).toContain('value="Muster"');
+    expect(html).toContain('maxLength="40"');
+    expect(html).toContain('placeholder="muster"');
+    expect(html).toContain('aria-label="Label for muster"');
+    expect(text(html)).toBe("muster · found in ~/playground");
+    // No label: the field is empty and shows the name; hidden and broken say so, as before.
+    const bare = cell({ label: "", hidden: true, ok: false, source: "added" });
+    expect(bare).toContain('value=""');
+    expect(text(bare)).toBe("muster · added · hidden · not a queue any more");
+    // Rename is gone: the label is the name the window shows, and commands keep the real one.
+    expect(text(settings("projects"))).not.toContain("Rename");
+    expect(text(settings("projects"))).toContain("Category");
+  });
+
+  it("sets each project's category in place (0044), empty meaning its group or Other", () => {
+    const p: Project = { key: "/p/colors/tasks", name: "colors", path: "/p/colors/tasks", source: "found", group: "persianUtils", hidden: false, ok: true, category: "" };
+    const cell = (over: Partial<Project> = {}) => renderToStaticMarkup(createElement(CategoryCell, { p: { ...p, ...over }, categories: ["Apps", "Other"], onSave: async () => {} }));
+    const html = cell();
+    expect(html).toContain('value=""');
+    expect(html).toContain('placeholder="persianUtils"');
+    expect(html).toContain('maxLength="24"');
+    expect(html).toContain('aria-label="Category for colors"');
+    // The chips to pick from lay out under it only while it has focus: none at rest.
+    expect(html).not.toContain("inline-options");
+    expect(cell({ group: "" })).toContain('placeholder="Other"');
+    expect(cell({ category: "Tools" })).toContain('value="Tools"');
   });
 
   it("starts the helper's and the core's settings as loading, not as made-up values", () => {

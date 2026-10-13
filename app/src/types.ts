@@ -221,7 +221,19 @@ export type Activity = { queue: string; at: number; what: string; source: string
  *  limit counts them (0050: agents' tasks only), and `yourCheckLimit` that limit (projects.json's
  *  `yourCheck` for its folder, check_limit.rs), null when it's off; an older core sends neither,
  *  which reads as within it. */
-export type QueueInfo = { name: string; path: string; prefix?: string; counts: Record<string, number>; yourCheck?: number; yourCheckLimit?: number | null };
+export type QueueInfo = {
+  name: string;
+  path: string;
+  prefix?: string;
+  counts: Record<string, number>;
+  yourCheck?: number;
+  yourCheckLimit?: number | null;
+  /** What the window calls it (0044): its label, else its name. The core always sends these two;
+   *  optional so a queue without them is called by its name, under Other. */
+  label?: string;
+  /** The sidebar heading it goes under (0044): its category, its group, else "Other". */
+  category?: string;
+};
 
 export type State = {
   queues: QueueInfo[];
@@ -253,4 +265,8 @@ export type Project = {
   /** What its tasks' keys start with (0033): stored with its queue, or its default. The core
    *  always sends it. */
   prefix?: string;
+  /** Its label (0044) as set, "" for none (it shows by its name). The core always sends these two. */
+  label?: string;
+  /** Its category (0044) as set, "" for none (it goes under its group, else Other). */
+  category?: string;
 };

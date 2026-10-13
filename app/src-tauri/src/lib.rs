@@ -15,6 +15,7 @@ pub mod helper;
 mod helper_cmds;
 pub mod index;
 pub mod key;
+pub mod labels;
 pub mod layout;
 pub mod migrate;
 pub mod ops;
@@ -133,6 +134,8 @@ async fn state(
             queue::read_state_keyed(&projects::shown(&list), &mut cache, &settings, &prefix_of);
         // Each project's Your check limit (0050), kept by folder beside its gate.
         check_limit::apply(&config.your_check, &mut s.queues);
+        // What the window calls each one and the heading it goes under (0044).
+        labels::apply(&list, &mut s.queues);
         // The cards' live dot: file times only, about a millisecond for 50 sessions.
         reader.set_live_secs(settings.live_secs());
         work::mark_live(&mut s.tasks, &reader, s.now);
@@ -1207,27 +1210,59 @@ async fn set_project_prefix(
     .await
 }
 
+/// Set what the window calls a project (0044), by its key: at most 40 characters, control
+/// characters stripped; empty shows its name again. Commands keep the name.
 #[tauri::command]
-async fn rename_project(handle: tauri::AppHandle, key: String, name: String) -> Result<(), String> {
-    let name: String = name
-        .trim()
-        .chars()
-        .filter(|c| !c.is_control())
-        .take(60)
-        .collect();
+async fn set_project_label(
+    handle: tauri::AppHandle,
+    key: String,
+    label: String,
+) -> Result<(), String> {
     blocking(move || {
         let app = handle.state::<AppState>();
         edit_config(&app, |c| {
             known_key(c, &key)?;
-            if name.is_empty() {
-                c.names.remove(&key);
-            } else {
-                c.names.insert(key, name);
-            }
+            labels::set(&mut c.labels, &key, &label, labels::MAX_LABEL);
             Ok(())
         })
     })
     .await
+}
+
+/// Set the sidebar heading a project goes under (0044), by its key: at most 24 characters,
+/// control characters stripped; empty puts it under its group's heading, or Other.
+#[tauri::command]
+async fn set_project_category(
+    handle: tauri::AppHandle,
+    key: String,
+    category: String,
+) -> Result<(), String> {
+    blocking(move || {
+        let app = handle.state::<AppState>();
+        edit_config(&app, |c| {
+            known_key(c, &key)?;
+            labels::set(&mut c.categories, &key, &category, labels::MAX_CATEGORY);
+            Ok(())
+        })
+    })
+    .await
+}
+
+/// The window's title for the project it shows, named by its name ("all" for All): "<label> —
+/// Muster", or "Muster".
+#[tauri::command]
+async fn show_project_title(handle: tauri::AppHandle, name: String) -> Result<(), String> {
+    let h = handle.clone();
+    let title = blocking(move || {
+        let app = h.state::<AppState>();
+        let list = projects::list(&base(), &projects::load(&app.config_file));
+        Ok(labels::window_title(&list, &name))
+    })
+    .await?;
+    match handle.get_webview_window("main") {
+        Some(w) => w.set_title(&title).map_err(|e| e.to_string()),
+        None => Ok(()),
+    }
 }
 
 #[tauri::command]
@@ -1257,6 +1292,8 @@ async fn remove_project(handle: tauri::AppHandle, key: String) -> Result<(), Str
             }
             c.added.retain(|a| a != &key);
             c.names.remove(&key);
+            c.labels.remove(&key);
+            c.categories.remove(&key);
             c.hidden.retain(|h| h != &key);
             Ok(())
         })
@@ -1296,7 +1333,9 @@ pub fn run() {
             set_your_check_limit,
             add_project,
             create_project,
-            rename_project,
+            set_project_label,
+            set_project_category,
+            show_project_title,
             set_project_prefix,
             hide_project,
             remove_project,

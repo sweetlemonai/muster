@@ -9,14 +9,14 @@ export const LIMIT_DEFAULT = 5;
 export const LIMIT_MIN = 1;
 export const LIMIT_MAX = 50;
 
-/** A project over its limit: how many wait, and the limit. */
-export type Over = { name: string; waiting: number; limit: number };
+/** A project over its limit: its name, what the window calls it (0044), how many wait, and the limit. */
+export type Over = { name: string; label: string; waiting: number; limit: number };
 
 /** The project over its limit, or null: within it, the limit off, or nothing said (an older core). */
 function overOf(q: QueueInfo): Over | null {
   const limit = q.yourCheckLimit;
   const waiting = q.yourCheck ?? 0;
-  return typeof limit === "number" && waiting > limit ? { name: q.name, waiting, limit } : null;
+  return typeof limit === "number" && waiting > limit ? { name: q.name, label: q.label || q.name, waiting, limit } : null;
 }
 
 /** The projects over their limit in the place shown: every project for "all", else the one
@@ -25,9 +25,9 @@ export function overLimit(queues: QueueInfo[], queue: string): Over[] {
   return queues.filter((q) => queue === "all" || q.name === queue).flatMap((q) => overOf(q) ?? []);
 }
 
-/** "muster (7 of 5) and drover (9 of 8)". */
+/** "Muster (7 of 5) and drover (9 of 8)", by their labels. */
 const named = (over: Over[]) => {
-  const each = over.map((o) => `${o.name} (${o.waiting} of ${o.limit})`);
+  const each = over.map((o) => `${o.label} (${o.waiting} of ${o.limit})`);
   return each.length > 1 ? `${each.slice(0, -1).join(", ")} and ${each[each.length - 1]}` : each.join("");
 };
 
@@ -81,7 +81,7 @@ export function overTitle(over: Over[], queue: string): string {
 export function bandLimit(queues: string[], over: Over[], queue: string): { over: boolean; title: string } {
   const here = over.filter((o) => queues.includes(o.name));
   if (here.length === 0) return { over: false, title: "" };
-  const title = here.map((o) => (queue === "all" ? `${o.name}: ${pile(o)}` : pile(o))).join("; ");
+  const title = here.map((o) => (queue === "all" ? `${o.label}: ${pile(o)}` : pile(o))).join("; ");
   return { over: true, title };
 }
 

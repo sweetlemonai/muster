@@ -1,5 +1,6 @@
 import { isBlocked } from "./blockWords";
 import { needsYouCount } from "./human";
+import { OTHER } from "./labels";
 import { CHECKIN_MINUTES, splitHolder, stamp, stampMinutes } from "./lib";
 import type { Activity, Task } from "./types";
 
@@ -13,8 +14,9 @@ export type ActivityTask = Pick<Task, "stage" | "blocked" | "blockedKind" | "cla
  *  gone quiet, and minutes since anything happened in it (null when nothing says). */
 export type ProjectActivity = { working: number; stalled: boolean; last: number | null };
 
-/** One sidebar row: a queue, its tasks and what's waiting on the owner in it. */
-export type ProjectRow = { name: string; title: string; tasks: Task[]; needs: number; activity: ProjectActivity };
+/** One sidebar row: a queue, what the window calls it and the heading it goes under (0044), its
+ *  tooltip (the real name and the folder), its tasks and what's waiting on the owner in it. */
+export type ProjectRow = { name: string; label: string; category: string; title: string; tasks: Task[]; needs: number; activity: ProjectActivity };
 
 /** The All projects row: projects being worked on, projects stalled, the newest activity. */
 export type Sums = { working: number; stalled: number; last: number | null };
@@ -102,7 +104,7 @@ export function projectActivity(tasks: ActivityTask[], commit: number, now: numb
 }
 
 /** The sidebar's rows, one per queue in the core's order, from one pass over the state. */
-export function projectRows(queues: { name: string; path: string }[], tasks: Task[], activity: Activity[], now: number): ProjectRow[] {
+export function projectRows(queues: { name: string; path: string; label?: string; category?: string }[], tasks: Task[], activity: Activity[], now: number): ProjectRow[] {
   const byQueue = new Map<string, Task[]>();
   for (const t of tasks) {
     const list = byQueue.get(t.queue);
@@ -115,7 +117,9 @@ export function projectRows(queues: { name: string; path: string }[], tasks: Tas
     const own = byQueue.get(q.name) ?? [];
     return {
       name: q.name,
-      title: q.path,
+      label: q.label || q.name,
+      category: q.category || OTHER,
+      title: `${q.name} · ${q.path}`,
       tasks: own,
       needs: needsYouCount(own),
       activity: projectActivity(own, commits.get(q.name) ?? 0, now),
@@ -156,10 +160,12 @@ export const SIDEBAR_ORDERS: { id: SidebarOrder; label: string; title: string }[
   { id: "needs", label: "Needs you", title: "The most waiting on you first, then the ones being worked on" },
 ];
 
-type Ranked = Pick<ProjectRow, "name" | "needs" | "activity">;
-// Plain code-unit order after folding case, so the order is the same on every machine.
+type Ranked = Pick<ProjectRow, "name" | "needs" | "activity"> & { label?: string };
+// Plain code-unit order after folding case, so the order is the same on every machine. A–Z goes
+// by what the row shows: its label (0044), else its name.
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-const byName = (a: Ranked, b: Ranked) => cmp(a.name.toLowerCase(), b.name.toLowerCase()) || cmp(a.name, b.name);
+const shownName = (r: Ranked) => r.label || r.name;
+const byName = (a: Ranked, b: Ranked) => cmp(shownName(a).toLowerCase(), shownName(b).toLowerCase()) || cmp(shownName(a), shownName(b)) || cmp(a.name, b.name);
 const byLast = (a: Ranked, b: Ranked) => {
   const x = a.activity.last, y = b.activity.last;
   return x === y ? 0 : x === null ? 1 : y === null ? -1 : x - y;
@@ -178,11 +184,11 @@ export function orderProjects<T extends Ranked>(rows: T[], by: SidebarOrder): T[
 
 /** The order the sidebar shows, kept between polls so rows don't jump (docs/DESIGN.md: nothing
  *  jumps; review, 2026-10-13): it's worked out again only when what defines it changes: the
- *  order chosen, the projects listed, which projects are working, and, in Needs you order, the
- *  counts. Activity minutes ticking on don't move a row. */
+ *  order chosen, the projects listed and their labels (0044), which projects are working, and, in
+ *  Needs you order, the counts. Activity minutes ticking on don't move a row. */
 export type OrderMemo = { by: SidebarOrder; names: string[]; key: string };
 export function nextOrder(prev: OrderMemo | null, rows: (Ranked & { activity: ProjectActivity })[], by: SidebarOrder): OrderMemo {
-  const names = rows.map((r) => r.name).sort();
+  const names = rows.map((r) => `${r.name}\n${r.label ?? ""}`).sort();
   const working = rows.filter((r) => r.activity.working > 0).map((r) => r.name).sort();
   const needs = by === "needs" ? rows.map((r) => `${r.name}:${r.needs}`).sort() : [];
   const key = JSON.stringify([by, names, working, needs]);

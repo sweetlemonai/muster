@@ -7,6 +7,7 @@ import Markdown from "./Markdown";
 import type { Note } from "./types";
 
 import { KINDS } from "./fields";
+import ProjectName from "./ProjectName";
 const PRIORITIES = ["high", "normal", "low"] as const;
 
 /** Put `text` on the clipboard now, in the click that asked: WebKit refuses a write made after an
@@ -92,7 +93,7 @@ export default function NotePanel({ note, now, onClose, onChanged, onFiled }: {
       <header>
         <div>
           <div className="meta">
-            {note.queue} · backlog note · added {ago(now, note.added)} ago
+            <ProjectName name={note.queue} className="" /> · backlog note · added {ago(now, note.added)} ago
           </div>
           <div className="title-row">
             <h1>{noteTitle(note)}</h1>

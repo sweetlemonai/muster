@@ -21,7 +21,13 @@ export const api = {
   // Both open the core's folder picker; null when cancelled.
   addProject: () => invoke<string | null>("add_project"),
   createProject: () => invoke<string | null>("create_project"),
-  renameProject: (key: string, name: string) => invoke<void>("rename_project", { key, name }),
+  // What the window calls a project and the sidebar heading it goes under (0044), by its key: the
+  // core strips control characters and keeps 40 and 24 characters; "" goes back to the name, and
+  // to the group or Other. Commands keep the name.
+  setProjectLabel: (key: string, label: string) => invoke<void>("set_project_label", { key, label }),
+  setProjectCategory: (key: string, category: string) => invoke<void>("set_project_category", { key, category }),
+  // The window's title for the project shown, by its name ("all" for All projects).
+  showProjectTitle: (name: string) => invoke<void>("show_project_title", { name }),
   // What its tasks' keys start with (0033), 2 to 4 lowercase letters; refused when it isn't one
   // or another project has it, with a message to show as is.
   setProjectPrefix: (key: string, prefix: string) => invoke<void>("set_project_prefix", { key, prefix }),

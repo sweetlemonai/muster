@@ -118,7 +118,7 @@ describe("the views highlight what the search matched", () => {
     const html = renderToStaticMarkup(createElement(TableView, { tasks: list, now: NOW, multi: false, openKey: null, onOpen: () => {}, words: ["flick", "design", "19"] }));
     expect(html).toContain("Board <mark>flick</mark>ers");
     expect(html).toContain("#<mark>design</mark>");
-    expect(html).toContain('<td class="id"><mark>0019</mark></td>');
+    expect(html).toContain('<td class="id" title="q · 0019"><mark>0019</mark></td>');
   });
   it("in the Timeline's labels", () => {
     // The timeline remembers its scale in local storage, which tests run without.
@@ -130,7 +130,7 @@ describe("the views highlight what the search matched", () => {
       const started = list.map((x) => ({ ...x, stage: "building", stageHistory: [{ at: stamp, who: "a", from: "ready", to: "building" }] }));
       const html = renderToStaticMarkup(createElement(TimelineView, { tasks: started, now: NOW, multi: false, openKey: null, onOpen: () => {}, words: ["board", "19"] }));
       expect(html).toContain("<mark>Board</mark> flickers");
-      expect(html).toContain('<span class="id"><mark>0019</mark></span>');
+      expect(html).toContain('<span class="id" title="q · 0019"><mark>0019</mark></span>');
     } finally {
       vi.unstubAllGlobals();
     }

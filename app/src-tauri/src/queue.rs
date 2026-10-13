@@ -621,6 +621,10 @@ pub struct QueueInfo {
     /// Its Your check limit, None when it's Off: the default here, projects.json's from
     /// `check_limit::apply`.
     pub your_check_limit: Option<usize>,
+    /// What the window calls it (0044): its label, else its name; `labels::apply` sets it.
+    pub label: String,
+    /// The sidebar heading it goes under (0044): its category, its group, else "Other".
+    pub category: String,
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
@@ -1478,6 +1482,8 @@ fn read_state_from(
             counts,
             your_check: crate::check_limit::waiting(&tasks),
             your_check_limit: Some(crate::check_limit::DEFAULT),
+            label: name.clone(),
+            category: crate::labels::OTHER.to_string(),
         });
         state.tasks.extend(tasks);
         let notes = crate::backlog::read_notes(name, root, &mut cache.notes, &mut seen);

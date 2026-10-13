@@ -17,8 +17,16 @@ pub struct Config {
     pub added: Vec<String>,
     /// Queue folders not to show.
     pub hidden: Vec<String>,
-    /// Display names by queue folder.
+    /// Names by queue folder, from the Rename the window had before labels (0044). Still read, so a
+    /// project renamed then keeps that name in commands; the window sets labels now.
     pub names: HashMap<String, String>,
+    /// What the window calls a project, by queue folder (0044, `labels`): shown only, never the
+    /// name commands use. A bad entry is left out when read, as with the categories.
+    #[serde(deserialize_with = "crate::labels::read_labels")]
+    pub labels: HashMap<String, String>,
+    /// The sidebar heading a project goes under, by queue folder (0044, `labels`).
+    #[serde(deserialize_with = "crate::labels::read_categories")]
+    pub categories: HashMap<String, String>,
     /// The project's gate command by queue folder (0023): what a merge runs in the task's
     /// worktree, split into words without a shell (`bin/gate`, `make check`).
     pub gate: HashMap<String, String>,
@@ -50,6 +58,11 @@ pub struct Project {
     /// What its tasks' keys start with (0033): `mu` in `mu-12`, stored or its default
     /// (`key::prefixes`).
     pub prefix: String,
+    /// Its label (0044), what the window calls it, or "" for its name; `labels::shown_label`.
+    pub label: String,
+    /// Its category (0044), the sidebar heading it goes under, or "" for its group or Other;
+    /// `labels::shown_category`.
+    pub category: String,
 }
 
 pub fn load(file: &Path) -> Config {
@@ -149,6 +162,8 @@ pub fn list(base: &Path, config: &Config) -> Vec<Project> {
             hidden: hidden.contains(key.as_str()),
             gate: config.gate.get(&key).cloned().unwrap_or_default(),
             prefix: String::new(),
+            label: config.labels.get(&key).cloned().unwrap_or_default(),
+            category: config.categories.get(&key).cloned().unwrap_or_default(),
             path: key.clone(),
             key,
             source: source.to_string(),
@@ -386,9 +401,9 @@ pub fn create(
 }
 
 /// After `muster migrate` (0005): what `projects.json` says of the old queue `old` (its gate,
-/// display name, hidden, Your check limit), said of the new one `new` too, under the key the app lists it by; a new
-/// queue the base doesn't find is added, so it shows as the old one did. The old queue keeps its
-/// own, until it's retired. Returns a line for each thing carried.
+/// name, label and category, hidden, Your check limit), said of the new one `new` too, under the
+/// key the app lists it by; a new queue the base doesn't find is added, so it shows as the old one
+/// did. The old queue keeps its own, until it's retired. Returns a line for each thing carried.
 pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> Vec<String> {
     let canon = |p: &Path| fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
     let (old, new) = (canon(old), canon(new));
@@ -400,6 +415,16 @@ pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> V
         .map(|(_, v)| v.clone());
     let name = config
         .names
+        .iter()
+        .find(|(k, _)| is_old(k))
+        .map(|(_, v)| v.clone());
+    let label = config
+        .labels
+        .iter()
+        .find(|(k, _)| is_old(k))
+        .map(|(_, v)| v.clone());
+    let category = config
+        .categories
         .iter()
         .find(|(k, _)| is_old(k))
         .map(|(_, v)| v.clone());
@@ -415,7 +440,12 @@ pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> V
         .into_iter()
         .find(|p| canon(Path::new(&p.path)) == new)
         .map(|p| p.key);
-    let carried = gate.is_some() || name.is_some() || hidden || your_check.is_some();
+    let carried = gate.is_some()
+        || name.is_some()
+        || label.is_some()
+        || category.is_some()
+        || hidden
+        || your_check.is_some();
     // Nothing to say of a queue nobody listed, or of one the new queue is found in place of.
     if !carried && (found.is_some() || !old_listed) {
         return Vec::new();
@@ -440,6 +470,18 @@ pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> V
             "projects.json: name {n:?} carried to the new queue"
         ));
         config.names.insert(key.clone(), n);
+    }
+    if let Some(l) = label {
+        lines.push(format!(
+            "projects.json: label {l:?} carried to the new queue"
+        ));
+        config.labels.insert(key.clone(), l);
+    }
+    if let Some(g) = category {
+        lines.push(format!(
+            "projects.json: category {g:?} carried to the new queue"
+        ));
+        config.categories.insert(key.clone(), g);
     }
     if let Some(l) = your_check {
         let said = match l {
@@ -859,6 +901,43 @@ mod tests {
         assert_eq!(
             lines,
             ["projects.json: Your check limit off carried to the new queue"]
+        );
+    }
+
+    #[test]
+    fn a_migrated_queue_keeps_its_label_and_category() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let old = base.join("proj/tasks");
+        make_queue(&old);
+        let main = base.join("proj/main");
+        fs::create_dir_all(main.join(".git")).unwrap();
+        let new = main.join(layout::DIR);
+        fs::create_dir(&new).unwrap();
+        fs::write(new.join(layout::CONFIG), layout::config_text(true, None)).unwrap();
+        let key = old.to_string_lossy().to_string();
+        let new_key = new.to_string_lossy().to_string();
+        // A label alone carries, as a gate does; so does a category alone.
+        let mut c = Config::default();
+        c.labels.insert(key.clone(), "Muster".into());
+        let lines = carry_over(&mut c, &base, &old, &new);
+        assert_eq!(c.labels.get(&new_key).map(String::as_str), Some("Muster"));
+        assert_eq!(
+            c.labels.get(&key).map(String::as_str),
+            Some("Muster"),
+            "the old keeps its own"
+        );
+        assert_eq!(
+            lines,
+            ["projects.json: label \"Muster\" carried to the new queue"]
+        );
+        let mut c = Config::default();
+        c.categories.insert(key.clone(), "Apps".into());
+        let lines = carry_over(&mut c, &base, &old, &new);
+        assert_eq!(c.categories.get(&new_key).map(String::as_str), Some("Apps"));
+        assert_eq!(
+            lines,
+            ["projects.json: category \"Apps\" carried to the new queue"]
         );
     }
 

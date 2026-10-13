@@ -44,7 +44,8 @@ describe("keys in comments (0033)", () => {
   };
   it("link there too, when the pane gives the projects' prefixes", () => {
     const html = renderToStaticMarkup(createElement(Comments, { task, onChanged: () => {}, keys }));
-    expect(html).toContain('<a href="#task/muster/0012" class="task-key">mu-12</a>');
+    // Its tooltip names the project (0044): by its name, with no label set.
+    expect(html).toContain('<a href="#task/muster/0012" class="task-key" title="muster · mu-12">mu-12</a>');
     expect(renderToStaticMarkup(createElement(Comments, { task, onChanged: () => {} }))).not.toContain("task-key");
   });
 });

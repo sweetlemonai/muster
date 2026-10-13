@@ -10,6 +10,7 @@ import { blockedCount, ChoiceChips, ColumnHead, FoldCounts } from "./ModeViews";
 import type { ColumnFolds } from "./modes";
 import { BandCount } from "./CheckLimit";
 import type { Over } from "./yourCheckLimit";
+import ProjectName from "./ProjectName";
 
 /** Group by: None · Feature · Goal, on screen above the board and the table, the current one lit. */
 export function GroupByChips({ value, onChange }: { value: GroupBy; onChange: (g: GroupBy) => void }) {
@@ -38,7 +39,7 @@ export function BandHead({ group, by, multi, active, onOpen }: {
   return (
     <div className="band-head">
       <button className={`band-title link${active ? " active" : ""}`} onClick={() => onOpen(h)} title={`Open ${levelLabel(h.level).toLowerCase()} ${taskKey(h)}`}>
-        {multi && <span className="q">{h.queue}</span>} <span className="level">{levelLabel(h.level)}</span> <span className="id">{taskKey(h)}</span> {h.title || "(no title)"}
+        {multi && <ProjectName name={h.queue} />} <span className="level">{levelLabel(h.level)}</span> <span className="id">{taskKey(h)}</span> {h.title || "(no title)"}
       </button>
       <span className={`status-pill s-${shownStageClass(h)}`}>{shownStageLabel(h)}</span>
       {h.blocked && <span className="status-pill blocked">blocked</span>}

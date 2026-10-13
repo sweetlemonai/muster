@@ -10,6 +10,7 @@ import { CardPause, pausable, PausedChip } from "./Pause";
 import { CardPing } from "./Ping";
 import type { Task } from "./types";
 import YouRibbon from "./YouRibbon";
+import ProjectName, { TaskKey } from "./ProjectName";
 
 type CardProps = { t: Task; now: number; multi: boolean; parent: string; onOpen: () => void; active: boolean; words: string[] };
 
@@ -41,8 +42,8 @@ function CardButton({ t, now, multi, parent, onOpen, active, words }: CardProps)
       {isHuman(t) && <YouRibbon />}
       <CardBand t={t} />
       <span className="card-top">
-        {multi && <span className="q">{t.queue}</span>}
-        <span className="id"><HlId t={t} words={words} /></span>
+        {multi && <ProjectName name={t.queue} />}
+        <TaskKey t={t}><HlId t={t} words={words} /></TaskKey>
         <LiveDot t={t} />
         {lines !== "status" && <span className={`kind ${t.kind}`}>{t.kind}</span>}
         {lines !== "status" && <span className={`pri pri-${priority}`} title={`Priority: ${priority}`}>{priority}</span>}

@@ -119,7 +119,8 @@ describe("the sidebar row over its limit (0050)", () => {
     expect(html(createElement(SideLimit, { q: q("muster", 5, 5) }))).toBe("");
     expect(html(createElement(SideLimit, { q: q("muster", 9, null) }))).toBe("");
     // In every mode: the row's alert, which the narrow sidebar (Focus) keeps.
-    expect(projectListSource).toContain("alert={<SideLimit q={queues.find((q) => q.name === r.name)} />}");
+    expect(projectListSource).toContain("const q = queues.find((x) => x.name === r.name);");
+    expect(projectListSource).toContain("alert={<SideLimit q={q} />}");
     expect(projectListSource).toMatch(/\{full && children\}\n\s*\{alert\}/);
   });
 });

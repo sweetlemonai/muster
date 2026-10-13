@@ -262,7 +262,7 @@ export function AboutView({ info, projects, error = "" }: { info: SettingsInfo; 
         <h2>Settings on this Mac</h2>
         <p><HomePath className="path" path={info.configDir} home={info.home} /></p>
         <ul className="about-list">
-          <li><code>projects.json</code>: the projects you added, hid or renamed, their gates and Your check limits</li>
+          <li><code>projects.json</code>: the projects you added or hid, their labels, categories, gates and Your check limits</li>
           <li><code>settings.json</code>: the claim lease and the LIVE window; the muster command reads it too</li>
           <li><code>helper/</code>: the helper's account, model and conversations</li>
         </ul>

@@ -3,9 +3,11 @@ import { api } from "./api";
 import { mayLeave } from "./writeUp";
 import { ago, columns, estimateTotal, feed, key, STAGES } from "./lib";
 import { keyIndex } from "./taskKey";
+import { Labels, labelsOf } from "./labels";
 import type { Note, State, Task } from "./types";
 import { backlogColumn, backlogNotes, hiddenCount, NoteCard, noteKey, QuickAdd } from "./Backlog";
 import ProjectList from "./ProjectList";
+import ProjectName from "./ProjectName";
 import NewTask from "./NewTask";
 import Card from "./Card";
 import { GraphView } from "./GraphView";
@@ -277,6 +279,13 @@ export default function App() {
   // or a name changes (what `prefixes` sums up), so the 2 s poll doesn't render the text again.
   const prefixes = (state?.queues ?? []).map((q) => `${q.prefix ?? ""} ${q.name}`).join("\n");
   const keys = useMemo(() => keyIndex(state?.queues ?? []), [prefixes]);
+  // Each project's label (0044) by its name, a new map only when one changes, for everywhere a
+  // project is named; the window's title says the one shown.
+  const labelText = (state?.queues ?? []).map((q) => `${q.name}\n${q.label ?? ""}`).join("\n");
+  const labels = useMemo(() => labelsOf(state?.queues ?? []), [labelText]);
+  useEffect(() => {
+    api.showProjectTitle(queue).catch((e: unknown) => console.warn("Can't set the window's title:", e));
+  }, [queue, labelText]);
   const allNotes = state?.backlog ?? [];
   // Notes show on the board, grouped or not (Group by draws them in its Backlog band, 0046), so
   // only it counts them as hidden. The Board, Table and Timeline also count the tasks their Who
@@ -352,10 +361,11 @@ export default function App() {
     <OpenHelp.Provider value={openHelp}>
     <Machine.Provider value={machine}>
     <Mode.Provider value={modes.mode}>
+    <Labels.Provider value={labels}>
     <div className="app shell">
       <aside className="sidebar" aria-label="Projects" data-sidebar={look("sidebar", modes.mode)}>
         <div className="brand"><img src={logo} alt="" width={22} height={22} /> Muster</div>
-        <ProjectList queues={state?.queues ?? []} tasks={state?.tasks ?? []} notes={allNotes} activity={state?.activity ?? []} now={now} current={queue} onPick={setQueue} />
+        <ProjectList queues={state?.queues ?? []} tasks={state?.tasks ?? []} notes={allNotes} activity={state?.activity ?? []} now={now} current={queue} onPick={setQueue} onLabel={(k, label) => api.setProjectLabel(k, label).then(refresh)} />
         <button className="side-add" onClick={() => openSettings("projects")} title="New or existing project queue, in Settings">+ Project</button>
       </aside>
       <div className="main-col">
@@ -496,7 +506,7 @@ export default function App() {
                 {feed(state?.activity.filter((a) => queue === "all" || a.queue === queue) ?? [], inQueue).map((a, i) => (
                   <li key={i}>
                     <span className="when">{ago(now, a.at)}</span>
-                    {multi && <span className="q">{a.queue}</span>}
+                    {multi && <ProjectName name={a.queue} />}
                     <span className={`src ${a.source}`}>{a.source === "commit" ? "commit" : "changed"}</span>
                     <span className="what">{a.what}</span>
                   </li>
@@ -569,6 +579,7 @@ export default function App() {
       </div>
       </div>
     </div>
+    </Labels.Provider>
     </Mode.Provider>
     </Machine.Provider>
     </OpenHelp.Provider>

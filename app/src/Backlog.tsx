@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useContext, useState } from "react";
 import { api } from "./api";
 import { Hl } from "./FilterBar";
 import { ago, oneAtATime, queueTotal, stamp } from "./lib";
 import type { Note, Task } from "./types";
+import ProjectName from "./ProjectName";
+import { labelOf, Labels } from "./labels";
 
 /** A note's title on the board; an empty note says so. */
 export const noteTitle = (n: Pick<Note, "title">) => n.title.trim() || "(empty note)";
@@ -49,7 +51,7 @@ export function NoteCard({ n, now, multi, active, onOpen, words }: { n: Note; no
     <button className={`note-card${active ? " active" : ""}`} onClick={onOpen} title={n.file}>
       <span className="title">{n.title.trim() ? <Hl text={noteTitle(n)} words={words} /> : noteTitle(n)}</span>
       <span className="note-meta">
-        {multi && <span className="q">{n.queue}</span>}
+        {multi && <ProjectName name={n.queue} />}
         <span className="badge note">note</span>
         <span className="age">{ago(now, n.added)}</span>
       </span>
@@ -74,6 +76,7 @@ export function quickAddKey(key: string, composing: boolean): "add" | "clear" | 
 export function QuickAdd({ queues, onAdded }: { queues: string[]; onAdded: () => void }) {
   const [text, setText] = useState("");
   const [target, setTarget] = useState("");
+  const labels = useContext(Labels);
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState("");
   const [once] = useState(oneAtATime);
@@ -120,12 +123,12 @@ export function QuickAdd({ queues, onAdded }: { queues: string[]; onAdded: () =>
           {picking ? (
             queues.map((q) => (
               <button key={q} type="button" className={q === queue ? "chip on" : "chip"} aria-pressed={q === queue} onClick={() => { setTarget(q); setPicking(false); }}>
-                {q}
+                {labelOf(labels, q)}
               </button>
             ))
           ) : (
             <button type="button" className="chip" title="The project the note goes to; click to change it" onClick={() => setPicking(true)}>
-              {`to ${queue}`}
+              {`to ${labelOf(labels, queue)}`}
             </button>
           )}
         </div>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { KINDS } from "./fields";
 import { paneEscape } from "./keys";
@@ -8,6 +8,7 @@ import { LEVELS } from "./levels";
 import { HelpButton } from "./HelpButton";
 import { pressed } from "./shortcuts";
 import { parseKey } from "./taskKey";
+import { labelOf, Labels } from "./labels";
 
 /** Who does a new task (0022), as a chip pair: an agent (the default) or you. */
 export const FOR_CHOICES = [
@@ -40,6 +41,7 @@ export default function NewTask({ queues, initial, prefixes = {}, onClose, onCre
   onCreated: (queue: string, id: string) => void;
 }) {
   const [queue, setQueue] = useState(initial);
+  const labels = useContext(Labels);
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<string>("code");
   const [priority, setPriority] = useState("normal");
@@ -122,7 +124,7 @@ export default function NewTask({ queues, initial, prefixes = {}, onClose, onCre
           <label>
             Project
             <select value={queue} onChange={(e) => setQueue(e.target.value)}>
-              {queues.map((q) => <option key={q}>{q}</option>)}
+              {queues.map((q) => <option key={q} value={q}>{labelOf(labels, q)}</option>)}
             </select>
           </label>
           <label>

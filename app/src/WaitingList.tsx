@@ -10,6 +10,7 @@ import PickOne from "./PickOne";
 import type { Task } from "./types";
 import YouRibbon from "./YouRibbon";
 import { nextStep } from "./yourCheck";
+import ProjectName from "./ProjectName";
 
 /** Waiting for you: every task waiting on the owner, in the order given. The agents' tasks in
  *  Your check come first, by effort (0043) with each one's next step in full and Accept all in
@@ -55,7 +56,7 @@ function WaitingItem({ t, now, multi, active, onOpen, onChanged }: { t: Task; no
     <article className={active ? "waiting active" : "waiting"}>
       <header>
         <button className="link" onClick={() => onOpen(t)}>
-          {isHuman(t) && <YouRibbon />} {multi && <span className="q">{t.queue}</span>} {taskKey(t)} · {t.title}
+          {isHuman(t) && <YouRibbon />} {multi && <ProjectName name={t.queue} />} {taskKey(t)} · {t.title}
         </button>
       </header>
       {t.paused && <p><PausedChip t={t} now={now} /></p>}

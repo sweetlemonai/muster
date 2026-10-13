@@ -53,6 +53,32 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   The All row sums projects: "3 working · 1 stalled". Chips above the list order it: **Working**
   (default: working projects first, then by last activity), **A–Z**, **Needs you** (most waiting
   first, then as Working), remembered in `localStorage` (`muster.sidebarOrder`).
+- **Labels and categories** (task 0044, `labels.rs`, `labels.ts`, `ProjectName.tsx`,
+  `InlineField.tsx`): `projects.json` keeps `labels` and `categories` by queue folder, beside the
+  gate and the limit; each entry is cleaned when read and set (control characters stripped,
+  trimmed, at most 40 and 24 characters), and one that isn't text or is empty is left out without
+  losing the rest of the file (`labels::read_labels`, `read_categories`). `Project` carries them
+  as set (`label`, `category`, "" for none) and `QueueInfo` as shown (`labels::apply`): the label,
+  else the name; the category, else the project's group (`persianUtils`), else "Other" ("other"
+  in any case is Other). The queue's `name` stays what commands, `--queue`, task keys' links and
+  the window's own bookkeeping use; `muster projects` adds `label:` and `category:` after the rest
+  of a line when set. The window calls a project by its label everywhere it names one (the
+  `Labels` context, read through its Consumer by `ProjectName` and `TaskKey`, so rows stay
+  hook-free): the sidebar, cards and lists with All, Waiting for you, the task pane, New task's and
+  the Helper's project pickers, the backlog's quick add, the Graph, the Your check limit's words,
+  and each task key's tooltip ("Muster · mu-12", Markdown links too); the real name is the tooltip.
+  The window's title is "<label> — Muster" for one project and "Muster" for All
+  (`show_project_title`, by the project's name, `labels::window_title`). The sidebar groups its
+  rows under category headings (A–Z, Other last; `byCategory`), each with its needs-you count,
+  its working tasks and its tasks ("3 tasks in 2 projects"), always shown, nothing folded; the
+  order chips order within each heading, and A–Z goes by the label. Double-clicking a row's name
+  puts a field in its place (`SideLabelEdit`): ↩ or leaving it saves, Esc keeps it, the folder's
+  name typed back is no label. Settings › Projects has a label field (the real name small under
+  it) and a category field per row, saved as you type (`InlineField`: after 400 ms, at once on ↩
+  or blur; Esc puts back what it held and saves that), the categories in use as chips under the
+  field while it has focus. `set_project_label` and `set_project_category` replace
+  `rename_project`: the old `names` are still read, so a project renamed before keeps that name in
+  commands, but the window no longer sets them. `carry_over` (0005's migrate) carries both.
 - **Reaching a working session** (0039, `ping.rs`, `Ping.tsx`, `reach.ts`): **Ask for a
   check-in** under a quiet card ("no check-in for N min"; a strip joined to the card's bottom,
   since the card is a button), in the task pane's **Session** strip (Building and Testing, an
@@ -110,8 +136,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   each line found or added. **New queue…** picks a project folder and creates its `tasks/`:
   status folders, README with the rules, `WAITING-FOR-OWNER.md`, the tools' stand-ins in `bin/`,
   and its own git with a first commit. It refuses inside a git repo, and refuses if `tasks/`
-  already exists. **Add existing queue…** picks any queue folder. Rename, Hide/Show, and Remove
-  (added ones only) never touch files. Each project's **Prefix** (0033) shows with **Set** beside
+  already exists. **Add existing queue…** picks any queue folder. The label and category fields
+  (0044), Hide/Show, and Remove (added ones only) never touch files. Each project's **Prefix** (0033) shows with **Set** beside
   it: stored in its queue's README.md, refused (why shows under the field) when it's bad or
   another project's; New queue stores the default. Saved in `~/Library/Application Support/ai.sweetlemon.muster/projects.json`.
   Folders are picked by the core's own dialog, so the window never hands the core a path.
@@ -151,7 +177,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   open, the other columns strips with counts, needs-you and blocked counts (a click opens one until
   the mode changes, in the plain and the grouped board, whose Backlog band folds to its head the
   same way); cards are the title, one status line and blocked, quiet, needs a tester or needs you; the filter bar is a **Search and filters ⌘F** button until ⌘F, and
-  stays while a search, filter or Who hides tasks; the sidebar is 150 px of names, a working dot,
+  stays while a search, filter or Who hides tasks; the sidebar is 150 px of category headings with their
+  needs-you count, names, a working dot,
   stalled (with its Ask all quiet sessions) and needs-you counts; Recently finished (0051) is a strip with its name and count that opens in
   place (Fold puts it back), and reads no costs while folded; the Done card's "done 4 min ago" line
   shows in all three; the pane folds as Standard. Needs-you counts and badges show in every mode. A pane fold keeps its

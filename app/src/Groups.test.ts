@@ -213,7 +213,7 @@ describe("grouped table", () => {
     );
     // The goal is a row in No feature: its level badge, then its title with the word marked.
     expect(html).toContain('<span class="badge level">Goal</span> <mark>Ship</mark> 1.0');
-    expect(html).toContain('<td class="id"><mark>0005</mark></td>');
+    expect(html).toContain('<td class="id" title="muster · 0005"><mark>0005</mark></td>');
   });
 });
 

@@ -11,6 +11,7 @@ import { isHuman } from "./human";
 import { PanePause, PausedChip } from "./Pause";
 import type { Task } from "./types";
 import YouRibbon from "./YouRibbon";
+import ProjectName from "./ProjectName";
 
 /** The top of the task pane: where it is and when it changed, the title (click to rename it in
  *  place), and the status line. */
@@ -22,7 +23,7 @@ export default function PaneHeader({ task, now, onClose, onRename, onOpenTask, p
       <div className="topline">
         <span className="meta">
           {isHuman(task) && <><YouRibbon />{" "}</>}
-          <b className="qname">{task.queue}</b> · changed {since === "now" ? "just now" : `${since} ago`}
+          <ProjectName name={task.queue} as="b" className="qname" /> · changed {since === "now" ? "just now" : `${since} ago`}
         </span>
         <button type="button" className="close" onClick={onClose} aria-label="Close">×</button>
       </div>

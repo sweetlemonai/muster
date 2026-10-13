@@ -277,6 +277,15 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .projects-table .actions { white-space: nowrap; text-align: right; }
 .projects-table .actions button { margin-left: 4px; }
 .projects-table input { font: inherit; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 4px; background: var(--bg); color: var(--text); width: 220px; }
+/* A label or category field (0044): always there, quiet until hovered or focused; the chips to
+   pick from lay out under it while it has focus. */
+.inline-field { display: flex; flex-direction: column; gap: 4px; }
+.projects-table .inline-field input { width: 200px; border-color: transparent; background: none; font-weight: 600; }
+.projects-table .inline-field input:hover { border-color: var(--border); }
+.projects-table .inline-field input:focus { border-color: var(--accent); background: var(--bg); }
+.projects-table .inline-field input::placeholder { color: var(--muted); }
+.inline-options { display: flex; flex-wrap: wrap; gap: 2px; max-width: 220px; }
+.inline-options .chip { font-size: 11px; padding: 0 7px; }
 
 .new { margin-left: 8px; background: var(--accent); color: var(--on-accent); border: none; border-radius: 6px; padding: 4px 12px; font-weight: 600; }
 .new:disabled { opacity: 0.4; }
@@ -539,6 +548,16 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .side-when { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .side-order { display: flex; flex-wrap: wrap; gap: 2px; margin: 0 4px 4px; }
 .side-order .chip { font-size: 11px; padding: 0 7px; }
+/* Category headings (0044): always shown, quiet, with their totals; each wraps its projects. */
+.side-group { display: flex; flex-direction: column; gap: 1px; }
+.side-cat { display: flex; align-items: center; gap: 8px; margin: 8px 8px 2px; font-size: 11px; color: var(--muted); }
+.side-cat-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; letter-spacing: 0.3px; }
+.side-cat .side-working { font-size: 11px; }
+/* A label set in place takes its row's place and height. */
+.side-editing { gap: 2px; }
+.side-label-input { font: inherit; font-weight: 550; width: 100%; padding: 0 4px; border: 1px solid var(--accent); border-radius: 4px; background: var(--bg); color: var(--text); }
+.side-editing .meta { font-size: 11px; }
+.side-editing .err { font-size: 11px; overflow-wrap: anywhere; }
 .side-add { margin: 8px; border: 1px dashed var(--border); background: none; border-radius: 6px; padding: 6px; color: var(--accent-text); }
 .side-add:hover { border-color: var(--accent); }
 .main-col { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }

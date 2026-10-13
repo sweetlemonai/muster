@@ -3,7 +3,7 @@
 // on a key the table doesn't list for that file (shortcuts.test.ts).
 
 /** The Shortcuts page's sections, in order. */
-export const AREAS = ["Anywhere", "Search and views", "Writing and sending", "The task pane", "The board"] as const;
+export const AREAS = ["Anywhere", "Search and views", "Writing and sending", "The task pane", "The board", "Projects"] as const;
 export type Area = (typeof AREAS)[number];
 
 export type Shortcut = {
@@ -45,6 +45,8 @@ const TABLE = [
   { id: "quick-add", keys: "↩", codes: ["Enter"], mod: false, what: "Add the line to the backlog as a note", where: "Add to the backlog…, at the top of the Backlog column", area: "The board", files: ["Backlog.tsx"] },
   { id: "quick-add-clear", keys: "Esc", codes: ["Escape"], mod: false, what: "Empty the field", where: "Add to the backlog…, at the top of the Backlog column", area: "The board", files: ["Backlog.tsx"] },
   { id: "accept-all-cancel", keys: "Esc", codes: ["Escape"], mod: false, what: "Don't accept them: nothing changes", where: "Accept all's confirm, in Your check's Just accept group (the board and Waiting for you)", area: "The board", files: ["EffortGroups.tsx"] },
+  { id: "label-save", keys: "↩", codes: ["Enter"], mod: false, what: "Save the label or the category (leaving the field saves it too; in Settings it's saved as you type)", where: "A project's label or category in Settings, Projects, and a project's name in the sidebar after a double click", area: "Projects", files: ["InlineField.tsx", "ProjectList.tsx"] },
+  { id: "label-revert", keys: "Esc", codes: ["Escape"], mod: false, what: "Keep the label or the category as it was before you started typing", where: "A project's label or category in Settings, Projects, and a project's name in the sidebar after a double click", area: "Projects", files: ["InlineField.tsx", "ProjectList.tsx"] },
 ] as const satisfies readonly Shortcut[];
 
 /** A shortcut's id: `pressed` takes only one the table has. */

@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useContext, useId, useMemo, useState } from "react";
 import { blockSentence, isBlocked } from "./blockWords";
 import { downstream, edgeLit, type Graph, hiddenDeps, layoutGraph, readyToStart, upstream } from "./graph";
 import { isHuman } from "./human";
@@ -7,6 +7,8 @@ import { PAUSE_GLYPH } from "./Pause";
 import { siblingKey, taskKey } from "./taskKey";
 import type { Task } from "./types";
 import YouRibbon from "./YouRibbon";
+import { labelOf, Labels } from "./labels";
+import ProjectName from "./ProjectName";
 
 const W = 196; // node width
 const H = 76; // node height
@@ -71,6 +73,7 @@ function Status({ t, ready }: { t: Task; ready: boolean }) {
 }
 
 function QueueGraph({ name, tasks, all, openKey, onOpen }: { name: string; tasks: Task[]; all: Task[]; openKey: string | null; onOpen: (t: Task) => void }) {
+  const labels = useContext(Labels);
   const g: Graph = useMemo(() => layoutGraph(tasks), [tasks]);
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const selected = g.nodes.find((n) => key(n.task) === openKey)?.id ?? null;
@@ -88,8 +91,8 @@ function QueueGraph({ name, tasks, all, openKey, onOpen }: { name: string; tasks
   }, [g]);
 
   return (
-    <section className="graph-queue" aria-label={name ? `${name} dependencies` : "Dependencies"}>
-      {name && <h2>{name}</h2>}
+    <section className="graph-queue" aria-label={name ? `${labelOf(labels, name)} dependencies` : "Dependencies"}>
+      {name && <h2><ProjectName name={name} className="" /></h2>}
       {g.nodes.length === 0 ? (
         <p className="meta">
           {all.some((t) => t.depends.some((d) => d !== t.id))

@@ -4,6 +4,44 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Projects get a label you choose and a category that groups the sidebar (task 0044)
+**Did:** each project has a label (what the app calls it, up to 40 characters) and a category (the
+sidebar heading it goes under, up to 24), set in Settings › Projects (a field each per row, saved
+as you type, Esc puts it back; the categories in use lay out as chips under the field while it has
+focus) or, for the label, by double-clicking a name in the sidebar. The label shows wherever the
+app names a project: the sidebar, cards and lists with All, Waiting for you, the task pane, New
+task's and the Helper's pickers, the quick add, the Graph, the Your check limit's words, each task
+key's tooltip ("Muster · mu-12") and the window's title ("<label> — Muster"); the real name is the tooltip and shows small under the field in Settings. The sidebar groups projects
+under category headings (A–Z, Other last), each with its needs-you count, working tasks and
+tasks; the order chips order within each, A–Z by label; Focus keeps the headings with their
+needs-you count. `muster projects` adds `label:` and `category:` to a line when set. Files:
+`labels.rs` (new), `projects.rs`, `queue.rs`, `lib.rs`, `cli.rs`, `help.rs`; `labels.ts`,
+`ProjectName.tsx`, `InlineField.tsx` (new), `ProjectList.tsx`, `Projects.tsx`, `activity.ts`,
+`App.tsx`, `keyLinks.ts`, `Markdown.tsx`, `yourCheckLimit.ts`, `shortcuts.ts`, `modes.ts`, the
+name places (`Card`, `WaitingList`, `Backlog`, `PaneHeader`, `NotePanel`, `Recent`, `Groups`,
+`Views`, `GraphView`, `EffortGroups`, `NewTask`, `Helper`), `styles.css`; manual 04, 05 and 06,
+AS_BUILT, DESIGN, PROTOCOL.
+**Decided:** kept in `projects.json` by queue folder (`labels`, `categories`), beside the gate and
+the limit, so they never touch the queue or the repo and `muster migrate` carries them
+(`carry_over`); each entry is cleaned when read, and a bad one is dropped without losing the rest.
+The label replaces Settings' Rename, which changed the real name commands use: `rename_project`
+is gone, the old `names` are still read so a project renamed before keeps that name. An empty
+category falls back to the project's group (`persianUtils`, a queue one level deeper), then Other.
+The core sends both as shown (`QueueInfo.label`, `category`) so the window doesn't redo the
+fallbacks; `Project` sends them as set, for the fields. The window's title is set by the core from
+the project's name (`show_project_title`), so the window never sends text for it. No collapsing of
+headings: they're always open (DESIGN.md).
+**Verified:** `bin/gate` → `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`.
+New tests: `labels.rs` (cleaning, bad entries dropped, saved and read back, broken file, name kept
+for commands, the state's label and category, the window title), `projects.rs` (migrate carries
+both), `cli.rs` (the projects line), `labels.test.ts`, `activity.test.ts` (A–Z by label, order
+recomputed on a label change), `ProjectList.test.ts` (headings, totals, order within, tooltip,
+Focus, the in-place field), `Settings.test.ts` (label and category cells, Rename gone),
+`ProjectName.test.ts` (card, Waiting for you, note, table, pane, key links),
+`yourCheckLimit.test.ts` (labels in the limit's words).
+**Open:** AC4 (the owner labels and groups their projects) is the owner's. Not checked in the
+running app here: the window title and the focus-only chips under the category field.
+
 ## 2026-10-13 — A limit on Your check per project: the board and the commands warn, never block (task 0050)
 **Did:** each project has a Your check limit, 5 unless set to 1–50 or Off in Settings › Projects
 (saved in `projects.json` as `yourCheck`, by queue folder; a bad value reads as 5). Only

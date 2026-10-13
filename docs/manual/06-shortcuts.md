@@ -50,6 +50,13 @@ Every keyboard shortcut in the app, and the slash commands for Claude Code. This
 | Esc | Empty the field | Add to the backlog…, at the top of the Backlog column |
 | Esc | Don't accept them: nothing changes | Accept all's confirm, in Your check's Just accept group (the board and Waiting for you) |
 
+## Projects
+
+| Keys | What it does | Where |
+| --- | --- | --- |
+| ↩ | Save the label or the category (leaving the field saves it too; in Settings it's saved as you type) | A project's label or category in Settings, Projects, and a project's name in the sidebar after a double click |
+| Esc | Keep the label or the category as it was before you started typing | A project's label or category in Settings, Projects, and a project's name in the sidebar after a double click |
+
 ## Slash commands in Claude Code
 
 `/mu` (or the long form, `/muster`) runs one `muster` command from inside a Claude Code session. The first word picks what it does, and anything that isn't a route is captured as a backlog one-liner, never guessed. Routes for the owner answer in plain words; routes for agents and the system print what `muster` printed.

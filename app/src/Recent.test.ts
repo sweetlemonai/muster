@@ -40,11 +40,14 @@ function buttons(node: ReactNode): { words: string; click: () => void }[] {
   if (Array.isArray(node)) return node.flatMap(buttons);
   const el = node as ReactElement<{ children?: ReactNode; onClick?: () => void }>;
   if (typeof el.type === "function") return buttons((el.type as (p: unknown) => ReactNode)(el.props));
+  // A context's Consumer (a project's label, 0044) renders its function child, here with no provider.
+  if (typeof el.props.children === "function") return buttons((el.props.children as (v: ReadonlyMap<string, string>) => ReactNode)(new Map()));
   const words = (n: ReactNode): string => {
     if (Array.isArray(n)) return n.map(words).join(" ");
     if (typeof n === "string" || typeof n === "number") return String(n);
     if (!n || typeof n !== "object" || !("props" in n)) return "";
     const e = n as ReactElement<{ children?: ReactNode }>;
+    if (typeof e.props.children === "function") return words((e.props.children as (v: ReadonlyMap<string, string>) => ReactNode)(new Map()));
     return typeof e.type === "function" ? words((e.type as (p: unknown) => ReactNode)(e.props)) : words(e.props.children);
   };
   const own = el.type === "button" ? [{ words: words(el.props.children).replace(/\s+/g, " ").trim(), click: () => el.props.onClick?.() }] : [];

@@ -7,13 +7,19 @@ const q = (name: string, yourCheck: number, yourCheckLimit: number | null | unde
 describe("the Your check limit (0050)", () => {
   it("is over only past the limit, never at it, and never with it off or from an older core", () => {
     const queues = [q("muster", 7, 5), q("drover", 5, 5), q("germ", 40, null), { name: "old", path: "/p/old/tasks", counts: {} }];
-    expect(overLimit(queues, "all")).toEqual([{ name: "muster", waiting: 7, limit: 5 }]);
-    expect(overLimit(queues, "muster")).toEqual([{ name: "muster", waiting: 7, limit: 5 }]);
+    expect(overLimit(queues, "all")).toEqual([{ name: "muster", label: "muster", waiting: 7, limit: 5 }]);
+    expect(overLimit(queues, "muster")).toEqual([{ name: "muster", label: "muster", waiting: 7, limit: 5 }]);
     expect(overLimit(queues, "drover")).toEqual([]);
     expect(overLimit(queues, "germ")).toEqual([]);
     expect(overLimit(queues, "old")).toEqual([]);
     expect(overLimit([], "all")).toEqual([]);
     expect(LIMIT_DEFAULT).toBe(5);
+  });
+
+  it("names the projects over by their labels (0044), and still finds them by name", () => {
+    const over = overLimit([{ ...q("muster", 7, 5), label: "Muster" }, { ...q("drover", 9, 8), label: "Drover — agents" }], "all");
+    expect(overTitle(over, "all")).toBe("Over your limit in Muster (7 of 5) and Drover — agents (9 of 8): check these before more start.");
+    expect(bandLimit(["muster"], over, "all")).toEqual({ over: true, title: "Muster: 7 tasks wait in Your check, over your limit of 5" });
   });
 
   it("one project over: the header reads N of L and the line names the limit", () => {

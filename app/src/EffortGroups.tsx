@@ -1,10 +1,11 @@
-import { Fragment, type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, type ReactNode, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api } from "./api";
 import { key, oneAtATime, stamp } from "./lib";
 import { pressed } from "./shortcuts";
 import { taskKey } from "./taskKey";
 import type { Task } from "./types";
 import { type AcceptOutcome, acceptAllRun, byEffort, EFFORTS, justAccept, staleResult } from "./yourCheck";
+import { labelOf, Labels } from "./labels";
 
 // Accept all's result lines, by place ("board", a band, "waiting"), outside any component: the
 // column it was clicked in can empty and unmount, and the line must still say what came of it.
@@ -120,10 +121,11 @@ function AcceptAll({ tasks, ready, place, result, onChanged }: { tasks: Task[]; 
       return true;
     });
   const several = new Set((asked ?? ready).map((t) => t.queue)).size > 1;
+  const labels = useContext(Labels);
   return (
     <AcceptAllView
       count={ready.length}
-      asked={asked && asked.map((t) => (several ? `${t.queue} ${taskKey(t)}` : taskKey(t)))}
+      asked={asked && asked.map((t) => (several ? `${labelOf(labels, t.queue)} ${taskKey(t)}` : taskKey(t)))}
       busy={busy}
       msg={result}
       onAsk={() => {

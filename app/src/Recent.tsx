@@ -5,6 +5,7 @@ import { useLook } from "./modes";
 import { taskKey } from "./taskKey";
 import { builtBy, byKind, dayGroups, type DayGroup, type Finish, finishes, KIND_FILTERS, type KindFilter, loadKind, storeKind, whenText } from "./recentData";
 import type { Task } from "./types";
+import ProjectName, { TaskKey } from "./ProjectName";
 
 /** A task's time and tokens, the Work section's totals (0025), or why they couldn't be read. */
 export type Cost = { minutes: number; tokens: number; read: number } | { error: string };
@@ -182,8 +183,8 @@ function RecentRow({ r, now, multi, active, onOpen, cost }: { r: Finish; now: nu
   return (
     <button type="button" className={active ? "recent-row active" : "recent-row"} onClick={() => onOpen(t)}>
       <span className="recent-top">
-        {multi && <span className="q">{t.queue}</span>}
-        <span className="id">{taskKey(t)}</span>
+        {multi && <ProjectName name={t.queue} />}
+        <TaskKey t={t}>{taskKey(t)}</TaskKey>
         <span className="recent-title">{t.title || "(no title)"}</span>
         <span className="recent-kind-when">
           <span className={`recent-kind ${r.kind}`}>{r.kind}</span>

@@ -1,7 +1,8 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import ProjectList, { ActivityLine, OrderChips, SumsLine } from "./ProjectList";
+import ProjectList, { ActivityLine, labelToSave, OrderChips, SideLabelEdit, SumsLine } from "./ProjectList";
+import { type DisplayMode, Mode } from "./modes";
 import type { ProjectActivity, Sums } from "./activity";
 import type { Activity, QueueInfo, Task } from "./types";
 
@@ -145,5 +146,76 @@ describe("the sidebar", () => {
     expect(rows(render())).toEqual(["All", "zeta", "alpha", "muster"]);
     vi.stubGlobal("localStorage", { getItem: () => "sideways" });
     expect(rows(render())).toEqual(["All", "zeta", "alpha", "muster"]);
+  });
+});
+
+describe("labels and categories in the sidebar (0044)", () => {
+  const queues: QueueInfo[] = [
+    { name: "alpha", path: "/p/alpha/tasks", counts: { ready: 1 }, label: "Alpha app", category: "Apps" },
+    { name: "zeta", path: "/p/zeta/tasks", counts: { building: 1, ready: 1 }, label: "zeta", category: "Tools" },
+    { name: "muster", path: "/p/muster/tasks", counts: { building: 1 }, label: "Muster", category: "Tools" },
+    // An older core: no label, no category.
+    { name: "beta", path: "/p/beta/tasks", counts: { ready: 2 } },
+  ];
+  const tasks = [
+    task({ queue: "alpha", id: "0001", waitingForOwner: true, modified: secs(9, 0) }),
+    task({ queue: "zeta", id: "0001", stage: "building", claimedBy: "zeta/wt-a (session 7b5e8856)", checkins: [{ at: at(13, 50), who: "zeta/wt-a", pct: 40, text: "tests" }] }),
+    task({ queue: "zeta", id: "0002", live: true }),
+    task({ queue: "muster", id: "0001", stage: "building", claimedBy: "muster/wt-b", heartbeat: at(12, 0), waitingForOwner: true }),
+    task({ queue: "beta", id: "0001" }),
+    task({ queue: "beta", id: "0002" }),
+  ];
+  const render = (mode: DisplayMode = "adhd") =>
+    renderToStaticMarkup(createElement(Mode.Provider, { value: mode }, createElement(ProjectList, { queues, tasks, notes: [], activity: [], now: NOW, current: "all", onPick: () => {}, onLabel: async () => {} })));
+  const rows = (html: string) => [...html.matchAll(/<span class="side-name"[^>]*>([^<]*)<\/span>/g)].map((m) => m[1]);
+  const heads = (html: string) => [...html.matchAll(/<div class="side-cat">([\s\S]*?)<\/div>/g)].map((m) => plain(m[1].replace(/></g, "> <")).replace(/\s+/g, " ").trim());
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("groups the projects under their category headings, A–Z with Other last, each row by its label", () => {
+    const html = render();
+    expect(heads(html)).toEqual(["Apps 1 1", "Tools 1 2 working 3", "Other 2"]);
+    expect(rows(html)).toEqual(["All", "Alpha app", "zeta", "Muster", "beta"]);
+    // Each heading wraps its own rows.
+    expect(html).toMatch(/<div class="side-group" role="group" aria-label="Tools"><div class="side-cat">/);
+  });
+  it("says each heading's totals in its titles: tasks, projects, needs you and working", () => {
+    const html = render();
+    expect(html).toContain('<small title="3 tasks in 2 projects">3</small>');
+    expect(html).toContain('<small title="2 tasks in 1 project">2</small>');
+    expect(html).toContain('<span class="count warn" title="1 needs you in Tools">1</span>');
+    expect(html).toMatch(/<span class="side-working" title="2 tasks being worked on now in Tools[^"]*"><i class="dot" aria-hidden="true"><\/i>2 working<\/span>/);
+  });
+  it("sorts by the order chips within each heading: A–Z goes by the label", () => {
+    vi.stubGlobal("localStorage", { getItem: () => "az" });
+    expect(rows(render())).toEqual(["All", "Alpha app", "Muster", "zeta", "beta"]);
+  });
+  it("names the real project and its folder in the row's tooltip, and offers the label on a double click", () => {
+    const html = render();
+    const muster = html.split('<button class="side-item').find((r) => r.includes('side-name" title=')  && r.includes(">Muster<")) ?? "";
+    expect(muster).toContain('title="muster · /p/muster/tasks"');
+    expect(muster).toContain('<span class="side-name" title="Double-click to change the label">Muster</span>');
+  });
+  it("keeps the headings and their needs-you counts in Focus's narrow sidebar", () => {
+    const html = render("focus");
+    expect(heads(html)).toEqual(["Apps 1", "Tools 1", "Other"]);
+    expect(rows(html)).toEqual(["All", "Alpha app", "zeta", "Muster", "beta"]);
+  });
+});
+
+describe("a label set in place in the sidebar (0044)", () => {
+  it("is a field in the row's place with the label, at most 40 characters, the real name under it", () => {
+    const html = renderToStaticMarkup(createElement(SideLabelEdit, { name: "muster", label: "Muster", onSave: async () => {}, onDone: () => {} }));
+    expect(html).toContain('<div class="side-item on side-editing">');
+    expect(html).toContain('value="Muster"');
+    expect(html).toContain('maxLength="40"');
+    expect(html).toContain('aria-label="Label for muster"');
+    expect(html).toContain('placeholder="muster"');
+    expect(plain(html)).toContain("muster · ↩ saves, Esc keeps it");
+  });
+  it("saves the folder's name typed back as no label at all", () => {
+    expect(labelToSave("  muster ", "muster")).toBe("");
+    expect(labelToSave("Muster", "muster")).toBe("Muster");
+    expect(labelToSave("", "muster")).toBe("");
   });
 });

@@ -14,6 +14,7 @@ import { estimateLeft, type Group, type GroupBy, isWork, levelLabel, progressTex
 import { Hl, HlId } from "./FilterBar";
 import { isHuman } from "./human";
 import YouRibbon from "./YouRibbon";
+import ProjectName, { TaskKey } from "./ProjectName";
 
 const COLS: { key: SortKey; label: string }[] = [
   { key: "queue", label: "Project" },
@@ -102,8 +103,8 @@ function Row({ t, now, multi, active, onOpen, words }: { t: Task; now: number; m
   const own = estimateText(t);
   return (
     <tr className={`${active ? "active " : ""}s-${parentLevel ? shownStageClass(t) : stageOf(t)}${parentLevel ? " level-item" : ""}`} onClick={() => onOpen(t)}>
-      {multi && <td className="q">{t.queue}</td>}
-      <td className="id"><HlId t={t} words={words} /></td>
+      {multi && <ProjectName name={t.queue} as="td" />}
+      <TaskKey t={t} as="td"><HlId t={t} words={words} /></TaskKey>
       <td className="t-title">
         {isHuman(t) && <YouRibbon />}
         {parentLevel && <span className="badge level">{levelLabel(t.level)}</span>}
@@ -216,7 +217,7 @@ export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen,
           <button key={key(t)} className={openKey === key(t) ? "tl-row active" : "tl-row"} onClick={() => onOpen(t)}>
             <span className="tl-label">
               {isHuman(t) && <YouRibbon />}
-              {multi && <span className="q">{t.queue}</span>} <span className="id"><HlId t={t} words={words} /></span> <Hl text={t.title} words={words} />
+              {multi && <ProjectName name={t.queue} />} <TaskKey t={t}><HlId t={t} words={words} /></TaskKey> <Hl text={t.title} words={words} />
             </span>
             <span className="tl-track">
               <span

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { api, type AccountInfo, type HelperInfo, type HelperLine } from "./api";
 import { readFiles, stamp } from "./lib";
 import Markdown from "./Markdown";
 import { HelpButton } from "./HelpButton";
+import { labelOf, Labels } from "./labels";
 
 type Group = { owner?: HelperLine; replies: HelperLine[]; tools: { cmd: string; result?: string }[]; end?: HelperLine; notes: HelperLine[] };
 
@@ -33,6 +34,7 @@ function groups(lines: HelperLine[]): Group[] {
 
 export default function Helper({ queues, initial, onChanged }: { queues: string[]; initial: string; onChanged: () => void }) {
   const [queue, setQueue] = useState(initial);
+  const labels = useContext(Labels);
   const [info, setInfo] = useState<HelperInfo | null>(null);
   const [lines, setLines] = useState<HelperLine[]>([]);
   const [running, setRunning] = useState(false);
@@ -125,7 +127,7 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
         <label>
           Project
           <select value={queue} onChange={(e) => setQueue(e.target.value)}>
-            {queues.map((q) => <option key={q}>{q}</option>)}
+            {queues.map((q) => <option key={q} value={q}>{labelOf(labels, q)}</option>)}
           </select>
         </label>
         <span className="meta">

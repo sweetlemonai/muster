@@ -1031,8 +1031,8 @@ fn edit_in_editor(id: &str, text: &str) -> Result<(String, PathBuf), String> {
 }
 
 /// One line of `muster projects`: the name, its prefix (0033), where it came from (found under
-/// ~/playground, or added in the app), the folder, whether it's hidden or no longer a queue, and
-/// its gate.
+/// ~/playground, or added in the app), the folder, whether it's hidden or no longer a queue, its
+/// gate, and the label and category the app shows it with (0044), when set.
 fn project_line(p: &projects::Project) -> String {
     let state = if p.hidden {
         " (hidden)"
@@ -1046,9 +1046,21 @@ fn project_line(p: &projects::Project) -> String {
     } else {
         format!("  gate: {}", p.gate)
     };
+    let shown = |what: &str, v: &str| {
+        if v.is_empty() {
+            String::new()
+        } else {
+            format!("  {what}: {v}")
+        }
+    };
     format!(
-        "{:<16} {:<4} {:<6} {}{state}{gate}",
-        p.name, p.prefix, p.source, p.path
+        "{:<16} {:<4} {:<6} {}{state}{gate}{}{}",
+        p.name,
+        p.prefix,
+        p.source,
+        p.path,
+        shown("label", &p.label),
+        shown("category", &p.category)
     )
 }
 
@@ -2178,6 +2190,26 @@ mod tests {
 
     fn sv(xs: &[&str]) -> Vec<String> {
         xs.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn muster_projects_lists_the_real_name_and_says_the_label_and_category_after() {
+        let base = tempfile::tempdir().unwrap();
+        let q = base.path().join("muster/tasks");
+        std::fs::create_dir_all(q.join("todo")).unwrap();
+        std::fs::write(q.join("README.md"), "q").unwrap();
+        let mut c = projects::Config::default();
+        let line = |c: &projects::Config| project_line(&projects::list(base.path(), c)[0]);
+        assert!(!line(&c).contains("label"), "{}", line(&c));
+        let key = projects::list(base.path(), &c)[0].key.clone();
+        c.labels.insert(key.clone(), "Muster".into());
+        c.categories.insert(key, "Apps".into());
+        let l = line(&c);
+        assert!(
+            l.starts_with("muster "),
+            "the name commands take comes first: {l}"
+        );
+        assert!(l.ends_with("  label: Muster  category: Apps"), "{l}");
     }
 
     /// No caller environment: the tests run inside Claude Code sessions, whose own session must

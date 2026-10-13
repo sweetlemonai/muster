@@ -67,8 +67,8 @@ describe("the timeline chart", () => {
   });
   it("labels each row with its id and title, and marks the open task", () => {
     const html = chart("week");
-    expect(html).toMatch(/<button class="tl-row"[^>]*><span class="tl-label"> ?<span class="id">0031<\/span> Timeline scales<\/span>/);
-    expect(html).toMatch(/<button class="tl-row active"[^>]*><span class="tl-label"> ?<span class="id">0032<\/span> Still going/);
+    expect(html).toMatch(/<button class="tl-row"[^>]*><span class="tl-label"> ?<span class="id" title="q · 0031">0031<\/span> Timeline scales<\/span>/);
+    expect(html).toMatch(/<button class="tl-row active"[^>]*><span class="tl-label"> ?<span class="id" title="q · 0032">0032<\/span> Still going/);
   });
   it("marks the owner's own task with the You ribbon, and only theirs (0022)", () => {
     // The Timeline shows work from when it started: both are in Building (Doing, for the owner's).
@@ -76,8 +76,8 @@ describe("the timeline chart", () => {
     const mixed = [t({ id: "0041", title: "Buy the domain", forWho: "human", ...started }), t({ id: "0042", title: "Agent work", ...started })];
     const win = timeWindow("week", NOW, 0);
     const html = renderToStaticMarkup(createElement(TimelineChart, { scale: "week", rows: layout(spans(mixed, NOW), win, "week"), ticks: axis("week", win, NOW), now: nowAt(win, NOW), multi: false, openKey: null, onOpen: () => {} }));
-    expect(html).toMatch(/<span class="tl-label"><span class="you-ribbon"[^>]*>You<\/span> ?<span class="id">0041<\/span> Buy the domain<\/span>/);
-    expect(html).toMatch(/<span class="tl-label"> ?<span class="id">0042<\/span> Agent work<\/span>/);
+    expect(html).toMatch(/<span class="tl-label"><span class="you-ribbon"[^>]*>You<\/span> ?<span class="id" title="q · 0041">0041<\/span> Buy the domain<\/span>/);
+    expect(html).toMatch(/<span class="tl-label"> ?<span class="id" title="q · 0042">0042<\/span> Agent work<\/span>/);
     const table = renderToStaticMarkup(createElement(TableView, { tasks: mixed, now: 0, multi: false, openKey: null, onOpen: () => {}, words: [] }));
     expect(table.match(/class="you-ribbon"/g)).toHaveLength(1);
     expect(table).toMatch(/<td class="t-title"><span class="you-ribbon"[^>]*>You<\/span>[^<]*Buy the domain/);
@@ -95,12 +95,15 @@ function buttons(node: ReactNode): { words: string; click: () => void }[] {
   if (Array.isArray(node)) return node.flatMap(buttons);
   const el = node as ReactElement<{ children?: ReactNode; onClick?: () => void }>;
   if (typeof el.type === "function") return buttons((el.type as (p: unknown) => ReactNode)(el.props));
+  // A context's Consumer (a project's label, 0044) renders its function child, here with no provider.
+  if (typeof el.props.children === "function") return buttons((el.props.children as (v: ReadonlyMap<string, string>) => ReactNode)(new Map()));
   // A function component (the search's highlight, `Hl`) gives its text when it's called.
   const words = (n: ReactNode): string => {
     if (Array.isArray(n)) return n.map(words).join("");
     if (typeof n === "string" || typeof n === "number") return String(n);
     if (!n || typeof n !== "object" || !("props" in n)) return "";
     const e = n as ReactElement<{ children?: ReactNode }>;
+    if (typeof e.props.children === "function") return words((e.props.children as (v: ReadonlyMap<string, string>) => ReactNode)(new Map()));
     return typeof e.type === "function" ? words((e.type as (p: unknown) => ReactNode)(e.props)) : words(e.props.children);
   };
   const own = el.type === "button" ? [{ words: words(el.props.children).trim(), click: () => el.props.onClick?.() }] : [];

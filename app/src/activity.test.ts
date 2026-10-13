@@ -127,7 +127,9 @@ describe("the sidebar's rows", () => {
       { queue: "drover", at: secs(13, 59), what: "a file", source: "file" },
     ];
     const rows = projectRows([{ name: "drover", path: "/d" }, { name: "muster", path: "/m" }, { name: "empty", path: "/e" }], tasks, activity, NOW);
-    expect(rows.map((r) => [r.name, r.title, r.tasks.length, r.needs])).toEqual([["drover", "/d", 2, 1], ["muster", "/m", 1, 0], ["empty", "/e", 0, 0]]);
+    // The tooltip says the real name and the folder (0044): the row shows the label.
+    expect(rows.map((r) => [r.name, r.title, r.tasks.length, r.needs])).toEqual([["drover", "drover · /d", 2, 1], ["muster", "muster · /m", 1, 0], ["empty", "empty · /e", 0, 0]]);
+    expect(rows.map((r) => [r.label, r.category])).toEqual([["drover", "Other"], ["muster", "Other"], ["empty", "Other"]]);
     expect(rows.map((r) => r.activity)).toEqual([
       { working: 1, stalled: false, last: 10 },
       { working: 0, stalled: false, last: 60 },
@@ -180,6 +182,10 @@ describe("the sidebar order", () => {
   });
   it("Needs you: most waiting on the owner first, then as Working", () => {
     expect(names("needs")).toEqual(["chit", "muster", "braindump", "germ", "Drover", "Apple"]);
+  });
+  it("A–Z: by the label the row shows, when it has one (0044)", () => {
+    const labelled = [{ ...row("apple", 0, 1), label: "Zed" }, row("muster", 0, 2), { ...row("Drover", 0, 3), label: "agents" }];
+    expect(orderProjects(labelled, "az").map((r) => r.name)).toEqual(["Drover", "muster", "apple"]);
   });
   it("leaves its input alone", () => {
     const copy = [...rows];
@@ -246,6 +252,9 @@ describe("review fixes (2026-10-13)", () => {
     // A new project, or another order chosen: worked out again.
     expect(nextOrder(first, [row("zeta", 1, 0), row("alpha", 1, 1), row("beta", 0, 5)], "working").names).toHaveLength(3);
     expect(nextOrder(first, [row("zeta", 1, 0), row("alpha", 1, 1)], "az").names).toEqual(["alpha", "zeta"]);
+    // A label set or changed (0044): worked out again, by the label.
+    const az = nextOrder(null, [row("zeta", 0, 1), row("alpha", 0, 1)], "az");
+    expect(nextOrder(az, [row("zeta", 0, 1), { ...row("alpha", 0, 1), label: "Zulu" }], "az").names).toEqual(["zeta", "alpha"]);
     // In Needs you order, a change in the counts moves rows.
     const needs = nextOrder(null, [row("a", 0, 5, 1), row("b", 0, 5, 0)], "needs");
     expect(nextOrder(needs, [row("a", 0, 5, 0), row("b", 0, 5, 2)], "needs").names).toEqual(["b", "a"]);

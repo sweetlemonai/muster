@@ -70,7 +70,8 @@ have their own short sets below. Every other section here applies in all three.
   needs a tester or needs you when it is.
 - **No filter bar until ⌘F,** only a button in its place, and the bar stays while a search or
   filter is on, so nothing is hidden without saying so.
-- **The sidebar narrows** to the project names, the working dot, stalled and the needs-you and paused counts;
+- **The sidebar narrows** to the category headings with their needs-you count, the project names, the working
+  dot, stalled and the needs-you and paused counts;
   a stalled project keeps its Ask for a check-in.
 - **Recently finished folds to a strip** with its name and count beside the board, opened in place
   with a click: finished work isn't what needs doing now, but it stays one click away.
