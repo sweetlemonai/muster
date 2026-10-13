@@ -394,6 +394,21 @@ fn a_claim_from_another_projects_folder_needs_queue_to_mean_it() {
         out.contains("MUSTER_ROOT points at drover/tasks but you're in muster/…; pass --queue drover to mean it"),
         "{out}"
     );
+    // Rewriting a write-up is checked the same way, before any editor opens.
+    let (code, out) = muster(
+        b,
+        &repo,
+        &[
+            ("MUSTER_ROOT", drover.as_path()),
+            ("EDITOR", Path::new("false")),
+        ],
+        &["edit", "0001", "--as", "owner"],
+    );
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("MUSTER_ROOT points at drover/tasks but you're in muster/…"),
+        "{out}"
+    );
     assert_eq!(std::fs::read_to_string(&file).unwrap(), text, "untouched");
     // Reading is fine; MUSTER_ROOT wins over TASKS_ROOT, and an empty one counts as unset.
     let (code, out) = muster(b, &repo, &env, &["list"]);
@@ -576,7 +591,7 @@ fn edit_opens_visual_or_editor_on_the_write_up_without_a_shell() {
     let script = tools.path().join("editor.sh");
     std::fs::write(
         &script,
-        "cp \"$1\" \"$SEEN\"\nprintf '%s' \"$1\" > \"$SEEN.path\"\nprintf '# In the editor\\n\\nAfter.\\n' > \"$1\"\nif [ -n \"$CLOBBER\" ]; then printf -- '---\\nid: 0001\\nstage: ready\\nstatus: todo\\n---\\n\\n# Someone else\\n\\n## Log\\n- x\\n' > \"$CLOBBER\"; fi\n",
+        "cp \"$1\" \"$SEEN\"\nprintf '%s' \"$1\" > \"$SEEN.path\"\nprintf '# In the editor\\n\\nAfter.\\n' > \"$1\"\nif [ -n \"$CLOBBER\" ]; then printf -- '---\\nid: 0001\\nstage: ready\\nstatus: todo\\n---\\n\\n# Someone else\\n\\n## Log\\n- x\\n' > \"$CLOBBER\"; fi\nif [ -n \"$EXIT\" ]; then printf 'Typed, then it failed.\\n' >> \"$1\"; exit \"$EXIT\"; fi\n",
     )
     .unwrap();
     let editor = format!("/bin/sh {}", script.display());
@@ -606,9 +621,26 @@ fn edit_opens_visual_or_editor_on_the_write_up_without_a_shell() {
     let before = std::fs::read_to_string(&file).unwrap();
     let (code, out) = edit(&[("VISUAL", "true"), ("EDITOR", &editor), ("SEEN", &seen_s)]);
     assert_eq!((code, out.as_str()), (0, "0001: no change\n"));
-    // An editor that fails saves nothing.
+    // An editor that fails saves nothing. Nothing typed: nothing kept.
     let (code, out) = edit(&[("EDITOR", "false")]);
-    assert!(code == 1 && out.contains("the editor exited"), "{out}");
+    assert!(
+        code == 1 && out.contains("the editor exited") && !out.contains("kept"),
+        "{out}"
+    );
+    // Typed, then the editor failed: the text is kept and named, not saved.
+    let (code, out) = edit(&[("EDITOR", &editor), ("SEEN", &seen_s), ("EXIT", "1")]);
+    let kept = temp_of();
+    assert!(
+        code == 1
+            && out.contains("the editor exited")
+            && out.contains(&format!("your text is kept in {}", kept.display())),
+        "{out}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&kept).unwrap(),
+        "# In the editor\n\nAfter.\nTyped, then it failed.\n"
+    );
+    std::fs::remove_file(&kept).unwrap();
     let (code, out) = edit(&[("EDITOR", "/no/such/editor")]);
     assert!(
         code == 1 && out.contains("couldn't run the editor"),

@@ -8,7 +8,8 @@ import type { Question, Task } from "./types";
 
 const IMAGE = /\.(png|jpe?g|gif|webp)$/i;
 
-export default function TaskPanel({ task, now, onClose, onChanged }: { task: Task; now: number; onClose: () => void; onChanged: () => void }) {
+/** `onDirty` and `nudge` pass between the window and the write-up editor (see EditBody). */
+export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudge }: { task: Task; now: number; onClose: () => void; onChanged: () => void; onDirty?: (dirty: boolean) => void; nudge?: number }) {
   const [body, setBody] = useState<string | null>(null);
   const [raw, setRaw] = useState(false);
   const [error, setError] = useState("");
@@ -75,6 +76,8 @@ export default function TaskPanel({ task, now, onClose, onChanged }: { task: Tas
           <EditBody
             task={task}
             opened={editing}
+            onDirty={onDirty}
+            nudge={nudge}
             onClose={() => setEditing(null)}
             onSaved={(text) => {
               setEditing(null);

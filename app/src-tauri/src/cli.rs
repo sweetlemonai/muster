@@ -125,9 +125,10 @@ fn resolve_queue(
         .ok_or_else(|| "no queue here: pass --queue <name|folder> or set MUSTER_ROOT".into())
 }
 
-/// Commands that claim, hand on or hold a task. A slip of the environment would do them in
-/// another project's queue (it happened: drover's 0022 claimed from muster), so they're checked.
-const TARGETED: [&str; 8] = [
+/// Commands that claim, hand on or hold a task, or rewrite its write-up. A slip of the environment
+/// would do them in another project's queue (it happened: drover's 0022 claimed from muster), so
+/// they're checked.
+const TARGETED: [&str; 9] = [
     "claim",
     "next",
     "pass",
@@ -136,6 +137,7 @@ const TARGETED: [&str; 8] = [
     "unblock",
     "stage",
     "heartbeat",
+    "edit",
 ];
 
 /// The same folder, through symlinks too.
@@ -339,21 +341,72 @@ fn read_capped(r: impl std::io::Read, what: &str) -> Result<String, String> {
     String::from_utf8(buf).map_err(|_| format!("{what} isn't UTF-8 text"))
 }
 
-/// The editor `edit` runs: `$VISUAL`, else `$EDITOR`, else `vi`, split on whitespace into the
-/// program and its arguments. No shell runs it, so `code --wait` works and quoting doesn't.
-fn editor_command(visual: Option<String>, editor: Option<String>) -> Vec<String> {
-    [visual, editor]
-        .into_iter()
-        .flatten()
-        .map(|v| v.split_whitespace().map(String::from).collect::<Vec<_>>())
-        .find(|words| !words.is_empty())
-        .unwrap_or_else(|| vec!["vi".into()])
+/// Split a command line into words the way a shell would quote them, without a shell: whitespace
+/// separates words; '…' is literal; in "…" a backslash escapes `"` and `\` only; elsewhere a
+/// backslash escapes the next character. Nothing is expanded. None for an unclosed quote or a
+/// trailing backslash.
+fn split_words(line: &str) -> Option<Vec<String>> {
+    let mut words = Vec::new();
+    let mut word: Option<String> = None;
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            c if c.is_whitespace() => words.extend(word.take()),
+            '\'' => {
+                let w = word.get_or_insert_with(String::new);
+                loop {
+                    match chars.next()? {
+                        '\'' => break,
+                        c => w.push(c),
+                    }
+                }
+            }
+            '"' => {
+                let w = word.get_or_insert_with(String::new);
+                loop {
+                    match chars.next()? {
+                        '"' => break,
+                        '\\' => match chars.next()? {
+                            c @ ('"' | '\\') => w.push(c),
+                            c => {
+                                w.push('\\');
+                                w.push(c);
+                            }
+                        },
+                        c => w.push(c),
+                    }
+                }
+            }
+            '\\' => word.get_or_insert_with(String::new).push(chars.next()?),
+            c => word.get_or_insert_with(String::new).push(c),
+        }
+    }
+    words.extend(word);
+    Some(words)
+}
+
+/// The editor `edit` runs: `$VISUAL`, else `$EDITOR`, else `vi`, as the program and its arguments
+/// (`split_words`: quotes and backslashes as a shell reads them, but no shell runs it). A blank
+/// variable counts as unset; one with an unclosed quote is refused.
+fn editor_command(visual: Option<String>, editor: Option<String>) -> Result<Vec<String>, String> {
+    for (name, value) in [("$VISUAL", visual), ("$EDITOR", editor)] {
+        let Some(value) = value else { continue };
+        let words = split_words(&value).ok_or_else(|| {
+            format!("{name} has an unclosed quote or a trailing backslash: {value:?}")
+        })?;
+        if !words.is_empty() {
+            return Ok(words);
+        }
+    }
+    Ok(vec!["vi".into()])
 }
 
 /// Open the editor on a private temp copy of `text`; returns what it holds once the editor exits
 /// cleanly, and the copy's path (the caller removes it, or keeps it when the save is refused).
+/// When the editor fails, the copy is kept and named if it was typed into, else removed.
 fn edit_in_editor(id: &str, text: &str) -> Result<(String, PathBuf), String> {
     use std::io::Write;
+    let cmd = editor_command(std::env::var("VISUAL").ok(), std::env::var("EDITOR").ok())?;
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.subsec_nanos())
@@ -369,31 +422,31 @@ fn edit_in_editor(id: &str, text: &str) -> Result<(String, PathBuf), String> {
     let mut f = opts
         .open(&file)
         .map_err(|e| format!("can't make a temp file to edit in: {e}"))?;
-    let written = f
-        .write_all(format!("{text}\n").as_bytes())
-        .and_then(|()| f.sync_all());
+    let first = format!("{text}\n");
+    let written = f.write_all(first.as_bytes()).and_then(|()| f.sync_all());
     drop(f);
     let gone = |e: String| {
         let _ = std::fs::remove_file(&file);
         e
     };
     written.map_err(|e| gone(format!("can't write the temp file to edit in: {e}")))?;
-    let cmd = editor_command(std::env::var("VISUAL").ok(), std::env::var("EDITOR").ok());
     let status = std::process::Command::new(&cmd[0])
         .args(&cmd[1..])
         .arg(&file)
         .status()
         .map_err(|e| gone(format!("couldn't run the editor {:?}: {e}", cmd[0])))?;
-    if !status.success() {
-        return Err(gone(format!(
-            "the editor exited with {status}; nothing was saved"
-        )));
-    }
     let new = std::fs::File::open(&file)
         .map_err(|e| e.to_string())
-        .and_then(|f| read_capped(f, "the edited text"))
-        .map_err(gone)?;
-    Ok((new, file))
+        .and_then(|f| read_capped(f, "the edited text"));
+    if !status.success() {
+        let failed = format!("the editor exited with {status}; nothing was saved");
+        // Something was typed before it failed: keep it rather than throw it away.
+        return Err(match &new {
+            Ok(t) if *t != first => format!("{failed}\nyour text is kept in {}", file.display()),
+            _ => gone(failed),
+        });
+    }
+    Ok((new.map_err(gone)?, file))
 }
 
 /// Runs a command; returns the process exit code (0 ok, 1 refused or failed, 2 usage).
@@ -639,7 +692,9 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                 let (text, file) = edit_in_editor(id, &opened)?;
                 (text, Some(file))
             };
-            let saved = ops::edit_body(root, id, &new, &opened, &me, stamp);
+            // Stamped when it's saved, not when the command started: an editor can stay open
+            // for hours.
+            let saved = ops::edit_body(root, id, &new, &opened, &me, &local_stamp());
             match (&saved, &copy) {
                 (Err(e), Some(file)) => {
                     return Err(format!("{e}\nyour text is kept in {}", file.display()))
@@ -1220,7 +1275,8 @@ mod tests {
         assert!(resolve_queue(Some("nowhere"), None, None, &known)
             .unwrap_err()
             .contains("no queue named"));
-        // Which commands are checked: the ones that claim, hand on or hold a task, not reads.
+        // Which commands are checked: the ones that claim, hand on or hold a task, or rewrite its
+        // write-up, not reads.
         for cmd in [
             "claim",
             "next",
@@ -1230,6 +1286,7 @@ mod tests {
             "unblock",
             "stage",
             "heartbeat",
+            "edit",
         ] {
             assert!(TARGETED.contains(&cmd), "{cmd}");
         }
@@ -1268,22 +1325,39 @@ mod tests {
     #[test]
     fn the_editor_comes_from_visual_then_editor_then_vi_split_without_a_shell() {
         let s = |v: &str| Some(v.to_string());
+        let ok = |visual: Option<String>, editor: Option<String>| {
+            editor_command(visual, editor).unwrap()
+        };
+        assert_eq!(ok(s("code --wait"), s("nano")), ["code", "--wait"]);
+        assert_eq!(ok(None, s("  nano  -w ")), ["nano", "-w"]);
+        assert_eq!(ok(s(" "), s("nano")), ["nano"], "blank is unset");
+        assert_eq!(ok(None, None), ["vi"]);
+        // Quotes and backslashes, as a shell would split them, but no shell runs anything.
         assert_eq!(
-            editor_command(s("code --wait"), s("nano")),
-            ["code", "--wait"]
+            ok(s("\"/Applications/Sublime Text.app/x/subl\" -w"), None),
+            ["/Applications/Sublime Text.app/x/subl", "-w"]
         );
-        assert_eq!(editor_command(None, s("  nano  -w ")), ["nano", "-w"]);
         assert_eq!(
-            editor_command(s(" "), s("nano")),
-            ["nano"],
-            "blank is unset"
+            ok(s("'/My Apps/ed it' --title 'a \"b\"'"), None),
+            ["/My Apps/ed it", "--title", "a \"b\""]
         );
-        assert_eq!(editor_command(None, None), ["vi"]);
-        // No shell: `;` and `$(…)` are just words handed to the program.
         assert_eq!(
-            editor_command(s("vi; rm -rf ~ $(x)"), None),
+            ok(s(r#"/My\ Apps/ed "x\"y" "a\\b" 'c\d' """#), None),
+            ["/My Apps/ed", "x\"y", "a\\b", "c\\d", ""]
+        );
+        assert_eq!(ok(s("a\"b c\"d"), None), ["ab cd"], "quotes join a word");
+        // `;` and `$(…)` are just words handed to the program.
+        assert_eq!(
+            ok(s("vi; rm -rf ~ $(x)"), None),
             ["vi;", "rm", "-rf", "~", "$(x)"]
         );
+        for bad in ["\"subl -w", "'vi", "vi \\"] {
+            let e = editor_command(s(bad), s("nano")).unwrap_err();
+            assert!(e.contains("$VISUAL"), "{bad}: {e}");
+        }
+        assert!(editor_command(None, s("'vi"))
+            .unwrap_err()
+            .contains("$EDITOR"));
     }
 
     #[test]

@@ -163,7 +163,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "edit",
         usage: "muster edit <id> [--body -]",
-        what: "Edit a task's write-up: the description, To do and acceptance criteria between the front matter and the Log. Opens $VISUAL or $EDITOR (else vi) on a copy and saves it when the editor exits, logged as an edit. Unchanged text prints \"no change\" and writes nothing. The front matter and the Log stay the tool's: a \"## Log\" line or a stage line is refused. Refused when the write-up changed since you opened it (your text is kept in the temp file it names), and while someone else holds it in Building: their branch owns the write-up then, so add a note instead.",
+        what: "Edit a task's write-up: the description, To do and acceptance criteria between the front matter and the Log. Opens $VISUAL or $EDITOR (else vi; quotes work as in a shell, but no shell runs it) on a copy and saves it when the editor exits, logged as an edit. Unchanged text prints \"no change\" and writes nothing. The front matter and the Log stay the tool's: a \"## Log\" line or a stage line is refused. Refused when the write-up changed since you opened it, or when the editor fails; either way, what you typed is kept in the temp file it names. Refused too while someone else holds it in Building: their branch owns the write-up then, so add a note instead.",
         options: &[
             ("--body -", "read the new write-up from stdin instead of opening an editor (for scripts)"),
             ("--as", "who's editing; the holder of a task in Building may edit it"),
@@ -171,6 +171,7 @@ pub const COMMANDS: &[Command] = &[
         examples: &[
             "muster edit 0007",
             "EDITOR=\"code --wait\" muster edit 0007",
+            "VISUAL='\"/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl\" -w' muster edit 0007",
             "pbpaste | muster edit 0007 --body -",
         ],
     },

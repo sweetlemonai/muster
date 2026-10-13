@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
+import { mayLeave } from "./writeUp";
 import { ago, columns, estimateTotal, feed, holder, inProgress, key, leaseRunOut, queueTotal, STAGES } from "./lib";
 import type { State, Task } from "./types";
 import Projects from "./Projects";
@@ -96,19 +97,36 @@ export default function App() {
   const openTask = openKey ? (state?.tasks ?? []).find((t) => key(t) === openKey) ?? null : null;
   const now = state?.now ?? Math.floor(Date.now() / 1000);
   const multi = queue === "all" && (state?.queues.length ?? 0) > 1;
-  const open = (t: Task) => setPane({ kind: "task", key: key(t) });
+  // Unsaved changes in a task's write-up editor keep the pane where it is: switching would unmount
+  // the editor and lose the typing. A refused switch bumps `nudge`, and the editor says why.
+  const unsaved = useRef(false);
+  const [nudge, setNudge] = useState(0);
+  const onDirty = useCallback((dirty: boolean) => {
+    unsaved.current = dirty;
+  }, []);
+  const go = useCallback(
+    (next: Pane) => {
+      if (!mayLeave(unsaved.current, pane, next)) {
+        setNudge((n) => n + 1);
+        return;
+      }
+      setPane(next);
+    },
+    [pane],
+  );
+  const open = (t: Task) => go({ kind: "task", key: key(t) });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPane(null);
+      if (e.key === "Escape") go(null);
       if (e.key === "n" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        setPane({ kind: "new" });
+        go({ kind: "new" });
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [go]);
 
   const toggle = (list: string[], set: (v: string[]) => void, v: string) => set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
@@ -135,7 +153,7 @@ export default function App() {
       </aside>
       <div className="main-col">
       <header className="top">
-        <button className="new" onClick={() => setPane({ kind: "new" })} disabled={!state?.queues.length} title="New task (⌘N)">+ New task</button>
+        <button className="new" onClick={() => go({ kind: "new" })} disabled={!state?.queues.length} title="New task (⌘N)">+ New task</button>
         <nav className="views" aria-label="Views">
           <span className="view-group" role="group" aria-label="Project views">
             <button className={view === "board" ? "tab on" : "tab"} onClick={() => setView("board")}>Board</button>
@@ -153,7 +171,7 @@ export default function App() {
           <button className={view === "projects" ? "tab on" : "tab"} onClick={() => setView("projects")}>Projects</button>
           <button className={view === "help" ? "tab on" : "tab"} onClick={() => setView("help")}>Help</button>
         </nav>
-        <button className={pane?.kind === "appearance" ? "tab on" : "tab"} onClick={() => setPane(pane?.kind === "appearance" ? null : { kind: "appearance" })} title="Theme and accent">
+        <button className={pane?.kind === "appearance" ? "tab on" : "tab"} onClick={() => go(pane?.kind === "appearance" ? null : { kind: "appearance" })} title="Theme and accent">
           Appearance
         </button>
         <span className="live" title={error || "Updates every 2 seconds while the window is visible"}>
@@ -283,7 +301,7 @@ export default function App() {
             <aside className="pane" style={{ width }} aria-label="Details">
               {pane.kind === "task" && openTask && (
                 <Suspense fallback={<p className="none">Loading…</p>}>
-                  <TaskPanel key={openKey} task={openTask} now={now} onClose={() => setPane(null)} onChanged={refresh} />
+                  <TaskPanel key={openKey} task={openTask} now={now} onClose={() => go(null)} onChanged={refresh} onDirty={onDirty} nudge={nudge} />
                 </Suspense>
               )}
               {pane.kind === "task" && !openTask && <p className="none">That task is gone.</p>}

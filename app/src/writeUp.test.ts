@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import EditBody from "./EditBody";
-import { editKey, isDirty, savedText } from "./writeUp";
+import { editKey, isDirty, mayLeave, savedText, UNSAVED } from "./writeUp";
 import type { Task } from "./types";
 
 const key = (k: string, mods: Partial<{ metaKey: boolean; ctrlKey: boolean; altKey: boolean; isComposing: boolean }> = {}) => ({
@@ -38,6 +38,24 @@ describe("the write-up editor's keys", () => {
     expect(editKey(key("a"), true, true)).toBeNull();
     expect(editKey(key("Escape", { isComposing: true }), true, true)).toBeNull();
     expect(editKey(key("s", { metaKey: true, isComposing: true }), true, false)).toBeNull();
+  });
+});
+
+describe("leaving a pane with unsaved changes", () => {
+  const t7 = { kind: "task", key: "demo/0007" };
+  it("is refused for another card, a new task, settings or closing", () => {
+    for (const to of [{ kind: "task", key: "demo/0008" }, { kind: "task", key: "other/0007" }, { kind: "new" }, { kind: "appearance" }, null]) {
+      expect(mayLeave(true, t7, to)).toBe(false);
+    }
+  });
+  it("is fine when nothing is unsaved, or the pane stays the same card", () => {
+    expect(mayLeave(false, t7, { kind: "task", key: "demo/0008" })).toBe(true);
+    expect(mayLeave(false, t7, null)).toBe(true);
+    expect(mayLeave(true, t7, { kind: "task", key: "demo/0007" })).toBe(true);
+    expect(mayLeave(false, null, { kind: "new" })).toBe(true);
+  });
+  it("says what to do in the editor", () => {
+    expect(UNSAVED).toBe("Unsaved changes: Save, or press Esc twice to discard");
   });
 });
 

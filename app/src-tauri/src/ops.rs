@@ -3700,6 +3700,30 @@ mod edit_tests {
     }
 
     #[test]
+    fn a_claim_left_on_a_task_past_building_does_not_hold_its_write_up() {
+        // Done by hand, with the old holder still named and no stage line in the Log.
+        let d = queue();
+        let stale =
+            "stage: done\nstatus: done\nclaimed-by: wt-a\nheartbeat: 2026-10-01 09:00\nwaiting_on:";
+        let p = put(d.path(), "done", stale, WRITE_UP, "");
+        assert_eq!(open_body(d.path(), "0001", "owner").unwrap(), WRITE_UP);
+        let new = "# Edit me\n\nCorrected after the fact.";
+        edit_body(d.path(), "0001", new, WRITE_UP, "owner", T).unwrap();
+        assert_eq!(open_body(d.path(), "0001", "owner").unwrap(), new);
+        let t = crate::queue::read_task(d.path(), "0001").unwrap();
+        assert_eq!(
+            (
+                t.stage.as_str(),
+                t.claimed_by.as_str(),
+                t.heartbeat.as_str()
+            ),
+            ("done", "wt-a", "2026-10-01 09:00"),
+            "only the write-up changed"
+        );
+        assert!(text(&p).ends_with(&format!("- {T} owner: edited the write-up\n")));
+    }
+
+    #[test]
     fn a_task_without_a_log_gets_one_and_the_flat_layout_works() {
         let d = tempfile::tempdir().unwrap();
         let p = d.path().join("0001-t.md");
