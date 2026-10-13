@@ -246,22 +246,54 @@ export function priorityName(p: string): "high" | "normal" | "low" {
   return (["high", "normal", "low"] as const)[PRIORITY[p] ?? 1];
 }
 
-/** Tasks per stage. Blocked tasks stay in their stage; an unknown stage goes to Backlog.
- *  Waiting-for-owner first, then priority, then id; Done newest first. */
-export function columns(tasks: Task[]): Record<string, Task[]> {
+/** Tasks per stage, each column in the board's sort (priority unless the Sort chips say
+ *  otherwise). Blocked tasks stay in their stage; an unknown stage goes to Backlog. */
+export function columns(tasks: Task[], by: BoardSort = "priority"): Record<string, Task[]> {
   const out: Record<string, Task[]> = Object.fromEntries(STAGES.map((s) => [s.id, [] as Task[]]));
-  for (const t of tasks) out[stageOf(t)].push(t);
-  for (const [stage, list] of Object.entries(out)) {
-    list.sort((a, b) =>
-      stage === "done"
-        ? b.modified - a.modified
-        : Number(b.waitingForOwner) - Number(a.waitingForOwner) ||
-          (PRIORITY[a.priority] ?? 1) - (PRIORITY[b.priority] ?? 1) ||
-          a.queue.localeCompare(b.queue) ||
-          a.id.localeCompare(b.id),
-    );
-  }
+  for (const t of sortBoard(tasks, by)) out[stageOf(t)].push(t);
   return out;
+}
+
+// The board's orders (task 0032). The core sorts `muster list --sort` the same way (search.rs),
+// and a shared fixture (search-cases.json) holds the two to the same order.
+
+export type BoardSort = "priority" | "newest" | "oldest" | "changed" | "estimate" | "id";
+/** The board's orders within each column, as chips. The Table sorts by its columns instead. */
+export const BOARD_SORTS: { id: BoardSort; label: string; title: string }[] = [
+  { id: "priority", label: "priority", title: "What needs you first, then high to low; Done newest first" },
+  { id: "newest", label: "newest", title: "Latest captured first" },
+  { id: "oldest", label: "oldest", title: "Earliest captured first" },
+  { id: "changed", label: "changed", title: "Latest changed first" },
+  { id: "estimate", label: "estimate", title: "Smallest estimate first, not estimated last" },
+  { id: "id", label: "id", title: "By id" },
+];
+export const isBoardSort = (s: unknown): s is BoardSort => BOARD_SORTS.some((x) => x.id === s);
+
+const rank = (t: Task) => PRIORITY[t.priority] ?? 1;
+// Plain code-unit order, like Rust's string order, so the CLI and the app sort alike.
+const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+const byPlace = (a: Task, b: Task) => cmp(a.queue, b.queue) || cmp(a.id, b.id);
+const estimated = (t: Task) => t.estMinutes > 0 || t.estTokenCount > 0;
+
+const COMPARE: Record<BoardSort, (a: Task, b: Task) => number> = {
+  // Open work: needs you, then priority. Done (where priority no longer matters): latest first.
+  priority: (a, b) => {
+    const da = a.stage === "done", db = b.stage === "done";
+    if (da !== db) return da ? 1 : -1;
+    if (da) return b.modified - a.modified || byPlace(a, b);
+    return Number(b.waitingForOwner) - Number(a.waitingForOwner) || rank(a) - rank(b) || byPlace(a, b);
+  },
+  // By the day it was captured; the same day, the higher id is the newer. No date goes last.
+  newest: (a, b) => Number(!a.captured) - Number(!b.captured) || cmp(b.captured, a.captured) || cmp(b.id, a.id) || cmp(a.queue, b.queue),
+  oldest: (a, b) => Number(!a.captured) - Number(!b.captured) || cmp(a.captured, b.captured) || byPlace(a, b),
+  changed: (a, b) => b.modified - a.modified || byPlace(a, b),
+  estimate: (a, b) => Number(!estimated(a)) - Number(!estimated(b)) || a.estMinutes - b.estMinutes || a.estTokenCount - b.estTokenCount || byPlace(a, b),
+  id: byPlace,
+};
+
+/** A sorted copy. */
+export function sortBoard(tasks: Task[], by: BoardSort): Task[] {
+  return [...tasks].sort(COMPARE[by]);
 }
 
 /** "now", "5 min", "3 h", "2 d". */

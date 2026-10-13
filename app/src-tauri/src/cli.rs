@@ -3,7 +3,7 @@
 //! from the current folder (a queue itself, or a `tasks/` beside or above it).
 
 use crate::session::{self, Session};
-use crate::{backlog, fields, index, ops, projects, queue, vision};
+use crate::{backlog, fields, index, ops, projects, queue, search, vision};
 use std::path::{Path, PathBuf};
 
 /// The environment a command reads its caller from (`std::env::var`, or a test's own).
@@ -18,6 +18,8 @@ struct Args {
     check: bool,
     /// `vision --all`: the whole queue.
     all: bool,
+    /// `--blocked`: `list` keeps blocked tasks only.
+    blocked: bool,
 }
 
 /// Options and positionals; after `--`, everything is positional (text that starts with `--`).
@@ -29,6 +31,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         keep: false,
         check: false,
         all: false,
+        blocked: false,
     };
     let mut it = argv.iter();
     let mut rest = false;
@@ -43,10 +46,12 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--keep" => a.keep = true,
             "--check" => a.check = true,
             "--all" => a.all = true,
+            "--blocked" => a.blocked = true,
             "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on"
             | "--tags" | "--tag" | "--time" | "--test-time" | "--tokens" | "--stage" | "--gate"
             | "--commit" | "--to" | "--from" | "--after" | "--session" | "--level" | "--parent"
-            | "--due" | "--pct" | "--remove" | "--record" | "--resolve" => {
+            | "--due" | "--pct" | "--remove" | "--record" | "--resolve" | "--search"
+            | "--holder" | "--sort" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -341,20 +346,72 @@ fn stage_message(root: &Path, id: &str, path: &str) -> String {
     }
 }
 
-/// `muster list`'s tasks: by status, stage and tag when given, in id order.
-fn list_filter<'a>(
-    tasks: &'a [queue::Task],
-    status: Option<&str>,
-    stage: Option<&str>,
-    tag: Option<&str>,
-) -> Vec<&'a queue::Task> {
+/// What `muster list` shows: the old status, the app's search and filters, and a sort.
+#[derive(Debug, Default)]
+struct ListQuery {
+    status: Option<String>,
+    filter: search::Filter,
+    sort: Option<search::Sort>,
+}
+
+/// A list option's values: `ready,building` → ["ready", "building"].
+fn values(a: &Args, flag: &str) -> Vec<String> {
+    a.flags
+        .get(flag)
+        .map(|v| {
+            v.split(',')
+                .map(|x| x.trim().to_string())
+                .filter(|x| !x.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// `muster list`'s options, checked: stages and the sort must be ones Muster has.
+fn list_query(a: &Args) -> Result<ListQuery, String> {
+    let stages: Vec<String> = values(a, "stage")
+        .into_iter()
+        .map(|s| s.to_lowercase())
+        .collect();
+    if stages.iter().any(|s| !ops::STAGES.contains(&s.as_str())) {
+        return Err(format!("stage must be one of {}", ops::STAGES.join(", ")));
+    }
+    let sort = match a.flags.get("sort") {
+        None => None,
+        Some(s) => Some(
+            search::Sort::parse(&s.to_lowercase())
+                .ok_or_else(|| format!("sort must be one of {}", search::Sort::NAMES.join(", ")))?,
+        ),
+    };
+    Ok(ListQuery {
+        status: a.flags.get("status").cloned(),
+        filter: search::Filter {
+            words: search::query_words(a.flags.get("search").map(String::as_str).unwrap_or("")),
+            stages,
+            // As a task's type is read (`task` is code), so `--type task` finds what it means.
+            kinds: values(a, "type")
+                .iter()
+                .map(|k| ops::read_kind(k))
+                .collect(),
+            tags: values(a, "tag"),
+            holders: values(a, "holder"),
+            blocked: a.blocked,
+        },
+        sort,
+    })
+}
+
+/// `muster list`'s tasks: those the status, search and filters keep, in id order or the sort's.
+fn list_filter<'a>(tasks: &'a [queue::Task], q: &ListQuery) -> Vec<&'a queue::Task> {
     let mut out: Vec<_> = tasks
         .iter()
-        .filter(|t| status.is_none_or(|o| t.status == o))
-        .filter(|t| stage.is_none_or(|g| t.stage == g))
-        .filter(|t| tag.is_none_or(|g| t.tags.iter().any(|x| x == g)))
+        .filter(|t| q.status.as_ref().is_none_or(|o| &t.status == o))
+        .filter(|t| q.filter.matches(t))
         .collect();
-    out.sort_by(|x, y| x.id.cmp(&y.id));
+    match q.sort {
+        Some(by) => search::sort(&mut out, by),
+        None => out.sort_by(|x, y| x.id.cmp(&y.id)),
+    }
     out
 }
 
@@ -401,22 +458,28 @@ fn show_footer(t: &queue::Task) -> String {
     }
 }
 
-/// `muster list`'s backlog notes: all of them where Backlog is listed (no filter, or
-/// `--stage backlog`); none under a status or tag filter, which notes don't have.
-fn list_notes<'a>(
-    notes: &'a [backlog::Note],
-    status: Option<&str>,
-    stage: Option<&str>,
-    tag: Option<&str>,
-) -> Vec<&'a backlog::Note> {
-    if status.is_some() || tag.is_some() || stage.is_some_and(|s| s != "backlog") {
+/// `muster list`'s backlog notes: where Backlog is listed (no stage, or one that includes
+/// backlog) and no filter needs what only tasks have (status, type, tag, holder, blocked);
+/// then those the search finds in their title and text.
+fn list_notes<'a>(notes: &'a [backlog::Note], q: &ListQuery) -> Vec<&'a backlog::Note> {
+    if q.status.is_some() || q.filter.hides_notes() {
         return Vec::new();
     }
-    notes.iter().collect()
+    notes
+        .iter()
+        .filter(|n| search::note_matches(&n.title, &n.text, &q.filter.words))
+        .collect()
+}
+
+/// A task as `--json` gives it: without its search text (`Task::search` is never serialized),
+/// which is only for matching and would cost an agent reading the list a few KB a task.
+fn task_json(t: &queue::Task) -> serde_json::Value {
+    serde_json::json!(t)
 }
 
 /// `muster list --json`: the tasks, and the backlog notes beside them.
 fn list_json(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> serde_json::Value {
+    let tasks: Vec<_> = tasks.iter().map(|t| task_json(t)).collect();
     serde_json::json!({ "tasks": tasks, "backlog": notes })
 }
 
@@ -763,19 +826,10 @@ fn run_on(
             Ok(0)
         }
         "list" => {
-            let stage = a.flags.get("stage").map(|s| s.to_lowercase());
-            if let Some(s) = &stage {
-                if !ops::STAGES.contains(&s.as_str()) {
-                    return Err(format!("stage must be one of {}", ops::STAGES.join(", ")));
-                }
-            }
+            let q = list_query(a)?;
             let s = tasks_of(root);
-            let (status, tag) = (
-                a.flags.get("status").map(String::as_str),
-                a.flags.get("tag").map(String::as_str),
-            );
-            let tasks = list_filter(&s.tasks, status, stage.as_deref(), tag);
-            let notes = list_notes(&s.backlog, status, stage.as_deref(), tag);
+            let tasks = list_filter(&s.tasks, &q);
+            let notes = list_notes(&s.backlog, &q);
             if a.json {
                 print_json(&list_json(&notes, &tasks))?;
             } else {
@@ -792,7 +846,7 @@ fn run_on(
                     .iter()
                     .find(|t| t.id == id)
                     .ok_or(format!("no task {id}"))?;
-                print_json(t)?;
+                print_json(&task_json(t))?;
             } else {
                 print!("{}", queue::read_body(root, id)?);
                 // Who's on it and the latest check-in, which the file only has in pieces.
@@ -1295,6 +1349,20 @@ mod tests {
         run_with(argv, &no_env)
     }
 
+    /// `list --status --stage --tag`, as the options give it.
+    fn lq(status: Option<&str>, stage: Option<&str>, tag: Option<&str>) -> ListQuery {
+        let one = |v: Option<&str>| v.map(String::from).into_iter().collect();
+        ListQuery {
+            status: status.map(String::from),
+            filter: search::Filter {
+                stages: one(stage),
+                tags: one(tag),
+                ..Default::default()
+            },
+            sort: None,
+        }
+    }
+
     #[test]
     fn parses_flags_and_positionals() {
         let a = parse(&sv(&["new", "A title", "--type", "bug", "--json"])).unwrap();
@@ -1597,7 +1665,7 @@ mod tests {
         file("inbox/0004-d.md", "0004", "status: inbox", "Raw");
         let s = tasks_of(d.path());
         let none: Vec<&crate::backlog::Note> = Vec::new();
-        let text = list_text(&none, &list_filter(&s.tasks, None, None, None));
+        let text = list_text(&none, &list_filter(&s.tasks, &lq(None, None, None)));
         assert!(s.backlog.is_empty());
         assert_eq!(
             text,
@@ -1619,33 +1687,36 @@ mod tests {
         }
         let s = tasks_of(d.path());
         let notes = |stage: Option<&str>, status: Option<&str>, tag: Option<&str>| {
-            list_notes(&s.backlog, status, stage, tag)
+            list_notes(&s.backlog, &lq(status, stage, tag))
                 .iter()
                 .map(|n| n.file.clone())
                 .collect::<Vec<_>>()
         };
-        let all = list_notes(&s.backlog, None, None, None);
-        assert!(list_text(&all, &list_filter(&s.tasks, None, None, None)).starts_with(
+        let all = list_notes(&s.backlog, &lq(None, None, None));
+        assert!(list_text(&all, &list_filter(&s.tasks, &lq(None, None, None))).starts_with(
             "Backlog notes (2)\n  2026-10-12-0900-an-idea.md  An idea\n  blank.md  (empty note)\nBacklog (1)\n"
         ));
         assert_eq!(notes(Some("backlog"), None, None).len(), 2);
         assert!(notes(Some("ready"), None, None).is_empty());
         assert!(notes(None, Some("inbox"), None).is_empty());
         assert!(notes(None, None, Some("ui")).is_empty());
-        let json = list_json(&all, &list_filter(&s.tasks, None, None, None));
+        let json = list_json(&all, &list_filter(&s.tasks, &lq(None, None, None)));
         assert_eq!(json["backlog"].as_array().unwrap().len(), 2);
         assert_eq!(json["tasks"].as_array().unwrap().len(), 4);
         let ids = |v: Vec<&queue::Task>| v.iter().map(|t| t.id.clone()).collect::<Vec<_>>();
         assert_eq!(
-            ids(list_filter(&s.tasks, None, Some("testing"), None)),
+            ids(list_filter(&s.tasks, &lq(None, Some("testing"), None))),
             ["0002"]
         );
         assert_eq!(
-            ids(list_filter(&s.tasks, Some("todo"), None, None)),
+            ids(list_filter(&s.tasks, &lq(Some("todo"), None, None))),
             ["0003"]
         );
-        assert_eq!(ids(list_filter(&s.tasks, None, None, Some("ui"))), ["0002"]);
-        assert!(list_filter(&s.tasks, None, Some("ready"), None).is_empty());
+        assert_eq!(
+            ids(list_filter(&s.tasks, &lq(None, None, Some("ui")))),
+            ["0002"]
+        );
+        assert!(list_filter(&s.tasks, &lq(None, Some("ready"), None)).is_empty());
         // After a change: the stage, and what it waits on; a failed re-read still says it changed.
         assert_eq!(
             stage_message(d.path(), "0002", "blocked/0002-b.md"),
@@ -1655,6 +1726,105 @@ mod tests {
             stage_message(d.path(), "0009", "doing/0009-x.md"),
             "0009: changed (doing/0009-x.md)"
         );
+    }
+
+    #[test]
+    fn list_searches_filters_and_sorts_like_the_app() {
+        let d = tempfile::tempdir().unwrap();
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir(d.path().join(f)).unwrap();
+        }
+        std::fs::write(d.path().join("README.md"), "q").unwrap();
+        let file = |rel: &str, fm: &str, body: &str| {
+            std::fs::write(
+                d.path().join(rel),
+                format!("---\n{fm}\n---\n\n{body}\n## Log\n- 2026-10-19 09:00 capture: created\n"),
+            )
+            .unwrap();
+        };
+        file(
+            "doing/0019-a.md",
+            "id: 0019\ntype: bug\npriority: low\nstatus: doing\nstage: building\ncaptured: 2026-10-01\nclaimed-by: drover/main (session 1)\ntags: ui, design",
+            "# Board flickers on résumé\n\nThe columns jump.\n",
+        );
+        file(
+            "blocked/0020-b.md",
+            "id: 0020\ntype: task\npriority: high\nstatus: blocked\nstage: ready\ncaptured: 2026-10-03\nwaiting_on: 0019\ntags: docs",
+            "# Write the guide\n\nAfter the board settles.\n",
+        );
+        file(
+            "todo/0119-c.md",
+            "id: 0119\ntype: idea\nstatus: todo\nstage: shaping\ncaptured: 2026-10-02",
+            "# Export CSV\n",
+        );
+        std::fs::write(d.path().join("inbox/an-idea.md"), "# Board idea\n").unwrap();
+        let s = tasks_of(d.path());
+        let list = |args: &[&str]| -> Result<(Vec<String>, Vec<String>), String> {
+            let a = parse(&sv(&[&["list"], args].concat()))?;
+            let q = list_query(&a)?;
+            let ids = list_filter(&s.tasks, &q)
+                .iter()
+                .map(|t| t.id.clone())
+                .collect();
+            let notes = list_notes(&s.backlog, &q)
+                .iter()
+                .map(|n| n.file.clone())
+                .collect();
+            Ok((ids, notes))
+        };
+        let ids = |args: &[&str]| list(args).unwrap().0;
+        assert_eq!(ids(&[]), ["0019", "0020", "0119"]);
+        assert_eq!(ids(&["--search", "BOARD"]), ["0019", "0020"]);
+        assert_eq!(ids(&["--search", "jump resume"]), ["0019"]);
+        assert_eq!(ids(&["--search", "19"]), ["0019"]);
+        assert_eq!(ids(&["--search", "0119"]), ["0119"]);
+        assert_eq!(ids(&["--search", "drover"]), ["0019"]);
+        assert_eq!(ids(&["--stage", "ready,Building"]), ["0019", "0020"]);
+        assert_eq!(ids(&["--type", "bug,idea"]), ["0019", "0119"]);
+        // `type: task` reads as code (0017), and `--type task` means code too.
+        assert_eq!(ids(&["--type", "code"]), ["0020"]);
+        assert_eq!(ids(&["--type", "Task"]), ["0020"]);
+        assert_eq!(ids(&["--tag", "docs,design"]), ["0019", "0020"]);
+        assert_eq!(ids(&["--holder", "drover/main"]), ["0019"]);
+        assert_eq!(ids(&["--blocked"]), ["0020"]);
+        assert_eq!(ids(&["--blocked", "--search", "board"]), ["0020"]);
+        assert_eq!(ids(&["--sort", "priority"]), ["0020", "0119", "0019"]);
+        assert_eq!(ids(&["--sort", "newest"]), ["0020", "0119", "0019"]);
+        assert_eq!(
+            ids(&["--sort", "oldest", "--search", "board"]),
+            ["0019", "0020"]
+        );
+        // Notes: matched by the search, hidden by a filter only tasks have.
+        assert_eq!(list(&["--search", "idea"]).unwrap().1, ["an-idea.md"]);
+        assert!(list(&["--search", "csv"]).unwrap().1.is_empty());
+        assert!(list(&["--blocked"]).unwrap().1.is_empty());
+        assert!(list(&["--holder", "x"]).unwrap().1.is_empty());
+        assert_eq!(list(&["--stage", "backlog"]).unwrap().1, ["an-idea.md"]);
+        // Wrong values are refused with what's allowed.
+        let err = |args: &[&str]| list(args).unwrap_err();
+        assert!(err(&["--sort", "sideways"])
+            .contains("priority, newest, oldest, changed, estimate, id"));
+        assert!(err(&["--stage", "ready,qa"]).contains("stage must be one of"));
+        assert!(err(&["--search"]).contains("needs a value"));
+        // JSON leaves the search text out: agents read it, and it's only for matching.
+        let json = list_json(
+            &[],
+            &list_filter(
+                &s.tasks,
+                &list_query(&parse(&sv(&["list"])).unwrap()).unwrap(),
+            ),
+        );
+        assert_eq!(json["tasks"].as_array().unwrap().len(), 3);
+        assert!(json["tasks"][0].get("search").is_none());
+        assert!(json["tasks"][0].get("title").is_some());
+        assert!(task_json(&s.tasks[0]).get("search").is_none());
+        let q = d.path().to_string_lossy().to_string();
+        let code = |args: &[&str]| run(&sv(&[args, &["--queue", &q]].concat())).unwrap_or(9);
+        assert_eq!(
+            code(&["list", "--search", "board", "--sort", "id", "--json"]),
+            0
+        );
+        assert_eq!(code(&["list", "--sort", "nope"]), 9);
     }
 
     #[test]
@@ -2220,7 +2390,7 @@ mod tests {
         let s = tasks_of(d.path());
         assert!(s.problems.is_empty(), "{:?}", s.problems);
         assert_eq!(
-            list_text(&[], &list_filter(&s.tasks, None, None, None)),
+            list_text(&[], &list_filter(&s.tasks, &lq(None, None, None))),
             format!("Building (1)\n  0001 code      normal  T  [on it: {a}]  [check-in 60% · gate green, writing tests that take a long while to describe… (2026-10-12 10:30)]\nTesting (1)\n  0002 code      normal  T  [on it: qa]\nYour check (1)\n  0003 code      normal  T  [needs you]  [on it: owner]\n")
         );
         let by = |id: &str| s.tasks.iter().find(|t| t.id == id).unwrap();

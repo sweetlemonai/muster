@@ -12,6 +12,7 @@ pub mod index;
 pub mod ops;
 pub mod projects;
 pub mod queue;
+pub mod search;
 pub mod session;
 pub mod vision;
 
@@ -80,6 +81,41 @@ async fn state(app: tauri::State<'_, AppState>) -> Result<queue::State, String> 
     .await?;
     *app.cache.lock().map_err(|e| e.to_string())? = cache;
     Ok(state)
+}
+
+/// The queues a search index covers: the one named (checked like every command's), or every
+/// queue for none.
+fn index_scope(
+    config_file: &std::path::Path,
+    queue: Option<&str>,
+) -> Result<Vec<(String, PathBuf)>, String> {
+    match queue {
+        Some(name) => Ok(vec![(name.to_string(), queue_root(config_file, name)?)]),
+        None => Ok(queues(config_file)),
+    }
+}
+
+/// Each task's search text by `queue/id`, for one queue or every queue (`null`): the window asks
+/// only while its search has words, and again only when a task changed (task 0032), so the 2 s
+/// `state` poll doesn't carry it.
+#[tauri::command]
+async fn search_index(
+    app: tauri::State<'_, AppState>,
+    queue: Option<String>,
+) -> Result<HashMap<String, String>, String> {
+    let file = app.config_file.clone();
+    // Read with the cache taken out, as `state` does; put back with `merge`, so a `state` that
+    // ran meanwhile (and found it taken) keeps its fuller cache.
+    let cache = std::mem::take(&mut *app.cache.lock().map_err(|e| e.to_string())?);
+    let (index, cache) = blocking(move || {
+        let mut cache = cache;
+        let index = index_scope(&file, queue.as_deref())
+            .map(|scope| queue::search_index(&scope, &mut cache));
+        Ok((index, cache))
+    })
+    .await?;
+    app.cache.lock().map_err(|e| e.to_string())?.merge(cache);
+    index
 }
 
 #[tauri::command]
@@ -820,6 +856,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             state,
+            search_index,
             help,
             task_body,
             image,
@@ -968,6 +1005,16 @@ mod tests {
         assert!(link_to_open(d.path(), "0007", "https://evil.example")
             .unwrap_err()
             .contains("no link"));
+    }
+
+    #[test]
+    fn search_index_takes_only_a_queue_muster_knows() {
+        let d = tempfile::tempdir().unwrap();
+        let config = d.path().join("projects.json");
+        for bad in ["../x", "/tmp", "no such queue"] {
+            let err = index_scope(&config, Some(bad)).unwrap_err();
+            assert!(err.contains("no queue named"), "{bad:?}: {err}");
+        }
     }
 
     #[test]

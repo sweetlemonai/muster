@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { KINDS } from "./fields";
+import { paneEscape } from "./keys";
 import { readFiles, stamp } from "./lib";
 import TagEditor from "./Tags";
 import { LEVELS } from "./levels";
@@ -27,15 +28,11 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const titleRef = useRef<HTMLInputElement>(null);
+  const paneRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => titleRef.current?.focus(), []);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
-    };
+    const onKey = (e: KeyboardEvent) => paneEscape(e, paneRef.current, onClose);
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose]);
@@ -65,7 +62,7 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
   };
 
   return (
-    <div className="pane-body">
+    <div className="pane-body" ref={paneRef}>
       <form
         className="pane-form"
         onSubmit={(e) => {

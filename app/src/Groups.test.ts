@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { GroupByChips, GroupedBoard } from "./Groups";
 import { groupItems, isWork } from "./levels";
+import type { BoardSort } from "./lib";
 import type { Task } from "./types";
 import { TableView } from "./Views";
 
@@ -23,11 +24,11 @@ const all = [
   task({ id: "0007", title: "Loose task" }),
 ];
 
-function board(by: "feature" | "goal") {
+function board(by: "feature" | "goal", sort: BoardSort = "priority") {
   const groups = groupItems(all.filter(isWork), all, by);
   return renderToStaticMarkup(
     createElement(GroupedBoard, {
-      groups, by, multi: false, openKey: null, onOpen: () => {},
+      groups, by, sort, multi: false, openKey: null, onOpen: () => {},
       renderCard: (t: Task) => createElement("i", { className: "card-stub" }, `${t.id}`),
     }),
   );
@@ -65,7 +66,7 @@ describe("grouped board", () => {
     ];
     const html = renderToStaticMarkup(
       createElement(GroupedBoard, {
-        groups: groupItems(items.filter(isWork), items, "goal"), by: "goal", multi: false, openKey: null, onOpen: () => {},
+        groups: groupItems(items.filter(isWork), items, "goal"), by: "goal", sort: "priority", multi: false, openKey: null, onOpen: () => {},
         renderCard: (t: Task) => createElement("i", { className: "card-stub" }, `${t.id}`),
       }),
     );
@@ -75,8 +76,25 @@ describe("grouped board", () => {
     const html = board("feature") + board("goal");
     expect(html).not.toMatch(/card-stub">000[123]</);
   });
+  it("orders each column of each band by the board's sort (task 0032)", () => {
+    const items = [
+      task({ id: "0010", parent: "0002", captured: "2026-10-01", priority: "high" }),
+      task({ id: "0011", parent: "0002", captured: "2026-10-05", priority: "low" }),
+      task({ id: "0012", captured: "2026-10-06", priority: "low" }),
+      task({ id: "0013", captured: "2026-10-04", priority: "high" }),
+    ];
+    const heads = all.filter((t) => !isWork(t));
+    const columnsOf = (sort: BoardSort) =>
+      bands(renderToStaticMarkup(createElement(GroupedBoard, {
+        groups: groupItems(items, [...heads, ...items], "feature"), by: "feature", sort, multi: false, openKey: null, onOpen: () => {},
+        renderCard: (t: Task) => createElement("i", { className: "card-stub" }, `${t.id}`),
+      }))).map((b) => b.split(" | ").slice(1).join(" | "));
+    expect(columnsOf("priority")).toEqual(["ready: 0010,0011", "No tasks yet", "ready: 0013,0012"]);
+    expect(columnsOf("newest")).toEqual(["ready: 0011,0010", "No tasks yet", "ready: 0012,0013"]);
+    expect(bands(board("feature", "id"))).toEqual(bands(board("feature")));
+  });
   it("says so when nothing matches", () => {
-    const html = renderToStaticMarkup(createElement(GroupedBoard, { groups: [], by: "feature", multi: false, openKey: null, onOpen: () => {}, renderCard: () => null }));
+    const html = renderToStaticMarkup(createElement(GroupedBoard, { groups: [], by: "feature", sort: "priority", multi: false, openKey: null, onOpen: () => {}, renderCard: () => null }));
     expect(html).toContain("No tasks match.");
   });
 });
@@ -84,7 +102,7 @@ describe("grouped board", () => {
 describe("grouped table", () => {
   const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   const table = (groups?: ReturnType<typeof groupItems>, by: "none" | "feature" | "goal" = "none") =>
-    renderToStaticMarkup(createElement(TableView, { tasks: all, now: 0, multi: false, openKey: null, onOpen: () => {}, groups, by }));
+    renderToStaticMarkup(createElement(TableView, { tasks: all, now: 0, multi: false, openKey: null, onOpen: () => {}, groups, by, words: [] }));
   /** Each row as text: the band heading rows, and the id and title cells of the others. */
   const rows = (html: string) =>
     [...html.matchAll(/<tr( class="([^"]*)")?[^>]*>([\s\S]*?)<\/tr>/g)].slice(1).map((m) =>
@@ -105,6 +123,14 @@ describe("grouped table", () => {
       // Sorted by stage: the goal shows In progress, so it comes after the Ready tasks.
       "# No feature 3 items", "0006 Under", "0007 Loose", "0001 Goal",
     ]);
+  });
+  it("marks the search's words in grouped rows, beside the level badge (task 0032)", () => {
+    const html = renderToStaticMarkup(
+      createElement(TableView, { tasks: all, now: 0, multi: false, openKey: null, onOpen: () => {}, groups: groupItems(all, all, "feature"), by: "feature", words: ["ship", "5"] }),
+    );
+    // The goal is a row in No feature: its level badge, then its title with the word marked.
+    expect(html).toContain('<span class="badge level">Goal</span> <mark>Ship</mark> 1.0');
+    expect(html).toContain('<td class="id"><mark>0005</mark></td>');
   });
 });
 

@@ -8,6 +8,7 @@ import {
 } from "./viewData";
 import { BandHead } from "./Groups";
 import { estimateLeft, type Group, type GroupBy, isWork, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
+import { Hl, HlId } from "./FilterBar";
 
 const COLS: { key: SortKey; label: string }[] = [
   { key: "queue", label: "Project" },
@@ -24,7 +25,7 @@ const COLS: { key: SortKey; label: string }[] = [
 
 /** Every task as a row: sortable by any column, everything at a glance. Grouped (by feature or
  *  goal), each band's heading row is the feature or goal, and its rows are sorted inside it. */
-export function TableView({ tasks, now, multi, openKey, onOpen, groups, by: groupBy }: {
+export function TableView({ tasks, now, multi, openKey, onOpen, groups, by: groupBy, words }: {
   tasks: Task[];
   now: number;
   multi: boolean;
@@ -32,12 +33,14 @@ export function TableView({ tasks, now, multi, openKey, onOpen, groups, by: grou
   onOpen: (t: Task) => void;
   groups?: Group[];
   by?: GroupBy;
+  /** The search's words, marked in ids, titles and tags (task 0032). */
+  words: string[];
 }) {
   const [by, setBy] = useState<SortKey>("stage");
   const [desc, setDesc] = useState(false);
   const rows = useMemo(() => sortTasks(tasks, by, desc), [tasks, by, desc]);
   const cols = multi ? COLS : COLS.filter((c) => c.key !== "queue");
-  const row = (t: Task) => <Row key={key(t)} t={t} now={now} multi={multi} active={openKey === key(t)} onOpen={onOpen} />;
+  const row = (t: Task) => <Row key={key(t)} t={t} now={now} multi={multi} active={openKey === key(t)} onOpen={onOpen} words={words} />;
   return (
     <main className="table-view">
       <table className="tasks-table">
@@ -74,16 +77,16 @@ export function TableView({ tasks, now, multi, openKey, onOpen, groups, by: grou
 
 /** One row of the table. A goal or feature says so, with its progress, the stage its tasks give
  *  it and the estimate left of its open tasks. */
-function Row({ t, now, multi, active, onOpen }: { t: Task; now: number; multi: boolean; active: boolean; onOpen: (t: Task) => void }) {
+function Row({ t, now, multi, active, onOpen, words }: { t: Task; now: number; multi: boolean; active: boolean; onOpen: (t: Task) => void; words: string[] }) {
   const parentLevel = !isWork(t);
   const own = estimateText(t);
   return (
     <tr className={`${active ? "active " : ""}s-${parentLevel ? shownStageClass(t) : stageOf(t)}${parentLevel ? " level-item" : ""}`} onClick={() => onOpen(t)}>
       {multi && <td className="q">{t.queue}</td>}
-      <td className="id">{t.id}</td>
+      <td className="id"><HlId id={t.id} words={words} /></td>
       <td className="t-title">
         {parentLevel && <span className="badge level">{levelLabel(t.level)}</span>}
-        {t.waitingForOwner && <span className="badge warn">needs you</span>} {t.title}
+        {t.waitingForOwner && <span className="badge warn">needs you</span>} <Hl text={t.title} words={words} />
         {parentLevel && <span className="meta rollup">{progressText(t.progress)}</span>}
         {t.openQuestions > 0 && <span className="badge">{t.openQuestions} open Q</span>}
       </td>
@@ -97,7 +100,7 @@ function Row({ t, now, multi, active, onOpen }: { t: Task; now: number; multi: b
       <td className="meta est-cell">{own || (parentLevel ? estimateLeft(t.progress) : "")}</td>
       <td className="meta">{t.captured}</td>
       <td className="meta">{ago(now, t.modified)}</td>
-      <td>{t.tags.map((g) => <span key={g} className="tag">#{g}</span>)}</td>
+      <td>{t.tags.map((g) => <span key={g} className="tag">#<Hl text={g} words={words} /></span>)}</td>
     </tr>
   );
 }
@@ -109,7 +112,7 @@ const SLOT_PX: Record<Scale, number> = { day: 40, week: 32, month: 30 };
 const pct = (x: number) => `${(x * 100).toFixed(3)}%`;
 
 /** Each task as a bar in a day, week or month: waiting, then each stage it held, with a now line. */
-export function TimelineView({ tasks, now, multi, openKey, onOpen }: { tasks: Task[]; now: number; multi: boolean; openKey: string | null; onOpen: (t: Task) => void }) {
+export function TimelineView({ tasks, now, multi, openKey, onOpen, words }: { tasks: Task[]; now: number; multi: boolean; openKey: string | null; onOpen: (t: Task) => void; words: string[] }) {
   const [scale, setScale] = useState<Scale>(() => parseScale(localStorage.getItem(SCALE_KEY)));
   const [offset, setOffset] = useState(0);
   // Wall-clock minutes (viewData's unit); changes once a minute, not on every poll.
@@ -127,7 +130,7 @@ export function TimelineView({ tasks, now, multi, openKey, onOpen }: { tasks: Ta
     <main className="timeline">
       <TimelineControls scale={scale} offset={offset} label={windowLabel(scale, win)} onScale={pick} onStep={(d) => setOffset((o) => o + d)} onToday={() => setOffset(0)} />
       <div className="tl-scroll">
-        <TimelineChart scale={scale} rows={rows} ticks={ticks} now={nowAt(win, at)} multi={multi} openKey={openKey} onOpen={onOpen} />
+        <TimelineChart scale={scale} rows={rows} ticks={ticks} now={nowAt(win, at)} multi={multi} openKey={openKey} onOpen={onOpen} words={words} />
         {rows.length === 0 && <p className="empty">{tasks.length ? `No task falls ${scale === "day" ? "on this day" : `in this ${scale}`}.` : "No tasks match."}</p>}
         <p className="meta tl-legend">
           A bar starts in a quiet tint while the task waits to be claimed, then shows each stage it was in, in that stage's colour,
@@ -162,8 +165,10 @@ export function TimelineControls({ scale, offset, label, onScale, onStep, onToda
 }
 
 /** The axis, one row per placed bar (label left, bar with its segments), and the now line. */
-export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen }: {
+export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen, words = [] }: {
   scale: Scale; rows: Placed[]; ticks: Tick[]; now: number | null; multi: boolean; openKey: string | null; onOpen: (t: Task) => void;
+  /** The search's words, marked in each row's id and title (task 0032). */
+  words?: string[];
 }) {
   const slotPx = SLOT_PX[scale];
   const slots = ticks.length * (scale === "week" ? 4 : 1);
@@ -183,7 +188,7 @@ export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen 
         return (
           <button key={key(t)} className={openKey === key(t) ? "tl-row active" : "tl-row"} onClick={() => onOpen(t)}>
             <span className="tl-label">
-              {multi && <span className="q">{t.queue}</span>} <span className="id">{t.id}</span> {t.title}
+              {multi && <span className="q">{t.queue}</span>} <span className="id"><HlId id={t.id} words={words} /></span> <Hl text={t.title} words={words} />
             </span>
             <span className="tl-track">
               <span

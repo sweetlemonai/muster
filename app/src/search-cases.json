@@ -1,0 +1,103 @@
+{
+  "about": "Search, filters and sort, one set of answers for both: tests/search_cases.rs writes these tasks as files and runs `muster list` on each case; search-cases.test.ts runs the app's filter on the same tasks. `parsed` is what the core reads from each file, which the app gets with the task.",
+  "fold": [
+    ["Café RÉSUMÉ", "cafe resume"],
+    ["Café", "cafe"],
+    ["İstanbul ŁÓDŹ", "istanbul lodz"],
+    ["tech-debt/#UI! 0019's", "tech debt  ui  0019 s"],
+    ["Задача 任务 Σ", "задача 任务 σ"],
+    ["Café ếạ", "cafe ếạ"],
+    ["Cafe\u0301 e\u0302\u0301a\u0323", "cafe ea"],
+    ["fix 🔥 1️⃣ a‍b", "fix   1   a b"],
+    ["١٩ ² １９", "١٩ ² １９"],
+    ["àáâãäåāăąǎ çćĉċč ďđð èéêëēĕėęě ĝğġģ ĥħ ìíîïĩīĭįıǐ ĵ ķ ĺļľŀł ñńņňŉ òóôõöøōŏőǒ ŕŗř śŝşšș ţťŧț ùúûüũūŭůűųǔ ŵ ýÿŷ źżž ß æ œ þ", "aaaaaaaaaa ccccc ddd eeeeeeeee gggg hh iiiiiiiiii j k lllll nnnnn oooooooooo rrr sssss tttt uuuuuuuuuuu w yyy zzz ss ae oe th"],
+    ["ÀÁÂÃÄÅĀĂĄǍ ÇĆĈĊČ ĎĐÐ ÈÉÊËĒĔĖĘĚ ĜĞĠĢ ĤĦ ÌÍÎÏĨĪĬĮǏ Ĵ Ķ ĹĻĽĿŁ ÑŃŅŇ ÒÓÔÕÖØŌŎŐǑ ŔŖŘ ŚŜŞŠȘ ŢŤŦȚ ÙÚÛÜŨŪŬŮŰŲǓ Ŵ ÝŸŶ ŹŻŽ ẞ Æ Œ Þ", "aaaaaaaaaa ccccc ddd eeeeeeeee gggg hh iiiiiiiii j k lllll nnnn oooooooooo rrr sssss tttt uuuuuuuuuuu w yyy zzz ss ae oe th"]
+  ],
+  "tasks": [
+    {
+      "id": "0007", "title": "Board flickers on résumé", "type": "bug", "priority": "high", "stage": "building", "tags": ["ui", "design"],
+      "claimedBy": "drover/main (session 3fba2222)", "heldBy": "", "waitingOn": "", "captured": "2026-10-01", "estTime": "", "modified": 1000,
+      "body": "The columns jump when the window shrinks.\n\n## Log\n- 2026-10-19 09:00 capture: created\n",
+      "parsed": { "search": "board flickers on resume ui design the columns jump when window shrinks log capture created", "blocked": false, "waitingForOwner": false, "estMinutes": 0 }
+    },
+    {
+      "id": "0019", "title": "Write the guide", "type": "code", "priority": "normal", "stage": "ready", "tags": ["docs"],
+      "claimedBy": "", "heldBy": "", "waitingOn": "0007 the board", "captured": "2026-10-03", "estTime": "", "modified": 3000,
+      "body": "Explain the café workflow.\n",
+      "parsed": { "search": "write the guide docs explain cafe workflow", "blocked": true, "waitingForOwner": false, "estMinutes": 0 }
+    },
+    {
+      "id": "0020", "title": "Export CSV", "type": "idea", "priority": "low", "stage": "shaping", "tags": [],
+      "claimedBy": "", "heldBy": "", "waitingOn": "", "captured": "2026-10-03", "estTime": "2h", "modified": 2000,
+      "body": "Rows as résumé lines, page ١٩.\n",
+      "parsed": { "search": "export csv rows as resume lines page ١٩","blocked": false, "waitingForOwner": false, "estMinutes": 120 }
+    },
+    {
+      "id": "0119", "title": "Release 19 notes", "type": "code", "priority": "P0", "stage": "your-check", "tags": ["docs", "release"],
+      "claimedBy": "", "heldBy": "", "waitingOn": "", "captured": "2026-10-02", "estTime": "30m", "modified": 500,
+      "body": "Notes for the release.\n",
+      "parsed": { "search": "release notes docs for the", "blocked": false, "waitingForOwner": true, "estMinutes": 30 }
+    },
+    {
+      "id": "0190", "title": "Crash on start", "type": "bug", "priority": "high", "stage": "done", "tags": ["ui"],
+      "claimedBy": "", "heldBy": "", "waitingOn": "", "captured": "2026-09-30", "estTime": "", "modified": 4000,
+      "body": "Fixed in v2.\n",
+      "parsed": { "search": "crash on start ui fixed in v2", "blocked": false, "waitingForOwner": false, "estMinutes": 0 }
+    },
+    {
+      "id": "0200", "title": "Owner picks colours", "type": "code", "priority": "normal", "stage": "ready", "tags": ["design"],
+      "claimedBy": "capture (muster/main, session 1)", "heldBy": "", "waitingOn": "owner pick a colour", "captured": "", "estTime": "", "modified": 100,
+      "body": "Ærøskøbing palette.\n",
+      "parsed": { "search": "owner picks colours design aeroskobing palette", "blocked": true, "waitingForOwner": true, "estMinutes": 0 }
+    },
+    {
+      "id": "0201", "title": "Straße names", "type": "code", "priority": "P0", "stage": "backlog", "tags": [],
+      "claimedBy": "", "heldBy": "", "waitingOn": "", "captured": "2026-10-05", "estTime": "", "modified": 50,
+      "body": "Turkish İstanbul too.\n",
+      "parsed": { "search": "strasse names turkish istanbul too", "blocked": false, "waitingForOwner": false, "estMinutes": 0 }
+    },
+    {
+      "id": "0202", "title": "Check the import", "type": "code", "priority": "low", "stage": "testing", "tags": [],
+      "claimedBy": "", "heldBy": "wt-a (wt-0030 · session 7b5e8856 · cc-hg)", "waitingOn": "", "captured": "2026-10-04", "estTime": "1h", "modified": 3500,
+      "body": "Run it on a big file.\n",
+      "parsed": { "search": "check the import run it on a big file", "blocked": false, "waitingForOwner": false, "estMinutes": 60 }
+    }
+  ],
+  "cases": [
+    { "query": {}, "ids": ["0007", "0019", "0020", "0119", "0190", "0200", "0201", "0202"] },
+    { "query": { "search": "board" }, "ids": ["0007"] },
+    { "query": { "search": "CAFÉ workflow" }, "ids": ["0019"] },
+    { "query": { "search": "resume" }, "ids": ["0007", "0020"] },
+    { "query": { "search": "19" }, "ids": ["0019"] },
+    { "query": { "search": "0119" }, "ids": ["0119"] },
+    { "query": { "search": "19 guide" }, "ids": ["0019"] },
+    { "query": { "search": "١٩" }, "ids": ["0020"] },
+    { "query": { "search": "shrinks flick" }, "ids": ["0007"] },
+    { "query": { "search": "drover" }, "ids": ["0007"] },
+    { "query": { "search": "capture" }, "ids": ["0007", "0200"] },
+    { "query": { "search": "strasse istanbul" }, "ids": ["0201"] },
+    { "query": { "search": "aeroskobing" }, "ids": ["0200"] },
+    { "query": { "search": "nothing-like-this" }, "ids": [] },
+    { "query": { "stage": ["ready", "building"] }, "ids": ["0007", "0019", "0200"] },
+    { "query": { "type": ["bug"] }, "ids": ["0007", "0190"] },
+    { "query": { "type": ["bug", "idea"] }, "ids": ["0007", "0020", "0190"] },
+    { "query": { "tag": ["docs"] }, "ids": ["0019", "0119"] },
+    { "query": { "tag": ["design", "release"] }, "ids": ["0007", "0119", "0200"] },
+    { "query": { "holder": ["drover/main"] }, "ids": ["0007"] },
+    { "query": { "holder": ["capture"] }, "ids": ["0200"] },
+    { "query": { "holder": ["wt-a"] }, "ids": ["0202"] },
+    { "query": { "holder": ["owner"] }, "ids": ["0119"] },
+    { "query": { "search": "wt" }, "ids": ["0202"] },
+    { "query": { "search": "7b5e8856" }, "ids": [] },
+    { "query": { "search": "cc hg" }, "ids": [] },
+    { "query": { "blocked": true }, "ids": ["0019", "0200"] },
+    { "query": { "blocked": true, "search": "owner" }, "ids": ["0200"] },
+    { "query": { "sort": "priority" }, "ids": ["0119", "0200", "0007", "0201", "0019", "0020", "0202", "0190"] },
+    { "query": { "sort": "newest" }, "ids": ["0201", "0202", "0020", "0019", "0119", "0007", "0190", "0200"] },
+    { "query": { "sort": "oldest" }, "ids": ["0190", "0007", "0119", "0019", "0020", "0202", "0201", "0200"] },
+    { "query": { "sort": "changed" }, "ids": ["0190", "0202", "0019", "0020", "0007", "0119", "0200", "0201"] },
+    { "query": { "sort": "estimate" }, "ids": ["0119", "0202", "0020", "0007", "0019", "0190", "0200", "0201"] },
+    { "query": { "sort": "id", "stage": ["done", "backlog"] }, "ids": ["0190", "0201"] },
+    { "query": { "search": "the", "tag": ["docs", "design"], "sort": "changed" }, "ids": ["0019", "0007", "0119"] }
+  ]
+}

@@ -10,7 +10,7 @@ const task = (over: Partial<Task>): Task => ({
   queue: "muster", id: "0001", title: "T", kind: "task", priority: "normal", status: "inbox", stage: "backlog", blocked: false, stageHistory: [],
   folder: "inbox", path: "inbox/0001-t.md", claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "", capturedAt: "", blockHistory: [], questions: [],
   openQuestions: 0, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [], attachments: [], logTail: [], modified: 0,
-  level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "backlog", ...over,
+  level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "backlog", search: "", ...over,
 });
 
 describe("backlog notes on the board", () => {
@@ -56,15 +56,22 @@ describe("backlog notes on the board", () => {
   });
 
   it("draws a note as a quiet card: its title, note, and how long ago", () => {
-    const html = renderToStaticMarkup(createElement(NoteCard, { n: note({ title: "", added: 100 }), now: 7300, multi: true, active: false, onOpen: () => {} }));
+    const html = renderToStaticMarkup(createElement(NoteCard, { n: note({ title: "", added: 100 }), now: 7300, multi: true, active: false, onOpen: () => {}, words: [] }));
     expect(html).toContain('class="note-card"');
     expect(html).toContain("(empty note)");
     expect(html).toContain(">note<");
     expect(html).toContain(">2 h<");
     expect(html).toContain(">muster<");
-    const one = renderToStaticMarkup(createElement(NoteCard, { n: note({}), now: 0, multi: false, active: true, onOpen: () => {} }));
+    const one = renderToStaticMarkup(createElement(NoteCard, { n: note({}), now: 0, multi: false, active: true, onOpen: () => {}, words: [] }));
     expect(one).toContain('class="note-card active"');
     expect(one).not.toContain('class="q"');
+  });
+
+  it("marks the words the search matched in a note's title, as task cards do", () => {
+    const card = (title: string, words: string[]) => renderToStaticMarkup(createElement(NoteCard, { n: note({ title }), now: 0, multi: false, active: false, onOpen: () => {}, words }));
+    expect(card("Board flickers on Résumé", ["flick", "resume"])).toContain('<span class="title">Board <mark>flick</mark>ers on <mark>Résumé</mark></span>');
+    expect(card("Board flickers", [])).toContain('<span class="title">Board flickers</span>');
+    expect(card("", ["empty"])).toContain('<span class="title">(empty note)</span>');
   });
 
   it("adds on Enter and clears on Esc, but not while an input method is composing", () => {

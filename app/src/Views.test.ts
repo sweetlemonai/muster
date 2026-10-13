@@ -81,7 +81,14 @@ function buttons(node: ReactNode): { words: string; click: () => void }[] {
   if (Array.isArray(node)) return node.flatMap(buttons);
   const el = node as ReactElement<{ children?: ReactNode; onClick?: () => void }>;
   if (typeof el.type === "function") return buttons((el.type as (p: unknown) => ReactNode)(el.props));
-  const words = (n: ReactNode): string => (Array.isArray(n) ? n.map(words).join("") : typeof n === "string" || typeof n === "number" ? String(n) : n && typeof n === "object" && "props" in n ? words((n as ReactElement<{ children?: ReactNode }>).props.children) : "");
+  // A function component (the search's highlight, `Hl`) gives its text when it's called.
+  const words = (n: ReactNode): string => {
+    if (Array.isArray(n)) return n.map(words).join("");
+    if (typeof n === "string" || typeof n === "number") return String(n);
+    if (!n || typeof n !== "object" || !("props" in n)) return "";
+    const e = n as ReactElement<{ children?: ReactNode }>;
+    return typeof e.type === "function" ? words((e.type as (p: unknown) => ReactNode)(e.props)) : words(e.props.children);
+  };
   const own = el.type === "button" ? [{ words: words(el.props.children).trim(), click: () => el.props.onClick?.() }] : [];
   return [...own, ...buttons(el.props.children)];
 }

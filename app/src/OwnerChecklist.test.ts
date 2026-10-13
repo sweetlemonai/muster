@@ -10,7 +10,7 @@ const task = (over: Partial<Task>): Task => ({
   queue: "demo", id: "0028", title: "T", kind: "task", priority: "normal", status: "doing", stage: "your-check", blocked: false, stageHistory: [],
   folder: "doing", path: "doing/0028-t.md", claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "", capturedAt: "",
   blockHistory: [], questions: [], openQuestions: 0, ownerCriteria: [], waitingForOwner: true, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [],
-  attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "your-check", ...over,
+  attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "your-check", search: "", ...over,
 });
 const list = (t: Task) => renderToStaticMarkup(createElement(OwnerChecklist, { task: t, busy: false, onTick: () => {} }));
 

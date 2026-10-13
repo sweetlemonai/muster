@@ -73,7 +73,37 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   closes it.
 - **Columns always fit:** an empty column becomes a slim strip with its name written vertically,
   so all five stay in view, even with a task open beside the board.
-- **Filters:** above the board, by priority and by tag, with a "24 of 98 tasks" count.
+- **Search, filters and sort** (task 0032): one bar above Board, Table, Timeline and Graph; ⌘F
+  stays in whichever of them is showing. Group by (0016) sits on the same bar.
+  - **Search** (always there, ⌘F, Esc clears): words in any order, case and accents aside, in the
+    id, title, tags, text and holder; the matches are marked on cards, backlog notes and rows. A
+    word of digits only (0–9) is an id (19 finds 0019) and never matches text, so dates in logs
+    don't swamp it. The core builds each task's search text when it reads the file (title, tags,
+    body without front matter, folded, each word once, digit-only words out, 4 KB at most),
+    cached with the task, so the window filters in memory (1,000 tasks well under a frame,
+    measured in a test). The text isn't in the 2 s `state` poll or `--json`: the window asks for
+    it (`search_index`, one project or all) only while the search has words, and again only when
+    a task in view is new or its `modified` changed. ⌘F only (Ctrl+F stays a text field's
+    "forward a character"). Esc in the search box stays there: it clears the words, or leaves an
+    empty box, and never closes the pane beside the board or throws away a New task draft.
+  - **Filters** as chip groups: Stage, Type, Priority, Tags, Held by, Flags (blocked, needs you,
+    open questions), Captured / Changed / Done (today, this week, this month). Held by is whoever
+    holds the task in its stage (0030: the claim in Ready and Building, `held-by` in Testing and
+    Your check, the owner there when it names nobody), shown as the stamp's label: `wt-a (wt-0030
+    · session 7b5e8856 · cc-hg)` is `wt-a`, in the app and in `muster list`. Each group shows
+    only the values the project has. Any chip within a group, every group together. The line
+    under the chips reads what's active ("“flicker” · Building · high · #design"), each with ✕,
+    then "36 hidden by filters" and Clear all; it keeps its place when nothing is active. Backlog
+    notes follow the search and hide under any filter but a Stage one with Backlog.
+  - **Sort:** the board's Sort chips order every column (priority, the default: needs you first,
+    then high to low, Done newest first; newest, oldest, changed, estimate, id), inside each
+    Group by band too. The Table sorts by its columns; the Timeline and Graph keep their own order.
+  - **Saved views:** + Save view keeps the search, filters and sort under a name, per project, in
+    local storage, as a chip; ✕ deletes it.
+  - **`muster list --search --stage --type --tag --holder --blocked --sort`** gives the same
+    tasks (`search.rs`; values joined by commas mean any of them). The rules are written once in
+    `search.rs` and `search.ts`, and `app/src/search-cases.json` holds both to the same answers
+    (`tests/search_cases.rs` runs the real command on it, `search-cases.test.ts` the app's filter).
 - **Three views of a project:** **Board** (the kanban below), **Table** (every task as a row:
   project, id, title, type, priority, status, who's on it or what it waits on, captured, changed,
   tags; click a header to sort) and **Timeline** (0031: scale chips Day · Week · Month, Week by
@@ -82,8 +112,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   (captured → first claim) in a quiet tint, then one segment per stage it held, in the stage
   colour, from the stage history's stamps; tasks with dates only fall back to whole days with a
   faded start. A now line runs across the chart and open tasks run to it. Bars are worked out in
-  `viewData.ts` in wall-clock minutes, so a clock change doesn't bend them). All three share the
-  priority and tag filters and open tasks in the docked pane.
+  `viewData.ts` in wall-clock minutes, so a clock change doesn't bend them). All three, and the
+  Graph (0019), share the search and filters and open tasks in the docked pane.
 - **Help** (tab): every `muster` command with usage, options and examples (click to copy), how to
   use Muster inside a Claude Code session (you, agents, capture), and the app's keys. It's the
   same list `muster help` prints (`help.rs`, with a test that fails if a command isn't documented).

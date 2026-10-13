@@ -304,6 +304,26 @@ button:disabled { opacity: 0.45; cursor: default; }
 .filters .right { margin-left: auto; }
 .chip.on.pchip-high { background: var(--st-needs); color: var(--on-status); border-color: var(--st-needs); }
 
+/* Search, filter groups, the active line (task 0032): quiet until used, nothing folds away. */
+.filter-bar { flex: none; }
+.filters.groups { padding-top: 4px; row-gap: 2px; }
+.fgroup { display: inline-flex; align-items: center; gap: 2px; flex-wrap: wrap; margin-right: 10px; }
+.fgroup > .meta { margin-right: 2px; }
+.fgroup .chip { padding: 1px 8px; }
+.filters .search { font: inherit; font-size: 13px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; width: 300px; max-width: 40vw; }
+.filters .search:focus, .view-name input:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
+.view-item { display: inline-flex; align-items: center; }
+.view-name { display: inline-flex; align-items: center; gap: 4px; }
+.view-name input { font: inherit; font-size: 12px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; width: 160px; }
+.chip-x { background: none; border: none; color: var(--faint); font-size: 10px; padding: 0 4px; line-height: 1; cursor: pointer; }
+.chip-x:hover, .chip-x:focus-visible { color: var(--text); }
+/* Always there (min-height), so a filter going on or off never moves the board. */
+.active-line { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; padding: 4px 14px 2px; min-height: 26px; font-size: 12px; color: var(--text); }
+.active-item { display: inline-flex; align-items: center; }
+.hidden-count { margin: 0 8px 0 12px; color: var(--muted); }
+.hidden-count.some { color: var(--text); font-weight: 600; }
+mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; }
+
 /* Tags. */
 .tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .tag { font-size: 11px; color: var(--accent-text); background: var(--accent-soft); border-radius: 4px; padding: 0 5px; }

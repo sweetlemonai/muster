@@ -1,9 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { SearchIndex } from "./search";
 import type { Project, State } from "./types";
 
 // The only way the window talks to the core. Queues are named, never given as paths.
 export const api = {
   state: () => invoke<State>("state"),
+  // Each task's search text by "queue/id", for one queue or every queue (null). Not in `state`:
+  // the window asks only while it searches (search.ts `needsIndex`).
+  searchIndex: (queue: string | null) => invoke<SearchIndex>("search_index", { queue }),
   taskBody: (queue: string, id: string) => invoke<string>("task_body", { queue, id }),
   image: (queue: string, id: string, name: string) => invoke<string>("image", { queue, id, name }),
   answer: (queue: string, id: string, n: number, text: string, stamp: string) =>

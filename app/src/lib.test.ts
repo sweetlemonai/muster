@@ -9,7 +9,7 @@ const task = (over: Partial<Task>): Task => ({
   queue: "drover", id: "0001", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
   folder: "todo", path: "todo/0001-t.md", claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "", capturedAt: "",
   blockHistory: [], questions: [], openQuestions: 0, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [],
-  attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", ...over,
+  attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", search: "", ...over,
 });
 
 describe("stages", () => {
@@ -111,6 +111,19 @@ describe("columns", () => {
       task({ id: "0001", priority: "low" }),
     ]);
     expect(c.ready.map((t) => t.id)).toEqual(["0004", "0002", "0003", "0001"]);
+  });
+  it("sorts every column by the board's Sort chip when given one, Done included", () => {
+    const list = [
+      task({ id: "0001", captured: "2026-10-02" }),
+      task({ id: "0002", captured: "2026-10-05", priority: "low" }),
+      task({ id: "0003", stage: "done", captured: "2026-10-01", modified: 9 }),
+      task({ id: "0004", stage: "done", captured: "2026-10-03", modified: 1 }),
+    ];
+    const c = columns(list, "newest");
+    expect(c.ready.map((t) => t.id)).toEqual(["0002", "0001"]);
+    expect(c.done.map((t) => t.id)).toEqual(["0004", "0003"]);
+    expect(columns(list, "id").ready.map((t) => t.id)).toEqual(["0001", "0002"]);
+    expect(columns(list).done.map((t) => t.id)).toEqual(["0003", "0004"]);
   });
   it("sorts done by most recently changed", () => {
     const c = columns([task({ id: "0001", stage: "done", modified: 1 }), task({ id: "0002", stage: "done", status: "blocked", blocked: true, modified: 9 })]);

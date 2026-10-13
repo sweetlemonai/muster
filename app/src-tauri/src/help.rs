@@ -58,15 +58,25 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "list",
-        usage: "muster list [--stage <s>] [--status <s>] [--tag <t>] [--json]",
-        what: "Tasks grouped by stage (Backlog, Shaping, Ready, Building, Testing, Your check, Done), with type, priority, what a blocked task waits on, estimate, tags, \"needs you\" and open questions. Backlog notes come first, under Backlog notes, by file name and title (not under a status or tag filter).",
+        usage: "muster list [--search \"<words>\"] [--stage <s,…>] [--type <t,…>] [--tag <t,…>] [--holder <who,…>] [--blocked] [--sort <order>] [--status <s>] [--json]",
+        what: "Tasks grouped by stage (Backlog, Shaping, Ready, Building, Testing, Your check, Done), with type, priority, what a blocked task waits on, estimate, tags, \"needs you\" and open questions. Backlog notes come first, under Backlog notes, by file name and title (not under a filter only tasks have). Search, filters and sort follow the app's rules, so the same query lists the same tasks. Several values in one option (ready,building) mean any of them; options together mean all of them.",
         options: &[
+            ("--search", "words in any order, case and accents aside, each in the id (19 finds 0019), title, tags, text or holder; a word of digits only is an id"),
             ("--stage", "backlog, shaping, ready, building, testing, your-check or done"),
-            ("--status", "the old status: inbox, todo, doing, blocked or done"),
+            ("--type", "code, bug, chore, tech-debt, spike, design, docs or research (task means code)"),
             ("--tag", "only tasks with this tag"),
+            ("--holder", "who holds it in its stage, as the board shows it, without the session (drover/main, wt-a, owner)"),
+            ("--blocked", "only blocked tasks"),
+            ("--sort", "priority (needs you, then high to low; Done last), newest, oldest, changed, estimate or id (the default)"),
+            ("--status", "the old status: inbox, todo, doing, blocked or done"),
             ("--json", "machine-readable: {\"tasks\": […], \"backlog\": […]}, for scripts and agents"),
         ],
-        examples: &["muster list", "muster list --stage ready --tag spike", "muster list --queue drover --json"],
+        examples: &[
+            "muster list",
+            "muster list --stage ready --tag spike",
+            "muster list --search \"board flicker\" --stage ready,building --sort changed",
+            "muster list --queue drover --json",
+        ],
     },
     Command {
         name: "show",
@@ -458,6 +468,7 @@ pub const SESSION: &[Topic] = &[
 
 pub const APP: &[(&str, &str)] = &[
     ("⌘N", "New task, in the pane beside the board"),
+    ("⌘F", "search the project's tasks: id (19 finds 0019), title, tags, text and holder, words in any order; the matches are marked on cards and rows. Esc clears it"),
     ("Esc", "close the pane"),
     (
         "⌘↩",
@@ -517,8 +528,16 @@ pub const APP: &[(&str, &str)] = &[
         "in a task's pane, under the description: the thread, oldest first, and a box to add yours (⌘↩ sends). While it holds typed text the pane stays open, and Esc twice throws the text away. Anyone may comment at any stage, while someone else holds it too",
     ),
     (
-        "Board · Table · Timeline",
-        "three views of the same tasks, with the same priority and tag filters",
+        "Board · Table · Timeline · Graph",
+        "four views of the same tasks, with the same search and filters",
+    ),
+    (
+        "Filters",
+        "chips by stage, type, priority, tag, who holds it, flags (blocked, needs you, open questions) and dates; any chip within a group, every group together. The line under them reads what's active, each with ✕, how many tasks the filters hide, and Clear all",
+    ),
+    (
+        "Sort · Save view",
+        "on the board, the Sort chips order each column (inside each Group by band too); + Save view keeps the search, filters and sort under a name, as a chip, for this project",
     ),
     (
         "Group by None · Feature · Goal",
@@ -817,6 +836,20 @@ mod tests {
         assert!(command_text("pass").unwrap().contains("--gate"));
         assert!(command_text("return").unwrap().contains("--to"));
         assert!(command_text("new").unwrap().contains("--tags"));
+        // list's search, filters and sort (task 0032), and the app's search key.
+        let list = command_text("list").unwrap();
+        for opt in [
+            "--search",
+            "--stage",
+            "--type",
+            "--tag",
+            "--holder",
+            "--blocked",
+            "--sort",
+        ] {
+            assert!(list.contains(opt), "{opt}: {list}");
+        }
+        assert!(APP.iter().any(|(k, _)| *k == "⌘F"));
         assert!(command_text("frob").is_none());
         assert!(command_text("pass").unwrap().contains("--from"));
         // Levels: the flags of new, the keys of set, and what check looks for.

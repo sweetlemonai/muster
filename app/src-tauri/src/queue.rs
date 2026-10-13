@@ -448,6 +448,12 @@ pub struct Task {
     /// The last stage change was the owner's override (`(set)`), so a goal or feature shows it.
     #[serde(skip)]
     pub stage_set_by_owner: bool,
+    /// What search looks in (task 0032): title, tags and body, folded, each word once, capped
+    /// (`search::search_text`). Built here, with the file, so the window filters in memory and
+    /// the cache keeps it until the file changes. Never serialized: the polled state and
+    /// `muster list --json` leave it out, and the window fetches it on its own (`search_index`).
+    #[serde(skip)]
+    pub search: String,
 }
 
 /// A goal's or feature's tasks (its descendants of level task): how many are done, of how many,
@@ -884,6 +890,12 @@ pub fn parse_task(
         .last()
         .is_some_and(|(_, detail)| *detail == "set");
     let est_test_time = crate::ops::clean_time(&get("est-test-time")).unwrap_or_default();
+    let tags: Vec<String> = get("tags")
+        .split(',')
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .collect();
+    let search = crate::search::search_text(&title, &tags, body);
     Some(Task {
         level,
         bad_level,
@@ -937,16 +949,13 @@ pub fn parse_task(
         est_test_minutes: crate::ops::time_minutes(&est_test_time),
         est_test_time,
         est_tokens: crate::ops::clean_tokens(&get("est-tokens")).unwrap_or_default(),
-        tags: get("tags")
-            .split(',')
-            .map(|t| t.trim().to_string())
-            .filter(|t| !t.is_empty())
-            .collect(),
+        tags,
         links: crate::fields::parse_links(&get("links")),
         comments: crate::fields::comments(body),
         attachments,
         log_tail,
         modified,
+        search,
     })
 }
 
@@ -971,7 +980,7 @@ fn list_attachments(root: &Path, id: &str) -> Vec<String> {
 /// Cache of parsed task files, keyed by path, valid while size and mtime match.
 #[derive(Default)]
 pub struct Cache {
-    files: HashMap<PathBuf, (u64, u64, Option<Task>)>,
+    files: TaskFiles,
     /// Backlog notes, the same way: by path, while size and mtime match.
     pub(crate) notes: HashMap<PathBuf, (u64, u64, crate::backlog::Note)>,
     git: HashMap<PathBuf, (u64, Vec<Activity>)>,
@@ -980,6 +989,26 @@ pub struct Cache {
 }
 
 impl Cache {
+    /// Puts back a cache a command took out to read with: what's here stays, and what `other`
+    /// read that isn't here is added. Two commands can each take the cache (one gets an empty
+    /// one) and put theirs back in any order without losing the fuller one. Every entry is checked
+    /// against the file's size and mtime when it's used, and `read_state` drops the files that
+    /// are gone, so keeping either copy of an entry is safe.
+    pub fn merge(&mut self, other: Cache) {
+        for (path, entry) in other.files {
+            self.files.entry(path).or_insert(entry);
+        }
+        for (path, entry) in other.notes {
+            self.notes.entry(path).or_insert(entry);
+        }
+        for (root, entry) in other.git {
+            self.git.entry(root).or_insert(entry);
+        }
+        if self.stamp.is_none() {
+            self.stamp = other.stamp;
+        }
+    }
+
     /// Local time at `now` (seconds since 1970), read from the clock once a minute: a stamp only
     /// changes per minute, and the window asks for the state every two seconds.
     fn stamp_at(&mut self, now: u64) -> String {
@@ -1013,6 +1042,51 @@ pub(crate) fn mtime_secs(m: &fs::Metadata) -> u64 {
         .unwrap_or(0)
 }
 
+type TaskFiles = HashMap<PathBuf, (u64, u64, Option<Task>)>;
+
+/// A task file through the cache: parsed again only when its size or mtime changed. None when it
+/// can't be read or has no front matter.
+fn cached_task<'c>(
+    files: &'c mut TaskFiles,
+    name: &str,
+    root: &Path,
+    folder: &str,
+    path: &Path,
+    meta: &fs::Metadata,
+) -> Option<&'c Task> {
+    let key = (meta.len(), mtime_secs(meta));
+    let fresh = matches!(files.get(path), Some((len, m, _)) if (*len, *m) == key);
+    if !fresh {
+        let t = fs::read_to_string(path)
+            .ok()
+            .and_then(|text| parse_task(name, root, folder, path, &text, key.1));
+        files.insert(path.to_path_buf(), (key.0, key.1, t));
+    }
+    files.get(path).and_then(|(_, _, t)| t.as_ref())
+}
+
+/// Each task's search text by `queue/id`, for the queues given (task 0032). The window asks for it
+/// only while it searches, and again only when a task changed, so the polled state doesn't carry
+/// up to `search::MAX_SEARCH_BYTES` a task. Read through the same cache as `read_state`; a file
+/// `read_state` would report as a problem is left out.
+pub fn search_index(queues: &[(String, PathBuf)], cache: &mut Cache) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    for (name, root) in queues {
+        for (folder, path) in task_files(root) {
+            let Ok(meta) = fs::metadata(&path) else {
+                continue;
+            };
+            if meta.len() > MAX_TASK_BYTES {
+                continue;
+            }
+            if let Some(t) = cached_task(&mut cache.files, name, root, &folder, &path, &meta) {
+                out.insert(format!("{name}/{}", t.id), t.search.clone());
+            }
+        }
+    }
+    out
+}
+
 pub fn read_state(queues: &[(String, PathBuf)], cache: &mut Cache) -> State {
     let stamp = cache.stamp_at(now_secs());
     read_state_at(queues, cache, &stamp)
@@ -1042,18 +1116,7 @@ pub fn read_state_at(queues: &[(String, PathBuf)], cache: &mut Cache, stamp: &st
                 ));
                 continue;
             }
-            let key = (meta.len(), mtime_secs(&meta));
-            let task = match cache.files.get(&path) {
-                Some((len, m, t)) if (*len, *m) == key => t.clone(),
-                _ => {
-                    let t = fs::read_to_string(&path)
-                        .ok()
-                        .and_then(|text| parse_task(name, root, &folder, &path, &text, key.1));
-                    cache.files.insert(path.clone(), (key.0, key.1, t.clone()));
-                    t
-                }
-            };
-            match task {
+            match cached_task(&mut cache.files, name, root, &folder, &path, &meta).cloned() {
                 Some(t) => tasks.push(t),
                 None => state
                     .problems
@@ -2263,6 +2326,70 @@ mod tests {
         fs::remove_file(&p).unwrap();
         assert!(read_state(&q, &mut c).tasks.is_empty());
         assert!(c.files.is_empty());
+    }
+
+    #[test]
+    fn the_polled_state_leaves_the_search_text_out() {
+        let d = queue();
+        let s = read_state(
+            &[("p".into(), d.path().to_path_buf())],
+            &mut Cache::default(),
+        );
+        assert!(s.tasks[0].search.starts_with("something broke details"));
+        let json = serde_json::to_value(&s).unwrap();
+        assert!(json["tasks"][0].get("search").is_none(), "{json}");
+        assert_eq!(json["tasks"][0]["title"], "Something broke");
+    }
+
+    #[test]
+    fn search_index_gives_each_tasks_text_by_queue_and_id_through_the_cache() {
+        let a = queue();
+        let b = tempfile::tempdir().unwrap();
+        let file = b.path().join("0007-x.md");
+        let task = "---\nid: 0007\nstatus: todo\n---\n\n# Board flickers\n\nThe columns jump.\n";
+        fs::write(&file, task).unwrap();
+        fs::write(b.path().join("0008-y.md"), "no front matter").unwrap();
+        let qa = ("a".to_string(), a.path().to_path_buf());
+        let qb = ("b".to_string(), b.path().to_path_buf());
+        let mut c = Cache::default();
+        let all = search_index(&[qa.clone(), qb.clone()], &mut c);
+        let mut keys: Vec<_> = all.keys().map(String::as_str).collect();
+        keys.sort();
+        assert_eq!(keys, ["a/0042", "b/0007"]);
+        assert!(all["a/0042"].starts_with("something broke details"));
+        assert_eq!(all["b/0007"], "board flickers the columns jump");
+        // Read once, kept in the cache with the files `state` reads.
+        assert_eq!(c.files.len(), 3);
+        // One queue: only its tasks, the same shape.
+        let one = search_index(std::slice::from_ref(&qb), &mut c);
+        assert_eq!(one.keys().collect::<Vec<_>>(), ["b/0007"]);
+        // A changed file is read again.
+        fs::write(&file, task.replace("jump", "jump about")).unwrap();
+        assert_eq!(
+            search_index(&[qb], &mut c)["b/0007"],
+            "board flickers the columns jump about"
+        );
+        assert_eq!(read_state(&[qa], &mut c).tasks.len(), 1);
+    }
+
+    #[test]
+    fn a_cache_put_back_keeps_what_is_there_and_adds_what_it_lacks() {
+        let a = queue();
+        let b = queue();
+        let qa = ("a".to_string(), a.path().to_path_buf());
+        let qb = ("b".to_string(), b.path().to_path_buf());
+        let mut there = Cache::default();
+        read_state(std::slice::from_ref(&qa), &mut there);
+        let mut mine = Cache::default();
+        search_index(&[qa, qb], &mut mine);
+        there.merge(mine);
+        assert_eq!(there.files.len(), 2);
+        assert!(there.stamp.is_some());
+        let mut empty = Cache::default();
+        let mut only_b = Cache::default();
+        search_index(&[("b".to_string(), b.path().to_path_buf())], &mut only_b);
+        empty.merge(only_b);
+        assert_eq!(empty.files.len(), 1);
     }
 
     #[test]

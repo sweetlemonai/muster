@@ -96,6 +96,11 @@ export type Task = {
   progress: Progress | null;
   /** The stage to show: a task's own; a goal's or feature's from its tasks ("in-progress" too). */
   shownStage: string;
+  /** What search looks in, built by the core when it reads the file (search.rs): the title, tags
+   *  and text without the front matter, folded (search.ts `fold`), each word once, no words of
+   *  digits only, at most 4 KB. Not in the polled state: the window adds it from the core's
+   *  `search_index` while it searches (search.ts `withSearch`). */
+  search?: string;
 };
 
 /** A backlog note (0015): a one-liner, or any .md dropped in the queue's backlog folder. */

@@ -4,6 +4,24 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Search, filter and sort every task (task 0032)
+**Did:** a search box at the start of the filter bar (⌘F, Esc clears): id (`19` finds 0019),
+title, tags, holder and the task's text, accent- and case-insensitive, words in any order, matches
+highlighted on cards, rows and backlog notes. Filter chips by stage, type, priority, tags, holder,
+flags (blocked, needs you, open questions) and dates, showing only values the project has, with
+an active line (✕ each, Clear all, "N hidden by filters"). Board sort chips; saved views per
+project. `muster list --search/--stage/--type/--tag/--holder/--blocked/--sort` with the same
+rules (a shared fixture runs both). Built by an implementer agent; review fixes by a second.
+**Fixed (review):** Esc in the search box threw away a New task draft; ⌘F also took Ctrl+F (a
+text-field key on macOS); every task's search text rode on every 2 s poll (now fetched only while
+searching, refreshed when a task changes); Unicode cases the CLI/app fixture didn't cover; Esc in
+an empty box closed the task pane; backlog notes weren't highlighted.
+**Decided:** a word of digits finds ids only; accents fold by one table shared by Rust and TS (no
+new dependency for full normalisation).
+**Verified:** after the rebase onto main (0016 levels, 0017 fields, 0018 index, 0019 graph, 0020
+edit, 0021 header, 0030 holders, 0031 timeline, 0034 colours): `pnpm check` green (vitest 554,
+cargo 244 + interop 13 + search cases 3), `test_task.py` 38 OK, `test_commands.py` 10 OK.
+
 ## 2026-10-13 — Pane header D2 (0021), fields and comments (0017), INDEX.md (0018), vision check (0029)
 **Did:** four tasks built in parallel on their own branches, each reviewed with one fix round, then
 merged into main one at a time (each merge resolved against the other session's 0019, 0030 and 0031):

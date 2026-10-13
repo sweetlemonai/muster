@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from "react";
-import { columns, key, STAGES } from "./lib";
+import { type BoardSort, columns, key, STAGES } from "./lib";
 import { estimateLeft, type Group, GROUP_BYS, type GroupBy, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
 import type { Task } from "./types";
 
@@ -50,11 +50,12 @@ export function BandHead({ group, by, multi, active, onOpen }: {
   );
 }
 
-/** The board grouped: one band per feature or goal, the stage columns inside each. Goals and
- *  features are the bands, never cards in the columns. */
-export function GroupedBoard({ groups, by, multi, openKey, onOpen, renderCard }: {
+/** The board grouped: one band per feature or goal, the stage columns inside each, each column
+ *  in the board's sort (task 0032). Goals and features are the bands, never cards in the columns. */
+export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderCard }: {
   groups: Group[];
   by: "feature" | "goal";
+  sort: BoardSort;
   multi: boolean;
   openKey: string | null;
   onOpen: (t: Task) => void;
@@ -64,7 +65,7 @@ export function GroupedBoard({ groups, by, multi, openKey, onOpen, renderCard }:
     <main className="bands">
       {groups.length === 0 && <p className="empty">No tasks match.</p>}
       {groups.map((g) => {
-        const cols = columns(g.items);
+        const cols = columns(g.items, sort);
         return (
           <section key={g.head ? key(g.head) : "none"} className="band">
             <BandHead group={g} by={by} multi={multi} active={!!g.head && openKey === key(g.head)} onOpen={onOpen} />
