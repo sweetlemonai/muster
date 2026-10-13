@@ -288,14 +288,23 @@ class RoutesRunOnARealQueue(unittest.TestCase):
         self.route("ask")
         self.route("answer")
         self.assertIn("**A (owner, ", self.task(self.a))
+        # The kind, then what it waits on (0024); the old "owner …" is a block on you.
         self.route("block", "owner: " + TEXT)
-        self.assertIn(f"waiting_on: owner: {TEXT}", self.task(self.a))
+        self.assertIn(f"waiting_on: {TEXT}\nblocked-kind: you\n", self.task(self.a))
+        self.route("unblock")
+        self.route("block", "permission " + TEXT)
+        self.assertIn(f"waiting_on: {TEXT}\nblocked-kind: permission\n", self.task(self.a))
         self.route("unblock")
         self.route("pass")
         self.assertIn("stage: testing", self.task(self.a))
         self.route("return")
         self.assertIn("stage: building", self.task(self.a))
         self.assertIn(f"claimed {self.b}", self.route("next", MUSTER_AS="wt-b")[0].stdout)
+        # Task ids go into depends, with no flag: it shows blocked by them until they're done.
+        out = self.route("block", self.b)[0].stdout
+        self.assertIn(f"Blocked by tasks: {self.b} (Building, wt-b)", out)
+        self.assertIn(f"depends: [{self.b}]", self.task(self.a))
+        self.assertNotIn("blocked-kind: tasks", self.task(self.a))
         self.route("check")
         self.route("help")
 

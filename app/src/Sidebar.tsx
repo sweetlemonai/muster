@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { blockSentence } from "./blockWords";
 import { KINDS } from "./fields";
 import { claimant, earlierStages, heldByOther, isStage, LEASE_SECS, leaseRunOut, passLabel, stageLabel } from "./lib";
 import { isWork } from "./levels";
@@ -96,7 +97,7 @@ function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a: TaskAc
           {claimant(task.claimedBy)} hasn't been heard from for {LEASE_SECS / 3600} h. Release puts it back in Ready, logged as reclaimed.
         </p>
       )}
-      {showPass && task.blocked && <p className="meta small">Blocked on {task.waitingOn || "something it doesn't name"}. Unblock it to pass it on.</p>}
+      {showPass && task.blocked && <p className="meta small">{blockSentence(task) || "Blocked on something it doesn't name"}. Unblock it to pass it on.</p>}
       {!showPass && !stale && !holder && <p className="meta small">{nothingNext(task)}</p>}
     </div>
   );

@@ -846,7 +846,7 @@ pub fn move_task(
         }
         let mut log = Vec::new();
         if t.blocked {
-            log.push(unblocked_line(stamp, &who, &t.waiting_on));
+            log.push(unblocked_line(stamp, &who, &was_waiting(t)));
         }
         if t.stage != stage {
             log.push(stage_line(stamp, &who, &t.stage, stage, " (set)"));
@@ -855,6 +855,8 @@ pub fn move_task(
             stage: stage.to_string(),
             blocked: false,
             waiting_on: String::new(),
+            blocked_kind: String::new(),
+            depends: None,
             claimed_by: released(t),
             commit: None,
             log,
@@ -867,6 +869,10 @@ struct Current {
     stage: String,
     blocked: bool,
     waiting_on: String,
+    /// `blocked-kind:` as the file has it (0024), "" when it has none.
+    blocked_kind: String,
+    /// The tasks it depends on (`depends:`).
+    depends: Vec<String>,
     claimed_by: String,
     /// Who holds it in Testing or Your check (`held-by:`).
     held_by: String,
@@ -891,6 +897,11 @@ struct Change {
     stage: String,
     blocked: bool,
     waiting_on: String,
+    /// `blocked-kind:` (0024): one of `block::TYPED` for a new block, "" to clear it, else as the
+    /// file had it.
+    blocked_kind: String,
+    /// A new `depends:` (a block on tasks), or None to leave it.
+    depends: Option<String>,
     claimed_by: String,
     commit: Option<String>,
     log: Vec<String>,
@@ -942,6 +953,16 @@ pub(crate) fn free_text_line(line: String, what: &str) -> Result<String, String>
     Ok(line)
 }
 
+/// What a blocked task was waiting on, for the unblock's log line: `you: pick a colour` with a
+/// kind (0024), `waiting_on` as written without one.
+fn was_waiting(t: &Current) -> String {
+    if t.blocked_kind.is_empty() || t.waiting_on.is_empty() {
+        t.waiting_on.clone()
+    } else {
+        format!("{}: {}", t.blocked_kind, t.waiting_on)
+    }
+}
+
 fn unblocked_line(stamp: &str, who: &str, was: &str) -> String {
     let line = format!("{stamp} {who}: unblocked (was waiting on {was})");
     // `was` comes from the file and may be hand-written; never let it log a stage change or a
@@ -978,7 +999,8 @@ fn change_locked(
     stamp: &str,
     f: impl FnOnce(&Current) -> Result<Change, String>,
 ) -> Result<String, String> {
-    edit_locked(root, id, |path, text| {
+    let mut finished = false;
+    let path = edit_locked(root, id, |path, text| {
         let folder = queue::folder_of(root, path);
         let t = queue::parse_task("", root, &folder, path, &text, 0)
             .ok_or("the task has no front matter")?;
@@ -1004,6 +1026,8 @@ fn change_locked(
             stage: t.stage,
             blocked: t.blocked,
             waiting_on: t.waiting_on,
+            blocked_kind: fields.get("blocked-kind").cloned().unwrap_or_default(),
+            depends: t.depends,
             claimed_by: t.claimed_by,
             held_by: t.held_by,
             builder,
@@ -1019,7 +1043,16 @@ fn change_locked(
         let held_after = c.stage == "building" && !c.blocked && !c.claimed_by.is_empty();
         let new_hold = held_after && !(held_before && same_holder(&now.claimed_by, &c.claimed_by));
         if new_hold && !is_owner(&c.claimed_by) {
-            if let Some(held) = holding(&tasks_now(root), &c.claimed_by, id) {
+            let tasks = tasks_now(root);
+            // Still blocked by tasks it depends on (0024): waiting, not held.
+            let depends = match &c.depends {
+                Some(d) => queue::parse_depends(d).0,
+                None => now.depends.clone(),
+            };
+            let waits = depends
+                .iter()
+                .any(|d| d != id && tasks.iter().any(|o| o.id == *d && o.stage != "done"));
+            if let Some(held) = holding(&tasks, &c.claimed_by, id).filter(|_| !waits) {
                 return Err(if same_holder(&c.claimed_by, who) {
                     already_holds(&held)
                 } else {
@@ -1034,6 +1067,13 @@ fn change_locked(
         let mut new = set_front(&text, "stage", &c.stage)?;
         new = set_front(&new, "status", status)?;
         new = set_front(&new, "waiting_on", &c.waiting_on)?;
+        // The block's kind sits next to what it waits on; a file that never had one gets none.
+        if !c.blocked_kind.is_empty() || fields.contains_key("blocked-kind") {
+            new = set_front_after(&new, "blocked-kind", &c.blocked_kind, "waiting_on")?;
+        }
+        if let Some(depends) = &c.depends {
+            new = set_front(&new, "depends", depends)?;
+        }
         new = set_front(&new, "claimed-by", &c.claimed_by)?;
         if let Some(commit) = &c.commit {
             new = set_front(&new, "commit", commit)?;
@@ -1070,8 +1110,71 @@ fn change_locked(
         } else {
             None
         };
+        finished = c.stage == "done" && now.stage != "done";
         Ok((new, dest))
-    })
+    })?;
+    if finished {
+        log_unblocked_by_done(root, id, who, stamp);
+    }
+    Ok(path)
+}
+
+/// Task `done_id` just reached Done: every task that's blocked only by tasks (not flagged) and
+/// whose last open dependency that was gets a log line saying it's free, `unblocked: 0014, 0016
+/// done`, which also ends its blocked span on the timeline. The block itself is derived from
+/// `depends:`, so it has cleared whether or not this line is written; a line that can't be written
+/// loses only the line, and never turns the Done that's already written into an error. The caller
+/// holds the queue's lock.
+fn log_unblocked_by_done(root: &Path, done_id: &str, who: &str, stamp: &str) {
+    let tasks = tasks_now(root);
+    for t in &tasks {
+        let freed = t.id != done_id
+            && t.stage != "done"
+            && !t.blocked
+            && t.depends.iter().any(|d| d == done_id)
+            && waiting_on_deps(t, &tasks).is_empty();
+        if !freed {
+            continue;
+        }
+        let done: Vec<&str> = t
+            .depends
+            .iter()
+            .map(String::as_str)
+            .filter(|d| *d != t.id && tasks.iter().any(|o| o.id == *d))
+            .collect();
+        let line = format!("{stamp} {who}: unblocked: {} done", done.join(", "));
+        let _ = edit_locked(root, &t.id, |_, text| Ok((append_log(&text, &line), None)));
+    }
+}
+
+/// `set_front`, but a key the front matter doesn't have yet goes right after `after` (when that's
+/// there), so related fields sit together.
+fn set_front_after(text: &str, key: &str, value: &str, after: &str) -> Result<String, String> {
+    let has = |k: &str| front_matter(text).is_some_and(|(fm, _)| fm.contains_key(k));
+    if has(key) || !has(after) {
+        return set_front(text, key, value);
+    }
+    let rest = text
+        .strip_prefix("---\n")
+        .ok_or("the task has no front matter")?;
+    let end = rest
+        .find("\n---\n")
+        .ok_or("the task's front matter isn't closed")?;
+    let prefix = format!("{after}:");
+    let mut lines: Vec<String> = rest[..end].lines().map(String::from).collect();
+    let at = lines
+        .iter()
+        .position(|l| l.starts_with(&prefix))
+        .map_or(lines.len(), |i| i + 1);
+    lines.insert(
+        at,
+        if value.is_empty() {
+            format!("{key}:")
+        } else {
+            format!("{key}: {value}")
+        },
+    );
+    Ok(format!("---\n{}{}", lines.join("\n"), &rest[end..]))
 }
 
 /// What `pass_task` may need besides the task: the gate's result line (Building → Testing)
@@ -1224,6 +1327,8 @@ fn pass_change(
         stage: to.to_string(),
         blocked: false,
         waiting_on: t.waiting_on.clone(),
+        blocked_kind: t.blocked_kind.clone(),
+        depends: None,
         claimed_by: if to == "building" {
             who.to_string()
         } else {
@@ -1243,8 +1348,9 @@ pub struct Claimed {
 }
 
 /// Every task of a queue as it is on disk now (files over 1 MB or without front matter are
-/// skipped), with each file's modified time. For decisions taken under the lock.
-fn tasks_now(root: &Path) -> Vec<queue::Task> {
+/// skipped), with each file's modified time and what blocks it (`block::derive`). For decisions
+/// taken under the lock.
+pub(crate) fn tasks_now(root: &Path) -> Vec<queue::Task> {
     let mut out: Vec<queue::Task> = queue::task_files(root)
         .into_iter()
         .filter_map(|(folder, path)| {
@@ -1257,17 +1363,18 @@ fn tasks_now(root: &Path) -> Vec<queue::Task> {
         })
         .collect();
     out.sort_by(|a, b| a.id.cmp(&b.id));
+    crate::block::derive(&mut out);
     out
 }
 
-/// The task `who` holds in Building in this queue (not blocked: a blocked task is waiting, and
-/// blocking it is how a holder lets go), other than `except`.
+/// The task `who` holds in Building in this queue (not blocked, by tasks either: a blocked task is
+/// waiting, and blocking it is how a holder lets go), other than `except`.
 fn holding(tasks: &[queue::Task], who: &str, except: &str) -> Option<String> {
     tasks
         .iter()
         .find(|t| {
             t.stage == "building"
-                && !t.blocked
+                && t.blocked_kind.is_empty()
                 && !t.claimed_by.is_empty()
                 && same_holder(&t.claimed_by, who)
                 && t.id != except
@@ -1605,6 +1712,8 @@ fn release_change(
         stage: "ready".into(),
         blocked: false,
         waiting_on: t.waiting_on.clone(),
+        blocked_kind: t.blocked_kind.clone(),
+        depends: None,
         claimed_by: String::new(),
         commit: None,
         log: vec![stage_line(
@@ -1637,7 +1746,7 @@ pub fn reclaim(
         let mut out = Reclaimed::default();
         let quiet = tasks_now(root).into_iter().filter(|t| {
             t.stage == "building"
-                && !t.blocked
+                && t.blocked_kind.is_empty()
                 && !t.claimed_by.is_empty()
                 && quiet_minutes(&t.heartbeat, t.modified, stamp, now_secs) > lease
         });
@@ -1668,8 +1777,21 @@ pub fn reclaim_task(
     now_secs: u64,
 ) -> Result<String, String> {
     let who = actor(who)?;
-    change(root, id, &who, stamp, |t| {
-        release_change(id, t, lease, &who, stamp, now_secs)
+    with_lock(root, || {
+        let tasks = tasks_now(root);
+        if let Some(t) = tasks
+            .iter()
+            .find(|t| t.id == id && t.blocked_kind == "tasks")
+        {
+            let ids: Vec<&str> = t.blocked_by.iter().map(|b| b.id.as_str()).collect();
+            return Err(format!(
+                "{id} is blocked by tasks {}; it's waiting, not quiet",
+                ids.join(", ")
+            ));
+        }
+        change_locked(root, id, &who, stamp, |t| {
+            release_change(id, t, lease, &who, stamp, now_secs)
+        })
     })
 }
 
@@ -1706,6 +1828,8 @@ pub fn return_task(
             stage: target.to_string(),
             blocked: t.blocked,
             waiting_on: t.waiting_on.clone(),
+            blocked_kind: t.blocked_kind.clone(),
+            depends: None,
             // Back to the builder. By label only when no other session under that label holds a
             // task in Building, so whichever session works under it next (the first may have
             // ended) carries on; otherwise to the exact session that built it, which keeps one
@@ -1733,30 +1857,12 @@ pub fn return_task(
     })
 }
 
-/// What a task waits on: a task id (`0012`), `owner` or `capture`, then optional words.
-fn clean_on(on: &str) -> Result<String, String> {
-    let on = one_line(on, 200, "what it's waiting on")?;
-    let rest_ok = |r: &str| !r.starts_with(|c: char| c.is_alphanumeric());
-    let task = on.len() >= 4
-        && on.as_bytes()[..4].iter().all(u8::is_ascii_digit)
-        && on.get(4..).is_some_and(rest_ok);
-    if task {
-        return Ok(on);
-    }
-    for word in ["owner", "capture"] {
-        let head_ok = on
-            .get(..word.len())
-            .is_some_and(|h| h.eq_ignore_ascii_case(word));
-        if let Some(tail) = on.get(word.len()..).filter(|t| head_ok && rest_ok(t)) {
-            return Ok(format!("{word}{tail}"));
-        }
-    }
-    Err(format!(
-        "what it's waiting on must start with a task id (0012), owner or capture, then a few words; got {on:?}"
-    ))
-}
+/// The kinds `block` takes, for its refusals.
+const BLOCK_USAGE: &str =
+    "task ids (0014,0016), you, permission, question Q2 or outside, then what it waits on";
 
-/// Set the blocked flag: the task keeps its stage (and its claim) and waits on `on`.
+/// Block a task on `on`, as `--on` reads (`block::split_on`): `"you: pick a colour"`,
+/// `"0014,0016"`, `"owner: which colour?"`. See `block_as`.
 pub fn block_task(
     root: &Path,
     id: &str,
@@ -1764,41 +1870,251 @@ pub fn block_task(
     who: &str,
     stamp: &str,
 ) -> Result<String, String> {
+    let (kind, detail) = crate::block::split_on(on);
+    block_as(root, id, &kind, &detail, who, stamp)
+}
+
+/// Block a task (0024), with what it waits on and why:
+/// - `tasks`: `detail` starts with task ids (`0014,0016`, maybe then a reason). They're added to
+///   `depends:` and no flag is set: the task shows blocked by them until they're done. An old
+///   block on task ids (no kind) is cleared, since the ids now say it.
+/// - `you` (`owner`), `permission`, `outside`: the flag with that kind and `detail`, which they need.
+/// - `question` (`capture`): a question's number, `Q2`, which must be open in this task; `capture`
+///   also takes words, as before kinds.
+///
+/// The task keeps its stage (and its claim). Refused: an unknown kind, a missing detail, a closed
+/// or missing question, the same block again.
+pub fn block_as(
+    root: &Path,
+    id: &str,
+    kind: &str,
+    detail: &str,
+    who: &str,
+    stamp: &str,
+) -> Result<String, String> {
     let who = actor(who)?;
-    let on = clean_on(on)?;
+    let typed = match kind.trim().to_lowercase().as_str() {
+        "tasks" => return block_on_tasks(root, id, detail, &who, stamp),
+        "" => {
+            return Err(format!(
+                "say what it's blocked by and what it's waiting on: {BLOCK_USAGE}"
+            ))
+        }
+        "you" | "owner" => "you",
+        "permission" => "permission",
+        "question" | "capture" => "question",
+        "outside" => "outside",
+        other => {
+            let other: String = other.chars().take(24).collect();
+            return Err(format!(
+                "{other:?} isn't a kind of block: use {BLOCK_USAGE}"
+            ));
+        }
+    };
+    let need = match typed {
+        "you" => "what you have to do or decide",
+        "permission" => "what access it lacks and where to grant it",
+        "question" => "the question's number, like Q2",
+        _ => "what it waits on outside",
+    };
+    if detail.trim().is_empty() {
+        return Err(format!("a block on {typed} needs {need}"));
+    }
+    let mut detail = one_line(detail, 200, "what it's waiting on")?;
+    let qn = crate::block::question_number(&detail);
+    if kind.trim().eq_ignore_ascii_case("question") && qn.is_none() {
+        return Err(format!(
+            "a block on question needs {need} (ask it first with muster ask), got {detail:?}"
+        ));
+    }
+    if let Some(n) = qn {
+        detail = format!("Q{n}");
+    }
     let line = free_text_line(
-        format!("{stamp} {who}: blocked on {on}"),
+        format!("{stamp} {who}: blocked on {typed}: {detail}"),
         "what it waits on",
     )?;
-    change(root, id, &who, stamp, |t| {
-        if t.waiting_on == on {
-            return Err(format!("{id} is already blocked on {on}"));
+    with_lock(root, || {
+        if let Some(n) = qn {
+            let t = queue::read_task(root, id)?;
+            match t.questions.iter().find(|q| q.n == Some(n)) {
+                None => return Err(format!("{id} has no Q{n}; ask it first (muster ask)")),
+                Some(q) if q.ticked => return Err(format!("{id}'s Q{n} is answered already")),
+                Some(_) => {}
+            }
         }
-        Ok(Change {
-            stage: t.stage.clone(),
-            blocked: true,
-            waiting_on: on.clone(),
-            claimed_by: t.claimed_by.clone(),
-            commit: None,
-            log: vec![line.clone()],
+        change_locked(root, id, &who, stamp, |t| {
+            if t.blocked && t.blocked_kind == typed && t.waiting_on == detail {
+                return Err(format!("{id} is already blocked on {typed}: {detail}"));
+            }
+            Ok(Change {
+                stage: t.stage.clone(),
+                blocked: true,
+                waiting_on: detail.clone(),
+                blocked_kind: typed.to_string(),
+                depends: None,
+                claimed_by: t.claimed_by.clone(),
+                commit: None,
+                log: vec![line.clone()],
+            })
         })
     })
 }
 
-/// Clear the blocked flag; the status mirror goes back to what the stage means.
-pub fn unblock_task(root: &Path, id: &str, who: &str, stamp: &str) -> Result<String, String> {
-    let who = actor(who)?;
-    change(root, id, &who, stamp, |t| {
-        if !t.blocked {
-            return Err(format!("{id} isn't blocked"));
+/// `block_as` on tasks: the ids `detail` starts with go into `depends:` (checked as `muster set
+/// depends` checks them: each a task here, not this one, no loop), each not done yet. An old
+/// block on task ids is cleared, as these ids say it now. Logged `blocked on tasks: 0014, 0016`,
+/// with the words after the ids as the reason.
+fn block_on_tasks(
+    root: &Path,
+    id: &str,
+    detail: &str,
+    who: &str,
+    stamp: &str,
+) -> Result<String, String> {
+    let detail = detail.trim();
+    let split = detail
+        .find(|c: char| !(c.is_ascii_digit() || c == ',' || c.is_whitespace()))
+        .unwrap_or(detail.len());
+    let (ids, bad) = queue::parse_depends(&detail[..split]);
+    if let Some(b) = bad.first() {
+        return Err(format!(
+            "a block on tasks takes task ids like 0014, got {b:?}"
+        ));
+    }
+    if ids.is_empty() {
+        return Err(format!(
+            "a block on tasks needs their ids, like 0014,0016; {BLOCK_USAGE}"
+        ));
+    }
+    let why = detail[split..].trim();
+    let why = if why.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", one_line(why, 200, "the reason")?)
+    };
+    let line = free_text_line(
+        format!("{stamp} {who}: blocked on tasks: {}{why}", ids.join(", ")),
+        "the reason",
+    )?;
+    with_lock(root, || {
+        let tasks = tasks_now(root);
+        let me = tasks
+            .iter()
+            .find(|t| t.id == id)
+            .ok_or_else(|| format!("no task {id}"))?;
+        if let Some(d) = ids.iter().find(|d| {
+            tasks.iter().any(|o| o.id == **d && o.stage == "done")
+                && !tasks.iter().any(|o| o.id == **d && o.stage != "done")
+        }) {
+            return Err(format!("{d} is done already; there's nothing to wait for"));
         }
+        let mut all = me.depends.clone();
+        all.extend(ids.iter().filter(|d| !me.depends.contains(d)).cloned());
+        let depends = clean_depends(root, id, &all.join(", "))?;
+        let added = all.len() > me.depends.len();
+        // An old block on task ids (no kind): the ids now say it, so the flag goes.
+        let legacy = me.kind_guessed && me.blocked_kind == "tasks";
+        if !added && !legacy {
+            return Err(format!("{id} already waits on {}", ids.join(", ")));
+        }
+        change_locked(root, id, who, stamp, |t| {
+            let (blocked, waiting_on, blocked_kind) = if legacy {
+                (false, String::new(), String::new())
+            } else {
+                (t.blocked, t.waiting_on.clone(), t.blocked_kind.clone())
+            };
+            Ok(Change {
+                stage: t.stage.clone(),
+                blocked,
+                waiting_on,
+                blocked_kind,
+                depends: Some(depends.clone()),
+                claimed_by: t.claimed_by.clone(),
+                commit: None,
+                log: vec![line.clone()],
+            })
+        })
+    })
+}
+
+/// Under the queue's lock, once task `id`'s question `n` is answered (`queue::answer`): a block on
+/// that question clears, logged `unblocked: Q2 answered`. If clearing it is refused (its holder
+/// now holds another task in Building), it stays blocked and the log says why. Any other block
+/// stays.
+pub(crate) fn unblock_answered_locked(
+    root: &Path,
+    id: &str,
+    n: u32,
+    who: &str,
+    stamp: &str,
+) -> Result<(), String> {
+    let path = find_task(root, id)?;
+    let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let typed = front_matter(&text)
+        .and_then(|(fm, _)| fm.get("blocked-kind").cloned())
+        .unwrap_or_default();
+    let t = queue::read_task(root, id)?;
+    let on_it = t.blocked
+        && typed.eq_ignore_ascii_case("question")
+        && crate::block::question_number(&t.waiting_on) == Some(n);
+    if !on_it {
+        return Ok(());
+    }
+    let cleared = change_locked(root, id, who, stamp, |c| {
         Ok(Change {
-            stage: t.stage.clone(),
+            stage: c.stage.clone(),
             blocked: false,
             waiting_on: String::new(),
-            claimed_by: t.claimed_by.clone(),
+            blocked_kind: String::new(),
+            depends: None,
+            claimed_by: c.claimed_by.clone(),
             commit: None,
-            log: vec![unblocked_line(stamp, &who, &t.waiting_on)],
+            log: vec![format!("{stamp} {who}: unblocked: Q{n} answered")],
+        })
+    });
+    if let Err(e) = cleared {
+        let line = free_text_line(
+            format!("{stamp} {who}: Q{n} answered, still blocked: {e}"),
+            "the reason",
+        )
+        .unwrap_or_else(|_| format!("{stamp} {who}: Q{n} answered, still blocked"));
+        edit_locked(root, id, |_, text| Ok((append_log(&text, &line), None)))?;
+    }
+    Ok(())
+}
+
+/// Clear the blocked flag; the status mirror goes back to what the stage means.
+/// A block on tasks (0024) isn't a flag: it clears by itself once they're done.
+pub fn unblock_task(root: &Path, id: &str, who: &str, stamp: &str) -> Result<String, String> {
+    let who = actor(who)?;
+    with_lock(root, || {
+        let tasks = tasks_now(root);
+        let open = tasks
+            .iter()
+            .find(|t| t.id == id)
+            .map(|t| waiting_on_deps(t, &tasks))
+            .unwrap_or_default();
+        change_locked(root, id, &who, stamp, |t| {
+            if !t.blocked && !open.is_empty() {
+                return Err(format!(
+                    "{id} is blocked by tasks {}: that clears by itself once they're done (or change its depends: muster set {id} depends …)",
+                    open.join(", ")
+                ));
+            }
+            if !t.blocked {
+                return Err(format!("{id} isn't blocked"));
+            }
+            Ok(Change {
+                stage: t.stage.clone(),
+                blocked: false,
+                waiting_on: String::new(),
+                blocked_kind: String::new(),
+                depends: None,
+                claimed_by: t.claimed_by.clone(),
+                commit: None,
+                log: vec![unblocked_line(stamp, &who, &was_waiting(t))],
+            })
         })
     })
 }
@@ -1829,6 +2145,8 @@ pub fn set_stage(
             stage: stage.to_string(),
             blocked: t.blocked,
             waiting_on: t.waiting_on.clone(),
+            blocked_kind: t.blocked_kind.clone(),
+            depends: None,
             claimed_by: released(t),
             commit: None,
             log: vec![stage_line(stamp, &who, &t.stage, stage, " (set)")],
@@ -2343,7 +2661,10 @@ mod tests {
             ),
             ("blocked", "blocked", "building", "wt (session aaaa1111)")
         );
-        assert_eq!(t.waiting_on, "owner: pick a colour");
+        assert_eq!(
+            (t.waiting_on.as_str(), t.blocked_kind.as_str()),
+            ("pick a colour", "you")
+        );
         assert!(t.waiting_for_owner);
         assert!(s.problems.is_empty(), "{:?}", s.problems);
         move_task(d.path(), "0001", "todo", "", "owner", T).unwrap();
@@ -2360,7 +2681,7 @@ mod tests {
         assert_eq!(
             t.log_tail[1..],
             [
-                "2026-10-12 14:05 owner: unblocked (was waiting on owner: pick a colour)",
+                "2026-10-12 14:05 owner: unblocked (was waiting on you: pick a colour)",
                 "2026-10-12 14:05 owner: stage building → ready (set)"
             ]
         );
@@ -3057,7 +3378,7 @@ mod tests {
             "0001-t.md"
         );
         assert_eq!(
-            block_task(d.path(), "0001", "owner", "o", T).unwrap(),
+            block_task(d.path(), "0001", "owner: pick a colour", "o", T).unwrap(),
             "0001-t.md"
         );
         let t = only(d.path());
@@ -3248,12 +3569,15 @@ mod tests {
                 TICKED,
             ),
         );
-        for bad in ["", "soon", "12 days", "owners", "00123", "captured"] {
+        for bad in [
+            "", "soon", "12 days", "owners", "00123", "captured", "owner", "you", "0012",
+        ] {
             assert!(
                 block_task(d.path(), "0001", bad, "qa", T).is_err(),
                 "{bad:?} is refused"
             );
         }
+        // `--on owner …` still works: a block on you, with the words as its detail.
         assert_eq!(
             block_task(d.path(), "0001", "Owner: which colour?", "qa", T).unwrap(),
             "blocked/0001-t.md"
@@ -3265,23 +3589,33 @@ mod tests {
                 t.status.as_str(),
                 t.blocked,
                 t.waiting_on.as_str(),
+                t.blocked_kind.as_str(),
                 t.claimed_by.as_str()
             ),
-            ("testing", "blocked", true, "owner: which colour?", "qa")
+            ("testing", "blocked", true, "which colour?", "you", "qa")
         );
-        assert!(t.waiting_for_owner);
+        assert!(t.waiting_for_owner && !t.kind_guessed);
         assert!(t
             .log_tail
             .last()
             .unwrap()
-            .ends_with("qa: blocked on owner: which colour?"));
+            .ends_with("qa: blocked on you: which colour?"));
+        let file = fs::read_to_string(d.path().join("blocked/0001-t.md")).unwrap();
         assert!(
-            block_task(d.path(), "0001", "owner: which colour?", "qa", T)
-                .unwrap_err()
-                .contains("already blocked")
+            file.contains("\nwaiting_on: which colour?\nblocked-kind: you\n"),
+            "{file}"
         );
-        block_task(d.path(), "0001", "0012", "qa", T).unwrap();
+        assert!(block_task(d.path(), "0001", "you: which colour?", "qa", T)
+            .unwrap_err()
+            .contains("already blocked"));
+        block_task(d.path(), "0001", "outside: Apple review", "qa", T).unwrap();
+        assert!(!only(d.path()).waiting_for_owner);
         block_task(d.path(), "0001", "capture, needs a spec", "qa", T).unwrap();
+        let t = only(d.path());
+        assert_eq!(
+            (t.blocked_kind.as_str(), t.waiting_on.as_str()),
+            ("question", "needs a spec")
+        );
         // Blocked: no pass, but return and set keep the flag.
         assert!(pass_task(d.path(), "0001", "qa", T, &no_gate())
             .unwrap_err()
@@ -3304,7 +3638,7 @@ mod tests {
             .log_tail
             .last()
             .unwrap()
-            .ends_with("owner: unblocked (was waiting on capture, needs a spec)"));
+            .ends_with("owner: unblocked (was waiting on question: needs a spec)"));
         assert!(unblock_task(d.path(), "0001", "owner", T)
             .unwrap_err()
             .contains("isn't blocked"));
@@ -3421,7 +3755,15 @@ mod tests {
         };
         move_task(d.path(), "0001", "inbox", "", "owner", T).unwrap();
         assert_eq!(st(d.path()), ("backlog".into(), "inbox".into(), false));
-        move_task(d.path(), "0001", "blocked", "0042", "owner", T).unwrap();
+        move_task(
+            d.path(),
+            "0001",
+            "blocked",
+            "outside: the release",
+            "owner",
+            T,
+        )
+        .unwrap();
         assert_eq!(st(d.path()), ("backlog".into(), "blocked".into(), true));
         // Moving a blocked task to todo unblocks it and sets Ready, in one change.
         assert_eq!(
@@ -3642,7 +3984,7 @@ mod tests {
                 TICKED,
             ),
         );
-        block_task(d.path(), "0001", "0012 the API", "qa", T).unwrap();
+        block_task(d.path(), "0001", "outside: the API", "qa", T).unwrap();
         assert_eq!(
             return_task(d.path(), "0001", "AC2 fails", None, "qa", T).unwrap(),
             "blocked/0001-t.md"
@@ -3654,9 +3996,10 @@ mod tests {
                 t.status.as_str(),
                 t.folder.as_str(),
                 t.waiting_on.as_str(),
+                t.blocked_kind.as_str(),
                 t.blocked
             ),
-            ("building", "blocked", "blocked", "0012 the API", true)
+            ("building", "blocked", "blocked", "the API", "outside", true)
         );
     }
 
@@ -3937,7 +4280,7 @@ mod tests {
         let t = only(d.path());
         assert_eq!(
             (t.title.as_str(), t.waiting_on.as_str()),
-            ("D: stage track wide", "owner: stage track width")
+            ("D: stage track wide", "stage track width")
         );
         assert!(t.stage_history.is_empty());
     }
@@ -4475,7 +4818,7 @@ mod tests {
         );
         assert_eq!(file_of(d.path(), "0002"), before);
         // Block 0001, claim 0002: unblocking 0001 would give wt-a two, so it's refused, for anyone.
-        block_task(d.path(), "0001", "owner", "wt-a", T).unwrap();
+        block_task(d.path(), "0001", "owner: pick a colour", "wt-a", T).unwrap();
         claim_task(d.path(), "0002", "wt-a", T).unwrap();
         assert_eq!(
             unblock_task(d.path(), "0001", "wt-a", T).unwrap_err(),

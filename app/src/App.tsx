@@ -10,6 +10,7 @@ import NewTask from "./NewTask";
 import Appearance from "./Appearance";
 import { CardBand, cardClass } from "./CardLook";
 import CardStatus from "./CardStatus";
+import BlockWhy from "./BlockWhy";
 import { GraphView } from "./GraphView";
 import { TableView, TimelineView } from "./Views";
 import { GroupByChips, GroupedBoard } from "./Groups";
@@ -310,7 +311,7 @@ export default function App() {
                   {t.questions.filter((q) => !q.ticked && q.escalated).map((q) => (
                     <p key={q.n ?? q.text}><b>Q{q.n}</b> {q.text}</p>
                   ))}
-                  {t.blocked && t.waitingOn.toLowerCase().startsWith("owner") && <p>Blocked on you: {t.waitingOn}</p>}
+                  {(t.blockedKind === "you" || t.blockedKind === "permission") && <p><BlockWhy t={t} /></p>}
                   {t.stage === "your-check" && <p>In Your check: accept it, or send it back with what's wrong.</p>}
                   <button onClick={() => open(t)}>Open to answer</button>
                 </article>
@@ -360,7 +361,7 @@ export default function App() {
             <aside className="pane" style={{ width }} aria-label="Details">
               {pane.kind === "task" && openTask && (
                 <Suspense fallback={<p className="none">Loading…</p>}>
-                  <TaskPanel key={openKey} task={openTask} now={now} onClose={() => go(null)} onChanged={refresh} onDirty={onDirty} nudge={nudge} childTasks={childrenOf(openTask, index)} />
+                  <TaskPanel key={openKey} task={openTask} now={now} onClose={() => go(null)} onChanged={refresh} onDirty={onDirty} nudge={nudge} childTasks={childrenOf(openTask, index)} onOpenTask={(id) => go({ kind: "task", key: key({ queue: openTask.queue, id }) })} />
                 </Suspense>
               )}
               {pane.kind === "task" && !openTask && <p className="none">That task is gone.</p>}
@@ -454,7 +455,7 @@ function Card({ t, now, multi, parent, onOpen, active }: { t: Task; now: number;
       )}
       <CardStatus t={t} now={now} />
       <span className="card-bottom">
-        {t.blocked && <span className="badge blocked">blocked{t.waitingOn ? `: ${t.waitingOn}` : ""}</span>}
+        <BlockWhy t={t} short />
         {t.waitingForOwner && <span className="badge warn">needs you</span>}
         {t.openQuestions > 0 && <span className="badge">{t.openQuestions} open Q</span>}
         {t.attachments.length > 0 && <span className="badge">{t.attachments.length} file{t.attachments.length === 1 ? "" : "s"}</span>}

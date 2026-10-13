@@ -37,7 +37,7 @@ it is, why it needs you, the options, the pick, and what happens with no answer.
 
 | Command | What it does | Runs |
 |---|---|---|
-| `/mu` | What's waiting for you (questions escalated to you, tasks in Your check, tasks blocked on you), then the queue in one line | `muster list`, then `muster show <id>` for each task marked [needs you] |
+| `/mu` | What's waiting for you (questions escalated to you, tasks in Your check, tasks blocked on you or by a permission), then the queue in one line | `muster list`, then `muster show <id>` for each task marked [needs you] |
 | `/mu <id>` | One task in plain words: what it is, its stage, who's on it, open questions, criteria left, the last thing that happened | `muster show <id>` |
 | `/mu waiting` | Only what's waiting for you | `muster list`, then `muster show <id>` for each task marked [needs you] |
 | `/mu add <text>` | Capture a one-liner in the backlog, for shaping into a task | `muster add -- '<text>'` |
@@ -58,8 +58,8 @@ options pass through.
 | `/mu note <id> <text>` | Add a line to the task's log | `muster note <id> -- '<text>'` |
 | `/mu pass <id> …` | Hand on to the next stage (from, gate line, commit as needed) | `muster pass <id> …` |
 | `/mu return <id> <why>` | Send back a stage, with the reason | `muster return <id> -- '<why>'` |
-| `/mu block <id> <on what>` | Mark it blocked on a task id, owner or capture; it keeps its stage | `muster block <id> --on '<on what>'` |
-| `/mu unblock <id>` | Clear the blocked flag | `muster unblock <id>` |
+| `/mu block <id> <on what>` | Mark it blocked, and why: task ids (0014,0016, added to its depends), you, permission, question Q2 or outside, then what it waits on (owner and capture still work); it keeps its stage | `muster block <id> --on '<on what>'` |
+| `/mu unblock <id>` | Clear the blocked flag (a block on tasks clears by itself when they're done) | `muster unblock <id>` |
 
 ## For running the system
 

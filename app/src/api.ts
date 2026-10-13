@@ -25,7 +25,8 @@ export const api = {
   // `to` is an earlier stage; null sends it back one.
   returnTask: (queue: string, id: string, why: string, to: string | null, stamp: string) =>
     invoke<string>("return_task", { queue, id, why, to, stamp }),
-  blockTask: (queue: string, id: string, on: string, stamp: string) => invoke<string>("block_task", { queue, id, on, stamp }),
+  // Why (0024): kind is tasks, you, permission, question or outside; detail what it waits on.
+  blockTask: (queue: string, id: string, kind: string, detail: string, stamp: string) => invoke<string>("block_task", { queue, id, kind, detail, stamp }),
   unblockTask: (queue: string, id: string, stamp: string) => invoke<string>("unblock_task", { queue, id, stamp }),
   // A claim in Building whose lease ran out goes back to Ready; refused if it's live again.
   reclaimTask: (queue: string, id: string, stamp: string) => invoke<string>("reclaim_task", { queue, id, stamp }),

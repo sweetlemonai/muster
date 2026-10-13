@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { stampMinutes } from "./lib";
 import {
-  axis, DAY, layout, nowAt, parseScale, segmentTitle, sortTasks, spans, taskSpan, timeWindow, wallMinutes, windowLabel,
+  axis, barTitle, DAY, layout, nowAt, parseScale, segmentTitle, sortTasks, spans, taskSpan, timeWindow, wallMinutes, windowLabel,
   type Placed, type Scale, type Span,
 } from "./viewData";
 import type { Task } from "./types";
@@ -22,7 +22,7 @@ describe("sortTasks", () => {
     expect(sortTasks(st, "stage", false).map((x) => x.id)).toEqual(["b", "d", "e", "c", "a"]);
     expect(sortTasks([t({ id: "x", modified: 5 }), t({ id: "y", modified: 9 })], "changed", true).map((x) => x.id)).toEqual(["y", "x"]);
     // "On it / waiting on" sorts by what the cell shows: a Done task's old claim counts as nobody.
-    const who = [t({ id: "a", stage: "done", claimedBy: "aaa" }), t({ id: "b", stage: "building", claimedBy: "zed" }), t({ id: "c", blocked: true, waitingOn: "0012" })];
+    const who = [t({ id: "a", stage: "done", claimedBy: "aaa" }), t({ id: "b", stage: "building", claimedBy: "zed" }), t({ id: "c", claimedBy: "zzz", blockedKind: "tasks", blockedBy: [{ id: "0012", stage: "ready", holder: "" }] })];
     expect(sortTasks(who, "who", false).map((x) => x.id)).toEqual(["a", "c", "b"]);
   });
   it("sorts by estimate as agent time plus test time, then tokens", () => {
@@ -304,13 +304,27 @@ describe("captured to the minute (0031)", () => {
 describe("blocked stretches (0031)", () => {
   const building = (blockHistory: Task["blockHistory"], blocked = false) =>
     t({ captured: "2026-10-14", capturedAt: "2026-10-14 08:00", stage: "building", blocked, blockHistory, stageHistory: [step("2026-10-14 09:00", "ready", "building")] });
-  it("keeps a block that ended, clipped to the bar", () => {
-    const s = taskSpan(building([{ from: "2026-10-14 10:00", to: "2026-10-14 14:00" }]), NOW);
-    expect(s.blocks).toEqual([{ from: stampMinutes("2026-10-14 10:00"), to: stampMinutes("2026-10-14 14:00") }]);
+  it("keeps a block that ended, clipped to the bar, with its kind (0024)", () => {
+    const s = taskSpan(building([{ from: "2026-10-14 10:00", to: "2026-10-14 14:00", kind: "permission" }]), NOW);
+    expect(s.blocks).toEqual([{ from: stampMinutes("2026-10-14 10:00"), to: stampMinutes("2026-10-14 14:00"), kind: "permission" }]);
   });
   it("runs a block that's still on to the end of the bar", () => {
     const s = taskSpan(building([{ from: "2026-10-14 16:00", to: "" }], true), NOW);
-    expect(s.blocks).toEqual([{ from: stampMinutes("2026-10-14 16:00"), to: s.end }]);
+    expect(s.blocks).toEqual([{ from: stampMinutes("2026-10-14 16:00"), to: s.end, kind: "" }]);
+  });
+  it("labels each placed block with its kind's words", () => {
+    const [p] = layout([taskSpan(building([{ from: "2026-10-14 10:00", to: "2026-10-14 14:00", kind: "tasks" }]), NOW)], timeWindow("day", NOW, 0), "day");
+    expect(p.blocks[0].kind).toBe("tasks");
+  });
+  it("says why it's blocked in the bar's tooltip", () => {
+    const base = { captured: "2026-10-14", stage: "building", claimedOn: "2026-10-14" };
+    expect(barTitle(t({ ...base, blocked: true, blockedKind: "you", blockDetail: "pick a colour" }), true)).toBe(
+      "Building · Blocked on you: pick a colour · captured 2026-10-14 · started 2026-10-14",
+    );
+    expect(barTitle(t({ ...base, blockedKind: "tasks", blockedBy: [{ id: "0014", stage: "testing", holder: "qa" }] }), false)).toBe(
+      "Building · Blocked by tasks: 0014 (Testing, qa) · captured 2026-10-14 · started 2026-10-14 · dates only",
+    );
+    expect(barTitle(t({ ...base, doneOn: "2026-10-15", stage: "done" }), true)).toBe("Done · captured 2026-10-14 · started 2026-10-14 · done 2026-10-15");
   });
   it("drops blocks outside the bar and bad stamps", () => {
     const s = taskSpan(building([{ from: "2026-10-01 10:00", to: "2026-10-02 10:00" }, { from: "nope", to: "" }]), NOW);

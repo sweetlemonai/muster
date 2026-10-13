@@ -52,10 +52,23 @@ describe("task pane stage controls", () => {
     expect(pane({ stage: "building", claimedBy: "owner" }).buttons).toEqual(["Pass to Testing", "Send back", "Block"]);
   });
   it("a blocked task keeps its stage; Pass waits for Unblock", () => {
-    const p = pane({ stage: "your-check", blocked: true, status: "blocked", waitingOn: "owner pick a colour" });
-    expect(p.line).toBe("Your check blocked: owner pick a colour LIVE on it: you owner Waiting on you: accept or send back · blocked on you");
+    const p = pane({ stage: "your-check", blocked: true, status: "blocked", waitingOn: "pick a colour", blockedKind: "you", blockDetail: "pick a colour" });
+    expect(p.line).toBe("Your check Blocked on you : pick a colour LIVE on it: you owner Waiting on you: accept or send back · blocked on you");
+    expect(p.html).toContain('<span class="status-pill blocked block-why"><b>Blocked on you</b>: pick a colour</span>');
     expect(p.buttons).toEqual(["Accept (disabled)", "Send back", "Unblock"]);
-    expect(p.html).toContain("Blocked on owner pick a colour. Unblock it to pass it on.");
+    expect(p.html).toContain("Blocked on you: pick a colour. Unblock it to pass it on.");
+  });
+  it("says why it's blocked by tasks, each a link that opens it, with Block still there (0024)", () => {
+    const blockedBy = [{ id: "0014", stage: "building", holder: "codex" }, { id: "0016", stage: "ready", holder: "" }];
+    const html = renderToStaticMarkup(
+      createElement(TaskPanel, { task: task({ blockedKind: "tasks", blockedBy, depends: ["0014", "0016"] }), now: 0, onClose: () => {}, onChanged: () => {}, onOpenTask: () => {} }),
+    );
+    expect(text(part(html, "status"))).toContain("Blocked by tasks : 0014 (Building, codex), 0016 (Ready)");
+    expect(part(html, "status")).toContain('<button type="button" class="link" title="Open 0014">0014</button>');
+    // Not a flag: there's nothing to unblock; it clears by itself.
+    const next = part(html, "next-step");
+    expect(next).toContain(">Block</button>");
+    expect(next).not.toContain("Unblock");
   });
   it("offers Release on a claim whose lease ran out, and only then", () => {
     const held = { stage: "building", claimedBy: "drover/main (session 3fba2222)", heartbeat: "", modified: 0 };

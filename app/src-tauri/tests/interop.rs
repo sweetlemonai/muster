@@ -138,7 +138,14 @@ fn every_stage_passes_the_python_check() {
     check("building");
     ops::pass_task(d.path(), &c.id, "wt-a", t, &gate).unwrap();
     check("testing, nobody holding it");
-    ops::block_task(d.path(), &c.id, "0001 itself", "qa", t).unwrap();
+    ops::block_task(
+        d.path(),
+        &c.id,
+        "permission: write to ~/x/tasks (sandbox)",
+        "qa",
+        t,
+    )
+    .unwrap();
     check("blocked in testing");
     ops::unblock_task(d.path(), &c.id, "qa", t).unwrap();
     ops::pass_task(d.path(), &c.id, "qa", t, &PassOpts::default()).unwrap();
@@ -170,7 +177,15 @@ fn tasks_made_by_the_app_pass_the_python_check() {
     };
     let c = muster_lib::ops::create_task(d.path(), &new, "owner", t).unwrap();
     muster_lib::ops::attach(d.path(), &c.id, "shot.png", b"png", "owner", t).unwrap();
-    muster_lib::ops::move_task(d.path(), &c.id, "blocked", "owner", "owner", t).unwrap();
+    muster_lib::ops::move_task(
+        d.path(),
+        &c.id,
+        "blocked",
+        "owner: pick a colour",
+        "owner",
+        t,
+    )
+    .unwrap();
     let (ok, out) = run(d.path(), "manifest.py", &["--check"]);
     assert!(ok, "{out}");
     let (ok, out) = run(

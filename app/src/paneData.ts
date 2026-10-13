@@ -12,8 +12,9 @@ export const LIVE_SECS = 5 * 60;
 export const isLive = (t: Pick<Task, "modified">, now: number) => now - t.modified < LIVE_SECS;
 
 /** What waits on the owner, in words, in a fixed order: Your check, escalated questions, a block
- *  on the owner. The same three things the core counts as waiting for the owner. */
-export function waitingOnYou(t: Pick<Task, "stage" | "ownerCriteria" | "questions" | "blocked" | "waitingOn">): string[] {
+ *  on the owner or by a permission (0024: a person acts on both). The same things the core counts
+ *  as waiting for the owner. */
+export function waitingOnYou(t: Pick<Task, "stage" | "ownerCriteria" | "questions" | "blockedKind">): string[] {
   const out: string[] = [];
   if (t.stage === "your-check") {
     const open = ownerOpen(t);
@@ -21,7 +22,8 @@ export function waitingOnYou(t: Pick<Task, "stage" | "ownerCriteria" | "question
   }
   const asked = t.questions.filter((q) => !q.ticked && q.escalated).length;
   if (asked > 0) out.push(`${asked} question${asked === 1 ? "" : "s"} for you`);
-  if (t.blocked && t.waitingOn.trim().toLowerCase().startsWith("owner")) out.push("blocked on you");
+  if (t.blockedKind === "you") out.push("blocked on you");
+  if (t.blockedKind === "permission") out.push("blocked by permission");
   return out;
 }
 

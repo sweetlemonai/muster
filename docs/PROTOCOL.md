@@ -1,5 +1,24 @@
 # Muster — task queue protocol (v2, with stages)
 
+> **Blocked says why (Muster 0024, 2026-10-13).** A block has a kind: **tasks**, **you**,
+> **permission**, **question** or **outside**. Block with `muster block <id> --on <kind> "<what>"`:
+> `--on 0014,0016` (task ids), `--on you "set the API key in the Keychain"`, `--on permission "write
+> to ~/x/tasks (sandbox): grant in the layer's write list"`, `--on question Q2` (an open question in
+> that task), `--on outside "Apple review"`. `--on owner …` and `--on capture …` still work, as you
+> and question. Refused: an unknown kind, no detail, a question that isn't open. The kind is
+> written as `blocked-kind:` next to `waiting_on:`, which holds the detail; only muster writes
+> either. **Tasks is never a flag:** the ids go into `depends:` (0019), so there's one record of
+> what waits on what, and the task shows "Blocked by tasks: 0014 (Building, codex), 0016 (Ready)"
+> until they're all Done, then clears by itself (logged `unblocked: 0014, 0016 done`). A block on a
+> question clears when it's answered (`unblocked: Q2 answered`). You, permission and outside stay
+> until `muster unblock`. Blocked on you or by a permission counts as waiting for the owner. The
+> card, table, timeline, task pane, `muster list` and INDEX.md say it in words, the kind first. A
+> file blocked before kinds has no `blocked-kind:`: its kind is read from `waiting_on` (owner → you,
+> capture → question, a task id → tasks, anything else → outside), and `muster check` and
+> `manifest.py --check` warn about it until it's blocked again with one (a block on its task ids
+> moves them into `depends:` and clears the old flag). Decision 0003 keeps the kind in the live
+> state with the flag; that store comes with task 0005, and until then the kind is in the file.
+>
 > **INDEX.md, the master list (Muster 0018, 2026-10-13).** `INDEX.md` in the queue folder lists
 > every task with a link to its file: goals with their features and tasks, then the tasks under
 > none by stage, the backlog notes, and what's done. muster writes it after every change it makes,
@@ -18,7 +37,7 @@
 > `--gate "<the gate's result line>"`. Testing → Your check needs every criterion ticked except
 > the owner's (`— verify: owner`, checked in Your check), and Your check → Done needs those too
 > (the owner ticks them: `muster tick <id> AC2`, or in the task pane) and can take `--commit <sha>`. Send it back with `muster return <id> "<why>"`. Blocked
-> is a flag on any stage: `muster block <id> --on "<task id|owner|capture> …"`, then `muster unblock <id>`.
+> is a flag on any stage, with a kind: `muster block <id> --on <0014,0016|you|permission|question|outside> "<what>"` (see the note on kinds above), then `muster unblock <id>`.
 > The owner or capture can override with `muster stage <id> <stage>`. Until task 0005 moves queues
 > into `.muster/`, the tool also keeps `status:` and the status folder below as a mirror of the
 > stage (Shaping and Ready → `todo/`, Building, Testing and Your check → `doing/`, blocked →
@@ -182,7 +201,8 @@ status: todo | doing | blocked | done
 captured: 2026-10-11
 claimed-by:            # branch/worktree + session id, set when claimed
 heartbeat:             # date-time of the owner's last log line; set on every log line
-waiting_on:            # owner | capture | 00NN (another task), when blocked
+waiting_on:            # what it waits on, when blocked (muster writes it)
+blocked-kind:          # you | permission | question | outside (0024; task ids go in depends:)
 commit:                # set when done
 ---
 

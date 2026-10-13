@@ -1,3 +1,4 @@
+import { blockSentence, isBlocked } from "./blockWords";
 import { holder, stageLabel, stageOf, stageRank, stampMinutes, type StageId } from "./lib";
 import type { Task } from "./types";
 import { isWork, shownStageRank } from "./levels";
@@ -15,7 +16,7 @@ export function sortTasks(tasks: Task[], by: SortKey, desc: boolean): Task[] {
       case "stage": return isWork(t) ? stageRank(t.stage) : shownStageRank(t);
       case "changed": return t.modified;
       case "estimate": return (t.estMinutes + t.estTestMinutes) * 1e7 + t.estTokenCount;
-      case "who": return t.blocked ? t.waitingOn : holder(t);
+      case "who": return isBlocked(t) ? blockSentence(t, true) : holder(t);
       case "kind": return t.kind;
       default: return t[by];
     }
@@ -66,7 +67,7 @@ export function wallMinutes(d: Date): number {
 export type Segment = { stage: StageId | "waiting"; from: number; to: number; fuzzy: boolean };
 /** A task on the timeline: from `start` to `end`, the working part from `work` (= `end` when it
  *  never left waiting). `timed` when it comes from the stage history, else from dates only. */
-export type Span = { task: Task; start: number; work: number; end: number; open: boolean; timed: boolean; segments: Segment[]; blocks: { from: number; to: number }[] };
+export type Span = { task: Task; start: number; work: number; end: number; open: boolean; timed: boolean; segments: Segment[]; blocks: { from: number; to: number; kind: string }[] };
 
 const WORKING = new Set<string>(["building", "testing", "your-check"]);
 const dayStart = (date: string) => {
@@ -139,9 +140,15 @@ export function taskSpan(t: Task, now: number): Span {
     const to = b.to ? stampMinutes(b.to) : end;
     if (from === null || to === null) return [];
     const a = Math.max(from, start), z = Math.min(to, end);
-    return z > a ? [{ from: a, to: z }] : [];
+    return z > a ? [{ from: a, to: z, kind: b.kind ?? "" }] : [];
   });
   return { task: t, start, work, end, open, timed: steps.length > 0, segments, blocks };
+}
+
+/** A timeline bar's tooltip: the stage, why it's blocked (0024), and its days. */
+export function barTitle(t: Task, timed: boolean): string {
+  const why = blockSentence(t);
+  return `${stageLabel(t.stage)}${why ? ` · ${why}` : ""} · captured ${t.captured}${t.claimedOn ? ` · started ${t.claimedOn}` : ""}${t.doneOn ? ` · done ${t.doneOn}` : ""}${timed ? "" : " · dates only"}`;
 }
 
 /** Every task's span, earliest first. */
@@ -221,7 +228,7 @@ export function segmentTitle(g: Segment): string {
 
 /** A bar placed in a window: `left` and `width` as fractions of the window, its segments as
  *  fractions of the bar. `clipStart`/`clipEnd` when it runs on past the window's edge. */
-export type Placed = { span: Span; left: number; width: number; clipStart: boolean; clipEnd: boolean; segments: { seg: Segment; left: number; width: number }[]; blocks: { left: number; width: number }[] };
+export type Placed = { span: Span; left: number; width: number; clipStart: boolean; clipEnd: boolean; segments: { seg: Segment; left: number; width: number }[]; blocks: { left: number; width: number; kind: string }[] };
 
 /** Linear map of `m` from [a, b] onto [da, db]; the end when the range is empty. */
 const lerp = (a: number, b: number, da: number, db: number, m: number) => (m >= b ? db : da + ((m - a) * (db - da)) / (b - a));
@@ -257,7 +264,7 @@ export function layout(list: Span[], w: TimeWindow, scale: Scale): Placed[] {
     if (c2 > c0) {
       for (const b of s.blocks) {
         const a = Math.max(map(b.from), c0), z = Math.min(map(b.to), c2);
-        if (z > a) blocks.push({ left: (a - c0) / (c2 - c0), width: (z - a) / (c2 - c0) });
+        if (z > a) blocks.push({ left: (a - c0) / (c2 - c0), width: (z - a) / (c2 - c0), kind: b.kind });
       }
     }
     let left = (c0 - w.from) / len, width = (c2 - c0) / len;

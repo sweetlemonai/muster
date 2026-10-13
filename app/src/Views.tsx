@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
 import { estimateText } from "./fields";
+import BlockWhy from "./BlockWhy";
+import { blockLead, isBlocked } from "./blockWords";
 import { ago, holder, key, stageLabel, stageOf } from "./lib";
 import type { Task } from "./types";
 import {
-  axis, layout, nowAt, parseScale, SCALES, segmentTitle, sortTasks, spans, timeWindow, wallMinutes, windowLabel,
+  axis, barTitle, layout, nowAt, parseScale, SCALES, segmentTitle, sortTasks, spans, timeWindow, wallMinutes, windowLabel,
   type Placed, type Scale, type SortKey, type Tick,
 } from "./viewData";
 import { BandHead } from "./Groups";
@@ -91,9 +93,9 @@ function Row({ t, now, multi, active, onOpen }: { t: Task; now: number; multi: b
       <td><span className={`pri pri-${t.priority || "normal"}`}>{t.priority || "normal"}</span></td>
       <td>
         {parentLevel ? <span className={`status-pill s-${shownStageClass(t)}`}>{shownStageLabel(t)}</span> : <span className={`status-pill s-${stageOf(t)}`}>{stageLabel(t.stage)}</span>}
-        {t.blocked && <span className="status-pill blocked">blocked</span>}
+        {isBlocked(t) && <span className="status-pill blocked">blocked</span>}
       </td>
-      <td className="meta">{t.blocked ? t.waitingOn : holder(t)}</td>
+      <td className="meta">{isBlocked(t) ? <BlockWhy t={t} short pill={false} /> : holder(t)}</td>
       <td className="meta est-cell">{own || (parentLevel ? estimateLeft(t.progress) : "")}</td>
       <td className="meta">{t.captured}</td>
       <td className="meta">{ago(now, t.modified)}</td>
@@ -187,9 +189,9 @@ export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen 
             </span>
             <span className="tl-track">
               <span
-                className={`tl-bar s-${stageOf(t)}${p.span.open ? " open" : ""}${t.blocked ? " blocked" : ""}${t.waitingForOwner ? " needs-you" : ""}${p.clipStart ? " clip-start" : ""}${p.clipEnd ? " clip-end" : ""}`}
+                className={`tl-bar s-${stageOf(t)}${p.span.open ? " open" : ""}${isBlocked(t) ? " blocked" : ""}${t.waitingForOwner ? " needs-you" : ""}${p.clipStart ? " clip-start" : ""}${p.clipEnd ? " clip-end" : ""}`}
                 style={{ left: pct(p.left), width: pct(p.width) }}
-                title={`${stageLabel(t.stage)}${t.blocked ? `, blocked on ${t.waitingOn || "something"}` : ""} · captured ${t.captured}${t.claimedOn ? ` · started ${t.claimedOn}` : ""}${t.doneOn ? ` · done ${t.doneOn}` : ""}${p.span.timed ? "" : " · dates only"}`}
+                title={barTitle(t, p.span.timed)}
               >
                 {p.segments.map((g) => (
                   <span
@@ -200,9 +202,9 @@ export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen 
                   />
                 ))}
                 {p.blocks.map((b) => (
-                  <span key={`b${b.left}`} className="tl-block" style={{ left: pct(b.left), width: pct(b.width) }} title="Blocked" />
+                  <span key={`b${b.left}`} className="tl-block" style={{ left: pct(b.left), width: pct(b.width) }} title={blockLead(b.kind)} />
                 ))}
-                <span className="tl-bar-text">{stageLabel(t.stage)}{t.blocked ? " · blocked" : ""}{t.priority === "high" ? " · high" : ""}</span>
+                <span className="tl-bar-text">{stageLabel(t.stage)}{isBlocked(t) ? " · blocked" : ""}{t.priority === "high" ? " · high" : ""}</span>
               </span>
             </span>
           </button>

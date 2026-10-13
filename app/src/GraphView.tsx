@@ -1,4 +1,5 @@
 import { useId, useMemo, useState } from "react";
+import { blockSentence } from "./blockWords";
 import { downstream, edgeLit, type Graph, hiddenDeps, layoutGraph, readyToStart, upstream } from "./graph";
 import { holder, key, stageLabel, stageOf } from "./lib";
 import type { Task } from "./types";
@@ -123,7 +124,7 @@ function QueueGraph({ name, tasks, all, openKey, onOpen }: { name: string; tasks
                 className={`g-node s-${stageOf(t)}${t.blocked ? " blocked" : ""}${ready ? " ready" : ""}${role(n.id)}`}
                 style={{ left: p.x, top: p.y, width: W, height: H }}
                 onClick={() => onOpen(t)}
-                title={`${t.id} ${t.title}\n${stageLabel(t.stage)}${t.blocked ? `, blocked on ${t.waitingOn || "something"}` : ""}${t.depends.length ? `\nwaits on ${t.depends.join(", ")}` : ""}`}
+                title={`${t.id} ${t.title}\n${stageLabel(t.stage)}${t.blockedKind ? `\n${blockSentence(t)}` : ""}${t.depends.length ? `\nwaits on ${t.depends.join(", ")}` : ""}`}
                 aria-pressed={n.id === selected}
               >
                 <span className="g-top">

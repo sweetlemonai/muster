@@ -196,12 +196,14 @@ pub fn stage_lines(body: &str) -> Vec<(StageStep, &str)> {
 }
 
 /// A stretch a task was blocked, as `YYYY-MM-DD HH:MM` stamps (a date-only line reads as 00:00);
-/// `to` is empty while it still is.
+/// `to` is empty while it still is. `kind` is the block's (0024, `block::line_kind`), "" for a
+/// hand-moved `→ blocked`.
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockSpan {
     pub from: String,
     pub to: String,
+    pub kind: String,
 }
 
 /// The stamp a log line starts with (`- YYYY-MM-DD HH:MM …` or `- YYYY-MM-DD …`), to the minute,
@@ -244,13 +246,13 @@ pub fn block_history(log_lines: &[&str]) -> Vec<BlockSpan> {
             continue;
         };
         let open = out.last().is_some_and(|b| b.to.is_empty());
-        if what.starts_with("blocked on")
-            || (what.starts_with("moved ") && what.contains("→ blocked"))
-        {
+        let kind = what.strip_prefix("blocked on").map(crate::block::line_kind);
+        if kind.is_some() || (what.starts_with("moved ") && what.contains("→ blocked")) {
             if !open {
                 out.push(BlockSpan {
                     from: at,
                     to: String::new(),
+                    kind: kind.unwrap_or("").to_string(),
                 });
             }
         } else if what.starts_with("unblocked") && open {
@@ -389,6 +391,18 @@ pub struct Task {
     pub checkins: Vec<Checkin>,
     pub heartbeat: String,
     pub waiting_on: String,
+    /// Why it's blocked (0024): you, permission, question or outside from `blocked-kind:` (in a
+    /// file from before kinds, read from `waiting_on`: `kind_guessed`); "tasks" when only its
+    /// `depends:` hold it (`block::derive` fills that in); "" when nothing does.
+    pub blocked_kind: String,
+    /// What the block says (`waiting_on`; an old file's leading owner or capture taken off).
+    pub block_detail: String,
+    /// The tasks it's blocked by, with their stage and holder (`block::derive`).
+    pub blocked_by: Vec<crate::block::BlockedBy>,
+    /// Blocked with no `blocked-kind:`, so the kind was read from `waiting_on`; `check` warns
+    /// until it's blocked again with one.
+    #[serde(skip)]
+    pub kind_guessed: bool,
     pub commit: String,
     pub captured: String,
     /// When it was captured to the minute (`YYYY-MM-DD HH:MM`), from the log's first line when
@@ -826,6 +840,16 @@ pub fn parse_task(
         ),
     };
     let blocked = !waiting_on.is_empty() || status == "blocked";
+    let typed = get("blocked-kind").to_lowercase();
+    let (blocked_kind, block_detail, kind_guessed) = if !blocked {
+        (String::new(), String::new(), false)
+    } else if crate::block::TYPED.contains(&typed.as_str()) {
+        (typed, waiting_on.clone(), false)
+    } else {
+        let kind = crate::block::guess(&waiting_on);
+        let detail = crate::block::guessed_detail(&waiting_on, kind);
+        (kind.to_string(), detail, true)
+    };
     let stage_history: Vec<StageStep> = stage_lines(body).into_iter().map(|(s, _)| s).collect();
     let stage_since = stage_history
         .iter()
@@ -839,9 +863,10 @@ pub fn parse_task(
         .into_iter()
         .filter(|c| c.owner)
         .collect();
+    // Blocked on you or by a permission: a person has to act on both (0024).
     let waiting_for_owner = questions.iter().any(|q| !q.ticked && q.escalated)
         || stage == "your-check"
-        || (blocked && waiting_on.to_lowercase().starts_with("owner"));
+        || matches!(blocked_kind.as_str(), "you" | "permission");
     let attachments = list_attachments(root, &id);
     let rel = path
         .strip_prefix(root)
@@ -897,6 +922,10 @@ pub fn parse_task(
         checkins,
         heartbeat: get("heartbeat"),
         waiting_on,
+        blocked_kind,
+        block_detail,
+        blocked_by: Vec::new(),
+        kind_guessed,
         commit: get("commit"),
         captured: get("captured"),
         captured_at,
@@ -1040,6 +1069,7 @@ pub fn read_state_at(queues: &[(String, PathBuf)], cache: &mut Cache, stamp: &st
                     .push(format!("{name}: {} has no front matter", path.display())),
             }
         }
+        crate::block::derive(&mut tasks);
         state
             .problems
             .extend(problems(name, &tasks, state.now, stamp));
@@ -1197,8 +1227,8 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str) -> Vec<Strin
                 t.path, t.bad_stage, t.stage
             ));
         }
-        // Only Building is held by someone; a blocked task isn't being worked on.
-        let building = t.stage == "building" && !t.blocked;
+        // Only Building is held by someone; a blocked task (by tasks too) isn't being worked on.
+        let building = t.stage == "building" && t.blocked_kind.is_empty();
         if building && t.claimed_by.is_empty() {
             out.push(format!(
                 "{queue}: {} is being worked on but nobody has claimed it",
@@ -1218,6 +1248,20 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str) -> Vec<Strin
             out.push(format!(
                 "{queue}: {} is blocked but doesn't say on what",
                 t.path
+            ));
+        }
+        if t.kind_guessed {
+            let how = if t.blocked_kind == "tasks" {
+                crate::block::ids_in(&t.waiting_on).join(",")
+            } else {
+                format!("{} \"…\"", t.blocked_kind)
+            };
+            out.push(format!(
+                "{queue}: {WARNING}{} is blocked on {:?} without a kind, read as {}; block it again with one to confirm (muster block {} --on {how})",
+                t.path,
+                t.waiting_on.chars().take(80).collect::<String>(),
+                t.blocked_kind,
+                t.id
             ));
         }
         for p in t.links.iter().filter_map(crate::fields::link_problem) {
@@ -1263,7 +1307,11 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str) -> Vec<Strin
             l.join(", ")
         ));
     }
-    for t in tasks {
+    // An old block on a task id (a typed block's detail is free text).
+    for t in tasks
+        .iter()
+        .filter(|t| t.kind_guessed && t.blocked_kind == "tasks")
+    {
         let r: String = t.waiting_on.chars().take(4).collect();
         if r.len() == 4 && r.bytes().all(|b| b.is_ascii_digit()) && !known.contains(r.as_str()) {
             out.push(format!(
@@ -1934,6 +1982,12 @@ pub fn answer(
             &format!("{stamp} {who}: answered Q{n}"),
         );
         write_atomic(&path, &new_body)?;
+        // A block on this question clears with its answer (0024), under the same lock. The answer
+        // is written either way, so a failure here leaves the block for `muster unblock` rather
+        // than reporting an answer that's in the file as failed.
+        let _ = crate::ops::unblock_answered_locked(root, id, n, &who, stamp);
+        // Unblocked, the file may have moved out of blocked/.
+        let path = find_task(root, id).unwrap_or(path);
         let asker = asker_session(&mail, id, n, item);
         if let Some(s) = &asker {
             let title = new_body
@@ -2584,7 +2638,10 @@ mod tests {
             d.path().join("blocked/0044-b.md"),
             TASK.replace("id: 0042", "id: 0044")
                 .replace("status: doing", "status: blocked\nstage: building")
-                .replace("waiting_on:", "waiting_on: owner"),
+                .replace(
+                    "waiting_on:",
+                    "waiting_on: pick a colour\nblocked-kind: you",
+                ),
         )
         .unwrap();
         old("blocked/0044-b.md");
@@ -3337,15 +3394,16 @@ mod tests {
             "- 2026-10-12 23:00 wt-a: blocked on 0002 — merge",
             "- 2026-10-12 23:01 wt-a: blocked on 0002 again (ignored: already open)",
         ];
-        let span = |f: &str, t: &str| BlockSpan {
+        let span = |f: &str, t: &str, kind: &str| BlockSpan {
             from: f.into(),
             to: t.into(),
+            kind: kind.into(),
         };
         assert_eq!(
             block_history(&lines),
             vec![
-                span("2026-10-12 15:05", "2026-10-12 22:02"),
-                span("2026-10-12 23:00", "")
+                span("2026-10-12 15:05", "2026-10-12 22:02", ""),
+                span("2026-10-12 23:00", "", "tasks")
             ]
         );
         // A date-only line reads as midnight; an unblock without a block is ignored.
@@ -3354,7 +3412,25 @@ mod tests {
                 "- 2026-10-11 capture: unblocked",
                 "- 2026-10-11 capture: blocked on owner"
             ]),
-            vec![span("2026-10-11 00:00", "")]
+            vec![span("2026-10-11 00:00", "", "you")]
+        );
+        // Lines muster writes since kinds (0024), and the unblocks that close them by themselves.
+        assert_eq!(
+            block_history(&[
+                "- 2026-10-13 09:00 wt-a: blocked on permission: write to ~/x/tasks",
+                "- 2026-10-13 09:30 owner: unblocked (was waiting on permission: write to ~/x/tasks)",
+                "- 2026-10-13 10:00 wt-a: blocked on question: Q2",
+                "- 2026-10-13 10:05 capture: unblocked: Q2 answered",
+                "- 2026-10-13 11:00 wt-a: blocked on tasks: 0014, 0016",
+                "- 2026-10-13 12:00 wt-b: unblocked: 0014, 0016 done",
+                "- 2026-10-13 13:00 wt-a: blocked on outside: Apple review",
+            ]),
+            vec![
+                span("2026-10-13 09:00", "2026-10-13 09:30", "permission"),
+                span("2026-10-13 10:00", "2026-10-13 10:05", "question"),
+                span("2026-10-13 11:00", "2026-10-13 12:00", "tasks"),
+                span("2026-10-13 13:00", "", "outside"),
+            ]
         );
     }
 

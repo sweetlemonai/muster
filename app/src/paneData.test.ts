@@ -34,15 +34,20 @@ describe("what's waiting on the owner", () => {
     expect(waitingOnYou(task({ stage: "your-check", ownerCriteria: [crit(1, true)] }))).toEqual(["accept or send back"]);
     expect(waitingOnYou(task({ stage: "your-check" }))).toEqual(["accept or send back"]);
   });
-  it("escalated open questions, counted, and a block on the owner", () => {
+  it("escalated open questions, counted, and a block on the owner or by a permission (0024)", () => {
     const qs = [q({ n: 1, escalated: true }), q({ n: 2, escalated: true }), q({ n: 3 }), q({ n: 4, escalated: true, ticked: true })];
     expect(waitingOnYou(task({ questions: qs }))).toEqual(["2 questions for you"]);
     expect(waitingOnYou(task({ questions: [q({ escalated: true })] }))).toEqual(["1 question for you"]);
-    expect(waitingOnYou(task({ blocked: true, waitingOn: "Owner: pick a colour" }))).toEqual(["blocked on you"]);
-    expect(waitingOnYou(task({ blocked: true, waitingOn: "0012" }))).toEqual([]);
+    expect(waitingOnYou(task({ blocked: true, waitingOn: "pick a colour", blockedKind: "you" }))).toEqual(["blocked on you"]);
+    expect(waitingOnYou(task({ blocked: true, waitingOn: "write to ~/x", blockedKind: "permission" }))).toEqual(["blocked by permission"]);
+    for (const kind of ["tasks", "question", "outside", ""]) {
+      expect(waitingOnYou(task({ blocked: kind !== "tasks" && kind !== "", blockedKind: kind }))).toEqual([]);
+    }
+    // The kind says it, not the words: the core reads an old "owner …" as you.
+    expect(waitingOnYou(task({ blocked: true, waitingOn: "Owner: pick a colour", blockedKind: "outside" }))).toEqual([]);
   });
   it("all at once, in that order", () => {
-    const t = task({ stage: "your-check", blocked: true, waitingOn: "owner", questions: [q({ escalated: true })] });
+    const t = task({ stage: "your-check", blocked: true, waitingOn: "pick", blockedKind: "you", questions: [q({ escalated: true })] });
     expect(waitingOnYou(t)).toEqual(["accept or send back", "1 question for you", "blocked on you"]);
   });
 });

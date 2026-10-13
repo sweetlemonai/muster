@@ -154,10 +154,10 @@ export const CHECKIN_MINUTES = 30;
 
 /** Minutes a session holding a Building task has been quiet, when that's past CHECKIN_MINUTES:
  *  since its last check-in or heartbeat (a check-in is one). Null when it isn't, when it's
- *  blocked (waiting), held by the owner (who doesn't check in), or held by nobody. */
-export function quietCheckin(t: Pick<Task, "stage" | "blocked" | "claimedBy" | "heartbeat" | "modified">, now: number): number | null {
+ *  blocked (waiting, by tasks too), held by the owner (who doesn't check in), or held by nobody. */
+export function quietCheckin(t: Pick<Task, "stage" | "blocked" | "blockedKind" | "claimedBy" | "heartbeat" | "modified">, now: number): number | null {
   const who = t.claimedBy.trim();
-  if (t.stage !== "building" || t.blocked || !who || splitHolder(who).label === "owner") return null;
+  if (t.stage !== "building" || t.blocked || t.blockedKind || !who || splitHolder(who).label === "owner") return null;
   const m = quietMinutes(t, now);
   return m > CHECKIN_MINUTES ? m : null;
 }
@@ -214,9 +214,9 @@ export function quietMinutes(t: Pick<Task, "heartbeat" | "modified">, now: numbe
 }
 
 /** A claim whose lease ran out, exactly what the core's reclaim takes: held, in Building, not
- *  blocked (that's waiting), and quiet for longer than the lease. */
-export function leaseRunOut(t: Pick<Task, "stage" | "blocked" | "claimedBy" | "heartbeat" | "modified">, now: number): boolean {
-  return t.stage === "building" && !t.blocked && t.claimedBy.trim() !== "" && quietMinutes(t, now) > LEASE_SECS / 60;
+ *  blocked (that's waiting, by tasks too), and quiet for longer than the lease. */
+export function leaseRunOut(t: Pick<Task, "stage" | "blocked" | "blockedKind" | "claimedBy" | "heartbeat" | "modified">, now: number): boolean {
+  return t.stage === "building" && !t.blocked && !t.blockedKind && t.claimedBy.trim() !== "" && quietMinutes(t, now) > LEASE_SECS / 60;
 }
 
 /** Runs one action at a time: a call made while one is in flight is dropped (false), so a
