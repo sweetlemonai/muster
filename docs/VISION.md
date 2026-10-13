@@ -50,8 +50,10 @@ and cost, 0024 why blocked). Appearance holds themes, accents and card looks (00
 
 ## Open questions (owner's to settle; the spine above shows capture's pick)
 
-- Parallel sessions: workers pull their own tasks now, dispatcher (0009) later; merge through
-  GitHub's main; merge after Testing; 3 at once.
+- **Settled by the owner (2026-10-13):** parallel sessions merge after Testing passes, into the
+  local main after a fresh gate, and the session pushes main to GitHub itself (no PR per task for
+  now; the owner doesn't push). 3 at once by default (0023). Workers pull their own tasks now; the
+  dispatcher (0009) comes later.
 - Merging after Testing means Done comes after the merge, so decision 0003's "Done rides in the
   PR" changes to: stage and actuals are stamped into the file at merge; Done is a tool commit on
   main that touches only `.muster/`.
