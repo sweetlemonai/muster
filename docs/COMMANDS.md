@@ -1,62 +1,73 @@
-# Muster: commands (draft, 2026-10-12)
+# Muster: commands
 
 **Name:** Muster (owner, 2026-10-12). It replaces the working names "tasky" and "the task queue".
 chit (`~/playground/chit`) is the earlier CLI and spec it grows from. A single task can still be
 called a ticket.
 
-**Slash commands:** `/muster`, with `/mu` as a short alias. Both are one router, like `/pr` in
-`~/playground/.claude/commands/pr.md`. The first word picks the action. A task number shows that
-task. Anything else is captured as a new idea. Each command is a thin wrapper over the `muster`
-script (today `bin/task`), which enforces the rules, so they don't live only in a prompt.
+**Slash commands:** `/muster`, with `/mu` as the short form. Both are one router, like `/pr` in
+`~/playground/.claude/commands/pr.md`. The first word picks the route, a task id (four digits)
+shows that task, and anything else is captured as a backlog one-liner, never guessed as a command.
+A route matches only its shape: `/mu next week we try dark mode` is captured, not a claim. Each
+route runs one `muster` command, which holds the rules.
+
+The router is `commands/muster.md`. `commands/mu.md` is an identical copy, because Claude Code has
+no alias for a command: a one-line pointer would cost an extra read on every call and would need
+the router's absolute path, which differs between this repo and the personal layer.
+`bin/test_commands.py` keeps the two byte for byte equal and checks this page against the router
+and against `muster help --json`.
+
+**Installed:** not yet. They go in the personal layer (`~/playground/.claude/commands/`), so every
+repo gets them, once the owner says yes (asked in `WAITING-FOR-OWNER.md`).
+
+Not built yet: anything marked (task NNNN). Until then the route says so and does nothing.
 
 ## For the owner
 
-| Command | What it does |
-|---|---|
-| `/mu` | What's waiting for you, then a one-screen view of the queue |
-| `/mu <any text>` | Capture an idea or bug: written up as a task, checked for duplicates, questions asked if unclear |
-| `/mu 0008` | One task in plain words: status, who's on it, open questions, what's left |
-| `/mu waiting` | Only what needs you, each with what it is, why, the options, the pick, and what happens with no answer |
-| `/mu answer 0008 Q2 <text>` | Answer a question. It reaches the asking agent by itself |
-| `/mu board` | Every task by status |
-| `/mu report` | The as-built doc, with the manual test script and QA checklist (task 0017) |
-| `/mu shot 0008` | Attach the image just pasted to a task |
+Answers in plain words: task titles with their ids, and for anything that needs a decision, what
+it is, why it needs you, the options, the pick, and what happens with no answer.
+
+| Command | What it does | Runs |
+|---|---|---|
+| `/mu` | What's waiting for you (questions escalated to you, tasks in Your check, tasks blocked on you), then the queue in one line | `muster list`, then `muster show <id>` for each task marked [needs you] |
+| `/mu <id>` | One task in plain words: what it is, its stage, who's on it, open questions, criteria left, the last thing that happened | `muster show <id>` |
+| `/mu waiting` | Only what's waiting for you | `muster list`, then `muster show <id>` for each task marked [needs you] |
+| `/mu add <text>` | Capture a one-liner in the backlog, for shaping into a task (task 0015) | `muster add -- '<text>'` |
+| `/mu answer <id> Q<n> <text>` | Answer a question, recorded as yours. It reaches the agent that asked | `muster answer <id> Q<n> --as owner -- '<text>'` |
+| `/mu <anything else>` | Captured as a backlog one-liner, and it says so (task 0015) | `muster add -- '<all of it>'` |
 
 ## For agents doing the work
 
-| Command | What it does |
-|---|---|
-| `/mu next` | Claim the top task this agent may take, and start |
-| `/mu claim 0013` | Claim a specific task |
-| `/mu ask 0013 <question>` | Ask without stopping. The answer is pushed back (answer hook) |
-| `/mu block 0013 <on what>` | Park the task with what it waits on, and release the claim |
-| `/mu done 0013 <commit>` | Close the task with its proof |
-| `/mu found <text>` | Drop a new bug or idea in the inbox for capture |
+Prints the command it ran and muster's output, verbatim. `--as <your branch>` and the other
+options pass through.
+
+| Command | What it does | Runs |
+|---|---|---|
+| `/mu ask <id> <question>` | Ask without stopping. The answer is pushed back (answer hook) | `muster ask <id> -- '<question>'` |
+| `/mu claim <id>` | Claim a Ready task | `muster claim <id>` |
+| `/mu next` | Claim the top Ready task this agent may take | `muster next` |
+| `/mu heartbeat <id>` | Keep a claim alive on long work | `muster heartbeat <id>` |
+| `/mu note <id> <text>` | Add a line to the task's log | `muster note <id> -- '<text>'` |
+| `/mu pass <id> …` | Hand on to the next stage (from, gate line, commit as needed) | `muster pass <id> …` |
+| `/mu return <id> <why>` | Send back a stage, with the reason | `muster return <id> -- '<why>'` |
+| `/mu block <id> <on what>` | Mark it blocked on a task id, owner or capture; it keeps its stage | `muster block <id> --on '<on what>'` |
+| `/mu unblock <id>` | Clear the blocked flag | `muster unblock <id>` |
 
 ## For running the system
 
-| Command | What it does |
-|---|---|
-| `/mu capture` | Make this session the capture session (PM + tech lead): watch, answer, escalate |
-| `/mu triage` | Turn inbox notes into tasks |
-| `/mu check` | Find problems: duplicate ids, stale claims, broken `waiting_on` links |
-| `/mu init <project>` | Start Muster in another project |
-| `/mu dogfood <note>` | Log a rough edge in Muster itself (`DOGFOOD.md`) |
+Prints the command and its output, verbatim.
 
-## Built today
+| Command | What it does | Runs |
+|---|---|---|
+| `/mu list [--stage <s>]` | Tasks by stage, or one stage | `muster list [--stage <s>]` |
+| `/mu check` | Problems in the queue: ids used twice, stale claims, broken waits | `muster check` |
+| `/mu help [<command>]` | These routes, then muster's own help | `muster help [<command>]` |
 
-The `muster` command (the app's binary, `bin/muster`): `new`, `list`, `show`, `move`, `set`, `note`,
-`attach`, `answer`, `check`, `projects`, `init`, and the stage commands (task 0014): `pass`
-(to the next stage. `--from <stage>` refuses if it has moved on. `--gate` is needed out of
-Building, and `--commit` goes with the pass into Done), `return` (back, with
-the reason), `block --on` / `unblock` (a flag, the task keeps its stage), and `stage` (the owner's
-override). Claims and their lease (task 0002): `claim` (Ready → Building, one claim per holder),
-`next` (the top Ready task you may take, by priority then id), `heartbeat` (the holder keeps a
-claim alive), and `reclaim [--after 12h]` (claims quiet past their lease go back to Ready). Questions
-(task 0002): `ask`, `escalate` and `inbox`, beside `answer`. The slash commands will call it.
+## The `muster` command
 
-### Python tools (in `bin/`)
+`muster help` lists every command, the same list as the app's Help tab. The ones /mu doesn't
+route run as `! muster …` in a session: new, move, stage, set, attach, escalate, inbox, reclaim,
+projects and init. Being built: add and shape (task 0015), `depends:` (task 0019).
 
-`task ask|answer|escalate|inbox` (a stand-in that runs the `muster` commands with the same
-arguments), the answer hook (reads the mailbox itself, for speed), `manifest.py` (board data +
-`--check`). Still to build: `found` and `triage` (task 0015), `depends:` (task 0019).
+`bin/task ask|answer|escalate|inbox` is a stand-in that runs the same muster commands, kept for
+scripts and agents that call it. `bin/answer-hook.py` delivers answers into a running session, and
+`bin/manifest.py` writes the board data (`--check` checks it).
