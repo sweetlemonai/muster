@@ -335,6 +335,64 @@ class TaskTests(unittest.TestCase):
         self.assertEqual([(n["file"], n["title"]) for n in json.loads(self.text("tasks.json"))["backlog"]],
                          [(name, "Found a bug")])
 
+    def item(self, id_, fm, folder="todo"):
+        """A task file `<id>-x.md` with these front-matter lines."""
+        (self.root / folder / f"{id_}-x.md").write_text(
+            f"---\nid: {id_}\ntype: task\npriority: normal\n{fm}\n---\n\n# Item {id_}\n\n"
+            "## Log\n- 2026-10-12 09:00 capture: created\n")
+
+    def test_manifest_reads_levels_and_checks_parents(self):
+        ready = "stage: ready\nstatus: todo"
+        self.item("0001", f"level: goal\ndue: 2099-01-01\n{ready}")
+        self.item("0002", f"level: Feature\nparent: 0001\n{ready}")
+        self.item("0003", f"parent: 0002\n{ready}")
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertEqual(self.manifest().returncode, 0)
+        tasks = {t["id"]: t for t in json.loads(self.text("tasks.json"))["tasks"]}
+        self.assertEqual([tasks["0001"][k] for k in ("level", "parent", "due")], ["goal", "", "2099-01-01"])
+        self.assertEqual([tasks["0002"][k] for k in ("level", "parent", "due")], ["feature", "0001", ""])
+        self.assertEqual([tasks["0003"][k] for k in ("level", "parent")], ["task", "0002"])
+        self.assertEqual(tasks["0042"]["level"], "task", "no level is a task")
+        self.item("0004", f"parent: 0003\n{ready}")
+        self.item("0005", f"level: feature\nparent: 0002\n{ready}")
+        self.item("0006", f"level: goal\nparent: 0001\n{ready}")
+        self.item("0007", f"parent: 0099\n{ready}")
+        self.item("0008", f"level: feature\nparent: 0009\n{ready}")
+        self.item("0009", f"level: feature\nparent: 0008\n{ready}")
+        self.item("0010", f"level: epic\n{ready}")
+        self.item("0011", f"level: goal\ndue: next week\n{ready}")
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 1)
+        for line in [
+            "todo/0004-x.md: a task under task 0003; a task's parent is a feature or a goal",
+            "todo/0005-x.md: a feature under feature 0002; a feature's parent is a goal",
+            "todo/0006-x.md: a goal with a parent (0001); a goal has none",
+            "todo/0007-x.md: parent 0099, which doesn't exist",
+            "todo/0008-x.md: a feature under feature 0009; a feature's parent is a goal",
+            "todo/0010-x.md: level 'epic' isn't a level (read as task)",
+            "todo/0011-x.md: due 'next week' isn't a date (YYYY-MM-DD)",
+            "parents go round in a loop: 0008 → 0009 → 0008",
+        ]:
+            self.assertIn(f"problem: {line}\n", r.stdout)
+        self.assertEqual(r.stdout.count("go round in a loop"), 1, r.stdout)
+
+    def test_manifest_warns_about_a_late_goal_without_failing(self):
+        self.item("0001", "level: goal\ndue: 2020-01-01\nstage: ready\nstatus: todo")
+        self.item("0002", "parent: 0001\nstage: ready\nstatus: todo")
+        self.item("0003", "parent: 0001\nstage: done\nstatus: done", folder="done")
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("warning: todo/0001-x.md: past its due date (2020-01-01) with 1 of 2 tasks open\n", r.stdout)
+        self.assertEqual(self.manifest().returncode, 0)
+        manifest = json.loads(self.text("tasks.json"))
+        self.assertEqual(len(manifest["warnings"]), 1)
+        self.assertEqual(manifest["problems"], [])
+        # All its work done: no warning.
+        self.item("0002", "parent: 0001\nstage: done\nstatus: done", folder="done")
+        (self.root / "todo" / "0002-x.md").unlink()
+        self.assertNotIn("warning", self.manifest("--check").stdout)
+
     def test_inbox_command(self):
         self.run_task("ask", "0042", "Q?", "--session", "aaaa1111")
         self.run_task("answer", "0042", "Q1", "the answer")

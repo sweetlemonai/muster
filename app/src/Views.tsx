@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { ago, holder, key, stageLabel, stageOf } from "./lib";
 import type { Task } from "./types";
 import { bars, dayLabel, sortTasks, type SortKey } from "./viewData";
+import { BandHead } from "./Groups";
+import { estimateLeft, type Group, type GroupBy, isWork, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
 
 const COLS: { key: SortKey; label: string }[] = [
   { key: "queue", label: "Project" },
@@ -16,12 +18,22 @@ const COLS: { key: SortKey; label: string }[] = [
   { key: "changed", label: "Changed" },
 ];
 
-/** Every task as a row: sortable by any column, everything at a glance. */
-export function TableView({ tasks, now, multi, openKey, onOpen }: { tasks: Task[]; now: number; multi: boolean; openKey: string | null; onOpen: (t: Task) => void }) {
+/** Every task as a row: sortable by any column, everything at a glance. Grouped (by feature or
+ *  goal), each band's heading row is the feature or goal, and its rows are sorted inside it. */
+export function TableView({ tasks, now, multi, openKey, onOpen, groups, by: groupBy }: {
+  tasks: Task[];
+  now: number;
+  multi: boolean;
+  openKey: string | null;
+  onOpen: (t: Task) => void;
+  groups?: Group[];
+  by?: GroupBy;
+}) {
   const [by, setBy] = useState<SortKey>("stage");
   const [desc, setDesc] = useState(false);
   const rows = useMemo(() => sortTasks(tasks, by, desc), [tasks, by, desc]);
   const cols = multi ? COLS : COLS.filter((c) => c.key !== "queue");
+  const row = (t: Task) => <Row key={key(t)} t={t} now={now} multi={multi} active={openKey === key(t)} onOpen={onOpen} />;
   return (
     <main className="table-view">
       <table className="tasks-table">
@@ -38,32 +50,51 @@ export function TableView({ tasks, now, multi, openKey, onOpen }: { tasks: Task[
             <th className="plain">Tags</th>
           </tr>
         </thead>
-        <tbody>
-          {rows.map((t) => (
-            <tr key={key(t)} className={`${openKey === key(t) ? "active " : ""}s-${stageOf(t)}`} onClick={() => onOpen(t)}>
-              {multi && <td className="q">{t.queue}</td>}
-              <td className="id">{t.id}</td>
-              <td className="t-title">
-                {t.waitingForOwner && <span className="badge warn">needs you</span>} {t.title}
-                {t.openQuestions > 0 && <span className="badge">{t.openQuestions} open Q</span>}
-              </td>
-              <td className={`kind ${t.kind}`}>{t.kind}</td>
-              <td><span className={`pri pri-${t.priority || "normal"}`}>{t.priority || "normal"}</span></td>
-              <td>
-                <span className={`status-pill s-${stageOf(t)}`}>{stageLabel(t.stage)}</span>
-                {t.blocked && <span className="status-pill blocked">blocked</span>}
-              </td>
-              <td className="meta">{t.blocked ? t.waitingOn : holder(t)}</td>
-              <td className="meta est-cell">{[t.estTime, t.estTokens].filter(Boolean).join(" · ")}</td>
-              <td className="meta">{t.captured}</td>
-              <td className="meta">{ago(now, t.modified)}</td>
-              <td>{t.tags.map((g) => <span key={g} className="tag">#{g}</span>)}</td>
-            </tr>
-          ))}
-        </tbody>
+        {groups && groupBy && groupBy !== "none"
+          ? groups.map((g) => (
+              <tbody key={g.head ? key(g.head) : "none"} className="band-rows">
+                <tr className="group-row">
+                  <td colSpan={cols.length + 1}>
+                    <BandHead group={g} by={groupBy} multi={multi} active={!!g.head && openKey === key(g.head)} onOpen={onOpen} />
+                  </td>
+                </tr>
+                {sortTasks(g.items, by, desc).map(row)}
+              </tbody>
+            ))
+          : <tbody>{rows.map(row)}</tbody>}
       </table>
       {rows.length === 0 && <p className="empty">No tasks match.</p>}
     </main>
+  );
+}
+
+/** One row of the table. A goal or feature says so, with its progress, the stage its tasks give
+ *  it and the estimate left of its open tasks. */
+function Row({ t, now, multi, active, onOpen }: { t: Task; now: number; multi: boolean; active: boolean; onOpen: (t: Task) => void }) {
+  const parentLevel = !isWork(t);
+  const own = [t.estTime, t.estTokens].filter(Boolean).join(" · ");
+  return (
+    <tr className={`${active ? "active " : ""}s-${parentLevel ? shownStageClass(t) : stageOf(t)}${parentLevel ? " level-item" : ""}`} onClick={() => onOpen(t)}>
+      {multi && <td className="q">{t.queue}</td>}
+      <td className="id">{t.id}</td>
+      <td className="t-title">
+        {parentLevel && <span className="badge level">{levelLabel(t.level)}</span>}
+        {t.waitingForOwner && <span className="badge warn">needs you</span>} {t.title}
+        {parentLevel && <span className="meta rollup">{progressText(t.progress)}</span>}
+        {t.openQuestions > 0 && <span className="badge">{t.openQuestions} open Q</span>}
+      </td>
+      <td className={`kind ${t.kind}`}>{t.kind}</td>
+      <td><span className={`pri pri-${t.priority || "normal"}`}>{t.priority || "normal"}</span></td>
+      <td>
+        {parentLevel ? <span className={`status-pill s-${shownStageClass(t)}`}>{shownStageLabel(t)}</span> : <span className={`status-pill s-${stageOf(t)}`}>{stageLabel(t.stage)}</span>}
+        {t.blocked && <span className="status-pill blocked">blocked</span>}
+      </td>
+      <td className="meta">{t.blocked ? t.waitingOn : holder(t)}</td>
+      <td className="meta est-cell">{own || (parentLevel ? estimateLeft(t.progress) : "")}</td>
+      <td className="meta">{t.captured}</td>
+      <td className="meta">{ago(now, t.modified)}</td>
+      <td>{t.tags.map((g) => <span key={g} className="tag">#{g}</span>)}</td>
+    </tr>
   );
 }
 

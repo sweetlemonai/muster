@@ -34,7 +34,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--keep" => a.keep = true,
             "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on"
             | "--tags" | "--tag" | "--time" | "--tokens" | "--stage" | "--gate" | "--commit"
-            | "--to" | "--from" | "--after" | "--session" => {
+            | "--to" | "--from" | "--after" | "--session" | "--level" | "--parent" | "--due" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -396,6 +396,7 @@ fn new_task(a: &Args, title: &str, body: String) -> ops::NewTask {
             .unwrap_or_default(),
         est_time: a.flags.get("time").cloned().unwrap_or_default(),
         est_tokens: a.flags.get("tokens").cloned().unwrap_or_default(),
+        ..Default::default()
     }
 }
 
@@ -608,7 +609,13 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
     match cmd {
         "new" => {
             let title = need(a, 1, "a title")?;
-            let new = new_task(a, title, body_arg(a)?.unwrap_or_default());
+            // Level, parent and due (0016) are new's own; `file` takes the rest of these options.
+            let new = ops::NewTask {
+                level: a.flags.get("level").cloned().unwrap_or_default(),
+                parent: a.flags.get("parent").cloned().unwrap_or_default(),
+                due: a.flags.get("due").cloned().unwrap_or_default(),
+                ..new_task(a, title, body_arg(a)?.unwrap_or_default())
+            };
             let c = ops::create_task(root, &new, &me, stamp)?;
             if a.json {
                 print_json(&c)?;
@@ -950,7 +957,9 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                     println!("{}: waits on the owner to verify {}", t.id, open.join(", "));
                 }
             }
-            Ok(if s.problems.is_empty() { 0 } else { 1 })
+            // Warnings (a goal past its due date) are shown but don't fail the check.
+            let failed = s.problems.iter().any(|p| !queue::is_warning(p));
+            Ok(if failed { 1 } else { 0 })
         }
         other => Err(format!("unknown command {other:?} (see `muster help`)")),
     }
@@ -1635,6 +1644,76 @@ mod tests {
         assert_eq!(queue::read_body(d.path(), "0001").unwrap(), before);
         let e = run(&sv(&["edit", "0001", "--queue", &q, "--as", "owner"])).unwrap_err();
         assert!(e.contains("wt-a holds it; add a note instead"), "{e}");
+    }
+
+    #[test]
+    fn levels_on_the_command_line_and_check_warns_without_failing() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let code = |args: &[&str]| {
+            let mut v = sv(&args[..1]);
+            v.extend(sv(&["--queue", &q, "--as", "owner"]));
+            v.extend(sv(&args[1..]));
+            main(&v)
+        };
+        assert_eq!(
+            code(&["new", "Ship it", "--level", "goal", "--due", "2026-12-01"]),
+            0
+        );
+        assert_eq!(
+            code(&[
+                "new",
+                "Stage track",
+                "--level",
+                "feature",
+                "--parent",
+                "0001"
+            ]),
+            0
+        );
+        assert_eq!(code(&["new", "Pass button", "--parent", "0002"]), 0);
+        assert_eq!(
+            code(&["new", "Bad", "--level", "feature", "--parent", "0002"]),
+            1
+        );
+        assert_eq!(code(&["new", "Bad", "--level", "goal", "--due", "soon"]), 1);
+        let t = |id: &str| queue::read_task(d.path(), id).unwrap();
+        assert_eq!(
+            (
+                t("0001").level,
+                t("0001").due,
+                t("0002").parent,
+                t("0003").parent
+            ),
+            (
+                "goal".into(),
+                "2026-12-01".into(),
+                "0001".into(),
+                "0002".into()
+            )
+        );
+        assert_eq!(code(&["claim", "0002"]), 1, "a feature isn't built");
+        assert_eq!(code(&["set", "0003", "parent", "0001"]), 0);
+        assert_eq!(code(&["set", "0003", "parent", ""]), 0);
+        assert_eq!(t("0003").parent, "");
+        assert_eq!(code(&["set", "0003", "due", "2026-12-01"]), 1);
+        assert_eq!(code(&["set", "0002", "level", "goal"]), 1);
+        assert_eq!(code(&["check"]), 0);
+        assert_eq!(code(&["show", "0001", "--json"]), 0);
+        // A goal past its due with a task open is a warning: shown, but check still passes.
+        assert_eq!(code(&["set", "0003", "parent", "0002"]), 0);
+        assert_eq!(code(&["set", "0001", "due", "2020-01-01"]), 0);
+        let s = tasks_of(d.path());
+        assert_eq!(
+            s.problems,
+            ["q: warning: todo/0001-ship-it.md is past its due date (2020-01-01) with 1 of 1 tasks open"]
+        );
+        assert_eq!(code(&["check"]), 0);
+        // A parent that doesn't exist (written by hand) fails it.
+        let p = d.path().join("todo/0003-pass-button.md");
+        let text = std::fs::read_to_string(&p).unwrap();
+        std::fs::write(&p, text.replace("parent: 0002", "parent: 0099")).unwrap();
+        assert_eq!(code(&["check"]), 1);
     }
 
     #[test]

@@ -33,20 +33,26 @@ pub struct Help {
 pub const COMMANDS: &[Command] = &[
     Command {
         name: "new",
-        usage: "muster new \"<title>\" [--type bug|task|idea] [--priority high|normal|low] [--tags a,b] [--time 2h] [--tokens 400k] [--body <text>|-]",
-        what: "Create a task in To do. Its id is taken in order under the queue's lock, and it's logged as you.",
+        usage: "muster new \"<title>\" [--type bug|task|idea] [--priority high|normal|low] [--tags a,b] [--time 2h] [--tokens 400k] [--level goal|feature] [--parent <id>] [--due YYYY-MM-DD] [--body <text>|-]",
+        what: "Create a task in To do. Its id is taken in order under the queue's lock, and it's logged as you. With --level it's a goal (an outcome, may have a due date) or a feature (groups tasks); agents build only tasks.",
         options: &[
             ("--type", "bug, task (default) or idea"),
             ("--priority", "high, normal (default) or low"),
             ("--tags", "comma-separated: spike, chore, tech-debt, code, docs, design, research, test, perf, security, or your own"),
             ("--time", "estimated agent time: 45m, 2h, 1.5d"),
             ("--tokens", "estimated tokens: 150k, 1.2M"),
+            ("--level", "goal, feature or task (default)"),
+            ("--parent", "the id it sits under: a task's is a feature or a goal, a feature's a goal; a goal has none"),
+            ("--due", "a goal's date, YYYY-MM-DD"),
             ("--body", "the description in Markdown; \\n is a line break; - reads it from stdin"),
         ],
         examples: &[
             "muster new \"Board flickers on resize\" --type bug --priority high --tags code --time 1h --tokens 300k",
             "muster new \"Export as CSV\" --type idea --body \"What: …\\n\\nDone looks like: …\"",
             "pbpaste | muster new \"From the clipboard\" --body -",
+            "muster new \"Ship 1.0\" --level goal --due 2026-12-01",
+            "muster new \"Stage track\" --level feature --parent 0030",
+            "muster new \"Pass button\" --parent 0031 --time 2h",
         ],
     },
     Command {
@@ -155,10 +161,10 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "set",
-        usage: "muster set <id> <priority|type|title|tags|time|tokens> <value>",
-        what: "Change one field, logged with the time and who.",
+        usage: "muster set <id> <priority|type|title|tags|time|tokens|level|parent|due> <value>",
+        what: "Change one field, logged with the time and who. level, parent and due keep the rules of muster new (a parent that exists at the right level, no loop, a due date only on a goal); a task in Building or Testing, or held, stays a task. An empty parent or due clears it.",
         options: &[],
-        examples: &["muster set 0007 priority high", "muster set 0007 tags spike,tech-debt", "muster set 0007 tags \"\"", "muster set 0007 time 3h", "muster set 0007 tokens 600k", "muster set 0007 title \"A clearer title\""],
+        examples: &["muster set 0007 priority high", "muster set 0007 tags spike,tech-debt", "muster set 0007 tags \"\"", "muster set 0007 time 3h", "muster set 0007 tokens 600k", "muster set 0007 title \"A clearer title\"", "muster set 0031 level feature", "muster set 0032 parent 0031", "muster set 0031 parent \"\"", "muster set 0030 due 2026-12-01"],
     },
     Command {
         name: "edit",
@@ -243,7 +249,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "check",
         usage: "muster check",
-        what: "Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist, a backlog note over 1 MB or that's a symlink. Exit 1 if any.",
+        what: "Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop. Exit 1 if any. A goal past its due date with tasks open is a warning: shown, without failing.",
         options: &[],
         examples: &["muster check", "muster check --queue braindump"],
     },
@@ -422,6 +428,10 @@ pub const APP: &[(&str, &str)] = &[
     (
         "Board · Table · Timeline",
         "three views of the same tasks, with the same priority and tag filters",
+    ),
+    (
+        "Group by None · Feature · Goal",
+        "above the board and table: one band per feature or goal, with its progress and the estimate left; tasks without one in the last band (remembered)",
     ),
     (
         "Paste or drop",
@@ -639,6 +649,15 @@ mod tests {
         assert!(command_text("new").unwrap().contains("--tags"));
         assert!(command_text("frob").is_none());
         assert!(command_text("pass").unwrap().contains("--from"));
+        // Levels: the flags of new, the keys of set, and what check looks for.
+        let new = command_text("new").unwrap();
+        for flag in ["--level", "--parent", "--due"] {
+            assert!(new.contains(flag), "{flag}: {new}");
+        }
+        let set = command_text("set").unwrap();
+        assert!(set.contains("level|parent|due"), "{set}");
+        assert!(set.contains("muster set 0031 parent \"\""), "{set}");
+        assert!(command_text("check").unwrap().contains("parent"));
         // The app's help names the pane's stage actions.
         let app: String = APP.iter().map(|(k, v)| format!("{k} {v}\n")).collect();
         for word in [

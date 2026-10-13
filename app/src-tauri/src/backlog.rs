@@ -1079,6 +1079,7 @@ mod tests {
             tags: vec!["code".into()],
             est_time: "2h".into(),
             est_tokens: "400k".into(),
+            ..Default::default()
         }
     }
 

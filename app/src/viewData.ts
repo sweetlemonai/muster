@@ -1,5 +1,6 @@
 import { holder, stageRank } from "./lib";
 import type { Task } from "./types";
+import { isWork, shownStageRank } from "./levels";
 
 // Pure helpers for the Table and Timeline views (tested in viewData.test.ts).
 
@@ -10,7 +11,8 @@ export function sortTasks(tasks: Task[], by: SortKey, desc: boolean): Task[] {
   const val = (t: Task): string | number => {
     switch (by) {
       case "priority": return PRIORITY_RANK[t.priority || "normal"] ?? 1;
-      case "stage": return stageRank(t.stage);
+      // A goal or feature sorts by the stage it shows (from its children).
+      case "stage": return isWork(t) ? stageRank(t.stage) : shownStageRank(t);
       case "changed": return t.modified;
       case "estimate": return t.estMinutes * 1e7 + t.estTokenCount;
       case "who": return t.blocked ? t.waitingOn : holder(t);

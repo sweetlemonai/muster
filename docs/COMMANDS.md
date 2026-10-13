@@ -78,6 +78,14 @@ route run as `! muster …` in a session: new, move, stage, set, attach, escalat
 projects, init, tick, untick (the owner's criteria, task 0028), edit (task 0020), and the backlog's
 shape, file and drop (task 0015). Also coming: `depends:` (task 0019).
 
+Levels (task 0016): `new --level goal|feature --parent <id> --due YYYY-MM-DD` and `set <id>
+level|parent|due <value>` (an empty parent or due clears it), with the rules checked: a task's
+parent is a feature or a goal, a feature's a goal, a goal has none, no loops, and only a goal has a
+due date. `claim`, `next` and `pass` never take a goal or a feature into Building. `check` reports a
+missing or wrong-level parent and a loop, and warns (without failing) about a goal past its due date
+with tasks open.
+
 `bin/task ask|answer|escalate|inbox` is a stand-in that runs the same muster commands, kept for
 scripts and agents that call it. `bin/answer-hook.py` delivers answers into a running session, and
-`bin/manifest.py` writes the board data (`--check` checks it).
+`bin/manifest.py` writes the board data (`--check` checks it, and reads `level`, `parent` and `due`
+into `tasks.json` and checks them as `muster check` does, warnings in their own list).

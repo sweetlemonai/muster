@@ -2,6 +2,26 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Parallel workers: slash commands (0003), editing (0020), goals and features (0016)
+**Did:** three tasks built at once by workers on their own branches (task/0003, task/0020, task/0016),
+each reviewed and fixed on its branch, then merged into main one by one, with the gate after each merge:
+- 0003: `/mu` and `/muster`, allowed only the commands they route.
+- 0020 part 1: edit a task's write-up in the app and with `muster edit`.
+- 0016: goals, features and tasks with roll-ups and grouping.
+**Fixed (from reviews):**
+- `/mu`'s blanket `Bash(muster:*)` would have let it run `muster attach` on any file.
+- Unsaved edits could be lost on Esc or by switching cards, and `muster edit` stamped the open time
+  and deleted the copy when the editor failed.
+- A held task could become a feature, a goal showed Done with an empty feature, and grouping hid a
+  matching parent.
+**Verified:** after the last merge (0016), `pnpm check` exit 0 (276 UI, 160 Rust, 12 interop tests),
+`python3 -I bin/test_task.py` 33 OK, `bin/test_commands.py` 10 OK, also under
+`TZ=Pacific/Kiritimati`.
+**Open:**
+- With Group by on, backlog notes and quick add don't show. Filed as a backlog note.
+- 0020's comments wait for 0017.
+- `/mu` needs the owner's yes to go into the personal layer.
+
 ## 2026-10-13 — Backlog one-liners, shaped into tasks (task 0015)
 **Did:**
 - Any non-task `.md` in a queue's `inbox/` is a backlog note.

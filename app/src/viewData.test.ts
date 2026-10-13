@@ -5,7 +5,8 @@ import type { Task } from "./types";
 const t = (over: Partial<Task>): Task => ({
   queue: "q", id: "0001", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [], folder: "todo", path: "", claimedBy: "",
   heartbeat: "", waitingOn: "", commit: "", captured: "2026-10-11", questions: [], openQuestions: 0, ownerCriteria: [], waitingForOwner: false,
-  tags: [], estTime: "", estTokens: "", estMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", attachments: [], logTail: [], modified: 0, ...over,
+  tags: [], estTime: "", estTokens: "", estMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", attachments: [], logTail: [], modified: 0,
+  level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", ...over,
 });
 
 describe("sortTasks", () => {
@@ -19,6 +20,18 @@ describe("sortTasks", () => {
     // "On it / waiting on" sorts by what the cell shows: a Done task's old claim counts as nobody.
     const who = [t({ id: "a", stage: "done", claimedBy: "aaa" }), t({ id: "b", stage: "building", claimedBy: "zed" }), t({ id: "c", blocked: true, waitingOn: "0012" })];
     expect(sortTasks(who, "who", false).map((x) => x.id)).toEqual(["a", "c", "b"]);
+  });
+});
+
+describe("sortTasks by stage for goals and features", () => {
+  it("sorts a goal or feature by the stage it shows, In progress with Building", () => {
+    const list = [
+      t({ id: "b", level: "feature", stage: "ready", shownStage: "done" }),
+      t({ id: "d", stage: "building" }),
+      t({ id: "c", level: "goal", stage: "ready", shownStage: "in-progress" }),
+      t({ id: "a", stage: "ready" }),
+    ];
+    expect(sortTasks(list, "stage", false).map((x) => x.id)).toEqual(["a", "c", "d", "b"]);
   });
 });
 

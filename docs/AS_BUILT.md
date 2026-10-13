@@ -100,6 +100,20 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     to read, related tasks, and the command to file it.
 
   `muster list` shows notes too. Until 0005 they live in `inbox/`; then in `.muster/backlog/`.
+- **Goals, features and tasks** (task 0016): `level: goal | feature | task`, `parent:` and a goal's
+  `due:` set with `muster new --level/--parent/--due` and `muster set`. A task sits under a feature
+  or goal, a feature under a goal. Goals and features are never claimed or built: their stage comes
+  from their children (Done only when every child is), and they roll up "n of m done" and the open
+  estimate. **Group by** None · Feature · Goal (chips above the board and table) gives one band per
+  parent, with the stage columns inside. Cards show their parent. `check` reports missing parents,
+  wrong levels and loops, and warns about late goals.
+- **Editing** (task 0020, part 1): **Edit** beside the description turns it into a text box in place.
+  ⌘S saves, Esc twice discards, and nothing typed is lost when you switch cards. `muster edit` does
+  the same with `$VISUAL` or `$EDITOR`. A save is refused if the file changed since it was opened,
+  or while someone else holds the task in Building (add a note instead). Comments come with 0017.
+- **Slash commands** (task 0003): `commands/muster.md` and `commands/mu.md` route `/mu <word>` to
+  one `muster` command each. They may run only the commands they route. Anything else is captured
+  as a backlog one-liner. They're installed into the personal layer only with the owner's yes.
 - **Board:** one column per stage, with its role under the name. Blocked cards stay in their stage
   with a rose "blocked: …" badge, and Your check cards count as "needs you". The task pane has a
   stage picker, Pass to <next> (with the gate line out of Building), Send back with a reason,

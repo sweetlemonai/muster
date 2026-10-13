@@ -448,3 +448,29 @@ button:disabled { opacity: 0.45; cursor: default; }
 .note-file .chip-row { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; font-size: 12px; }
 .note-file .chip-row .sep { margin-left: 10px; }
 .note-panel .control-row .on { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Levels (task 0016): Group by, bands of the grouped board, the card's parent line, goals and
+   features in the table, and the New task form's Level chips. */
+.group-by { display: inline-flex; gap: 4px; align-items: center; margin-left: auto; }
+.group-by .meta { margin-right: 2px; }
+.bands { flex: 1; display: flex; flex-direction: column; gap: 12px; padding: 8px 14px 12px; overflow: auto; min-height: 0; }
+.band { flex: none; border: 1px solid var(--border); border-radius: var(--radius); background: color-mix(in srgb, var(--surface) 30%, var(--bg)); }
+.band-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; font-size: 13px; }
+.band-title { font-weight: 600; }
+.band-title.active { text-decoration: underline; }
+.band-title .level, .badge.level { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+.band-title .id { color: var(--muted); font-weight: 400; }
+.band > .none { margin: 0 12px 10px; }
+.band-board { flex: none; overflow: visible; padding: 0 8px 8px; }
+.parent-line { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tasks-table tr.group-row { cursor: default; }
+.tasks-table .group-row td, .tasks-table tbody tr.group-row:hover td { background: var(--tint); padding: 0; }
+.tasks-table .group-row .band-head { padding: 6px 10px; font-size: 12.5px; }
+.tasks-table .rollup { margin-left: 6px; font-weight: 400; }
+.pane-form .level-pick { align-items: center; gap: 4px; }
+.level-pick .parent-field { flex-direction: row; align-items: center; gap: 6px; margin-left: 10px; }
+.rollup-panel { padding: 4px 0 8px; }
+.rollup-panel h2 { margin: 0 0 4px; font-size: 13px; }
+.rollup-panel p { margin: 2px 0; }
+.rollup-panel .children { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
+.rollup-panel .children .id { color: var(--muted); }
