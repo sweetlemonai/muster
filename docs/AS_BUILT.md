@@ -704,7 +704,8 @@ keep working (`layout.rs` is the one place that says where a layout keeps what).
   front matter at the top of the new README; writes `config.toml`, `.gitignore`, `INDEX.md`,
   `tasks.json` (by `manifest.py`) and `migrated-from.txt` (the old queue's folder, the time, its
   last commit, read with `git --no-optional-locks` so the old index is never rewritten); carries
-  the old queue's gate, name and hidden in `projects.json` to the new one, and adds the new one
+  the old queue's gate, name, hidden and Your check limit in `projects.json` to the new one
+  (saved through `projects::edit`, under the file's lock), and adds the new one
   to the list when the old one was listed but discovery can't find the new (three levels down,
   outside `~/playground`). It holds the old
   queue's lock while it reads, builds the new queue in a folder beside it with every file made

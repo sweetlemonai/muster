@@ -126,6 +126,23 @@ fn machine_settings(env: Env) -> settings::Settings {
         .unwrap_or_default()
 }
 
+/// What `muster migrate` carries in projects.json from the old queue to the new (0005, with 0050's
+/// limits): worked out again under projects.json's lock and saved there (`projects::edit`), so an
+/// edit the app makes meanwhile is kept. With `dry_run`, or nothing to carry, nothing is written.
+fn carry_projects(
+    file: &Path,
+    base: &Path,
+    old: &Path,
+    new: &Path,
+    dry_run: bool,
+) -> Result<Vec<String>, String> {
+    let lines = projects::carry_over(&mut projects::load(file), base, old, new);
+    if dry_run || lines.is_empty() {
+        return Ok(lines);
+    }
+    projects::edit(file, |c| Ok(projects::carry_over(c, base, old, new)))
+}
+
 /// The line `next`, `start`, `ready --parallel` and `list` print on stderr when more waits in Your
 /// check than the project's limit allows (0050), or None. It only warns: nothing is refused. The
 /// limit is projects.json's for the queue's folder (`config`), 5 unless set.
@@ -1377,15 +1394,12 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
             for line in &r.lines {
                 println!("{line}");
             }
-            // What projects.json says of the old queue (gate, name, hidden), said of the new.
-            let file = config_file();
-            let mut c = projects::load(&file);
-            let carried = projects::carry_over(&mut c, &base(), Path::new(old), &r.queue);
+            // What projects.json says of the old queue (gate, name, hidden, Your check limit), said
+            // of the new.
+            let carried =
+                carry_projects(&config_file(), &base(), Path::new(old), &r.queue, a.dry_run)?;
             for line in &carried {
                 println!("{}{line}", if a.dry_run { "would: " } else { "" });
-            }
-            if !a.dry_run && !carried.is_empty() {
-                projects::save(&file, &c)?;
             }
             Ok(0)
         }
@@ -2236,6 +2250,50 @@ mod tests {
         let mut c = projects::Config::default();
         check_limit::set(&mut c.your_check, &root.to_string_lossy(), value).unwrap();
         c
+    }
+
+    #[test]
+    fn migrate_carries_the_limit_into_projects_json_under_its_lock_and_a_dry_run_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let old = base.join("proj/tasks");
+        std::fs::create_dir_all(old.join("todo")).unwrap();
+        std::fs::write(old.join("README.md"), "q").unwrap();
+        let main = base.join("proj/main");
+        std::fs::create_dir_all(main.join(".git")).unwrap();
+        let new = main.join(crate::layout::DIR);
+        std::fs::create_dir(&new).unwrap();
+        std::fs::write(
+            new.join(crate::layout::CONFIG),
+            crate::layout::config_text(true, None),
+        )
+        .unwrap();
+        let file = base.join("cfg/projects.json");
+        let old_key = old.to_string_lossy().to_string();
+        projects::edit(&file, |c| {
+            check_limit::set(&mut c.your_check, &old_key, "8")
+        })
+        .unwrap();
+        let before = std::fs::read_to_string(&file).unwrap();
+        // A dry run says what it would carry and writes nothing.
+        let said = carry_projects(&file, &base, &old, &new, true).unwrap();
+        assert_eq!(
+            said,
+            ["projects.json: Your check limit 8 carried to the new queue"]
+        );
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), before);
+        // The real one saves it; the old queue keeps its own.
+        let said = carry_projects(&file, &base, &old, &new, false).unwrap();
+        assert_eq!(said.len(), 1);
+        let c = projects::load(&file);
+        assert_eq!(check_limit::limit_for(&c.your_check, &new), Some(8));
+        assert_eq!(check_limit::limit_for(&c.your_check, &old), Some(8));
+        // Nothing to carry: projects.json isn't written (or made).
+        let none = base.join("cfg2/projects.json");
+        assert!(carry_projects(&none, &base, &old, &new, false)
+            .unwrap()
+            .is_empty());
+        assert!(!none.exists());
     }
 
     #[test]

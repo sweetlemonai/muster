@@ -386,7 +386,7 @@ pub fn create(
 }
 
 /// After `muster migrate` (0005): what `projects.json` says of the old queue `old` (its gate,
-/// display name, hidden), said of the new one `new` too, under the key the app lists it by; a new
+/// display name, hidden, Your check limit), said of the new one `new` too, under the key the app lists it by; a new
 /// queue the base doesn't find is added, so it shows as the old one did. The old queue keeps its
 /// own, until it's retired. Returns a line for each thing carried.
 pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> Vec<String> {
@@ -404,13 +404,18 @@ pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> V
         .find(|(k, _)| is_old(k))
         .map(|(_, v)| v.clone());
     let hidden = config.hidden.iter().any(is_old);
+    let your_check = config
+        .your_check
+        .iter()
+        .find(|(k, _)| is_old(k))
+        .map(|(_, l)| *l);
     let listed = list(base, config);
     let old_listed = listed.iter().any(|p| canon(Path::new(&p.path)) == old);
     let found = listed
         .into_iter()
         .find(|p| canon(Path::new(&p.path)) == new)
         .map(|p| p.key);
-    let carried = gate.is_some() || name.is_some() || hidden;
+    let carried = gate.is_some() || name.is_some() || hidden || your_check.is_some();
     // Nothing to say of a queue nobody listed, or of one the new queue is found in place of.
     if !carried && (found.is_some() || !old_listed) {
         return Vec::new();
@@ -435,6 +440,16 @@ pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> V
             "projects.json: name {n:?} carried to the new queue"
         ));
         config.names.insert(key.clone(), n);
+    }
+    if let Some(l) = your_check {
+        let said = match l {
+            crate::check_limit::Limit::At(n) => n.to_string(),
+            crate::check_limit::Limit::Off => "off".into(),
+        };
+        lines.push(format!(
+            "projects.json: Your check limit {said} carried to the new queue"
+        ));
+        config.your_check.insert(key.clone(), l);
     }
     if hidden && !config.hidden.contains(&key) {
         lines.push("projects.json: hidden, like the old queue".into());
@@ -807,6 +822,44 @@ mod tests {
         let mut c = Config::default();
         assert!(carry_over(&mut c, &base, &old, &new).is_empty());
         assert_eq!(c, Config::default());
+    }
+
+    #[test]
+    fn a_migrated_queue_keeps_its_your_check_limit() {
+        use crate::check_limit::{limit_for, Limit};
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let old = base.join("proj/tasks");
+        make_queue(&old);
+        let main = base.join("proj/main");
+        fs::create_dir_all(main.join(".git")).unwrap();
+        let new = main.join(layout::DIR);
+        fs::create_dir(&new).unwrap();
+        fs::write(new.join(layout::CONFIG), layout::config_text(true, None)).unwrap();
+        let key = old.to_string_lossy().to_string();
+        // A limit alone carries, as a gate does.
+        let mut c = Config::default();
+        c.your_check.insert(key.clone(), Limit::At(8));
+        let lines = carry_over(&mut c, &base, &old, &new);
+        assert_eq!(limit_for(&c.your_check, &new), Some(8));
+        assert_eq!(
+            limit_for(&c.your_check, &old),
+            Some(8),
+            "the old keeps its own"
+        );
+        assert_eq!(
+            lines,
+            ["projects.json: Your check limit 8 carried to the new queue"]
+        );
+        // Off carries as Off.
+        let mut c = Config::default();
+        c.your_check.insert(key.clone(), Limit::Off);
+        let lines = carry_over(&mut c, &base, &old, &new);
+        assert_eq!(limit_for(&c.your_check, &new), None);
+        assert_eq!(
+            lines,
+            ["projects.json: Your check limit off carried to the new queue"]
+        );
     }
 
     #[test]

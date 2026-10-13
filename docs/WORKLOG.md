@@ -48,6 +48,12 @@ time could lose an edit or fail → `projects::edit` holds a flock on `projects.
 load, change and save, and each save writes its own tmp (pid and counter) before the rename;
 tested with 4 writers and a reader at once (a version without the lock lost edits and failed).
 Paused tasks (0045) can't be in Your check, so they never count; nothing to change.
+**Fixed (with 0005):** `muster migrate` carried a queue's gate, name and hidden but not its Your
+check limit, and saved projects.json without the lock → `projects::carry_over` carries the limit
+too ("Your check limit 8 carried to the new queue"), and migrate's carry is worked out again and
+saved under the lock (`projects::edit`, `cli::carry_projects`); a dry run, or nothing to carry,
+writes nothing. Tested: a migrated queue keeps its limit (and Off); migrate saves it, a dry run
+doesn't. Every projects.json write now goes through `projects::edit`.
 **Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; new
 Rust tests in check_limit.rs (a rename keeps the limit; same-named projects keep their own; a bad
 entry never loses the rest of projects.json), projects.rs (concurrent writers keep every edit, no
