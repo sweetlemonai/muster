@@ -12,6 +12,7 @@ then it's its own repo, tools and (soon) app.
 - **As built** (what exists today, and what's left): [`docs/AS_BUILT.md`](docs/AS_BUILT.md)
 - **Commands** (planned `/muster`, `/mu`): [`docs/COMMANDS.md`](docs/COMMANDS.md)
 - **Adopted from chit, and next:** [`docs/ADOPTION.md`](docs/ADOPTION.md)
+- **Design rules** (every screen of the app; read before any UI work): [`docs/DESIGN.md`](docs/DESIGN.md)
 - **Dogfood notes** (what went wrong, and what it taught): [`docs/DOGFOOD.md`](docs/DOGFOOD.md)
 
 ## The app

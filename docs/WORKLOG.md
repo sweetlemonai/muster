@@ -2,6 +2,19 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-12 — Design rules for the whole app; tasks 0019–0023 filed
+**Decided:** the owner has ADHD, and out of sight is out of mind. Every screen shows its options
+(no menus, popovers, short-choice dropdowns, or tabs for things used together), but keeps them out
+of the way through weight, size and fixed placement, not by hiding them. Written as
+`docs/DESIGN.md` and linked from the README.
+**Did:** filed 0019 (dependency graph view and a `depends:` field), 0020 (edit a task's body,
+comments in the panel), 0021 (task panel header redesign) and 0022 (Human board and AI board per
+project), and 0023 (parallel sessions: a worktree per task, then merge, clean up, report and
+take the next; split out of 0009). Added the owner's tags note (show only selected tags) and the design rule to 0006.
+Brought 0021 and 0022 in line with the rule. Queue commits `eff688b`, `ce98eab`, `4fc7efa`,
+`8d57a2c`, `5e5aebc`, `0774e29`, `7c8191d`.
+**Open:** no code changed. The tags fix is small and waits for 0006 or the owner's go.
+
 ## 2026-10-12 — Decided: `.muster/` in the repo, backlog, stages with roles, levels, points
 **Decided:** the owner moved tasks into the repo's `.muster/` (committed or local per project),
 picked the stage names (Backlog, Shaping, Ready, Building, Testing, Your check, Done) and the
