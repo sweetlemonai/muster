@@ -448,3 +448,14 @@ button:disabled { opacity: 0.45; cursor: default; }
 .note-file .chip-row { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; font-size: 12px; }
 .note-file .chip-row .sep { margin-left: 10px; }
 .note-panel .control-row .on { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The vision check (0029): open conflicts on the card in the colour of what's broken; the pane's
+   Vision section quiet until a conflict is open; Problems' Vision lines as warnings. */
+.badge.vision { background: color-mix(in srgb, var(--st-blocked) 22%, var(--surface)); color: var(--err); }
+.panel section.vision.has-open { border-left: 3px solid var(--st-blocked); }
+.vision h2 small { text-transform: none; letter-spacing: 0; margin-left: 4px; }
+.vision.has-open h2 small { color: var(--err); }
+.vision .control-row .on { outline: 2px solid var(--accent); outline-offset: 1px; }
+.vision .markdown h3 { font-size: 12px; margin: 10px 0 4px; }
+.count.quiet { background: none; border: 1px solid var(--border); color: var(--muted); }
+.problems.warnings li { color: var(--muted); }
+.problems.warnings b { color: var(--text); font-weight: 600; margin-right: 4px; }

@@ -1,0 +1,64 @@
+{
+  "conflicts": [
+    {
+      "title": "Two records of task-on-task waits",
+      "this": {"quote": "blocked-by: lists the tasks it waits on, typed with muster block --by", "at": "0024"},
+      "other": {"quote": "depends: names the tasks a task waits on; it's Ready only once they're done", "at": "0019"},
+      "fix": "Keep depends: as the one record. Blocked by tasks is derived from it, never typed twice."
+    },
+    {
+      "title": "Two spellings for blocking: --on and --by",
+      "this": {"quote": "muster block <id> --by 0012", "at": "0024"},
+      "other": {"quote": "muster block <id> --on \"<task id|owner|capture> …\"", "at": "docs/COMMANDS.md:44"},
+      "fix": "Keep --on: a task id after it already says blocked by that task."
+    },
+    {
+      "title": "finish skips the Testing stage",
+      "this": {"quote": "muster finish merges the branch and marks the task Done", "at": "0023"},
+      "other": {"quote": "Testing: pass opens the PR; the engine reviews it; QA verifies each criterion", "at": "docs/VISION.md:31"},
+      "fix": "finish ends Building: it opens the PR and passes to Testing, and the merge comes after Testing (0014, 0027)."
+    },
+    {
+      "title": "A design rule the owner already overruled",
+      "this": {"quote": "show every priority value as a row of chips", "at": "0021"},
+      "other": {"quote": "Show the value, not every possible value. A field shows its current value as one chip", "at": "docs/DESIGN.md:18"},
+      "fix": "0021 shows the current value as one chip, and clicking it lays the options out in place."
+    },
+    {
+      "title": "A second stage model for human tasks",
+      "this": {"quote": "human tasks move To do → Doing → Done", "at": "0022"},
+      "other": {"quote": "Backlog → Shaping → Ready → Building → Testing → Your check → Done", "at": "docs/VISION.md:24"},
+      "fix": "Either the spine says human tasks have their own three columns, or 0022 uses the same stages.",
+      "pivot": {
+        "tasks": ["0022", "0006"],
+        "built": "nothing yet: 0022 is in Shaping",
+        "spent": "unknown (no actuals recorded)",
+        "redo": "1h and 150k tokens to rewrite 0022's spec",
+        "waiting": "the Human board gets built on the second model, and changing it later rewrites its columns and filters",
+        "keep": "two stage models in one app: every count, filter and the Dock badge handles both",
+        "recommend": "Settle it now: human tasks get their own To do, Doing and Done columns, written into the spine."
+      }
+    },
+    {
+      "title": "Merging after Testing breaks decision 0003's \"Done rides in the PR\"",
+      "this": {"quote": "merge after Testing, then mark the task Done", "at": "0023"},
+      "other": {"quote": "Done rides in the PR: the stage change is part of the merged branch", "at": "docs/decisions/0003-muster-in-the-repo-backlog-and-stages.md:40"},
+      "fix": "Change decision 0003: the stage and actuals are stamped into the file at merge, and Done is a tool commit on main that touches only .muster/.",
+      "pivot": {
+        "tasks": ["0023", "0005"],
+        "built": "0014's pass and stage commands (app/src-tauri/src/ops.rs, about 300 lines) stay; nothing is thrown away",
+        "spent": "0014: 6h and 1.2M tokens",
+        "redo": "2h and 300k tokens: a new decision record and 0023's merge step",
+        "waiting": "0005 moves queues into .muster/ on the old rule, and its migration has to be redone",
+        "keep": "Done can't come after a merge that Testing gates, so Testing has to finish on the branch before the PR merges",
+        "recommend": "Change the decision now, before 0005 and 0023 are built."
+      }
+    }
+  ],
+  "overlaps": [
+    {"task": "0019", "what": "the list of tasks a task waits on", "buildIn": "0019"}
+  ],
+  "gaps": [
+    "Nothing builds the Dock badge's count of human tasks."
+  ]
+}

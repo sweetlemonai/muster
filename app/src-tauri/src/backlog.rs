@@ -127,7 +127,7 @@ fn breaks_a_line(c: char) -> bool {
 
 /// Control characters out, except line breaks and tabs; Unicode line and paragraph separators
 /// become line breaks.
-fn clean_text(text: &str) -> String {
+pub(crate) fn clean_text(text: &str) -> String {
     text.chars()
         .map(|c| {
             if c == '\u{2028}' || c == '\u{2029}' {
@@ -506,7 +506,7 @@ const COMMON: [&str; 60] = [
 
 /// The text's significant words: letters and digits (any script), three or more characters,
 /// lowercase, not only digits, not a common word.
-fn words(text: &str) -> HashSet<String> {
+pub(crate) fn words(text: &str) -> HashSet<String> {
     text.split(|c: char| !c.is_alphanumeric())
         .map(str::to_lowercase)
         .filter(|w| {
@@ -611,7 +611,7 @@ pub struct Brief {
 }
 
 /// Single-quoted for a POSIX shell, so any file name or path is one argument.
-fn sh(s: &str) -> String {
+pub(crate) fn sh(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
@@ -645,6 +645,24 @@ pub fn brief(
     }
 }
 
+/// Untrusted text quoted for a brief, control characters out: every line (`> `), so nothing in it
+/// can end the quote and pass for the brief around it; `empty`, quoted, when there's no text.
+pub(crate) fn quote_lines(text: &str, empty: &str) -> String {
+    let text = clean_text(text);
+    if text.trim().is_empty() {
+        return format!("> {empty}\n");
+    }
+    let mut out = String::new();
+    for line in text.trim_end_matches('\n').lines() {
+        if line.is_empty() {
+            out.push_str(">\n");
+        } else {
+            out.push_str(&format!("> {line}\n"));
+        }
+    }
+    out
+}
+
 /// The brief as text, for a session's prompt or the clipboard.
 pub fn brief_text(b: &Brief) -> String {
     let mut out = format!(
@@ -658,19 +676,7 @@ pub fn brief_text(b: &Brief) -> String {
             .map(|c| if c.is_control() || c == '\u{2028}' || c == '\u{2029}' { ' ' } else { c })
             .collect::<String>()
     );
-    // Every line quoted, so nothing in the note can end the quote and pass for the brief.
-    let text = clean_text(&b.text);
-    if text.trim().is_empty() {
-        out.push_str("> (empty note)\n");
-    } else {
-        for line in text.trim_end_matches('\n').lines() {
-            if line.is_empty() {
-                out.push_str(">\n");
-            } else {
-                out.push_str(&format!("> {line}\n"));
-            }
-        }
-    }
+    out.push_str(&quote_lines(&b.text, "(empty note)"));
     out.push_str("\nRoles:\n");
     for r in &b.roles {
         out.push_str(&format!("  {}: {}\n", r.role, r.job));
@@ -707,6 +713,24 @@ pub fn brief_text(b: &Brief) -> String {
 /// checked out beside the queue (a folder with a `.git` folder; worktrees have a `.git` file and
 /// are copies). Only the ones that exist, as absolute paths.
 fn project_docs(root: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    for place in project_places(root) {
+        for f in ["CLAUDE.md", "docs/VISION.md", "docs/DESIGN.md"] {
+            if place.join(f).is_file() {
+                out.push(place.join(f).display().to_string());
+            }
+        }
+        if place.join("docs/decisions").is_dir() {
+            out.push(format!("{}/", place.join("docs/decisions").display()));
+        }
+    }
+    out
+}
+
+/// Where a queue's project keeps its docs: the queue's project folder, then each repo checked out
+/// beside the queue (a folder with a `.git` folder; worktrees have a `.git` file and are copies),
+/// by name. Absolute, through symlinks.
+pub(crate) fn project_places(root: &Path) -> Vec<PathBuf> {
     let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let Some(project) = root.parent() else {
         return Vec::new();
@@ -720,18 +744,9 @@ fn project_docs(root: &Path) -> Vec<String> {
         })
         .unwrap_or_default();
     repos.sort();
-    let mut out = Vec::new();
-    for place in std::iter::once(project.to_path_buf()).chain(repos) {
-        for f in ["CLAUDE.md", "docs/VISION.md", "docs/DESIGN.md"] {
-            if place.join(f).is_file() {
-                out.push(place.join(f).display().to_string());
-            }
-        }
-        if place.join("docs/decisions").is_dir() {
-            out.push(format!("{}/", place.join("docs/decisions").display()));
-        }
-    }
-    out
+    std::iter::once(project.to_path_buf())
+        .chain(repos)
+        .collect()
 }
 
 /// `muster shape`: the brief for a note, read whole. Writes nothing.

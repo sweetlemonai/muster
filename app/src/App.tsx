@@ -9,6 +9,7 @@ import NewTask from "./NewTask";
 import Appearance from "./Appearance";
 import { CardBand, cardClass } from "./CardLook";
 import { TableView, TimelineView } from "./Views";
+import { VisionBadge, visionWarnings } from "./Vision";
 import logo from "./logo.png";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
@@ -94,6 +95,8 @@ export default function App() {
   );
   const allTags = useMemo(() => [...new Set(inQueue.flatMap((t) => t.tags))].sort(), [inQueue]);
   const problems = useMemo(() => (state?.problems ?? []).filter((p) => queue === "all" || p.startsWith(`${queue}:`)), [state, queue]);
+  // Not problems: Shaping tasks with no vision check yet (0029), listed under them.
+  const unchecked = useMemo(() => visionWarnings(inQueue), [inQueue]);
   const waiting = inQueue.filter((t) => t.waitingForOwner);
   const cols = useMemo(() => columns(tasks), [tasks]);
   const openKey = pane?.kind === "task" ? pane.key : null;
@@ -178,6 +181,7 @@ export default function App() {
           <button className={view === "activity" ? "tab on" : "tab"} onClick={() => setView("activity")}>Activity</button>
           <button className={view === "problems" ? "tab on" : "tab"} onClick={() => setView("problems")}>
             Problems{problems.length ? <b className="count">{problems.length}</b> : null}
+            {unchecked.length ? <small className="count quiet" title="Shaping tasks with no vision check yet">{unchecked.length}</small> : null}
           </button>
           <button className={view === "projects" ? "tab on" : "tab"} onClick={() => setView("projects")}>Projects</button>
           <button className={view === "help" ? "tab on" : "tab"} onClick={() => setView("help")}>Help</button>
@@ -302,6 +306,7 @@ export default function App() {
           {view === "problems" && (
             <main className="list">
               {problems.length === 0 ? <p className="empty">No problems found in the queues.</p> : <ul className="problems">{problems.map((p) => <li key={p}>{p}</li>)}</ul>}
+              {unchecked.length > 0 && <ul className="problems warnings">{unchecked.map((w) => <li key={w}><b>Vision</b> {w}</li>)}</ul>}
             </main>
           )}
 
@@ -421,6 +426,7 @@ function Card({ t, now, multi, onOpen, active }: { t: Task; now: number; multi: 
       )}
       <span className="card-bottom">
         {t.blocked && <span className="badge blocked">blocked{t.waitingOn ? `: ${t.waitingOn}` : ""}</span>}
+        <VisionBadge t={t} />
         {t.waitingForOwner && <span className="badge warn">needs you</span>}
         {t.openQuestions > 0 && <span className="badge">{t.openQuestions} open Q</span>}
         {t.attachments.length > 0 && <span className="badge">{t.attachments.length} file{t.attachments.length === 1 ? "" : "s"}</span>}

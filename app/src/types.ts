@@ -36,6 +36,11 @@ export type Task = {
   questions: Question[];
   openQuestions: number;
   ownerCriteria: Criterion[];
+  /** The vision check (0029): open conflicts, or null before the first check. Over 0, it can't
+   *  pass from Shaping to Ready. */
+  visionOpen?: number | null;
+  /** The open conflicts' ids (V1, V2…), once checked. */
+  visionIds?: string[];
   waitingForOwner: boolean;
   tags: string[];
   estTime: string;

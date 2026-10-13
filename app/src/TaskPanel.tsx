@@ -6,6 +6,8 @@ import Markdown from "./Markdown";
 import OwnerChecklist, { ownerOpen } from "./OwnerChecklist";
 import TagEditor from "./Tags";
 import type { Question, Task } from "./types";
+import { withoutVision } from "./Vision";
+import VisionPanel from "./VisionPanel";
 
 const IMAGE = /\.(png|jpe?g|gif|webp)$/i;
 
@@ -37,7 +39,8 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
     api.editableBody(task.queue, task.id).then(setEditing, (e) => setEditMsg({ ok: false, text: String(e) }));
   };
 
-  const shown = body ? body.replace(/^---\n[\s\S]*?\n---\n/, "") : "";
+  // The Vision section has its own place in the pane (VisionPanel), so the description leaves it out.
+  const shown = body ? withoutVision(body.replace(/^---\n[\s\S]*?\n---\n/, ""), (task.visionOpen ?? null) !== null) : "";
   const open = task.questions.filter((q) => !q.ticked && q.n !== null);
 
   return (
@@ -69,6 +72,8 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
           ))}
         </section>
       )}
+
+      <VisionPanel task={task} body={body} onChanged={onChanged} />
 
       {task.attachments.length > 0 && <Attachments task={task} />}
 

@@ -10,6 +10,7 @@ mod helper_cmds;
 pub mod ops;
 pub mod projects;
 pub mod queue;
+pub mod vision;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -434,6 +435,48 @@ async fn shape_note(
     .await
 }
 
+/// The vision brief for task `id` (0029), as text for the clipboard.
+#[tauri::command]
+async fn vision_brief(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+) -> Result<String, String> {
+    check_id(&id)?;
+    let file = app.config_file.clone();
+    blocking(move || {
+        vision::brief(&queue_root(&file, &queue)?, &id).map(|b| vision::brief_text(&b))
+    })
+    .await
+}
+
+/// The owner resolves vision conflict `which` (V2) of task `id`, saying how. Returns how many are
+/// still open.
+#[tauri::command]
+async fn resolve_vision(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+    which: String,
+    how: String,
+    stamp: String,
+) -> Result<usize, String> {
+    check_id(&id)?;
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || {
+        vision::resolve(
+            &queue_root(&file, &queue)?,
+            &id,
+            &which,
+            &how,
+            "owner",
+            &stamp,
+        )
+    })
+    .await
+}
+
 /// The write-up the owner's Edit opens: refused while someone else holds the task in Building.
 #[tauri::command]
 async fn editable_body(
@@ -731,6 +774,8 @@ pub fn run() {
             file_note,
             drop_note,
             shape_note,
+            vision_brief,
+            resolve_vision,
             editable_body,
             edit_body,
             attach_data,

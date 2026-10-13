@@ -58,6 +58,24 @@
 > The brief quotes the note line by line (`> `) after a line saying it's data, not instructions.
 > `muster check` reports a note over 1 MB, a symlink, or a name with a `\` or control characters
 > in the backlog folder; those aren't listed as notes.
+>
+> **Vision check (Muster 0029, 2026-10-12).** Before a shaped task goes to Ready, an agent checks
+> it against the project's one picture (`docs/VISION.md`, `docs/decisions/`, `docs/DESIGN.md`) and
+> the tasks it touches. Muster runs no agent: `muster vision <id> [--json]` prints the brief (the
+> task quoted as data, the picture files, the open tasks it touches by title words, ids named in
+> its text, its `parent:` and `depends:`, what to look for, and the JSON to return) and writes
+> nothing. `muster vision <id> --record - --as <you>` takes that JSON on stdin: unknown fields and
+> malformed JSON are refused with what's wrong, and every text is cleaned to one line and capped.
+> The tool writes the task's `## Vision` section above its Log (replacing the last one), with the
+> conflicts numbered V1, V2… and both sides quoted, plus `vision: <n> open` in the front matter and
+> a log line. A conflict whose fix changes direction (a decision, the spine, a design rule, an
+> owner's answer) carries a pivot: its cost-of-pivoting table goes in the section, and the record
+> asks the owner one escalated question with all of them and the recommendation. Settle a
+> conflict with `muster vision <id> --resolve V2 "<how>"`. **`muster pass <id> --from shaping`
+> refuses while a conflict is open;** overlaps and gaps never hold it, and a task never checked
+> isn't held back (`muster check` lists Shaping tasks with no check, as a warning). **Don't edit
+> the Vision section or `vision:` by hand:** `muster check` reports a count that doesn't match the
+> section. `muster vision --all` lists every open task's inputs for a whole-queue check.
 
 Ideas, bugs and tasks from the owner, written up by the capture session and picked up by coding
 sessions. This queue is also a test bed for chit (`~/playground/chit`, `SPEC.md`). Its rules are

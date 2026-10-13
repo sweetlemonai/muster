@@ -265,6 +265,14 @@ pub struct Task {
     /// The criteria only the owner verifies (`— verify: owner`), ticked or not, for the task
     /// pane's checklist in Your check (0028).
     pub owner_criteria: Vec<Criterion>,
+    /// The vision check (0029): its open conflicts, by the front matter's `vision: <n> open`; None
+    /// before the first check. While it's above 0 the task can't pass from Shaping to Ready.
+    pub vision_open: Option<usize>,
+    /// The open conflicts' ids (V1, V2…) in its Vision section, once checked.
+    pub vision_ids: Vec<String>,
+    /// A `vision:` value that isn't `<n> open`, for `check`.
+    #[serde(skip)]
+    pub bad_vision: String,
     pub waiting_for_owner: bool,
     pub tags: Vec<String>,
     /// Estimates ("2h", "400k"), and the same as numbers for totals.
@@ -568,6 +576,15 @@ pub fn parse_task(
         .into_iter()
         .filter(|c| c.owner)
         .collect();
+    let (vision_open, bad_vision) = match crate::vision::parse_count(&get("vision")) {
+        Some(n) => (n, String::new()),
+        None => (None, get("vision").chars().take(40).collect()),
+    };
+    let vision_ids = if vision_open.is_some() {
+        crate::vision::open_ids(body)
+    } else {
+        Vec::new()
+    };
     let waiting_for_owner = questions.iter().any(|q| !q.ticked && q.escalated)
         || stage == "your-check"
         || (blocked && waiting_on.to_lowercase().starts_with("owner"));
@@ -608,6 +625,9 @@ pub fn parse_task(
         questions,
         open_questions,
         owner_criteria,
+        vision_open,
+        vision_ids,
+        bad_vision,
         waiting_for_owner,
         done_on,
         claimed_on,
@@ -818,6 +838,19 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str) -> Vec<Strin
                 "{queue}: {} is claimed but hasn't been heard from in {} h",
                 t.path,
                 quiet / 60
+            ));
+        }
+        if !t.bad_vision.is_empty() {
+            out.push(format!(
+                "{queue}: {} has vision '{}', which isn't a count of open conflicts (`vision: <n> open`); record a new check",
+                t.path, t.bad_vision
+            ));
+        }
+        if let Some(n) = t.vision_open.filter(|n| *n != t.vision_ids.len()) {
+            out.push(format!(
+                "{queue}: {} says vision {n} open but its Vision section has {} open (edited by hand? record a new check)",
+                t.path,
+                t.vision_ids.len()
             ));
         }
         if t.status == "blocked" && t.waiting_on.is_empty() {
@@ -1161,12 +1194,7 @@ pub fn ask(
                 return Err(format!("already answered in {id}:\n{shown}"));
             }
         }
-        let highest = items.iter().filter_map(|q| q.n).max().unwrap_or(0);
-        let count = u32::try_from(items.len()).unwrap_or(u32::MAX);
-        let n = highest
-            .max(count)
-            .checked_add(1)
-            .ok_or("the task has too many questions")?;
+        let n = next_question(&items)?;
         let item = format!(
             "- [ ] **Q{n} ({who}, session {sid}, {stamp}):** {}\n",
             indent_text(&question)
@@ -1205,6 +1233,51 @@ pub fn ask(
             .collect();
         Ok(Asked { n, earlier })
     })
+}
+
+/// The number the next question in a task gets: one past the highest, and past the count, so old
+/// unnumbered questions are counted too.
+fn next_question(items: &[Question]) -> Result<u32, String> {
+    let highest = items.iter().filter_map(|q| q.n).max().unwrap_or(0);
+    let count = u32::try_from(items.len()).unwrap_or(u32::MAX);
+    highest
+        .max(count)
+        .checked_add(1)
+        .ok_or_else(|| "the task has too many questions".to_string())
+}
+
+/// A question the tool asks the owner, not a session (the vision check's change of direction,
+/// 0029), added to the task `text`: numbered on from its questions, written in `## Questions`
+/// (lines after the first indented, contract rule 3) and already "Escalated to owner", so it waits
+/// for the owner like any escalated question. No session asked it, so its answer stays in the
+/// task. `about` says where it comes from, beside who and when. Returns the new text and the
+/// question's number; the caller holds the lock and writes the file.
+pub(crate) fn add_owner_question(
+    text: &str,
+    who: &str,
+    about: &str,
+    question: &str,
+    stamp: &str,
+) -> Result<(String, u32), String> {
+    let body = with_questions(text);
+    let (start, end) = questions_span(&body).ok_or("the task's Questions section is gone")?;
+    let sect = &body[start..end];
+    let items: Vec<Question> = question_items(sect)
+        .into_iter()
+        .map(|(a, b)| parse_question(&sect[a..b]))
+        .collect();
+    let n = next_question(&items)?;
+    let item = format!(
+        "- [ ] **Q{n} ({who}, {about}, {stamp}):** {}\n  **Escalated to owner ({who}, {stamp}).**\n",
+        indent_text(question.trim())
+    );
+    let kept = sect.trim_end_matches('\n');
+    let new_sect = if kept.trim().is_empty() {
+        format!("{item}\n")
+    } else {
+        format!("{kept}\n{item}\n")
+    };
+    Ok((format!("{}{new_sect}{}", &body[..start], &body[end..]), n))
 }
 
 /// Mark question `n` of task `id` "Escalated to owner" (capture takes it to the owner), once.

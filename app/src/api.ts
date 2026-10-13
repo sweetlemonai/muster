@@ -44,6 +44,11 @@ export const api = {
   dropNote: (queue: string, note: string, why: string, stamp: string) => invoke<string>("drop_note", { queue, note, why, stamp }),
   // The shaping brief as text, for the clipboard.
   shapeNote: (queue: string, note: string) => invoke<string>("shape_note", { queue, note }),
+  // The vision check (0029): the brief as text, for the clipboard; and resolving one conflict
+  // (V2) with how, which returns how many are still open.
+  visionBrief: (queue: string, id: string) => invoke<string>("vision_brief", { queue, id }),
+  resolveVision: (queue: string, id: string, which: string, how: string, stamp: string) =>
+    invoke<number>("resolve_vision", { queue, id, which, how, stamp }),
   // The write-up (between the front matter and the Log) for Edit; refused while someone else
   // holds the task in Building.
   editableBody: (queue: string, id: string) => invoke<string>("editable_body", { queue, id }),

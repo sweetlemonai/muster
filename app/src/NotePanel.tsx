@@ -10,9 +10,9 @@ const PRIORITIES = ["high", "normal", "low"] as const;
 
 /** Put `text` on the clipboard now, in the click that asked: WebKit refuses a write made after an
  *  await (the IPC for the brief), so the brief is loaded before the click and nothing is awaited
- *  before `writeText` is called. */
-export function copyNow(text: string | null, clipboard: Pick<Clipboard, "writeText"> | undefined): Promise<void> {
-  if (text === null) return Promise.reject(new Error("The shaping brief is still loading."));
+ *  before `writeText` is called. `what` names the brief in the refusal. */
+export function copyNow(text: string | null, clipboard: Pick<Clipboard, "writeText"> | undefined, what = "The shaping brief"): Promise<void> {
+  if (text === null) return Promise.reject(new Error(`${what} is still loading.`));
   if (!clipboard) return Promise.reject(new Error("The clipboard isn't available here."));
   return clipboard.writeText(text);
 }

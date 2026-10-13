@@ -2,7 +2,7 @@
 //! The queue is `--queue <name|folder>`, else `$MUSTER_ROOT`, else the nearest queue found
 //! from the current folder (a queue itself, or a `tasks/` beside or above it).
 
-use crate::{backlog, ops, projects, queue};
+use crate::{backlog, ops, projects, queue, vision};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
@@ -11,6 +11,8 @@ struct Args {
     flags: std::collections::HashMap<String, String>,
     json: bool,
     keep: bool,
+    /// `vision --all`: the whole queue.
+    all: bool,
 }
 
 /// Options and positionals; after `--`, everything is positional (text that starts with `--`).
@@ -20,6 +22,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         flags: Default::default(),
         json: false,
         keep: false,
+        all: false,
     };
     let mut it = argv.iter();
     let mut rest = false;
@@ -32,9 +35,10 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--" => rest = true,
             "--json" => a.json = true,
             "--keep" => a.keep = true,
+            "--all" => a.all = true,
             "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on"
             | "--tags" | "--tag" | "--time" | "--tokens" | "--stage" | "--gate" | "--commit"
-            | "--to" | "--from" | "--after" | "--session" => {
+            | "--to" | "--from" | "--after" | "--session" | "--record" | "--resolve" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -142,6 +146,13 @@ const TARGETED: [&str; 12] = [
     "drop",
     "edit",
 ];
+
+/// Is this command checked like a claim (`check_target`)? The TARGETED ones, and `vision` when it
+/// writes (`--record`, `--resolve`); its brief only reads.
+fn targeted(cmd: &str, a: &Args) -> bool {
+    TARGETED.contains(&cmd)
+        || (cmd == "vision" && (a.flags.contains_key("record") || a.flags.contains_key("resolve")))
+}
 
 /// The same folder, through symlinks too.
 fn same_folder(a: &Path, b: &Path) -> bool {
@@ -595,7 +606,7 @@ fn run(argv: &[String]) -> Result<i32, String> {
             let known = || projects::active(&base(), &projects::load(&config_file()));
             let flag = a.flags.get("queue").map(String::as_str);
             let (root, source) = resolve_queue(flag, env_root(), cwd.as_deref(), &known)?;
-            if TARGETED.contains(&cmd) {
+            if targeted(cmd, &a) {
                 check_target(&source, &root, cwd.as_deref(), &known)?;
             }
             run_on(&a, cmd, &root, &stamp)
@@ -927,10 +938,15 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
             println!("dropped {note} ({p})");
             Ok(0)
         }
+        "vision" => run_vision(a, root, &me, stamp),
         "check" => {
             let s = tasks_of(root);
             for p in &s.problems {
                 println!("{p}");
+            }
+            // Not problems either: the vision check is the shaper's job (0029).
+            for w in vision::unchecked(&s.tasks) {
+                println!("{w}");
             }
             // Not problems: what waits on the owner's look (0028). The exit code ignores them.
             for t in s.tasks.iter().filter(|t| t.stage == "your-check") {
@@ -953,6 +969,73 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
             Ok(if s.problems.is_empty() { 0 } else { 1 })
         }
         other => Err(format!("unknown command {other:?} (see `muster help`)")),
+    }
+}
+
+/// `muster vision`: one task's brief, `--record` an agent's result (`-` reads it from stdin),
+/// `--resolve V2 "<how>"`, or `--all` for the whole queue's inputs.
+fn run_vision(a: &Args, root: &Path, me: &str, stamp: &str) -> Result<i32, String> {
+    let (record, resolve) = (a.flags.get("record"), a.flags.get("resolve"));
+    if a.all {
+        if a.pos.len() > 1 || record.is_some() || resolve.is_some() {
+            return Err(
+                "vision --all takes no task id, --record or --resolve (see `muster help`)".into(),
+            );
+        }
+        let all = vision::all(root);
+        if a.json {
+            print_json(&all)?;
+        } else {
+            print!("{}", vision::all_text(&all));
+        }
+        return Ok(0);
+    }
+    let id = need(a, 1, "a task id, or --all")?;
+    match (record, resolve) {
+        (Some(_), Some(_)) => {
+            Err("vision takes --record or --resolve, not both (see `muster help`)".into())
+        }
+        (Some(json), None) => {
+            if a.pos.len() > 2 {
+                return Err("vision --record takes the JSON as its value, or - to read it from stdin; nothing after the id (see `muster help`)".into());
+            }
+            let json = if json == "-" {
+                read_capped(std::io::stdin(), "stdin")?
+            } else {
+                json.clone()
+            };
+            let r = vision::record(root, id, &json, me, stamp)?;
+            if a.json {
+                print_json(&r)?;
+            } else {
+                print!("{}", vision::recorded_text(&r));
+            }
+            Ok(0)
+        }
+        (None, Some(which)) => {
+            need(a, 2, "how it was resolved")?;
+            let how = a.pos[2..].join(" ").replace("\\n", " ");
+            let left = vision::resolve(root, id, which, &how, me, stamp)?;
+            println!(
+                "{id}: vision conflict {} resolved; {left} still open",
+                which.trim()
+            );
+            Ok(0)
+        }
+        (None, None) => {
+            if a.pos.len() > 2 {
+                return Err(format!(
+                    "vision takes one task id; to resolve a conflict: muster vision {id} --resolve V1 \"<how>\" (see `muster help`)"
+                ));
+            }
+            let b = vision::brief(root, id)?;
+            if a.json {
+                print_json(&b)?;
+            } else {
+                print!("{}", vision::brief_text(&b));
+            }
+            Ok(0)
+        }
     }
 }
 
@@ -1635,6 +1718,89 @@ mod tests {
         assert_eq!(queue::read_body(d.path(), "0001").unwrap(), before);
         let e = run(&sv(&["edit", "0001", "--queue", &q, "--as", "owner"])).unwrap_err();
         assert!(e.contains("wt-a holds it; add a note instead"), "{e}");
+    }
+
+    #[test]
+    fn vision_brief_record_resolve_and_all_with_their_exit_codes() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let code = |args: &[&str]| {
+            let mut v = sv(&args[..1]);
+            v.extend(sv(&["--queue", &q, "--as", "wt-shape"]));
+            v.extend(sv(&args[1..]));
+            main(&v)
+        };
+        std::fs::write(
+            d.path().join("todo/0001-shaped.md"),
+            "---\nid: 0001\ntype: task\npriority: normal\nstage: shaping\nstatus: todo\nclaimed-by:\nheartbeat:\nwaiting_on:\n---\n\n# Shaped\n\n## Acceptance criteria\n- [ ] AC1: works — verify: command\n\n## Log\n- 2026-10-12 09:00 capture: created\n",
+        )
+        .unwrap();
+        let two = r#"{"conflicts": [{"title": "A", "this": {"quote": "a", "at": "0001"}, "other": {"quote": "b", "at": "docs/VISION.md:3"}, "fix": "f"}, {"title": "B", "this": {"quote": "c", "at": "0001"}, "other": {"quote": "d", "at": "docs/DESIGN.md:9"}, "fix": "g"}]}"#;
+        let task = || queue::read_task(d.path(), "0001").unwrap();
+        // The brief, and the whole queue's inputs: read only.
+        assert_eq!(code(&["vision", "0001"]), 0);
+        assert_eq!(code(&["vision", "0001", "--json"]), 0);
+        assert_eq!(code(&["vision", "--all"]), 0);
+        assert_eq!(code(&["vision", "--all", "--json"]), 0);
+        assert_eq!(task().vision_open, None);
+        // Usage (2) and refusals (1).
+        assert_eq!(code(&["vision"]), 2, "no id");
+        assert_eq!(code(&["vision", "0001", "--all"]), 2);
+        assert_eq!(code(&["vision", "0001", "extra"]), 2);
+        assert_eq!(
+            code(&["vision", "0001", "--record", two, "--resolve", "V1"]),
+            2
+        );
+        assert_eq!(code(&["vision", "0009"]), 1, "no such task");
+        assert_eq!(code(&["vision", "0001", "--record", "not json"]), 1);
+        assert_eq!(task().vision_open, None, "a refused record writes nothing");
+        // Record, then Shaping → Ready waits for the conflicts.
+        assert_eq!(code(&["vision", "0001", "--record", two]), 0);
+        assert_eq!((task().vision_open, task().vision_ids.len()), (Some(2), 2));
+        assert_eq!(code(&["pass", "0001", "--from", "shaping"]), 1);
+        assert_eq!(code(&["check"]), 0, "open conflicts aren't problems");
+        assert_eq!(code(&["vision", "0001", "--resolve", "V1"]), 2, "no how");
+        assert_eq!(
+            code(&["vision", "0001", "--resolve", "V1", "kept", "the", "spine"]),
+            0
+        );
+        assert_eq!(code(&["vision", "0001", "--resolve", "V1", "again"]), 1);
+        assert_eq!(
+            code(&[
+                "vision",
+                "0001",
+                "--resolve",
+                "v2",
+                "--",
+                "--by",
+                "is",
+                "gone"
+            ]),
+            0
+        );
+        let body = queue::read_body(d.path(), "0001").unwrap();
+        assert!(
+            body.contains(": vision check: resolved V2: --by is gone\n"),
+            "{body}"
+        );
+        assert_eq!(task().vision_open, Some(0));
+        assert_eq!(code(&["pass", "0001", "--from", "shaping"]), 0);
+        assert_eq!(task().stage, "ready");
+    }
+
+    #[test]
+    fn vision_is_checked_like_a_claim_only_when_it_writes() {
+        let a = |args: &[&str]| parse(&sv(args)).unwrap();
+        assert!(!targeted("vision", &a(&["vision", "0001"])));
+        assert!(!targeted("vision", &a(&["vision", "--all"])));
+        assert!(targeted("vision", &a(&["vision", "0001", "--record", "-"])));
+        assert!(targeted(
+            "vision",
+            &a(&["vision", "0001", "--resolve", "V1", "how"])
+        ));
+        assert!(targeted("claim", &a(&["claim", "0001"])));
+        assert!(!targeted("shape", &a(&["shape", "n.md"])));
+        assert!(a(&["vision", "--all"]).all);
     }
 
     #[test]

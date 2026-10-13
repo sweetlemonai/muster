@@ -533,6 +533,9 @@ struct Current {
     /// Unticked criteria only the owner verifies (`— verify: owner`): they don't hold Testing
     /// back, since Your check is where the owner verifies them (0028).
     owner_open: usize,
+    /// Open vision conflicts (`vision: <n> open`, 0029) and their ids: they hold Shaping back.
+    vision_open: usize,
+    vision_ids: Vec<String>,
     /// Who passed it Ready → Building most recently (the builder), if anyone.
     builder: Option<String>,
     /// The claim's lease: the holder's last heartbeat stamp, and the file's modified time.
@@ -637,6 +640,8 @@ fn change_locked(
         let now = Current {
             criteria: (items.len(), items.iter().filter(|c| c.ticked).count()),
             owner_open: items.iter().filter(|c| c.owner && !c.ticked).count(),
+            vision_open: t.vision_open.unwrap_or(0),
+            vision_ids: t.vision_ids,
             stage: t.stage,
             blocked: t.blocked,
             waiting_on: t.waiting_on,
@@ -717,7 +722,8 @@ fn clean_commit(input: &str) -> Result<String, String> {
 }
 
 /// Hand a task to the next stage. Refused when it's blocked or done, when someone else holds
-/// Ready or Building, Shaping → Ready without acceptance criteria, Building → Testing without
+/// Ready or Building, Shaping → Ready without acceptance criteria or with an open vision conflict
+/// (0029; a task never checked isn't held back), Building → Testing without
 /// the gate's result line, Testing → Your check before every criterion but the owner's is
 /// ticked, and Your check → Done before the owner's are (`— verify: owner`, 0028).
 pub fn pass_task(
@@ -786,6 +792,13 @@ fn pass_change(
         "shaping" | "testing" if items == 0 => {
             return Err(format!(
                 "{id} has no acceptance criteria: add `- [ ]` items under `## Acceptance criteria` first"
+            ))
+        }
+        "shaping" if t.vision_open > 0 => {
+            return Err(crate::vision::holds_ready(
+                id,
+                t.vision_open,
+                &t.vision_ids,
             ))
         }
         "testing" if ticked + t.owner_open < items => {
