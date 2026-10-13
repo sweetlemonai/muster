@@ -10,6 +10,7 @@ mod helper_cmds;
 pub mod ops;
 pub mod projects;
 pub mod queue;
+pub mod session;
 
 use std::collections::HashMap;
 use std::path::PathBuf;

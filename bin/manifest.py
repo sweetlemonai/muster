@@ -328,6 +328,8 @@ def main():
                 "folder": folder,
                 "path": rel,
                 "claimed_by": fields.get("claimed-by", ""),
+                # Who holds Testing or Your check (muster writes it, 0030); Building has claimed_by.
+                "held_by": fields.get("held-by", ""),
                 "heartbeat": fields.get("heartbeat", ""),
                 "waiting_on": fields.get("waiting_on", ""),
                 "depends": parse_depends(fields.get("depends", ""))[0],

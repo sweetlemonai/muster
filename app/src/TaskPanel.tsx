@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import EditBody from "./EditBody";
-import { ago, claimant, earlierStages, heldByOther, isStage, LEASE_SECS, leaseRunOut, nextStage, oneAtATime, passLabel, readFiles, stamp, STAGES, stageLabel, stageOf } from "./lib";
+import {
+  ago, claimant, earlierStages, heldByOther, holderOf, isStage, LEASE_SECS, leaseRunOut, nextStage, oneAtATime, passLabel, readFiles, splitHolder, stageHolders, stamp, STAGES, stageLabel,
+  stageOf, startedAgo,
+} from "./lib";
 import { estimateLeft, isWork, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
 import Markdown from "./Markdown";
 import OwnerChecklist, { ownerOpen } from "./OwnerChecklist";
@@ -59,8 +62,8 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
           </div>
           <h1>{task.title}</h1>
           <StageLine task={task} />
+          <Holders task={task} now={now} />
           <div className="meta">
-            {task.claimedBy && <>on it: {task.claimedBy} · </>}
             {task.waitingOn && <>waiting on: {task.waitingOn} · </>}
             {task.commit && <>commit {task.commit} · </>}
             <span title={task.path}>{task.path}</span>
@@ -113,6 +116,8 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
           </>
         )}
       </section>
+
+      {task.checkins.length > 0 && <Checkins task={task} />}
     </div>
   );
 }
@@ -139,6 +144,43 @@ function Rollup({ task, childTasks }: { task: Task; childTasks?: Task[] }) {
           })}
         </ul>
       )}
+    </section>
+  );
+}
+
+/** "you" for the owner, else who as written, session and all (the pane shows the full id). */
+const person = (who: string) => (splitHolder(who).label === "owner" ? (who === "owner" ? "you" : `you, ${who}`) : who);
+
+/** Who's on it now and since when, and who held each stage so far (0030). */
+function Holders({ task, now }: { task: Task; now: number }) {
+  const current = holderOf(task);
+  const started = startedAgo(task, now);
+  const earlier = stageHolders(task).filter((h) => h.stage !== task.stage);
+  if (!current && !started && earlier.length === 0) return null;
+  return (
+    <div className="meta holders">
+      {current && <>on it: {person(current)}</>}
+      {started && <>{current ? " · " : ""}{started}</>}
+      {earlier.map((h) => (
+        <span key={h.stage}> · {stageLabel(h.stage)}: {person(h.who)}</span>
+      ))}
+    </div>
+  );
+}
+
+/** Every check-in, in order: when, how far (the session's own estimate), what, who. */
+function Checkins({ task }: { task: Task }) {
+  return (
+    <section className="checkins">
+      <h2>Check-ins <small>{task.checkins.length}</small></h2>
+      <p className="meta small">The percentages are each session's own estimate.</p>
+      <ol>
+        {task.checkins.map((c, i) => (
+          <li key={i}>
+            <span className="when">{c.at}</span> {c.pct !== null && <b>{c.pct}%</b>} {c.text} <span className="meta">· {c.who}</span>
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }

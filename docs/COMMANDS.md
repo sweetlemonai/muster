@@ -75,8 +75,13 @@ Prints the command and its output, verbatim.
 
 `muster help` lists every command, the same list as the app's Help tab. The ones /mu doesn't
 route run as `! muster …` in a session: new, move, stage, set, attach, escalate, inbox, reclaim,
-projects, init, tick, untick (the owner's criteria, task 0028), edit (task 0020), and the backlog's
-shape, file and drop (task 0015). Also coming: `depends:` (task 0019).
+checkin (task 0030), projects, init, tick, untick (the owner's criteria, task 0028), edit (task
+0020), and the backlog's shape, file and drop (task 0015). Also coming: `depends:` (task 0019).
+
+Who's on it (task 0030): `checkin <id> "<what's done, what's next>" [--pct <0-100>]` is the holder
+saying how far along it is, which renews the claim too. Inside a session every command stamps the
+session next to `--as`; with no `--as` the actor is `$MUSTER_AS`, then the folder's git user.name,
+never the login name.
 
 Levels (task 0016): `new --level goal|feature --parent <id> --due YYYY-MM-DD` and `set <id>
 level|parent|due <value>` (an empty parent or due clears it), with the rules checked: a task's

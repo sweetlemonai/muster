@@ -426,6 +426,15 @@ class TaskTests(unittest.TestCase):
         self.assertIn("doing/0060-a.md: depends has '\u06f0\u06f0\u06f1\u06f4', which isn't a task id", r.stdout)
         self.assertIn("doing/0061-b.md: depends has '0042\\xa00060', which isn't a task id", r.stdout)
 
+    def test_manifest_carries_the_holder_of_testing_and_your_check(self):
+        # muster writes held-by: for Testing and Your check (0030), beside Building's claimed-by.
+        (self.root / "doing" / "0042-something.md").write_text(
+            TASK_FILE.replace("status: doing", "status: doing\nstage: testing\nheld-by: qa (session cccc3333)"))
+        self.assertEqual(self.manifest("--check").returncode, 0)
+        self.assertEqual(self.manifest().returncode, 0)
+        tasks = {t["id"]: t for t in json.loads(self.text("tasks.json"))["tasks"]}
+        self.assertEqual(tasks["0042"]["held_by"], "qa (session cccc3333)")
+        self.assertEqual(tasks["0043"]["held_by"], "")
 
     def test_inbox_command(self):
         self.run_task("ask", "0042", "Q?", "--session", "aaaa1111")

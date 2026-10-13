@@ -617,6 +617,8 @@ fn muster_in(root: &Path, env: &[(&str, &str)], args: &[&str], input: &str) -> (
         .env_remove("MUSTER_ROOT")
         .env_remove("TASKS_ROOT")
         .env_remove("MUSTER_AS")
+        // Run inside a Claude Code session, muster would stamp that session on who acts (0030).
+        .env_remove("CLAUDE_CODE_SESSION_ID")
         .env_remove("VISUAL")
         .env_remove("EDITOR")
         .stdin(Stdio::piped())

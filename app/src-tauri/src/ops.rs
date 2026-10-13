@@ -7,6 +7,7 @@ use crate::queue::{
     STATUS_FOLDERS,
 };
 pub use crate::queue::{stage_label, stage_role, StageStep, STAGES};
+use crate::session::{is_owner, same_holder};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -809,6 +810,8 @@ struct Current {
     blocked: bool,
     waiting_on: String,
     claimed_by: String,
+    /// Who holds it in Testing or Your check (`held-by:`).
+    held_by: String,
     /// Acceptance criteria: (items, ticked).
     criteria: (usize, usize),
     /// Unticked criteria only the owner verifies (`— verify: owner`): they don't hold Testing
@@ -816,6 +819,8 @@ struct Current {
     owner_open: usize,
     /// Who passed it Ready → Building most recently (the builder), if anyone.
     builder: Option<String>,
+    /// Who passed it Building → Testing most recently (Testing's holder), if anyone.
+    tester: Option<String>,
     /// The claim's lease: the holder's last heartbeat stamp, and the file's modified time.
     heartbeat: String,
     modified: u64,
@@ -855,14 +860,25 @@ fn reads_as_stage(line: &str) -> bool {
     queue::stage_line(&format!("- {line}")).is_some()
 }
 
+/// Would this log line read as a holder's check-in (`queue::checkin_line`)?
+fn reads_as_checkin(line: &str) -> bool {
+    queue::checkin_line(&format!("- {line}")).is_some()
+}
+
 /// A log line carrying free text (a note, a field's value, what it waits on). Only the stage
-/// writer may log stage history, so a line the log's reader would take for a stage change
-/// (`queue::stage_line`, whatever part of it the who and the text make up) is refused. Prose
-/// that only mentions a stage doesn't parse as one, so it's fine.
+/// writer may log stage history, and only `checkin` a check-in, so a line the log's reader would
+/// take for either (`queue::stage_line`, `queue::checkin_line`, whatever part of it the who and
+/// the text make up) is refused. Prose that only mentions a stage or a check-in doesn't parse as
+/// one, so it's fine.
 pub(crate) fn free_text_line(line: String, what: &str) -> Result<String, String> {
     if reads_as_stage(&line) {
         return Err(format!(
             "{what} would read as a stage change in the log (\"<who>: stage <from> → <to>\"); only muster pass, return and stage write those"
+        ));
+    }
+    if reads_as_checkin(&line) {
+        return Err(format!(
+            "{what} would read as a check-in in the log (\"<who>: check-in …\"); only muster checkin writes those"
         ));
     }
     Ok(line)
@@ -870,8 +886,9 @@ pub(crate) fn free_text_line(line: String, what: &str) -> Result<String, String>
 
 fn unblocked_line(stamp: &str, who: &str, was: &str) -> String {
     let line = format!("{stamp} {who}: unblocked (was waiting on {was})");
-    // `was` comes from the file and may be hand-written; never let it log a stage change.
-    if was.is_empty() || reads_as_stage(&line) {
+    // `was` comes from the file and may be hand-written; never let it log a stage change or a
+    // check-in.
+    if was.is_empty() || reads_as_stage(&line) || reads_as_checkin(&line) {
         format!("{stamp} {who}: unblocked")
     } else {
         line
@@ -913,6 +930,12 @@ fn change_locked(
             .rev()
             .find(|(s, detail)| s.from == "ready" && s.to == "building" && *detail == "claimed")
             .map(|(s, _)| s.who);
+        let tester = queue::stage_lines(body)
+            .into_iter()
+            .rev()
+            .find(|(s, _)| s.from == "building" && s.to == "testing")
+            .map(|(s, _)| s.who);
+        let (fields, _) = front_matter(&text).ok_or("the task has no front matter")?;
         let modified = fs::metadata(path)
             .map(|m| queue::mtime_secs(&m))
             .map_err(|e| e.to_string())?;
@@ -924,7 +947,9 @@ fn change_locked(
             blocked: t.blocked,
             waiting_on: t.waiting_on,
             claimed_by: t.claimed_by,
+            held_by: t.held_by,
             builder,
+            tester,
             heartbeat: t.heartbeat,
             modified,
             level: t.level,
@@ -934,10 +959,10 @@ fn change_locked(
         // whichever change makes it: a pass from Ready, a return to the builder, an unblock, a set.
         let held_before = now.stage == "building" && !now.blocked && !now.claimed_by.is_empty();
         let held_after = c.stage == "building" && !c.blocked && !c.claimed_by.is_empty();
-        let new_hold = held_after && !(held_before && now.claimed_by == c.claimed_by);
-        if new_hold && c.claimed_by != "owner" {
+        let new_hold = held_after && !(held_before && same_holder(&now.claimed_by, &c.claimed_by));
+        if new_hold && !is_owner(&c.claimed_by) {
             if let Some(held) = holding(&tasks_now(root), &c.claimed_by, id) {
-                return Err(if c.claimed_by == who {
+                return Err(if same_holder(&c.claimed_by, who) {
                     already_holds(&held)
                 } else {
                     format!(
@@ -955,13 +980,27 @@ fn change_locked(
         if let Some(commit) = &c.commit {
             new = set_front(&new, "commit", commit)?;
         }
+        // Testing and Your check have a holder too (0030), shown like the claim but not one: who
+        // may pass is unchanged. Testing goes to whoever passes it there from Building; back in
+        // Testing any other way, to whoever did that last. Your check is the owner's.
+        let held_by = match c.stage.as_str() {
+            s if s == now.stage => now.held_by.clone(),
+            "testing" if now.stage == "building" => who.to_string(),
+            "testing" => now.tester.clone().unwrap_or_else(|| who.to_string()),
+            "your-check" => "owner".to_string(),
+            _ => String::new(),
+        };
+        if !held_by.is_empty() || fields.contains_key("held-by") {
+            new = set_front(&new, "held-by", &held_by)?;
+        }
         // The lease restarts when the holder acts, and whenever a change makes a hold: a claim,
         // a return to the builder, or an unblock (time spent waiting isn't time gone quiet).
-        let holder_acts =
-            now.stage == "building" && !now.claimed_by.is_empty() && now.claimed_by == who;
+        let holder_acts = now.stage == "building"
+            && !now.claimed_by.is_empty()
+            && same_holder(&now.claimed_by, who);
         let new_claim = c.stage == "building"
             && !c.claimed_by.is_empty()
-            && (now.stage != "building" || now.claimed_by != c.claimed_by);
+            && (now.stage != "building" || !same_holder(&now.claimed_by, &c.claimed_by));
         if holder_acts || new_claim || new_hold {
             new = set_front(&new, "heartbeat", stamp)?;
         }
@@ -1068,7 +1107,10 @@ fn pass_change(
     if !commit.is_empty() && from != "your-check" {
         return Err("--commit is only for passing Your check → Done".into());
     }
-    if matches!(from, "ready" | "building") && !t.claimed_by.is_empty() && t.claimed_by != who {
+    if matches!(from, "ready" | "building")
+        && !t.claimed_by.is_empty()
+        && !same_holder(&t.claimed_by, who)
+    {
         return Err(format!("{id} is claimed by {}", t.claimed_by));
     }
     let (items, ticked) = t.criteria;
@@ -1154,7 +1196,13 @@ fn tasks_now(root: &Path) -> Vec<queue::Task> {
 fn holding(tasks: &[queue::Task], who: &str, except: &str) -> Option<String> {
     tasks
         .iter()
-        .find(|t| t.stage == "building" && !t.blocked && t.claimed_by == who && t.id != except)
+        .find(|t| {
+            t.stage == "building"
+                && !t.blocked
+                && !t.claimed_by.is_empty()
+                && same_holder(&t.claimed_by, who)
+                && t.id != except
+        })
         .map(|t| t.id.clone())
 }
 
@@ -1218,14 +1266,14 @@ pub fn next_task(root: &Path, who: &str, stamp: &str) -> Result<Option<Claimed>,
         let tasks = tasks_now(root);
         // Checked before picking, so a holder is told so rather than handed a refusal for one
         // task; `change` checks again. The owner may hold several.
-        if let Some(held) = holding(&tasks, &who, "").filter(|_| who != "owner") {
+        if let Some(held) = holding(&tasks, &who, "").filter(|_| !is_owner(&who)) {
             return Err(already_holds(&held));
         }
         let Some(top) = tasks
             .iter()
             .filter(|t| t.stage == "ready" && !t.blocked && is_id(&t.id))
             .filter(|t| t.level == "task")
-            .filter(|t| t.claimed_by.is_empty() || t.claimed_by == who)
+            .filter(|t| t.claimed_by.is_empty() || same_holder(&t.claimed_by, &who))
             .filter(|t| waiting_on_deps(t, &tasks).is_empty())
             .min_by_key(|t| (priority_rank(&t.priority), t.id.clone()))
         else {
@@ -1243,22 +1291,97 @@ pub fn next_task(root: &Path, who: &str, stamp: &str) -> Result<Option<Claimed>,
 pub fn heartbeat_task(root: &Path, id: &str, who: &str, stamp: &str) -> Result<String, String> {
     let who = actor(who)?;
     edit(root, id, |path, text| {
-        let t = queue::parse_task("", root, &queue::folder_of(root, path), path, &text, 0)
-            .ok_or("the task has no front matter")?;
-        if t.stage != "building" {
-            return Err(format!(
-                "{id} is in {}, not Building; only a claim in Building has a lease to keep alive",
-                stage_label(&t.stage)
-            ));
-        }
-        if t.claimed_by != who {
-            return Err(if t.claimed_by.is_empty() {
-                format!("nobody holds {id}; claim it first")
-            } else {
-                format!("{id} is held by {}, not {who}", t.claimed_by)
-            });
-        }
+        held_in_building(root, id, path, &text, &who)?;
         Ok((set_front(&text, "heartbeat", stamp)?, None))
+    })
+}
+
+/// Refused unless the task is in Building and `who` holds it: whose lease a heartbeat or a
+/// check-in may renew.
+fn held_in_building(
+    root: &Path,
+    id: &str,
+    path: &Path,
+    text: &str,
+    who: &str,
+) -> Result<(), String> {
+    let t = queue::parse_task("", root, &queue::folder_of(root, path), path, text, 0)
+        .ok_or("the task has no front matter")?;
+    if t.stage != "building" {
+        return Err(format!(
+            "{id} is in {}, not Building; only a claim in Building has a lease to keep alive",
+            stage_label(&t.stage)
+        ));
+    }
+    if t.claimed_by.is_empty() {
+        return Err(format!("nobody holds {id}; claim it first"));
+    }
+    if !same_holder(&t.claimed_by, who) {
+        return Err(format!("{id} is held by {}, not {who}", t.claimed_by));
+    }
+    Ok(())
+}
+
+/// A check-in's percentage (`--pct`): a whole number from 0 to 100, `%` allowed. Empty is none.
+fn clean_pct(input: &str) -> Result<Option<u8>, String> {
+    let t = input.trim();
+    if t.is_empty() {
+        return Ok(None);
+    }
+    let digits = t.strip_suffix('%').unwrap_or(t);
+    let n = (!digits.is_empty() && digits.len() <= 3 && digits.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| digits.parse::<u8>().ok())
+        .flatten()
+        .filter(|n| *n <= 100);
+    match n {
+        Some(n) => Ok(Some(n)),
+        None => Err(format!(
+            "--pct must be a whole number from 0 to 100, got {:?}",
+            t.chars().take(20).collect::<String>()
+        )),
+    }
+}
+
+/// The longest check-in, in characters: one line on the card, the rest in the task pane.
+const MAX_CHECKIN: usize = 500;
+
+/// A holder's check-in (0030): what's done and what's next, with the session's own estimate of how
+/// far along it is (`pct`, 0–100, or "" for none). Logged as `<who>: check-in 60% · <text>`, and
+/// it renews the claim's lease exactly as `heartbeat_task` does, under the same lock. Only the
+/// holder, only in Building. Text that would read as a stage change is refused.
+pub fn checkin_task(
+    root: &Path,
+    id: &str,
+    text: &str,
+    pct: &str,
+    who: &str,
+    stamp: &str,
+) -> Result<String, String> {
+    let who = actor(who)?;
+    let text = one_line(text, MAX_CHECKIN, "the check-in")?;
+    let pct = clean_pct(pct)?;
+    let line = match pct {
+        Some(n) => format!("{stamp} {who}: check-in {n}% · {text}"),
+        None => format!("{stamp} {who}: check-in · {text}"),
+    };
+    if reads_as_stage(&line) {
+        return Err(
+            "the check-in would read as a stage change in the log (\"<who>: stage <from> → <to>\"); say it another way".into(),
+        );
+    }
+    // What the log's reader takes from the line is exactly this check-in.
+    let back = queue::checkin_line(&format!("- {line}"));
+    if back
+        .as_ref()
+        .map(|c| (c.who.as_str(), c.pct, c.text.as_str()))
+        != Some((&who, pct, &text))
+    {
+        return Err("the check-in wouldn't read back as written; say it another way".into());
+    }
+    edit(root, id, |path, file| {
+        held_in_building(root, id, path, &file, &who)?;
+        let new = set_front(&file, "heartbeat", stamp)?;
+        Ok((append_log(&new, &line), None))
     })
 }
 
@@ -1514,8 +1637,18 @@ pub fn return_task(
             stage: target.to_string(),
             blocked: t.blocked,
             waiting_on: t.waiting_on.clone(),
+            // Back to the builder. By label only when no other session under that label holds a
+            // task in Building, so whichever session works under it next (the first may have
+            // ended) carries on; otherwise to the exact session that built it, which keeps one
+            // claim per holder. The stage lines still say which session built it.
             claimed_by: if target == "building" {
-                t.builder.clone().unwrap_or_default()
+                let builder = t.builder.clone().unwrap_or_default();
+                let label = crate::session::split(&builder).0.to_string();
+                if !label.is_empty() && holding(&tasks_now(root), &label, id).is_none() {
+                    label
+                } else {
+                    builder
+                }
             } else {
                 String::new()
             },
@@ -1646,7 +1779,7 @@ pub fn add_note(
         // The holder's note keeps its claim alive.
         let t = queue::parse_task("", root, &queue::folder_of(root, path), path, &text, 0);
         if t.is_some_and(|t| {
-            t.stage == "building" && !t.claimed_by.is_empty() && t.claimed_by == who
+            t.stage == "building" && !t.claimed_by.is_empty() && same_holder(&t.claimed_by, &who)
         }) {
             new = set_front(&new, "heartbeat", stamp)?;
         }
@@ -1853,7 +1986,7 @@ pub fn editable_body(text: &str) -> Result<String, String> {
 /// Who holds `t` in Building, when that's someone other than `who`. While they do, its write-up
 /// belongs to their branch (decision 0003), so nobody else edits it.
 fn write_up_holder(t: &queue::Task, who: &str) -> Option<String> {
-    (t.stage == "building" && !t.claimed_by.is_empty() && t.claimed_by != who)
+    (t.stage == "building" && !t.claimed_by.is_empty() && !same_holder(&t.claimed_by, who))
         .then(|| t.claimed_by.clone())
 }
 
@@ -1889,6 +2022,11 @@ fn clean_write_up(text: &str) -> Result<String, String> {
         if queue::stage_line(line).is_some() {
             return Err(format!(
                 "the write-up has a line that would read as a stage change in the log (\"<who>: stage <from> → <to>\"); only muster pass, return and stage write those: {line:?}"
+            ));
+        }
+        if queue::checkin_line(line).is_some() {
+            return Err(format!(
+                "the write-up has a line that would read as a check-in in the log (\"<who>: check-in …\"); only muster checkin writes those: {line:?}"
             ));
         }
     }
@@ -1939,7 +2077,7 @@ pub fn edit_body(
         };
         new = append_log(&new, &format!("{stamp} {who}: edited the write-up"));
         // The holder's edit keeps its claim alive.
-        if t.stage == "building" && t.claimed_by == who {
+        if t.stage == "building" && !t.claimed_by.is_empty() && same_holder(&t.claimed_by, &who) {
             new = set_front(&new, "heartbeat", stamp)?;
         }
         write_atomic(&path, &new)?;
@@ -4481,6 +4619,298 @@ mod tests {
         assert_eq!(shown("0002").as_deref(), Some("ready"));
         assert_eq!(shown("0004").as_deref(), Some("shaping"));
     }
+
+    // Task 0030: the session stamped on a claim, a holder for Testing and Your check, check-ins.
+
+    const A: &str = "wt-a (wt-0030 · session 7b5e8856 · cc-hg)";
+
+    #[test]
+    fn a_claim_records_the_session_and_its_holder_is_matched_by_label_and_session() {
+        let d = queue();
+        for id in ["0001", "0002", "0003"] {
+            put_task(d.path(), "todo", id, &ready_fm("normal"));
+        }
+        claim_task(d.path(), "0001", A, T).unwrap();
+        let t = task_of(d.path(), "0001");
+        assert_eq!((t.claimed_by.as_str(), t.heartbeat.as_str()), (A, T));
+        assert!(file_of(d.path(), "0001")
+            .ends_with(&format!("- {T} {A}: stage ready → building (claimed)\n")));
+        // The same session from another folder is the same holder; so is its bare label.
+        let elsewhere = "wt-a (main · session 7b5e8856 · cc-hg)";
+        heartbeat_task(d.path(), "0001", elsewhere, "2026-10-12 14:10").unwrap();
+        heartbeat_task(d.path(), "0001", "wt-a", "2026-10-12 14:11").unwrap();
+        assert!(claim_task(d.path(), "0002", elsewhere, T)
+            .unwrap_err()
+            .contains("you already hold 0001"));
+        // Another session under the same label is someone else: it can't renew or pass the claim.
+        let other = "wt-a (session 11111111)";
+        assert_eq!(
+            heartbeat_task(d.path(), "0001", other, T).unwrap_err(),
+            format!("0001 is held by {A}, not {other}")
+        );
+        assert!(pass_task(d.path(), "0001", other, T, &gate())
+            .unwrap_err()
+            .contains("0001 is claimed by"));
+        claim_task(d.path(), "0002", other, T).unwrap();
+        // The owner, from a session too, may hold several.
+        let owner = "owner (session 22222222)";
+        put_task(d.path(), "todo", "0004", &ready_fm("normal"));
+        claim_task(d.path(), "0003", owner, T).unwrap();
+        claim_task(d.path(), "0004", owner, T).unwrap();
+        // A holder's note keeps the claim alive from any folder of its session.
+        add_note(d.path(), "0001", "phase 1", elsewhere, "2026-10-12 14:30").unwrap();
+        assert_eq!(task_of(d.path(), "0001").heartbeat, "2026-10-12 14:30");
+        // Its pass out of Building, and a return to it, go back to the builder: here the exact
+        // session, since another wt-a session (`other`) holds 0002 in Building.
+        pass_task(d.path(), "0001", elsewhere, T, &gate()).unwrap();
+        return_task(d.path(), "0001", "AC1 fails", None, "qa", T).unwrap();
+        assert_eq!(task_of(d.path(), "0001").claimed_by, A);
+        // With no other wt-a session holding work, a return goes to the label, so a new session
+        // under it carries on even when the first has ended.
+        pass_task(d.path(), "0002", other, T, &gate()).unwrap();
+        pass_task(d.path(), "0001", elsewhere, T, &gate()).unwrap();
+        return_task(d.path(), "0001", "AC1 fails again", None, "qa", T).unwrap();
+        assert_eq!(task_of(d.path(), "0001").claimed_by, "wt-a");
+        let next_session = "wt-a (session 33333333)";
+        heartbeat_task(d.path(), "0001", next_session, "2026-10-12 15:00").unwrap();
+        pass_task(d.path(), "0001", next_session, T, &gate()).unwrap();
+        assert!(state(d.path()).problems.is_empty());
+    }
+
+    #[test]
+    fn a_stamp_never_lets_who_run_past_its_label_cap_or_forge_the_log() {
+        let d = queue();
+        put_task(d.path(), "todo", "0001", &ready_fm("normal"));
+        let label = "w".repeat(100);
+        let long = format!(
+            "{label} (main-29-is-a-long-name-of-32-ch · wt-0030 · session 7b5e8856 · cc-hg)"
+        );
+        claim_task(d.path(), "0001", &long, T).unwrap();
+        assert_eq!(task_of(d.path(), "0001").claimed_by, long);
+        let too_long = format!("w{long}");
+        assert!(heartbeat_task(d.path(), "0001", &too_long, T)
+            .unwrap_err()
+            .contains("longer than 100"));
+        for who in [
+            "x: check-in 50% · done",
+            "wt-a (session 7b5e8856): stage ready → done",
+        ] {
+            assert!(
+                add_note(d.path(), "0001", "hi", who, T)
+                    .unwrap_err()
+                    .contains("who"),
+                "{who}"
+            );
+        }
+    }
+
+    #[test]
+    fn pass_gives_testing_to_whoever_passes_it_there_and_your_check_to_the_owner() {
+        let d = queue();
+        put(
+            d.path(),
+            "todo/0001-t.md",
+            &task_text("status: todo\nclaimed-by:\nwaiting_on:", TICKED),
+        );
+        let held = |d: &Path| {
+            let t = only(d);
+            (
+                t.stage.clone(),
+                t.claimed_by.clone(),
+                t.held_by.clone(),
+                t.holder().to_string(),
+            )
+        };
+        let s = |a: &str, b: &str, c: &str, e: &str| {
+            (a.to_string(), b.to_string(), c.to_string(), e.to_string())
+        };
+        pass_task(d.path(), "0001", A, "2026-10-12 10:00", &no_gate()).unwrap();
+        assert_eq!(held(d.path()), s("building", A, "", A));
+        assert!(
+            !fs::read_to_string(d.path().join("doing/0001-t.md"))
+                .unwrap()
+                .contains("held-by"),
+            "no field until it's needed"
+        );
+        pass_task(d.path(), "0001", A, "2026-10-12 11:00", &gate()).unwrap();
+        assert_eq!(held(d.path()), s("testing", "", A, A));
+        assert_eq!(only(d.path()).stage_since, "2026-10-12 11:00");
+        // A block and an unblock keep the holder; a pass by anyone moves on (who may pass is
+        // unchanged: Testing isn't a claim).
+        block_task(d.path(), "0001", "owner: which port?", "owner", T).unwrap();
+        unblock_task(d.path(), "0001", "owner", T).unwrap();
+        assert_eq!(held(d.path()), s("testing", "", A, A));
+        pass_task(d.path(), "0001", "qa", T, &no_gate()).unwrap();
+        assert_eq!(held(d.path()), s("your-check", "", "owner", "owner"));
+        // Sent back to Testing, it goes to whoever passed it there last, not the sender.
+        return_task(d.path(), "0001", "AC2 fails on the Mac", None, "owner", T).unwrap();
+        assert_eq!(held(d.path()), s("testing", "", A, A));
+        // Back to Building: the claim again (to the builder's label, as no other wt-a session
+        // holds work), and no Testing holder left behind.
+        return_task(d.path(), "0001", "rework", None, "qa", T).unwrap();
+        assert_eq!(held(d.path()), s("building", "wt-a", "", "wt-a"));
+        pass_task(d.path(), "0001", A, T, &gate()).unwrap();
+        pass_task(d.path(), "0001", "qa", T, &no_gate()).unwrap();
+        pass_task(d.path(), "0001", "owner", T, &no_gate()).unwrap();
+        assert_eq!(held(d.path()), s("done", "", "", ""));
+        // The owner's override into Testing: back to whoever last passed it there.
+        set_stage(d.path(), "0001", "ready", "owner", T).unwrap();
+        set_stage(d.path(), "0001", "testing", "owner", T).unwrap();
+        assert_eq!(held(d.path()).2, A, "the last tester");
+        assert!(state(d.path()).problems.is_empty());
+    }
+
+    #[test]
+    fn a_check_in_is_the_holders_heartbeat_with_words() {
+        let d = queue();
+        put_task(d.path(), "todo", "0001", &ready_fm("normal"));
+        put_task(d.path(), "todo", "0002", &ready_fm("normal"));
+        claim_task(d.path(), "0001", A, "2026-10-12 09:00").unwrap();
+        assert_eq!(
+            checkin_task(
+                d.path(),
+                "0001",
+                "gate green, writing tests",
+                "60",
+                A,
+                "2026-10-12 10:00"
+            )
+            .unwrap(),
+            "doing/0001-t.md"
+        );
+        let t = task_of(d.path(), "0001");
+        assert_eq!(t.heartbeat, "2026-10-12 10:00");
+        assert!(file_of(d.path(), "0001").ends_with(&format!(
+            "- 2026-10-12 10:00 {A}: check-in 60% · gate green, writing tests\n"
+        )));
+        let c = t.current_checkin().unwrap();
+        assert_eq!(
+            (c.pct, c.text.as_str(), c.who.as_str()),
+            (Some(60), "gate green, writing tests", A)
+        );
+        assert!(
+            t.stage_history.len() == 1,
+            "a check-in isn't a stage change"
+        );
+        // Without --pct; "%" allowed; text on one line, trimmed.
+        checkin_task(
+            d.path(),
+            "0001",
+            "  phase 2\nstarted ",
+            "",
+            "wt-a",
+            "2026-10-12 10:30",
+        )
+        .unwrap();
+        checkin_task(d.path(), "0001", "almost", "100%", A, "2026-10-12 10:40").unwrap();
+        checkin_task(d.path(), "0001", "start", "0", A, "2026-10-12 10:41").unwrap();
+        let t = task_of(d.path(), "0001");
+        let got: Vec<_> = t.checkins.iter().map(|c| (c.pct, c.text.clone())).collect();
+        assert_eq!(
+            got,
+            [
+                (Some(60), "gate green, writing tests".to_string()),
+                (None, "phase 2 started".to_string()),
+                (Some(100), "almost".to_string()),
+                (Some(0), "start".to_string()),
+            ]
+        );
+        assert_eq!(t.heartbeat, "2026-10-12 10:41");
+        // Refused, and the file left alone: not the holder, not Building, a bad percentage,
+        // empty or too long text, and text that would log a stage change.
+        let before = file_of(d.path(), "0001");
+        let refused = |id: &str, text: &str, pct: &str, who: &str| {
+            checkin_task(d.path(), id, text, pct, who, T).unwrap_err()
+        };
+        assert_eq!(
+            refused("0001", "x", "", "wt-a (session 11111111)"),
+            format!("0001 is held by {A}, not wt-a (session 11111111)")
+        );
+        assert!(refused("0002", "x", "", A).contains("0002 is in Ready, not Building"));
+        for pct in ["101", "-1", "60.5", "sixty", "1000", "6 0", "%"] {
+            assert!(refused("0001", "x", pct, A).contains("--pct"), "{pct}");
+        }
+        assert!(refused("0001", "  ", "", A).contains("empty"));
+        assert!(refused("0001", &"x".repeat(501), "", A).contains("longer than 500"));
+        assert!(refused("0001", "a: stage building → done", "", A).contains("stage change"));
+        assert!(refused("0001", "ok", "", "x: check-in 5% · y").contains("who"));
+        assert_eq!(file_of(d.path(), "0001"), before);
+        // Nobody else's free text can pass for a check-in: a note, a title, a block reason.
+        for note in [
+            "check-in 90% · done",
+            "fyi: check-in 90% · done",
+            "check-in · done",
+        ] {
+            assert!(
+                add_note(d.path(), "0001", note, "owner", T)
+                    .unwrap_err()
+                    .contains("check-in"),
+                "{note}"
+            );
+        }
+        assert!(
+            set_field(d.path(), "0001", "title", "x: check-in 1% · y", "owner", T)
+                .unwrap_err()
+                .contains("check-in")
+        );
+        assert!(
+            block_task(d.path(), "0001", "owner: check-in 1% · y", "owner", T)
+                .unwrap_err()
+                .contains("check-in")
+        );
+        assert_eq!(task_of(d.path(), "0001").checkins.len(), 4);
+        // Prose about check-ins is fine.
+        add_note(
+            d.path(),
+            "0001",
+            "check-ins every 30 min from now",
+            "owner",
+            T,
+        )
+        .unwrap();
+        // A Building task blocked by its holder can still check in (it's still theirs).
+        block_task(d.path(), "0001", "owner: which port?", A, T).unwrap();
+        checkin_task(
+            d.path(),
+            "0001",
+            "waiting on the port",
+            "",
+            A,
+            "2026-10-12 11:00",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_check_in_racing_a_reclaim_lands_before_it_or_is_refused() {
+        let now = crate::queue::now_secs();
+        for _ in 0..20 {
+            let d = queue();
+            put_task(
+                d.path(),
+                "doing",
+                "0001",
+                &format!("priority: normal\nstage: building\nstatus: doing\nclaimed-by: {A}\nheartbeat: 2026-10-12 01:00\nwaiting_on:"),
+            );
+            let root = d.path().to_path_buf();
+            let results = at_once(&["checkin", "reclaim"], move |how| match how {
+                "checkin" => checkin_task(&root, "0001", "still here", "", A, T).map(|_| 0),
+                _ => reclaim(&root, 720, "capture", T, now).map(|r| r.released.len()),
+            });
+            let t = task_of(d.path(), "0001");
+            match (&results[0], &results[1]) {
+                (Ok(_), Ok(0)) => assert_eq!(
+                    (t.stage.as_str(), t.heartbeat.as_str(), t.checkins.len()),
+                    ("building", T, 1)
+                ),
+                (Err(e), Ok(1)) => {
+                    assert!(e.contains("not Building"), "{e}");
+                    assert_eq!((t.stage.as_str(), t.checkins.len()), ("ready", 0));
+                }
+                other => panic!("{other:?}"),
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -4621,6 +5051,10 @@ mod edit_tests {
             "# T\n\n- 2026-10-12 15:00 evil: stage ready → building (claimed)",
             "stage change",
         );
+        refused(
+            "# T\n\n- 2026-10-12 15:00 evil: check-in 90% · done",
+            "check-in",
+        );
         refused("  \n\t\n", "empty");
         refused("Just a description, no title line", "# ");
         refused(
@@ -4714,6 +5148,53 @@ mod edit_tests {
             T,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn the_holder_is_matched_by_label_and_session_when_it_edits() {
+        let d = queue();
+        let a = "wt-a (wt-0030 · session 7b5e8856 · cc-hg)";
+        let held = format!(
+            "stage: building\nstatus: doing\nclaimed-by: {a}\nheartbeat: 2026-10-12 09:00\nwaiting_on:"
+        );
+        let p = put(d.path(), "doing", &held, WRITE_UP, "");
+        let before = text(&p);
+        // Another session under the same label is someone else.
+        let other = "wt-a (session 11111111)";
+        let e = open_body(d.path(), "0001", other).unwrap_err();
+        assert!(e.contains(&format!("{a} holds it")), "{e}");
+        let e = edit_body(d.path(), "0001", "# Edit me\n\nMine.", WRITE_UP, other, T).unwrap_err();
+        assert!(e.contains(&format!("{a} holds it")), "{e}");
+        assert_eq!(text(&p), before);
+        // The same session from another folder, and the bare label, are the holder: the edit
+        // goes through and keeps the claim alive.
+        let elsewhere = "wt-a (main · session 7b5e8856 · cc-hg)";
+        assert_eq!(open_body(d.path(), "0001", elsewhere).unwrap(), WRITE_UP);
+        edit_body(
+            d.path(),
+            "0001",
+            "# Edit me\n\nOne.",
+            WRITE_UP,
+            elsewhere,
+            T,
+        )
+        .unwrap();
+        let t = crate::queue::read_task(d.path(), "0001").unwrap();
+        assert_eq!((t.heartbeat.as_str(), t.claimed_by.as_str()), (T, a));
+        let later = "2026-10-12 15:00";
+        edit_body(
+            d.path(),
+            "0001",
+            "# Edit me\n\nTwo.",
+            "# Edit me\n\nOne.",
+            "wt-a",
+            later,
+        )
+        .unwrap();
+        assert_eq!(
+            crate::queue::read_task(d.path(), "0001").unwrap().heartbeat,
+            later
+        );
     }
 
     #[test]

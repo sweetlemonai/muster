@@ -13,6 +13,9 @@ export type Question = {
 /** One stage change from the task's log, written by muster. `at` is "YYYY-MM-DD HH:MM". */
 export type StageStep = { at: string; who: string; from: string; to: string };
 
+/** A holder's check-in from the log (0030). `pct` is the session's own estimate, 0–100, or null. */
+export type Checkin = { at: string; who: string; pct: number | null; text: string };
+
 export type Task = {
   queue: string;
   id: string;
@@ -29,6 +32,12 @@ export type Task = {
   folder: string;
   path: string;
   claimedBy: string;
+  /** Who holds it in Testing or Your check (`held-by:`), as Building has `claimedBy`. */
+  heldBy: string;
+  /** When the current stage began (the latest stage line into it), or "". */
+  stageSince: string;
+  /** Every check-in in the log, oldest first. */
+  checkins: Checkin[];
   heartbeat: string;
   waitingOn: string;
   /** The tasks it waits on (`depends:`, same queue, 0019). */

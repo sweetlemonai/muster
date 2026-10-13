@@ -142,7 +142,13 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .pri-low { color: var(--faint); }
 .badge { background: var(--tint); border-radius: 4px; padding: 0 5px; }
 .badge.warn { background: var(--st-needs); color: var(--on-status); }
-.badge.who { background: var(--accent-soft); }
+/* Who's on it and how far (0030): quiet lines, one each, cut with an ellipsis; the full text is
+   in the task pane. A session gone quiet takes the attention colour. */
+.card-who, .card-checkin, .card-quiet { font-size: 11px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-who { color: var(--muted); }
+.card-who.nobody { color: var(--faint); }
+.card-checkin { color: var(--text); opacity: 0.8; }
+.card-quiet { color: var(--err); font-weight: 600; }
 .badge.blocked { background: var(--st-blocked); color: var(--on-status); }
 .column h2 .role { display: block; margin-top: 2px; font-size: 10px; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--muted); }
 .column.empty h2 .role { display: none; }
@@ -169,6 +175,8 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .close { margin-left: auto; align-self: flex-start; border: none; background: none; font-size: 22px; line-height: 1; color: var(--muted); }
 .panel section { padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.checkins ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.checkins .when { display: inline; width: auto; margin-right: 4px; font-variant-numeric: tabular-nums; }
 .answer { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; }
 .answer.needs-you { border-left: 3px solid var(--st-needs); }
 .answer p { margin: 0 0 4px; }
@@ -274,7 +282,6 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 button.primary:hover, .new:hover, .answer-bar button:hover { background: var(--accent-strong); }
 ::placeholder { color: var(--faint); }
-.badge.stale { background: color-mix(in srgb, var(--st-blocked) 22%, var(--surface)); color: var(--err); }
 
 button:disabled { opacity: 0.45; cursor: default; }
 .helper-bar button { white-space: nowrap; }

@@ -1,13 +1,14 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import { mayLeave } from "./writeUp";
-import { ago, columns, estimateTotal, feed, holder, inProgress, key, leaseRunOut, STAGES } from "./lib";
+import { ago, columns, estimateTotal, feed, inProgress, key, STAGES } from "./lib";
 import type { State, Task } from "./types";
 import { backlogColumn, backlogNotes, NoteCard, noteKey, projectCount, QuickAdd } from "./Backlog";
 import Projects from "./Projects";
 import NewTask from "./NewTask";
 import Appearance from "./Appearance";
 import { CardBand, cardClass } from "./CardLook";
+import CardStatus from "./CardStatus";
 import { GraphView } from "./GraphView";
 import { TableView, TimelineView } from "./Views";
 import { GroupByChips, GroupedBoard } from "./Groups";
@@ -433,8 +434,6 @@ function Splitter({ width, onWidth }: { width: number; onWidth: (w: number) => v
 }
 
 function Card({ t, now, multi, parent, onOpen, active }: { t: Task; now: number; multi: boolean; parent: string; onOpen: () => void; active: boolean }) {
-  const stale = leaseRunOut(t, now);
-  const who = holder(t);
   const priority = t.priority || "normal";
   return (
     <button className={cardClass(t, active)} onClick={onOpen}>
@@ -452,13 +451,13 @@ function Card({ t, now, multi, parent, onOpen, active }: { t: Task; now: number;
           {t.tags.map((g) => <span key={g} className="tag">#{g}</span>)}
         </span>
       )}
+      <CardStatus t={t} now={now} />
       <span className="card-bottom">
         {t.blocked && <span className="badge blocked">blocked{t.waitingOn ? `: ${t.waitingOn}` : ""}</span>}
         {t.waitingForOwner && <span className="badge warn">needs you</span>}
         {t.openQuestions > 0 && <span className="badge">{t.openQuestions} open Q</span>}
         {t.attachments.length > 0 && <span className="badge">{t.attachments.length} file{t.attachments.length === 1 ? "" : "s"}</span>}
         {(t.estTime || t.estTokens) && <span className="badge est" title="Estimated agent time and tokens">~{[t.estTime, t.estTokens].filter(Boolean).join(" · ")}</span>}
-        {who && <span className={stale ? "badge stale" : "badge who"}>{who}{stale ? " · quiet 12 h+" : ""}</span>}
         <span className="age">{ago(now, t.modified)}</span>
       </span>
     </button>

@@ -25,7 +25,7 @@ gives one view of everything and checks the queue for problems. The owner reads
 | Manifest + check | `bin/manifest.py` → `tasks.json` | Built, tested. Capture rebuilds it on every commit |
 | Owner's waiting list | `WAITING-FOR-OWNER.md` per queue (by hand); Drover's Home (task 0015) | By hand here. Built in Drover |
 | Attachments | `attachments/<id>/` per queue | In use (screenshots, mockups) |
-| `muster` command line | the app's binary, `bin/muster` shim | Built: new, list, show, move, set, note, attach, answer, check, projects, init, the backlog commands add, shape, file, drop, the stage commands pass, return, block, unblock, stage, the claims claim, next, heartbeat, reclaim, and questions ask, escalate, inbox (same rules as the app) |
+| `muster` command line | the app's binary, `bin/muster` shim | Built: new, list, show, move, set, note, attach, answer, check, projects, init, the backlog commands add, shape, file, drop, the stage commands pass, return, block, unblock, stage, the claims claim, next, heartbeat, checkin, reclaim, and questions ask, escalate, inbox (same rules as the app) |
 | Commands `/muster`, `/mu` | `docs/COMMANDS.md` | Designed, not built |
 | Desktop app | `app/` (Tauri 2 + React 19, decision 0001) | Built and running: board, new task, task management, waiting for you with answering, files, activity, problems, projects, the AI helper |
 

@@ -104,18 +104,65 @@ fn legacy_stage(status: &str) -> &'static str {
     }
 }
 
+/// A check-in from the log (0030): `- <at> <who>: check-in 60% · <text>`, or `check-in · <text>`
+/// without a percentage. The percentage is the session's own estimate.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Checkin {
+    pub at: String,
+    pub who: String,
+    pub pct: Option<u8>,
+    pub text: String,
+}
+
+/// Is this the shape of a tool stamp, `YYYY-MM-DD HH:MM`?
+fn stamp_shaped(at: &str) -> bool {
+    at.len() == 16
+        && at.bytes().enumerate().all(|(i, c)| match i {
+            4 | 7 => c == b'-',
+            10 => c == b' ',
+            13 => c == b':',
+            _ => c.is_ascii_digit(),
+        })
+}
+
+/// A tool-written check-in line from the log. A stage line never is one, whatever its detail says.
+pub fn checkin_line(line: &str) -> Option<Checkin> {
+    if stage_line(line).is_some() {
+        return None;
+    }
+    let rest = line.strip_prefix("- ")?;
+    let at = rest.get(..16).filter(|at| stamp_shaped(at))?;
+    let (who, tail) = rest
+        .get(16..)?
+        .strip_prefix(' ')?
+        .split_once(": check-in ")?;
+    let (pct, text) = match tail.strip_prefix("· ") {
+        Some(text) => (None, text),
+        None => {
+            let (n, text) = tail.split_once("% · ")?;
+            let ok = (1..=3).contains(&n.len()) && n.bytes().all(|b| b.is_ascii_digit());
+            let n: u8 = n.parse().ok().filter(|n| ok && *n <= 100)?;
+            (Some(n), text)
+        }
+    };
+    if who.trim().is_empty() || text.trim().is_empty() {
+        return None;
+    }
+    Some(Checkin {
+        at: at.to_string(),
+        who: who.to_string(),
+        pct,
+        text: text.trim().to_string(),
+    })
+}
+
 /// A tool-written stage line from the log, with its detail (the text in the closing brackets).
 /// Anything else, a hand-typed "moved todo → doing" included, is not stage history.
 pub fn stage_line(line: &str) -> Option<(StageStep, &str)> {
     let rest = line.strip_prefix("- ")?;
     let at = rest.get(..16)?;
-    let stamp_ok = at.bytes().enumerate().all(|(i, c)| match i {
-        4 | 7 => c == b'-',
-        10 => c == b' ',
-        13 => c == b':',
-        _ => c.is_ascii_digit(),
-    });
-    if !stamp_ok {
+    if !stamp_shaped(at) {
         return None;
     }
     let (who, tail) = rest.get(16..)?.strip_prefix(' ')?.split_once(": stage ")?;
@@ -331,6 +378,13 @@ pub struct Task {
     pub folder: String,
     pub path: String,
     pub claimed_by: String,
+    /// Who holds it in Testing or Your check (`held-by:`, set by `pass`), as Building has
+    /// `claimed_by`.
+    pub held_by: String,
+    /// When the current stage began: the stamp of the latest stage line into it, or "".
+    pub stage_since: String,
+    /// Every check-in in the log, oldest first (0030).
+    pub checkins: Vec<Checkin>,
     pub heartbeat: String,
     pub waiting_on: String,
     pub commit: String,
@@ -389,6 +443,31 @@ pub struct Progress {
     pub total: usize,
     pub est_minutes: u64,
     pub est_token_count: u64,
+}
+
+impl Task {
+    /// Who's on it in its stage: the claim in Ready and Building, `held-by` in Testing and Your
+    /// check (the owner's when it names nobody), nobody elsewhere.
+    pub fn holder(&self) -> &str {
+        match self.stage.as_str() {
+            "ready" | "building" => &self.claimed_by,
+            "testing" => &self.held_by,
+            "your-check" if self.held_by.is_empty() => "owner",
+            "your-check" => &self.held_by,
+            _ => "",
+        }
+    }
+
+    /// The latest check-in of the current Building stage, if any.
+    pub fn current_checkin(&self) -> Option<&Checkin> {
+        if self.stage != "building" {
+            return None;
+        }
+        self.checkins
+            .iter()
+            .rev()
+            .find(|c| c.at.as_str() >= self.stage_since.as_str())
+    }
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -697,7 +776,14 @@ pub fn parse_task(
         ),
     };
     let blocked = !waiting_on.is_empty() || status == "blocked";
-    let stage_history = stage_lines(body).into_iter().map(|(s, _)| s).collect();
+    let stage_history: Vec<StageStep> = stage_lines(body).into_iter().map(|(s, _)| s).collect();
+    let stage_since = stage_history
+        .iter()
+        .rev()
+        .find(|s| s.to == stage)
+        .map(|s| s.at.clone())
+        .unwrap_or_default();
+    let checkins = log_lines.iter().filter_map(|l| checkin_line(l)).collect();
     let open_questions = questions.iter().filter(|q| !q.ticked).count();
     let owner_criteria: Vec<Criterion> = criteria_items(body)
         .into_iter()
@@ -755,6 +841,9 @@ pub fn parse_task(
         folder: folder.to_string(),
         path: rel,
         claimed_by: get("claimed-by"),
+        held_by: get("held-by"),
+        stage_since,
+        checkins,
         heartbeat: get("heartbeat"),
         waiting_on,
         commit: get("commit"),
@@ -1445,8 +1534,9 @@ pub fn base64(data: &[u8]) -> String {
     out
 }
 
-/// Who's acting, as it goes into the front matter and the log: one line of at most 100
-/// characters, and nothing that would let a log line pass for tool-written stage history.
+/// Who's acting, as it goes into the front matter and the log: one line, a label (`--as`) of at
+/// most 100 characters plus the session stamp `muster` adds (0030, `session::stamped`), and
+/// nothing that would let a log line pass for tool-written stage history or a check-in.
 pub fn actor(who: &str) -> Result<String, String> {
     let t: String = who
         .chars()
@@ -1456,13 +1546,22 @@ pub fn actor(who: &str) -> Result<String, String> {
     if t.is_empty() {
         return Err("who (--as) is empty".into());
     }
-    if t.chars().count() > 100 {
+    if crate::session::split(&t).0.chars().count() > 100 {
         return Err("who (--as) is longer than 100 characters".into());
     }
-    if t.contains(": stage ") || t.contains(" → ") {
+    if t.contains(": stage ") || t.contains(" → ") || t.contains(": check-in ") {
         return Err(format!(
-            "who (--as) can't contain \": stage \" or \" → \" (that's stage history): {t:?}"
+            "who (--as) can't contain \": stage \", \" → \" or \": check-in \" (that's what the tool logs): {t:?}"
         ));
+    }
+    Ok(t)
+}
+
+/// `actor` for the Questions section (contract rule 2): at most 100 characters in all.
+fn answerer(who: &str) -> Result<String, String> {
+    let t = actor(who)?;
+    if t.chars().count() > 100 {
+        return Err("who (--as) is longer than 100 characters".into());
     }
     Ok(t)
 }
@@ -1596,7 +1695,7 @@ pub fn ask(
     session: &str,
     stamp: &str,
 ) -> Result<Asked, String> {
-    let who = actor(who)?;
+    let who = answerer(who)?;
     let question = clean_text_as(text, "the question")?;
     let sid = session8(session)?;
     let mail = root.join("mail");
@@ -1644,7 +1743,9 @@ pub fn ask(
         // The holder asking is the holder being heard from: it keeps the claim alive.
         let held =
             parse_task("", root, &folder_of(root, &path), &path, &body, 0).is_some_and(|t| {
-                t.stage == "building" && !t.claimed_by.is_empty() && t.claimed_by == who
+                t.stage == "building"
+                    && !t.claimed_by.is_empty()
+                    && crate::session::same_holder(&t.claimed_by, &who)
             });
         if held {
             new_body = crate::ops::set_front(&new_body, "heartbeat", stamp)?;
@@ -1669,7 +1770,7 @@ pub fn ask(
 
 /// Mark question `n` of task `id` "Escalated to owner" (capture takes it to the owner), once.
 pub fn escalate(root: &Path, id: &str, n: u32, who: &str, stamp: &str) -> Result<(), String> {
-    let who = actor(who)?;
+    let who = answerer(who)?;
     with_lock(root, || {
         let path = find_task(root, id)?;
         let body = read_body(root, id)?;
@@ -1752,7 +1853,7 @@ pub fn answer(
     who: &str,
     stamp: &str,
 ) -> Result<Option<String>, String> {
-    let who = actor(who)?;
+    let who = answerer(who)?;
     let text = clean_text(text)?;
     let mail = root.join("mail");
     with_lock(root, || {
@@ -2308,6 +2409,79 @@ mod tests {
             ]
         );
         assert_eq!(t.claimed_on, "2026-10-12");
+    }
+
+    #[test]
+    fn check_ins_the_stage_start_and_the_holder_come_from_the_file() {
+        let log = "## Log\n\
+- 2026-10-12 10:00 wt-a (session aaaa1111): check-in 10% · before the claim\n\
+- 2026-10-12 10:05 wt-a (session aaaa1111): stage ready → building (claimed)\n\
+- 2026-10-12 10:30 wt-a (session aaaa1111): check-in 40% · gate green · writing tests\n\
+- 2026-10-12 10:31 wt-a: check-in 101% · too much\n\
+- 2026-10-12 10:32 wt-a: check-in 4o% · not a number\n\
+- 2026-10-12 10:33 wt-a: check-in · \n\
+- 2026-10-12 10:34 : check-in · nobody\n\
+- 2026-10-12 10:35 wt-a: Check-in 50% · not the tool's\n\
+- 2026-10-12 wt-a: check-in 50% · no time\n\
+- 2026-10-12 10:36 x: stage testing → done (y: check-in 9% · z)\n\
+- 2026-10-12 10:40 owner: fyi: check-in 50% · a note's who with a colon\n\
+- 2026-10-12 10:50 wt-a (session aaaa1111): check-in · 60% · no pct given, so this is text\n";
+        let text = format!(
+            "{}{log}",
+            TASK.split("## Log").next().unwrap().replace(
+                "claimed-by: wt-a (session aaaa1111)",
+                "claimed-by: wt-a (session aaaa1111)\nheld-by: qa"
+            )
+        );
+        let t = parse_one(&text, "doing");
+        let got: Vec<_> = t
+            .checkins
+            .iter()
+            .map(|c| format!("{} {}|{:?}|{}", c.at, c.who, c.pct, c.text))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                "2026-10-12 10:00 wt-a (session aaaa1111)|Some(10)|before the claim",
+                "2026-10-12 10:30 wt-a (session aaaa1111)|Some(40)|gate green · writing tests",
+                "2026-10-12 10:40 owner: fyi|Some(50)|a note's who with a colon",
+                "2026-10-12 10:50 wt-a (session aaaa1111)|None|60% · no pct given, so this is text",
+            ]
+        );
+        assert_eq!(t.stage_since, "2026-10-12 10:05");
+        assert_eq!(t.held_by, "qa");
+        // Building's holder is the claim; the check-in it shows is the latest since the stage began.
+        assert_eq!(t.holder(), "wt-a (session aaaa1111)");
+        assert_eq!(
+            t.current_checkin().map(|c| c.at.as_str()),
+            Some("2026-10-12 10:50")
+        );
+        let v = serde_json::to_value(&t).unwrap();
+        assert_eq!(v["heldBy"], "qa");
+        assert_eq!(v["stageSince"], "2026-10-12 10:05");
+        assert_eq!(v["checkins"][0]["pct"], 10);
+        assert!(v["checkins"][3]["pct"].is_null());
+        // Testing and Your check are held by `held-by`; with no stage line into the stage, no start.
+        let testing = parse_one(
+            &text.replace("status: doing", "status: doing\nstage: testing"),
+            "doing",
+        );
+        assert_eq!((testing.holder(), testing.stage_since.as_str()), ("qa", ""));
+        assert_eq!(
+            testing.current_checkin(),
+            None,
+            "Building's check-ins aren't Testing's"
+        );
+        let ready = parse_one(
+            &text.replace("status: doing", "status: todo\nstage: ready"),
+            "todo",
+        );
+        assert_eq!(ready.holder(), "wt-a (session aaaa1111)");
+        let done = parse_one(
+            &text.replace("status: doing", "status: done\nstage: done"),
+            "done",
+        );
+        assert_eq!(done.holder(), "");
     }
 
     #[test]

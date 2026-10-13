@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  ago, claimant, columns, earlierStages, estimateTotal, feed, fileName, fmtMinutes, fmtTokens, heldByOther, holder, inProgress, LEASE_SECS, leaseRunOut, nextStage, oneAtATime, passLabel,
-  queueTotal, quietMinutes, stageOf, STAGES, stamp, stampMinutes,
+  ago, checkinLine, claimant, columns, currentCheckin, earlierStages, estimateTotal, feed, fileName, fmtMinutes, fmtTokens, heldByOther, holder, holderOf, inProgress, LEASE_SECS, leaseRunOut,
+  nextStage, oneAtATime, passLabel, queueTotal, quietCheckin, quietMinutes, splitHolder, stageHolders, stageOf, STAGES, stamp, stampMinutes, startedAgo, whoLine,
 } from "./lib";
 import type { Task } from "./types";
 
 const task = (over: Partial<Task>): Task => ({
   queue: "drover", id: "0001", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
-  folder: "todo", path: "todo/0001-t.md", claimedBy: "", heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "", capturedAt: "", blockHistory: [], questions: [],
-  openQuestions: 0, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTokens: "", estMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", attachments: [], logTail: [], modified: 0,
-  level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", ...over,
+  folder: "todo", path: "todo/0001-t.md", claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "", capturedAt: "",
+  blockHistory: [], questions: [], openQuestions: 0, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTokens: "", estMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "",
+  attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", ...over,
 });
 
 describe("stages", () => {
@@ -50,12 +50,19 @@ describe("stages", () => {
     expect(heldByOther(task({ stage: "building", claimedBy: "" }))).toBe("");
     expect(heldByOther(task({ stage: "testing", claimedBy: "qa" }))).toBe("");
   });
-  it("shows who holds a task only where a stage can be held (Ready, Building)", () => {
+  it("shows who holds a task from Ready to Your check: the claim, then held-by (0030)", () => {
     expect(holder(task({ stage: "building", claimedBy: "drover/main (session 3fba2222)" }))).toBe("drover/main");
     expect(holder(task({ stage: "ready", claimedBy: "owner" }))).toBe("owner");
-    expect(holder(task({ stage: "done", claimedBy: "wt-a" }))).toBe("");
+    expect(holder(task({ stage: "done", claimedBy: "wt-a", heldBy: "qa" }))).toBe("");
     expect(holder(task({ stage: "testing", claimedBy: "wt-a" }))).toBe("");
+    expect(holder(task({ stage: "testing", claimedBy: "wt-a", heldBy: "qa (wt-0030 · session 7b5e8856)" }))).toBe("qa");
+    expect(holder(task({ stage: "your-check" }))).toBe("owner");
     expect(holder(task({ stage: "building", claimedBy: " " }))).toBe("");
+    expect(holderOf(task({ stage: "testing", heldBy: "qa (session 7b5e8856)" }))).toBe("qa (session 7b5e8856)");
+    // Only Ready and Building are claims: the owner's pass is refused only there.
+    expect(heldByOther(task({ stage: "testing", heldBy: "qa" }))).toBe("");
+    expect(heldByOther(task({ stage: "your-check", heldBy: "owner" }))).toBe("");
+    expect(heldByOther(task({ stage: "building", claimedBy: "owner (session 7b5e8856)" }))).toBe("");
   });
   it("runs one stage action at a time: a second click while one is in flight is dropped", async () => {
     const once = oneAtATime();
@@ -190,6 +197,80 @@ describe("lease (the core's ops::reclaim rule)", () => {
     expect(leaseRunOut(task({ ...old, claimedBy: " " }), now)).toBe(false);
     expect(leaseRunOut(task({ ...old, stage: "testing" }), now)).toBe(false);
     expect(LEASE_SECS).toBe(12 * 3600);
+  });
+});
+
+describe("who's on it, since when, and how far (0030)", () => {
+  const at = (s: string) => {
+    const [y, mo, d, h, mi] = s.split(/[- :]/).map(Number);
+    return new Date(y, mo - 1, d, h, mi).getTime() / 1000;
+  };
+  const now = at("2026-10-12 14:05");
+  const A = "wt-a (main-29 · wt-0030 · session 7b5e8856 · cc-hg)";
+  it("reads the core's session stamp, and nothing else, as one (session.rs split)", () => {
+    expect(splitHolder(A)).toEqual({ label: "wt-a", parts: ["main-29", "wt-0030"], id: "7b5e8856", account: "hg" });
+    expect(splitHolder("drover/main (session 3fba2222)")).toEqual({ label: "drover/main", parts: [], id: "3fba2222", account: "" });
+    for (const who of ["wt-a", "capture (drover/main, session 349bc9c3)", "x (session 7B5E8856)", "x (session 7b5e8856 · hg)", "x (a · b · c · session 7b5e8856)", "(session 7b5e8856)", "x (session 7b5e8856) more"]) {
+      expect(splitHolder(who)).toEqual({ label: who, parts: [], id: "", account: "" });
+    }
+  });
+  it("puts who's on it in one short line: name, checkout, short session; you for the owner", () => {
+    expect(whoLine(task({ stage: "building", claimedBy: A }))).toBe("wt-a · main-29 · wt-0030 · 7b5e8856");
+    expect(whoLine(task({ stage: "building", claimedBy: "muster/wt-0030 (who's on it) (session 7b5e8856)" }))).toBe("muster/wt-0030 · 7b5e8856");
+    expect(whoLine(task({ stage: "building", claimedBy: "capture (drover/main, session 349bc9c3)" }))).toBe("capture · 349bc9c3");
+    expect(whoLine(task({ stage: "testing", heldBy: "wt-0030 (session 7b5e8856)" }))).toBe("wt-0030 · 7b5e8856");
+    expect(whoLine(task({ stage: "your-check" }))).toBe("you");
+    expect(whoLine(task({ stage: "building", claimedBy: "owner (session 7b5e8856)" }))).toBe("you · 7b5e8856");
+    expect(whoLine(task({ stage: "ready" }))).toBe("");
+    expect(whoLine(task({ stage: "done", claimedBy: A }))).toBe("");
+  });
+  it("says when Building or Testing started, from the stage line into it", () => {
+    expect(startedAgo(task({ stage: "building", stageSince: "2026-10-12 12:00" }), now)).toBe("started 2 h ago");
+    expect(startedAgo(task({ stage: "testing", stageSince: "2026-10-12 13:53" }), now)).toBe("started 12 min ago");
+    expect(startedAgo(task({ stage: "building", stageSince: "2026-10-12 14:05" }), now)).toBe("started just now");
+    expect(startedAgo(task({ stage: "building", stageSince: "2026-10-10 09:00" }), now)).toBe("started 2 d ago");
+    expect(startedAgo(task({ stage: "ready", stageSince: "2026-10-12 12:00" }), now)).toBe("");
+    expect(startedAgo(task({ stage: "your-check", stageSince: "2026-10-12 12:00" }), now)).toBe("");
+    expect(startedAgo(task({ stage: "building", stageSince: "" }), now)).toBe("");
+  });
+  it("shows the latest check-in of this Building stage with its percentage and age", () => {
+    const c = (at: string, pct: number | null, text: string) => ({ at, who: A, pct, text });
+    const t = task({ stage: "building", stageSince: "2026-10-12 12:00", checkins: [c("2026-10-12 11:00", 90, "last round"), c("2026-10-12 13:53", 60, "gate green, writing tests")] });
+    expect(currentCheckin(t)?.text).toBe("gate green, writing tests");
+    expect(checkinLine(currentCheckin(t)!, now)).toBe("60% · gate green, writing tests · 12 min ago");
+    expect(checkinLine(c("2026-10-12 14:05", null, "started"), now)).toBe("started · just now");
+    expect(currentCheckin(task({ ...t, checkins: [c("2026-10-12 11:00", 90, "last round")] }))).toBeNull();
+    expect(currentCheckin({ ...t, stage: "testing" })).toBeNull();
+  });
+  it("flags a Building session quiet for more than 30 min, by its last check-in or heartbeat", () => {
+    const held = task({ stage: "building", claimedBy: A, modified: now });
+    expect(quietCheckin({ ...held, heartbeat: "2026-10-12 13:20" }, now)).toBe(45);
+    expect(quietCheckin({ ...held, heartbeat: "2026-10-12 13:35" }, now)).toBeNull();
+    expect(quietCheckin({ ...held, heartbeat: "2026-10-12 13:34" }, now)).toBe(31);
+    expect(quietCheckin({ ...held, heartbeat: "", modified: now - 3600 }, now)).toBe(60);
+    // Waiting isn't going quiet, the owner doesn't check in, and only Building is worked on.
+    expect(quietCheckin(task({ ...held, heartbeat: "2026-10-12 10:00", blocked: true, waitingOn: "owner" }), now)).toBeNull();
+    expect(quietCheckin({ ...held, heartbeat: "2026-10-12 10:00", claimedBy: "owner" }, now)).toBeNull();
+    expect(quietCheckin({ ...held, heartbeat: "2026-10-12 10:00", stage: "testing" }, now)).toBeNull();
+    expect(quietCheckin({ ...held, heartbeat: "2026-10-12 10:00", claimedBy: "" }, now)).toBeNull();
+  });
+  it("lists the holder of each stage so far, the current one live", () => {
+    const history = [
+      { at: "2026-10-12 10:00", who: A, from: "ready", to: "building" },
+      { at: "2026-10-12 11:00", who: A, from: "building", to: "testing" },
+      { at: "2026-10-12 12:00", who: "qa", from: "testing", to: "your-check" },
+    ];
+    expect(stageHolders(task({ stage: "your-check", stageHistory: history, heldBy: "owner" }))).toEqual([
+      { stage: "building", who: A },
+      { stage: "testing", who: A },
+      { stage: "your-check", who: "owner" },
+    ]);
+    expect(stageHolders(task({ stage: "testing", stageHistory: history.slice(0, 2), heldBy: "qa (session 11111111)" }))).toEqual([
+      { stage: "building", who: A },
+      { stage: "testing", who: "qa (session 11111111)" },
+    ]);
+    expect(stageHolders(task({ stage: "ready" }))).toEqual([]);
+    expect(stageHolders(task({ stage: "building", claimedBy: "wt-b" }))).toEqual([{ stage: "building", who: "wt-b" }]);
   });
 });
 

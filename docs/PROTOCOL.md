@@ -71,6 +71,22 @@
 > Ready, else Ready. Unless it's being shaped or the owner set it with `muster stage`. `muster check` and `manifest.py --check` report a parent that doesn't exist, one at the
 > wrong level and a loop, and warn about a goal past its due date with tasks open (a warning doesn't
 > fail the check).
+>
+> **Who's on it, since when, and how far (Muster 0030, 2026-10-12).** Inside a Claude Code session
+> `muster` stamps the session next to `--as` on every change it writes: `claimed-by: wt-0030
+> (main-29 · session 7b5e8856 · cc-hg)` (the session's name when the harness gives one, its checkout
+> folder, the first 8 characters of `CLAUDE_CODE_SESSION_ID`, the account from `CLAUDE_CONFIG_DIR`;
+> nothing else). Don't type it. Without `--as` the label is `$MUSTER_AS`, else the folder's git
+> `user.name`, else `owner`; the login name is never used. One holder is one label in one session:
+> the same session from another folder is still you, another session under your label isn't.
+> Testing and Your check have a holder too, `held-by:`, set by `pass` (whoever passes it into
+> Testing; the owner in Your check); it's shown, not a claim, so who may pass doesn't change.
+> **Check in at each milestone and at least every 30 minutes** while you hold a task in Building:
+> `muster checkin <id> "<what's done, what's next>" [--pct 60] --as <you>`. It logs
+> `<who>: check-in 60% · <text>`, renews your claim like `muster heartbeat`, and the card shows it
+> ("60% · gate green, writing tests · 12 min ago"). The percentage is your own estimate. A card
+> quiet for longer than 30 minutes says "no check-in for 45 min". A note, title or reason that would
+> read as a check-in is refused, like one that would read as a stage change.
 
 Ideas, bugs and tasks from the owner, written up by the capture session and picked up by coding
 sessions. This queue is also a test bed for chit (`~/playground/chit`, `SPEC.md`). Its rules are

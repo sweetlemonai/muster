@@ -4,6 +4,30 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-12 — Who's on it, since when, how far: session stamps, held-by, check-ins (task 0030)
+**Did:** `muster` stamps who acts with the session (`wt-a (wt-0030 · session 7b5e8856 · cc-hg)`:
+checkout folder name, short session id, account label; `session.rs`). A holder is its label plus
+its session. Testing and Your check get a `held-by`. `muster checkin <id> "<text>" [--pct N]` is
+the holder's heartbeat with words. Every card from Ready to Your check says who's on it and
+since when, its latest check-in, and "no check-in for 45 min" past 30 minutes; the pane lists
+holders per stage and every check-in. `list`/`show` print the same. PROTOCOL asks for a check-in
+at each milestone and every 30 minutes. Built by an implementer agent; review fixes by the main
+session. The live dot is 0025's.
+**Decided:** with no `--as`, the actor is the queue folder's git user name plus the session
+(owner, 2026-10-12: "git username and session id is fine"), never `$USER`; in a session with no
+git name it's `agent`, never `owner`. A task sent back to Building returns to the builder's
+label (so a new session under it carries on), unless another session under that label holds
+work, then to the exact session.
+**Fixed (review):** a checkout, session name or account containing the login name is dropped
+(not only an exact match); a blank `--as` is refused even in a session; a return no longer locks
+the task to a session that may have ended.
+**Merged with main:** rebased on 0015/0016/0019/0020/0031/0034: holders are compared by label
+and session in 0020's edit permission and heartbeat, 0019's `next`, and 0015's add/file/drop
+actors; a write-up line that reads as a check-in is refused, as a stage line is; `checkin` is
+listed as not routed by `/mu` (it's an agent command).
+**Verified:** after the rebase, `pnpm check` green (vitest 343, cargo 191 + interop 12),
+`test_task.py` 36 OK, `test_commands.py` 10 OK.
+
 ## 2026-10-12 — Dependency graph: `depends:` and a Graph tab (task 0019)
 **Did:** tasks have a `depends:` field (ids in the same queue), set with `muster set <id> depends
 0014,0016`, which refuses unknown ids, itself and a loop. `muster check`, the Problems tab and

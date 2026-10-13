@@ -2,8 +2,12 @@
 //! The queue is `--queue <name|folder>`, else `$MUSTER_ROOT`, else the nearest queue found
 //! from the current folder (a queue itself, or a `tasks/` beside or above it).
 
+use crate::session::{self, Session};
 use crate::{backlog, ops, projects, queue};
 use std::path::{Path, PathBuf};
+
+/// The environment a command reads its caller from (`std::env::var`, or a test's own).
+type Env<'a> = &'a dyn Fn(&str) -> Option<String>;
 
 #[derive(Debug)]
 struct Args {
@@ -34,7 +38,8 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--keep" => a.keep = true,
             "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on"
             | "--tags" | "--tag" | "--time" | "--tokens" | "--stage" | "--gate" | "--commit"
-            | "--to" | "--from" | "--after" | "--session" | "--level" | "--parent" | "--due" => {
+            | "--to" | "--from" | "--after" | "--session" | "--level" | "--parent" | "--due"
+            | "--pct" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -128,7 +133,7 @@ fn resolve_queue(
 /// Commands that claim, hand on or hold a task, rewrite its write-up, and the backlog's writes
 /// (add, file, drop). A slip of the environment would do them in another project's queue (it
 /// happened: drover's 0022 claimed from muster), so they're checked.
-const TARGETED: [&str; 12] = [
+const TARGETED: [&str; 13] = [
     "claim",
     "next",
     "pass",
@@ -137,6 +142,7 @@ const TARGETED: [&str; 12] = [
     "unblock",
     "stage",
     "heartbeat",
+    "checkin",
     "add",
     "file",
     "drop",
@@ -223,22 +229,71 @@ fn question_number(q: &str) -> Result<u32, String> {
 }
 
 /// The session asking or collecting answers: `--session`, else `$CLAUDE_CODE_SESSION_ID`.
-fn session(a: &Args) -> String {
+fn session(a: &Args, env: Env) -> String {
     a.flags
         .get("session")
         .filter(|s| !s.is_empty())
         .cloned()
-        .or_else(|| std::env::var("CLAUDE_CODE_SESSION_ID").ok())
+        .or_else(|| env("CLAUDE_CODE_SESSION_ID"))
         .unwrap_or_default()
 }
 
-fn who(a: &Args) -> String {
-    a.flags
-        .get("as")
-        .cloned()
-        .or_else(|| std::env::var("MUSTER_AS").ok())
-        .or_else(|| std::env::var("USER").ok())
-        .unwrap_or_else(|| "cli".into())
+/// Who's acting, without the session: `--as`, else `$MUSTER_AS`, else the git user name for the
+/// queue's folder, else `owner` (outside a session) or `agent` (in one: a session without a name
+/// mustn't pass for the owner, who may hold several claims). Never the login name (`$USER`): it
+/// isn't read.
+fn label(a: &Args, env: Env, root: &Path) -> String {
+    let in_session = env("CLAUDE_CODE_SESSION_ID")
+        .and_then(|i| session::short_id(&i))
+        .is_some();
+    pick_label(
+        // A blank --as stays blank, so actor() refuses it rather than guessing who.
+        a.flags.get("as").cloned(),
+        env("MUSTER_AS").filter(|s| !s.trim().is_empty()),
+        || git_name(root),
+        in_session,
+    )
+}
+
+fn pick_label(
+    flag: Option<String>,
+    muster_as: Option<String>,
+    git: impl FnOnce() -> Option<String>,
+    in_session: bool,
+) -> String {
+    flag.or(muster_as)
+        .or_else(git)
+        .unwrap_or_else(|| if in_session { "agent" } else { "owner" }.into())
+}
+
+/// `git config user.name`, run in the queue's folder so the folder's identity applies (personal
+/// and work folders have their own), as one safe line; None when git gives nothing usable.
+fn git_name(root: &Path) -> Option<String> {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["config", "user.name"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    clean_git_name(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// A git user name as a label: control characters out, one line, at most 64 characters, and
+/// nothing the log would read as a stage change, a check-in or a session stamp.
+fn clean_git_name(raw: &str) -> Option<String> {
+    let first = raw.lines().next()?;
+    let name: String = queue::actor(first).ok()?.chars().take(64).collect();
+    let name = name.trim().to_string();
+    (!name.is_empty() && session::split(&name).1.is_none()).then_some(name)
+}
+
+/// Who's acting as it's written: the label, with the session stamped after it when the command
+/// runs in one (0030).
+fn stamped_who(label: &str, env: Env, cwd: Option<&Path>) -> String {
+    session::stamped(label, Session::from_env(env, cwd).as_ref())
 }
 
 fn need<'a>(a: &'a Args, i: usize, what: &str) -> Result<&'a str, String> {
@@ -287,6 +342,49 @@ fn list_filter<'a>(
         .collect();
     out.sort_by(|x, y| x.id.cmp(&y.id));
     out
+}
+
+/// A check-in in one line: `60% · gate green, writing tests (2026-10-12 23:40)`, its text cut at
+/// `max` characters.
+fn checkin_text(c: &queue::Checkin, max: usize) -> String {
+    let mut text: String = c.text.chars().take(max).collect();
+    if c.text.chars().count() > max {
+        text = format!("{}…", text.trim_end());
+    }
+    match c.pct {
+        Some(n) => format!("{n}% · {text} ({})", c.at),
+        None => format!("{text} ({})", c.at),
+    }
+}
+
+/// `muster show`'s lines after the file: who's on it in this stage, since when, and the latest
+/// check-in. Empty when there's nothing to say.
+fn show_footer(t: &queue::Task) -> String {
+    let mut out = String::new();
+    let holder = t.holder();
+    if !holder.is_empty() {
+        let since = if t.stage_since.is_empty() {
+            String::new()
+        } else {
+            format!(", since {}", t.stage_since)
+        };
+        out.push_str(&format!(
+            "on it: {holder} ({}{since})\n",
+            queue::stage_label(&t.stage)
+        ));
+    }
+    if let Some(c) = t.current_checkin() {
+        out.push_str(&format!(
+            "latest check-in, by {}: {}\n",
+            c.who,
+            checkin_text(c, usize::MAX)
+        ));
+    }
+    if out.is_empty() {
+        out
+    } else {
+        format!("\n---\n{out}")
+    }
 }
 
 /// `muster list`'s backlog notes: all of them where Backlog is listed (no filter, or
@@ -353,6 +451,12 @@ fn list_text(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> String {
             }
             if t.open_questions > 0 {
                 extra.push_str(&format!("  [{} open Q]", t.open_questions));
+            }
+            if !t.holder().is_empty() {
+                extra.push_str(&format!("  [on it: {}]", t.holder()));
+            }
+            if let Some(c) = t.current_checkin() {
+                extra.push_str(&format!("  [check-in {}]", checkin_text(c, 60)));
             }
             out.push_str(&format!(
                 "  {} {:<6} {:<7} {}{extra}\n",
@@ -532,7 +636,12 @@ fn edit_in_editor(id: &str, text: &str) -> Result<(String, PathBuf), String> {
 
 /// Runs a command; returns the process exit code (0 ok, 1 refused or failed, 2 usage).
 pub fn main(argv: &[String]) -> i32 {
-    match run(argv) {
+    main_with(argv, &|k: &str| std::env::var(k).ok())
+}
+
+/// `main`, with the caller's environment given.
+fn main_with(argv: &[String], env: Env) -> i32 {
+    match run_with(argv, env) {
         Ok(code) => code,
         Err(e) => {
             eprintln!("muster: {e}");
@@ -545,7 +654,7 @@ pub fn main(argv: &[String]) -> i32 {
     }
 }
 
-fn run(argv: &[String]) -> Result<i32, String> {
+fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
     let a = parse(argv)?;
     let cmd = a.pos.first().map(String::as_str).unwrap_or("help");
     let stamp = local_stamp();
@@ -599,13 +708,23 @@ fn run(argv: &[String]) -> Result<i32, String> {
             if TARGETED.contains(&cmd) {
                 check_target(&source, &root, cwd.as_deref(), &known)?;
             }
-            run_on(&a, cmd, &root, &stamp)
+            run_on(&a, cmd, &root, &stamp, env, cwd.as_deref())
         }
     }
 }
 
-fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> {
-    let me = who(a);
+fn run_on(
+    a: &Args,
+    cmd: &str,
+    root: &Path,
+    stamp: &str,
+    env: Env,
+    cwd: Option<&Path>,
+) -> Result<i32, String> {
+    // Who's acting, worked out only by the commands that write: the label, and the label with the
+    // session (the questions' commands record the session on their own).
+    let label = || label(a, env, root);
+    let me = || stamped_who(&label(), env, cwd);
     match cmd {
         "new" => {
             let title = need(a, 1, "a title")?;
@@ -616,7 +735,7 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                 due: a.flags.get("due").cloned().unwrap_or_default(),
                 ..new_task(a, title, body_arg(a)?.unwrap_or_default())
             };
-            let c = ops::create_task(root, &new, &me, stamp)?;
+            let c = ops::create_task(root, &new, &me(), stamp)?;
             if a.json {
                 print_json(&c)?;
             } else {
@@ -657,6 +776,10 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                 print_json(t)?;
             } else {
                 print!("{}", queue::read_body(root, id)?);
+                // Who's on it and the latest check-in, which the file only has in pieces.
+                if let Ok(t) = queue::read_task(root, id) {
+                    print!("{}", show_footer(&t));
+                }
             }
             Ok(0)
         }
@@ -668,7 +791,7 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                 id,
                 status,
                 a.flags.get("on").map(String::as_str).unwrap_or(""),
-                &me,
+                &me(),
                 stamp,
             )?;
             println!("{id} → {p}");
@@ -681,7 +804,7 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                 commit: a.flags.get("commit").cloned().unwrap_or_default(),
                 from: a.flags.get("from").cloned(),
             };
-            let p = ops::pass_task(root, id, &me, stamp, &opts)?;
+            let p = ops::pass_task(root, id, &me(), stamp, &opts)?;
             println!("{}", stage_message(root, id, &p));
             Ok(0)
         }
@@ -690,7 +813,7 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
             need(a, 2, "the reason")?;
             let why = a.pos[2..].join(" ").replace("\\n", " ");
             let to = a.flags.get("to").map(String::as_str);
-            let p = ops::return_task(root, id, &why, to, &me, stamp)?;
+            let p = ops::return_task(root, id, &why, to, &me(), stamp)?;
             println!("{}", stage_message(root, id, &p));
             Ok(0)
         }
@@ -700,20 +823,20 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                 .flags
                 .get("on")
                 .ok_or("block needs --on \"<task id|owner|capture> …\" (see `muster help`)")?;
-            let p = ops::block_task(root, id, on, &me, stamp)?;
+            let p = ops::block_task(root, id, on, &me(), stamp)?;
             println!("{}", stage_message(root, id, &p));
             Ok(0)
         }
         "unblock" => {
             let id = need(a, 1, "a task id")?;
-            let p = ops::unblock_task(root, id, &me, stamp)?;
+            let p = ops::unblock_task(root, id, &me(), stamp)?;
             println!("{}", stage_message(root, id, &p));
             Ok(0)
         }
         "stage" => {
             let id = need(a, 1, "a task id")?;
             let stage = need(a, 2, "a stage")?;
-            let p = ops::set_stage(root, id, stage, &me, stamp)?;
+            let p = ops::set_stage(root, id, stage, &me(), stamp)?;
             println!("{}", stage_message(root, id, &p));
             Ok(0)
         }
@@ -721,7 +844,7 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
             let id = need(a, 1, "a task id")?;
             let field = need(a, 2, "a field")?;
             let value = a.pos[3..].join(" ");
-            ops::set_field(root, id, field, &value, &me, stamp)?;
+            ops::set_field(root, id, field, &value, &me(), stamp)?;
             println!("{id}: {field} set");
             Ok(0)
         }
@@ -731,7 +854,7 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                 root,
                 id,
                 &a.pos[2..].join(" ").replace("\\n", " "),
-                &me,
+                &me(),
                 stamp,
             )?;
             println!("{id}: noted");
@@ -741,7 +864,7 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
             let id = need(a, 1, "a task id")?;
             let which = need(a, 2, "which criterion (AC2 or 2)")?;
             let undo = cmd == "untick";
-            ops::tick_criterion(root, id, which, undo, &me, stamp)?;
+            ops::tick_criterion(root, id, which, undo, &me(), stamp)?;
             println!("{id}: {} {which}", if undo { "unticked" } else { "ticked" });
             Ok(0)
         }
@@ -753,6 +876,7 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                 Some(_) => return Err("edit takes --body - (the new text on stdin), or no --body to open $VISUAL or $EDITOR (see `muster help`)".into()),
             };
             // Refused here (someone else holds it) before anything is typed.
+            let me = me();
             let opened = ops::open_body(root, id, &me)?;
             let (new, copy) = if from_stdin {
                 (read_capped(std::io::stdin(), "stdin")?, None)
@@ -783,6 +907,7 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
         "attach" => {
             let id = need(a, 1, "a task id")?;
             need(a, 2, "a file")?;
+            let me = me();
             for f in &a.pos[2..] {
                 let p = Path::new(f);
                 let meta = std::fs::metadata(p).map_err(|e| format!("{f}: {e}"))?;
@@ -803,7 +928,7 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
             let id = need(a, 1, "a task id")?;
             let q = need(a, 2, "a question like Q2")?;
             let n = question_number(q)?;
-            let asker = queue::answer(root, id, n, &a.pos[3..].join(" "), &me, stamp)?;
+            let asker = queue::answer(root, id, n, &a.pos[3..].join(" "), &label(), stamp)?;
             match asker {
                 Some(s) => println!("{id}: answered {q}; delivered to session {s}"),
                 None => println!("{id}: answered {q}; no asking session on record"),
@@ -812,34 +937,46 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
         }
         "claim" => {
             let id = need(a, 1, "a task id")?;
-            let p = ops::claim_task(root, id, &me, stamp)?;
+            let p = ops::claim_task(root, id, &me(), stamp)?;
             println!("{}", claimed_message(root, id, &p));
             Ok(0)
         }
-        "next" => match ops::next_task(root, &me, stamp)? {
-            Some(c) => {
-                println!("{}", claimed_message(root, &c.id, &c.path));
-                Ok(0)
+        "next" => {
+            let me = me();
+            match ops::next_task(root, &me, stamp)? {
+                Some(c) => {
+                    println!("{}", claimed_message(root, &c.id, &c.path));
+                    Ok(0)
+                }
+                None => {
+                    println!(
+                        "nothing ready in {} ({}) that {me} may take",
+                        projects::default_name(root),
+                        root.display()
+                    );
+                    Ok(1)
+                }
             }
-            None => {
-                println!(
-                    "nothing ready in {} ({}) that {me} may take",
-                    projects::default_name(root),
-                    root.display()
-                );
-                Ok(1)
-            }
-        },
+        }
         "heartbeat" => {
             let id = need(a, 1, "a task id")?;
-            ops::heartbeat_task(root, id, &me, stamp)?;
+            ops::heartbeat_task(root, id, &me(), stamp)?;
             println!("{id}: heartbeat {stamp}");
+            Ok(0)
+        }
+        "checkin" => {
+            let id = need(a, 1, "a task id")?;
+            need(a, 2, "what's done and what's next")?;
+            let text = a.pos[2..].join(" ").replace("\\n", " ");
+            let pct = a.flags.get("pct").map(String::as_str).unwrap_or("");
+            ops::checkin_task(root, id, &text, pct, &me(), stamp)?;
+            println!("{id}: checked in; heartbeat {stamp}");
             Ok(0)
         }
         "reclaim" => {
             let after = a.flags.get("after").map(String::as_str).unwrap_or("");
             let lease = ops::lease_minutes(after)?;
-            let r = ops::reclaim(root, lease, &me, stamp, queue::now_secs())?;
+            let r = ops::reclaim(root, lease, &me(), stamp, queue::now_secs())?;
             if a.json {
                 print_json(&r)?;
             } else {
@@ -866,7 +1003,14 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
         "ask" => {
             let id = need(a, 1, "a task id")?;
             need(a, 2, "the question")?;
-            let asked = queue::ask(root, id, &a.pos[2..].join(" "), &me, &session(a), stamp)?;
+            let asked = queue::ask(
+                root,
+                id,
+                &a.pos[2..].join(" "),
+                &label(),
+                &session(a, env),
+                stamp,
+            )?;
             println!(
                 "asked Q{} on {id}. The answer will be delivered to this session.",
                 asked.n
@@ -883,12 +1027,12 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
         "escalate" => {
             let id = need(a, 1, "a task id")?;
             let n = question_number(need(a, 2, "a question like Q2")?)?;
-            queue::escalate(root, id, n, &me, stamp)?;
+            queue::escalate(root, id, n, &label(), stamp)?;
             println!("escalated Q{n} on {id}; add it to WAITING-FOR-OWNER.md");
             Ok(0)
         }
         "inbox" => {
-            let mail = queue::take_mail(root, &session(a), a.keep)?;
+            let mail = queue::take_mail(root, &session(a, env), a.keep)?;
             if mail.is_empty() {
                 println!("no answers waiting");
             } else {
@@ -900,7 +1044,7 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
             need(a, 1, "the note (one line)")?;
             let line = a.pos[1..].join(" ");
             let body = body_arg(a)?.unwrap_or_default();
-            println!("{}", backlog::add(root, &line, &body, &me, stamp)?);
+            println!("{}", backlog::add(root, &line, &body, &me(), stamp)?);
             Ok(0)
         }
         "shape" => {
@@ -918,7 +1062,7 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
             let body = body_arg(a)?
                 .ok_or("file needs --body <text>|- with the shaped task (see `muster help`)")?;
             let new = new_task(a, &a.pos[2..].join(" "), body);
-            let f = backlog::file_note(root, note, &new, &me, stamp)?;
+            let f = backlog::file_note(root, note, &new, &me(), stamp)?;
             if a.json {
                 print_json(&f)?;
             } else {
@@ -930,7 +1074,7 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
             let note = need(a, 1, "a backlog note's file name")?;
             need(a, 2, "why it's dropped")?;
             let why = a.pos[2..].join(" ").replace("\\n", " ");
-            let p = backlog::drop_note(root, note, &why, &me, stamp)?;
+            let p = backlog::drop_note(root, note, &why, &me(), stamp)?;
             println!("dropped {note} ({p})");
             Ok(0)
         }
@@ -971,6 +1115,18 @@ mod tests {
 
     fn sv(xs: &[&str]) -> Vec<String> {
         xs.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// No caller environment: the tests run inside Claude Code sessions, whose own session must
+    /// not be stamped on what they check.
+    fn no_env(_: &str) -> Option<String> {
+        None
+    }
+    fn main(argv: &[String]) -> i32 {
+        main_with(argv, &no_env)
+    }
+    fn run(argv: &[String]) -> Result<i32, String> {
+        run_with(argv, &no_env)
     }
 
     #[test]
@@ -1481,6 +1637,7 @@ mod tests {
             "unblock",
             "stage",
             "heartbeat",
+            "checkin",
             "add",
             "file",
             "drop",
@@ -1584,6 +1741,219 @@ mod tests {
                 "claimed 0001 in muster ({})\n0001: Building (doing/0001-said.md)",
                 q.display()
             )
+        );
+    }
+
+    /// `cmd` with the queue `q`, run with the environment `vars`.
+    fn code_in(q: &str, vars: &[(&str, &str)], args: &[&str]) -> i32 {
+        let vars: std::collections::HashMap<String, String> = vars
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        let mut v = sv(&args[..1]);
+        v.extend(sv(&["--queue", q]));
+        v.extend(sv(&args[1..]));
+        main_with(&v, &|k: &str| vars.get(k).cloned())
+    }
+
+    /// A v2 queue that is its own git repo with `user.name` set, as `<project>/tasks` is.
+    fn git_queue(name: &str) -> tempfile::TempDir {
+        let d = v2_queue();
+        let git = |args: &[&str]| {
+            let ok = std::process::Command::new("git")
+                .arg("-C")
+                .arg(d.path())
+                .args(args)
+                .output()
+                .unwrap()
+                .status
+                .success();
+            assert!(ok, "git {args:?}");
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.name", name]);
+        d
+    }
+
+    #[test]
+    fn without_as_the_actor_is_the_git_name_with_the_session_and_never_the_login() {
+        let d = git_queue("Test Person");
+        let q = d.path().to_string_lossy().to_string();
+        let login = [("USER", "loginname-xyz"), ("LOGNAME", "loginname-xyz")];
+        assert_eq!(code_in(&q, &login, &["new", "Mine"]), 0);
+        let session = [
+            ("USER", "loginname-xyz"),
+            ("LOGNAME", "loginname-xyz"),
+            (
+                "CLAUDE_CODE_SESSION_ID",
+                "7b5e8856-c9c8-45ec-aa03-c0ddbf1d4394",
+            ),
+            ("CLAUDE_CONFIG_DIR", "/nowhere/.claude-hg"),
+        ];
+        assert_eq!(code_in(&q, &session, &["claim", "0001"]), 0);
+        let t = queue::read_task(d.path(), "0001").unwrap();
+        let body = queue::read_body(d.path(), "0001").unwrap();
+        assert!(body.contains("Test Person: created"), "{body}");
+        let (label, stamp) = session::split(&t.claimed_by);
+        let stamp = stamp.unwrap();
+        assert_eq!(
+            (label, stamp.id.as_str(), stamp.account.as_str()),
+            ("Test Person", "7b5e8856", "hg")
+        );
+        assert!(body.contains(&format!(
+            "{}: stage ready → building (claimed)",
+            t.claimed_by
+        )));
+        assert!(!body.contains("loginname-xyz"), "{body}");
+        // `--as` alone still works, stamped with the session it runs in.
+        assert_eq!(code_in(&q, &session, &["new", "Theirs"]), 0);
+        assert_eq!(code_in(&q, &session, &["claim", "0002", "--as", "wt-b"]), 0);
+        let claim = queue::read_task(d.path(), "0002").unwrap().claimed_by;
+        assert!(
+            claim.starts_with("wt-b (") && claim.contains("session 7b5e8856"),
+            "{claim}"
+        );
+        // MUSTER_AS stands in for --as.
+        let helper = [("MUSTER_AS", "helper")];
+        assert_eq!(
+            code_in(&q, &helper, &["note", "0001", "from", "the", "helper"]),
+            0
+        );
+        assert!(queue::read_body(d.path(), "0001")
+            .unwrap()
+            .contains(" helper: from the helper\n"));
+        // The questions' commands record the session on their own, so the asker isn't stamped.
+        assert_eq!(code_in(&q, &session, &["ask", "0001", "Which port?"]), 0);
+        assert!(queue::read_body(d.path(), "0001")
+            .unwrap()
+            .contains("**Q1 (Test Person, session 7b5e8856, "));
+    }
+
+    #[test]
+    fn the_label_falls_back_to_the_owner_only_when_git_gives_nothing_usable() {
+        let some = |s: &str| Some(s.to_string());
+        assert_eq!(
+            pick_label(some("wt-a"), some("helper"), || some("G"), false),
+            "wt-a"
+        );
+        assert_eq!(
+            pick_label(None, some("helper"), || some("G"), false),
+            "helper"
+        );
+        assert_eq!(pick_label(None, None, || some("G"), false), "G");
+        assert_eq!(pick_label(None, None, || None, false), "owner");
+        // In a session with no name to go by: an agent, never the owner.
+        assert_eq!(pick_label(None, None, || None, true), "agent");
+        assert_eq!(clean_git_name("Massihx\n").as_deref(), Some("Massihx"));
+        assert_eq!(
+            clean_git_name("  Two  Words \n").as_deref(),
+            Some("Two Words")
+        );
+        assert_eq!(clean_git_name(&"n".repeat(90)).map(|n| n.len()), Some(64));
+        for bad in [
+            "",
+            "\n",
+            "x: stage ready → done",
+            "x: check-in 50% · y",
+            "Me (session 7b5e8856)",
+            &"n".repeat(101),
+        ] {
+            assert_eq!(clean_git_name(bad), None, "{bad:?}");
+        }
+        assert_eq!(clean_git_name("a\u{7}b").as_deref(), Some("a b"));
+    }
+
+    #[test]
+    fn checkin_on_the_command_line_with_its_exit_codes() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let code = |who: &str, args: &[&str]| {
+            let mut v = sv(args);
+            v.extend(sv(&["--queue", &q, "--as", who]));
+            main(&v)
+        };
+        assert_eq!(code("owner", &["new", "Long work"]), 0);
+        assert_eq!(
+            code("wt-a", &["checkin", "0001", "too early"]),
+            1,
+            "not Building"
+        );
+        assert_eq!(code("wt-a", &["claim", "0001"]), 0);
+        assert_eq!(
+            code(
+                "wt-a",
+                &["checkin", "0001", "gate", "green,", "writing", "tests", "--pct", "60"]
+            ),
+            0
+        );
+        assert_eq!(code("wt-a", &["checkin", "0001", "no percentage"]), 0);
+        assert_eq!(
+            code("wt-b", &["checkin", "0001", "not mine"]),
+            1,
+            "not the holder"
+        );
+        assert_eq!(code("wt-a", &["checkin", "0001", "x", "--pct", "101"]), 1);
+        assert_eq!(code("wt-a", &["checkin", "0001", "x", "--pct", "high"]), 1);
+        assert_eq!(
+            code("wt-a", &["checkin", "0001", "x", "--pct"]),
+            1,
+            "needs a value"
+        );
+        assert_eq!(code("wt-a", &["checkin", "0001"]), 2, "no text");
+        assert_eq!(code("wt-a", &["checkin"]), 2, "no id");
+        let t = queue::read_task(d.path(), "0001").unwrap();
+        let got: Vec<_> = t
+            .checkins
+            .iter()
+            .map(|c| (c.pct, c.text.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                (Some(60), "gate green, writing tests"),
+                (None, "no percentage")
+            ]
+        );
+        assert_eq!(code("wt-a", &["show", "0001"]), 0);
+        assert_eq!(code("wt-a", &["list"]), 0);
+    }
+
+    #[test]
+    fn list_and_show_say_who_is_on_it_and_the_latest_check_in() {
+        let d = v2_queue();
+        let file = |id: &str, fm: &str, log: &str| {
+            std::fs::write(
+                d.path().join(format!("doing/{id}-t.md")),
+                format!("---\nid: {id}\ntype: task\npriority: normal\n{fm}\n---\n\n# T\n\n## Log\n- 2026-10-12 09:00 capture: created\n{log}"),
+            )
+            .unwrap();
+        };
+        let a = "wt-a (wt-0030 · session 7b5e8856)";
+        file(
+            "0001",
+            &format!("status: doing\nstage: building\nclaimed-by: {a}"),
+            &format!("- 2026-10-12 10:00 {a}: stage ready → building (claimed)\n- 2026-10-12 10:30 {a}: check-in 60% · gate green, writing tests that take a long while to describe in full\n"),
+        );
+        file(
+            "0002",
+            "status: doing\nstage: testing\nheld-by: qa",
+            "- 2026-10-12 11:00 wt-b: stage building → testing (gate: green)\n",
+        );
+        file("0003", "status: doing\nstage: your-check", "");
+        let s = tasks_of(d.path());
+        assert!(s.problems.is_empty(), "{:?}", s.problems);
+        assert_eq!(
+            list_text(&[], &list_filter(&s.tasks, None, None, None)),
+            format!("Building (1)\n  0001 task   normal  T  [on it: {a}]  [check-in 60% · gate green, writing tests that take a long while to describe… (2026-10-12 10:30)]\nTesting (1)\n  0002 task   normal  T  [on it: qa]\nYour check (1)\n  0003 task   normal  T  [needs you]  [on it: owner]\n")
+        );
+        let by = |id: &str| s.tasks.iter().find(|t| t.id == id).unwrap();
+        assert_eq!(
+            show_footer(by("0001")),
+            format!("\n---\non it: {a} (Building, since 2026-10-12 10:00)\nlatest check-in, by {a}: 60% · gate green, writing tests that take a long while to describe in full (2026-10-12 10:30)\n")
+        );
+        assert_eq!(
+            show_footer(by("0002")),
+            "\n---\non it: qa (Testing, since 2026-10-12 11:00)\n"
         );
     }
 

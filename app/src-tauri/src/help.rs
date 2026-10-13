@@ -84,15 +84,15 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "claim",
         usage: "muster claim <id> [--as <who>]",
-        what: "Take a Ready task: it moves to Building, held by you, with its lease started (heartbeat). Refused while you already hold another task in Building in this queue (pass, return or block that first), when it's blocked, or when it isn't in Ready any more. Says which queue it claimed in.",
-        options: &[("--as", "who you are (your branch or worktree); default $MUSTER_AS, then $USER")],
+        what: "Take a Ready task: it moves to Building, held by you, with its lease started (heartbeat). Inside a Claude Code session muster adds the session to who you are (name, short id, checkout, account), so you never type it. Refused while you already hold another task in Building in this queue (pass, return or block that first), when it's blocked, or when it isn't in Ready any more. Says which queue it claimed in.",
+        options: &[("--as", "who you are (your branch or worktree); default $MUSTER_AS, then the folder's git user.name")],
         examples: &["muster claim 0007 --as wt-a", "muster claim 0007 --as wt-a --queue drover"],
     },
     Command {
         name: "next",
         usage: "muster next [--as <who>]",
         what: "Claim the top Ready task you may take: not blocked, not held by someone else; high priority first, then normal, then low, then the lowest id. Prints \"nothing ready\" and exits 1 when there's none. Refused while you already hold a task in Building.",
-        options: &[("--as", "who you are; default $MUSTER_AS, then $USER")],
+        options: &[("--as", "who you are; default $MUSTER_AS, then the folder's git user.name")],
         examples: &["muster next --as wt-a", "muster next --as wt-a --queue muster"],
     },
     Command {
@@ -101,6 +101,19 @@ pub const COMMANDS: &[Command] = &[
         what: "Keep your claim alive on long work: stamps the task's heartbeat, no log line. Only the holder, only in Building. Your note, ask, pass, return and block stamp it too, and so does an unblock. A claim quiet for 12 h can be released to Ready.",
         options: &[("--as", "who you are; must be who holds it")],
         examples: &["muster heartbeat 0007 --as wt-a"],
+    },
+    Command {
+        name: "checkin",
+        usage: "muster checkin <id> \"<what's done, what's next>\" [--pct <0-100>]",
+        what: "Say how the work is going: a line in the task's log that its card shows (\"60% · gate green, writing tests · 12 min ago\"), and the heartbeat with words, so it keeps your claim alive too. Only the holder, only in Building. Check in at each milestone and at least every 30 minutes: a card quiet for longer says \"no check-in for 45 min\".",
+        options: &[
+            ("--pct", "how far along you think you are, 0 to 100 (your own estimate)"),
+            ("--as", "who you are; must be who holds it"),
+        ],
+        examples: &[
+            "muster checkin 0007 \"gate green, writing tests\" --pct 60 --as wt-a",
+            "muster checkin 0007 \"found the cause, fixing it\" --as wt-a",
+        ],
     },
     Command {
         name: "reclaim",
@@ -214,7 +227,7 @@ pub const COMMANDS: &[Command] = &[
         usage: "muster ask <id> \"<question>\" [--as <who>] [--session <id>]",
         what: "Ask a question in a task without stopping: numbered, written under ## Questions, and your session recorded so the answer is pushed to you (the answer hook) or waits in muster inbox. Lists the task's earlier questions, and refuses one that's already answered there.",
         options: &[
-            ("--as", "who's asking (your branch); default $MUSTER_AS, then $USER"),
+            ("--as", "who's asking (your branch); default $MUSTER_AS, then the folder's git user.name"),
             ("--session", "your session id; default $CLAUDE_CODE_SESSION_ID"),
         ],
         examples: &[
@@ -259,7 +272,7 @@ pub const COMMANDS: &[Command] = &[
         what: "Drop a one-liner in the backlog, to be shaped into a task later. It's a file in the backlog folder (inbox/ today), named by the time and the line; prints its name. No id, no front matter. Line breaks in the line become spaces, and it's refused over 200 characters; the body, if any, is Markdown up to 50,000. Checked like a claim: with $MUSTER_ROOT at another project's queue, pass --queue to mean it.",
         options: &[
             ("--body", "more detail in Markdown; \\n is a line break; - reads it from stdin"),
-            ("--as", "who found it; default $MUSTER_AS, then $USER"),
+            ("--as", "who found it; default $MUSTER_AS, then the folder's git user.name"),
         ],
         examples: &[
             "muster add \"Board flickers when the pane opens\"",
@@ -326,7 +339,7 @@ pub const COMMANDS: &[Command] = &[
 
 pub const COMMON: &[(&str, &str)] = &[
     ("--queue <name|folder>", "which queue; default $MUSTER_ROOT, then the nearest queue from the current folder (a queue, or tasks/ beside or above it)"),
-    ("--as <who>", "who's acting, for the log; default $MUSTER_AS, then $USER"),
+    ("--as <who>", "who's acting, for the log; default $MUSTER_AS, then the folder's git user.name, then owner. Inside a Claude Code session muster adds the session (name, short id, checkout, account)"),
 ];
 
 pub const SESSION: &[Topic] = &[
@@ -353,6 +366,8 @@ pub const SESSION: &[Topic] = &[
             "$ muster claim 0007 --as <your branch>",
             "On long work, keep the claim alive. A claim with no heartbeat for 12 h goes back to Ready (muster reclaim). Your notes and passes count too:",
             "$ muster heartbeat 0007 --as <your branch>",
+            "Check in at each milestone and at least every 30 minutes, with what's done and what's next. It's on the card, and it renews the claim:",
+            "$ muster checkin 0007 \"gate green, writing tests\" --pct 60 --as <your branch>",
             "Ask without stopping. The answer is pushed into your session after your next tool call (the answer hook):",
             "$ muster ask 0007 \"Child webview or a separate window?\" --as <your branch>",
             "No hook in this checkout? Collect answers yourself:",
@@ -512,6 +527,7 @@ mod tests {
             "claim",
             "next",
             "heartbeat",
+            "checkin",
             "reclaim",
             "pass",
             "return",
@@ -553,7 +569,7 @@ mod tests {
                 "{name}'s examples use it"
             );
         }
-        assert_eq!(COMMANDS.len(), 31);
+        assert_eq!(COMMANDS.len(), 32);
     }
 
     #[test]
@@ -629,6 +645,11 @@ mod tests {
         assert!(t.contains("      muster next --as <your branch>\n"));
         assert!(t.contains("      muster claim 0007 --as <your branch>\n"));
         assert!(t.contains("      muster heartbeat 0007 --as <your branch>\n"));
+        assert!(t.contains(
+            "      muster checkin 0007 \"gate green, writing tests\" --pct 60 --as <your branch>\n"
+        ));
+        assert!(command_text("checkin").unwrap().contains("--pct"));
+        assert!(!t.contains("$USER"), "the login name is never who's acting");
         assert!(t.contains("      muster ask 0007 "));
         assert!(t.contains("      muster inbox\n"));
         assert!(t.contains(

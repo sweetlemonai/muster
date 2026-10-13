@@ -6,9 +6,9 @@ import type { Task } from "./types";
 
 const task = (over: Partial<Task>): Task => ({
   queue: "demo", id: "0007", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
-  folder: "todo", path: "todo/0007-t.md", claimedBy: "", heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "", capturedAt: "", blockHistory: [], questions: [],
-  openQuestions: 0, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTokens: "", estMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", attachments: [], logTail: [], modified: 0,
-  level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", ...over,
+  folder: "todo", path: "todo/0007-t.md", claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "", capturedAt: "",
+  blockHistory: [], questions: [], openQuestions: 0, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTokens: "", estMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "",
+  attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", ...over,
 });
 
 /** The pane as first drawn: its stage line, the stage row's buttons and the notes under it. */
@@ -64,6 +64,29 @@ describe("task pane stage controls", () => {
       const bar = /<div class="body-bar">([\s\S]*?)<\/div>/.exec(pane(over).html)?.[1] ?? "";
       expect([...bar.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1])).toEqual(["Rendered", "Raw", "Edit"]);
     }
+  });
+  it("says who's on it in full, since when, and who held each stage so far (0030)", () => {
+    const A = "wt-a (wt-0030 · session 7b5e8856 · cc-hg)";
+    const now = new Date(2026, 9, 12, 14, 5).getTime() / 1000;
+    const history = [
+      { at: "2026-10-12 10:00", who: A, from: "ready", to: "building" },
+      { at: "2026-10-12 12:05", who: A, from: "building", to: "testing" },
+    ];
+    const holders = (over: Partial<Task>) => /<div class="meta holders">([\s\S]*?)<\/div>/.exec(pane(over, now).html)?.[1].replace(/<[^>]+>/g, "").replace(/&#x27;/g, "'") ?? "";
+    expect(holders({ stage: "testing", heldBy: A, stageHistory: history, stageSince: "2026-10-12 12:05" })).toBe(`on it: ${A} · started 2 h ago · Building: ${A}`);
+    expect(holders({ stage: "your-check", heldBy: "owner", stageHistory: [...history, { at: "2026-10-12 13:00", who: "qa", from: "testing", to: "your-check" }] })).toBe(
+      `on it: you · Building: ${A} · Testing: ${A}`,
+    );
+    expect(holders({ stage: "ready" })).toBe("");
+  });
+  it("lists every check-in in order, the percentage labelled as the session's own estimate", () => {
+    const A = "wt-a (session 7b5e8856)";
+    const html = pane({ stage: "building", claimedBy: A, checkins: [{ at: "2026-10-12 10:30", who: A, pct: 40, text: "gate green" }, { at: "2026-10-12 11:00", who: A, pct: null, text: "tests next" }] }).html;
+    const list = /<section class="checkins">([\s\S]*?)<\/section>/.exec(html)?.[1] ?? "";
+    expect(list).toContain("The percentages are each session&#x27;s own estimate.");
+    const items = [...list.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim());
+    expect(items).toEqual([`2026-10-12 10:30 40% gate green · ${A}`, `2026-10-12 11:00 tests next · ${A}`]);
+    expect(pane({ stage: "building" }).html).not.toContain("checkins");
   });
   it("a stage it doesn't know: shown as is, only the picker and Block", () => {
     const p = pane({ stage: "reviewing" });
