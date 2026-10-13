@@ -5,13 +5,14 @@ import { createContext } from "react";
 import type { HelpTopic } from "./helpTopics";
 import { LEASE_SECS } from "./lib";
 
-export type SettingsGroup = "appearance" | "projects" | "agents" | "about";
+export type SettingsGroup = "appearance" | "display" | "projects" | "agents" | "about";
 
-/** Settings' groups, in the order the list shows them, each with what it holds. Display modes
- *  (0038) and Notifications (0006) add their groups to this list. Help isn't one: the manual is
+/** Settings' groups, in the order the list shows them, each with what it holds. Notifications
+ *  (0006) adds its group to this list. Help isn't one: the manual is
  *  the header's Help tab, and only there (owner, 2026-10-13). */
 export const SETTINGS_GROUPS: { id: SettingsGroup; label: string; holds: string; topic: HelpTopic }[] = [
   { id: "appearance", label: "Appearance", holds: "Theme, accent, text size, cards", topic: "appearance" },
+  { id: "display", label: "Display", holds: "ADHD, Standard or Focus: how much shows", topic: "display" },
   { id: "projects", label: "Projects", holds: "The queues Muster shows", topic: "projects" },
   { id: "agents", label: "Agents", holds: "The helper, the claim lease, LIVE", topic: "agents" },
   { id: "about", label: "About", holds: "Version, settings, what it reads", topic: "about" },

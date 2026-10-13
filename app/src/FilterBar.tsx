@@ -3,6 +3,7 @@ import {
   activeItems, deleteView, GROUPS, groupValues, hiddenLine, isActive, removeFilter, sameQuery, saveView, toggleFilter, type DayContext, type Query, type SavedView,
 } from "./filters";
 import { BOARD_SORTS } from "./lib";
+import { useLook } from "./modes";
 import { searchBoxKey } from "./keys";
 import { highlights, idHit } from "./search";
 import { taskKey } from "./taskKey";
@@ -50,15 +51,35 @@ type Props = {
   searchRef?: RefObject<HTMLInputElement | null>;
   /** The view's "?", last in the top row (task 0035). */
   help?: ReactNode;
+  /** Focus (0038) hides the bar until ⌘F brings it `out`; `onSummon` is ⌘F's action, for the
+   *  button left in its place, and `onHide` puts it away again. */
+  out?: boolean;
+  onSummon?: () => void;
+  onHide?: () => void;
 };
 
 /** The bar above Board, Table, Timeline and Graph: search, saved views, every filter group as
- *  chips, the board's sort, and one line that reads what's active and how much it hides. Nothing
- *  in it folds away (docs/DESIGN.md). */
-export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views, onViews, shown, total, hidden, estimate, arrange, searchRef, help }: Props) {
+ *  chips, the board's sort, and one line that reads what's active and how much it hides. In ADHD
+ *  mode nothing in it folds away (docs/DESIGN.md); Standard folds the groups and Sort behind one
+ *  Filters chip that opens them in place, and Focus leaves only a button until ⌘F, a search or a
+ *  filter brings the bar back (0038). The active line shows whenever the bar does. */
+export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views, onViews, shown, total, hidden, estimate, arrange, searchRef, help, out = false, onSummon, onHide }: Props) {
   const [naming, setNaming] = useState<string | null>(null);
+  const [unfolded, setUnfolded] = useState(false);
+  const how = useLook("filters");
   const items = activeItems(query);
   const active = isActive(query);
+  // Focus never hides the bar while it hides tasks, so a filter can't hide them unannounced.
+  const forced = active || hidden > 0;
+  if (how === "on-key" && !out && !forced) {
+    return (
+      <div className="filter-bar summon" aria-label="Search and filters">
+        <button type="button" className="chip" onClick={onSummon}>Search and filters <small>⌘F</small></button>
+        {help}
+      </div>
+    );
+  }
+  const filterCount = items.filter((it) => it.group !== "search").length;
   const set = (over: Partial<Query>) => onQuery({ ...query, ...over });
   const save = () => {
     if (naming?.trim()) onViews(saveView(views, { ...query, name: naming }));
@@ -113,15 +134,23 @@ export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views,
             </span>
           )}
         </span>
+        {how === "folded" && (
+          <button type="button" className={unfolded ? "chip filters-fold on" : "chip filters-fold"} aria-expanded={unfolded} onClick={() => setUnfolded((u) => !u)} title="The filter groups and Sort, under the bar">
+            Filters{filterCount > 0 && <> <b className="count">{filterCount}</b></>}
+          </button>
+        )}
         {/* Group by pushes itself right (`.group-by`); without it, the count does. */}
         {arrange}
         <span className={arrange ? "meta" : "meta right"}>
           {estimate && <span className="est-total">{estimate} · </span>}
           {shown === total ? `${total} tasks` : `${shown} of ${total} tasks`}
         </span>
+        {how === "on-key" && !forced && (
+          <button type="button" className="chip" onClick={onHide} title="Put the bar away again: ⌘F brings it back">Hide</button>
+        )}
         {help}
       </div>
-      <div className="filters groups">
+      {(how !== "folded" || unfolded) && <div className="filters groups">
         {GROUPS.map((g) => {
           const selected = query.filters[g.id] ?? [];
           const values = groupValues(g, tasks, selected, ctx);
@@ -150,7 +179,7 @@ export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views,
             ))}
           </span>
         )}
-      </div>
+      </div>}
       <div className="active-line" aria-label="Active filters">
         {active ? (
           <>

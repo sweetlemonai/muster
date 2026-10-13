@@ -225,4 +225,4 @@ One list, everywhere, of what's waiting on you:
 
 They're counted on the **Waiting for you** tab and beside each project on the left, in orange, and marked "needs you" on their cards, which sort to the top of their columns. **Coming (task 0022):** tasks only you can do, on a board of your own beside the agents'.
 
-Why: you shouldn't have to look for what needs you. See [DESIGN.md](../DESIGN.md#everything-visible).
+Why: you shouldn't have to look for what needs you, in any display mode. See [DESIGN.md](../DESIGN.md#in-every-mode).

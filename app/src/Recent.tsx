@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import { fmtMinutes, key, shortTokens } from "./lib";
+import { useLook } from "./modes";
 import { taskKey } from "./taskKey";
 import { builtBy, byKind, dayGroups, type DayGroup, type Finish, finishes, KIND_FILTERS, type KindFilter, loadKind, storeKind, whenText } from "./recentData";
 import type { Task } from "./types";
@@ -61,7 +62,8 @@ function useCosts(tasks: Task[]): Map<string, Cost> {
 /** Recently finished (0051), docked beside the board: what landed on main and what the owner
  *  accepted in the project in view (every project with All), newest first, grouped by day, from
  *  the stage log. The kind chips are remembered; the window starts at 7 days and Show older adds
- *  a week. `now` is the state's clock, seconds since 1970. */
+ *  a week. Focus (0038) folds it to a strip with its count, which opens it in place; folded, it
+ *  reads no costs. `now` is the state's clock, seconds since 1970. */
 export default function Recent({ tasks, now, multi, openKey, onOpen }: {
   tasks: Task[];
   now: number;
@@ -78,14 +80,46 @@ export default function Recent({ tasks, now, multi, openKey, onOpen }: {
   const all = useMemo(() => finishes(tasks), [tasks]);
   const { groups, older } = useMemo(() => dayGroups(byKind(all, kind), now, weeks), [all, kind, now, weeks]);
   const shown = useMemo(() => [...new Map(groups.flatMap((g) => g.rows).map((r) => [key(r.task), r.task])).values()], [groups]);
-  const costs = useCosts(shown);
-  return <RecentList groups={groups} older={older} kind={kind} onKind={pick} weeks={weeks} onOlder={() => setWeeks((w) => w + 1)} now={now} multi={multi} openKey={openKey} onOpen={onOpen} costs={costs} />;
+  const how = useLook("rail");
+  const [opened, setOpened] = useState(false);
+  const folded = how === "strip" && !opened;
+  const costs = useCosts(folded ? NO_TASKS : shown);
+  if (folded) return <RailStrip count={groups.reduce((n, g) => n + g.rows.length, 0)} onOpen={() => setOpened(true)} />;
+  return (
+    <RecentList
+      groups={groups}
+      older={older}
+      kind={kind}
+      onKind={pick}
+      weeks={weeks}
+      onOlder={() => setWeeks((w) => w + 1)}
+      now={now}
+      multi={multi}
+      openKey={openKey}
+      onOpen={onOpen}
+      costs={costs}
+      onFold={how === "strip" ? () => setOpened(false) : undefined}
+    />
+  );
+}
+
+const NO_TASKS: Task[] = [];
+
+/** The rail as Focus folds it: a thin strip that says what it is and how many rows it holds. */
+export function RailStrip({ count, onOpen }: { count: number; onOpen: () => void }) {
+  return (
+    <aside className="recent folded" aria-label="Recently finished">
+      <button type="button" className="rail-fold" aria-expanded={false} onClick={onOpen} title="Open Recently finished: Focus folds it">
+        Recently finished <small>{count}</small>
+      </button>
+    </aside>
+  );
 }
 
 const NOTHING: Record<KindFilter, string> = { all: "merged or accepted", merged: "merged", accepted: "accepted" };
 
 /** The list as drawn: the head with its window and the kind chips, the day groups, Show older. */
-export function RecentList({ groups, older, kind, onKind, weeks, onOlder, now, multi, openKey, onOpen, costs }: {
+export function RecentList({ groups, older, kind, onKind, weeks, onOlder, now, multi, openKey, onOpen, costs, onFold }: {
   groups: DayGroup[];
   older: number;
   kind: KindFilter;
@@ -97,12 +131,21 @@ export function RecentList({ groups, older, kind, onKind, weeks, onOlder, now, m
   openKey: string | null;
   onOpen: (t: Task) => void;
   costs: Map<string, Cost>;
+  /** Folds it back to its strip, when the mode folds it (Focus, 0038). */
+  onFold?: () => void;
 }) {
   const days = weeks * 7;
   return (
     <aside className="recent" aria-label="Recently finished">
       <header className="recent-head">
-        <h2>Recently finished <small>last {days} days</small></h2>
+        <h2>
+          Recently finished <small>last {days} days</small>
+          {onFold && (
+            <button type="button" className="chip rail-unfold" aria-expanded={true} onClick={onFold} title="Fold it back to its strip, as Focus has it">
+              Fold
+            </button>
+          )}
+        </h2>
         <span className="recent-kinds" role="group" aria-label="Show what finished">
           {KIND_FILTERS.map((k) => (
             <button key={k.id} type="button" className={kind === k.id ? "chip on" : "chip"} aria-pressed={kind === k.id} title={k.title} onClick={() => onKind(k.id)}>

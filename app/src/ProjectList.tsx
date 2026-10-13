@@ -3,6 +3,7 @@ import { lastLabel, loadOrder, nextOrder, type OrderMemo, projectRows, SIDEBAR_O
 import { projectCount } from "./Backlog";
 import { needsYouCount } from "./human";
 import { inProgress } from "./lib";
+import { useLook } from "./modes";
 import { QuietPing } from "./Ping";
 import type { Activity, Note, QueueInfo, Task } from "./types";
 
@@ -31,21 +32,23 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
   const shown = memo.current.names.flatMap((n) => byName.get(n) ?? []);
   const sums = useMemo(() => sumActivity(rows.map((r) => r.activity)), [rows]);
   const counts = useMemo(() => new Map(queues.map((q) => [q.name, q.counts])), [queues]);
+  // Focus (0038) narrows the sidebar to the names, the working dot and the needs-you count.
+  const full = useLook("sidebar") === "full";
   return (
     <nav className="projects-nav">
-      <ProjectItem name="All" total={tasks.length + notes.length} tasks={tasks} on={current === "all"} onClick={() => onPick("all")}>
+      <ProjectItem name="All" total={tasks.length + notes.length} tasks={tasks} on={current === "all"} onClick={() => onPick("all")} working={sums.working > 0}>
         <SumsLine s={sums} now={now} />
       </ProjectItem>
-      <div className="side-label">Projects</div>
-      <OrderChips value={order} onChange={pick} />
+      {full && <div className="side-label">Projects</div>}
+      {full && <OrderChips value={order} onChange={pick} />}
       {shown.map((r) => (
         <Fragment key={r.name}>
-          <ProjectItem name={r.name} title={r.title} total={projectCount(counts.get(r.name) ?? {}, notes, r.name)} tasks={r.tasks} on={current === r.name} onClick={() => onPick(r.name)}>
+          <ProjectItem name={r.name} title={r.title} total={projectCount(counts.get(r.name) ?? {}, notes, r.name)} tasks={r.tasks} on={current === r.name} onClick={() => onPick(r.name)} working={r.activity.working > 0}>
             <ActivityLine a={r.activity} now={now} />
           </ProjectItem>
           {/* A stalled project offers to ask its quiet sessions for a check-in (0039), under its
               row, since the row is itself a button. */}
-          {r.activity.stalled && <QuietPing tasks={r.tasks} now={now} />}
+          {full && r.activity.stalled && <QuietPing tasks={r.tasks} now={now} />}
         </Fragment>
       ))}
     </nav>
@@ -54,21 +57,24 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
 
 /** One project in the sidebar: its name and count, what's in progress and what needs you (the
  *  needs-you count: your own tasks to do and doing, and what the agents wait on you for), and
- *  under them its activity line. */
-export function ProjectItem({ name, title, total, tasks, on, onClick, children }: { name: string; title?: string; total: number; tasks: Task[]; on: boolean; onClick: () => void; children: ReactNode }) {
+ *  under them its activity line. Narrowed (Focus, 0038), the name, the working dot and the
+ *  needs-you count. */
+export function ProjectItem({ name, title, total, tasks, on, onClick, working = false, children }: { name: string; title?: string; total: number; tasks: Task[]; on: boolean; onClick: () => void; working?: boolean; children: ReactNode }) {
   const doing = tasks.filter(inProgress).length;
   const needs = needsYouCount(tasks);
+  const full = useLook("sidebar") === "full";
   return (
     <button className={on ? "side-item on" : "side-item"} onClick={onClick} title={title}>
       <span className="side-line">
+        {!full && working && <i className="dot side-dot" title={`Being worked on now: ${WORKING_HINT}`} />}
         <span className="side-name">{name}</span>
         <span className="side-badges">
           {needs > 0 && <span className="count warn" title={`${needs} need you`}>{needs}</span>}
-          {doing > 0 && <span className="side-doing" title={`${doing} in progress (Building or Testing)`}>{doing}</span>}
-          <small>{total}</small>
+          {full && doing > 0 && <span className="side-doing" title={`${doing} in progress (Building or Testing)`}>{doing}</span>}
+          {full && <small>{total}</small>}
         </span>
       </span>
-      {children}
+      {full && children}
     </button>
   );
 }

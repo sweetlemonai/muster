@@ -26,6 +26,8 @@ import { byWho, FOR_FILTERS, FOR_KEY, type ForFilter, needsYouCount, parseForFil
 import { HelpButton, OpenHelp } from "./HelpButton";
 import { HELP_TOPICS, type HelpTopic, type ManualAt } from "./helpTopics";
 import { Machine, machineOf, type SettingsGroup } from "./settingsData";
+import { columnFold, loadMode, look, Mode, pickMode, storeMode, toggleFocus, type ColumnFolds, type ModeState } from "./modes";
+import { ChoiceChips, ColumnHead, ModeChip } from "./ModeViews";
 import logo from "./logo.png";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
@@ -161,6 +163,15 @@ function useForFilter(): [ForFilter, (f: ForFilter) => void] {
   return [f, set];
 }
 
+/** The display mode (0038) and the one ⌘. goes back to, remembered between launches. */
+function useDisplayMode(): [ModeState, (f: (s: ModeState) => ModeState) => void] {
+  const [s, setS] = useState<ModeState>(() => loadMode(localStorage));
+  useEffect(() => storeMode(localStorage, s), [s]);
+  return [s, setS];
+}
+
+const NO_COLUMNS: ReadonlySet<string> = new Set();
+
 export default function App() {
   const { state, error, at, refresh } = useQueues();
   const [queue, setQueue] = useState("all");
@@ -180,6 +191,28 @@ export default function App() {
   const railSide = railBeside(win, pane ? paneWidth : 0);
   const [groupBy, setGroupBy] = useGroupBy();
   const [who, setWho] = useForFilter();
+  const [modes, setModes] = useDisplayMode();
+  // The columns Focus folds that a click opened, and the filter bar ⌘F brought out in Focus: both
+  // until the mode changes.
+  const [opened, setOpened] = useState<ReadonlySet<string>>(NO_COLUMNS);
+  const [barOut, setBarOut] = useState(false);
+  const changeMode = useCallback(
+    (f: (s: ModeState) => ModeState) => {
+      setModes(f);
+      setOpened(NO_COLUMNS);
+      setBarOut(false);
+    },
+    [setModes],
+  );
+  const columnFoldOf: ColumnFolds = {
+    of: (id) => columnFold(look("columns", modes.mode), id, opened),
+    toggle: (id) =>
+      setOpened((o) => {
+        const n = new Set(o);
+        if (!n.delete(id)) n.add(id);
+        return n;
+      }),
+  };
   // Where the manual is open in the Help tab; a "?" opens it at its topic, and the pane stays.
   const [helpAt, setHelpAt] = useState<ManualAt>({ file: "01-start-here.md", slug: "", n: 0 });
   const helpGo = useCallback((file: string, slug: string) => setHelpAt((a) => ({ file, slug, n: a.n + 1 })), []);
@@ -286,21 +319,25 @@ export default function App() {
     else setView(v);
   };
 
+  // ⌘F: the search box, in the project view that's showing (Board, Table, Timeline or Graph), on
+  // the board when another tab is; in Focus it brings the filter bar out first.
+  const summonSearch = useCallback(() => {
+    setView(searchView);
+    setBarOut(true);
+    setFocusSearch((n) => n + 1);
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) =>
       windowKey(e, {
         closePane: () => go(null),
         newTask: () => go({ kind: "new" }),
-        // ⌘F: the search box, in the project view that's showing (Board, Table, Timeline or
-        // Graph), on the board when another tab is.
-        search: () => {
-          setView(searchView);
-          setFocusSearch((n) => n + 1);
-        },
+        search: summonSearch,
+        focusMode: () => changeMode(toggleFocus),
       });
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [go]);
+  }, [go, summonSearch, changeMode]);
 
   // After the view that holds the search box has rendered.
   useEffect(() => {
@@ -310,8 +347,9 @@ export default function App() {
   return (
     <OpenHelp.Provider value={openHelp}>
     <Machine.Provider value={machine}>
+    <Mode.Provider value={modes.mode}>
     <div className="app shell">
-      <aside className="sidebar" aria-label="Projects">
+      <aside className="sidebar" aria-label="Projects" data-sidebar={look("sidebar", modes.mode)}>
         <div className="brand"><img src={logo} alt="" width={22} height={22} /> Muster</div>
         <ProjectList queues={state?.queues ?? []} tasks={state?.tasks ?? []} notes={allNotes} activity={state?.activity ?? []} now={now} current={queue} onPick={setQueue} />
         <button className="side-add" onClick={() => openSettings("projects")} title="New or existing project queue, in Settings">+ Project</button>
@@ -338,6 +376,7 @@ export default function App() {
           <button className={view === "help" ? "tab on" : "tab"} onClick={() => setView("help")}>Help</button>
           <button className={view === "settings" ? "tab on" : "tab"} onClick={() => setView("settings")} title="Appearance, projects, agents and about">Settings</button>
         </nav>
+        <ModeChip mode={modes.mode} onOpen={() => openSettings("display")} />
         <span className="live" title={error || "Updates every 2 seconds while the window is visible"}>
           {error ? <span className="err">Can't read the queues</span> : at ? <><i className="dot" /> live</> : "loading…"}
         </span>
@@ -365,21 +404,15 @@ export default function App() {
                 estimate={estimateTotal(work)}
                 arrange={
                   <>
-                    {whoFilters && (
-                      <span className="for-filter" role="group" aria-label="Who does it">
-                        <span className="meta sep">Who</span>
-                        {FOR_FILTERS.map((f) => (
-                          <button key={f.id} className={who === f.id ? "chip on" : "chip"} aria-pressed={who === f.id} onClick={() => setWho(f.id)}>
-                            {f.label}
-                          </button>
-                        ))}
-                      </span>
-                    )}
+                    {whoFilters && <ChoiceChips label="Who" className="for-filter" aria="Who does it" metaClass="meta sep" value={who} options={FOR_FILTERS} onPick={setWho} />}
                     {view !== "timeline" && <GroupByChips value={groupBy} onChange={setGroupBy} />}
                   </>
                 }
                 searchRef={searchRef}
                 help={<HelpButton topic={view} />}
+                out={barOut}
+                onSummon={summonSearch}
+                onHide={() => setBarOut(false)}
               />
               {indexError && <p className="err small" role="alert">Search can't read the tasks' text: {indexError}</p>}
               {view === "table" && <TableView tasks={viewTasks} now={now} multi={multi} openKey={openKey} onOpen={open} groups={tableGroups} by={groupBy} words={words} />}
@@ -398,10 +431,12 @@ export default function App() {
                   renderCard={card}
                   onChanged={() => void refresh()}
                   backlog={quickAdd ? { notes, renderNote: noteCard, quickAdd } : undefined}
+                  fold={columnFoldOf}
                 />
               )}
-              {/* Backlog never folds: its quick add is always there. */}
-              {groupBy === "none" && <main className="board" style={{ gridTemplateColumns: STAGES.map((s) => (s.id === "backlog" || (cols[s.id] ?? []).length || (s.id === "your-check" && boardResult) ? "minmax(118px, 1fr)" : "44px")).join(" ") }}>
+              {/* Backlog never folds, its quick add is always there, except in Focus (0038), which folds
+                  every column but Building, Testing and Your check to a strip that opens with a click. */}
+              {groupBy === "none" && <main className="board" style={{ gridTemplateColumns: STAGES.map((s) => ((s.id === "backlog" || (cols[s.id] ?? []).length || (s.id === "your-check" && boardResult)) && columnFoldOf.of(s.id) !== "folded" ? "minmax(118px, 1fr)" : "44px")).join(" ") }}>
                 {STAGES.map((c) => {
                   const list = cols[c.id] ?? [];
                   const shown = c.id === "done" && !showAllDone ? list.slice(0, 8) : list;
@@ -409,13 +444,13 @@ export default function App() {
                   const count = list.length + (backlog ? notes.length : 0);
                   // Your check stays open while Accept all's result line has something to say (0043).
                   const kept = c.id === "your-check" && boardResult;
+                  const fold = columnFoldOf.of(c.id);
                   return (
-                    <section key={c.id} className={`column col-${c.id}${count || backlog || kept ? "" : " empty"}`}>
-                      <h2 title={c.role ? `${c.label}: ${c.role}` : c.label}>
-                        {c.label} <small>{count}</small>
+                    <section key={c.id} className={`column col-${c.id}${fold === "folded" ? " folded" : count || backlog || kept ? "" : " empty"}`}>
+                      <ColumnHead stage={c} count={count} needs={needsYouCount(list)} fold={fold} onFold={() => columnFoldOf.toggle(c.id)}>
                         {c.role && <span className="role">{c.role}</span>}
-                      </h2>
-                      {backlog && quickAdd}
+                      </ColumnHead>
+                      {backlog && fold !== "folded" && quickAdd}
                       <div className="cards">
                         {backlog
                           ? backlogColumn(notes, list).map((item) =>
@@ -439,7 +474,7 @@ export default function App() {
                   );
                 })}
               </main>}
-              <Recent key={queue} tasks={inQueue} now={now} multi={multi} openKey={openKey} onOpen={open} />
+              <Recent key={`${queue}/${modes.mode}`} tasks={inQueue} now={now} multi={multi} openKey={openKey} onOpen={open} />
               </div>}
             </>
           )}
@@ -487,6 +522,8 @@ export default function App() {
                 onGroup={setSettingsAt}
                 queues={state?.queues ?? []}
                 onChanged={refresh}
+                mode={modes.mode}
+                onMode={(m) => changeMode((s) => pickMode(s, m))}
               />
             </Suspense>
           )}
@@ -523,6 +560,7 @@ export default function App() {
       </div>
       </div>
     </div>
+    </Mode.Provider>
     </Machine.Provider>
     </OpenHelp.Provider>
   );

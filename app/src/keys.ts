@@ -22,9 +22,10 @@ export function searchView<V extends string>(view: V): V | "board" {
   return (PROJECT_VIEWS as readonly string[]).includes(view) ? view : "board";
 }
 
-export type WindowActions ={ closePane: () => void; newTask: () => void; search: () => void };
+export type WindowActions ={ closePane: () => void; newTask: () => void; search: () => void; focusMode: () => void };
 
-/** The window's shortcuts: Esc closes the pane, ⌘N opens New task, ⌘F goes to the search box. */
+/** The window's shortcuts: Esc closes the pane, ⌘N opens New task, ⌘F goes to the search box,
+ *  ⌘. turns Focus on or off (0038). */
 export function windowKey(e: Mods & { preventDefault: () => void }, act: WindowActions): void {
   if (pressed(e, "close-pane")) act.closePane();
   if (pressed(e, "new-task")) {
@@ -34,6 +35,10 @@ export function windowKey(e: Mods & { preventDefault: () => void }, act: WindowA
   if (isSearchKey(e)) {
     e.preventDefault();
     act.search();
+  }
+  if (pressed(e, "focus-mode")) {
+    e.preventDefault();
+    act.focusMode();
   }
 }
 

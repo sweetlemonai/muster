@@ -6,6 +6,7 @@ import { splitLog, withoutComments } from "./fields";
 import { isHuman } from "./human";
 import { stageLabel, stamp } from "./lib";
 import Markdown from "./Markdown";
+import { Fold } from "./ModeViews";
 import { taskKey, taskOfHref } from "./taskKey";
 import PaneHeader from "./PaneHeader";
 import { isFileDrag, releasedBy, undoFor } from "./paneData";
@@ -17,7 +18,7 @@ import StageForms from "./StageForms";
 import StageTrack from "./StageTrack";
 import type { Question, Task } from "./types";
 import { useTaskActions } from "./useTaskActions";
-import { withoutVision } from "./Vision";
+import { visionStatus, withoutVision } from "./Vision";
 import VisionPanel from "./VisionPanel";
 import { anyDirty, withPart } from "./writeUp";
 import Work from "./Work";
@@ -185,17 +186,26 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
         )}
       </section>
 
-      <VisionPanel task={task} body={body} onChanged={onChanged} />
-      <Work task={task} />
+      {/* Standard and Focus fold these to a header each (0038); ADHD shows them as they are. */}
+      <Fold label="Vision" summary={visionStatus(task)}>
+        <VisionPanel task={task} body={body} onChanged={onChanged} />
+      </Fold>
+      <Fold label="Work" summary="who worked on it, time and tokens">
+        <Work task={task} />
+      </Fold>
 
       <Comments task={task} onChanged={onChanged} onDirty={commentDirty} nudge={nudge} keys={keys} onLink={openLink} />
-      {log && !raw && editing === null && (
-        <section className="log">
-          <Markdown text={log} keys={keys} onLink={openLink} />
-        </section>
-      )}
+      {((log && !raw && editing === null) || task.checkins.length > 0) && (
+        <Fold label="Log and check-ins" summary={task.checkins.length ? `${task.checkins.length} check-in${task.checkins.length === 1 ? "" : "s"}` : undefined}>
+          {log && !raw && editing === null && (
+            <section className="log">
+              <Markdown text={log} keys={keys} onLink={openLink} />
+            </section>
+          )}
 
-      {task.checkins.length > 0 && <Checkins task={task} />}
+          {task.checkins.length > 0 && <Checkins task={task} />}
+        </Fold>
+      )}
 
       <NoteBar onNote={a.note} onPaste={onPaste} />
     </div>

@@ -4,6 +4,32 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Display modes: ADHD, Standard and Focus, in Settings and on ⌘. (task 0038)
+**Did:** Settings › Display picks ADHD (default, today's screens), Standard or Focus: three chips
+and a table of every element by mode, current column lit; applied at once, kept in
+`localStorage`. The header ends with the mode as a chip that opens that page; ⌘. (Ctrl+. too)
+toggles Focus and back. `modes.ts` is the one table of what differs (filter bar, Who and Group by,
+card lines, board columns, task pane sections, sidebar); components read it through `useLook`
+(`FilterBar`, `Card`/`CardStatus`, `Groups`, `ProjectList`, `TaskPanel` via `ModeViews.tsx`'s
+`Fold`, `ColumnHead`, `ChoiceChips`, `ModeChip`; App for the board and sidebar). Standard: filters
+behind **Filters (n)**, Who and Group by as their value, brief cards (the rest on the selected
+card), Vision, Work and Log folded. Focus: Building, Testing and Your check open, other columns
+strips with counts and needs-you counts, title-and-status cards, a Search and filters ⌘F button
+for the bar, a narrow sidebar, and 0051's Recently finished rail folded to a strip with its count
+(a click opens it in place, Fold puts it back; ADHD and Standard keep it open as 0051 made it).
+0051's Done line ("done 4 min ago") has its own row, the same in all three: it's the Done card's
+status line. DESIGN.md is per mode (shared rules first); the manual has
+Settings › Display and ⌘.; AS_BUILT updated. Mockups in the queue's `attachments/0038/`.
+**Decided:** fold in place (design A of three, `attachments/0038/mockups.md`): one layout, a mode
+only says how much shows, every fold a labelled chip, strip or header one click or key away.
+Standard's secondary lines show on the selected card, not on hover (hover would push the cards
+below). Focus keeps the filter bar out while anything hides tasks. Posted on the task as "decided
+for you, overrule any time".
+**Verified:** `bin/gate`: `gate: green (pnpm check, test_task, test_commands, cargo test
+(Kiritimati))`; 1004 app tests, new `modes.test.ts` (15: the table, ⌘. and kept mode, and the
+AC2 scan, shown to fail on a planted `useLook("nope")` and `mode === "focus"`) and
+`Display.test.ts` (23: Settings, header chip, ⌘., each element per mode, needs you in every mode).
+**Open:** the owner tries all three on the real queue (AC4); ⌘. not yet pressed in the built app.
 ## 2026-10-13 — Task keys with a project prefix: mu-12 (task 0033)
 **Did:** every place that shows a task shows its key (`mu-12`, no leading zeros): cards, rows,
 graph, timeline, task pane, Recently finished, INDEX.md, `muster list`/`show`/`check`, refusals

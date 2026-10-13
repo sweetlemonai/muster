@@ -1,23 +1,28 @@
 import { useEffect, useState } from "react";
 import { api, type HelperInfo } from "./api";
 import Appearance from "./Appearance";
+import { DisplayModes } from "./Display";
 import { AccountPicker } from "./Helper";
 import { HelpButton } from "./HelpButton";
 import { HomePath } from "./HomePath";
 import Projects from "./Projects";
 import { homePath } from "./lib";
+import type { DisplayMode } from "./modes";
 import { DEFAULT_MACHINE, SETTINGS_GROUPS, type SettingsGroup, type SettingsInfo, spanInput, spanText } from "./settingsData";
 import type { Project, QueueInfo } from "./types";
 
-/** Settings (0036): one place for Appearance, Projects, Agents and About. A view in the
+/** Settings (0036): one place for Appearance, Display, Projects, Agents and About. A view in the
  *  header's row, never a window: the groups are a docked list on the left, and the open group's
  *  settings on the right, all of them at once. Every change applies at once and is remembered. */
-export default function Settings({ group, onGroup, queues, onChanged }: {
+export default function Settings({ group, onGroup, queues, onChanged, mode, onMode }: {
   group: SettingsGroup;
   onGroup: (g: SettingsGroup) => void;
   queues: QueueInfo[];
   /** Read the queues again, so the board uses a change now, not at the next poll. */
   onChanged: () => void;
+  /** The display mode (0038), which the window keeps. */
+  mode: DisplayMode;
+  onMode: (m: DisplayMode) => void;
 }) {
   const [info, setInfo] = useState<SettingsInfo | null>(null);
   const [error, setError] = useState("");
@@ -48,6 +53,7 @@ export default function Settings({ group, onGroup, queues, onChanged }: {
         </header>
         {error && <p className="err" role="alert">Can't read this Mac's settings: {error}</p>}
         {g.id === "appearance" && <Appearance />}
+        {g.id === "display" && <DisplayModes mode={mode} onMode={onMode} />}
         {g.id === "projects" && <Projects queues={queues} home={info?.home ?? ""} onChanged={onChanged} />}
         {g.id === "agents" && <Agents info={info} queues={queues} onInfo={setInfo} onChanged={onChanged} />}
         {g.id === "about" && (info ? <About info={info} /> : !error && <p className="none">Loading…</p>)}
@@ -258,7 +264,7 @@ export function AboutView({ info, projects, error = "" }: { info: SettingsInfo; 
           <li><code>settings.json</code>: the claim lease and the LIVE window; the muster command reads it too</li>
           <li><code>helper/</code>: the helper's account, model and conversations</li>
         </ul>
-        <p className="meta">Appearance, text size, Group by, saved views and the pane's width are kept by the window itself, on this Mac.</p>
+        <p className="meta">Appearance, the display mode, text size, Group by, saved views and the pane's width are kept by the window itself, on this Mac.</p>
       </section>
       <section>
         <h2>What it reads</h2>

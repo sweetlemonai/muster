@@ -3,6 +3,7 @@ import { BranchCardLine } from "./Branch";
 import { builtTested, checkinLine, currentCheckin, holderOf, leaseRunOut, needsTester, quietCheckin, quietText, splitHolder, startedAgo, whoLine } from "./lib";
 import { askedText } from "./reach";
 import { finishText } from "./recentData";
+import { useLook, type CardLines } from "./modes";
 import { Machine, spanText } from "./settingsData";
 import type { Task } from "./types";
 import { VisionBadge } from "./Vision";
@@ -17,15 +18,19 @@ const HELD = new Set(["ready", "building", "testing"]);
  *  "needs a tester" on its own line while a builder still holds it (0047); in Done, when it was
  *  done (0051). A task started in its own worktree (0023) adds its branch and the worktree's
  *  folder. Then, at any stage, its open vision conflicts (0029).
+ *  `lines` is the display mode's (0038): Standard's brief card keeps only what says something is
+ *  wrong or waits on you; Focus keeps who's on it, or Your turn, and the alarms. The Done line is
+ *  the Done card's status line, read from the modes' table on its own.
  *  `now` is the state's clock, seconds since 1970. */
-export default function CardStatus({ t, now }: { t: Task; now: number }) {
+export default function CardStatus({ t, now, lines = "all" }: { t: Task; now: number; lines?: CardLines }) {
+  const doneLine = useLook("done-line");
   return (
     <>
-      {HELD.has(t.stage) && <HeldLines t={t} now={now} />}
-      {t.stage === "your-check" && <YourTurn t={t} />}
-      <DoneLine t={t} now={now} />
-      <BranchCardLine t={t} />
-      <VisionBadge t={t} />
+      {HELD.has(t.stage) && <HeldLines t={t} now={now} lines={lines} />}
+      {t.stage === "your-check" && <YourTurn t={t} lines={lines} />}
+      {doneLine === "show" && <DoneLine t={t} now={now} />}
+      {lines === "all" && <BranchCardLine t={t} />}
+      {lines !== "status" && <VisionBadge t={t} />}
     </>
   );
 }
@@ -39,20 +44,20 @@ function DoneLine({ t, now }: { t: Task; now: number }) {
 
 /** Your check (0043): whose turn it is (yours, unless the file names someone else) and the one
  *  thing to try, cut to fit with the whole of it in the tooltip, or "Nothing to try: Accept". */
-function YourTurn({ t }: { t: Task }) {
+function YourTurn({ t, lines }: { t: Task; lines: CardLines }) {
   const yours = splitHolder(holderOf(t)).label === "owner";
   const step = nextStep(t);
   const built = builtTested(t);
   return (
     <>
       {yours ? <span className="card-who your-turn">Your turn</span> : <span className="card-who">{whoLine(t)}</span>}
-      <span className="card-next" title={step.full}>{`${step.text}${step.more ? ` · ${step.more} more` : ""}`}</span>
-      {built && <span className="card-built">{built}</span>}
+      {lines !== "status" && <span className="card-next" title={step.full}>{`${step.text}${step.more ? ` · ${step.more} more` : ""}`}</span>}
+      {lines === "all" && built && <span className="card-built">{built}</span>}
     </>
   );
 }
 
-function HeldLines({ t, now }: { t: Task; now: number }) {
+function HeldLines({ t, now, lines }: { t: Task; now: number; lines: CardLines }) {
   const who = whoLine(t);
   const started = startedAgo(t, now);
   const checkin = currentCheckin(t);
@@ -65,9 +70,9 @@ function HeldLines({ t, now }: { t: Task; now: number }) {
   const flag = [stale ? `quiet ${spanText(lease)}+` : "", quiet === null ? "" : quietText(quiet)].filter(Boolean).join(" · ");
   return (
     <>
-      <span className={who ? "card-who" : "card-who nobody"}>{[who || "nobody on it", started].filter(Boolean).join(" · ")}</span>
-      {needsTester(t) && <span className="card-tester">needs a tester</span>}
-      {asked ? <span className="card-asked">{asked}</span> : checkin && <span className="card-checkin">{checkinLine(checkin, now)}</span>}
+      {lines !== "brief" && <span className={who ? "card-who" : "card-who nobody"}>{[who || "nobody on it", started].filter(Boolean).join(" · ")}</span>}
+      {lines !== "status" && needsTester(t) && <span className="card-tester">needs a tester</span>}
+      {lines === "all" && (asked ? <span className="card-asked">{asked}</span> : checkin && <span className="card-checkin">{checkinLine(checkin, now)}</span>)}
       {flag && <span className="card-quiet">{flag}</span>}
     </>
   );

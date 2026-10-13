@@ -9,6 +9,7 @@ Every keyboard shortcut in the app, and the slash commands for Claude Code. This
 | ⌘N | Open New task in the pane beside the board | Anywhere in the window |
 | Esc | Close the pane: a task, a note or New task | Anywhere while the pane is open, except in the search box or a view's name, which take Esc for themselves |
 | ⌘F | Put the caret in the search box, with its words selected so typing replaces them. Ctrl+F is left to text fields, where it moves the caret | Anywhere in the window. From a tab without a search box, it opens the board first |
+| ⌘. | Turn Focus on, or back off to the mode you were in (the display modes are in Settings, Display) | Anywhere in the window |
 | ⌘+ | Make everything larger: the board, the panes and the manual (the size is remembered; also in Settings, Appearance, Text size) | Anywhere in the window |
 | ⌘− | Make everything smaller | Anywhere in the window |
 | ⌘0 | Back to 100% | Anywhere in the window |

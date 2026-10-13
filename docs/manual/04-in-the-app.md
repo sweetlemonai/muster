@@ -5,7 +5,7 @@ Every view and pane of the Muster app, and what each control does. A **?** besid
 ## The window at a glance
 
 - **Left:** the projects (see [The projects sidebar](#the-projects-sidebar)).
-- **Top:** **+ New task**, then the views: **Board**, **Table**, **Timeline** and **Graph** (four views of the same tasks), **Helper**, **Waiting for you**, **Activity**, **Problems**, **Help** and **Settings** (where [Appearance](#appearance) is). Then "live" with a dot while the app is reading the queues. If it can't read them, that spot says "Can't read the queues"; point at it to see why.
+- **Top:** **+ New task**, then the views: **Board**, **Table**, **Timeline** and **Graph** (four views of the same tasks), **Helper**, **Waiting for you**, **Activity**, **Problems**, **Help** and **Settings** (where [Appearance](#appearance) is). Then the display mode, **ADHD**, **Standard** or **Focus**, as a chip that opens [Display](#display), and "live" with a dot while the app is reading the queues. If it can't read them, that spot says "Can't read the queues"; point at it to see why.
 - **Right:** the **pane**, when one is open: a task, a backlog note or New task. It docks beside the content, which shrinks and stays live, so nothing ever covers the board. Drag the pane's edge to resize it (the width is remembered; it stops where the board would get too narrow, and in a narrow window, or with the text zoomed in, it's made narrower to fit, down to 240 px), and press Esc to close it.
 
 The app reads the queues every 2 seconds while its window is visible, and stops while it's hidden.
@@ -149,7 +149,7 @@ This manual. The sidebar has the search box, then every page with its sections; 
 
 ## Settings
 
-One place for how the app looks and works on this Mac: **Settings** in the top row. Settings is a view like the others, not a window. The groups are listed down its left side, each with what it holds: **Appearance**, **Projects**, **Agents** and **About**. Click one and all of its settings show on the right, each with its current value and what it changes. Every change applies at once and is remembered after the app restarts. The **?** beside a group's name opens its section here. The manual isn't a group: it's the [Help](#help) tab in the top row. A folder in your home folder shows as `~/…`; point at it to see the full path, and copying it copies the full path.
+One place for how the app looks and works on this Mac: **Settings** in the top row. Settings is a view like the others, not a window. The groups are listed down its left side, each with what it holds: **Appearance**, **Display**, **Projects**, **Agents** and **About**. Click one and all of its settings show on the right, each with its current value and what it changes. Every change applies at once and is remembered after the app restarts. The **?** beside a group's name opens its section here. The manual isn't a group: it's the [Help](#help) tab in the top row. A folder in your home folder shows as `~/…`; point at it to see the full path, and copying it copies the full path.
 
 ### Appearance
 
@@ -159,6 +159,14 @@ One place for how the app looks and works on this Mac: **Settings** in the top r
 - **Text size:** 90%, 100%, 115%, 130% or 150%, for everything in the window, this manual too. ⌘+ and ⌘− step through the sizes and ⌘0 goes back to 100%; the size is remembered.
 - **Cards:** how a card shows its colour (Stripe, Tint, Top bar, Dot or Outline), and whether the colour shows its **Stage** or its **Priority**. Blocked and "needs you" always take over the colour.
 - **Back to Muster's violet** resets the theme and accent.
+
+### Display
+
+How much the app shows at once. Three modes, as chips, the current one lit; a pick applies at once and is remembered. Below them is a table of every place that differs between the modes, with what each mode does there, the current mode's column lit. ⌘. turns Focus on from any mode, and off again back to the mode you were in. The colours, the docked panes and where every control sits are the same in all three, and in every mode what waits on you keeps its counts (Waiting for you, the sidebar, a folded column's strip) and its badge on the card.
+
+- **ADHD** (the default): everything on screen. Every filter group, saved view and Sort above the board; every choice of Who and Group by as a chip; every line on a card; the task pane's sections open; the sidebar with its order chips and activity lines.
+- **Standard:** what most apps do. The filter groups and Sort fold behind one **Filters** chip, with the number of filters on; click it and they open under the bar. Who and Group by show their current choice as one chip; click it to lay the choices out in its place. A card shows its title, kind, priority, age and anything wrong (blocked, quiet, needs you, open questions); who's on it, the check-in, branch, tags, parent, estimate and files show on the selected card. In the task pane, **Vision**, **Work** and **Log and check-ins** fold to a header each; click one to open it.
+- **Focus:** only what needs doing now. The board keeps **Building**, **Testing** and **Your check** open; the other columns are thin strips with their names, their counts and how many need you; click a strip to open that column until you leave Focus. A card is its title, one status line (who's on it, or Your turn) and blocked, quiet or needs you when it is. The filter bar is one **Search and filters** button until ⌘F brings it out (**Hide** puts it away); it stays out while a search or filter is on, so nothing is hidden without saying so. The sidebar narrows to the project names, the dot for one being worked on now, and the needs-you count. **Recently finished** folds to a thin strip beside the board with its name and count; click it to open it there, and **Fold** puts it back. A Done card still says when it was done. The task pane folds as in Standard.
 
 ### Projects
 
@@ -184,7 +192,7 @@ Type a span the way `muster reclaim --after` takes it: `30m`, `2h`, `1.25h` or `
 ### About
 
 - **Version:** the app's version.
-- **Settings on this Mac:** the app's settings folder (`~/Library/Application Support/ai.sweetlemon.muster`) and what's in it: `projects.json` (the projects you added, hid or renamed), `settings.json` (the claim lease and the LIVE window) and `helper/` (the helper's account, model and conversations). Appearance, text size, Group by, saved views and the pane's width are kept by the window itself.
+- **Settings on this Mac:** the app's settings folder (`~/Library/Application Support/ai.sweetlemon.muster`) and what's in it: `projects.json` (the projects you added, hid or renamed), `settings.json` (the claim lease and the LIVE window) and `helper/` (the helper's account, model and conversations). Appearance, the display mode, text size, Group by, saved views and the pane's width are kept by the window itself.
 - **What it reads:** the queues it found on its own (at `~/playground/<project>/tasks`, and one level deeper), then the ones you added (or that you added none), each with its folder, and the folders of the Claude Code session transcripts. All of it is read on this Mac and nothing is sent anywhere; only what you write to the helper goes to Anthropic, through your own Claude Code.
 
 ## Colours

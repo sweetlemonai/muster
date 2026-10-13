@@ -39,7 +39,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Projects sidebar** (left): All and every queue (found at `~/playground/*/tasks` and one level deeper,
   `~/playground/*/*/tasks`, plus ones added by hand), each with its task count, how many need you (orange) and how many are in progress
   (the Building colour), and **+ Project** at the bottom (Settings, at Projects). The header keeps only the views, New task and
-  Appearance, on one line. Under each name, quietly (0037, `activity.ts`): the Building-colour
+  the display mode chip (0038), on one line. Under each name, quietly (0037, `activity.ts`): the Building-colour
   dot and "2 working" (tasks with a live session, or a check-in or heartbeat in the last 30
   minutes; never in Done, and in Your check only while live), or **stalled** in the attention
   colour (work in Building, not blocked and not the owner's, and nothing in the project for over
@@ -77,8 +77,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   another project's; New queue stores the default. Saved in `~/Library/Application Support/ai.sweetlemon.muster/projects.json`.
   Folders are picked by the core's own dialog, so the window never hands the core a path.
 - **Settings** (task 0036, `Settings.tsx`, `settingsData.ts`, `settings.rs`): a view in the header's
-  row (never a window), its groups docked on the left (Appearance, Projects, Agents, About;
-  `SETTINGS_GROUPS` is where later groups such as display modes and notifications go), the open
+  row (never a window), its groups docked on the left (Appearance, Display, Projects, Agents,
+  About; `SETTINGS_GROUPS` is where later groups such as notifications go), the open
   group's settings on the right. Appearance is only here and Help only in the header: on the
   owner's word (2026-10-13) the header's one-click Appearance button and Settings' Help group
   (links into the manual, which the Help tab and every ? already open) were removed; the old
@@ -96,6 +96,26 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   (0043) open Settings for Appearance, Projects and Settings. **About** shows the version, the
   settings folder and its files, and every folder the app reads: the queues found on their own,
   then the ones added by you (or that there are none), with paths under the home folder as `~/`.
+- **Display modes** (task 0038, `modes.ts`, `ModeViews.tsx`, `Display.tsx`): **ADHD** (the default:
+  today's screens), **Standard** and **Focus**, picked in Settings › Display (three chips and a
+  table of every element by mode, the current column lit), shown as a chip at the end of the
+  header that opens that page, and toggled by ⌘. (Focus from any mode, back to the one before).
+  Kept in `localStorage` (`muster.displayMode`, `muster.displayMode.before`). `modes.ts` is one
+  table of the elements a mode could change (filter bar, Who and Group by, card lines, the Done
+  line, board columns, Recently finished, task pane sections, sidebar), each with its behaviour,
+  words and how to get back what it folds;
+  components read it through `useLook` only, and `modes.test.ts` fails on a read of an element
+  the table lacks, on a mode read around it, and on a row nothing reads. Standard: the filter
+  groups and Sort behind **Filters (n)**, opened in place; Who and Group by as their value; brief
+  cards (who, check-in, branch, tags, parent, estimate and files on the selected card); Vision,
+  Work, and the Log and check-ins folded to a header each. Focus: Building, Testing and Your check
+  open, the other columns strips with counts and needs-you counts (a click opens one until the
+  mode changes, in the plain and the grouped board); cards are the title, one status line and
+  blocked, quiet or needs you; the filter bar is a **Search and filters ⌘F** button until ⌘F, and
+  stays while a search, filter or Who hides tasks; the sidebar is 150 px of names, a working dot
+  and needs-you counts; Recently finished (0051) is a strip with its name and count that opens in
+  place (Fold puts it back), and reads no costs while folded; the Done card's "done 4 min ago" line
+  shows in all three; the pane folds as Standard. Needs-you counts and badges show in every mode.
 - **Themes and accents** (Settings' Appearance): 7 themes (Violet night, Violet day, Graphite,
   Midnight, Paper, Snow, High contrast), with Match the Mac picking one dark and one light, and 6
   accents (Violet, Teal, Rose, Gold, Green, Graphite). No blue, no orange. They apply live and are

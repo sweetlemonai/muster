@@ -132,7 +132,7 @@ describe("Accept all's confirm and the keyboard (review, round 1)", () => {
     let stopped = false;
     const e = { key, metaKey: false, ctrlKey: false, stopPropagation: () => (stopped = true), preventDefault: () => {} };
     confirmEscape(e, busy, () => log.push("cancel"));
-    if (!stopped) windowKey(e, { closePane: () => log.push("close pane"), newTask: () => log.push("new task"), search: () => log.push("search") });
+    if (!stopped) windowKey(e, { closePane: () => log.push("close pane"), newTask: () => log.push("new task"), search: () => log.push("search"), focusMode: () => log.push("focus") });
     return { log, stopped };
   }
   it("Esc cancels the confirm and the pane stays open", () => {

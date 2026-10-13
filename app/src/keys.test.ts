@@ -40,7 +40,7 @@ function windowWith(search: string, newTask = true) {
     // The "Name for this view" field stops Esc itself (FilterBar).
     if (!stopped && target === viewName && key === "Escape") e.stopPropagation();
     // App's shortcuts.
-    if (!stopped) windowKey(e, { closePane, newTask: () => s.log.push("new task"), search: () => s.searched++ });
+    if (!stopped) windowKey(e, { closePane, newTask: () => s.log.push("new task"), search: () => s.searched++, focusMode: () => s.log.push("focus") });
     return { stopped, prevented };
   };
   return { s, press };

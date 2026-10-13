@@ -5,19 +5,13 @@ import { taskKey } from "./taskKey";
 import { estimateLeft, type Group, GROUP_BYS, type GroupBy, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
 import type { Note, Task } from "./types";
 import EffortGroups, { useAcceptResults } from "./EffortGroups";
+import { needsYouCount } from "./human";
+import { ChoiceChips, ColumnHead } from "./ModeViews";
+import type { ColumnFolds } from "./modes";
 
 /** Group by: None · Feature · Goal, on screen above the board and the table, the current one lit. */
 export function GroupByChips({ value, onChange }: { value: GroupBy; onChange: (g: GroupBy) => void }) {
-  return (
-    <span className="group-by" role="group" aria-label="Group by">
-      <span className="meta">Group by</span>
-      {GROUP_BYS.map((g) => (
-        <button key={g.id} className={value === g.id ? "chip on" : "chip"} aria-pressed={value === g.id} onClick={() => onChange(g.id)}>
-          {g.label}
-        </button>
-      ))}
-    </span>
-  );
+  return <ChoiceChips label="Group by" className="group-by" aria="Group by" value={value} options={GROUP_BYS} onPick={onChange} />;
 }
 
 /** A band's heading: the feature or goal (click to open it), the stage its tasks give it, its
@@ -94,7 +88,7 @@ function BacklogBand({ by, parts, tasks, renderCard }: { by: "feature" | "goal";
  *  in the board's sort (task 0032). Goals and features are the bands, never cards in the columns.
  *  With `backlog`, the Backlog band comes first and takes the Backlog tasks of the last band
  *  (No feature or No goal), which then holds the rest. */
-export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderCard, onChanged, backlog }: {
+export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderCard, onChanged, backlog, fold }: {
   groups: Group[];
   by: "feature" | "goal";
   sort: BoardSort;
@@ -105,6 +99,8 @@ export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderC
   /** With it, each band's Your check column is grouped by effort, with Accept all (0043). */
   onChanged?: () => void;
   backlog?: BacklogBandParts;
+  /** The columns the display mode folds (Focus, 0038), the same in every band as on the board. */
+  fold?: ColumnFolds;
 }) {
   const results = useAcceptResults();
   const loose = backlog ? groups.find((g) => !g.head) : undefined;
@@ -126,14 +122,13 @@ export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderC
             {g.items.length === 0 ? (
               <p className="none">No tasks yet</p>
             ) : (
-              <div className="board band-board" style={{ gridTemplateColumns: STAGES.map((s) => ((cols[s.id] ?? []).length || kept(s.id) ? "minmax(118px, 1fr)" : "44px")).join(" ") }}>
+              <div className="board band-board" style={{ gridTemplateColumns: STAGES.map((s) => ((cols[s.id] ?? []).length || kept(s.id)) && fold?.of(s.id) !== "folded" ? "minmax(118px, 1fr)" : "44px").join(" ") }}>
                 {STAGES.map((c) => {
                   const list = cols[c.id] ?? [];
+                  const folded = fold?.of(c.id) ?? "fixed";
                   return (
-                    <section key={c.id} className={`column col-${c.id}${list.length || kept(c.id) ? "" : " empty"}`}>
-                      <h2 title={c.role ? `${c.label}: ${c.role}` : c.label}>
-                        {c.label} <small>{list.length}</small>
-                      </h2>
+                    <section key={c.id} className={`column col-${c.id}${folded === "folded" ? " folded" : list.length || kept(c.id) ? "" : " empty"}`}>
+                      <ColumnHead stage={c} count={list.length} needs={needsYouCount(list)} fold={folded} onFold={() => fold?.toggle(c.id)} />
                       <div className="cards">
                         {c.id === "your-check" && onChanged && (list.length > 0 || kept(c.id))
                           ? <EffortGroups tasks={list} place={place} renderCard={renderCard} onChanged={onChanged} />

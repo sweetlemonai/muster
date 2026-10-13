@@ -5,6 +5,7 @@ import { estimateText } from "./fields";
 import { Hl, HlId } from "./FilterBar";
 import { isHuman } from "./human";
 import { ago } from "./lib";
+import { cardLines, useLook } from "./modes";
 import { CardPing } from "./Ping";
 import type { Task } from "./types";
 import YouRibbon from "./YouRibbon";
@@ -29,6 +30,9 @@ export default function Card(props: CardProps) {
  *  is a needs-you card. */
 function CardButton({ t, now, multi, parent, onOpen, active, words }: CardProps) {
   const priority = t.priority || "normal";
+  // The display mode (0038): every line, Standard's brief card, or Focus's title and status line.
+  const lines = cardLines(useLook("card-lines"), active);
+  const all = lines === "all";
   return (
     <button className={cardClass(t, active)} onClick={onOpen}>
       {isHuman(t) && <YouRibbon />}
@@ -37,24 +41,24 @@ function CardButton({ t, now, multi, parent, onOpen, active, words }: CardProps)
         {multi && <span className="q">{t.queue}</span>}
         <span className="id"><HlId t={t} words={words} /></span>
         <LiveDot t={t} />
-        <span className={`kind ${t.kind}`}>{t.kind}</span>
-        <span className={`pri pri-${priority}`} title={`Priority: ${priority}`}>{priority}</span>
+        {lines !== "status" && <span className={`kind ${t.kind}`}>{t.kind}</span>}
+        {lines !== "status" && <span className={`pri pri-${priority}`} title={`Priority: ${priority}`}>{priority}</span>}
       </span>
       <span className="title">{t.title ? <Hl text={t.title} words={words} /> : "(no title)"}</span>
-      {parent && <span className="parent-line">{parent}</span>}
-      {t.tags.length > 0 && (
+      {all && parent && <span className="parent-line">{parent}</span>}
+      {all && t.tags.length > 0 && (
         <span className="tags">
           {t.tags.map((g) => <span key={g} className="tag">#<Hl text={g} words={words} /></span>)}
         </span>
       )}
-      <CardStatus t={t} now={now} />
+      <CardStatus t={t} now={now} lines={lines} />
       <span className="card-bottom">
         <BlockWhy t={t} short />
         {t.waitingForOwner && <span className="badge warn">needs you</span>}
-        {t.openQuestions > 0 && <span className="badge">{t.openQuestions} open Q</span>}
-        {t.attachments.length > 0 && <span className="badge">{t.attachments.length} file{t.attachments.length === 1 ? "" : "s"}</span>}
-        {estimateText(t) && <span className="badge est" title="Estimated agent time, test time and tokens">{estimateText(t)}</span>}
-        <span className="age">{ago(now, t.modified)}</span>
+        {lines !== "status" && t.openQuestions > 0 && <span className="badge">{t.openQuestions} open Q</span>}
+        {all && t.attachments.length > 0 && <span className="badge">{t.attachments.length} file{t.attachments.length === 1 ? "" : "s"}</span>}
+        {all && estimateText(t) && <span className="badge est" title="Estimated agent time, test time and tokens">{estimateText(t)}</span>}
+        {lines !== "status" && <span className="age">{ago(now, t.modified)}</span>}
       </span>
     </button>
   );
