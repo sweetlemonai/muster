@@ -51,7 +51,7 @@ pub fn backlog_dir(root: &Path) -> PathBuf {
 }
 
 /// `.md` (any case), not a dot-file, and not a task file (`NNNN-slug.md`).
-fn is_note_file(name: &str) -> bool {
+pub(crate) fn is_note_file(name: &str) -> bool {
     let md = name
         .len()
         .checked_sub(3)

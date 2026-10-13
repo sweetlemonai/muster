@@ -357,6 +357,70 @@ class TaskTests(unittest.TestCase):
         self.assertEqual([(n["file"], n["title"]) for n in json.loads(self.text("tasks.json"))["backlog"]],
                          [(name, "Found a bug")])
 
+    def muster(self, *args):
+        r = subprocess.run([str(MUSTER), args[0], "--queue", str(self.root), *args[1:]],
+                           env=self.env, capture_output=True, text=True)
+        return r
+
+    def test_manifest_checks_index_md_against_the_files_without_making_it(self):
+        stale = "problem: INDEX.md doesn't match the task files (rebuild with `muster index`)"
+        # None yet: nothing to check.
+        self.assertEqual(self.manifest("--check").returncode, 0)
+        # Made by muster, from files the two must read alike: a note with a Unicode name, a task
+        # over 1 MB (read by its size only), a flat-layout-looking file in the queue folder, and
+        # files that aren't sources (dot-files, dropped notes, README, tasks.json).
+        self.note("inbox/idée café ☕.md", "Une idée\n", 10)
+        big = TASK_FILE.replace("id: 0042", "id: 0044") + "x" * (1024 * 1024)
+        (self.root / "doing" / "0044-big.md").write_text(big, encoding="utf-8")
+        (self.root / "0045-root.md").write_text(TASK_FILE.replace("id: 0042", "id: 0045"), encoding="utf-8")
+        self.note("inbox/.hidden.md", "x", 10)
+        self.note("inbox/dropped/old.md", "x", 10)
+        r = self.muster("index")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        index = self.text("INDEX.md")
+        self.assertIn("idée café ☕.md · Une idée", index)
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertEqual(self.manifest().returncode, 0)  # tasks.json isn't a source
+        self.assertEqual(self.manifest("--check").returncode, 0)
+        # A write outside muster (Drover answers under its own lock, never through muster, or a
+        # hand edit): the list is due a refresh. That's a warning, not a failure; manifest.py
+        # never writes INDEX.md.
+        refresh = ("warning: INDEX.md: refresh due (the files changed outside muster; the next "
+                   "muster write or `muster index` refreshes it)")
+        f = self.root / "todo" / "0043-old.md"
+        f.write_text(OLD_STYLE.replace("# Old style questions", "# Edited by hand"), encoding="utf-8")
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn(refresh, r.stdout)
+        self.assertNotIn(stale, r.stdout)
+        self.manifest()
+        self.assertEqual(self.text("INDEX.md"), index)
+        m = json.loads(self.text("tasks.json"))
+        self.assertIn(refresh[len("warning: "):], m["warnings"])
+        self.assertNotIn(stale[len("problem: "):], m["problems"])
+        self.assertEqual(self.muster("index", "--check").returncode, 1)
+        self.assertEqual(self.muster("index").returncode, 0)
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 0)
+        self.assertNotIn("INDEX.md", r.stdout)
+        # A note added counts as much as a task; the next muster write refreshes the list.
+        self.note("inbox/another.md", "Another", 10)
+        self.assertIn(refresh, self.manifest("--check").stdout)
+        r = self.muster("add", "--as", "wt-a", "Through", "muster")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("INDEX.md", self.manifest("--check").stdout)
+        # A list without its sources line, or one that isn't a plain file, isn't muster's: a problem.
+        (self.root / "INDEX.md").write_text("# My own list\n", encoding="utf-8")
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn(stale, r.stdout)
+        (self.root / "INDEX.md").unlink()
+        (self.root / "INDEX.md").symlink_to(self.root / "README.md")
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn(stale, r.stdout)
+
     def item(self, id_, fm, folder="todo"):
         """A task file `<id>-x.md` with these front-matter lines."""
         (self.root / folder / f"{id_}-x.md").write_text(

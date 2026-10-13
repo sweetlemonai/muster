@@ -3,7 +3,7 @@
 //! from the current folder (a queue itself, or a `tasks/` beside or above it).
 
 use crate::session::{self, Session};
-use crate::{backlog, fields, ops, projects, queue};
+use crate::{backlog, fields, index, ops, projects, queue};
 use std::path::{Path, PathBuf};
 
 /// The environment a command reads its caller from (`std::env::var`, or a test's own).
@@ -15,6 +15,7 @@ struct Args {
     flags: std::collections::HashMap<String, String>,
     json: bool,
     keep: bool,
+    check: bool,
 }
 
 /// Options and positionals; after `--`, everything is positional (text that starts with `--`).
@@ -24,6 +25,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         flags: Default::default(),
         json: false,
         keep: false,
+        check: false,
     };
     let mut it = argv.iter();
     let mut rest = false;
@@ -36,6 +38,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--" => rest = true,
             "--json" => a.json = true,
             "--keep" => a.keep = true,
+            "--check" => a.check = true,
             "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on"
             | "--tags" | "--tag" | "--time" | "--test-time" | "--tokens" | "--stage" | "--gate"
             | "--commit" | "--to" | "--from" | "--after" | "--session" | "--level" | "--parent"
@@ -458,6 +461,17 @@ fn list_text(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> String {
         }
     }
     out
+}
+
+/// What `muster check` says about INDEX.md, in the problems' form (`q:` like `tasks_of`'s): a
+/// list that shows something other than the files is a problem; one only due a refresh (the
+/// files changed outside muster, as Drover's answers do) is a warning; none yet is fine.
+fn index_check_line(status: index::Status) -> Option<String> {
+    match status {
+        index::Status::Stale => Some(format!("q: {}", index::STALE)),
+        index::Status::Refresh => Some(format!("q: warning: {}", index::REFRESH)),
+        index::Status::Current | index::Status::Missing => None,
+    }
 }
 
 /// `--body`: the text, `-` for stdin (up to 1 MB), or None when not given. A one-line command can
@@ -1132,9 +1146,47 @@ fn run_on(
                     println!("{}: waits on the owner to verify {}", t.id, open.join(", "));
                 }
             }
-            // Warnings (a goal past its due date) are shown but don't fail the check.
-            let failed = s.problems.iter().any(|p| !queue::is_warning(p));
+            let index_line = index_check_line(index::status(root));
+            if let Some(l) = &index_line {
+                println!("{l}");
+            }
+            // Warnings (a goal past its due date, a list due a refresh) are shown but don't fail
+            // the check.
+            let failed = s
+                .problems
+                .iter()
+                .chain(&index_line)
+                .any(|p| !queue::is_warning(p));
             Ok(if failed { 1 } else { 0 })
+        }
+        "index" => {
+            let path = root.join(index::FILE);
+            if a.check {
+                return Ok(match index::status(root) {
+                    index::Status::Current => {
+                        println!("{} is up to date", path.display());
+                        0
+                    }
+                    index::Status::Stale => {
+                        println!("{}", index::STALE);
+                        1
+                    }
+                    index::Status::Refresh => {
+                        println!("{}", index::REFRESH);
+                        1
+                    }
+                    index::Status::Missing => {
+                        println!("there's no INDEX.md yet (make it with `muster index`)");
+                        1
+                    }
+                });
+            }
+            if index::rebuild(root)? {
+                println!("rebuilt {}", path.display());
+            } else {
+                println!("{} is up to date", path.display());
+            }
+            Ok(0)
         }
         other => Err(format!("unknown command {other:?} (see `muster help`)")),
     }
@@ -1647,6 +1699,60 @@ mod tests {
         let t = queue::read_task(d.path(), "0001").unwrap();
         assert_eq!((t.questions.len(), t.open_questions), (1, 0));
         assert!(t.questions[0].escalated && t.questions[0].owner_answered);
+    }
+
+    #[test]
+    fn index_rebuilds_the_master_list_and_check_reports_a_stale_one() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let code = |args: &[&str]| {
+            let mut v = sv(&args[..1]);
+            v.extend(sv(&["--queue", &q, "--as", "owner"]));
+            v.extend(sv(&args[1..]));
+            main(&v)
+        };
+        let index = d.path().join(crate::index::FILE);
+        // No list yet: `index --check` says so; `check` doesn't call it a problem.
+        assert_eq!(code(&["index", "--check"]), 1);
+        assert_eq!(code(&["check"]), 0);
+        assert_eq!(code(&["index"]), 0);
+        assert!(std::fs::read_to_string(&index)
+            .unwrap()
+            .starts_with("# Master list\n"));
+        // Every write keeps it current.
+        assert_eq!(code(&["new", "Listed"]), 0);
+        assert_eq!(code(&["index", "--check"]), 0);
+        assert!(std::fs::read_to_string(&index)
+            .unwrap()
+            .contains("[Listed](todo/0001-listed.md)"));
+        // A hand edit leaves it stale: both checks fail until it's rebuilt.
+        let f = d.path().join("todo/0001-listed.md");
+        let text = std::fs::read_to_string(&f).unwrap();
+        std::fs::write(&f, text.replace("# Listed", "# Edited by hand")).unwrap();
+        assert_eq!(code(&["index", "--check"]), 1);
+        assert_eq!(code(&["check"]), 1);
+        assert_eq!(code(&["index"]), 0);
+        assert_eq!(code(&["index", "--check"]), 0);
+        assert_eq!(code(&["check"]), 0);
+        assert!(std::fs::read_to_string(&index)
+            .unwrap()
+            .contains("[Edited by hand]"));
+        // A write outside muster that the list doesn't show (Drover's answer): check warns
+        // without failing; `index --check` still says it isn't as muster would write it.
+        let text = std::fs::read_to_string(&f).unwrap();
+        std::fs::write(&f, format!("{text}- 2026-10-14 09:00 owner: answered Q1\n")).unwrap();
+        assert_eq!(code(&["check"]), 0);
+        assert_eq!(code(&["index", "--check"]), 1);
+        assert_eq!(code(&["index"]), 0);
+        assert_eq!(code(&["index", "--check"]), 0);
+        // The lines check prints: a warning by the problems' convention, or a problem.
+        let refresh = index_check_line(index::Status::Refresh).unwrap();
+        assert!(queue::is_warning(&refresh), "{refresh}");
+        assert!(refresh.contains("INDEX.md: refresh due"), "{refresh}");
+        let stale = index_check_line(index::Status::Stale).unwrap();
+        assert!(!queue::is_warning(&stale), "{stale}");
+        assert_eq!(index_check_line(index::Status::Missing), None);
+        assert_eq!(index_check_line(index::Status::Current), None);
     }
 
     /// `<base>/<project>/tasks` as a queue, and `<base>/<project>/main` as its repo.

@@ -76,13 +76,27 @@ Prints the command and its output, verbatim.
 `muster help` lists every command, the same list as the app's Help tab. The ones /mu doesn't
 route run as `! muster …` in a session: new, move, stage, set, attach, escalate, inbox, reclaim,
 checkin (task 0030), projects, init, tick, untick (the owner's criteria, task 0028), edit (task
-0020), the backlog's shape, file and drop (task 0015), and link and comment (task 0017: a task's
-external links, and a comment thread anyone may add to). Also coming: `depends:` (task 0019).
+0020), the backlog's shape, file and drop (task 0015), link and comment (task 0017: a task's
+external links, and a comment thread anyone may add to), and index (task 0018). Also coming:
+`depends:` (task 0019).
 
 Who's on it (task 0030): `checkin <id> "<what's done, what's next>" [--pct <0-100>]` is the holder
 saying how far along it is, which renews the claim too. Inside a session every command stamps the
 session next to `--as`; with no `--as` the actor is `$MUSTER_AS`, then the folder's git user.name,
 never the login name.
+
+The master list (task 0018): `INDEX.md` in the queue folder lists every goal with its features and
+tasks, then the tasks under none by stage, the backlog notes, and what's done (collapsed), each
+with its stage, the tasks it still waits on (`depends:` not done yet, as "waits on 0014"),
+priority, type, estimate (the text `muster list` shows: agent time, test time, tokens), how many
+comments it has, and a link to its file. muster rewrites it after every
+change it makes, under the queue's lock, and only when its text changed. It's generated, so never
+edit it by hand. After a hand edit to a task file, `muster index` rebuilds it, and `muster index
+--check` exits 1 when it isn't exactly what muster would write. `muster check` fails on a list
+that shows something the files no longer say, and only warns ("INDEX.md: refresh due") when just
+its "As of" and sources lines are behind, as after Drover writes an answer outside muster.
+`manifest.py --check` reads only the sources line at the end, so a mismatch there is a warning;
+a list without one is a problem. A missing list is fine, and `manifest.py` never writes it.
 
 Levels (task 0016): `new --level goal|feature --parent <id> --due YYYY-MM-DD` and `set <id>
 level|parent|due <value>` (an empty parent or due clears it), with the rules checked: a task's

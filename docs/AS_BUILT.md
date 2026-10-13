@@ -23,9 +23,10 @@ gives one view of everything and checks the queue for problems. The owner reads
 | `task` CLI: ask / answer / escalate / inbox | `bin/task` | A stand-in since task 0002: it runs the same `muster` commands |
 | Answer push | `bin/answer-hook.py` | Live in Drover's checkouts (`drover/main`, `agent-controls`, `cleanup`, `docs-wt`), verified end to end on 2026-10-12 |
 | Manifest + check | `bin/manifest.py` → `tasks.json` | Built, tested. Capture rebuilds it on every commit |
+| Master list | `INDEX.md` per queue, written by `muster` after every change; `muster index` | Built, tested (task 0018). `muster check` and `manifest.py --check` report a stale one. No app link yet: the app has no open-a-file path |
 | Owner's waiting list | `WAITING-FOR-OWNER.md` per queue (by hand); Drover's Home (task 0015) | By hand here. Built in Drover |
 | Attachments | `attachments/<id>/` per queue | In use (screenshots, mockups) |
-| `muster` command line | the app's binary, `bin/muster` shim | Built: new, list, show, move, set, note, attach, answer, check, projects, init, the backlog commands add, shape, file, drop, the stage commands pass, return, block, unblock, stage, the claims claim, next, heartbeat, checkin, reclaim, and questions ask, escalate, inbox (same rules as the app) |
+| `muster` command line | the app's binary, `bin/muster` shim | Built: new, list, show, move, set, note, attach, answer, check, index, projects, init, the backlog commands add, shape, file, drop, the stage commands pass, return, block, unblock, stage, the claims claim, next, heartbeat, checkin, reclaim, and questions ask, escalate, inbox (same rules as the app) |
 | Commands `/muster`, `/mu` | `docs/COMMANDS.md` | Designed, not built |
 | Desktop app | `app/` (Tauri 2 + React 19, decision 0001) | Built and running: board, new task, task management, waiting for you with answering, files, activity, problems, projects, the AI helper |
 

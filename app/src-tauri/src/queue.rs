@@ -28,6 +28,8 @@ pub const STAGES: [&str; 7] = [
 /// without one is a task.
 pub const LEVELS: [&str; 3] = ["goal", "feature", "task"];
 pub(crate) const MAX_TASK_BYTES: u64 = 1024 * 1024;
+/// The queue's master list, INDEX.md (task 0018).
+pub use crate::index::index_md;
 const MAX_ANSWER_CHARS: usize = 4000;
 const MAX_IMAGE_BYTES: u64 = 15 * 1024 * 1024;
 
@@ -1957,8 +1959,24 @@ pub fn answer(
     })
 }
 
-/// Run `f` holding the queue's lock (an exclusive flock on `mail/.lock`, file contract rule 1).
+/// Run `f` holding the queue's lock (an exclusive flock on `mail/.lock`, file contract rule 1),
+/// then, still holding it, bring INDEX.md up to date (task 0018). Every write muster makes to a
+/// queue goes through here, so this is the one place the master list follows the files.
 pub fn with_lock<T>(root: &Path, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    hold_lock(root, || {
+        let result = f();
+        // The change is made (or refused) either way, so a list that can't be written never
+        // turns it into an error: `muster check` reports the stale list instead.
+        let _ = crate::index::refresh_locked(root);
+        result
+    })
+}
+
+/// The queue's lock alone, without bringing INDEX.md up to date: for `index::rebuild`.
+pub(crate) fn hold_lock<T>(
+    root: &Path,
+    f: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
     let mail = root.join("mail");
     fs::create_dir_all(&mail).map_err(|e| e.to_string())?;
     let lock = fs::OpenOptions::new()
