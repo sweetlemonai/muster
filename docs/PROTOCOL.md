@@ -277,6 +277,17 @@ Ids: only the tool numbers tasks. Coders who find something new run `muster add 
 which drops a note in `inbox/` named `<date-time>-<short-slug>.md` (no number), and a shaping
 session files it with `muster file` (see the note at the top).
 
+## Sessions (decision 0004)
+
+- **One session per task.** Build a task in its own fresh session and worktree; that session
+  claims it, checks in and passes it itself, then ends. It never takes a second task.
+- **Coordinators stay thin:** they read `muster list --json` and builders' short reports, merge,
+  and talk to other coordinators; subagents read the code.
+- **Hand off at about 150k context**, coordinator or builder: write the state (check-in, notes,
+  a short handoff note) and let a fresh session continue. Don't wait until the context is full;
+  every turn re-reads all of it.
+- **Name sessions by role:** `claude -n muster-lead`, `/rename muster-build-0042`.
+
 ## Working a task (coder)
 
 1. **Pick:** `todo/`, high priority first, then lowest id. Skip tasks whose `depends on` (in

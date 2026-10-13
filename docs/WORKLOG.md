@@ -4,6 +4,11 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Decision 0004: one session per task, thin coordinator, handoff at ~150k
+**Decided:** the owner said yes after seeing today's numbers (almost every token is context
+re-read per turn; a 450k coordinator pays 450k per turn). Record:
+`docs/decisions/0004-one-session-per-task-thin-coordinator.md`. 0009 and 0023 note it.
+
 ## 2026-10-13 — The four parts: idea → task → run → gate (proposal)
 **Did:** the owner: "idea -> task -> execution -> gates -> done; execution is Drover, task is
 Muster, idea is the third part and gates (QA, visual QA) the fourth". Mapped what exists (GenIdea
