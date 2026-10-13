@@ -454,6 +454,13 @@ pub struct Task {
     /// `muster list --json` leave it out, and the window fetches it on its own (`search_index`).
     #[serde(skip)]
     pub search: String,
+    /// The sessions its holder (`holder()`) and log name, as short ids (0025), for the card's
+    /// live check.
+    #[serde(skip)]
+    pub session_ids: Vec<String>,
+    /// One of those sessions' transcripts changed in the last 5 minutes (0025). Set by the app's
+    /// state read (`work::mark_live`); false wherever nothing set it.
+    pub live: bool,
 }
 
 /// A goal's or feature's tasks (its descendants of level task): how many are done, of how many,
@@ -683,7 +690,7 @@ pub(crate) fn comments_span(text: &str) -> Option<(usize, usize, usize)> {
 }
 
 /// The task's Log section (the last `## Log`; see `log_span`).
-fn log_section(body: &str) -> Option<&str> {
+pub(crate) fn log_section(body: &str) -> Option<&str> {
     log_span(body).map(|(a, b)| &body[a..b])
 }
 
@@ -896,7 +903,7 @@ pub fn parse_task(
         .filter(|t| !t.is_empty())
         .collect();
     let search = crate::search::search_text(&title, &tags, body);
-    Some(Task {
+    let mut task = Task {
         level,
         bad_level,
         parent: get("parent").chars().take(40).collect(),
@@ -956,7 +963,12 @@ pub fn parse_task(
         log_tail,
         modified,
         search,
-    })
+        session_ids: Vec::new(),
+        live: false,
+    };
+    // The sessions its log names, and any its claim or `held-by` names.
+    task.session_ids = crate::work::session_ids(&[&task.claimed_by, &task.held_by], body);
+    Some(task)
 }
 
 fn list_attachments(root: &Path, id: &str) -> Vec<String> {

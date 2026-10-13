@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SearchIndex } from "./search";
-import type { Project, State } from "./types";
+import type { Project, State, Work } from "./types";
 
 // The only way the window talks to the core. Queues are named, never given as paths.
 export const api = {
@@ -42,6 +42,10 @@ export const api = {
   addNote: (queue: string, id: string, note: string, stamp: string) => invoke<string>("add_note", { queue, id, note, stamp }),
   tickCriterion: (queue: string, id: string, which: string, undo: boolean, stamp: string) =>
     invoke<string>("tick_criterion", { queue, id, which, undo, stamp }),
+  // Who worked on a task and what it cost (0025), from the session transcripts on this Mac; and
+  // one of those sessions' transcripts as folded Markdown (only a session the task names).
+  taskSessions: (queue: string, id: string) => invoke<Work>("task_sessions", { queue, id }),
+  sessionTranscript: (queue: string, id: string, session: string) => invoke<string>("session_transcript", { queue, id, session }),
   // Backlog notes (0015), named by their file name. Add returns the new note's file name; file
   // makes a task in Shaping and moves the note into its attachments; drop sets it aside.
   addBacklogNote: (queue: string, text: string, stamp: string) => invoke<string>("add_backlog_note", { queue, text, stamp }),

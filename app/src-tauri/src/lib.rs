@@ -14,11 +14,13 @@ pub mod projects;
 pub mod queue;
 pub mod search;
 pub mod session;
+pub mod transcripts;
 pub mod vision;
+pub mod work;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
@@ -29,6 +31,8 @@ pub(crate) struct AppState {
     /// Serializes changes to projects.json.
     config: Mutex<()>,
     pub(crate) config_file: PathBuf,
+    /// Session transcripts under the home folder (0025), read and cached off the main thread.
+    transcripts: Arc<transcripts::Reader>,
 }
 
 fn base() -> PathBuf {
@@ -73,9 +77,12 @@ async fn state(app: tauri::State<'_, AppState>) -> Result<queue::State, String> 
     let file = app.config_file.clone();
     // The cache is small and the read is quick on a warm cache; take it inside the blocking task.
     let cache = std::mem::take(&mut *app.cache.lock().map_err(|e| e.to_string())?);
+    let reader = app.transcripts.clone();
     let (state, cache) = blocking(move || {
         let mut cache = cache;
-        let s = queue::read_state(&queues(&file), &mut cache);
+        let mut s = queue::read_state(&queues(&file), &mut cache);
+        // The cards' live dot: file times only, about a millisecond for 50 sessions.
+        work::mark_live(&mut s.tasks, &reader, s.now);
         Ok((s, cache))
     })
     .await?;
@@ -425,6 +432,36 @@ async fn tick_criterion(
         )
     })
     .await
+}
+
+/// Who worked on a task and what it cost (0025): its sessions with tokens, times and live, the
+/// totals against the estimates, and a progress guess. Transcripts are read on this Mac only.
+#[tauri::command]
+async fn task_sessions(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+) -> Result<work::Work, String> {
+    check_id(&id)?;
+    let file = app.config_file.clone();
+    let reader = app.transcripts.clone();
+    blocking(move || work::for_task(&reader, &queue_root(&file, &queue)?, &id, queue::now_secs()))
+        .await
+}
+
+/// One of a task's sessions' transcripts, folded to Markdown for the task pane (0025). Only a
+/// session the task names.
+#[tauri::command]
+async fn session_transcript(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+    session: String,
+) -> Result<String, String> {
+    check_id(&id)?;
+    let file = app.config_file.clone();
+    let reader = app.transcripts.clone();
+    blocking(move || work::transcript(&reader, &queue_root(&file, &queue)?, &id, &session)).await
 }
 
 /// The owner's quick add (0015): `text`, one line, into the queue's backlog as a note. Returns
@@ -850,6 +887,7 @@ pub fn run() {
                 cache: Mutex::new(queue::Cache::default()),
                 helpers: Mutex::new(HashMap::new()),
                 config: Mutex::new(()),
+                transcripts: Arc::new(transcripts::Reader::new(home())),
                 config_file: dir.join("projects.json"),
             });
             Ok(())
@@ -878,6 +916,8 @@ pub fn run() {
             set_field,
             add_note,
             tick_criterion,
+            task_sessions,
+            session_transcript,
             add_backlog_note,
             file_note,
             drop_note,

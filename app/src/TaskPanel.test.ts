@@ -10,7 +10,7 @@ import type { StageStep, Task } from "./types";
 const task = (over: Partial<Task>): Task => ({
   queue: "demo", id: "0007", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
   folder: "todo", path: "todo/0007-t.md", claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "", capturedAt: "",
-  blockHistory: [], questions: [], openQuestions: 0, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [],
+  blockHistory: [], questions: [], openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [],
   attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", search: "", ...over,
 });
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ").trim();
@@ -350,5 +350,13 @@ describe("the pane's 0017 fields in the D2 layout", () => {
     expect(html.indexOf('data-part="body"')).toBeLessThan(html.indexOf('data-part="vision"'));
     expect(html.indexOf('data-part="vision"')).toBeLessThan(html.indexOf('class="comments"'));
     expect(html).toContain("Vision <small>1 open conflict</small>");
+  });
+});
+
+describe("task pane Work section (0025)", () => {
+  it("sits below the description and says it's reading the transcripts until the core answers", () => {
+    const { html } = pane({ stage: "building" });
+    expect(html.indexOf('<section class="work" aria-label="Work">')).toBeGreaterThan(html.indexOf('<section class="body">'));
+    expect(html).toContain("Reading the sessions&#x27; transcripts…");
   });
 });

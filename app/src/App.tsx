@@ -8,7 +8,7 @@ import { backlogColumn, backlogNotes, NoteCard, noteKey, projectCount, QuickAdd 
 import Projects from "./Projects";
 import NewTask from "./NewTask";
 import Appearance from "./Appearance";
-import { CardBand, cardClass } from "./CardLook";
+import { CardBand, cardClass, LiveDot } from "./CardLook";
 import CardStatus from "./CardStatus";
 import { GraphView } from "./GraphView";
 import { TableView, TimelineView } from "./Views";
@@ -508,6 +508,7 @@ function Card({ t, now, multi, parent, onOpen, active, words }: { t: Task; now: 
       <span className="card-top">
         {multi && <span className="q">{t.queue}</span>}
         <span className="id"><HlId id={t.id} words={words} /></span>
+        <LiveDot t={t} />
         <span className={`kind ${t.kind}`}>{t.kind}</span>
         <span className={`pri pri-${priority}`} title={`Priority: ${priority}`}>{priority}</span>
       </span>

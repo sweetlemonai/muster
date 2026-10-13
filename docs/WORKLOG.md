@@ -4,6 +4,29 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Who worked on a task and what it cost: sessions, tokens, time, live (task 0025)
+**Did:** the task pane has a Work section: every session that held or logged on the task, with
+stage, start, end (or live), minutes and tokens, read from the transcripts on this Mac
+(`~/.claude*/projects`, linked account folders counted once, usage once per reply, subagents
+included); totals against the estimates ("40 min of 2 h (33%)"); a labelled progress guess; and
+View, which shows a session's transcript as escaped Markdown in the pane. Cards get a live dot
+while a session's transcript changed in the last 5 minutes. `transcripts.rs` (with
+`actuals()`, shared with 0017), `work.rs`, `Work.tsx`, two Tauri commands (the transcript one
+only for a session the task names). Built by an implementer agent; review fixes by the main
+session.
+**Decided:** a session counts in full on every task that names it (no time-splitting yet); the
+pane says so on the row ("also on 3 other tasks") and on the totals.
+**Fixed (review):** shared sessions weren't marked, so a controller session's whole cost read as
+each task's; a live row inherited the header's right-aligned style.
+**Rebased onto main (0016, 0019, 0020, 0030, 0031, 0034):** a session is found in the claim, in
+0030's `held-by` and in the log; "holds it" follows 0030's holder (the claim, or `held-by` in
+Testing and Your check). Cards show 0030's who line and 0025's live dot (0030 left no dot of its
+own). The Work section sits after the check-ins.
+**Verified:** after the rebase, `pnpm check` green (vitest 357 in 16 files, cargo 217 + interop
+12, clippy and fmt clean), `test_task.py` 36 OK, `test_commands.py` 10 OK; transcript paths
+can't be reached from the window (8-hex id, named by the task, symlinks excluded); nothing
+leaves the Mac.
+
 ## 2026-10-13 — One colour, one meaning: a fixed colour code
 **Fixed:** the owner: "tags for priority and stage the color are mixing together". High priority
 used the "needs you" orange (= Your check), every tag the accent (= Building), a bug's type red

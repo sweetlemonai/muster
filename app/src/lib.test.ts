@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   ago, checkinLine, claimant, columns, currentCheckin, earlierStages, estimateTotal, feed, fileName, fmtMinutes, fmtTokens, heldByOther, holder, holderOf, inProgress, LEASE_SECS, leaseRunOut,
-  nextStage, oneAtATime, passLabel, queueTotal, quietCheckin, quietMinutes, splitHolder, stageHolders, stageOf, STAGES, stamp, stampMinutes, startedAgo, whoLine,
+  nextStage, ofEstimate, oneAtATime, passLabel, queueTotal, quietCheckin, quietMinutes, shortTokens, splitHolder, stageHolders, stageOf, STAGES, stamp, stampMinutes, startedAgo, whoLine,
 } from "./lib";
 import type { Task } from "./types";
 
 const task = (over: Partial<Task>): Task => ({
   queue: "drover", id: "0001", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
   folder: "todo", path: "todo/0001-t.md", claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "", capturedAt: "",
-  blockHistory: [], questions: [], openQuestions: 0, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [],
+  blockHistory: [], questions: [], openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [],
   attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", search: "", ...over,
 });
 
@@ -304,5 +304,19 @@ describe("estimates", () => {
     const t = (m: number, k: number, stage = "ready") => ({ estMinutes: m, estTestMinutes: 0, estTokenCount: k, stage });
     expect(estimateTotal([t(60, 100_000), t(30, 50_000), t(0, 0), t(600, 0, "done")])).toBe("≈ 1.5 h · 150k tokens left (2 of 3 open tasks estimated)");
     expect(estimateTotal([t(0, 0)])).toBe("");
+  });
+});
+
+describe("work against an estimate (0025)", () => {
+  it("shortTokens: a count without the word", () => {
+    expect([0, 16, 999, 1000, 3500, 6000, 9_960, 11_501, 69_516, 999_499, 999_500, 1_234_567, 12_000_000].map(shortTokens)).toEqual([
+      "0", "16", "999", "1k", "3.5k", "6k", "10k", "12k", "70k", "999k", "1M", "1.2M", "12M",
+    ]);
+  });
+  it("ofEstimate: the actual, of the estimate, with the share; the actual alone without one", () => {
+    expect(ofEstimate("1.2M", "2M", 60)).toBe("1.2M of 2M (60%)");
+    expect(ofEstimate("3 h", "2 h", 150)).toBe("3 h of 2 h (150%)");
+    expect(ofEstimate("40 min", "", null)).toBe("40 min");
+    expect(ofEstimate("40 min", "2 h", null)).toBe("40 min");
   });
 });

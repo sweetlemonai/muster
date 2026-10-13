@@ -187,6 +187,30 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Task panel** (loads on first open): the task rendered as Markdown with a Raw switch,
   open questions with an answer box (⌘↩), the files as thumbnails that open large (← → between
   them, Esc to close), who's on it, what it waits on, and the commit.
+- **Work** (task 0025, below the description and check-ins in the task panel): every Claude Code
+  session that worked on the task, found by the `session <8 hex>` in its claim or `held-by` and in
+  the who of its log lines (the older `label (session 7b5e8856)` and 0030's stamped
+  `label (checkout · session 7b5e8856 · cc-hg)`). One row each: short id and label, the stage it
+  held, whether it holds the task now (0030's holder: the claim, or `held-by` in Testing and Your
+  check), started, ended or **live**, minutes and tokens. Then the totals against the estimates ("Tokens 70k of 100k (70%)"), the tokens by kind,
+  and a progress guess from ticked criteria and the stage, labelled as a guess. **View** opens that
+  session's transcript below the rows as Markdown: one line per prompt, reply and tool call, tool
+  output and thinking left out, the latest 1,500 entries, every punctuation mark escaped so nothing
+  in it renders as a link, image or HTML. Only a session the task names can be viewed.
+  - **Where the numbers come from** (`transcripts.rs`, the one reader 0017's actuals will use too:
+    `transcripts::actuals`): `~/.claude*/projects/<folder key>/<session id>.jsonl`, every account
+    folder once (`.claude-hg/projects` linking to `.claude/projects` isn't counted twice), plus the
+    session's `subagents/*.jsonl` for tokens. Usage counts once per reply (Claude Code repeats it
+    on each content block); minutes are first to last time stamp. Read on this Mac and sent nowhere;
+    the window gets counts, ids and times, never a path. A session not found reads "not on this
+    Mac". Transcripts over 128 MB and lines over 8 MB are skipped, and summaries are cached by
+    size and modified time (512 files).
+  - **Live:** a transcript (or one of its subagents') changed in the last 5 minutes. The card shows
+    a small dot by its id while any of the task's sessions is live, worked out in the state read
+    from file times only (20 cards × 50 sessions: about 0.5 ms). Done tasks aren't checked.
+  - **Speed:** 50 transcripts of 1,000 lines each read in about 0.3 s cold in a debug build and
+    0.5 ms warm. On the owner's Mac, five real sessions (up to 60 MB) read in 0.15 s cold in a
+    release build, with no line skipped.
 - **New task** (`+ New task`, ⌘N, in the docked pane): project, type, priority, tags, a one-line title, a Markdown
   description, and files by paste, drop or picking. The id comes from the core under the queue's
   lock. The task lands in To do and opens.
@@ -345,6 +369,10 @@ Live claims go in the repo's shared git folder. See
   is gone, and two agents editing the front matter at once could both believe they won. So
   `muster claim` reads the status and writes the claim under the queue's lock, and agents never
   edit the status themselves.
+- **A session counts in full on every task it names** (0025): a session that worked on three
+  tasks, or a controller session that passed many, shows its whole transcript's tokens and minutes
+  on each, and its live dot on each open one. Splitting a transcript by the times it held each
+  task isn't built.
 - **Reclaim runs when someone runs it:** `muster reclaim` or Release on a card. No scheduler runs
   it yet. A crashed session's claim waits until then.
 

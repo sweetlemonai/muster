@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { CardBand, CardLookPicker, cardClass, SAMPLES } from "./CardLook";
+import { CardBand, CardLookPicker, cardClass, LiveDot, SAMPLES } from "./CardLook";
 
 const band = (t: { stage: string; blocked: boolean; waitingForOwner: boolean; priority: string }) =>
   renderToStaticMarkup(createElement(CardBand, { t }));
@@ -61,5 +61,14 @@ describe("Appearance's Cards picker", () => {
     const html = picker("stripe", "priority");
     expect(html).toMatch(/class="chip on" aria-pressed="true">Priority</);
     expect(html).toMatch(/class="chip" aria-pressed="false">Stage</);
+  });
+});
+
+describe("the live dot (0025)", () => {
+  it("shows while one of the task's sessions is live, and nothing otherwise", () => {
+    expect(renderToStaticMarkup(createElement(LiveDot, { t: { live: true } }))).toBe(
+      '<i class="dot live-dot" role="img" aria-label="live" title="A session on it is working now: its transcript changed in the last 5 minutes"></i>',
+    );
+    expect(renderToStaticMarkup(createElement(LiveDot, { t: { live: false } }))).toBe("");
   });
 });

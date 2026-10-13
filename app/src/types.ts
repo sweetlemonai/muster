@@ -101,6 +101,42 @@ export type Task = {
    *  digits only, at most 4 KB. Not in the polled state: the window adds it from the core's
    *  `search_index` while it searches (search.ts `withSearch`). */
   search?: string;
+  /** One of the task's sessions changed its transcript in the last 5 minutes (0025). */
+  live: boolean;
+};
+
+/** Tokens a session used, by kind (0025). */
+export type Tokens = { input: number; output: number; cacheRead: number; cacheWrite: number };
+
+/** One session that worked on a task, and what its transcript on this Mac says (0025). Times are
+ *  seconds since 1970; `found` says whether the transcript was read. */
+export type SessionRow = {
+  id: string;
+  /** The label it acted under ("muster/wt-0025"). */
+  who: string;
+  /** Stages it held, in order. */
+  stages: string[];
+  /** It holds the task now. */
+  holds: boolean;
+  found: "read" | "missing" | "too-big";
+  tokens: Tokens;
+  start: number | null;
+  end: number | null;
+  minutes: number;
+  live: boolean;
+  skippedLines: number;
+  skippedFiles: number;
+  /** How many other tasks name this session; its cost counts in full on each. */
+  sharedWith: number;
+};
+
+/** The task pane's Work section (0025): sessions, totals against the estimates, a progress guess. */
+export type Work = {
+  rows: SessionRow[];
+  totals: { sessions: number; read: number; live: number; shared: number; tokens: Tokens; totalTokens: number; minutes: number };
+  /** The estimates as minutes and tokens, and the totals as a share of each (null without one). */
+  estimate: { minutes: number; tokens: number; minutesPct: number | null; tokensPct: number | null };
+  guess: { pct: number; basis: string };
 };
 
 /** A backlog note (0015): a one-liner, or any .md dropped in the queue's backlog folder. */

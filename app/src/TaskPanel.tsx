@@ -16,6 +16,7 @@ import { useTaskActions } from "./useTaskActions";
 import { withoutVision } from "./Vision";
 import VisionPanel from "./VisionPanel";
 import { anyDirty, withPart } from "./writeUp";
+import Work from "./Work";
 
 /** The task pane (0021, the owner's design D2): title and status first, the stage track, then
  *  two columns (what this stage needs; the next step and the task's settings), the stage forms
@@ -166,6 +167,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
       </section>
 
       <VisionPanel task={task} body={body} onChanged={onChanged} />
+      <Work task={task} />
 
       <Comments task={task} onChanged={onChanged} onDirty={commentDirty} nudge={nudge} />
       {log && !raw && editing === null && (

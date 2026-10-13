@@ -196,6 +196,24 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .edit-bar button:disabled { opacity: 0.5; }
 .raw { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg); padding: 10px; border-radius: 6px; }
 
+/* The Work section (0025): sessions, cost against the estimates, a guess, and a transcript. Quiet:
+   muted text, no attention colour; only a live session gets the small dot. */
+.work-totals { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 2px; font-size: 13px; }
+.work-rows { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0; }
+.work-rows th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); font-weight: 600; padding: 3px 6px; border-bottom: 1px solid var(--border); }
+.work-rows td { padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.work-rows td:last-child { text-align: right; }
+.work-rows button { border: 1px solid var(--border); background: var(--surface); color: var(--muted); border-radius: 6px; padding: 1px 8px; font-size: 11px; }
+.work-rows button:hover:not(:disabled), .work-rows button:focus-visible, .work-rows button[aria-pressed="true"] { color: var(--text); border-color: var(--accent); }
+.work-rows button:disabled { opacity: 0.4; }
+.live-now { white-space: nowrap; }
+.work-guess { margin: 4px 0 0; font-size: 12px; }
+.transcript { margin-top: 10px; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; font-size: 12px; }
+.transcript-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.transcript-title { font-weight: 600; }
+.transcript-bar button { margin-left: auto; border: 1px solid var(--border); background: var(--surface); border-radius: 6px; padding: 1px 8px; font-size: 11px; }
+.card .live-dot { margin: 0; }
+
 .markdown { overflow-wrap: anywhere; }
 .markdown h1 { font-size: 16px; }
 .markdown h2 { font-size: 14px; text-transform: none; letter-spacing: 0; color: var(--text); margin: 16px 0 6px; }

@@ -379,3 +379,17 @@ export function estimateTotal(tasks: { estMinutes: number; estTestMinutes: numbe
   const parts = [fmtMinutes(m), fmtTokens(k)].filter(Boolean).join(" · ");
   return `≈ ${parts} left${est.length < open.length ? ` (${est.length} of ${open.length} open tasks estimated)` : ""}`;
 }
+/** A token count, short and without the word: "1.2M", "70k", "3.5k", "900". */
+export function shortTokens(n: number): string {
+  const v = Math.max(0, Math.round(n));
+  const one = (x: number) => String(Math.round(x * 10) / 10);
+  if (v >= 999_500) return `${one(v / 1e6)}M`;
+  if (v >= 10_000) return `${Math.round(v / 1e3)}k`;
+  if (v >= 1000) return `${one(v / 1e3)}k`;
+  return String(v);
+}
+/** "1.2M of 2M (60%)": an actual against its estimate, with the core's share; the actual alone
+ *  when there's no estimate. */
+export function ofEstimate(actual: string, estimate: string, pct: number | null): string {
+  return estimate && pct !== null ? `${actual} of ${estimate} (${pct}%)` : actual;
+}
