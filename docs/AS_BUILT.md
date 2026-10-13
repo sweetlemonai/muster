@@ -69,10 +69,15 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   (added ones only) never touch files. Saved in `~/Library/Application Support/ai.sweetlemon.muster/projects.json`.
   Folders are picked by the core's own dialog, so the window never hands the core a path.
 - **Settings** (task 0036, `Settings.tsx`, `settingsData.ts`, `settings.rs`): a view in the header's
-  row (never a window), its groups docked on the left (Appearance, Projects, Agents, Help, About;
+  row (never a window), its groups docked on the left (Appearance, Projects, Agents, About;
   `SETTINGS_GROUPS` is where later groups such as display modes and notifications go), the open
-  group's settings on the right. The header's **Appearance** opens it at Appearance in one click;
-  the old Appearance pane and Projects tab are gone, their contents moved here. **Agents** has the
+  group's settings on the right. Appearance is only here and Help only in the header: on the
+  owner's word (2026-10-13) the header's one-click Appearance button and Settings' Help group
+  (links into the manual, which the Help tab and every ? already open) were removed; the old
+  Appearance pane and Projects tab are gone, their contents moved here. Paths under the home
+  folder (About, the Agents settings file, Projects' folders) show as `~/…` (`homePath` in
+  `lib.ts`, `HomePath.tsx`; the core sends `home` in `settings_info`), the real path in the
+  tooltip and on the clipboard when copied. **Agents** has the
   helper's account and model, the **claim lease** (default 12 h, 1 h to 7 d) and the **LIVE
   window** (default 5 min, 1 min to 1 h), typed as `30m`, `2h`, `1d` and checked by the core.
   Both are saved per machine in `settings.json` beside `projects.json`; `muster reclaim` (with
@@ -80,9 +85,9 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   the card's "quiet" and dot, the pane's LIVE), and a missing, broken or out-of-bounds value is
   the default, field by field. **Projects** also shows each project's gate command (0023),
   read-only, with the `muster projects set` line when none is set. Your check's view buttons
-  (0043) open Settings for Appearance, Projects and Settings. **Help** links into the manual; **About** shows the version, the
+  (0043) open Settings for Appearance, Projects and Settings. **About** shows the version, the
   settings folder and its files, and every folder the app reads.
-- **Themes and accents** (Settings' Appearance, one click from the header): 7 themes (Violet night, Violet day, Graphite,
+- **Themes and accents** (Settings' Appearance): 7 themes (Violet night, Violet day, Graphite,
   Midnight, Paper, Snow, High contrast), with Match the Mac picking one dark and one light, and 6
   accents (Violet, Teal, Rose, Gold, Green, Graphite). No blue, no orange. They apply live and are
   remembered. Default: Muster's violet, following the Mac. A test checks every theme and accent

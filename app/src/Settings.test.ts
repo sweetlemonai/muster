@@ -1,14 +1,14 @@
-import { createElement, type ReactElement } from "react";
+import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HelperInfo } from "./api";
 import { HELP_TOPICS } from "./helpTopics";
-import { headings, PAGES } from "./manual";
+import { headings } from "./manual";
 import inTheApp from "../../docs/manual/04-in-the-app.md?raw";
-import { AppearanceShortcut } from "./AppearanceShortcut";
+import appSource from "./App.tsx?raw";
 import { GateCell } from "./Projects";
-import Settings, { AboutView, AgentsView, HelpLinks, SpanSetting, withModel } from "./Settings";
-import { DEFAULT_MACHINE, machineOf, MANUAL_LINKS, SETTINGS_GROUPS, type SettingsInfo, spanInput, spanText } from "./settingsData";
+import Settings, { AboutView, AgentsView, SpanSetting, withModel } from "./Settings";
+import { DEFAULT_MACHINE, machineOf, SETTINGS_GROUPS, type SettingsInfo, spanInput, spanText } from "./settingsData";
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
 
@@ -17,6 +17,7 @@ const INFO: SettingsInfo = {
   leaseBounds: [60, 10080],
   liveBounds: [1, 60],
   version: "0.1.0",
+  home: "/Users/someone",
   configDir: "/Users/someone/Library/Application Support/ai.sweetlemon.muster",
   base: "/Users/someone/playground",
   transcripts: ["/Users/someone/.claude/projects", "/Users/someone/.claude-mg/projects"],
@@ -39,16 +40,16 @@ const QUEUES = [
 ];
 
 const settings = (group: (typeof SETTINGS_GROUPS)[number]["id"]) =>
-  renderToStaticMarkup(createElement(Settings, { group, onGroup: () => {}, queues: QUEUES, onChanged: () => {}, onManual: () => {} }));
+  renderToStaticMarkup(createElement(Settings, { group, onGroup: () => {}, queues: QUEUES, onChanged: () => {} }));
 
 describe("Settings (0036)", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("lists its groups in a fixed order, the open one marked, with room for later groups", () => {
-    expect(SETTINGS_GROUPS.map((g) => g.label)).toEqual(["Appearance", "Projects", "Agents", "Help", "About"]);
+    expect(SETTINGS_GROUPS.map((g) => g.label)).toEqual(["Appearance", "Projects", "Agents", "About"]);
     const html = settings("agents");
     const list = /<nav class="settings-groups"[^>]*>([\s\S]*?)<\/nav>/.exec(html)?.[1] ?? "";
-    expect([...list.matchAll(/<button[^>]*>([^<]*)<small>/g)].map((m) => m[1])).toEqual(["Appearance", "Projects", "Agents", "Help", "About"]);
+    expect([...list.matchAll(/<button[^>]*>([^<]*)<small>/g)].map((m) => m[1])).toEqual(["Appearance", "Projects", "Agents", "About"]);
     expect(list.match(/aria-current="page"/g)).toHaveLength(1);
     expect(list).toMatch(/aria-current="page"[^>]*>Agents</);
     // Each says what it holds, so nothing is behind a click to find out.
@@ -113,7 +114,7 @@ describe("Agents", () => {
     expect(t).toContain("muster reclaim");
     expect(t).toContain("LIVE window 5 min default");
     expect(t).toContain("From 1 min to 1 h");
-    expect(t).toContain("Saved on this Mac");
+    expect(t).toContain("Saved on this Mac, in ~/Library/Application Support/ai.sweetlemon.muster/settings.json");
     // A changed value says so and offers the way back.
     const changed = text(agents({ info: { ...INFO, settings: { leaseMinutes: 120, liveMinutes: 10 } } }));
     expect(changed).toContain("Claim lease 2 h A claim in Building");
@@ -161,45 +162,65 @@ describe("About", () => {
   it("shows the version, where the settings are kept, and every folder it reads", () => {
     const t = text(renderToStaticMarkup(createElement(AboutView, { info: INFO, queues: QUEUES })));
     expect(t).toContain("Muster 0.1.0");
-    expect(t).toContain(`${INFO.configDir} projects.json`);
+    expect(t).toContain("~/Library/Application Support/ai.sweetlemon.muster projects.json");
     expect(t).toContain("settings.json");
     expect(t).toContain("helper/");
-    expect(t).toContain("/Users/someone/playground/*/tasks");
-    for (const q of QUEUES) expect(t).toContain(q.path);
-    for (const f of INFO.transcripts) expect(t).toContain(f);
+    expect(t).toContain("Queues found on their own: ~/playground /*/tasks");
+    expect(t).toContain("muster: ~/playground/muster/tasks");
+    expect(t).toContain("drover: ~/playground/drover/tasks");
+    expect(t).toContain("Session transcripts: ~/.claude/projects");
+    expect(t).toContain("Session transcripts: ~/.claude-mg/projects");
     expect(t).toContain("nothing is sent anywhere");
+  });
+  it("shows paths under home with ~, never the user's name; the real path is the tooltip", () => {
+    const html = renderToStaticMarkup(createElement(AboutView, { info: INFO, queues: QUEUES }));
+    expect(text(html)).not.toContain("/Users/someone");
+    const titles = [...html.matchAll(/title="([^"]*)"/g)].map((m) => m[1]);
+    for (const p of [INFO.configDir, INFO.base, ...QUEUES.map((q) => q.path), ...INFO.transcripts]) expect(titles).toContain(p);
+  });
+  it("leaves a path outside home as it is", () => {
+    const t = text(renderToStaticMarkup(createElement(AboutView, { info: { ...INFO, transcripts: ["/Volumes/Work/.claude/projects"] }, queues: [] })));
+    expect(t).toContain("Session transcripts: /Volumes/Work/.claude/projects");
   });
 });
 
-describe("Help", () => {
-  it("links into the manual's own pages and sections, not a copy", () => {
-    let went: [string, string] | null = null;
-    const html = renderToStaticMarkup(createElement(HelpLinks, { onManual: (f: string, s: string) => void (went = [f, s]) }));
-    expect([...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1])).toEqual(MANUAL_LINKS.map((l) => l.label));
-    for (const l of MANUAL_LINKS) {
-      expect(PAGES.some((p) => p.file === l.file)).toBe(true);
-      if (l.slug) expect(headings(inTheApp).some((h) => h.slug === l.slug)).toBe(true);
-    }
-    // The element's click goes to the manual at that place.
-    const el = HelpLinks({ onManual: (f: string, s: string) => void (went = [f, s]) }) as ReactElement<{ children: ReactElement[] }>;
-    const first = findButtons(el)[1];
-    first.props.onClick();
-    expect(went).toEqual([MANUAL_LINKS[1].file, MANUAL_LINKS[1].slug]);
-  });
+describe("the manual and Settings", () => {
   it("the manual describes every group of Settings", () => {
     const slugs = headings(inTheApp).map((h) => h.slug);
     for (const s of ["settings", "appearance", "projects", "agents", "about"]) expect(slugs).toContain(s);
   });
 });
 
-describe("the header's Appearance shortcut", () => {
-  it("opens Settings at Appearance in one click, and is lit while it's open", () => {
-    let opened = "";
-    const el = AppearanceShortcut({ active: false, onOpen: (g) => void (opened = g) }) as ReactElement<{ onClick: () => void; className: string }>;
-    el.props.onClick();
-    expect(opened).toBe("appearance");
-    expect(el.props.className).toBe("tab");
-    expect((AppearanceShortcut({ active: true, onOpen: () => {} }) as ReactElement<{ className: string }>).props.className).toBe("tab on");
+describe("Help lives only in the header (owner, 2026-10-13)", () => {
+  it("Settings has no Help group", () => {
+    expect(SETTINGS_GROUPS.map((g) => g.id)).not.toContain("help");
+    const list = /<nav class="settings-groups"[^>]*>([\s\S]*?)<\/nav>/.exec(settings("about"))?.[1] ?? "";
+    expect(text(list)).not.toMatch(/\bHelp\b/);
+  });
+  it("the header's Help tab still opens the manual, as the ? buttons do", () => {
+    const header = /<header className="top">([\s\S]*?)<\/header>/.exec(appSource)?.[1] ?? "";
+    expect(header).toContain(`onClick={() => setView("help")}>Help</button>`);
+    expect(appSource).toMatch(/\{view === "help" && \(\s*<Suspense fallback=\{[^}]*\}>\s*<HelpView /);
+    expect(appSource).toMatch(/const openHelp = useCallback\(\s*\(topic: HelpTopic\) => \{\s*setView\("help"\);/);
+  });
+  it("the manual's Settings section has no Help group: Help is the header's tab", () => {
+    expect(headings(inTheApp).filter((h) => h.title === "Help")).toHaveLength(1);
+  });
+});
+
+describe("Appearance lives only in Settings (owner, 2026-10-13)", () => {
+  it("the header has no Appearance button, and Settings still has the Appearance group", () => {
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: true }) });
+    vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {} });
+    const header = /<header className="top">([\s\S]*?)<\/header>/.exec(appSource)?.[1] ?? "";
+    expect(header).toContain(">Settings</button>");
+    expect(header).not.toMatch(/Appearance\s*<\/button>|<Appearance\w*/);
+    expect(SETTINGS_GROUPS.some((g) => g.id === "appearance" && g.label === "Appearance")).toBe(true);
+    expect(text(settings("appearance"))).toContain("Appearance ? Theme, accent, text size, cards");
+    vi.unstubAllGlobals();
+  });
+  it("the manual doesn't send you to the header for it", () => {
+    expect(inTheApp).not.toMatch(/\*\*Appearance\*\* (beside it|, which opens)/);
   });
 });
 
@@ -216,17 +237,3 @@ describe("settings data", () => {
     expect(DEFAULT_MACHINE).toEqual({ leaseMinutes: 720, liveMinutes: 5 });
   });
 });
-
-/** Every <button> element under `el`, depth first. */
-function findButtons(el: ReactElement): ReactElement<{ onClick: () => void }>[] {
-  const out: ReactElement<{ onClick: () => void }>[] = [];
-  const walk = (n: unknown) => {
-    if (Array.isArray(n)) return n.forEach(walk);
-    if (!n || typeof n !== "object" || !("props" in n)) return;
-    const e = n as ReactElement<{ children?: unknown; onClick?: () => void }>;
-    if (e.type === "button") out.push(e as ReactElement<{ onClick: () => void }>);
-    walk(e.props.children);
-  };
-  walk(el);
-  return out;
-}

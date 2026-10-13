@@ -22,7 +22,6 @@ import type { NamedView } from "./yourCheck";
 import { byWho, FOR_FILTERS, FOR_KEY, type ForFilter, needsYouCount, parseForFilter, waitingForYou, whoFiltersOn, whoShows } from "./human";
 import { HelpButton, OpenHelp } from "./HelpButton";
 import { HELP_TOPICS, type HelpTopic, type ManualAt } from "./helpTopics";
-import { AppearanceShortcut } from "./AppearanceShortcut";
 import { Machine, machineOf, type SettingsGroup } from "./settingsData";
 import logo from "./logo.png";
 
@@ -179,7 +178,7 @@ export default function App() {
     },
     [helpGo],
   );
-  // Settings (0036): the group it shows; the header's Appearance and the sidebar's + Project open it at theirs.
+  // Settings (0036): the group it shows; the sidebar's + Project and Your check's view buttons open it at theirs.
   const [settingsAt, setSettingsAt] = useState<SettingsGroup>("appearance");
   const openSettings = (g: SettingsGroup) => {
     setSettingsAt(g);
@@ -321,9 +320,8 @@ export default function App() {
             {unchecked.length ? <small className="count quiet" title="Shaping tasks with no vision check yet">{unchecked.length}</small> : null}
           </button>
           <button className={view === "help" ? "tab on" : "tab"} onClick={() => setView("help")}>Help</button>
-          <button className={view === "settings" ? "tab on" : "tab"} onClick={() => setView("settings")} title="Appearance, projects, agents, help and about">Settings</button>
+          <button className={view === "settings" ? "tab on" : "tab"} onClick={() => setView("settings")} title="Appearance, projects, agents and about">Settings</button>
         </nav>
-        <AppearanceShortcut active={view === "settings" && settingsAt === "appearance"} onOpen={openSettings} />
         <span className="live" title={error || "Updates every 2 seconds while the window is visible"}>
           {error ? <span className="err">Can't read the queues</span> : at ? <><i className="dot" /> live</> : "loading…"}
         </span>
@@ -469,10 +467,6 @@ export default function App() {
                 onGroup={setSettingsAt}
                 queues={state?.queues ?? []}
                 onChanged={refresh}
-                onManual={(file, slug) => {
-                  setView("help");
-                  helpGo(file, slug);
-                }}
               />
             </Suspense>
           )}

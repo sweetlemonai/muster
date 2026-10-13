@@ -5,7 +5,7 @@ Every view and pane of the Muster app, and what each control does. A **?** besid
 ## The window at a glance
 
 - **Left:** the projects (see [The projects sidebar](#the-projects-sidebar)).
-- **Top:** **+ New task**, then the views: **Board**, **Table**, **Timeline** and **Graph** (four views of the same tasks), **Helper**, **Waiting for you**, **Activity**, **Problems**, **Help** and **Settings**. Then **Appearance**, which opens [Settings](#settings) at Appearance in one click, and "live" with a dot while the app is reading the queues. If it can't read them, that spot says "Can't read the queues"; point at it to see why.
+- **Top:** **+ New task**, then the views: **Board**, **Table**, **Timeline** and **Graph** (four views of the same tasks), **Helper**, **Waiting for you**, **Activity**, **Problems**, **Help** and **Settings** (where [Appearance](#appearance) is). Then "live" with a dot while the app is reading the queues. If it can't read them, that spot says "Can't read the queues"; point at it to see why.
 - **Right:** the **pane**, when one is open: a task, a backlog note or New task. It docks beside the content, which shrinks and stays live, so nothing ever covers the board. Drag the pane's edge to resize it (the width is remembered), and press Esc to close it.
 
 The app reads the queues every 2 seconds while its window is visible, and stops while it's hidden.
@@ -147,7 +147,7 @@ This manual. The sidebar has the search box, then every page with its sections; 
 
 ## Settings
 
-One place for how the app looks and works on this Mac: **Settings** in the top row, or **Appearance** beside it, which opens Settings at Appearance in one click. Settings is a view like the others, not a window. The groups are listed down its left side, each with what it holds: **Appearance**, **Projects**, **Agents**, **Help** and **About**. Click one and all of its settings show on the right, each with its current value and what it changes. Every change applies at once and is remembered after the app restarts. The **?** beside a group's name opens its section here.
+One place for how the app looks and works on this Mac: **Settings** in the top row. Settings is a view like the others, not a window. The groups are listed down its left side, each with what it holds: **Appearance**, **Projects**, **Agents** and **About**. Click one and all of its settings show on the right, each with its current value and what it changes. Every change applies at once and is remembered after the app restarts. The **?** beside a group's name opens its section here. The manual isn't a group: it's the [Help](#help) tab in the top row. A folder in your home folder shows as `~/…`; point at it to see the full path, and copying it copies the full path.
 
 ### Appearance
 
@@ -177,10 +177,6 @@ Claims come first, then the helper, whose accounts take a moment to check.
 - **The helper:** which Claude account [the Helper](#the-helper) uses, with each account's login (**Log in…** opens Terminal on that account's own login), and its **Model**: **Sonnet** unless you pick another, **Haiku** (quicker, costs less) or **Opus** (thinks hardest, costs most). The chip lights as soon as the choice is saved, and the helper uses it from its next message.
 
 Type a span the way `muster reclaim --after` takes it: `30m`, `2h`, `1.25h` or `1d` (a day is 24 hours; decimals count as typed), then ↩ or **Save**. A value out of bounds, or one that isn't a span, is refused with why, and nothing changes. **Back to 12 h** and **Back to 5 min** go back to the defaults. Both are saved on this Mac in `settings.json` in the app's settings folder (see [About](#about)); the `muster` command reads the same file, so the app, `muster reclaim` and `muster check` agree. A missing or broken file means the defaults.
-
-### Help
-
-Links into this manual: **Start here**, this section, every view and button, **Concepts**, **Commands**, **Shortcuts** and **FAQ and troubleshooting**. Each opens the page in the Help tab.
 
 ### About
 

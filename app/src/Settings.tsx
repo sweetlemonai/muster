@@ -3,20 +3,20 @@ import { api, type HelperInfo } from "./api";
 import Appearance from "./Appearance";
 import { AccountPicker } from "./Helper";
 import { HelpButton } from "./HelpButton";
+import { HomePath } from "./HomePath";
 import Projects from "./Projects";
-import { DEFAULT_MACHINE, MANUAL_LINKS, SETTINGS_GROUPS, type SettingsGroup, type SettingsInfo, spanInput, spanText } from "./settingsData";
+import { DEFAULT_MACHINE, SETTINGS_GROUPS, type SettingsGroup, type SettingsInfo, spanInput, spanText } from "./settingsData";
 import type { QueueInfo } from "./types";
 
-/** Settings (0036): one place for Appearance, Projects, Agents, Help and About. A view in the
+/** Settings (0036): one place for Appearance, Projects, Agents and About. A view in the
  *  header's row, never a window: the groups are a docked list on the left, and the open group's
  *  settings on the right, all of them at once. Every change applies at once and is remembered. */
-export default function Settings({ group, onGroup, queues, onChanged, onManual }: {
+export default function Settings({ group, onGroup, queues, onChanged }: {
   group: SettingsGroup;
   onGroup: (g: SettingsGroup) => void;
   queues: QueueInfo[];
   /** Read the queues again, so the board uses a change now, not at the next poll. */
   onChanged: () => void;
-  onManual: (file: string, slug: string) => void;
 }) {
   const [info, setInfo] = useState<SettingsInfo | null>(null);
   const [error, setError] = useState("");
@@ -47,9 +47,8 @@ export default function Settings({ group, onGroup, queues, onChanged, onManual }
         </header>
         {error && <p className="err" role="alert">Can't read this Mac's settings: {error}</p>}
         {g.id === "appearance" && <Appearance />}
-        {g.id === "projects" && <Projects queues={queues} onChanged={onChanged} />}
+        {g.id === "projects" && <Projects queues={queues} home={info?.home ?? ""} onChanged={onChanged} />}
         {g.id === "agents" && <Agents info={info} queues={queues} onInfo={setInfo} onChanged={onChanged} />}
-        {g.id === "help" && <HelpLinks onManual={onManual} />}
         {g.id === "about" && (info ? <AboutView info={info} queues={queues} /> : !error && <p className="none">Loading…</p>)}
       </section>
     </div>
@@ -137,7 +136,7 @@ export function AgentsView({ info, helper, helperError = "", onHelper, onModel, 
           what="How recent a change counts as working now: the card's dot (a session's transcript) and the task pane's LIVE (the task's file)."
           onSet={(v) => onSet("live", v)}
         />
-        <p className="meta">Saved on this Mac, in {info.configDir}/settings.json; the muster command reads the same file.</p>
+        <p className="meta">Saved on this Mac, in <HomePath path={`${info.configDir}/settings.json`} home={info.home} />; the muster command reads the same file.</p>
       </section>
       <section>
         <h2>The helper</h2>
@@ -210,24 +209,6 @@ export function SpanSetting({ label, minutes, def, bounds, what, onSet }: {
   );
 }
 
-/** Help: links into the manual (the Help tab), not a copy of it. */
-export function HelpLinks({ onManual }: { onManual: (file: string, slug: string) => void }) {
-  return (
-    <div className="settings-sections">
-      <section>
-        <div className="settings-links">
-          {MANUAL_LINKS.map((l) => (
-            <button key={`${l.file}#${l.slug}`} type="button" onClick={() => onManual(l.file, l.slug)}>
-              {l.label}
-            </button>
-          ))}
-        </div>
-        <p className="meta">Each opens the manual in the Help tab. A ? beside a pane's title or in a view's toolbar opens that part of it.</p>
-      </section>
-    </div>
-  );
-}
-
 /** About: the version, where this Mac's settings are kept, and every folder the app reads. */
 export function AboutView({ info, queues }: { info: SettingsInfo; queues: QueueInfo[] }) {
   return (
@@ -238,7 +219,7 @@ export function AboutView({ info, queues }: { info: SettingsInfo; queues: QueueI
       </section>
       <section>
         <h2>Settings on this Mac</h2>
-        <p className="path">{info.configDir}</p>
+        <p><HomePath className="path" path={info.configDir} home={info.home} /></p>
         <ul className="about-list">
           <li><code>projects.json</code>: the projects you added, hid or renamed</li>
           <li><code>settings.json</code>: the claim lease and the LIVE window; the muster command reads it too</li>
@@ -249,12 +230,12 @@ export function AboutView({ info, queues }: { info: SettingsInfo; queues: QueueI
       <section>
         <h2>What it reads</h2>
         <ul className="about-list">
-          <li>Queues found on their own: <span className="path">{info.base}/*/tasks</span></li>
+          <li>Queues found on their own: <span className="path"><HomePath path={info.base} home={info.home} />/*/tasks</span></li>
           {queues.map((q) => (
-            <li key={q.path}>{q.name}: <span className="path">{q.path}</span></li>
+            <li key={q.path}>{q.name}: <HomePath className="path" path={q.path} home={info.home} /></li>
           ))}
           {info.transcripts.map((f) => (
-            <li key={f}>Session transcripts: <span className="path">{f}</span></li>
+            <li key={f}>Session transcripts: <HomePath className="path" path={f} home={info.home} /></li>
           ))}
         </ul>
         <p className="meta">All of it is read on this Mac and nothing is sent anywhere. Only what you write to the helper goes out, to Anthropic, through your own Claude Code.</p>

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
+import { HomePath } from "./HomePath";
 import { queueTotal } from "./lib";
 import type { Project, QueueInfo } from "./types";
 
-/** Settings' Projects group (0036): every project with its folder and task count, New queue and Add existing. */
-export default function Projects({ queues, onChanged }: { queues: QueueInfo[]; onChanged: () => void }) {
+/** Settings' Projects group (0036): every project with its folder and task count, New queue and
+ *  Add existing. A folder under `home` shows as `~/…`. */
+export default function Projects({ queues, home, onChanged }: { queues: QueueInfo[]; home: string; onChanged: () => void }) {
   const [list, setList] = useState<Project[] | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
@@ -76,7 +78,7 @@ export default function Projects({ queues, onChanged }: { queues: QueueInfo[]; o
                   {!p.ok && <span className="err"> · not a queue any more</span>}
                 </div>
               </td>
-              <td className="path" title={p.path}>{p.path}</td>
+              <td className="path"><HomePath path={p.path} home={home} /></td>
               <td>{p.hidden || !p.ok ? "—" : total(p) ?? "…"}</td>
               <td><GateCell name={p.name} gate={p.gate ?? ""} /></td>
               <td className="actions">

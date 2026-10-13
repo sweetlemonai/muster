@@ -4,6 +4,25 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Appearance only in Settings, Help only in the header; paths shown with ~ (owner)
+**Did:** the owner: "remove appearance from top header since it is now under the settings", and
+why Help was both in Settings and outside it. The header's one-click **Appearance** is gone
+(`AppearanceShortcut.tsx` deleted), so Settings › Appearance is the only place; no key opened it,
+so no shortcut changed. Settings' **Help** group (links into the manual) is gone too: the
+header's Help tab, which every ? opens, is the manual's one place (`settingsData.ts`,
+`Settings.tsx`, the unused `settings` help topic and `.settings-links` CSS). Settings shows paths
+under the home folder as `~/…` (About, the Agents settings file, Projects' folders), with the
+real path in the tooltip and on the clipboard when copied: `homePath` and `copiedPath` in
+`lib.ts`, `HomePath.tsx`, and `home` in the core's `settings_info`. Manual (04) and AS_BUILT
+updated.
+**Verified:** `pnpm check` green (tsc, vitest 949 tests, vite build, cargo fmt, clippy -D
+warnings, cargo test 391 + 4 + 14 + 3); new tests: the header has no Appearance button and
+Settings still has the group; no Help group, the Help tab still opens the manual; `homePath`
+under home, home itself, home with and without a trailing slash, a sibling like
+`/Users/someone2` and a path outside home left as is, empty or `/` home; copying all or part of
+a shown path; About shows no user name and keeps the full paths as tooltips.
+`python3 -I bin/test_task.py` 48 OK, `python3 -I bin/test_commands.py` 11 OK.
+
 ## 2026-10-13 — Group by Feature or Goal keeps the backlog notes and the quick add in view (task 0046)
 **Fixed:** with Group by on, the backlog notes and the **Add to the backlog…** field disappeared →
 they were drawn only in the plain board's Backlog column, and the bands hold tasks, so notes (no

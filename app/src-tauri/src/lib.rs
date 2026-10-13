@@ -889,6 +889,8 @@ pub(crate) struct SettingsInfo {
     lease_bounds: [u64; 2],
     live_bounds: [u64; 2],
     version: String,
+    /// The home folder: the window shows paths under it as `~/…`.
+    home: String,
     /// The app's config folder: projects.json, settings.json and the helper's folder.
     config_dir: String,
     /// Where queues are found on their own (`<base>/*/tasks`).
@@ -908,6 +910,7 @@ fn info_for(
         lease_bounds: [settings::LEASE_MIN, settings::LEASE_MAX],
         live_bounds: [settings::LIVE_MIN, settings::LIVE_MAX],
         version: version.to_string(),
+        home: shown(&home()),
         config_dir: settings_file.parent().map(shown).unwrap_or_default(),
         base: shown(&base()),
         transcripts: reader.folders().iter().map(|p| shown(p)).collect(),
@@ -1441,6 +1444,9 @@ mod tests {
             json.contains(r#""leaseBounds":[60,10080],"liveBounds":[1,60]"#),
             "{json}"
         );
+        // The home folder, so the window can show paths under it as `~/…`.
+        assert_eq!(info.home, super::home().to_string_lossy());
+        assert!(json.contains(r#""home":"#), "{json}");
     }
 
     #[test]

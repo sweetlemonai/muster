@@ -5,15 +5,15 @@ import { createContext } from "react";
 import type { HelpTopic } from "./helpTopics";
 import { LEASE_SECS } from "./lib";
 
-export type SettingsGroup = "appearance" | "projects" | "agents" | "help" | "about";
+export type SettingsGroup = "appearance" | "projects" | "agents" | "about";
 
 /** Settings' groups, in the order the list shows them, each with what it holds. Display modes
- *  (0038) and Notifications (0006) add their groups to this list. */
+ *  (0038) and Notifications (0006) add their groups to this list. Help isn't one: the manual is
+ *  the header's Help tab, and only there (owner, 2026-10-13). */
 export const SETTINGS_GROUPS: { id: SettingsGroup; label: string; holds: string; topic: HelpTopic }[] = [
   { id: "appearance", label: "Appearance", holds: "Theme, accent, text size, cards", topic: "appearance" },
   { id: "projects", label: "Projects", holds: "The queues Muster shows", topic: "projects" },
   { id: "agents", label: "Agents", holds: "The helper, the claim lease, LIVE", topic: "agents" },
-  { id: "help", label: "Help", holds: "The manual", topic: "settings" },
   { id: "about", label: "About", holds: "Version, settings, what it reads", topic: "about" },
 ];
 
@@ -56,23 +56,14 @@ export function spanInput(minutes: number): string {
   return `${minutes}m`;
 }
 
-/** The places in the manual the Help group links to: the manual's own pages, not a copy. */
-export const MANUAL_LINKS: { label: string; file: string; slug: string }[] = [
-  { label: "Start here", file: "01-start-here.md", slug: "" },
-  { label: "Settings, in the manual", file: "04-in-the-app.md", slug: "settings" },
-  { label: "Every view and button", file: "04-in-the-app.md", slug: "" },
-  { label: "Concepts", file: "02-concepts.md", slug: "" },
-  { label: "Commands", file: "05-commands.md", slug: "" },
-  { label: "Shortcuts", file: "06-shortcuts.md", slug: "" },
-  { label: "FAQ and troubleshooting", file: "08-faq.md", slug: "" },
-];
-
 /** The core's answer for Settings: the settings with their bounds, and what About shows. */
 export type SettingsInfo = {
   settings: MachineSettings;
   leaseBounds: [number, number];
   liveBounds: [number, number];
   version: string;
+  /** The home folder: paths under it show as `~/…` (`homePath`). */
+  home: string;
   configDir: string;
   base: string;
   transcripts: string[];
