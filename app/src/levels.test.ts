@@ -67,6 +67,14 @@ describe("levels", () => {
     expect(g.map((b) => b.head?.id ?? "none")).toEqual(["0003", "none"]);
     expect(groupItems([], all, "goal")).toEqual([]);
   });
+  it("a band whose feature matches the filter stays, even when none of its tasks do", () => {
+    const bands = (g: ReturnType<typeof groupItems>) => g.map((b) => [b.head?.id ?? "none", ids(b.items)]);
+    const want = [["0002", []], ["0003", []], ["none", ["0007"]]];
+    // The board: its items are the tasks shown; the feature 0002 is shown too, its tasks aren't.
+    expect(bands(groupItems([t7], all, "feature", [stageTrack, t7]))).toEqual(want);
+    // The table: the feature's row is shown, as its band's heading.
+    expect(bands(groupItems([stageTrack, t7], all, "feature"))).toEqual(want);
+  });
   it("in the table, the other levels' rows go in their band too", () => {
     const g = groupItems(all.filter((t) => t.level !== "goal"), all, "goal");
     expect(g.map((b) => [b.head?.id ?? "none", ids(b.items)])).toEqual([

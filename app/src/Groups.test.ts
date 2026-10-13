@@ -56,6 +56,21 @@ describe("grouped board", () => {
       "No goal 1 item | ready: 0007",
     ]);
   });
+  it("shows a goal In progress when the core says so, though every task under it is done (an empty feature isn't)", () => {
+    const items = [
+      task({ id: "0001", title: "G", level: "goal", progress: { done: 1, total: 1, estMinutes: 0, estTokenCount: 0 }, shownStage: "in-progress" }),
+      task({ id: "0002", title: "Done one", level: "feature", parent: "0001", progress: { done: 1, total: 1, estMinutes: 0, estTokenCount: 0 }, shownStage: "done" }),
+      task({ id: "0003", title: "Empty one", level: "feature", parent: "0001", progress: { done: 0, total: 0, estMinutes: 0, estTokenCount: 0 } }),
+      task({ id: "0004", parent: "0002", stage: "done" }),
+    ];
+    const html = renderToStaticMarkup(
+      createElement(GroupedBoard, {
+        groups: groupItems(items.filter(isWork), items, "goal"), by: "goal", multi: false, openKey: null, onOpen: () => {},
+        renderCard: (t: Task) => createElement("i", { className: "card-stub" }, `${t.id}`),
+      }),
+    );
+    expect(bands(html)).toEqual(["Goal 0001 G In progress 1 of 1 done | done: 0004"]);
+  });
   it("never draws a goal or a feature as a card", () => {
     const html = board("feature") + board("goal");
     expect(html).not.toMatch(/card-stub">000[123]</);
@@ -87,7 +102,8 @@ describe("grouped table", () => {
     expect(rows(table(by, "feature"))).toEqual([
       "# Feature 0002 Stage track In progress 1 of 2 done ≈ 2 h · 200k tokens left", "0005 Built", "0004 Done",
       "# Feature 0003 Empty one Ready no tasks yet",
-      "# No feature 3 items", "0001 Goal", "0006 Under", "0007 Loose",
+      // Sorted by stage: the goal shows In progress, so it comes after the Ready tasks.
+      "# No feature 3 items", "0006 Under", "0007 Loose", "0001 Goal",
     ]);
   });
 });

@@ -1,4 +1,4 @@
-import { fmtMinutes, fmtTokens, key, stageLabel, stageOf } from "./lib";
+import { fmtMinutes, fmtTokens, key, stageLabel, stageOf, stageRank } from "./lib";
 import type { Progress, Task } from "./types";
 
 // Goal → Feature → Task (decision 0003): a task names its parent, and the board and the table can
@@ -44,6 +44,11 @@ export function parentOf(t: Pick<Task, "queue" | "parent">, index: Map<string, T
   return t.parent ? index.get(key({ queue: t.queue, id: t.parent })) ?? null : null;
 }
 
+/** A goal's or feature's children (the ids the core rolled up) that are at hand, in id order. */
+export function childrenOf(t: Pick<Task, "queue" | "children">, index: Map<string, Task>): Task[] {
+  return t.children.flatMap((id) => index.get(key({ queue: t.queue, id })) ?? []);
+}
+
 /** A card's quiet parent line: "▸ Feature 0030 Stage track", or "" without a parent. */
 export function parentLine(t: Pick<Task, "queue" | "parent">, index: Map<string, Task>): string {
   if (!t.parent) return "";
@@ -67,10 +72,12 @@ export function groupHead(t: Pick<Task, "queue" | "parent">, index: Map<string, 
 export type Group = { head: Task | null; items: Task[] };
 
 /** Bands for the board (items: its tasks) or the table (items: every other row). One per feature
- *  or goal of `all`, by project and id, that holds any of `items`, or has no tasks yet so it stays
- *  in view; then the items with none, in a last band (head null) when there are any. */
-export function groupItems(items: Task[], all: Task[], by: "feature" | "goal"): Group[] {
+ *  or goal of `all`, by project and id, that holds any of `items`, is itself among `shown` (what
+ *  the filters let through, which for the table is its rows), or has no tasks yet so it stays in
+ *  view; then the items with none, in a last band (head null) when there are any. */
+export function groupItems(items: Task[], all: Task[], by: "feature" | "goal", shown: Task[] = items): Group[] {
   const index = indexTasks(all);
+  const lit = new Set(shown.filter((t) => t.level === by).map(key));
   const heads = all.filter((t) => t.level === by).sort((a, b) => a.queue.localeCompare(b.queue) || a.id.localeCompare(b.id));
   const into = new Map<string, Task[]>(heads.map((h) => [key(h), [] as Task[]]));
   const rest: Task[] = [];
@@ -83,7 +90,7 @@ export function groupItems(items: Task[], all: Task[], by: "feature" | "goal"): 
   }
   const out: Group[] = heads
     .map((h) => ({ head: h, items: into.get(key(h)) ?? [] }))
-    .filter((g) => g.items.length > 0 || (g.head.progress?.total ?? 0) === 0);
+    .filter((g) => g.items.length > 0 || lit.has(key(g.head)) || (g.head.progress?.total ?? 0) === 0);
   if (rest.length) out.push({ head: null, items: rest });
   return out;
 }
@@ -104,6 +111,11 @@ export function estimateLeft(p: Progress | null): string {
 /** The stage to show: "In progress" for a goal or feature with tasks under way. */
 export function shownStageLabel(t: Pick<Task, "stage" | "shownStage">): string {
   return t.shownStage === "in-progress" ? "In progress" : stageLabel(t.shownStage || t.stage);
+}
+
+/** Where the stage it shows sorts: a stage's place, In progress with Building. */
+export function shownStageRank(t: Pick<Task, "stage" | "shownStage">): number {
+  return stageRank(t.shownStage === "in-progress" ? "building" : t.shownStage || t.stage);
 }
 
 /** The stage colour to show it in (In progress takes Building's). */

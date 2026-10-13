@@ -443,6 +443,19 @@ fn set_link(
             .ok_or_else(|| format!("task {id} has no front matter"))?;
         match key {
             "level" => {
+                // Only tasks are built: one being built or tested, or held, stays a task.
+                let at_work = matches!(me.stage.as_str(), "building" | "testing");
+                if val != "task" && (at_work || !me.claimed_by.is_empty()) {
+                    let held = if me.claimed_by.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" (held by {})", me.claimed_by)
+                    };
+                    return Err(format!(
+                        "{id} is in {}{held}; return or pass it first",
+                        stage_label(&me.stage)
+                    ));
+                }
                 if val != "goal" && !me.due.is_empty() {
                     return Err(format!("clear {id}'s due date first; only a goal has one"));
                 }
@@ -3729,6 +3742,56 @@ mod tests {
             set("0006", "parent", "0005").unwrap_err(),
             "0006 under 0005 would make a loop: 0005 is under 0006"
         );
+    }
+
+    #[test]
+    fn a_task_in_building_testing_or_held_cant_become_a_feature_or_goal() {
+        let d = queue();
+        put_task(
+            d.path(),
+            "doing",
+            "0005",
+            "priority: normal\nstage: building\nstatus: doing\nclaimed-by: wt-a\nheartbeat:\nwaiting_on:",
+        );
+        put_task(
+            d.path(),
+            "doing",
+            "0006",
+            "priority: normal\nstage: testing\nstatus: doing\nclaimed-by:\nwaiting_on:",
+        );
+        put_task(
+            d.path(),
+            "todo",
+            "0007",
+            "priority: normal\nstage: ready\nstatus: todo\nclaimed-by: wt-b\nwaiting_on:",
+        );
+        put_task(d.path(), "todo", "0008", &ready_fm("normal"));
+        let files: Vec<_> = ["0005", "0006", "0007"]
+            .iter()
+            .map(|id| file_of(d.path(), id))
+            .collect();
+        let set = |id: &str, level: &str| set_field(d.path(), id, "level", level, "owner", T);
+        assert_eq!(
+            set("0005", "feature").unwrap_err(),
+            "0005 is in Building (held by wt-a); return or pass it first"
+        );
+        assert_eq!(
+            set("0006", "goal").unwrap_err(),
+            "0006 is in Testing; return or pass it first"
+        );
+        assert_eq!(
+            set("0007", "feature").unwrap_err(),
+            "0007 is in Ready (held by wt-b); return or pass it first"
+        );
+        let after: Vec<_> = ["0005", "0006", "0007"]
+            .iter()
+            .map(|id| file_of(d.path(), id))
+            .collect();
+        assert_eq!(after, files, "refusals leave the files alone");
+        // Staying a task is fine wherever it is; a free task in Ready may change.
+        set("0005", "task").unwrap();
+        set("0008", "feature").unwrap();
+        assert_eq!(task_of(d.path(), "0008").level, "feature");
     }
 
     #[test]

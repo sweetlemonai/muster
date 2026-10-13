@@ -1,13 +1,21 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { ago, claimant, earlierStages, heldByOther, isStage, LEASE_SECS, leaseRunOut, nextStage, oneAtATime, passLabel, readFiles, stamp, STAGES, stageLabel, stageOf } from "./lib";
+import { estimateLeft, isWork, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
 import Markdown from "./Markdown";
 import TagEditor from "./Tags";
 import type { Question, Task } from "./types";
 
 const IMAGE = /\.(png|jpe?g|gif|webp)$/i;
 
-export default function TaskPanel({ task, now, onClose, onChanged }: { task: Task; now: number; onClose: () => void; onChanged: () => void }) {
+export default function TaskPanel({ task, now, onClose, onChanged, childTasks }: {
+  task: Task;
+  now: number;
+  onClose: () => void;
+  onChanged: () => void;
+  /** A goal's or feature's children, as far as the window has them. */
+  childTasks?: Task[];
+}) {
   const [body, setBody] = useState<string | null>(null);
   const [raw, setRaw] = useState(false);
   const [error, setError] = useState("");
@@ -46,6 +54,8 @@ export default function TaskPanel({ task, now, onClose, onChanged }: { task: Tas
         <button className="close" onClick={onClose} aria-label="Close">×</button>
       </header>
 
+      {!isWork(task) && <Rollup task={task} childTasks={childTasks} />}
+
       <Controls task={task} nowSecs={now} onChanged={onChanged} />
 
       {open.length > 0 && (
@@ -72,8 +82,44 @@ export default function TaskPanel({ task, now, onClose, onChanged }: { task: Tas
   );
 }
 
-/** The stage, who works it, and the blocked flag. */
+/** A goal's or feature's roll-up: its tasks' progress, the estimate left, a goal's due date, and
+ *  its children with the stage each shows. */
+function Rollup({ task, childTasks }: { task: Task; childTasks?: Task[] }) {
+  const byId = new Map((childTasks ?? []).map((c) => [c.id, c]));
+  const left = estimateLeft(task.progress);
+  return (
+    <section className="rollup-panel" aria-label="Roll-up">
+      <h2>{levelLabel(task.level)} · {progressText(task.progress) || "no tasks yet"}</h2>
+      {left && <p className="meta">{left}</p>}
+      {task.due && <p className="meta">due {task.due}</p>}
+      {task.children.length > 0 && (
+        <ul className="children">
+          {task.children.map((id) => {
+            const c = byId.get(id);
+            return (
+              <li key={id}>
+                {c ? <><span className="id">{id}</span> {c.title} <span className={`status-pill s-${shownStageClass(c)}`}>{shownStageLabel(c)}</span></> : id}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** The stage, who works it, and the blocked flag. A goal or feature shows the stage its children
+ *  give it, and its level. */
 function StageLine({ task }: { task: Task }) {
+  if (!isWork(task)) {
+    return (
+      <div className="stage-line">
+        <span className={`status-pill s-${shownStageClass(task)}`}>{shownStageLabel(task)}</span>
+        <span className="meta">{levelLabel(task.level)}</span>
+        {task.blocked && <span className="status-pill blocked">blocked{task.waitingOn ? `: ${task.waitingOn}` : ""}</span>}
+      </div>
+    );
+  }
   const known = isStage(task.stage);
   const role = known ? STAGES.find((s) => s.id === task.stage)?.role : "";
   return (
@@ -245,8 +291,11 @@ function Controls({ task, nowSecs, onChanged }: { task: Task; nowSecs: number; o
   const backTarget = back.some((s) => s.id === backTo) ? backTo : back[0]?.id ?? "";
   const holder = heldByOther(task);
   // A claim nobody has heard from past the lease: the owner may give it back to Ready.
-  const stale = leaseRunOut(task, nowSecs);
-  const showPass = pass !== null && !holder;
+  // Goals and features never go into or through Building: they may be passed on only while
+  // they're shaped, and have no claim to release. The stage picker stays the owner's.
+  const shapedOnly = !isWork(task);
+  const stale = !shapedOnly && leaseRunOut(task, nowSecs);
+  const showPass = pass !== null && !holder && (!shapedOnly || task.stage === "backlog" || task.stage === "shaping");
   // Every pass says the stage it was clicked in, so the core refuses it if the task moved on.
   const passFrom = (gateLine: string, done: string) => submit(() => api.passTask(task.queue, task.id, task.stage, gateLine, "", now()), done);
   const passNow = () => {
@@ -331,7 +380,7 @@ function Controls({ task, nowSecs, onChanged }: { task: Task; nowSecs: number; o
           {claimant(task.claimedBy)} hasn't been heard from for {LEASE_SECS / 3600} h. Release puts it back in Ready, logged as reclaimed.
         </p>
       )}
-      {pass && !holder && task.blocked && <p className="meta small">Blocked on {task.waitingOn || "something it doesn't name"}. Unblock it to pass it on.</p>}
+      {showPass && task.blocked && <p className="meta small">Blocked on {task.waitingOn || "something it doesn't name"}. Unblock it to pass it on.</p>}
       {form === "gate" && task.stage === "building" && (
         <form
           className="control-row"

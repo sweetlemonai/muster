@@ -220,7 +220,7 @@ pub struct Task {
     /// only): the ids whose parent this is, and its tasks' progress.
     pub children: Vec<String>,
     pub progress: Option<Progress>,
-    /// The stage to show: a task's own; for a goal or feature, the one its tasks give it
+    /// The stage to show: a task's own; for a goal or feature, the one its children give it
     /// ("ready", "in-progress" or "done"), unless it's being shaped or the owner set it.
     pub shown_stage: String,
     /// The last stage change was the owner's override (`(set)`), so a goal or feature shows it.
@@ -816,10 +816,11 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str) -> Vec<Strin
 
 /// The goals' and features' roll-ups, once every task of a queue is read: their children (by
 /// `parent:` in this queue), their tasks' progress and open estimates, and the stage they show
-/// (`Task::shown_stage`): Done when every one of their tasks is (and they have one), In progress
-/// once any is past Ready, else Ready. One being shaped (Backlog, Shaping), or whose stage the
-/// owner set, shows its own. Loops and wrong levels are `level_problems`' to report; here each
-/// task is counted once, so a loop can't make it go round.
+/// (`Task::shown_stage`): Done when every direct child is Done (and it has one; a feature with no
+/// tasks isn't Done), In progress once any child is past Ready, else Ready. Features are worked
+/// out before goals, so a goal reads its features' shown stages. One being shaped (Backlog,
+/// Shaping), or whose stage the owner set, shows its own. Loops and wrong levels are
+/// `level_problems`' to report; here each task is counted once, so a loop can't make it go round.
 pub fn rollup(tasks: &mut [Task]) {
     let mut index: HashMap<&str, usize> = HashMap::new();
     for (i, t) in tasks.iter().enumerate() {
@@ -838,7 +839,6 @@ pub fn rollup(tasks: &mut [Task]) {
             continue;
         }
         let mut progress = Progress::default();
-        let mut started = false;
         let mut seen = HashSet::from([g]);
         let mut stack = kids[g].clone();
         while let Some(i) = stack.pop() {
@@ -858,24 +858,35 @@ pub fn rollup(tasks: &mut [Task]) {
                 progress.est_token_count =
                     progress.est_token_count.saturating_add(t.est_token_count);
             }
-            started |= STAGES.iter().position(|s| *s == t.stage).unwrap_or(0) > ready;
         }
         let mut children: Vec<String> = kids[g].iter().map(|&i| tasks[i].id.clone()).collect();
         children.sort();
-        let t = &mut tasks[g];
-        let shaping = matches!(t.stage.as_str(), "backlog" | "shaping");
-        if !shaping && !t.stage_set_by_owner {
-            t.shown_stage = if progress.total > 0 && progress.done == progress.total {
+        tasks[g].children = children;
+        tasks[g].progress = Some(progress);
+    }
+    // The shown stage from the direct children's: features first, then goals that read them.
+    let past_ready =
+        |s: &str| s == "in-progress" || STAGES.iter().position(|x| *x == s).unwrap_or(0) > ready;
+    for level in ["feature", "goal"] {
+        for g in 0..tasks.len() {
+            let t = &tasks[g];
+            let own = matches!(t.stage.as_str(), "backlog" | "shaping") || t.stage_set_by_owner;
+            if t.level != level || own {
+                continue;
+            }
+            let shown: Vec<&str> = kids[g]
+                .iter()
+                .map(|&i| tasks[i].shown_stage.as_str())
+                .collect();
+            let stage = if !shown.is_empty() && shown.iter().all(|s| *s == "done") {
                 "done"
-            } else if started {
+            } else if shown.iter().any(|s| past_ready(s)) {
                 "in-progress"
             } else {
                 "ready"
-            }
-            .to_string();
+            };
+            tasks[g].shown_stage = stage.to_string();
         }
-        t.children = children;
-        t.progress = Some(progress);
     }
 }
 
@@ -2527,6 +2538,33 @@ mod tests {
             (goal.stage.as_str(), goal.status.as_str()),
             ("ready", "todo")
         );
+    }
+
+    #[test]
+    fn a_goal_is_done_only_when_every_direct_child_is_and_an_empty_feature_is_not() {
+        let d = levels_queue(&[
+            ("0001", &format!("level: goal\n{READY}")),
+            ("0002", &format!("level: feature\nparent: 0001\n{READY}")),
+            ("0003", &format!("parent: 0002\n{DONE}")),
+            // A feature with no tasks yet: not Done, so its goal isn't either.
+            ("0004", &format!("level: feature\nparent: 0001\n{READY}")),
+            // A goal whose only child is a feature with no tasks: Ready, not In progress.
+            ("0005", &format!("level: goal\n{READY}")),
+            ("0006", &format!("level: feature\nparent: 0005\n{READY}")),
+        ]);
+        let s = levels_state(&d);
+        assert!(s.problems.is_empty(), "{:?}", s.problems);
+        let t = |id: &str| s.tasks.iter().find(|t| t.id == id).unwrap().clone();
+        assert_eq!(t("0002").shown_stage, "done");
+        assert_eq!(t("0004").shown_stage, "ready");
+        assert_eq!(
+            t("0001").shown_stage,
+            "in-progress",
+            "a done feature beside an empty one"
+        );
+        // Every task under it is done, yet it isn't: the progress says 1 of 1.
+        assert_eq!(t("0001").progress.map(|p| (p.done, p.total)), Some((1, 1)));
+        assert_eq!(t("0005").shown_stage, "ready");
     }
 
     #[test]

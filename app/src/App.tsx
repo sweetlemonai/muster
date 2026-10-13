@@ -7,7 +7,7 @@ import NewTask from "./NewTask";
 import Appearance from "./Appearance";
 import { TableView, TimelineView } from "./Views";
 import { GroupByChips, GroupedBoard } from "./Groups";
-import { GROUP_KEY, type GroupBy, groupItems, indexTasks, isWork, parentLine, parseGroupBy } from "./levels";
+import { childrenOf, GROUP_KEY, type GroupBy, groupItems, indexTasks, isWork, parentLine, parseGroupBy } from "./levels";
 import logo from "./logo.png";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
@@ -108,7 +108,7 @@ export default function App() {
   const work = useMemo(() => tasks.filter(isWork), [tasks]);
   const cols = useMemo(() => columns(work), [work]);
   const index = useMemo(() => indexTasks(state?.tasks ?? []), [state]);
-  const boardGroups = useMemo(() => (groupBy === "none" ? [] : groupItems(work, inQueue, groupBy)), [groupBy, work, inQueue]);
+  const boardGroups = useMemo(() => (groupBy === "none" ? [] : groupItems(work, inQueue, groupBy, tasks)), [groupBy, work, inQueue, tasks]);
   const tableGroups = useMemo(() => (groupBy === "none" ? undefined : groupItems(tasks, inQueue, groupBy)), [groupBy, tasks, inQueue]);
   const openKey = pane?.kind === "task" ? pane.key : null;
   const openTask = openKey ? (state?.tasks ?? []).find((t) => key(t) === openKey) ?? null : null;
@@ -312,7 +312,7 @@ export default function App() {
             <aside className="pane" style={{ width }} aria-label="Details">
               {pane.kind === "task" && openTask && (
                 <Suspense fallback={<p className="none">Loading…</p>}>
-                  <TaskPanel key={openKey} task={openTask} now={now} onClose={() => setPane(null)} onChanged={refresh} />
+                  <TaskPanel key={openKey} task={openTask} now={now} onClose={() => setPane(null)} onChanged={refresh} childTasks={childrenOf(openTask, index)} />
                 </Suspense>
               )}
               {pane.kind === "task" && !openTask && <p className="none">That task is gone.</p>}

@@ -12,8 +12,8 @@ const task = (over: Partial<Task>): Task => ({
 });
 
 /** The pane as first drawn: its stage line, the stage row's buttons and the notes under it. */
-function pane(over: Partial<Task>, now = 0) {
-  const html = renderToStaticMarkup(createElement(TaskPanel, { task: task(over), now, onClose: () => {}, onChanged: () => {} }));
+function pane(over: Partial<Task>, now = 0, childTasks?: Task[]) {
+  const html = renderToStaticMarkup(createElement(TaskPanel, { task: task(over), now, onClose: () => {}, onChanged: () => {}, childTasks }));
   const row = /<section class="controls">\s*<div class="control-row">([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "";
   const buttons = [...row.matchAll(/<button([^>]*)>([^<]*)<\/button>/g)].map((m) => `${m[2]}${m[1].includes("disabled") ? " (disabled)" : ""}`);
   const line = /<div class="stage-line">([\s\S]*?)<\/div>/.exec(html)?.[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() ?? "";
@@ -64,5 +64,29 @@ describe("task pane stage controls", () => {
     expect(p.line).toBe("reviewing (unknown)");
     expect(p.html).toContain('<option value="" disabled="" selected="">reviewing (unknown)</option>');
     expect(p.buttons).toEqual(["Block"]);
+  });
+});
+
+describe("task pane for a goal or feature", () => {
+  const progress = { done: 3, total: 7, estMinutes: 120, estTokenCount: 0 };
+  const kids = [task({ id: "0031", title: "Pass button", stage: "building" }), task({ id: "0032", title: "Undo", stage: "done" })];
+  it("shows the stage its children give it, its roll-up and children, and no action the core refuses", () => {
+    const p = pane({ id: "0030", level: "feature", stage: "ready", shownStage: "in-progress", progress, children: ["0031", "0032"] }, 0, kids);
+    expect(p.line).toBe("In progress Feature");
+    expect(p.buttons).toEqual(["Send back", "Block"]);
+    const rollup = (/<section class="rollup-panel"[^>]*>([\s\S]*?)<\/section>/.exec(p.html)?.[1] ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    expect(rollup).toBe("Feature · 3 of 7 done ≈ 2 h left 0031 Pass button Building 0032 Undo Done");
+    // The owner's stage picker stays.
+    expect(p.html).toContain('<option value="ready" selected="">Ready</option>');
+  });
+  it("without the children's tasks at hand, lists their ids", () => {
+    const p = pane({ id: "0030", level: "goal", due: "2026-12-01", progress, children: ["0031"] });
+    expect(p.html).toContain("due 2026-12-01");
+    expect(p.html).toContain("<li>0031</li>");
+  });
+  it("may still be passed on while it's shaped, but never into Building, nor out of it, nor released", () => {
+    expect(pane({ level: "goal", stage: "shaping", shownStage: "shaping", progress }).buttons).toEqual(["Pass to Ready", "Send back", "Block"]);
+    const held = { level: "feature", stage: "building", shownStage: "building", claimedBy: "owner", heartbeat: "", modified: 0, progress };
+    expect(pane(held, 12 * 3600 + 60).buttons).toEqual(["Send back", "Block"]);
   });
 });

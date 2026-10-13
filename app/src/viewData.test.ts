@@ -23,6 +23,18 @@ describe("sortTasks", () => {
   });
 });
 
+describe("sortTasks by stage for goals and features", () => {
+  it("sorts a goal or feature by the stage it shows, In progress with Building", () => {
+    const list = [
+      t({ id: "b", level: "feature", stage: "ready", shownStage: "done" }),
+      t({ id: "d", stage: "building" }),
+      t({ id: "c", level: "goal", stage: "ready", shownStage: "in-progress" }),
+      t({ id: "a", stage: "ready" }),
+    ];
+    expect(sortTasks(list, "stage", false).map((x) => x.id)).toEqual(["a", "c", "d", "b"]);
+  });
+});
+
 describe("timeline bars", () => {
   const today = dayNumber("2026-10-14")!;
   it("runs from capture to done, or to today while open", () => {

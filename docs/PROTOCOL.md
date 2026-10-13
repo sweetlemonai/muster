@@ -43,9 +43,10 @@
 > `muster set <id> level|parent|due <value>` (empty clears a parent or due). A task's parent is a
 > feature or a goal, a feature's is a goal, a goal has none; anything else is refused. Agents build
 > only tasks: `claim`, `next` and `pass` never take a goal or feature into Building (`next` passes
-> over them). A goal's or feature's stage is shown from its tasks (Done when all are, In progress
-> once one is past Ready, else Ready) unless it's being shaped or the owner set it with `muster
-> stage`. `muster check` and `manifest.py --check` report a parent that doesn't exist, one at the
+> over them), and a task can't become a goal or feature while it's in Building or Testing or held.
+> A goal's or feature's stage is shown from its direct children: Done when every child is Done (a
+> feature with no tasks yet isn't, so neither is its goal), In progress once any child is past
+> Ready, else Ready. Unless it's being shaped or the owner set it with `muster stage`. `muster check` and `manifest.py --check` report a parent that doesn't exist, one at the
 > wrong level and a loop, and warn about a goal past its due date with tasks open (a warning doesn't
 > fail the check).
 

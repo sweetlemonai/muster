@@ -396,3 +396,8 @@ button:disabled { opacity: 0.45; cursor: default; }
 .tasks-table .rollup { margin-left: 6px; font-weight: 400; }
 .pane-form .level-pick { align-items: center; gap: 4px; }
 .level-pick .parent-field { flex-direction: row; align-items: center; gap: 6px; margin-left: 10px; }
+.rollup-panel { padding: 4px 0 8px; }
+.rollup-panel h2 { margin: 0 0 4px; font-size: 13px; }
+.rollup-panel p { margin: 2px 0; }
+.rollup-panel .children { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
+.rollup-panel .children .id { color: var(--muted); }

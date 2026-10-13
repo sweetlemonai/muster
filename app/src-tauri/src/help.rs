@@ -162,7 +162,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "set",
         usage: "muster set <id> <priority|type|title|tags|time|tokens|level|parent|due> <value>",
-        what: "Change one field, logged with the time and who. level, parent and due keep the rules of muster new (a parent that exists at the right level, no loop, a due date only on a goal); an empty parent or due clears it.",
+        what: "Change one field, logged with the time and who. level, parent and due keep the rules of muster new (a parent that exists at the right level, no loop, a due date only on a goal); a task in Building or Testing, or held, stays a task. An empty parent or due clears it.",
         options: &[],
         examples: &["muster set 0007 priority high", "muster set 0007 tags spike,tech-debt", "muster set 0007 tags \"\"", "muster set 0007 time 3h", "muster set 0007 tokens 600k", "muster set 0007 title \"A clearer title\"", "muster set 0031 level feature", "muster set 0032 parent 0031", "muster set 0031 parent \"\"", "muster set 0030 due 2026-12-01"],
     },
