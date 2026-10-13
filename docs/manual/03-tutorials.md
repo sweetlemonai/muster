@@ -141,7 +141,7 @@ Several Claude Code sessions can build different tasks of one project at the sam
    ! muster next --as wt-a
    ```
 
-   Each holds one task at a time, and `next` skips tasks someone else holds, tasks that are blocked, and tasks whose dependencies aren't Done. Two sessions asking at once get different tasks.
+   Each holds one task at a time, and `next` skips tasks someone else holds, tasks that are blocked, and tasks whose dependencies aren't merged yet (in Your check or Done). Two sessions asking at once get different tasks.
 4. Watch the board: each card in Building shows who has it, how long ago it started and its latest check-in, and a dot beside its id while the session is working. A session quiet for more than 30 minutes shows "no check-in for …". Open a task to see in its **Work** section what each session has used so far.
 5. Merge each branch when its task has passed your check, as you would any branch.
 

@@ -30,7 +30,7 @@ budgeted; only `muster` writes state, agents never edit status, claims or times 
 |---|---|---|---|
 | Backlog | anyone | a one-liner from the app, CLI, a session, a file | 0015 |
 | Shaping | product + tech + UI agents | criteria, type, parent (0016), estimates (0017), `depends:` (0019), `touches:` (0023), `for:` (0022) | 0015 |
-| Ready | — | claimable when its `depends:` are done; `muster ready --parallel` picks a safe set | 0019, 0023 |
+| Ready | — | claimable when its `depends:` are merged (Your check or Done; a human task's, Done, 0042); `muster ready --parallel` picks a safe set | 0019, 0023 |
 | Building | code agent (or the owner, for `for: human`) | `muster start`: claim (0002) + branch + worktree (0023); lessons for its `touches:` in the brief (0027); gate | 0002, 0023, 0027 |
 | Testing | review engine + QA agent | `pass` opens the PR; the engine reviews it, the builder fixes or disputes (up to 3 rounds); QA verifies each criterion; then merge, clean up the worktree | 0023, 0027 |
 | Your check | the owner | try it on main; tick the owner-only criteria (0028); Accept | 0014, 0028 |

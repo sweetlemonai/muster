@@ -1454,11 +1454,16 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str) -> Vec<Strin
             ));
         }
         if t.kind_guessed {
-            // For an old block on task ids, only those still open: done or missing ones don't
-            // hold it, and with none left it only needs unblocking.
+            // For an old block on task ids, only those still open: merged (0042) or missing ones
+            // don't hold it, and with none left it only needs unblocking.
+            let under_way = crate::block::started(t);
             let open: Vec<String> = crate::block::ids_in(&t.waiting_on)
                 .into_iter()
-                .filter(|d| tasks.iter().any(|o| o.id == *d && o.stage != "done"))
+                .filter(|d| {
+                    tasks
+                        .iter()
+                        .any(|o| o.id == *d && crate::block::holds(o, under_way))
+                })
                 .collect();
             let what = t.waiting_on.chars().take(80).collect::<String>();
             let (kind, id) = (&t.blocked_kind, &t.id);

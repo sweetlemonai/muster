@@ -55,7 +55,7 @@ Why stages: each kind of work gets its own worker and its own check, and you onl
 
 You block a task by saying what kind of wait it is, and what it waits on. There are five kinds:
 
-- **tasks**: other tasks have to be done first. Their ids go into its `depends:`, so it's written once, and it clears by itself when they're all Done.
+- **tasks**: other tasks have to be merged first. Their ids go into its `depends:`, so it's written once, and it clears by itself once they're all merged: in Your check or Done (see [Depends and the graph](#depends-and-the-graph)).
 - **you**: you have to do or decide something.
 - **permission**: the agent lacks some access; say what, and where to grant it.
 - **question**: an open question in the task. It clears when the question is answered.
@@ -90,7 +90,11 @@ See [Levels](05-commands.md#levels) and decision [0003](../decisions/0003-muster
 
 ## Depends and the graph
 
-A task can **depend on** other tasks in the same queue: it shouldn't start until they're done. You set it with `muster set 0018 depends 0014,0016` (an empty value clears it). `muster claim` and `muster next` won't take a task while anything it depends on isn't Done.
+A task can **depend on** other tasks in the same queue: it shouldn't start until they're merged. You set it with `muster set 0018 depends 0014,0016` (an empty value clears it).
+
+A dependency counts once it's **merged**. An agent's work merges into main after Testing passes, then waits in Your check for your look, so the next tasks can build on it: a task in **Your check or Done** counts. One in Testing or earlier doesn't. Your own tasks (human tasks) count only when they're **Done**, since nothing merges for them. `muster claim` and `muster next` won't take a task while anything it depends on isn't merged, and the card, the table, `muster list` and the Graph all show it "Blocked by tasks" until then. When the last one reaches Your check, the waiting task's log says so: `unblocked: 0014 in Your check`.
+
+If you send a task back from Your check (**Send back**, or `muster return 0014 "<why>" --to building`), the tasks that depend on it and haven't started show blocked by it again. Ones already under way (in Building with someone on them, or in Testing or Your check) keep going: nothing moves them back, and their log gets a note naming where it went, `0014 went back to Building: <why>`.
 
 The **Graph** tab draws it: an arrow points from a task to each task that waits on it. Click a task and what it waits on, and what waits on it, light up. A task with nothing left to wait on is marked "ready to start". See [The graph](04-in-the-app.md#the-graph) (task 0019).
 

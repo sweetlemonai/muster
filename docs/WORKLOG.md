@@ -4,6 +4,29 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — A dependency is met once it's merged: Your check counts, not only Done (task 0042)
+**Did:** the owner settled that work merges after Testing and waits in Your check so the next
+tasks build on it, but the core still held dependents until Done (0005 couldn't be claimed with
+0002 and 0014 merged). Now an agent's task in Your check or Done meets a `depends:`; a human task
+still needs Done. One rule in `block.rs` (`met_at`, `holds`, `open_ids`) feeds `claim`/`next`
+and `pass` into Building (review: a Pass on the Ready card slipped past it), `muster start` and
+`ready --parallel` (0023),
+the derived "Blocked by tasks" (card, table, timeline, pane, `muster list`, `check`, INDEX.md's
+"waits on"), `set depends`, `block --on <ids>` and the old-block check; `manifest.py` mirrors it
+and the Graph's "ready" and blocked badge read the core's verdict (`readyToStart`). Reaching Your
+check logs `unblocked: 0002 in Your check` on the tasks it frees (Done after it writes nothing
+more). A return from Your check blocks unstarted dependents again and notes started ones
+(`0002 went back to Building: <why>`) without moving them; they aren't held by it again. Shared
+fixture `app/src/deps-cases.json` holds the CLI (`tests/deps_cases.rs`), the app
+(`deps-cases.test.ts`) and `manifest.py` (`test_task.py`) to the same answers. Help text, the
+commands page, PROTOCOL.md, VISION.md's spine, AS_BUILT.md, COMMANDS.md and the manual (Concepts,
+Tutorials, FAQ) say so.
+**Verified:** `pnpm check` green (vitest 849, cargo test 368 + 4 + 13 + 3, clippy, fmt, build);
+`python3 -I bin/test_task.py` (41) and `bin/test_commands.py` (11) OK. Mutating `met_at` back to
+Done-only fails 3 of the 4 fixture tests.
+**Open:** a task under way whose dependency went back can't be blocked on that task again
+(refused, saying so).
+
 ## 2026-10-13 — Decision 0004: one session per task, thin coordinator, handoff at ~150k
 **Decided:** the owner said yes after seeing today's numbers (almost every token is context
 re-read per turn; a 450k coordinator pays 450k per turn). Record:

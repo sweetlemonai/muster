@@ -1,0 +1,47 @@
+{
+  "about": "What is blocked by the tasks it depends on (0019, 0024, 0042), one set of answers for the core and the app. tests/deps_cases.rs writes these tasks as files and checks `muster list --json`, `muster list`, `muster check`, `muster claim` and `muster next` against `want`; deps-cases.test.ts gives the app the same tasks with the `blockedKind` and `blockedBy` the core derives, and checks the board's words and the Graph's ready mark against the same `want`. A dependency is met once it's merged: an agent's task in Your check or Done, the owner's own (for: human) only once it's Done. One merged once and sent back holds back only tasks not started yet.",
+  "tasks": [
+    { "id": "0001", "title": "Merged, waiting for the owner's look", "stage": "your-check", "for": "ai", "claimedBy": "", "heldBy": "owner", "waitingOn": "", "depends": [], "log": ["2026-10-13 08:00 qa: stage testing → your-check"] },
+    { "id": "0002", "title": "In Testing, not merged yet", "stage": "testing", "for": "ai", "claimedBy": "", "heldBy": "wt-q", "waitingOn": "", "depends": [], "log": ["2026-10-13 08:00 wt-q: stage building → testing"] },
+    { "id": "0003", "title": "Done", "stage": "done", "for": "ai", "claimedBy": "", "heldBy": "", "waitingOn": "", "depends": [], "log": ["2026-10-13 08:00 owner: stage your-check → done"] },
+    { "id": "0004", "title": "The owner's own, put in Your check by hand", "stage": "your-check", "for": "human", "claimedBy": "", "heldBy": "owner", "waitingOn": "", "depends": [], "log": ["2026-10-13 08:00 owner: stage building → your-check (set)"] },
+    { "id": "0005", "title": "Merged, then sent back", "stage": "building", "for": "ai", "claimedBy": "wt-e", "heldBy": "", "waitingOn": "", "depends": [], "log": ["2026-10-13 07:00 qa: stage testing → your-check", "2026-10-13 08:00 owner: stage your-check → building (returned: the colours are off)"] },
+    { "id": "0006", "title": "The owner's own, to do", "stage": "ready", "for": "human", "claimedBy": "", "heldBy": "", "waitingOn": "", "depends": [], "log": [] },
+    { "id": "0010", "title": "Waits on one in Your check", "stage": "ready", "for": "ai", "claimedBy": "", "heldBy": "", "waitingOn": "", "depends": ["0001"], "log": [] },
+    { "id": "0011", "title": "Waits on one in Testing", "stage": "ready", "for": "ai", "claimedBy": "", "heldBy": "", "waitingOn": "", "depends": ["0002"], "log": [] },
+    { "id": "0012", "title": "Waits on one in Your check and one done", "stage": "ready", "for": "ai", "claimedBy": "", "heldBy": "", "waitingOn": "", "depends": ["0001", "0003"], "log": [] },
+    { "id": "0013", "title": "Waits on the owner's own in Your check", "stage": "ready", "for": "ai", "claimedBy": "", "heldBy": "", "waitingOn": "", "depends": ["0004"], "log": [] },
+    { "id": "0014", "title": "Not started, waits on one sent back", "stage": "ready", "for": "ai", "claimedBy": "", "heldBy": "", "waitingOn": "", "depends": ["0005"], "log": [] },
+    { "id": "0015", "title": "Under way, waits on one sent back", "stage": "building", "for": "ai", "claimedBy": "wt-a", "heldBy": "", "waitingOn": "", "depends": ["0005"], "log": ["2026-10-13 07:30 wt-a: stage ready → building (claimed)"] },
+    { "id": "0016", "title": "Under way, waits on one never merged", "stage": "testing", "for": "ai", "claimedBy": "", "heldBy": "wt-b", "waitingOn": "", "depends": ["0002"], "log": ["2026-10-13 07:30 wt-b: stage building → testing"] },
+    { "id": "0017", "title": "Waits on the owner's own to do", "stage": "ready", "for": "ai", "claimedBy": "", "heldBy": "", "waitingOn": "", "depends": ["0006"], "log": [] },
+    { "id": "0018", "title": "An old block on a task now merged", "stage": "ready", "for": "ai", "claimedBy": "", "heldBy": "", "waitingOn": "0001", "depends": [], "log": [] }
+  ],
+  "want": {
+    "0001": { "blockedBy": [], "ready": false },
+    "0002": { "blockedBy": [], "ready": false },
+    "0003": { "blockedBy": [], "ready": false },
+    "0004": { "blockedBy": [], "ready": false },
+    "0005": { "blockedBy": [], "ready": false },
+    "0006": { "blockedBy": [], "ready": true },
+    "0010": { "blockedBy": [], "ready": true },
+    "0011": { "blockedBy": [{ "id": "0002", "stage": "testing", "holder": "wt-q" }], "ready": false },
+    "0012": { "blockedBy": [], "ready": true },
+    "0013": { "blockedBy": [{ "id": "0004", "stage": "your-check", "holder": "owner" }], "ready": false },
+    "0014": { "blockedBy": [{ "id": "0005", "stage": "building", "holder": "wt-e" }], "ready": false },
+    "0015": { "blockedBy": [], "ready": false },
+    "0016": { "blockedBy": [{ "id": "0002", "stage": "testing", "holder": "wt-q" }], "ready": false },
+    "0017": { "blockedBy": [{ "id": "0006", "stage": "ready", "holder": "" }], "ready": false },
+    "0018": { "blockedBy": [{ "id": "0001", "stage": "your-check", "holder": "owner" }], "ready": false }
+  },
+  "sentences": {
+    "0011": "Blocked by tasks: 0002 (Testing, wt-q)",
+    "0013": "Blocked by tasks: 0004 (Your check, owner)",
+    "0014": "Blocked by tasks: 0005 (Building, wt-e)",
+    "0016": "Blocked by tasks: 0002 (Testing, wt-q)",
+    "0017": "Blocked by tasks: 0006 (Ready)"
+  },
+  "agentClaims": ["0010", "0012"],
+  "next": "0010",
+  "check": ["0018-t.md is blocked on \"0001\" without a kind, read as tasks; none of them is open now: muster unblock 0018"]
+}

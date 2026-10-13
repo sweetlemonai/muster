@@ -212,19 +212,96 @@ pub fn sentence_of(t: &Task, short: bool) -> String {
     sentence(&t.blocked_kind, &t.block_detail, &t.blocked_by, short)
 }
 
+/// Is a task in `stage` met as a dependency (0042)? An agent's task once it's merged: work merges
+/// into main after Testing passes and then waits in Your check (VISION.md), so Your check counts
+/// as Done does. The owner's own task (`human`, `for: human`) only once it's Done, since nothing
+/// merges for it.
+pub fn met_at(stage: &str, human: bool) -> bool {
+    stage == "done" || (stage == "your-check" && !human)
+}
+
+/// `met_at` for a task as it is now.
+pub fn met(dep: &Task) -> bool {
+    met_at(&dep.stage, dep.is_human())
+}
+
+/// Was it met once (its stage history reached a met stage), whatever it is now: merged, then sent
+/// back.
+fn was_met(dep: &Task) -> bool {
+    dep.stage_history
+        .iter()
+        .any(|s| met_at(&s.to, dep.is_human()))
+}
+
+/// Is `t` under way: held in Building, or past it in Testing or Your check?
+pub fn started(t: &Task) -> bool {
+    (t.stage == "building" && !t.claimed_by.is_empty())
+        || matches!(t.stage.as_str(), "testing" | "your-check")
+}
+
+/// Does `dep` hold back a task that depends on it, one under way (`started`) or not? Until it's
+/// met, it does. Except that a dependency merged once and then sent back (`return`, an override)
+/// holds back only the tasks not started yet: one already under way keeps going, with a note on
+/// its log saying it went back, rather than a forced return.
+pub fn holds(dep: &Task, started: bool) -> bool {
+    !met(dep) && !(started && was_met(dep))
+}
+
+/// Why `dep` doesn't hold `id` back (`holds` is false): the refusal for a block on it.
+pub fn nothing_to_wait_for(dep: &Task, id: &str) -> String {
+    match dep.stage.as_str() {
+        "done" => format!("{} is done already; there's nothing to wait for", dep.id),
+        _ if met(dep) => format!(
+            "{} is in Your check, merged already; there's nothing to wait for",
+            dep.id
+        ),
+        // Nothing merges for the owner's own task: it was done.
+        _ => format!(
+            "{} went back after it was {}, and {id} is under way, so it doesn't wait for it again; block on outside or you to wait anyway",
+            dep.id,
+            if dep.is_human() { "done" } else { "merged" }
+        ),
+    }
+}
+
+/// Per task id, whether it holds back a task not started yet, and one under way (`holds`). Any
+/// file with that id counts, as `claim` reads them.
+pub type Open = HashMap<String, (bool, bool)>;
+
+/// `Open` for a queue's tasks.
+pub fn open_ids<'a>(tasks: impl IntoIterator<Item = &'a Task>) -> Open {
+    let mut open = Open::new();
+    for t in tasks {
+        let o = open.entry(t.id.clone()).or_default();
+        o.0 |= holds(t, false);
+        o.1 |= holds(t, true);
+    }
+    open
+}
+
+/// Does the task with id `d` hold `t` back (by `open_ids`)? Never itself; a dependency that
+/// doesn't exist doesn't.
+pub fn holds_id(open: &Open, d: &str, t: &Task) -> bool {
+    let under_way = started(t);
+    d != t.id
+        && open
+            .get(d)
+            .is_some_and(|o| if under_way { o.1 } else { o.0 })
+}
+
 /// Once every task of a queue is read: what each is blocked by. An old block on task ids lists
-/// those ids; then the tasks in `depends:` that aren't done (any file with that id, as `claim`
-/// reads them; a dependency that doesn't exist doesn't hold it, `check` names it). A task that
-/// isn't flagged blocked but has such a dependency is blocked by tasks; a Done task never is.
+/// those ids; then the tasks in `depends:` that still hold it (`holds`: not merged yet; any file
+/// with that id, as `claim` reads them; a dependency that doesn't exist doesn't hold it, `check`
+/// names it). A task that isn't flagged blocked but has such a dependency is blocked by tasks; a
+/// Done task never is.
 pub fn derive(tasks: &mut [Task]) {
     let mut info: HashMap<String, (String, String)> = HashMap::new();
-    let mut open: HashMap<String, bool> = HashMap::new();
+    let open = open_ids(tasks.iter());
     let mut latest: HashMap<String, String> = HashMap::new();
     for t in tasks.iter() {
         let holder = crate::session::split(t.holder()).0.to_string();
         info.entry(t.id.clone())
             .or_insert_with(|| (t.stage.clone(), holder));
-        *open.entry(t.id.clone()).or_default() |= t.stage != "done";
         // The latest stamp its log shows, for a span that ends without a line (below).
         let last = t
             .log_tail
@@ -245,8 +322,7 @@ pub fn derive(tasks: &mut [Task]) {
         }
         if t.stage != "done" {
             for d in &t.depends {
-                let waits = *d != t.id && open.get(d).copied().unwrap_or(false);
-                if waits && !ids.contains(d) {
+                if holds_id(&open, d, t) && !ids.contains(d) {
                     ids.push(d.clone());
                 }
             }
@@ -440,8 +516,8 @@ mod tests {
     // ---- Blocking through muster's rules (ops), on a throwaway queue ----------------------------
 
     use crate::ops::{
-        block_as, block_task, claim_task, pass_task, reclaim, reclaim_task, set_field, set_stage,
-        unblock_task, PassOpts,
+        block_as, block_task, claim_task, next_task, pass_task, reclaim, reclaim_task, return_task,
+        set_field, set_stage, unblock_task, PassOpts,
     };
     use crate::queue::{is_warning, read_state_at, Cache, State, STATUS_FOLDERS};
     use std::fs;
@@ -1085,5 +1161,258 @@ mod tests {
             t.log_tail
         );
         assert!(state(p).problems.is_empty(), "{:?}", state(p).problems);
+    }
+
+    // ---- Merged is met (0042): a dependency in Your check counts, as Done does -----------------
+
+    const TESTED: &str = "## Acceptance criteria\n- [x] AC1: works\n\n";
+    const TESTING: &str = "stage: testing\nstatus: doing\nclaimed-by:\nheartbeat:\nwaiting_on:";
+
+    #[test]
+    fn a_dependency_in_your_check_is_met_and_one_in_testing_is_not() {
+        let d = queue();
+        let p = d.path();
+        put(p, "doing", "0001", TESTING, TESTED);
+        put(p, "todo", "0002", &format!("{READY}\ndepends: [0001]"), "");
+        put(p, "todo", "0003", READY, "");
+        put(p, "todo", "0004", &format!("{READY}\ndepends: [0003]"), "");
+        // 0001 in Testing isn't merged yet: 0002 waits, and next passes it by.
+        let e = claim_task(p, "0002", "wt-a", T).unwrap_err();
+        assert_eq!(
+            e,
+            "0002 depends on 0001, not merged yet (an agent's task counts once it's in Your check, the owner's own once it's Done); pick another (muster next)"
+        );
+        assert_eq!(
+            sentence_of(&task(p, "0002"), false),
+            "Blocked by tasks: 0001 (Testing)"
+        );
+        assert_eq!(next_task(p, "wt-a", T).unwrap().unwrap().id, "0003");
+        // Merged after Testing, it waits in Your check: that counts.
+        pass_task(p, "0001", "qa", T, &PassOpts::default()).unwrap();
+        let t = task(p, "0002");
+        assert_eq!((t.blocked_kind.as_str(), t.blocked_by.len()), ("", 0));
+        assert_eq!(next_task(p, "wt-b", T).unwrap().unwrap().id, "0002");
+        // A block on a task in Your check has nothing to wait for; check agrees nothing holds it.
+        assert_eq!(
+            block_task(p, "0004", "0001", "wt-c", T).unwrap_err(),
+            "0001 is in Your check, merged already; there's nothing to wait for"
+        );
+        // Its depends set to one in Your check: nothing open is left, and the log says so.
+        set_field(p, "0004", "depends", "0001", "owner", T).unwrap();
+        assert!(last_log(p, "0004").ends_with("owner: unblocked: no open depends left"));
+        let old = "stage: ready\nstatus: blocked\nclaimed-by:\nwaiting_on: 0001";
+        put(p, "blocked", "0005", old, "");
+        let s = state(p);
+        assert!(
+            s.problems
+                .iter()
+                .any(|w| w.ends_with("none of them is open now: muster unblock 0005")),
+            "{:?}",
+            s.problems
+        );
+    }
+
+    #[test]
+    fn reaching_your_check_logs_unblocked_on_the_tasks_it_frees() {
+        let d = queue();
+        let p = d.path();
+        put(p, "doing", "0001", TESTING, TESTED);
+        put(
+            p,
+            "done",
+            "0002",
+            "stage: done\nstatus: done\nclaimed-by:\nwaiting_on:",
+            "",
+        );
+        put(p, "todo", "0003", READY, "");
+        put(p, "todo", "0004", &format!("{READY}\ndepends: [0001]"), "");
+        put(
+            p,
+            "todo",
+            "0005",
+            &format!("{READY}\ndepends: [0002, 0001]"),
+            "",
+        );
+        // Still waiting on 0003 too: no line.
+        put(
+            p,
+            "todo",
+            "0006",
+            &format!("{READY}\ndepends: [0001, 0003]"),
+            "",
+        );
+        pass_task(p, "0001", "qa", "2026-10-13 10:00", &PassOpts::default()).unwrap();
+        assert!(
+            last_log(p, "0004").ends_with("qa: unblocked: 0001 in Your check"),
+            "{}",
+            last_log(p, "0004")
+        );
+        assert!(
+            last_log(p, "0005").ends_with("qa: unblocked: 0002 done; 0001 in Your check"),
+            "{}",
+            last_log(p, "0005")
+        );
+        assert!(last_log(p, "0006").ends_with("capture: created"));
+        let t = task(p, "0006");
+        assert_eq!(sentence_of(&t, false), "Blocked by tasks: 0003 (Ready)");
+        // Accepted later: it was free already, so Done writes nothing more on it.
+        pass_task(p, "0001", "owner", T, &PassOpts::default()).unwrap();
+        assert!(last_log(p, "0004").ends_with("qa: unblocked: 0001 in Your check"));
+        assert_eq!(task(p, "0004").log_tail.len(), 2);
+        assert!(state(p).problems.is_empty(), "{:?}", state(p).problems);
+    }
+
+    #[test]
+    fn a_return_from_your_check_blocks_unclaimed_dependents_and_notes_claimed_ones() {
+        let d = queue();
+        let p = d.path();
+        put(p, "doing", "0001", TESTING, TESTED);
+        put(p, "todo", "0002", &format!("{READY}\ndepends: [0001]"), "");
+        put(p, "todo", "0003", &format!("{READY}\ndepends: [0001]"), "");
+        put(p, "todo", "0004", READY, "");
+        put(p, "todo", "0005", &format!("{READY}\ndepends: [0001]"), "");
+        pass_task(p, "0001", "qa", T, &PassOpts::default()).unwrap();
+        claim_task(p, "0003", "wt-a", T).unwrap();
+        // 0005 is in Testing already.
+        claim_task(p, "0005", "wt-b", T).unwrap();
+        pass_task(
+            p,
+            "0005",
+            "wt-b",
+            T,
+            &PassOpts {
+                gate: "gate full: green".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let before = fs::read_to_string(p.join("todo/0002-t.md")).unwrap();
+        let at = "2026-10-13 11:00";
+        return_task(
+            p,
+            "0001",
+            "the colours are off",
+            Some("building"),
+            "owner",
+            at,
+        )
+        .unwrap();
+        // Not claimed yet: blocked again, derived, with nothing written.
+        let t = task(p, "0002");
+        assert_eq!(sentence_of(&t, false), "Blocked by tasks: 0001 (Building)");
+        assert_eq!(
+            fs::read_to_string(p.join("todo/0002-t.md")).unwrap(),
+            before
+        );
+        assert!(claim_task(p, "0002", "wt-c", T)
+            .unwrap_err()
+            .contains("0002 depends on 0001, not merged yet"));
+        // Claimed ones keep going, with a note: no forced return, no block, the claim still held.
+        for (id, stage, holder) in [("0003", "building", "wt-a"), ("0005", "testing", "")] {
+            let t = task(p, id);
+            assert_eq!(
+                (
+                    t.stage.as_str(),
+                    t.blocked_kind.as_str(),
+                    t.claimed_by.as_str()
+                ),
+                (stage, "", holder),
+                "{id}"
+            );
+            assert!(
+                t.log_tail
+                    .last()
+                    .unwrap()
+                    .ends_with("owner: 0001 went back to Building: the colours are off"),
+                "{id}: {:?}",
+                t.log_tail
+            );
+        }
+        assert!(claim_task(p, "0004", "wt-a", T)
+            .unwrap_err()
+            .contains("you already hold 0003"));
+        // A task under way doesn't wait for it again, even when asked to: that would hide nothing.
+        assert_eq!(
+            block_task(p, "0003", "0001", "wt-a", T).unwrap_err(),
+            "0001 went back after it was merged, and 0003 is under way, so it doesn't wait for it again; block on outside or you to wait anyway"
+        );
+        // Merged again: the unclaimed one is free and says so; the claimed one has nothing new.
+        let n3 = task(p, "0003").log_tail.len();
+        pass_task(
+            p,
+            "0001",
+            "wt-x",
+            T,
+            &PassOpts {
+                gate: "gate full: green".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        pass_task(p, "0001", "qa", "2026-10-13 12:00", &PassOpts::default()).unwrap();
+        assert!(last_log(p, "0002").ends_with("qa: unblocked: 0001 in Your check"));
+        assert_eq!(task(p, "0003").log_tail.len(), n3);
+        // Sent back by the owner's override, without a reason: the note still says where.
+        set_stage(p, "0001", "testing", None, "owner", T).unwrap();
+        assert!(last_log(p, "0003").ends_with("owner: 0001 went back to Testing"));
+        assert!(state(p).problems.is_empty(), "{:?}", state(p).problems);
+    }
+
+    #[test]
+    fn a_pass_into_building_waits_on_depends_as_a_claim_does() {
+        let d = queue();
+        let p = d.path();
+        put(p, "doing", "0001", TESTING, TESTED);
+        put(p, "todo", "0002", &format!("{READY}\ndepends: [0001]"), "");
+        // Merged, then sent back: 0002 hasn't started, so it waits again.
+        pass_task(p, "0001", "qa", T, &PassOpts::default()).unwrap();
+        return_task(
+            p,
+            "0001",
+            "the colours are off",
+            Some("building"),
+            "owner",
+            T,
+        )
+        .unwrap();
+        let before = fs::read_to_string(p.join("todo/0002-t.md")).unwrap();
+        // Pass on the Ready card is a claim: refused the same way, for anyone, nothing written.
+        for who in ["wt-z", "owner"] {
+            let e = pass_task(p, "0002", who, T, &PassOpts::default()).unwrap_err();
+            assert_eq!(
+                e,
+                "0002 depends on 0001, not merged yet (an agent's task counts once it's in Your check, the owner's own once it's Done); pick another (muster next)"
+            );
+        }
+        assert_eq!(
+            fs::read_to_string(p.join("todo/0002-t.md")).unwrap(),
+            before
+        );
+        let t = task(p, "0002");
+        assert_eq!(
+            (t.stage.as_str(), sentence_of(&t, false).as_str()),
+            ("ready", "Blocked by tasks: 0001 (Building)")
+        );
+        // The owner's override still moves it, logged as one.
+        set_stage(p, "0002", "building", None, "owner", T).unwrap();
+        assert!(last_log(p, "0002").ends_with("owner: stage ready → building (set)"));
+    }
+
+    #[test]
+    fn the_owners_own_task_reopened_from_done_says_done_not_merged() {
+        let d = queue();
+        let p = d.path();
+        let doing = "stage: building\nstatus: doing\nclaimed-by: owner\nwaiting_on:\nfor: human";
+        put(p, "doing", "0001", doing, "");
+        put(p, "todo", "0002", &format!("{READY}\ndepends: [0001]"), "");
+        pass_task(p, "0001", "owner", T, &PassOpts::default()).unwrap();
+        claim_task(p, "0002", "wt-a", T).unwrap();
+        set_stage(p, "0001", "building", None, "owner", T).unwrap();
+        // Overridden back out of Done: noted on the task under way, which keeps going.
+        assert!(last_log(p, "0002").ends_with("owner: 0001 went back to Building"));
+        assert_eq!(
+            block_task(p, "0002", "0001", "wt-a", T).unwrap_err(),
+            "0001 went back after it was done, and 0002 is under way, so it doesn't wait for it again; block on outside or you to wait anyway"
+        );
     }
 }

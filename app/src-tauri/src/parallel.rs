@@ -66,8 +66,8 @@ fn is_id(id: &str) -> bool {
 }
 
 /// Could a session start `t` now? A task (not a goal or feature) in Ready, not blocked, nobody's
-/// claim on it, an agent's (never for: human), and everything it depends on done (a dependency
-/// that doesn't exist doesn't hold it, as with `claim`).
+/// claim on it, an agent's (never for: human), and everything it depends on merged, in Your check
+/// or Done (0042, `block::holds`; a dependency that doesn't exist doesn't hold it, as with `claim`).
 pub fn claimable(t: &Task, tasks: &[Task]) -> bool {
     t.stage == "ready"
         && !t.blocked
@@ -76,10 +76,9 @@ pub fn claimable(t: &Task, tasks: &[Task]) -> bool {
         && !t.is_human()
         && t.claimed_by.is_empty()
         && t.depends.iter().filter(|d| **d != t.id).all(|d| {
-            tasks
+            !tasks
                 .iter()
-                .find(|o| o.id == *d)
-                .is_none_or(|o| o.stage == "done")
+                .any(|o| o.id == *d && crate::block::holds(o, false))
         })
 }
 
@@ -512,6 +511,11 @@ pub fn start(
             "{id} is blocked on {}; unblock it first",
             t.waiting_on
         ));
+    }
+    // What it depends on, before any branch or worktree is made (`start_task` checks again under
+    // the lock).
+    if let Some(e) = ops::deps_refusal(id, &ops::tasks_now(root), "muster ready --parallel") {
+        return Err(e);
     }
     let repo = repo_of(cwd)
         .map_err(|e| format!("muster start runs in the project's repo or a worktree of it: {e}"))?;
@@ -1474,7 +1478,7 @@ pub(crate) mod tests {
         ops::set_field(r, &b, "priority", "high", "owner", T0).unwrap();
         let s = state(r);
         // `ready`: claimable only, high first; the human, blocked and claimed ones aren't, nor
-        // the one whose dependency isn't done.
+        // the one whose dependency isn't merged.
         assert_eq!(ids(&ready(&s.tasks)), [b.as_str(), &a, &c, &d, &e]);
         let pick = parallel_set(&s.tasks, 3, &[]);
         assert_eq!(ids(&pick.set), [b.as_str(), &a, &d]);
@@ -1584,6 +1588,47 @@ pub(crate) mod tests {
         };
         assert_eq!(why(&near), format!("touches overlap {run}"));
         assert_eq!(why(&after), format!("touches overlap {testing}"));
+    }
+
+    #[test]
+    fn ready_parallel_and_start_count_a_merged_dependency_as_met() {
+        let f = fx();
+        let r = &f.root;
+        let base = task(r, "Base", "lib/");
+        let testing = task(r, "Still in testing", "t/");
+        let after = task(r, "After the base", "app/");
+        let waits = task(r, "After the one in testing", "docs/");
+        ops::set_field(r, &after, "depends", &base, "owner", T0).unwrap();
+        ops::set_field(r, &waits, "depends", &testing, "owner", T0).unwrap();
+        let gate = PassOpts {
+            gate: "gate: green".into(),
+            from: Some("building".into()),
+            ..Default::default()
+        };
+        for id in [&base, &testing] {
+            ops::claim_task(r, id, "wt-x", T0).unwrap();
+            ops::pass_task(r, id, "wt-x", T0, &gate).unwrap();
+        }
+        // The base merged, in Your check (0042): what waits on it is free; Testing isn't merged.
+        ops::pass_task(r, &base, "qa", T0, &PassOpts::default()).unwrap();
+        let s = state(r);
+        let all = ids(&ready(&s.tasks));
+        assert!(all.contains(&after) && !all.contains(&waits), "{all:?}");
+        // Sent back: not claimable, and start refuses before it makes a branch or a worktree.
+        ops::return_task(r, &base, "redo it", Some("building"), "owner", T0).unwrap();
+        let s = state(r);
+        assert!(!ids(&ready(&s.tasks)).contains(&after));
+        let e = start(r, &after, "wt-a", T0, &f.repo, &Place::Default).unwrap_err();
+        assert_eq!(
+            e,
+            format!("{after} depends on {base}, not merged yet (an agent's task counts once it's in Your check, the owner's own once it's Done); pick another (muster ready --parallel)")
+        );
+        assert_eq!(g(&f.repo, &["branch", "--list", "task/*"]), "");
+        assert!(!f.base.join("proj/worktrees").exists());
+        // Merged again: start takes it.
+        ops::pass_task(r, &base, "wt-x", T0, &gate).unwrap();
+        ops::pass_task(r, &base, "qa", T0, &PassOpts::default()).unwrap();
+        start(r, &after, "wt-a", T0, &f.repo, &Place::Default).unwrap();
     }
 
     #[test]

@@ -938,10 +938,13 @@ pub fn set_field(
                 // free, so its blocked span on the timeline ends here (0024).
                 let tasks = tasks_now(root);
                 let freed = tasks.iter().find(|t| t.id == id).is_some_and(|t| {
-                    let now_open = queue::parse_depends(&val)
-                        .0
-                        .iter()
-                        .any(|d| *d != t.id && tasks.iter().any(|o| o.id == *d && o.stage != "done"));
+                    let under_way = crate::block::started(t);
+                    let now_open = queue::parse_depends(&val).0.iter().any(|d| {
+                        *d != t.id
+                            && tasks
+                                .iter()
+                                .any(|o| o.id == *d && crate::block::holds(o, under_way))
+                    });
                     t.blocked_kind == "tasks" && !t.blocked && !now_open
                 });
                 edit_locked(root, id, |_, text| {
@@ -1069,6 +1072,9 @@ struct Current {
     /// The branch `muster start` made for it (0023), or "": passing such a task from Testing is
     /// the merge's (`parallel::merge`), not a plain pass.
     branch: String,
+    /// Whom it holds back as a dependency (0042, `block::holds`): tasks not started yet, and
+    /// tasks under way.
+    kept_back: (bool, bool),
 }
 
 /// What a stage change writes.
@@ -1195,7 +1201,12 @@ fn current(root: &Path, path: &Path, text: &str) -> Result<Current, String> {
         .map_err(|e| e.to_string())?;
     let items = queue::criteria_items(body);
     let human = t.is_human();
+    let kept_back = (
+        crate::block::holds(&t, false),
+        crate::block::holds(&t, true),
+    );
     Ok(Current {
+        kept_back,
         human,
         criteria: (items.len(), items.iter().filter(|c| c.ticked).count()),
         owner_open: items.iter().filter(|c| c.owner && !c.ticked).count(),
@@ -1225,7 +1236,10 @@ fn change_locked(
     stamp: &str,
     f: impl FnOnce(&Current) -> Result<Change, String>,
 ) -> Result<String, String> {
-    let mut finished = false;
+    // Dependents this change frees (it's just been merged), and where it went back to with why
+    // (it was merged and isn't any more), for the lines written once it's saved.
+    let mut freed: Option<Vec<String>> = None;
+    let mut went_back: Option<(String, String)> = None;
     let path = edit_locked(root, id, |path, text| {
         let now = current(root, path, &text)?;
         let (fields, _) = front_matter(&text).ok_or("the task has no front matter")?;
@@ -1251,9 +1265,13 @@ fn change_locked(
                 Some(d) => queue::parse_depends(d).0,
                 None => now.depends.clone(),
             };
-            let waits = depends
-                .iter()
-                .any(|d| d != id && tasks.iter().any(|o| o.id == *d && o.stage != "done"));
+            // A hold is a task under way (`block::started`).
+            let waits = depends.iter().any(|d| {
+                d != id
+                    && tasks
+                        .iter()
+                        .any(|o| o.id == *d && crate::block::holds(o, true))
+            });
             if let Some(held) = holding(&tasks, &c.claimed_by, id).filter(|_| !waits) {
                 return Err(if same_holder(&c.claimed_by, who) {
                     already_holds(&held)
@@ -1264,6 +1282,44 @@ fn change_locked(
                     )
                 });
             }
+        }
+        // Merged now (0042: Your check or Done; the owner's own task, Done) or no longer. Read
+        // before this change is written, so `freed` is what it was holding back.
+        let met_before = crate::block::met_at(&now.stage, now.human);
+        let met_after = crate::block::met_at(&c.stage, now.human);
+        if !met_before && met_after {
+            let tasks = tasks_now(root);
+            freed = Some(
+                tasks
+                    .iter()
+                    .filter(|o| {
+                        o.id != id && o.stage != "done" && o.depends.iter().any(|d| d == id)
+                    })
+                    .filter(|o| {
+                        if crate::block::started(o) {
+                            now.kept_back.1
+                        } else {
+                            now.kept_back.0
+                        }
+                    })
+                    .map(|o| o.id.clone())
+                    .collect(),
+            );
+        } else if met_before && !met_after {
+            // The reason a return gives, from the stage line it writes (`returned: <why>`).
+            let why = c
+                .log
+                .iter()
+                .find_map(|l| {
+                    queue::stage_line(&format!("- {l}")).map(|(_, detail)| {
+                        detail
+                            .strip_prefix("returned: ")
+                            .unwrap_or_default()
+                            .to_string()
+                    })
+                })
+                .unwrap_or_default();
+            went_back = Some((c.stage.clone(), why));
         }
         let status = mirror_status(&c.stage, c.blocked);
         let mut new = set_front(&text, "stage", &c.stage)?;
@@ -1312,45 +1368,63 @@ fn change_locked(
         } else {
             None
         };
-        finished = c.stage == "done" && now.stage != "done";
         Ok((new, dest))
     })?;
-    if finished {
-        log_unblocked_by_done(root, id, who, stamp);
+    if let Some(held) = freed {
+        log_unblocked(root, id, &held, who, stamp);
+    }
+    if let Some((to, why)) = went_back {
+        note_went_back(root, id, &to, &why, who, stamp);
     }
     Ok(path)
 }
 
-/// Task `done_id` just reached Done: every task that's blocked only by tasks (not flagged) and
-/// whose last open dependency that was gets a log line saying it's free, `unblocked: 0014, 0016
-/// done`, which also ends its blocked span on the timeline. The block itself is derived from
-/// `depends:`, so it has cleared whether or not this line is written; a line that can't be written
-/// loses only the line, and never turns the Done that's already written into an error. The caller
-/// holds the queue's lock.
+/// Task `dep_id` was just merged (0042: it reached Your check, or Done; the owner's own task,
+/// Done). Of the tasks it was holding back (`waiting`, read before the change), every one that's
+/// blocked only by tasks (not flagged) and that waits on nothing else now gets a log line saying
+/// it's free, `unblocked: 0014, 0016 done; 0017 in Your check`, which also ends its blocked span on
+/// the timeline. The block itself is derived from `depends:`, so it has cleared whether or not
+/// this line is written; a line that can't be written loses only the line, and never turns the
+/// change that's already written into an error. Done after Your check frees nothing more, so it
+/// writes nothing. The caller holds the queue's lock.
 ///
 /// A freed task in Building held by someone (not the owner) is theirs again: its lease starts
 /// over (time spent waiting isn't time gone quiet). If they already hold another task in Building,
 /// one holder would hold two, so the freed one goes back to Ready instead, with its claim
 /// released and a stage line saying why (`released: wt-a already holds 0007`).
-fn log_unblocked_by_done(root: &Path, done_id: &str, who: &str, stamp: &str) {
+fn log_unblocked(root: &Path, dep_id: &str, waiting: &[String], who: &str, stamp: &str) {
+    if waiting.is_empty() {
+        return;
+    }
     let tasks = tasks_now(root);
     let mut released: Vec<&str> = Vec::new();
     for t in &tasks {
-        let freed = t.id != done_id
+        let freed = t.id != dep_id
+            && waiting.contains(&t.id)
             && t.stage != "done"
             && !t.blocked
-            && t.depends.iter().any(|d| d == done_id)
             && waiting_on_deps(t, &tasks).is_empty();
         if !freed {
             continue;
         }
-        let done: Vec<&str> = t
-            .depends
-            .iter()
-            .map(String::as_str)
-            .filter(|d| *d != t.id && tasks.iter().any(|o| o.id == *d))
-            .collect();
-        let line = format!("{stamp} {who}: unblocked: {} done", done.join(", "));
+        // What it waited on, by how each is met now: done, or merged and in Your check.
+        let state = |d: &str| {
+            tasks
+                .iter()
+                .find(|o| o.id == d && crate::block::met(o))
+                .map(|o| o.stage == "done")
+        };
+        let deps = || t.depends.iter().map(String::as_str).filter(|d| *d != t.id);
+        let done: Vec<&str> = deps().filter(|d| state(d) == Some(true)).collect();
+        let merged: Vec<&str> = deps().filter(|d| state(d) == Some(false)).collect();
+        let mut parts = Vec::new();
+        if !done.is_empty() {
+            parts.push(format!("{} done", done.join(", ")));
+        }
+        if !merged.is_empty() {
+            parts.push(format!("{} in Your check", merged.join(", ")));
+        }
+        let line = format!("{stamp} {who}: unblocked: {}", parts.join("; "));
         let held = t.stage == "building" && !t.claimed_by.is_empty() && !is_owner(&t.claimed_by);
         // Another task this holder has in Building, not blocked (one freed by this same Done
         // counts until it's been released here).
@@ -1395,6 +1469,29 @@ fn log_unblocked_by_done(root: &Path, done_id: &str, who: &str, stamp: &str) {
                 Ok((append_log(&text, &line), None))
             }),
         };
+    }
+}
+
+/// Task `dep_id` was merged and isn't any more: sent back to `to` (a return from Your check, or an
+/// override), with `why` when a return gave one (0042). The tasks that depend on it and haven't
+/// started are blocked by it again, derived, with nothing written. Each one already under way
+/// (`block::started`) keeps going, its claim and stage as they are, and gets a note on its log
+/// instead: `0002 went back to Building: <why>`. A note that can't be written loses only the
+/// note. The caller holds the queue's lock.
+fn note_went_back(root: &Path, dep_id: &str, to: &str, why: &str, who: &str, stamp: &str) {
+    let head = format!("{stamp} {who}: {dep_id} went back to {}", stage_label(to));
+    // `why` was checked as one line by `return`; still, never let it log a stage change.
+    let line = free_text_line(format!("{head}: {why}"), "the reason")
+        .ok()
+        .filter(|_| !why.is_empty())
+        .unwrap_or(head);
+    for t in tasks_now(root).iter().filter(|t| {
+        t.id != dep_id
+            && t.stage != "done"
+            && t.depends.iter().any(|d| d == dep_id)
+            && crate::block::started(t)
+    }) {
+        let _ = edit_locked(root, &t.id, |_, text| Ok((append_log(&text, &line), None)));
     }
 }
 
@@ -1458,7 +1555,9 @@ fn clean_commit(input: &str) -> Result<String, String> {
 /// the gate's result line, Testing → Your check before every criterion but the owner's is
 /// ticked, and Your check → Done before the owner's are (`— verify: owner`, 0028). The owner's
 /// own task (`for: human`, 0022) goes Ready → Building (To do → Doing) only for the owner, then
-/// straight to Done, with no gate line and no criteria.
+/// straight to Done, with no gate line and no criteria. Into Building from an earlier stage is
+/// refused, as `claim` is, while a task it depends on isn't merged (0042); the owner's
+/// `muster stage` override isn't.
 pub fn pass_task(
     root: &Path,
     id: &str,
@@ -1478,7 +1577,15 @@ pub fn pass_task(
         if t.stage == "testing" && !t.branch.is_empty() {
             return Err(started_pass(id, &t.branch));
         }
-        pass_change(id, t, &who, stamp, &gate, &commit, expected)
+        let c = pass_change(id, t, &who, stamp, &gate, &commit, expected)?;
+        // Into Building from before it is a start, like a claim: refused, for anyone, while what
+        // it depends on isn't merged (0042). Read under the lock, before anything is written.
+        if c.stage == "building" && stage_index(&t.stage) < stage_index("building") {
+            if let Some(e) = deps_refusal(id, &tasks_now(root), "muster next") {
+                return Err(e);
+            }
+        }
+        Ok(c)
     })
 }
 
@@ -1592,7 +1699,7 @@ fn clear_front(text: &str, key: &str) -> Result<String, String> {
 }
 
 /// `muster start`'s claim (0023): Ready → Building for `who` by `claim_task`'s rules (one claim
-/// per holder, everything it depends on done), with the worktree and branch recorded and logged,
+/// per holder, everything it depends on merged, 0042), with the worktree and branch recorded and logged,
 /// all under one lock. The git side is made before this; if the claim is refused, the caller
 /// removes it again. `runner`: the worktree is one a runner made (`start --here`), recorded as
 /// `worktree-runner: yes` so muster never removes it.
@@ -1623,13 +1730,9 @@ pub fn start_task(
                     "{id} is the owner's to do; a human task isn't built in a worktree"
                 ));
             }
-            let open = waiting_on_deps(t, &tasks);
-            if !open.is_empty() {
-                return Err(format!(
-                    "{id} depends on {}, not done yet; pick another (muster ready --parallel)",
-                    open.join(", ")
-                ));
-            }
+        }
+        if let Some(e) = deps_refusal(id, &tasks, "muster ready --parallel") {
+            return Err(e);
         }
         change_locked(root, id, &who, stamp, |t| {
             pass_change(id, t, &who, stamp, "", "", Some("ready"))
@@ -1920,33 +2023,53 @@ fn is_id(id: &str) -> bool {
     id.len() == 4 && id.bytes().all(|b| b.is_ascii_digit())
 }
 
-/// What `t` still waits on (`depends:` not yet done), among `tasks` (0019). A dependency that
-/// doesn't exist doesn't hold it (check reports it).
+/// What `t` still waits on among `tasks` (0019): its `depends:` not merged yet (0042,
+/// `block::holds`). A dependency that doesn't exist doesn't hold it (check reports it).
 fn waiting_on_deps(t: &queue::Task, tasks: &[queue::Task]) -> Vec<String> {
+    let under_way = crate::block::started(t);
     t.depends
         .iter()
         .filter(|d| **d != t.id)
-        .filter(|d| tasks.iter().any(|o| o.id == **d && o.stage != "done"))
+        .filter(|d| {
+            tasks
+                .iter()
+                .any(|o| o.id == **d && crate::block::holds(o, under_way))
+        })
         .cloned()
         .collect()
 }
 
+/// Why task `id` can't start yet: what it depends on that isn't merged (`waiting_on_deps`), in the
+/// words `claim`, `next`, a pass into Building and `start` share, ending with where to pick
+/// another (`pick`); None when nothing holds it.
+pub(crate) fn deps_refusal(id: &str, tasks: &[queue::Task], pick: &str) -> Option<String> {
+    let t = tasks.iter().find(|t| t.id == id)?;
+    let open = waiting_on_deps(t, tasks);
+    if open.is_empty() {
+        return None;
+    }
+    // The owner's own tasks are only ever done; an agent's merged once in Your check.
+    let human = |d: &String| tasks.iter().any(|o| o.id == *d && o.is_human());
+    let not_yet = if open.iter().all(human) {
+        "not done yet"
+    } else {
+        "not merged yet (an agent's task counts once it's in Your check, the owner's own once it's Done)"
+    };
+    Some(format!(
+        "{id} depends on {}, {not_yet}; pick another ({pick})",
+        open.join(", ")
+    ))
+}
+
 /// Claim a Ready task for `who`: Ready → Building, as `pass --from ready`, and refused while
 /// `who` already holds another task in Building in this queue, or while a task it depends on
-/// isn't done. The checks and the claim happen under one lock, so of two claims at once only one
-/// can win.
+/// isn't merged (in Your check or Done; the owner's own, Done). The checks and the claim happen
+/// under one lock, so of two claims at once only one can win.
 pub fn claim_task(root: &Path, id: &str, who: &str, stamp: &str) -> Result<String, String> {
     let who = actor(who)?;
     with_lock(root, || {
-        let tasks = tasks_now(root);
-        if let Some(t) = tasks.iter().find(|t| t.id == id) {
-            let open = waiting_on_deps(t, &tasks);
-            if !open.is_empty() {
-                return Err(format!(
-                    "{id} depends on {}, not done yet; pick another (muster next)",
-                    open.join(", ")
-                ));
-            }
+        if let Some(e) = deps_refusal(id, &tasks_now(root), "muster next") {
+            return Err(e);
         }
         // `change_locked` refuses a second claim for `who`, under the same lock.
         change_locked(root, id, &who, stamp, |t| {
@@ -1964,8 +2087,9 @@ fn priority_rank(p: &str) -> u8 {
 }
 
 /// Claim the top Ready task `who` may take: not blocked, not held in Ready by someone else,
-/// everything it depends on done, and not the owner's own (`for: human`) unless `who` is the
-/// owner; high before normal before low, then the lowest id. None when there's nothing to take.
+/// everything it depends on merged (`waiting_on_deps`), and not the owner's own (`for: human`)
+/// unless `who` is the owner; high before normal before low, then the lowest id. None when
+/// there's nothing to take.
 /// Refused while `who` already holds a task in Building here.
 pub fn next_task(root: &Path, who: &str, stamp: &str) -> Result<Option<Claimed>, String> {
     let who = actor(who)?;
@@ -2502,10 +2626,11 @@ pub fn block_as(
 }
 
 /// `block_as` on tasks: the ids `detail` starts with go into `depends:` (checked as `muster set
-/// depends` checks them: each a task here, not this one, no loop), each not done yet. An old
-/// block on task ids is cleared, as these ids say it now; for it, ids that are done or gone are
-/// dropped, and with none left the old block just ends (logged as an unblock). Logged `blocked
-/// on tasks: 0014, 0016`, with the words after the ids as the reason.
+/// depends` checks them: each a task here, not this one, no loop), each one that would hold it
+/// (`block::holds`: not merged yet). An old block on task ids is cleared, as these ids say it now;
+/// for it, ids that are merged or gone are dropped, and with none left the old block just ends
+/// (logged as an unblock). Logged `blocked on tasks: 0014, 0016`, with the words after the ids as
+/// the reason.
 fn block_on_tasks(
     root: &Path,
     id: &str,
@@ -2546,16 +2671,24 @@ fn block_on_tasks(
             .find(|t| t.id == id)
             .ok_or_else(|| format!("no task {id}"))?;
         // An old block on task ids (no kind): the ids now say it, so the flag goes. Its ids that
-        // are done or gone are dropped rather than refused: they don't hold it any more.
+        // are merged or gone are dropped rather than refused: they don't hold it any more.
         let legacy = me.kind_guessed && me.blocked_kind == "tasks";
-        let open = |d: &str| tasks.iter().any(|o| o.id == d && o.stage != "done");
+        let under_way = crate::block::started(me);
+        let open = |d: &str| {
+            tasks
+                .iter()
+                .any(|o| o.id == d && crate::block::holds(o, under_way))
+        };
         let ids: Vec<String> = if legacy {
             ids.iter().filter(|d| open(d.as_str())).cloned().collect()
         } else {
-            if let Some(d) = ids.iter().find(|d| {
-                tasks.iter().any(|o| o.id == **d && o.stage == "done") && !open(d.as_str())
-            }) {
-                return Err(format!("{d} is done already; there's nothing to wait for"));
+            // One that exists but wouldn't hold it (merged, or merged once and it's under way).
+            let idle = ids
+                .iter()
+                .filter(|d| !open(d.as_str()))
+                .find_map(|d| tasks.iter().find(|o| o.id == *d));
+            if let Some(dep) = idle {
+                return Err(crate::block::nothing_to_wait_for(dep, id));
             }
             ids.clone()
         };
@@ -2662,7 +2795,7 @@ pub fn unblock_task(root: &Path, id: &str, who: &str, stamp: &str) -> Result<Str
         change_locked(root, id, &who, stamp, |t| {
             if !t.blocked && !open.is_empty() {
                 return Err(format!(
-                    "{id} is blocked by tasks {}: that clears by itself once they're done (or change its depends: muster set {id} depends …)",
+                    "{id} is blocked by tasks {}: that clears by itself once they're merged, in Your check or Done (the owner's own once Done), or change its depends: muster set {id} depends …",
                     open.join(", ")
                 ));
             }
@@ -4446,7 +4579,7 @@ mod tests {
             &t("0003", "status: todo\npriority: low"),
         );
         let e = claim_task(d.path(), "0002", "wt-a", T).unwrap_err();
-        assert!(e.contains("depends on 0001, not done yet"), "{e}");
+        assert!(e.contains("depends on 0001, not merged yet"), "{e}");
         // next skips the high-priority 0002 and takes 0003.
         assert_eq!(next_task(d.path(), "wt-a", T).unwrap().unwrap().id, "0003");
         // Once 0001 is done, 0002 can be claimed.
@@ -7051,6 +7184,40 @@ mod human_tests {
             file(d.path(), "0002"),
             format!("{before}- {T} owner: unblocked: 0001 done\n")
         );
+        assert_eq!(next_task(d.path(), "wt-a", T).unwrap().unwrap().id, "0002");
+    }
+
+    #[test]
+    fn a_human_task_in_your_check_still_holds_what_depends_on_it_until_it_is_done() {
+        let d = queue();
+        new(d.path(), "Pick the colours", "human", "owner").unwrap();
+        new(d.path(), "Paint the board", "", "owner").unwrap();
+        set_field(d.path(), "0002", "depends", "0001", "capture", T).unwrap();
+        // Only the owner's override puts their own task in Your check, and nothing merges for it:
+        // an agent's task that waits on it still waits for Done (0042).
+        set_stage(d.path(), "0001", "your-check", None, "owner", T).unwrap();
+        let before = file(d.path(), "0002");
+        assert_eq!(
+            claim_task(d.path(), "0002", "wt-a", T).unwrap_err(),
+            "0002 depends on 0001, not done yet; pick another (muster next)"
+        );
+        assert_eq!(next_task(d.path(), "wt-a", T).unwrap(), None);
+        let blocked = |d: &Path| {
+            let s = state_at(d, T);
+            let t = s.tasks.iter().find(|t| t.id == "0002").unwrap();
+            crate::block::sentence_of(t, false)
+        };
+        assert_eq!(
+            blocked(d.path()),
+            "Blocked by tasks: 0001 (Your check, owner)"
+        );
+        assert_eq!(file(d.path(), "0002"), before);
+        pass_task(d.path(), "0001", "owner", T, &no_gate()).unwrap();
+        assert_eq!(
+            file(d.path(), "0002"),
+            format!("{before}- {T} owner: unblocked: 0001 done\n")
+        );
+        assert_eq!(blocked(d.path()), "");
         assert_eq!(next_task(d.path(), "wt-a", T).unwrap().unwrap().id, "0002");
     }
 }

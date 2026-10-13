@@ -307,7 +307,7 @@ Move a task on to the next stage, send it back, or mark it blocked. Only these c
 
 ### muster pass
 
-Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria and no open vision conflict (muster vision). Building → Testing needs the gate's result line and releases your claim. Testing → Your check needs every criterion ticked except the owner's ("— verify: owner"); Your check → Done needs those ticked too (muster tick). A human task (the owner's own) goes To do (Ready) → Doing (Building) → Done, and only the owner passes it: no gate line, no Testing, no Your check. Refused while it's blocked, or when someone else holds it. A task made with muster start merges when it passes from Testing, in order, stopping at the first failure: one merge at a time per repo; rebase its branch on the local main (a conflict sends it back to Building naming the files); run the project's gate in its worktree (muster projects set \<name\> gate; red sends it back with the gate line), and again if main moved while it ran (twice at most, then it stops: main keeps moving); fast-forward the local main to it (never a merge commit, so main only gets a tree the gate saw), only if the main checkout is clean and on main; push main to origin (never forced: if origin moved, it fetches and stops); remove the worktree (never a runner's, made with start --here) and delete the branch, and origin's copy only when it's the same commit; record the merge (the commit and a report: gate line, time in Building and Testing, check-ins) and pass it to Your check: the record is written even if the task was blocked or moved meanwhile, and then it says so (use muster stage); then it names the next task to start. Nothing is deleted on any failure before main has the merge. Only the command line does this: the app's Pass is refused for such a task.
+Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria and no open vision conflict (muster vision). Building → Testing needs the gate's result line and releases your claim. Testing → Your check needs every criterion ticked except the owner's ("— verify: owner"); Your check → Done needs those ticked too (muster tick). A human task (the owner's own) goes To do (Ready) → Doing (Building) → Done, and only the owner passes it: no gate line, no Testing, no Your check. Refused while it's blocked, when someone else holds it, and into Building (Ready → Building, or the owner's Start) while a task it depends on isn't merged yet, as claim is. A task made with muster start merges when it passes from Testing, in order, stopping at the first failure: one merge at a time per repo; rebase its branch on the local main (a conflict sends it back to Building naming the files); run the project's gate in its worktree (muster projects set \<name\> gate; red sends it back with the gate line), and again if main moved while it ran (twice at most, then it stops: main keeps moving); fast-forward the local main to it (never a merge commit, so main only gets a tree the gate saw), only if the main checkout is clean and on main; push main to origin (never forced: if origin moved, it fetches and stops); remove the worktree (never a runner's, made with start --here) and delete the branch, and origin's copy only when it's the same commit; record the merge (the commit and a report: gate line, time in Building and Testing, check-ins) and pass it to Your check: the record is written even if the task was blocked or moved meanwhile, and then it says so (use muster stage); then it names the next task to start. Nothing is deleted on any failure before main has the merge. Only the command line does this: the app's Pass is refused for such a task.
 
 ```
 muster pass <id> [--from <stage>] [--gate "<gate result line>"] [--commit <sha>]
@@ -344,7 +344,7 @@ muster pass 0031 --from testing --as qa
 
 ### muster return
 
-Send a task back one stage, or to an earlier stage with --to, with the reason (one line, 500 characters). Back to Building gives it to whoever last claimed it there.
+Send a task back one stage, or to an earlier stage with --to, with the reason (one line, 500 characters). Back to Building gives it to whoever last claimed it there. Sent back from Your check (merged), the tasks that depend on it and haven't started show blocked by it again; ones already under way keep going, with a note on their log ("0002 went back to Building: \<why\>").
 
 ```
 muster return <id> "<why>" [--to <stage>]
@@ -366,7 +366,7 @@ muster return 0007 "the spec misses the empty state" --to shaping
 
 ### muster block
 
-Mark a task blocked, and say why: the card, the table, the timeline and the task pane say it in words, the kind first ("Blocked on you: …"). It stays in its stage and keeps its claim; blocked is a flag, not a stage. Task ids go into its depends instead of a flag: it shows blocked by them until they're all done, and clears by itself then (logged). A block on a question clears when it's answered. You, permission and outside stay until muster unblock. Blocked on you or by a permission counts as waiting for you. Refused: an unknown kind, no detail, a question that isn't open in the task.
+Mark a task blocked, and say why: the card, the table, the timeline and the task pane say it in words, the kind first ("Blocked on you: …"). It stays in its stage and keeps its claim; blocked is a flag, not a stage. Task ids go into its depends instead of a flag: it shows blocked by them until they're all merged (in Your check or Done; the owner's own task, Done), and clears by itself then (logged). A block on a question clears when it's answered. You, permission and outside stay until muster unblock. Blocked on you or by a permission counts as waiting for you. Refused: an unknown kind, no detail, a question that isn't open in the task.
 
 ```
 muster block <id> --on <0014,0016|you|permission|question|outside> ["<what it waits on>"]
@@ -502,7 +502,7 @@ Who's on a task. A coding session claims a Ready task, keeps the claim alive whi
 
 ### muster claim
 
-Take a Ready task: it moves to Building, held by you, with its lease started (heartbeat). Inside a Claude Code session muster adds the session to who you are (name, short id, checkout, account), so you never type it. Refused while you already hold another task in Building in this queue (pass, return or block that first), when it's blocked, when a task it depends on isn't done, when it isn't in Ready any more, and for a human task (the owner's own) unless you're the owner. Says which queue it claimed in.
+Take a Ready task: it moves to Building, held by you, with its lease started (heartbeat). Inside a Claude Code session muster adds the session to who you are (name, short id, checkout, account), so you never type it. Refused while you already hold another task in Building in this queue (pass, return or block that first), when it's blocked, when a task it depends on isn't merged yet (an agent's task counts once it's in Your check, the owner's own once it's Done), when it isn't in Ready any more, and for a human task (the owner's own) unless you're the owner. Says which queue it claimed in.
 
 ```
 muster claim <id> [--as <who>]
@@ -524,7 +524,7 @@ muster claim 0007 --as wt-a --queue drover
 
 ### muster next
 
-Claim the top Ready task you may take: not blocked, not held by someone else, everything it depends on done, and never a human task (the owner's own) unless you're the owner; high priority first, then normal, then low, then the lowest id. Prints "nothing ready" and exits 1 when there's none. Refused while you already hold a task in Building.
+Claim the top Ready task you may take: not blocked, not held by someone else, everything it depends on merged (in Your check or Done; the owner's own task, Done), and never a human task (the owner's own) unless you're the owner; high priority first, then normal, then low, then the lowest id. Prints "nothing ready" and exits 1 when there's none. Refused while you already hold a task in Building.
 
 ```
 muster next [--as <who>]
@@ -610,7 +610,7 @@ muster reclaim --after 1d --queue drover
 
 ### muster ready
 
-The tasks a session could start now: in Ready, not blocked, nobody's claim, an agent's (never a human task), everything they depend on done; high priority first, then the lowest id. With --parallel, up to n of them (default 3) that are safe side by side, and beside the tasks already in Building or Testing: none depends on another, and what they touch doesn't overlap. A task says where it works in touches: (folders and globs, set at shaping or with muster set \<id\> touches); two entries overlap when the part before the first wildcard of one starts the other's (app/src overlaps app/src/TaskPanel\*), and a task without touches never pairs. Then the ones left out, with why.
+The tasks a session could start now: in Ready, not blocked, nobody's claim, an agent's (never a human task), everything they depend on merged (in Your check or Done); high priority first, then the lowest id. With --parallel, up to n of them (default 3) that are safe side by side, and beside the tasks already in Building or Testing: none depends on another, and what they touch doesn't overlap. A task says where it works in touches: (folders and globs, set at shaping or with muster set \<id\> touches); two entries overlap when the part before the first wildcard of one starts the other's (app/src overlaps app/src/TaskPanel\*), and a task without touches never pairs. Then the ones left out, with why.
 
 ```
 muster ready [--parallel [<n>]] [--json]

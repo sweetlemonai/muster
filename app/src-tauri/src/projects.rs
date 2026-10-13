@@ -316,7 +316,8 @@ fn readme(project: &str, q: &Path) -> String {
          - Something's wrong: `muster return NNNN \"<why>\"` sends it back a stage.\n\
          - Waiting on something: `muster block NNNN --on <0014,0016|you|permission|question|outside> \"<what>\"`,\n  \
          then `muster unblock NNNN`. It keeps its stage. Task ids go into its depends and it clears by\n  \
-         itself when they're done; a block on a question (`--on question Q2`) clears when it's answered.\n\
+         itself once they're merged (in Your check or Done); a block on a question (`--on question Q2`)\n  \
+         clears when it's answered.\n\
          - Code goes in the project's repo, never in this folder.\n\
          - New bugs or ideas you find: `muster add \"<one line>\" --as <your branch>` puts a note in the backlog\n  \
          (`inbox/`; a file dropped there by hand counts too). Shaping turns it into a task: `muster shape <note-file>`\n  \

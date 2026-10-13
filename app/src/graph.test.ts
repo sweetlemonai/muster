@@ -72,18 +72,20 @@ describe("chains and readiness", () => {
     expect(lit).toEqual(["0002>0005", "0005>0004", "0014>0005"]);
     expect(g.edges.some((e) => edgeLit(e, null, up, down))).toBe(false);
   });
-  it("ready to start: in Ready, nobody on it, not blocked, everything it waits on done", () => {
+  it("ready to start: in Ready, nobody on it, not blocked by the flag or by tasks (the core's verdict)", () => {
     const byId = new Map(MUSTER.map((t) => [t.id, t]));
-    expect(readyToStart(byId.get("0021")!, byId)).toBe(true);
-    expect(readyToStart(byId.get("0015")!, byId)).toBe(false); // 0014 is in Your check
-    const done = new Map(byId).set("0014", task("0014", [], { stage: "done" }));
-    expect(readyToStart(byId.get("0015")!, done)).toBe(true);
-    expect(readyToStart(task("0030", [], { blocked: true }), byId)).toBe(false);
-    expect(readyToStart(task("0030", [], { claimedBy: "wt-b" }), byId)).toBe(false);
-    expect(readyToStart(byId.get("0002")!, byId)).toBe(false); // Building
+    expect(readyToStart(byId.get("0021")!)).toBe(true);
+    // 0014 is in Your check, merged: the core doesn't block 0015 on it (0042).
+    expect(readyToStart(byId.get("0015")!)).toBe(true);
+    // 0005 waits on 0002 in Building: the core says it's blocked by tasks.
+    const waiting = task("0005", ["0014", "0002"], { blockedKind: "tasks", blockedBy: [{ id: "0002", stage: "building", holder: "wt-a" }] });
+    expect(readyToStart(waiting)).toBe(false);
+    expect(readyToStart(task("0030", [], { blocked: true }))).toBe(false);
+    expect(readyToStart(task("0030", [], { claimedBy: "wt-b" }))).toBe(false);
+    expect(readyToStart(byId.get("0002")!)).toBe(false); // Building
     // Blocked only by the tasks it depends on, as the core derives it (0024): not ready, even
     // when those tasks aren't among the ones given.
-    expect(readyToStart(task("0030", [], { blockedKind: "tasks", blockedBy: [{ id: "0041", stage: "ready", holder: "" }] }), byId)).toBe(false);
+    expect(readyToStart(task("0030", [], { blockedKind: "tasks", blockedBy: [{ id: "0041", stage: "ready", holder: "" }] }))).toBe(false);
   });
 });
 
@@ -97,12 +99,15 @@ describe("GraphView", () => {
     expect(html).toContain("Not linked to any task (2)");
     expect(html).toContain('aria-pressed="false">Hide done</button>');
   });
-  it("marks what's ready to start", () => {
-    const ready = layoutGraph([task("0001"), task("0002", ["0001"])]);
+  it("marks what's ready to start, and what's blocked by the tasks it waits on", () => {
+    // As the core gives them: 0002 waits on 0001, which is only in Ready.
+    const two = [task("0001"), task("0002", ["0001"], { blockedKind: "tasks", blockedBy: [{ id: "0001", stage: "ready", holder: "" }] })];
+    const ready = layoutGraph(two);
     expect(ready.nodes).toHaveLength(2);
-    const html = view(null, [task("0001"), task("0002", ["0001"])]);
+    const html = view(null, two);
     expect(html).toMatch(/class="g-node s-ready ready"[^>]*>.*?0001/);
     expect(html).not.toMatch(/class="g-node s-ready ready"[^>]*>.*?<span class="id">0002/);
+    expect(html).toMatch(/class="g-node s-ready blocked"[^>]*><span class="g-top"><span class="id">0002/);
   });
   it("lights the selected task's chain and dims the rest", () => {
     const html = view("muster/0005");

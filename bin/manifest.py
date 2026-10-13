@@ -147,6 +147,40 @@ def mirror_status(stage: str, blocked: bool) -> str:
     return {"backlog": "inbox", "shaping": "todo", "ready": "todo", "done": "done"}.get(stage, "doing")
 
 
+# A stage line muster writes in a task's log (queue.rs stage_line): who, from, to, maybe a detail.
+STAGE_LINE = re.compile(r"- \d{4}-\d{2}-\d{2} \d{2}:\d{2} (.+?): stage (\S+) → (\S+)(?: \(.*\))?")
+
+
+def stages_reached(body: str) -> list[str]:
+    """The stages the log's stage lines moved the task into, oldest first (its last `## Log`)."""
+    log = body.rsplit("\n## Log\n", 1)[1].split("\n## ", 1)[0] if "\n## Log\n" in body else ""
+    out = []
+    for line in log.splitlines():
+        m = STAGE_LINE.fullmatch(line)
+        if m and m.group(1).strip() and m.group(2) in STAGES and m.group(3) in STAGES and m.group(2) != m.group(3):
+            out.append(m.group(3))
+    return out
+
+
+def met(stage: str, human: bool) -> bool:
+    """Is a dependency in `stage` met (0042, block.rs met_at)? An agent's task once it's merged, in
+    Your check or Done; the owner's own (for: human) only once it's Done: nothing merges for it."""
+    return stage == "done" or (stage == "your-check" and not human)
+
+
+def started(t: dict) -> bool:
+    """Under way: held in Building, or past it in Testing or Your check (block.rs started)."""
+    return (t["stage"] == "building" and bool(t["claimed_by"])) or t["stage"] in ("testing", "your-check")
+
+
+def holds(dep: dict, under_way: bool) -> bool:
+    """Does `dep` hold back a task that depends on it (block.rs holds)? Until it's met. One merged
+    once and sent back holds back only tasks not started yet."""
+    human = dep["for"] == "human"
+    merged_once = any(met(s, human) for s in dep["_reached"])
+    return not met(dep["stage"], human) and not (under_way and merged_once)
+
+
 def is_task_name(name: str) -> bool:
     """`NNNN-slug.md`, not a date-named note (queue.rs is_task_name, on the same bytes)."""
     b = name.encode("utf-8")
@@ -474,6 +508,7 @@ def main():
                 "parent": fields.get("parent", ""),
                 "due": fields.get("due", ""),
                 "for": for_of(fields),
+                "_reached": stages_reached(body),
             }
             raw_level = fields.get("level", "").lower()
             t["bad_level"] = raw_level[:40] if raw_level and raw_level not in LEVELS else ""
@@ -518,17 +553,20 @@ def main():
         if len(paths) > 1:
             problems.append(f"id {i} used twice: {', '.join(paths)}")
     known = set(ids)
-    # Any file with that id not done holds a task that depends on it (as `muster claim` reads it).
-    open_ids = {t["id"] for t in tasks if t["stage"] != "done"}
+    # Any file with that id not merged yet holds a task that depends on it (as `muster claim` reads
+    # it): per id, for a task not started yet and for one under way.
+    open_ids = {False: {t["id"] for t in tasks if holds(t, False)},
+                True: {t["id"] for t in tasks if holds(t, True)}}
     for t in tasks:
         # Only an old block names a task in waiting_on; a typed one's words are just words.
         ref = re.match(r"(\d{4})\b", t["waiting_on"]) if t["_kind_guessed"] else None
         if ref and ref.group(1) not in known:
             problems.append(f"{t['path']}: waiting_on {ref.group(1)}, which doesn't exist")
         del t["_kind_guessed"]
-        # Blocked by tasks (0024): not flagged, not done, and something it depends on isn't done.
+        # Blocked by tasks (0024): not flagged, not done, and something it depends on isn't merged.
+        waiting = open_ids[started(t)]
         if not t["blocked_kind"] and t["stage"] != "done" and any(
-                d != t["id"] and d in open_ids for d in t["depends"]):
+                d != t["id"] and d in waiting for d in t["depends"]):
             t["blocked_kind"] = "tasks"
         # Dependencies (0019), as muster check reports them.
         for b in t.pop("_bad_depends"):
@@ -553,6 +591,7 @@ def main():
         warnings.append(index_warning)
     for t in tasks:
         del t["bad_level"]
+        del t["_reached"]
     inbox = sorted(p.name for p in (ROOT / "inbox").glob("*.md"))
     if not check_only:
         manifest = {

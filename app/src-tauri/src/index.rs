@@ -65,12 +65,8 @@ pub fn index_md(state: &State, queue: &str) -> String {
     let done = |i: usize| tasks[i].shown_stage == "done";
     let mut placed = vec![false; tasks.len()];
     // The ids still open, for what a task waits on (as `claim` reads `depends:`: any file with
-    // that id not done holds it).
-    let open: HashSet<&str> = tasks
-        .iter()
-        .filter(|t| t.stage != "done")
-        .map(|t| t.id.as_str())
-        .collect();
+    // that id not merged yet holds it, 0042).
+    let open = crate::block::open_ids(tasks.iter().copied());
     let mut list =
         |i: usize, out: &mut String| list_from(&tasks, &open, &kids, &mut placed, i, out);
 
@@ -137,7 +133,7 @@ pub fn index_md(state: &State, queue: &str) -> String {
 /// many lines it wrote. A stack, not recursion, so a hand-made chain of parents can't overflow.
 fn list_from(
     tasks: &[&Task],
-    open: &HashSet<&str>,
+    open: &crate::block::Open,
     kids: &[Vec<usize>],
     placed: &mut [bool],
     i: usize,
@@ -175,7 +171,7 @@ fn stage_name(stage: &str) -> String {
 /// stage, why it's blocked (the block's sentence, 0024), the tasks it depends on that are still
 /// `open` (unless that sentence names them), its open vision conflicts, progress and due date,
 /// priority, type (tasks), estimate (`muster list`'s text), and how many comments it has.
-fn line(t: &Task, open: &HashSet<&str>) -> String {
+fn line(t: &Task, open: &crate::block::Open) -> String {
     let title = match md_text(&t.title, 200) {
         s if s.is_empty() => "(untitled)".to_string(),
         s => s,
@@ -201,7 +197,7 @@ fn line(t: &Task, open: &HashSet<&str>) -> String {
         .depends
         .iter()
         .map(String::as_str)
-        .filter(|d| *d != t.id && open.contains(d))
+        .filter(|d| crate::block::holds_id(open, d, t))
         .collect();
     // Blocked by tasks already names them, with their stage.
     if !waits.is_empty() && t.blocked_kind != "tasks" {
@@ -906,6 +902,14 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
             "{}",
             line_of(&s)
         );
+        // Merged, in Your check: it counts as done (0042).
+        s.tasks[2].stage = "your-check".into();
+        assert!(
+            line_of(&s).contains(" · Ready · waits on 0002 · "),
+            "{}",
+            line_of(&s)
+        );
+        s.tasks[2].stage = "testing".into();
         // One comment, then two.
         let c = |text: &str| crate::fields::Comment {
             who: "owner".into(),

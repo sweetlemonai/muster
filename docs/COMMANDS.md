@@ -105,7 +105,7 @@ never the login name.
 
 The master list (task 0018): `INDEX.md` in the queue folder lists every goal with its features and
 tasks, then the tasks under none by stage, the backlog notes, and what's done (collapsed), each
-with its stage, the tasks it still waits on (`depends:` not done yet, as "waits on 0014"),
+with its stage, the tasks it still waits on (`depends:` not merged yet, as "waits on 0014"),
 its open vision conflicts (as "⚠ 2 vision", task 0029), priority, type, estimate (the text `muster list` shows: agent time, test time, tokens), how many
 comments it has, and a link to its file. muster rewrites it after every
 change it makes, under the queue's lock, and only when its text changed. It's generated, so never

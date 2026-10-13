@@ -70,7 +70,6 @@ function Status({ t, ready }: { t: Task; ready: boolean }) {
 function QueueGraph({ name, tasks, all, openKey, onOpen }: { name: string; tasks: Task[]; all: Task[]; openKey: string | null; onOpen: (t: Task) => void }) {
   const g: Graph = useMemo(() => layoutGraph(tasks), [tasks]);
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
-  const byId = useMemo(() => new Map(all.map((t) => [t.id, t])), [all]);
   const selected = g.nodes.find((n) => key(n.task) === openKey)?.id ?? null;
   const up = useMemo(() => (selected ? upstream(g, selected) : new Set<string>()), [g, selected]);
   const down = useMemo(() => (selected ? downstream(g, selected) : new Set<string>()), [g, selected]);
@@ -118,7 +117,7 @@ function QueueGraph({ name, tasks, all, openKey, onOpen }: { name: string; tasks
           {g.nodes.map((n) => {
             const p = at.get(n.id)!;
             const t = n.task;
-            const ready = readyToStart(t, byId);
+            const ready = readyToStart(t);
             return (
               <button
                 key={n.id}
@@ -148,7 +147,7 @@ function QueueGraph({ name, tasks, all, openKey, onOpen }: { name: string; tasks
           <span className="meta">Not linked to any task ({g.loose.length})</span>
           {g.loose.map((t) => (
             <button key={t.id} type="button" className={`chip g-loose s-${stageOf(t)}${isHuman(t) ? " human" : ""}${key(t) === openKey ? " on" : ""}`} onClick={() => onOpen(t)} title={t.title}>
-              <span className="id">{t.id}</span>{isHuman(t) && <YouRibbon />} {t.title.length > 34 ? `${t.title.slice(0, 33)}…` : t.title} <Status t={t} ready={readyToStart(t, byId)} />
+              <span className="id">{t.id}</span>{isHuman(t) && <YouRibbon />} {t.title.length > 34 ? `${t.title.slice(0, 33)}…` : t.title} <Status t={t} ready={readyToStart(t)} />
             </button>
           ))}
         </div>

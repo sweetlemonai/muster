@@ -148,7 +148,7 @@ export function BlockFormView({ kind, detail, questions, busy, onKind, onDetail,
         <button type="submit" disabled={busy || !ready}>Block</button>
         <button type="button" onClick={onCancel}>Cancel</button>
       </div>
-      {kind === "tasks" && <p className="meta small">They're added to its depends: it shows blocked by them until they're all done, then clears by itself.</p>}
+      {kind === "tasks" && <p className="meta small">They're added to its depends: it shows blocked by them until they're all merged (in Your check or Done; the owner's own, Done), then clears by itself.</p>}
     </form>
   );
 }

@@ -66,7 +66,7 @@ export function blockSentence(t: Block, short = false): string {
   return text ? `${lead}: ${text}` : lead;
 }
 
-/** Blocked, by the flag or by tasks it depends on that aren't done. */
+/** Blocked, by the flag or by tasks it depends on that aren't merged yet (the core's `blockedKind`). */
 export const isBlocked = (t: Pick<Task, "blocked" | "blockedKind">) => t.blocked || !!t.blockedKind;
 
 /** What the Block form sends for a kind and what was typed or picked, or why it can't yet. */

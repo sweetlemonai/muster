@@ -1,12 +1,30 @@
 # Muster — task queue protocol (v2, with stages)
 
+> **A dependency is met once it's merged (Muster 0042, 2026-10-13).** Work merges into main after
+> Testing passes and then waits in Your check for the owner's look (VISION.md), so the next tasks
+> build on it. A task that `depends:` on an agent's task is free once that task is in **Your check
+> or Done**: `muster claim` and `muster next` take it, and the card, table, `muster list`,
+> INDEX.md, `muster check`, `manifest.py` and the Graph stop showing it blocked by that task. One
+> depending on a task in Testing or earlier still waits ("0005 depends on 0002, not merged yet (…)"),
+> and `muster pass` into Building (the Ready card's Pass, the owner's Start) refuses it the same
+> way; only the owner's `muster stage` override moves it, logged as one.
+> A **human task** (`for: human`) still has to be **Done**: nothing merges for it. Reaching Your
+> check logs the unblock on each task it frees, as Done did before: `unblocked: 0002 in Your
+> check` (or `unblocked: 0014 done; 0002 in Your check`); the Done that follows writes nothing
+> more. **If the owner sends it back** from Your check (`muster return`, or `muster stage` to an
+> earlier stage), the tasks that depend on it and haven't started show blocked by it again, with
+> nothing written; each one already under way (held in Building, or in Testing or Your check)
+> keeps its stage and claim and gets a note on its log instead, `0002 went back to Building:
+> <why>`, not a forced return, and isn't held back by it again (a `muster block … --on 0002` on it
+> is refused, saying so). When it's merged again, the ones that waited log `unblocked` as above.
+
 > **Parallel sessions: one worktree per task (Muster 0023, 2026-10-13).** Several sessions can
 > work one queue at once, each on its own task in its own git worktree. "Work Muster's queue in
 > parallel-safe worktrees" means this loop:
 >
 > 1. **Pick.** `muster ready --parallel` lists up to 3 tasks (`--parallel <n>` for more) that are
 >    safe side by side: claimable now (Ready, not blocked, nobody's claim, an agent's, everything
->    they depend on done), none depending on another or on a task in Building or Testing, and
+>    they depend on merged, 0042), none depending on another or on a task in Building or Testing, and
 >    their `touches:` not overlapping each other's or those of the tasks in Building or Testing. A task
 >    says where it works in `touches:` (folders and globs, comma-separated, set at shaping with
 >    `muster file … --touches` or `muster set <id> touches "app/src/TaskPanel*, docs/"`); two
@@ -70,8 +88,8 @@
 > `muster add "<what the owner needs to do>"`, and the owner files it. `muster set <id> for
 > human|ai` switches who does a task while nobody is on it (made human in Backlog or Shaping, it moves to To do). An agent's task can wait on a human
 > task with `depends:` ("needs the API key first"): it can't be claimed until the human task is
-> Done, with no field changed (it shows "Blocked by tasks" until then and logs `unblocked: … done`
-> when it frees, as below). `muster list` marks human tasks `[you]`, and INDEX.md "you".
+> Done, even if it's put in Your check, since nothing merges for it (0042), with no field changed
+> (it shows "Blocked by tasks" until then and logs `unblocked: … done` when it frees, as below). `muster list` marks human tasks `[you]`, and INDEX.md "you".
 > A file without `for:` (every older one) is an agent's.
 >
 > **Blocked says why (Muster 0024, 2026-10-13).** A block has a kind: **tasks**, **you**,
@@ -85,8 +103,9 @@
 > "owner …" as needing the owner), `waiting_on` keeps the old words in front for you and question:
 > `owner: set the API key`, `capture: Q2`; the detail is what follows them. **Tasks is never a
 > flag:** the ids go into `depends:` (0019), so there's one record of what waits on what, and the
-> task shows "Blocked by tasks: 0014 (Building, codex), 0016 (Ready)" until they're all Done, then
-> clears by itself (logged `unblocked: 0014, 0016 done`; emptying its depends logs `unblocked: no
+> task shows "Blocked by tasks: 0014 (Building, codex), 0016 (Ready)" until they're all merged (in
+> Your check or Done, a human task Done: see 0042 above), then clears by itself (logged
+> `unblocked: 0014, 0016 done`; emptying its depends logs `unblocked: no
 > open depends left`). When it frees itself in Building, the holder's lease starts again; if the
 > holder already holds another task in Building, the freed one goes back to Ready with its claim
 > released (`stage building → ready (released: wt-a already holds 0007)`). A block on a question

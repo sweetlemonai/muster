@@ -148,6 +148,20 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   hands Building back to its last builder. Until 0005, `status:` and the status folder are a mirror
   of the stage for older readers (Drover, `manifest.py`), and `check` reports a stage whose status
   doesn't match, which is what a hand move leaves.
+- **Depends, met once merged** (tasks 0019, 0024, 0042): a task's `depends:` hold it back until
+  each is merged, which for an agent's task is Your check or Done (work merges into main after
+  Testing passes) and for a human task only Done. One rule in `block.rs` (`met_at`, `holds`)
+  feeds every reader: `claim` and `next` (`waiting_on_deps`), the derived "Blocked by tasks"
+  (`block::derive`) that the card, table, timeline, pane, `muster list`, INDEX.md's "waits on"
+  and `check` show, the Graph's "ready" (`readyToStart` reads the core's verdict), and
+  `manifest.py`, which mirrors it. A change that merges a task logs `unblocked: 0014 done; 0017 in
+  Your check` on each task it frees (Done after Your check writes nothing more). Sent back from
+  Your check (`return`, or a `stage` override), it blocks again the tasks that depend on it and
+  haven't started; each one under way (held in Building, or in Testing or Your check) keeps its
+  stage and claim, gets `0017 went back to Building: <why>` on its log, and isn't held by that
+  task again. A shared fixture, `app/src/deps-cases.json`, holds the CLI
+  (`tests/deps_cases.rs`), the app (`deps-cases.test.ts`) and `manifest.py` (`test_task.py`) to
+  the same answers.
 - **Backlog** (task 0015): any `.md` in the queue's `inbox/` that isn't a numbered task is a
   backlog note, a one-liner or a whole page, however it got there. Add one with `muster add` or the
   quick-add field at the top of the Backlog column. Open a note in the docked pane to:

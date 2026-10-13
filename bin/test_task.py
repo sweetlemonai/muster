@@ -568,6 +568,29 @@ class TaskTests(unittest.TestCase):
         # Blocked on you or by a permission waits on the owner; a question, outside or tasks don't.
         self.assertEqual(sorted(manifest["waiting_for_owner"]), ["0050", "0052", "0057"])
 
+    def test_manifest_reads_blocked_by_tasks_as_the_core_does(self):
+        # Task 0042: the shared dependency cases (app/src/deps-cases.json), which `muster list` and
+        # the app are held to as well. A dependency is met once merged: an agent's task in Your
+        # check or Done, the owner's own only once Done; one merged once and sent back holds back
+        # only tasks not started yet.
+        cases = json.loads((HERE.parent / "app" / "src" / "deps-cases.json").read_text(encoding="utf-8"))
+        for old in self.root.glob("*/*.md"):
+            if old.name != "README.md":
+                old.unlink()
+        mirror = {"backlog": "inbox", "shaping": "todo", "ready": "todo", "done": "done"}
+        for t in cases["tasks"]:
+            folder = "blocked" if t["waitingOn"] else mirror.get(t["stage"], "doing")
+            log = "".join(f"- {line}\n" for line in t["log"])
+            (self.root / folder / f"{t['id']}-t.md").write_text(
+                f"---\nid: {t['id']}\ntype: code\npriority: normal\nstatus: {folder}\nstage: {t['stage']}\n"
+                f"for: {t['for']}\ncaptured: 2026-10-12\nclaimed-by: {t['claimedBy']}\nheld-by: {t['heldBy']}\n"
+                f"heartbeat:\nwaiting_on: {t['waitingOn']}\ndepends: [{', '.join(t['depends'])}]\n---\n\n"
+                f"# {t['title']}\n\n## Log\n- 2026-10-12 09:00 capture: created\n{log}", encoding="utf-8")
+        self.assertEqual(self.manifest().returncode, 0)
+        kinds = {t["id"]: t["blocked_kind"] for t in json.loads(self.text("tasks.json"))["tasks"]}
+        want = {i: "tasks" if w["blockedBy"] else "" for i, w in cases["want"].items()}
+        self.assertEqual(kinds, want)
+
     def test_manifest_carries_the_holder_of_testing_and_your_check(self):
         # muster writes held-by: for Testing and Your check (0030), beside Building's claimed-by.
         (self.root / "doing" / "0042-something.md").write_text(
