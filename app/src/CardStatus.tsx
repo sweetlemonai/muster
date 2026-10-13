@@ -2,6 +2,7 @@ import { useContext } from "react";
 import { BranchCardLine } from "./Branch";
 import { builtTested, checkinLine, currentCheckin, holderOf, leaseRunOut, needsTester, quietCheckin, quietText, splitHolder, startedAgo, whoLine } from "./lib";
 import { askedText } from "./reach";
+import { finishText } from "./recentData";
 import { Machine, spanText } from "./settingsData";
 import type { Task } from "./types";
 import { VisionBadge } from "./Vision";
@@ -13,18 +14,27 @@ const HELD = new Set(["ready", "building", "testing"]);
 /** A card's who and progress lines (0030), quiet unless something's wrong: who's on it and since
  *  when, the latest check-in, and a session gone quiet in the attention colour. In Your check,
  *  "Your turn" and the next step instead (0043), then who built and who tested it; in Testing,
- *  "needs a tester" on its own line while a builder still holds it (0047). A task started in its own worktree (0023) adds
- *  its branch and the worktree's folder. Then, at any stage, its open vision conflicts (0029).
+ *  "needs a tester" on its own line while a builder still holds it (0047); in Done, when it was
+ *  done (0051). A task started in its own worktree (0023) adds its branch and the worktree's
+ *  folder. Then, at any stage, its open vision conflicts (0029).
  *  `now` is the state's clock, seconds since 1970. */
 export default function CardStatus({ t, now }: { t: Task; now: number }) {
   return (
     <>
       {HELD.has(t.stage) && <HeldLines t={t} now={now} />}
       {t.stage === "your-check" && <YourTurn t={t} />}
+      <DoneLine t={t} now={now} />
       <BranchCardLine t={t} />
       <VisionBadge t={t} />
     </>
   );
+}
+
+/** In Done (0051): when it was done, "done 4 min ago", as Recently finished says it; the stamp
+ *  in the tooltip. Nothing when the log doesn't know. */
+function DoneLine({ t, now }: { t: Task; now: number }) {
+  const text = finishText(t, now);
+  return text ? <span className="card-done" title={`Done ${t.doneAt || t.doneOn}`}>{text}</span> : null;
 }
 
 /** Your check (0043): whose turn it is (yours, unless the file names someone else) and the one

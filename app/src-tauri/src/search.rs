@@ -262,13 +262,27 @@ fn estimated(t: &Task) -> bool {
     t.est_minutes > 0 || t.est_token_count > 0
 }
 
+/// When a task finished, to compare: its move into Done to the minute, else the day the log
+/// knows (which sorts before that day's times), else "" (last). The app's lib.ts `finished`.
+fn finished(t: &Task) -> &str {
+    if t.done_at.is_empty() {
+        &t.done_on
+    } else {
+        &t.done_at
+    }
+}
+
 fn compare(by: Sort, a: &Task, b: &Task) -> Ordering {
     match by {
         Sort::Priority => {
             let (da, db) = (a.stage == "done", b.stage == "done");
             da.cmp(&db).then_with(|| {
                 if da {
-                    b.modified.cmp(&a.modified).then_with(|| by_place(a, b))
+                    // Done: latest finished first (0051), then latest changed.
+                    finished(b)
+                        .cmp(finished(a))
+                        .then_with(|| b.modified.cmp(&a.modified))
+                        .then_with(|| by_place(a, b))
                 } else {
                     b.waiting_for_owner
                         .cmp(&a.waiting_for_owner)
@@ -604,5 +618,41 @@ mod tests {
         for n in Sort::NAMES {
             assert!(Sort::parse(n).is_some(), "{n}");
         }
+    }
+
+    #[test]
+    fn priority_puts_done_newest_finished_first() {
+        // 0051: by the move into Done, else the day the log knows, else last; then latest changed.
+        let mk = |id: &str, log: &str, modified: u64| {
+            let mut t = task(
+                &format!("id: {id}\nstage: done\nstatus: done"),
+                &format!("# T\n\n## Log\n{log}"),
+            );
+            t.modified = modified;
+            t
+        };
+        let list = [
+            mk(
+                "0001",
+                "- 2026-10-12 18:00 owner: stage your-check → done\n",
+                900,
+            ),
+            mk(
+                "0002",
+                "- 2026-10-13 13:56 owner: stage your-check → done\n",
+                100,
+            ),
+            mk("0003", "- 2026-10-13 capture: moved todo → done\n", 999),
+            mk("0004", "", 1000),
+            mk(
+                "0005",
+                "- 2026-10-13 09:00 capture: moved todo → done\n",
+                50,
+            ),
+        ];
+        let mut v: Vec<&Task> = list.iter().collect();
+        sort(&mut v, Sort::Priority);
+        let ids: Vec<&str> = v.iter().map(|t| t.id.as_str()).collect();
+        assert_eq!(ids, ["0002", "0005", "0003", "0001", "0004"]);
     }
 }

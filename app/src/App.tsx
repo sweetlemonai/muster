@@ -17,6 +17,8 @@ import { applyQuery, dayContext, EMPTY_QUERY, loadViews, notesFor, storeViews, t
 import { indexStamp, needsIndex, queryWords, withSearch, type IndexStamp, type SearchIndex } from "./search";
 import { focusSearchBox, searchView, windowKey } from "./keys";
 import WaitingList from "./WaitingList";
+import Recent from "./Recent";
+import { clampPane, layoutWidth, PANE_DEFAULT, railBeside } from "./paneSize";
 import EffortGroups, { useAcceptResults } from "./EffortGroups";
 import type { NamedView } from "./yourCheck";
 import { byWho, FOR_FILTERS, FOR_KEY, type ForFilter, needsYouCount, parseForFilter, waitingForYou, whoFiltersOn, whoShows } from "./human";
@@ -110,10 +112,13 @@ function useSearchIndex(queue: string, tasks: Task[], searching: boolean): { ind
   return { index, error };
 }
 
+/** The window's width in the page's pixels, under the ⌘+ zoom (paneSize.ts `layoutWidth`). */
+const pageWidth = () => layoutWidth(window.innerWidth, document.documentElement.style.getPropertyValue("zoom"));
+
 function usePaneWidth(): [number, (w: number) => void] {
-  const [w, setW] = useState(() => Number(localStorage.getItem(PANE_KEY)) || 560);
+  const [w, setW] = useState(() => Number(localStorage.getItem(PANE_KEY)) || PANE_DEFAULT);
   const set = useCallback((v: number) => {
-    const c = Math.round(Math.min(Math.max(v, 360), Math.max(420, window.innerWidth - 420)));
+    const c = clampPane(v, pageWidth());
     setW(c);
     localStorage.setItem(PANE_KEY, String(c));
   }, []);
@@ -166,6 +171,12 @@ export default function App() {
   const searchRef = useRef<HTMLInputElement>(null);
   const [focusSearch, setFocusSearch] = useState(0);
   const [width, setWidth] = usePaneWidth();
+  // Fitted to the window each render (every poll is one), so a narrower window still leaves the
+  // board its room. On the board, Recently finished (0051) goes under the board when the row
+  // can't hold it beside (paneSize.ts).
+  const win = pageWidth();
+  const paneWidth = clampPane(width, win);
+  const railSide = railBeside(win, pane ? paneWidth : 0);
   const [groupBy, setGroupBy] = useGroupBy();
   const [who, setWho] = useForFilter();
   // Where the manual is open in the Help tab; a "?" opens it at its topic, and the pane stays.
@@ -369,7 +380,9 @@ export default function App() {
               {view === "table" && <TableView tasks={viewTasks} now={now} multi={multi} openKey={openKey} onOpen={open} groups={tableGroups} by={groupBy} words={words} />}
               {view === "graph" && <GraphView tasks={tasks} all={inQueue} multi={multi} openKey={openKey} onOpen={open} />}
               {view === "timeline" && <TimelineView tasks={viewTasks} now={now} multi={multi} openKey={openKey} onOpen={open} words={words} />}
-              {view === "board" && groupBy !== "none" && (
+              {/* Recently finished (0051) is docked at the board's right edge, grouped or not; under it when the row is too narrow for both. */}
+              {view === "board" && <div className={railSide ? "board-row" : "board-row stacked"}>
+              {groupBy !== "none" && (
                 <GroupedBoard
                   groups={boardGroups}
                   by={groupBy}
@@ -383,7 +396,7 @@ export default function App() {
                 />
               )}
               {/* Backlog never folds: its quick add is always there. */}
-              {view === "board" && groupBy === "none" && <main className="board" style={{ gridTemplateColumns: STAGES.map((s) => (s.id === "backlog" || (cols[s.id] ?? []).length || (s.id === "your-check" && boardResult) ? "minmax(118px, 1fr)" : "44px")).join(" ") }}>
+              {groupBy === "none" && <main className="board" style={{ gridTemplateColumns: STAGES.map((s) => (s.id === "backlog" || (cols[s.id] ?? []).length || (s.id === "your-check" && boardResult) ? "minmax(118px, 1fr)" : "44px")).join(" ") }}>
                 {STAGES.map((c) => {
                   const list = cols[c.id] ?? [];
                   const shown = c.id === "done" && !showAllDone ? list.slice(0, 8) : list;
@@ -421,6 +434,8 @@ export default function App() {
                   );
                 })}
               </main>}
+              <Recent key={queue} tasks={inQueue} now={now} multi={multi} openKey={openKey} onOpen={open} />
+              </div>}
             </>
           )}
 
@@ -474,8 +489,8 @@ export default function App() {
 
         {pane && (
           <>
-            <Splitter width={width} onWidth={setWidth} />
-            <aside className="pane" style={{ width }} aria-label="Details">
+            <Splitter width={paneWidth} onWidth={setWidth} />
+            <aside className="pane" style={{ width: paneWidth }} aria-label="Details">
               {pane.kind === "task" && openTask && (
                 <Suspense fallback={<p className="none">Loading…</p>}>
                   <TaskPanel key={openKey} task={openTask} now={now} onClose={() => go(null)} onChanged={refresh} onDirty={onDirty} nudge={nudge} childTasks={childrenOf(openTask, index)} onOpenTask={(id) => go({ kind: "task", key: key({ queue: openTask.queue, id }) })} onOpenView={openView} />

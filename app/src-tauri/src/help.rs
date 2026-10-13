@@ -84,7 +84,7 @@ pub const COMMANDS: &[Command] = &[
             ("--tag", "only tasks with this tag"),
             ("--holder", "who holds it in its stage, as the board shows it, without the session (drover/main, wt-a, owner)"),
             ("--blocked", "only blocked tasks, those waiting only on the tasks they depend on too"),
-            ("--sort", "priority (needs you, then high to low; Done last), newest, oldest, changed, estimate or id (the default)"),
+            ("--sort", "priority (needs you, then high to low; Done last, newest finished first), newest, oldest, changed, estimate or id (the default)"),
             ("--status", "the old status: inbox, todo, doing, blocked or done"),
             ("--json", "machine-readable: {\"tasks\": […], \"backlog\": […]}, for scripts and agents"),
         ],

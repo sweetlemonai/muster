@@ -4,6 +4,50 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Recently finished: what got merged and accepted, newest first, "4 min ago" (task 0051)
+**Did:** the owner: "looking at a project I need to see list of recent tasks done, by date: like
+4 min ago". **Recently finished** is docked at the board's right edge (plain or grouped): merged
+(the latest Testing → Your check stage line) and accepted (into Done, `doneAt`) rows, newest
+first, grouped Today · Yesterday · dates with counts, when in words ("4 min ago", "2 h ago",
+"yesterday 18:20", then the date); chips All · Merged · Accepted, remembered; the last 7 days,
+**Show older** adds a week; each row opens its task and says who built it and its time and
+tokens (0025's totals). With All, rows carry their project. The Done column sorts newest finished
+first under the default sort (app `lib.ts` and the CLI's `search.rs`, the shared order), and Done
+cards say "done 4 min ago". Files: `recentData.ts`, `Recent.tsx`, `CardStatus.tsx`, `App.tsx`
+(board area only), `lib.ts`, `search.rs`, `help.rs`, `styles.css`; manual 03, 04, 05 and
+AS_BUILT updated.
+**Decided:** rows only for what's still finished (a task sent back drops out); a merge is only a
+Testing → Your check line (a hand move isn't one); the owner's own task's Done is an accepted row;
+the list follows the picked project, not the filter bar; the Done order changes only under the
+priority sort, so the other Sort chips still order Done their way.
+**Verified:** `bin/gate` → `gate: green (pnpm check, test_task, test_commands, cargo test
+(Kiritimati))`; vitest 1017 tests on main f038f0b (new: `recentData.test.ts`, `Recent.test.ts`, `paneSize.test.ts`, Card's Done line,
+all with a fake clock, also run under Kiritimati, Los Angeles and Lord Howe time); cargo
+`priority_puts_done_newest_finished_first`.
+**Fixed (review):** the rail was a fixed 272 px, so with the pane open the board lost most of its
+width (398 px on a 1440 px window, 0 with the pane at its widest, the rail's right edge
+clipped) → the rail gives way (about a quarter of the row, 200 to 272 px) and on the board the
+pane's widest leaves the rail 200 px and the board its old 210 px (`paneSize.ts` `clampPane`,
+pinned in `paneSize.test.ts` with the CSS numbers). No fold to a strip: the clamp keeps every
+row in view, and a strip would hide them.
+**Fixed (review):** windows of 820–1040 px with the pane open still squeezed the board (10 px at
+820, 130 at 960) because the pane's floor of 420 px won and the rail kept 200 → the pane's widest
+is now the window less the sidebar and the board's 210 px in every view (no 420 floor, so 400 at
+820), and when the board's row can't hold the board and the rail side by side the rail moves under
+the board, full width (`railBeside`, `.board-row.stacked`), never hidden. The pane no longer
+changes width between the board and the other views. Widths count in the page's pixels under ⌘+
+zoom (`layoutWidth`). Pinned in `paneSize.test.ts`: the board's room at 820, 900, 960, 1000 and
+1040–2560 with the pane at its narrowest, default and widest.
+**Fixed (review):** under ⌘+ zoom the page can be narrower than the sidebar, the board's 210 px and
+the pane's 360 px (780): at 150% a 1000 px window left the board 97 px, and at 820 × 150% the
+content collapsed and the pane ran 23 px past the window → the pane gives way first: it fits the
+window down to 240 px (`PANE_FLOOR`, `.pane` min-width 240 px; you still drag it no narrower than
+360), rounded down so the board keeps its full room, and never past the window. The board keeps
+210 px while the page is at least 660 px (820 × 115% → pane 293; 1000 × 150% → pane 246);
+below that it gets less (820 × 130% → 181 px, 820 × 150% → 97 px) and nothing runs off-screen.
+The earlier claim "210 px from 820 px" holds at 100% and 115% only. Pinned in `paneSize.test.ts`.
+**Open:** AC4 is the owner's look in the real app; the rail's look wasn't checked in a running
+window or screenshot by the builder.
 ## 2026-10-13 — Pick-one questions: agents ask with options, the owner answers with one click (task 0049)
 **Did:** `muster ask <id> "<q>" --option "<text>"… [--pick b] [--no-answer a]` writes 2 to 6
 options under the question as plain indented lines (`- (a) … (my pick)`, `With no answer: (a)`),

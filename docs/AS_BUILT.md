@@ -143,8 +143,10 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     then "36 hidden by filters" and Clear all; it keeps its place when nothing is active. Backlog
     notes follow the search and hide under any filter but a Stage one with Backlog.
   - **Sort:** the board's Sort chips order every column (priority, the default: needs you first,
-    then high to low, Done newest first; newest, oldest, changed, estimate, id), inside each
-    Group by band too. The Table sorts by its columns; the Timeline and Graph keep their own order.
+    then high to low, Done newest finished first by `doneAt`, else `doneOn`, then latest changed,
+    0051, in `muster list --sort priority` too; newest, oldest, changed, estimate, id), inside
+    each Group by band too. The Table sorts by its columns; the Timeline and Graph keep their own
+    order.
   - **Saved views:** + Save view keeps the search, filters and sort under a name, per project, in
     local storage, as a chip; ✕ deletes it.
   - **`muster list --search --stage --type --tag --holder --blocked --sort`** gives the same
@@ -299,6 +301,28 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   sentence; derived, so the blocked chip, `muster list --blocked`, the graph and the activity
   feed count it as blocked too) and can't be claimed until it's done. `muster list` marks human
   tasks `[you]`, INDEX.md "you", and `manifest.py` reads `for`.
+- **Recently finished** (task 0051, `recentData.ts`, `Recent.tsx`): docked at the board's right
+  edge (plain or grouped), always in view, its own scroll; about a quarter of the board's row,
+  200 to 272 px. When the row can't hold the board's 210 px and the rail's 200 px (a narrow
+  window, or a wide pane), the rail goes under the board, full width, at most a third of the
+  window high (`paneSize.ts` `railBeside`, the `stacked` row): moved, never hidden. The pane's
+  widest leaves the content 210 px in every view, counted in the page's pixels under ⌘+ zoom
+  (`clampPane`, `layoutWidth`), so it doesn't change width with the view. In a narrow page it
+  gives way first, below the 360 px you can drag it to, down to 240 px (`PANE_FLOOR`, the `.pane`
+  min-width): the board keeps 210 px while the page is at least 660 px wide (an 820 px window up
+  to 115% zoom, 1000 px at 150%); narrower than that the board gets less (97 px at 820 × 150%),
+  and the pane never runs past the window. What landed on main (the latest
+  Testing → Your check stage line, **merged**) and what moved into Done (`doneAt`, **accepted**;
+  the owner's own task's Done too), each a row of its own, for the project in view (every project
+  with All, each row with its project), whatever the filter bar says. Only what's still finished:
+  a task sent back has no row; goals and features have none. Newest first, grouped by day (Today,
+  Yesterday, then "Sun 11 Oct"), each day with its count; when in words ("4 min ago", "2 h ago",
+  "yesterday 18:20", then the date), the stamp in the tooltip. Chips All · Merged · Accepted,
+  remembered (`muster.recentKind`). The last 7 days, **Show older · n more** adds a week. Each row
+  opens its task in the pane, and its second line says who built it (the session that took it
+  into Building) and its time and tokens (0025's totals, `task_sessions`, read one task at a time
+  for the rows in view and again only when a file changes). Done cards say "done 4 min ago"
+  (`CardStatus.tsx`).
 - **Waiting for you:** what the agents wait on the owner for (escalated questions, Your check,
   blocked on you or by a permission, `queue::needs_owner`), then the owner's own tasks to do and
   doing, each opening its task (`human.ts` `waitingForYou`: the needs-you count's tasks). Your check comes first, by

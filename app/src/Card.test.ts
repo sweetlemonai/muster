@@ -51,3 +51,18 @@ describe("a card on the one board (0022, owner 2026-10-13)", () => {
     expect(html).not.toContain("waits-you");
   });
 });
+
+describe("a Done card (0051)", () => {
+  // The fake clock: 14:00 local time on 2026-10-13.
+  const NOW = new Date(2026, 9, 13, 14, 0).getTime() / 1000;
+  const at = (t: Task) => renderToStaticMarkup(createElement(Card, { t, now: NOW, multi: false, parent: "", onOpen: () => {}, active: false, words: [] }));
+  it("says when it was done, from the log, with the stamp in its tooltip", () => {
+    expect(at(task("0050", { stage: "done", doneAt: "2026-10-13 13:56" }))).toContain('<span class="card-done" title="Done 2026-10-13 13:56">done 4 min ago</span>');
+    expect(at(task("0051", { stage: "done", doneAt: "2026-10-12 18:20" }))).toContain(">done yesterday 18:20<");
+    expect(at(task("0052", { stage: "done", doneOn: "2026-10-12" }))).toContain('<span class="card-done" title="Done 2026-10-12">done yesterday</span>');
+  });
+  it("says nothing when the log doesn't know, or the task isn't done", () => {
+    expect(at(task("0053", { stage: "done" }))).not.toContain("card-done");
+    expect(at(task("0054", { stage: "building", doneAt: "2026-10-13 13:56" }))).not.toContain("card-done");
+  });
+});

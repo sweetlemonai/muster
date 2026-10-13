@@ -320,7 +320,7 @@ export function columns(tasks: Task[], by: BoardSort = "priority"): Record<strin
 export type BoardSort = "priority" | "newest" | "oldest" | "changed" | "estimate" | "id";
 /** The board's orders within each column, as chips. The Table sorts by its columns instead. */
 export const BOARD_SORTS: { id: BoardSort; label: string; title: string }[] = [
-  { id: "priority", label: "priority", title: "What needs you first, then high to low; Done newest first" },
+  { id: "priority", label: "priority", title: "What needs you first, then high to low; Done newest finished first" },
   { id: "newest", label: "newest", title: "Latest captured first" },
   { id: "oldest", label: "oldest", title: "Earliest captured first" },
   { id: "changed", label: "changed", title: "Latest changed first" },
@@ -334,13 +334,17 @@ const rank = (t: Task) => PRIORITY[t.priority] ?? 1;
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const byPlace = (a: Task, b: Task) => cmp(a.queue, b.queue) || cmp(a.id, b.id);
 const estimated = (t: Task) => t.estMinutes > 0 || t.estTokenCount > 0;
+/** When a task finished, to compare: its move into Done to the minute, else the day the log
+ *  knows (which sorts before that day's times), else "" (last). The core's search.rs `finished`. */
+const finished = (t: Task) => t.doneAt || t.doneOn;
 
 const COMPARE: Record<BoardSort, (a: Task, b: Task) => number> = {
-  // Open work: needs you, then priority. Done (where priority no longer matters): latest first.
+  // Open work: needs you, then priority. Done (where priority no longer matters): latest finished
+  // first (0051), then latest changed.
   priority: (a, b) => {
     const da = a.stage === "done", db = b.stage === "done";
     if (da !== db) return da ? 1 : -1;
-    if (da) return b.modified - a.modified || byPlace(a, b);
+    if (da) return cmp(finished(b), finished(a)) || b.modified - a.modified || byPlace(a, b);
     return Number(b.waitingForOwner) - Number(a.waitingForOwner) || rank(a) - rank(b) || byPlace(a, b);
   },
   // By the day it was captured; the same day, the higher id is the newer. No date goes last.
