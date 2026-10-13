@@ -1307,6 +1307,30 @@ pub fn read_state_at_with(
     stamp: &str,
     settings: &crate::settings::Settings,
 ) -> State {
+    read_state_from(queues, cache, stamp, settings, &|_| String::new())
+}
+
+/// `read_state_with`, each queue and its tasks with its project's prefix (0033), `prefix_of(name)`,
+/// before anything is worked out: what the problems, the block sentences and `--json` say then
+/// name tasks by their keys. For the window and the command line; the rules' own reads leave it
+/// out.
+pub fn read_state_keyed(
+    queues: &[(String, PathBuf)],
+    cache: &mut Cache,
+    settings: &crate::settings::Settings,
+    prefix_of: &dyn Fn(&str) -> String,
+) -> State {
+    let stamp = cache.stamp_at(now_secs());
+    read_state_from(queues, cache, &stamp, settings, prefix_of)
+}
+
+fn read_state_from(
+    queues: &[(String, PathBuf)],
+    cache: &mut Cache,
+    stamp: &str,
+    settings: &crate::settings::Settings,
+    prefix_of: &dyn Fn(&str) -> String,
+) -> State {
     let mut state = State {
         now: now_secs(),
         settings: *settings,
@@ -1335,6 +1359,10 @@ pub fn read_state_at_with(
                     .push(format!("{name}: {} has no front matter", path.display())),
             }
         }
+        let prefix = prefix_of(name);
+        for t in &mut tasks {
+            t.prefix.clone_from(&prefix);
+        }
         crate::block::derive(&mut tasks);
         state.problems.extend(problems(
             name,
@@ -1356,7 +1384,7 @@ pub fn read_state_at_with(
         state.queues.push(QueueInfo {
             name: name.clone(),
             path: root.to_string_lossy().to_string(),
-            prefix: String::new(),
+            prefix,
             counts,
         });
         state.tasks.extend(tasks);
@@ -1467,6 +1495,8 @@ pub fn dependency_loops<'a>(edges: &HashMap<&'a str, Vec<&'a str>>) -> Vec<Vec<S
 /// and as local time (`YYYY-MM-DD HH:MM`), for the claims' lease of `lease` minutes.
 pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str, lease: u64) -> Vec<String> {
     let mut out = Vec::new();
+    // Tasks named by their keys (0033) when they have the queue's prefix; files by their path.
+    let key = |id: &str| crate::key::key(tasks.first().map_or("", |t| t.prefix.as_str()), id);
     let mut ids: HashMap<&str, Vec<&str>> = HashMap::new();
     for t in tasks {
         ids.entry(t.id.as_str()).or_default().push(t.path.as_str());
@@ -1554,12 +1584,12 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str, lease: u64) 
                 })
                 .collect();
             let what = t.waiting_on.chars().take(80).collect::<String>();
-            let (kind, id) = (&t.blocked_kind, &t.id);
+            let (kind, id) = (&t.blocked_kind, key(&t.id));
             let how = match (kind.as_str(), open.is_empty()) {
                 ("tasks", true) => format!("none of them is open now: muster unblock {id}"),
                 ("tasks", false) => format!(
                     "block it again with one to confirm (muster block {id} --on {})",
-                    open.join(",")
+                    open.iter().map(|d| key(d)).collect::<Vec<_>>().join(",")
                 ),
                 _ => format!(
                     "block it again with one to confirm (muster block {id} --on {kind} \"…\")"
@@ -1597,8 +1627,9 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str, lease: u64) 
                 out.push(format!("{queue}: {} depends on itself", t.path));
             } else if !known.contains(d.as_str()) {
                 out.push(format!(
-                    "{queue}: {} depends on {d}, which doesn't exist",
-                    t.path
+                    "{queue}: {} depends on {}, which doesn't exist",
+                    t.path,
+                    key(d)
                 ));
             }
         }
@@ -1608,6 +1639,7 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str, lease: u64) 
             .extend(t.depends.iter().map(String::as_str).filter(|d| *d != t.id));
     }
     for l in dependency_loops(&edges) {
+        let l: Vec<String> = l.iter().map(|d| key(d)).collect();
         out.push(format!(
             "{queue}: {} depend on each other in a loop",
             l.join(", ")
@@ -1621,8 +1653,9 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str, lease: u64) 
         let r: String = t.waiting_on.chars().take(4).collect();
         if r.len() == 4 && r.bytes().all(|b| b.is_ascii_digit()) && !known.contains(r.as_str()) {
             out.push(format!(
-                "{queue}: {} waits on {r}, which doesn't exist",
-                t.path
+                "{queue}: {} waits on {}, which doesn't exist",
+                t.path,
+                key(&r)
             ));
         }
     }
@@ -1730,6 +1763,8 @@ pub fn is_date(d: &str) -> bool {
 /// and, as a warning, a goal past its due date (before `today`, `YYYY-MM-DD`) with tasks open.
 pub fn level_problems(queue: &str, tasks: &[Task], today: &str) -> Vec<String> {
     let mut out = Vec::new();
+    // Tasks named by their keys (0033) when they have the queue's prefix.
+    let key = |id: &str| crate::key::key(tasks.first().map_or("", |t| t.prefix.as_str()), id);
     let mut index: HashMap<&str, &Task> = HashMap::new();
     for t in tasks {
         index.entry(t.id.as_str()).or_insert(t);
@@ -1742,10 +1777,10 @@ pub fn level_problems(queue: &str, tasks: &[Task], today: &str) -> Vec<String> {
             ));
         }
         if !t.parent.is_empty() {
-            let p = &t.parent;
+            let p = &key(&t.parent);
             match (
                 t.level.as_str(),
-                index.get(p.as_str()).map(|p| p.level.as_str()),
+                index.get(t.parent.as_str()).map(|p| p.level.as_str()),
             ) {
                 ("goal", _) => out.push(format!(
                     "{queue}: {} is a goal with a parent ({p}); a goal has none",
@@ -1797,6 +1832,7 @@ pub fn level_problems(queue: &str, tasks: &[Task], today: &str) -> Vec<String> {
                 let low = (0..ring.len()).min_by_key(|&i| ring[i]).unwrap_or(0);
                 ring.rotate_left(low);
                 if loops.insert(ring.clone()) {
+                    let ring: Vec<String> = ring.iter().map(|id| key(id)).collect();
                     out.push(format!(
                         "{queue}: parents go round in a loop: {} → {}",
                         ring.join(" → "),

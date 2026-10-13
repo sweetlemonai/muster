@@ -149,7 +149,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
         <section className="answers" data-part="questions">
           <h2>Open questions</h2>
           {open.map((q) => (
-            <AnswerBox key={q.n} task={task} q={q} onChanged={onChanged} />
+            <AnswerBox key={q.n} task={task} q={q} onChanged={onChanged} keys={keys} onLink={openLink} />
           ))}
         </section>
       )}
@@ -187,7 +187,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
       <VisionPanel task={task} body={body} onChanged={onChanged} />
       <Work task={task} />
 
-      <Comments task={task} onChanged={onChanged} onDirty={commentDirty} nudge={nudge} />
+      <Comments task={task} onChanged={onChanged} onDirty={commentDirty} nudge={nudge} keys={keys} onLink={openLink} />
       {log && !raw && editing === null && (
         <section className="log">
           <Markdown text={log} keys={keys} onLink={openLink} />
@@ -239,7 +239,7 @@ function Checkins({ task }: { task: Task }) {
   );
 }
 
-function AnswerBox({ task, q, onChanged }: { task: Task; q: Question; onChanged: () => void }) {
+function AnswerBox({ task, q, onChanged, keys, onLink }: { task: Task; q: Question; onChanged: () => void; keys?: Map<string, string>; onLink?: (href: string) => void }) {
   const [text, setText] = useState("");
   const [state, setState] = useState<"idle" | "saving" | "done" | "error">("idle");
   const [msg, setMsg] = useState("");
@@ -263,7 +263,7 @@ function AnswerBox({ task, q, onChanged }: { task: Task; q: Question; onChanged:
         <b>Q{q.n}</b> <span className="asker">{q.asker}</span>
         {q.escalated && <span className="badge warn">for you</span>}
       </p>
-      <Markdown text={q.text} />
+      <Markdown text={q.text} keys={keys} onLink={onLink} />
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}

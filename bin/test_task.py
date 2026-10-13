@@ -700,7 +700,7 @@ class TaskTests(unittest.TestCase):
             self.assertIn("task ask <id>", r.stdout)
         r = self.run_task("escalate", "0042", "Q1", ok=False)
         self.assertEqual(r.returncode, 1)
-        self.assertIn("no Q1 in 0042", r.stderr)
+        self.assertIn("no Q1 in tt-42", r.stderr)
         self.env["MUSTER_BIN"] = str(self.root / "no-such-muster")
         r = self.run_task("inbox", "--session", "aaaa1111", ok=False)
         self.assertEqual(r.returncode, 1)

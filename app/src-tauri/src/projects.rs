@@ -227,6 +227,16 @@ pub fn set_prefix(
         .ok_or_else(|| format!("no project named {name:?} (see `muster projects`)"))?
 }
 
+/// `set_prefix` for the project the window names by its key.
+pub fn set_prefix_by_key(
+    config: &Config,
+    base: &Path,
+    key: &str,
+    prefix: &str,
+) -> Result<String, String> {
+    set_prefix_where(config, base, prefix, &|p| p.key == key).ok_or("no such project")?
+}
+
 fn set_prefix_where(
     config: &Config,
     base: &Path,
@@ -621,5 +631,36 @@ mod tests {
         assert_eq!(load(&f), c);
         fs::write(&f, "not json").unwrap();
         assert_eq!(load(&f), Config::default());
+    }
+    #[test]
+    fn the_window_sets_a_prefix_by_the_projects_key_with_the_same_checks() {
+        let base = tempfile::tempdir().unwrap();
+        make_queue(&base.path().join("muster/tasks"));
+        make_queue(&base.path().join("braindump/tasks"));
+        let c = Config::default();
+        let key_of = |name: &str| {
+            list(base.path(), &c)
+                .into_iter()
+                .find(|p| p.name == name)
+                .unwrap()
+                .key
+        };
+        let bd = key_of("braindump");
+        assert!(set_prefix_by_key(&c, base.path(), &bd, "mu")
+            .unwrap_err()
+            .contains("muster has mu"));
+        assert!(set_prefix_by_key(&c, base.path(), &bd, "B1")
+            .unwrap_err()
+            .contains("2 to 4 lowercase letters"));
+        assert_eq!(
+            set_prefix_by_key(&c, base.path(), "/nowhere", "zz").unwrap_err(),
+            "no such project"
+        );
+        assert_eq!(set_prefix_by_key(&c, base.path(), &bd, "bd").unwrap(), bd);
+        let prefixes: Vec<String> = list(base.path(), &c)
+            .into_iter()
+            .map(|p| p.prefix)
+            .collect();
+        assert_eq!(prefixes, ["bd", "mu"]);
     }
 }

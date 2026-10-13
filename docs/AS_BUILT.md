@@ -72,7 +72,9 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   status folders, README with the rules, `WAITING-FOR-OWNER.md`, the tools' stand-ins in `bin/`,
   and its own git with a first commit. It refuses inside a git repo, and refuses if `tasks/`
   already exists. **Add existing queue…** picks any queue folder. Rename, Hide/Show, and Remove
-  (added ones only) never touch files; New queue stores the queue's default prefix (0033). Saved in `~/Library/Application Support/ai.sweetlemon.muster/projects.json`.
+  (added ones only) never touch files. Each project's **Prefix** (0033) shows with **Set** beside
+  it: stored in its queue's README.md, refused (why shows under the field) when it's bad or
+  another project's; New queue stores the default. Saved in `~/Library/Application Support/ai.sweetlemon.muster/projects.json`.
   Folders are picked by the core's own dialog, so the window never hands the core a path.
 - **Settings** (task 0036, `Settings.tsx`, `settingsData.ts`, `settings.rs`): a view in the header's
   row (never a window), its groups docked on the left (Appearance, Projects, Agents, About;
@@ -449,8 +451,9 @@ owner ◀────────────┘ WAITING-FOR-OWNER.md    └─ 
   `MU-12`, `12` or `0012`; another project's key runs in its queue (refused against a `--queue`
   that names another). Cards, rows, the timeline, the graph, the pane, the parent line, the
   activity feed, `muster list`/`show`, what commands print, branches (`task/mu-12-slug`) and new
-  log lines name tasks by key, and a key in a task's text or log links to it. INDEX.md,
-  `manifest.py` and refusals still say ids.
+  log lines, INDEX.md, `muster check` and the core's refusals (`key::name_tasks`, at the command
+  line's and the window's edge) name tasks by key, and a key in a task's text, log, comments or
+  questions links to it. `manifest.py` and `tasks.json`, which scripts read, keep ids.
 - **Ids:** four digits, taken in order under the queue's lock by whoever creates the task: `muster
   new`, the app's New task, or the helper (through `muster new`). Taking them under the lock is
   what prevents two tasks getting the same id. The Python `bin/task` doesn't create tasks yet

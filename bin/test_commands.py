@@ -348,7 +348,7 @@ class RoutesRunOnARealQueue(unittest.TestCase):
         [claim] = commands_of(self.routes["claim"])
         r = self.muster(render(claim, mine))
         self.assertEqual(r.returncode, 1, r.stdout)
-        self.assertIn(f"{ident(mine)} is the owner's to do", r.stderr)
+        self.assertIn(f"{mine} is the owner's to do", r.stderr)
         part = ROUTER.read_text(encoding="utf-8").split("### What's waiting", 1)[1].split("\n### ", 1)[0]
         self.assertIn("`[you]`", part)
         hints = re.findall(r"`/mu pass <id> (--from (?:ready|building) --as owner)`", part)

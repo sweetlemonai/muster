@@ -18,7 +18,7 @@ Commands: `muster projects` lists the queues, and `muster init <project-folder>`
 
 A **task** is one piece of work small enough for one agent to build. Its file is named by its id and title, like `0012-board-flickers-when-the-pane-opens.md`. The id is four digits, given out in order by `muster`, so two tasks never share one.
 
-Everywhere you see a task, it's named by its **key**: its project's prefix and its number, like `mu-12` for Muster's `0012`. Type either one: `muster show mu-12`, `muster show 12` and `muster show 0012` find the same task, and `muster show br-7` finds Braindump's task 7 from any folder. The file keeps its id, so nothing is renamed. A project's prefix is 2 to 4 lowercase letters: the first two of its name unless another project starts the same, or the one you set with `muster projects set <name> prefix <p>`. A key written in a task's text links to that task in the app.
+Everywhere you see a task, it's named by its **key**: its project's prefix and its number, like `mu-12` for Muster's `0012`. Type either one: `muster show mu-12`, `muster show 12` and `muster show 0012` find the same task, and `muster show br-7` finds Braindump's task 7 from any folder. The file keeps its id, so nothing is renamed. A project's prefix is 2 to 4 lowercase letters: the first two of its name unless another project starts the same, or the one you set in **Settings › Projects** or with `muster projects set <name> prefix <p>`. A key written in a task's text links to that task in the app.
 
 The file has four parts:
 

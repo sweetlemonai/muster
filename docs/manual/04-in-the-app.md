@@ -160,11 +160,12 @@ One place for how the app looks and works on this Mac: **Settings** in the top r
 
 ### Projects
 
-Every project Muster shows, with its folder, task count and **Gate**: the command a merge runs in a task's worktree (see [Run parallel sessions in worktrees](03-tutorials.md#run-parallel-sessions-in-worktrees)). A merge never runs without one, so a project with none says so, with the line that sets it: `muster projects set <project> gate "<command>"`. The command line is the one place to set it.
+Every project Muster shows, with its **Prefix** (what its tasks' keys start with: `mu` in `mu-12`), folder, task count and **Gate**: the command a merge runs in a task's worktree (see [Run parallel sessions in worktrees](03-tutorials.md#run-parallel-sessions-in-worktrees)). A merge never runs without one, so a project with none says so, with the line that sets it: `muster projects set <project> gate "<command>"`. The command line is the one place to set it.
 
 - **New queue…** picks a project's folder and makes its queue there, like `muster init`.
 - **Add existing queue…** picks a queue kept anywhere else. Muster finds the ones at `~/playground/<project>/tasks` on its own, and one level deeper (`~/playground/<group>/<project>/tasks`), but not in folders starting with `.` or `_`, or in `node_modules`, `worktrees`, `target` or `dist`.
 - **Rename** a project, **Hide** or **Show** it, and **Remove** one you added.
+- **Set** beside a prefix changes it: 2 to 4 lowercase letters that no other project has (`muster projects set <project> prefix <p>` does the same). Why one is refused shows under the field. The task files keep their ids, so nothing moves, but the old keys stop finding its tasks.
 
 None of them deletes files. A project marked "not a queue any more" points at a folder that no longer has a queue's `README.md` and `todo/` folder.
 

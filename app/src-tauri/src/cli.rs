@@ -466,18 +466,15 @@ fn need<'a>(a: &'a Args, i: usize, what: &str) -> Result<&'a str, String> {
         .ok_or_else(|| format!("missing {what} (see `muster help`)"))
 }
 
-fn tasks_of(root: &Path) -> queue::State {
-    queue::read_state(
+/// The queue at `root` as `muster` reads it, each task with its project's prefix (0033) for its
+/// key.
+fn keyed(root: &Path, prefix: &str) -> queue::State {
+    queue::read_state_keyed(
         &[("q".into(), root.to_path_buf())],
         &mut queue::Cache::default(),
+        &crate::settings::Settings::default(),
+        &|_| prefix.to_string(),
     )
-}
-
-/// `tasks_of`, each task with its project's prefix (0033) for its key.
-fn keyed(root: &Path, prefix: &str) -> queue::State {
-    let mut s = tasks_of(root);
-    crate::key::apply(&mut s, |_| prefix.to_string());
-    s
 }
 
 /// After a stage change: `mu-7: Building (doing/0007-x.md)`, with what it waits on if blocked.
@@ -1249,7 +1246,15 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
                 a.pos[i] = t.id;
             }
             task_lists(&mut a, &cmd, &prefix, &projects::default_name(&root))?;
-            run_on(&a, &cmd, &root, &prefix, &stamp, env, cwd.as_deref())
+            // What the core refuses with names tasks by their keys too (0033).
+            let typed_id = task_arg(&cmd, &a).map(|i| a.pos[i].clone());
+            run_on(&a, &cmd, &root, &prefix, &stamp, env, cwd.as_deref()).map_err(|e| {
+                crate::key::name_tasks(
+                    &root,
+                    &e,
+                    &typed_id.iter().map(String::as_str).collect::<Vec<_>>(),
+                )
+            })
         }
     }
 }
@@ -1733,12 +1738,12 @@ fn run_on(
         "check" => {
             // A claim is quiet past this machine's lease (0036), as `reclaim` judges it; each task
             // with its key (0033).
-            let mut s = queue::read_state_with(
+            let s = queue::read_state_keyed(
                 &[("q".into(), root.to_path_buf())],
                 &mut queue::Cache::default(),
                 &machine_settings(env),
+                &|_| prefix.to_string(),
             );
-            crate::key::apply(&mut s, |_| prefix.to_string());
             for p in &s.problems {
                 println!("{p}");
             }
@@ -1901,6 +1906,14 @@ fn run_vision(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The queue at `root`, as the rules read it (no prefix).
+    fn tasks_of(root: &Path) -> queue::State {
+        queue::read_state(
+            &[("q".into(), root.to_path_buf())],
+            &mut queue::Cache::default(),
+        )
+    }
 
     fn sv(xs: &[&str]) -> Vec<String> {
         xs.iter().map(|s| s.to_string()).collect()

@@ -1,7 +1,11 @@
 import MarkdownIt from "markdown-it";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { taskKeyLinks } from "./keyLinks";
+import Comments from "./Comments";
 import { keyIndex, taskOfHref } from "./taskKey";
+import type { Task } from "./types";
 
 // A key written in a task's text links to that task (0033), as the task pane renders it.
 
@@ -28,5 +32,19 @@ describe("keys in task text", () => {
   });
   it("still escape what's around them", () => {
     expect(render("<b>mu-1</b>")).toBe('<p>&lt;b&gt;<a href="#task/muster/0001" class="task-key">mu-1</a>&lt;/b&gt;</p>\n');
+  });
+});
+
+describe("keys in comments (0033)", () => {
+  const task: Task = {
+    queue: "muster", id: "0013", title: "T", kind: "code", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
+    folder: "todo", path: "todo/0013-t.md", claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], forWho: "ai", commit: "", captured: "", capturedAt: "", doneAt: "", blockHistory: [], questions: [],
+    openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [],
+    comments: [{ who: "owner", at: "2026-10-13 09:00", text: "Same as mu-12." }], attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: "ready",
+  };
+  it("link there too, when the pane gives the projects' prefixes", () => {
+    const html = renderToStaticMarkup(createElement(Comments, { task, onChanged: () => {}, keys }));
+    expect(html).toContain('<a href="#task/muster/0012" class="task-key">mu-12</a>');
+    expect(renderToStaticMarkup(createElement(Comments, { task, onChanged: () => {} }))).not.toContain("task-key");
   });
 });

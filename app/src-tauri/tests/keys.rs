@@ -258,3 +258,35 @@ fn init_stores_a_prefix_and_refuses_a_taken_one() {
         Some("gm")
     );
 }
+
+#[test]
+fn refusals_and_the_check_name_tasks_by_their_keys() {
+    let w = World::new();
+    w.ok(&["new", "First"]);
+    w.ok(&["new", "Second"]);
+    w.ok(&["claim", "mu-1"]);
+    let (code, out) = w.run(&["claim", "mu-2"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("you already hold mu-1"), "{out}");
+    assert!(!out.contains("0001"), "{out}");
+    let (code, out) = w.run(&["show", "mu-99"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("no task mu-99"), "{out}");
+    // A depends on a task that isn't there, written by hand: the check names both by key, the
+    // file by its name.
+    let path = muster_lib::queue::find_task(&w.queue("muster"), "0002").unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(&path, text.replacen("---\n\n", "depends: 0042\n---\n\n", 1)).unwrap();
+    let (_, out) = w.run(&["check"]);
+    assert!(
+        out.contains("todo/0002-second.md depends on mu-42, which doesn't exist"),
+        "{out}"
+    );
+    // INDEX.md lists them by key, linked to their files.
+    w.ok(&["index"]);
+    let index = std::fs::read_to_string(w.queue("muster").join("INDEX.md")).unwrap();
+    assert!(
+        index.contains("- mu-2 [Second](todo/0002-second.md)"),
+        "{index}"
+    );
+}

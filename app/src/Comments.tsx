@@ -11,11 +11,15 @@ import { commentNotice, editKey } from "./writeUp";
  *  refusal shows as is and the text stays in the box. Typed text is guarded like the write-up
  *  editor's: `onDirty` tells the pane, so the window won't close it or switch cards (`nudge` goes
  *  up each time it refused to); the first Esc only arms, and the second throws the text away. */
-export default function Comments({ task, onChanged, onDirty = () => {}, nudge = 0 }: {
+export default function Comments({ task, onChanged, onDirty = () => {}, nudge = 0, keys, onLink }: {
   task: Task;
   onChanged: () => void;
   onDirty?: (dirty: boolean) => void;
   nudge?: number;
+  /** Task keys in a comment link to their task (0033): each project's prefix to its queue, and
+   *  what a clicked link does. */
+  keys?: Map<string, string>;
+  onLink?: (href: string) => void;
 }) {
   const [text, setText] = useState("");
   const [state, setState] = useState<"idle" | "saving" | "done" | "error">("idle");
@@ -86,7 +90,7 @@ export default function Comments({ task, onChanged, onDirty = () => {}, nudge = 
           <p className="meta">
             {c.who} · {c.at}
           </p>
-          <Markdown text={c.text} />
+          <Markdown text={c.text} keys={keys} onLink={onLink} />
         </div>
       ))}
       <div className="answer comment-box">

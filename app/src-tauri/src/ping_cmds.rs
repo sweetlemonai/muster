@@ -1,7 +1,7 @@
 //! The app's commands for reaching the session working on a task (task 0039, `ping`), as the
 //! owner. Kept beside `ping` so the app's command list grows by two lines.
 
-use crate::{blocking, check_id, check_stamp, ping, queue_root, AppState};
+use crate::{blocking, check_id, check_stamp, in_queue, ping, AppState};
 
 /// The owner asks the session holding a task in Building for a check-in.
 #[tauri::command]
@@ -12,7 +12,7 @@ pub(crate) async fn ask_checkin(
     stamp: String,
 ) -> Result<ping::Pinged, String> {
     let file = app.config_file.clone();
-    blocking(move || ask(&queue_root(&file, &queue)?, &id, &stamp)).await
+    blocking(move || in_queue(&file, &queue, |root| ask(root, &id, &stamp))).await
 }
 
 /// The owner sends the session holding a task in Building or Testing a message.
@@ -25,7 +25,7 @@ pub(crate) async fn message_session(
     stamp: String,
 ) -> Result<ping::Pinged, String> {
     let file = app.config_file.clone();
-    blocking(move || message(&queue_root(&file, &queue)?, &id, &text, &stamp)).await
+    blocking(move || in_queue(&file, &queue, |root| message(root, &id, &text, &stamp))).await
 }
 
 /// What `ask_checkin` does once it has the queue: its arguments checked, then the core's rules.

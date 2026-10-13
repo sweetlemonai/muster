@@ -4,13 +4,17 @@ import { HomePath } from "./HomePath";
 import { queueTotal } from "./lib";
 import type { Project, QueueInfo } from "./types";
 
-/** Settings' Projects group (0036): every project with its folder and task count, New queue and
- *  Add existing. A folder under `home` shows as `~/…`. */
+/** Settings' Projects group (0036): every project with its prefix (0033), folder and task count,
+ *  New queue and Add existing. A folder under `home` shows as `~/…`. */
 export default function Projects({ queues, home, onChanged }: { queues: QueueInfo[]; home: string; onChanged: () => void }) {
   const [list, setList] = useState<Project[] | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [name, setName] = useState("");
+  // The project whose prefix is being set, what's typed, and why the core refused it.
+  const [prefixOf, setPrefixOf] = useState<string | null>(null);
+  const [prefix, setPrefix] = useState("");
+  const [prefixError, setPrefixError] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -31,6 +35,19 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
       onChanged();
     } catch (e) {
       setMsg({ ok: false, text: String(e) });
+    }
+  };
+  const savePrefix = async (p: Project) => {
+    const next = prefix.trim();
+    try {
+      await api.setProjectPrefix(p.key, next);
+      setPrefixOf(null);
+      setPrefixError("");
+      setMsg({ ok: true, text: `${p.name}'s tasks are ${next}-1, ${next}-2… now.` });
+      await load();
+      onChanged();
+    } catch (e) {
+      setPrefixError(String(e));
     }
   };
   const total = (p: Project) => {
@@ -54,7 +71,7 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
       {list === null && <p className="none">Loading…</p>}
       <table className="projects-table">
         <thead>
-          <tr><th>Project</th><th>Folder</th><th>Tasks</th><th>Gate</th><th></th></tr>
+          <tr><th>Project</th><th title="What its tasks' keys start with: mu in mu-12">Prefix</th><th>Folder</th><th>Tasks</th><th>Gate</th><th></th></tr>
         </thead>
         <tbody>
           {list?.map((p) => (
@@ -79,6 +96,20 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
                   {!p.ok && <span className="err"> · not a queue any more</span>}
                 </div>
               </td>
+              <td>
+                <PrefixCell
+                  name={p.name}
+                  prefix={p.prefix ?? ""}
+                  editing={prefixOf === p.key}
+                  value={prefix}
+                  error={prefixOf === p.key ? prefixError : ""}
+                  canSet={p.ok}
+                  onEdit={() => { setPrefixOf(p.key); setPrefix(p.prefix ?? ""); setPrefixError(""); }}
+                  onChange={setPrefix}
+                  onSave={() => void savePrefix(p)}
+                  onCancel={() => { setPrefixOf(null); setPrefixError(""); }}
+                />
+              </td>
               <td className="path"><HomePath path={p.path} home={home} /></td>
               <td>{p.hidden || !p.ok ? "—" : total(p) ?? "…"}</td>
               <td><GateCell name={p.name} gate={p.gate ?? ""} /></td>
@@ -92,6 +123,52 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** A project's prefix (0033), what its tasks' keys start with, set in place: Set opens a field
+ *  for 2 to 4 lowercase letters, Enter or Save saves, Cancel leaves it. The core refuses a bad one
+ *  or another project's, and why shows under the field, which stays open. */
+export function PrefixCell({ name, prefix, editing, value, error, canSet, onEdit, onChange, onSave, onCancel }: {
+  name: string;
+  prefix: string;
+  editing: boolean;
+  value: string;
+  error: string;
+  /** The folder is still a queue, so there's a README to store it in. */
+  canSet: boolean;
+  onEdit: () => void;
+  onChange: (v: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  if (!editing) {
+    return (
+      <span className="prefix">
+        <code>{prefix}</code> {canSet && <button type="button" className="link" onClick={onEdit} title={`Set ${name}'s prefix`}>Set</button>}
+      </span>
+    );
+  }
+  return (
+    <form
+      className="prefix"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave();
+      }}
+    >
+      <input
+        autoFocus
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        maxLength={4}
+        size={5}
+        aria-label={`${name}'s prefix`}
+        placeholder="2–4 letters"
+      />{" "}
+      <button type="submit">Save</button> <button type="button" onClick={onCancel}>Cancel</button>
+      {error && <p className="err small" role="alert">{error}</p>}
+    </form>
   );
 }
 

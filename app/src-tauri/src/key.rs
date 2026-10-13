@@ -99,16 +99,66 @@ pub fn same_project_ids(
     Ok((!ids.is_empty()).then_some(ids))
 }
 
-/// Each queue in `state`, and each of its tasks, gets its project's prefix: `prefix_of(name)`.
-pub fn apply(state: &mut queue::State, prefix_of: impl Fn(&str) -> String) {
-    for q in &mut state.queues {
-        q.prefix = prefix_of(&q.name);
+/// What the core says (a refusal, an error), with each task of the queue at `root` it names by
+/// its id (`0012`) named by its key (`mu-12`): what a command prints and the window shows. Only
+/// ids of tasks that are there, plus `also` (what the command was given), standing alone: not in a
+/// file name (`0012-x.md`), a path, a date or a longer number.
+pub fn name_tasks(root: &Path, text: &str, also: &[&str]) -> String {
+    let mut ids: HashSet<String> = queue::task_files(root)
+        .into_iter()
+        .filter_map(|(_, p)| {
+            let name = p.file_name()?.to_str()?.to_string();
+            name.get(..4).map(String::from)
+        })
+        .collect();
+    ids.extend(also.iter().map(|s| s.to_string()));
+    if ids.is_empty() || !text.bytes().any(|b| b.is_ascii_digit()) {
+        return text.to_string();
     }
-    for t in &mut state.tasks {
-        if let Some(q) = state.queues.iter().find(|q| q.name == t.queue) {
-            t.prefix = q.prefix.clone();
+    name_ids(text, &prefix_for(root), &ids)
+}
+
+/// `name_tasks` with the prefix and the ids given.
+fn name_ids(text: &str, prefix: &str, ids: &HashSet<String>) -> String {
+    if prefix.is_empty() {
+        return text.to_string();
+    }
+    let joins = |c: char| c.is_alphanumeric() || "-_/.:".contains(c);
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    let mut out = String::with_capacity(text.len() + 16);
+    let mut i = 0;
+    while i < chars.len() {
+        let (at, c) = chars[i];
+        let run = chars[i..]
+            .iter()
+            .take_while(|(_, c)| c.is_ascii_digit())
+            .count();
+        let before = i.checked_sub(1).map(|j| chars[j].1);
+        if c.is_ascii_digit() && run == 4 && !before.is_some_and(joins) {
+            let after = chars.get(i + 4).map(|&(_, c)| c);
+            let next = chars.get(i + 5).map(|&(_, c)| c);
+            // A full stop ends a sentence; one before a letter or digit is a file's extension.
+            let ends = match after {
+                None => true,
+                Some('.') => !next.is_some_and(char::is_alphanumeric),
+                Some(a) => !(a.is_alphanumeric() || "-_/".contains(a)),
+            };
+            let end = chars.get(i + 4).map_or(text.len(), |&(e, _)| e);
+            let id = &text[at..end];
+            if ends && ids.contains(id) {
+                out.push_str(&key(prefix, id));
+                i += 4;
+                continue;
+            }
         }
+        // Not an id: the digits as they are, all of them, so a longer number stays whole.
+        let take = if c.is_ascii_digit() { run } else { 1 };
+        for &(_, c) in &chars[i..i + take] {
+            out.push(c);
+        }
+        i += take;
     }
+    out
 }
 
 /// A name's letters as a prefix starts with them: a to z only, lowercased, padded with x to 2.
@@ -322,25 +372,92 @@ mod tests {
             queue_at(q, "q");
             std::fs::write(
                 q.join("todo/0012-t.md"),
-                "---\nid: 0012\nstatus: todo\n---\n\n# T\n",
+                "---\nid: 0012\nstatus: todo\ndepends: 0099\n---\n\n# T\n",
             )
             .unwrap();
         }
-        let mut s = queue::read_state(
-            &[("a".into(), a), ("b".into(), b)],
+        let prefix_of = |name: &str| if name == "a" { "aa" } else { "bb" }.to_string();
+        let s = queue::read_state_keyed(
+            &[("a".into(), a.clone()), ("b".into(), b)],
             &mut queue::Cache::default(),
+            &crate::settings::Settings::default(),
+            &prefix_of,
         );
-        apply(&mut s, |name| {
-            if name == "a" {
-                "aa".into()
-            } else {
-                "bb".into()
-            }
-        });
         let prefixes: Vec<&str> = s.queues.iter().map(|q| q.prefix.as_str()).collect();
         assert_eq!(prefixes, ["aa", "bb"]);
         let keys: Vec<String> = s.tasks.iter().map(|t| key(&t.prefix, &t.id)).collect();
         assert_eq!(keys, ["aa-12", "bb-12"]);
+        // What the queue check says names tasks by their keys too; files keep their names.
+        for want in [
+            "a: todo/0012-t.md depends on aa-99, which doesn't exist",
+            "b: todo/0012-t.md depends on bb-99, which doesn't exist",
+        ] {
+            assert!(s.problems.iter().any(|p| p == want), "{:?}", s.problems);
+        }
+        // The rules' own reads leave the prefix out.
+        let plain = queue::read_state(&[("a".into(), a)], &mut queue::Cache::default());
+        assert!(
+            plain
+                .problems
+                .iter()
+                .any(|p| p == "a: todo/0012-t.md depends on 0099, which doesn't exist"),
+            "{:?}",
+            plain.problems
+        );
+    }
+
+    #[test]
+    fn what_the_core_says_names_tasks_by_their_keys() {
+        let ids: HashSet<String> = ["0003", "0012", "2026", "4000"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let named = |t: &str| name_ids(t, "mu", &ids);
+        assert_eq!(
+            named("0003 is the owner's to do; agents never take a human task"),
+            "mu-3 is the owner's to do; agents never take a human task"
+        );
+        assert_eq!(
+            named("you already hold 0012; pass, return or block it first"),
+            "you already hold mu-12; pass, return or block it first"
+        );
+        assert_eq!(named("blocked by 0003, 0012."), "blocked by mu-3, mu-12.");
+        assert_eq!(named("(0012)"), "(mu-12)");
+        // Not ids: files, paths, dates, times, longer numbers and ids of no task here.
+        for same in [
+            "todo/0012-x.md",
+            "0012-x.md",
+            "attachments/0012/a.png",
+            "0012.md",
+            "on 2026-10-13 09:00",
+            "x0012",
+            "00120",
+            "12345 and 40000",
+            "no task 0099",
+            "mu-12 already",
+            "",
+        ] {
+            assert_eq!(named(same), same, "{same:?}");
+        }
+        // No prefix (a queue Muster can't name): as it was.
+        assert_eq!(name_ids("0003 is done", "", &ids), "0003 is done");
+        // Unicode around it stays whole.
+        assert_eq!(named("é0003 ✓ 0003 ✓"), "é0003 ✓ mu-3 ✓");
+    }
+
+    #[test]
+    fn errors_name_the_queues_tasks_and_what_was_typed() {
+        let d = tempfile::tempdir().unwrap();
+        queue_at(d.path(), "---\nprefix: nt\n---\n");
+        std::fs::write(d.path().join("todo/0007-x.md"), "---\nid: 0007\n---\n").unwrap();
+        assert_eq!(
+            name_tasks(d.path(), "0007 waits on 0099", &[]),
+            "nt-7 waits on 0099"
+        );
+        assert_eq!(
+            name_tasks(d.path(), "no task 0099", &["0099"]),
+            "no task nt-99"
+        );
     }
 
     #[test]

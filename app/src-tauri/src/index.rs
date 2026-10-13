@@ -167,7 +167,7 @@ fn stage_name(stage: &str) -> String {
     }
 }
 
-/// One task's line: id, linked title, level (goals and features), "you" for the owner's own task,
+/// One task's line: its key (0033; the id when it has no prefix), linked title, level (goals and features), "you" for the owner's own task,
 /// stage, why it's blocked (the block's sentence, 0024), the tasks it depends on that are still
 /// `open` (unless that sentence names them), its open vision conflicts, progress and due date,
 /// priority, type (tasks), estimate (`muster list`'s text), and how many comments it has.
@@ -176,9 +176,10 @@ fn line(t: &Task, open: &crate::block::Open) -> String {
         s if s.is_empty() => "(untitled)".to_string(),
         s => s,
     };
+    let key = |id: &str| crate::key::key(&t.prefix, id);
     let mut parts = vec![format!(
         "{} [{title}]({})",
-        md_text(&t.id, 40),
+        md_text(&key(&t.id), 40),
         link(&t.path)
     )];
     if t.level != "task" {
@@ -193,11 +194,12 @@ fn line(t: &Task, open: &crate::block::Open) -> String {
     if !why.is_empty() {
         parts.push(md_text(&why, 400));
     }
-    let waits: Vec<&str> = t
+    let waits: Vec<String> = t
         .depends
         .iter()
         .map(String::as_str)
         .filter(|d| crate::block::holds_id(open, d, t))
+        .map(key)
         .collect();
     // Blocked by tasks already names them, with their stage.
     if !waits.is_empty() && t.blocked_kind != "tasks" {
@@ -437,8 +439,9 @@ fn fnv1a(hash: &mut u64, bytes: &[u8]) {
     }
 }
 
-/// A queue's tasks (rolled up) and backlog notes as they are on disk now, as `index_md` takes
-/// them (queue name ""). Unlike `read_state`, no git log and no problems: only what the list shows.
+/// A queue's tasks (rolled up, each with the queue's prefix for its key, 0033) and backlog notes
+/// as they are on disk now, as `index_md` takes them (queue name ""). Unlike `read_state`, no git
+/// log and no problems: only what the list shows.
 fn read(root: &Path) -> State {
     let mut tasks: Vec<Task> = queue::task_files(root)
         .into_iter()
@@ -453,6 +456,10 @@ fn read(root: &Path) -> State {
         .collect();
     crate::block::derive(&mut tasks);
     queue::rollup(&mut tasks);
+    let prefix = crate::key::prefix_for(root);
+    for t in &mut tasks {
+        t.prefix.clone_from(&prefix);
+    }
     let notes = backlog::read_notes("", root, &mut HashMap::new(), &mut HashSet::new());
     State {
         tasks,
@@ -552,7 +559,8 @@ mod tests {
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }
-        fs::write(d.path().join("README.md"), "q").unwrap();
+        // Its prefix stored (0033): the INDEX.md muster writes names tasks by their keys, ix-1.
+        fs::write(d.path().join("README.md"), "---\nprefix: ix\n---\nq").unwrap();
         d
     }
 
@@ -966,7 +974,7 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
             fs::read_to_string(p.join(FILE))
                 .unwrap()
                 .lines()
-                .find(|l| l.starts_with("- 0001 "))
+                .find(|l| l.starts_with("- ix-1 "))
                 .unwrap()
                 .to_string()
         };
@@ -1114,7 +1122,7 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
         assert_eq!(status(p), Status::Current);
         let text = fs::read_to_string(p.join(FILE)).unwrap();
         assert!(
-            text.contains("- 0001 [First](todo/0001-first.md) · Ready"),
+            text.contains("- ix-1 [First](todo/0001-first.md) · Ready"),
             "{text}"
         );
         assert!(text.ends_with(&format!("\n<!-- muster sources: {} -->\n", sources(p))));
@@ -1189,13 +1197,13 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
         let second = || {
             text()
                 .lines()
-                .find(|l| l.starts_with("- 0002 "))
+                .find(|l| l.starts_with("- ix-2 "))
                 .unwrap()
                 .to_string()
         };
         ops::set_field(p, "0002", "depends", "0001", "owner", t).unwrap();
         assert!(
-            second().contains(" · Ready · Blocked by tasks: 0001 (Ready) · "),
+            second().contains(" · Ready · Blocked by tasks: ix-1 (Ready) · "),
             "{}",
             second()
         );
@@ -1314,6 +1322,7 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
     fn a_flat_queue_gets_one_too() {
         let d = tempfile::tempdir().unwrap();
         let p = d.path();
+        fs::write(p.join("README.md"), "---\nprefix: ix\n---\nq").unwrap();
         let n = ops::NewTask {
             title: "Flat".into(),
             ..Default::default()
@@ -1322,7 +1331,7 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
         crate::backlog::add(p, "A flat note", "", "owner", "2026-10-12 14:05").unwrap();
         let text = fs::read_to_string(p.join(FILE)).unwrap();
         assert!(
-            text.contains("- 0001 [Flat](0001-flat.md) · Ready"),
+            text.contains("- ix-1 [Flat](0001-flat.md) · Ready"),
             "{text}"
         );
         assert!(text.contains("A flat note"), "{text}");

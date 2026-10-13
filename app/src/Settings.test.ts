@@ -6,7 +6,7 @@ import { HELP_TOPICS } from "./helpTopics";
 import { headings } from "./manual";
 import inTheApp from "../../docs/manual/04-in-the-app.md?raw";
 import appSource from "./App.tsx?raw";
-import { GateCell } from "./Projects";
+import { GateCell, PrefixCell } from "./Projects";
 import Settings, { AboutView, AgentsView, SpanSetting, withModel } from "./Settings";
 import { DEFAULT_MACHINE, machineOf, SETTINGS_GROUPS, type SettingsInfo, spanInput, spanText } from "./settingsData";
 import type { Project } from "./types";
@@ -86,6 +86,27 @@ describe("Settings (0036)", () => {
     expect(gate("bin/gate full")).toBe("bin/gate full");
     expect(gate("")).toBe('none: merges wait for one. muster projects set muster gate "<command>"');
     expect(text(settings("projects"))).toContain("Gate");
+  });
+
+  it("shows each project's prefix (0033) and sets it in place, saying why when it's refused", () => {
+    const cell = (over: Partial<Parameters<typeof PrefixCell>[0]> = {}) =>
+      renderToStaticMarkup(
+        createElement(PrefixCell, { name: "muster", prefix: "mu", editing: false, value: "", error: "", canSet: true, onEdit: () => {}, onChange: () => {}, onSave: () => {}, onCancel: () => {}, ...over }),
+      );
+    expect(text(cell())).toBe("mu Set");
+    expect(cell()).toContain('title="Set muster&#x27;s prefix"');
+    expect(text(cell({ canSet: false }))).toBe("mu");
+    const open = cell({ editing: true, value: "mus" });
+    expect(open).toContain('value="mus"');
+    expect(open).toContain('maxLength="4"');
+    expect(open).toContain('aria-label="muster&#x27;s prefix"');
+    expect(text(open)).toBe("Save Cancel");
+    expect(open).not.toContain('role="alert"');
+    // The core's refusal shows under the field, which stays open: no overlay.
+    const refused = cell({ editing: true, value: "br", error: "braindump has br: a prefix names one project (see `muster projects`)" });
+    expect(refused).toContain('<p class="err small" role="alert">braindump has br');
+    expect(refused).toContain('value="br"');
+    expect(text(settings("projects"))).toContain("Prefix");
   });
 
   it("starts the helper's and the core's settings as loading, not as made-up values", () => {

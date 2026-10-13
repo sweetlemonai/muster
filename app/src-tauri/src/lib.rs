@@ -72,6 +72,17 @@ pub(crate) fn queue_root(config_file: &std::path::Path, name: &str) -> Result<Pa
         .ok_or_else(|| format!("no queue named {name:?}"))
 }
 
+/// Run `f` on the queue named `name`; what the core refuses with names tasks by their keys
+/// (0033), as the command line says them.
+pub(crate) fn in_queue<T>(
+    config_file: &std::path::Path,
+    name: &str,
+    f: impl FnOnce(&std::path::Path) -> Result<T, String>,
+) -> Result<T, String> {
+    let root = queue_root(config_file, name)?;
+    f(&root).map_err(|e| key::name_tasks(&root, &e, &[]))
+}
+
 pub(crate) async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
@@ -92,14 +103,15 @@ async fn state(app: tauri::State<'_, AppState>) -> Result<queue::State, String> 
         // Read every poll, so a change in Settings (or by hand) applies at the next one.
         let settings = settings::load(&settings_file);
         let list = projects::list(&base(), &projects::load(&file));
-        let mut s = queue::read_state_with(&projects::shown(&list), &mut cache, &settings);
         // Each project's prefix, for its tasks' keys (0033).
-        key::apply(&mut s, |name| {
+        let prefix_of = |name: &str| {
             list.iter()
                 .find(|p| p.name == name)
                 .map(|p| p.prefix.clone())
                 .unwrap_or_default()
-        });
+        };
+        let mut s =
+            queue::read_state_keyed(&projects::shown(&list), &mut cache, &settings, &prefix_of);
         // The cards' live dot: file times only, about a millisecond for 50 sessions.
         reader.set_live_secs(settings.live_secs());
         work::mark_live(&mut s.tasks, &reader, s.now);
@@ -152,7 +164,7 @@ async fn task_body(
     id: String,
 ) -> Result<String, String> {
     let file = app.config_file.clone();
-    blocking(move || queue::read_body(&queue_root(&file, &queue)?, &id)).await
+    blocking(move || in_queue(&file, &queue, |root| queue::read_body(root, &id))).await
 }
 
 #[tauri::command]
@@ -163,7 +175,7 @@ async fn image(
     name: String,
 ) -> Result<String, String> {
     let file = app.config_file.clone();
-    blocking(move || queue::read_image(&queue_root(&file, &queue)?, &id, &name)).await
+    blocking(move || in_queue(&file, &queue, |root| queue::read_image(root, &id, &name))).await
 }
 
 /// The owner answers question `n`. `stamp` is the Mac's local time, `YYYY-MM-DD HH:MM`.
@@ -178,8 +190,12 @@ async fn answer(
 ) -> Result<Option<String>, String> {
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
-    blocking(move || queue::answer(&queue_root(&file, &queue)?, &id, n, &text, "owner", &stamp))
-        .await
+    blocking(move || {
+        in_queue(&file, &queue, |root| {
+            queue::answer(root, &id, n, &text, "owner", &stamp)
+        })
+    })
+    .await
 }
 
 pub(crate) fn check_stamp(stamp: &str) -> Result<(), String> {
@@ -208,19 +224,21 @@ async fn create_task(
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
     blocking(move || {
-        let root = queue_root(&file, &queue)?;
-        let created = ops::create_task(&root, &task, "owner", &stamp)?;
-        for (name, data_url) in files {
-            ops::attach(
-                &root,
-                &created.id,
-                &name,
-                &ops::data_url_bytes(&data_url)?,
-                "owner",
-                &stamp,
-            )?;
-        }
-        Ok(created)
+        in_queue(&file, &queue, |root| {
+            let root = root.to_path_buf();
+            let created = ops::create_task(&root, &task, "owner", &stamp)?;
+            for (name, data_url) in files {
+                ops::attach(
+                    &root,
+                    &created.id,
+                    &name,
+                    &ops::data_url_bytes(&data_url)?,
+                    "owner",
+                    &stamp,
+                )?;
+            }
+            Ok(created)
+        })
     })
     .await
 }
@@ -237,14 +255,9 @@ async fn move_task(
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
     blocking(move || {
-        ops::move_task(
-            &queue_root(&file, &queue)?,
-            &id,
-            &status,
-            &waiting_on,
-            "owner",
-            &stamp,
-        )
+        in_queue(&file, &queue, |root| {
+            ops::move_task(root, &id, &status, &waiting_on, "owner", &stamp)
+        })
     })
     .await
 }
@@ -273,12 +286,14 @@ async fn pass_task(
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
     blocking(move || {
-        let opts = ops::PassOpts {
-            gate,
-            commit,
-            from: Some(from),
-        };
-        ops::pass_task(&queue_root(&file, &queue)?, &id, "owner", &stamp, &opts)
+        in_queue(&file, &queue, |root| {
+            let opts = ops::PassOpts {
+                gate,
+                commit,
+                from: Some(from),
+            };
+            ops::pass_task(root, &id, "owner", &stamp, &opts)
+        })
     })
     .await
 }
@@ -301,7 +316,7 @@ async fn accept_all(
     stamp: String,
 ) -> Result<AcceptAll, String> {
     let file = app.config_file.clone();
-    blocking(move || accept_all_in(&queue_root(&file, &queue)?, &ids, &stamp)).await
+    blocking(move || in_queue(&file, &queue, |root| accept_all_in(root, &ids, &stamp))).await
 }
 
 /// What `accept_all` does once it has the queue: every argument checked before anything is
@@ -384,14 +399,9 @@ async fn return_task(
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
     blocking(move || {
-        ops::return_task(
-            &queue_root(&file, &queue)?,
-            &id,
-            &why,
-            to.as_deref(),
-            "owner",
-            &stamp,
-        )
+        in_queue(&file, &queue, |root| {
+            ops::return_task(root, &id, &why, to.as_deref(), "owner", &stamp)
+        })
     })
     .await
 }
@@ -411,14 +421,9 @@ async fn block_task(
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
     blocking(move || {
-        ops::block_as(
-            &queue_root(&file, &queue)?,
-            &id,
-            &kind,
-            &detail,
-            "owner",
-            &stamp,
-        )
+        in_queue(&file, &queue, |root| {
+            ops::block_as(root, &id, &kind, &detail, "owner", &stamp)
+        })
     })
     .await
 }
@@ -433,7 +438,12 @@ async fn unblock_task(
     check_id(&id)?;
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
-    blocking(move || ops::unblock_task(&queue_root(&file, &queue)?, &id, "owner", &stamp)).await
+    blocking(move || {
+        in_queue(&file, &queue, |root| {
+            ops::unblock_task(root, &id, "owner", &stamp)
+        })
+    })
+    .await
 }
 
 /// The owner releases a claim whose lease ran out (the card says "quiet 12 h+"): back to Ready,
@@ -450,14 +460,10 @@ async fn reclaim_task(
     let file = app.config_file.clone();
     let settings_file = app.settings_file.clone();
     blocking(move || {
-        let lease = settings::load(&settings_file).lease_minutes;
-        release(
-            &queue_root(&file, &queue)?,
-            &id,
-            &stamp,
-            queue::now_secs(),
-            lease,
-        )
+        in_queue(&file, &queue, |root| {
+            let lease = settings::load(&settings_file).lease_minutes;
+            release(root, &id, &stamp, queue::now_secs(), lease)
+        })
     })
     .await
 }
@@ -491,14 +497,9 @@ async fn set_stage(
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
     blocking(move || {
-        ops::set_stage(
-            &queue_root(&file, &queue)?,
-            &id,
-            &stage,
-            from.as_deref(),
-            "owner",
-            &stamp,
-        )
+        in_queue(&file, &queue, |root| {
+            ops::set_stage(root, &id, &stage, from.as_deref(), "owner", &stamp)
+        })
     })
     .await
 }
@@ -515,14 +516,9 @@ async fn set_field(
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
     blocking(move || {
-        ops::set_field(
-            &queue_root(&file, &queue)?,
-            &id,
-            &field,
-            &value,
-            "owner",
-            &stamp,
-        )
+        in_queue(&file, &queue, |root| {
+            ops::set_field(root, &id, &field, &value, "owner", &stamp)
+        })
     })
     .await
 }
@@ -537,7 +533,12 @@ async fn add_note(
 ) -> Result<String, String> {
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
-    blocking(move || ops::add_note(&queue_root(&file, &queue)?, &id, &note, "owner", &stamp)).await
+    blocking(move || {
+        in_queue(&file, &queue, |root| {
+            ops::add_note(root, &id, &note, "owner", &stamp)
+        })
+    })
+    .await
 }
 
 /// Tick or untick one of the owner's criteria (0028), as the owner.
@@ -554,14 +555,9 @@ async fn tick_criterion(
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
     blocking(move || {
-        ops::tick_criterion(
-            &queue_root(&file, &queue)?,
-            &id,
-            &which,
-            undo,
-            "owner",
-            &stamp,
-        )
+        in_queue(&file, &queue, |root| {
+            ops::tick_criterion(root, &id, &which, undo, "owner", &stamp)
+        })
     })
     .await
 }
@@ -579,8 +575,10 @@ async fn task_sessions(
     let settings_file = app.settings_file.clone();
     let reader = app.transcripts.clone();
     blocking(move || {
-        reader.set_live_secs(settings::load(&settings_file).live_secs());
-        work::for_task(&reader, &queue_root(&file, &queue)?, &id, queue::now_secs())
+        in_queue(&file, &queue, |root| {
+            reader.set_live_secs(settings::load(&settings_file).live_secs());
+            work::for_task(&reader, root, &id, queue::now_secs())
+        })
     })
     .await
 }
@@ -597,7 +595,12 @@ async fn session_transcript(
     check_id(&id)?;
     let file = app.config_file.clone();
     let reader = app.transcripts.clone();
-    blocking(move || work::transcript(&reader, &queue_root(&file, &queue)?, &id, &session)).await
+    blocking(move || {
+        in_queue(&file, &queue, |root| {
+            work::transcript(&reader, root, &id, &session)
+        })
+    })
+    .await
 }
 
 /// The owner's quick add (0015): `text`, one line, into the queue's backlog as a note. Returns
@@ -611,7 +614,12 @@ async fn add_backlog_note(
 ) -> Result<String, String> {
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
-    blocking(move || backlog::add(&queue_root(&file, &queue)?, &text, "", "owner", &stamp)).await
+    blocking(move || {
+        in_queue(&file, &queue, |root| {
+            backlog::add(root, &text, "", "owner", &stamp)
+        })
+    })
+    .await
 }
 
 /// The owner files backlog note `note` (its file name) as a task in Shaping.
@@ -625,8 +633,12 @@ async fn file_note(
 ) -> Result<backlog::Filed, String> {
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
-    blocking(move || backlog::file_note(&queue_root(&file, &queue)?, &note, &task, "owner", &stamp))
-        .await
+    blocking(move || {
+        in_queue(&file, &queue, |root| {
+            backlog::file_note(root, &note, &task, "owner", &stamp)
+        })
+    })
+    .await
 }
 
 /// The owner drops backlog note `note`, with the reason. Returns where it went.
@@ -640,8 +652,12 @@ async fn drop_note(
 ) -> Result<String, String> {
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
-    blocking(move || backlog::drop_note(&queue_root(&file, &queue)?, &note, &why, "owner", &stamp))
-        .await
+    blocking(move || {
+        in_queue(&file, &queue, |root| {
+            backlog::drop_note(root, &note, &why, "owner", &stamp)
+        })
+    })
+    .await
 }
 
 /// The shaping brief for backlog note `note`, as text for the clipboard.
@@ -653,7 +669,9 @@ async fn shape_note(
 ) -> Result<String, String> {
     let file = app.config_file.clone();
     blocking(move || {
-        backlog::shape(&queue_root(&file, &queue)?, &note).map(|b| backlog::brief_text(&b))
+        in_queue(&file, &queue, |root| {
+            backlog::shape(root, &note).map(|b| backlog::brief_text(&b))
+        })
     })
     .await
 }
@@ -668,7 +686,9 @@ async fn vision_brief(
     check_id(&id)?;
     let file = app.config_file.clone();
     blocking(move || {
-        vision::brief(&queue_root(&file, &queue)?, &id).map(|b| vision::brief_text(&b))
+        in_queue(&file, &queue, |root| {
+            vision::brief(root, &id).map(|b| vision::brief_text(&b))
+        })
     })
     .await
 }
@@ -688,14 +708,9 @@ async fn resolve_vision(
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
     blocking(move || {
-        vision::resolve(
-            &queue_root(&file, &queue)?,
-            &id,
-            &which,
-            &how,
-            "owner",
-            &stamp,
-        )
+        in_queue(&file, &queue, |root| {
+            vision::resolve(root, &id, &which, &how, "owner", &stamp)
+        })
     })
     .await
 }
@@ -709,7 +724,7 @@ async fn editable_body(
 ) -> Result<String, String> {
     check_id(&id)?;
     let file = app.config_file.clone();
-    blocking(move || open_to_edit(&queue_root(&file, &queue)?, &id)).await
+    blocking(move || in_queue(&file, &queue, |root| open_to_edit(root, &id))).await
 }
 
 /// The owner saves an edited write-up. `expected` is the text Edit opened: refused if the file's
@@ -726,7 +741,12 @@ async fn edit_body(
     check_id(&id)?;
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
-    blocking(move || save_body(&queue_root(&file, &queue)?, &id, &body, &expected, &stamp)).await
+    blocking(move || {
+        in_queue(&file, &queue, |root| {
+            save_body(root, &id, &body, &expected, &stamp)
+        })
+    })
+    .await
 }
 
 /// What `editable_body` does once it has the queue: its id checked, then the core's rule.
@@ -758,7 +778,7 @@ async fn add_comment(
     stamp: String,
 ) -> Result<String, String> {
     let file = app.config_file.clone();
-    blocking(move || comment(&queue_root(&file, &queue)?, &id, &text, &stamp)).await
+    blocking(move || in_queue(&file, &queue, |root| comment(root, &id, &text, &stamp))).await
 }
 
 /// What `add_comment` does once it has the queue: its arguments checked, then the core's rules.
@@ -784,17 +804,19 @@ async fn open_link(
 ) -> Result<(), String> {
     let file = app.config_file.clone();
     blocking(move || {
-        let url = link_to_open(&queue_root(&file, &queue)?, &id, &url)?;
-        let ok = std::process::Command::new("/usr/bin/open")
-            .arg(&url)
-            .status()
-            .map_err(|e| e.to_string())?
-            .success();
-        if ok {
-            Ok(())
-        } else {
-            Err("couldn't open the link in your browser".into())
-        }
+        in_queue(&file, &queue, |root| {
+            let url = link_to_open(root, &id, &url)?;
+            let ok = std::process::Command::new("/usr/bin/open")
+                .arg(&url)
+                .status()
+                .map_err(|e| e.to_string())?
+                .success();
+            if ok {
+                Ok(())
+            } else {
+                Err("couldn't open the link in your browser".into())
+            }
+        })
     })
     .await
 }
@@ -817,20 +839,22 @@ async fn attach_data(
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
     blocking(move || {
-        let root = queue_root(&file, &queue)?;
-        files
-            .iter()
-            .map(|(name, url)| {
-                ops::attach(
-                    &root,
-                    &id,
-                    name,
-                    &ops::data_url_bytes(url)?,
-                    "owner",
-                    &stamp,
-                )
-            })
-            .collect()
+        in_queue(&file, &queue, |root| {
+            let root = root.to_path_buf();
+            files
+                .iter()
+                .map(|(name, url)| {
+                    ops::attach(
+                        &root,
+                        &id,
+                        name,
+                        &ops::data_url_bytes(url)?,
+                        "owner",
+                        &stamp,
+                    )
+                })
+                .collect()
+        })
     })
     .await
 }
@@ -858,21 +882,23 @@ async fn attach_pick(
     .await?;
     blocking(move || {
         let app = handle.state::<AppState>();
-        let root = queue_root(&app.config_file, &queue)?;
-        let mut saved = Vec::new();
-        for p in picked {
-            let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
-            if !meta.is_file() {
-                continue;
+        in_queue(&app.config_file, &queue, |root| {
+            let root = root.to_path_buf();
+            let mut saved = Vec::new();
+            for p in picked {
+                let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
+                if !meta.is_file() {
+                    continue;
+                }
+                let bytes = std::fs::read(&p).map_err(|e| e.to_string())?;
+                let name = p
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                saved.push(ops::attach(&root, &id, &name, &bytes, "owner", &stamp)?);
             }
-            let bytes = std::fs::read(&p).map_err(|e| e.to_string())?;
-            let name = p
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
-            saved.push(ops::attach(&root, &id, &name, &bytes, "owner", &stamp)?);
-        }
-        Ok(saved)
+            Ok(saved)
+        })
     })
     .await
 }
@@ -1027,6 +1053,24 @@ async fn create_project(handle: tauri::AppHandle) -> Result<Option<String>, Stri
     .await
 }
 
+/// Set a project's prefix (0033), stored with its queue: refused when it isn't 2 to 4 lowercase
+/// letters or another project has it.
+#[tauri::command]
+async fn set_project_prefix(
+    handle: tauri::AppHandle,
+    key: String,
+    prefix: String,
+) -> Result<(), String> {
+    blocking(move || {
+        let app = handle.state::<AppState>();
+        // Under the config lock, so two changes can't both take one prefix.
+        let _guard = app.config.lock().map_err(|e| e.to_string())?;
+        let c = projects::load(&app.config_file);
+        projects::set_prefix_by_key(&c, &base(), &key, prefix.trim()).map(|_| ())
+    })
+    .await
+}
+
 #[tauri::command]
 async fn rename_project(handle: tauri::AppHandle, key: String, name: String) -> Result<(), String> {
     let name: String = name
@@ -1112,6 +1156,7 @@ pub fn run() {
             add_project,
             create_project,
             rename_project,
+            set_project_prefix,
             hide_project,
             remove_project,
             create_task,

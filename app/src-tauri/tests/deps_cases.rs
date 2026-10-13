@@ -189,6 +189,11 @@ fn muster_check_reads_old_blocks_by_the_same_rule() {
     write_queue(d.path());
     let text = stdout(&muster(d.path(), &["check"]));
     for want in strings(&c["check"]) {
+        // The command it suggests names the task by its key (0033); the file keeps its id.
+        let want = match want.rsplit_once("muster unblock ") {
+            Some((head, id)) => format!("{head}muster unblock {}", key(id)),
+            None => want,
+        };
         assert!(
             text.lines().any(|l| l.ends_with(&want)),
             "{want}\nin:\n{text}"
