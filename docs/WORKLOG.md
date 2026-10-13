@@ -18,8 +18,8 @@ Settings › Agents says "Claude Code's session states: on (2 accounts)" or "not
 under the LIVE window (`Settings.tsx`, from the core's `sessionStates`).
 **Decided:** an interactive session (no `state`, a `status`) is read by its status: busy is
 working, waiting is waiting for input, idle unknown; `failed` and `stopped` are unknown (this
-coordinator's own running session listed as failed); "session ended" shows in Testing as well as
-Building. Found in Claude Code 2.1.296's own `printAgentsJson`. Telemetry: without
+coordinator's own running session listed as failed); "session ended" shows in Building only (see
+Fixed). Found in Claude Code 2.1.296's own `printAgentsJson`. Telemetry: without
 `DISABLE_TELEMETRY`/`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`/`DO_NOT_TRACK`, each run tried
 api.anthropic.com, so they're set (privacy baseline).
 **Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; cargo test 437 + 4 + 15 + 3, vitest 1036 (rebased onto 893cfd9); new tests `agents::tests` (18: parser fixtures, fake `claude` scripts for
@@ -27,6 +27,23 @@ the argument array, env, exit, timeout and cap, matching, fake-clock polling, of
 `list_json_carries_each_tasks_session_state_from_claude_code`, `sessionState.test.ts` (10), the
 Settings test for the line. One
 real run: 0.13–0.18 s for 2 and 6 sessions (AS_BUILT).
+**Fixed (review):** (1) `tests/search_cases.rs` and `deps_cases.rs` ran `muster list --json` with
+the real `$HOME`, so each pass ran this Mac's `claude agents` ~70 times and fixture 0202's real
+session could flip the priority sort → both run `muster` in a home of their own with a fake
+`claude` (lists nothing, records calls), and the search cases assert the fake was the one called
+(it fails without the home: 25 s of real runs); `bin/test_commands.py` gets its own home too and
+asserts no route runs it. (2) Testing's `held-by` is the builder that passed it, so after a
+normal handoff its card said "session ended, task still in Testing" and the builder's next claim
+lost its state → `agents::holds` counts claims (Ready, Building) and Testing holds apart: Building
+needs one claim, Testing no claim and one hold; Ended shows in Building only. (3) `muster list
+--json` counted holds in its own queue while the app counts every queue → `holds` is shared and
+the CLI counts across `projects::active` (`other_queues`). (4) A background entry with state
+working and status idle reads unknown; a repeated session id is its latest entry (`startedAt`,
+else list order); a run starts its own process group and a timeout kills the group, so a child
+can't outlive it. Tests: `holds_count_across_every_queue_given`, the reworked apply and parse
+tests, the group-kill case in the runner test, the cross-queue case in
+`list_json_carries_each_tasks_session_state_from_claude_code`; each failed before its fix.
+Verified: `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; cargo test 438 + 4 + 15 + 3, vitest 1036, test_commands 13 OK.
 **Open:** AC6 is the owner's (watch a card while a session works and stops at a permission
 prompt).
 ## 2026-10-13 — Pause a task: it keeps its place and claim, nobody works it, its session is told (task 0045)

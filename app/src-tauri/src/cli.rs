@@ -669,9 +669,10 @@ fn with_key(mut v: serde_json::Value, key: String) -> serde_json::Value {
 
 /// `muster list --json`'s `sessionState` (0048): Claude Code's word on each holder's session, read
 /// now from the accounts the stamps in Building and Testing name, under the caller's `$HOME`.
-/// Unknown without a home or a stamped holder (then nothing runs). Only this read runs it, never
-/// a write.
-fn session_states(tasks: &mut [queue::Task], env: Env) {
+/// What each session holds is counted across this queue and `others` (every other queue Muster
+/// knows), as the app counts across all of them. Unknown without a home or a stamped holder (then
+/// nothing runs, and `others` isn't read). Only this read runs it, never a write.
+fn session_states(tasks: &mut [queue::Task], env: Env, others: &dyn Fn() -> Vec<queue::Task>) {
     let Some(home) = env("HOME").filter(|h| !h.is_empty()) else {
         return;
     };
@@ -680,7 +681,19 @@ fn session_states(tasks: &mut [queue::Task], env: Env) {
         return;
     }
     let snap = agents::read_all(&agents::claude_fetch(PathBuf::from(home)), &wanted);
-    agents::apply(tasks, &snap);
+    let others = others();
+    let holds = agents::holds(tasks.iter().chain(&others));
+    agents::apply_with(tasks, &holds, &snap);
+}
+
+/// The tasks of every queue Muster knows other than `root` (the app's list: found and added).
+fn other_queues(root: &Path) -> Vec<queue::Task> {
+    let here = std::fs::canonicalize(root).ok();
+    let others: Vec<(String, PathBuf)> = projects::active(&base(), &projects::load(&config_file()))
+        .into_iter()
+        .filter(|(_, p)| std::fs::canonicalize(p).ok() != here)
+        .collect();
+    queue::read_state(&others, &mut queue::Cache::default()).tasks
 }
 
 /// `muster list --json`: the tasks, and the backlog notes beside them.
@@ -1346,7 +1359,7 @@ fn run_on(
             let q = list_query(a)?;
             let mut s = keyed(root, prefix);
             if a.json {
-                session_states(&mut s.tasks, env);
+                session_states(&mut s.tasks, env, &|| other_queues(root));
             }
             let tasks = list_filter(&s.tasks, &q);
             let notes = list_notes(&s.backlog, &q);
@@ -3991,7 +4004,9 @@ mod tests {
 
         // No home folder (a test's empty environment): nothing runs, every state unknown.
         let mut s = tasks_of(d.path());
-        session_states(&mut s.tasks, &no_env);
+        session_states(&mut s.tasks, &no_env, &|| {
+            panic!("nothing to count without a home")
+        });
         assert_eq!(runs(), "");
         let json = list_json(&[], &s.tasks.iter().collect::<Vec<_>>());
         assert_eq!(json["tasks"][0]["sessionState"], "unknown");
@@ -3999,12 +4014,25 @@ mod tests {
         let h = home.path().to_string_lossy().to_string();
         let env = move |k: &str| (k == "HOME").then(|| h.clone());
         let mut s = tasks_of(d.path());
-        session_states(&mut s.tasks, &env);
+        session_states(&mut s.tasks, &env, &Vec::new);
         assert_eq!(runs(), "ran\n", "once, for the one account");
         let json = list_json(&[], &s.tasks.iter().collect::<Vec<_>>());
         assert_eq!(json["tasks"][0]["sessionState"], "needs-input");
         assert_eq!(json["tasks"][0]["waitingForOwner"], true);
         assert_eq!(json["tasks"][1]["sessionState"], "unknown");
         assert!(!json.to_string().contains("someone"), "cwd isn't kept");
+
+        // The same session holds a task in another queue too: unknown, as the app says.
+        let other = v2_queue();
+        std::fs::write(
+            other.path().join("doing/0101-t.md"),
+            "---\nid: 0101\nstage: building\nstatus: doing\nclaimed-by: wt-c (session 7b5e8856 · cc-hg)\nheartbeat:\nwaiting_on:\n---\n\n# T\n",
+        )
+        .unwrap();
+        let mut s = tasks_of(d.path());
+        session_states(&mut s.tasks, &env, &|| tasks_of(other.path()).tasks);
+        let json = list_json(&[], &s.tasks.iter().collect::<Vec<_>>());
+        assert_eq!(json["tasks"][0]["sessionState"], "unknown");
+        assert_eq!(json["tasks"][0]["waitingForOwner"], false);
     }
 }

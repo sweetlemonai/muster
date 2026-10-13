@@ -93,11 +93,16 @@ struct Raw {
     state: Option<String>,
     #[serde(default)]
     status: Option<String>,
+    /// Any JSON: only a number orders entries; anything else is as if missing.
+    #[serde(default, rename = "startedAt")]
+    started_at: Option<serde_json::Value>,
 }
 
 /// The sessions in one run's output, or why it can't be read. Entries without a session id (or
 /// one that isn't a session id), or with neither a `state` nor an interactive session's `status`,
-/// are skipped; a state Muster doesn't know reads as unknown.
+/// are skipped; a state Muster doesn't know reads as unknown, and so does a background session
+/// whose state says working while its process sits idle (it may be ready for review). A session
+/// listed twice (a resumed id) is its latest entry: the later `startedAt`, else the later listed.
 pub fn parse(out: &[u8]) -> Result<Vec<Entry>, String> {
     if out.len() > MAX_OUTPUT {
         return Err("its output is over 1 MB".into());
@@ -107,7 +112,7 @@ pub fn parse(out: &[u8]) -> Result<Vec<Entry>, String> {
     let serde_json::Value::Array(items) = value else {
         return Err("its output isn't a JSON array".into());
     };
-    let mut entries: Vec<Entry> = Vec::new();
+    let mut entries: Vec<(Entry, f64)> = Vec::new();
     for item in items {
         let Ok(raw) = serde_json::from_value::<Raw>(item) else {
             continue;
@@ -116,18 +121,30 @@ pub fn parse(out: &[u8]) -> Result<Vec<Entry>, String> {
             continue;
         };
         let state = match (&raw.state, &raw.status) {
+            (Some(s), Some(st))
+                if SessionState::from_state(s) == SessionState::Working && normal(st) == "idle" =>
+            {
+                SessionState::Unknown
+            }
             (Some(s), _) => SessionState::from_state(s),
             (None, Some(s)) => SessionState::from_status(s),
             (None, None) => continue,
         };
-        // A session listed twice keeps the state that says something.
-        match entries.iter_mut().find(|e| e.id == id) {
-            Some(e) if e.state == SessionState::Unknown => e.state = state,
+        let started = raw
+            .started_at
+            .as_ref()
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(f64::MIN);
+        match entries.iter_mut().find(|(e, _)| e.id == id) {
+            Some((e, at)) if started >= *at => {
+                e.state = state;
+                *at = started;
+            }
             Some(_) => {}
-            None => entries.push(Entry { id, state }),
+            None => entries.push((Entry { id, state }, started)),
         }
     }
-    Ok(entries)
+    Ok(entries.into_iter().map(|(e, _)| e).collect())
 }
 
 /// Set for every run: without them `claude agents --json` reports its use to Anthropic (it tried
@@ -150,6 +167,8 @@ pub fn run(claude: &Path, config_dir: Option<&Path>, timeout: Duration) -> Resul
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
+    // A group of its own, so a timeout stops anything it started too (`stop`).
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
     for k in crate::helper::STRIP_ENV {
         cmd.env_remove(k);
     }
@@ -178,12 +197,11 @@ pub fn run(claude: &Path, config_dir: Option<&Path>, timeout: Duration) -> Resul
             Ok(Some(status)) => break status,
             Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
             Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                stop(&mut child);
                 return Err(format!("claude agents didn't finish within {timeout:?}"));
             }
             Err(e) => {
-                let _ = child.kill();
+                stop(&mut child);
                 return Err(format!("couldn't wait for claude ({})", e.kind()));
             }
         }
@@ -202,6 +220,20 @@ pub fn run(claude: &Path, config_dir: Option<&Path>, timeout: Duration) -> Resul
         });
     }
     Ok(out)
+}
+
+/// Stop a run and everything it started: its process group (it leads one, `run`), through
+/// `/bin/kill` with an argument array since the standard library has no group kill, then the
+/// process itself in case that failed.
+fn stop(child: &mut std::process::Child) {
+    let _ = Command::new("/bin/kill")
+        .args(["-KILL", "--", &format!("-{}", child.id())])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// Where the states come from: one account's raw output (by its label, "" for the default
@@ -284,25 +316,64 @@ pub fn read_all(fetch: &Fetch, accounts: &[String]) -> Snapshot {
     snap
 }
 
-/// Give each task its session's state. One applies when the holder's stamp (`stamp_of`) names
-/// the session and its account, and no other open task (any not in Done, across every queue
-/// given) is held under that session: a coordinator's subagents share its id, and its state says
-/// nothing about one of their tasks. Every other task is unknown, so its card reads as before.
-/// A session waiting for input waits on the owner, so the task counts in the needs-you count.
-pub fn apply(tasks: &mut [Task], snap: &Snapshot) {
-    let mut held: HashMap<String, usize> = HashMap::new();
-    for t in tasks.iter().filter(|t| t.stage != "done") {
-        if let Some(stamp) = session::split(t.holder()).1 {
-            *held.entry(stamp.id).or_default() += 1;
-        }
+/// Who holds what, by session id: the claims (Ready and Building) and the Testing holds (`held-by`
+/// there is the builder that passed it).
+#[derive(Debug, Default)]
+pub struct Holds {
+    claims: HashMap<String, usize>,
+    testing: HashMap<String, usize>,
+}
+
+/// What every session holds among `tasks`: every queue Muster reads, so a session holding a task
+/// in two projects is seen holding two (the app and `muster list --json` count alike). A paused
+/// task (0045) isn't counted: its session was told to stop, so its next claim gets the state.
+pub fn holds<'a>(tasks: impl IntoIterator<Item = &'a Task>) -> Holds {
+    let mut h = Holds::default();
+    // A paused task's session was told to stop (0045): it isn't what the session is doing.
+    for t in tasks.into_iter().filter(|t| t.paused.is_empty()) {
+        let Some(stamp) = session::split(t.holder()).1 else {
+            continue;
+        };
+        let count = match t.stage.as_str() {
+            "ready" | "building" => &mut h.claims,
+            "testing" => &mut h.testing,
+            _ => continue,
+        };
+        *count.entry(stamp.id).or_default() += 1;
     }
+    h
+}
+
+/// Give each task its session's state, counting holds among the tasks themselves.
+pub fn apply(tasks: &mut [Task], snap: &Snapshot) {
+    let h = holds(tasks.iter());
+    apply_with(tasks, &h, snap);
+}
+
+/// Give each task its session's state. One applies when the holder's stamp (`stamp_of`) names
+/// the session and its account, and the session holds nothing else (`holds`): in Building, no
+/// other claim; in Testing, no claim and no other Testing hold. A coordinator's subagents share
+/// its id, and a builder that passed a task to Testing and claimed the next is working on that
+/// one, so its state says nothing about the others. Ended shows only in Building: in Testing the
+/// holder is the builder that passed it, whose session ending is the normal course. Every other
+/// task is unknown, so its card reads as before. A session waiting for input waits on the owner,
+/// so the task counts in the needs-you count.
+pub fn apply_with(tasks: &mut [Task], holds: &Holds, snap: &Snapshot) {
+    let n = |m: &HashMap<String, usize>, id: &str| m.get(id).copied().unwrap_or(0);
     for t in tasks.iter_mut() {
+        let building = t.stage == "building";
         t.session_state = match stamp_of(t) {
-            Some(s) if held.get(&s.id) == Some(&1) => snap
-                .states
-                .get(&(s.account, s.id))
-                .copied()
-                .unwrap_or_default(),
+            Some(s)
+                if (building && n(&holds.claims, &s.id) == 1)
+                    || (!building
+                        && n(&holds.claims, &s.id) == 0
+                        && n(&holds.testing, &s.id) == 1) =>
+            {
+                match snap.states.get(&(s.account, s.id)).copied() {
+                    Some(SessionState::Ended) if !building => SessionState::Unknown,
+                    state => state.unwrap_or_default(),
+                }
+            }
             _ => SessionState::Unknown,
         };
         if t.session_state == SessionState::NeedsInput {
@@ -549,11 +620,35 @@ mod tests {
             SessionState::NeedsInput
         );
         assert_eq!(SessionState::from_status("idle"), SessionState::Unknown);
-        // A session listed twice keeps the state that says something.
-        let twice = r#"[{"sessionId": "11111111", "state": "failed"}, {"sessionId": "11111111", "status": "busy"}, {"sessionId": "11111111", "state": "done"}]"#;
+        // A session listed twice (a resumed id) is its latest entry: by `startedAt`, else the
+        // one listed last (Claude Code lists them oldest first).
+        let twice = r#"[{"sessionId": "11111111", "state": "done", "startedAt": 100}, {"sessionId": "11111111", "status": "busy", "startedAt": 200}]"#;
         assert_eq!(
             parse(twice.as_bytes()).unwrap(),
             [entry("11111111", SessionState::Working)]
+        );
+        let reversed = r#"[{"sessionId": "11111111", "status": "busy", "startedAt": 200}, {"sessionId": "11111111", "state": "done", "startedAt": 100}]"#;
+        assert_eq!(
+            parse(reversed.as_bytes()).unwrap(),
+            [entry("11111111", SessionState::Working)]
+        );
+        let unstamped = r#"[{"sessionId": "11111111", "state": "working"}, {"sessionId": "11111111", "state": "done"}, {"sessionId": "22222222", "state": "blocked"}]"#;
+        assert_eq!(
+            parse(unstamped.as_bytes()).unwrap(),
+            [
+                entry("11111111", SessionState::Ended),
+                entry("22222222", SessionState::NeedsInput)
+            ]
+        );
+        // A background session whose state says working but whose process sits idle may be
+        // ready for review: unknown, not working.
+        let idle = r#"[{"sessionId": "11111111", "state": "working", "status": "idle"}, {"sessionId": "22222222", "state": "working", "status": "busy"}]"#;
+        assert_eq!(
+            parse(idle.as_bytes()).unwrap(),
+            [
+                entry("11111111", SessionState::Unknown),
+                entry("22222222", SessionState::Working)
+            ]
         );
         assert_eq!(
             serde_json::to_string(&[
@@ -654,6 +749,28 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
             "claude agents didn't finish within 300ms"
         );
         assert!(started.elapsed() < Duration::from_secs(5), "it was stopped");
+        // A child it started (holding the pipe) is stopped with it: the whole group goes.
+        let parent = fake(
+            d.path(),
+            "sleep 30 &\necho $! > \"$0.child\"\nexec sleep 30",
+        );
+        assert!(run(&parent, None, Duration::from_millis(300))
+            .unwrap_err()
+            .contains("didn't finish"));
+        let child = fs::read_to_string(d.path().join("claude.child")).unwrap();
+        let alive = || {
+            Command::new("/bin/kill")
+                .args(["-0", child.trim()])
+                .stderr(Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        };
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while alive() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(!alive(), "the child it started was stopped too");
         // Output past the cap: stopped reading, not available.
         let loud = fake(d.path(), "head -c 2000000 /dev/zero | tr '\\0' ' '");
         assert_eq!(run(&loud, None, t).unwrap_err(), "its output is over 1 MB");
@@ -734,10 +851,22 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
         ];
         apply(&mut shared, &s);
         assert_eq!(states(&shared), [Unknown, Unknown]);
-        // A task in Testing it still holds counts as open; one in Done doesn't.
+        // A builder that passed a task to Testing (it's `held-by` there) and claimed the next one:
+        // its state is the new claim's, and says nothing about the task in Testing.
         let mut testing = vec![task("0001", "building", A), task("0003", "testing", A)];
         apply(&mut testing, &s);
-        assert_eq!(states(&testing), [Unknown, Unknown]);
+        assert_eq!(states(&testing), [Working, Unknown]);
+        // In Testing with nothing claimed, one task: its state; two: neither.
+        let mut alone = vec![task("0003", "testing", A)];
+        apply(&mut alone, &s);
+        assert_eq!(states(&alone), [Working]);
+        let mut two = vec![task("0003", "testing", A), task("0009", "testing", A)];
+        apply(&mut two, &s);
+        assert_eq!(states(&two), [Unknown, Unknown]);
+        // Your check's holder isn't working on it: it doesn't count either way.
+        let mut checked = vec![task("0001", "building", A), task("0010", "your-check", A)];
+        apply(&mut checked, &s);
+        assert_eq!(states(&checked), [Working, Unknown]);
         let mut done = vec![task("0001", "building", A), task("0004", "done", A)];
         apply(&mut done, &s);
         assert_eq!(states(&done), [Working, Unknown]);
@@ -756,14 +885,19 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
     }
 
     #[test]
-    fn waiting_for_input_waits_on_the_owner_and_ended_shows_in_testing_too() {
+    fn waiting_for_input_waits_on_the_owner_and_ended_shows_only_in_building() {
         use SessionState::*;
-        let b = "qa (session 4d517d9d · cc-hg)";
+        let b = "wt-b (session 4d517d9d · cc-hg)";
         let s = snap(&[("hg", "7b5e8856", NeedsInput), ("hg", "4d517d9d", Ended)]);
         let mut tasks = vec![task("0001", "building", A), task("0002", "testing", b)];
         assert!(!tasks[0].waiting_for_owner);
         apply(&mut tasks, &s);
-        assert_eq!(states(&tasks), [NeedsInput, Ended]);
+        // In Testing, `held-by` is the builder that passed it, whose session has usually ended:
+        // that isn't news, so Testing reads as before.
+        assert_eq!(states(&tasks), [NeedsInput, Unknown]);
+        let mut building = vec![task("0002", "building", b)];
+        apply(&mut building, &s);
+        assert_eq!(states(&building), [Ended]);
         assert!(tasks[0].waiting_for_owner, "counts in the needs-you count");
         assert!(!tasks[1].waiting_for_owner);
         let json = serde_json::to_value(&tasks[0]).unwrap();
@@ -793,6 +927,39 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
         let mut resumed = vec![task("0001", "building", A)];
         apply(&mut resumed, &snap(&[("hg", "7b5e8856", NeedsInput)]));
         assert_eq!(states(&resumed), [NeedsInput]);
+        // Paused, its session was told to stop: the task isn't what the session is doing, so it
+        // doesn't count as its hold, and the session's next claim gets the state.
+        let mut next = vec![
+            paused(task("0001", "building", A)),
+            task("0002", "building", A),
+        ];
+        apply(&mut next, &snap(&[("hg", "7b5e8856", NeedsInput)]));
+        assert_eq!(states(&next), [Unknown, NeedsInput]);
+        assert!(!next[0].waiting_for_owner && next[1].waiting_for_owner);
+        let mut testing = vec![
+            paused(task("0003", "testing", A)),
+            task("0004", "testing", A),
+        ];
+        apply(&mut testing, &snap(&[("hg", "7b5e8856", Working)]));
+        assert_eq!(states(&testing), [Unknown, Working]);
+    }
+
+    #[test]
+    fn holds_count_across_every_queue_given() {
+        use SessionState::*;
+        let s = snap(&[("hg", "7b5e8856", NeedsInput)]);
+        let mut here = vec![task("0001", "building", A)];
+        // The same session holds a task in another queue: its state is about neither.
+        let elsewhere = vec![task("0101", "building", A)];
+        let h = holds(here.iter().chain(&elsewhere));
+        apply_with(&mut here, &h, &s);
+        assert_eq!(states(&here), [Unknown]);
+        assert!(!here[0].waiting_for_owner);
+        // Another queue's tasks under other sessions change nothing.
+        let unrelated = vec![task("0102", "building", "wt-z (session 99999999 · cc-hg)")];
+        let h = holds(here.iter().chain(&unrelated));
+        apply_with(&mut here, &h, &s);
+        assert_eq!(states(&here), [NeedsInput]);
     }
 
     #[test]

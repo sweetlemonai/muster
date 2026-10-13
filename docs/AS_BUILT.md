@@ -74,15 +74,18 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   (`<id>-pause.md`, `<id>-resume.md`); the pane says whether it was.
 - **Claude Code's session states** (0048, `agents.rs`, `sessionState.ts`): the core runs
   `claude agents --json --all` (argument array, `CLAUDE_CONFIG_DIR` per account the stamps in
-  Building and Testing name, usage reporting off, 10 s timeout, 1 MB cap) on a thread of its own,
+  Building and Testing name, usage reporting off, in a process group of its own that a 10 s timeout stops whole, 1 MB cap) on a thread of its own,
   started by the window's state poll at most every 15 s and never while nothing has a stamped
   holder; the poll uses the latest result and never waits for a run. Parsed with serde into the
   session id and state only (`cwd` and `name` are never kept); an interactive session's `status`
-  stands in for its missing `state`. `agents::apply` gives a task its holder's state when the id
-  and account match and no other open task is held under that session; a paused task (0045) gets none. The card's who lines add
+  stands in for its missing `state`, working with an idle `status` is unknown, and a repeated id
+  is its latest entry. `agents::holds` counts each session's claims and Testing holds across every
+  queue (the app's poll, and `muster list --json` through `projects::active`), and
+  `agents::apply_with` gives a task its holder's state when the id and account match and the
+  session holds nothing else (in Testing: no claim, one Testing hold); a paused task (0045) gets none and isn't counted as a hold. The card's who lines add
   "working" (accent, with the Building dot), "waiting for input in Claude Code" (orange pill, and
   the task counts as needs you: the core sets `waitingForOwner`) or "session ended, task still in
-  Building/Testing", with "no check-in for N min" kept under it in muted text; the pane's status
+  Building" (Building only), with "no check-in for N min" kept under it in muted text; the pane's status
   line says the same and "Waiting on you: input in Claude Code"; the sidebar's working now takes
   Claude Code's word over the transcript and heartbeat; Ask for a check-in is disabled with
   "waiting for input in Claude Code: answer it there first", and Ask all leaves those out and

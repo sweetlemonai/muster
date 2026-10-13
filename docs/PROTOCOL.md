@@ -267,16 +267,21 @@
 > account the stamps in Building and Testing name (`cc-hg` → `CLAUDE_CONFIG_DIR=~/.claude-hg`; no
 > account part → the default `~/.claude`), run as an argument array with its usage reporting off,
 > off the window's thread, at most every 15 s while the window shows, and not at all while no task
-> in Building or Testing has a stamped holder (the owner's own claims and paused tasks aside: a paused task, 0045, gets no state, never working and never waiting on the owner through its session). A run stops at 10 s
+> in Building or Testing has a stamped holder (the owner's own claims and paused tasks aside: a paused task, 0045, gets no state, never working and never waiting on the owner through its session, and doesn't count as its session's hold, so that session's next claim gets the state). A run stops at 10 s
 > and reads at most 1 MB; only each session's short id and state are kept. A state applies to a
-> task when the session id and account match the holder's stamp **and no other open task** (any
-> not in Done) is held under that session: a coordinator's subagents share its id, so their tasks
-> fall back. `working` shows "working"; `blocked` (a permission prompt or a question) shows
-> "waiting for input in Claude Code" in orange, counts as needing the owner, and Ask for a check-in
-> waits ("answer it there first"); `done`, `completed` or `ready for review` shows "session ended,
-> task still in Building" (or Testing). An interactive session, which has no `state`, is read by
-> its `status`: busy is working, waiting is waiting for input. Anything else (`failed`, `stopped`,
-> idle, a state Muster doesn't know), a session it doesn't list, a missing `claude`, a non-zero
+> task when the session id and account match the holder's stamp **and the session holds nothing
+> else**, counted across every queue Muster knows: in Building, no other claim (Ready or Building);
+> in Testing (whose `held-by:` is the builder that passed it), no claim and no other Testing hold.
+> A coordinator's subagents share its id, so their tasks fall back; a builder that passed a task to
+> Testing and claimed the next gets the new claim's state. `working` shows "working"; `blocked` (a
+> permission prompt or a question) shows "waiting for input in Claude Code" in orange, counts as
+> needing the owner, and Ask for a check-in waits ("answer it there first"); `done`, `completed` or
+> `ready for review` shows "session ended, task still in Building", in Building only (in Testing the
+> builder's session ending is the normal course). An interactive session, which has no `state`, is
+> read by its `status`: busy is working, waiting is waiting for input; a background session whose
+> state says working while its `status` is idle is unknown, and a session listed twice is its
+> latest entry. Anything else (`failed`, `stopped`, idle, a state Muster doesn't know), a session
+> it doesn't list, a missing `claude`, a non-zero
 > exit, a timeout or output that isn't a JSON array: the card reads exactly as before, from the
 > heartbeat, check-ins and the live dot, and Settings > Agents says "not available: <why>". Where
 > a state shows, "no check-in for 45 min" stays under it, quiet. `muster list --json` gives each

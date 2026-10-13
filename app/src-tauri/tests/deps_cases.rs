@@ -69,14 +69,38 @@ fn write_queue(root: &Path) {
     }
 }
 
+/// A home folder of its own for `muster` (task 0048), so `list --json` never runs this Mac's
+/// Claude Code or reads its projects: a `claude` where muster looks first, which lists no
+/// sessions and records each call in `claude.calls`, and the `cc-hg` account's folder.
+fn fake_home() -> tempfile::TempDir {
+    let h = tempfile::tempdir().unwrap();
+    let bin = h.path().join(".local/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::create_dir(h.path().join(".claude-hg")).unwrap();
+    let claude = bin.join("claude");
+    std::fs::write(
+        &claude,
+        "#!/bin/sh\necho \"$@\" >> \"$0.calls\"\necho '[]'\n",
+    )
+    .unwrap();
+    let mut perms = std::fs::metadata(&claude).unwrap().permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+    std::fs::set_permissions(&claude, perms).unwrap();
+    h
+}
+
+/// `muster` on the queue `root`, in a home of its own (`fake_home`).
 fn muster(root: &Path, args: &[&str]) -> Output {
+    let home = fake_home();
     Command::new(env!("CARGO_BIN_EXE_muster"))
         .args(args)
         .arg("--queue")
         .arg(root)
         .current_dir(std::env::temp_dir())
+        .env("HOME", home.path())
         .env_remove("MUSTER_ROOT")
         .env_remove("TASKS_ROOT")
+        .env_remove("MUSTER_BASE")
         .env_remove("MUSTER_AS")
         .output()
         .expect("muster runs")

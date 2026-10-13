@@ -251,15 +251,27 @@ class RoutesRunOnARealQueue(unittest.TestCase):
         # Its prefix stored (0033): muster names its tasks tc-1, tc-2…, whatever projects this Mac has.
         (self.root / "README.md").write_text("---\nprefix: tc\n---\nA Muster queue, for the tests.\n",
                                               encoding="utf-8")
+        # A home of its own (task 0048): `muster list --json` asks Claude Code about stamped
+        # sessions, and these claims are stamped. Its `claude` records every call; none is expected.
+        self.home = Path(self.tmp.name) / "home"
+        bin_dir = self.home / ".local" / "bin"
+        bin_dir.mkdir(parents=True)
+        self.claude = bin_dir / "claude"
+        self.claude.write_text("#!/bin/sh\necho \"$@\" >> \"$0.calls\"\necho '[]'\n", encoding="utf-8")
+        self.claude.chmod(0o755)
         self.env = {**os.environ, "MUSTER_ROOT": str(self.root), "MUSTER_AS": "wt-a",
-                    "CLAUDE_CODE_SESSION_ID": "aaaa1111-test"}
-        self.env.pop("TASKS_ROOT", None)
+                    "CLAUDE_CODE_SESSION_ID": "aaaa1111-test", "HOME": str(self.home)}
+        for k in ("TASKS_ROOT", "MUSTER_BASE"):
+            self.env.pop(k, None)
         self.routes = {r["key"]: r for r in rows(ROUTER.read_text(encoding="utf-8"))}
         self.a = self.new("Synthetic first")
         self.b = self.new("Synthetic second")
 
     def tearDown(self):
+        calls = Path(f"{self.claude}.calls")
+        ran = calls.read_text(encoding="utf-8") if calls.exists() else ""
         self.tmp.cleanup()
+        self.assertEqual(ran, "", "a route ran Claude Code's agents listing")
 
     def muster(self, argv: list[str], **env: str) -> subprocess.CompletedProcess:
         self.assertEqual(argv[0], "muster")

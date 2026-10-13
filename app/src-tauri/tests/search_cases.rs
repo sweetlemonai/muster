@@ -96,7 +96,27 @@ fn args(q: &Value) -> Vec<String> {
     out
 }
 
-fn list(root: &Path, extra: &[String]) -> Value {
+/// A home folder of its own for `muster` (task 0048), so `list --json` never runs this Mac's
+/// Claude Code or reads its projects: a `claude` where muster looks first, which lists no
+/// sessions and records each call in `claude.calls`, and the `cc-hg` account's folder.
+fn fake_home() -> tempfile::TempDir {
+    let h = tempfile::tempdir().unwrap();
+    let bin = h.path().join(".local/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::create_dir(h.path().join(".claude-hg")).unwrap();
+    let claude = bin.join("claude");
+    std::fs::write(
+        &claude,
+        "#!/bin/sh\necho \"$@\" >> \"$0.calls\"\necho '[]'\n",
+    )
+    .unwrap();
+    let mut perms = std::fs::metadata(&claude).unwrap().permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+    std::fs::set_permissions(&claude, perms).unwrap();
+    h
+}
+
+fn list(root: &Path, home: &Path, extra: &[String]) -> Value {
     let out = Command::new(env!("CARGO_BIN_EXE_muster"))
         .arg("list")
         .arg("--queue")
@@ -104,8 +124,10 @@ fn list(root: &Path, extra: &[String]) -> Value {
         .arg("--json")
         .args(extra)
         .current_dir(std::env::temp_dir())
+        .env("HOME", home)
         .env_remove("MUSTER_ROOT")
         .env_remove("TASKS_ROOT")
+        .env_remove("MUSTER_BASE")
         .output()
         .expect("muster runs");
     assert!(
@@ -179,9 +201,10 @@ fn muster_list_gives_each_cases_tasks_in_order() {
         s(&c, "prefix"),
         c["tasks"].as_array().expect("tasks"),
     );
+    let home = fake_home();
     for case in c["cases"].as_array().expect("cases") {
         let opts = args(&case["query"]);
-        let out = list(d.path(), &opts);
+        let out = list(d.path(), home.path(), &opts);
         let ids: Vec<String> = out["tasks"]
             .as_array()
             .expect("tasks")
@@ -198,6 +221,12 @@ fn muster_list_gives_each_cases_tasks_in_order() {
             "--json leaves the search text out"
         );
     }
+    // 0202 is held in Testing under a stamped session, so list --json asked Claude Code: the
+    // fake one in the test's own home, never this Mac's.
+    let calls =
+        std::fs::read_to_string(home.path().join(".local/bin/claude.calls")).unwrap_or_default();
+    assert!(calls.lines().count() > 0, "list --json ran the fake claude");
+    assert!(calls.lines().all(|l| l == "agents --json --all"), "{calls}");
 }
 
 #[test]
