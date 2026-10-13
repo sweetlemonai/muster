@@ -62,6 +62,14 @@ dispute-only brief in `the_brief_names_the_range_the_answers_to_recheck_and_the_
 `the_waiting_count_is_read_again_only_when_lessons_json_changes`.
 Verified: `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; cargo
 test 551 lib.
+**Fixed (fix check):** the re-check before each rebase threw its answer away, so for the owner (whose
+override reads as Ok) a commit landing while the merge waited was rebased before `carry` refused
+→ `review::still_stands` refuses anyone, nothing rebased. The lock-wait test now moves main too
+and asserts the branch tip is still the late commit and the review still stands for the reviewed
+one, for qa and the owner (failed for the owner before the fix). New: a settle the task file can't
+take (just under 1 MB) writes nothing, and a confidence of 150 is refused; both checked against
+the bug they guard (save before `task_text`; no ceiling): each failed, then passed restored.
+Verified: `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`.
 ## 2026-10-13 — Projects get a label you choose and a category that groups the sidebar (task 0044)
 **Did:** each project has a label (what the app calls it, up to 40 characters) and a category (the
 sidebar heading it goes under, up to 24), set in Settings › Projects (a field each per row, saved

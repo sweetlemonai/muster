@@ -916,7 +916,7 @@ pub fn merge(
         // A commit that landed while the merge waited for its lock, or during the last gate,
         // hasn't been reviewed: refused, nothing rebased.
         if review.stands {
-            crate::review::merge_check(root, id, &before, who)?;
+            crate::review::still_stands(root, id, &before)?;
         }
         if let Err(e) = git(&wt, &["rebase", &trunk]) {
             let files = conflicted(&wt);
@@ -2606,45 +2606,61 @@ pub(crate) mod tests {
 
     #[test]
     fn a_commit_landing_while_the_merge_waits_for_its_lock_is_refused_not_merged() {
-        let f = fx();
-        let id = task(&f.root, "Waits", "w/");
-        let s = built(&f, &id, "w/x.txt");
-        // Another merge holds the repo's lock.
-        let dir = f.repo.join(".git/muster");
-        fs::create_dir_all(&dir).unwrap();
-        let held = fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(dir.join("merge.lock"))
-            .unwrap();
-        held.lock().unwrap();
-        let main_before = g(&f.repo, &["rev-parse", "main"]);
-        let (tx, rx) = std::sync::mpsc::channel();
-        let (root, task_id, gate) = (f.root.clone(), id.clone(), green(&f));
-        let merging = std::thread::spawn(move || {
-            merge(&root, &task_id, "qa", &noon, &gate, &mut |l| {
-                let _ = tx.send(l);
-            })
-        });
-        let said = rx.recv_timeout(std::time::Duration::from_secs(20)).unwrap();
-        assert!(said.starts_with("waiting for another merge"), "{said}");
-        // Reviewed at T; a commit C lands while it waits.
-        commit(
-            &s.worktree,
-            "w/late.txt",
-            "unreviewed\n",
-            "after the review",
-        );
-        held.unlock().unwrap();
-        let e = merging.join().unwrap().unwrap_err();
-        assert!(e.contains("review the new commits"), "{e}");
-        assert_eq!(
-            g(&f.repo, &["rev-parse", "main"]),
-            main_before,
-            "nothing merged"
-        );
-        assert!(has_branch(&f, &s.branch) && s.worktree.is_dir());
+        for who in ["qa", "owner"] {
+            let f = fx();
+            let id = task(&f.root, "Waits", "w/");
+            let s = built(&f, &id, "w/x.txt");
+            let reviewed = g(&s.worktree, &["rev-parse", "HEAD"]);
+            // Another merge holds the repo's lock.
+            let dir = f.repo.join(".git/muster");
+            fs::create_dir_all(&dir).unwrap();
+            let held = fs::OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .write(true)
+                .open(dir.join("merge.lock"))
+                .unwrap();
+            held.lock().unwrap();
+            let (tx, rx) = std::sync::mpsc::channel();
+            let (root, task_id, gate) = (f.root.clone(), id.clone(), green(&f));
+            let merging = std::thread::spawn(move || {
+                merge(&root, &task_id, who, &noon, &gate, &mut |l| {
+                    let _ = tx.send(l);
+                })
+            });
+            let said = rx.recv_timeout(std::time::Duration::from_secs(20)).unwrap();
+            assert!(said.starts_with("waiting for another merge"), "{said}");
+            // Reviewed at T; a commit C lands on the branch while it waits, and the other merge
+            // moves main, so a rebase would rewrite the branch.
+            commit(
+                &s.worktree,
+                "w/late.txt",
+                "unreviewed\n",
+                "after the review",
+            );
+            let late = g(&s.worktree, &["rev-parse", "HEAD"]);
+            commit(&f.repo, "other.txt", "other\n", "the other merge");
+            let main_after = g(&f.repo, &["rev-parse", "main"]);
+            held.unlock().unwrap();
+            let e = merging.join().unwrap().unwrap_err();
+            assert!(e.contains("review the new commits"), "{who}: {e}");
+            assert_eq!(
+                g(&f.repo, &["rev-parse", "main"]),
+                main_after,
+                "{who}: nothing merged"
+            );
+            assert_eq!(
+                g(&s.worktree, &["rev-parse", "HEAD"]),
+                late,
+                "{who}: not rebased"
+            );
+            assert_eq!(
+                crate::review::load(&f.root, &id).unwrap().unwrap().head,
+                reviewed,
+                "{who}: the review still stands for T"
+            );
+            assert!(has_branch(&f, &s.branch) && s.worktree.is_dir());
+        }
     }
 
     #[test]

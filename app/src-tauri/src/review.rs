@@ -1475,6 +1475,19 @@ pub fn merge_check(root: &Path, id: &str, head: &str, who: &str) -> Result<Merge
     }
 }
 
+/// Does the clean review the merge started from still stand for the branch at `head`? Refused,
+/// as `merge_check` refuses anyone, when a commit landed since (while the merge waited for its
+/// lock, or during its last gate): the owner's override covered the review it saw, not this one.
+pub fn still_stands(root: &Path, id: &str, head: &str) -> Result<(), String> {
+    match merge_check(root, id, head, "merge")? {
+        MergeReview { stands: true, .. } => Ok(()),
+        // Only the owner gets an override, and "merge" isn't the owner.
+        MergeReview { stands: false, .. } => {
+            Err(format!("{id}'s review doesn't stand for {}", short(head)))
+        }
+    }
+}
+
 /// The merge rebased task `id`'s branch from `old` to `new` without a conflict: the review that
 /// stood for `old` now stands for `new`, the same commits replayed on the local main. Refused when
 /// no review stands for `old` (a commit it didn't see), so nothing unreviewed is carried.
@@ -2200,6 +2213,13 @@ mod tests {
             &span(HEAD1, None)
         )
         .contains("missing field `confidence`"));
+        // Nor more than certain.
+        assert!(e(
+            &ok.replace("\"confidence\":90", "\"confidence\":150"),
+            "qa",
+            &span(HEAD1, None)
+        )
+        .contains("up to 100"));
         assert!(e(
             &ok.replace("\"should\"", "\"major\""),
             "qa",
@@ -2286,6 +2306,62 @@ mod tests {
         assert_eq!(load(d.path(), &id).unwrap().unwrap().head, HEAD1);
         carry(d.path(), &id, HEAD1, HEAD2).unwrap();
         assert!(merge_check(d.path(), &id, HEAD2, "qa").is_ok());
+    }
+
+    #[test]
+    fn a_settle_the_task_file_cant_take_writes_nothing() {
+        let d = queue();
+        let id = in_testing(d.path(), "app/");
+        let json = rec(
+            HEAD1,
+            &[finding_json(
+                "Unbounded output",
+                "unbounded-output",
+                "should",
+            )],
+            "",
+        );
+        record(
+            d.path(),
+            &id,
+            &json,
+            "qa",
+            "2026-10-13 12:00",
+            &span(HEAD1, None),
+        )
+        .unwrap();
+        // The task file a few bytes under the 1 MB a task file may be: the settle's lines don't fit.
+        let path = find_task(d.path(), &id).unwrap();
+        let body = fs::read_to_string(&path).unwrap();
+        let room = usize::try_from(queue::MAX_TASK_BYTES).unwrap() - body.len() - 40;
+        let padded = body.replacen(
+            "\n## Acceptance criteria",
+            &format!("\n{}\n\n## Acceptance criteria", "x".repeat(room - 2)),
+            1,
+        );
+        fs::write(&path, &padded).unwrap();
+        let review_before = fs::read_to_string(path_of(d.path(), &id)).unwrap();
+        let e = settle(
+            d.path(),
+            &id,
+            "R1",
+            "false-positive",
+            "the pipe is bounded",
+            "owner",
+            "2026-10-13 12:30",
+        )
+        .unwrap_err();
+        assert!(e.contains("over 1 MB"), "{e}");
+        assert_eq!(
+            fs::read_to_string(path_of(d.path(), &id)).unwrap(),
+            review_before,
+            "the review is as it was"
+        );
+        assert_eq!(
+            load(d.path(), &id).unwrap().unwrap().findings[0].state,
+            "open"
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), padded, "the task too");
     }
 
     #[test]
