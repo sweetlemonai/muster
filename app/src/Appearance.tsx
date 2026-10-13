@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CardLookPicker } from "./CardLook";
 import { HelpButton } from "./HelpButton";
 import { stageLabel } from "./lib";
+import { loadZoom, setZoom, ZOOM_EVENT, ZOOMS } from "./zoom";
 import { ACCENTS, apply, buildingColour, cardChoice, type Choice, DEFAULT_CHOICE, load, resolve, save, THEMES, variables } from "./themes";
 
 /** Theme, accent and card look, applied live while the board stays in view beside it. */
@@ -74,6 +75,11 @@ export default function Appearance({ onClose }: { onClose: () => void }) {
         <p className="meta">Blue and orange are left out of the accents: they belong to 127, Drover and Braindump. Every theme and accent pair passes WCAG AA.</p>
       </section>
       <section>
+        <h2>Text size</h2>
+        <TextSize />
+        <p className="meta">Everything in the window grows or shrinks, the manual too. ⌘+ and ⌘− step through the sizes, ⌘0 goes back to 100%.</p>
+      </section>
+      <section>
         <h2>Cards</h2>
         <CardLookPicker {...pickerProps(c, setC)} />
         <p className="meta">Blocked and "needs you" take over the colour in every look, and keep their words on the card.</p>
@@ -93,4 +99,23 @@ function pickerProps(c: Choice, setC: (f: (p: Choice) => Choice) => void) {
     onLook: (l: Choice["cards"]) => setC((p) => ({ ...p, cards: l })),
     onColour: (k: Choice["cardColour"]) => setC((p) => ({ ...p, cardColour: k })),
   };
+}
+
+/** The text size steps as chips, the current one pressed (zoom.ts). Follows ⌘+ ⌘− ⌘0 too. */
+export function TextSize({ initial }: { initial?: number }) {
+  const [size, setSize] = useState(() => initial ?? loadZoom());
+  useEffect(() => {
+    const on = (e: Event) => setSize((e as CustomEvent<number>).detail);
+    window.addEventListener(ZOOM_EVENT, on);
+    return () => window.removeEventListener(ZOOM_EVENT, on);
+  }, []);
+  return (
+    <div className="look-colour" role="group" aria-label="Text size">
+      {ZOOMS.map((z) => (
+        <button key={z} type="button" className={size === z ? "chip on" : "chip"} aria-pressed={size === z} onClick={() => setSize(setZoom(z))}>
+          {Math.round(z * 100)}%
+        </button>
+      ))}
+    </div>
+  );
 }

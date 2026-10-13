@@ -135,6 +135,7 @@ Opens in the pane, and every change applies at once and is remembered:
 
 - **Match the Mac's light or dark:** pick a dark theme and a light one, and the app follows the Mac. Off, one theme stays.
 - **Theme:** Violet night, Violet day, Graphite, Midnight, Paper, Snow and High contrast.
+- **Text size:** 90%, 100%, 115%, 130% or 150%, for everything in the window, this manual too. ⌘+ and ⌘− step through the sizes and ⌘0 goes back to 100%; the size is remembered.
 - **Accent:** Violet, Teal, Rose, Gold, Green or Graphite. Building takes the accent colour, unless it would look like another stage's; then Building stays violet, and Appearance says so.
 - **Cards:** how a card shows its colour (Stripe, Tint, Top bar, Dot or Outline), and whether the colour shows its **Stage** or its **Priority**. Blocked and "needs you" always take over the colour.
 - **Back to Muster's violet** resets the theme and accent.

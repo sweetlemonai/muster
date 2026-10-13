@@ -4,6 +4,12 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Text size for the whole window
+**Did:** the owner: "option to zoom in the help page and all pages". ⌘+ ⌘− ⌘0 and a Text size
+row in Appearance (90–150%), remembered, for everything in the window including the manual.
+CSS zoom on the page root (no window permission). `zoom.ts`, the shortcut table, the manual.
+**Verified:** `pnpm check` green.
+
 ## 2026-10-13 — Help is a manual: concepts, tutorials, commands, shortcuts (task 0035)
 **Did:** the Help tab is a manual with a docked sidebar (every page and section, search across
 pages, ◀ ▶): Start here, Concepts, Tutorials, In the app, Commands (generated from `help.rs`),

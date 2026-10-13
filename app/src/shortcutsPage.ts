@@ -31,7 +31,10 @@ const cell = (s: string) => s.replace(/[<>|]/g, (c) => `\\${c}`);
 /** The manual's Shortcuts page (docs/manual/06-shortcuts.md), made from the tables above. */
 export function shortcutsPage(): string {
   const cmdOnly = SHORTCUTS.filter((s) => s.mod === "cmd").map((s) => s.keys);
-  const ctrl = cmdOnly.length ? `Ctrl works too wherever ⌘ is shown, except ${cmdOnly.join(" and ")}, which takes ⌘ only.` : "Ctrl works too wherever ⌘ is shown.";
+  const list = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+  const ctrl = cmdOnly.length
+    ? `Ctrl works too wherever ⌘ is shown, except ${list(cmdOnly)}, which ${cmdOnly.length === 1 ? "takes" : "take"} ⌘ only.`
+    : "Ctrl works too wherever ⌘ is shown.";
   const out = [
     "# Shortcuts",
     "",

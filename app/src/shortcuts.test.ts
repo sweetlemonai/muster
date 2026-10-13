@@ -96,7 +96,7 @@ describe("the Shortcuts page", () => {
     }
   });
   it("says which shortcut doesn't take Ctrl for ⌘", () => {
-    expect(page).toContain("Ctrl works too wherever ⌘ is shown, except ⌘F, which takes ⌘ only.");
+    expect(page).toContain("Ctrl works too wherever ⌘ is shown, except ⌘F, ⌘+, ⌘− and ⌘0, which take ⌘ only.");
   });
   it("has a section per area and the slash commands", () => {
     for (const a of AREAS) expect(page).toContain(`\n## ${a}\n`);

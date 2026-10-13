@@ -1,6 +1,6 @@
 # Shortcuts
 
-Every keyboard shortcut in the app, and the slash commands for Claude Code. This page is made from the app's own table of shortcuts, and a test checks every key the app reacts to against that table, so a shortcut can't exist without being listed here. ⌘ is the Command key. Ctrl works too wherever ⌘ is shown, except ⌘F, which takes ⌘ only. ↩ is Return.
+Every keyboard shortcut in the app, and the slash commands for Claude Code. This page is made from the app's own table of shortcuts, and a test checks every key the app reacts to against that table, so a shortcut can't exist without being listed here. ⌘ is the Command key. Ctrl works too wherever ⌘ is shown, except ⌘F, ⌘+, ⌘− and ⌘0, which take ⌘ only. ↩ is Return.
 
 ## Anywhere
 
@@ -9,6 +9,9 @@ Every keyboard shortcut in the app, and the slash commands for Claude Code. This
 | ⌘N | Open New task in the pane beside the board | Anywhere in the window |
 | Esc | Close the pane: a task, a note, New task or Appearance | Anywhere while the pane is open, except in the search box or a view's name, which take Esc for themselves |
 | ⌘F | Put the caret in the search box, with its words selected so typing replaces them. Ctrl+F is left to text fields, where it moves the caret | Anywhere in the window. From a tab without a search box, it opens the board first |
+| ⌘+ | Make everything larger: the board, the panes and the manual (the size is remembered; also in Appearance → Text size) | Anywhere in the window |
+| ⌘− | Make everything smaller | Anywhere in the window |
+| ⌘0 | Back to 100% | Anywhere in the window |
 | ← → | Widen or narrow the pane by 40 pixels (the width is remembered) | The pane's edge, once Tab has put the focus on it |
 
 ## Search and views
