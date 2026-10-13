@@ -63,7 +63,9 @@ const ON_STATUS = "#1A1730";
 export const NEEDS_COLOUR = STAGE_COLOURS["your-check"];
 // Priority colours, for cards coloured by priority: magenta for high (orange means "needs you" and
 // red means blocked), violet for normal, grey for low.
-export const PRIORITY_COLOURS: Record<string, string> = { high: "#E879C9", normal: "#8B6CF0", low: "#8E8AA6" };
+// Priority has its own colours, never a stage's (owner, 2026-10-13: "a solid color code"):
+// magenta for high, a light slate for normal, grey for low.
+export const PRIORITY_COLOURS: Record<string, string> = { high: "#E879C9", normal: "#B4B9C8", low: "#8E8AA6" };
 
 /** How a card shows its colour (0026). Picked in Appearance; applied as CSS only. */
 export type CardLook = "stripe" | "tint" | "top" | "dot" | "outline";

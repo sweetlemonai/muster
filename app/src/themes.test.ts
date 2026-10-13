@@ -243,3 +243,22 @@ describe("apply() puts the card look on the page (0026)", () => {
     expect(root.dataset).toEqual({ cards: "stripe", cardColour: "stage" });
   });
 });
+
+describe("one colour, one meaning (owner, 2026-10-13)", () => {
+  it("priority's colours never pass for a stage, blocked or needs you", () => {
+    for (const [p, c] of Object.entries(PRIORITY_COLOURS))
+      for (const [s, sc] of Object.entries({ ...STAGE_COLOURS, needs: NEEDS_COLOUR }))
+        if (p === "high") expect(colourDistance(c, sc), `${p} vs ${s}`).toBeGreaterThanOrEqual(SAME_AT_A_GLANCE);
+    // Normal and low are neutral greys, so they never read as a coloured stage either.
+    for (const s of ["ready", "building", "testing", "your-check", "done", "blocked"])
+      for (const p of ["normal", "low"]) expect(colourDistance(PRIORITY_COLOURS[p], STAGE_COLOURS[s]), `${p} vs ${s}`).toBeGreaterThanOrEqual(SAME_AT_A_GLANCE);
+  });
+  it("the CSS gives priority, tags and types their own colours, not a stage's or the accent", () => {
+    const rule = (sel: string) => css.slice(css.indexOf(`${sel} {`), css.indexOf("}", css.indexOf(`${sel} {`)));
+    expect(rule(".pri-high")).toContain("var(--pri-high");
+    expect(rule(".pri-high")).not.toContain("--st-");
+    expect(rule(".chip.on.pchip-high")).not.toContain("--st-");
+    expect(rule(".tag")).not.toMatch(/--accent|--st-/);
+    expect(rule(".kind.bug")).not.toMatch(/--err|--st-/);
+  });
+});

@@ -4,6 +4,15 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — One colour, one meaning: a fixed colour code
+**Fixed:** the owner: "tags for priority and stage the color are mixing together". High priority
+used the "needs you" orange (= Your check), every tag the accent (= Building), a bug's type red
+(= Blocked), and normal priority violet (= Building, in colour-by-priority). Now stage colours
+only say stages; high priority is its own magenta chip, normal a light slate, low grey; tags and
+types are neutral outlined labels. The code is a table in `docs/DESIGN.md`; tests keep priority
+colours away from every stage and check the CSS uses them.
+**Verified:** `pnpm check` green.
+
 ## 2026-10-13 — Search, filter and sort every task (task 0032)
 **Did:** a search box at the start of the filter bar (⌘F, Esc clears): id (`19` finds 0019),
 title, tags, holder and the task's text, accent- and case-insensitive, words in any order, matches

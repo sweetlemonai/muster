@@ -29,6 +29,24 @@ every screen.
 - **Status on the card:** stage, blocked, who holds it, waiting-on and open questions show on the
   card or row itself, not only in the task panel.
 
+## The colour code
+
+One colour, one meaning, everywhere (owner, 2026-10-13: "the color are mixing together, we need
+to have a solid color code"). `themes.ts` holds the values; tests keep them apart.
+
+| Colour | Means | Nothing else uses it for |
+|---|---|---|
+| grey · light cyan · blue | Backlog · Shaping · Ready | tags, types |
+| the accent (violet by default) | Building, and selection or focus | tags |
+| amber | Testing | |
+| orange | Your check and "needs you" (the same thing: waiting on the owner) | priority |
+| green | Done | |
+| red | Blocked, and errors | a task's type (a bug is the word "bug") |
+| magenta | High priority (a filled chip); normal is an outlined grey chip, low faint text | stages |
+| neutral grey, outlined | tags and types: labels, not states | |
+
+A stage colour only ever says a stage. Words carry everything else.
+
 ## Out of the way
 
 Visible doesn't mean loud. Controls are always there but never between the owner and the work:

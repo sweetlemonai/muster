@@ -135,9 +135,9 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .title { font-weight: 550; line-height: 1.3; }
 .id { font-variant-numeric: tabular-nums; }
 .q { font-size: 11px; color: var(--accent-text); }
-.kind.bug { color: var(--err); }
+.kind.bug { color: var(--text); font-weight: 600; } /* a type is a word, not a colour: red means blocked */
 .pri { margin-left: auto; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; border-radius: 4px; padding: 0 5px; }
-.pri-high { background: var(--st-needs); color: var(--on-status); font-weight: 700; }
+.pri-high { background: var(--pri-high, #E879C9); color: var(--on-status); font-weight: 700; } /* priority's own colour, never a stage's */
 .pri-normal { color: var(--muted); border: 1px solid var(--border); }
 .pri-low { color: var(--faint); }
 .badge { background: var(--tint); border-radius: 4px; padding: 0 5px; }
@@ -302,7 +302,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 .filters { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 8px 14px 0; font-size: 12px; }
 .filters .sep { margin-left: 10px; }
 .filters .right { margin-left: auto; }
-.chip.on.pchip-high { background: var(--st-needs); color: var(--on-status); border-color: var(--st-needs); }
+.chip.on.pchip-high { background: var(--pri-high, #E879C9); color: var(--on-status); border-color: var(--pri-high, #E879C9); }
 
 /* Search, filter groups, the active line (task 0032): quiet until used, nothing folds away. */
 .filter-bar { flex: none; }
@@ -326,7 +326,7 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 
 /* Tags. */
 .tags { display: flex; flex-wrap: wrap; gap: 4px; }
-.tag { font-size: 11px; color: var(--accent-text); background: var(--accent-soft); border-radius: 4px; padding: 0 5px; }
+.tag { font-size: 11px; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; } /* labels are neutral: no stage or accent colour */
 .tag-editor { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .tag-editor .chip { font-size: 12px; padding: 1px 8px; }
 .tag-editor input { width: 90px; padding: 2px 6px; font-size: 12px; }
