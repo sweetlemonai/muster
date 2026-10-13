@@ -7,17 +7,26 @@
 > that task), `--on outside "Apple review"`. `--on owner …` and `--on capture …` still work, as you
 > and question. Refused: an unknown kind, no detail, a question that isn't open. The kind is
 > written as `blocked-kind:` next to `waiting_on:`, which holds the detail; only muster writes
-> either. **Tasks is never a flag:** the ids go into `depends:` (0019), so there's one record of
-> what waits on what, and the task shows "Blocked by tasks: 0014 (Building, codex), 0016 (Ready)"
-> until they're all Done, then clears by itself (logged `unblocked: 0014, 0016 done`). A block on a
-> question clears when it's answered (`unblocked: Q2 answered`). You, permission and outside stay
-> until `muster unblock`. Blocked on you or by a permission counts as waiting for the owner. The
-> card, table, timeline, task pane, `muster list` and INDEX.md say it in words, the kind first. A
-> file blocked before kinds has no `blocked-kind:`: its kind is read from `waiting_on` (owner → you,
-> capture → question, a task id → tasks, anything else → outside), and `muster check` and
-> `manifest.py --check` warn about it until it's blocked again with one (a block on its task ids
-> moves them into `depends:` and clears the old flag). Decision 0003 keeps the kind in the live
-> state with the flag; that store comes with task 0005, and until then the kind is in the file.
+> either. `blocked-kind:` is the truth. For readers from before kinds (Drover's waiting list reads
+> "owner …" as needing the owner), `waiting_on` keeps the old words in front for you and question:
+> `owner: set the API key`, `capture: Q2`; the detail is what follows them. **Tasks is never a
+> flag:** the ids go into `depends:` (0019), so there's one record of what waits on what, and the
+> task shows "Blocked by tasks: 0014 (Building, codex), 0016 (Ready)" until they're all Done, then
+> clears by itself (logged `unblocked: 0014, 0016 done`; emptying its depends logs `unblocked: no
+> open depends left`). When it frees itself in Building, the holder's lease starts again; if the
+> holder already holds another task in Building, the freed one goes back to Ready with its claim
+> released (`stage building → ready (released: wt-a already holds 0007)`). A block on a question
+> clears when it's answered through muster (`muster answer`, the app): `unblocked: Q2 answered`.
+> Answers written by other tools under the file contract (Drover's) don't clear it yet; `muster
+> unblock` does. You, permission and outside stay until `muster unblock`. Blocked on you or by a
+> permission counts as waiting for the owner. The card, table, timeline, task pane, `muster list`
+> and INDEX.md say it in words, the kind first. A file blocked before kinds has no `blocked-kind:`:
+> its kind is read from `waiting_on` (owner → you, capture → question, a task id → tasks, anything
+> else → outside), and `muster check` and `manifest.py --check` warn about it until it's blocked
+> again with one. Blocking an old block on task ids again moves the ones still open into
+> `depends:` and clears the old flag; ids that are done or gone are dropped (with none left, check
+> says to `muster unblock` it). Decision 0003 keeps the kind in the live state with the flag; that
+> store comes with task 0005, and until then the kind is in the file.
 >
 > **INDEX.md, the master list (Muster 0018, 2026-10-13).** `INDEX.md` in the queue folder lists
 > every task with a link to its file: goals with their features and tasks, then the tasks under
@@ -201,7 +210,7 @@ status: todo | doing | blocked | done
 captured: 2026-10-11
 claimed-by:            # branch/worktree + session id, set when claimed
 heartbeat:             # date-time of the owner's last log line; set on every log line
-waiting_on:            # what it waits on, when blocked (muster writes it)
+waiting_on:            # what it waits on, when blocked (muster writes it; "owner: …" or "capture: …" for you and question)
 blocked-kind:          # you | permission | question | outside (0024; task ids go in depends:)
 commit:                # set when done
 ---

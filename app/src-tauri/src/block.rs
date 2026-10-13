@@ -84,6 +84,18 @@ pub fn guessed_detail(waiting_on: &str, kind: &str) -> String {
     after_word(w, word).unwrap_or(w).to_string()
 }
 
+/// What `waiting_on` holds for a typed block: the detail, after the old words readers from before
+/// kinds look for (Drover's waiting list reads "owner …" as needing the owner): `owner: <detail>`
+/// for you, `capture: <detail>` for a question, the detail alone for the rest. `guessed_detail`
+/// reads it back.
+pub fn stored_waiting_on(kind: &str, detail: &str) -> String {
+    match kind {
+        "you" => format!("owner: {detail}"),
+        "question" => format!("capture: {detail}"),
+        _ => detail.to_string(),
+    }
+}
+
 /// The kind a log line's `blocked on …` names: the kind it starts with, as muster writes it since
 /// 0024 (`blocked on you: …`), else what `guess` reads from it.
 pub fn line_kind(text: &str) -> &'static str {
@@ -207,11 +219,24 @@ pub fn sentence_of(t: &Task, short: bool) -> String {
 pub fn derive(tasks: &mut [Task]) {
     let mut info: HashMap<String, (String, String)> = HashMap::new();
     let mut open: HashMap<String, bool> = HashMap::new();
+    let mut latest: HashMap<String, String> = HashMap::new();
     for t in tasks.iter() {
         let holder = crate::session::split(t.holder()).0.to_string();
         info.entry(t.id.clone())
             .or_insert_with(|| (t.stage.clone(), holder));
         *open.entry(t.id.clone()).or_default() |= t.stage != "done";
+        // The latest stamp its log shows, for a span that ends without a line (below).
+        let last = t
+            .log_tail
+            .iter()
+            .filter_map(|l| crate::queue::log_stamp(&format!("- {l}")).map(|(at, _)| at))
+            .max();
+        if let Some(at) = last {
+            let e = latest.entry(t.id.clone()).or_insert_with(|| at.clone());
+            if at > *e {
+                *e = at;
+            }
+        }
     }
     for t in tasks.iter_mut() {
         let mut ids: Vec<String> = Vec::new();
@@ -235,6 +260,25 @@ pub fn derive(tasks: &mut [Task]) {
             .collect();
         if !t.blocked && !t.blocked_by.is_empty() {
             t.blocked_kind = "tasks".into();
+        }
+        // A block on tasks that cleared without a line in this log (its depends done outside
+        // muster): its span ends at the latest change its depends show, not never.
+        if t.blocked_kind.is_empty() {
+            if let Some(span) = t
+                .block_history
+                .last_mut()
+                .filter(|s| s.to.is_empty() && s.kind == "tasks")
+            {
+                let to = t
+                    .depends
+                    .iter()
+                    .filter_map(|d| latest.get(d))
+                    .max()
+                    .filter(|at| **at >= span.from)
+                    .cloned()
+                    .unwrap_or_else(|| span.from.clone());
+                span.to = to;
+            }
         }
     }
 }
@@ -396,7 +440,7 @@ mod tests {
     // ---- Blocking through muster's rules (ops), on a throwaway queue ----------------------------
 
     use crate::ops::{
-        block_as, block_task, claim_task, pass_task, reclaim, reclaim_task, set_stage,
+        block_as, block_task, claim_task, pass_task, reclaim, reclaim_task, set_field, set_stage,
         unblock_task, PassOpts,
     };
     use crate::queue::{is_warning, read_state_at, Cache, State, STATUS_FOLDERS};
@@ -483,7 +527,7 @@ mod tests {
         assert!(
             s.problems
                 .iter()
-                .any(|w| w.contains("(muster block 0004 --on 0001,0099)")),
+                .any(|w| w.contains("(muster block 0004 --on 0001)")),
             "{:?}",
             s.problems
         );
@@ -511,15 +555,19 @@ mod tests {
         let d = queue();
         let p = d.path();
         put(p, "todo", "0001", READY, QUESTIONS);
-        for (kind, detail, words, needs_you) in [
+        // `waiting_on` keeps the old words Drover reads (owner …, capture …) for you and question;
+        // `blocked-kind:` is the truth, and the detail is read back without them.
+        for (kind, detail, stored, words, needs_you) in [
             (
                 "you",
                 "set the API key in the Keychain",
+                "owner: set the API key in the Keychain",
                 "Blocked on you: set the API key in the Keychain",
                 true,
             ),
             (
                 "permission",
+                "write to ~/x/tasks (sandbox), grant in the layer's write list",
                 "write to ~/x/tasks (sandbox), grant in the layer's write list",
                 "Blocked by permission: write to ~/x/tasks (sandbox), grant in the layer's write list",
                 true,
@@ -527,11 +575,13 @@ mod tests {
             (
                 "question",
                 "q1",
+                "capture: Q1",
                 "Blocked by a question: Q1, waiting on capture",
                 false,
             ),
             (
                 "outside",
+                "Apple review ✓",
                 "Apple review ✓",
                 "Blocked by outside: Apple review ✓",
                 false,
@@ -540,18 +590,63 @@ mod tests {
             block_as(p, "0001", kind, detail, "wt-a", T).unwrap();
             let t = task(p, "0001");
             assert_eq!(t.blocked_kind, kind);
+            assert_eq!(t.waiting_on, stored);
             assert_eq!(sentence_of(&t, false), words);
             assert_eq!(t.waiting_for_owner, needs_you, "{kind}");
             assert!(!t.kind_guessed);
             let file = fs::read_to_string(p.join("blocked/0001-t.md")).unwrap();
-            let pair = format!("\nwaiting_on: {}\nblocked-kind: {kind}\n", t.waiting_on);
+            let pair = format!("\nwaiting_on: {stored}\nblocked-kind: {kind}\n");
             assert!(file.contains(&pair), "{file}");
-            let line = format!("wt-a: blocked on {kind}: {}", t.waiting_on);
+            let line = format!("wt-a: blocked on {kind}: {}", t.block_detail);
             assert!(last_log(p, "0001").ends_with(&line), "{line}");
+            // The same block again is refused, as stored.
+            assert!(block_as(p, "0001", kind, detail, "wt-a", T)
+                .unwrap_err()
+                .contains("already blocked"));
         }
+        unblock_task(p, "0001", "owner", T).unwrap();
+        assert!(last_log(p, "0001")
+            .ends_with("owner: unblocked (was waiting on outside: Apple review ✓)"));
+        block_as(p, "0001", "you", "pick", "wt-a", T).unwrap();
+        unblock_task(p, "0001", "owner", T).unwrap();
+        assert!(last_log(p, "0001").ends_with("owner: unblocked (was waiting on you: pick)"));
         assert!(state(p).problems.is_empty(), "{:?}", state(p).problems);
         // The timeline's span carries the kind of the block that opened it.
         assert_eq!(task(p, "0001").block_history[0].kind, "you");
+    }
+
+    #[test]
+    fn typed_blocks_read_with_or_without_the_old_words() {
+        let d = queue();
+        let p = d.path();
+        for (id, waiting_on, kind, detail) in [
+            ("0001", "owner: pick a colour", "you", "pick a colour"),
+            ("0002", "pick a colour", "you", "pick a colour"),
+            ("0003", "capture: Q2", "question", "Q2"),
+            ("0004", "Q2", "question", "Q2"),
+            (
+                "0005",
+                "owner: of the repo",
+                "outside",
+                "owner: of the repo",
+            ),
+        ] {
+            let fm = format!(
+                "stage: ready\nstatus: blocked\nclaimed-by:\nwaiting_on: {waiting_on}\nblocked-kind: {kind}"
+            );
+            put(p, "blocked", id, &fm, "");
+            let t = task(p, id);
+            assert_eq!(
+                (
+                    t.blocked_kind.as_str(),
+                    t.block_detail.as_str(),
+                    t.kind_guessed
+                ),
+                (kind, detail, false),
+                "{id}"
+            );
+        }
+        assert!(state(p).problems.is_empty(), "{:?}", state(p).problems);
     }
 
     #[test]
@@ -799,5 +894,196 @@ mod tests {
         // Back out of Done: blocked by it again, derived, with nothing written.
         set_stage(p, "0002", "testing", None, "owner", T).unwrap();
         assert_eq!(task(p, "0003").blocked_kind, "tasks");
+    }
+
+    #[test]
+    fn a_freed_task_whose_holder_holds_another_goes_back_to_ready() {
+        let d = queue();
+        let p = d.path();
+        for id in ["0001", "0002", "0003"] {
+            put(p, "todo", id, READY, "");
+        }
+        claim_task(p, "0001", "wt-a", T).unwrap();
+        block_task(p, "0001", "0003", "wt-a", T).unwrap();
+        claim_task(p, "0002", "wt-a", T).unwrap();
+        set_stage(p, "0003", "done", None, "owner", "2026-10-13 10:00").unwrap();
+        let t = task(p, "0001");
+        assert_eq!(
+            (
+                t.stage.as_str(),
+                t.claimed_by.as_str(),
+                t.blocked_kind.as_str()
+            ),
+            ("ready", "", "")
+        );
+        let n = t.log_tail.len();
+        assert!(
+            t.log_tail[n - 2].ends_with("owner: unblocked: 0003 done"),
+            "{:?}",
+            t.log_tail
+        );
+        assert!(
+            t.log_tail[n - 1]
+                .ends_with("owner: stage building → ready (released: wt-a already holds 0002)"),
+            "{:?}",
+            t.log_tail
+        );
+        assert_eq!(t.stage_history.last().unwrap().to, "ready");
+        assert_eq!(task(p, "0002").claimed_by, "wt-a");
+        assert!(state(p).problems.is_empty(), "{:?}", state(p).problems);
+        // The owner may hold several: nothing is released.
+        for id in ["0004", "0005", "0006"] {
+            put(p, "todo", id, READY, "");
+        }
+        claim_task(p, "0004", "owner", T).unwrap();
+        block_task(p, "0004", "0006", "owner", T).unwrap();
+        claim_task(p, "0005", "owner", T).unwrap();
+        set_stage(p, "0006", "done", None, "owner", T).unwrap();
+        assert_eq!(task(p, "0004").stage, "building");
+    }
+
+    #[test]
+    fn a_freed_claim_starts_its_lease_again() {
+        let d = queue();
+        let p = d.path();
+        for id in ["0001", "0002"] {
+            put(p, "todo", id, READY, "");
+        }
+        claim_task(p, "0001", "wt-a", T).unwrap();
+        block_task(p, "0001", "0002", "wt-a", T).unwrap();
+        // Done 25 h later: the time spent waiting isn't time gone quiet.
+        let later = "2026-10-14 10:00";
+        set_stage(p, "0002", "done", None, "owner", later).unwrap();
+        let t = task(p, "0001");
+        assert_eq!(
+            (t.stage.as_str(), t.heartbeat.as_str()),
+            ("building", later)
+        );
+        let r = reclaim(p, 720, "capture", later, crate::queue::now_secs()).unwrap();
+        assert!(r.released.is_empty(), "{r:?}");
+        let s = read_state_at(
+            &[("p".into(), p.to_path_buf())],
+            &mut Cache::default(),
+            later,
+        );
+        assert!(s.problems.is_empty(), "{:?}", s.problems);
+    }
+
+    #[test]
+    fn a_block_on_tasks_cleared_another_way_closes_its_span() {
+        let d = queue();
+        let p = d.path();
+        for id in ["0001", "0002", "0003"] {
+            put(p, "todo", id, READY, "");
+        }
+        block_task(p, "0002", "0001", "wt-a", T).unwrap();
+        block_task(p, "0003", "0001", "wt-a", T).unwrap();
+        // Its depends emptied: logged, so the span ends there.
+        set_field(p, "0002", "depends", "", "owner", "2026-10-13 10:00").unwrap();
+        let t = task(p, "0002");
+        assert!(t
+            .log_tail
+            .last()
+            .unwrap()
+            .ends_with("owner: unblocked: no open depends left"));
+        let span = t.block_history.last().unwrap();
+        assert_eq!(
+            (span.to.as_str(), span.kind.as_str()),
+            ("2026-10-13 10:00", "tasks")
+        );
+        // A depends that still waits on something logs nothing.
+        block_task(p, "0002", "0001", "wt-a", T).unwrap();
+        set_field(p, "0002", "depends", "0001,0003", "owner", T).unwrap();
+        assert!(task(p, "0002")
+            .log_tail
+            .last()
+            .unwrap()
+            .ends_with("depends set to [0001, 0003]"));
+        // 0001 done by hand, outside muster: 0003's span closes at the last change it shows.
+        let f = p.join("todo/0001-t.md");
+        let text = fs::read_to_string(&f)
+            .unwrap()
+            .replace("stage: ready\nstatus: todo", "stage: done\nstatus: done")
+            + "- 2026-10-13 12:00 owner: done by hand\n";
+        fs::remove_file(&f).unwrap();
+        fs::write(p.join("done/0001-t.md"), text).unwrap();
+        let t = task(p, "0003");
+        assert_eq!(t.blocked_kind, "");
+        let span = t.block_history.last().unwrap();
+        assert_eq!(
+            (span.from.as_str(), span.to.as_str()),
+            (T, "2026-10-13 12:00")
+        );
+    }
+
+    #[test]
+    fn an_old_block_on_tasks_that_are_done_or_gone_clears_when_blocked_again() {
+        let d = queue();
+        let p = d.path();
+        put(p, "todo", "0001", READY, "");
+        put(
+            p,
+            "done",
+            "0002",
+            "stage: done\nstatus: done\nclaimed-by:\nwaiting_on:",
+            "",
+        );
+        let old =
+            |on: &str| format!("stage: ready\nstatus: blocked\nclaimed-by:\nwaiting_on: {on}");
+        put(p, "blocked", "0005", &old("0002"), "");
+        put(p, "blocked", "0006", &old("0001, 0002, 0099"), "");
+        let s = state(p);
+        let warned = |id: &str| {
+            s.problems
+                .iter()
+                .find(|w| w.contains(&format!("{id}-t.md")))
+                .cloned()
+                .unwrap()
+        };
+        assert!(
+            warned("0005").ends_with("none of them is open now: muster unblock 0005"),
+            "{}",
+            warned("0005")
+        );
+        assert!(
+            warned("0006").ends_with("(muster block 0006 --on 0001)"),
+            "{}",
+            warned("0006")
+        );
+        // Blocked again on its ids: the done and missing ones are dropped, the flag clears.
+        block_task(p, "0005", "0002", "capture", T).unwrap();
+        let t = task(p, "0005");
+        assert_eq!(
+            (
+                t.blocked,
+                t.blocked_kind.as_str(),
+                t.depends.len(),
+                t.status.as_str()
+            ),
+            (false, "", 0, "todo")
+        );
+        assert!(
+            t.log_tail
+                .last()
+                .unwrap()
+                .ends_with("capture: unblocked (was waiting on 0002)"),
+            "{:?}",
+            t.log_tail
+        );
+        block_task(p, "0006", "0001, 0002, 0099", "capture", T).unwrap();
+        let t = task(p, "0006");
+        assert_eq!(
+            (t.blocked, t.blocked_kind.as_str(), t.depends.clone()),
+            (false, "tasks", vec!["0001".to_string()])
+        );
+        assert!(
+            t.log_tail
+                .last()
+                .unwrap()
+                .ends_with("capture: blocked on tasks: 0001"),
+            "{:?}",
+            t.log_tail
+        );
+        assert!(state(p).problems.is_empty(), "{:?}", state(p).problems);
     }
 }

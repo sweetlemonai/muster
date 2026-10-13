@@ -290,7 +290,7 @@ class RoutesRunOnARealQueue(unittest.TestCase):
         self.assertIn("**A (owner, ", self.task(self.a))
         # The kind, then what it waits on (0024); the old "owner …" is a block on you.
         self.route("block", "owner: " + TEXT)
-        self.assertIn(f"waiting_on: {TEXT}\nblocked-kind: you\n", self.task(self.a))
+        self.assertIn(f"waiting_on: owner: {TEXT}\nblocked-kind: you\n", self.task(self.a))
         self.route("unblock")
         self.route("block", "permission " + TEXT)
         self.assertIn(f"waiting_on: {TEXT}\nblocked-kind: permission\n", self.task(self.a))

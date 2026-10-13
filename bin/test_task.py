@@ -526,6 +526,9 @@ class TaskTests(unittest.TestCase):
         put("todo", "0054", "status: todo\nstage: ready\ndepends: [0050]")
         put("todo", "0055", "status: todo\nstage: ready\ndepends: [0056]")
         put("done", "0056", "status: done\nstage: done")
+        # As muster writes a block on you or a question since: the old words first, for Drover.
+        put("blocked", "0057", "status: blocked\nstage: ready\nwaiting_on: owner: pick\nblocked-kind: you")
+        put("blocked", "0058", "status: blocked\nstage: ready\nwaiting_on: capture: Q1\nblocked-kind: question")
         r = self.manifest("--check")
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertIn(
@@ -538,11 +541,11 @@ class TaskTests(unittest.TestCase):
         manifest = json.loads(self.text("tasks.json"))
         kinds = {t["id"]: t["blocked_kind"] for t in manifest["tasks"]}
         self.assertEqual(
-            {k: kinds[k] for k in ("0042", "0050", "0051", "0052", "0053", "0054", "0055", "0056")},
+            {k: kinds[k] for k in ("0042", "0050", "0051", "0052", "0053", "0054", "0055", "0056", "0057", "0058")},
             {"0042": "", "0050": "permission", "0051": "question", "0052": "you", "0053": "outside",
-             "0054": "tasks", "0055": "", "0056": ""})
+             "0054": "tasks", "0055": "", "0056": "", "0057": "you", "0058": "question"})
         # Blocked on you or by a permission waits on the owner; a question, outside or tasks don't.
-        self.assertEqual(sorted(manifest["waiting_for_owner"]), ["0050", "0052"])
+        self.assertEqual(sorted(manifest["waiting_for_owner"]), ["0050", "0052", "0057"])
 
     def test_manifest_carries_the_holder_of_testing_and_your_check(self):
         # muster writes held-by: for Testing and Your check (0030), beside Building's claimed-by.

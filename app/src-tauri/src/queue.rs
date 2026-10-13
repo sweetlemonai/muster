@@ -208,7 +208,7 @@ pub struct BlockSpan {
 
 /// The stamp a log line starts with (`- YYYY-MM-DD HH:MM …` or `- YYYY-MM-DD …`), to the minute,
 /// and the rest of the line.
-fn log_stamp(line: &str) -> Option<(String, &str)> {
+pub(crate) fn log_stamp(line: &str) -> Option<(String, &str)> {
     let rest = line.strip_prefix("- ")?;
     let date = rest.get(..10)?;
     let b = date.as_bytes();
@@ -844,7 +844,10 @@ pub fn parse_task(
     let (blocked_kind, block_detail, kind_guessed) = if !blocked {
         (String::new(), String::new(), false)
     } else if crate::block::TYPED.contains(&typed.as_str()) {
-        (typed, waiting_on.clone(), false)
+        // A block on you or a question keeps the old words in `waiting_on` (owner …, capture …)
+        // for readers from before kinds (Drover); the detail is what follows them.
+        let detail = crate::block::guessed_detail(&waiting_on, &typed);
+        (typed, detail, false)
     } else {
         let kind = crate::block::guess(&waiting_on);
         let detail = crate::block::guessed_detail(&waiting_on, kind);
@@ -1251,17 +1254,27 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str) -> Vec<Strin
             ));
         }
         if t.kind_guessed {
-            let how = if t.blocked_kind == "tasks" {
-                crate::block::ids_in(&t.waiting_on).join(",")
-            } else {
-                format!("{} \"…\"", t.blocked_kind)
+            // For an old block on task ids, only those still open: done or missing ones don't
+            // hold it, and with none left it only needs unblocking.
+            let open: Vec<String> = crate::block::ids_in(&t.waiting_on)
+                .into_iter()
+                .filter(|d| tasks.iter().any(|o| o.id == *d && o.stage != "done"))
+                .collect();
+            let what = t.waiting_on.chars().take(80).collect::<String>();
+            let (kind, id) = (&t.blocked_kind, &t.id);
+            let how = match (kind.as_str(), open.is_empty()) {
+                ("tasks", true) => format!("none of them is open now: muster unblock {id}"),
+                ("tasks", false) => format!(
+                    "block it again with one to confirm (muster block {id} --on {})",
+                    open.join(",")
+                ),
+                _ => format!(
+                    "block it again with one to confirm (muster block {id} --on {kind} \"…\")"
+                ),
             };
             out.push(format!(
-                "{queue}: {WARNING}{} is blocked on {:?} without a kind, read as {}; block it again with one to confirm (muster block {} --on {how})",
-                t.path,
-                t.waiting_on.chars().take(80).collect::<String>(),
-                t.blocked_kind,
-                t.id
+                "{queue}: {WARNING}{} is blocked on {what:?} without a kind, read as {kind}; {how}",
+                t.path
             ));
         }
         for p in t.links.iter().filter_map(crate::fields::link_problem) {
