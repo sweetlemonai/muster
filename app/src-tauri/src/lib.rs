@@ -2,6 +2,7 @@
 //! in `spawn_blocking`. The window names a queue by its project name, and a project by the key
 //! the core gave it, never by a path it made up. Folders are picked by the core's own dialog.
 
+pub mod agents;
 pub mod backlog;
 pub mod block;
 pub mod choices;
@@ -44,6 +45,8 @@ pub(crate) struct AppState {
     settings_file: PathBuf,
     /// Session transcripts under the home folder (0025), read and cached off the main thread.
     transcripts: Arc<transcripts::Reader>,
+    /// Claude Code's session states (0048), read off the main thread at most every 15 s.
+    agents: Arc<agents::Monitor>,
 }
 
 fn base() -> PathBuf {
@@ -101,6 +104,7 @@ async fn state(app: tauri::State<'_, AppState>) -> Result<queue::State, String> 
     // The cache is small and the read is quick on a warm cache; take it inside the blocking task.
     let cache = std::mem::take(&mut *app.cache.lock().map_err(|e| e.to_string())?);
     let reader = app.transcripts.clone();
+    let monitor = app.agents.clone();
     let (state, cache) = blocking(move || {
         let mut cache = cache;
         // Read every poll, so a change in Settings (or by hand) applies at the next one.
@@ -118,6 +122,9 @@ async fn state(app: tauri::State<'_, AppState>) -> Result<queue::State, String> 
         // The cards' live dot: file times only, about a millisecond for 50 sessions.
         reader.set_live_secs(settings.live_secs());
         work::mark_live(&mut s.tasks, &reader, s.now);
+        // Claude Code's word on each holder's session (0048): the latest read, never waited on.
+        let sessions = monitor.poll(&s.tasks, s.now);
+        agents::apply(&mut s.tasks, &sessions);
         Ok((s, cache))
     })
     .await?;
@@ -959,12 +966,16 @@ pub(crate) struct SettingsInfo {
     base: String,
     /// The session transcripts' folders (0025).
     transcripts: Vec<String>,
+    /// Whether Claude Code's session states are read (0048): "on (2 accounts)", or "not
+    /// available: <why>" (`agents::Monitor::summary`).
+    session_states: String,
 }
 
 fn info_for(
     settings_file: &std::path::Path,
     version: &str,
     reader: &transcripts::Reader,
+    session_states: String,
 ) -> SettingsInfo {
     let shown = |p: &std::path::Path| p.to_string_lossy().to_string();
     SettingsInfo {
@@ -976,6 +987,7 @@ fn info_for(
         config_dir: settings_file.parent().map(shown).unwrap_or_default(),
         base: shown(&base()),
         transcripts: reader.folders().iter().map(|p| shown(p)).collect(),
+        session_states,
     }
 }
 
@@ -984,7 +996,12 @@ async fn settings_info(handle: tauri::AppHandle) -> Result<SettingsInfo, String>
     let version = handle.package_info().version.to_string();
     blocking(move || {
         let app = handle.state::<AppState>();
-        Ok(info_for(&app.settings_file, &version, &app.transcripts))
+        Ok(info_for(
+            &app.settings_file,
+            &version,
+            &app.transcripts,
+            app.agents.summary(),
+        ))
     })
     .await
 }
@@ -1004,7 +1021,12 @@ async fn set_setting(
             let _guard = app.config.lock().map_err(|e| e.to_string())?;
             settings::set(&app.settings_file, &name, &value)?;
         }
-        Ok(info_for(&app.settings_file, &version, &app.transcripts))
+        Ok(info_for(
+            &app.settings_file,
+            &version,
+            &app.transcripts,
+            app.agents.summary(),
+        ))
     })
     .await
 }
@@ -1165,6 +1187,7 @@ pub fn run() {
                 helpers: Mutex::new(HashMap::new()),
                 config: Mutex::new(()),
                 transcripts: Arc::new(transcripts::Reader::new(home())),
+                agents: agents::Monitor::app(home()),
                 config_file: dir.join("projects.json"),
                 settings_file: dir.join(settings::FILE),
             });
@@ -1505,7 +1528,7 @@ mod tests {
             .join("Library/Application Support/ai.sweetlemon.muster");
         let file = dir.join(settings::FILE);
         let reader = transcripts::Reader::new(home.path());
-        let info = info_for(&file, "0.1.0", &reader);
+        let info = info_for(&file, "0.1.0", &reader, "on (1 account)".into());
         // Nothing saved yet: the defaults.
         assert_eq!(info.settings, settings::Settings::default());
         assert_eq!(
@@ -1521,7 +1544,9 @@ mod tests {
             info.transcripts
         );
         settings::set(&file, "live", "15m").unwrap();
-        let json = serde_json::to_string(&info_for(&file, "0.1.0", &reader)).unwrap();
+        let json =
+            serde_json::to_string(&info_for(&file, "0.1.0", &reader, "on (1 account)".into()))
+                .unwrap();
         assert!(
             json.contains(r#""settings":{"leaseMinutes":720,"liveMinutes":15}"#),
             "{json}"
@@ -1533,6 +1558,11 @@ mod tests {
         // The home folder, so the window can show paths under it as `~/…`.
         assert_eq!(info.home, super::home().to_string_lossy());
         assert!(json.contains(r#""home":"#), "{json}");
+        // Whether Claude Code's session states are read (0048), as the monitor says.
+        assert!(
+            json.contains(r#""sessionStates":"on (1 account)""#),
+            "{json}"
+        );
     }
 
     #[test]

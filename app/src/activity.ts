@@ -7,7 +7,7 @@ import type { Activity, Task } from "./types";
 // of the polled state and its clock (`now`, seconds since 1970), so the sidebar recomputes them
 // every poll without reading anything else.
 
-export type ActivityTask = Pick<Task, "stage" | "blocked" | "blockedKind" | "claimedBy" | "heldBy" | "live" | "heartbeat" | "checkins" | "stageHistory" | "stageSince" | "modified" | "paused">;
+export type ActivityTask = Pick<Task, "stage" | "blocked" | "blockedKind" | "claimedBy" | "heldBy" | "live" | "heartbeat" | "checkins" | "stageHistory" | "stageSince" | "modified" | "paused" | "sessionState">;
 
 /** A project now: how many of its tasks are being worked on, whether its work in Building has
  *  gone quiet, and minutes since anything happened in it (null when nothing says). */
@@ -40,7 +40,7 @@ function sinceBeat(t: ActivityTask, wall: number | null): number | null {
 }
 
 function lastAt(t: ActivityTask, now: number, wall: number | null): number | null {
-  if (t.live) return 0;
+  if (t.live || t.sessionState === "working") return 0;
   return newest([
     sinceBeat(t, wall),
     sinceStamp(t.stageSince, wall),
@@ -57,6 +57,10 @@ export function lastMinutes(t: ActivityTask, now: number): number | null {
 
 function workingAt(t: ActivityTask, wall: number | null): boolean {
   if (t.stage === "done") return false;
+  // Claude Code's word wins where it has one (0048): working is working; a session waiting for
+  // input or ended isn't, whatever its transcript or heartbeat says.
+  if (t.sessionState === "working") return true;
+  if (t.sessionState === "needs-input" || t.sessionState === "ended") return false;
   if (t.live) return true;
   // A heartbeat or check-in counts only while someone holds the task and it isn't waiting: in
   // Building with a claim, or in Testing with a holder. A task handed back to Ready, blocked (by
@@ -68,8 +72,9 @@ function workingAt(t: ActivityTask, wall: number | null): boolean {
   return m !== null && m <= CHECKIN_MINUTES;
 }
 
-/** A task someone is on right now: a live session (0025), or a check-in or heartbeat in the last
- *  30 minutes, the interval sessions check in at (0030). Never in Done (the core's live rule), and
+/** A task someone is on right now: Claude Code says its session is working (0048), a live
+ *  session (0025), or a check-in or heartbeat in the last 30 minutes, the interval sessions check
+ *  in at (0030); not while Claude Code says it waits for input or has ended. Never in Done (the core's live rule), and
  *  in Your check only while a session is still live. */
 export function isWorking(t: ActivityTask, now: number): boolean {
   return workingAt(t, wallMinutes(now));

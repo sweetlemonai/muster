@@ -1,3 +1,5 @@
+import type { SessionState } from "./sessionState";
+
 /** One of the criteria only the owner verifies ("— verify: owner"), from the core (0028). */
 export type Criterion = { n: number; label: string; text: string; ticked: boolean; owner: boolean };
 
@@ -148,6 +150,9 @@ export type Task = {
   search?: string;
   /** One of the task's sessions changed its transcript in the last 5 minutes (0025). */
   live: boolean;
+  /** What Claude Code says its holder's session is doing (0048, sessionState.ts); unknown when
+   *  absent. "needs-input" also sets `waitingForOwner`. */
+  sessionState?: SessionState;
   /** Where in the repo it works (`touches:`, 0023): folders and globs. */
   touches?: string[];
   /** A task `muster start` began (0023): its git worktree and branch, until the merge clears them. */

@@ -77,7 +77,7 @@ muster list [--search "<words>"] [--stage <s,…>] [--type <t,…>] [--tag <t,�
 | `--blocked` | only blocked tasks, those waiting only on the tasks they depend on too |
 | `--sort` | priority (needs you, then high to low; Done last, newest finished first), newest, oldest, changed, estimate or id (the default) |
 | `--status` | the old status: inbox, todo, doing, blocked or done |
-| `--json` | machine-readable: {"tasks": \[…\], "backlog": \[…\]}, for scripts and agents |
+| `--json` | machine-readable: {"tasks": \[…\], "backlog": \[…\]}, for scripts and agents. Each task's sessionState (working, needs-input, ended or unknown) is what Claude Code says its holder's session is doing, read from claude agents --json for this listing only; unknown when it can't be read or the session holds other open tasks too |
 
 Examples:
 

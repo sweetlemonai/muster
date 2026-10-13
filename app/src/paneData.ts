@@ -15,7 +15,7 @@ export const isLive = (t: Pick<Task, "modified">, now: number, liveSecs = LIVE_S
 /** What waits on the owner, in words, in a fixed order: Your check, escalated questions, a block
  *  on the owner or by a permission (0024: a person acts on both). The same things the core counts
  *  as waiting for the owner. */
-export function waitingOnYou(t: Pick<Task, "stage" | "ownerCriteria" | "questions" | "blockedKind">): string[] {
+export function waitingOnYou(t: Pick<Task, "stage" | "ownerCriteria" | "questions" | "blockedKind" | "sessionState">): string[] {
   const out: string[] = [];
   if (t.stage === "your-check") {
     const open = ownerOpen(t);
@@ -25,6 +25,8 @@ export function waitingOnYou(t: Pick<Task, "stage" | "ownerCriteria" | "question
   if (asked > 0) out.push(`${asked} question${asked === 1 ? "" : "s"} for you`);
   if (t.blockedKind === "you") out.push("blocked on you");
   if (t.blockedKind === "permission") out.push("blocked by permission");
+  // Its session waits on a prompt in Claude Code (0048): the core counts it as needing the owner.
+  if (t.sessionState === "needs-input") out.push("input in Claude Code");
   return out;
 }
 

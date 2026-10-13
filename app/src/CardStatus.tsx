@@ -4,6 +4,7 @@ import { builtTested, checkinLine, currentCheckin, holderOf, leaseRunOut, needsT
 import { askedText } from "./reach";
 import { finishText } from "./recentData";
 import { useLook, type CardLines } from "./modes";
+import { sessionWords } from "./sessionState";
 import { Machine, spanText } from "./settingsData";
 import type { Task } from "./types";
 import { VisionBadge } from "./Vision";
@@ -13,7 +14,8 @@ import { nextStep } from "./yourCheck";
 const HELD = new Set(["ready", "building", "testing"]);
 
 /** A card's who and progress lines (0030), quiet unless something's wrong: who's on it and since
- *  when, the latest check-in, and a session gone quiet in the attention colour. In Your check,
+ *  when, what Claude Code says its session is doing (0048: working, waiting for input, ended),
+ *  the latest check-in, and a session gone quiet in the attention colour. In Your check,
  *  "Your turn" and the next step instead (0043), then who built and who tested it; in Testing,
  *  "needs a tester" on its own line while a builder still holds it (0047); in Done, when it was
  *  done (0051). A task started in its own worktree (0023) adds its branch and the worktree's
@@ -69,12 +71,20 @@ function HeldLines({ t, now, lines }: { t: Task; now: number; lines: CardLines }
   const lease = useContext(Machine).leaseMinutes;
   const stale = leaseRunOut(t, now, lease);
   const flag = [stale ? `quiet ${spanText(lease)}+` : "", quiet === null ? "" : quietText(quiet)].filter(Boolean).join(" · ");
+  // What Claude Code says the session is doing (0048), when it says: the flag stays, quiet, under it.
+  const session = sessionWords(t);
   return (
     <>
       {lines !== "brief" && <span className={who ? "card-who" : "card-who nobody"}>{[who || "nobody on it", started].filter(Boolean).join(" · ")}</span>}
       {needsTester(t) && <span className="card-tester">needs a tester</span>}
+      {session && (
+        <span className={`card-session ${t.sessionState}`}>
+          {t.sessionState === "working" && <i className="dot" aria-hidden="true" />}
+          {session}
+        </span>
+      )}
       {lines === "all" && (asked ? <span className="card-asked">{asked}</span> : checkin && <span className="card-checkin">{checkinLine(checkin, now)}</span>)}
-      {flag && <span className="card-quiet">{flag}</span>}
+      {flag && <span className={session ? "card-quiet calm" : "card-quiet"}>{flag}</span>}
     </>
   );
 }

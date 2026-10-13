@@ -525,6 +525,9 @@ pub struct Task {
     /// One of those sessions' transcripts changed in the last 5 minutes (0025). Set by the app's
     /// state read (`work::mark_live`); false wherever nothing set it.
     pub live: bool,
+    /// What Claude Code says its holder's session is doing (0048, `agents::apply`): working,
+    /// needs-input, ended, or unknown wherever nothing read it (the heartbeat lines decide then).
+    pub session_state: crate::agents::SessionState,
     /// The folders and globs it works in (`touches:`, 0023), which `ready --parallel` keeps apart.
     pub touches: Vec<String>,
     /// Where `muster start` put it (0023): its git worktree and branch, until the merge or a
@@ -1183,6 +1186,7 @@ pub fn parse_task(
         search,
         session_ids: Vec::new(),
         live: false,
+        session_state: Default::default(),
         touches: parse_touches(&get("touches")),
         worktree: get("worktree"),
         branch: get("branch"),

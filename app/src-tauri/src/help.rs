@@ -86,7 +86,7 @@ pub const COMMANDS: &[Command] = &[
             ("--blocked", "only blocked tasks, those waiting only on the tasks they depend on too"),
             ("--sort", "priority (needs you, then high to low; Done last, newest finished first), newest, oldest, changed, estimate or id (the default)"),
             ("--status", "the old status: inbox, todo, doing, blocked or done"),
-            ("--json", "machine-readable: {\"tasks\": […], \"backlog\": […]}, for scripts and agents"),
+            ("--json", "machine-readable: {\"tasks\": […], \"backlog\": […]}, for scripts and agents. Each task's sessionState (working, needs-input, ended or unknown) is what Claude Code says its holder's session is doing, read from claude agents --json for this listing only; unknown when it can't be read or the session holds other open tasks too"),
         ],
         examples: &[
             "muster list",
@@ -596,7 +596,11 @@ pub const APP: &[(&str, &str)] = &[
     ),
     (
         "needs you",
-        "the orange badge on a card waiting on you, where it is: in Your check, a question escalated to you, blocked on you or by a permission. With your own tasks to do and doing, it's the count in the sidebar and on Waiting for you",
+        "the orange badge on a card waiting on you, where it is: in Your check, a question escalated to you, blocked on you or by a permission, or its session waiting for input in Claude Code. With your own tasks to do and doing, it's the count in the sidebar and on Waiting for you",
+    ),
+    (
+        "working · waiting for input in Claude Code · session ended",
+        "under who's on a card in Building or Testing, and in its pane: what Claude Code says the holder's session is doing (claude agents --json, read every 15 s while the window shows). Waiting for input is yours to answer in Claude Code, so it counts as needs you, and Ask for a check-in waits for it. When Claude Code can't say, or the session holds other open tasks too, the card shows its check-in lines as before; Settings > Agents says whether the states are read",
     ),
     (
         "Send back",

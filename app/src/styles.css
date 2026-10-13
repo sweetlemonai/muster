@@ -156,6 +156,14 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .card-done { color: var(--muted); }
 .card-checkin { color: var(--text); opacity: 0.8; }
 .card-quiet { color: var(--err); font-weight: 600; }
+/* What Claude Code says the session is doing (0048): working in the Building accent with its dot,
+   waiting for input in the needs-you orange (as Your turn), ended in weight only. Where it says
+   something, the no-check-in flag stays under it, quiet. */
+.card-session { font-size: 11px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-session.working, .session-state.working { color: var(--accent-text); }
+.card-session.needs-input, .session-state.needs-input { background: var(--st-needs); color: var(--on-status); font-weight: 600; border-radius: 4px; padding: 0 6px; align-self: flex-start; }
+.card-session.ended, .session-state.ended { color: var(--text); font-weight: 600; }
+.card-quiet.calm { color: var(--muted); font-weight: 400; }
 .badge.blocked { background: var(--st-blocked); color: var(--on-status); }
 .column h2 .role { display: block; margin-top: 2px; font-size: 10px; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--muted); }
 .column.empty h2 .role { display: none; }

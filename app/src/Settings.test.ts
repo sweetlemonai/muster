@@ -148,6 +148,16 @@ describe("Agents", () => {
     expect(agents()).toMatch(/<button type="button" disabled="">Back to 12 h<\/button>/);
   });
 
+  it("says under Claims whether Claude Code's session states are read (0048), or why not", () => {
+    expect(text(agents({ info: { ...INFO, sessionStates: "on (2 accounts)" } }))).toContain("LIVE window 5 min default");
+    expect(agents({ info: { ...INFO, sessionStates: "on (2 accounts)" } })).toContain('<p class="meta">Claude Code&#x27;s session states: on (2 accounts)</p>');
+    const off = text(agents({ info: { ...INFO, sessionStates: "not available: claude isn't installed" } }));
+    expect(off).toContain("Claude Code's session states: not available: claude isn't installed");
+    // In the Claims section, above where it's saved.
+    expect(off.indexOf("Claude Code's session states")).toBeLessThan(off.indexOf("Saved on this Mac"));
+    expect(off.indexOf("Claude Code's session states")).toBeLessThan(off.indexOf("The helper"));
+  });
+
   it("puts Claims first, so the helper's slow account check can't push them down (docs/DESIGN.md)", () => {
     const h2s = (html: string) => [...html.matchAll(/<h2>([^<]*)<\/h2>/g)].map((m) => m[1]);
     expect(h2s(agents({ helper: null }))).toEqual(["Claims", "The helper"]);

@@ -4,6 +4,7 @@ import { ago, builtTested, holderOf, isStage, splitHolder, stageHolders, stageLa
 import BlockWhy from "./BlockWhy";
 import { taskKey } from "./taskKey";
 import { isLive, waitingOnYou } from "./paneData";
+import { sessionWords } from "./sessionState";
 import { Machine } from "./settingsData";
 import { isWork, levelLabel, shownStageClass, shownStageLabel } from "./levels";
 import { isHuman } from "./human";
@@ -88,6 +89,7 @@ const person = (who: string) => (splitHolder(who).label === "owner" ? (who === "
 /** Stage, Paused with when and why and the Pause or Resume beside it (0045), why it's blocked (the
  *  kind in bold, each task it's blocked by a link, 0024), who's on it
  *  (in full, session and all; "Your turn" in Your check, 0043), whether it's live and since when,
+ *  what Claude Code says its session is doing (0048),
  *  who held the stages before (0030), who built and who tested it (0047), its role ("your own task" for a human task, 0022), and what's waiting on the owner
  *  (gold) or that nothing is. A goal or feature shows the stage its children give it, and its
  *  level. */
@@ -107,6 +109,7 @@ export function StatusLine({ task, now, onOpenTask, pause }: { task: Task; now: 
   const built = builtTested(task, person);
   const live = isLive(task, now, useContext(Machine).liveMinutes * 60);
   const waiting = waitingOnYou(task);
+  const session = sessionWords(task);
   return (
     <div className="status-line" data-part="status">
       {pill}
@@ -131,6 +134,7 @@ export function StatusLine({ task, now, onOpenTask, pause }: { task: Task; now: 
           {built && <span className="built-tested">{built}</span>}
         </span>
       )}
+      {session && <span className={`session-state ${task.sessionState}`}>{session}</span>}
       {role && <span className="meta">{role}</span>}
       {waiting.length > 0 ? <span className="needs">Waiting on you: {waiting.join(" · ")}</span> : <span className="meta">nothing waiting on you</span>}
     </div>

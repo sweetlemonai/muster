@@ -4,6 +4,31 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Cards say whether Claude Code's session is working, waiting for input or ended (task 0048)
+**Did:** `agents.rs` runs `claude agents --json --all` per account the stamps in Building and
+Testing name (argument array, `CLAUDE_CONFIG_DIR=~/.claude-<label>` or none, router/token
+variables out, usage reporting off, 10 s timeout, 1 MB cap), on its own thread, started by the
+window's state poll at most every 15 s and never without a stamped holder; reads older than 40 s
+aren't shown. Parsed into short id and state only. `agents::apply` gives a task its holder's state
+when id and account match and no other open task is held under that session; waiting for input
+sets `waitingForOwner`. The card (`CardStatus.tsx`), the pane's status line (`PaneHeader.tsx`),
+Waiting for you, the sidebar's working now (`activity.ts`) and Ask for a check-in (`reach.ts`,
+`Ping.tsx`) use it (`sessionState.ts`, `styles.css`). `muster list --json` gives `sessionState`.
+Settings › Agents says "Claude Code's session states: on (2 accounts)" or "not available: <why>"
+under the LIVE window (`Settings.tsx`, from the core's `sessionStates`).
+**Decided:** an interactive session (no `state`, a `status`) is read by its status: busy is
+working, waiting is waiting for input, idle unknown; `failed` and `stopped` are unknown (this
+coordinator's own running session listed as failed); "session ended" shows in Testing as well as
+Building. Found in Claude Code 2.1.296's own `printAgentsJson`. Telemetry: without
+`DISABLE_TELEMETRY`/`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`/`DO_NOT_TRACK`, each run tried
+api.anthropic.com, so they're set (privacy baseline).
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; cargo test 437 + 4 + 15 + 3, vitest 1036 (rebased onto 893cfd9); new tests `agents::tests` (18: parser fixtures, fake `claude` scripts for
+the argument array, env, exit, timeout and cap, matching, fake-clock polling, off-thread read),
+`list_json_carries_each_tasks_session_state_from_claude_code`, `sessionState.test.ts` (10), the
+Settings test for the line. One
+real run: 0.13–0.18 s for 2 and 6 sessions (AS_BUILT).
+**Open:** AC6 is the owner's (watch a card while a session works and stops at a permission
+prompt).
 ## 2026-10-13 — Pause a task: it keeps its place and claim, nobody works it, its session is told (task 0045)
 **Fixed (review):** a check-in's text could forge a pause or resume line (`next: paused (x)`) →
 `pause_line` read any log line shaped like one → a check-in line never reads as one, and

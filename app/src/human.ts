@@ -23,7 +23,8 @@ export function humanColumn(stage: string): HumanColumn {
 
 /** Does this task need the owner? Their own task until it's done, unless they paused it (0045), or
  *  an agent's waiting on them (the core's needs_owner: Your check, a question escalated to them,
- *  blocked on you or by a permission). */
+ *  blocked on you or by a permission; and in the app, its session waiting for input in Claude
+ *  Code, 0048). */
 export function needsYou(t: Pick<Task, "forWho" | "waitingForOwner" | "stage" | "paused">): boolean {
   return isHuman(t) ? humanColumn(t.stage) !== "done" && !t.paused : t.waitingForOwner;
 }

@@ -3,7 +3,9 @@
 //! from the current folder (a queue itself, or a `tasks/` beside or above it).
 
 use crate::session::{self, Session};
-use crate::{backlog, fields, index, ops, pause, ping, projects, queue, search, settings, vision};
+use crate::{
+    agents, backlog, fields, index, ops, pause, ping, projects, queue, search, settings, vision,
+};
 use std::path::{Path, PathBuf};
 
 /// The environment a command reads its caller from (`std::env::var`, or a test's own).
@@ -663,6 +665,22 @@ fn task_json(t: &queue::Task) -> serde_json::Value {
 fn with_key(mut v: serde_json::Value, key: String) -> serde_json::Value {
     v["key"] = key.into();
     v
+}
+
+/// `muster list --json`'s `sessionState` (0048): Claude Code's word on each holder's session, read
+/// now from the accounts the stamps in Building and Testing name, under the caller's `$HOME`.
+/// Unknown without a home or a stamped holder (then nothing runs). Only this read runs it, never
+/// a write.
+fn session_states(tasks: &mut [queue::Task], env: Env) {
+    let Some(home) = env("HOME").filter(|h| !h.is_empty()) else {
+        return;
+    };
+    let wanted = agents::wanted(tasks);
+    if wanted.is_empty() {
+        return;
+    }
+    let snap = agents::read_all(&agents::claude_fetch(PathBuf::from(home)), &wanted);
+    agents::apply(tasks, &snap);
 }
 
 /// `muster list --json`: the tasks, and the backlog notes beside them.
@@ -1326,7 +1344,10 @@ fn run_on(
         }
         "list" => {
             let q = list_query(a)?;
-            let s = keyed(root, prefix);
+            let mut s = keyed(root, prefix);
+            if a.json {
+                session_states(&mut s.tasks, env);
+            }
             let tasks = list_filter(&s.tasks, &q);
             let notes = list_notes(&s.backlog, &q);
             if a.json {
@@ -3938,5 +3959,52 @@ mod tests {
         assert!(gate_words("proj", "")
             .unwrap_err()
             .contains("no gate set for proj"));
+    }
+
+    #[test]
+    fn list_json_carries_each_tasks_session_state_from_claude_code() {
+        let d = v2_queue();
+        let write = |id: &str, who: &str| {
+            std::fs::write(
+                d.path().join(format!("doing/{id}-t.md")),
+                format!("---\nid: {id}\nstage: building\nstatus: doing\nclaimed-by: {who}\nheartbeat:\nwaiting_on:\n---\n\n# T\n"),
+            )
+            .unwrap();
+        };
+        write("0001", "wt-a (session 7b5e8856 · cc-hg)");
+        write("0002", "wt-b");
+        // A fake `claude` where the CLI looks first, and the account's folder.
+        let home = tempfile::tempdir().unwrap();
+        let bin = home.path().join(".local/bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::create_dir(home.path().join(".claude-hg")).unwrap();
+        let claude = bin.join("claude");
+        std::fs::write(
+            &claude,
+            "#!/bin/sh\necho ran >> \"$0.runs\"\nprintf '%s' '[{\"sessionId\": \"7b5e8856-c9c8\", \"cwd\": \"/Users/someone\", \"state\": \"blocked\"}]'\n",
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&claude).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+        std::fs::set_permissions(&claude, perms).unwrap();
+        let runs = || std::fs::read_to_string(bin.join("claude.runs")).unwrap_or_default();
+
+        // No home folder (a test's empty environment): nothing runs, every state unknown.
+        let mut s = tasks_of(d.path());
+        session_states(&mut s.tasks, &no_env);
+        assert_eq!(runs(), "");
+        let json = list_json(&[], &s.tasks.iter().collect::<Vec<_>>());
+        assert_eq!(json["tasks"][0]["sessionState"], "unknown");
+
+        let h = home.path().to_string_lossy().to_string();
+        let env = move |k: &str| (k == "HOME").then(|| h.clone());
+        let mut s = tasks_of(d.path());
+        session_states(&mut s.tasks, &env);
+        assert_eq!(runs(), "ran\n", "once, for the one account");
+        let json = list_json(&[], &s.tasks.iter().collect::<Vec<_>>());
+        assert_eq!(json["tasks"][0]["sessionState"], "needs-input");
+        assert_eq!(json["tasks"][0]["waitingForOwner"], true);
+        assert_eq!(json["tasks"][1]["sessionState"], "unknown");
+        assert!(!json.to_string().contains("someone"), "cwd isn't kept");
     }
 }

@@ -1,4 +1,5 @@
 import { agoText, currentCheckin, holderOf, minutesSince, quietCheckin, splitHolder, stageLabel } from "./lib";
+import { ANSWER_FIRST } from "./sessionState";
 import type { Task } from "./types";
 
 // Reaching the session working on a task (0039): who can be reached, and whether a check-in was
@@ -31,9 +32,10 @@ export function unreachable(t: Pick<Task, "stage" | "claimedBy" | "heldBy">): st
   return id ? "" : NO_SESSION;
 }
 
-/** Why a check-in can't be asked for, or "" when it can: reachable, and in Building. */
-export function cantAsk(t: Pick<Task, "stage" | "claimedBy" | "heldBy">): string {
-  return unreachable(t) || (t.stage === "testing" ? CHECKIN_IN_TESTING : "");
+/** Why a check-in can't be asked for, or "" when it can: reachable, in Building, and not waiting
+ *  for input in Claude Code (0048), where it couldn't read the request until that's answered. */
+export function cantAsk(t: Pick<Task, "stage" | "claimedBy" | "heldBy" | "sessionState">): string {
+  return unreachable(t) || (t.sessionState === "needs-input" ? ANSWER_FIRST : "") || (t.stage === "testing" ? CHECKIN_IN_TESTING : "");
 }
 
 /** "asked 2 min ago" while a check-in asked for in this Building stage hasn't come; a check-in

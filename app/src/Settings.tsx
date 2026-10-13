@@ -6,6 +6,7 @@ import { AccountPicker } from "./Helper";
 import { HelpButton } from "./HelpButton";
 import { HomePath } from "./HomePath";
 import Projects from "./Projects";
+import { sessionStatesLine } from "./sessionState";
 import { homePath } from "./lib";
 import type { DisplayMode } from "./modes";
 import { DEFAULT_MACHINE, SETTINGS_GROUPS, type SettingsGroup, type SettingsInfo, spanInput, spanText } from "./settingsData";
@@ -143,6 +144,7 @@ export function AgentsView({ info, helper, helperError = "", onHelper, onModel, 
           what="How recent a change counts as working now: the card's dot (a session's transcript) and the task pane's LIVE (the task's file)."
           onSet={(v) => onSet("live", v)}
         />
+        {info.sessionStates && <p className="meta">{sessionStatesLine(info.sessionStates)}</p>}
         <p className="meta">Saved on this Mac, in <HomePath path={`${info.configDir}/settings.json`} home={info.home} />; the muster command reads the same file.</p>
       </section>
       <section>

@@ -72,6 +72,25 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   "ready"), Waiting for you shows the chip, the owner's own paused task doesn't need them, the
   stage track is off, and the pane's time so far leaves paused time out. In Building or Testing the holder's session is told through its mailbox
   (`<id>-pause.md`, `<id>-resume.md`); the pane says whether it was.
+- **Claude Code's session states** (0048, `agents.rs`, `sessionState.ts`): the core runs
+  `claude agents --json --all` (argument array, `CLAUDE_CONFIG_DIR` per account the stamps in
+  Building and Testing name, usage reporting off, 10 s timeout, 1 MB cap) on a thread of its own,
+  started by the window's state poll at most every 15 s and never while nothing has a stamped
+  holder; the poll uses the latest result and never waits for a run. Parsed with serde into the
+  session id and state only (`cwd` and `name` are never kept); an interactive session's `status`
+  stands in for its missing `state`. `agents::apply` gives a task its holder's state when the id
+  and account match and no other open task is held under that session; a paused task (0045) gets none. The card's who lines add
+  "working" (accent, with the Building dot), "waiting for input in Claude Code" (orange pill, and
+  the task counts as needs you: the core sets `waitingForOwner`) or "session ended, task still in
+  Building/Testing", with "no check-in for N min" kept under it in muted text; the pane's status
+  line says the same and "Waiting on you: input in Claude Code"; the sidebar's working now takes
+  Claude Code's word over the transcript and heartbeat; Ask for a check-in is disabled with
+  "waiting for input in Claude Code: answer it there first", and Ask all leaves those out and
+  says so. Unknown, unmatched or unreadable: the card reads as before. Settings › Agents shows
+  one line under the LIVE window from `sessionStates` ("Claude Code's session states: on (2
+  accounts)" / "not available: <why>"). One real run (2.1.296, 2026-10-13,
+  this Mac, 2 and 6 sessions listed): 0.13–0.18 s, 0.5 and 1.5 KB of output; the task's note had
+  seen several seconds on one run, which the 10 s timeout and the background thread cover.
 - **Projects** (in Settings, or **+ Project** under the project list): every project with its folder, task count and where it came from (found
   in `~/playground`, or added). Discovery (`queue::discover`) looks at `<project>/tasks` and one
   level deeper, `<group>/<project>/tasks`, and no further; it passes over folders named `.*`, `_*`,
@@ -519,6 +538,9 @@ logged on the task.
 pass refuse it and `reclaim` skips it; the holder's session in Building or Testing gets a stop
 request, and on resume a carry-on (and in Building a fresh lease). `muster list` marks it
 `[paused since …]`, INDEX.md "paused".
+**Session states** (task 0048): `muster list --json` gives each task `sessionState` (`working`,
+`needs-input`, `ended`, `unknown`), read from `claude agents --json` for that listing only, under
+the caller's `$HOME`; no other command runs it, a write never does.
 
 ## How the pieces talk
 
@@ -626,6 +648,11 @@ Live claims go in the repo's shared git folder. See
 - **A pause reaches a session only through the answer hook** (0045), like a ping: a session
   that has ended its turn gets the stop or carry-on request on its next prompt. Who may pause or
   resume isn't limited to the owner, as with block and unblock.
+- **Claude Code's states are a research preview** (0048): the format may change, and anything
+  Muster can't read falls back to heartbeats. A coordinator's subagents share its session id, so
+  their tasks never get a state; `failed`, `stopped` and an idle interactive session read as
+  unknown. Only this Mac's accounts are read, and only `~/.claude-<label>` folders. When Drover
+  supplies session states (Drover 0018), `agents::Fetch` is the one place the source changes.
 
 ## What's left (in order)
 

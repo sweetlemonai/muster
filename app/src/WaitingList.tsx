@@ -13,7 +13,8 @@ import { nextStep } from "./yourCheck";
 
 /** Waiting for you: every task waiting on the owner, in the order given. The agents' tasks in
  *  Your check come first, by effort (0043) with each one's next step in full and Accept all in
- *  Just accept; then questions escalated to the owner, blocks on them and their own tasks. */
+ *  Just accept; then questions escalated to the owner, blocks on them, sessions waiting for input
+ *  in Claude Code (0048) and their own tasks. */
 export default function WaitingList({ tasks, multi, openKey, onOpen, onChanged, now }: {
   tasks: Task[];
   multi: boolean;
@@ -66,6 +67,7 @@ function WaitingItem({ t, now, multi, active, onOpen, onChanged }: { t: Task; no
         </Fragment>
       ))}
       {(t.blockedKind === "you" || t.blockedKind === "permission") && <p><BlockWhy t={t} /></p>}
+      {t.sessionState === "needs-input" && <p>Waiting for input in Claude Code: answer it there.</p>}
       {step && <p className="next-step-line">{`${step.full}${step.more ? ` · ${step.more} more` : ""}`}</p>}
       <button onClick={() => onOpen(t)}>{asked.length > 0 || t.blockedKind === "you" ? "Open to answer" : "Open"}</button>
     </article>

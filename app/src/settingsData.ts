@@ -68,4 +68,7 @@ export type SettingsInfo = {
   configDir: string;
   base: string;
   transcripts: string[];
+  /** Whether Claude Code's session states are read (0048): "on (2 accounts)", or "not
+   *  available: <why>" (sessionState.ts `sessionStatesLine`). */
+  sessionStates?: string;
 };

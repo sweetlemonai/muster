@@ -37,8 +37,8 @@ const TABLE = {
   "card-lines": {
     label: "Card lines",
     adhd: { how: "all", says: "Who and since when, the check-in, branch, tags, parent, estimate, files and age on every card" },
-    standard: { how: "selected", says: "Title, kind, priority, age and anything wrong; who, the check-in, tags, estimate and the rest on the selected card", reach: "Select the card" },
-    focus: { how: "status", says: "Title and one status line, and blocked, paused, quiet or needs you when it is", reach: "Open the card: the task pane has it all" },
+    standard: { how: "selected", says: "Title, kind, priority, age, anything wrong and what Claude Code says the session is doing; who, the check-in, tags, estimate and the rest on the selected card", reach: "Select the card" },
+    focus: { how: "status", says: "Title and one status line, and blocked, paused, quiet, needs you or what Claude Code says the session is doing, when it is", reach: "Open the card: the task pane has it all" },
   },
   "done-line": {
     label: "Done line",

@@ -4,6 +4,7 @@ import { isHuman } from "./human";
 import { holderOf, quietCheckin, splitHolder, stamp } from "./lib";
 import { taskKey } from "./taskKey";
 import { askedText, cantAsk, MAX_MESSAGE, messageLength, quietToAsk, unreachable } from "./reach";
+import { ANSWER_FIRST } from "./sessionState";
 import type { Task } from "./types";
 
 // Reaching the session working on a task (0039): ask it for a check-in, or send it a message.
@@ -146,7 +147,15 @@ export function QuietPing({ tasks, now }: { tasks: Task[]; now: number }) {
   const [result, setResult] = useState<Result>(null);
   const { quiet, reachable } = quietToAsk(tasks, now);
   if (quiet.length === 0) return null;
-  const unreached = quiet.length - reachable.length;
+  // Waiting for input in Claude Code (0048): reachable, but not until that's answered there.
+  const waiting = quiet.filter((t) => cantAsk(t) === ANSWER_FIRST).length;
+  const unreached = quiet.length - reachable.length - waiting;
+  const why = [
+    unreached > 0 ? `${unreached} of them ${unreached === 1 ? "has" : "have"} no session to reach` : "",
+    waiting > 0 ? `${waiting} ${waiting === 1 ? "waits" : "wait"} for input in Claude Code: answer it there first` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const askAll = async () => {
     setBusy(true);
     setResult(null);
@@ -166,10 +175,10 @@ export function QuietPing({ tasks, now }: { tasks: Task[]; now: number }) {
   return (
     <div className="side-ping">
       <button type="button" disabled={reachable.length === 0 || busy} onClick={() => void askAll()}>{label}</button>
-      {reachable.length === 0 ? (
+      {reachable.length === 0 && waiting === 0 ? (
         <span className="why">none of its quiet claims has a session to reach</span>
       ) : (
-        unreached > 0 && <span className="why">{`${unreached} of them ${unreached === 1 ? "has" : "have"} no session to reach`}</span>
+        why && <span className="why">{why}</span>
       )}
       {result && <span className={result.ok ? "ok" : "err"} role="status">{result.text}</span>}
     </div>

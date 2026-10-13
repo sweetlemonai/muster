@@ -261,6 +261,27 @@
 > the task is still in Building and claimed by that session; one that has moved on is set aside in
 > `delivered/` unasked (`muster inbox` still shows it). Only `muster ping` writes an ask line: a note that
 > would read as one is refused. Messages stay on this Mac.
+>
+> **Claude Code's session states (Muster 0048, 2026-10-13).** The app also asks Claude Code what
+> each holder's session is doing: `claude agents --json --all` (a research preview), once per
+> account the stamps in Building and Testing name (`cc-hg` → `CLAUDE_CONFIG_DIR=~/.claude-hg`; no
+> account part → the default `~/.claude`), run as an argument array with its usage reporting off,
+> off the window's thread, at most every 15 s while the window shows, and not at all while no task
+> in Building or Testing has a stamped holder (the owner's own claims and paused tasks aside: a paused task, 0045, gets no state, never working and never waiting on the owner through its session). A run stops at 10 s
+> and reads at most 1 MB; only each session's short id and state are kept. A state applies to a
+> task when the session id and account match the holder's stamp **and no other open task** (any
+> not in Done) is held under that session: a coordinator's subagents share its id, so their tasks
+> fall back. `working` shows "working"; `blocked` (a permission prompt or a question) shows
+> "waiting for input in Claude Code" in orange, counts as needing the owner, and Ask for a check-in
+> waits ("answer it there first"); `done`, `completed` or `ready for review` shows "session ended,
+> task still in Building" (or Testing). An interactive session, which has no `state`, is read by
+> its `status`: busy is working, waiting is waiting for input. Anything else (`failed`, `stopped`,
+> idle, a state Muster doesn't know), a session it doesn't list, a missing `claude`, a non-zero
+> exit, a timeout or output that isn't a JSON array: the card reads exactly as before, from the
+> heartbeat, check-ins and the live dot, and Settings > Agents says "not available: <why>". Where
+> a state shows, "no check-in for 45 min" stays under it, quiet. `muster list --json` gives each
+> task `sessionState` (`working`, `needs-input`, `ended` or `unknown`), read for that listing only;
+> no other command runs it. **Sessions still check in**: the states don't replace check-ins.
 
 > **Pausing a task (Muster 0045, 2026-10-13).** "Not now, keep it as it is": `muster pause <id>
 > ["<why>"]` (the app's **Pause**, under a card and beside the stage in the task pane) and `muster
