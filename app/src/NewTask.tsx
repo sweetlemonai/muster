@@ -5,7 +5,14 @@ import { readFiles, stamp } from "./lib";
 import TagEditor from "./Tags";
 import { LEVELS } from "./levels";
 
-/** New task, in the docked pane beside the board: title, type, priority, tags, description, files. */
+/** Who does a new task (0022), as a chip pair: an agent (the default) or you. */
+export const FOR_CHOICES = [
+  { id: "human", label: "Human", hint: "Yours to do: on the Human board, and agents never take it" },
+  { id: "ai", label: "AI", hint: "An agent's: on the AI board" },
+] as const;
+
+/** New task, in the docked pane beside the board: who does it, title, type, priority, tags,
+ *  description, files. */
 export default function NewTask({ queues, initial, onClose, onCreated }: {
   queues: string[];
   initial: string;
@@ -22,6 +29,8 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
   const [estTestTime, setEstTestTime] = useState("");
   const [estTokens, setEstTokens] = useState("");
   const [level, setLevel] = useState<string>("task");
+  // Who does it (0022): an agent, or you (a human task: only a task, never a goal or feature).
+  const [forWho, setForWho] = useState<"ai" | "human">("ai");
   const [parent, setParent] = useState("");
   const [files, setFiles] = useState<[string, string][]>([]);
   const [busy, setBusy] = useState(false);
@@ -56,7 +65,7 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
     try {
       // A goal has no parent; the core refuses one, so none is sent.
       const link = { level, parent: level === "goal" ? "" : parent.trim(), due: "" };
-      const c = await api.createTask(queue, { title, kind, priority, body, tags, estTime, estTestTime, estTokens, ...link }, files, stamp(new Date()));
+      const c = await api.createTask(queue, { title, kind, priority, body, tags, estTime, estTestTime, estTokens, ...link, forWho: level === "task" ? forWho : "ai" }, files, stamp(new Date()));
       onCreated(queue, c.id);
     } catch (e) {
       setError(String(e));
@@ -116,10 +125,36 @@ export default function NewTask({ queues, initial, onClose, onCreated }: {
             <input value={estTokens} onChange={(e) => setEstTokens(e.target.value)} placeholder="500k" size={6} maxLength={10} />
           </label>
         </div>
+        <div className="chip-row" role="group" aria-label="Who does it">
+          <span className="meta">For</span>
+          {FOR_CHOICES.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              className={forWho === f.id ? "chip on" : "chip"}
+              aria-pressed={forWho === f.id}
+              title={f.hint}
+              onClick={() => {
+                setForWho(f.id);
+                if (f.id === "human") setLevel("task");
+              }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
         <div className="row level-pick" role="group" aria-label="Level">
           <span className="meta">Level</span>
           {LEVELS.map((l) => (
-            <button key={l.id} type="button" className={level === l.id ? "chip on" : "chip"} aria-pressed={level === l.id} onClick={() => setLevel(l.id)}>
+            <button
+              key={l.id}
+              type="button"
+              className={level === l.id ? "chip on" : "chip"}
+              aria-pressed={level === l.id}
+              disabled={forWho === "human" && l.id !== "task"}
+              title={forWho === "human" && l.id !== "task" ? "Your own task is a task: a goal or feature is its tasks' sum" : undefined}
+              onClick={() => setLevel(l.id)}
+            >
               {l.label}
             </button>
           ))}

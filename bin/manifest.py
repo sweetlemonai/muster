@@ -23,6 +23,8 @@ STAGES = ["backlog", "shaping", "ready", "building", "testing", "your-check", "d
 LEGACY_STAGE = {"inbox": "backlog", "todo": "ready", "doing": "building", "blocked": "ready", "done": "done"}
 # Goal → Feature → Task (decision 0003); a file without `level:` is a task.
 LEVELS = ["goal", "feature", "task"]
+# Who does it (0022): `for:` is ai (an agent; also a file without one) or human (the owner's own).
+FOR_WHO = ["ai", "human"]
 STALE_HOURS = 12
 
 
@@ -309,6 +311,12 @@ def level_of(fields: dict) -> str:
     return level if level in LEVELS else "task"
 
 
+def for_of(fields: dict) -> str:
+    """ai or human: `for:`, ai when it has none or one that isn't either (as the core reads it)."""
+    who = fields.get("for", "").lower()
+    return who if who in FOR_WHO else "ai"
+
+
 def is_date(value: str) -> bool:
     """A `YYYY-MM-DD` date that exists."""
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
@@ -442,9 +450,13 @@ def main():
                 "level": level_of(fields),
                 "parent": fields.get("parent", ""),
                 "due": fields.get("due", ""),
+                "for": for_of(fields),
             }
             raw_level = fields.get("level", "").lower()
             t["bad_level"] = raw_level[:40] if raw_level and raw_level not in LEVELS else ""
+            raw_for = fields.get("for", "").lower()
+            if raw_for and raw_for not in FOR_WHO:
+                problems.append(f"{rel}: for '{raw_for[:40]}' isn't ai or human (read as ai)")
             tasks.append(t)
             if t["status"] != folder:
                 problems.append(f"{rel}: status '{t['status']}' but it's in {folder}/")
@@ -462,7 +474,8 @@ def main():
                 problems.append(f"{rel}: in doing/ with no claimed-by")
             if folder == "blocked" and not t["waiting_on"]:
                 problems.append(f"{rel}: blocked with no waiting_on")
-            if building and t["heartbeat"]:
+            # The owner doing their own task (for: human) has no lease, so no stale heartbeat.
+            if building and t["heartbeat"] and t["for"] != "human":
                 age = heartbeat_age(t["heartbeat"], now)
                 if age is not None and age > STALE_HOURS:
                     problems.append(f"{rel}: heartbeat {age:.0f} h old (stale after {STALE_HOURS} h)")

@@ -321,6 +321,29 @@ class RoutesRunOnARealQueue(unittest.TestCase):
         act("pass", "--from your-check --as owner", "")
         self.assertIn("stage: done", self.task(self.a))
 
+    def test_a_task_of_yours_is_the_owners_to_start_and_finish(self):
+        # 0022: a human task, made by the owner. Agents can't claim it; What's waiting's two act
+        # hints start it and finish it, as the owner.
+        r = self.muster(["muster", "new", "Synthetic task of yours", "--human", "--as", "owner"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        mine = r.stdout.split()[0]
+        listed = self.muster(["muster", "list"]).stdout
+        self.assertIn(f"  {mine} code      normal  Synthetic task of yours  [you]\n", listed)
+        [claim] = commands_of(self.routes["claim"])
+        r = self.muster(render(claim, mine))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn(f"{mine} is the owner's to do", r.stderr)
+        part = ROUTER.read_text(encoding="utf-8").split("### What's waiting", 1)[1].split("\n### ", 1)[0]
+        self.assertIn("`[you]`", part)
+        hints = re.findall(r"`/mu pass <id> (--from (?:ready|building) --as owner)`", part)
+        self.assertEqual(hints, ["--from ready --as owner", "--from building --as owner"])
+        [cmd] = commands_of(self.routes["pass"])
+        for opts, stage in zip(hints, ["building", "done"]):
+            argv = render(cmd.replace(" …", "").replace("<id>", "<id> " + opts, 1), mine, "")
+            r = self.muster(argv)
+            self.assertEqual(r.returncode, 0, f"{argv}\n{r.stdout}{r.stderr}")
+            self.assertIn(f"stage: {stage}", self.task(mine))
+
     def test_add_runs_or_says_it_isnt_built(self):
         # The router stops on `unknown command "add"`: that must be what muster says without it.
         for key in ("add", "<other>"):

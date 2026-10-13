@@ -1,7 +1,9 @@
 import { useId, useMemo, useState } from "react";
 import { downstream, edgeLit, type Graph, hiddenDeps, layoutGraph, readyToStart, upstream } from "./graph";
+import { isHuman } from "./human";
 import { holder, key, stageLabel, stageOf } from "./lib";
 import type { Task } from "./types";
+import YouRibbon from "./YouRibbon";
 
 const W = 196; // node width
 const H = 76; // node height
@@ -120,7 +122,7 @@ function QueueGraph({ name, tasks, all, openKey, onOpen }: { name: string; tasks
               <button
                 key={n.id}
                 type="button"
-                className={`g-node s-${stageOf(t)}${t.blocked ? " blocked" : ""}${ready ? " ready" : ""}${role(n.id)}`}
+                className={`g-node s-${stageOf(t)}${isHuman(t) ? " human" : ""}${t.blocked ? " blocked" : ""}${ready ? " ready" : ""}${role(n.id)}`}
                 style={{ left: p.x, top: p.y, width: W, height: H }}
                 onClick={() => onOpen(t)}
                 title={`${t.id} ${t.title}\n${stageLabel(t.stage)}${t.blocked ? `, blocked on ${t.waitingOn || "something"}` : ""}${t.depends.length ? `\nwaits on ${t.depends.join(", ")}` : ""}`}
@@ -128,6 +130,7 @@ function QueueGraph({ name, tasks, all, openKey, onOpen }: { name: string; tasks
               >
                 <span className="g-top">
                   <span className="id">{t.id}</span>
+                  {isHuman(t) && <YouRibbon />}
                   {up.has(n.id) && <span className="g-rel">needed first</span>}
                   {down.has(n.id) && <span className="g-rel">waits for it</span>}
                   <Status t={t} ready={ready} />
@@ -143,8 +146,8 @@ function QueueGraph({ name, tasks, all, openKey, onOpen }: { name: string; tasks
         <div className="graph-loose">
           <span className="meta">Not linked to any task ({g.loose.length})</span>
           {g.loose.map((t) => (
-            <button key={t.id} type="button" className={`chip g-loose s-${stageOf(t)}${key(t) === openKey ? " on" : ""}`} onClick={() => onOpen(t)} title={t.title}>
-              <span className="id">{t.id}</span> {t.title.length > 34 ? `${t.title.slice(0, 33)}…` : t.title} <Status t={t} ready={readyToStart(t, byId)} />
+            <button key={t.id} type="button" className={`chip g-loose s-${stageOf(t)}${isHuman(t) ? " human" : ""}${key(t) === openKey ? " on" : ""}`} onClick={() => onOpen(t)} title={t.title}>
+              <span className="id">{t.id}</span>{isHuman(t) && <YouRibbon />} {t.title.length > 34 ? `${t.title.slice(0, 33)}…` : t.title} <Status t={t} ready={readyToStart(t, byId)} />
             </button>
           ))}
         </div>

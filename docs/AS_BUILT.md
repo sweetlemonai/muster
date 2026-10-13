@@ -128,7 +128,23 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   "needs you", open questions, files, who's on it (flagged when quiet for 12 h), what a blocked
   task waits on, and when it last changed. Tasks waiting on the owner sort first. Done shows the
   latest 8.
-- **Waiting for you:** escalated questions and owner-blocked tasks, each opening its task.
+- **Human tasks and the Human board** (task 0022): `for: human` makes a task the owner's own
+  (`muster new --human --as owner`, the Human/AI chips in New task, the For chip in the task pane,
+  `muster set <id> for human|ai`). It goes To do (Ready) → Doing (Building) → Done with the pane's
+  Start and Done, no gate line, no Testing, no Your check, no lease. Agents never take one: `claim`
+  refuses it and `next` passes it by; an agent proposes one with `muster add`, and only the owner
+  makes one. On the Board view a compact **Human board** sits above the **AI board** (agents'
+  tasks only): From the agents (tasks in Your check, questions escalated to the owner, tasks
+  blocked on the owner, each opening its task where it is), then To do · Doing · Done. Its count
+  (`needsYouCount` in `human.ts`) is the needs-you number in the sidebar and the header. Wherever
+  both kinds share a view (Table, Timeline, Graph, the pane) a human task carries a gold "You"
+  ribbon (`#A08428`, never a stage colour; contrast tested in `themes.test.ts`), and Table and
+  Timeline filter Human · AI · All. An agent's task that depends on a human task shows "blocked by
+  yours" until it's done, and can't be claimed until then. `muster list` marks human tasks
+  `[you]`, INDEX.md "you", and `manifest.py` reads `for`.
+- **Waiting for you:** what the agents wait on the owner for (escalated questions, Your check,
+  blocked on the owner), then the owner's own tasks to do and doing, each opening its task (the
+  Human board's count).
 - **Task panel** (loads on first open): the task rendered as Markdown with a Raw switch,
   open questions with an answer box (⌘↩), the files as thumbnails that open large (← → between
   them, Esc to close), who's on it, what it waits on, and the commit.

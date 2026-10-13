@@ -61,6 +61,9 @@ export const STAGE_COLOURS: Record<string, string> = {
 const ON_STATUS = "#1A1730";
 /** "Needs you" (Your check, escalations): the Your check orange, as styles.css's --st-needs. */
 export const NEEDS_COLOUR = STAGE_COLOURS["your-check"];
+/** The owner's own tasks (0022): an old gold for the "You" ribbon, in the needs-you family but
+ *  never a stage colour (a brighter gold would pass for Testing's amber), as styles.css's --st-human. */
+export const HUMAN_COLOUR = "#A08428";
 // Priority colours, for cards coloured by priority: magenta for high (orange means "needs you" and
 // red means blocked), violet for normal, grey for low.
 export const PRIORITY_COLOURS: Record<string, string> = { high: "#E879C9", normal: "#8B6CF0", low: "#8E8AA6" };
@@ -187,6 +190,8 @@ export function variables(theme: Theme, accent: Accent): Record<string, string> 
     ...Object.fromEntries(Object.entries(stages).map(([s, c]) => [`--edge-${s}`, edge(c)])),
     "--st-needs": NEEDS_COLOUR,
     "--edge-needs": edge(NEEDS_COLOUR),
+    "--st-human": HUMAN_COLOUR,
+    "--edge-human": edge(HUMAN_COLOUR),
     ...Object.fromEntries(Object.entries(PRIORITY_COLOURS).map(([p, c]) => [`--pri-${p}`, c])),
     ...Object.fromEntries(Object.entries(PRIORITY_COLOURS).map(([p, c]) => [`--edge-pri-${p}`, edge(c)])),
     "--card-tint": `${Math.round(CARD_TINT[theme.mode] * 100)}%`,

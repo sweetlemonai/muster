@@ -1,11 +1,13 @@
 import { priorityName, stageLabel } from "./lib";
 import { CARD_LOOKS, type CardColour, type CardLook } from "./themes";
 import type { Task } from "./types";
+import YouRibbon from "./YouRibbon";
 
 /** A board card's classes: its priority (for colour by priority), and the states that take over
- *  its colour in every look: blocked, needs you; plus the selected one. */
-export function cardClass(t: Pick<Task, "priority" | "blocked" | "waitingForOwner">, active: boolean): string {
-  return `card p-${priorityName(t.priority)}${active ? " active" : ""}${t.waitingForOwner ? " needs-you" : ""}${t.blocked ? " blocked" : ""}`;
+ *  its colour in every look: blocked, needs you; the selected one; and `human` for the owner's own
+ *  task (0022), which carries the You ribbon in every look. */
+export function cardClass(t: Pick<Task, "priority" | "blocked" | "waitingForOwner"> & { forWho?: string }, active: boolean): string {
+  return `card p-${priorityName(t.priority)}${active ? " active" : ""}${t.waitingForOwner ? " needs-you" : ""}${t.blocked ? " blocked" : ""}${t.forWho === "human" ? " human" : ""}`;
 }
 
 /** The band the Top bar look shows (0026): what the card's colour means, by stage or by priority.
@@ -20,12 +22,14 @@ export function CardBand({ t }: { t: Pick<Task, "stage" | "blocked" | "waitingFo
   );
 }
 
-type Sample = { stage: string; title: string; priority: string; blocked?: boolean; needsYou?: boolean };
-/** What each preview shows: a plain card, one waiting on the owner, and a blocked one. */
+type Sample = { stage: string; title: string; priority: string; blocked?: boolean; needsYou?: boolean; human?: boolean };
+/** What each preview shows: a plain card, one waiting on the owner, a blocked one, and one of the
+ *  owner's own with its You ribbon (0022). */
 export const SAMPLES: Sample[] = [
   { stage: "building", title: "Board flickers on resize", priority: "high" },
   { stage: "your-check", title: "Try the new header", priority: "normal", needsYou: true },
   { stage: "ready", title: "Graph view", priority: "low", blocked: true },
+  { stage: "ready", title: "Buy the domain", priority: "normal", human: true },
 ];
 
 /** A small, live preview of a card look: the same classes as the board, so it can't drift. */
@@ -33,7 +37,8 @@ function Preview({ look, colour }: { look: CardLook; colour: CardColour }) {
   return (
     <span className={`look-preview look-${look}${colour === "priority" ? " look-by-priority" : ""}`}>
       {SAMPLES.map((s) => (
-        <span key={s.title} className={`${cardClass({ priority: s.priority, blocked: !!s.blocked, waitingForOwner: !!s.needsYou }, false)} s-${s.stage}`}>
+        <span key={s.title} className={`${cardClass({ priority: s.priority, blocked: !!s.blocked, waitingForOwner: !!s.needsYou, forWho: s.human ? "human" : "ai" }, false)} s-${s.stage}`}>
+          {s.human && <YouRibbon />}
           <CardBand t={{ stage: s.stage, blocked: !!s.blocked, waitingForOwner: !!s.needsYou, priority: s.priority }} />
           <span className="card-top"><span className="id">{s.title}</span></span>
         </span>

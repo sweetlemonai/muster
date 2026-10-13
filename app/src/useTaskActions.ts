@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "./api";
 import { isStage, nextStage, oneAtATime, readFiles, stageLabel, stamp } from "./lib";
+import { isHuman } from "./human";
 import { trackMove } from "./paneData";
 import type { Task } from "./types";
 
@@ -60,13 +61,21 @@ export function useTaskActions(task: Task, onChanged: () => void) {
     close: () => setOpened(null),
     run,
     passFrom,
-    /** The next step: out of Building it asks for the gate line first. */
+    /** The next step: out of Building it asks for the gate line first. The owner's own task
+     *  (0022) needs none: Start puts it in Doing, Done finishes it. */
     pass: () => {
-      if (task.stage === "building") {
+      const human = isHuman(task);
+      if (task.stage === "building" && !human) {
         setOpened({ kind: "gate", stage: task.stage });
         return;
       }
-      passFrom("", task.stage === "your-check" ? "Accepted: it's done." : `Passed to ${nextStage(task.stage)?.label ?? "the next stage"}.`);
+      const next = nextStage(task.stage, human);
+      const done = human && next?.id === "building"
+        ? "Started: it's in Doing."
+        : human && next?.id === "done"
+          ? "Done."
+          : task.stage === "your-check" ? "Accepted: it's done." : `Passed to ${next?.label ?? "the next stage"}.`;
+      passFrom("", done);
     },
     sendBack: (why: string, to: string) => submit(() => api.returnTask(task.queue, task.id, why, to, now()), `Sent back to ${stageLabel(to)}.`),
     block: (on: string) => submit(() => api.blockTask(task.queue, task.id, on, now()), "Blocked. It keeps its stage."),

@@ -9,7 +9,7 @@ import type { StageStep, Task } from "./types";
 
 const task = (over: Partial<Task>): Task => ({
   queue: "demo", id: "0007", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
-  folder: "todo", path: "todo/0007-t.md", claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], commit: "", captured: "", capturedAt: "",
+  folder: "todo", path: "todo/0007-t.md", claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], forWho: "ai", commit: "", captured: "", capturedAt: "",
   blockHistory: [], questions: [], openQuestions: 0, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [],
   attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", ...over,
 });
@@ -344,5 +344,30 @@ describe("the pane's 0017 fields in the D2 layout", () => {
     const html = pane({ comments: [{ who: "owner", at: "2026-10-12 10:00", text: "Hi." }] }).html;
     expect(html.indexOf('data-part="body"')).toBeLessThan(html.indexOf('class="comments"'));
     expect(html.indexOf('class="comments"')).toBeLessThan(html.indexOf('data-part="note-bar"'));
+  });
+});
+
+describe("the owner's own task in the pane (0022)", () => {
+  it("is Start in To do and Done in Doing: no gate line, no Testing", () => {
+    expect(pane({ forWho: "human" }).buttons).toEqual(["Start", "Send back", "Block"]);
+    expect(pane({ forWho: "human", stage: "building", claimedBy: "owner" }).buttons).toEqual(["Done", "Send back", "Block"]);
+    expect(pane({ forWho: "human", stage: "building", claimedBy: "owner" }).primary).toEqual(["Done"]);
+  });
+  it("never offers Release: the owner's own work has no lease", () => {
+    const p = pane({ forWho: "human", stage: "building", claimedBy: "owner", heartbeat: "", modified: 0 }, 12 * 3600 + 60);
+    expect(p.buttons).toEqual(["Done", "Send back", "Block"]);
+  });
+  it("says it's yours, with the You ribbon by the project and its role in the status line", () => {
+    const p = pane({ forWho: "human" });
+    expect(p.line).toBe("Ready your own task nothing waiting on you");
+    expect(pane({ forWho: "human", stage: "building", claimedBy: "owner" }).line).toBe("Building LIVE on it: you your own task nothing waiting on you");
+    expect(p.html).toContain('<span class="you-ribbon"');
+    expect(pane({}).html).not.toContain("you-ribbon");
+  });
+  it("shows who does it as one chip in the settings, human or ai", () => {
+    expect(pane({ forWho: "human" }).html).toContain('aria-label="For: human, click to change">human</button>');
+    expect(pane({}).html).toContain('aria-label="For: ai, click to change">ai</button>');
+    // A goal or feature is nobody's to do: no chip.
+    expect(pane({ level: "feature" }).html).not.toContain('aria-label="For:');
   });
 });

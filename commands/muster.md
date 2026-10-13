@@ -92,10 +92,16 @@ on it.
    - **Blocked on you:** it waits on the owner (its waiting-on starts with "owner"). Say what it
      needs from you, in plain words. With no answer it stays blocked. Act: once it's settled,
      `/mu unblock <id> --as owner`.
+
+   Then each line marked `[you]` that isn't under Done: a **task of yours**, one only you can do
+   (a human task: an account, a secret, a decision, a try on a device). Agents never take these.
+   Say what it is and whether it's To do (Ready) or Doing (Building), and which agent tasks wait
+   on it (their `depends`). Act: start it, `/mu pass <id> --from ready --as owner`; once it's
+   done, `/mu pass <id> --from building --as owner`. With no answer it stays yours to do.
 2. Look for `WAITING-FOR-OWNER.md` in the queue folder (the `tasks/` folder beside the repo, or
    beside a folder above it). If it's there, Read it for the options and picks of the items above,
    and add its numbered items that no task above covers. Skip its "Decided" sections.
-3. Nothing waiting: say "Nothing is waiting for you."
+3. Nothing waiting and nothing of yours: say "Nothing is waiting for you."
 4. For bare `/mu` only, end with the queue from the same `muster list` output, no second call:
    one line with the count in each stage in board order (Backlog, Shaping, Ready, Building,
    Testing, Your check, Done), then what's in Building and what's blocked, by title.

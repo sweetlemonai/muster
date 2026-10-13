@@ -463,6 +463,27 @@ class TaskTests(unittest.TestCase):
             self.assertIn(f"problem: {line}\n", r.stdout)
         self.assertEqual(r.stdout.count("go round in a loop"), 1, r.stdout)
 
+    def test_manifest_reads_for_like_muster(self):
+        # 0022: `for: human` is the owner's own task; no `for:` (every older file) is an agent's.
+        r = self.muster("new", "Buy the domain", "--human", "--as", "owner")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.manifest("--check").returncode, 0, self.manifest("--check").stdout)
+        self.assertEqual(self.manifest().returncode, 0)
+        tasks = {t["id"]: t for t in json.loads(self.text("tasks.json"))["tasks"]}
+        self.assertEqual({i: t["for"] for i, t in tasks.items()}, {"0042": "ai", "0043": "ai", "0044": "human"})
+        # The owner doing their own task has no lease to run out: an old heartbeat isn't stale.
+        self.item("0045", "for: Human\nstage: building\nstatus: doing\nclaimed-by: owner\nheartbeat: 2026-01-01 10:00",
+                  folder="doing")
+        self.item("0046", "for: robot\nstage: ready\nstatus: todo")
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("problem: todo/0046-x.md: for 'robot' isn't ai or human (read as ai)\n", r.stdout)
+        self.assertNotIn("0045-x.md", r.stdout)
+        self.manifest()
+        tasks = {t["id"]: t for t in json.loads(self.text("tasks.json"))["tasks"]}
+        self.assertEqual((tasks["0045"]["for"], tasks["0046"]["for"]), ("human", "ai"))
+        self.assertNotIn("bad_for", self.text("tasks.json"))
+
     def test_manifest_warns_about_a_late_goal_without_failing(self):
         self.item("0001", "level: goal\ndue: 2020-01-01\nstage: ready\nstatus: todo")
         self.item("0002", "parent: 0001\nstage: ready\nstatus: todo")

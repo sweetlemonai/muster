@@ -14,6 +14,9 @@ import { GraphView } from "./GraphView";
 import { TableView, TimelineView } from "./Views";
 import { GroupByChips, GroupedBoard } from "./Groups";
 import { childrenOf, GROUP_KEY, type GroupBy, groupItems, indexTasks, isWork, parentLine, parseGroupBy } from "./levels";
+import HumanBoard from "./HumanBoard";
+import { byWho, FOR_FILTERS, FOR_KEY, type ForFilter, humanBoard, humanColumn, isHuman, needsYouCount, parseForFilter, waitsOnYou } from "./human";
+import YouRibbon from "./YouRibbon";
 import logo from "./logo.png";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
@@ -85,6 +88,16 @@ function useGroupBy(): [GroupBy, (g: GroupBy) => void] {
   return [g, set];
 }
 
+/** Table's and Timeline's Human · AI · All filter (0022), remembered between launches. */
+function useForFilter(): [ForFilter, (f: ForFilter) => void] {
+  const [f, setF] = useState<ForFilter>(() => parseForFilter(localStorage.getItem(FOR_KEY)));
+  const set = useCallback((v: ForFilter) => {
+    setF(v);
+    localStorage.setItem(FOR_KEY, v);
+  }, []);
+  return [f, set];
+}
+
 export default function App() {
   const { state, error, at, refresh } = useQueues();
   const [queue, setQueue] = useState("all");
@@ -95,6 +108,7 @@ export default function App() {
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [width, setWidth] = usePaneWidth();
   const [groupBy, setGroupBy] = useGroupBy();
+  const [who, setWho] = useForFilter();
 
   useEffect(() => {
     if (queue !== "all" && state && !state.queues.some((q) => q.name === queue)) setQueue("all");
@@ -110,13 +124,25 @@ export default function App() {
   );
   const allTags = useMemo(() => [...new Set(inQueue.flatMap((t) => t.tags))].sort(), [inQueue]);
   const problems = useMemo(() => (state?.problems ?? []).filter((p) => queue === "all" || p.startsWith(`${queue}:`)), [state, queue]);
-  const waiting = inQueue.filter((t) => t.waitingForOwner);
-  // Goals and features aren't cards in the stage columns: they're the bands, and table rows.
+  // What needs the owner (0022): one count everywhere, and the Waiting tab lists the same tasks,
+  // From the agents first, then the owner's own To do and Doing.
+  const needs = needsYouCount(inQueue);
+  const waiting = useMemo(() => {
+    const b = humanBoard(inQueue);
+    return [...b.lane, ...b.todo, ...b.doing];
+  }, [inQueue]);
+  // Goals and features aren't cards in the stage columns: they're the bands, and table rows. The
+  // AI board is the agents' tasks; the owner's own are on the Human board above it.
   const work = useMemo(() => tasks.filter(isWork), [tasks]);
-  const cols = useMemo(() => columns(work), [work]);
+  const aiWork = useMemo(() => byWho(work, "ai"), [work]);
+  const cols = useMemo(() => columns(aiWork), [aiWork]);
   const index = useMemo(() => indexTasks(state?.tasks ?? []), [state]);
-  const boardGroups = useMemo(() => (groupBy === "none" ? [] : groupItems(work, inQueue, groupBy, tasks)), [groupBy, work, inQueue, tasks]);
-  const tableGroups = useMemo(() => (groupBy === "none" ? undefined : groupItems(tasks, inQueue, groupBy)), [groupBy, tasks, inQueue]);
+  const boardGroups = useMemo(() => (groupBy === "none" ? [] : groupItems(aiWork, inQueue, groupBy, tasks)), [groupBy, aiWork, inQueue, tasks]);
+  // Table and Timeline show both kinds, each human task with its You ribbon; Human · AI · All picks.
+  const viewTasks = useMemo(() => byWho(tasks, who), [tasks, who]);
+  const tableGroups = useMemo(() => (groupBy === "none" ? undefined : groupItems(viewTasks, inQueue, groupBy)), [groupBy, viewTasks, inQueue]);
+  const whoFilters = view === "table" || view === "timeline";
+  const shownCount = whoFilters ? viewTasks.length : tasks.length;
   const openKey = pane?.kind === "task" ? pane.key : null;
   const openTask = openKey ? (state?.tasks ?? []).find((t) => key(t) === openKey) ?? null : null;
   const allNotes = state?.backlog ?? [];
@@ -194,8 +220,8 @@ export default function App() {
             <button className={view === "graph" ? "tab on" : "tab"} onClick={() => setView("graph")} title="What waits on what">Graph</button>
           </span>
           <button className={view === "helper" ? "tab on" : "tab"} onClick={() => setView("helper")}>Helper</button>
-          <button className={view === "waiting" ? "tab on" : "tab"} onClick={() => setView("waiting")}>
-            Waiting for you{waiting.length ? <b className="count warn">{waiting.length}</b> : null}
+          <button className={view === "waiting" ? "tab on" : "tab"} onClick={() => setView("waiting")} title="Your own tasks and what the agents wait on you for: the Human board's count">
+            Waiting for you{needs ? <b className="count warn">{needs}</b> : null}
           </button>
           <button className={view === "activity" ? "tab on" : "tab"} onClick={() => setView("activity")}>Activity</button>
           <button className={view === "problems" ? "tab on" : "tab"} onClick={() => setView("problems")}>
@@ -236,15 +262,29 @@ export default function App() {
                 {(prio.length > 0 || tagFilter.length > 0) && (
                   <button className="chip" onClick={() => { setPrio([]); setTagFilter([]); }}>Clear</button>
                 )}
+                {whoFilters && (
+                  <span className="for-filter" role="group" aria-label="Who does it">
+                    <span className="meta sep">Who</span>
+                    {FOR_FILTERS.map((f) => (
+                      <button key={f.id} className={who === f.id ? "chip on" : "chip"} aria-pressed={who === f.id} onClick={() => setWho(f.id)}>
+                        {f.label}
+                      </button>
+                    ))}
+                  </span>
+                )}
                 {view !== "timeline" && <GroupByChips value={groupBy} onChange={setGroupBy} />}
                 <span className={view !== "timeline" ? "meta" : "meta right"}>
                   {estimateTotal(work) && <span className="est-total">{estimateTotal(work)} · </span>}
-                  {tasks.length === inQueue.length ? `${tasks.length} tasks` : `${tasks.length} of ${inQueue.length} tasks`}
+                  {shownCount === inQueue.length ? `${shownCount} tasks` : `${shownCount} of ${inQueue.length} tasks`}
                 </span>
               </div>
-              {view === "table" && <TableView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} groups={tableGroups} by={groupBy} />}
+              {view === "table" && <TableView tasks={viewTasks} now={now} multi={multi} openKey={openKey} onOpen={open} groups={tableGroups} by={groupBy} />}
               {view === "graph" && <GraphView tasks={tasks} all={inQueue} multi={multi} openKey={openKey} onOpen={open} />}
-              {view === "timeline" && <TimelineView tasks={tasks} now={now} multi={multi} openKey={openKey} onOpen={open} />}
+              {view === "timeline" && <TimelineView tasks={viewTasks} now={now} multi={multi} openKey={openKey} onOpen={open} />}
+              {/* The Human board sits above the AI board, both in view (docs/DESIGN.md). It shows
+                  everything that needs the owner, whatever the filters, so nothing waiting is hidden. */}
+              {view === "board" && <HumanBoard tasks={inQueue} multi={multi} openKey={openKey} onOpen={open} />}
+              {view === "board" && <h2 className="board-label">AI board</h2>}
               {view === "board" && groupBy !== "none" && (
                 <GroupedBoard
                   groups={boardGroups}
@@ -252,7 +292,7 @@ export default function App() {
                   multi={multi}
                   openKey={openKey}
                   onOpen={open}
-                  renderCard={(t) => <Card t={t} now={now} multi={multi} parent={parentLine(t, index)} onOpen={() => open(t)} active={openKey === key(t)} />}
+                  renderCard={(t) => <Card t={t} now={now} multi={multi} parent={parentLine(t, index)} waitsOn={waitsOnYou(t, index)} onOpen={() => open(t)} active={openKey === key(t)} />}
                 />
               )}
               {/* Backlog never folds: its quick add is always there. */}
@@ -277,11 +317,11 @@ export default function App() {
                               item.kind === "note" ? (
                                 <NoteCard key={`note:${noteKey(item.note)}`} n={item.note} now={now} multi={multi} onOpen={() => setPane({ kind: "note", key: noteKey(item.note) })} active={openNoteKey === noteKey(item.note)} />
                               ) : (
-                                <Card key={key(item.task)} t={item.task} now={now} multi={multi} parent={parentLine(item.task, index)} onOpen={() => open(item.task)} active={openKey === key(item.task)} />
+                                <Card key={key(item.task)} t={item.task} now={now} multi={multi} parent={parentLine(item.task, index)} waitsOn={waitsOnYou(item.task, index)} onOpen={() => open(item.task)} active={openKey === key(item.task)} />
                               ),
                             )
                           : shown.map((t) => (
-                              <Card key={key(t)} t={t} now={now} multi={multi} parent={parentLine(t, index)} onOpen={() => open(t)} active={openKey === key(t)} />
+                              <Card key={key(t)} t={t} now={now} multi={multi} parent={parentLine(t, index)} waitsOn={waitsOnYou(t, index)} onOpen={() => open(t)} active={openKey === key(t)} />
                             ))}
                         {c.id === "done" && list.length > 8 && (
                           <button className="more" onClick={() => setShowAllDone((v) => !v)}>
@@ -304,15 +344,16 @@ export default function App() {
                 <article key={key(t)} className={openKey === key(t) ? "waiting active" : "waiting"}>
                   <header>
                     <button className="link" onClick={() => open(t)}>
-                      {multi && <span className="q">{t.queue}</span>} {t.id} · {t.title}
+                      {isHuman(t) && <YouRibbon />} {multi && <span className="q">{t.queue}</span>} {t.id} · {t.title}
                     </button>
                   </header>
+                  {isHuman(t) && <p>Yours to do: {humanColumn(t.stage) === "doing" ? "in Doing. Mark it Done when it is." : "in To do. Start it when you do."}</p>}
                   {t.questions.filter((q) => !q.ticked && q.escalated).map((q) => (
                     <p key={q.n ?? q.text}><b>Q{q.n}</b> {q.text}</p>
                   ))}
                   {t.blocked && t.waitingOn.toLowerCase().startsWith("owner") && <p>Blocked on you: {t.waitingOn}</p>}
                   {t.stage === "your-check" && <p>In Your check: accept it, or send it back with what's wrong.</p>}
-                  <button onClick={() => open(t)}>Open to answer</button>
+                  <button onClick={() => open(t)}>{isHuman(t) ? "Open" : "Open to answer"}</button>
                 </article>
               ))}
             </main>
@@ -388,10 +429,11 @@ export default function App() {
   );
 }
 
-/** One project in the sidebar: its name and count, what's in progress and what needs you. */
+/** One project in the sidebar: its name and count, what's in progress and what needs you (the
+ *  Human board's count: your own tasks to do and doing, and what the agents wait on you for). */
 function ProjectItem({ name, title, total, tasks, on, onClick }: { name: string; title?: string; total: number; tasks: Task[]; on: boolean; onClick: () => void }) {
   const doing = tasks.filter(inProgress).length;
-  const needs = tasks.filter((t) => t.waitingForOwner).length;
+  const needs = needsYouCount(tasks);
   return (
     <button className={on ? "side-item on" : "side-item"} onClick={onClick} title={title}>
       <span className="side-name">{name}</span>
@@ -434,10 +476,13 @@ function Splitter({ width, onWidth }: { width: number; onWidth: (w: number) => v
   );
 }
 
-function Card({ t, now, multi, parent, onOpen, active }: { t: Task; now: number; multi: boolean; parent: string; onOpen: () => void; active: boolean }) {
+/** A board card. `waitsOn`: the owner's own tasks it depends on that aren't done (0022), shown as
+ *  blocked by them until they are. */
+function Card({ t, now, multi, parent, waitsOn = [], onOpen, active }: { t: Task; now: number; multi: boolean; parent: string; waitsOn?: string[]; onOpen: () => void; active: boolean }) {
   const priority = t.priority || "normal";
   return (
     <button className={cardClass(t, active)} onClick={onOpen}>
+      {isHuman(t) && <YouRibbon />}
       <CardBand t={t} />
       <span className="card-top">
         {multi && <span className="q">{t.queue}</span>}
@@ -455,6 +500,7 @@ function Card({ t, now, multi, parent, onOpen, active }: { t: Task; now: number;
       <CardStatus t={t} now={now} />
       <span className="card-bottom">
         {t.blocked && <span className="badge blocked">blocked{t.waitingOn ? `: ${t.waitingOn}` : ""}</span>}
+        {waitsOn.length > 0 && <span className="badge waits-you" title="It can't start until your task is done">blocked by yours: {waitsOn.join(", ")}</span>}
         {t.waitingForOwner && <span className="badge warn">needs you</span>}
         {t.openQuestions > 0 && <span className="badge">{t.openQuestions} open Q</span>}
         {t.attachments.length > 0 && <span className="badge">{t.attachments.length} file{t.attachments.length === 1 ? "" : "s"}</span>}

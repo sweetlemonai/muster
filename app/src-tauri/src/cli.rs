@@ -16,6 +16,7 @@ struct Args {
     json: bool,
     keep: bool,
     check: bool,
+    human: bool,
 }
 
 /// Options and positionals; after `--`, everything is positional (text that starts with `--`).
@@ -26,6 +27,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         json: false,
         keep: false,
         check: false,
+        human: false,
     };
     let mut it = argv.iter();
     let mut rest = false;
@@ -39,6 +41,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--json" => a.json = true,
             "--keep" => a.keep = true,
             "--check" => a.check = true,
+            "--human" => a.human = true,
             "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on"
             | "--tags" | "--tag" | "--time" | "--test-time" | "--tokens" | "--stage" | "--gate"
             | "--commit" | "--to" | "--from" | "--after" | "--session" | "--level" | "--parent"
@@ -432,6 +435,10 @@ fn list_text(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> String {
         out.push_str(&format!("{} ({})\n", ops::stage_label(st), group.len()));
         for t in group {
             let mut extra = String::new();
+            // The owner's own task (0022): only they do it.
+            if t.is_human() {
+                extra.push_str("  [you]");
+            }
             if t.blocked {
                 extra.push_str(&format!(" blocked: {}", t.waiting_on));
             }
@@ -736,11 +743,13 @@ fn run_on(
     match cmd {
         "new" => {
             let title = need(a, 1, "a title")?;
-            // Level, parent and due (0016) are new's own; `file` takes the rest of these options.
+            // Level, parent, due (0016) and --human (0022) are new's own; `file` takes the rest of
+            // these options.
             let new = ops::NewTask {
                 level: a.flags.get("level").cloned().unwrap_or_default(),
                 parent: a.flags.get("parent").cloned().unwrap_or_default(),
                 due: a.flags.get("due").cloned().unwrap_or_default(),
+                for_who: if a.human { "human" } else { "" }.into(),
                 ..new_task(a, title, body_arg(a)?.unwrap_or_default())
             };
             let c = ops::create_task(root, &new, &me(), stamp)?;
@@ -1647,6 +1656,59 @@ mod tests {
         assert_eq!(code("capture", &["reclaim", "--after", "soon"]), 1);
         assert_eq!(t("0002").stage, "building");
         assert_eq!(code("wt-a", &["show", "0002", "--json"]), 0);
+    }
+
+    #[test]
+    fn human_tasks_on_the_command_line() {
+        // 0022: new --human (the owner's only), set for, and an agent's claim refused.
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let code = |who: &str, args: &[&str]| {
+            let mut v = sv(args);
+            v.extend(sv(&["--queue", &q, "--as", who]));
+            main(&v)
+        };
+        let t = |id: &str| queue::read_task(d.path(), id).unwrap();
+        assert!(parse(&sv(&["new", "x", "--human"])).unwrap().human);
+        assert!(!parse(&sv(&["new", "x"])).unwrap().human);
+        assert_eq!(code("owner", &["new", "Buy the domain", "--human"]), 0);
+        assert!(t("0001").is_human());
+        assert_eq!(
+            code("wt-a", &["new", "Set the secret", "--human"]),
+            1,
+            "agents propose in the backlog"
+        );
+        assert_eq!(code("owner", &["new", "Agent work"]), 0);
+        assert_eq!(t("0002").for_who, "ai");
+        assert_eq!(code("wt-a", &["claim", "0001"]), 1, "the owner's to do");
+        assert_eq!(code("wt-a", &["next"]), 0);
+        assert_eq!(t("0002").claimed_by, "wt-a");
+        assert_eq!(code("wt-b", &["next"]), 1, "nothing an agent may take");
+        assert_eq!(code("owner", &["set", "0001", "for", "robot"]), 1);
+        assert_eq!(code("owner", &["new", "Try it on the phone"]), 0);
+        assert_eq!(code("capture", &["set", "0003", "for", "human"]), 0);
+        assert!(t("0003").is_human());
+        // To do → Doing → Done by the owner, no gate line.
+        assert_eq!(code("owner", &["pass", "0001", "--from", "ready"]), 0);
+        assert_eq!(code("owner", &["pass", "0001", "--from", "building"]), 0);
+        assert_eq!(t("0001").stage, "done");
+        // list marks the owner's own tasks.
+        let s = tasks_of(d.path());
+        let all: Vec<&queue::Task> = s.tasks.iter().collect();
+        let text = list_text(&[], &all);
+        assert!(
+            text.contains("  0003 code      normal  Try it on the phone  [you]\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("  0001 code      normal  Buy the domain  [you]\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("  0002 code      normal  Agent work  [on it: wt-a]\n"),
+            "{text}"
+        );
+        assert_eq!(code("owner", &["check"]), 0);
     }
 
     #[test]

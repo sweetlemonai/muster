@@ -1,5 +1,18 @@
 # Muster — task queue protocol (v2, with stages)
 
+> **Human tasks (Muster 0022, 2026-10-13).** `for: human` in the front matter makes a task the
+> owner's own: something only they can do (an account, a secret, a decision, a try on a device).
+> **Agents never claim one**: `muster claim` refuses it ("0041 is the owner's to do") and
+> `muster next` passes it by. It goes To do (Ready) → Doing (Building) → Done by the owner's
+> `muster pass … --as owner`, with no gate line, no Testing and no Your check, and no lease.
+> Only the owner makes one (`muster new "<title>" --human --as owner`, or New task in the app):
+> **an agent that finds something only the owner can do puts it in the backlog** with
+> `muster add "<what the owner needs to do>"`, and the owner files it. `muster set <id> for
+> human|ai` switches who does a task while nobody is on it. An agent's task can wait on a human
+> task with `depends:` ("needs the API key first"): it can't be claimed until the human task is
+> Done, with nothing more written. `muster list` marks human tasks `[you]`, and INDEX.md "you".
+> A file without `for:` (every older one) is an agent's.
+>
 > **INDEX.md, the master list (Muster 0018, 2026-10-13).** `INDEX.md` in the queue folder lists
 > every task with a link to its file: goals with their features and tasks, then the tasks under
 > none by stage, the backlog notes, and what's done. muster writes it after every change it makes,
