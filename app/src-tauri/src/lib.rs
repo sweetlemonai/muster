@@ -10,6 +10,7 @@ pub mod helper;
 mod helper_cmds;
 pub mod index;
 pub mod ops;
+pub mod parallel;
 pub mod projects;
 pub mod queue;
 pub mod search;

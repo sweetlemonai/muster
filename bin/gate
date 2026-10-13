@@ -1,0 +1,41 @@
+#!/bin/sh
+# Muster's gate (task 0023): every check this repo has, run from the checkout it's in, quietly.
+# A session runs it before `muster pass <id> --from building --gate "<its last line>"`, and a
+# merge runs it in the task's worktree (`muster projects set muster gate bin/gate`).
+# Prints one result line last: `gate: green (…)`, or `gate: RED (…)` with exit 1. A failed step's
+# last lines are shown above it; its whole log stays in the folder it names.
+set -u
+cd "$(dirname "$0")/.." || exit 2
+logs=$(mktemp -d "${TMPDIR:-/tmp}/muster-gate.XXXXXX") || exit 2
+passed=""
+failed=""
+
+# step <name> <program> [args…]: run one check, its output to its log.
+step() {
+  name=$1
+  shift
+  if "$@" >"$logs/$name.log" 2>&1; then
+    passed="$passed, $name"
+  else
+    failed="$failed, $name"
+    printf -- '--- %s failed (log: %s)\n' "$name" "$logs/$name.log"
+    tail -n 20 "$logs/$name.log"
+  fi
+}
+
+# A fresh worktree has no node_modules yet.
+if [ ! -d app/node_modules ]; then
+  step "pnpm install" pnpm --dir app install --frozen-lockfile
+fi
+step "pnpm check" pnpm --dir app check
+step "test_task" python3 -I bin/test_task.py
+step "test_commands" python3 -I bin/test_commands.py
+step "cargo test (Kiritimati)" env TZ=Pacific/Kiritimati cargo test --quiet --manifest-path app/src-tauri/Cargo.toml
+
+if [ -n "$failed" ]; then
+  printf 'gate: RED (failed: %s; logs in %s)\n' "${failed#, }" "$logs"
+  exit 1
+fi
+rm -f "$logs"/*.log
+rmdir "$logs"
+printf 'gate: green (%s)\n' "${passed#, }"

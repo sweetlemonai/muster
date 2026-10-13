@@ -109,6 +109,13 @@ export type Task = {
   search?: string;
   /** One of the task's sessions changed its transcript in the last 5 minutes (0025). */
   live: boolean;
+  /** Where in the repo it works (`touches:`, 0023): folders and globs. */
+  touches?: string[];
+  /** A task `muster start` began (0023): its git worktree and branch, until the merge clears them. */
+  worktree?: string;
+  branch?: string;
+  /** After the merge: the report from its log ("merged task/… into main as …"), else "". */
+  mergeReport?: string;
 };
 
 /** Tokens a session used, by kind (0025). */

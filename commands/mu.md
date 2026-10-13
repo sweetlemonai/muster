@@ -48,7 +48,7 @@ mode` is captured, never a claim. Never guess which command was meant.
 | `/mu check` | system | `muster check` | Problems in the queue. |
 | `/mu help [<command>]` | system | `muster help [<command>]` | This route table as a short list, then muster's help. |
 
-Not routed: `new`, `move`, `stage`, `set`, `attach`, `escalate`, `inbox`, `reclaim`, `checkin`, `projects`, `init`, `tick`, `untick`, `edit`, `shape`, `file`, `drop`, `link`, `comment`, `index`, `vision`.
+Not routed: `new`, `move`, `stage`, `set`, `attach`, `escalate`, `inbox`, `reclaim`, `checkin`, `projects`, `init`, `tick`, `untick`, `edit`, `shape`, `file`, `drop`, `link`, `comment`, `index`, `vision`, `ready`, `start`, `release`.
 
 ## Running muster
 

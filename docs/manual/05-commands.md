@@ -11,7 +11,7 @@ Make a task, read it, and change what it says: its fields, its write-up, its log
 Create a task in Ready. Its id is taken in order under the queue's lock, and it's logged as you. With --level it's a goal (an outcome, may have a due date) or a feature (groups tasks); agents build only tasks. With --human it's the owner's own to do (for: human): only the owner makes one, and agents never take it; an agent that finds something only the owner can do proposes it with muster add. An idea that isn't a task yet goes in the backlog instead (muster add).
 
 ```
-muster new "<title>" [--type code|bug|chore|tech-debt|spike|design|docs|research] [--priority high|normal|low] [--tags a,b] [--time 2h] [--test-time 30m] [--tokens 400k] [--level goal|feature] [--parent <id>] [--due YYYY-MM-DD] [--human] [--body <text>|-]
+muster new "<title>" [--type code|bug|chore|tech-debt|spike|design|docs|research] [--priority high|normal|low] [--tags a,b] [--time 2h] [--test-time 30m] [--tokens 400k] [--touches <folders,globs>] [--level goal|feature] [--parent <id>] [--due YYYY-MM-DD] [--human] [--body <text>|-]
 ```
 
 | Option | What it does |
@@ -22,6 +22,7 @@ muster new "<title>" [--type code|bug|chore|tech-debt|spike|design|docs|research
 | `--time` | estimated agent time: 45m, 2h, 1.5d |
 | `--test-time` | estimated test time, the QA agent plus your check: 30m, 1h |
 | `--tokens` | estimated tokens: 150k, 1.2M |
+| `--touches` | where in the repo it works, folders and globs, comma-separated (app/src/TaskPanel\*, docs/), for muster ready --parallel |
 | `--level` | goal, feature or task (default) |
 | `--parent` | the id it sits under: a task's is a feature or a goal, a feature's a goal; a goal has none |
 | `--due` | a goal's date, YYYY-MM-DD |
@@ -120,10 +121,10 @@ muster show 0007 --json
 
 ### muster set
 
-Change one field, logged with the time and who. type is one of code, bug, chore, tech-debt, spike, design, docs, research; time is agent time and test-time the QA agent plus your check. level, parent and due keep the rules of muster new (a parent that exists at the right level, no loop, a due date only on a goal); a task in Building or Testing, or held, stays a task. An empty parent or due clears it. for is human or ai: who does it (a human task is the owner's own, on the Human board); only a task, and not while it's held, in Building, Testing or Your check; made human in Backlog or Shaping, it moves to Ready (To do).
+Change one field, logged with the time and who. type is one of code, bug, chore, tech-debt, spike, design, docs, research; time is agent time and test-time the QA agent plus your check. touches is where in the repo it works, folders and globs, comma-separated (app/src/TaskPanel\*, docs/), which muster ready --parallel keeps apart; empty clears it. level, parent and due keep the rules of muster new (a parent that exists at the right level, no loop, a due date only on a goal); a task in Building or Testing, or held, stays a task. An empty parent or due clears it. for is human or ai: who does it (a human task is the owner's own, on the Human board); only a task, and not while it's held, in Building, Testing or Your check; made human in Backlog or Shaping, it moves to Ready (To do).
 
 ```
-muster set <id> <priority|type|title|tags|time|test-time|tokens|level|parent|due|depends|for> <value>
+muster set <id> <priority|type|title|tags|time|test-time|tokens|touches|level|parent|due|depends|for> <value>
 ```
 
 Examples:
@@ -186,6 +187,10 @@ muster set 0018 depends 0014,0016
 
 ```
 muster set 0018 depends ""
+```
+
+```
+muster set 0031 touches "app/src/TaskPanel*, docs/"
 ```
 
 ### muster edit
@@ -302,7 +307,7 @@ Move a task on to the next stage, send it back, or mark it blocked. Only these c
 
 ### muster pass
 
-Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria and no open vision conflict (muster vision). Building → Testing needs the gate's result line and releases your claim. Testing → Your check needs every criterion ticked except the owner's ("— verify: owner"); Your check → Done needs those ticked too (muster tick). A human task (the owner's own) goes To do (Ready) → Doing (Building) → Done, and only the owner passes it: no gate line, no Testing, no Your check. Refused while it's blocked, or when someone else holds it.
+Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria and no open vision conflict (muster vision). Building → Testing needs the gate's result line and releases your claim. Testing → Your check needs every criterion ticked except the owner's ("— verify: owner"); Your check → Done needs those ticked too (muster tick). A human task (the owner's own) goes To do (Ready) → Doing (Building) → Done, and only the owner passes it: no gate line, no Testing, no Your check. Refused while it's blocked, or when someone else holds it. A task made with muster start merges when it passes from Testing, in order, stopping at the first failure: one merge at a time per repo; rebase its branch on the local main (a conflict sends it back to Building naming the files); run the project's gate in its worktree (muster projects set \<name\> gate; red sends it back with the gate line); merge into the local main (a fast-forward when it can, else a merge commit), only if the main checkout is clean and on main; push main to origin (never forced: if origin moved, it fetches and stops); remove the worktree and delete the branch once it's on main; Your check, with the merge commit and a report logged (gate line, time in Building and Testing, check-ins); then it names the next task to start. Nothing is deleted on any failure. Only the command line does this: the app's Pass is refused for such a task.
 
 ```
 muster pass <id> [--from <stage>] [--gate "<gate result line>"] [--commit <sha>]
@@ -331,6 +336,10 @@ muster pass 0007 --from your-check --commit 3f2a9c1
 
 ```
 muster pass 0041 --from ready --as owner
+```
+
+```
+muster pass 0031 --from testing --as qa
 ```
 
 ### muster return
@@ -473,7 +482,7 @@ muster move 0007 done
 
 ## Claims
 
-Who's on a task. A coding session claims a Ready task, keeps the claim alive while it works, and checks in to say how far it got. See [Claims, leases and check-ins](02-concepts.md#claims-leases-and-check-ins).
+Who's on a task. A coding session claims a Ready task, keeps the claim alive while it works, and checks in to say how far it got. See [Claims, leases and check-ins](02-concepts.md#claims-leases-and-check-ins). Sessions that work side by side each start a task in its own worktree: `muster ready --parallel` says which tasks are safe together, `muster start` claims one with a branch and a worktree, passing it from Testing merges it into main and cleans up, and `muster release --clean` gives it up.
 
 ### muster claim
 
@@ -581,6 +590,84 @@ muster reclaim
 
 ```
 muster reclaim --after 1d --queue drover
+```
+
+### muster ready
+
+The tasks a session could start now: in Ready, not blocked, nobody's claim, an agent's (never a human task), everything they depend on done; high priority first, then the lowest id. With --parallel, up to n of them (default 3) that are safe side by side: none depends on another, and what they touch doesn't overlap. A task says where it works in touches: (folders and globs, set at shaping or with muster set \<id\> touches); two entries overlap when the part before the first wildcard of one starts the other's (app/src overlaps app/src/TaskPanel\*), and a task without touches never pairs. Then the ones left out, with why.
+
+```
+muster ready [--parallel [<n>]] [--json]
+```
+
+| Option | What it does |
+| --- | --- |
+| `--parallel` | only a set that can be built at the same time; how many goes after it (1 to 20, default 3) |
+| `--json` | {"tasks": \[…\], "left": \[{"id", "why"}\]}, for a dispatcher |
+
+Examples:
+
+```
+muster ready
+```
+
+```
+muster ready --parallel
+```
+
+```
+muster ready --parallel 2 --json
+```
+
+### muster start
+
+Claim a Ready task (claim's rules) in its own git worktree, to work beside other sessions: a branch task/\<id\>-\<slug\> from the local main's commit (however dirty the main checkout is) and a worktree for it, at \<project\>/worktrees/\<repo\>/\<id\>-\<slug\> unless --at says where. Run it in the project's repo or a worktree of it. The task records worktree: and branch:, and start prints both with the brief: the task file, what it touches, its criteria. Work there; pass from Building as always. Passing it from Testing merges it (muster pass). A task started before (sent back to Ready, reclaimed) is picked up in its worktree again. Refused claims leave nothing behind.
+
+```
+muster start <id> [--at <path>|--here]
+```
+
+| Option | What it does |
+| --- | --- |
+| `--at` | where to make the worktree instead (a path that doesn't exist yet) |
+| `--here` | use the worktree you're in (one a runner like a Drover lane made, with nothing uncommitted): it's switched to the task's branch |
+| `--as` | who you are; default $MUSTER\_AS, then the folder's git user.name |
+
+Examples:
+
+```
+muster start 0031 --as wt-a
+```
+
+```
+muster start 0031 --here --as lane-2
+```
+
+```
+muster start 0031 --at ~/wt/0031 --as wt-a
+```
+
+### muster release
+
+Give up a started task: back to Ready with its claim released, its worktree removed and its branch deleted (the local one; a branch pushed to origin stays, and so does its work). It first lists what that would lose (uncommitted files in the worktree, commits on no other branch) and refuses it unless --force. Works when the worktree is already gone too. In Building only its holder or the owner releases it.
+
+```
+muster release <id> --clean [--force]
+```
+
+| Option | What it does |
+| --- | --- |
+| `--clean` | remove the worktree and the branch (required: to send a task back and keep them, use muster return) |
+| `--force` | throw away the uncommitted files and unpushed commits it listed |
+
+Examples:
+
+```
+muster release 0031 --clean
+```
+
+```
+muster release 0031 --clean --force --as owner
 ```
 
 ## Questions
@@ -723,7 +810,7 @@ muster shape 2026-10-12-1405-board-flickers.md --json --queue drover
 File a shaped backlog note as a task: the next id, in Shaping, with your body after a "From the backlog" line quoting the note. The note moves into the task's attachments/\<id\>/, so nothing is lost; all under the queue's lock, so a note is filed once. Then muster pass \<id\> --from shaping puts it in Ready (it needs acceptance criteria).
 
 ```
-muster file <note-file> "<title>" [--type code|bug|chore|tech-debt|spike|design|docs|research] [--priority high|normal|low] [--tags a,b] [--time 2h] [--test-time 30m] [--tokens 400k] --body <text>|-
+muster file <note-file> "<title>" [--type code|bug|chore|tech-debt|spike|design|docs|research] [--priority high|normal|low] [--tags a,b] [--time 2h] [--test-time 30m] [--tokens 400k] [--touches <folders,globs>] --body <text>|-
 ```
 
 | Option | What it does |
@@ -734,6 +821,7 @@ muster file <note-file> "<title>" [--type code|bug|chore|tech-debt|spike|design|
 | `--time` | estimated agent time: 45m, 2h, 1.5d |
 | `--test-time` | estimated test time, the QA agent plus your check: 30m, 1h |
 | `--tokens` | estimated tokens: 150k, 1.2M |
+| `--touches` | where in the repo it works, folders and globs, comma-separated: what muster ready --parallel keeps apart |
 | `--body` | the shaped task in Markdown, with ## Acceptance criteria (required); - reads it from stdin |
 
 Examples:
@@ -825,16 +913,28 @@ Find the queues Muster knows, start one for a project, check a queue for problem
 
 ### muster projects
 
-Every queue Muster knows: found under ~/playground and added in the app.
+Every queue Muster knows: found under ~/playground and added in the app, with each one's gate. projects set \<name\> gate stores the project's gate command in the app's projects.json: what a merge runs in a task's worktree (muster pass \<id\> --from testing). It's split into words like a shell would, quotes and all, but no shell runs it, so a pipe or a cd is just a word: point it at a script in the repo (bin/gate) for anything more. "" clears it; with no gate, nothing merges.
 
 ```
-muster projects [--json]
+muster projects [--json] | muster projects set <name> gate "<command>"
 ```
+
+| Option | What it does |
+| --- | --- |
+| `--json` | the list, for scripts |
 
 Examples:
 
 ```
 muster projects
+```
+
+```
+muster projects set muster gate bin/gate
+```
+
+```
+muster projects set drover gate "pnpm check"
 ```
 
 ### muster init
@@ -853,7 +953,7 @@ muster init ~/playground/braindump
 
 ### muster check
 
-Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist, a link that isn't a plain https link, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop, a for that isn't human or ai, a vision count that doesn't match the task's Vision section, an INDEX.md that shows something the task files no longer say (rebuild with muster index; none yet is fine). Exit 1 if any. A goal past its due date with tasks open, and an INDEX.md only due a refresh (the files changed outside muster, as Drover's answers do), are warnings: shown, without failing. Also lists, without counting them as problems, what waits on the owner's look and Shaping tasks with no vision check yet.
+Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet for 12 h, blocked with no reason, waiting on a task that doesn't exist, a link that isn't a plain https link, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop, a for that isn't human or ai, a vision count that doesn't match the task's Vision section, an INDEX.md that shows something the task files no longer say (rebuild with muster index; none yet is fine). Exit 1 if any. A goal past its due date with tasks open, and an INDEX.md only due a refresh (the files changed outside muster, as Drover's answers do), are warnings: shown, without failing. Also lists, without counting them as problems, what waits on the owner's look, Shaping tasks with no vision check yet, and what parallel sessions left behind: a started task whose worktree is gone, a worktree of a task sent back to Ready, and a worktree on a task/\<id\>- branch whose task is past Testing, each with the command that cleans it.
 
 ```
 muster check
@@ -956,6 +1056,16 @@ muster next --as <your branch>
 
 ```
 muster claim 0007 --as <your branch>
+```
+
+Working beside other sessions? Pick from the tasks that are safe together and start one in its own worktree (PROTOCOL.md has the whole loop). Passing it from Testing merges it into main, pushes main and cleans up:
+
+```
+muster ready --parallel
+```
+
+```
+muster start 0007 --as <your branch>
 ```
 
 On long work, keep the claim alive. A claim with no heartbeat for 12 h goes back to Ready (muster reclaim). Your notes and passes count too:

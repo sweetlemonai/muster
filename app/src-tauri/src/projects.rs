@@ -18,6 +18,9 @@ pub struct Config {
     pub hidden: Vec<String>,
     /// Display names by queue folder.
     pub names: HashMap<String, String>,
+    /// The project's gate command by queue folder (0023): what a merge runs in the task's
+    /// worktree, split into words without a shell (`bin/gate`, `make check`).
+    pub gate: HashMap<String, String>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -33,6 +36,8 @@ pub struct Project {
     pub hidden: bool,
     /// The folder still looks like a Muster queue.
     pub ok: bool,
+    /// Its gate command (0023), or "" when none is set.
+    pub gate: String,
 }
 
 pub fn load(file: &Path) -> Config {
@@ -91,6 +96,7 @@ pub fn list(base: &Path, config: &Config) -> Vec<Project> {
                 .unwrap_or_else(|| default_name(&path)),
             ok: looks_like_queue(&path),
             hidden: hidden.contains(key.as_str()),
+            gate: config.gate.get(&key).cloned().unwrap_or_default(),
             path: key.clone(),
             key,
             source: source.to_string(),
@@ -120,6 +126,45 @@ pub fn active(base: &Path, config: &Config) -> Vec<(String, PathBuf)> {
         .filter(|p| !p.hidden && p.ok)
         .map(|p| (p.name, PathBuf::from(p.path)))
         .collect()
+}
+
+/// The longest gate command projects.json keeps.
+const MAX_GATE: usize = 500;
+
+/// Set (or, with an empty `cmd`, clear) the gate command of the project named `name`. The caller
+/// has checked it splits into words (`cli::split_words`); here it's one line of at most 500
+/// characters. Returns the project's queue folder.
+pub fn set_gate(config: &mut Config, base: &Path, name: &str, cmd: &str) -> Result<String, String> {
+    let p = list(base, config)
+        .into_iter()
+        .find(|p| p.name == name)
+        .ok_or_else(|| format!("no project named {name:?} (see `muster projects`)"))?;
+    let cmd = cmd.trim();
+    if cmd.chars().any(char::is_control) {
+        return Err("the gate command is one line, without control characters".into());
+    }
+    if cmd.chars().count() > MAX_GATE {
+        return Err(format!(
+            "the gate command is longer than {MAX_GATE} characters"
+        ));
+    }
+    if cmd.is_empty() {
+        config.gate.remove(&p.key);
+    } else {
+        config.gate.insert(p.key.clone(), cmd.to_string());
+    }
+    Ok(p.key)
+}
+
+/// The gate command of the project whose queue is `root` (the same folder, through symlinks
+/// too), if one is set.
+pub fn gate_of(base: &Path, config: &Config, root: &Path) -> Option<(String, String)> {
+    let canon = |p: &Path| fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let root = canon(root);
+    list(base, config)
+        .into_iter()
+        .find(|p| canon(Path::new(&p.path)) == root)
+        .map(|p| (p.name, p.gate))
 }
 
 fn inside_git_work_tree(dir: &Path) -> bool {
