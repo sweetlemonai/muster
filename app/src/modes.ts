@@ -50,7 +50,7 @@ const TABLE = {
     label: "Board columns",
     adhd: { how: "all", says: "Every stage; an empty one narrows to its name" },
     standard: { how: "all", says: "Every stage; an empty one narrows to its name" },
-    focus: { how: "now", says: "Building, Testing and Your check; the others are thin strips with their counts", reach: "Click a strip to open that column" },
+    focus: { how: "now", says: "Building, Testing and Your check; the others (the grouped board's Backlog band too) are thin strips with their counts, needs you and blocked", reach: "Click a strip to open that column" },
   },
   rail: {
     label: "Recently finished",
@@ -68,7 +68,7 @@ const TABLE = {
     label: "Sidebar",
     adhd: { how: "full", says: "Projects with their counts, the order chips and each one's activity line" },
     standard: { how: "full", says: "Projects with their counts, the order chips and each one's activity line" },
-    focus: { how: "narrow", says: "Project names, the working dot and the needs-you count", reach: "Leave Focus: ⌘. or the mode chip in the header" },
+    focus: { how: "narrow", says: "Project names, the working dot, stalled and the needs-you count; a stalled project keeps its Ask for a check-in", reach: "Leave Focus: ⌘. or the mode chip in the header" },
   },
 } as const satisfies Record<string, Entry>;
 

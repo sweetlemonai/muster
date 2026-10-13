@@ -63,13 +63,15 @@ have their own short sets below. Every other section here applies in all three.
 
 ## Focus mode: only what needs doing now
 
-- **The board is Building, Testing and Your check.** The other columns are thin strips with their
-  name, count and needs-you count; a click opens one until Focus is left.
-- **A card is its title and one status line** (who's on it, or Your turn), plus blocked, quiet or
-  needs you when it is.
+- **The board is Building, Testing and Your check.** The other columns (and the grouped board's
+  Backlog band) are thin strips with their name, count, needs-you count and blocked count; a click
+  opens one until Focus is left. Blocked never hides behind a fold.
+- **A card is its title and one status line** (who's on it, or Your turn), plus blocked, quiet,
+  needs a tester or needs you when it is.
 - **No filter bar until ⌘F,** only a button in its place, and the bar stays while a search or
   filter is on, so nothing is hidden without saying so.
-- **The sidebar narrows** to the project names, the working dot and the needs-you count.
+- **The sidebar narrows** to the project names, the working dot, stalled and the needs-you count;
+  a stalled project keeps its Ask for a check-in.
 - **Recently finished folds to a strip** with its name and count beside the board, opened in place
   with a click: finished work isn't what needs doing now, but it stays one click away.
 - **The task pane folds as in Standard.**

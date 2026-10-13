@@ -19,7 +19,8 @@ const HELD = new Set(["ready", "building", "testing"]);
  *  done (0051). A task started in its own worktree (0023) adds its branch and the worktree's
  *  folder. Then, at any stage, its open vision conflicts (0029).
  *  `lines` is the display mode's (0038): Standard's brief card keeps only what says something is
- *  wrong or waits on you; Focus keeps who's on it, or Your turn, and the alarms. The Done line is
+ *  wrong or waits on you; Focus keeps who's on it, or Your turn, and the alarms (needs a tester
+ *  among them: a builder holding Testing isn't work going on). The Done line is
  *  the Done card's status line, read from the modes' table on its own.
  *  `now` is the state's clock, seconds since 1970. */
 export default function CardStatus({ t, now, lines = "all" }: { t: Task; now: number; lines?: CardLines }) {
@@ -71,7 +72,7 @@ function HeldLines({ t, now, lines }: { t: Task; now: number; lines: CardLines }
   return (
     <>
       {lines !== "brief" && <span className={who ? "card-who" : "card-who nobody"}>{[who || "nobody on it", started].filter(Boolean).join(" · ")}</span>}
-      {lines !== "status" && needsTester(t) && <span className="card-tester">needs a tester</span>}
+      {needsTester(t) && <span className="card-tester">needs a tester</span>}
       {lines === "all" && (asked ? <span className="card-asked">{asked}</span> : checkin && <span className="card-checkin">{checkinLine(checkin, now)}</span>)}
       {flag && <span className="card-quiet">{flag}</span>}
     </>

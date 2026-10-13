@@ -9,7 +9,7 @@ import Markdown from "./Markdown";
 import { Fold } from "./ModeViews";
 import { taskKey, taskOfHref } from "./taskKey";
 import PaneHeader from "./PaneHeader";
-import { isFileDrag, releasedBy, undoFor } from "./paneData";
+import { isFileDrag, logSummary, releasedBy, undoFor } from "./paneData";
 import PickOne, { answeredText } from "./PickOne";
 import { SessionPing } from "./Ping";
 import Sidebar from "./Sidebar";
@@ -196,7 +196,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
 
       <Comments task={task} onChanged={onChanged} onDirty={commentDirty} nudge={nudge} keys={keys} onLink={openLink} />
       {((log && !raw && editing === null) || task.checkins.length > 0) && (
-        <Fold label="Log and check-ins" summary={task.checkins.length ? `${task.checkins.length} check-in${task.checkins.length === 1 ? "" : "s"}` : undefined}>
+        <Fold label="Log and check-ins" summary={logSummary(log && !raw && editing === null ? log : "", task.checkins.length)}>
           {log && !raw && editing === null && (
             <section className="log">
               <Markdown text={log} keys={keys} onLink={openLink} />

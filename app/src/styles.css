@@ -878,6 +878,19 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .fold.open > .fold-head::before { content: "▾ "; }
 .fold-head small { font-weight: 400; color: var(--muted); margin-left: 4px; }
 .fold-head:hover, .fold-head:focus-visible { background: var(--tint); }
+/* ADHD's wrapper takes no room: the section lays out as it always has. */
+.fold.all, .fold.all > .fold-body { display: contents; }
+/* An opened fold's header already names the section. */
+.fold.open > .fold-body > section:first-child > h2:first-child { display: none; }
+/* Blocked on a folded strip: in words, in the error colour, so a fold never hides it. */
+.count.blocked-count { background: none; border: 1px solid var(--err); color: var(--err); white-space: nowrap; }
+.column.folded .col-fold .count.blocked-count { margin-top: 4px; }
+.band-fold { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; width: 100%; text-align: left; border: none; background: none; padding: 8px 12px; font: inherit; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px; }
+.band-fold::before { content: "▸"; color: var(--muted); }
+.band-fold[aria-expanded="true"]::before { content: "▾"; }
+.band-fold small { color: var(--muted); }
+.band-fold .count { margin-left: 0; }
+.band-fold:hover, .band-fold:focus-visible { background: var(--tint); }
 .filter-bar.summon { display: flex; align-items: center; gap: 8px; }
 .filters-fold .count { margin-left: 4px; }
 .sidebar[data-sidebar="narrow"] { width: 150px; }

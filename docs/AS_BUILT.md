@@ -109,13 +109,15 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   groups and Sort behind **Filters (n)**, opened in place; Who and Group by as their value; brief
   cards (who, check-in, branch, tags, parent, estimate and files on the selected card); Vision,
   Work, and the Log and check-ins folded to a header each. Focus: Building, Testing and Your check
-  open, the other columns strips with counts and needs-you counts (a click opens one until the
-  mode changes, in the plain and the grouped board); cards are the title, one status line and
-  blocked, quiet or needs you; the filter bar is a **Search and filters ⌘F** button until ⌘F, and
-  stays while a search, filter or Who hides tasks; the sidebar is 150 px of names, a working dot
-  and needs-you counts; Recently finished (0051) is a strip with its name and count that opens in
+  open, the other columns strips with counts, needs-you and blocked counts (a click opens one until
+  the mode changes, in the plain and the grouped board, whose Backlog band folds to its head the
+  same way); cards are the title, one status line and blocked, quiet, needs a tester or needs you; the filter bar is a **Search and filters ⌘F** button until ⌘F, and
+  stays while a search, filter or Who hides tasks; the sidebar is 150 px of names, a working dot,
+  stalled (with its Ask all quiet sessions) and needs-you counts; Recently finished (0051) is a strip with its name and count that opens in
   place (Fold puts it back), and reads no costs while folded; the Done card's "done 4 min ago" line
-  shows in all three; the pane folds as Standard. Needs-you counts and badges show in every mode.
+  shows in all three; the pane folds as Standard. Needs-you counts and badges show in every mode. A pane fold keeps its
+  section mounted in every mode (ADHD's wrapper is `display: contents`), so typed text survives a
+  fold or a mode switch; the folded Log's header counts its lines and check-ins.
 - **Themes and accents** (Settings' Appearance): 7 themes (Violet night, Violet day, Graphite,
   Midnight, Paper, Snow, High contrast), with Match the Mac picking one dark and one light, and 6
   accents (Violet, Teal, Rose, Gold, Green, Graphite). No blue, no orange. They apply live and are

@@ -27,7 +27,7 @@ import { HelpButton, OpenHelp } from "./HelpButton";
 import { HELP_TOPICS, type HelpTopic, type ManualAt } from "./helpTopics";
 import { Machine, machineOf, type SettingsGroup } from "./settingsData";
 import { columnFold, loadMode, look, Mode, pickMode, storeMode, toggleFocus, type ColumnFolds, type ModeState } from "./modes";
-import { ChoiceChips, ColumnHead, ModeChip } from "./ModeViews";
+import { blockedCount, ChoiceChips, ColumnHead, ModeChip } from "./ModeViews";
 import logo from "./logo.png";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
@@ -447,7 +447,7 @@ export default function App() {
                   const fold = columnFoldOf.of(c.id);
                   return (
                     <section key={c.id} className={`column col-${c.id}${fold === "folded" ? " folded" : count || backlog || kept ? "" : " empty"}`}>
-                      <ColumnHead stage={c} count={count} needs={needsYouCount(list)} fold={fold} onFold={() => columnFoldOf.toggle(c.id)}>
+                      <ColumnHead stage={c} count={count} needs={needsYouCount(list)} blocked={blockedCount(list)} fold={fold} onFold={() => columnFoldOf.toggle(c.id)}>
                         {c.role && <span className="role">{c.role}</span>}
                       </ColumnHead>
                       {backlog && fold !== "folded" && quickAdd}

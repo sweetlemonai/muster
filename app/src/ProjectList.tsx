@@ -32,23 +32,24 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
   const shown = memo.current.names.flatMap((n) => byName.get(n) ?? []);
   const sums = useMemo(() => sumActivity(rows.map((r) => r.activity)), [rows]);
   const counts = useMemo(() => new Map(queues.map((q) => [q.name, q.counts])), [queues]);
-  // Focus (0038) narrows the sidebar to the names, the working dot and the needs-you count.
+  // Focus (0038) narrows the sidebar to the names, the working dot, stalled and the needs-you count;
+  // a stalled project keeps its Ask all quiet sessions under it.
   const full = useLook("sidebar") === "full";
   return (
     <nav className="projects-nav">
-      <ProjectItem name="All" total={tasks.length + notes.length} tasks={tasks} on={current === "all"} onClick={() => onPick("all")} working={sums.working > 0}>
+      <ProjectItem name="All" total={tasks.length + notes.length} tasks={tasks} on={current === "all"} onClick={() => onPick("all")} working={sums.working > 0} stalled={sums.stalled > 0 ? `${sums.stalled} stalled` : ""}>
         <SumsLine s={sums} now={now} />
       </ProjectItem>
       {full && <div className="side-label">Projects</div>}
       {full && <OrderChips value={order} onChange={pick} />}
       {shown.map((r) => (
         <Fragment key={r.name}>
-          <ProjectItem name={r.name} title={r.title} total={projectCount(counts.get(r.name) ?? {}, notes, r.name)} tasks={r.tasks} on={current === r.name} onClick={() => onPick(r.name)} working={r.activity.working > 0}>
+          <ProjectItem name={r.name} title={r.title} total={projectCount(counts.get(r.name) ?? {}, notes, r.name)} tasks={r.tasks} on={current === r.name} onClick={() => onPick(r.name)} working={r.activity.working > 0} stalled={r.activity.stalled ? "stalled" : ""}>
             <ActivityLine a={r.activity} now={now} />
           </ProjectItem>
           {/* A stalled project offers to ask its quiet sessions for a check-in (0039), under its
               row, since the row is itself a button. */}
-          {full && r.activity.stalled && <QuietPing tasks={r.tasks} now={now} />}
+          {r.activity.stalled && <QuietPing tasks={r.tasks} now={now} />}
         </Fragment>
       ))}
     </nav>
@@ -57,9 +58,9 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
 
 /** One project in the sidebar: its name and count, what's in progress and what needs you (the
  *  needs-you count: your own tasks to do and doing, and what the agents wait on you for), and
- *  under them its activity line. Narrowed (Focus, 0038), the name, the working dot and the
- *  needs-you count. */
-export function ProjectItem({ name, title, total, tasks, on, onClick, working = false, children }: { name: string; title?: string; total: number; tasks: Task[]; on: boolean; onClick: () => void; working?: boolean; children: ReactNode }) {
+ *  under them its activity line. Narrowed (Focus, 0038), the name, the working dot, "stalled" in the
+ *  attention colour (the activity line's word, or "2 stalled" on All) and the needs-you count. */
+export function ProjectItem({ name, title, total, tasks, on, onClick, working = false, stalled = "", children }: { name: string; title?: string; total: number; tasks: Task[]; on: boolean; onClick: () => void; working?: boolean; stalled?: string; children: ReactNode }) {
   const doing = tasks.filter(inProgress).length;
   const needs = needsYouCount(tasks);
   const full = useLook("sidebar") === "full";
@@ -68,6 +69,7 @@ export function ProjectItem({ name, title, total, tasks, on, onClick, working = 
       <span className="side-line">
         {!full && working && <i className="dot side-dot" title={`Being worked on now: ${WORKING_HINT}`} />}
         <span className="side-name">{name}</span>
+        {!full && stalled && <span className="side-stalled" title={`Stalled: ${STALLED_HINT}`}>{stalled}</span>}
         <span className="side-badges">
           {needs > 0 && <span className="count warn" title={`${needs} need you`}>{needs}</span>}
           {full && doing > 0 && <span className="side-doing" title={`${doing} in progress (Building or Testing)`}>{doing}</span>}

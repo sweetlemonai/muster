@@ -29,6 +29,21 @@ for you, overrule any time".
 (Kiritimati))`; 1004 app tests, new `modes.test.ts` (15: the table, ⌘. and kept mode, and the
 AC2 scan, shown to fail on a planted `useLook("nope")` and `mode === "focus"`) and
 `Display.test.ts` (23: Settings, header chip, ⌘., each element per mode, needs you in every mode).
+**Fixed (review):** in Focus a Testing card held by its builder lost "needs a tester" and showed
+the builder's who line, so it looked worked on → `CardStatus` shows the tester line in every mode.
+Focus's narrow sidebar dropped a stalled project's word, dot and Ask all quiet sessions → the row
+says **stalled** in the attention colour (All: "N stalled") and the button stays under it. The
+grouped board's Backlog band stayed open in Focus → it folds to its head (a button with its count,
+needs-you and blocked counts), toggling `backlog` like the plain board's column. Folded strips said
+nothing of blocked tasks → they count them ("3 blocked", `blockedCount`, `FoldCounts`). The folded
+Log header had no count → "12 log lines · 3 check-ins" (`paneData.logSummary`); Work keeps its
+words, since the task carries no session count until Work reads the transcripts. Switching
+ADHD ↔ another mode unmounted Vision and Work (typed text lost) → `Fold` renders the same wrapper
+and body in every mode, the body `hidden` when folded and `display: contents` in ADHD. An opened
+fold repeated the section's heading → hidden under the fold's header. The raw mode-read test now
+also catches 'single'- and `template`-quoted mode names and `Mode as` imports. ADHD is unchanged
+but for that wrapper, which takes no room. Each fix has a test that failed first (the tester line
+and the tighter scan were also checked by reverting or planting).
 **Open:** the owner tries all three on the real queue (AC4); ⌘. not yet pressed in the built app.
 ## 2026-10-13 — Task keys with a project prefix: mu-12 (task 0033)
 **Did:** every place that shows a task shows its key (`mu-12`, no leading zeros): cards, rows,

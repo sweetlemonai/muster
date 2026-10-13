@@ -118,3 +118,12 @@ export function trackSteps(stage: string, human: boolean): { id: string; label: 
   const at = boardColumn({ stage, forWho: "human" });
   return HUMAN_STEPS.map((s) => ({ id: s.id, label: s.label, place: trackPlace(s.id, at) }));
 }
+
+/** The folded Log and check-ins header's count (display modes, 0038): the Log's lines (each a
+ *  "- " item) and the check-ins, "3 log lines · 2 check-ins"; undefined when there's neither. */
+export function logSummary(log: string, checkins: number): string | undefined {
+  const lines = log.split("\n").filter((l) => /^\s*- /.test(l)).length;
+  const n = (k: number, word: string) => `${k} ${word}${k === 1 ? "" : "s"}`;
+  const parts = [lines ? n(lines, "log line") : "", checkins ? n(checkins, "check-in") : ""].filter(Boolean);
+  return parts.length ? parts.join(" · ") : undefined;
+}

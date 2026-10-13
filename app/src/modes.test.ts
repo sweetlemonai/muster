@@ -13,11 +13,11 @@ function elementsReadIn(text: string): string[] {
   return [...text.matchAll(/\b(?:useLook|look)\(\s*"([^"]+)"/g)].map((m) => m[1]);
 }
 
-/** Ways a file could read the mode around the table: the context itself, or a mode's name in
- *  quotes (`mode === "focus"`). Only modes.ts may do either. */
+/** Ways a file could read the mode around the table: the context itself, imported under another
+ *  name, or a mode's name in any quotes (`mode === "focus"`, 'focus', `focus`). Only modes.ts may. */
 function rawReadsIn(text: string): string[] {
   const names = MODES.map((m) => m.id).join("|");
-  return [...text.matchAll(new RegExp(`useContext\\(\\s*Mode\\s*\\)|"(?:${names})"`, "g"))].map((m) => m[0]);
+  return [...text.matchAll(new RegExp(`useContext\\(\\s*Mode\\s*\\)|\\bMode\\s+as\\s+\\w+|(["'\`])(?:${names})\\1`, "g"))].map((m) => m[0]);
 }
 
 const IDS = Object.keys(ELEMENTS) as ElementId[];
@@ -49,6 +49,10 @@ describe("the display modes' table (0038)", () => {
     expect(elementsReadIn('const how = useLook("tags");')).toEqual(["tags"]);
     expect(elementsReadIn('look("columns", mode)')).toEqual(["columns"]);
     expect(rawReadsIn('if (mode === "focus") x(); const m = useContext(Mode);')).toEqual(['"focus"', "useContext(Mode)"]);
+    expect(rawReadsIn("if (m === 'adhd' || m === `standard`) x();")).toEqual(["'adhd'", "`standard`"]);
+    expect(rawReadsIn('import { Mode as Shown } from "./modes"; useContext(Shown);')).toEqual(["Mode as Shown"]);
+    // Words that only contain a mode's name aren't reads.
+    expect(rawReadsIn('const f = "focused"; setFocus(true); className="standard-x";')).toEqual([]);
   });
 
   it("has no component that reads the mode around the table", () => {

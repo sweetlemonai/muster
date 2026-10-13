@@ -6,13 +6,17 @@ import Card from "./Card";
 import { DisplayModes } from "./Display";
 import FilterBar from "./FilterBar";
 import { dayContext, EMPTY_QUERY, type Query } from "./filters";
-import { GroupByChips } from "./Groups";
+import { GroupByChips, GroupedBoard } from "./Groups";
+import groupsSource from "./Groups.tsx?raw";
 import { windowKey } from "./keys";
 import { ChoiceChips, ColumnHead, Fold, ModeChip } from "./ModeViews";
-import { ELEMENTS, Mode, MODES, type DisplayMode } from "./modes";
+import { columnFold, ELEMENTS, Mode, MODES, type DisplayMode } from "./modes";
+import { logSummary } from "./paneData";
 import ProjectList from "./ProjectList";
 import Recent from "./Recent";
 import TaskPanel from "./TaskPanel";
+import paneSource from "./TaskPanel.tsx?raw";
+import css from "./styles.css?raw";
 import { pressed, SHORTCUTS } from "./shortcuts";
 import { SETTINGS_GROUPS } from "./settingsData";
 import type { Activity, QueueInfo, Task } from "./types";
@@ -175,6 +179,11 @@ describe("a card in each mode", () => {
     expect(html).not.toContain('class="age"');
   });
 
+  it("says a Testing task held by its builder needs a tester in every mode, so it doesn't look worked on (review)", () => {
+    const t = task("0047", { stage: "testing", claimedBy: "muster/wt-0047 (w-0047)", heldBy: "muster/wt-0047 (w-0047)", builtBy: "muster/wt-0047 (w-0047)" });
+    for (const mode of ALL) expect(card(mode, t), mode).toContain('<span class="card-tester">needs a tester</span>');
+  });
+
   it("keeps needs you, blocked and quiet on the card in every mode (AC3)", () => {
     const needs = task("0050", { stage: "your-check", waitingForOwner: true });
     const blocked = task("0052", { blocked: true, waitingOn: "owner: which colour?", blockedKind: "you", blockDetail: "which colour?", waitingForOwner: true });
@@ -189,8 +198,8 @@ describe("a card in each mode", () => {
 });
 
 describe("board columns in each mode", () => {
-  const head = (fold: "fixed" | "folded" | "opened", needs = 0) =>
-    renderToStaticMarkup(createElement(ColumnHead, { stage: { id: "done", label: "Done", role: "" }, count: 9, needs, fold, onFold: () => {} }));
+  const head = (fold: "fixed" | "folded" | "opened", needs = 0, blocked = 0) =>
+    renderToStaticMarkup(createElement(ColumnHead, { stage: { id: "done", label: "Done", role: "" }, count: 9, needs, blocked, fold, onFold: () => {} }));
 
   it("a column the mode doesn't fold heads as before", () => {
     expect(head("fixed")).toBe('<h2 title="Done">Done <small>9</small></h2>');
@@ -202,8 +211,44 @@ describe("board columns in each mode", () => {
     expect(head("opened")).toContain('aria-expanded="true"');
   });
 
-  it("a folded column still says how many in it need you", () => {
+  it("a folded column still says how many in it need you, and how many are blocked (review)", () => {
     expect(head("folded", 2)).toContain('<b class="count warn" title="2 need you">2</b>');
+    expect(head("folded", 0, 3)).toContain('<b class="count blocked-count" title="3 blocked">3 blocked</b>');
+    expect(head("folded")).not.toContain("blocked");
+    // An open column's cards say it themselves.
+    expect(head("fixed", 2, 3)).toBe('<h2 title="Done">Done <small>9</small></h2>');
+  });
+
+  it("the board and the bands count blocked tasks for the strips", () => {
+    expect(appSource).toContain("blocked={blockedCount(list)}");
+    expect(groupsSource).toContain("blocked={blockedCount(list)}");
+  });
+
+  it("Focus folds the grouped board's Backlog band like the column, with its counts (review)", () => {
+    const board = (opened: string[]) =>
+      inMode(
+        "focus",
+        createElement(GroupedBoard, {
+          groups: [{ head: null, items: [task("0009", { stage: "backlog", blocked: true, blockedKind: "you", waitingForOwner: true })] }],
+          by: "feature", sort: "priority", multi: false, openKey: null, onOpen: () => {}, renderCard: (t: Task) => createElement("i", { key: t.id }, t.id),
+          backlog: { notes: [], renderNote: () => null, quickAdd: createElement("span", null, "QUICK") },
+          fold: { of: (id: string) => columnFold("now", id, new Set(opened)), toggle: () => {} },
+        }),
+      );
+    const folded = board([]);
+    expect(folded).toMatch(/<button type="button" class="band-fold" aria-expanded="false"[^>]*>Backlog · not in a feature yet <small>1 item<\/small><b class="count warn" title="1 need you">1<\/b><b class="count blocked-count" title="1 blocked">1 blocked<\/b><\/button>/);
+    expect(folded).not.toContain("QUICK");
+    expect(folded).not.toContain("<i>0009</i>");
+    const open = board(["backlog"]);
+    expect(open).toContain('class="band-fold" aria-expanded="true"');
+    expect(open).toContain("QUICK");
+    expect(open).toContain("<i>0009</i>");
+    // Not folded by the mode: the band as 0046 made it.
+    expect(inMode("adhd", createElement(GroupedBoard, {
+      groups: [], by: "feature", sort: "priority", multi: false, openKey: null, onOpen: () => {}, renderCard: () => null,
+      backlog: { notes: [], renderNote: () => null, quickAdd: createElement("span", null, "QUICK") },
+      fold: { of: (id: string) => columnFold("all", id, new Set()), toggle: () => {} },
+    }))).toContain('<div class="band-head"><span class="band-title">Backlog · not in a feature yet</span>');
   });
 
   it("the board and every band fold the same columns", () => {
@@ -246,10 +291,30 @@ describe("the task pane's secondary sections in each mode", () => {
   const fold = (mode: DisplayMode) => inMode(mode, createElement(Fold, { label: "Vision", summary: "1 open conflict" }, createElement("section", { className: "vision" }, "inside")));
 
   it("ADHD shows the section as it is; Standard and Focus fold it to a header that opens it", () => {
-    expect(fold("adhd")).toBe('<section class="vision">inside</section>');
+    // ADHD's wrapper takes no room (display: contents), so the section lays out as it always has.
+    expect(fold("adhd")).toBe('<div class="fold all"><div class="fold-body"><section class="vision">inside</section></div></div>');
     for (const mode of ["standard", "focus"] as const) {
-      expect(fold(mode)).toBe('<div class="fold"><button type="button" class="fold-head" aria-expanded="false">Vision <small>1 open conflict</small></button></div>');
+      expect(fold(mode)).toBe('<div class="fold"><button type="button" class="fold-head" aria-expanded="false">Vision <small>1 open conflict</small></button><div class="fold-body" hidden=""><section class="vision">inside</section></div></div>');
     }
+    expect(css).toMatch(/\.fold\.all, \.fold\.all > \.fold-body \{ display: contents; \}/);
+  });
+
+  it("keeps the section mounted in every mode and folded or not, so typed text survives a switch (review)", () => {
+    // The same elements at the same places: the header is only added in front of the body.
+    const shape = (html: string) => html.replace(/<button[\s\S]*?<\/button>/, "").replace(/ class="[^"]*"| hidden=""/g, "");
+    expect(new Set(ALL.map((m) => shape(fold(m))))).toEqual(new Set(["<div><div><section>inside</section></div></div>"]));
+  });
+
+  it("an opened fold hides the section's own heading, which its header already says (review)", () => {
+    expect(css).toContain(".fold.open > .fold-body > section:first-child > h2:first-child { display: none; }");
+  });
+
+  it("the Log and check-ins header counts both", () => {
+    const t = task("0007", { stage: "building", checkins: [{ at: "2026-10-13 04:00", who: "w", pct: 5, text: "start" }, { at: "2026-10-13 05:00", who: "w", pct: 50, text: "half" }] });
+    expect(logSummary("- 2026-10-13 03:58 claimed\n- 2026-10-13 04:00 note\n\n- 2026-10-13 05:00 passed\n", t.checkins.length)).toBe("3 log lines · 2 check-ins");
+    expect(logSummary("- one\n", 0)).toBe("1 log line");
+    expect(logSummary("", 1)).toBe("1 check-in");
+    expect(paneSource).toContain('<Fold label="Log and check-ins" summary={logSummary(log && !raw && editing === null ? log : "", task.checkins.length)}>');
   });
 
   it("folds Vision, Work, and the Log and check-ins in the pane, and leaves the write-up and comments open", () => {
@@ -257,7 +322,7 @@ describe("the task pane's secondary sections in each mode", () => {
     const html = inMode("standard", createElement(TaskPanel, { task: t, now: 0, onClose: () => {}, onChanged: () => {} }));
     expect([...html.matchAll(/class="fold-head"[^>]*>([^<]*)</g)].map((m) => m[1].trim())).toEqual(["Vision", "Work", "Log and check-ins"]);
     expect(html).toContain('data-part="body"');
-    expect(html).not.toContain('class="checkins"');
+    expect(html).toMatch(/<div class="fold-body" hidden=""><section class="checkins">/);
     expect(inMode("adhd", createElement(TaskPanel, { task: t, now: 0, onClose: () => {}, onChanged: () => {} }))).toContain('class="checkins"');
   });
 });
@@ -281,6 +346,15 @@ describe("the sidebar in each mode", () => {
     expect(html).toMatch(/<i class="dot side-dot" title="Being worked on now: [^"]*"><\/i><span class="side-name">zeta<\/span>/);
     expect(html).not.toMatch(/side-dot[^>]*><\/i><span class="side-name">alpha</);
     expect(appSource).toContain('data-sidebar={look("sidebar", modes.mode)}');
+  });
+
+  it("Focus still marks a stalled project, and keeps its Ask for a check-in (review)", () => {
+    const stalled = [...tasks, task("0003", { queue: "zeta", stage: "building", claimedBy: "zeta/wt-b", heartbeat: stamp(NOW - 3 * 3600), stageSince: stamp(NOW - 4 * 3600) })];
+    const html = inMode("focus", createElement(ProjectList, { queues, tasks: stalled.map((t) => (t.id === "0002" ? { ...t, live: false, stage: "ready", claimedBy: "" } : t)), notes: [], activity, now: NOW, current: "all", onPick: () => {} }));
+    expect(html).toMatch(/<span class="side-name">zeta<\/span><span class="side-stalled" title="Stalled: [^"]*">stalled<\/span>/);
+    expect(html).toMatch(/<span class="side-name">All<\/span><span class="side-stalled" title="[^"]*">1 stalled<\/span>/);
+    expect(html).toContain('class="side-ping"');
+    expect(html).not.toMatch(/side-name">alpha<\/span><span class="side-stalled/);
   });
 
   it("keeps the needs-you count in every mode (AC3)", () => {

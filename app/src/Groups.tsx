@@ -6,7 +6,7 @@ import { estimateLeft, type Group, GROUP_BYS, type GroupBy, levelLabel, progress
 import type { Note, Task } from "./types";
 import EffortGroups, { useAcceptResults } from "./EffortGroups";
 import { needsYouCount } from "./human";
-import { ChoiceChips, ColumnHead } from "./ModeViews";
+import { blockedCount, ChoiceChips, ColumnHead, FoldCounts } from "./ModeViews";
 import type { ColumnFolds } from "./modes";
 
 /** Group by: None · Feature · Goal, on screen above the board and the table, the current one lit. */
@@ -58,16 +58,28 @@ export type BacklogBandParts = {
 
 /** The first band (0046): the quick add, the notes, then the Backlog tasks with no feature or goal,
  *  as the plain board's Backlog column shows them. Notes have no parent, so no other band holds
- *  them. Drawn with nothing in it too, so the quick add never disappears. */
-function BacklogBand({ by, parts, tasks, renderCard }: { by: "feature" | "goal"; parts: BacklogBandParts; tasks: Task[]; renderCard: (t: Task) => ReactNode }) {
+ *  them. Drawn with nothing in it too, so the quick add never disappears; Focus (0038) folds it to
+ *  its head, a button with its counts, one click from open. */
+function BacklogBand({ by, parts, tasks, renderCard, fold }: { by: "feature" | "goal"; parts: BacklogBandParts; tasks: Task[]; renderCard: (t: Task) => ReactNode; fold?: ColumnFolds }) {
   const items = backlogColumn(parts.notes, tasks);
+  const title = `Backlog · not in a ${by} yet`;
+  const count = `${items.length} ${items.length === 1 ? "item" : "items"}`;
+  // Focus (0038) folds it as it folds the plain board's Backlog column: its head is the button.
+  const folded = fold?.of("backlog") ?? "fixed";
   return (
     <section className="band backlog-band">
-      <div className="band-head">
-        <span className="band-title">{`Backlog · not in a ${by} yet`}</span>
-        <span className="meta">{items.length} {items.length === 1 ? "item" : "items"}</span>
-      </div>
-      <div className="board band-board backlog-board">
+      {folded === "fixed" ? (
+        <div className="band-head">
+          <span className="band-title">{title}</span>
+          <span className="meta">{count}</span>
+        </div>
+      ) : (
+        <button type="button" className="band-fold" aria-expanded={folded === "opened"} onClick={() => fold?.toggle("backlog")} title={folded === "folded" ? "Open the Backlog: Focus folds it" : "Fold the Backlog back, as Focus has it"}>
+          {title} <small>{count}</small>
+          <FoldCounts needs={needsYouCount(tasks)} blocked={blockedCount(tasks)} />
+        </button>
+      )}
+      {folded !== "folded" && <div className="board band-board backlog-board">
         <section className="column col-backlog">
           {parts.quickAdd}
           <div className="cards">
@@ -79,7 +91,7 @@ function BacklogBand({ by, parts, tasks, renderCard }: { by: "feature" | "goal";
             {items.length === 0 && <p className="none">Nothing here</p>}
           </div>
         </section>
-      </div>
+      </div>}
     </section>
   );
 }
@@ -109,7 +121,7 @@ export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderC
   const bands = loose ? groups.flatMap((g) => (g !== loose ? [g] : rest.length ? [{ head: null, items: rest }] : [])) : groups;
   return (
     <main className="bands">
-      {backlog && <BacklogBand by={by} parts={backlog} tasks={looseBacklog} renderCard={renderCard} />}
+      {backlog && <BacklogBand by={by} parts={backlog} tasks={looseBacklog} renderCard={renderCard} fold={fold} />}
       {bands.length === 0 && looseBacklog.length === 0 && <p className="empty">No tasks match.</p>}
       {bands.map((g) => {
         const cols = columns(g.items, sort);
@@ -128,7 +140,7 @@ export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderC
                   const folded = fold?.of(c.id) ?? "fixed";
                   return (
                     <section key={c.id} className={`column col-${c.id}${folded === "folded" ? " folded" : list.length || kept(c.id) ? "" : " empty"}`}>
-                      <ColumnHead stage={c} count={list.length} needs={needsYouCount(list)} fold={folded} onFold={() => fold?.toggle(c.id)} />
+                      <ColumnHead stage={c} count={list.length} needs={needsYouCount(list)} blocked={blockedCount(list)} fold={folded} onFold={() => fold?.toggle(c.id)} />
                       <div className="cards">
                         {c.id === "your-check" && onChanged && (list.length > 0 || kept(c.id))
                           ? <EffortGroups tasks={list} place={place} renderCard={renderCard} onChanged={onChanged} />
