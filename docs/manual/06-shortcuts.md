@@ -47,6 +47,7 @@ Every keyboard shortcut in the app, and the slash commands for Claude Code. This
 | --- | --- | --- |
 | ↩ | Add the line to the backlog as a note | Add to the backlog…, at the top of the Backlog column |
 | Esc | Empty the field | Add to the backlog…, at the top of the Backlog column |
+| Esc | Don't accept them: nothing changes | Accept all's confirm, in Your check's Just accept group (the board and Waiting for you) |
 
 ## Slash commands in Claude Code
 

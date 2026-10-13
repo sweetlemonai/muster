@@ -13,6 +13,8 @@ const task = (over: Partial<Task>): Task => ({
   attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "your-check", search: "", ...over,
 });
 const list = (t: Task) => renderToStaticMarkup(createElement(OwnerChecklist, { task: t, busy: false, onTick: () => {} }));
+const withViews = (t: Task) => renderToStaticMarkup(createElement(OwnerChecklist, { task: t, busy: false, onTick: () => {}, onView: () => {} }));
+const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ").trim();
 
 describe("criterionWords", () => {
   it("drops the verify tail and its dash", () => {
@@ -21,6 +23,10 @@ describe("criterionWords", () => {
     expect(criterionWords("no tail")).toBe("no tail");
     expect(criterionWords("İstanbul build runs — Verify: owner")).toBe("İstanbul build runs");
     expect(criterionWords("quotes \"verify: owner\" in its words — verify: command")).toBe("quotes \"verify: owner\" in its words");
+  });
+  it("drops an effort override too (0043), before or after the verify part", () => {
+    expect(criterionWords("opens INDEX.md — effort: session — verify: owner")).toBe("opens INDEX.md");
+    expect(criterionWords("a session's transcript — verify: owner — effort: look")).toBe("a session's transcript");
   });
 });
 
@@ -32,9 +38,29 @@ describe("the owner's checklist in Your check", () => {
   it("lists each with its label, words and state, and counts what's left", () => {
     const html = list(task({ ownerCriteria: [crit(1, true), crit(2, false, "AC2: looks right in dark — verify: owner (screenshots)")] }));
     expect(html).toContain("Yours to verify: 1 left, then Accept.");
-    expect(html).toMatch(/class="criterion ticked" aria-pressed="true"[^>]*>.*<b>AC1<\/b> tried it<\/button>/);
-    expect(html).toMatch(/class="criterion" aria-pressed="false"[^>]*>.*<b>AC2<\/b> looks right in dark<\/button>/);
-    for (const b of html.match(/<button[\s\S]*?<\/button>/g) ?? []) expect(b).not.toContain("verify");
+    expect(html).toMatch(/<li class="criterion ticked">.*<b>AC1<\/b> tried it<\/span>/);
+    expect(html).toMatch(/<li class="criterion">.*<b>AC2<\/b> looks right in dark<\/span>/);
+    for (const row of html.match(/<li[\s\S]*?<\/li>/g) ?? []) expect(row).not.toContain("verify");
+  });
+  it("lists the open ones first (0043), each with Tick and its effort; the ticked ones after, with Untick", () => {
+    const t = task({ ownerCriteria: [crit(1, true), crit(2, false, "AC2: runs in a session — verify: owner"), crit(3, false), crit(4, true)] });
+    const rows = [...list(t).matchAll(/<li class="([^"]+)">([\s\S]*?)<\/li>/g)].map((m) => `${m[1]}: ${text(m[2])}`);
+    expect(rows).toEqual([
+      "criterion: AC2 runs in a session Needs a session Tick",
+      "criterion: AC3 tried it One look Tick",
+      "criterion ticked: ✓ AC1 tried it Untick",
+      "criterion ticked: ✓ AC4 tried it Untick",
+    ]);
+    // Tick says which, for the core; it's pressed when ticked.
+    expect(list(t)).toMatch(/<button type="button" class="tick" aria-pressed="false"[^>]*>Tick<\/button>/);
+    expect(list(t)).toMatch(/<button type="button" class="tick" aria-pressed="true"[^>]*>Untick<\/button>/);
+  });
+  it("gives an open criterion a button for each view it names (0043)", () => {
+    const t = task({ ownerCriteria: [crit(1, false, "AC1: the Graph tab and the Timeline agree, then Appearance — verify: owner"), crit(2, true, "AC2: the Graph — verify: owner")] });
+    const views = [...withViews(t).matchAll(/<button type="button" class="view-btn"[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
+    expect(views).toEqual(["Open Timeline", "Open Graph", "Open Appearance"]);
+    // Without a way to open views, none are drawn.
+    expect(list(t)).not.toContain("view-btn");
   });
   it("says when all are ticked", () => {
     expect(list(task({ ownerCriteria: [crit(1, true)] }))).toContain("All yours are ticked. Accept to finish.");

@@ -541,6 +541,10 @@ pub const APP: &[(&str, &str)] = &[
         "in a task's pane: hand it on (from Building it asks for the gate's result line); in Your check the button reads Accept and marks it Done",
     ),
     (
+        "Accept all",
+        "in Your check's Just accept group (the board and Waiting for you): accepts each task there with nothing of yours left to try, as Accept does, after a second click that names them; each is logged",
+    ),
+    (
         "Start · Done",
         "in your own task's pane (Human, for: human): Start moves it from To do to Doing, Done finishes it; no gate line, no Testing, no Your check",
     ),
@@ -1228,6 +1232,7 @@ mod tests {
             "Unblock",
             "Stage picker",
             "Release",
+            "Accept all",
         ] {
             assert!(app.contains(word), "{word}: {app}");
         }

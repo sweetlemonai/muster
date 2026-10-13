@@ -265,6 +265,93 @@ async fn pass_task(
     .await
 }
 
+/// What Accept all did in one queue (0043): the ids it accepted, in order, and each it refused
+/// with the core's reason.
+#[derive(serde::Serialize, Debug, Default, PartialEq)]
+pub(crate) struct AcceptAll {
+    pub accepted: Vec<String>,
+    pub refused: Vec<(String, String)>,
+}
+
+/// Accept all (0043): the owner accepts each task the window listed under "Just accept", as
+/// Accept does (Done, with the commit the merge recorded), one after the other.
+#[tauri::command]
+async fn accept_all(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    ids: Vec<String>,
+    stamp: String,
+) -> Result<AcceptAll, String> {
+    let file = app.config_file.clone();
+    blocking(move || accept_all_in(&queue_root(&file, &queue)?, &ids, &stamp)).await
+}
+
+/// What `accept_all` does once it has the queue: every argument checked before anything is
+/// touched, then each task passed from Your check as the owner, as Accept does. The core's rules
+/// decide: one of the owner's criteria still open, a block, or a task that has left Your check
+/// is refused with the reason and the rest go on. Each accepted task's log gets its stage line.
+pub(crate) fn accept_all_in(
+    root: &std::path::Path,
+    ids: &[String],
+    stamp: &str,
+) -> Result<AcceptAll, String> {
+    for id in ids {
+        check_id(id)?;
+    }
+    check_stamp(stamp)?;
+    let opts = ops::PassOpts {
+        from: Some("your-check".into()),
+        ..ops::PassOpts::default()
+    };
+    let mut out = AcceptAll::default();
+    for id in ids {
+        if let Some(why) = queue::read_task(root, id)
+            .ok()
+            .and_then(|t| not_just_accept(&t))
+        {
+            out.refused.push((id.clone(), why));
+            continue;
+        }
+        match ops::pass_task(root, id, "owner", stamp, &opts) {
+            Ok(_) => out.accepted.push(id.clone()),
+            Err(why) => out.refused.push((id.clone(), why)),
+        }
+    }
+    Ok(out)
+}
+
+/// Why Accept all leaves a task alone that a single Accept would take: it's a goal or a feature
+/// (Accept all is for tasks), or a question escalated to the owner is still open. Read just before
+/// the pass; the pass itself rechecks the stage, the owner's criteria and blocks under the lock. A
+/// task that can't be read goes on to the pass, which says why.
+fn not_just_accept(t: &queue::Task) -> Option<String> {
+    if t.level != "task" {
+        return Some(format!(
+            "{} is a {}; Accept all takes tasks only",
+            t.id, t.level
+        ));
+    }
+    let open: Vec<String> = t
+        .questions
+        .iter()
+        .filter(|q| !q.ticked && q.escalated)
+        .map(|q| q.n.map_or_else(|| "Q?".to_string(), |n| format!("Q{n}")))
+        .collect();
+    (!open.is_empty()).then(|| {
+        format!(
+            "{} has {} for the owner ({}); answer {} first",
+            t.id,
+            if open.len() == 1 {
+                "a question"
+            } else {
+                "questions"
+            },
+            open.join(", "),
+            if open.len() == 1 { "it" } else { "them" }
+        )
+    })
+}
+
 /// The owner sends a task back one stage, or to the earlier stage `to`, with the reason.
 #[tauri::command]
 async fn return_task(
@@ -923,6 +1010,7 @@ pub fn run() {
             create_task,
             move_task,
             pass_task,
+            accept_all,
             return_task,
             block_task,
             unblock_task,
@@ -1069,6 +1157,157 @@ mod tests {
         for bad in ["../x", "/tmp", "no such queue"] {
             let err = index_scope(&config, Some(bad)).unwrap_err();
             assert!(err.contains("no queue named"), "{bad:?}: {err}");
+        }
+    }
+
+    #[test]
+    fn accept_all_accepts_exactly_the_just_accept_tasks_each_logged() {
+        let d = tempfile::tempdir().unwrap();
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir(d.path().join(f)).unwrap();
+        }
+        let write = |file: &str, id: &str, stage: &str, criteria: &str| {
+            let text = format!(
+                "---\nid: {id}\nstage: {stage}\nstatus: doing\nclaimed-by:\nheld-by:\nwaiting_on:\ncommit: abc1234\n---\n\n# T\n\n## Acceptance criteria\n- [x] AC1: built — verify: command\n{criteria}\n## Log\n- 2026-10-12 09:00 capture: created\n"
+            );
+            std::fs::write(d.path().join(file), &text).unwrap();
+            text
+        };
+        // None of the owner's; the owner's all ticked; one of theirs open; still in Testing.
+        write("doing/0001-t.md", "0001", "your-check", "");
+        write(
+            "doing/0002-t.md",
+            "0002",
+            "your-check",
+            "- [x] AC2: tried it — verify: owner\n",
+        );
+        let open = write(
+            "doing/0003-t.md",
+            "0003",
+            "your-check",
+            "- [ ] AC2: tried it — verify: owner\n",
+        );
+        let testing = write("doing/0004-t.md", "0004", "testing", "");
+        let t = "2026-10-13 10:00";
+
+        // Arguments first: one bad id or stamp and nothing is touched.
+        assert_eq!(
+            accept_all_in(d.path(), &["0001".into(), "../7".into()], t).unwrap_err(),
+            "bad task id"
+        );
+        assert_eq!(
+            accept_all_in(d.path(), &["0001".into()], "2026-10-13").unwrap_err(),
+            "bad time stamp"
+        );
+        assert_eq!(
+            queue::read_task(d.path(), "0001").unwrap().stage,
+            "your-check"
+        );
+        assert_eq!(
+            accept_all_in(d.path(), &[], t).unwrap(),
+            AcceptAll::default()
+        );
+
+        let ids: Vec<String> = ["0001", "0002", "0003", "0004", "0001"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let r = accept_all_in(d.path(), &ids, t).unwrap();
+        assert_eq!(r.accepted, ["0001", "0002"]);
+        let refused: Vec<&str> = r.refused.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(refused, ["0003", "0004", "0001"]);
+        assert!(
+            r.refused[0].1.contains("owner's criteria aren't ticked"),
+            "{r:?}"
+        );
+        assert!(
+            r.refused[1].1.contains("is now in Testing, not Your check"),
+            "{r:?}"
+        );
+        // Asked twice in one go, it's accepted once.
+        assert!(
+            r.refused[2].1.contains("is now in Done, not Your check"),
+            "{r:?}"
+        );
+        for id in ["0001", "0002"] {
+            let task = queue::read_task(d.path(), id).unwrap();
+            // Done, with the commit the merge recorded, and one log line: the stage move.
+            assert_eq!(
+                (task.stage.as_str(), task.commit.as_str()),
+                ("done", "abc1234")
+            );
+            let file = d.path().join(&task.path);
+            assert!(file.starts_with(d.path().join("done")), "{file:?}");
+            let text = std::fs::read_to_string(file).unwrap();
+            let log = text.split("## Log\n").nth(1).unwrap();
+            assert_eq!(
+                log,
+                "- 2026-10-12 09:00 capture: created\n- 2026-10-13 10:00 owner: stage your-check → done\n",
+                "{id}"
+            );
+        }
+        // The refused ones are as they were.
+        assert_eq!(
+            std::fs::read_to_string(d.path().join("doing/0003-t.md")).unwrap(),
+            open
+        );
+        assert_eq!(
+            std::fs::read_to_string(d.path().join("doing/0004-t.md")).unwrap(),
+            testing
+        );
+    }
+
+    #[test]
+    fn accept_all_leaves_goals_features_and_open_questions_for_the_owner() {
+        let d = tempfile::tempdir().unwrap();
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir(d.path().join(f)).unwrap();
+        }
+        let write = |id: &str, front: &str, questions: &str| {
+            let text = format!(
+                "---\nid: {id}\nstage: your-check\nstatus: doing\nclaimed-by:\nheld-by:\nwaiting_on:\ncommit:\n{front}---\n\n# T\n\n## Questions\n{questions}\n## Acceptance criteria\n- [x] AC1: built — verify: command\n\n## Log\n- 2026-10-12 09:00 capture: created\n"
+            );
+            std::fs::write(d.path().join(format!("doing/{id}-t.md")), &text).unwrap();
+            text
+        };
+        let escalated = "- [ ] **Q1 (wt-a, colour, 2026-10-12 09:00):** Which colour?\n  **Escalated to owner (capture, 2026-10-12 09:05).**\n";
+        let answered = "- [x] **Q1 (wt-a, colour, 2026-10-12 09:00):** Which colour?\n  **Escalated to owner (capture, 2026-10-12 09:05).**\n";
+        let asked_agent = "- [ ] **Q1 (wt-a, colour, 2026-10-12 09:00):** Which colour?\n";
+        let goal = write("0001", "level: goal\n", "");
+        let feature = write("0002", "level: feature\n", "");
+        let open_q = write("0003", "", escalated);
+        // An answered question, or one only for an agent, isn't the owner's to do.
+        write("0004", "", answered);
+        write("0005", "", asked_agent);
+        let ids: Vec<String> = ["0001", "0002", "0003", "0004", "0005"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let r = accept_all_in(d.path(), &ids, "2026-10-13 10:00").unwrap();
+        assert_eq!(r.accepted, ["0004", "0005"]);
+        assert_eq!(
+            r.refused,
+            [
+                (
+                    "0001".to_string(),
+                    "0001 is a goal; Accept all takes tasks only".to_string()
+                ),
+                (
+                    "0002".to_string(),
+                    "0002 is a feature; Accept all takes tasks only".to_string()
+                ),
+                (
+                    "0003".to_string(),
+                    "0003 has a question for the owner (Q1); answer it first".to_string()
+                ),
+            ]
+        );
+        for (id, before) in [("0001", goal), ("0002", feature), ("0003", open_q)] {
+            assert_eq!(
+                std::fs::read_to_string(d.path().join(format!("doing/{id}-t.md"))).unwrap(),
+                before,
+                "{id}"
+            );
         }
     }
 

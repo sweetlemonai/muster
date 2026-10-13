@@ -43,6 +43,7 @@ const TABLE = [
   { id: "view-cancel", keys: "Esc", codes: ["Escape"], mod: false, what: "Stop naming the view; nothing is saved", where: "A view's name, after + Save view", area: "Search and views", files: ["FilterBar.tsx"] },
   { id: "quick-add", keys: "↩", codes: ["Enter"], mod: false, what: "Add the line to the backlog as a note", where: "Add to the backlog…, at the top of the Backlog column", area: "The board", files: ["Backlog.tsx"] },
   { id: "quick-add-clear", keys: "Esc", codes: ["Escape"], mod: false, what: "Empty the field", where: "Add to the backlog…, at the top of the Backlog column", area: "The board", files: ["Backlog.tsx"] },
+  { id: "accept-all-cancel", keys: "Esc", codes: ["Escape"], mod: false, what: "Don't accept them: nothing changes", where: "Accept all's confirm, in Your check's Just accept group (the board and Waiting for you)", area: "The board", files: ["EffortGroups.tsx"] },
 ] as const satisfies readonly Shortcut[];
 
 /** A shortcut's id: `pressed` takes only one the table has. */

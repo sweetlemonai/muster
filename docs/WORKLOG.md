@@ -4,6 +4,29 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Your check says what to do: next step, effort groups, Accept all (task 0043)
+**Did:** the owner, on 21 tasks in Your check: "not clear what I need to do about it". Each Your
+check card now says **Your turn** (the pane too, instead of "on it: you") and its next step, the
+first open owner criterion as an instruction ("Try: group the board by Feature and check a goal's
+progress") or "Nothing to try: Accept". The Your check column (each band's too) and Waiting for
+you group by effort: Just accept, One look, Needs a session (an open criterion mentions a session,
+terminal or command; `— effort: look|session` overrides). **Accept all** in Just accept names the
+tasks in place, then a second click sends them to a new core command, `accept_all` (lib.rs), which
+passes each from Your check as Accept does, logged, and reports what it refused. The pane's
+checklist lists open owner criteria first with Tick and a button per view they name. Logic in
+`yourCheck.ts`; `EffortGroups.tsx`, `WaitingList.tsx` (moved out of App.tsx); manual's In the app
+(new Your check section), Concepts, AS_BUILT, shortcuts page (Esc cancels the confirm).
+**Fixed (review round 1):** Accept all could take a goal or feature, or a task with a question
+escalated to the owner, which a single Accept never offers → `justAccept` and the Waiting list take
+tasks only, an open escalated question or a block on the owner is owner work (One look; the next
+step says "Answer Q2: …" or "Unblock: …"), and `accept_all_in` refuses both too. The confirm takes
+the focus and its Esc is a window capture listener (never closes the pane). "Your turn" is a filled
+chip (orange text was ~2.4:1 on light themes). The result line is kept by place outside the column,
+so it outlives an emptied column and goes on the next change; refusals drop the id and `muster` hints.
+**Verified:** `pnpm check` exit 0, both Python suites OK (counts in the 0043 pass). The core test
+`accept_all_accepts_exactly_the_just_accept_tasks_each_logged` fails when the from-Your-check
+check is dropped (a Testing task gets moved). AC5 is the owner's.
+
 ## 2026-10-13 — A dependency is met once it's merged: Your check counts, not only Done (task 0042)
 **Did:** the owner settled that work merges after Testing and waits in Your check so the next
 tasks build on it, but the core still held dependents until Done (0005 couldn't be claimed with

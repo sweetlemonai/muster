@@ -22,7 +22,7 @@ Each card shows, top to bottom:
 
 - the project (when you're looking at All), the id, a small dot while a session is working on it (its transcript changed in the last 5 minutes), the type, and the priority: **HIGH** filled in magenta, normal outlined, low faint;
 - the title, the feature or goal it's under, and its tags;
-- who's on it and how long ago they started, their latest check-in ("60% · gate green, writing tests · 12 min ago"), and a warning when they've gone quiet ("quiet 12 h+", "no check-in for 45 min");
+- who's on it and how long ago they started, their latest check-in ("60% · gate green, writing tests · 12 min ago"), and a warning when they've gone quiet ("quiet 12 h+", "no check-in for 45 min"). In Your check: **Your turn** and the next step (see [Your check](#your-check));
 - "⚠ 2 vision" while the task has open [vision conflicts](02-concepts.md#the-vision-check);
 - badges: why it's blocked, the kind first ("Blocked on you: …", [Blocked, and why](02-concepts.md#blocked-and-why)); needs you; open questions; files; the estimate; and how long ago it last changed.
 
@@ -61,18 +61,33 @@ Tasks whose work hasn't started, or whose log has no times, aren't drawn; a line
 
 What waits on what, per project (set with `muster set <id> depends …`, see [Depends and the graph](02-concepts.md#depends-and-the-graph)). An arrow points from a task to each task that waits on it. Click a task: what it waits on lights up as "needed first", what waits on it as "waits for it", and the rest dims. "ready" marks a task with nothing left to wait on. **Hide done** drops finished tasks, and tasks that aren't linked to any other are listed under the graph.
 
+## Your check
+
+Your check is where the agents' finished work waits for you. Each card there says what to do, so you don't have to open it to find out:
+
+- **Your turn**, in orange: the task waits on you. Nobody else holds it.
+- **The next step:** a question an agent escalated to you comes first ("Answer Q2: …"), then a block on you or by a permission ("Unblock: …"), then the first criterion only you verify (`— verify: owner`) that you haven't ticked, as an instruction: "Try: group the board by Feature and check a goal's progress", or "Check: …" when it isn't written as something you do. "· 2 more" says how many others are open. A long one is cut on the card; point at it to read all of it, or open the task. With nothing of yours open, it says **Nothing to try: Accept**.
+
+The column is grouped by how much each task asks of you, always in this order, each group with its count:
+
+- **Just accept:** none of your criteria are open, no question waits on you, and nothing is blocked on you. **Accept all** accepts each of them that isn't blocked, as Accept does: it goes to Done with the commit its merge recorded, and its log gets the line. The first click names them in place ("Accept 3: 0014, 0021, 0030?") and puts the focus on **Cancel**. **Yes, accept 3** does it; **Cancel** or Esc leaves them, and Esc there never closes the pane. It accepts only the tasks it named, and never a goal or a feature. One that changed in the meantime (a criterion opened, a question for you, a block, it moved on) stays where it is, and the line beside the button says which and why. That line stays, even when the column empties, until something new comes into Your check there, a task it couldn't accept changes (you ticked, answered or unblocked it), or you click Accept all again.
+- **One look:** something to check in the app, a question to answer or a block to clear.
+- **Needs a session:** an open criterion mentions a session, a terminal or a command, so you'll run something outside the app.
+
+A criterion can set its own effort with `— effort: look` or `— effort: session`, before or after its `— verify: owner`. With Group by on, each band's Your check column is grouped the same way, and its Accept all takes that band's tasks. [Waiting for you](#waiting-for-you) groups its Your check tasks the same way.
+
 ## The task pane
 
 Click a card to open its task beside the board. The pane keeps every control in the same place for every task, from the top:
 
 1. **The top line:** the project and how long ago the task changed, and **×** to close.
 2. **The title**, with its id. Click the title to rename it: ↩ saves, Esc keeps the old one. The **?** beside it opens this section.
-3. **The status line:** the stage, why it's blocked (the kind first; each task it's blocked by opens with a click), **LIVE** (the file changed in the last 5 minutes) or how long it's been quiet, who's on it and who held the stages before, the stage's role, and what's waiting on you, or "nothing waiting on you".
+3. **The status line:** the stage, why it's blocked (the kind first; each task it's blocked by opens with a click), **LIVE** (the file changed in the last 5 minutes) or how long it's been quiet, who's on it ("Your turn" in Your check) and who held the stages before, the stage's role, and what's waiting on you, or "nothing waiting on you".
 4. **The stage track:** all seven stages, the task's own lit; for your own task only **To do**, **Doing** and **Done**. Click another stage to put the task there. That's your override: it happens at once, and the message under it offers **Undo**. When the move would release someone's claim, the stage's tooltip says whose.
 5. **Two columns.** The left one shows what this stage needs:
    - Backlog, Shaping and Ready: the acceptance criteria and the estimate.
    - Building and Testing: **Work so far**, the time spent against the estimate, the tokens estimated, and the stage history. The sessions and the tokens they used are in the **Work** section further down.
-   - Your check: **Your checklist** of the criteria only you verify, and the history.
+   - Your check: **Your checklist** of the criteria only you verify, and the history. The open ones come first, each with its effort (One look or Needs a session), **Tick**, and a button for each view it names (**Open Graph**, **Open Timeline**, **Open Appearance**…). A view opens beside the task; Appearance opens in the pane in the task's place. Ticked ones follow, with **Untick**.
    - Done: the history.
    - A goal or feature: its tasks and their stages, its progress and the estimate left.
 
@@ -110,7 +125,7 @@ The note's text is below the buttons, up to 20 KB.
 
 ## Waiting for you
 
-Every task waiting on you, in one list: questions escalated to you (with the question), tasks blocked on you or by a permission, and tasks in Your check, then your own tasks to do and doing. **Open to answer** (or **Open**, for your own) opens the task in the pane. The tab's count is the number of tasks, the same needs-you count as the sidebar's.
+Every task waiting on you, in one list. Tasks in Your check come first, grouped as the [Your check](#your-check) column is (Just accept with **Accept all**, One look, Needs a session), each with its next step in full. Then **Questions, blocks and your own tasks**: questions escalated to you (with the question), tasks blocked on you or by a permission, and your own tasks to do and doing. **Open** or **Open to answer** opens the task in the pane. The tab's count is the number of tasks, the same needs-you count as the sidebar's.
 
 ## Activity and Problems
 

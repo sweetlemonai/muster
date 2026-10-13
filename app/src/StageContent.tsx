@@ -4,18 +4,21 @@ import Markdown from "./Markdown";
 import OwnerChecklist from "./OwnerChecklist";
 import { criteriaSection, fmtWall, timeInWork } from "./paneData";
 import type { Task } from "./types";
+import type { NamedView } from "./yourCheck";
 
 /** The task pane's left column: what this stage needs. Building and Testing: the work so far.
  *  Your check: the owner's checklist and the history. Backlog, Shaping and Ready: the criteria and
  *  the estimate. Done (and a stage the window doesn't know): the history. A goal or feature: its
  *  roll-up. `body` is the write-up as loaded (null while it loads). */
-export default function StageContent({ task, nowSecs, body, childTasks, busy, onTick }: {
+export default function StageContent({ task, nowSecs, body, childTasks, busy, onTick, onView }: {
   task: Task;
   nowSecs: number;
   body: string | null;
   childTasks?: Task[];
   busy: boolean;
   onTick: (which: string, undo: boolean) => void;
+  /** Opens a view an owner criterion names (0043). */
+  onView?: (v: NamedView) => void;
 }) {
   if (!isWork(task)) return <Rollup task={task} childTasks={childTasks} />;
   switch (task.stage) {
@@ -28,7 +31,7 @@ export default function StageContent({ task, nowSecs, body, childTasks, busy, on
           <div className="stage-block" data-part="checklist">
             <span className="lbl">Your checklist</span>
             {task.ownerCriteria.length > 0 ? (
-              <OwnerChecklist task={task} busy={busy} onTick={onTick} />
+              <OwnerChecklist task={task} busy={busy} onTick={onTick} onView={onView} />
             ) : (
               <p className="meta small">None of the criteria are yours to verify. Accept it, or send it back.</p>
             )}

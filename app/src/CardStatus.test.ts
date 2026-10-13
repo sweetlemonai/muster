@@ -55,7 +55,24 @@ describe("the card's who and progress lines", () => {
     expect(lines({ stage: "testing", heldBy: "wt-0030 (session 7b5e8856)", stageSince: "2026-10-12 13:00" })).toEqual([
       ["card-who", "wt-0030 · 7b5e8856 · started 1 h ago"],
     ]);
-    expect(lines({ stage: "your-check", heldBy: "owner", stageSince: "2026-10-12 13:00" })).toEqual([["card-who", "you"]]);
+    expect(lines({ stage: "your-check", heldBy: "wt-0030 (session 7b5e8856)" })[0]).toEqual(["card-who", "wt-0030 · 7b5e8856"]);
+  });
+  it("in Your check: Your turn, then the next step (0043)", () => {
+    expect(lines({ stage: "your-check", heldBy: "owner", stageSince: "2026-10-12 13:00" })).toEqual([
+      ["card-who your-turn", "Your turn"],
+      ["card-next", "Nothing to try: Accept"],
+    ]);
+    // Nobody named is the owner's too.
+    expect(lines({ stage: "your-check" })[0]).toEqual(["card-who your-turn", "Your turn"]);
+    const crit = (n: number, ticked: boolean, words: string) => ({ n, label: `AC${n}`, text: `AC${n}: ${words} — verify: owner`, ticked, owner: true });
+    expect(lines({ stage: "your-check", ownerCriteria: [crit(1, true, "x"), crit(2, false, "the owner opens INDEX.md and finds it useful."), crit(3, false, "y")] })).toEqual([
+      ["card-who your-turn", "Your turn"],
+      ["card-next", "Try: open INDEX.md and find it useful · 1 more"],
+    ]);
+    // A long one is cut on the card, and whole in its tooltip.
+    const long = `the owner looks at ${"every part of the sidebar ".repeat(6)}`;
+    const html = renderToStaticMarkup(createElement(CardStatus, { t: task({ stage: "your-check", ownerCriteria: [crit(1, false, long)] }), now: NOW }));
+    expect(html).toMatch(/<span class="card-next" title="Try: look at (every part of the sidebar ){5}every part of the sidebar">Try: look at every part[^<]*…<\/span>/);
   });
   it("in Ready says nobody is on it yet, and Backlog, Shaping and Done say nothing", () => {
     expect(lines({ stage: "ready" })).toEqual([["card-who nobody", "nobody on it"]]);

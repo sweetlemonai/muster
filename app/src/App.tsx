@@ -9,7 +9,6 @@ import ProjectList from "./ProjectList";
 import NewTask from "./NewTask";
 import Appearance from "./Appearance";
 import Card from "./Card";
-import BlockWhy from "./BlockWhy";
 import { GraphView } from "./GraphView";
 import { TableView, TimelineView } from "./Views";
 import { GroupByChips, GroupedBoard } from "./Groups";
@@ -19,8 +18,10 @@ import FilterBar from "./FilterBar";
 import { applyQuery, dayContext, EMPTY_QUERY, loadViews, notesFor, storeViews, type Query, type SavedView } from "./filters";
 import { indexStamp, needsIndex, queryWords, withSearch, type IndexStamp, type SearchIndex } from "./search";
 import { focusSearchBox, searchView, windowKey } from "./keys";
-import { byWho, FOR_FILTERS, FOR_KEY, type ForFilter, humanColumn, isHuman, needsYouCount, parseForFilter, waitingForYou, whoFiltersOn, whoShows } from "./human";
-import YouRibbon from "./YouRibbon";
+import WaitingList from "./WaitingList";
+import EffortGroups, { useAcceptResults } from "./EffortGroups";
+import type { NamedView } from "./yourCheck";
+import { byWho, FOR_FILTERS, FOR_KEY, type ForFilter, needsYouCount, parseForFilter, waitingForYou, whoFiltersOn, whoShows } from "./human";
 import { HelpButton, OpenHelp } from "./HelpButton";
 import { HELP_TOPICS, type HelpTopic, type ManualAt } from "./helpTopics";
 import logo from "./logo.png";
@@ -244,6 +245,16 @@ export default function App() {
     [pane],
   );
   const open = (t: Task) => go({ kind: "task", key: key(t) });
+  const boardResult = useAcceptResults().has("board");
+  const card = (t: Task) => (
+    <Card key={key(t)} t={t} now={now} multi={multi} parent={parentLine(t, index)} onOpen={() => open(t)} active={openKey === key(t)} words={words} />
+  );
+  // A view an owner criterion names, from its button in Your check (0043). Appearance is a pane,
+  // so it takes the task's place; every other one is a tab, and the task stays open beside it.
+  const openView = (v: NamedView) => {
+    if (v === "appearance") go({ kind: "appearance" });
+    else setView(v);
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) =>
@@ -354,18 +365,21 @@ export default function App() {
                   multi={multi}
                   openKey={openKey}
                   onOpen={open}
-                  renderCard={(t) => <Card t={t} now={now} multi={multi} parent={parentLine(t, index)} onOpen={() => open(t)} active={openKey === key(t)} words={words} />}
+                  renderCard={card}
+                  onChanged={() => void refresh()}
                 />
               )}
               {/* Backlog never folds: its quick add is always there. */}
-              {view === "board" && groupBy === "none" && <main className="board" style={{ gridTemplateColumns: STAGES.map((s) => (s.id === "backlog" || (cols[s.id] ?? []).length ? "minmax(118px, 1fr)" : "44px")).join(" ") }}>
+              {view === "board" && groupBy === "none" && <main className="board" style={{ gridTemplateColumns: STAGES.map((s) => (s.id === "backlog" || (cols[s.id] ?? []).length || (s.id === "your-check" && boardResult) ? "minmax(118px, 1fr)" : "44px")).join(" ") }}>
                 {STAGES.map((c) => {
                   const list = cols[c.id] ?? [];
                   const shown = c.id === "done" && !showAllDone ? list.slice(0, 8) : list;
                   const backlog = c.id === "backlog";
                   const count = list.length + (backlog ? notes.length : 0);
+                  // Your check stays open while Accept all's result line has something to say (0043).
+                  const kept = c.id === "your-check" && boardResult;
                   return (
-                    <section key={c.id} className={`column col-${c.id}${count || backlog ? "" : " empty"}`}>
+                    <section key={c.id} className={`column col-${c.id}${count || backlog || kept ? "" : " empty"}`}>
                       <h2 title={c.role ? `${c.label}: ${c.role}` : c.label}>
                         {c.label} <small>{count}</small>
                         {c.role && <span className="role">{c.role}</span>}
@@ -382,15 +396,15 @@ export default function App() {
                                 <Card key={key(item.task)} t={item.task} now={now} multi={multi} parent={parentLine(item.task, index)} onOpen={() => open(item.task)} active={openKey === key(item.task)} words={words} />
                               ),
                             )
-                          : shown.map((t) => (
-                              <Card key={key(t)} t={t} now={now} multi={multi} parent={parentLine(t, index)} onOpen={() => open(t)} active={openKey === key(t)} words={words} />
-                            ))}
+                          : c.id === "your-check" && (shown.length > 0 || kept)
+                            ? <EffortGroups tasks={shown} place="board" renderCard={card} onChanged={() => void refresh()} />
+                            : shown.map(card)}
                         {c.id === "done" && list.length > 8 && (
                           <button className="more" onClick={() => setShowAllDone((v) => !v)}>
                             {showAllDone ? "Show fewer" : `Show all ${list.length}`}
                           </button>
                         )}
-                        {count === 0 && <p className="none">Nothing here</p>}
+                        {count === 0 && !kept && <p className="none">Nothing here</p>}
                       </div>
                     </section>
                   );
@@ -399,27 +413,7 @@ export default function App() {
             </>
           )}
 
-          {view === "waiting" && (
-            <main className="list">
-              {waiting.length === 0 && <p className="empty">Nothing is waiting for you.</p>}
-              {waiting.map((t) => (
-                <article key={key(t)} className={openKey === key(t) ? "waiting active" : "waiting"}>
-                  <header>
-                    <button className="link" onClick={() => open(t)}>
-                      {isHuman(t) && <YouRibbon />} {multi && <span className="q">{t.queue}</span>} {t.id} · {t.title}
-                    </button>
-                  </header>
-                  {isHuman(t) && <p>Yours to do: {humanColumn(t.stage) === "doing" ? "in Doing. Mark it Done when it is." : "in To do. Start it when you do."}</p>}
-                  {t.questions.filter((q) => !q.ticked && q.escalated).map((q) => (
-                    <p key={q.n ?? q.text}><b>Q{q.n}</b> {q.text}</p>
-                  ))}
-                  {(t.blockedKind === "you" || t.blockedKind === "permission") && <p><BlockWhy t={t} /></p>}
-                  {t.stage === "your-check" && <p>In Your check: accept it, or send it back with what's wrong.</p>}
-                  <button onClick={() => open(t)}>{isHuman(t) ? "Open" : "Open to answer"}</button>
-                </article>
-              ))}
-            </main>
-          )}
+          {view === "waiting" && <WaitingList tasks={waiting} multi={multi} openKey={openKey} onOpen={open} onChanged={() => void refresh()} />}
 
           {view === "activity" && (
             <main className="list">
@@ -464,7 +458,7 @@ export default function App() {
             <aside className="pane" style={{ width }} aria-label="Details">
               {pane.kind === "task" && openTask && (
                 <Suspense fallback={<p className="none">Loading…</p>}>
-                  <TaskPanel key={openKey} task={openTask} now={now} onClose={() => go(null)} onChanged={refresh} onDirty={onDirty} nudge={nudge} childTasks={childrenOf(openTask, index)} onOpenTask={(id) => go({ kind: "task", key: key({ queue: openTask.queue, id }) })} />
+                  <TaskPanel key={openKey} task={openTask} now={now} onClose={() => go(null)} onChanged={refresh} onDirty={onDirty} nudge={nudge} childTasks={childrenOf(openTask, index)} onOpenTask={(id) => go({ kind: "task", key: key({ queue: openTask.queue, id }) })} onOpenView={openView} />
                 </Suspense>
               )}
               {pane.kind === "task" && !openTask && <p className="none">That task is gone.</p>}

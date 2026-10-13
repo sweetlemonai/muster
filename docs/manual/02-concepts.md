@@ -133,7 +133,9 @@ See [Claims](05-commands.md#claims) and decision [0001](../decisions/0001-app-on
 
 An acceptance criterion ends with how it's verified. `— verify: command (pnpm test)` means a command proves it; an agent ticks it with the proof. `— verify: owner (open a task and watch the board)` means only you can judge it: it's **your criterion**.
 
-Testing passes a task to Your check without your criteria ticked: they're yours to tick. In **Your check** the task pane shows **Your checklist**. Try each thing, click it to tick it, then click **Accept**, and the task is Done. Accept stays off until all of yours are ticked. A criterion verified by "command (test) and owner" isn't yours alone: the agent ticks it with the command's proof.
+Testing passes a task to Your check without your criteria ticked: they're yours to tick. In **Your check** the card names the next one to try, and the task pane shows **Your checklist**, the open ones first. Try each thing, click its **Tick**, then click **Accept**, and the task is Done. Accept stays off until all of yours are ticked. A criterion verified by "command (test) and owner" isn't yours alone: the agent ticks it with the command's proof.
+
+Each task in Your check also has an **effort**, from your criteria still open: **Just accept** (none, and no question or block waiting on you), **Needs a session** (one mentions a session, a terminal or a command) or **One look** (the rest, a question for you or a block on you included). A criterion can say its own with `— effort: look` or `— effort: session`. The board and Waiting for you group Your check by it, and **Accept all** accepts the Just accept ones at once ([Your check](04-in-the-app.md#your-check)).
 
 ```
 muster tick 0012 AC2

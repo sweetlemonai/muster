@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SearchIndex } from "./search";
 import type { Project, State, Work } from "./types";
+import type { AcceptResult } from "./yourCheck";
 
 // The only way the window talks to the core. Queues are named, never given as paths.
 export const api = {
@@ -26,6 +27,9 @@ export const api = {
   // since. `gate` only for Building → Testing, `commit` only for Your check → Done.
   passTask: (queue: string, id: string, from: string, gate: string, commit: string, stamp: string) =>
     invoke<string>("pass_task", { queue, id, from, gate, commit, stamp }),
+  // Accept all (0043): each id passed from Your check to Done as Accept does, in order; what the
+  // core refused comes back with why, and the rest still go.
+  acceptAll: (queue: string, ids: string[], stamp: string) => invoke<AcceptResult>("accept_all", { queue, ids, stamp }),
   // `to` is an earlier stage; null sends it back one.
   returnTask: (queue: string, id: string, why: string, to: string | null, stamp: string) =>
     invoke<string>("return_task", { queue, id, why, to, stamp }),

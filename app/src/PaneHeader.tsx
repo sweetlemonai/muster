@@ -80,8 +80,8 @@ export function TitleEdit({ value, onChange, onSave, onCancel }: { value: string
 const person = (who: string) => (splitHolder(who).label === "owner" ? (who === "owner" ? "you" : `you, ${who}`) : who);
 
 /** Stage, why it's blocked (the kind in bold, each task it's blocked by a link, 0024), who's on it
- *  (in full, session and all), whether it's live and since when, who held the stages before
- *  (0030), its role ("your own task" for a human task, 0022), and what's waiting on the owner
+ *  (in full, session and all; "Your turn" in Your check, 0043), whether it's live and since when,
+ *  who held the stages before (0030), its role ("your own task" for a human task, 0022), and what's waiting on the owner
  *  (gold) or that nothing is. A goal or feature shows the stage its children give it, and its
  *  level. */
 export function StatusLine({ task, now, onOpenTask }: { task: Task; now: number; onOpenTask?: (id: string) => void }) {
@@ -93,6 +93,8 @@ export function StatusLine({ task, now, onOpenTask }: { task: Task; now: number;
   // The owner's own task (0022) is theirs in every stage, whatever the stage's usual role.
   const role = work ? (known ? (isHuman(task) ? "your own task" : STAGES.find((s) => s.id === task.stage)?.role) : "") : levelLabel(task.level);
   const who = holderOf(task);
+  // Your check is the owner's turn, not a claim on it (0043).
+  const yourTurn = task.stage === "your-check" && splitHolder(who).label === "owner";
   const started = startedAgo(task, now);
   const earlier = stageHolders(task).filter((h) => h.stage !== task.stage);
   const live = isLive(task, now);
@@ -110,7 +112,7 @@ export function StatusLine({ task, now, onOpenTask }: { task: Task; now: number;
             </>
           )}
           <span className="holders">
-            {who && <>on it: {person(who)}</>}
+            {who && (yourTurn ? <b className="your-turn">Your turn</b> : <>on it: {person(who)}</>)}
             {started && <>{who ? " · " : ""}{started}</>}
             {earlier.map((h, i) => (
               <Fragment key={h.stage}>{who || started || i > 0 ? " · " : ""}{stageLabel(h.stage)}: {person(h.who)}</Fragment>

@@ -250,7 +250,37 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   tasks `[you]`, INDEX.md "you", and `manifest.py` reads `for`.
 - **Waiting for you:** what the agents wait on the owner for (escalated questions, Your check,
   blocked on you or by a permission, `queue::needs_owner`), then the owner's own tasks to do and
-  doing, each opening its task (`human.ts` `waitingForYou`: the needs-you count's tasks).
+  doing, each opening its task (`human.ts` `waitingForYou`: the needs-you count's tasks). Your check comes first, by
+  effort (`WaitingList.tsx`, task 0043).
+- **Your check says what to do** (task 0043, `yourCheck.ts`, `EffortGroups.tsx`):
+  - Each Your check card says **Your turn** (not "on it: owner"; the pane's status line too) and
+    its next step: the first open owner criterion as an instruction ("Try: …", or "Check: …"
+    when it isn't written as something the owner does), cut to 90 characters with the whole in
+    its tooltip and the pane, "· n more", or "Nothing to try: Accept".
+  - The next step is, in order: an open question escalated to the owner ("Answer Q2: …"), a
+    block on them or by a permission ("Unblock: …"), the first open owner criterion, else
+    "Nothing to try: Accept".
+  - Effort is derived from the open owner criteria: any mentioning a session, terminal or command
+    (whole words) → Needs a session; any other open one, an open escalated question or a block on
+    the owner → One look; else Just accept. `— effort: look|session`
+    on a criterion overrides it, and its words leave it out.
+  - The board's Your check column (each band's too, with Group by) and Waiting for you group by
+    effort, in that order, each with its count; an empty group keeps its heading.
+  - **Accept all** in Just accept: the first click freezes the tasks shown (tasks only, not
+    blocked) and names them in place, with the focus on Cancel; the second sends them to the
+    core's `accept_all` (lib.rs, one call per project), which checks every id and the stamp first, then passes each from Your check as the
+    owner, as Accept does (`ops::pass_task` with `from: your-check`, so the commit the merge
+    recorded stays). The core's rules refuse an open owner criterion, a block or a task that moved
+    on, and `accept_all_in` also refuses a goal or feature and an open escalated question (read
+    just before each pass), with the reason, and the rest go on. Each accepted task's log gets its
+    stage line. Esc cancels the confirm (a capture listener, so it never closes the pane), and
+    the focus goes back to the button. The result line is kept by place (board, band, Waiting for
+    you) outside the column, so it outlives an emptied column, and goes on the next change
+    (`staleResult`). Refusals read without the leading id or `muster` hints.
+  - The pane's checklist lists the open owner criteria first, each with its effort, **Tick** and
+    a button per view it names (Board, Table, Timeline, Graph, Appearance in any case; Helper,
+    Waiting for you, Activity, Problems, Projects, Help only capitalized). Ticked ones follow with
+    **Untick**.
 - **Task panel** (loads on first open): the task rendered as Markdown with a Raw switch,
   open questions with an answer box (⌘↩), the files as thumbnails that open large (← → between
   them, Esc to close), who's on it, what it waits on, and the commit.

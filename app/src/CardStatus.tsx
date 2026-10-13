@@ -1,21 +1,37 @@
 import { BranchCardLine } from "./Branch";
-import { checkinLine, currentCheckin, leaseRunOut, LEASE_SECS, quietCheckin, quietText, startedAgo, whoLine } from "./lib";
+import { checkinLine, currentCheckin, holderOf, leaseRunOut, LEASE_SECS, quietCheckin, quietText, splitHolder, startedAgo, whoLine } from "./lib";
 import type { Task } from "./types";
 import { VisionBadge } from "./Vision";
+import { nextStep } from "./yourCheck";
 
 /** Stages where someone can be on a task, so the card says who. */
-const HELD = new Set(["ready", "building", "testing", "your-check"]);
+const HELD = new Set(["ready", "building", "testing"]);
 
 /** A card's who and progress lines (0030), quiet unless something's wrong: who's on it and since
- *  when, the latest check-in, and a session gone quiet in the attention colour; a task started in
- *  its own worktree (0023) adds its branch and the worktree's folder. Then, at any stage, its open
- *  vision conflicts (0029). `now` is the state's clock, seconds since 1970. */
+ *  when, the latest check-in, and a session gone quiet in the attention colour. In Your check,
+ *  "Your turn" and the next step instead (0043). A task started in its own worktree (0023) adds
+ *  its branch and the worktree's folder. Then, at any stage, its open vision conflicts (0029).
+ *  `now` is the state's clock, seconds since 1970. */
 export default function CardStatus({ t, now }: { t: Task; now: number }) {
   return (
     <>
       {HELD.has(t.stage) && <HeldLines t={t} now={now} />}
+      {t.stage === "your-check" && <YourTurn t={t} />}
       <BranchCardLine t={t} />
       <VisionBadge t={t} />
+    </>
+  );
+}
+
+/** Your check (0043): whose turn it is (yours, unless the file names someone else) and the one
+ *  thing to try, cut to fit with the whole of it in the tooltip, or "Nothing to try: Accept". */
+function YourTurn({ t }: { t: Task }) {
+  const yours = splitHolder(holderOf(t)).label === "owner";
+  const step = nextStep(t);
+  return (
+    <>
+      {yours ? <span className="card-who your-turn">Your turn</span> : <span className="card-who">{whoLine(t)}</span>}
+      <span className="card-next" title={step.full}>{`${step.text}${step.more ? ` · ${step.more} more` : ""}`}</span>
     </>
   );
 }
