@@ -43,7 +43,11 @@ describe("stages", () => {
     expect(passLabel("ready", true)).toBe("Start");
     expect(passLabel("building", true)).toBe("Done");
     expect(passLabel("your-check", true)).toBe("Done");
-    expect(passLabel("shaping", true)).toBe("Pass to Ready");
+    // From Backlog or Shaping (an override put it there) the owner's Start goes straight to Doing.
+    expect(nextStage("backlog", true)?.id).toBe("building");
+    expect(nextStage("shaping", true)?.id).toBe("building");
+    expect(passLabel("backlog", true)).toBe("Start");
+    expect(passLabel("shaping", true)).toBe("Start");
     expect(passLabel("done", true)).toBeNull();
   });
   it("lists the stages a task can be sent back to, nearest first", () => {

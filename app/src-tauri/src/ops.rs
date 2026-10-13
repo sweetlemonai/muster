@@ -448,9 +448,9 @@ pub fn create_task(root: &Path, new: &NewTask, who: &str, stamp: &str) -> Result
     t.for_who = pick(new.for_who.trim(), &queue::FOR_WHO, "ai", "for")?;
     if t.for_who == "human" {
         if !is_owner(&who) {
-            return Err(
-                "only the owner makes a human task; propose it in the backlog instead: muster add \"<what the owner needs to do>\"".into(),
-            );
+            return Err(format!(
+                "only the owner makes a human task; propose it in the backlog instead: muster add \"<what the owner needs to do>\"{AS_OWNER}"
+            ));
         }
         if t.level != "task" {
             return Err(only_a_task_is_human(t.level));
@@ -480,6 +480,19 @@ fn clean_link(new: &NewTask) -> Result<(&'static str, String, String), String> {
     Ok((level, parent, due))
 }
 
+/// The refusal when someone who isn't the owner takes, starts or finishes the owner's own task,
+/// with the fix for the owner acting under another label (a terminal's git name).
+fn owners_to_do(id: &str) -> String {
+    format!("{id} is the owner's to do; agents never take a human task{AS_OWNER}")
+}
+const AS_OWNER: &str = " (if you're the owner, add --as owner)";
+
+/// Does `who` hold a claim made as `claimed_by`? The same holder; and for the owner's own task
+/// (`human`), any owner session, since every session of the owner is the owner.
+fn holds(claimed_by: &str, who: &str, human: bool) -> bool {
+    same_holder(claimed_by, who) || (human && is_owner(claimed_by) && is_owner(who))
+}
+
 /// Why a goal or feature can't be the owner's to do: its tasks are.
 fn only_a_task_is_human(level: &str) -> String {
     format!("only a task can be the owner's to do (for: human), not a {level}; its tasks are")
@@ -487,7 +500,8 @@ fn only_a_task_is_human(level: &str) -> String {
 
 /// `muster set <id> for human|ai` (0022), under the lock: only a task, and not while someone is
 /// on it (an agent's claim in Building, the owner doing their own, or Testing and Your check), so
-/// a claim never changes hands by a field. Logged.
+/// a claim never changes hands by a field. Logged. Made human in Backlog or Shaping, it moves to
+/// Ready (To do).
 fn set_for(root: &Path, id: &str, value: &str, who: &str, stamp: &str) -> Result<String, String> {
     let who = actor(who)?;
     let val = pick(value.trim(), &queue::FOR_WHO, "", "for")?;
@@ -518,9 +532,24 @@ fn set_for(root: &Path, id: &str, value: &str, who: &str, stamp: &str) -> Result
                 stage_label(&me.stage)
             ));
         }
-        edit_locked(root, id, |_, text| {
+        let path = edit_locked(root, id, |_, text| {
             Ok((append_log(&set_front(&text, "for", val)?, &line), None))
-        })
+        })?;
+        // The owner's own task waits in To do, not in Backlog or Shaping: it moves there, logged
+        // as a stage change like any other (review C1).
+        if val == "human" && matches!(me.stage.as_str(), "backlog" | "shaping") {
+            return change_locked(root, id, &who, stamp, |t| {
+                Ok(Change {
+                    stage: "ready".into(),
+                    blocked: t.blocked,
+                    waiting_on: t.waiting_on.clone(),
+                    claimed_by: t.claimed_by.clone(),
+                    commit: None,
+                    log: vec![stage_line(stamp, &who, &t.stage, "ready", " (yours to do)")],
+                })
+            });
+        }
+        Ok(path)
     })
 }
 
@@ -1089,7 +1118,16 @@ fn change_locked(
             modified,
             level: t.level,
         };
-        let c = f(&now)?;
+        let mut c = f(&now)?;
+        // The owner's own task in Building is the owner's, however it got there (an override, a
+        // return): never "Building with no claim", and never an agent's claim (review C4).
+        if now.human && c.stage == "building" && !is_owner(&c.claimed_by) {
+            c.claimed_by = if is_owner(who) {
+                who.to_string()
+            } else {
+                "owner".to_string()
+            };
+        }
         // A claim is held Building, not blocked. One per holder (the owner may hold several),
         // whichever change makes it: a pass from Ready, a return to the builder, an unblock, a set.
         let held_before = now.stage == "building" && !now.blocked && !now.claimed_by.is_empty();
@@ -1243,16 +1281,19 @@ fn pass_change(
     let Some(&next) = STAGES.get(stage_index(from) + 1) else {
         return Err(format!("{id} is done; there's no stage after Done"));
     };
-    // The owner's own task (0022) has no Testing or Your check: Done comes after Doing.
+    // The owner's own task (0022) has no Testing or Your check: Done comes after Doing. And the
+    // owner's Start takes it to Doing from wherever it waits (Backlog or Shaping after an
+    // override), with no criteria to write first.
     let to = if t.human && stage_index(from) >= stage_index("building") {
         "done"
+    } else if t.human && is_owner(who) {
+        "building"
     } else {
         next
     };
-    if to == "building" && t.human && !is_owner(who) {
-        return Err(format!(
-            "{id} is the owner's to do; agents never take a human task"
-        ));
+    // Only the owner starts or finishes it, whoever's claim is (or isn't) on the file.
+    if t.human && matches!(to, "building" | "done") && !is_owner(who) {
+        return Err(owners_to_do(id));
     }
     if !gate.is_empty() && t.human {
         return Err(format!(
@@ -1273,7 +1314,7 @@ fn pass_change(
     }
     if matches!(from, "ready" | "building")
         && !t.claimed_by.is_empty()
-        && !same_holder(&t.claimed_by, who)
+        && !holds(&t.claimed_by, who, t.human)
     {
         return Err(format!("{id} is claimed by {}", t.claimed_by));
     }
@@ -1281,6 +1322,7 @@ fn pass_change(
     let detail = match from {
         // The owner's own task is done when they say so: no gate line, no criteria to tick.
         _ if t.human && to == "done" => String::new(),
+        _ if t.human && to == "building" => " (claimed)".to_string(),
         "shaping" | "testing" if items == 0 => {
             return Err(format!(
                 "{id} has no acceptance criteria: add `- [ ]` items under `## Acceptance criteria` first"
@@ -1485,7 +1527,7 @@ fn held_in_building(
     if t.claimed_by.is_empty() {
         return Err(format!("nobody holds {id}; claim it first"));
     }
-    if !same_holder(&t.claimed_by, who) {
+    if !holds(&t.claimed_by, who, t.is_human()) {
         return Err(format!("{id} is held by {}, not {who}", t.claimed_by));
     }
     Ok(())
@@ -2170,7 +2212,7 @@ pub fn editable_body(text: &str) -> Result<String, String> {
 /// Who holds `t` in Building, when that's someone other than `who`. While they do, its write-up
 /// belongs to their branch (decision 0003), so nobody else edits it.
 fn write_up_holder(t: &queue::Task, who: &str) -> Option<String> {
-    (t.stage == "building" && !t.claimed_by.is_empty() && !same_holder(&t.claimed_by, who))
+    (t.stage == "building" && !t.claimed_by.is_empty() && !holds(&t.claimed_by, who, t.is_human()))
         .then(|| t.claimed_by.clone())
 }
 
@@ -5996,7 +6038,7 @@ mod human_tests {
         for who in ["wt-a", "agent (session 7b5e8856)", "owner-ish"] {
             let e = claim_task(d.path(), "0001", who, T).unwrap_err();
             assert_eq!(
-                e, "0001 is the owner's to do; agents never take a human task",
+                e, "0001 is the owner's to do; agents never take a human task (if you're the owner, add --as owner)",
                 "{who}"
             );
             let e = pass_task(d.path(), "0001", who, T, &no_gate()).unwrap_err();
@@ -6012,6 +6054,124 @@ mod human_tests {
         assert_eq!(next_task(d.path(), "wt-a", T).unwrap().unwrap().id, "0002");
         // The owner's next may take it.
         assert_eq!(next_task(d.path(), "owner", T).unwrap().unwrap().id, "0001");
+    }
+
+    #[test]
+    fn a_filed_note_set_for_human_goes_to_to_do_and_the_owner_starts_it() {
+        // Review C1: Backlog or Shaping is no place for the owner's own task; To do is.
+        let d = queue();
+        let note = crate::backlog::add(d.path(), "Buy the domain", "", "capture", T).unwrap();
+        let filed = crate::backlog::file_note(
+            d.path(),
+            &note,
+            &NewTask {
+                title: "Buy the domain".into(),
+                ..Default::default()
+            },
+            "capture",
+            T,
+        )
+        .unwrap();
+        assert_eq!(task(d.path(), &filed.id).stage, "shaping");
+        set_field(d.path(), &filed.id, "for", "human", "owner", T).unwrap();
+        let t = task(d.path(), &filed.id);
+        assert_eq!((t.stage.as_str(), t.status.as_str()), ("ready", "todo"));
+        assert!(t.path.starts_with("todo/"), "{}", t.path);
+        assert!(file(d.path(), &filed.id).ends_with(
+            "- 2026-10-12 14:05 owner: for set to human\n- 2026-10-12 14:05 owner: stage shaping → ready (yours to do)\n"
+        ));
+        // Start: straight to Doing, no criteria needed.
+        pass_task(d.path(), &filed.id, "owner", T, &no_gate()).unwrap();
+        let t = task(d.path(), &filed.id);
+        assert_eq!(
+            (t.stage.as_str(), t.claimed_by.as_str()),
+            ("building", "owner")
+        );
+        // Put back in Backlog by the override, the owner's Start still takes it to Doing; an
+        // agent's pass from there goes the usual way, criteria and all.
+        set_stage(d.path(), &filed.id, "backlog", None, "owner", T).unwrap();
+        pass_task(d.path(), &filed.id, "owner", T, &no_gate()).unwrap();
+        assert_eq!(task(d.path(), &filed.id).stage, "building");
+        set_stage(d.path(), &filed.id, "shaping", None, "owner", T).unwrap();
+        assert!(pass_task(d.path(), &filed.id, "capture", T, &no_gate())
+            .unwrap_err()
+            .contains("no acceptance criteria"));
+        assert!(state_at(d.path(), T).problems.is_empty());
+    }
+
+    #[test]
+    fn any_owner_session_holds_the_owners_own_task() {
+        // Review C2: the owner in one session starts it, the owner in another finishes it.
+        let d = queue();
+        new(d.path(), "Buy the domain", "human", "owner").unwrap();
+        let a = "owner (main · session aaaa1111)";
+        let b = "owner (main · session bbbb2222)";
+        claim_task(d.path(), "0001", a, T).unwrap();
+        heartbeat_task(d.path(), "0001", b, T).unwrap();
+        checkin_task(d.path(), "0001", "halfway", "50", b, T).unwrap();
+        assert!(open_body(d.path(), "0001", b).is_ok());
+        pass_task(d.path(), "0001", b, T, &no_gate()).unwrap();
+        assert_eq!(task(d.path(), "0001").stage, "done");
+        // Two agent sessions under one label stay apart, as before.
+        new(d.path(), "Agent work", "", "owner").unwrap();
+        claim_task(d.path(), "0002", "wt-a (main · session aaaa1111)", T).unwrap();
+        assert!(heartbeat_task(d.path(), "0002", "wt-a (main · session bbbb2222)", T).is_err());
+    }
+
+    #[test]
+    fn refusals_name_the_fix_for_the_owner() {
+        // Review C3.
+        let d = queue();
+        let e = new(d.path(), "Set the secret", "human", "Massih").unwrap_err();
+        assert!(e.ends_with("(if you're the owner, add --as owner)"), "{e}");
+        new(d.path(), "Buy the domain", "human", "owner").unwrap();
+        let want = "0001 is the owner's to do; agents never take a human task (if you're the owner, add --as owner)";
+        assert_eq!(claim_task(d.path(), "0001", "Massih", T).unwrap_err(), want);
+        assert_eq!(
+            pass_task(d.path(), "0001", "Massih", T, &no_gate()).unwrap_err(),
+            want
+        );
+    }
+
+    #[test]
+    fn the_override_into_building_gives_the_owners_task_to_the_owner() {
+        // Review C4: no "Building with no claim", and only the owner finishes it.
+        let d = queue();
+        new(d.path(), "Buy the domain", "human", "owner").unwrap();
+        set_stage(d.path(), "0001", "building", None, "capture", T).unwrap();
+        let t = task(d.path(), "0001");
+        assert_eq!(
+            (t.stage.as_str(), t.claimed_by.as_str()),
+            ("building", "owner")
+        );
+        assert!(state_at(d.path(), T).problems.is_empty());
+        let e = pass_task(d.path(), "0001", "capture", T, &no_gate()).unwrap_err();
+        assert!(e.contains("0001 is the owner's to do"), "{e}");
+        // Even with the claim cleared by hand, only the owner marks it done.
+        let p = d.path().join("doing/0001-buy-the-domain.md");
+        let text = fs::read_to_string(&p)
+            .unwrap()
+            .replace("claimed-by: owner", "claimed-by:");
+        fs::write(&p, text).unwrap();
+        assert!(pass_task(d.path(), "0001", "capture", T, &no_gate())
+            .unwrap_err()
+            .contains("0001 is the owner's to do"));
+        set_stage(d.path(), "0001", "ready", None, "owner", T).unwrap();
+        set_stage(
+            d.path(),
+            "0001",
+            "building",
+            None,
+            "owner (session aaaa1111)",
+            T,
+        )
+        .unwrap();
+        assert_eq!(
+            task(d.path(), "0001").claimed_by,
+            "owner (session aaaa1111)"
+        );
+        pass_task(d.path(), "0001", "owner", T, &no_gate()).unwrap();
+        assert_eq!(task(d.path(), "0001").stage, "done");
     }
 
     #[test]

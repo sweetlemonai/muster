@@ -350,6 +350,7 @@ describe("the pane's 0017 fields in the D2 layout", () => {
 describe("the owner's own task in the pane (0022)", () => {
   it("is Start in To do and Done in Doing: no gate line, no Testing", () => {
     expect(pane({ forWho: "human" }).buttons).toEqual(["Start", "Send back", "Block"]);
+    expect(pane({ forWho: "human", stage: "shaping" }).buttons).toEqual(["Start", "Send back", "Block"]);
     expect(pane({ forWho: "human", stage: "building", claimedBy: "owner" }).buttons).toEqual(["Done", "Send back", "Block"]);
     expect(pane({ forWho: "human", stage: "building", claimedBy: "owner" }).primary).toEqual(["Done"]);
   });

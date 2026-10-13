@@ -28,12 +28,13 @@ export const stageRank = (stage: string) => Math.max(0, stageIndex(stage));
 export const stageLabel = (stage: string) => STAGES[stageRank(stage)].label;
 
 /** The stage `pass` leads to, or null from Done (or an unknown stage). The owner's own task
- *  (`human`, 0022) has no Testing or Your check: from Building on, it goes to Done (the core's
- *  pass_change). */
+ *  (`human`, 0022) has no Testing or Your check: from Building on, it goes to Done, and before
+ *  Building the owner's Start takes it to Building (the core's pass_change, as the owner). */
 export function nextStage(stage: string, human = false): Stage | null {
   const i = stageIndex(stage);
   if (i < 0) return null;
   if (human && i >= stageIndex("building") && i < STAGES.length - 1) return STAGES[STAGES.length - 1];
+  if (human && i < stageIndex("building")) return STAGES[stageIndex("building")];
   return STAGES[i + 1] ?? null;
 }
 /** The pass button's words: "Pass to Testing", and "Accept" in Your check; for the owner's own

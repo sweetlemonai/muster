@@ -8,7 +8,7 @@
 > Only the owner makes one (`muster new "<title>" --human --as owner`, or New task in the app):
 > **an agent that finds something only the owner can do puts it in the backlog** with
 > `muster add "<what the owner needs to do>"`, and the owner files it. `muster set <id> for
-> human|ai` switches who does a task while nobody is on it. An agent's task can wait on a human
+> human|ai` switches who does a task while nobody is on it (made human in Backlog or Shaping, it moves to To do). An agent's task can wait on a human
 > task with `depends:` ("needs the API key first"): it can't be claimed until the human task is
 > Done, with nothing more written. `muster list` marks human tasks `[you]`, and INDEX.md "you".
 > A file without `for:` (every older one) is an agent's.
