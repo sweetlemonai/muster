@@ -59,17 +59,47 @@ pub fn load(file: &Path) -> Config {
         .unwrap_or_default()
 }
 
+/// Write projects.json whole: to a temporary file of this writer's own (process id and a
+/// counter), then renamed over it, so a reader sees the old file or the new one, never half.
+/// Changes go through `edit`, which holds the lock around the load, the change and this.
 pub fn save(file: &Path, config: &Config) -> Result<(), String> {
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     if let Some(dir) = file.parent() {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    let tmp = file.with_extension("json.tmp");
-    fs::write(
-        &tmp,
-        serde_json::to_string_pretty(config).map_err(|e| e.to_string())? + "\n",
-    )
-    .map_err(|e| e.to_string())?;
-    fs::rename(&tmp, file).map_err(|e| e.to_string())
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = file.with_extension(format!("json.{}-{n}.tmp", std::process::id()));
+    let text = serde_json::to_string_pretty(config).map_err(|e| e.to_string())? + "\n";
+    fs::write(&tmp, text)
+        .and_then(|_| fs::rename(&tmp, file))
+        .map_err(|e| {
+            let _ = fs::remove_file(&tmp);
+            e.to_string()
+        })
+}
+
+/// Change projects.json: load, `f`, save, holding an exclusive flock on `projects.json.lock`
+/// beside it the whole time, so the app and `muster projects set` (or two of either) never lose
+/// each other's edits. Nothing is written when `f` refuses.
+pub fn edit<T>(file: &Path, f: impl FnOnce(&mut Config) -> Result<T, String>) -> Result<T, String> {
+    if let Some(dir) = file.parent() {
+        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(file.with_extension("json.lock"))
+        .map_err(|e| e.to_string())?;
+    lock.lock().map_err(|e| e.to_string())?;
+    let result = (|| {
+        let mut c = load(file);
+        let out = f(&mut c)?;
+        save(file, &c)?;
+        Ok(out)
+    })();
+    let _ = lock.unlock();
+    result
 }
 
 /// A queue: a repo's `.muster/` (task 0005), or an old `<project>/tasks` (a README plus a
@@ -597,6 +627,82 @@ mod tests {
     fn make_queue(dir: &Path) {
         fs::create_dir_all(dir.join("todo")).unwrap();
         fs::write(dir.join("README.md"), "q").unwrap();
+    }
+
+    #[test]
+    fn writers_at_once_keep_every_edit_and_a_reader_never_sees_half_a_file() {
+        let d = tempfile::tempdir().unwrap();
+        let file = d.path().join("app").join("projects.json");
+        // A big file, so a write takes long enough for the others to land in the middle of it.
+        edit(&file, |c| {
+            for i in 0..2000 {
+                c.added.push(format!("/p/{i:04}/tasks"));
+            }
+            Ok(())
+        })
+        .unwrap();
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let reader = {
+            let (file, stop) = (file.clone(), stop.clone());
+            std::thread::spawn(move || {
+                let mut torn = 0;
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    let t = fs::read_to_string(&file).unwrap_or_default();
+                    if serde_json::from_str::<Config>(&t).is_err() {
+                        torn += 1;
+                    }
+                }
+                torn
+            })
+        };
+        let writers: Vec<_> = (0..4)
+            .map(|w| {
+                let file = file.clone();
+                std::thread::spawn(move || {
+                    for i in 0..25 {
+                        edit(&file, |c| {
+                            c.names.insert(format!("/w{w}/{i}"), format!("{w}-{i}"));
+                            Ok(())
+                        })
+                        .unwrap();
+                    }
+                })
+            })
+            .collect();
+        for w in writers {
+            w.join().unwrap();
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(reader.join().unwrap(), 0, "no torn read");
+        let c = load(&file);
+        assert_eq!(c.names.len(), 100, "every writer's every edit is kept");
+        assert_eq!(c.added.len(), 2000);
+        // No temporary file is left behind.
+        let left: Vec<_> = fs::read_dir(file.parent().unwrap())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.ends_with(".tmp"))
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
+    }
+
+    #[test]
+    fn a_refused_edit_writes_nothing() {
+        let d = tempfile::tempdir().unwrap();
+        let file = d.path().join("projects.json");
+        edit(&file, |c| {
+            c.hidden.push("/x".into());
+            Ok(())
+        })
+        .unwrap();
+        let before = fs::read_to_string(&file).unwrap();
+        let r: Result<(), String> = edit(&file, |c| {
+            c.hidden.clear();
+            Err("no".into())
+        });
+        assert_eq!(r.unwrap_err(), "no");
+        assert_eq!(fs::read_to_string(&file).unwrap(), before);
     }
 
     #[test]

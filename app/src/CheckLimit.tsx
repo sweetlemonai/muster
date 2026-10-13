@@ -1,6 +1,6 @@
 import { useState } from "react";
-import type { QueueInfo } from "./types";
-import { checkCount, columnLine, LIMIT_DEFAULT, LIMIT_MAX, LIMIT_MIN, limitText, type Over, overLine, sideLimit } from "./yourCheckLimit";
+import type { QueueInfo, Task } from "./types";
+import { bandLimit, checkCount, columnLine, LIMIT_DEFAULT, LIMIT_MAX, LIMIT_MIN, limitText, type Over, overLine, overTitle, sideLimit } from "./yourCheckLimit";
 
 // The Your check limit's places (0050): the line above the board, the column's count and its
 // short line, the sidebar row's line, and the setting in Settings › Projects. Words in the needs-you
@@ -16,7 +16,18 @@ export function CheckCount({ count, over, queue }: { count: number; over: Over[]
  *  All projects. Always there, empty within the limit, so the board never moves when it comes. */
 export function OverLine({ over, queue }: { over: Over[]; queue: string }) {
   const text = overLine(over, queue);
-  return <p className={text ? "limit-board over-limit" : "limit-board"} role="status">{text}</p>;
+  return (
+    <p className={text ? "limit-board over-limit" : "limit-board"} role="status" title={overTitle(over, queue) || undefined}>
+      {text}
+    </p>
+  );
+}
+
+/** A Group by band's Your check count: the band's own, orange with the pile in its title when it
+ *  holds tasks of a project over its limit. "N of L" is said once, above the board. */
+export function BandCount({ tasks, over, queue }: { tasks: Pick<Task, "queue">[]; over: Over[]; queue: string }) {
+  const b = bandLimit(tasks.map((t) => t.queue), over, queue);
+  return b.over ? <small className="over-limit" title={b.title}>{tasks.length}</small> : <small>{tasks.length}</small>;
 }
 
 /** The short line under the Your check header, in its reserved two lines; empty within the limit. */

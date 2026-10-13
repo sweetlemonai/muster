@@ -1315,14 +1315,16 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
         "projects" => {
             if a.pos.get(1).map(String::as_str) == Some("set") {
                 let file = config_file();
-                let mut c = projects::load(&file);
                 // A prefix lives with the queue (0033), not in projects.json.
                 if a.pos.get(3).map(String::as_str) == Some("prefix") {
-                    println!("{}", set_project_prefix(&a, &c, &base())?);
+                    println!(
+                        "{}",
+                        set_project_prefix(&a, &projects::load(&file), &base())?
+                    );
                     return Ok(0);
                 }
-                println!("{}", set_project_gate(&a, &mut c, &base())?);
-                projects::save(&file, &c)?;
+                let said = projects::edit(&file, |c| set_project_gate(&a, c, &base()))?;
+                println!("{said}");
                 return Ok(0);
             }
             let list = projects::list(&base(), &projects::load(&config_file()));

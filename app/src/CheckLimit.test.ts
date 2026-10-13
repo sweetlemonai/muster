@@ -26,7 +26,7 @@ describe("the Your check header over its limit (0050)", () => {
     const count = html(createElement(CheckCount, { count: 7, over, queue: "muster" }));
     expect(count).toBe('<small class="over-limit" title="7 tasks wait in Your check, over your limit of 5 (Settings › Projects)">7 of 5</small>');
     expect(html(createElement(ColumnLine, { over, queue: "muster" }))).toBe('<p class="limit-line over-limit">Over your limit of 5</p>');
-    expect(html(createElement(OverLine, { over, queue: "muster" }))).toBe('<p class="limit-board over-limit" role="status">Over your limit of 5: check these before more start.</p>');
+    expect(html(createElement(OverLine, { over, queue: "muster" }))).toBe('<p class="limit-board over-limit" role="status" title="7 tasks wait in Your check, over your limit of 5: check these before more start.">7 of 5 in Your check: check these before more start.</p>');
   });
 
   it("within the limit: the plain count, and both lines' places kept empty so nothing jumps", () => {
@@ -45,12 +45,17 @@ describe("the Your check header over its limit (0050)", () => {
     expect(count).toContain('class="over-limit"');
     expect(text(count)).toBe("13");
     expect(text(html(createElement(ColumnLine, { over, queue: "all" })))).toBe("2 projects over limit");
-    expect(text(html(createElement(OverLine, { over, queue: "all" })))).toBe("Over your limit in muster (7 of 5) and germ (4 of 3): check these before more start.");
+    const line = html(createElement(OverLine, { over, queue: "all" }));
+    expect(text(line)).toBe("Over your limit in 2 projects: check these before more start.");
+    expect(line).toContain('title="Over your limit in muster (7 of 5) and germ (4 of 3): check these before more start."');
   });
 
   it("the places are reserved: two lines in the column, one above the board, in the needs-you text colour", () => {
     expect(rule(".limit-line")).toContain("min-height: calc(2 * 1.35em)");
     expect(rule(".limit-board")).toContain("min-height: 1.35em");
+    // One line, never two: at the narrowest it's cut at the end (the title has it whole), so the
+    // board under it never moves.
+    for (const d of ["white-space: nowrap", "overflow: hidden", "text-overflow: ellipsis"]) expect(rule(".limit-board")).toContain(d);
     expect(rule(".over-limit")).toContain("color: var(--needs-text)");
   });
 
@@ -62,20 +67,30 @@ describe("the Your check header over its limit (0050)", () => {
     expect(appSource).toContain("limit={{ over: overCheck, queue }}");
   });
 
-  it("with Group by, each band's Your check header says N of L too", () => {
+  it("with Group by, each band keeps its own count, orange only when it holds tasks of a project over its limit", () => {
     const t = (id: string): Task => ({
       queue: "muster", id, title: "T", kind: "task", priority: "normal", status: "doing", stage: "your-check", blocked: false, stageHistory: [], folder: "doing", path: `doing/${id}-t.md`,
       claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], forWho: "ai", commit: "", captured: "", capturedAt: "", doneAt: "", blockHistory: [],
       questions: [], openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: true, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0,
       claimedOn: "", doneOn: "", links: [], comments: [], attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: "your-check", search: "",
     });
-    const items = [t("0001"), t("0002")];
-    const band = (limit?: { over: ReturnType<typeof overLimit>; queue: string }) =>
+    const band = (items: Task[], limit?: { over: ReturnType<typeof overLimit>; queue: string }) =>
       html(createElement(GroupedBoard, { groups: groupItems(items.filter(isWork), items, "feature"), by: "feature", sort: "priority", multi: false, openKey: null, onOpen: () => {}, renderCard: () => null, limit }));
-    const head = (h: string) => /<section class="column col-your-check"><h2[^>]*>(.*?)<\/h2>/.exec(h)?.[1] ?? "";
-    expect(head(band({ over: overLimit([q("muster", 7, 5)], "muster"), queue: "muster" }))).toContain('<small class="over-limit" title="7 tasks wait in Your check, over your limit of 5 (Settings › Projects)">7 of 5</small>');
-    expect(head(band({ over: [], queue: "muster" }))).toContain("<small>2</small>");
-    expect(head(band())).toContain("<small>2</small>");
+    const heads = (h: string) => [...h.matchAll(/<section class="column col-your-check[^"]*"><h2[^>]*>(.*?)<\/h2>/g)].map((m) => m[1]);
+    const two = [t("0001"), t("0002")];
+    // The band's own 2, never the project's 7; the title says the pile and the limit.
+    expect(heads(band(two, { over: overLimit([q("muster", 7, 5)], "muster"), queue: "muster" }))).toEqual(['Your check <small class="over-limit" title="7 tasks wait in Your check, over your limit of 5">2</small>']);
+    expect(heads(band(two, { over: [], queue: "muster" }))).toEqual(["Your check <small>2</small>"]);
+    expect(heads(band(two))).toEqual(["Your check <small>2</small>"]);
+    // All: a band of a project within its limit stays plain while another project is over; a
+    // band with nothing in Your check (folded) says 0, plain.
+    const feature: Task = { ...t("0010"), level: "feature", stage: "ready", shownStage: "ready" };
+    const mixed = [t("0001"), { ...t("0003"), queue: "drover" }, feature, { ...t("0011"), stage: "ready", shownStage: "ready", parent: "0010" }];
+    const all = { over: overLimit([q("muster", 7, 5), q("drover", 1, 5)], "all"), queue: "all" };
+    const h = band(mixed, all);
+    expect(heads(h)).toEqual(['Your check <small>0</small>', 'Your check <small class="over-limit" title="muster: 7 tasks wait in Your check, over your limit of 5">2</small>']);
+    const droverOnly = band([{ ...t("0003"), queue: "drover" }], all);
+    expect(heads(droverOnly)).toEqual(["Your check <small>1</small>"]);
   });
 });
 

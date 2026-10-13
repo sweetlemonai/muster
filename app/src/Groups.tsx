@@ -8,7 +8,7 @@ import EffortGroups, { useAcceptResults } from "./EffortGroups";
 import { needsYouCount } from "./human";
 import { blockedCount, ChoiceChips, ColumnHead, FoldCounts } from "./ModeViews";
 import type { ColumnFolds } from "./modes";
-import { CheckCount } from "./CheckLimit";
+import { BandCount } from "./CheckLimit";
 import type { Over } from "./yourCheckLimit";
 
 /** Group by: None · Feature · Goal, on screen above the board and the table, the current one lit. */
@@ -115,7 +115,8 @@ export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderC
   backlog?: BacklogBandParts;
   /** The columns the display mode folds (Focus, 0038), the same in every band as on the board. */
   fold?: ColumnFolds;
-  /** The projects over their Your check limit (0050): each band's Your check header says N of L. */
+  /** The projects over their Your check limit (0050): a band's Your check count turns orange
+   *  when it holds their tasks. */
   limit?: { over: Over[]; queue: string };
 }) {
   const results = useAcceptResults();
@@ -144,7 +145,7 @@ export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderC
                   const folded = fold?.of(c.id) ?? "fixed";
                   return (
                     <section key={c.id} className={`column col-${c.id}${folded === "folded" ? " folded" : list.length || kept(c.id) ? "" : " empty"}`}>
-                      <ColumnHead stage={c} count={list.length} countNode={c.id === "your-check" && limit ? <CheckCount count={list.length} over={limit.over} queue={limit.queue} /> : undefined} needs={needsYouCount(list)} blocked={blockedCount(list)} fold={folded} onFold={() => fold?.toggle(c.id)} />
+                      <ColumnHead stage={c} count={list.length} countNode={c.id === "your-check" && limit ? <BandCount tasks={list} over={limit.over} queue={limit.queue} /> : undefined} needs={needsYouCount(list)} blocked={blockedCount(list)} fold={folded} onFold={() => fold?.toggle(c.id)} />
                       <div className="cards">
                         {c.id === "your-check" && onChanged && (list.length > 0 || kept(c.id))
                           ? <EffortGroups tasks={list} place={place} renderCard={renderCard} onChanged={onChanged} />

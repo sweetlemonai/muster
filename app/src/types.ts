@@ -218,8 +218,9 @@ export type Activity = { queue: string; at: number; what: string; source: string
 
 /** `counts` is tasks per stage, plus "blocked" (tasks also counted in their stage). `prefix` is
  *  what its tasks' keys start with (0033). `yourCheck` is how many tasks wait in Your check as its
- *  limit counts them (0050: agents' tasks only), and `yourCheckLimit` that limit from this Mac's
- *  settings, null when it's off; an older core sends neither, which reads as within it. */
+ *  limit counts them (0050: agents' tasks only), and `yourCheckLimit` that limit (projects.json's
+ *  `yourCheck` for its folder, check_limit.rs), null when it's off; an older core sends neither,
+ *  which reads as within it. */
 export type QueueInfo = { name: string; path: string; prefix?: string; counts: Record<string, number>; yourCheck?: number; yourCheckLimit?: number | null };
 
 export type State = {

@@ -944,7 +944,7 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .column h2 small.over-limit { font-weight: 600; }
 .limit-line { margin: 0 12px 4px; min-height: calc(2 * 1.35em); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
 .column.empty .limit-line { display: none; }
-.limit-board { margin: 4px 14px 0; min-height: 1.35em; font-size: 12px; line-height: 1.35; }
+.limit-board { margin: 4px 14px 0; min-height: 1.35em; font-size: 12px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .side-limit { display: block; font-size: 11px; line-height: 1.35; }
 .limit-cell { display: flex; flex-direction: column; gap: 2px; }
 .limit-edit { display: flex; align-items: center; gap: 4px; }

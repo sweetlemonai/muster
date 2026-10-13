@@ -1,10 +1,10 @@
 // The Your check limit (0050): when more of the agents' tasks wait in Your check than the owner
 // set for a project, the board, the sidebar and Settings › Projects say so. It only warns. The
-// core counts and keeps the limits (settings.rs); these are the words. Tested in
-// yourCheckLimit.test.ts.
+// core counts the waiting tasks and keeps the limits (check_limit.rs, in projects.json by queue
+// folder); these are the words. Tested in yourCheckLimit.test.ts.
 import type { QueueInfo } from "./types";
 
-/** The default limit and its bounds, as the core's settings::YOUR_CHECK_LIMIT, _MIN and _MAX. */
+/** The default limit and its bounds, as the core's check_limit::DEFAULT, MIN and MAX. */
 export const LIMIT_DEFAULT = 5;
 export const LIMIT_MIN = 1;
 export const LIMIT_MAX = 50;
@@ -55,11 +55,34 @@ export function columnLine(over: Over[], queue: string): string {
   return `${over.length} ${over.length === 1 ? "project" : "projects"} over limit`;
 }
 
-/** The full line above the board; "" within the limit. */
+const CHECK_THESE = "check these before more start.";
+/** "7 tasks wait in Your check, over your limit of 5". */
+const pile = (o: Over) => `${o.waiting} tasks wait in Your check, over your limit of ${o.limit}`;
+
+/** The line above the board, short enough for one line at any width it's likely to have: the
+ *  numbers first for one project ("7 of 5 in Your check: …"), how many projects in All (each
+ *  sidebar row says its own); "" within the limit. `overTitle` has it whole. */
 export function overLine(over: Over[], queue: string): string {
   if (over.length === 0) return "";
-  const where = queue === "all" ? ` in ${named(over)}` : ` of ${over[0].limit}`;
-  return `Over your limit${where}: check these before more start.`;
+  if (queue !== "all") return `${over[0].waiting} of ${over[0].limit} in Your check: ${CHECK_THESE}`;
+  return `Over your limit in ${over.length} ${over.length === 1 ? "project" : "projects"}: ${CHECK_THESE}`;
+}
+
+/** The line above the board in full, its title: the pile and the limit, or in All each project
+ *  over with its count and limit; "" within the limit. */
+export function overTitle(over: Over[], queue: string): string {
+  if (over.length === 0) return "";
+  if (queue !== "all") return `${pile(over[0])}: ${CHECK_THESE}`;
+  return `Over your limit in ${named(over)}: ${CHECK_THESE}`;
+}
+
+/** A Group by band's Your check count: its own, in orange when it holds tasks (`queues`, one per
+ *  task in the band's column) of a project over its limit, with that project's pile as its title. */
+export function bandLimit(queues: string[], over: Over[], queue: string): { over: boolean; title: string } {
+  const here = over.filter((o) => queues.includes(o.name));
+  if (here.length === 0) return { over: false, title: "" };
+  const title = here.map((o) => (queue === "all" ? `${o.name}: ${pile(o)}` : pile(o))).join("; ");
+  return { over: true, title };
 }
 
 /** A sidebar row's line when its project is over: "7 in Your check, limit 5"; else "". */

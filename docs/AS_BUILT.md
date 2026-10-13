@@ -433,11 +433,13 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   the `state` command fills the limit from projects.json with `check_limit::apply`). Over the limit
   (more than it, not equal), the Your check header reads "7 of 5" (the project's whole pile,
   whatever the filters show) in `--needs-text` (the orange on dark themes, #A84300 on light ones:
-  4.5:1), on the plain board and in each Group by band. Under the plain board's header a short
-  line ("Over your limit of 5", or "2 projects over limit" in All; at most 24 characters) has a
-  reserved two-line place; above the board, plain or grouped, a full-width line with a reserved
-  one-line place says "Over your limit of 5: check these before more start." or, in All, names
-  each project over with its count and limit. Over, the column stays open even when a filter
+  4.5:1) on the plain board. A Group by band's Your check keeps its own count, orange (with the
+  pile in its title) when it holds tasks of a project over its limit. Under the plain board's
+  header a short line ("Over your limit of 5", or "2 projects over limit" in All; at most 24
+  characters) has a reserved two-line place; above the board, plain or grouped, a full-width
+  line with a reserved one-line place says "7 of 5 in Your check: check these before more
+  start." or, in All, "Over your limit in 2 projects: …"; it never wraps (nowrap, cut with an
+  ellipsis at the narrowest) and its title has it whole, with each project over in All. Over, the column stays open even when a filter
   empties it. The sidebar row of a project over says "7 in Your check, limit 5" under its activity
   line. Settings › Projects has a Your check column: "limit 5 · 7 waiting", an **Off** chip and a
   1–50 field with **Set** (`set_your_check_limit` by the project's key, checked by the core; the
@@ -446,6 +448,10 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   bottleneck.` on stderr before their work, and `list` prints it between its Your check and Done
   groups (stdout is cut there, `list_parts`); with `--json` it goes on stderr after the JSON. Exit
   codes don't change. The CLI finds the queue's entry by folder, through symlinks too.
+  Every change to projects.json, the app's and `muster projects set`'s, goes through
+  `projects::edit`: an exclusive flock on `projects.json.lock` held across load, change and
+  save, and a temporary file per writer (process id and counter) renamed over it, so concurrent
+  writers keep each other's edits and a reader never sees half a file.
 - **Task panel** (loads on first open): the task rendered as Markdown with a Raw switch,
   open questions with an answer box (⌘↩), the files as thumbnails that open large (← → between
   them, Esc to close), who's on it, what it waits on, and the commit.

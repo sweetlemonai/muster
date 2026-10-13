@@ -36,9 +36,22 @@ orange words read about 4:1 on light themes → `--needs-text` (#A84300 light, #
 rename lost them and two same-named projects shared one → decided (coordinator): kept in
 `projects.json` by queue folder beside the gate, so 0005's carry_over can move them; the CLI finds
 the entry by folder (through symlinks) instead of looking up the name; settings.rs is back as it was.
+**Fixed (review 2):** the line above the board still wrapped (one project with the pane open in an
+820 px window; All naming 3 projects at 1400 px), so the board dropped a line when a limit was
+crossed → it leads with the numbers ("7 of 5 in Your check: check these before more start."), All
+counts the projects ("Over your limit in 3 projects: …"; each sidebar row names its own), and it
+can't wrap (nowrap, cut with an ellipsis, the whole sentence with names in its title). Every band
+showed the project's "7 of 5", even an empty one → a band keeps its own count, orange (title: the
+pile and the limit) only when it holds tasks of a project over. `muster projects set` and the app
+both wrote projects.json through one fixed `projects.json.tmp` with no lock, so a write at the same
+time could lose an edit or fail → `projects::edit` holds a flock on `projects.json.lock` across
+load, change and save, and each save writes its own tmp (pid and counter) before the rename;
+tested with 4 writers and a reader at once (a version without the lock lost edits and failed).
+Paused tasks (0045) can't be in Your check, so they never count; nothing to change.
 **Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; new
 Rust tests in check_limit.rs (a rename keeps the limit; same-named projects keep their own; a bad
-entry never loses the rest of projects.json), queue.rs and cli.rs (exit codes over the limit for next, list,
+entry never loses the rest of projects.json), projects.rs (concurrent writers keep every edit, no
+torn read), queue.rs and cli.rs (exit codes over the limit for next, list,
 ready --parallel and start), vitest `yourCheckLimit.test.ts`, `CheckLimit.test.ts`.
 **Open:** AC5 is the owner's look in the running app (not run here).
 ## 2026-10-13 — `.muster/`: a shared prefix routes to the new queue; a literal-string prefix is read (task 0005)

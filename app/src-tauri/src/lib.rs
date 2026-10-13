@@ -1120,16 +1120,14 @@ async fn set_your_check_limit(
     .await
 }
 
-/// Change projects.json under the lock: load, edit, save.
+/// Change projects.json under the lock: load, edit, save (`projects::edit`, whose file lock keeps
+/// `muster projects set` from losing the app's edits, or the app the command's).
 fn edit_config<T>(
     app: &AppState,
     f: impl FnOnce(&mut projects::Config) -> Result<T, String>,
 ) -> Result<T, String> {
     let _guard = app.config.lock().map_err(|e| e.to_string())?;
-    let mut c = projects::load(&app.config_file);
-    let out = f(&mut c)?;
-    projects::save(&app.config_file, &c)?;
-    Ok(out)
+    projects::edit(&app.config_file, f)
 }
 
 fn known_key(c: &projects::Config, key: &str) -> Result<(), String> {
