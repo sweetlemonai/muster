@@ -414,3 +414,10 @@ button:disabled { opacity: 0.45; cursor: default; }
 .column.empty .cards { display: none; }
 .column.empty h2 { writing-mode: vertical-rl; padding: 12px 0; margin: 0 auto; white-space: nowrap; }
 .column.empty h2::before { margin: 0 0 6px; }
+/* Your check: the criteria only the owner verifies (0028). */
+.owner-checklist { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.criterion { display: flex; gap: 8px; align-items: baseline; text-align: left; background: none; border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; color: var(--text); }
+.criterion:hover { border-color: var(--accent); }
+.criterion .box { flex: none; width: 14px; height: 14px; border: 1.5px solid var(--st-needs); border-radius: 3px; display: inline-grid; place-items: center; font-size: 11px; line-height: 1; transform: translateY(2px); }
+.criterion.ticked { color: var(--muted); }
+.criterion.ticked .box { background: var(--st-needs); color: var(--on-status); }

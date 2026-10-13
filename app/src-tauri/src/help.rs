@@ -109,7 +109,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "pass",
         usage: "muster pass <id> [--from <stage>] [--gate \"<gate result line>\"] [--commit <sha>]",
-        what: "Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria. Building → Testing needs the gate's result line and releases your claim. Testing → Your check needs every criterion ticked. Refused while it's blocked, or when someone else holds it.",
+        what: "Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria. Building → Testing needs the gate's result line and releases your claim. Testing → Your check needs every criterion ticked except the owner's (\"— verify: owner\"); Your check → Done needs those ticked too (muster tick). Refused while it's blocked, or when someone else holds it.",
         options: &[
             ("--from", "the stage you saw it in; refused if it has moved on since (use it, so a repeat never moves it twice)"),
             ("--gate", "Building → Testing: the gate's result line, verbatim"),
@@ -166,6 +166,20 @@ pub const COMMANDS: &[Command] = &[
         what: "Add a line to the task's log (the tool stamps the time).",
         options: &[],
         examples: &["muster note 0007 \"Checked on the Mac, works\""],
+    },
+    Command {
+        name: "tick",
+        usage: "muster tick <id> <AC2|2>",
+        what: "Tick one of the criteria only the owner verifies (\"— verify: owner\"), in Your check. Agents tick their own in the file, with the proof; these have no proof but the owner's look. Testing passes to Your check without them; Done needs them.",
+        options: &[],
+        examples: &["muster tick 0026 AC1", "muster tick 0026 2"],
+    },
+    Command {
+        name: "untick",
+        usage: "muster untick <id> <AC2|2>",
+        what: "Undo muster tick: untick one of the owner's criteria.",
+        options: &[],
+        examples: &["muster untick 0026 AC1"],
     },
     Command {
         name: "attach",
@@ -416,6 +430,8 @@ mod tests {
             "stage",
             "set",
             "note",
+            "tick",
+            "untick",
             "attach",
             "ask",
             "answer",
@@ -442,7 +458,7 @@ mod tests {
                 "{name}'s examples use it"
             );
         }
-        assert_eq!(COMMANDS.len(), 24);
+        assert_eq!(COMMANDS.len(), 26);
     }
 
     #[test]

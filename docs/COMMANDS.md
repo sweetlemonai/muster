@@ -53,7 +53,8 @@ the reason), `block --on` / `unblock` (a flag, the task keeps its stage), and `s
 override). Claims and their lease (task 0002): `claim` (Ready → Building, one claim per holder),
 `next` (the top Ready task you may take, by priority then id), `heartbeat` (the holder keeps a
 claim alive), and `reclaim [--after 12h]` (claims quiet past their lease go back to Ready). Questions
-(task 0002): `ask`, `escalate` and `inbox`, beside `answer`. The slash commands will call it.
+(task 0002): `ask`, `escalate` and `inbox`, beside `answer`. `tick` / `untick` (task 0028): the owner
+ticks the criteria only they verify, in Your check. The slash commands will call it.
 
 ### Python tools (in `bin/`)
 

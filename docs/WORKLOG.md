@@ -2,6 +2,20 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-12 — The owner's criteria don't block Testing; the owner ticks them in Your check (task 0028)
+**Fixed:** a criterion only the owner can verify ("— verify: owner") couldn't be ticked before
+Your check, and Testing → Your check refused while any criterion was open, so such tasks were
+stuck. Now `pass` from Testing skips the owner's (the stage line says how many wait), and Your
+check → Done waits only on them. A criterion is the owner's when its last `verify:` starts with
+"owner"; "command (test) and owner" still needs the agent's proof.
+**Did:** `queue::criteria_items` (labels, wrapped lines, offsets; `criteria` derives from it);
+`ops::tick_criterion` and `muster tick` / `untick` (owner's criteria only, under the lock,
+logged); the task pane lists them in Your check with a tick each, and Accept waits for them;
+`muster check` lists what waits on the owner's look. `PROTOCOL.md`, `COMMANDS.md`, help.
+**Verified:** `pnpm check` green: vitest 114, cargo 82 + interop 5, clippy, build;
+`test_task.py` OK. Reviewed (correctness, security); fixed: Done held on agents' criteria too,
+stale `help pass`, `check` didn't list them.
+**Open:** built in a worktree; merges into main once the session holding 0002 commits.
 ## 2026-10-12 — Card looks in Appearance (task 0026)
 **Did:** Appearance has a Cards section: five looks (Stripe, the default, now 5px; Tint; Top bar,
 a band naming the stage or priority; Dot; Outline), each with a live preview of a plain, a
@@ -46,7 +60,6 @@ session holding 0002 commits its working tree.
 (correctness, concurrency, tests, security), with two fix rounds, each re-reviewed.
 **Open:** nothing runs `muster reclaim` on a schedule yet. Claims still go in the task file until
 0005 moves live state into `.git/muster/`.
-||||||| parent of f8eefb2 (Card looks in Appearance: stripe, tint, top bar, dot, outline (task 0026))
 
 ## 2026-10-12 — One picture: tasks checked for conflicts, VISION.md, vision check queued
 **Did:** read every open task (0002–0029) against decision 0003 and wrote `docs/VISION.md`: the

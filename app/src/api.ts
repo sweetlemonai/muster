@@ -34,6 +34,8 @@ export const api = {
   setField: (queue: string, id: string, field: string, value: string, stamp: string) =>
     invoke<string>("set_field", { queue, id, field, value, stamp }),
   addNote: (queue: string, id: string, note: string, stamp: string) => invoke<string>("add_note", { queue, id, note, stamp }),
+  tickCriterion: (queue: string, id: string, which: string, undo: boolean, stamp: string) =>
+    invoke<string>("tick_criterion", { queue, id, which, undo, stamp }),
   // Files the window holds (pasted or dropped) go as [name, data URL]; picking uses the core's dialog.
   attachData: (queue: string, id: string, files: [string, string][], stamp: string) =>
     invoke<string[]>("attach_data", { queue, id, files, stamp }),

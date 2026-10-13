@@ -4,7 +4,7 @@ import type { Task } from "./types";
 
 const t = (over: Partial<Task>): Task => ({
   queue: "q", id: "0001", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [], folder: "todo", path: "", claimedBy: "",
-  heartbeat: "", waitingOn: "", commit: "", captured: "2026-10-11", questions: [], openQuestions: 0, waitingForOwner: false,
+  heartbeat: "", waitingOn: "", commit: "", captured: "2026-10-11", questions: [], openQuestions: 0, ownerCriteria: [], waitingForOwner: false,
   tags: [], estTime: "", estTokens: "", estMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", attachments: [], logTail: [], modified: 0, ...over,
 });
 

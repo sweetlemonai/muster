@@ -1,3 +1,6 @@
+/** One of the criteria only the owner verifies ("— verify: owner"), from the core (0028). */
+export type Criterion = { n: number; label: string; text: string; ticked: boolean; owner: boolean };
+
 export type Question = {
   n: number | null;
   ticked: boolean;
@@ -32,6 +35,7 @@ export type Task = {
   captured: string;
   questions: Question[];
   openQuestions: number;
+  ownerCriteria: Criterion[];
   waitingForOwner: boolean;
   tags: string[];
   estTime: string;

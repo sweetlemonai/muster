@@ -486,6 +486,9 @@ struct Current {
     claimed_by: String,
     /// Acceptance criteria: (items, ticked).
     criteria: (usize, usize),
+    /// Unticked criteria only the owner verifies (`— verify: owner`): they don't hold Testing
+    /// back, since Your check is where the owner verifies them (0028).
+    owner_open: usize,
     /// Who passed it Ready → Building most recently (the builder), if anyone.
     builder: Option<String>,
     /// The claim's lease: the holder's last heartbeat stamp, and the file's modified time.
@@ -586,8 +589,10 @@ fn change_locked(
         let modified = fs::metadata(path)
             .map(|m| queue::mtime_secs(&m))
             .map_err(|e| e.to_string())?;
+        let items = queue::criteria_items(body);
         let now = Current {
-            criteria: queue::criteria(body),
+            criteria: (items.len(), items.iter().filter(|c| c.ticked).count()),
+            owner_open: items.iter().filter(|c| c.owner && !c.ticked).count(),
             stage: t.stage,
             blocked: t.blocked,
             waiting_on: t.waiting_on,
@@ -669,7 +674,8 @@ fn clean_commit(input: &str) -> Result<String, String> {
 
 /// Hand a task to the next stage. Refused when it's blocked or done, when someone else holds
 /// Ready or Building, Shaping → Ready without acceptance criteria, Building → Testing without
-/// the gate's result line, and Testing → Your check before every criterion is ticked.
+/// the gate's result line, Testing → Your check before every criterion but the owner's is
+/// ticked, and Your check → Done before the owner's are (`— verify: owner`, 0028).
 pub fn pass_task(
     root: &Path,
     id: &str,
@@ -738,10 +744,26 @@ fn pass_change(
                 "{id} has no acceptance criteria: add `- [ ]` items under `## Acceptance criteria` first"
             ))
         }
-        "testing" if ticked < items => {
+        "testing" if ticked + t.owner_open < items => {
             return Err(format!(
-                "{id}: {} of {items} acceptance criteria aren't ticked; tick each with its proof first",
-                items - ticked
+                "{id}: {} of {items} acceptance criteria aren't ticked; tick each with its proof first{}",
+                items - ticked - t.owner_open,
+                if t.owner_open > 0 {
+                    format!(" ({} more are the owner's, checked in Your check)", t.owner_open)
+                } else {
+                    String::new()
+                }
+            ))
+        }
+        "testing" if t.owner_open > 0 => format!(
+            " ({} criteri{} for the owner to verify)",
+            t.owner_open,
+            if t.owner_open == 1 { "on" } else { "a" }
+        ),
+        "your-check" if t.owner_open > 0 => {
+            return Err(format!(
+                "{id}: {} of the owner's criteria aren't ticked; tick each once you've checked it (muster tick {id} <AC>), then pass it to Done",
+                t.owner_open
             ))
         }
         "building" if gate.is_empty() => {
@@ -1269,6 +1291,62 @@ pub fn add_note(
             new = set_front(&new, "heartbeat", stamp)?;
         }
         Ok((new, None))
+    })
+}
+
+/// Tick (or, with `undo`, untick) one of the criteria only the owner verifies, by label (`AC2`)
+/// or position (`2`). Agents tick their own criteria with the proof in the text; this is for the
+/// owner's, which have no proof but the owner's look. Logged with who and when.
+pub fn tick_criterion(
+    root: &Path,
+    id: &str,
+    which: &str,
+    undo: bool,
+    who: &str,
+    stamp: &str,
+) -> Result<String, String> {
+    let who = actor(who)?;
+    let which = which.trim();
+    if which.is_empty() || which.len() > 8 {
+        return Err(format!(
+            "say which criterion: its label (AC2) or number (2), got {which:?}"
+        ));
+    }
+    edit(root, id, |_, text| {
+        let (_, body) = front_matter(&text).ok_or("the task has no front matter")?;
+        // The body is a slice of the text, so offsets in it map onto the file.
+        let base = body.as_ptr() as usize - text.as_ptr() as usize;
+        let items = queue::criteria_items(body);
+        let c = items
+            .iter()
+            .find(|c| c.label.eq_ignore_ascii_case(which) || c.n.to_string() == which)
+            .ok_or_else(|| format!("{id} has no acceptance criterion {which}"))?;
+        let name = if c.label.is_empty() {
+            format!("criterion {}", c.n)
+        } else {
+            c.label.clone()
+        };
+        if !c.owner {
+            return Err(format!(
+                "{name} isn't the owner's to verify (its verify part doesn't start with owner); tick it in the file with its proof"
+            ));
+        }
+        if c.ticked != undo {
+            return Err(format!(
+                "{id} {name} is already {}",
+                if undo { "unticked" } else { "ticked" }
+            ));
+        }
+        let at = base + c.at;
+        let mut new = String::with_capacity(text.len());
+        new.push_str(&text[..at]);
+        new.push_str(if undo { "- [ ]" } else { "- [x]" });
+        new.push_str(&text[at + 5..]);
+        let line = format!(
+            "{stamp} {who}: {} {name}",
+            if undo { "unticked" } else { "ticked" }
+        );
+        Ok((append_log(&new, &line), None))
     })
 }
 
@@ -1809,6 +1887,162 @@ mod tests {
     }
     fn no_gate() -> PassOpts {
         PassOpts::default()
+    }
+
+    const OWNERS: &str = "## Acceptance criteria\n- [x] AC1: built — verify: command\n- [ ] AC2: tried it — verify: owner\n- [ ] AC3: looks right —\n  verify: owner (screenshots)\n\n";
+
+    #[test]
+    fn testing_passes_without_the_owners_criteria_and_says_so() {
+        let d = queue();
+        put(
+            d.path(),
+            "doing/0001-t.md",
+            &task_text(
+                "status: doing\nstage: testing\nclaimed-by:\nwaiting_on:",
+                OWNERS,
+            ),
+        );
+        pass_task(d.path(), "0001", "qa", T, &no_gate()).unwrap();
+        let t = only(d.path());
+        assert_eq!(t.stage, "your-check");
+        let text = fs::read_to_string(d.path().join(&t.path)).unwrap();
+        assert!(
+            text.ends_with("qa: stage testing → your-check (2 criteria for the owner to verify)\n"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn testing_still_refuses_an_agents_unticked_criterion() {
+        let d = queue();
+        let mixed = "## Acceptance criteria\n- [ ] AC1: a test — verify: command\n- [ ] AC2: tried it — verify: owner\n- [ ] AC3: test and look — verify: command (test) and owner\n\n";
+        put(
+            d.path(),
+            "doing/0001-t.md",
+            &task_text(
+                "status: doing\nstage: testing\nclaimed-by:\nwaiting_on:",
+                mixed,
+            ),
+        );
+        let before = fs::read_to_string(d.path().join("doing/0001-t.md")).unwrap();
+        let e = pass_task(d.path(), "0001", "qa", T, &no_gate()).unwrap_err();
+        assert!(
+            e.contains("2 of 3 acceptance criteria aren't ticked")
+                && e.contains("(1 more are the owner's"),
+            "{e}"
+        );
+        assert_eq!(
+            fs::read_to_string(d.path().join("doing/0001-t.md")).unwrap(),
+            before
+        );
+    }
+
+    #[test]
+    fn done_needs_the_owners_criteria_ticked_and_tick_does_it() {
+        let d = queue();
+        put(
+            d.path(),
+            "doing/0001-t.md",
+            &task_text(
+                "status: doing\nstage: your-check\nclaimed-by:\nwaiting_on:",
+                OWNERS,
+            ),
+        );
+        let e = pass_task(d.path(), "0001", "owner", T, &no_gate()).unwrap_err();
+        assert!(
+            e.contains("2 of the owner's criteria aren't ticked") && e.contains("muster tick 0001"),
+            "{e}"
+        );
+        tick_criterion(d.path(), "0001", "AC2", false, "owner", T).unwrap();
+        tick_criterion(d.path(), "0001", "3", false, "owner", T).unwrap();
+        let t = only(d.path());
+        assert!(t.owner_criteria.iter().all(|c| c.ticked));
+        let text = fs::read_to_string(d.path().join(&t.path)).unwrap();
+        assert!(text.contains("- [x] AC2: tried it — verify: owner\n- [x] AC3: looks right —\n  verify: owner (screenshots)\n"), "{text}");
+        assert!(
+            text.ends_with(
+                "- 2026-10-12 14:05 owner: ticked AC2\n- 2026-10-12 14:05 owner: ticked AC3\n"
+            ),
+            "{text}"
+        );
+        pass_task(d.path(), "0001", "owner", T, &no_gate()).unwrap();
+        assert_eq!(only(d.path()).stage, "done");
+    }
+
+    #[test]
+    fn done_waits_only_on_the_owners_criteria() {
+        // Put in Your check by the owner's override with an agent's criterion open: Done isn't
+        // held for it (as before 0028); only the owner's criteria hold Done.
+        let d = queue();
+        let agents = "## Acceptance criteria\n- [ ] AC1: a test — verify: command\n\n";
+        put(
+            d.path(),
+            "doing/0001-t.md",
+            &task_text(
+                "status: doing\nstage: your-check\nclaimed-by:\nwaiting_on:",
+                agents,
+            ),
+        );
+        pass_task(d.path(), "0001", "owner", T, &no_gate()).unwrap();
+        assert_eq!(only(d.path()).stage, "done");
+    }
+
+    #[test]
+    fn tick_changes_only_its_box_and_logs_it() {
+        let d = queue();
+        put(
+            d.path(),
+            "doing/0001-t.md",
+            &task_text(
+                "status: doing\nstage: your-check\nclaimed-by:\nwaiting_on:",
+                OWNERS,
+            ),
+        );
+        let before = fs::read_to_string(d.path().join("doing/0001-t.md")).unwrap();
+        tick_criterion(d.path(), "0001", "ac2", false, "owner", T).unwrap();
+        let after = fs::read_to_string(d.path().join("doing/0001-t.md")).unwrap();
+        let expected =
+            before.replacen("- [ ] AC2", "- [x] AC2", 1) + "- 2026-10-12 14:05 owner: ticked AC2\n";
+        assert_eq!(after, expected);
+        tick_criterion(d.path(), "0001", "AC2", true, "owner", T).unwrap();
+        let undone = fs::read_to_string(d.path().join("doing/0001-t.md")).unwrap();
+        assert_eq!(
+            undone,
+            before
+                + "- 2026-10-12 14:05 owner: ticked AC2\n- 2026-10-12 14:05 owner: unticked AC2\n"
+        );
+    }
+
+    #[test]
+    fn tick_refusals_leave_the_file_alone() {
+        let d = queue();
+        put(
+            d.path(),
+            "doing/0001-t.md",
+            &task_text(
+                "status: doing\nstage: your-check\nclaimed-by:\nwaiting_on:",
+                OWNERS,
+            ),
+        );
+        let before = fs::read_to_string(d.path().join("doing/0001-t.md")).unwrap();
+        for (which, undo, why) in [
+            ("AC1", false, "isn't the owner's to verify"),
+            ("AC9", false, "has no acceptance criterion AC9"),
+            ("", false, "say which criterion"),
+            ("123456789", false, "say which criterion"),
+            ("AC2", true, "already unticked"),
+        ] {
+            let e = tick_criterion(d.path(), "0001", which, undo, "owner", T).unwrap_err();
+            assert!(e.contains(why), "{which}: {e}");
+        }
+        assert_eq!(
+            fs::read_to_string(d.path().join("doing/0001-t.md")).unwrap(),
+            before
+        );
+        tick_criterion(d.path(), "0001", "AC2", false, "owner", T).unwrap();
+        assert!(tick_criterion(d.path(), "0001", "AC2", false, "owner", T)
+            .unwrap_err()
+            .contains("already ticked"));
     }
 
     #[test]

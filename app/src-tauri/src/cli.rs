@@ -553,6 +553,14 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
             println!("{id}: noted");
             Ok(0)
         }
+        "tick" | "untick" => {
+            let id = need(a, 1, "a task id")?;
+            let which = need(a, 2, "which criterion (AC2 or 2)")?;
+            let undo = cmd == "untick";
+            ops::tick_criterion(root, id, which, undo, &me, stamp)?;
+            println!("{id}: {} {which}", if undo { "unticked" } else { "ticked" });
+            Ok(0)
+        }
         "attach" => {
             let id = need(a, 1, "a task id")?;
             need(a, 2, "a file")?;
@@ -674,6 +682,24 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
             for p in &s.problems {
                 println!("{p}");
             }
+            // Not problems: what waits on the owner's look (0028). The exit code ignores them.
+            for t in s.tasks.iter().filter(|t| t.stage == "your-check") {
+                let open: Vec<String> = t
+                    .owner_criteria
+                    .iter()
+                    .filter(|c| !c.ticked)
+                    .map(|c| {
+                        if c.label.is_empty() {
+                            c.n.to_string()
+                        } else {
+                            c.label.clone()
+                        }
+                    })
+                    .collect();
+                if !open.is_empty() {
+                    println!("{}: waits on the owner to verify {}", t.id, open.join(", "));
+                }
+            }
             Ok(if s.problems.is_empty() { 0 } else { 1 })
         }
         other => Err(format!("unknown command {other:?} (see `muster help`)")),
@@ -769,6 +795,41 @@ mod tests {
         assert!(run(&sv(&["move", "0001", "doing", "--queue", &q]))
             .unwrap_err()
             .contains("claim"));
+    }
+
+    #[test]
+    fn tick_and_untick_the_owners_criteria() {
+        let d = tempfile::tempdir().unwrap();
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir(d.path().join(f)).unwrap();
+        }
+        std::fs::write(d.path().join("README.md"), "q").unwrap();
+        let q = d.path().to_string_lossy().to_string();
+        let code = |args: &[&str]| {
+            let mut v = sv(args);
+            v.extend(sv(&["--queue", &q, "--as", "owner"]));
+            main(&v)
+        };
+        assert_eq!(code(&["new", "Checked"]), 0);
+        std::fs::write(
+            d.path().join("todo/0001-checked.md"),
+            queue::read_body(d.path(), "0001").unwrap().replace(
+                "## Log",
+                "## Acceptance criteria\n- [x] AC1: works — verify: command\n- [ ] AC2: tried it — verify: owner\n\n## Log",
+            ),
+        )
+        .unwrap();
+        let ticked = || queue::read_task(d.path(), "0001").unwrap().owner_criteria[0].ticked;
+        assert_eq!(code(&["tick", "0001", "AC2"]), 0);
+        assert!(ticked());
+        // Refused (1): already ticked, not the owner's; usage (2): which one is missing.
+        assert_eq!(code(&["tick", "0001", "AC2"]), 1);
+        assert_eq!(code(&["tick", "0001", "AC1"]), 1);
+        assert_eq!(code(&["tick", "0001"]), 2);
+        assert_eq!(code(&["untick", "0001", "2"]), 0);
+        assert!(!ticked());
+        // check lists what waits on the owner without calling it a problem.
+        assert_eq!(code(&["check"]), 0);
     }
 
     #[test]

@@ -349,6 +349,32 @@ async fn add_note(
     blocking(move || ops::add_note(&queue_root(&file, &queue)?, &id, &note, "owner", &stamp)).await
 }
 
+/// Tick or untick one of the owner's criteria (0028), as the owner.
+#[tauri::command]
+async fn tick_criterion(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+    which: String,
+    undo: bool,
+    stamp: String,
+) -> Result<String, String> {
+    check_id(&id)?;
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || {
+        ops::tick_criterion(
+            &queue_root(&file, &queue)?,
+            &id,
+            &which,
+            undo,
+            "owner",
+            &stamp,
+        )
+    })
+    .await
+}
+
 /// Attach files the window holds (pasted or dropped), as data URLs.
 #[tauri::command]
 async fn attach_data(
@@ -593,6 +619,7 @@ pub fn run() {
             set_stage,
             set_field,
             add_note,
+            tick_criterion,
             attach_data,
             attach_pick,
             helper_cmds::helper_info,

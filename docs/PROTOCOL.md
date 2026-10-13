@@ -5,8 +5,9 @@
 > `stage:` in the front matter is the truth, and only `muster` writes it. Hand a task on with
 > `muster pass <id> --from <the stage you saw> --as <you>`. `--from` makes a pass refuse if the task
 > has moved on since you looked, and the app always sends it. Ready → Building claims it for you, and Building → Testing needs
-> `--gate "<the gate's result line>"`. Testing → Your check needs every criterion ticked, and Your
-> check → Done can take `--commit <sha>`. Send it back with `muster return <id> "<why>"`. Blocked
+> `--gate "<the gate's result line>"`. Testing → Your check needs every criterion ticked except
+> the owner's (`— verify: owner`, checked in Your check), and Your check → Done needs those too
+> (the owner ticks them: `muster tick <id> AC2`, or in the task pane) and can take `--commit <sha>`. Send it back with `muster return <id> "<why>"`. Blocked
 > is a flag on any stage: `muster block <id> --on "<task id|owner|capture> …"`, then `muster unblock <id>`.
 > The owner or capture can override with `muster stage <id> <stage>`. Until task 0005 moves queues
 > into `.muster/`, the tool also keeps `status:` and the status folder below as a mirror of the
@@ -107,6 +108,10 @@ commit:                # set when done
 
 ## Acceptance criteria
 - [ ] AC1: what must be true. — verify: command (`pnpm check`) | screenshot (what) | owner (what they check)
+
+A criterion whose verify part starts with `owner` is the owner's: agents don't tick it, Testing
+passes to Your check without it, and the owner ticks it there. "command (test) and owner" is
+not the owner's alone: tick it with the command's proof.
 
 ## Questions
 ## Log

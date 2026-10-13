@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { ago, claimant, earlierStages, heldByOther, isStage, LEASE_SECS, leaseRunOut, nextStage, oneAtATime, passLabel, readFiles, stamp, STAGES, stageLabel, stageOf } from "./lib";
 import Markdown from "./Markdown";
+import OwnerChecklist, { ownerOpen } from "./OwnerChecklist";
 import TagEditor from "./Tags";
 import type { Question, Task } from "./types";
 
@@ -299,7 +300,15 @@ function Controls({ task, nowSecs, onChanged }: { task: Task; nowSecs: number; o
           </select>
         </label>
         {showPass && (
-          <button type="button" className="primary" disabled={task.blocked || busy} onClick={passNow}>{pass}</button>
+          <button
+            type="button"
+            className="primary"
+            disabled={task.blocked || busy || (task.stage === "your-check" && ownerOpen(task) > 0)}
+            title={task.stage === "your-check" && ownerOpen(task) > 0 ? "Tick yours below first" : undefined}
+            onClick={passNow}
+          >
+            {pass}
+          </button>
         )}
         {stale && (
           <button
@@ -321,6 +330,11 @@ function Controls({ task, nowSecs, onChanged }: { task: Task; nowSecs: number; o
           <button type="button" disabled={busy} onClick={() => open("block")}>Block</button>
         )}
       </div>
+      <OwnerChecklist
+        task={task}
+        busy={busy}
+        onTick={(which, undo) => void stageRun(() => api.tickCriterion(task.queue, task.id, which, undo, now()), `${undo ? "Unticked" : "Ticked"} ${which}.`)}
+      />
       {holder && (
         <p className="meta small">
           {holder} holds it in {stageLabel(task.stage)}, so only they can pass it on. To move it yourself, pick a stage above.

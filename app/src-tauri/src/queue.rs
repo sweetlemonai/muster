@@ -143,23 +143,94 @@ pub fn stage_lines(body: &str) -> Vec<(StageStep, &str)> {
         .unwrap_or_default()
 }
 
-/// Acceptance criteria: (items, ticked). Items are `- [ ]` / `- [x]` lines at the start of a
-/// line under `## Acceptance criteria`.
-pub fn criteria(body: &str) -> (usize, usize) {
+/// One acceptance criterion: a `- [ ]` / `- [x]` line at the start of a line under
+/// `## Acceptance criteria`, with its indented continuation lines.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Criterion {
+    /// 1-based position in the list.
+    pub n: usize,
+    /// Its label (`AC2`) when the text starts with one, else empty.
+    pub label: String,
+    /// The text after the box, continuation lines joined with a space.
+    pub text: String,
+    pub ticked: bool,
+    /// Only the owner verifies it: its `verify:` part starts with "owner" ("— verify: owner",
+    /// "— verify: owner (screenshots…)"). "verify: command … and owner" isn't: it needs the
+    /// agent's proof first.
+    pub owner: bool,
+    /// Byte offset of its box line within the body.
+    #[serde(skip)]
+    pub at: usize,
+}
+
+/// The acceptance criteria, in order. Sub-steps (`  - [ ]`, indented) belong to the item above.
+pub fn criteria_items(body: &str) -> Vec<Criterion> {
     let Some(s) = section(body, "Acceptance criteria") else {
-        return (0, 0);
+        return Vec::new();
     };
-    let mut total = 0;
-    let mut ticked = 0;
-    for l in s.lines() {
-        if l.starts_with("- [ ]") {
-            total += 1;
-        } else if l.starts_with("- [x]") || l.starts_with("- [X]") {
-            total += 1;
-            ticked += 1;
+    // `section` returns a slice of `body`, so its offset is the distance between the two.
+    let base = s.as_ptr() as usize - body.as_ptr() as usize;
+    let mut out: Vec<Criterion> = Vec::new();
+    let mut pos = 0;
+    // Whether indented lines still continue the item above (prose or a blank line ends it).
+    let mut open = false;
+    for line in s.split_inclusive('\n') {
+        let l = line.trim_end_matches(['\n', '\r']);
+        let ticked = l.starts_with("- [x]") || l.starts_with("- [X]");
+        if ticked || l.starts_with("- [ ]") {
+            let text = l[5..].trim().to_string();
+            let label = text
+                .split(|c: char| c == ':' || c.is_whitespace())
+                .next()
+                .filter(|w| {
+                    w.len() > 2 && w.starts_with("AC") && w[2..].bytes().all(|b| b.is_ascii_digit())
+                })
+                .unwrap_or("")
+                .to_string();
+            out.push(Criterion {
+                n: out.len() + 1,
+                label,
+                text,
+                ticked,
+                owner: false,
+                at: base + pos,
+            });
+            open = true;
+        } else if let Some(c) = out
+            .last_mut()
+            .filter(|_| open && l.starts_with([' ', '\t']) && !l.trim().is_empty())
+        {
+            c.text.push(' ');
+            c.text.push_str(l.trim());
+        } else {
+            open = false;
         }
+        pos += line.len();
     }
-    (total, ticked)
+    for c in &mut out {
+        c.owner = owner_verifies(&c.text);
+    }
+    out
+}
+
+/// Does the criterion's `verify:` part (the last one) start with "owner"?
+fn owner_verifies(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    lower
+        .rfind("verify:")
+        .map(|i| {
+            lower[i + "verify:".len()..]
+                .trim_start()
+                .starts_with("owner")
+        })
+        .unwrap_or(false)
+}
+
+/// Acceptance criteria: (items, ticked).
+pub fn criteria(body: &str) -> (usize, usize) {
+    let items = criteria_items(body);
+    (items.len(), items.iter().filter(|c| c.ticked).count())
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -191,6 +262,9 @@ pub struct Task {
     pub captured: String,
     pub questions: Vec<Question>,
     pub open_questions: usize,
+    /// The criteria only the owner verifies (`— verify: owner`), ticked or not, for the task
+    /// pane's checklist in Your check (0028).
+    pub owner_criteria: Vec<Criterion>,
     pub waiting_for_owner: bool,
     pub tags: Vec<String>,
     /// Estimates ("2h", "400k"), and the same as numbers for totals.
@@ -488,6 +562,10 @@ pub fn parse_task(
     let blocked = !waiting_on.is_empty() || status == "blocked";
     let stage_history = stage_lines(body).into_iter().map(|(s, _)| s).collect();
     let open_questions = questions.iter().filter(|q| !q.ticked).count();
+    let owner_criteria: Vec<Criterion> = criteria_items(body)
+        .into_iter()
+        .filter(|c| c.owner)
+        .collect();
     let waiting_for_owner = questions.iter().any(|q| !q.ticked && q.escalated)
         || stage == "your-check"
         || (blocked && waiting_on.to_lowercase().starts_with("owner"));
@@ -527,6 +605,7 @@ pub fn parse_task(
         captured: get("captured"),
         questions,
         open_questions,
+        owner_criteria,
         waiting_for_owner,
         done_on,
         claimed_on,
@@ -2128,6 +2207,100 @@ mod tests {
         assert!(read_mail(&d.path().join("mail/aaaa1111"))
             .unwrap_err()
             .contains("aaaa1111"));
+    }
+
+    #[test]
+    fn criteria_items_read_labels_ticks_and_whose_they_are() {
+        let body = concat!(
+            "# T\n\n## Acceptance criteria\n",
+            "- [x] AC1: works — verify: command (test)\n",
+            "- [ ] AC2: the owner tried it — verify: owner\n",
+            "- [ ] AC3: looks right in light and dark, wrapped onto the next line. —\n",
+            "  verify: owner (screenshots in attachments/0026/)\n",
+            "- [ ] AC4: a test, then a look — verify: command (test) and owner\n",
+            "- [X] no label, ticked — verify: Owner\n",
+            "  - [ ] a sub-step, part of the item above\n",
+            "Some prose.\n",
+            "  verify: owner (indented, but after prose: not part of any item)\n",
+            "- [ ] AC10: says nothing about who verifies\n",
+            "\n## Log\n- [ ] not a criterion\n",
+        );
+        let items = criteria_items(body);
+        let got: Vec<_> = items
+            .iter()
+            .map(|c| (c.n, c.label.as_str(), c.ticked, c.owner))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (1, "AC1", true, false),
+                (2, "AC2", false, true),
+                (3, "AC3", false, true),
+                (4, "AC4", false, false),
+                (5, "", true, true),
+                (6, "AC10", false, false),
+            ]
+        );
+        assert!(
+            items[2]
+                .text
+                .ends_with("— verify: owner (screenshots in attachments/0026/)"),
+            "{}",
+            items[2].text
+        );
+        assert!(
+            items[4]
+                .text
+                .ends_with("- [ ] a sub-step, part of the item above"),
+            "{}",
+            items[4].text
+        );
+        assert!(!items[5].text.contains("indented"), "{}", items[5].text);
+        // Each offset points at its box in the body.
+        for c in &items {
+            assert!(
+                body[c.at..].starts_with("- ["),
+                "{}: {:?}",
+                c.n,
+                &body[c.at..c.at + 10]
+            );
+        }
+        assert_eq!(criteria(body), (6, 2));
+    }
+
+    #[test]
+    fn a_label_is_ac_and_digits_only() {
+        let labels = |b: &str| {
+            criteria_items(b)
+                .into_iter()
+                .map(|c| c.label)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            labels(
+                "## Acceptance criteria\n- [ ] AC: x\n- [ ] ACT1: x\n- [ ] AC12 x\n- [ ] ac3: x\n"
+            ),
+            vec!["", "", "AC12", ""]
+        );
+    }
+
+    #[test]
+    fn the_task_carries_only_the_owners_criteria() {
+        let d = tempfile::tempdir().unwrap();
+        let text = "---\nid: 0001\nstatus: doing\nstage: your-check\n---\n\n# T\n\n## Acceptance criteria\n- [x] AC1: a — verify: command\n- [ ] AC2: b — verify: owner\n\n## Log\n";
+        let path = d.path().join("doing/0001-t.md");
+        let t = parse_task("q", d.path(), "doing", &path, text, 0).unwrap();
+        assert_eq!(
+            t.owner_criteria
+                .iter()
+                .map(|c| c.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["AC2"]
+        );
+        let json = serde_json::to_value(&t).unwrap();
+        assert_eq!(json["ownerCriteria"][0]["label"], "AC2");
+        assert_eq!(json["ownerCriteria"][0]["owner"], true);
+        assert!(json["ownerCriteria"][0].get("at").is_none());
     }
 
     #[test]
