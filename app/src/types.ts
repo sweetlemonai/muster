@@ -41,6 +41,9 @@ export type Task = {
   visionOpen?: number | null;
   /** The open conflicts' ids (V1, V2…), once checked. */
   visionIds?: string[];
+  /** A `vision:` value that isn't a count ("" when fine): a problem the core reports, so the task
+   *  isn't also listed as unchecked. */
+  badVision?: string;
   waitingForOwner: boolean;
   tags: string[];
   estTime: string;

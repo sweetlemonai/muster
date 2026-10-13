@@ -125,6 +125,14 @@ fn breaks_a_line(c: char) -> bool {
     c.is_control() || c == '\u{2028}' || c == '\u{2029}'
 }
 
+/// A file name or path as a brief shows it: anything that may break a line (`breaks_a_line`) as a
+/// space, so a name can't start a line of its own and pass for the brief.
+pub(crate) fn one_line_name(name: &str) -> String {
+    name.chars()
+        .map(|c| if breaks_a_line(c) { ' ' } else { c })
+        .collect()
+}
+
 /// Control characters out, except line breaks and tabs; Unicode line and paragraph separators
 /// become line breaks.
 pub(crate) fn clean_text(text: &str) -> String {
@@ -671,10 +679,7 @@ pub fn brief_text(b: &Brief) -> String {
         b.root,
         b.notice,
         // The file name is the note writer's too: quoted with the note, never in the header.
-        b.note
-            .chars()
-            .map(|c| if c.is_control() || c == '\u{2028}' || c == '\u{2029}' { ' ' } else { c })
-            .collect::<String>()
+        one_line_name(&b.note)
     );
     out.push_str(&quote_lines(&b.text, "(empty note)"));
     out.push_str("\nRoles:\n");

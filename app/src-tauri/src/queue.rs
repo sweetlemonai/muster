@@ -270,8 +270,8 @@ pub struct Task {
     pub vision_open: Option<usize>,
     /// The open conflicts' ids (V1, V2…) in its Vision section, once checked.
     pub vision_ids: Vec<String>,
-    /// A `vision:` value that isn't `<n> open`, for `check`.
-    #[serde(skip)]
+    /// A `vision:` value that isn't `<n> open` (`check` reports it; such a task isn't counted as
+    /// unchecked), else "".
     pub bad_vision: String,
     pub waiting_for_owner: bool,
     pub tags: Vec<String>,
@@ -1095,7 +1095,7 @@ pub fn session8(session: &str) -> Result<String, String> {
 
 /// The first `## Questions` section's content: (start, end) byte offsets, from the line after
 /// the heading to the next `## ` line or the end.
-fn questions_span(body: &str) -> Option<(usize, usize)> {
+pub(crate) fn questions_span(body: &str) -> Option<(usize, usize)> {
     let mut start = None;
     let mut pos = 0;
     for line in body.split_inclusive('\n') {
@@ -1280,6 +1280,50 @@ pub(crate) fn add_owner_question(
     Ok((format!("{}{new_sect}{}", &body[..start], &body[end..]), n))
 }
 
+/// Was a question with this asker part asked by the tool with `about` (`<who>, <about>, <stamp>`,
+/// as `add_owner_question` writes it)? A session's question has its session there instead.
+fn asked_by_tool(asker: &str, about: &str) -> bool {
+    let parts: Vec<&str> = asker.rsplitn(3, ", ").collect();
+    parts.len() == 3 && parts[1] == about && crate::ops::stamp_minutes(parts[0]).is_some()
+}
+
+/// Close the open questions the tool asked with `about` (`add_owner_question`): each is ticked
+/// with `answer` under it as `who`'s answer, so it leaves the owner's list. Answered questions and
+/// every session's question stay as they are. Returns the new text and the closed questions'
+/// numbers; the caller holds the lock and writes the file.
+pub(crate) fn close_owner_questions(
+    text: &str,
+    about: &str,
+    who: &str,
+    stamp: &str,
+    answer: &str,
+) -> (String, Vec<u32>) {
+    let Some((start, end)) = questions_span(text) else {
+        return (text.to_string(), Vec::new());
+    };
+    let sect = &text[start..end];
+    let mut out = String::new();
+    let mut last = 0;
+    let mut closed = Vec::new();
+    for (a, b) in question_items(sect) {
+        let item = &sect[a..b];
+        let q = parse_question(item);
+        if q.ticked || !asked_by_tool(&q.asker, about) {
+            continue;
+        }
+        out.push_str(&sect[last..a]);
+        out.push_str(&format!(
+            "{}\n  **A ({who}, {stamp}):** {}",
+            item.replacen("- [ ] **Q", "- [x] **Q", 1),
+            indent_text(answer)
+        ));
+        last = b;
+        closed.extend(q.n);
+    }
+    out.push_str(&sect[last..]);
+    (format!("{}{out}{}", &text[..start], &text[end..]), closed)
+}
+
 /// Mark question `n` of task `id` "Escalated to owner" (capture takes it to the owner), once.
 pub fn escalate(root: &Path, id: &str, n: u32, who: &str, stamp: &str) -> Result<(), String> {
     let who = actor(who)?;
@@ -1430,7 +1474,9 @@ pub fn with_lock<T>(root: &Path, f: impl FnOnce() -> Result<T, String>) -> Resul
     result
 }
 
-/// Contract rule 4: `mail/asks.json`, else `session xxxxxxxx` in the question line.
+/// Contract rule 4: `mail/asks.json`, else `session xxxxxxxx` in the question line's asker part
+/// (`**Q3 (<who>, session <id>, <stamp>):**`). Only there: the question's own text is anyone's,
+/// so a session it names never gets the answer, and a question with none there gets no mailbox.
 fn asker_session(mail: &Path, id: &str, n: u32, item: &str) -> Option<String> {
     let valid = |s: &str| {
         s.len() == 8
@@ -1446,8 +1492,9 @@ fn asker_session(mail: &Path, id: &str, n: u32, item: &str) -> Option<String> {
             }
         }
     }
-    let i = item.find("session ")? + 8;
-    let s: String = item[i..].chars().take(8).collect();
+    let asker = parse_question(item).asker;
+    let i = asker.find("session ")? + 8;
+    let s: String = asker[i..].chars().take(8).collect();
     valid(&s).then_some(s)
 }
 

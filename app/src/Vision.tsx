@@ -92,10 +92,11 @@ export function visionStatus(t: Pick<Task, "visionOpen">): string {
 }
 
 /** Problems' "Vision" lines: Shaping tasks with no check yet (warnings, as `muster check` lists
- *  them), by project and id. */
+ *  them, vision::unchecked), by project and id. A `vision:` that isn't a count is a problem of
+ *  its own, so it isn't listed here too. */
 export function visionWarnings(tasks: Task[]): string[] {
   return tasks
-    .filter((t) => t.stage === "shaping" && (t.visionOpen ?? null) === null)
+    .filter((t) => t.stage === "shaping" && (t.visionOpen ?? null) === null && !t.badVision)
     .sort((a, b) => a.queue.localeCompare(b.queue) || a.id.localeCompare(b.id))
     .map((t) => `${t.queue}: ${t.id} ${t.title} is in Shaping with no vision check yet (muster vision ${t.id})`);
 }

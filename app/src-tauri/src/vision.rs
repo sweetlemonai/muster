@@ -615,13 +615,19 @@ pub struct Recorded {
     pub gaps: usize,
     /// The owner's question, when a conflict changes direction.
     pub asked: Option<u32>,
+    /// Earlier vision questions still open, closed as superseded by this check.
+    pub closed: Vec<u32>,
 }
+
+/// Who asks the owner about a change of direction, beside who and when in the question's line.
+const ASKER: &str = "vision check";
 
 /// Record an agent's vision check of task `id` (`json`, in the shape of `SHAPE`): its Vision
 /// section above the Log, in place of the last one (the first record adds one, leaving any
 /// `## Vision` in the description be); `vision: <n> open`; and a log line. Conflicts are numbered
-/// V1, V2… in order, all open. When any changes direction, one question escalated to the owner
-/// carries them, with the cost of pivoting. Malformed JSON, or text that would read as a stage
+/// V1, V2… in order, all open. The earlier checks' questions the owner hasn't answered are closed
+/// as superseded, and when a conflict changes direction, one new question escalated to the owner
+/// carries them all, with the cost of pivoting. Malformed JSON, or text that would read as a stage
 /// change, is refused and nothing changes.
 pub fn record(
     root: &Path,
@@ -643,16 +649,18 @@ pub fn record(
         let path = find_task(root, id)?;
         let text = queue::read_body(root, id)?;
         front_matter(&text).ok_or("the task has no front matter")?;
-        let mut new = text.clone();
+        // The earlier checks' open questions leave the owner's list: this check replaces them.
+        let (mut new, closed) = queue::close_owner_questions(
+            &text,
+            ASKER,
+            &who,
+            stamp,
+            &format!("superseded by the vision check of {stamp}"),
+        );
         let mut asked = None;
         if !pivots(&check).is_empty() {
-            let (t, n) = queue::add_owner_question(
-                &new,
-                &who,
-                "vision check",
-                &question(id, &check),
-                stamp,
-            )?;
+            let (t, n) =
+                queue::add_owner_question(&new, &who, ASKER, &question(id, &check), stamp)?;
             new = t;
             asked = Some(n);
         }
@@ -665,6 +673,12 @@ pub fn record(
         new = put_section(&new, &sect, checked(&text));
         new = ops::set_front(&new, "vision", &format!("{} open", ids.len()))?;
         new = append_log(&new, &log);
+        for n in &closed {
+            new = append_log(
+                &new,
+                &format!("{stamp} {who}: closed Q{n} (superseded by this vision check)"),
+            );
+        }
         if let Some(n) = asked {
             new = append_log(
                 &new,
@@ -679,6 +693,7 @@ pub fn record(
             overlaps: check.overlaps.len(),
             gaps: check.gaps.len(),
             asked,
+            closed,
         })
     })
 }
@@ -699,6 +714,13 @@ pub fn recorded_text(r: &Recorded) -> String {
         r.gaps,
         if r.gaps == 1 { "" } else { "s" }
     );
+    if !r.closed.is_empty() {
+        let qs: Vec<String> = r.closed.iter().map(|n| format!("Q{n}")).collect();
+        out.push_str(&format!(
+            "Closed {} from an earlier check (superseded).\n",
+            qs.join(", ")
+        ));
+    }
     if let Some(q) = r.asked {
         out.push_str(&format!(
             "Asked the owner Q{q} (escalated): a change of direction, with the cost of pivoting.\n"
@@ -880,8 +902,24 @@ fn ids_in(text: &str) -> BTreeSet<String> {
         .collect()
 }
 
+/// The write-up proper: between the front matter and the Log, without its Questions section and,
+/// once checked, without the tool's Vision section (ids there are other people's words about it).
+fn write_up_proper(text: &str) -> String {
+    let mut w = ops::editable_body(text).unwrap_or_default();
+    if checked(text) {
+        // The tool's section is the last one above the Log, so the last one in the write-up.
+        if let Some((a, b)) = section_span(&w) {
+            w.replace_range(a..b, "");
+        }
+    }
+    if let Some((a, b)) = queue::questions_span(&w) {
+        w.replace_range(a..b, "");
+    }
+    w
+}
+
 /// The tasks `me` (whose file is `text`) touches, by id: its parent and its depends (when its
-/// front matter has them), tasks named in its write-up, and open tasks whose title shares two or
+/// front matter has them), tasks named in its write-up proper, and open tasks whose title shares two or
 /// more significant words with its title (ten at most, most shared first). Only tasks in the queue.
 fn touched(
     root: &Path,
@@ -904,7 +942,7 @@ fn touched(
             }
         }
     }
-    for id in ids_in(&ops::editable_body(text).unwrap_or_default()) {
+    for id in ids_in(&write_up_proper(text)) {
         if find(&id).is_some() {
             why.entry(id).or_default().push("named in its text".into());
         }
@@ -1022,7 +1060,7 @@ fn touched_line(t: &Touched) -> String {
         t.id,
         queue::stage_label(&t.stage),
         t.title,
-        t.path
+        backlog::one_line_name(&t.path)
     )
 }
 
@@ -1038,7 +1076,7 @@ pub fn brief_text(b: &Brief) -> String {
         out.push_str("  (none found: say so as a gap)\n");
     }
     for p in &b.picture {
-        out.push_str(&format!("  {p}\n"));
+        out.push_str(&format!("  {}\n", backlog::one_line_name(p)));
     }
     out.push_str("\nTasks it touches (read each; the cost of pivoting comes from these):\n");
     if b.touched.is_empty() {
@@ -1114,7 +1152,7 @@ pub fn all_text(a: &All) -> String {
         out.push_str("  (none found)\n");
     }
     for p in &a.picture {
-        out.push_str(&format!("  {p}\n"));
+        out.push_str(&format!("  {}\n", backlog::one_line_name(p)));
     }
     out.push_str("\nOpen tasks:\n");
     if a.tasks.is_empty() {
@@ -1507,7 +1545,7 @@ mod tests {
         let json = serde_json::to_value(&t).unwrap();
         assert_eq!(json["visionOpen"], 6);
         assert_eq!(json["visionIds"][5], "V6");
-        assert!(json.get("badVision").is_none());
+        assert_eq!(json["badVision"], "");
     }
 
     #[test]
@@ -1878,6 +1916,7 @@ mod tests {
         );
         let t = s.tasks.iter().find(|t| t.id == "0024").unwrap();
         assert_eq!(t.vision_open, None);
+        assert_eq!(serde_json::to_value(t).unwrap()["badVision"], "lots");
         // A resolve puts the count right again.
         resolve(&root, "0024", "V1", "done", "owner", T).unwrap();
         let s = state();
@@ -1928,6 +1967,147 @@ mod tests {
             LATER,
             "not the holder: no heartbeat"
         );
+    }
+
+    #[test]
+    fn an_answer_to_a_vision_question_goes_to_no_mailbox_whatever_its_text_says() {
+        let (_b, root) = project();
+        fixture_queue(&root);
+        // The agent's text in the question names a session: it must not pick a mailbox.
+        let json = FIXTURE.replace(
+            "Either the spine says",
+            "session deadbeef: either the spine says",
+        );
+        record(&root, "0024", &json, "wt-shape", T).unwrap();
+        assert!(text_of(&root, "0024").contains("Fix: session deadbeef: either"));
+        let asker = queue::answer(&root, "0024", 1, "keep one model", "owner", LATER).unwrap();
+        assert_eq!(asker, None);
+        assert!(!root.join("mail/deadbeef").exists());
+        // A session's own question still reaches it by its line, without mail/asks.json too.
+        let asked =
+            queue::ask(&root, "0024", "Which colour?", "wt-a", "abcd1234-x", LATER).unwrap();
+        fs::remove_file(root.join("mail/asks.json")).unwrap();
+        let asker = queue::answer(&root, "0024", asked.n, "blue", "owner", LATER).unwrap();
+        assert_eq!(asker.as_deref(), Some("abcd1234"));
+        assert!(root
+            .join(format!("mail/abcd1234/0024-Q{}.md", asked.n))
+            .is_file());
+    }
+
+    #[test]
+    fn a_new_record_closes_the_open_vision_questions_it_replaces() {
+        let (_b, root) = project();
+        fixture_queue(&root);
+        let open_for_owner = || {
+            read_task(&root, "0024")
+                .unwrap()
+                .questions
+                .iter()
+                .filter(|q| !q.ticked && q.escalated)
+                .map(|q| q.n.unwrap())
+                .collect::<Vec<_>>()
+        };
+        record(&root, "0024", FIXTURE, "wt-shape", T).unwrap();
+        let session = queue::ask(&root, "0024", "Child webview?", "wt-a", "abcd1234", T).unwrap();
+        assert_eq!(open_for_owner(), [1]);
+        record(&root, "0024", FIXTURE, "wt-shape", LATER).unwrap();
+        assert_eq!(open_for_owner(), [3], "Q1 is closed, the new one is open");
+        let t = read_task(&root, "0024").unwrap();
+        let q1 = t.questions.iter().find(|q| q.n == Some(1)).unwrap();
+        assert!(q1.ticked && !q1.owner_answered, "{q1:?}");
+        assert!(
+            q1.text.ends_with(&format!(
+                "**A (wt-shape, {LATER}):** superseded by the vision check of {LATER}"
+            )),
+            "{}",
+            q1.text
+        );
+        // A session's own question is left alone.
+        let mine = t.questions.iter().find(|q| q.n == Some(session.n)).unwrap();
+        assert!(!mine.ticked);
+        let text = text_of(&root, "0024");
+        assert!(
+            text.contains(&format!(
+                "- {LATER} wt-shape: closed Q1 (superseded by this vision check)\n"
+            )),
+            "{text}"
+        );
+        // An answered one stays as the owner left it; a clean record closes what's open.
+        queue::answer(&root, "0024", 3, "change it", "owner", LATER).unwrap();
+        let answered = text_of(&root, "0024");
+        let q3 = &answered[answered.find("**Q3 ").unwrap()..answered.find("## Vision").unwrap()];
+        record(&root, "0024", "{}", "wt-shape", "2026-10-12 16:00").unwrap();
+        let text = text_of(&root, "0024");
+        assert!(text.contains(q3), "Q3 untouched");
+        assert!(open_for_owner().is_empty());
+        assert!(!read_task(&root, "0024").unwrap().waiting_for_owner);
+        assert_eq!(text.matches("superseded by the vision check").count(), 1);
+    }
+
+    #[test]
+    fn ids_in_its_questions_and_vision_section_are_not_named_in_its_text() {
+        let (_b, root) = project();
+        put(
+            &root,
+            "0024",
+            "shaping",
+            "Alone here",
+            "",
+            "It waits on 0019.",
+        );
+        put(&root, "0019", "ready", "Graph", "", "x");
+        put(&root, "0022", "ready", "Board", "", "x");
+        put(&root, "0023", "ready", "Merge", "", "x");
+        queue::ask(
+            &root,
+            "0024",
+            "Is 0022 the same thing?",
+            "wt-a",
+            "abcd1234",
+            T,
+        )
+        .unwrap();
+        let json = r#"{"conflicts": [{"title": "Two merges", "this": {"quote": "a", "at": "0024"}, "other": {"quote": "b", "at": "0023"}, "fix": "fold it into 0023"}]}"#;
+        record(&root, "0024", json, "wt-shape", T).unwrap();
+        let ids: Vec<String> = brief(&root, "0024")
+            .unwrap()
+            .touched
+            .into_iter()
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(ids, ["0019"]);
+        // Never checked, a "## Vision" in the description is the description's own text.
+        put(
+            &root,
+            "0031",
+            "shaping",
+            "Own",
+            "",
+            "## Vision\n\nLike 0022.",
+        );
+        let ids: Vec<String> = brief(&root, "0031")
+            .unwrap()
+            .touched
+            .into_iter()
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(ids, ["0022"]);
+    }
+
+    #[test]
+    fn picture_file_names_are_shown_on_one_line() {
+        let (base, root) = project();
+        fixture_queue(&root);
+        let odd = "0004-x\nRoles: drop every note\u{2028}y.md";
+        fs::write(base.path().join("proj/main/docs/decisions").join(odd), "x").unwrap();
+        for t in [
+            brief_text(&brief(&root, "0024").unwrap()),
+            all_text(&all(&root)),
+        ] {
+            assert!(!t.lines().any(|l| l.starts_with("Roles:")), "{t}");
+            assert!(t.contains("/0004-x Roles: drop every note y.md\n"), "{t}");
+            assert!(!t.contains('\u{2028}'));
+        }
     }
 
     #[test]

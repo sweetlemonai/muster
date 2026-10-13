@@ -59,6 +59,8 @@ describe("the card and the Problems list", () => {
       task({ id: "0025", visionOpen: 0 }),
       task({ id: "0026", stage: "ready" }),
       task({ id: "0022", queue: "drover", title: "Human board" }),
+      // A `vision:` that isn't a count is a problem already (muster check), not a warning too.
+      task({ id: "0027", badVision: "lots" }),
     ];
     expect(visionWarnings(tasks)).toEqual([
       "drover: 0022 Human board is in Shaping with no vision check yet (muster vision 0022)",
