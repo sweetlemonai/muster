@@ -370,19 +370,26 @@ pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> V
         .find(|(k, _)| is_old(k))
         .map(|(_, v)| v.clone());
     let hidden = config.hidden.iter().any(is_old);
-    if gate.is_none() && name.is_none() && !hidden {
-        return Vec::new();
-    }
-    let found = list(base, config)
+    let listed = list(base, config);
+    let old_listed = listed.iter().any(|p| canon(Path::new(&p.path)) == old);
+    let found = listed
         .into_iter()
         .find(|p| canon(Path::new(&p.path)) == new)
         .map(|p| p.key);
+    let carried = gate.is_some() || name.is_some() || hidden;
+    // Nothing to say of a queue nobody listed, or of one the new queue is found in place of.
+    if !carried && (found.is_some() || !old_listed) {
+        return Vec::new();
+    }
+    let mut lines = Vec::new();
     let key = found.unwrap_or_else(|| {
         let key = new.to_string_lossy().to_string();
+        lines.push(format!(
+            "projects.json: added {key}, which Muster doesn't find on its own, as the old queue was listed"
+        ));
         config.added.push(key.clone());
         key
     });
-    let mut lines = Vec::new();
     if let Some(g) = gate {
         lines.push(format!(
             "projects.json: gate {g:?} carried to the new queue"
@@ -612,6 +619,33 @@ mod tests {
         let a = active(base.path(), &c);
         assert_eq!(a.len(), 1);
         assert_eq!(a[0].0, "work");
+    }
+
+    #[test]
+    fn a_migrated_queue_discovery_cant_see_is_added_when_the_old_one_was_listed() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        // <base>/g/p/tasks is found (two levels); <base>/g/p/main/.muster is three levels down.
+        let old = base.join("g/p/tasks");
+        make_queue(&old);
+        let main = base.join("g/p/main");
+        fs::create_dir_all(main.join(".git")).unwrap();
+        let new = main.join(layout::DIR);
+        fs::create_dir(&new).unwrap();
+        fs::write(new.join(layout::CONFIG), layout::config_text(true, None)).unwrap();
+        let mut c = Config::default();
+        let lines = carry_over(&mut c, &base, &old, &new);
+        let key = new.to_string_lossy().to_string();
+        assert_eq!(c.added, vec![key.clone()], "{lines:?}");
+        assert!(lines.join("\n").contains("added"), "{lines:?}");
+        assert!(list(&base, &c).iter().any(|p| p.key == key && p.ok));
+        // A queue nobody listed stays unlisted.
+        let elsewhere = tempfile::tempdir().unwrap();
+        let stray = elsewhere.path().canonicalize().unwrap().join("x/tasks");
+        make_queue(&stray);
+        let mut c = Config::default();
+        assert!(carry_over(&mut c, &base, &stray, &new).is_empty());
+        assert!(c.added.is_empty());
     }
 
     #[test]

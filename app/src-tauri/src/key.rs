@@ -327,6 +327,14 @@ pub fn pin_prefix(root: &Path) {
     }
 }
 
+/// `pin_prefix` with the projects given instead of the ones Muster knows (a test's own).
+#[cfg(test)]
+pub(crate) fn pin_prefix_in(root: &Path, list: &[projects::Project]) {
+    if stored_prefix(root).is_none() && has_prefix_home(root) {
+        let _ = store_prefix(root, &prefix_in(root, list));
+    }
+}
+
 fn same_folder(a: &Path, b: &Path) -> bool {
     let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
     canon(a) == canon(b)
@@ -344,14 +352,22 @@ pub fn known() -> Vec<projects::Project> {
 /// else (a folder Muster doesn't list) the default it would get beside those, without changing
 /// theirs.
 pub fn prefix_for(root: &Path) -> String {
+    match stored_prefix(root) {
+        Some(p) => p,
+        None => prefix_in(root, &known()),
+    }
+}
+
+/// `prefix_for` with the projects given (`list`) instead of the ones Muster knows: `migrate`
+/// takes them from its caller, so its tests never read this Mac's projects.
+pub fn prefix_in(root: &Path, list: &[projects::Project]) -> String {
     if let Some(p) = stored_prefix(root) {
         return p;
     }
-    let list = known();
     if let Some(p) = list.iter().find(|p| same_folder(Path::new(&p.path), root)) {
         return p.prefix.clone();
     }
-    let taken: Vec<String> = list.into_iter().map(|p| p.prefix).collect();
+    let taken: Vec<String> = list.iter().map(|p| p.prefix.clone()).collect();
     prefix_beside(&projects::default_name(root), &taken)
 }
 

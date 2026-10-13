@@ -546,15 +546,18 @@ pub(crate) mod resolve {
             title: "First".into(),
             ..Default::default()
         };
-        crate::ops::create_task(&q2, &new, "owner", T).unwrap();
-        let pinned = crate::key::stored_prefix(&q2).expect("pinned on the first write");
+        // The pin every write makes (`with_lock`), here beside no other project: "other" → ot.
+        crate::key::pin_prefix_in(&q2, &[]);
+        assert_eq!(crate::key::stored_prefix(&q2).as_deref(), Some("ot"));
         assert!(fs::read_to_string(q2.join(CONFIG))
             .unwrap()
-            .contains(&format!("prefix = \"{pinned}\"")),);
+            .contains("\nprefix = \"ot\"\n"));
         assert_eq!(fs::read_to_string(q2.join("README.md")).unwrap(), readme2);
         // The master list names tasks by key.
+        crate::ops::create_task(&q2, &new, "owner", T).unwrap();
         let index = fs::read_to_string(q2.join(crate::index::FILE)).unwrap();
-        assert!(index.contains(&format!("{pinned}-1")), "{index}");
+        assert!(index.contains("ot-1"), "{index}");
+        assert_eq!(fs::read_to_string(q2.join("README.md")).unwrap(), readme2);
     }
 
     #[test]
@@ -861,14 +864,17 @@ mod flows {
         for f in STATUS_FOLDERS {
             fs::create_dir(v2.path().join(f)).unwrap();
         }
-        fs::write(v2.path().join("README.md"), "q").unwrap();
+        // Each with its prefix stored where its layout keeps it (0033), so no write works one out
+        // from the projects on this Mac.
+        fs::write(v2.path().join("README.md"), "---\nprefix: pp\n---\nq\n").unwrap();
         let v2_root = v2.path().to_path_buf();
         let flat = tempfile::tempdir().unwrap();
+        fs::write(flat.path().join("README.md"), "---\nprefix: pp\n---\nq\n").unwrap();
         let flat_root = flat.path().to_path_buf();
         let repo = tempfile::tempdir().unwrap();
         let m = repo.path().join(DIR);
         fs::create_dir(&m).unwrap();
-        fs::write(m.join("config.toml"), "local = false\n").unwrap();
+        fs::write(m.join("config.toml"), config_text(false, Some("pp"))).unwrap();
         vec![
             (v2, v2_root, "v2"),
             (flat, flat_root, "flat"),
@@ -1034,6 +1040,33 @@ mod flows {
             assert_eq!(
                 crate::index::status(&root),
                 crate::index::Status::Stale,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_field_written_twice_is_changed_where_it_is_read_the_last_one() {
+        for (_d, root, name) in layouts() {
+            let dir = task_dir(&root, "todo");
+            fs::create_dir_all(&dir).unwrap();
+            // Readers take the last `stage:`; a change must land there, or it's lost.
+            let status = if keeps_status(&root) {
+                "status: todo\n"
+            } else {
+                ""
+            };
+            fs::write(
+                dir.join("0001-twice.md"),
+                format!("---\nid: 0001\nstage: backlog\n{status}claimed-by:\nheartbeat:\nwaiting_on:\nstage: ready\n---\n\n# Twice\n\n## Log\n- {T} owner: created\n"),
+            )
+            .unwrap();
+            assert_eq!(task(&root, "0001").stage, "ready", "{name}");
+            ops::claim_task(&root, "0001", "wt-a", T).unwrap();
+            let t = task(&root, "0001");
+            assert_eq!(
+                (t.stage.as_str(), t.claimed_by.as_str()),
+                ("building", "wt-a"),
                 "{name}"
             );
         }

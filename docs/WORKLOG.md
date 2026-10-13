@@ -4,6 +4,19 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — `.muster/` migrate and hook: last review round (task 0005)
+**Fixed (review):**
+- **carry_over:** a migrated queue that discovery can't find (`<base>/g/p/main/.muster`) is now added to `projects.json` whenever the old queue was listed, even with no gate, name or hidden to carry. Before, it vanished once the old queue was retired.
+- **migrate:** a task file is changed only when its front matter can't be read as it is, and then only the front matter (byte-order mark, CRLF). Body bytes are kept.
+- **Old queue's git index:** bytes and mtime are now checked after migrate (the fixture touches a tracked file's mtime). This test fails without `--no-optional-locks`.
+- **Hook:** a `.git` file with no `commondir` (a submodule, `--separate-git-dir`) has no main checkout. It no longer resolves to the superproject's `.muster/`, matching `layout::find`.
+- **set_front:** writes the last line of a key written twice, the one `queue::front_matter` reads. Before, a claim on a file with two `stage:` lines was written and lost.
+
+**Verified:**
+- New tests:
+  - `a_migrated_queue_discovery_cant_see_is_added_when_the_old_one_was_listed`
+  - `a_field_written_twice_is_changed_where_it_is_read_the_last_one`
+- Extended: the CRLF test (a mixed file is byte-identical apart from stage and status), the v2 copy test (index mtime) and `test_the_hook_finds_no_queue_where_git_has_no_main_checkout` (submodule). Each failed before its fix.
 ## 2026-10-13 — `.muster/` queues keep their task-key prefix in config.toml (task 0005, after 0033)
 **Did:** for a `.muster` queue, `key::stored_prefix`, `store_prefix` and `pin_prefix` read and write `prefix = "mu"` in `.muster/config.toml` (`layout::config_prefix`, `store_config_prefix`), never a README. Old queues keep README front matter exactly as 0033 built it.
 - `muster init <repo> --prefix` checks and stores it like `create` does; the `.muster` README shows `muster show <prefix>-1`.

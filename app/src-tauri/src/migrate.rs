@@ -74,13 +74,16 @@ struct Plan {
 }
 
 /// Migrate `old` into the `.muster/` of the repo `repo` is in (its main checkout). `tools` holds
-/// `manifest.py`, which writes `tasks.json`; `stamp` is local time for `migrated-from.txt`.
+/// `manifest.py`, which writes `tasks.json`; `stamp` is local time for `migrated-from.txt`;
+/// `known` the projects Muster lists (`key::known`), for the default prefix of an old queue with
+/// none stored (0033).
 pub fn migrate(
     old: &Path,
     repo: &Path,
     opts: &Options,
     tools: &Path,
     stamp: &str,
+    known: &[crate::projects::Project],
 ) -> Result<Report, String> {
     let old = fs::canonicalize(old).map_err(|e| format!("{}: {e}", old.display()))?;
     if layout::is_muster(&old) {
@@ -118,7 +121,7 @@ pub fn migrate(
     };
     taken()?;
     if opts.dry_run {
-        let plan = plan(&old)?;
+        let plan = plan(&old, known)?;
         return Ok(Report {
             lines: summary(&plan, &old, &q, opts, true),
             queue: q,
@@ -126,7 +129,7 @@ pub fn migrate(
     }
     // The old queue's lock, so no muster write lands in it while it's read and copied.
     queue::hold_lock(&old, || {
-        let plan = plan(&old)?;
+        let plan = plan(&old, known)?;
         taken()?;
         let staging = main.join(format!(".muster-migrating-{}", std::process::id()));
         fs::create_dir(&staging).map_err(|e| format!("{}: {e}", staging.display()))?;
@@ -147,9 +150,9 @@ pub fn migrate(
 
 /// The old queue as a plan: every file it has, where each goes, and what's said about it. Refused
 /// while an agent holds a task in Building or Testing, and when two files would land on one path.
-fn plan(old: &Path) -> Result<Plan, String> {
+fn plan(old: &Path, known: &[crate::projects::Project]) -> Result<Plan, String> {
     let mut p = Plan {
-        prefix: crate::key::prefix_for(old),
+        prefix: crate::key::prefix_in(old, known),
         ..Plan::default()
     };
     let mut busy = Vec::new();
@@ -283,14 +286,19 @@ fn held_by_an_agent(t: &Task) -> bool {
         && !crate::session::is_owner(holder)
 }
 
-/// A task file's text as the readers take it: a byte-order mark taken off and CRLF line ends
-/// made LF, with what was changed. None when it isn't UTF-8. An error names a file it can't read.
+/// A task file's text as the readers take it, changed only when its front matter can't be read
+/// as it is: a byte-order mark taken off, then the front matter's own CRLF line ends made LF,
+/// the body kept byte for byte. Returns what was changed. None when it isn't UTF-8. An error
+/// names a file it can't read.
 fn task_text(path: &Path) -> Result<(Option<String>, Vec<&'static str>), String> {
     let bytes = fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let Ok(text) = String::from_utf8(bytes) else {
         return Ok((None, Vec::new()));
     };
     let mut edits = Vec::new();
+    if queue::front_matter(&text).is_some() {
+        return Ok((Some(text), edits));
+    }
     let text = match text.strip_prefix('\u{feff}') {
         Some(rest) => {
             edits.push("its byte-order mark taken off");
@@ -298,13 +306,30 @@ fn task_text(path: &Path) -> Result<(Option<String>, Vec<&'static str>), String>
         }
         None => text,
     };
-    let text = if text.contains("\r\n") {
-        edits.push("its CRLF line ends made LF");
-        text.replace("\r\n", "\n")
-    } else {
-        text
+    if queue::front_matter(&text).is_some() {
+        return Ok((Some(text), edits));
+    }
+    let text = match plain_front(&text) {
+        Some(plain) => {
+            edits.push("its front matter's CRLF line ends made LF");
+            plain
+        }
+        None => text,
     };
     Ok((Some(text), edits))
+}
+
+/// The text with its front matter's CRLF line ends made LF, through the closing `---` line, and
+/// the rest as it was; None when it doesn't start with a CRLF front matter.
+fn plain_front(text: &str) -> Option<String> {
+    let open = "---\r\n";
+    let rest = text.strip_prefix(open)?;
+    let close = ["\r\n---\r\n", "\r\n---\n"]
+        .iter()
+        .filter_map(|c| rest.find(c).map(|i| i + c.len()))
+        .min()?;
+    let (head, body) = text.split_at(open.len() + close);
+    Some(format!("{}{body}", head.replace("\r\n", "\n")))
 }
 
 /// A task's text for `.muster/tasks/`: `stage:` set from what it was read as, `status:` gone,
@@ -648,6 +673,18 @@ mod tests {
 
     const T: &str = "2026-10-13 09:00";
 
+    /// `migrate` as the tests run it: beside no other project, so a default prefix comes from the
+    /// queue's own name and nothing of this Mac's projects is read.
+    fn migrate(
+        old: &Path,
+        repo: &Path,
+        opts: &Options,
+        tools: &Path,
+        stamp: &str,
+    ) -> Result<Report, String> {
+        super::migrate(old, repo, opts, tools, stamp, &[])
+    }
+
     fn tools() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bin")
     }
@@ -776,7 +813,14 @@ mod tests {
         let main = repo(base.path(), "proj");
         let before = snapshot(&old);
         let head = git(&old, &["rev-parse", "HEAD"]);
-        let index = || fs::read(old.join(".git/index")).unwrap();
+        // The old queue's git index, bytes and time: `snapshot` leaves `.git` out.
+        let index = || {
+            let p = old.join(".git/index");
+            (
+                fs::read(&p).unwrap(),
+                fs::metadata(&p).unwrap().modified().unwrap(),
+            )
+        };
         let index_before = index();
         let opts = Options {
             local: true,
@@ -822,11 +866,17 @@ mod tests {
             assert!(!text.contains("\nstatus:"), "{text}");
             assert!(text.contains(&format!("\nstage: {}\n", t.stage)), "{text}");
         }
-        // CRLF and a byte-order mark are made plain, so its stage is set like every other's.
+        // Its front matter is made plain (CRLF, a byte-order mark), so its stage is set like every
+        // other's; the body is kept byte for byte.
         let crlf = fs::read_to_string(q.join("tasks/0010-crlf.md")).unwrap();
+        let (front, body) = crlf.split_once("\n---\n").unwrap();
         assert!(
-            crlf.starts_with("---\nid: 0010\n") && !crlf.contains('\r'),
+            front.starts_with("---\nid: 0010\n") && !front.contains('\r'),
             "{crlf:?}"
+        );
+        assert_eq!(
+            body,
+            "\r\n# Windows\r\n\r\n## Log\r\n- 2026-10-12 09:00 capture: created\r\n"
         );
         assert!(fs::read_to_string(q.join("tasks/0006-why.md"))
             .unwrap()
@@ -886,7 +936,7 @@ mod tests {
             "attachments: 2 files; mail: 2 files",
             "README.md keeps the old README's front matter (but its prefix)",
             "prefix: mu, kept in config.toml",
-            "note: todo/0010-crlf.md: its byte-order mark taken off and its CRLF line ends made LF",
+            "note: todo/0010-crlf.md: its byte-order mark taken off and its front matter's CRLF line ends made LF",
             "note: blocked/0006-why.md: blocked without saying on what",
             "note: todo/0009-odd.md: stage \"someday\" isn't a stage; set to ready",
             "not copied (still in the old queue): attachments/0002/link.txt (a symlink), bin/task, todo/notes.txt",
@@ -901,7 +951,7 @@ mod tests {
 
     /// Each task's key in the queue at `root`, by id, as `muster list` shows them.
     fn keys(root: &Path) -> BTreeMap<String, String> {
-        let prefix = crate::key::prefix_for(root);
+        let prefix = crate::key::prefix_in(root, &[]);
         state(root)
             .tasks
             .iter()
@@ -940,12 +990,11 @@ mod tests {
             &[("todo/0001-a.md", &task("0001", "status: todo"))],
         );
         let before = keys(&old);
+        // Beside no other project, "nostore" defaults to its first two letters.
+        assert!(before.values().all(|k| k.starts_with("no-")), "{before:?}");
         let r = migrate(&old, &main, &Options::default(), &tools(), T).unwrap();
         assert_eq!(keys(&r.queue), before);
-        assert_eq!(
-            crate::key::stored_prefix(&r.queue),
-            Some(crate::key::prefix_for(&old))
-        );
+        assert_eq!(crate::key::stored_prefix(&r.queue).as_deref(), Some("no"));
         // The old queue wasn't given one on the way.
         assert_eq!(crate::key::stored_prefix(&old), None);
     }
@@ -1184,24 +1233,45 @@ mod tests {
             "x".repeat(1_100_000)
         );
         let crlf = task("0002", "status: done").replace('\n', "\r\n");
+        // Plain front matter, a CRLF line in the body: it reads as it is, so only its stage and
+        // status lines change.
+        let mixed = format!(
+            "{}A pasted line\r\nand another\r\n",
+            task("0003", "status: done")
+        );
         let (old, main) = queue_with(
             base.path(),
             "p",
-            &[("done/0001-big.md", &big), ("done/0002-crlf.md", &crlf)],
+            &[
+                ("done/0001-big.md", &big),
+                ("done/0002-crlf.md", &crlf),
+                ("done/0003-mixed.md", &mixed),
+            ],
         );
         let r = migrate(&old, &main, &Options::default(), &tools(), T).unwrap();
-        for f in ["tasks/0001-big.md", "tasks/0002-crlf.md"] {
+        for f in [
+            "tasks/0001-big.md",
+            "tasks/0002-crlf.md",
+            "tasks/0003-mixed.md",
+        ] {
             let text = fs::read_to_string(r.queue.join(f)).unwrap();
             assert!(
                 text.contains("\nstage: done\n") && !text.contains("status:"),
                 "{f}"
             );
         }
+        let out = fs::read_to_string(r.queue.join("tasks/0003-mixed.md")).unwrap();
+        assert_eq!(
+            out.replace("\nstage: done\n---\n", "\nstatus: done\n---\n"),
+            mixed,
+            "only the stage and status lines change"
+        );
         let text = r.lines.join("\n");
         assert!(
-            text.contains("note: done/0002-crlf.md: its CRLF line ends made LF"),
+            text.contains("note: done/0002-crlf.md: its front matter's CRLF line ends made LF"),
             "{text}"
         );
+        assert!(!text.contains("0003-mixed"), "{text}");
         // Without front matter there's no stage to keep: refused, naming each.
         let (old, main) = queue_with(
             base.path(),

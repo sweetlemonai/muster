@@ -39,10 +39,12 @@
 >   project at `<checkout>.worktrees/…` beside it, never in `~/playground` itself.
 > - **Starting one:** `muster init <repo> [--local|--committed]`. **Moving one:** `muster migrate
 >   <old-queue> <repo> [--local|--committed] [--dry-run]` copies every task file (its `stage:` set
->   from its old stage or status, `status:` dropped, CRLF line ends and a byte-order mark made
->   plain), note, dropped note, attachment, mailbox and `WAITING-FOR-OWNER.md`, writes
->   `migrated-from.txt` with the old queue's last commit, gives the new queue the old one's gate,
->   name and hidden from the app's `projects.json`, and prints what it copied and what it didn't.
+>   from its old stage or status, `status:` dropped, the rest byte for byte; a front matter that
+>   can't be read as it is gets its byte-order mark and CRLF line ends made plain), note, dropped
+>   note, attachment, mailbox and `WAITING-FOR-OWNER.md`, writes `migrated-from.txt` with the old
+>   queue's last commit, gives the new queue the old one's gate, name and hidden from the app's
+>   `projects.json` (and lists it there when discovery can't find it but found the old one), and
+>   prints what it copied and what it didn't.
 >   It copies, never moves: the old queue is left as it was. It refuses while an agent holds a task
 >   in Building or Testing (it lists them), when `.muster/` is there already, when the repo and the
 >   old queue overlap, on a folder it can't read, on a task file without front matter it can read,

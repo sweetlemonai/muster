@@ -183,6 +183,21 @@ class MusterDirTests(unittest.TestCase):
         mail.write_text("Answer to Q1 on task 0001 (X), from owner:\nAnswer: 1\n")
         self.assertEqual(self.hook("aaaa1111", payload_cwd=bwt), "")
         self.assertTrue(mail.is_file())
+        # A submodule inside this repo: its git folder is .git/modules/sub, so it has no main
+        # checkout of its own, and the superproject's queue isn't its queue either (find agrees).
+        inner = base / "inner"
+        inner.mkdir()
+        git(inner, "init", "-q", "-b", "main")
+        (inner / "x.txt").write_text("x\n")
+        git(inner, "add", "-A")
+        git(inner, "commit", "-q", "-m", "inner")
+        git(self.main, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(inner), "sub")
+        box = self.q / "mail" / "aaaa1111"
+        box.mkdir(parents=True)
+        outer_mail = box / "0002-Q1.md"
+        outer_mail.write_text("Answer to Q1 on task 0002 (Y), from owner:\nAnswer: 2\n")
+        self.assertEqual(self.hook("aaaa1111", payload_cwd=self.main / "sub"), "")
+        self.assertTrue(outer_mail.is_file())
 
     def test_manifest_reads_the_muster_layout_like_muster(self):
         self.muster("new", "Ready one", "--as", "owner")

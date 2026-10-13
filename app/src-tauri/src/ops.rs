@@ -789,7 +789,8 @@ fn set_link(
     })
 }
 
-/// Replace a front-matter field's value (adding it before the closing `---` if missing).
+/// Replace a front-matter field's value (its last line, which readers read when it's written
+/// twice; adding it before the closing `---` if missing). `clear_front` drops every line of it.
 pub(crate) fn set_front(text: &str, key: &str, value: &str) -> Result<String, String> {
     let rest = text
         .strip_prefix("---\n")
@@ -799,7 +800,8 @@ pub(crate) fn set_front(text: &str, key: &str, value: &str) -> Result<String, St
         .ok_or("the task's front matter isn't closed")?;
     let mut lines: Vec<String> = rest[..end].lines().map(String::from).collect();
     let prefix = format!("{key}:");
-    match lines.iter_mut().find(|l| l.starts_with(&prefix)) {
+    // The last line with the key: the one `queue::front_matter` reads when a key is written twice.
+    match lines.iter_mut().rev().find(|l| l.starts_with(&prefix)) {
         Some(l) => {
             *l = if value.is_empty() {
                 prefix

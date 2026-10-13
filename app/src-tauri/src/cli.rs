@@ -1343,6 +1343,7 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
                 &opts,
                 &tools_dir(),
                 &stamp,
+                &crate::key::known(),
             )?;
             for line in &r.lines {
                 println!("{line}");

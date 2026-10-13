@@ -667,14 +667,17 @@ keep working (`layout.rs` is the one place that says where a layout keeps what).
   checkout, never over one that's there), local unless `--committed`; outside a repo, the old
   `<folder>/tasks`. The app's New queue still makes the old layout and refuses inside a repo.
 - **`muster migrate <old-queue> <repo> [--local|--committed] [--dry-run]`:** copies (never moves)
-  every task file with `stage:` set from its old stage or status and `status:` dropped (CRLF line
-  ends and a byte-order mark made plain first, and said so; a task the old status alone said was
+  every task file with `stage:` set from its old stage or status and `status:` dropped, the rest
+  byte for byte (only when its front matter can't be read as it is: a byte-order mark taken off
+  and the front matter's CRLF line ends made LF, and said so; a task the old status alone said was
   blocked keeps a `waiting_on` saying so), the backlog folder (notes, dropped notes, anything else
   in it), `attachments/`, `mail/` (not its lock) and `WAITING-FOR-OWNER.md`; puts the old README's
   front matter at the top of the new README; writes `config.toml`, `.gitignore`, `INDEX.md`,
   `tasks.json` (by `manifest.py`) and `migrated-from.txt` (the old queue's folder, the time, its
   last commit, read with `git --no-optional-locks` so the old index is never rewritten); carries
-  the old queue's gate, name and hidden in `projects.json` to the new one. It holds the old
+  the old queue's gate, name and hidden in `projects.json` to the new one, and adds the new one
+  to the list when the old one was listed but discovery can't find the new (three levels down,
+  outside `~/playground`). It holds the old
   queue's lock while it reads, builds the new queue in a folder beside it with every file made
   new (never over another) and renames it into place, so a failure leaves nothing. Refused while
   an agent holds a task in Building or Testing (listed; a Testing task from before `held-by` by

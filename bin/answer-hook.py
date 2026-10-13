@@ -194,7 +194,8 @@ def main_checkout(folder: Path) -> Path | None:
     """The main checkout of the repo `folder` is in, from git's own files (layout.rs
     main_checkout asks git the same): the nearest folder up with a `.git`; a folder `.git` is the
     main checkout's, and a linked worktree's `.git` file names its folder in the main checkout's
-    `.git/worktrees/`, whose `commondir` leads back to that `.git`. None outside a repo."""
+    `.git/worktrees/`, whose `commondir` leads back to that `.git`. None outside a repo, and where
+    git's folder isn't a `.git` folder (a bare repo's worktree, a submodule, --separate-git-dir)."""
     for d in [folder, *folder.parents]:
         dot_git = d / ".git"
         if dot_git.is_dir():
@@ -210,7 +211,9 @@ def main_checkout(folder: Path) -> Path | None:
                 common = Path(common_file.read_text(encoding="utf-8").strip())
                 common = common if common.is_absolute() else gitdir / common
             else:
-                common = gitdir.parent.parent
+                # No commondir: git's folder is gitdir itself (a submodule's .git/modules/<x>,
+                # --separate-git-dir), never a main checkout's .git.
+                common = gitdir
             common = common.resolve()
             return common.parent if common.name == ".git" else None
     return None
