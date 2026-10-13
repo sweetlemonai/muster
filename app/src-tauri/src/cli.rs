@@ -366,6 +366,17 @@ fn list_text(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> String {
     out
 }
 
+/// What `muster check` says about INDEX.md, in the problems' form (`q:` like `tasks_of`'s): a
+/// list that shows something other than the files is a problem; one only due a refresh (the
+/// files changed outside muster, as Drover's answers do) is a warning; none yet is fine.
+fn index_check_line(status: index::Status) -> Option<String> {
+    match status {
+        index::Status::Stale => Some(format!("q: {}", index::STALE)),
+        index::Status::Refresh => Some(format!("q: warning: {}", index::REFRESH)),
+        index::Status::Current | index::Status::Missing => None,
+    }
+}
+
 /// `--body`: the text, `-` for stdin (up to 1 MB), or None when not given. A one-line command can
 /// carry line breaks as `\n` (the helper writes them so, because a permission rule only matches a
 /// command on one line).
@@ -960,13 +971,17 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                     println!("{}: waits on the owner to verify {}", t.id, open.join(", "));
                 }
             }
-            // A master list that doesn't match the files (a hand edit since); none yet is fine.
-            let stale = index::status(root) == index::Status::Stale;
-            if stale {
-                println!("{}", index::STALE);
+            let index_line = index_check_line(index::status(root));
+            if let Some(l) = &index_line {
+                println!("{l}");
             }
-            // Warnings (a goal past its due date) are shown but don't fail the check.
-            let failed = stale || s.problems.iter().any(|p| !queue::is_warning(p));
+            // Warnings (a goal past its due date, a list due a refresh) are shown but don't fail
+            // the check.
+            let failed = s
+                .problems
+                .iter()
+                .chain(&index_line)
+                .any(|p| !queue::is_warning(p));
             Ok(if failed { 1 } else { 0 })
         }
         "index" => {
@@ -979,6 +994,10 @@ fn run_on(a: &Args, cmd: &str, root: &Path, stamp: &str) -> Result<i32, String> 
                     }
                     index::Status::Stale => {
                         println!("{}", index::STALE);
+                        1
+                    }
+                    index::Status::Refresh => {
+                        println!("{}", index::REFRESH);
                         1
                     }
                     index::Status::Missing => {
@@ -1474,6 +1493,22 @@ mod tests {
         assert!(std::fs::read_to_string(&index)
             .unwrap()
             .contains("[Edited by hand]"));
+        // A write outside muster that the list doesn't show (Drover's answer): check warns
+        // without failing; `index --check` still says it isn't as muster would write it.
+        let text = std::fs::read_to_string(&f).unwrap();
+        std::fs::write(&f, format!("{text}- 2026-10-14 09:00 owner: answered Q1\n")).unwrap();
+        assert_eq!(code(&["check"]), 0);
+        assert_eq!(code(&["index", "--check"]), 1);
+        assert_eq!(code(&["index"]), 0);
+        assert_eq!(code(&["index", "--check"]), 0);
+        // The lines check prints: a warning by the problems' convention, or a problem.
+        let refresh = index_check_line(index::Status::Refresh).unwrap();
+        assert!(queue::is_warning(&refresh), "{refresh}");
+        assert!(refresh.contains("INDEX.md: refresh due"), "{refresh}");
+        let stale = index_check_line(index::Status::Stale).unwrap();
+        assert!(!queue::is_warning(&stale), "{stale}");
+        assert_eq!(index_check_line(index::Status::Missing), None);
+        assert_eq!(index_check_line(index::Status::Current), None);
     }
 
     /// `<base>/<project>/tasks` as a queue, and `<base>/<project>/main` as its repo.

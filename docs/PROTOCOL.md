@@ -4,8 +4,10 @@
 > every task with a link to its file: goals with their features and tasks, then the tasks under
 > none by stage, the backlog notes, and what's done. muster writes it after every change it makes,
 > under the queue's lock, so **never edit it by hand**. After you edit a task file by hand, run
-> `muster index`. `muster check` and `manifest.py --check` report a list that doesn't match the
-> files. A queue committed with its project (`.muster/`) would see branches conflict on it; the
+> `muster index`. `muster check` fails on a list that shows something the files no longer say.
+> Tools that write task files outside muster (Drover's answers, under Drover's own lock) leave the
+> list's refresh to the next muster write: until then `muster check` and `manifest.py --check`
+> only warn "INDEX.md: refresh due", without failing. A queue committed with its project (`.muster/`) would see branches conflict on it; the
 > pre-commit hook that rebuilds it and the git merge driver that does the same come with task 0005.
 >
 > **Stages (Muster 0014, 2026-10-12).** A task goes Backlog → Shaping (product, tech and UI

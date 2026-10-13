@@ -361,30 +361,43 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertEqual(self.manifest().returncode, 0)  # tasks.json isn't a source
         self.assertEqual(self.manifest("--check").returncode, 0)
-        # A hand edit: stale until muster rebuilds it; manifest.py never writes INDEX.md.
+        # A write outside muster (Drover answers under its own lock, never through muster, or a
+        # hand edit): the list is due a refresh. That's a warning, not a failure; manifest.py
+        # never writes INDEX.md.
+        refresh = ("warning: INDEX.md: refresh due (the files changed outside muster; the next "
+                   "muster write or `muster index` refreshes it)")
         f = self.root / "todo" / "0043-old.md"
         f.write_text(OLD_STYLE.replace("# Old style questions", "# Edited by hand"), encoding="utf-8")
         r = self.manifest("--check")
-        self.assertEqual(r.returncode, 1)
-        self.assertIn(stale, r.stdout)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn(refresh, r.stdout)
+        self.assertNotIn(stale, r.stdout)
         self.manifest()
         self.assertEqual(self.text("INDEX.md"), index)
-        self.assertIn(stale[len("problem: "):], json.loads(self.text("tasks.json"))["problems"])
+        m = json.loads(self.text("tasks.json"))
+        self.assertIn(refresh[len("warning: "):], m["warnings"])
+        self.assertNotIn(stale[len("problem: "):], m["problems"])
         self.assertEqual(self.muster("index", "--check").returncode, 1)
         self.assertEqual(self.muster("index").returncode, 0)
-        self.assertEqual(self.manifest("--check").returncode, 0)
-        # A note added, moved or removed counts as much as a task.
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 0)
+        self.assertNotIn("INDEX.md", r.stdout)
+        # A note added counts as much as a task; the next muster write refreshes the list.
         self.note("inbox/another.md", "Another", 10)
-        self.assertEqual(self.manifest("--check").returncode, 1)
+        self.assertIn(refresh, self.manifest("--check").stdout)
         r = self.muster("add", "--as", "wt-a", "Through", "muster")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.manifest("--check").returncode, 0)
-        # A list without its sources line, or one that isn't a plain file, is stale too.
+        self.assertNotIn("INDEX.md", self.manifest("--check").stdout)
+        # A list without its sources line, or one that isn't a plain file, isn't muster's: a problem.
         (self.root / "INDEX.md").write_text("# My own list\n", encoding="utf-8")
-        self.assertIn(stale, self.manifest("--check").stdout)
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn(stale, r.stdout)
         (self.root / "INDEX.md").unlink()
         (self.root / "INDEX.md").symlink_to(self.root / "README.md")
-        self.assertIn(stale, self.manifest("--check").stdout)
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn(stale, r.stdout)
 
     def item(self, id_, fm, folder="todo"):
         """A task file `<id>-x.md` with these front-matter lines."""

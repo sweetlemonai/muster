@@ -83,9 +83,11 @@ tasks, then the tasks under none by stage, the backlog notes, and what's done (c
 with its stage, priority, type, estimate and a link to its file. muster rewrites it after every
 change it makes, under the queue's lock, and only when its text changed. It's generated, so never
 edit it by hand. After a hand edit to a task file, `muster index` rebuilds it, and `muster index
---check` exits 1 when it's missing or stale. `muster check` and `manifest.py --check` report a
-stale one (a missing one is fine); `manifest.py` reads the sources line at its end and never
-writes the list.
+--check` exits 1 when it isn't exactly what muster would write. `muster check` fails on a list
+that shows something the files no longer say, and only warns ("INDEX.md: refresh due") when just
+its "As of" and sources lines are behind, as after Drover writes an answer outside muster.
+`manifest.py --check` reads only the sources line at the end, so a mismatch there is a warning;
+a list without one is a problem. A missing list is fine, and `manifest.py` never writes it.
 
 Levels (task 0016): `new --level goal|feature --parent <id> --due YYYY-MM-DD` and `set <id>
 level|parent|due <value>` (an empty parent or due clears it), with the rules checked: a task's

@@ -152,6 +152,8 @@ def backlog_notes():
 
 INDEX = "INDEX.md"
 INDEX_STALE = "INDEX.md doesn't match the task files (rebuild with `muster index`)"
+INDEX_REFRESH = ("INDEX.md: refresh due (the files changed outside muster; the next muster write "
+                 "or `muster index` refreshes it)")
 INDEX_SOURCES = re.compile(r"<!-- muster sources: ([0-9a-f]{16}) -->")
 MAX_INDEX_BYTES = 16 * 1024 * 1024
 
@@ -212,18 +214,24 @@ def index_sources() -> str:
     return f"{h:016x}"
 
 
-def index_problem():
-    """INDEX.md's problem (task 0018), or None: it's there but its last line, the sources it was
-    made from, doesn't name what the files are now. None when there's no INDEX.md yet. Only muster
-    writes it; this never does."""
+def index_check():
+    """What's wrong with INDEX.md (task 0018), as (problem, warning), each None or a line. Only
+    muster writes it; this never does, and there being none yet is fine.
+    - A problem: it isn't a plain file, or has no sources line, so muster didn't write it.
+    - A warning: its sources line doesn't name what the files are now. The files changed outside
+      muster (Drover's answers, a hand edit), and the next muster write or `muster index`
+      refreshes it. Only muster can tell whether what the list shows changed too
+      (`muster check`)."""
     p = ROOT / INDEX
     if not p.is_symlink() and not p.exists():
-        return None
+        return None, None
     if p.is_symlink() or not p.is_file() or p.stat().st_size > MAX_INDEX_BYTES:
-        return INDEX_STALE
+        return INDEX_STALE, None
     lines = p.read_text(encoding="utf-8", errors="replace").rstrip("\n").split("\n")
     m = INDEX_SOURCES.fullmatch(lines[-1])
-    return None if m and m.group(1) == index_sources() else INDEX_STALE
+    if not m:
+        return INDEX_STALE, None
+    return None, (None if m.group(1) == index_sources() else INDEX_REFRESH)
 
 
 def level_of(fields: dict) -> str:
@@ -397,9 +405,11 @@ def main():
             problems.append(f"{t['path']}: waiting_on {ref.group(1)}, which doesn't exist")
     level_problems, warnings = level_checks(tasks, now.strftime("%Y-%m-%d"))
     problems.extend(level_problems)
-    stale_index = index_problem()
-    if stale_index:
-        problems.append(stale_index)
+    index_problem, index_warning = index_check()
+    if index_problem:
+        problems.append(index_problem)
+    if index_warning:
+        warnings.append(index_warning)
     for t in tasks:
         del t["bad_level"]
     inbox = sorted(p.name for p in (ROOT / "inbox").glob("*.md"))

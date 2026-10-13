@@ -286,6 +286,39 @@ fn md_text(s: &str, max: usize) -> String {
         }
         out.push(c);
     }
+    unlinked(&out)
+}
+
+/// `http://`, `https://` and `www.` (any case) with a zero-width space inside, so a viewer's
+/// autolinking (GitHub's) shows a web address in a title as text, never as a live link.
+fn unlinked(text: &str) -> String {
+    // ASCII lowercasing keeps every byte where it was, so offsets in `lower` are offsets in `text`.
+    let lower = text.to_ascii_lowercase();
+    let mut out = String::with_capacity(text.len() + 6);
+    let mut from = 0;
+    let mut at = 0;
+    while at < text.len() {
+        let rest = &lower[at..];
+        let split = if rest.starts_with("https://") {
+            Some(at + "https:".len())
+        } else if rest.starts_with("http://") {
+            Some(at + "http:".len())
+        } else if rest.starts_with("www.") {
+            Some(at + "www".len())
+        } else {
+            None
+        };
+        match split {
+            Some(s) => {
+                out.push_str(&text[from..s]);
+                out.push('\u{200b}');
+                from = s;
+                at = s + 1;
+            }
+            None => at += rest.chars().next().map_or(1, char::len_utf8),
+        }
+    }
+    out.push_str(&text[from..]);
     out
 }
 
@@ -445,6 +478,9 @@ pub enum Status {
     Current,
     /// There, but not what the files make (or not a plain file).
     Stale,
+    /// The list shows what the files say, but they changed since it was written, outside muster
+    /// (Drover's answers): only its "As of" or sources line is behind.
+    Refresh,
     Missing,
 }
 
@@ -452,13 +488,34 @@ pub enum Status {
 pub fn status(root: &Path) -> Status {
     match current(root) {
         Ok(None) => Status::Missing,
-        Ok(Some(text)) if text == build(root) => Status::Current,
-        _ => Status::Stale,
+        Ok(Some(text)) => {
+            let now = build(root);
+            if text == now {
+                Status::Current
+            } else if shown(&text) == shown(&now) {
+                Status::Refresh
+            } else {
+                Status::Stale
+            }
+        }
+        Err(()) => Status::Stale,
     }
+}
+
+/// The list as it reads, without the lines that follow every change to the files rather than what
+/// the list shows: "As of" and the sources line. No task's text can start a line, so these can't
+/// be forged by a title.
+fn shown(text: &str) -> Vec<&str> {
+    text.lines()
+        .filter(|l| !l.starts_with("As of ") && !l.starts_with(SOURCES_LINE))
+        .collect()
 }
 
 /// The problem `muster check` reports for a stale INDEX.md.
 pub const STALE: &str = "INDEX.md doesn't match the task files (rebuild with `muster index`)";
+
+/// The warning `muster check` gives for a list only due a refresh (`Status::Refresh`).
+pub const REFRESH: &str = "INDEX.md: refresh due (the files changed outside muster; the next muster write or `muster index` refreshes it)";
 
 #[cfg(test)]
 mod tests {
@@ -851,6 +908,22 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
             .unwrap()
             .contains("## Backlog notes (1)"));
         assert_eq!(status(p), Status::Current);
+        // Questions change the files but not the list: the sources line still follows them.
+        let sources_line = || {
+            let text = fs::read_to_string(p.join(FILE)).unwrap();
+            text.lines().last().unwrap().to_string()
+        };
+        let mut seen = vec![sources_line()];
+        queue::ask(p, "0001", "Which port?", "wt-a", "aaaa1111", t).unwrap();
+        seen.push(sources_line());
+        queue::escalate(p, "0001", 1, "capture", t).unwrap();
+        seen.push(sources_line());
+        queue::answer(p, "0001", 1, "5173", "owner", t).unwrap();
+        seen.push(sources_line());
+        for w in seen.windows(2) {
+            assert_ne!(w[0], w[1], "every write moves the sources line");
+        }
+        assert_eq!(status(p), Status::Current);
         // A hand edit leaves it stale until the next write, or `muster index`.
         let f = p.join("doing/0001-first.md");
         fs::write(
@@ -866,6 +939,76 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
         assert!(fs::read_to_string(p.join(FILE))
             .unwrap()
             .contains("[Renamed]"));
+    }
+
+    #[test]
+    fn a_write_outside_muster_the_list_does_not_show_is_a_refresh_not_stale() {
+        let d = sample();
+        let p = d.path();
+        assert!(rebuild(p).unwrap());
+        // What Drover's answer does, under its own lock and never through muster: an answer in
+        // the Questions section and a newer log line (which moves "As of").
+        let f = p.join("doing/0003-pass.md");
+        let text = fs::read_to_string(&f).unwrap().replace(
+            "## Log\n",
+            "## Questions\n- [x] **Q1 (wt-a, session aaaa1111, 2026-10-12 10:00):** Which port?\n  **A (owner, 2026-10-14 09:00):** 5173\n\n## Log\n",
+        ) + "- 2026-10-14 09:00 owner: answered Q1\n";
+        fs::write(&f, text).unwrap();
+        assert_eq!(status(p), Status::Refresh);
+        // A change the list shows is stale.
+        fs::write(
+            &f,
+            fs::read_to_string(&f)
+                .unwrap()
+                .replace("# Pass button", "# Renamed"),
+        )
+        .unwrap();
+        assert_eq!(status(p), Status::Stale);
+        assert!(rebuild(p).unwrap());
+        assert_eq!(status(p), Status::Current);
+    }
+
+    #[test]
+    fn a_list_that_cannot_be_written_never_fails_the_write() {
+        let d = queue();
+        let p = d.path();
+        fs::create_dir(p.join(FILE)).unwrap();
+        let n = ops::NewTask {
+            title: "Still made".into(),
+            ..Default::default()
+        };
+        let c = ops::create_task(p, &n, "owner", "2026-10-12 14:05").unwrap();
+        assert!(p.join(&c.path).is_file());
+        assert_eq!(status(p), Status::Stale);
+        assert!(rebuild(p).is_err());
+        // No temp file left behind in the queue folder.
+        let left: Vec<String> = fs::read_dir(p)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.ends_with(".tmp"))
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
+    }
+
+    #[test]
+    fn web_addresses_in_titles_stay_text() {
+        for (title, want) in [
+            (
+                "see https://evil.example/x",
+                "see https:\u{200b}//evil.example/x",
+            ),
+            (
+                "HTTP://A.B and http://c.d",
+                "HTTP:\u{200b}//A.B and http:\u{200b}//c.d",
+            ),
+            ("go to www.example.com", "go to www\u{200b}.example.com"),
+            ("WWW.X.Y", "WWW\u{200b}.X.Y"),
+            ("plain words, no link", "plain words, no link"),
+            ("été https://é.fr", "été https:\u{200b}//é.fr"),
+        ] {
+            assert_eq!(md_text(title, 200), want, "{title:?}");
+        }
     }
 
     #[test]
