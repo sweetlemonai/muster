@@ -39,9 +39,9 @@ pub struct Note {
     pub added: u64,
 }
 
-/// The backlog folder of a queue. Until task 0005 moves notes to `.muster/backlog/`, it's the
-/// v2 layout's `inbox/` (where agents' dated notes already go), or `backlog/` in the flat layout.
-/// This is the one place that says so.
+/// The backlog folder of a queue: `backlog/` in `.muster/` (task 0005) and in the old flat
+/// layout, and the old v2 layout's `inbox/` (where agents' dated notes already go). This is the
+/// one place that says so.
 pub fn backlog_dir(root: &Path) -> PathBuf {
     if ops::has_status_folders(root) {
         root.join("inbox")

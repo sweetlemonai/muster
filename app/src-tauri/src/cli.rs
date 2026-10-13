@@ -30,6 +30,12 @@ struct Args {
     force: bool,
     /// `ask --option <text>`, once per option, in order (0049).
     options: Vec<String>,
+    /// `init --local`, `migrate --local` (0005): a queue that stays on this Mac.
+    local: bool,
+    /// `init --committed`, `migrate --committed`: a queue committed with the code.
+    committed: bool,
+    /// `migrate --dry-run`: the plan, nothing written.
+    dry_run: bool,
 }
 
 /// Options and positionals; after `--`, everything is positional (text that starts with `--`).
@@ -48,6 +54,9 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         clean: false,
         force: false,
         options: vec![],
+        local: false,
+        committed: false,
+        dry_run: false,
     };
     let mut it = argv.iter();
     let mut rest = false;
@@ -71,6 +80,9 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--option" => a
                 .options
                 .push(it.next().ok_or("--option needs a value")?.clone()),
+            "--local" => a.local = true,
+            "--committed" => a.committed = true,
+            "--dry-run" => a.dry_run = true,
             "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on"
             | "--tags" | "--tag" | "--time" | "--test-time" | "--tokens" | "--stage" | "--gate"
             | "--commit" | "--to" | "--from" | "--after" | "--session" | "--level" | "--parent"
@@ -117,6 +129,23 @@ fn home() -> PathBuf {
     PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
 }
 
+/// `init` and `migrate` (0005): a local queue unless `--committed` says otherwise. Local is the
+/// default until a committed queue's live state moves to `.git/muster/`: until then every claim
+/// and pass rewrites files that git tracks.
+fn local_or_committed(a: &Args) -> Result<bool, String> {
+    if a.local && a.committed {
+        return Err("--local and --committed: pick one".into());
+    }
+    Ok(!a.committed)
+}
+
+/// Muster's tools (`bin/`): what an old queue's stand-ins run, and `manifest.py` for `migrate`.
+fn tools_dir() -> PathBuf {
+    std::env::var_os("MUSTER_TOOLS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home().join("playground/muster/main/bin"))
+}
+
 pub(crate) fn base() -> PathBuf {
     std::env::var_os("MUSTER_BASE")
         .map(PathBuf::from)
@@ -145,9 +174,13 @@ fn env_root() -> Option<(&'static str, PathBuf)> {
     })
 }
 
-/// The queue a folder belongs to: the folder itself or one above it, or a `tasks/` beside it
-/// or beside a folder above it (so a repo, or a worktree inside it, finds `<project>/tasks`).
+/// The queue a folder belongs to: its repo's `.muster/` (the main checkout's, from any worktree,
+/// task 0005); else the folder itself or one above it, or a `tasks/` beside it or beside a folder
+/// above it (so a repo, or a worktree inside it, finds `<project>/tasks`).
 fn queue_of(cwd: &Path) -> Option<PathBuf> {
+    if let Some(q) = crate::layout::find(cwd) {
+        return Some(q);
+    }
     cwd.ancestors().find_map(|dir| {
         if projects::looks_like_queue(dir) {
             return Some(dir.to_path_buf());
@@ -222,17 +255,26 @@ fn same_folder(a: &Path, b: &Path) -> bool {
     canon(a) == canon(b)
 }
 
-/// `drover/tasks`: a queue as people name it, its project folder and its own.
+/// `drover/tasks`, `muster/main/.muster`: a queue as people name it, its project folder (and
+/// checkout) and its own.
 fn short_queue(root: &Path) -> String {
     let name = |p: Option<&Path>| {
         p.and_then(Path::file_name)
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default()
     };
-    match name(root.parent()) {
-        parent if !parent.is_empty() => format!("{parent}/{}", name(Some(root))),
-        _ => root.display().to_string(),
+    // A `.muster` names its checkout too: the project folder alone would read like its old queue.
+    let up = if crate::layout::is_muster(root) { 2 } else { 1 };
+    let mut parts: Vec<String> = root
+        .ancestors()
+        .take(up + 1)
+        .map(|p| name(Some(p)))
+        .collect();
+    if parts.len() <= up || parts.iter().any(String::is_empty) {
+        return root.display().to_string();
     }
+    parts.reverse();
+    parts.join("/")
 }
 
 /// Refuse a targeted command on a queue that came from the environment while the current folder
@@ -1267,17 +1309,54 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
             Ok(0)
         }
         "init" => {
-            let dir = need(&a, 1, "the project folder")?;
-            let tools = std::env::var_os("MUSTER_TOOLS")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| home().join("playground/muster/main/bin"));
+            let dir = Path::new(need(&a, 1, "the project folder")?);
+            let local = local_or_committed(&a)?;
             let wanted = a.flags.get("prefix").map(String::as_str);
-            let (q, prefix) =
-                projects::create(Path::new(dir), &tools, wanted, &crate::key::known())?;
+            let known = crate::key::known();
+            // In a repo, its `.muster/` (0005); elsewhere, the old `<folder>/tasks`.
+            let (q, prefix) = if crate::layout::main_checkout(dir).is_some() {
+                projects::init(dir, local, wanted, &known)?
+            } else if a.local || a.committed {
+                return Err(format!(
+                    "{} isn't in a git repo: --local and --committed are for a repo's .muster/",
+                    dir.display()
+                ));
+            } else {
+                projects::create(dir, &tools_dir(), wanted, &known)?
+            };
             println!(
                 "created {} (prefix {prefix}: its tasks are {prefix}-1, {prefix}-2…)",
                 q.display()
             );
+            Ok(0)
+        }
+        "migrate" => {
+            let old = need(&a, 1, "the old queue's folder")?;
+            let repo = need(&a, 2, "the repo to put .muster/ in")?;
+            let opts = crate::migrate::Options {
+                local: local_or_committed(&a)?,
+                dry_run: a.dry_run,
+            };
+            let r = crate::migrate::migrate(
+                Path::new(old),
+                Path::new(repo),
+                &opts,
+                &tools_dir(),
+                &stamp,
+            )?;
+            for line in &r.lines {
+                println!("{line}");
+            }
+            // What projects.json says of the old queue (gate, name, hidden), said of the new.
+            let file = config_file();
+            let mut c = projects::load(&file);
+            let carried = projects::carry_over(&mut c, &base(), Path::new(old), &r.queue);
+            for line in &carried {
+                println!("{}{line}", if a.dry_run { "would: " } else { "" });
+            }
+            if !a.dry_run && !carried.is_empty() {
+                projects::save(&file, &c)?;
+            }
             Ok(0)
         }
         _ => {
@@ -3027,6 +3106,91 @@ mod tests {
         let repo = base.join(name).join("main");
         std::fs::create_dir_all(repo.join(".claude/worktrees/wt-x/src")).unwrap();
         (q, repo)
+    }
+
+    #[test]
+    fn a_repos_muster_queue_is_found_from_its_worktrees_and_the_env_check_knows_it() {
+        use crate::layout::resolve::{git, repo};
+        let base = tempfile::tempdir().unwrap();
+        let (drover, drover_repo) = project(base.path(), "drover");
+        let main = repo(base.path(), "muster");
+        let q = projects::init(&main, true, None, &[]).unwrap().0;
+        let wt = base.path().join("muster/wt-1");
+        git(
+            &main,
+            &["worktree", "add", "-q", "-b", "wt-1", wt.to_str().unwrap()],
+        );
+        // The project's old queue is still there, as it is until it's retired: .muster wins.
+        let old = base.path().join("muster/tasks");
+        std::fs::create_dir_all(old.join("todo")).unwrap();
+        std::fs::write(old.join("README.md"), "q").unwrap();
+        let known = || projects::active(base.path(), &Default::default());
+        let canon = |p: &Path| std::fs::canonicalize(p).unwrap();
+        for from in [&wt, &main, &q] {
+            let (root, source) = resolve_queue(None, None, Some(from), &known).unwrap();
+            assert_eq!(
+                (canon(&root), source),
+                (canon(&q), Source::Here),
+                "{from:?}"
+            );
+        }
+        // --queue by the project's name, or by the folder.
+        for flag in ["muster", q.to_str().unwrap()] {
+            let (root, source) = resolve_queue(Some(flag), None, None, &known).unwrap();
+            assert_eq!((canon(&root), source), (canon(&q), Source::Flag), "{flag}");
+        }
+        // MUSTER_ROOT at another project's old queue, from a worktree of this repo: refused.
+        let env = Some(("MUSTER_ROOT", drover.clone()));
+        let (root, source) = resolve_queue(None, env, Some(&wt), &known).unwrap();
+        assert_eq!(
+            check_target(&source, &root, Some(&wt), &known).unwrap_err(),
+            "MUSTER_ROOT points at drover/tasks but you're in muster/…; pass --queue drover to mean it"
+        );
+        // MUSTER_ROOT at this repo's .muster: its own queue from any worktree, refused elsewhere.
+        let env = Some(("MUSTER_ROOT", q.clone()));
+        let (root, source) = resolve_queue(None, env, Some(&wt), &known).unwrap();
+        assert!(check_target(&source, &root, Some(&wt), &known).is_ok());
+        assert!(check_target(&source, &root, Some(&main), &known).is_ok());
+        assert_eq!(
+            check_target(&source, &root, Some(&drover_repo), &known).unwrap_err(),
+            "MUSTER_ROOT points at muster/main/.muster but you're in drover/…; pass --queue muster to mean it"
+        );
+    }
+
+    #[test]
+    fn init_makes_a_repos_muster_and_migrate_takes_its_options() {
+        let base = tempfile::tempdir().unwrap();
+        let main_dir = crate::layout::resolve::repo(base.path(), "p");
+        let m = main_dir.to_string_lossy().to_string();
+        let outside = tempfile::tempdir().unwrap();
+        let o = outside.path().to_string_lossy().to_string();
+        // --local outside a repo is refused; without it, the old tasks/ as before.
+        assert_eq!(main(&sv(&["init", &o, "--local"])), 1);
+        assert!(!outside.path().join("tasks").exists());
+        let old = base.path().join("p/tasks");
+        std::fs::create_dir_all(old.join("todo")).unwrap();
+        std::fs::write(old.join("README.md"), "q").unwrap();
+        // The plan, nothing written; then init, after which migrate refuses.
+        let q = old.to_string_lossy().to_string();
+        assert_eq!(main(&sv(&["migrate", &q, &m, "--local", "--dry-run"])), 0);
+        assert!(!main_dir.join(".muster").exists());
+        // Local by default, until live state moves to .git/muster (0005's next step).
+        assert_eq!(main(&sv(&["init", &m])), 0);
+        assert_eq!(
+            crate::layout::read_config(&main_dir.join(".muster")),
+            Ok(crate::layout::Config { local: true })
+        );
+        assert_eq!(main(&sv(&["migrate", &q, &m, "--dry-run"])), 1);
+        assert_eq!(main(&sv(&["migrate", &q])), 2, "needs the repo");
+        // A committed queue only when asked; --local and --committed together are refused.
+        let other = crate::layout::resolve::repo(base.path(), "c");
+        let c = other.to_string_lossy().to_string();
+        assert_eq!(main(&sv(&["init", &c, "--local", "--committed"])), 1);
+        assert_eq!(main(&sv(&["init", &c, "--committed"])), 0);
+        assert_eq!(
+            crate::layout::read_config(&other.join(".muster")),
+            Ok(crate::layout::Config { local: false })
+        );
     }
 
     #[test]

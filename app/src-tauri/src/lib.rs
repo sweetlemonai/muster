@@ -14,6 +14,8 @@ pub mod helper;
 mod helper_cmds;
 pub mod index;
 pub mod key;
+pub mod layout;
+pub mod migrate;
 pub mod ops;
 pub mod parallel;
 pub mod pause;

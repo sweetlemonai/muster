@@ -473,16 +473,38 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "projects",
         usage: "muster projects [--json] | muster projects set <name> gate \"<command>\" | muster projects set <name> prefix <p>",
-        what: "Every queue Muster knows, each marked found (at ~/playground/<project>/tasks, or one level deeper) or added (in the app), with its prefix and gate. A prefix is what its tasks' keys start with (mu in mu-12): 2 to 4 lowercase letters, stored in its queue's README.md (prefix: mu). Without one it's the first 2 letters of the project's name, or 3 or 4 when another project's start the same. projects set <name> prefix stores one, refused when it isn't 2 to 4 lowercase letters or another project has it; the files keep their ids, so nothing moves, but the old keys stop finding its tasks. projects set <name> gate stores the project's gate command in the app's projects.json: what a merge runs in a task's worktree (muster pass <id> --from testing). It's split into words like a shell would, quotes and all, but no shell runs it, so a pipe or a cd is just a word: point it at a script in the repo (bin/gate) for anything more. \"\" clears it; with no gate, nothing merges.",
+        what: "Every queue Muster knows, each marked found (at ~/playground/<project>/tasks, or one level deeper) or added (in the app), with its prefix and gate. A prefix is what its tasks' keys start with (mu in mu-12): 2 to 4 lowercase letters, stored in its queue's README.md (prefix: mu), or for a repo's .muster/ in its config.toml (prefix = \"mu\"). Without one it's the first 2 letters of the project's name, or 3 or 4 when another project's start the same. projects set <name> prefix stores one, refused when it isn't 2 to 4 lowercase letters or another project has it; the files keep their ids, so nothing moves, but the old keys stop finding its tasks. projects set <name> gate stores the project's gate command in the app's projects.json: what a merge runs in a task's worktree (muster pass <id> --from testing). It's split into words like a shell would, quotes and all, but no shell runs it, so a pipe or a cd is just a word: point it at a script in the repo (bin/gate) for anything more. \"\" clears it; with no gate, nothing merges.",
         options: &[("--json", "the list, for scripts")],
         examples: &["muster projects", "muster projects set muster gate bin/gate", "muster projects set drover gate \"pnpm check\"", "muster projects set braindump prefix bd"],
     },
     Command {
         name: "init",
-        usage: "muster init <project-folder> [--prefix <p>]",
-        what: "Create <project-folder>/tasks: status folders, README with the rules and its prefix, the tool stand-ins, and its own git. Refuses inside a git repo, over an existing tasks/, and a prefix that isn't 2 to 4 lowercase letters or that another project has.",
-        options: &[("--prefix", "what its tasks' keys start with (mu in mu-12); default the first 2 letters of the folder's name, more when another project has them")],
-        examples: &["muster init ~/playground/braindump", "muster init ~/playground/germ --prefix gm"],
+        usage: "muster init <folder> [--local|--committed] [--prefix <p>]",
+        what: "In a git repo (its main checkout or any worktree of it): create the repo's queue, .muster/ in the main checkout, with config.toml (its prefix in it), .gitignore, a README with the rules, tasks/, backlog/, attachments/ and INDEX.md. Task files live in tasks/ and never move. Local by default: it stays on this Mac. Refuses if .muster/ is there already, and in a repo without a main checkout (a bare repo's worktree, a submodule). Outside a repo it creates <folder>/tasks, the old layout: status folders, README with the rules and its prefix, the tool stand-ins and its own git, never over an existing tasks/. Either way it refuses a prefix that isn't 2 to 4 lowercase letters or that another project has.",
+        options: &[
+            ("--local", "the default: .muster/.gitignore keeps all but config.toml out of git, and every worktree of the repo uses the main checkout's .muster/"),
+            ("--committed", "commit the queue with the code. For now every claim and pass changes tracked files in the main checkout (merges pass over them), until the live state moves to .git/muster/"),
+            ("--prefix", "what its tasks' keys start with (mu in mu-12); default the first 2 letters of the project's name, more when another project has them"),
+        ],
+        examples: &[
+            "muster init ~/playground/braindump/main",
+            "muster init ~/playground/braindump",
+            "muster init ~/playground/germ/main --prefix gm",
+        ],
+    },
+    Command {
+        name: "migrate",
+        usage: "muster migrate <old-queue> <repo> [--local|--committed] [--dry-run]",
+        what: "Copy an old queue (<project>/tasks, with status folders or flat) into the repo's .muster/, local by default. Every task file goes to tasks/ with stage: set from its old stage or status and status: dropped (CRLF line ends and a byte-order mark are made plain first); the backlog folder's notes and dropped notes to backlog/; attachments/, mail/ and WAITING-FOR-OWNER.md as they are; the old README's front matter into the new README. Writes config.toml, .gitignore, INDEX.md, tasks.json, and migrated-from.txt with the old queue's last commit, and gives the new queue the old one's gate, name and hidden from projects.json. Prints what it copied and what it didn't. Copies, never moves: the old queue is left as it was, to retire once muster check is clean. Refuses while an agent holds a task in Building or Testing (it lists them), when .muster/ is there already, when the repo and the old queue overlap, on a folder it can't read, on a task file without front matter it can read, and on two names that would be one file on this Mac (case or accents).",
+        options: &[
+            ("--local", "the default: the queue stays on this Mac, as init"),
+            ("--committed", "commit the queue with the code, as init --committed"),
+            ("--dry-run", "print the plan and write nothing"),
+        ],
+        examples: &[
+            "muster migrate ~/playground/muster/tasks ~/playground/muster/main --dry-run",
+            "muster migrate ~/playground/muster/tasks ~/playground/muster/main",
+        ],
     },
     Command {
         name: "help",
@@ -495,7 +517,7 @@ pub const COMMANDS: &[Command] = &[
 
 pub const COMMON: &[(&str, &str)] = &[
     ("<id>", "a task, by its key (mu-12, MU-12: its project's prefix and number) or its number (12, 0012). A key with another project's prefix runs in that project's queue, wherever you are; with a --queue that names another project it's refused. Keys work in --parent, depends and block --on too, for tasks of the same project"),
-    ("--queue <name|folder>", "which queue; default $MUSTER_ROOT, then the nearest queue from the current folder (a queue, or tasks/ beside or above it)"),
+    ("--queue <name|folder>", "which queue; default $MUSTER_ROOT, then the current folder's: its repo's .muster/ (the main checkout's, from any worktree), else the nearest old queue (a queue, or tasks/ beside or above it)"),
     ("--as <who>", "who's acting, for the log; default $MUSTER_AS, then the folder's git user.name, then owner. Inside a Claude Code session muster adds the session (name, short id, checkout, account)"),
 ];
 
@@ -515,7 +537,7 @@ pub const SESSION: &[Topic] = &[
     Topic {
         title: "Agents doing the work (coding sessions)",
         lines: &[
-            "Read the queue's README.md first: ../tasks/README.md from the project's repo.",
+            "Read the queue's README.md first: .muster/README.md in the repo's main checkout, or ../tasks/README.md beside the repo where the queue isn't moved yet.",
             "A task moves through stages: Backlog (anyone), Shaping (product, tech and UI agents), Ready (claimable), Building (code agent), Testing (QA agent), Your check (the owner), Done. Only muster changes a stage: never move or edit task files for that.",
             "Never edit stage:, status:, claimed-by: or heartbeat: by hand. Only muster writes them.",
             "Claim with muster, under your branch name, in the queue of the project you're in (it says which queue it claimed in). One claim per session: take the top Ready task, or a given one. Agents never claim a human task ([you] in muster list): that's the owner's own to do:",
@@ -721,8 +743,8 @@ pub const GROUPS: &[Group] = &[
     },
     Group {
         title: "Projects and the queue",
-        intro: "Find the queues Muster knows, start one for a project, check a queue for problems, and rebuild its master list.",
-        commands: &["projects", "init", "check", "index", "help"],
+        intro: "Find the queues Muster knows, start one for a project (in its repo's `.muster/`), move an old `<project>/tasks` queue into it, check a queue for problems, and rebuild its master list.",
+        commands: &["projects", "init", "migrate", "check", "index", "help"],
         examples: &[],
     },
 ];
@@ -914,6 +936,7 @@ mod tests {
             "index",
             "projects",
             "init",
+            "migrate",
             "help",
         ] {
             let c = COMMANDS
@@ -932,7 +955,7 @@ mod tests {
                 "{name}'s examples use it"
             );
         }
-        assert_eq!(COMMANDS.len(), 42);
+        assert_eq!(COMMANDS.len(), 43);
     }
 
     #[test]
@@ -995,7 +1018,7 @@ mod tests {
     fn the_commands_page_keeps_the_help_text_as_text() {
         let page = commands_page();
         // `<id>` would be an HTML tag on GitHub, and `_` or `*` would start emphasis.
-        assert!(page.contains("Create \\<project-folder\\>/tasks"), "{page}");
+        assert!(page.contains("it creates \\<folder\\>/tasks"), "{page}");
         assert!(page.contains("CLAUDE\\_CODE\\_SESSION\\_ID"), "{page}");
         // A `|` inside an option's name would end its table cell.
         assert!(page.contains("| `--queue <name\\|folder>` |"), "{page}");

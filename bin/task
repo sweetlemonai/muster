@@ -16,8 +16,10 @@ mail/<first 8 chars of the session id>/ and are not committed. bin/answer-hook.p
 into a running Claude Code session after each tool call.
 
 This is a stand-in kept for scripts and agents that call `task`: it runs `muster ask`, `answer`,
-`escalate` or `inbox` (one implementation of the rules), on the queue in $MUSTER_ROOT, with the
-same arguments. $MUSTER_BIN names the muster to run; by default it's bin/muster beside this file.
+`escalate` or `inbox` (one implementation of the rules), with the same arguments, on the queue in
+$MUSTER_ROOT, else the one muster finds from the current folder: the repo's .muster/ (the main
+checkout's, from any worktree of it), or an old <project>/tasks beside the repo. $MUSTER_BIN names
+the muster to run; by default it's bin/muster beside this file.
 """
 # Annotations stay text, so `list[str] | None` runs on macOS's own python3 (3.9) too.
 from __future__ import annotations

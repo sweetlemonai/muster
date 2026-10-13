@@ -1,5 +1,54 @@
 # Muster — task queue protocol (v2, with stages)
 
+> **Where tasks live: in the repo's `.muster/` (Muster 0005, 2026-10-13, decision 0003).** A
+> project's queue moves into its repo as `.muster/`, one queue per repo. Queues move one at a time,
+> so until every one has moved **both layouts work**: `muster`, the app, `manifest.py`, `bin/task`
+> and the answer hook read and write both.
+>
+> - **`.muster/`, in the repo's main checkout:** `tasks/NNNN-slug.md`, flat, and **a task file
+>   never moves**: `stage:` in it is the only truth, and no `status:` is written (one left in a
+>   file isn't read). `backlog/` holds the notes (`backlog/dropped/` the dropped ones),
+>   `attachments/NNNN/` the files, `mail/` the mailboxes and the lock; `INDEX.md` and
+>   `tasks.json` are rebuilt by the tools; `config.toml` holds the settings, the project's prefix
+>   among them (`prefix = "mu"`, 0033: an old queue keeps it in its README's front matter), and
+>   `README.md` the rules in short. `muster migrate` writes the old queue's prefix (stored, or the
+>   default its keys had) into `config.toml`, so no task key changes.
+> - **Local, the default** (`local = true` in `config.toml`, what `muster init` and
+>   `muster migrate` write): `.muster/.gitignore` keeps everything but `config.toml` out of git,
+>   so the queue stays on this Mac. **Committed** (`--committed`) leaves out only `/mail/`,
+>   `/INDEX.md` and `/tasks.json`, but for now every claim and pass rewrites tracked files in the
+>   main checkout (a merge passes over `.muster/` when it checks main is clean), until the live
+>   state moves to `.git/muster/`.
+> - **One queue for every worktree.** From any worktree of the repo (Claude Code's, a Drover lane,
+>   Orca's, `muster start`'s) muster finds the **main checkout's** `.muster/` through git's common
+>   folder, so every session claims in the one queue under its one lock: of two worktrees claiming
+>   one task at once, one wins. A worktree's own `.muster/` holds only what's committed: never
+>   write there by hand. A repo without a main checkout (a bare repo's worktree, a submodule,
+>   `--separate-git-dir`) has no `.muster/` queue.
+> - **The old layout**, `<project>/tasks` beside the repo with its own git (status folders that
+>   mirror the stage, `status:` written), stays for the queues not moved yet (Drover's). The rest
+>   of this file describes it where it says folders.
+> - **Finding the queue:** `--queue <name|folder>`, else `$MUSTER_ROOT`, else the current
+>   folder's: its repo's `.muster/`, else the old `tasks/` beside or above it. A queue's name is its
+>   project folder's when the checkout is the project's `main` or `master` (`muster` for
+>   `~/playground/muster/main/.muster`), else the checkout's own (`chit` for
+>   `~/playground/chit/.muster`, `harness40` for `~/playground/harness/harness40/.muster`). The app
+>   finds `~/playground/*/.muster` and `~/playground/*/*/.muster` (main checkouts only) beside the
+>   old `tasks/` queues; a project with both shows the `.muster/` one under its name. `muster
+>   start` puts worktrees at `<project>/worktrees/<repo>/…`, or for a repo that is its own
+>   project at `<checkout>.worktrees/…` beside it, never in `~/playground` itself.
+> - **Starting one:** `muster init <repo> [--local|--committed]`. **Moving one:** `muster migrate
+>   <old-queue> <repo> [--local|--committed] [--dry-run]` copies every task file (its `stage:` set
+>   from its old stage or status, `status:` dropped, CRLF line ends and a byte-order mark made
+>   plain), note, dropped note, attachment, mailbox and `WAITING-FOR-OWNER.md`, writes
+>   `migrated-from.txt` with the old queue's last commit, gives the new queue the old one's gate,
+>   name and hidden from the app's `projects.json`, and prints what it copied and what it didn't.
+>   It copies, never moves: the old queue is left as it was. It refuses while an agent holds a task
+>   in Building or Testing (it lists them), when `.muster/` is there already, when the repo and the
+>   old queue overlap, on a folder it can't read, on a task file without front matter it can read,
+>   and on two names that would be one file on this Mac (they differ only in case or accents).
+>   Retire the old queue once `muster check` on the new one is clean.
+
 > **The tester isn't the builder (Muster 0047, 2026-10-13).** Testing → Your check is refused
 > when the passer built the task: whoever claimed it last (`ready → building (claimed)`) or passed
 > it into Testing with the gate's line, matched as one holder is (the same `--as` label, in the
@@ -385,6 +434,9 @@ Coders never ask the owner directly about a task. They ask in the task file. Cap
 or escalates. That way every answer lands in the file, where the next session finds it.
 
 ## Layout: the folder is the status
+
+The old layout, `<project>/tasks`. In a repo's `.muster/` there are no status folders: task files
+sit in `tasks/` and never move (see the note at the top).
 
 | Folder | Status | Meaning |
 |---|---|---|

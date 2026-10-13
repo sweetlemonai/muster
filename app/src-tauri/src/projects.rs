@@ -4,7 +4,7 @@
 //! config folder. Creating a queue writes Muster's layout into a new
 //! `tasks/` folder, never inside a git work tree, and never over an existing folder.
 
-use crate::queue;
+use crate::{layout, queue};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -68,13 +68,22 @@ pub fn save(file: &Path, config: &Config) -> Result<(), String> {
     fs::rename(&tmp, file).map_err(|e| e.to_string())
 }
 
+/// A queue: a repo's `.muster/` (task 0005), or an old `<project>/tasks` (a README plus a
+/// status folder or a manifest).
 pub fn looks_like_queue(dir: &Path) -> bool {
-    dir.join("README.md").is_file()
-        && (dir.join("todo").is_dir() || dir.join("tasks.json").is_file())
+    layout::is_queue(dir)
+        || (dir.join("README.md").is_file()
+            && (dir.join("todo").is_dir() || dir.join("tasks.json").is_file()))
 }
 
 pub fn default_name(dir: &Path) -> String {
-    // `<project>/tasks` → the project's folder name; anything else → its own name.
+    // `<project>/<checkout>/.muster` and `<project>/tasks` → the project's folder name; anything
+    // else → its own name.
+    if layout::is_muster(dir) {
+        if let Some(name) = layout::project_name(dir) {
+            return name;
+        }
+    }
     let own = dir
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -202,7 +211,7 @@ pub fn add(config: &mut Config, base: &Path, dir: &Path) -> Result<String, Strin
     let dir = dir.canonicalize().map_err(|e| e.to_string())?;
     if !looks_like_queue(&dir) {
         return Err(format!(
-            "{} isn't a Muster queue (no README.md with a todo/ folder). To start one, use New queue.",
+            "{} isn't a Muster queue (a repo's .muster/ with its config.toml, or a README.md with a todo/ folder). To start one, use New queue.",
             dir.display()
         ));
     }
@@ -342,6 +351,161 @@ pub fn create(
     Ok((q, prefix))
 }
 
+/// After `muster migrate` (0005): what `projects.json` says of the old queue `old` (its gate,
+/// display name, hidden), said of the new one `new` too, under the key the app lists it by; a new
+/// queue the base doesn't find is added, so it shows as the old one did. The old queue keeps its
+/// own, until it's retired. Returns a line for each thing carried.
+pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> Vec<String> {
+    let canon = |p: &Path| fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let (old, new) = (canon(old), canon(new));
+    let is_old = |k: &String| canon(Path::new(k)) == old;
+    let gate = config
+        .gate
+        .iter()
+        .find(|(k, _)| is_old(k))
+        .map(|(_, v)| v.clone());
+    let name = config
+        .names
+        .iter()
+        .find(|(k, _)| is_old(k))
+        .map(|(_, v)| v.clone());
+    let hidden = config.hidden.iter().any(is_old);
+    if gate.is_none() && name.is_none() && !hidden {
+        return Vec::new();
+    }
+    let found = list(base, config)
+        .into_iter()
+        .find(|p| canon(Path::new(&p.path)) == new)
+        .map(|p| p.key);
+    let key = found.unwrap_or_else(|| {
+        let key = new.to_string_lossy().to_string();
+        config.added.push(key.clone());
+        key
+    });
+    let mut lines = Vec::new();
+    if let Some(g) = gate {
+        lines.push(format!(
+            "projects.json: gate {g:?} carried to the new queue"
+        ));
+        config.gate.insert(key.clone(), g);
+    }
+    if let Some(n) = name {
+        lines.push(format!(
+            "projects.json: name {n:?} carried to the new queue"
+        ));
+        config.names.insert(key.clone(), n);
+    }
+    if hidden && !config.hidden.contains(&key) {
+        lines.push("projects.json: hidden, like the old queue".into());
+        config.hidden.push(key);
+    }
+    lines
+}
+
+/// `muster init <folder> [--local]` in a repo (task 0005, decision 0003): a `.muster/` queue in
+/// the repo's main checkout, wherever in the repo or its worktrees `dir` is. Committed by
+/// default; `local` keeps it on this Mac. Refused outside a git repo, and when the repo already
+/// has a `.muster`, which is never written over.
+pub fn init(
+    dir: &Path,
+    local: bool,
+    wanted: Option<&str>,
+    known: &[Project],
+) -> Result<(PathBuf, String), String> {
+    let main = layout::main_checkout(dir).ok_or_else(|| {
+        format!(
+            "{} isn't in a git repo with a main checkout (a .git folder): muster init puts the queue in that checkout's .muster/",
+            dir.display()
+        )
+    })?;
+    let q = main.join(layout::DIR);
+    if fs::symlink_metadata(&q).is_ok() {
+        return Err(format!("{} already exists", q.display()));
+    }
+    let project = default_name(&q);
+    // As `create` picks it (0033): the one asked for, checked, else the default beside the others.
+    let prefix = match wanted {
+        Some(p) => {
+            crate::key::check_new_prefix(p, &q, known)?;
+            p.to_string()
+        }
+        None => {
+            let taken: Vec<String> = known.iter().map(|p| p.prefix.clone()).collect();
+            crate::key::prefix_beside(&project, &taken)
+        }
+    };
+    // Made here, not before: if it's there, it's someone's, and it's left as it is.
+    fs::create_dir(&q).map_err(|e| match e.kind() {
+        std::io::ErrorKind::AlreadyExists => format!("{} already exists", q.display()),
+        _ => format!("{}: {e}", q.display()),
+    })?;
+    let made = write_muster(&q, local, "", &project, &prefix)
+        .and_then(|()| crate::index::rebuild(&q).map(|_| ()));
+    if let Err(e) = made {
+        let _ = fs::remove_dir_all(&q);
+        return Err(e);
+    }
+    Ok((q, prefix))
+}
+
+/// The new layout's own files in an empty `.muster` folder `q`: its folders, `config.toml` (with
+/// the queue's `prefix`, where a `.muster` queue keeps it), `.gitignore` and `README.md` for
+/// `project`, which starts with `front` (an old queue's README front matter, when migrating;
+/// else "").
+pub(crate) fn write_muster(
+    q: &Path,
+    local: bool,
+    front: &str,
+    project: &str,
+    prefix: &str,
+) -> Result<(), String> {
+    let io = |what: &str, e: std::io::Error| format!("{}: {e}", q.join(what).display());
+    for d in ["tasks", "backlog", "attachments"] {
+        fs::create_dir_all(q.join(d)).map_err(|e| io(d, e))?;
+    }
+    fs::write(
+        q.join(layout::CONFIG),
+        layout::config_text(local, Some(prefix)),
+    )
+    .map_err(|e| io(layout::CONFIG, e))?;
+    fs::write(q.join(".gitignore"), layout::gitignore_text(local))
+        .map_err(|e| io(".gitignore", e))?;
+    let readme = format!("{front}{}", muster_readme(project, prefix));
+    fs::write(q.join("README.md"), readme).map_err(|e| io("README.md", e))
+}
+
+/// The README of a `.muster/` queue: where things are, and the rules in short.
+fn muster_readme(project: &str, prefix: &str) -> String {
+    format!(
+        "# {project} — task queue\n\nA Muster queue, in the repo's `.muster/`. **The rules are in Muster's `docs/PROTOCOL.md`. Read\n\
+         them before you claim anything.** The short version:\n\n\
+         - Tasks are `tasks/NNNN-slug.md`. A file never moves: `stage:` in it says where the task is.\n  \
+         A task moves through stages: Backlog → Shaping → Ready → Building → Testing → Your check → Done.\n  \
+         Shaping is for product, tech and UI agents, Building for the code agent, Testing for the QA\n  \
+         agent, Your check for the owner. Find a task by its key (`muster show {prefix}-1`; its file\n  \
+         keeps the id, 0001). The prefix is in `config.toml`.\n\
+         - Only `muster` changes a stage. Never edit `stage:`, `claimed-by:` or `heartbeat:` by hand.\n  \
+         `muster` finds this queue from the repo and from every worktree of it.\n\
+         - One claim per session, made by `muster`: `muster next --as <your branch>` takes the top\n  \
+         Ready task, `muster claim NNNN --as <your branch>` a given one. It says which queue it claimed in.\n\
+         - On long work, `muster heartbeat NNNN --as <your branch>` keeps the claim alive (your notes and\n  \
+         passes do too). A claim quiet for 12 h goes back to Ready (`muster reclaim`).\n\
+         - Ask without stopping, and the answer is pushed to you:\n  \
+         `muster ask NNNN \"<question>\" --as <your branch>`. No answer hook? `muster inbox` collects them.\n\
+         - Built and the gate is green: `muster pass NNNN --as <your branch> --from building --gate \"<the gate's result line>\"`.\n  \
+         Testing ticks each criterion with its proof, then passes it on to the owner's check.\n\
+         - Something's wrong: `muster return NNNN \"<why>\"` sends it back a stage.\n\
+         - Waiting on something: `muster block NNNN --on <0014,0016|you|permission|question|outside> \"<what>\"`,\n  \
+         then `muster unblock NNNN`. It keeps its stage.\n\
+         - New bugs or ideas you find: `muster add \"<one line>\" --as <your branch>` puts a note in `backlog/`\n  \
+         (a file dropped there by hand counts too). Shaping turns it into a task: `muster shape <note-file>`\n  \
+         prints the brief, `muster file <note-file> \"<title>\" --body -` files it in Shaping, and\n  \
+         `muster drop <note-file> \"<why>\"` sets it aside in `backlog/dropped/`.\n\
+         - Files go in `attachments/NNNN/`; `INDEX.md` and `tasks.json` are rebuilt by the tools, never edited.\n\
+         - `config.toml`: `local = true` keeps the queue on this Mac (only `config.toml` is committed).\n"
+    )
+}
+
 #[cfg(unix)]
 fn make_executable(p: &Path) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
@@ -448,6 +612,57 @@ mod tests {
         let a = active(base.path(), &c);
         assert_eq!(a.len(), 1);
         assert_eq!(a[0].0, "work");
+    }
+
+    #[test]
+    fn a_migrated_queue_takes_the_old_ones_gate_name_and_hidden() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let old = base.join("proj/tasks");
+        make_queue(&old);
+        // The new queue, found under the base (a main checkout's .muster).
+        let main = base.join("proj/main");
+        fs::create_dir_all(main.join(".git")).unwrap();
+        let new = main.join(layout::DIR);
+        fs::create_dir(&new).unwrap();
+        fs::write(new.join(layout::CONFIG), layout::config_text(true, None)).unwrap();
+        let key = old.to_string_lossy().to_string();
+        let mut c = Config::default();
+        c.gate.insert(key.clone(), "bin/gate".into());
+        c.names.insert(key.clone(), "Muster".into());
+        let lines = carry_over(&mut c, &base, &old, &new);
+        let new_key = new.to_string_lossy().to_string();
+        assert_eq!(c.gate.get(&new_key).map(String::as_str), Some("bin/gate"));
+        assert_eq!(c.names.get(&new_key).map(String::as_str), Some("Muster"));
+        assert!(c.added.is_empty(), "found, so not added: {:?}", c.added);
+        assert_eq!(
+            c.gate.get(&key).map(String::as_str),
+            Some("bin/gate"),
+            "the old keeps its own"
+        );
+        let text = lines.join("\n");
+        assert!(text.contains("gate \"bin/gate\""), "{text}");
+        assert!(text.contains("name \"Muster\""), "{text}");
+        // A new queue outside the base is added, so it shows as the old one did; hidden carries.
+        let elsewhere = tempfile::tempdir().unwrap();
+        let away = elsewhere.path().canonicalize().unwrap().join("repo");
+        fs::create_dir_all(away.join(".git")).unwrap();
+        let away_q = away.join(layout::DIR);
+        fs::create_dir(&away_q).unwrap();
+        fs::write(away_q.join(layout::CONFIG), layout::config_text(true, None)).unwrap();
+        let mut c = Config {
+            hidden: vec![key.clone()],
+            ..Config::default()
+        };
+        let lines = carry_over(&mut c, &base, &old, &away_q);
+        let away_key = away_q.to_string_lossy().to_string();
+        assert_eq!(c.added, vec![away_key.clone()]);
+        assert!(c.hidden.contains(&away_key));
+        assert!(lines.join("\n").contains("hidden"), "{lines:?}");
+        // Nothing set for the old one: nothing to say, nothing added for a found queue.
+        let mut c = Config::default();
+        assert!(carry_over(&mut c, &base, &old, &new).is_empty());
+        assert_eq!(c, Config::default());
     }
 
     #[test]

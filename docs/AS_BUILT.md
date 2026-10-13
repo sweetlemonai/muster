@@ -5,7 +5,9 @@ history (history is in `DOGFOOD.md` and the queue's git log).
 
 ## In one paragraph
 
-A **queue** is a folder of Markdown task files, one per task, where the subfolder is the
+A **queue** is a folder of Markdown task files, one per task: the repo's `.muster/` (task 0005),
+where files sit in `tasks/` and never move and `stage:` says where each task is, or, for the
+queues not moved yet, the old `<project>/tasks` beside the repo, where the subfolder is the
 status (`inbox/ todo/ doing/ blocked/ done/`). A **capture** session (PM + tech lead) writes the
 owner's words up as tasks, answers technical questions, and escalates product questions to the
 owner in plain terms. **Coder** sessions claim a task by moving its file, work in their repo,
@@ -21,8 +23,9 @@ gives one view of everything and checks the queue for problems. The owner reads
 | Protocol v2.1 | `docs/PROTOCOL.md`; each queue's `README.md` | In use on Drover |
 | File contract v1 (for tools that write answers without `bin/task`) | `docs/PROTOCOL.md`, "File contract" | In use: Drover's waiting list (Drover task 0015, `327af59`) writes against it |
 | `task` CLI: ask / answer / escalate / inbox | `bin/task` | A stand-in since task 0002: it runs the same `muster` commands |
-| Answer push | `bin/answer-hook.py` | Live in Drover's checkouts (`drover/main`, `agent-controls`, `cleanup`, `docs-wt`), verified end to end on 2026-10-12 |
-| Manifest + check | `bin/manifest.py` → `tasks.json` | Built, tested. Capture rebuilds it on every commit |
+| Answer push | `bin/answer-hook.py` | Live in Drover's checkouts (`drover/main`, `agent-controls`, `cleanup`, `docs-wt`), verified end to end on 2026-10-12. Reads `$MUSTER_ROOT`'s mailbox and the session folder's repo's `.muster/` one (0005), finding the main checkout from `.git` files, without running git |
+| Manifest + check | `bin/manifest.py` → `tasks.json` | Built, tested, both layouts (0005: `MUSTER_ROOT=<repo>/.muster`). Capture rebuilds it on every commit |
+| Queue in the repo | `.muster/` (`layout.rs`, `migrate.rs`); `muster init <repo> [--local]`, `muster migrate` | Step 1 built and tested (task 0005): layout, local mode, one queue for every worktree, discovery, migrate. No queue moved yet. Committed mode with live state in `.git/muster/` is the next step |
 | Master list | `INDEX.md` per queue, written by `muster` after every change; `muster index` | Built, tested (task 0018). `muster check` and `manifest.py --check` report a stale one. No app link yet: the app has no open-a-file path |
 | Owner's waiting list | `WAITING-FOR-OWNER.md` per queue (by hand); Drover's Home (task 0015) | By hand here. Built in Drover |
 | Attachments | `attachments/<id>/` per queue | In use (screenshots, mockups) |
@@ -37,7 +40,9 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 `cd app && pnpm install && pnpm release:build`; develop: `pnpm app`).
 
 - **Projects sidebar** (left): All and every queue (found at `~/playground/*/tasks` and one level deeper,
-  `~/playground/*/*/tasks`, plus ones added by hand), each with its task count, how many need you (orange) and how many are in progress
+  `~/playground/*/*/tasks`, and the repos' `.muster/` at `~/playground/*/.muster` and
+  `~/playground/*/*/.muster` in a main checkout, a project with both showing its `.muster/` under
+  its name; plus ones added by hand), each with its task count, how many need you (orange) and how many are in progress
   (the Building colour), and **+ Project** at the bottom (Settings, at Projects). The header keeps only the views, New task and
   the display mode chip (0038), on one line. Under each name, quietly (0037, `activity.ts`): the Building-colour
   dot and "2 working" (tasks with a live session, or a check-in or heartbeat in the last 30
@@ -244,9 +249,11 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   stage. `pass` moves it on, refusing when the task is blocked, when someone else holds it, or when it
   has moved since you looked (`--from`). It also refuses Building → Testing without the gate's line,
   and Testing → Your check with any criterion unticked. `return` sends it back with a reason and
-  hands Building back to its last builder. Until 0005, `status:` and the status folder are a mirror
-  of the stage for older readers (Drover, `manifest.py`), and `check` reports a stage whose status
-  doesn't match, which is what a hand move leaves.
+  hands Building back to its last builder. In the old layout `status:` and the status folder are a
+  mirror of the stage for older readers (Drover), and `check` reports a stage whose status doesn't
+  match, which is what a hand move leaves. In `.muster/` (0005) no `status:` is written, and one
+  left in a file isn't read: the status the window and `muster list --status` use is worked out
+  from the stage.
 - **The tester isn't the builder** (task 0047): `pass_change` (so `pass`, the merge's
   `check_merge_pass` before any rebase or gate, and `pass_merged`), `set_stage` and `move_task`
   (past Testing) refuse the builder of an agent's task, matched by `session::same_holder` against
@@ -281,7 +288,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   - **Copy shaping brief:** `muster shape` gives the note, quoted as data, with the roles and the docs
     to read, related tasks, and the command to file it.
 
-  `muster list` shows notes too. Until 0005 they live in `inbox/`; then in `.muster/backlog/`.
+  `muster list` shows notes too. They live in `.muster/backlog/` (0005), and in the old layout's
+  `inbox/`.
 - **Goals, features and tasks** (task 0016): `level: goal | feature | task`, `parent:` and a goal's
   `due:` set with `muster new --level/--parent/--due` and `muster set`. A task sits under a feature
   or goal, a feature under a goal. Goals and features are never claimed or built: their stage comes
@@ -519,9 +527,10 @@ folded "steps" line, never file edits.
 
 The app's binary is also the `muster` command (`bin/muster` runs it). It uses the same Rust code as
 the app (`ops.rs`), so the app and the command line can't disagree. It picks the queue from
-`--queue <name|folder>`, then `$MUSTER_ROOT`, then the nearest queue from the current folder (a
-queue, or a `tasks/` beside or above it); a task named by another project's key (`br-7`) picks
-that project's queue instead.
+`--queue <name|folder>`, then `$MUSTER_ROOT`, then the current folder's: its repo's `.muster/`
+(the main checkout's, found through git's common folder from any worktree, 0005), else the nearest
+old queue (a queue, or a `tasks/` beside or above it); a task named by another project's key
+(`br-7`) picks that project's queue instead.
 
 `muster` is linked into `~/.local/bin`, so it works in any terminal and in any Claude Code
 session as `! muster …`. `muster help` lists everything, and `muster help <command>` shows usage,
@@ -618,11 +627,73 @@ owner ◀────────────┘ WAITING-FOR-OWNER.md    └─ 
   fixed (`DOGFOOD.md` 36).
 - Hook cost: about 10 ms per tool call with an empty mailbox.
 
-## Decided, not built yet: `.muster/` in the repo, backlog, stages, levels (decision 0003)
+## `.muster/` in the repo (decision 0003, task 0005 step 1)
 
-Today each queue is `<project>/tasks`, beside its repo, with its own git history (what's described
-above). The owner decided on 2026-10-12 to move it into the repo as `.muster/`, either committed
-(the default) or local. With that comes:
+Built: the layout, local mode, one queue for every worktree, discovery and `muster migrate`. No
+queue has moved yet; each queue is still `<project>/tasks` until it's migrated, and both layouts
+keep working (`layout.rs` is the one place that says where a layout keeps what).
+
+- **Layout:** `.muster/` in the repo's main checkout: `config.toml` (`local = true|false`, true
+  as `init` and `migrate` write it; `prefix = "mu"`, the task keys' prefix (0033), which
+  `key::stored_prefix`/`store_prefix` read and write there for a `.muster` queue, and the first
+  write pins when it's missing, never in a README (an old queue keeps it in its README's front
+  matter); other keys, quoted or not, and other tools' multi-line values are left alone; `init
+  --prefix` sets it, and `migrate` writes the old queue's (stored, or the default its keys had),
+  so `muster list` shows the same keys before and after), `tasks/NNNN-slug.md`
+  (flat, never moved, `stage:` the only truth, no `status:` written or read), `backlog/` and
+  `backlog/dropped/`, `attachments/NNNN/`, `mail/` (asks, mailboxes, the lock), `INDEX.md`,
+  `tasks.json`, `README.md`. Every write goes through the same lock (`mail/.lock`) and refreshes
+  `INDEX.md`. `muster check` also reports a `config.toml` it can't read and a local queue whose
+  `.gitignore` would let it into git.
+- **Local mode (the default):** `.muster/.gitignore` ignores everything but itself and
+  `config.toml`. A queue is found from the repo's main checkout or any worktree (`git rev-parse
+  --git-common-dir`, which must be a `.git` folder), so every session uses the main checkout's one
+  copy and its one lock: two worktrees claiming one task at once, one wins (tested 10 rounds with
+  real `git worktree add`). A repo without a main checkout (a bare repo's worktree, a submodule,
+  `--separate-git-dir`) has no queue, and `init` refuses it; the walk up to a `.muster` folder is
+  only for folders in no repo at all, so a worktree git can't read never falls back to its own
+  copy. Committed mode (`--committed`) has the same single copy for now; its `.gitignore`
+  leaves out `/mail/`, `/INDEX.md` and `/tasks.json`, and a merge's "is main clean" check passes
+  over `.muster/`.
+- **Finding it:** `queue_of` in `cli.rs` asks `layout::find` first, then the old rules; the
+  `MUSTER_ROOT`-vs-current-folder check (0002) uses the same, so a `.muster/` from any of its
+  worktrees is "here". The app discovers `~/playground/*/.muster` and `~/playground/*/*/.muster`
+  in main checkouts only (a worktree beside main has a `.git` file and is skipped), within
+  `queue::discover`'s two levels and skips. Named by the project folder for a `main`/`master`
+  checkout, else by the checkout (`chit`, `harness40` in the group `harness`). `muster start`
+  puts its worktrees at `<project>/worktrees/<repo>/…`, or `<checkout>.worktrees/…` for a repo
+  that is its own project, never in `~/playground` itself.
+- **`muster init <folder> [--local|--committed]`:** in a repo, its `.muster/` (in the main
+  checkout, never over one that's there), local unless `--committed`; outside a repo, the old
+  `<folder>/tasks`. The app's New queue still makes the old layout and refuses inside a repo.
+- **`muster migrate <old-queue> <repo> [--local|--committed] [--dry-run]`:** copies (never moves)
+  every task file with `stage:` set from its old stage or status and `status:` dropped (CRLF line
+  ends and a byte-order mark made plain first, and said so; a task the old status alone said was
+  blocked keeps a `waiting_on` saying so), the backlog folder (notes, dropped notes, anything else
+  in it), `attachments/`, `mail/` (not its lock) and `WAITING-FOR-OWNER.md`; puts the old README's
+  front matter at the top of the new README; writes `config.toml`, `.gitignore`, `INDEX.md`,
+  `tasks.json` (by `manifest.py`) and `migrated-from.txt` (the old queue's folder, the time, its
+  last commit, read with `git --no-optional-locks` so the old index is never rewritten); carries
+  the old queue's gate, name and hidden in `projects.json` to the new one. It holds the old
+  queue's lock while it reads, builds the new queue in a folder beside it with every file made
+  new (never over another) and renames it into place, so a failure leaves nothing. Refused while
+  an agent holds a task in Building or Testing (listed; a Testing task from before `held-by` by
+  its claim), when `.muster/` is there, when the repo and the old queue overlap, on a folder it
+  can't read, on task files without front matter it can read (listed), and when two files would
+  be one: the same path, or names that differ only in case (checked in the plan) or accents
+  (checked by making the plan's names in a scratch folder in the temp folder, so the dry run says
+  so too). Prints what it copied, notes (a stage that wasn't one, a file made plain) and what it
+  didn't copy (symlinks, `bin/`, stray files). `--dry-run` prints the same plan and writes nothing
+  in the repo or the old queue.
+- **The tools:** `manifest.py` reads `.muster/` (`MUSTER_ROOT=<repo>/.muster`); `bin/task` runs
+  muster, which finds the queue from the folder; the answer hook also reads the session
+  folder's repo's `.muster/mail/` (no queue where git has no main checkout, as `layout.rs`), each
+  queue's mail on its own, so one queue's problem never loses another's; the helper's brief says
+  where the queue is.
+
+The owner decided on 2026-10-12 to move each queue into the repo as `.muster/`, either committed
+or local (local is what the tools write until the live state moves to `.git/muster/`). With that
+came:
 - A backlog of raw one-liners, which agents shape into tasks.
 - Stages with roles: Backlog, Shaping, Ready, Building, Testing, Your check, Done. Blocked is a
   flag on a stage, not a stage of its own.
@@ -630,9 +701,9 @@ above). The owner decided on 2026-10-12 to move it into the repo as `.muster/`, 
 - Points: estimates and actuals, in minutes and tokens.
 - Links, comments, and a generated `INDEX.md`.
 
-Live claims go in the repo's shared git folder. See
-`docs/decisions/0003-muster-in-the-repo-backlog-and-stages.md`. The work, in order: tasks 0014,
-0002, 0005, then 0015–0018 and 0004.
+Live claims in the repo's shared git folder (`.git/muster/`), for committed queues whose task
+files have one copy per branch, are the next step of 0005. See
+`docs/decisions/0003-muster-in-the-repo-backlog-and-stages.md`.
 
 ## Known limits
 
@@ -649,13 +720,18 @@ Live claims go in the repo's shared git folder. See
   personal layer (owner's call).
 - **Capture's watcher lives in its chat session.** The app shows changes live, but nothing wakes
   a capture session when an agent asks something.
-- **Files still move between status folders** (v2). The owner wants files that never move, with
-  status only inside the file (task 0005). The app already reads both layouts. **0005 must ship
-  with `muster claim` (task 0002), not before.** Today a claim is safe because the `mv` is atomic:
-  of two coders moving the same file, only one succeeds. Once files stop moving, that guarantee
-  is gone, and two agents editing the front matter at once could both believe they won. So
-  `muster claim` reads the status and writes the claim under the queue's lock, and agents never
-  edit the status themselves.
+- **Files still move between status folders in the old layout** (v2), until its queue is migrated
+  into `.muster/`, where they never move. There a claim is safe only because `muster claim` reads
+  the stage and writes the claim under the queue's one lock (task 0002), so agents never edit the
+  stage themselves.
+- **A worktree session writes into the main checkout's `.muster/`.** That folder must be in the
+  session's sandbox write list; a Claude Code worktree's sandbox usually allows its own folder and
+  the main checkout's `.git`, not the main checkout itself (decision 0003, "Revisit when").
+- **A committed queue has one copy too, for now:** every worktree writes the main checkout's
+  `.muster/`, so every claim and pass rewrites tracked files there, which show up as changes to
+  commit (a merge passes over them when it checks main is clean). That's why `init` and
+  `migrate` write a local queue unless `--committed` is given. Live state in `.git/muster/` with
+  the write-up on the claimant's branch is the next step.
 - **A session counts in full on every task it names** (0025): a session that worked on three
   tasks, or a controller session that passed many, shows its whole transcript's tokens and minutes
   on each, and its live dot on each open one. Splitting a transcript by the times it held each
@@ -682,8 +758,9 @@ Live claims go in the repo's shared git folder. See
    differ), and a notification when something new needs you (`tauri-plugin-notification`, a new
    dependency waiting on the owner's yes). The owner's moves (priority, unblock, a stage, Done)
    are in the task pane, through the core's rules; claims stay with agents.
-2. **Files that never move:** task 0005 (`.muster/` in the repo, live state in `.git/muster/`),
-   on top of 0014's stages and 0002's claims. Then the `/muster` / `/mu` slash commands (0003).
+2. **Files that never move:** task 0005's next step (committed mode, live state in
+   `.git/muster/`), and migrating each queue (`muster migrate`). Then the `/muster` / `/mu` slash
+   commands (0003).
 3. **Other projects:** the answer hook and the rules go in through the personal layer (task
    0004). Pilot on one more project.
 4. **Orchestration:** Muster decides who does what, Drover starts and steers the agents (owner,

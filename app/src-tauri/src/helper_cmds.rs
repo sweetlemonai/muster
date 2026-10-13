@@ -302,7 +302,7 @@ pub async fn helper_send(
         }
         let mut text = message.clone();
         if !files.is_empty() {
-            let dir = root.join("inbox").join("helper");
+            let dir = crate::backlog::backlog_dir(&root).join("helper");
             std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
             for (name, url) in &files {
                 let bytes = ops::data_url_bytes(url)?;

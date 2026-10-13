@@ -8,7 +8,7 @@
 //! untrusted: they're escaped, so none of them can add a link, a heading or a list item.
 
 use crate::backlog::{self, Note};
-use crate::queue::{self, State, Task, MAX_TASK_BYTES, STAGES, STATUS_FOLDERS};
+use crate::queue::{self, State, Task, MAX_TASK_BYTES, STAGES};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -377,10 +377,10 @@ pub fn file_text(state: &State, queue: &str, sources: &str) -> String {
 }
 
 /// What INDEX.md is made from, as a 64-bit FNV-1a hash in hex: every task file (`NNNN-slug.md` in
-/// the queue folder and its status folders, symlinks followed) and every backlog note (plain
-/// files only), in order of their path relative to the queue, each as its path, a NUL, its size,
-/// a NUL and its bytes (none for a file over 1 MB, which isn't read). `manifest.py` works out the
-/// same. A name that isn't UTF-8 is left out on both sides.
+/// the queue folder and its status folders, or in `.muster/tasks/`, symlinks followed) and every
+/// backlog note (plain files only), in order of their path relative to the queue, each as its
+/// path, a NUL, its size, a NUL and its bytes (none for a file over 1 MB, which isn't read).
+/// `manifest.py` works out the same. A name that isn't UTF-8 is left out on both sides.
 pub fn sources(root: &Path) -> String {
     let mut files: Vec<(String, PathBuf)> = Vec::new();
     let names = |dir: &Path| -> Vec<(String, fs::DirEntry)> {
@@ -392,12 +392,14 @@ pub fn sources(root: &Path) -> String {
             })
             .unwrap_or_default()
     };
-    let mut task_dirs = vec![(String::new(), root.to_path_buf())];
-    task_dirs.extend(
-        STATUS_FOLDERS
-            .iter()
-            .map(|f| (format!("{f}/"), root.join(f))),
-    );
+    // Each folder's path relative to the queue: "" for the queue itself, `todo/`, `tasks/`…
+    let task_dirs = crate::layout::task_dirs(root).into_iter().map(|(_, dir)| {
+        let prefix = match dir.strip_prefix(root).ok().and_then(Path::to_str) {
+            Some("") | None => String::new(),
+            Some(rel) => format!("{rel}/"),
+        };
+        (prefix, dir)
+    });
     for (prefix, dir) in task_dirs {
         for (name, e) in names(&dir) {
             if queue::is_task_name(&name) && e.path().is_file() {
@@ -556,7 +558,7 @@ pub const REFRESH: &str = "INDEX.md: refresh due (the files changed outside must
 mod tests {
     use super::*;
     use crate::ops;
-    use crate::queue::{read_state, Cache};
+    use crate::queue::{read_state, Cache, STATUS_FOLDERS};
 
     fn queue() -> tempfile::TempDir {
         let d = tempfile::tempdir().unwrap();

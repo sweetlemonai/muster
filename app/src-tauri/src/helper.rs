@@ -93,8 +93,14 @@ pub fn is_login_error(text: &str) -> bool {
 }
 
 pub fn brief(project: &str, queue: &Path) -> String {
+    // A queue in the repo (0005): its files sit beside the code the helper reads.
+    let place = if crate::layout::is_muster(queue) {
+        " It lives in the repo's .muster/ folder (tasks in tasks/, notes in backlog/), which only muster writes."
+    } else {
+        ""
+    };
     format!(
-        "You are the capture helper for the Muster task queue of the project \"{project}\" ({queue}). \
+        "You are the capture helper for the Muster task queue of the project \"{project}\" ({queue}).{place} \
 The owner talks to you here about ideas, bugs and tasks. Turn what they say into tasks that an agent can start on without asking.
 
 Rules:
@@ -299,6 +305,13 @@ mod tests {
         assert_eq!(model("--dangerously-skip-permissions"), "sonnet");
         assert_eq!(model("Opus"), "sonnet");
         assert_eq!(MODELS[0], DEFAULT_MODEL);
+    }
+
+    #[test]
+    fn the_brief_says_where_a_queue_in_the_repo_lives() {
+        let b = brief("muster", Path::new("/r/main/.muster"));
+        assert!(b.contains("(/r/main/.muster). It lives in the repo's .muster/ folder (tasks in tasks/, notes in backlog/), which only muster writes."), "{b}");
+        assert!(!brief("muster", Path::new("/q/tasks")).contains(".muster"));
     }
 
     #[test]

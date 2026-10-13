@@ -651,10 +651,12 @@ pub struct Found {
 }
 
 /// Queues at `<base>/*/tasks` and `<base>/*/*/tasks` that look like Muster queues
-/// (`projects::looks_like_queue`), sorted by folder. Two levels and no further. Folders named
-/// `.*`, `_*`, `node_modules`, `worktrees`, `*.worktrees`, `target` or `dist` are passed over,
-/// and a symlink is followed only while it stays inside the base: one that leads out of it, or
-/// back to the base itself, isn't. A queue reached by two paths is found once, by the first.
+/// (`projects::looks_like_queue`), and the repos' `.muster/` at `<base>/*/.muster` and
+/// `<base>/*/*/.muster` in a main checkout (task 0005, `layout::found_queue`, whose group
+/// `layout::found_group` says), sorted by folder. Two levels and no further. Folders named `.*`,
+/// `_*`, `node_modules`, `worktrees`, `*.worktrees`, `target` or `dist` are passed over, and a
+/// symlink is followed only while it stays inside the base: one that leads out of it, or back to
+/// the base itself, isn't. A queue reached by two paths is found once, by the first.
 pub fn discover(base: &Path) -> Vec<Found> {
     let Ok(root) = fs::canonicalize(base) else {
         return Vec::new();
@@ -662,15 +664,22 @@ pub fn discover(base: &Path) -> Vec<Found> {
     let mut candidates = Vec::new();
     for (group, dir) in subfolders(base, &root) {
         candidates.push((dir.join("tasks"), String::new()));
+        candidates.push((dir.join(crate::layout::DIR), String::new()));
         for (_, inner) in subfolders(&dir, &root) {
             candidates.push((inner.join("tasks"), group.clone()));
+            let muster = inner.join(crate::layout::DIR);
+            let in_group = crate::layout::found_group(&muster, &group);
+            candidates.push((muster, in_group));
         }
     }
     candidates.sort();
     let mut seen = HashSet::new();
     candidates
         .into_iter()
-        .filter(|(path, _)| crate::projects::looks_like_queue(path))
+        .filter(|(path, _)| {
+            crate::projects::looks_like_queue(path)
+                && (!crate::layout::is_muster(path) || crate::layout::found_queue(path))
+        })
         .filter_map(|(path, group)| {
             let real = inside(&path, &root)?;
             seen.insert(real).then_some(Found { path, group })
@@ -706,10 +715,11 @@ fn inside(path: &Path, root: &Path) -> Option<PathBuf> {
     (real != root && real.starts_with(root) && real.is_dir()).then_some(real)
 }
 
-/// Every task file of a queue: (folder it's in, path). The folder is "" for the flat layout.
+/// Every task file of a queue: (folder it's in, path). The folder is "" for the flat layout and
+/// `.muster/tasks/` (`layout::task_dirs`).
 pub fn task_files(root: &Path) -> Vec<(String, PathBuf)> {
     let mut out = Vec::new();
-    let mut scan = |folder: &str, dir: PathBuf| {
+    for (folder, dir) in crate::layout::task_dirs(root) {
         if let Ok(rd) = fs::read_dir(&dir) {
             for e in rd.flatten() {
                 let p = e.path();
@@ -719,10 +729,6 @@ pub fn task_files(root: &Path) -> Vec<(String, PathBuf)> {
                 }
             }
         }
-    };
-    scan("", root.to_path_buf());
-    for f in STATUS_FOLDERS {
-        scan(f, root.join(f));
     }
     out.sort_by(|a, b| a.1.cmp(&b.1));
     out
@@ -994,7 +1000,10 @@ pub fn parse_task(
         .and_then(|l| day_of(l))
         .unwrap_or_default();
     let id = get("id");
-    let mut status = get("status");
+    // In `.muster/` the stage is the only truth: a `status:` left in the file isn't read, and
+    // the status is worked out from the stage below, for the readers that still use it.
+    let muster = crate::layout::is_muster(root);
+    let mut status = if muster { String::new() } else { get("status") };
     if status.is_empty() {
         status = folder.to_string();
     }
@@ -1010,6 +1019,9 @@ pub fn parse_task(
         ),
     };
     let blocked = !waiting_on.is_empty() || status == "blocked";
+    if muster {
+        status = mirror_status(&stage, blocked).to_string();
+    }
     let typed = get("blocked-kind").to_lowercase();
     let (blocked_kind, block_detail, kind_guessed) = if !blocked {
         (String::new(), String::new(), false)
@@ -1452,6 +1464,7 @@ fn read_state_from(
                 *counts.entry("blocked".into()).or_default() += 1;
             }
         }
+        state.problems.extend(crate::layout::problems(name, root));
         state.activity.extend(git_activity(name, root, cache));
         state.queues.push(QueueInfo {
             name: name.clone(),
@@ -1977,15 +1990,10 @@ pub fn find_task(root: &Path, id: &str) -> Result<PathBuf, String> {
     }
 }
 
-/// The status folder a task file is in, or "" when it sits in the queue folder (flat layout).
+/// The status folder a task file is in, or "" when it sits in the queue folder (flat layout) or
+/// in `.muster/tasks/`.
 pub fn folder_of(root: &Path, path: &Path) -> String {
-    match path.parent() {
-        Some(p) if p != root => p
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default(),
-        _ => String::new(),
-    }
+    crate::layout::folder_of(root, path)
 }
 
 /// One task, parsed.

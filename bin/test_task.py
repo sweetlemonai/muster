@@ -78,6 +78,142 @@ claimed-by:
 """
 
 
+def git(cwd: Path, *args: str) -> str:
+    """git in `cwd`, as a test identity."""
+    r = subprocess.run(["git", "-C", str(cwd), "-c", "user.name=Test", "-c", "user.email=test@example.com", *args],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        raise AssertionError(f"git {args}: {r.stderr}")
+    return r.stdout.strip()
+
+
+class MusterDirTests(unittest.TestCase):
+    """A queue in the repo's .muster/ (task 0005): local, shared by every worktree."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name).resolve()
+        self.main = base / "proj" / "main"
+        self.main.mkdir(parents=True)
+        git(self.main, "init", "-q", "-b", "main")
+        (self.main / "README.md").write_text("code\n")
+        git(self.main, "add", "-A")
+        git(self.main, "commit", "-q", "-m", "first")
+        self.env = {**os.environ, "MUSTER_BIN": str(MUSTER)}
+        for k in ("MUSTER_ROOT", "TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS"):
+            self.env.pop(k, None)
+        self.muster("init", str(self.main), "--local")
+        self.q = self.main / ".muster"
+        git(self.main, "add", "-A")
+        git(self.main, "commit", "-q", "-m", "muster")
+        self.wt = base / "proj" / "wt-1"
+        git(self.main, "worktree", "add", "-q", "-b", "wt-1", str(self.wt))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def muster(self, *args, cwd=None):
+        r = subprocess.run([str(MUSTER), *args], env=self.env, cwd=cwd or self.main, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout
+
+    def run_task(self, *args, cwd):
+        r = subprocess.run([sys.executable, "-I", str(TASK), *args], env=self.env, cwd=cwd,
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r
+
+    def hook(self, session, payload_cwd=None, cwd=None):
+        data = {"session_id": session, "hook_event_name": "PostToolUse"}
+        if payload_cwd:
+            data["cwd"] = str(payload_cwd)
+        r = subprocess.run([sys.executable, "-I", str(HOOK)], input=json.dumps(data), env=self.env,
+                           cwd=cwd or Path(self.tmp.name), capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout
+
+    def test_the_stand_in_and_the_hook_find_the_main_checkouts_queue_from_a_worktree(self):
+        out = self.muster("new", "Port", "--as", "owner", cwd=self.wt)
+        self.assertIn("tasks/0001-port.md", out)
+        task = self.q / "tasks" / "0001-port.md"
+        self.assertTrue(task.is_file())
+        self.assertFalse((self.wt / ".muster" / "tasks").exists())
+        self.run_task("ask", "0001", "Which port?", "--session", "aaaa1111", cwd=self.wt)
+        self.run_task("ask", "0001", "Which host?", "--session", "aaaa1111", cwd=self.wt)
+        self.assertIn("**Q1 (wt-1, session aaaa1111", task.read_text())
+        self.run_task("answer", "0001", "Q1", "5173", cwd=self.main)
+        # The hook, given the session's folder (a worktree) and no MUSTER_ROOT, finds main's mailbox.
+        self.assertEqual(self.hook("bbbb2222", payload_cwd=self.wt), "")
+        ctx = json.loads(self.hook("aaaa1111", payload_cwd=self.wt))["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("5173", ctx)
+        self.assertEqual(self.hook("aaaa1111", payload_cwd=self.wt), "")  # delivered once
+        # Without a cwd in its input, the folder it runs in.
+        self.run_task("answer", "0001", "Q2", "localhost", cwd=self.main)
+        ctx = json.loads(self.hook("aaaa1111", cwd=self.wt))
+        self.assertIn("localhost", ctx["hookSpecificOutput"]["additionalContext"])
+        # Nothing of it is in git.
+        self.assertEqual(git(self.main, "status", "--porcelain", "--untracked-files=all", "--", ".muster"), "")
+
+    def test_a_broken_mailbox_in_one_queue_never_loses_another_queues_mail(self):
+        # $MUSTER_ROOT's queue has an answer waiting; the repo's .muster/ mailbox can't be
+        # delivered from (its delivered/ is a file).
+        old = Path(self.tmp.name) / "old" / "tasks"
+        (old / "mail" / "aaaa1111").mkdir(parents=True)
+        (old / "mail" / "aaaa1111" / "0001-Q1.md").write_text(
+            "Answer to Q1 on task 0001 (X), from owner:\nYour question: Port?\nAnswer: 5173\n")
+        box = self.q / "mail" / "aaaa1111"
+        box.mkdir(parents=True)
+        (box / "0002-Q1.md").write_text("Answer to Q1 on task 0002 (Y), from owner:\nAnswer: no\n")
+        (box / "delivered").write_text("not a folder")
+        self.env["MUSTER_ROOT"] = str(old)
+        ctx = json.loads(self.hook("aaaa1111", payload_cwd=self.wt))["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("Answer: 5173", ctx)
+
+    def test_the_hook_finds_no_queue_where_git_has_no_main_checkout(self):
+        # A bare repo's worktree: git's folder is bare.git, never a place for .muster/ (layout.rs
+        # main_checkout agrees), so mail left there isn't taken.
+        base = Path(self.tmp.name)
+        bare = base / "bare.git"
+        git(base, "clone", "-q", "--bare", str(self.main), str(bare))
+        bwt = base / "bwt"
+        git(bare, "worktree", "add", "-q", str(bwt), "main")
+        (bare / ".muster" / "mail" / "aaaa1111").mkdir(parents=True)
+        (bare / ".muster" / "config.toml").write_text("local = true\n")
+        mail = bare / ".muster" / "mail" / "aaaa1111" / "0001-Q1.md"
+        mail.write_text("Answer to Q1 on task 0001 (X), from owner:\nAnswer: 1\n")
+        self.assertEqual(self.hook("aaaa1111", payload_cwd=bwt), "")
+        self.assertTrue(mail.is_file())
+
+    def test_manifest_reads_the_muster_layout_like_muster(self):
+        self.muster("new", "Ready one", "--as", "owner")
+        self.muster("add", "A note", "--as", "owner")
+        (self.q / "tasks" / "0002-left.md").write_text(
+            "---\nid: 0002\nstage: building\nstatus: done\nclaimed-by:\nwaiting_on:\n---\n\n# Left\n")
+        self.muster("index")
+        env = {**self.env, "MUSTER_ROOT": str(self.q)}
+        r = subprocess.run([sys.executable, "-I", str(HERE / "manifest.py")], env=env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        m = json.loads((self.q / "tasks.json").read_text())
+        tasks = {t["id"]: t for t in m["tasks"]}
+        self.assertEqual((tasks["0001"]["path"], tasks["0001"]["folder"], tasks["0001"]["stage"], tasks["0001"]["status"]),
+                         ("tasks/0001-ready-one.md", "", "ready", "todo"))
+        # A status left in a file isn't read: the stage says it.
+        self.assertEqual((tasks["0002"]["stage"], tasks["0002"]["status"]), ("building", "doing"))
+        self.assertEqual([n["title"] for n in m["backlog"]], ["A note"])
+        self.assertEqual(m["counts"]["todo"], 1)
+        # Building with nobody on it is a problem; the status isn't; INDEX.md is current.
+        self.assertEqual(m["problems"], ["tasks/0002-left.md: in Building with no claimed-by"])
+        self.assertEqual(m["warnings"], [])
+        (self.q / "tasks" / "0002-left.md").unlink()
+        r = subprocess.run([sys.executable, "-I", str(HERE / "manifest.py"), "--check"], env=env,
+                           capture_output=True, text=True)
+        self.assertEqual((r.returncode, r.stdout), (0, "warning: INDEX.md: refresh due (the files changed outside muster; the next muster write or `muster index` refreshes it)\n"))
+        self.muster("index")
+        r = subprocess.run([sys.executable, "-I", str(HERE / "manifest.py"), "--check"], env=env,
+                           capture_output=True, text=True)
+        self.assertEqual((r.returncode, r.stdout), (0, ""))
+
+
 class TaskTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -102,10 +238,12 @@ class TaskTests(unittest.TestCase):
         return r
 
     def hook(self, session, event="PostToolUse"):
+        # Run in the queue's temp folder: the hook also reads the mail of the .muster/ of the repo
+        # it runs in, and these tests never reach this checkout's.
         r = subprocess.run(
             [sys.executable, "-I", str(HOOK)],
             input=json.dumps({"session_id": session, "hook_event_name": event}),
-            env=self.env, capture_output=True, text=True,
+            env=self.env, cwd=self.root, capture_output=True, text=True,
         )
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout
@@ -210,7 +348,7 @@ class TaskTests(unittest.TestCase):
     def test_hook_tolerates_bad_input(self):
         for payload in ["", "not json", "{}", json.dumps({"session_id": "../../etc"})]:
             r = subprocess.run([sys.executable, "-I", str(HOOK)], input=payload, env=self.env,
-                               capture_output=True, text=True)
+                               cwd=self.root, capture_output=True, text=True)
             self.assertEqual(r.returncode, 0)
             self.assertEqual(r.stdout, "")
 
@@ -692,7 +830,7 @@ class TaskTests(unittest.TestCase):
     def test_the_stand_in_and_hook_run_on_the_macos_python(self):
         def old(script, *args, stdin=None):
             return subprocess.run([OLD_PYTHON, "-I", str(script), *args], input=stdin,
-                                  env=self.env, capture_output=True, text=True)
+                                  env=self.env, cwd=self.root, capture_output=True, text=True)
         r = old(TASK, "ask", "0042", "Which port?", "--session", "aaaa1111")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.run_task("answer", "0042", "Q1", "5173")

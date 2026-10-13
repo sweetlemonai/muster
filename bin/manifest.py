@@ -17,6 +17,10 @@ if not _root:
     sys.exit("muster: set MUSTER_ROOT to the task queue folder")
 ROOT = Path(_root).resolve()
 FOLDERS = ["inbox", "todo", "doing", "blocked", "done"]
+# The new layout (task 0005, layout.rs): a repo's `.muster/`, task files flat in `tasks/` (never
+# moved), `stage:` the only truth and no `status:` written, notes in `backlog/`. Otherwise the old
+# `<project>/tasks`, where the status folder is the status.
+MUSTER = ROOT.name == ".muster"
 # The stages (decision 0003). `stage:` is the truth; an old file's status says it otherwise.
 # The rules live in the app's core (ops.rs); this only reads them.
 STAGES = ["backlog", "shaping", "ready", "building", "testing", "your-check", "done"]
@@ -196,8 +200,17 @@ def is_task_name(name: str) -> bool:
 
 
 def backlog_dir() -> Path:
-    """Where backlog notes live (backlog.rs backlog_dir): inbox/ in the v2 layout, else backlog/."""
-    return ROOT / ("inbox" if (ROOT / "todo").is_dir() else "backlog")
+    """Where backlog notes live (backlog.rs backlog_dir): inbox/ in the v2 layout, else backlog/
+    (`.muster/backlog/` too)."""
+    return ROOT / ("inbox" if (ROOT / "todo").is_dir() and not MUSTER else "backlog")
+
+
+def task_dirs() -> list:
+    """The folders task files are read from, each with the status folder it stands for ("" when
+    the file alone says): `.muster/tasks/`, or the old status folders (layout.rs task_dirs)."""
+    if MUSTER:
+        return [("", ROOT / "tasks")]
+    return [(f, ROOT / f) for f in FOLDERS]
 
 
 def is_note_file(name: str) -> bool:
@@ -317,7 +330,8 @@ def index_sources() -> str:
     note (plain files only), by relative path, each as its path, a NUL, its size, a NUL and its
     bytes (none over 1 MB), hashed with 64-bit FNV-1a."""
     files = []
-    for prefix, folder in [("", ROOT)] + [(f + "/", ROOT / f) for f in FOLDERS]:
+    dirs = [("tasks/", ROOT / "tasks")] if MUSTER else [("", ROOT)] + [(f + "/", ROOT / f) for f in FOLDERS]
+    for prefix, folder in dirs:
         for name in utf8_names(folder):
             if is_task_name(name) and (folder / name).is_file():
                 files.append((prefix + name, folder / name))
@@ -464,16 +478,19 @@ def main():
     tasks, problems, block_warnings = [], [], []
     backlog, note_problems = backlog_notes()
     problems.extend(note_problems)
-    for folder in FOLDERS:
-        for path in sorted((ROOT / folder).glob("*.md")):
-            if ROOT / folder == backlog_dir() and not is_task_name(path.name):
-                continue  # a backlog note (task 0015), listed under "backlog"
+    for folder, folder_path in task_dirs():
+        for path in sorted(folder_path.glob("*.md")):
+            if (MUSTER or folder_path == backlog_dir()) and not is_task_name(path.name):
+                continue  # a backlog note (task 0015), listed under "backlog"; in .muster/tasks/, not a task
             rel = path.relative_to(ROOT).as_posix()
             fields, body = front_matter(path.read_text(encoding="utf-8"))
             if fields is None:
                 if folder != "inbox":
                     problems.append(f"{rel}: no front matter")
                 continue
+            if MUSTER:
+                # The stage is the only truth there: a `status:` left in the file isn't read.
+                fields.pop("status", None)
             title = next((l[2:].strip() for l in body.splitlines() if l.startswith("# ")), "")
             questions = body.split("## Questions", 1)[1].split("\n## ", 1)[0] if "## Questions" in body else ""
             t = {
@@ -520,10 +537,13 @@ def main():
             if raw_for and raw_for not in FOR_WHO:
                 problems.append(f"{rel}: for '{raw_for[:40]}' isn't ai or human (read as ai)")
             tasks.append(t)
-            if t["status"] != folder:
+            if not MUSTER and t["status"] != folder:
                 problems.append(f"{rel}: status '{t['status']}' but it's in {folder}/")
             raw_stage = fields.get("stage", "").lower()
             blocked = bool(t["waiting_on"]) or t["status"] == "blocked"
+            if MUSTER:
+                # Worked out from the stage, for the readers that still use it (queue.rs parse_task).
+                t["status"] = mirror_status(t["stage"], blocked)
             # Why it's blocked (0024): the typed kind, or what an old waiting_on reads as (warned
             # about until it's blocked again with one); "tasks" from depends is filled in below.
             typed = fields.get("blocked-kind", "").lower()
@@ -533,16 +553,18 @@ def main():
                 block_warnings.append(
                     f"{rel}: blocked on {t['waiting_on'][:80]!r} without a kind, read as {t['blocked_kind']};"
                     f" block it again with one to confirm")
-            if raw_stage in STAGES and mirror_status(raw_stage, blocked) != t["status"]:
-                problems.append(f"{rel}: says stage {raw_stage} but status {t['status']} (moved by hand? use `muster stage`)")
-            elif raw_stage and raw_stage not in STAGES:
+            if raw_stage and raw_stage not in STAGES:
                 problems.append(f"{rel}: stage '{raw_stage[:40]}' isn't a stage (read as {t['stage']})")
+            elif not MUSTER and raw_stage in STAGES and mirror_status(raw_stage, blocked) != t["status"]:
+                problems.append(f"{rel}: says stage {raw_stage} but status {t['status']} (moved by hand? use `muster stage`)")
             if not re.fullmatch(r"\d{4}", t["id"]) or not path.name.startswith(t["id"] + "-"):
                 problems.append(f"{rel}: id '{t['id']}' doesn't match the file name")
-            # Only Building is held by someone; Testing and Your check also sit in doing/.
-            building = folder == "doing" and t["stage"] == "building"
+            # Only Building is held by someone; Testing and Your check also sit in doing/. In
+            # .muster/ a blocked task isn't being worked on (queue.rs problems).
+            building = t["stage"] == "building" and (not blocked if MUSTER else folder == "doing")
             if building and not t["claimed_by"]:
-                problems.append(f"{rel}: in doing/ with no claimed-by")
+                problems.append(f"{rel}: in Building with no claimed-by" if MUSTER
+                                else f"{rel}: in doing/ with no claimed-by")
             if folder == "blocked" and not t["waiting_on"]:
                 problems.append(f"{rel}: blocked with no waiting_on")
             # The owner doing their own task (for: human) has no lease, so no stale heartbeat, and
@@ -603,7 +625,8 @@ def main():
             "version": 1,
             "generated": now.strftime("%Y-%m-%d %H:%M"),
             "next_id": f"{max((int(i) for i in known if i.isdigit()), default=0) + 1:04d}",
-            "counts": {f: sum(t["folder"] == f for t in tasks) for f in FOLDERS},
+            # By status folder; in .muster/, by the status the stage means.
+            "counts": {f: sum(t["status" if MUSTER else "folder"] == f for t in tasks) for f in FOLDERS},
             "inbox": inbox,
             "backlog": backlog,
             "waiting_for_owner": [

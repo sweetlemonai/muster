@@ -329,17 +329,13 @@ pub fn next_id(root: &Path) -> Result<String, String> {
     Ok(format!("{:04}", max + 1))
 }
 
-/// Is this queue laid out with status folders (v2) or flat?
+/// Is this queue laid out with status folders (v2), or flat (or `.muster/`, 0005)?
 pub(crate) fn has_status_folders(root: &Path) -> bool {
-    root.join("todo").is_dir()
+    crate::layout::has_status_folders(root)
 }
 
 fn folder_for(root: &Path, status: &str) -> PathBuf {
-    if has_status_folders(root) {
-        root.join(status)
-    } else {
-        root.to_path_buf()
-    }
+    crate::layout::task_dir(root, status)
 }
 
 /// A new task's fields, cleaned by `clean_new`, as `create_locked` writes them.
@@ -453,8 +449,14 @@ pub(crate) fn create_locked(
     let date = stamp.get(..10).unwrap_or(stamp);
     let (title, kind, priority, tags) = (&t.title, t.kind, t.priority, &t.tags);
     let (est_time, est_test_time, est_tokens) = (&t.est_time, &t.est_test_time, &t.est_tokens);
+    // The status mirror only where the layout keeps one (not in `.muster/`, 0005).
+    let status = if crate::layout::keeps_status(root) {
+        format!("status: {status}\n")
+    } else {
+        String::new()
+    };
     let mut text = format!(
-        "---\nid: {id}\ntype: {kind}\npriority: {priority}\ntags:{tags}\nest-time:{est_time}\nest-test-time:{est_test_time}\nest-tokens:{est_tokens}\nstage: {stage}\nstatus: {status}\ncaptured: {date}\nclaimed-by:\nheartbeat:\nwaiting_on:\ncommit:\n---\n\n# {title}\n\n{details}## Log\n- {stamp} {who}: created\n"
+        "---\nid: {id}\ntype: {kind}\npriority: {priority}\ntags:{tags}\nest-time:{est_time}\nest-test-time:{est_test_time}\nest-tokens:{est_tokens}\nstage: {stage}\n{status}captured: {date}\nclaimed-by:\nheartbeat:\nwaiting_on:\ncommit:\n---\n\n# {title}\n\n{details}## Log\n- {stamp} {who}: created\n"
     );
     // Level, parent, due and for only when given: a file without them is an agent's task on its
     // own.
@@ -1358,7 +1360,9 @@ fn change_locked(
         }
         let status = mirror_status(&c.stage, c.blocked);
         let mut new = set_front(&text, "stage", &c.stage)?;
-        new = set_front(&new, "status", status)?;
+        if crate::layout::keeps_status(root) {
+            new = set_front(&new, "status", status)?;
+        }
         new = set_front(&new, "waiting_on", &c.waiting_on)?;
         // The block's kind sits next to what it waits on; a file that never had one gets none.
         if !c.blocked_kind.is_empty() || fields.contains_key("blocked-kind") {

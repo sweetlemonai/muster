@@ -549,9 +549,10 @@ pub fn start(
                 Place::At(p) if p.is_absolute() => p.clone(),
                 Place::At(p) => cwd.join(p),
                 _ => {
-                    let project = root.parent().ok_or("the queue has no project folder")?;
                     let repo_name = repo.main.file_name().ok_or("the repo has no folder name")?;
-                    project.join("worktrees").join(repo_name).join(&name)
+                    crate::layout::worktrees_dir(root, &repo_name.to_string_lossy())
+                        .ok_or("the queue has no project folder")?
+                        .join(&name)
                 }
             };
             if wt.exists() {
@@ -779,9 +780,18 @@ fn main_ready(repo: &Repo) -> Result<(), String> {
             repo.trunk
         ));
     }
+    // A committed `.muster/` (0005) changes with every claim and pass in the main checkout: that
+    // is the queue at work, not code that a fast-forward could clash with.
     let dirty = git(
         &repo.main,
-        &["status", "--porcelain", "--untracked-files=no"],
+        &[
+            "status",
+            "--porcelain",
+            "--untracked-files=no",
+            "--",
+            ".",
+            ":(exclude).muster",
+        ],
     )?;
     if !dirty.is_empty() {
         return Err(format!(
@@ -1734,6 +1744,38 @@ pub(crate) mod tests {
         let e = start(&f.root, &fourth, "wt-d", T0, &f.root, &Place::Default).unwrap_err();
         assert!(e.contains("runs in the project's repo"), "{e}");
         assert_eq!(read(&f.root, &fourth).stage, "ready");
+    }
+
+    #[test]
+    fn start_from_a_repos_muster_puts_the_worktree_beside_the_repo_sharing_its_queue() {
+        let f = fx();
+        let q = crate::projects::init(&f.repo, true, None, &[]).unwrap().0;
+        let id = task(&q, "In the repo", "src/");
+        let s = start(&q, &id, "wt-a", T0, &f.repo, &Place::Default).unwrap();
+        let prefix = crate::key::stored_prefix(&q).expect("init stores it");
+        let wt = f
+            .base
+            .join(format!("proj/worktrees/main/{prefix}-1-in-the-repo"));
+        assert_eq!(s.worktree, wt, "beside the checkout, never inside it");
+        assert_eq!(read(&q, &id).worktree, wt.to_str().unwrap());
+        assert_eq!(crate::layout::find(&wt).map(|p| canon(&p)), Some(canon(&q)));
+    }
+
+    #[test]
+    fn a_committed_queues_own_changes_never_make_main_unclean_for_a_merge() {
+        let f = fx();
+        let q = crate::projects::init(&f.repo, false, None, &[]).unwrap().0;
+        let id = task(&q, "Tracked", "src/");
+        g(&f.repo, &["add", "-A"]);
+        g(&f.repo, &["commit", "-qm", "queue"]);
+        // Every claim rewrites a tracked task file in the main checkout.
+        ops::claim_task(&q, &id, "wt-a", T0).unwrap();
+        assert!(!g(&f.repo, &["status", "--porcelain", "--untracked-files=no"]).is_empty());
+        let repo = repo_of(&f.repo).unwrap();
+        assert_eq!(main_ready(&repo), Ok(()));
+        // The code's own changes still stop it.
+        fs::write(f.repo.join("README.md"), "changed\n").unwrap();
+        assert!(main_ready(&repo).unwrap_err().contains("isn't clean"));
     }
 
     #[test]

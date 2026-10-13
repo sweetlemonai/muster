@@ -10,7 +10,7 @@ Why: the board is only useful if it's true. A hand edit can say a task was teste
 
 ## A coding session, step by step
 
-1. **Read the queue's rules:** `../tasks/README.md` from the project's repo.
+1. **Read the queue's rules:** `.muster/README.md` in the repo's main checkout (one queue for every worktree), or `../tasks/README.md` from the repo where the queue hasn't moved into the repo yet.
 2. **Claim one task**, under the branch or worktree's name:
 
    ```

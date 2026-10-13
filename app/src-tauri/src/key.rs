@@ -3,9 +3,9 @@
 //! `0012`. Everything that shows or reads a key goes through here; taskKey.ts is the window's
 //! half, and `app/src/key-cases.json` holds the two to the same answers.
 //!
-//! A project's prefix is 2 to 4 lowercase ASCII letters. It's stored in its queue's README.md
-//! front matter (`prefix: mu`), which only `stored_prefix` reads and `store_prefix` writes (task
-//! 0005 moves it to `.muster/config.toml`, and changes only those two). Without one, it's the
+//! A project's prefix is 2 to 4 lowercase ASCII letters. It's stored in an old queue's README.md
+//! front matter (`prefix: mu`), and in a `.muster` queue's `config.toml` (`prefix = "mu"`, task
+//! 0005), which only `stored_prefix` reads and `store_prefix` writes. Without one, it's the
 //! first 2 letters of the project's name, or 3, then 4, when another project Muster knows would
 //! start the same (`prefixes`).
 
@@ -271,22 +271,41 @@ pub fn prefix_beside(name: &str, taken: &[String]) -> String {
 /// The most of README.md read for its front matter.
 const README_HEAD: u64 = 64 * 1024;
 
-/// The prefix stored for the queue at `root` (README.md's front matter), if it's a valid one.
+/// The prefix stored for the queue at `root`, if it's a valid one: a `.muster` queue's in its
+/// `config.toml` (0005; a README there doesn't count), an old queue's in README.md's front matter.
 pub fn stored_prefix(root: &Path) -> Option<String> {
-    let mut text = String::new();
-    std::fs::File::open(root.join("README.md"))
-        .ok()?
-        .take(README_HEAD)
-        .read_to_string(&mut text)
-        .ok()?;
-    let (fields, _) = queue::front_matter(&text)?;
-    let p = fields.get("prefix")?.trim().to_ascii_lowercase();
+    let raw = if crate::layout::is_muster(root) {
+        crate::layout::config_prefix(root)?
+    } else {
+        let mut text = String::new();
+        std::fs::File::open(root.join("README.md"))
+            .ok()?
+            .take(README_HEAD)
+            .read_to_string(&mut text)
+            .ok()?;
+        let (fields, _) = queue::front_matter(&text)?;
+        fields.get("prefix")?.clone()
+    };
+    let p = raw.trim().to_ascii_lowercase();
     check_prefix(&p).ok().map(|()| p)
 }
 
-/// Store `prefix` for the queue at `root`, in README.md's front matter (made when it has none).
-/// The caller has checked it.
+/// Where a queue keeps its prefix exists: a `.muster` queue's `config.toml`, an old queue's
+/// README.md.
+fn has_prefix_home(root: &Path) -> bool {
+    if crate::layout::is_muster(root) {
+        root.join(crate::layout::CONFIG).is_file()
+    } else {
+        root.join("README.md").is_file()
+    }
+}
+
+/// Store `prefix` for the queue at `root`: in a `.muster` queue's `config.toml` (0005), else in
+/// README.md's front matter (made when it has none). The caller has checked it.
 pub fn store_prefix(root: &Path, prefix: &str) -> Result<(), String> {
+    if crate::layout::is_muster(root) {
+        return crate::layout::store_config_prefix(root, prefix);
+    }
     let file = root.join("README.md");
     let text = std::fs::read_to_string(&file).map_err(|e| format!("{}: {e}", file.display()))?;
     let text = if queue::front_matter(&text).is_some() {
@@ -299,10 +318,11 @@ pub fn store_prefix(root: &Path, prefix: &str) -> Result<(), String> {
 
 /// Store the queue's current prefix when it has none stored, so its keys stay what they are now
 /// whatever projects come along later. Called under the queue's lock by every write. A queue
-/// with no README.md is left alone, and a README that can't be written only means the default
-/// is worked out again next time: the write itself goes on either way.
+/// with nowhere to keep it (an old one with no README.md, a `.muster` with no `config.toml`) is
+/// left alone, and a file that can't be written only means the default is worked out again next
+/// time: the write itself goes on either way.
 pub fn pin_prefix(root: &Path) {
-    if stored_prefix(root).is_none() && root.join("README.md").is_file() {
+    if stored_prefix(root).is_none() && has_prefix_home(root) {
         let _ = store_prefix(root, &prefix_for(root));
     }
 }

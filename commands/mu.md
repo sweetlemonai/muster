@@ -50,7 +50,7 @@ mode` is captured, never a claim. Never guess which command was meant.
 | `/mu check` | system | `muster check` | Problems in the queue. |
 | `/mu help [<command>]` | system | `muster help [<command>]` | This route table as a short list, then muster's help. |
 
-Not routed: `new`, `move`, `stage`, `pause`, `resume`, `set`, `attach`, `escalate`, `inbox`, `reclaim`, `checkin`, `ping`, `projects`, `init`, `tick`, `untick`, `edit`, `shape`, `file`, `drop`, `link`, `comment`, `index`, `vision`, `ready`, `start`, `release`.
+Not routed: `new`, `move`, `stage`, `pause`, `resume`, `set`, `attach`, `escalate`, `inbox`, `reclaim`, `checkin`, `ping`, `projects`, `init`, `migrate`, `tick`, `untick`, `edit`, `shape`, `file`, `drop`, `link`, `comment`, `index`, `vision`, `ready`, `start`, `release`.
 
 ## Running muster
 
@@ -110,8 +110,9 @@ on it.
    Say what it is and whether it's To do (Ready) or Doing (Building), and which agent tasks wait
    on it (their `depends`). Act: start it, `/mu pass <id> --from ready --as owner`; once it's
    done, `/mu pass <id> --from building --as owner`. With no answer it stays yours to do.
-2. Look for `WAITING-FOR-OWNER.md` in the queue folder (the `tasks/` folder beside the repo, or
-   beside a folder above it). If it's there, Read it for the options and picks of the items above,
+2. Look for `WAITING-FOR-OWNER.md` in the queue folder (the repo's `.muster/` in its main
+   checkout, or on the old layout the `tasks/` folder beside the repo, or beside a folder above
+   it). If it's there, Read it for the options and picks of the items above,
    and add its numbered items that no task above covers. Skip its "Decided" sections.
 3. Nothing waiting and nothing of yours: say "Nothing is waiting for you."
 4. For bare `/mu` only, end with the queue from the same `muster list` output, no second call:

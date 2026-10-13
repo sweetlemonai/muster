@@ -1014,11 +1014,11 @@ muster set 0018 depends 0014,0016
 
 ## Projects and the queue
 
-Find the queues Muster knows, start one for a project, check a queue for problems, and rebuild its master list.
+Find the queues Muster knows, start one for a project (in its repo's `.muster/`), move an old `<project>/tasks` queue into it, check a queue for problems, and rebuild its master list.
 
 ### muster projects
 
-Every queue Muster knows, each marked found (at ~/playground/\<project\>/tasks, or one level deeper) or added (in the app), with its prefix and gate. A prefix is what its tasks' keys start with (mu in mu-12): 2 to 4 lowercase letters, stored in its queue's README.md (prefix: mu). Without one it's the first 2 letters of the project's name, or 3 or 4 when another project's start the same. projects set \<name\> prefix stores one, refused when it isn't 2 to 4 lowercase letters or another project has it; the files keep their ids, so nothing moves, but the old keys stop finding its tasks. projects set \<name\> gate stores the project's gate command in the app's projects.json: what a merge runs in a task's worktree (muster pass \<id\> --from testing). It's split into words like a shell would, quotes and all, but no shell runs it, so a pipe or a cd is just a word: point it at a script in the repo (bin/gate) for anything more. "" clears it; with no gate, nothing merges.
+Every queue Muster knows, each marked found (at ~/playground/\<project\>/tasks, or one level deeper) or added (in the app), with its prefix and gate. A prefix is what its tasks' keys start with (mu in mu-12): 2 to 4 lowercase letters, stored in its queue's README.md (prefix: mu), or for a repo's .muster/ in its config.toml (prefix = "mu"). Without one it's the first 2 letters of the project's name, or 3 or 4 when another project's start the same. projects set \<name\> prefix stores one, refused when it isn't 2 to 4 lowercase letters or another project has it; the files keep their ids, so nothing moves, but the old keys stop finding its tasks. projects set \<name\> gate stores the project's gate command in the app's projects.json: what a merge runs in a task's worktree (muster pass \<id\> --from testing). It's split into words like a shell would, quotes and all, but no shell runs it, so a pipe or a cd is just a word: point it at a script in the repo (bin/gate) for anything more. "" clears it; with no gate, nothing merges.
 
 ```
 muster projects [--json] | muster projects set <name> gate "<command>" | muster projects set <name> prefix <p>
@@ -1048,24 +1048,54 @@ muster projects set braindump prefix bd
 
 ### muster init
 
-Create \<project-folder\>/tasks: status folders, README with the rules and its prefix, the tool stand-ins, and its own git. Refuses inside a git repo, over an existing tasks/, and a prefix that isn't 2 to 4 lowercase letters or that another project has.
+In a git repo (its main checkout or any worktree of it): create the repo's queue, .muster/ in the main checkout, with config.toml (its prefix in it), .gitignore, a README with the rules, tasks/, backlog/, attachments/ and INDEX.md. Task files live in tasks/ and never move. Local by default: it stays on this Mac. Refuses if .muster/ is there already, and in a repo without a main checkout (a bare repo's worktree, a submodule). Outside a repo it creates \<folder\>/tasks, the old layout: status folders, README with the rules and its prefix, the tool stand-ins and its own git, never over an existing tasks/. Either way it refuses a prefix that isn't 2 to 4 lowercase letters or that another project has.
 
 ```
-muster init <project-folder> [--prefix <p>]
+muster init <folder> [--local|--committed] [--prefix <p>]
 ```
 
 | Option | What it does |
 | --- | --- |
-| `--prefix` | what its tasks' keys start with (mu in mu-12); default the first 2 letters of the folder's name, more when another project has them |
+| `--local` | the default: .muster/.gitignore keeps all but config.toml out of git, and every worktree of the repo uses the main checkout's .muster/ |
+| `--committed` | commit the queue with the code. For now every claim and pass changes tracked files in the main checkout (merges pass over them), until the live state moves to .git/muster/ |
+| `--prefix` | what its tasks' keys start with (mu in mu-12); default the first 2 letters of the project's name, more when another project has them |
 
 Examples:
+
+```
+muster init ~/playground/braindump/main
+```
 
 ```
 muster init ~/playground/braindump
 ```
 
 ```
-muster init ~/playground/germ --prefix gm
+muster init ~/playground/germ/main --prefix gm
+```
+
+### muster migrate
+
+Copy an old queue (\<project\>/tasks, with status folders or flat) into the repo's .muster/, local by default. Every task file goes to tasks/ with stage: set from its old stage or status and status: dropped (CRLF line ends and a byte-order mark are made plain first); the backlog folder's notes and dropped notes to backlog/; attachments/, mail/ and WAITING-FOR-OWNER.md as they are; the old README's front matter into the new README. Writes config.toml, .gitignore, INDEX.md, tasks.json, and migrated-from.txt with the old queue's last commit, and gives the new queue the old one's gate, name and hidden from projects.json. Prints what it copied and what it didn't. Copies, never moves: the old queue is left as it was, to retire once muster check is clean. Refuses while an agent holds a task in Building or Testing (it lists them), when .muster/ is there already, when the repo and the old queue overlap, on a folder it can't read, on a task file without front matter it can read, and on two names that would be one file on this Mac (case or accents).
+
+```
+muster migrate <old-queue> <repo> [--local|--committed] [--dry-run]
+```
+
+| Option | What it does |
+| --- | --- |
+| `--local` | the default: the queue stays on this Mac, as init |
+| `--committed` | commit the queue with the code, as init --committed |
+| `--dry-run` | print the plan and write nothing |
+
+Examples:
+
+```
+muster migrate ~/playground/muster/tasks ~/playground/muster/main --dry-run
+```
+
+```
+muster migrate ~/playground/muster/tasks ~/playground/muster/main
 ```
 
 ### muster check
@@ -1131,7 +1161,7 @@ muster help new
 | Option | What it does |
 | --- | --- |
 | `<id>` | a task, by its key (mu-12, MU-12: its project's prefix and number) or its number (12, 0012). A key with another project's prefix runs in that project's queue, wherever you are; with a --queue that names another project it's refused. Keys work in --parent, depends and block --on too, for tasks of the same project |
-| `--queue <name\|folder>` | which queue; default $MUSTER\_ROOT, then the nearest queue from the current folder (a queue, or tasks/ beside or above it) |
+| `--queue <name\|folder>` | which queue; default $MUSTER\_ROOT, then the current folder's: its repo's .muster/ (the main checkout's, from any worktree), else the nearest old queue (a queue, or tasks/ beside or above it) |
 | `--as <who>` | who's acting, for the log; default $MUSTER\_AS, then the folder's git user.name, then owner. Inside a Claude Code session muster adds the session (name, short id, checkout, account) |
 
 ## Inside a Claude Code session
@@ -1160,7 +1190,7 @@ Slash commands /muster and /mu are planned (task 0003). Until then, use ! muster
 
 ### Agents doing the work (coding sessions)
 
-Read the queue's README.md first: ../tasks/README.md from the project's repo.
+Read the queue's README.md first: .muster/README.md in the repo's main checkout, or ../tasks/README.md beside the repo where the queue isn't moved yet.
 
 A task moves through stages: Backlog (anyone), Shaping (product, tech and UI agents), Ready (claimable), Building (code agent), Testing (QA agent), Your check (the owner), Done. Only muster changes a stage: never move or edit task files for that.
 

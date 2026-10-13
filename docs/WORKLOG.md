@@ -4,6 +4,50 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — `.muster/` queues keep their task-key prefix in config.toml (task 0005, after 0033)
+**Did:** for a `.muster` queue, `key::stored_prefix`, `store_prefix` and `pin_prefix` read and write `prefix = "mu"` in `.muster/config.toml` (`layout::config_prefix`, `store_config_prefix`), never a README. Old queues keep README front matter exactly as 0033 built it.
+- `muster init <repo> --prefix` checks and stores it like `create` does; the `.muster` README shows `muster show <prefix>-1`.
+- `muster migrate` writes the old queue's prefix (`key::prefix_for`: the stored one, else the default its keys had) into `config.toml`, takes `prefix:` out of the README front matter it carries, and says so in its summary.
+- INDEX.md in `.muster` shows keys. `tasks.json` keeps ids, as 0033 decided.
+
+**Verified:** each test failed when `stored_prefix` read README only.
+- `a_muster_queue_keeps_its_prefix_in_config_toml_never_in_a_readme`: init, store, and pin on the first write; the README stays as it was.
+- `task_keys_are_the_same_after_a_migrate_stored_prefix_or_default`: the keys `muster list` shows are identical before and after, for a stored prefix and for the default.
+- The config tests now cover the prefix.
+
+## 2026-10-13 — Tasks in the repo's `.muster/`: review fixes, rebased onto main's two-level discovery (task 0005)
+**Fixed (review):**
+- **Migrate:**
+  - Names that differ only in case or accents are refused in the plan, the dry run too: case by a lowercase key, accents by a scratch-folder probe in the temp folder. Every file is written with `create_new`, so nothing is ever overwritten.
+  - A folder it can't read stops it, naming the folder.
+  - CRLF line ends and a byte-order mark are made plain, so those tasks keep their stage. Files over 1 MB are no longer copied without their stage. A task file without front matter it can read is refused, listed by name.
+  - A repo that overlaps the old queue is refused.
+  - `git --no-optional-locks status`, so the old queue's index isn't rewritten.
+  - A pre-`held-by` Testing task's claim now counts as held.
+  - `projects.json` gate, name and hidden carry over to the new queue.
+- **Layout:**
+  - `main_checkout` is None unless git's common folder is a `.git` folder: no bare-repo worktree, submodule or `--separate-git-dir` queue, and never `.muster` inside git's own folder. The hook agrees.
+  - `find` walks up for a `.muster` only outside any repo.
+  - A queue is named after its checkout unless that is `main`/`master` (`chit`, `harness40` in group `harness`). `<base>/*/.muster` is discovered too. Worktrees of such repos go to `<checkout>.worktrees`.
+  - `init` and `migrate` are local unless `--committed`, and a merge's clean-main check passes over `.muster/`.
+  - The committed `.gitignore` patterns are anchored.
+  - `config.toml` skips lines without `=` and reads a quoted `"local"`.
+- **Hook:** each queue's mail is delivered on its own.
+
+**Rebase onto d005ad5:** the `.muster` discovery moved into main's `queue::discover` (`Found`, `group`), with ping and the routes kept in both command files.
+
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`.
+- New tests:
+  - `names_that_are_one_file_on_this_mac_are_refused_in_the_plan_never_overwritten`
+  - `an_unreadable_folder_stops_it_naming_the_folder`
+  - `big_and_crlf_task_files_keep_their_folders_stage_and_one_it_cant_read_stops_it`
+  - `refuses_a_repo_that_is_the_old_queue_or_holds_it`
+  - `a_migrated_queue_takes_the_old_ones_gate_name_and_hidden`
+  - `a_repo_whose_git_folder_isnt_a_dot_git_has_no_queue_and_a_broken_worktree_never_splits_one`
+  - `a_committed_queues_own_changes_never_make_main_unclean_for_a_merge`
+  - `test_a_broken_mailbox_in_one_queue_never_loses_another_queues_mail`
+  - `test_the_hook_finds_no_queue_where_git_has_no_main_checkout`
+- Extended: discovery (chit, harness/*), config, the init default, the index check and the claimed-by Testing refusal.
 ## 2026-10-13 — The Dock badge: what needs you, on Muster's icon (task 0006, part)
 **Did:** Muster's Dock icon shows the needs-you count over every shown project, gone at 0, so
 it's seen without opening the window. Set from Rust on each window poll when it changes, and

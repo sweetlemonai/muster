@@ -2,9 +2,11 @@
 """Claude Code hook: deliver task-queue mail into the session it's for.
 
 Wire it to PostToolUse, UserPromptSubmit and SessionStart. It reads the hook's JSON from stdin,
-looks in $MUSTER_ROOT/mail/<first 8 chars of session_id>/ and, if mail is waiting, returns it
-as additionalContext and moves it to delivered/. With nothing waiting it prints nothing and
-exits 0, after one directory listing. It never blocks the tool call.
+looks in <queue>/mail/<first 8 chars of session_id>/ and, if mail is waiting, returns it as
+additionalContext and moves it to delivered/. The queues it looks in: $MUSTER_ROOT's, and the
+session folder's repo's `.muster/` (task 0005: the main checkout's, from any worktree of it),
+each on its own, so a problem with one never loses the other's mail. With nothing waiting it
+prints nothing and exits 0, after a directory listing or two. It never blocks the tool call.
 
 The mail is answers to this session's questions (`<task>-Q<n>.md`), and, from the owner (task
 0039, `muster ping` or the app), a request for a check-in on the task it holds
@@ -13,10 +15,14 @@ pause` and `resume`) a request to stop work on it while it's paused (`<task>-pau
 carry on once it's resumed (`<task>-resume.md`). Those requests and messages come first. The hook's own words say what each one is; the mail's text is indented
 under them, as information, never as the hook's instructions.
 
-It reads the mailbox itself instead of running `muster inbox`, so a tool call costs ~10 ms, not
-a process start. The mailbox is what `muster answer`, `muster ping` (or the app) write: file
-contract rule 5, docs/PROTOCOL.md.
+It reads the mailbox itself instead of running `muster inbox`, and finds the repo by reading
+`.git` files rather than running git, so a tool call costs ~10 ms, not a process start. The
+mailbox is what `muster answer`, `muster ping` (or the app) write: file contract rule 5,
+docs/PROTOCOL.md.
 """
+# Annotations stay text, so this runs on macOS's own python3 (3.9) too.
+from __future__ import annotations
+
 import json
 import os
 import re
@@ -184,18 +190,71 @@ def context(mail: "list[tuple[int, str]]") -> str:
     return "\n".join(parts)
 
 
+def main_checkout(folder: Path) -> Path | None:
+    """The main checkout of the repo `folder` is in, from git's own files (layout.rs
+    main_checkout asks git the same): the nearest folder up with a `.git`; a folder `.git` is the
+    main checkout's, and a linked worktree's `.git` file names its folder in the main checkout's
+    `.git/worktrees/`, whose `commondir` leads back to that `.git`. None outside a repo."""
+    for d in [folder, *folder.parents]:
+        dot_git = d / ".git"
+        if dot_git.is_dir():
+            return d
+        if dot_git.is_file():
+            text = dot_git.read_text(encoding="utf-8").strip()
+            if not text.startswith("gitdir:"):
+                return None
+            gitdir = Path(text[len("gitdir:"):].strip())
+            gitdir = gitdir if gitdir.is_absolute() else d / gitdir
+            common_file = gitdir / "commondir"
+            if common_file.is_file():
+                common = Path(common_file.read_text(encoding="utf-8").strip())
+                common = common if common.is_absolute() else gitdir / common
+            else:
+                common = gitdir.parent.parent
+            common = common.resolve()
+            return common.parent if common.name == ".git" else None
+    return None
+
+
+def queues(data: dict) -> list[Path]:
+    """The queues whose mailboxes this session may have answers in, each once: $MUSTER_ROOT's,
+    then the session folder's repo's `.muster/` (its `config.toml` there)."""
+    out: list[Path] = []
+    root = os.environ.get("MUSTER_ROOT") or os.environ.get("TASKS_ROOT")
+    if root:
+        out.append(Path(root).resolve())
+    try:
+        folder = Path(str(data.get("cwd") or os.getcwd()))
+        main = main_checkout(folder) if folder.is_absolute() else None
+    except (OSError, ValueError):
+        main = None  # an unreadable .git: $MUSTER_ROOT's mail still goes out
+    if main and (main / ".muster" / "config.toml").is_file():
+        q = (main / ".muster").resolve()
+        if q not in out:
+            out.append(q)
+    return out
+
+
 def main() -> int:
     # A hook must never fail: anything unexpected means no mail this time.
     try:
         data = json.load(sys.stdin)
-        root = os.environ.get("MUSTER_ROOT") or os.environ.get("TASKS_ROOT")
+        if not isinstance(data, dict):
+            return 0
         session = str(data.get("session_id") or "")
         event = str(data.get("hook_event_name") or "PostToolUse")
-        if not root or not session:
+        if not session:
             return 0
-        mail = take_mail(Path(root), session)
+        roots = queues(data)
     except Exception:
         return 0
+    mail = []
+    for q in roots:
+        # Each queue on its own: mail already taken from one is never lost to another's problem.
+        try:
+            mail.extend(take_mail(q, session))
+        except Exception:
+            continue
     if not mail:
         return 0
     print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": context(mail)}}))
