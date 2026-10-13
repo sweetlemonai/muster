@@ -8,6 +8,7 @@ It grows out of chit (`~/playground/chit`) and its design (`~/playground/izzy/do
 dogfooded on Drover since 2026-10-11. The plan is for Muster to become part of Drover. Until
 then it's its own repo, tools and (soon) app.
 
+- **The one picture** (what Muster is, how a task flows, which task builds what; every task points here): [`docs/VISION.md`](docs/VISION.md)
 - **Protocol** (what every session follows): [`docs/PROTOCOL.md`](docs/PROTOCOL.md)
 - **As built** (what exists today, and what's left): [`docs/AS_BUILT.md`](docs/AS_BUILT.md)
 - **Commands** (planned `/muster`, `/mu`): [`docs/COMMANDS.md`](docs/COMMANDS.md)

@@ -2,6 +2,21 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-12 — One picture: tasks checked for conflicts, VISION.md, vision check queued
+**Did:** read every open task (0002–0029) against decision 0003 and wrote `docs/VISION.md`: the
+spine (each stage, who works it, which task builds it), where things live, and the open
+questions. Linked from the README. Queue commit `620b4b3`.
+**Fixed:** conflicts between tasks filed today. 0019 and 0024 kept two records of task-on-task
+waits (blocked by tasks is now derived from `depends:`), and 0024 had a second CLI spelling
+(`--by`, now the existing `--on`). 0023's `finish` skipped Testing (now: `pass` from Building
+opens the PR, Testing is 0027's review plus QA, merge on `pass` from Testing, conflicts return to
+the builder). `DESIGN.md` said every option shows, but the owner had said priority and type show
+only their value (rule corrected). 0015's shaping now also sets `depends:`, `touches:` and `for:`.
+**Open (owner's):** human tasks on the same stages vs their own columns (0022); Done after the
+merge changes decision 0003's "Done rides in the PR"; one review of record (PR engine) vs a
+second in-session review; the four parallel-session choices. Filed 0029 (vision check with a
+cost-of-pivoting section) so this check runs on every new task.
+
 ## 2026-10-12 — Stages with roles (task 0014)
 **Did:** tasks have a stage: Backlog, Shaping, Ready, Building, Testing, Your check, Done.
 - `stage:` in the file is the truth; blocked is a flag that keeps the task in its stage; stage

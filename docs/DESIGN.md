@@ -13,9 +13,12 @@ every screen.
 - **Options are on screen, not behind something.** No kebab or "…" menus, no hover-only buttons,
   no popovers, no "show more", no collapsed sections for things used in normal work. If a control
   matters, it's visible; if there are too many, group and label them rather than hide them.
-- **Pick from what you can see.** Short choices (priority, type, stage, for human/AI) are a row of
-  chips or a segmented control with every option showing and the current one highlighted, not a
-  dropdown that hides the others.
+- **Show the value, not every possible value.** A field shows its current value as one chip
+  (priority, type, for human/AI). Clicking it lays the options out inline, in place, never in a
+  popover or dropdown (the owner, on 0021: "priority and type don't need to show all options,
+  just the selected one"). What must always show is every **state** and every **action**, not
+  every value a field could take. Places whose job is choosing (Appearance, a filter, the Block
+  form) show all their options.
 - **No overlays.** Details, New task and editing open in a docked pane beside the content, which
   shrinks and stays live. Modals only for confirming something destructive.
 - **Side by side over tabs** when two things are used together (the Human and AI boards, a task
