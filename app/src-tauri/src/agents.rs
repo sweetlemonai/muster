@@ -26,7 +26,8 @@ use std::time::{Duration, Instant};
 pub const TIMEOUT: Duration = Duration::from_secs(10);
 /// The most output read from one run.
 pub const MAX_OUTPUT: usize = 1024 * 1024;
-/// The app reads at most this often, and only while its window polls (it does while visible).
+/// The app reads at most this often: with the window's polls while it's visible, and with the Dock
+/// badge's own reads (0006) while it's hidden.
 pub const EVERY_SECS: u64 = 15;
 /// A read older than this (two rounds and a timeout) isn't shown: after the window was hidden,
 /// the cards wait for a fresh one rather than show what was true then.

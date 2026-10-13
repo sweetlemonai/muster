@@ -75,7 +75,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Claude Code's session states** (0048, `agents.rs`, `sessionState.ts`): the core runs
   `claude agents --json --all` (argument array, `CLAUDE_CONFIG_DIR` per account the stamps in
   Building and Testing name, usage reporting off, in a process group of its own that a 10 s timeout stops whole, 1 MB cap) on a thread of its own,
-  started by the window's state poll at most every 15 s and never while nothing has a stamped
+  started by the window's state poll (or the Dock badge's own read while the window is hidden,
+  0006) at most every 15 s and never while nothing has a stamped
   holder; the poll uses the latest result and never waits for a run. Parsed with serde into the
   session id and state only (`cwd` and `name` are never kept); an interactive session's `status`
   stands in for its missing `state`, working with an idle `status` is unknown, and a repeated id
@@ -353,7 +354,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   What the agents wait on the owner for has no lane of its own: Your check is a column, and
   escalated questions and blocks on you or by a permission are needs-you cards where they are.
   `needsYouCount` (`human.ts`: the owner's own tasks to do and doing, plus those) is the one
-  count: sidebar, Waiting for you, the needs-you filter chip, and 0006's Dock badge later. An
+  count: sidebar, Waiting for you, the needs-you filter chip, and the Dock badge (0006, counted
+  in the core by `badge.rs`, which `needs-cases.json` holds to the same answers). An
   agent's task that depends on an unfinished human task says "Blocked by tasks: 0041" (0024's
   sentence; derived, so the blocked chip, `muster list --blocked`, the graph and the activity
   feed count it as blocked too) and can't be claimed until it's done. `muster list` marks human
@@ -471,9 +473,25 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   task.** Claims belong to the agents doing the work.
 - **Activity:** queue commits and changed task files, newest first. **Problems:** the same
   checks as `manifest.py --check`, done natively.
-- **Live:** refreshes every 2 s while the window is visible, and never while it's hidden.
+- **Live:** refreshes every 2 s while the window is visible; the window never refreshes while
+  hidden (the Dock badge reads on its own, below).
   On the real queues (21 tasks): 19 ms for the first read, 0.6 ms after that. Startup code is
   229 KB (72 KB gzipped). The task panel is a separate 102 KB chunk. The app is 5.2 MB.
+  **2026-10-13 (0006):** on the real queues (662 tasks), 180 ms cold and 7 ms warm (release
+  build, `examples/probe.rs`). Startup code is 329 KB (106 KB gzipped), the task panel 42 KB.
+  The app is 8.2 MB (`pnpm release:build`), the binary 8.4 MB.
+- **Dock badge** (task 0006): Muster's Dock icon shows how many tasks need the owner in every
+  shown project (the needs-you count; no badge at 0), so it's seen without opening the window.
+  `badge.rs` counts in the core and sets it from Rust (`set_badge_count`), so the window has no
+  permission for it (still `core:default` only). Each window poll sets it when the count
+  changes; while the window is hidden and doesn't poll, a thread reads the queues every 15 s for
+  the badge alone (7 ms each on the real queues), and applies Claude Code's session states as the
+  poll does (0048), so a session waiting for input stays on the badge. That starts at most one
+  `claude agents` run per 15 s, on its own thread and never waited on, and only while some task
+  in Building or Testing has a stamped holder. `needs_you` mirrors `human.ts`'s `needsYou`
+  (the owner's own paused task left out, 0045);
+  `app/src/needs-cases.json` holds both to the same answers. It adds 16 KB to the binary. No
+  notification yet: `tauri-plugin-notification` waits on the owner (WAITING-FOR-OWNER #3).
 
 ## The AI helper
 
@@ -659,9 +677,11 @@ Live claims go in the repo's shared git folder. See
 
 ## What's left (in order)
 
-1. **App, next round:** a look by the owner, then theme it like Drover (its `src/ui`), and add
-   a menu-bar count of what's waiting, a notification when something new needs you, and
-   moving tasks on the board for the owner (claims stay with agents).
+1. **App, next round (0006):** the Dock badge is built. Left: the owner's first look, Drover's
+   look (its `src/ui`; the owner decides how far, since Muster's own palette and DESIGN.md rules
+   differ), and a notification when something new needs you (`tauri-plugin-notification`, a new
+   dependency waiting on the owner's yes). The owner's moves (priority, unblock, a stage, Done)
+   are in the task pane, through the core's rules; claims stay with agents.
 2. **Files that never move:** task 0005 (`.muster/` in the repo, live state in `.git/muster/`),
    on top of 0014's stages and 0002's claims. Then the `/muster` / `/mu` slash commands (0003).
 3. **Other projects:** the answer hook and the rules go in through the personal layer (task

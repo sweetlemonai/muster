@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { byWho, FOR_FILTERS, humanColumn, isHuman, needsYou, needsYouCount, parseForFilter, waitingForYou, whoFiltersOn, whoShows } from "./human";
 import { columns } from "./lib";
+import needsCases from "./needs-cases.json";
 import type { Question, Task } from "./types";
 
 const task = (id: string, over: Partial<Task> = {}): Task => ({
@@ -89,6 +90,13 @@ describe("the needs-you count: one definition everywhere", () => {
     expect(needsYou(task("0001", { waitingForOwner: true }))).toBe(true);
     // A block by a permission waits on the owner too (the core sets waitingForOwner).
     expect(needsYou(task("0001", { blocked: true, blockedKind: "permission", waitingForOwner: true }))).toBe(true);
+  });
+  // The Dock badge (0006) counts in the core (badge.rs), which reads the same cases.
+  it("gives the shared cases' answers, as the Dock badge does", () => {
+    for (const [forWho, stage, waitingForOwner, needs, paused] of needsCases.cases as [string, string, boolean, boolean, boolean][]) {
+      const t = task("0001", { forWho, stage, waitingForOwner, paused: paused ? "2026-10-13 10:00" : "" });
+      expect(needsYou(t), `${forWho} ${stage} ${waitingForOwner} paused ${paused}`).toBe(needs);
+    }
   });
 });
 

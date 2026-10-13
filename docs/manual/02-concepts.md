@@ -236,8 +236,10 @@ One list, everywhere, of what's waiting on you:
 
 - tasks in **Your check**,
 - questions **escalated** to you,
-- tasks **blocked on you** or **by a permission**.
+- tasks **blocked on you** or **by a permission**,
+- tasks whose agent's session is **waiting for your input** (a permission prompt, as Claude Code reports it),
+- your own tasks (for: human) to do and doing, except the ones you paused.
 
-They're counted on the **Waiting for you** tab and beside each project on the left, in orange, and marked "needs you" on their cards, which sort to the top of their columns. **Coming (task 0022):** tasks only you can do, on a board of your own beside the agents'.
+They're counted on the **Waiting for you** tab, beside each project on the left in orange, and on Muster's icon in the Dock (every project you show), and the agents' ones are marked "needs you" on their cards, which sort to the top of their columns.
 
 Why: you shouldn't have to look for what needs you, in any display mode. See [DESIGN.md](../DESIGN.md#in-every-mode).

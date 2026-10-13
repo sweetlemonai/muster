@@ -21,6 +21,10 @@ part of Drover later)
 - **Live:** the window polls every 2 s while visible and stops when hidden. Parsed files are
   cached by size and mtime, and git logs by the mtime of `.git/logs/HEAD`. Measured on the real
   queues (21 tasks): 19 ms cold, 0.6 ms warm. No file-watcher dependency.
+  **Amended 2026-10-13 (task 0006):** the window still stops polling while hidden, but the core
+  now reads the queues every 15 s while it is, for the Dock badge alone (about 7 ms warm on 662
+  tasks), plus at most one `claude agents` run per 15 s (0048) while someone holds a task in
+  Building or Testing with a session stamp.
 - **Writes:** only the owner's answers, through file contract v1 (`docs/PROTOCOL.md`), proven
   against `bin/task` by `tests/interop.rs`. The app never runs a script from a queue.
 - **Safety:** task text is rendered with markdown-it `html: false`, and links don't navigate.

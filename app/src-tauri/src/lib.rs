@@ -4,6 +4,7 @@
 
 pub mod agents;
 pub mod backlog;
+pub mod badge;
 pub mod block;
 pub mod choices;
 pub mod cli;
@@ -47,6 +48,8 @@ pub(crate) struct AppState {
     transcripts: Arc<transcripts::Reader>,
     /// Claude Code's session states (0048), read off the main thread at most every 15 s.
     agents: Arc<agents::Monitor>,
+    /// The Dock badge's count and the window's last poll (0006).
+    badge: badge::Badge,
 }
 
 fn base() -> PathBuf {
@@ -98,7 +101,12 @@ pub(crate) async fn blocking<T: Send + 'static>(
 }
 
 #[tauri::command]
-async fn state(app: tauri::State<'_, AppState>) -> Result<queue::State, String> {
+async fn state(
+    handle: tauri::AppHandle,
+    app: tauri::State<'_, AppState>,
+) -> Result<queue::State, String> {
+    // The window is visible while it polls, and its polls keep the Dock badge current.
+    app.badge.polled(std::time::Instant::now());
     let file = app.config_file.clone();
     let settings_file = app.settings_file.clone();
     // The cache is small and the read is quick on a warm cache; take it inside the blocking task.
@@ -129,7 +137,64 @@ async fn state(app: tauri::State<'_, AppState>) -> Result<queue::State, String> 
     })
     .await?;
     *app.cache.lock().map_err(|e| e.to_string())? = cache;
+    show_badge(&handle, &app.badge, badge::needs_you_count(&state.tasks));
     Ok(state)
+}
+
+/// Puts `n` on the Dock icon, or takes the badge off at 0, unless it already shows that.
+fn show_badge(handle: &tauri::AppHandle, badge: &badge::Badge, n: usize) {
+    badge.show(n, |label| {
+        handle
+            .get_webview_window("main")
+            .is_some_and(|w| w.set_badge_count(label).is_ok())
+    });
+}
+
+/// How many tasks in the shown projects need the owner, read as the window's poll reads them (with
+/// its cache and Claude Code's session states), for the Dock badge while the window doesn't poll.
+fn needs_now(app: &AppState) -> Result<usize, String> {
+    needs_in(
+        &base(),
+        &app.config_file,
+        &app.settings_file,
+        &app.cache,
+        &app.agents,
+    )
+}
+
+/// `needs_now` for the projects under `base`.
+fn needs_in(
+    base: &std::path::Path,
+    config_file: &std::path::Path,
+    settings_file: &std::path::Path,
+    cache: &Mutex<queue::Cache>,
+    monitor: &Arc<agents::Monitor>,
+) -> Result<usize, String> {
+    let settings = settings::load(settings_file);
+    let list = projects::list(base, &projects::load(config_file));
+    let mut taken = std::mem::take(&mut *cache.lock().map_err(|e| e.to_string())?);
+    let mut s = queue::read_state_with(&projects::shown(&list), &mut taken, &settings);
+    *cache.lock().map_err(|e| e.to_string())? = taken;
+    // As the poll does (0048): a session waiting for input waits on the owner. The monitor reads
+    // `claude agents` at most every 15 s, on its own thread, and never holds this up.
+    let sessions = monitor.poll(&s.tasks, s.now);
+    agents::apply(&mut s.tasks, &sessions);
+    Ok(badge::needs_you_count(&s.tasks))
+}
+
+/// Keeps the Dock badge current while the window is hidden and doesn't poll (0006): every
+/// `badge::HIDDEN_EVERY` with no poll in between, it reads the queues itself. A read that fails
+/// leaves the badge as it was until the next one. Runs as long as the app does.
+fn watch_badge(handle: tauri::AppHandle) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(badge::HIDDEN_EVERY);
+        let app = handle.state::<AppState>();
+        if app.badge.due(std::time::Instant::now()) {
+            if let Ok(n) = needs_now(&app) {
+                show_badge(&handle, &app.badge, n);
+            }
+        }
+    });
 }
 
 /// The queues a search index covers: the one named (checked like every command's), or every
@@ -1190,7 +1255,9 @@ pub fn run() {
                 agents: agents::Monitor::app(home()),
                 config_file: dir.join("projects.json"),
                 settings_file: dir.join(settings::FILE),
+                badge: badge::Badge::default(),
             });
+            watch_badge(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1602,5 +1669,74 @@ mod tests {
         assert!(t.log_tail.last().unwrap().ends_with(
             "owner: stage building → ready (reclaimed from wt-a (no heartbeat for 2 h))"
         ));
+    }
+
+    #[test]
+    fn the_hidden_windows_badge_counts_what_needs_the_owner_in_the_shown_projects() {
+        let base = tempfile::tempdir().unwrap();
+        let put = |project: &str, name: &str, front: &str| {
+            let q = base.path().join(project).join("tasks");
+            std::fs::create_dir_all(q.join("todo")).unwrap();
+            std::fs::write(q.join("README.md"), "q").unwrap();
+            let text = format!("---\n{front}\n---\n\n# {name}\n\n## Log\n- 2026-10-13 captured\n");
+            std::fs::write(q.join(name), text).unwrap();
+        };
+        put("alpha", "0001-buy.md", "id: 0001\nstage: ready\nfor: human");
+        put("alpha", "0002-check.md", "id: 0002\nstage: your-check");
+        put("alpha", "0003-build.md", "id: 0003\nstage: building");
+        put("beta", "0001-check.md", "id: 0001\nstage: your-check");
+        let config = tempfile::tempdir().unwrap();
+        let config_file = config.path().join("projects.json");
+        let settings_file = config.path().join(settings::FILE);
+        let cache = Mutex::new(queue::Cache::default());
+        // No task has a session stamp, so Claude Code is never asked.
+        let fetch: agents::Fetch = Arc::new(|_: &str| Err("not asked".to_string()));
+        let monitor = agents::Monitor::new(fetch, in_place);
+        let count =
+            || needs_in(base.path(), &config_file, &settings_file, &cache, &monitor).unwrap();
+        assert_eq!(count(), 3);
+        // Read again on the cache it put back: the same answer.
+        assert_eq!(count(), 3);
+        // A hidden project isn't on the board, so it isn't on the badge either.
+        let mut c = projects::load(&config_file);
+        let beta = projects::list(base.path(), &c)
+            .into_iter()
+            .find(|p| p.name == "beta")
+            .unwrap();
+        c.hidden.push(beta.key);
+        projects::save(&config_file, &c).unwrap();
+        assert_eq!(count(), 2);
+    }
+
+    fn in_place(job: Box<dyn FnOnce() + Send>) {
+        job()
+    }
+
+    #[test]
+    fn the_hidden_windows_badge_counts_a_task_whose_session_waits_for_input() {
+        let base = tempfile::tempdir().unwrap();
+        let q = base.path().join("alpha/tasks");
+        std::fs::create_dir_all(q.join("todo")).unwrap();
+        std::fs::write(q.join("README.md"), "q").unwrap();
+        let front =
+            "id: 0001\nstage: building\nclaimed-by: wt-a (wt-0048 · session 7b5e8856 · cc-hg)";
+        let text = format!("---\n{front}\n---\n\n# Build\n\n## Log\n- 2026-10-13 captured\n");
+        std::fs::write(q.join("0001-build.md"), text).unwrap();
+        let config = tempfile::tempdir().unwrap();
+        let config_file = config.path().join("projects.json");
+        let settings_file = config.path().join(settings::FILE);
+        // Claude Code says the holder's session is `state`, as the window's poll would apply it.
+        let count = |state: &'static str| {
+            let fetch: agents::Fetch = Arc::new(move |account: &str| {
+                assert_eq!(account, "hg");
+                Ok(format!(r#"[{{"sessionId": "7b5e8856", "state": "{state}"}}]"#).into_bytes())
+            });
+            let monitor = agents::Monitor::new(fetch, in_place);
+            let cache = Mutex::new(queue::Cache::default());
+            needs_in(base.path(), &config_file, &settings_file, &cache, &monitor).unwrap()
+        };
+        // Waiting for input (a permission prompt) waits on the owner, hidden window or not.
+        assert_eq!(count("blocked"), 1);
+        assert_eq!(count("working"), 0);
     }
 }

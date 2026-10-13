@@ -4,6 +4,25 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — The Dock badge: what needs you, on Muster's icon (task 0006, part)
+**Did:** Muster's Dock icon shows the needs-you count over every shown project, gone at 0, so
+it's seen without opening the window. Set from Rust on each window poll when it changes, and
+every 15 s while the window is hidden and doesn't poll. Files: `badge.rs` (new), `lib.rs` (the
+`state` command, `needs_in`, a watcher thread), `needs-cases.json` (new) read by `badge.rs` and
+`human.test.ts`; manual 02 and 04, AS_BUILT.
+**Decided:** counted in the core, not the window: a hidden window stops polling and WKWebView
+suspends hidden pages, so a window-side badge would go stale exactly when it's needed; and set
+from Rust, the window needs no new permission. The rule is mirrored, not shared, and the case
+file holds both to the same answers. Badge only, no notification and no new dependency: the
+owner hasn't answered WAITING-FOR-OWNER #3, so its default applies.
+**Verified:** `bin/gate` → `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; 6 new Rust tests (shared cases, the count
+as the core reads files, label, show-on-change and retry after a failed set, hidden-read timing,
+hidden projects left out) and the shared cases in `human.test.ts`. Real queues (662 tasks): 180
+ms cold, 7 ms warm. Binary +16 KB (8,359,744 → 8,376,272 B, `cargo build --release`); app 8.2 MB;
+startup chunk unchanged at 329 KB. The badge on the Dock itself wasn't seen: not launched here.
+**Open:** the owner's first look (AC1); Drover's look (how far to adopt its `src/ui`); the
+notification (`tauri-plugin-notification`, #3); screenshots in `attachments/0006/`.
+
 ## 2026-10-13 — Cards say whether Claude Code's session is working, waiting for input or ended (task 0048)
 **Did:** `agents.rs` runs `claude agents --json --all` per account the stamps in Building and
 Testing name (argument array, `CLAUDE_CONFIG_DIR=~/.claude-<label>` or none, router/token

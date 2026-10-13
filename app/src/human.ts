@@ -5,8 +5,9 @@ import type { Task } from "./types";
 // when its file says `for: human`: something only they can do. Agents never take one (the core
 // refuses). It sits on the one board with the agents' tasks, hatched and with the You ribbon
 // (owner, 2026-10-13); lib.ts `boardColumn` says which column. Everything that needs the owner
-// is counted by `needsYou`, the one definition the sidebar, the header, the needs-you filter chip
-// and 0006's Dock badge share.
+// is counted by `needsYou`, the one definition the sidebar, the header and the needs-you filter
+// chip share. The Dock badge (0006) counts in the core, which can read while the window is hidden:
+// badge.rs `needs_you` is this rule, and `needs-cases.json` holds the two to the same answers.
 
 /** The owner's own task (`for: human`); every other one, every older file included, is an agent's. */
 export const isHuman = (t: Pick<Task, "forWho">) => t.forWho === "human";

@@ -1,0 +1,28 @@
+{
+  "about": "What needs the owner (0022), the one count the sidebar, Waiting for you and the Dock badge (0006) show: human.ts `needsYou` and badge.rs `needs_you` read these and must give the same answer. Each case is [for, stage, waitingForOwner, needs, paused]: paused (0045) takes the owner's own task out of the count, never an agent's that waits on them.",
+  "cases": [
+    ["human", "backlog", false, true, false],
+    ["human", "shaping", false, true, false],
+    ["human", "ready", false, true, false],
+    ["human", "building", false, true, false],
+    ["human", "testing", false, true, false],
+    ["human", "nowhere", false, true, false],
+    ["human", "ready", true, true, false],
+    ["human", "done", false, false, false],
+    ["human", "done", true, false, false],
+    ["human", "ready", false, false, true],
+    ["human", "building", false, false, true],
+    ["human", "ready", true, false, true],
+    ["human", "done", false, false, true],
+    ["ai", "your-check", true, true, false],
+    ["ai", "building", true, true, false],
+    ["ai", "ready", true, true, false],
+    ["ai", "building", false, false, false],
+    ["ai", "testing", false, false, false],
+    ["ai", "done", false, false, false],
+    ["ai", "your-check", true, true, true],
+    ["ai", "building", false, false, true],
+    ["", "ready", false, false, false],
+    ["", "your-check", true, true, false]
+  ]
+}

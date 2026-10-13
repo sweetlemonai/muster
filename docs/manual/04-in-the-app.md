@@ -10,6 +10,8 @@ Every view and pane of the Muster app, and what each control does. A **?** besid
 
 The app reads the queues every 2 seconds while its window is visible, and stops while it's hidden.
 
+**The Dock badge:** Muster's icon in the Dock shows how many tasks need you, across every project you show, so you see it without opening the window. It's the same count as the sidebar's with **All** selected (see [What needs you](02-concepts.md#what-needs-you)), and there's no badge at 0. While the window is hidden or minimized, the app still reads the queues every 15 seconds for the badge alone. It's there while the app runs; quitting Muster takes it away.
+
 ## The projects sidebar
 
 **All** shows every project together. Below it is each project, with its numbers: an orange one for the tasks that need you, one in the Building colour for tasks in Building or Testing, "⏸ 2" in grey when some are [paused](02-concepts.md#paused), and the total, notes included. Click a project to see only its tasks. **+ Project** at the bottom opens [Settings](#settings) at [Projects](#projects).
