@@ -211,6 +211,17 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   closes it.
 - **Columns always fit:** an empty column becomes a slim strip with its name written vertically,
   so all five stay in view, even with a task open beside the board.
+- **Columns scroll without scrollbars** (owner, 2026-10-13: "hide the scrollbar, in the columns
+  doesn't feel good"): `.board .cards` hides its scrollbar (`scrollbar-width: none` and
+  `::-webkit-scrollbar`), plain and grouped board; other scroll areas keep theirs. `ColumnCards.tsx`
+  draws every column's list: while it overflows, a strip above and below it (18 px, fixed, so
+  nothing moves) holds "+N above" and "+N below" (muted text; a click scrolls one screen, smooth
+  unless reduced motion), and the edge with more fades (a mask, so it takes the column's own
+  background). `scrollMore.ts` counts the cards (task and note cards) wholly or partly out of
+  sight (`moreAround`, a pure function); `watchMore` measures on a passive scroll listener and a
+  ResizeObserver on the list and its children (a MutationObserver follows children), one
+  measure per frame, all released on unmount. Grouped bands grow to fit, so their columns never
+  scroll and show neither.
 - **Search, filters and sort** (task 0032): one bar above Board, Table, Timeline and Graph; ⌘F
   stays in whichever of them is showing. Group by (0016) sits on the same bar.
   - **Search** (always there, ⌘F, Esc clears): words in any order, case and accents aside, in the

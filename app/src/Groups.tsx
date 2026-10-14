@@ -5,6 +5,7 @@ import { taskKey } from "./taskKey";
 import { estimateLeft, type Group, GROUP_BYS, type GroupBy, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
 import type { Note, Task } from "./types";
 import EffortGroups, { useAcceptResults } from "./EffortGroups";
+import ColumnCards from "./ColumnCards";
 import { needsYouCount } from "./human";
 import { blockedCount, ChoiceChips, ColumnHead, FoldCounts } from "./ModeViews";
 import type { ColumnFolds } from "./modes";
@@ -85,14 +86,14 @@ function BacklogBand({ by, parts, tasks, renderCard, fold }: { by: "feature" | "
       {folded !== "folded" && <div className="board band-board backlog-board">
         <section className="column col-backlog">
           {parts.quickAdd}
-          <div className="cards">
+          <ColumnCards>
             {items.map((item) =>
               item.kind === "note"
                 ? <Fragment key={`note:${noteKey(item.note)}`}>{parts.renderNote(item.note)}</Fragment>
                 : <Fragment key={key(item.task)}>{renderCard(item.task)}</Fragment>,
             )}
             {items.length === 0 && <p className="none">Nothing here</p>}
-          </div>
+          </ColumnCards>
         </section>
       </div>}
     </section>
@@ -147,13 +148,13 @@ export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderC
                   return (
                     <section key={c.id} className={`column col-${c.id}${folded === "folded" ? " folded" : list.length || kept(c.id) ? "" : " empty"}`}>
                       <ColumnHead stage={c} count={list.length} countNode={c.id === "your-check" && limit ? <BandCount tasks={list} over={limit.over} queue={limit.queue} /> : undefined} needs={needsYouCount(list)} blocked={blockedCount(list)} fold={folded} onFold={() => fold?.toggle(c.id)} />
-                      <div className="cards">
+                      <ColumnCards>
                         {c.id === "your-check" && onChanged && (list.length > 0 || kept(c.id))
                           ? <EffortGroups tasks={list} place={place} renderCard={renderCard} onChanged={onChanged} />
                           : list.map((t) => (
                               <Fragment key={key(t)}>{renderCard(t)}</Fragment>
                             ))}
-                      </div>
+                      </ColumnCards>
                     </section>
                   );
                 })}

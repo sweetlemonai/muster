@@ -24,6 +24,8 @@ Under a stalled project is **Ask all quiet sessions for a check-in**, with how m
 
 One column per stage, with the stage's role under its name. An empty column shrinks to a slim strip with its name written down it, so every stage stays in view even with the pane open.
 
+A column with more cards than fit scrolls on its own (trackpad, wheel or keys) and shows no scrollbar. Instead, the edge with more beyond it fades, and **+3 below** under the list (or **+2 above** over it) says how many cards are out of sight that way. Click the count to scroll a screen. Both go at the ends.
+
 Each card shows, top to bottom:
 
 - the project (when you're looking at All), the id, a small dot while a session is working on it (its transcript changed in the last 5 minutes, the [LIVE window](#agents)), the type, and the priority: **HIGH** filled in magenta, normal outlined, low faint;

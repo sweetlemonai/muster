@@ -33,6 +33,7 @@ import { HELP_TOPICS, type HelpTopic, type ManualAt } from "./helpTopics";
 import { Machine, machineOf, type SettingsGroup } from "./settingsData";
 import { columnFold, loadMode, look, Mode, pickMode, storeMode, toggleFocus, type ColumnFolds, type ModeState } from "./modes";
 import { blockedCount, ChoiceChips, ColumnHead, ModeChip } from "./ModeViews";
+import ColumnCards from "./ColumnCards";
 import logo from "./logo.png";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
@@ -472,7 +473,7 @@ export default function App() {
                       </ColumnHead>
                       {c.id === "your-check" && <ColumnLine over={overCheck} queue={queue} />}
                       {backlog && fold !== "folded" && quickAdd}
-                      <div className="cards">
+                      <ColumnCards>
                         {backlog
                           ? backlogColumn(notes, list).map((item) =>
                               item.kind === "note" ? (
@@ -490,7 +491,7 @@ export default function App() {
                           </button>
                         )}
                         {count === 0 && !kept && <p className="none">Nothing here</p>}
-                      </div>
+                      </ColumnCards>
                     </section>
                   );
                 })}

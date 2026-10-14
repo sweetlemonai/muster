@@ -97,6 +97,20 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .column h2 { margin: 0; padding: 10px 12px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
 .column h2 small { font-weight: 400; }
 .cards { display: flex; flex-direction: column; gap: 8px; padding: 4px 8px 10px; overflow-y: auto; }
+/* The board's columns scroll without a scrollbar (owner, 2026-10-13: "doesn't feel good"); trackpad,
+   wheel and keys still scroll them. What's out of sight says so instead (ColumnCards, scrollMore.ts):
+   the edge with more beyond it fades into the column (a mask, so it takes the column's own
+   background in every theme and card look), and a strip above and below the list, there only
+   while it overflows and always the same height, holds "+N above" and "+N below". */
+.board .cards { scrollbar-width: none; }
+.board .cards::-webkit-scrollbar { display: none; }
+.cards.fade-top { mask-image: linear-gradient(to bottom, transparent, #000 28px); }
+.cards.fade-bottom { mask-image: linear-gradient(to top, transparent, #000 28px); }
+.cards.fade-top.fade-bottom { mask-image: linear-gradient(to bottom, transparent, #000 28px, #000 calc(100% - 28px), transparent); }
+.col-more { flex: none; height: 18px; display: flex; align-items: center; justify-content: center; }
+.column.folded .col-more, .column.empty .col-more { display: none; }
+.more-count { border: none; background: none; padding: 0 8px; border-radius: 999px; font: inherit; font-size: 11px; line-height: 16px; color: var(--muted); cursor: pointer; }
+.more-count:hover, .more-count:focus-visible { color: var(--text); background: var(--tint); }
 .none { color: var(--muted); font-size: 12px; margin: 6px 4px; }
 .more { background: none; border: none; color: var(--muted); font-size: 12px; }
 

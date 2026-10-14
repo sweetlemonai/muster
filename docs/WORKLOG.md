@@ -4,6 +4,15 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Board columns scroll without scrollbars; a fade and '+N below' say there's more (owner)
+**Did:** the board's column lists hide their scrollbars (`styles.css`, `.board .cards`) and still
+scroll. While a list overflows, its edge with more fades and a fixed strip says "+N above" or
+"+N below" (a click scrolls a screen): `ColumnCards.tsx`, `scrollMore.ts`, used in `App.tsx` and
+`Groups.tsx`. Manual (The board) and AS_BUILT updated.
+**Verified:** `scrollMore.test.ts` (counting, measuring, the rAF-throttled watcher and its cleanup,
+the markup, the CSS); `pnpm check`, `bin/test_task.py`, `bin/test_commands.py`.
+**Open:** not looked at in the running app (trackpad feel, the fade's strength in each theme).
+
 ## 2026-10-13 — Decision 0007: one ecosystem; Muster owns idea and task
 **Decided:** the owner: "idea and task are in muster, code is the drover, review is review engine
 and gates and deploy we build afterward. all in one ecosystem". Replaces 0006's "planning lives in
