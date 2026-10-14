@@ -4,6 +4,18 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — A started task can't skip its merge (mu-64)
+**Fixed:** a task made with `muster start`, moved to Your check or Done with `muster stage`/`move`
+(or the app's stage track), skipped the merge, so its branch never landed on main → the move is
+refused until the branch is in main (`git merge-base --is-ancestor`), naming `muster pass <key>
+--from testing` or `muster release <key> --clean`. The repo is the `.muster` queue's own or the
+task's worktree; with neither, a missing branch isn't taken as merged.
+**Verified:** `bin/gate` → `gate: green (pnpm check, test_task, test_commands, cargo test
+(Kiritimati))` on 113f25c (re-gated after main moved); core and CLI tests on real temp repos.
+**Open:** `pass --from your-check` (accept) isn't guarded; a task can only reach Your check through
+the merge or the guarded moves now. My merge script passed mu-64 to Testing before the
+fast-forward when main moved mid-gate; the next steps now only run after the merge lands.
+
 ## 2026-10-13 — Paused tasks go to their own lane; old "paused" blocks become pauses (task 0059)
 **Did:** a Paused lane before Backlog (`PausedLane.tsx`, `lib.ts` `columns()`): paused tasks show
 there with "was Building · paused 2 h ago · why", not in their column; the stage and claim are
