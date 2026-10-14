@@ -4,6 +4,17 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Coordinator (Muster_Team_Lead): Asghar's six merged, Gholi's eight tested
+**Did:** reviews of record (one agent per task, never the builder) and merges by `muster pass`:
+mu-57 811d06b, mu-62 5c1058d, mu-68 a6fe0bb, mu-70 3bf2af4 (owner ask: DashAfzar folding), mu-67
+209ee76 (work-log merge driver; CLI rebuilt so `muster merge-log` is on PATH). Tested Gholi's mu-40,
+58, 60, 61, 63, 64, 65, 66 (on main, gate green at c79bbfe, criteria proven) and passed them to Your
+check. Shaped three backlog notes into mu-67, 68, 69. Looked at drag (mu-57) and folding (mu-70) in
+the release app with real mouse events; projects.json put back after each test.
+**Open:** mu-4, mu-52 and mu-53 stay in Building until muster-lead (stuck on a 16:43 question) or
+the owner's override passes them; mu-69 waits on mu-52. Lessons L1–L4 wait for the owner. Whether
+braindump, muster and drover leave the persianUtils heading is the owner's call.
+
 ## 2026-10-14 — Work log entries merge by themselves: a muster merge driver for docs/WORKLOG.md (mu-67)
 **Did:** `muster merge-log %O %A %B` (`merge_log.rs`): a plain three-way merge when it's clean;
 when both sides only added whole dated entries on top, both sides' entries go above the base,
