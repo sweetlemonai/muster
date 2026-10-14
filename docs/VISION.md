@@ -45,7 +45,7 @@ so who built and who tested a task can be told apart even inside one lead's team
 **Blocked** is a flag on any stage with a kind (0024): by tasks (derived from `depends:`, never
 typed twice), on you, by a permission, by a question, by something outside.
 
-**What needs the owner** is one list everywhere (the needs-you count 0022, the Dock badge 0006, counts):
+**What needs the owner** is one list everywhere (the needs-you count 0022, the Dock badge 0006, the Mac notification 0052, counts):
 Your check, escalated questions, blocked on you or by a permission, human tasks, lessons to approve.
 
 ## The app (one place per job)

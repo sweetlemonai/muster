@@ -586,8 +586,31 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   `claude agents` run per 15 s, on its own thread and never waited on, and only while some task
   in Building or Testing has a stamped holder. `needs_you` mirrors `human.ts`'s `needsYou`
   (the owner's own paused task left out, 0045);
-  `app/src/needs-cases.json` holds both to the same answers. It adds 16 KB to the binary. No
-  notification yet: `tauri-plugin-notification` waits on the owner (WAITING-FOR-OWNER #3).
+  `app/src/needs-cases.json` holds both to the same answers. It adds 16 KB to the binary.
+- **Mac notifications** (task 0052): one notification when something new waits for the owner.
+  `notify.rs` splits what the badge counts into items, one per reason a task waits (Your check,
+  keyed by when it came in, so a second arrival is new; each escalated question; blocked on you
+  or by a permission; its session waiting for input; the owner's own task) and one per lesson to
+  approve, and keeps the keys it has seen. Each window poll and each hidden read (above) passes
+  its state through it (`notify::after_read`), so there are no extra reads: the lessons' rules
+  come from the same `(len, mtime)` cache as their count (`lessons::proposed`), and while
+  Settings › Notifications is Off (`settings.json` `notify`, default on) nothing is read for them.
+  New items are posted once, several in one notification (the first three named, the rest
+  counted; each line at most 200 characters). Taken as seen without a notification: everything
+  on the first read after start, after Off, and in a project the last read didn't have (no
+  flood); a session waiting for input until a read before knew the sessions (`agents::known`:
+  some account read, or none wanted), so one waiting at launch isn't posted when the first
+  `claude agents` read lands; and what the window shows while it has the focus (its project, or
+  All; the window tells the core with `show_project_title`). News from another project is
+  neither posted nor seen while the window has the focus (`mac-notification-sys` shows no banner
+  while the app is frontmost) and is posted at the first read once it hasn't. The keys are kept
+  in `notified.json` beside it: the last 500, plus every one still waiting, so nothing comes up
+  twice. Permission: asked at the first thing to say, never at start
+  (`tauri-plugin-notification` 2.6.0 on desktop grants it itself; macOS asks the owner on the
+  first post; no usage string exists for notifications). Posted from Rust through the plugin, so
+  the window has no notification permission (still `core:default` only); local only, the plugin
+  has no network code. Under `tauri dev` they show as Terminal's (the plugin's rule for unbundled
+  builds); the built app shows them as Muster's.
 
 ## The AI helper
 
@@ -891,8 +914,7 @@ files have one copy per branch, are the next step of 0005. See
 
 1. **App, next round (0006):** the Dock badge is built. Left: the owner's first look, Drover's
    look (its `src/ui`; the owner decides how far, since Muster's own palette and DESIGN.md rules
-   differ), and a notification when something new needs you (`tauri-plugin-notification`, a new
-   dependency waiting on the owner's yes). The owner's moves (priority, unblock, a stage, Done)
+   differ). The notification is built (0052). The owner's moves (priority, unblock, a stage, Done)
    are in the task pane, through the core's rules; claims stay with agents.
 2. **Files that never move:** task 0005's next step (committed mode, live state in
    `.git/muster/`), and migrating each queue (`muster migrate`). Then the `/muster` / `/mu` slash

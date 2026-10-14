@@ -47,10 +47,10 @@ describe("Settings (0036)", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("lists its groups in a fixed order, the open one marked, with room for later groups", () => {
-    expect(SETTINGS_GROUPS.map((g) => g.label)).toEqual(["Appearance", "Display", "Projects", "Agents", "About"]);
+    expect(SETTINGS_GROUPS.map((g) => g.label)).toEqual(["Appearance", "Display", "Projects", "Agents", "Notifications", "About"]);
     const html = settings("agents");
     const list = /<nav class="settings-groups"[^>]*>([\s\S]*?)<\/nav>/.exec(html)?.[1] ?? "";
-    expect([...list.matchAll(/<button[^>]*>([^<]*)<small>/g)].map((m) => m[1])).toEqual(["Appearance", "Display", "Projects", "Agents", "About"]);
+    expect([...list.matchAll(/<button[^>]*>([^<]*)<small>/g)].map((m) => m[1])).toEqual(["Appearance", "Display", "Projects", "Agents", "Notifications", "About"]);
     expect(list.match(/aria-current="page"/g)).toHaveLength(1);
     expect(list).toMatch(/aria-current="page"[^>]*>Agents</);
     // Each says what it holds, so nothing is behind a click to find out.

@@ -9,7 +9,9 @@ part of Drover later)
   and Rust code can move into Drover later without a rewrite.
 - **Dependencies:** only ones Drover already uses (`tauri`, `tauri-plugin-dialog` for the folder
   picker, called from Rust only, so the window gets no dialog permission; `serde`, `serde_json`, `tempfile` for
-  tests; `react`, `react-dom`, `@tauri-apps/api`, `markdown-it`). The Rust lockfile was seeded
+  tests; `react`, `react-dom`, `@tauri-apps/api`, `markdown-it`). **Amended 2026-10-13 (task
+  0052):** plus `tauri-plugin-notification` 2.6.0 (Drover's version; the owner said yes), called
+  from Rust only, so the window gets no notification permission either. The Rust lockfile was seeded
   from Drover's so the versions match. No libc: file locking uses std's `File::lock` (Rust
   1.89+), and the answer's time stamp comes from the window's local clock, validated in Rust.
 - **Layout:** the app lives in `app/` inside the Muster repo (`app/src`, `app/src-tauri`),
@@ -24,7 +26,8 @@ part of Drover later)
   **Amended 2026-10-13 (task 0006):** the window still stops polling while hidden, but the core
   now reads the queues every 15 s while it is, for the Dock badge alone (about 7 ms warm on 662
   tasks), plus at most one `claude agents` run per 15 s (0048) while someone holds a task in
-  Building or Testing with a session stamp.
+  Building or Testing with a session stamp. The same read, and each poll, also decide the Mac
+  notifications (0052): no extra reads.
 - **Writes:** only the owner's answers, through file contract v1 (`docs/PROTOCOL.md`), proven
   against `bin/task` by `tests/interop.rs`. The app never runs a script from a queue.
 - **Safety:** task text is rendered with markdown-it `html: false`, and links don't navigate.

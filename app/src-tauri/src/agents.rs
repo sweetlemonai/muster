@@ -317,6 +317,13 @@ pub fn read_all(fetch: &Fetch, accounts: &[String]) -> Snapshot {
     snap
 }
 
+/// Whether `snap` says what the sessions of `tasks` are doing: nothing is wanted of Claude Code
+/// (no session to know of), or it read some account. False before the first read lands, so a
+/// session waiting for input then isn't known to wait yet.
+pub fn known(tasks: &[Task], snap: &Snapshot) -> bool {
+    wanted(tasks).is_empty() || snap.accounts.iter().any(|(_, r)| r.is_ok())
+}
+
 /// Who holds what, by session id: the claims (Ready and Building) and the Testing holds (`held-by`
 /// there is the builder that passed it).
 #[derive(Debug, Default)]
@@ -976,6 +983,23 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
         ];
         assert_eq!(wanted(&tasks), ["", "hg", "mg"]);
         assert!(wanted(&tasks[4..]).is_empty());
+    }
+
+    #[test]
+    fn the_sessions_are_known_once_an_account_was_read_or_when_none_is_wanted() {
+        let tasks = vec![task("0001", "building", A)];
+        let read = |r: Result<usize, &str>| Snapshot {
+            states: HashMap::new(),
+            accounts: vec![("hg".to_string(), r.map_err(String::from))],
+        };
+        // Before the first read lands: not known.
+        assert!(!known(&tasks, &Snapshot::default()));
+        assert!(known(&tasks, &read(Ok(0))));
+        // An account that couldn't be read says nothing of its sessions.
+        assert!(!known(&tasks, &read(Err("claude isn't installed"))));
+        // Nothing to read: no session waits, and that's known.
+        let unstamped = vec![task("0002", "building", "wt-unstamped")];
+        assert!(known(&unstamped, &Snapshot::default()));
     }
 
     /// A source that counts its reads per account and answers `out`.

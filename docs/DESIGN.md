@@ -45,7 +45,7 @@ have their own short sets below. Every other section here applies in all three.
   can't be mistaken, and the Who chips (All · You · Agents) show either side alone.
 - **What needs you is always in view:** a visible count and a highlighted place for anything
   waiting on the owner (Your check, escalated questions, blocked on owner, human tasks), on every
-  screen, plus the Dock badge.
+  screen, plus the Dock badge, and one Mac notification when something new comes in (0052).
 - **Status on the card:** stage, blocked, who holds it, waiting-on and open questions show on the
   card or row itself, not only in the task panel.
 

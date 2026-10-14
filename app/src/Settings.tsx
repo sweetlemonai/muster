@@ -5,6 +5,7 @@ import { DisplayModes } from "./Display";
 import { AccountPicker } from "./Helper";
 import { HelpButton } from "./HelpButton";
 import { HomePath } from "./HomePath";
+import Notifications from "./Notifications";
 import Projects from "./Projects";
 import { sessionStatesLine } from "./sessionState";
 import { homePath } from "./lib";
@@ -13,7 +14,7 @@ import { DEFAULT_MACHINE, SETTINGS_GROUPS, type SettingsGroup, type SettingsInfo
 import type { Project, QueueInfo } from "./types";
 import { Button, Pill } from "./ui";
 
-/** Settings (0036): one place for Appearance, Display, Projects, Agents and About. A view in the
+/** Settings (0036): one place for Appearance, Display, Projects, Agents, Notifications and About. A view in the
  *  header's row, never a window: the groups are a docked list on the left, and the open group's
  *  settings on the right, all of them at once. Every change applies at once and is remembered. */
 export default function Settings({ group, onGroup, queues, onChanged, mode, onMode }: {
@@ -58,6 +59,7 @@ export default function Settings({ group, onGroup, queues, onChanged, mode, onMo
         {g.id === "display" && <DisplayModes mode={mode} onMode={onMode} />}
         {g.id === "projects" && <Projects queues={queues} home={info?.home ?? ""} onChanged={onChanged} />}
         {g.id === "agents" && <Agents info={info} queues={queues} onInfo={setInfo} onChanged={onChanged} />}
+        {g.id === "notifications" && <Notifications info={info} onInfo={setInfo} />}
         {g.id === "about" && (info ? <About info={info} /> : !error && <p className="none">Loading…</p>)}
       </section>
     </div>
@@ -264,7 +266,8 @@ export function AboutView({ info, projects, error = "" }: { info: SettingsInfo; 
         <p><HomePath className="path" path={info.configDir} home={info.home} /></p>
         <ul className="about-list">
           <li><code>projects.json</code>: the projects you added or hid, their labels, categories, gates and Your check limits</li>
-          <li><code>settings.json</code>: the claim lease and the LIVE window; the muster command reads it too</li>
+          <li><code>settings.json</code>: the claim lease, the LIVE window and whether notifications are on; the muster command reads it too</li>
+          <li><code>notified.json</code>: what Muster won't notify you of again: what it notified, and what you'd already seen (waiting at start or when notifications were turned on, or shown in the window in front)</li>
           <li><code>helper/</code>: the helper's account, model and conversations</li>
         </ul>
         <p className="meta">Appearance, the display mode, text size, Group by, saved views and the pane's width are kept by the window itself, on this Mac.</p>

@@ -1,20 +1,20 @@
 // Settings (0036): its groups in the order they show, this machine's settings as the core sends
 // them (the claim lease and the LIVE window, saved in the app's settings.json, which `muster`
-// reads too), and the words for them. No React views here; Settings.tsx has those.
+// reads too, and whether Mac notifications are on, 0052), and the words for them. No React views here; Settings.tsx has those.
 import { createContext } from "react";
 import type { HelpTopic } from "./helpTopics";
 import { LEASE_SECS } from "./lib";
 
-export type SettingsGroup = "appearance" | "display" | "projects" | "agents" | "about";
+export type SettingsGroup = "appearance" | "display" | "projects" | "agents" | "notifications" | "about";
 
-/** Settings' groups, in the order the list shows them, each with what it holds. Notifications
- *  (0006) adds its group to this list. Help isn't one: the manual is
- *  the header's Help tab, and only there (owner, 2026-10-13). */
+/** Settings' groups, in the order the list shows them, each with what it holds. Help isn't one:
+ *  the manual is the header's Help tab, and only there (owner, 2026-10-13). */
 export const SETTINGS_GROUPS: { id: SettingsGroup; label: string; holds: string; topic: HelpTopic }[] = [
   { id: "appearance", label: "Appearance", holds: "Theme, accent, text size, cards", topic: "appearance" },
   { id: "display", label: "Display", holds: "ADHD, Standard or Focus: how much shows", topic: "display" },
   { id: "projects", label: "Projects", holds: "The queues Muster shows", topic: "projects" },
   { id: "agents", label: "Agents", holds: "The helper, the claim lease, LIVE", topic: "agents" },
+  { id: "notifications", label: "Notifications", holds: "A Mac notification when something new waits for you", topic: "notifications" },
   { id: "about", label: "About", holds: "Version, settings, what it reads", topic: "about" },
 ];
 
@@ -59,7 +59,8 @@ export function spanInput(minutes: number): string {
 
 /** The core's answer for Settings: the settings with their bounds, and what About shows. */
 export type SettingsInfo = {
-  settings: MachineSettings;
+  /** `notify`: Mac notifications on (0052); a core from before them sends none, which reads as on. */
+  settings: MachineSettings & { notify?: boolean };
   leaseBounds: [number, number];
   liveBounds: [number, number];
   version: string;

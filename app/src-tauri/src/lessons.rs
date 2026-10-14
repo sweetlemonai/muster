@@ -402,37 +402,57 @@ pub fn decide(
     })
 }
 
-/// The waiting count by `lessons.json`'s path, with the size and time it was read at: the window
-/// asks on every poll, and an unchanged file isn't parsed again (as task files are cached).
-type Seen = (u64, std::time::SystemTime, usize);
+/// The proposals by `lessons.json`'s path, each its id and rule, with the size and time it was
+/// read at: the window asks on every poll, and an unchanged file isn't parsed again (as task files
+/// are cached).
+type Seen = (u64, std::time::SystemTime, Vec<(String, String)>);
 static WAITING: std::sync::Mutex<BTreeMap<PathBuf, Seen>> = std::sync::Mutex::new(BTreeMap::new());
 
 /// How many proposals wait for the owner.
 pub fn waiting(root: &Path) -> usize {
+    with_proposed(root, <[_]>::len)
+}
+
+/// The proposals waiting for the owner, each its id and rule (for the notifications, 0052).
+pub fn proposed(root: &Path) -> Vec<(String, String)> {
+    with_proposed(root, <[_]>::to_vec)
+}
+
+/// `f` of the proposals in `root`'s `lessons.json`, parsed only when it changed; none when it's
+/// missing or doesn't read.
+fn with_proposed<T>(root: &Path, f: impl FnOnce(&[(String, String)]) -> T) -> T {
     let p = path(root);
     let Some((len, at)) = fs::metadata(&p)
         .ok()
         .and_then(|m| Some((m.len(), m.modified().ok()?)))
     else {
-        return 0;
+        return f(&[]);
     };
-    if let Some(&(l, a, n)) = WAITING
-        .lock()
-        .ok()
-        .and_then(|c| c.get(&p).copied())
-        .as_ref()
-    {
-        if (l, a) == (len, at) {
-            return n;
+    if let Ok(c) = WAITING.lock() {
+        if let Some((l, a, ps)) = c.get(&p) {
+            if (*l, *a) == (len, at) {
+                return f(ps);
+            }
         }
     }
-    let n = load(root)
-        .map(|b| b.lessons.iter().filter(|l| l.state == "proposed").count())
-        .unwrap_or(0);
+    let ps = read_proposed(root);
+    let out = f(&ps);
     if let Ok(mut c) = WAITING.lock() {
-        c.insert(p, (len, at, n));
+        c.insert(p, (len, at, ps));
     }
-    n
+    out
+}
+
+fn read_proposed(root: &Path) -> Vec<(String, String)> {
+    load(root)
+        .map(|b| {
+            b.lessons
+                .into_iter()
+                .filter(|l| l.state == "proposed")
+                .map(|l| (l.id, l.rule))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// One lesson in `lessons.md`.
@@ -872,11 +892,15 @@ mod tests {
             .set_modified(at)
             .unwrap();
         assert_eq!(waiting(root), 1);
+        // The proposals themselves, for the notifications (0052), from the same read.
+        assert_eq!(proposed(root), [("L1".to_string(), "r".to_string())]);
         // Changed: read again.
         fs::write(&file, book(2)).unwrap();
         assert_eq!(waiting(root), 2);
+        assert_eq!(proposed(root).len(), 2);
         fs::remove_file(&file).unwrap();
         assert_eq!(waiting(root), 0);
+        assert!(proposed(root).is_empty());
     }
 
     #[test]

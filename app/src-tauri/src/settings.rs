@@ -1,5 +1,5 @@
-//! Per-machine settings that both the app and `muster` read (task 0036): the claim lease and the
-//! LIVE window. Saved as `settings.json` beside `projects.json` in the app's config folder
+//! Per-machine settings that both the app and `muster` read (task 0036): the claim lease, the
+//! LIVE window, and whether Mac notifications are on (0052). Saved as `settings.json` beside `projects.json` in the app's config folder
 //! (`~/Library/Application Support/ai.sweetlemon.muster/`). A missing or broken file, or a value
 //! out of bounds, reads as the default, field by field: a bad setting never stops the tools.
 
@@ -29,6 +29,8 @@ pub struct Settings {
     pub lease_minutes: u64,
     /// A session (the card's dot) or a task file (the pane's LIVE) that changed this recently is live.
     pub live_minutes: u64,
+    /// A Mac notification when something new waits for the owner (0052): on unless turned off.
+    pub notify: bool,
 }
 
 impl Default for Settings {
@@ -36,6 +38,7 @@ impl Default for Settings {
         Settings {
             lease_minutes: ops::LEASE_MINUTES,
             live_minutes: LIVE_MINUTES,
+            notify: true,
         }
     }
 }
@@ -65,6 +68,10 @@ pub fn load(file: &Path) -> Settings {
         lease_minutes: bounded(v.get("leaseMinutes"), LEASE_MIN, LEASE_MAX)
             .unwrap_or(d.lease_minutes),
         live_minutes: bounded(v.get("liveMinutes"), LIVE_MIN, LIVE_MAX).unwrap_or(d.live_minutes),
+        notify: v
+            .get("notify")
+            .and_then(|n| n.as_bool())
+            .unwrap_or(d.notify),
     }
 }
 
@@ -121,9 +128,22 @@ fn minutes(input: &str, what: &str) -> Result<u64, String> {
 }
 
 /// Change one setting, `lease` or `live`, to a span like `12h` or `5m` (empty is the default),
-/// checked against its bounds, and save. Returns the settings now in force.
+/// checked against its bounds, or `notify` to `on` or `off` (empty is on), and save. Returns the
+/// settings now in force.
 pub fn set(file: &Path, name: &str, value: &str) -> Result<Settings, String> {
     let d = Settings::default();
+    if name == "notify" {
+        let on = match value.trim() {
+            "" => d.notify,
+            "on" => true,
+            "off" => false,
+            _ => return Err(format!("notifications are on or off, not {value:?}")),
+        };
+        let mut s = load(file);
+        s.notify = on;
+        save(file, &s)?;
+        return Ok(s);
+    }
     let (what, min, max, default) = match name {
         "lease" => ("the lease", LEASE_MIN, LEASE_MAX, d.lease_minutes),
         "live" => ("the LIVE window", LIVE_MIN, LIVE_MAX, d.live_minutes),
@@ -189,7 +209,8 @@ mod tests {
             load(&f),
             Settings {
                 lease_minutes: 720,
-                live_minutes: 10
+                live_minutes: 10,
+                notify: true,
             }
         );
         fs::write(&f, r#"{"leaseMinutes": 120, "liveMinutes": 61}"#).unwrap();
@@ -197,7 +218,8 @@ mod tests {
             load(&f),
             Settings {
                 lease_minutes: 120,
-                live_minutes: 5
+                live_minutes: 5,
+                notify: true,
             }
         );
         // The bounds themselves are fine.
@@ -206,7 +228,8 @@ mod tests {
             load(&f),
             Settings {
                 lease_minutes: 60,
-                live_minutes: 60
+                live_minutes: 60,
+                notify: true,
             }
         );
         fs::write(&f, r#"{"leaseMinutes": 10080, "liveMinutes": 1}"#).unwrap();
@@ -214,7 +237,8 @@ mod tests {
             load(&f),
             Settings {
                 lease_minutes: 10080,
-                live_minutes: 1
+                live_minutes: 1,
+                notify: true,
             }
         );
     }
@@ -229,14 +253,16 @@ mod tests {
             set(&f, "live", " 10 m ").unwrap(),
             Settings {
                 lease_minutes: 120,
-                live_minutes: 10
+                live_minutes: 10,
+                notify: true,
             }
         );
         assert_eq!(
             load(&f),
             Settings {
                 lease_minutes: 120,
-                live_minutes: 10
+                live_minutes: 10,
+                notify: true,
             },
             "remembered"
         );
@@ -290,6 +316,46 @@ mod tests {
             fs::read_to_string(&f).unwrap(),
             before,
             "a refused change writes nothing"
+        );
+    }
+
+    #[test]
+    fn notifications_are_on_unless_turned_off_and_a_bad_value_reads_as_on() {
+        let d = tempfile::tempdir().unwrap();
+        let f = file(&d);
+        assert!(Settings::default().notify);
+        assert!(!set(&f, "notify", "off").unwrap().notify);
+        assert!(!load(&f).notify, "remembered");
+        // Turning it off keeps the other settings, and changing them keeps it off.
+        assert_eq!(set(&f, "lease", "2h").unwrap().lease_minutes, 120);
+        assert!(!load(&f).notify);
+        assert!(set(&f, "notify", " on ").unwrap().notify);
+        set(&f, "notify", "off").unwrap();
+        assert!(
+            set(&f, "notify", "").unwrap().notify,
+            "empty is the default"
+        );
+        let before = fs::read_to_string(&f).unwrap();
+        assert_eq!(
+            set(&f, "notify", "maybe").unwrap_err(),
+            "notifications are on or off, not \"maybe\""
+        );
+        assert_eq!(fs::read_to_string(&f).unwrap(), before);
+        for bad in [
+            r#"{"notify": "off"}"#,
+            r#"{"notify": 0}"#,
+            r#"{"notify": null}"#,
+        ] {
+            fs::write(&f, bad).unwrap();
+            assert!(load(&f).notify, "{bad}");
+        }
+        fs::write(&f, r#"{"notify": false, "liveMinutes": 61}"#).unwrap();
+        assert_eq!(
+            load(&f),
+            Settings {
+                notify: false,
+                ..Settings::default()
+            }
         );
     }
 

@@ -19,6 +19,7 @@ pub mod labels;
 pub mod layout;
 pub mod lessons;
 pub mod migrate;
+pub mod notify;
 pub mod ops;
 pub mod parallel;
 pub mod pause;
@@ -57,6 +58,8 @@ pub(crate) struct AppState {
     agents: Arc<agents::Monitor>,
     /// The Dock badge's count and the window's last poll (0006).
     badge: badge::Badge,
+    /// What the Mac notifications have seen, and the project the window shows (0052).
+    notify: notify::Notifier,
 }
 
 fn base() -> PathBuf {
@@ -120,6 +123,7 @@ async fn state(
     let cache = std::mem::take(&mut *app.cache.lock().map_err(|e| e.to_string())?);
     let reader = app.transcripts.clone();
     let monitor = app.agents.clone();
+    let h = handle.clone();
     let (state, cache) = blocking(move || {
         let mut cache = cache;
         // Read every poll, so a change in Settings (or by hand) applies at the next one.
@@ -145,6 +149,7 @@ async fn state(
         // Claude Code's word on each holder's session (0048): the latest read, never waited on.
         let sessions = monitor.poll(&s.tasks, s.now);
         agents::apply(&mut s.tasks, &sessions);
+        notify_new(&h, &s, &sessions);
         Ok((s, cache))
     })
     .await?;
@@ -166,10 +171,22 @@ fn show_badge(handle: &tauri::AppHandle, badge: &badge::Badge, n: usize) {
     });
 }
 
-/// How many tasks in the shown projects need the owner, read as the window's poll reads them (with
-/// its cache and Claude Code's session states), for the Dock badge while the window doesn't poll.
-fn needs_now(app: &AppState) -> Result<usize, String> {
-    needs_in(
+/// A Mac notification of what's new for the owner in `s` (0052), whose sessions `sessions` told,
+/// unless Settings turned them off (`notify::after_read`).
+fn notify_new(handle: &tauri::AppHandle, s: &queue::State, sessions: &agents::Snapshot) {
+    notify::after_read(
+        &handle.state::<AppState>().notify,
+        s,
+        sessions,
+        &notify::Mac(handle),
+    );
+}
+
+/// The shown projects' state, read as the window's poll reads it (with its cache, the tasks' keys,
+/// the projects' labels and Claude Code's session states), for the Dock badge and the
+/// notifications while the window doesn't poll; with the session states it applied.
+fn waiting_now(app: &AppState) -> Result<(queue::State, agents::Snapshot), String> {
+    waiting_in(
         &base(),
         &app.config_file,
         &app.settings_file,
@@ -178,36 +195,45 @@ fn needs_now(app: &AppState) -> Result<usize, String> {
     )
 }
 
-/// `needs_now` for the projects under `base`.
-fn needs_in(
+/// `waiting_now` for the projects under `base`.
+fn waiting_in(
     base: &std::path::Path,
     config_file: &std::path::Path,
     settings_file: &std::path::Path,
     cache: &Mutex<queue::Cache>,
     monitor: &Arc<agents::Monitor>,
-) -> Result<usize, String> {
+) -> Result<(queue::State, agents::Snapshot), String> {
     let settings = settings::load(settings_file);
     let list = projects::list(base, &projects::load(config_file));
+    let prefix_of = |name: &str| {
+        list.iter()
+            .find(|p| p.name == name)
+            .map(|p| p.prefix.clone())
+            .unwrap_or_default()
+    };
     let mut taken = std::mem::take(&mut *cache.lock().map_err(|e| e.to_string())?);
-    let mut s = queue::read_state_with(&projects::shown(&list), &mut taken, &settings);
+    let mut s = queue::read_state_keyed(&projects::shown(&list), &mut taken, &settings, &prefix_of);
     *cache.lock().map_err(|e| e.to_string())? = taken;
+    labels::apply(&list, &mut s.queues);
     // As the poll does (0048): a session waiting for input waits on the owner. The monitor reads
     // `claude agents` at most every 15 s, on its own thread, and never holds this up.
     let sessions = monitor.poll(&s.tasks, s.now);
     agents::apply(&mut s.tasks, &sessions);
-    Ok(badge::dock_count(&s.tasks, &s.queues))
+    Ok((s, sessions))
 }
 
 /// Keeps the Dock badge current while the window is hidden and doesn't poll (0006): every
-/// `badge::HIDDEN_EVERY` with no poll in between, it reads the queues itself. A read that fails
-/// leaves the badge as it was until the next one. Runs as long as the app does.
+/// `badge::HIDDEN_EVERY` with no poll in between, it reads the queues itself, and notifies what's
+/// new (0052). A read that fails leaves the badge as it was until the next one. Runs as long as
+/// the app does.
 fn watch_badge(handle: tauri::AppHandle) {
     std::thread::spawn(move || loop {
         std::thread::sleep(badge::HIDDEN_EVERY);
         let app = handle.state::<AppState>();
         if app.badge.due(std::time::Instant::now()) {
-            if let Ok(n) = needs_now(&app) {
-                show_badge(&handle, &app.badge, n);
+            if let Ok((s, sessions)) = waiting_now(&app) {
+                show_badge(&handle, &app.badge, badge::dock_count(&s.tasks, &s.queues));
+                notify_new(&handle, &s, &sessions);
             }
         }
     });
@@ -1260,6 +1286,8 @@ async fn set_project_category(
 /// Muster", or "Muster".
 #[tauri::command]
 async fn show_project_title(handle: tauri::AppHandle, name: String) -> Result<(), String> {
+    // The notifications hold back what the window, focused, shows (0052).
+    handle.state::<AppState>().notify.viewing(&name);
     let h = handle.clone();
     let title = blocking(move || {
         let app = h.state::<AppState>();
@@ -1312,6 +1340,7 @@ async fn remove_project(handle: tauri::AppHandle, key: String) -> Result<(), Str
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             app.manage(AppState {
@@ -1323,6 +1352,7 @@ pub fn run() {
                 config_file: dir.join("projects.json"),
                 settings_file: dir.join(settings::FILE),
                 badge: badge::Badge::default(),
+                notify: notify::Notifier::new(dir.join(notify::FILE)),
             });
             watch_badge(app.handle().clone());
             Ok(())
@@ -1688,7 +1718,7 @@ mod tests {
             serde_json::to_string(&info_for(&file, "0.1.0", &reader, "on (1 account)".into()))
                 .unwrap();
         assert!(
-            json.contains(r#""settings":{"leaseMinutes":720,"liveMinutes":15}"#),
+            json.contains(r#""settings":{"leaseMinutes":720,"liveMinutes":15,"notify":true}"#),
             "{json}"
         );
         assert!(
@@ -1765,9 +1795,30 @@ mod tests {
         // No task has a session stamp, so Claude Code is never asked.
         let fetch: agents::Fetch = Arc::new(|_: &str| Err("not asked".to_string()));
         let monitor = agents::Monitor::new(fetch, in_place);
-        let count =
-            || needs_in(base.path(), &config_file, &settings_file, &cache, &monitor).unwrap();
+        let read = || {
+            waiting_in(base.path(), &config_file, &settings_file, &cache, &monitor)
+                .unwrap()
+                .0
+        };
+        let count = || {
+            let s = read();
+            badge::dock_count(&s.tasks, &s.queues)
+        };
         assert_eq!(count(), 3);
+        // Read with the tasks' keys and the projects' labels, for the notifications (0052).
+        let s = read();
+        let lines: Vec<String> = notify::waiting(&s.tasks, &s.queues)
+            .into_iter()
+            .map(|i| format!("{}: {}", i.label, i.line))
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                "alpha: al-1 0001-buy.md: your task",
+                "alpha: al-2 0002-check.md: ready for your check",
+                "beta: be-1 0001-check.md: ready for your check"
+            ]
+        );
         // Read again on the cache it put back: the same answer.
         assert_eq!(count(), 3);
         // A hidden project isn't on the board, so it isn't on the badge either.
@@ -1806,7 +1857,9 @@ mod tests {
             });
             let monitor = agents::Monitor::new(fetch, in_place);
             let cache = Mutex::new(queue::Cache::default());
-            needs_in(base.path(), &config_file, &settings_file, &cache, &monitor).unwrap()
+            let (s, _) =
+                waiting_in(base.path(), &config_file, &settings_file, &cache, &monitor).unwrap();
+            badge::dock_count(&s.tasks, &s.queues)
         };
         // Waiting for input (a permission prompt) waits on the owner, hidden window or not.
         assert_eq!(count("blocked"), 1);
