@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { LimitCell } from "./CheckLimit";
 import { HomePath } from "./HomePath";
@@ -87,36 +87,38 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
       {list === null && <p className="none">Loading…</p>}
       <table className="projects-table">
         <thead>
-          <tr><th title="What the window calls it; the name under it is what commands take">Project</th><th title="The sidebar heading it goes under">Category</th><th title="What its tasks' keys start with: mu in mu-12">Prefix</th><th>Folder</th><th>Tasks</th><th>Your check</th><th>Gate</th><th></th></tr>
+          <tr><th title="What the window calls it; the name under it is what commands take">Project</th><th title="The sidebar heading it goes under">Category</th><th title="What its tasks' keys start with: mu in mu-12">Prefix</th><th>Folder</th><th>Tasks</th><th>Your check</th><th></th></tr>
         </thead>
         <tbody>
           {list?.map((p) => (
-            <tr key={p.key} className={p.hidden ? "dim" : ""}>
-              <td><NameCell p={p} onSave={(v) => api.setProjectLabel(p.key, v).then(saved)} /></td>
-              <td><CategoryCell p={p} categories={otherCategories(queues, p.path)} onSave={(v) => api.setProjectCategory(p.key, v).then(saved)} /></td>
-              <td>
-                <PrefixCell
-                  name={p.name}
-                  prefix={p.prefix ?? ""}
-                  editing={prefixOf === p.key}
-                  value={prefix}
-                  error={prefixOf === p.key ? prefixError : ""}
-                  canSet={p.ok}
-                  onEdit={() => { setPrefixOf(p.key); setPrefix(p.prefix ?? ""); setPrefixError(""); }}
-                  onChange={setPrefix}
-                  onSave={() => void savePrefix(p)}
-                  onCancel={() => { setPrefixOf(null); setPrefixError(""); }}
-                />
-              </td>
-              <td className="path"><HomePath path={p.path} home={home} /></td>
-              <td>{p.hidden || !p.ok ? "—" : total(p) ?? "…"}</td>
-              <td>{limit(p)}</td>
-              <td><GateCell name={p.name} gate={p.gate ?? ""} /></td>
-              <td className="actions">
-                <Button onClick={() => void act(() => api.hideProject(p.key, !p.hidden))}>{p.hidden ? "Show" : "Hide"}</Button>
-                {p.source === "added" && <Button onClick={() => void act(() => api.removeProject(p.key))}>Remove</Button>}
-              </td>
-            </tr>
+            <Fragment key={p.key}>
+              <tr className={p.hidden ? "dim" : ""}>
+                <td><NameCell p={p} onSave={(v) => api.setProjectLabel(p.key, v).then(saved)} /></td>
+                <td><CategoryCell p={p} categories={otherCategories(queues, p.path)} onSave={(v) => api.setProjectCategory(p.key, v).then(saved)} /></td>
+                <td>
+                  <PrefixCell
+                    name={p.name}
+                    prefix={p.prefix ?? ""}
+                    editing={prefixOf === p.key}
+                    value={prefix}
+                    error={prefixOf === p.key ? prefixError : ""}
+                    canSet={p.ok}
+                    onEdit={() => { setPrefixOf(p.key); setPrefix(p.prefix ?? ""); setPrefixError(""); }}
+                    onChange={setPrefix}
+                    onSave={() => void savePrefix(p)}
+                    onCancel={() => { setPrefixOf(null); setPrefixError(""); }}
+                  />
+                </td>
+                <td className="path"><HomePath path={p.path} home={home} /></td>
+                <td>{p.hidden || !p.ok ? "—" : total(p) ?? "…"}</td>
+                <td>{limit(p)}</td>
+                <td className="actions">
+                  <Button onClick={() => void act(() => api.hideProject(p.key, !p.hidden))}>{p.hidden ? "Show" : "Hide"}</Button>
+                  {p.source === "added" && <Button onClick={() => void act(() => api.removeProject(p.key))}>Remove</Button>}
+                </td>
+              </tr>
+              <GateRow name={p.name} gate={p.gate ?? ""} hidden={p.hidden} />
+            </Fragment>
           ))}
         </tbody>
       </table>
@@ -167,7 +169,7 @@ export function PrefixCell({ name, prefix, editing, value, error, canSet, onEdit
   if (!editing) {
     return (
       <span className="prefix">
-        <code>{prefix}</code> {canSet && <button type="button" className="link" onClick={onEdit} title={`Set ${name}'s prefix`}>Set</button>}
+        <code>{prefix}</code> {canSet && <Button type="button" onClick={onEdit} title={`Set ${name}'s prefix`}>Set</Button>}
       </span>
     );
   }
@@ -184,13 +186,24 @@ export function PrefixCell({ name, prefix, editing, value, error, canSet, onEdit
         value={value}
         onChange={(e) => onChange(e.target.value)}
         maxLength={4}
-        size={5}
         aria-label={`${name}'s prefix`}
-        placeholder="2–4 letters"
+        title="2 to 4 lowercase letters"
       />{" "}
       <Button type="submit">Save</Button> <Button type="button" onClick={onCancel}>Cancel</Button>
       {error && <p className="err small" role="alert">{error}</p>}
     </form>
+  );
+}
+
+/** A project's gate on a line under its row, with room to wrap like text; a column of it left the
+ *  folder and the gate a word or a few letters wide. */
+export function GateRow({ name, gate, hidden }: { name: string; gate: string; hidden: boolean }) {
+  return (
+    <tr className={hidden ? "gate-row dim" : "gate-row"}>
+      <td colSpan={7}>
+        <b className="gate-label">Gate</b> <GateCell name={name} gate={gate} />
+      </td>
+    </tr>
   );
 }
 

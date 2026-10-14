@@ -12,8 +12,8 @@ import YouRibbon from "./YouRibbon";
 import { labelOf, Labels } from "./labels";
 import ProjectName from "./ProjectName";
 
-const W = 196; // node width
-const H = 76; // node height
+const W = 232; // node width: id, stage, priority and needs you fit one line
+const H = 100; // node height: room for the top line to wrap onto a second
 const GX = 56; // gap between ranks (room for the arrows)
 const GY = 12; // gap between rows
 
@@ -58,20 +58,20 @@ export function GraphView({ tasks, all, multi, openKey, onOpen }: { tasks: Task[
 
 const NONE: Task[] = [];
 
-/** The state line every task shows, as a node or a chip: stage, ready, paused, blocked, who holds it. */
+/** The state line every task shows, as a node or a chip: stage, ready, paused, blocked, who holds
+ *  it. A space between the parts, so a chip reads "Done high", not "Donehigh". */
 function Status({ t, ready }: { t: Task; ready: boolean }) {
   const who = holder(t);
-  return (
-    <>
-      <span className="g-stage">{stageLabel(t.stage)}</span>
-      {t.priority === "high" && <span className="pri pri-high">high</span>}
-      {ready && <span className="g-ready">ready</span>}
-      {t.paused && <Badge variant="paused">{`${PAUSE_GLYPH} paused`}</Badge>}
-      {blockedRed(t) ? <Badge variant="blocked">blocked</Badge> : isBlocked(t) && <BlockWhy t={t} short />}
-      {t.waitingForOwner && <Badge variant="warn">needs you</Badge>}
-      {who && <span className="g-who">{who}</span>}
-    </>
-  );
+  const parts = [
+    <span key="stage" className="g-stage">{stageLabel(t.stage)}</span>,
+    t.priority === "high" && <span key="pri" className="pri pri-high">high</span>,
+    ready && <span key="ready" className="g-ready">ready</span>,
+    t.paused && <Badge key="paused" variant="paused">{`${PAUSE_GLYPH} paused`}</Badge>,
+    blockedRed(t) ? <Badge key="blocked" variant="blocked">blocked</Badge> : isBlocked(t) && <BlockWhy key="why" t={t} short />,
+    t.waitingForOwner && <Badge key="needs" variant="warn">needs you</Badge>,
+    who && <span key="who" className="g-who">{who}</span>,
+  ].filter((p) => p !== false && p !== "");
+  return <>{parts.flatMap((p, i) => (i === 0 ? [p] : [" ", p]))}</>;
 }
 
 function QueueGraph({ name, tasks, all, openKey, onOpen }: { name: string; tasks: Task[]; all: Task[]; openKey: string | null; onOpen: (t: Task) => void }) {
@@ -99,7 +99,7 @@ function QueueGraph({ name, tasks, all, openKey, onOpen }: { name: string; tasks
         <p className="meta">
           {all.some((t) => t.depends.some((d) => d !== t.id))
             ? "Nothing linked among the tasks shown: what they wait on is done (hidden) or filtered out."
-            : <>No task here depends on another yet. Set one with <code>muster set &lt;id&gt; depends 0014</code>.</>}
+            : <>No task here depends on another yet. Set one with <code>muster set &lt;id&gt; depends {taskKey(tasks[0] ?? all[0])}</code>.</>}
         </p>
       ) : (
         <div className="graph-canvas" style={{ width, height }}>

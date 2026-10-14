@@ -239,6 +239,8 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .answer textarea { width: 100%; margin-top: 8px; font: inherit; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px; resize: vertical; }
 .answer-bar { display: flex; gap: 10px; align-items: center; margin-top: 6px; font-size: 12px; }
 .answer-bar button, .waiting > button { background: var(--accent); color: var(--accent-ink); border: none; border-radius: 6px; padding: 4px 12px; }
+/* The buttons under a waiting task (Done, unblock; Open) sit apart, and wrap together on a narrow row. */
+.waiting > button { margin: 0 8px 4px 0; }
 .answer-bar button:disabled { opacity: 0.5; cursor: default; }
 /* Pick-one questions (0049): every option a chip that answers in one click, outlined and neutral
    (a choice isn't a state); the asker's pick says so in words. */
@@ -292,24 +294,36 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .markdown a { color: var(--accent-text); }
 
 .projects-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 12px; }
-.projects-bar button, .actions button { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 3px 10px; }
+.projects-bar button, .actions button, .prefix button { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 3px 10px; }
 .projects-bar button:first-child { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .projects-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
 .projects-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); }
 .projects-table td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .projects-table tr.dim td { opacity: 0.55; }
 .projects-table .path { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); overflow-wrap: anywhere; max-width: 420px; }
+.projects-table td.path { min-width: 150px; }
+/* A project is two rows: its fields, then its gate as a line of text under them (no column of it
+   to crush the folder). The rule between projects is under the gate. */
+.projects-table tbody tr:not(.gate-row) td { border-bottom: none; }
+.projects-table .gate-row td { padding-top: 0; font-size: 12px; }
+.gate-label { margin-right: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+.projects-table .gate-row code { font-size: 12px; overflow-wrap: anywhere; }
 .projects-table .actions { white-space: nowrap; text-align: right; }
 .projects-table .actions button { margin-left: 4px; }
+/* The prefix is 2 to 4 letters: a field 4 characters wide (monospace, so 4ch holds "mmmm"), and a
+   gap between it and its buttons, which wrap under it before the column grows. */
+.prefix { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.projects-table .prefix input { width: 4ch; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.prefix .err { flex-basis: 100%; margin: 0; }
 .projects-table input { font: inherit; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 4px; background: var(--bg); color: var(--text); width: 220px; }
 /* A label or category field (0044): always there, quiet until hovered or focused; the chips to
    pick from lay out under it while it has focus. */
 .inline-field { display: flex; flex-direction: column; gap: 4px; }
-.projects-table .inline-field input { width: 200px; border-color: transparent; background: none; font-weight: 600; }
+.projects-table .inline-field input { width: 170px; border-color: transparent; background: none; font-weight: 600; }
 .projects-table .inline-field input:hover { border-color: var(--line); }
 .projects-table .inline-field input:focus { border-color: var(--accent); background: var(--bg); }
 .projects-table .inline-field input::placeholder { color: var(--muted); }
-.inline-options { display: flex; flex-wrap: wrap; gap: 2px; max-width: 220px; }
+.inline-options { display: flex; flex-wrap: wrap; gap: 2px; max-width: 190px; }
 .inline-options .ui-pill { font-size: 11px; padding: 0 7px; }
 
 .new { margin-left: 8px; background: var(--accent); color: var(--accent-ink); border: none; border-radius: 6px; padding: 4px 12px; font-weight: 600; }
@@ -456,8 +470,8 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .ui-status-pill { font-size: 11px; border-radius: 999px; padding: 1px 8px; color: var(--on-status); }
 .ui-status-pill { background: var(--status); white-space: nowrap; }
 .ui-status-pill.ui-status-pill--blocked { background: var(--st-blocked); margin-left: 4px; }
-.table-view { flex: 1; overflow: auto; padding: 8px 14px 14px; }
-.tasks-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.table-view { flex: 1; overflow: auto; padding: 0 14px 14px; }
+.tasks-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
 .tasks-table th { position: sticky; top: 0; background: var(--bg); text-align: left; border-bottom: 1px solid var(--line); padding: 0; z-index: 1; }
 .tasks-table th button { width: 100%; text-align: left; border: none; background: none; padding: 7px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
 .tasks-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -716,16 +730,20 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .g-who { color: var(--muted); }
 .g-deps { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .g-loose .id { color: var(--muted); }
-.g-loose .g-stage { color: var(--muted); margin-left: 4px; }
+.g-loose .g-stage { color: var(--muted); }
 .g-node.dim { opacity: 0.4; }
 /* Done work is quiet, unless it's on the selected task's chain. */
 .g-node.s-done:not(.sel):not(.up):not(.down) { opacity: 0.55; }
-.g-top { display: flex; gap: 6px; align-items: center; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; }
+/* The top line wraps rather than clips, so "needs you" is never cut to "nee"; each part keeps its
+   own word whole, and only the holder's name gives way (an ellipsis). */
+.g-top { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; font-size: 11px; color: var(--muted); }
+.g-top > * { flex: none; white-space: nowrap; }
+.g-top > .g-who { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .g-stage { color: var(--text); }
 .g-ready { color: var(--ok); font-weight: 600; }
 .g-title { font-size: 12px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; min-height: 0; -webkit-box-orient: vertical; overflow: hidden; }
 .graph-loose { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
-.g-loose { border: 1px solid var(--line); border-left: 3px solid var(--edge, var(--status, var(--line))); border-radius: 6px; font-size: 12px; }
+.g-loose { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-left: 3px solid var(--edge, var(--status, var(--line))); border-radius: 6px; font-size: 12px; }
 
 /* Task pane (0021, the owner's design D2): title and status, the stage track, two columns (what the
    stage needs; the sidebar), the forms under both, the path, then the write-up and a note bar fixed
@@ -747,6 +765,8 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .status-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
 .status-line .ui-status-pill.ui-status-pill--blocked { margin-left: 0; }
 .task-pane .holder { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+/* "quiet 21 min ·" keeps its line; the names beside it give way and wrap (it wrapped a word per line). */
+.task-pane .holder > .meta, .task-pane .holder > .live-badge { flex: none; white-space: nowrap; }
 /* Who's on it in full (0030): a session id is long, so it wraps rather than widening the pane. */
 .task-pane .holders { min-width: 0; overflow-wrap: anywhere; }
 /* Who built it and who tested it (0047): quiet, beside who's on it. */
@@ -962,9 +982,11 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .column.folded h2 { writing-mode: vertical-rl; white-space: nowrap; padding: 0; margin: 0 auto; }
 /* The strip's head is its button, so the whole strip opens the column. */
 .col-fold { writing-mode: inherit; border: none; background: none; font: inherit; text-transform: inherit; letter-spacing: inherit; color: inherit; text-align: left; padding: 0; cursor: pointer; border-radius: 4px; }
-.column.folded .col-fold { padding: 12px 4px; }
+/* The strip's parts (name, count, needs you, blocked) are items of one flex line, which runs down
+   a vertical strip, with a gap between: inline-blocks in vertical text overlapped (Blocked over "Ready 10"). */
+.column.folded .col-fold { display: flex; flex-direction: row; align-items: center; gap: 6px; padding: 12px 4px; }
 .col-fold:hover, .col-fold:focus-visible { color: var(--text); background: var(--hover); }
-.column.folded .col-fold .count { margin: 6px 0 0; }
+.column.folded .col-fold .count { margin: 0; }
 .fold-head { display: block; width: 100%; text-align: left; border: none; border-top: 1px solid var(--line); background: none; padding: 8px 16px; font-weight: 600; font-size: 13px; color: var(--text); }
 .fold-head::before { content: "▸ "; color: var(--muted); }
 .fold.open > .fold-head::before { content: "▾ "; }
@@ -976,7 +998,6 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .fold.open > .fold-body > section:first-child > h2:first-child { display: none; }
 /* Blocked on a folded strip: in words, in the error colour, so a fold never hides it. */
 .count.blocked-count { background: none; border: 1px solid var(--bad); color: var(--bad); white-space: nowrap; }
-.column.folded .col-fold .count.blocked-count { margin-top: 4px; }
 .band-fold { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; width: 100%; text-align: left; border: none; background: none; padding: 8px 12px; font: inherit; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px; }
 .band-fold::before { content: "▸"; color: var(--muted); }
 .band-fold[aria-expanded="true"]::before { content: "▾"; }
@@ -1015,6 +1036,6 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .column.empty .limit-line { display: none; }
 .limit-board { margin: 4px 14px 0; min-height: 1.35em; font-size: 12px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .side-limit { display: block; font-size: 11px; line-height: 1.35; }
-.limit-cell { display: flex; flex-direction: column; gap: 2px; }
+.limit-cell { display: flex; flex-direction: column; gap: 2px; min-width: 120px; }
 .limit-edit { display: flex; align-items: center; gap: 4px; }
 .limit-edit input { width: 4.5em; }

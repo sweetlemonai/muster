@@ -6,12 +6,16 @@ import { HELP_TOPICS } from "./helpTopics";
 import { headings } from "./manual";
 import inTheApp from "../../docs/manual/04-in-the-app.md?raw";
 import appSource from "./App.tsx?raw";
-import { CategoryCell, GateCell, NameCell, PrefixCell } from "./Projects";
+import { CategoryCell, GateCell, GateRow, NameCell, PrefixCell } from "./Projects";
 import Settings, { AboutView, AgentsView, SpanSetting, withModel } from "./Settings";
 import { DEFAULT_MACHINE, machineOf, SETTINGS_GROUPS, type SettingsInfo, spanInput, spanText } from "./settingsData";
+import css from "./styles.css?raw";
 import type { Project } from "./types";
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
+
+/** One CSS rule's body. */
+const rule = (sel: string) => new RegExp(`(?:^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`).exec(css)?.[1] ?? "";
 
 const INFO: SettingsInfo = {
   settings: { leaseMinutes: 720, liveMinutes: 5 },
@@ -85,7 +89,12 @@ describe("Settings (0036)", () => {
     const gate = (g: string) => text(renderToStaticMarkup(createElement(GateCell, { name: "muster", gate: g })));
     expect(gate("bin/gate full")).toBe("bin/gate full");
     expect(gate("")).toBe('none: merges wait for one. muster projects set muster gate "<command>"');
-    expect(text(settings("projects"))).toContain("Gate");
+    // On a line of its own under the project's row, so no column of it crushes the folder (0061).
+    const row = (g: string, hidden = false) => renderToStaticMarkup(createElement("table", null, createElement("tbody", null, createElement(GateRow, { name: "muster", gate: g, hidden }))));
+    expect(text(row("bin/gate full"))).toBe("Gate bin/gate full");
+    expect(row("bin/gate")).toContain('<tr class="gate-row"><td colSpan="7">');
+    expect(row("bin/gate", true)).toContain('<tr class="gate-row dim">');
+    expect(text(settings("projects"))).not.toMatch(/\bGate\b/);
   });
 
   it("shows each project's prefix (0033) and sets it in place, saying why when it's refused", () => {
@@ -94,6 +103,9 @@ describe("Settings (0036)", () => {
         createElement(PrefixCell, { name: "muster", prefix: "mu", editing: false, value: "", error: "", canSet: true, onEdit: () => {}, onChange: () => {}, onSave: () => {}, onCancel: () => {}, ...over }),
       );
     expect(text(cell())).toBe("mu Set");
+    // Set is the ui Button, with a gap between it and the prefix (0061).
+    expect(cell()).toMatch(/<button type="button" title="Set muster&#x27;s prefix" class="ui-button">Set<\/button>/);
+    expect(rule(".prefix")).toMatch(/display: inline-flex;[^]*gap: 6px;/);
     expect(cell()).toContain('title="Set muster&#x27;s prefix"');
     expect(text(cell({ canSet: false }))).toBe("mu");
     const open = cell({ editing: true, value: "mus" });
@@ -101,6 +113,10 @@ describe("Settings (0036)", () => {
     expect(open).toContain('maxLength="4"');
     expect(open).toContain('aria-label="muster&#x27;s prefix"');
     expect(text(open)).toBe("Save Cancel");
+    expect(open).toContain('<button type="submit" class="ui-button">Save</button>');
+    // 4 characters wide, not the table's 220px, and the buttons style like the other rows' (0061).
+    expect(rule(".projects-table .prefix input")).toMatch(/width: 4ch;/);
+    expect(rule(".projects-bar button, .actions button, .prefix button")).toContain("border: 1px solid var(--line)");
     expect(open).not.toContain('role="alert"');
     // The core's refusal shows under the field, which stays open: no overlay.
     const refused = cell({ editing: true, value: "br", error: "braindump has br: a prefix names one project (see `muster projects`)" });

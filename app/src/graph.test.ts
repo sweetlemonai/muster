@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { downstream, edgeLit, layoutGraph, readyToStart, upstream } from "./graph";
 import { GraphView } from "./GraphView";
+import css from "./styles.css?raw";
 import type { Task } from "./types";
 
 const task = (id: string, depends: string[] = [], over: Partial<Task> = {}): Task => ({
@@ -18,6 +19,8 @@ const MUSTER = [
   task("0002", [], { stage: "building", claimedBy: "wt-a" }), task("0005", ["0014", "0002"]), task("0004", ["0005"]),
   task("0021"), task("0026", [], { stage: "done" }),
 ];
+/** One CSS rule's body. */
+const rule = (sel: string) => new RegExp(`(?:^|\\n)${sel.replace(/[.*+?^${}()|[\]\\>]/g, "\\$&")} \\{([^}]*)\\}`).exec(css)?.[1] ?? "";
 const rankOf = (g: ReturnType<typeof layoutGraph>) => Object.fromEntries(g.nodes.map((n) => [n.id, n.rank]));
 
 describe("layoutGraph", () => {
@@ -179,7 +182,22 @@ describe("GraphView", () => {
     expect(html).toMatch(/class="ui-pill g-loose s-ready human"[^>]*><span class="id">0003<\/span><span class="you-ribbon"/);
     expect(html.match(/class="you-ribbon"/g)).toHaveLength(2);
   });
-  it("says how to start when nothing is linked", () => {
+  it("says how to start when nothing is linked, with a task key as the example", () => {
     expect(view(null, [task("0001"), task("0002")])).toContain("No task here depends on another yet.");
+    const html = view(null, [task("0001", [], { prefix: "mu" }), task("0014", [], { prefix: "mu" })]);
+    expect(html).toContain("<code>muster set &lt;id&gt; depends mu-1</code>");
+    expect(html).not.toContain("depends 0014");
+  });
+  it("puts a space between the parts of a chip's state, so the words don't run together (Donehigh)", () => {
+    const loose = [task("0021", [], { stage: "done", priority: "high" }), task("0024", [], { stage: "your-check", priority: "high", waitingForOwner: true, claimedBy: "wt-x" })];
+    const chip = (id: string) => (new RegExp(`<button[^>]*g-loose[^>]*><span class="id">${id}</span>.*?</button>`).exec(view(null, loose))?.[0] ?? "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ");
+    expect(chip("0021")).toContain("Done high");
+    expect(chip("0024")).toContain("Your check high needs you");
+  });
+  it("lays a chip's parts out with a gap, and a node's top line wraps whole words, so needs you never clips to nee", () => {
+    expect(rule(".g-loose")).toMatch(/display: inline-flex;[^]*gap: 6px;/);
+    expect(rule(".g-top")).toContain("flex-wrap: wrap;");
+    expect(rule(".g-top")).not.toContain("overflow: hidden");
+    expect(rule(".g-top > *")).toMatch(/flex: none;\s*white-space: nowrap;/);
   });
 });
