@@ -4,6 +4,32 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Coordinator (Muster_Team_Lead): mu-75, mu-79, mu-82, mu-85 and mu-84 merged; the lead runs its own sessions
+**Did:** merged mu-75 (aba4fcc), mu-79 (19a336d), mu-82 (07d7922), mu-85 (dfb92dd) and mu-84
+(8a39448), all in Your check; rebuilt the release app and CLI from main and restarted the
+running Muster. Took over from Muster_Team_Lead_4 on the owner's word and stopped it, Lead_3 and
+the builders stuck on permission prompts; the lead now starts every builder, reviewer and QA
+session itself, in its own permission mode, so nothing waits on the owner (memory: lead owns
+sessions). One task per builder session (decision 0004): Akbar (mu-84), Gholi_2 (mu-85),
+Asghar_5 (mu-82), Asghar_7 (mu-79's tests), Reviewer and QA sessions, each with successors at
+the context cap. Lessons L11 and L12 accepted.
+**Decided:** (overrule any time) mu-82: no number without its words; the name gives way first,
+and a heading wraps to a second labelled line only where one line can't hold "N need you".
+mu-84: a column opened from a chip stays open in that mode until folded; when chips overflow, a
+fixed "+N more · K need you" cue walks the hidden chips in board order and wraps to the start.
+mu-79 AC4 taken on a split proof, then confirmed after the merge (Run → Stop ends the second
+Muster). mu-85's R1 nit fixed before the merge. Every successor's claim moved by `muster return
+--as owner` (backlog 2026-10-14-0707); successor names can clash (backlog note).
+**Verified:** each merge's gate green after the rebase on main; release-app QA by QA sessions
+(window-only screenshots in attachments/0079, 0082, 0084, 0085); projects.json, settings.json
+and the webview's storage byte-identical after every QA run. mu-79's merge gate first went red on
+two load-sensitive run:: tests (load average 49-230 from parallel builds); a test-only commit
+made them robust, proven by five mutants.
+**Open:** AC5 of mu-82, mu-84, mu-85 (the owner's look). QA_3's clicks landed on the owner's
+Teams window for a moment (4 clicks); QA now refuses to click unless Muster is frontmost.
+Backlog notes: mu-79 nits R5-R7, mu-84 cue nits, the 150px sidebar rows outside mu-82,
+projects.json key order, mu-85 icon nits, the parallel:: load-sensitive test.
+
 ## 2026-10-14 — Closed and empty board columns are one row of chips above the board; show or hide each column (mu-84)
 **Did:** the plain board draws only its open columns; every empty, folded or hidden place (Paused,
 a stage, Recently finished) is a chip in one row under the filter bar, in board order, with its
