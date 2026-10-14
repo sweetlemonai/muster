@@ -45,25 +45,44 @@ fn fence(line: &[u8]) -> Option<(u8, usize, &[u8])> {
     (n >= 3).then(|| (c, n, &rest[n..]))
 }
 
-/// Split at every `## ` line outside a fenced code block, so a heading quoted in an entry's
-/// code stays in that entry. A fence closes on the same character, at least as many, and
-/// nothing after them but spaces; one never closed runs to the end of the file.
-fn split(text: &[u8]) -> Log<'_> {
-    let mut starts = Vec::new();
-    let mut at = 0;
-    let mut open: Option<(u8, usize)> = None;
-    for line in text.split_inclusive(|&b| b == b'\n') {
-        match (open, fence(line)) {
+/// Fenced code blocks, followed line by line (CommonMark): a fence closes on the same character,
+/// at least as many, and nothing after them but spaces; one never closed runs to the end. Also
+/// what the lenses' block reader skips (0076), so both read fences alike.
+#[derive(Default)]
+pub(crate) struct Fences {
+    open: Option<(u8, usize)>,
+}
+
+impl Fences {
+    /// Is `line`, the next line, code: a fence line itself, or inside an open fence?
+    pub(crate) fn fenced(&mut self, line: &[u8]) -> bool {
+        match (self.open, fence(line)) {
             (Some((c, n)), Some((c2, n2, rest)))
                 if c2 == c && n2 >= n && rest.iter().all(|b| b" \t\r\n".contains(b)) =>
             {
-                open = None
+                self.open = None;
+                true
             }
-            (Some(_), _) => {}
+            (Some(_), _) => true,
             // A backtick fence's info string can't hold a backtick (then it's inline code).
-            (None, Some((c, n, rest))) if c == b'~' || !rest.contains(&b'`') => open = Some((c, n)),
-            (None, _) if line.starts_with(b"## ") => starts.push(at),
-            (None, _) => {}
+            (None, Some((c, n, rest))) if c == b'~' || !rest.contains(&b'`') => {
+                self.open = Some((c, n));
+                true
+            }
+            (None, _) => false,
+        }
+    }
+}
+
+/// Split at every `## ` line outside a fenced code block (`Fences`), so a heading quoted in an
+/// entry's code stays in that entry.
+fn split(text: &[u8]) -> Log<'_> {
+    let mut starts = Vec::new();
+    let mut at = 0;
+    let mut fences = Fences::default();
+    for line in text.split_inclusive(|&b| b == b'\n') {
+        if !fences.fenced(line) && line.starts_with(b"## ") {
+            starts.push(at);
         }
         at += line.len();
     }

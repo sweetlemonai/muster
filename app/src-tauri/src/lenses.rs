@@ -9,7 +9,7 @@
 //!   skip = ["payments"]
 //!
 //!   [shaping.reasons]
-//!   payments = "Muster has no paid features, licences or prices"
+//!   payments = "a free tool: no paid features, licences or prices"
 //!   ```
 //!
 //! - an old queue, in README.md's front matter: `shaping-skip: payments, themes`, and one
@@ -554,15 +554,21 @@ fn is_heading(line: &str) -> bool {
 
 /// The body's Lenses block: from its `**Lenses:**` line (what follows the label on it included)
 /// to the next heading, or to a blank line that isn't followed by a list item or an indented line.
+/// Fenced code is never read (`merge_log::Fences`): a `**Lenses:**` example in a fence isn't the
+/// block, and a fence inside the block is left out of it.
 fn block(body: &str) -> Option<String> {
     let lines: Vec<&str> = body.lines().collect();
-    let start = lines
-        .iter()
-        .position(|l| l.trim_start().starts_with(BLOCK))?;
+    let mut fences = crate::merge_log::Fences::default();
+    let code: Vec<bool> = lines.iter().map(|l| fences.fenced(l.as_bytes())).collect();
+    let start = (0..lines.len()).find(|&i| !code[i] && lines[i].trim_start().starts_with(BLOCK))?;
     let mut out = vec![lines[start].trim_start()[BLOCK.len()..].trim().to_string()];
     let mut i = start + 1;
     while i < lines.len() {
         let l = lines[i];
+        if code[i] {
+            i += 1;
+            continue;
+        }
         if is_heading(l) {
             break;
         }
@@ -962,6 +968,32 @@ mod tests {
             .copied()
             .collect();
         assert_eq!(missing(LISTED, &without), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn a_lenses_example_in_a_code_fence_is_not_the_block() {
+        let all = LENSES.to_vec();
+        let only_security: Vec<Lens> = all.iter().filter(|l| l.id == "security").copied().collect();
+        // The format shown in a fence before the real block: the real one is read.
+        let body = "Write it like this:\n\n```\n**Lenses:**\n- **Accessibility:** n/a\n```\n\n**Lenses:** Security: the input is checked.\n";
+        assert_eq!(missing(body, &only_security), Vec::<&str>::new());
+        assert_eq!(
+            said_na(body),
+            Vec::<(&str, String)>::new(),
+            "the example's n/a isn't the task's"
+        );
+        // A ~~~ fence, and one that a shorter fence doesn't close.
+        let tilde = "~~~~md\n**Lenses:** Security: n/a\n~~~\nstill code\n~~~~\n\n**Lenses:** Security: checked.\n";
+        assert_eq!(said_na(tilde), Vec::<(&str, String)>::new());
+        assert_eq!(missing(tilde, &only_security), Vec::<&str>::new());
+        // Only a fenced example: no block at all, so every lens is missing.
+        let names: Vec<&str> = LENSES.iter().map(|l| l.name).collect();
+        assert_eq!(missing("```\n**Lenses:** Security: x\n```\n", &all), names);
+        // A fence inside the block is left out of it, and a heading quoted there doesn't end it.
+        let inside = "**Lenses:**\n- **Security:** checked, as in:\n```\n## not a heading\n- **Privacy:** n/a\n```\n- **Themes:** every theme\n";
+        let m = missing(inside, &all);
+        assert!(!m.contains(&"Security") && !m.contains(&"Themes") && m.contains(&"Privacy"));
+        assert_eq!(said_na(inside), Vec::<(&str, String)>::new());
     }
 
     #[test]

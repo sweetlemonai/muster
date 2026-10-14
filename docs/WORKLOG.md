@@ -13,12 +13,15 @@ matter. `muster file` warns, naming the lenses the body has no line for, and fil
 check` reports a bad skip. A VISION.md `**Lenses needed:**` line makes the vision check flag a task
 that says only "n/a" for one of them. Help, manual, PROTOCOL and AS_BUILT updated.
 **Decided:** a skip without a known lens or a reason doesn't count (the lens still applies) and is a
-problem, not a warning; a line counts for a lens when its label is only lens words.
+problem, not a warning; a line counts for a lens when its label is only lens words. The coordinator
+decided Muster's own two calls: its `config.toml` skips no lens (payments stays one, answered "n/a"
+and why, since Muster may be sold inside Drover), and its VISION.md needs accessibility, i18n/RTL,
+themes, architecture, security, privacy and performance. A `**Lenses:**` example in fenced code
+isn't the task's block (review R2; the fence rule is merge_log's, now shared as `Fences`).
 **Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; lenses,
 backlog, vision and CLI tests on synthetic queues in both layouts.
 **Open:** the app's "File as task" doesn't show the missing-lens warning yet; `manifest.py --check`
-doesn't know skips; whether Muster itself skips a lens (payments?) and its VISION's needed lenses are
-the owner's call.
+doesn't know skips.
 
 ## 2026-10-14 — Each project has a run command beside its gate; Muster's is bin/run (mu-77)
 **Did:** `muster projects set <name> run "<command>"` stores what the app's Run will start to try a

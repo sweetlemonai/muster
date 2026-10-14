@@ -18,6 +18,8 @@ Principles: no babysitting (ask the owner only what's theirs, in batches); every
 out of the way (ADHD, `DESIGN.md`); local first, nothing sent anywhere but the model; tokens are
 budgeted; only `muster` writes state, agents never edit status, claims or times by hand.
 
+**Lenses needed:** accessibility, i18n/RTL, themes, architecture, security, privacy, performance
+
 ## Where things live (decision 0003)
 
 - `.muster/` in each repo: `config.toml`, `backlog/`, `tasks/NNNN-slug.md` (never moved),

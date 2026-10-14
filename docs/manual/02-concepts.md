@@ -148,7 +148,7 @@ Every task answers the **lenses**, the concerns all projects share: accessibilit
 skip = ["payments"]
 
 [shaping.reasons]
-payments = "Muster has no paid features, licences or prices"
+payments = "a free tool: no paid features, licences or prices"
 ```
 
 An older queue says it in its README.md's front matter, with `shaping-skip: payments` and `shaping-reason-payments: <why>`. The brief names each skipped lens and its reason. A skip with no reason, or of a lens that doesn't exist, doesn't count, and **Problems** and `muster check` list it. `muster file` warns when the body has no line for a lens, naming it, and files the task anyway.
