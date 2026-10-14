@@ -93,6 +93,11 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   without a session stamp, or in Testing for a check-in, shows the button disabled with the
   reason. Not built: the optional auto-nudge after 45 quiet minutes, off by default; it can now
   go in Settings → Agents (0036).
+- **Send-back comes first** (mu-66, `ops.rs` `change_locked`, `block.rs` `put_sent_back_first`): a
+  Testing → Building change (a review round, `muster return`) skips the one-claim-per-holder check,
+  so a review can always send a task back to its builder; the sent-back task comes first (`muster
+  next` refuses with "fix mu-59 first", its card says so, the holder's other card says it waits
+  behind it). Claiming another task stays refused while you hold one.
 - **Pause and Resume** (0045, `pause.rs`, `pause_cmds.rs`, `Pause.tsx`): **Pause** or **Resume**
   in the strip under a card (Backlog through Testing; the strip a quiet card's Ask for a check-in
   shares) and beside the stage in the pane's status line, with an optional why typed in place. A

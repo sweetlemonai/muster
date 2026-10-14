@@ -282,7 +282,11 @@
 > (the top Ready task you may take: not blocked, high priority first, then the lowest id) or
 > `muster claim <id> --as <you>`. One claim per holder (the owner may hold several): anything that
 > would give you a second unblocked task in Building in that queue is refused, a claim, a pass from
-> Ready, an unblock or a return to you alike, so pass, return or block the first. It's checked under
+> Ready, an unblock or a return to you alike, so pass, return or block the first. The one exception is
+> a send-back: a task returned from Testing to Building (a review's findings, or `muster return`) always
+> goes back to its builder, even while they hold another task there (mu-66). It comes first: `muster next`
+> says `fix mu-59 first (sent back by the review)`, the card says so, and the builder's other task's card
+> says it's waiting behind it. A third claim is still refused. It's checked under
 > the queue's lock (two claims at once: one wins), and a claim says which queue it was made in. A
 > claim has a lease: `heartbeat:` is stamped by the tool on the claim, on `muster heartbeat <id>`
 > (the holder, on long work), on the holder's note, comment, ask, pass, return and block, and when the task

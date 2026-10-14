@@ -21,7 +21,7 @@ A card in Building that says **quiet 12 h+** belongs to a session nobody has hea
 - Out of Shaping, the task needs acceptance criteria.
 - "has 2 open vision conflicts (V1, V2): resolve them or record a new check": settle each one with **Resolve** in the task pane's Vision section (or `muster vision <id> --resolve V1 "<how>"`), or have a session check the task again. See [The vision check](02-concepts.md#the-vision-check).
 - "depends on 0004, not merged yet": a task can't be claimed until everything it depends on is merged, in Your check or Done ("not done yet" when it waits on one of your own tasks, which only counts once Done).
-- A claim is refused while the same session already holds another task in Building: pass, send back or block that one first.
+- A claim is refused while the same session already holds another task in Building: pass, send back or block that one first. A task sent back to you from Testing is the exception: it comes back even while you hold another, and you fix it first (`muster next` and the cards say so).
 - Goals and features never go into Building: build their tasks.
 
 ## Tasks are missing from the board

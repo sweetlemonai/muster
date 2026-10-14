@@ -417,6 +417,37 @@ pub fn derive(tasks: &mut [Task]) {
             }
         }
     }
+    put_sent_back_first(tasks);
+}
+
+/// A task is held when it's in Building with a holder and isn't blocked (`ops::holding`).
+fn held(t: &Task) -> bool {
+    t.stage == "building" && t.blocked_kind.is_empty() && !t.claimed_by.is_empty()
+}
+
+/// A send-back comes first (mu-66): of the tasks one holder holds in Building, the lowest-id one
+/// sent back from Testing is `behind` for each of the others they hold.
+fn put_sent_back_first(tasks: &mut [Task]) {
+    let first: Vec<(String, String)> = tasks
+        .iter()
+        .filter(|t| held(t) && t.sent_back)
+        .map(|t| (t.id.clone(), t.claimed_by.clone()))
+        .collect();
+    for t in tasks.iter_mut() {
+        t.behind = if held(t) {
+            first
+                .iter()
+                .filter(|(id, by)| *id != t.id && crate::session::same_holder(by, &t.claimed_by))
+                .map(|(id, _)| id)
+                // A sent-back task is behind another sent-back one with a lower id only.
+                .filter(|id| !t.sent_back || **id < t.id)
+                .min()
+                .cloned()
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+    }
 }
 
 #[cfg(test)]

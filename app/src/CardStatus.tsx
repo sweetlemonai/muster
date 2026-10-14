@@ -1,6 +1,6 @@
 import { useContext } from "react";
 import { BranchCardLine } from "./Branch";
-import { builtTested, checkinLine, currentCheckin, holderOf, leaseRunOut, needsTester, quietCheckin, quietText, splitHolder, startedAgo, whoLine } from "./lib";
+import { builtTested, checkinLine, currentCheckin, holderOf, leaseRunOut, needsTester, sendBackLine, quietCheckin, quietText, splitHolder, startedAgo, whoLine } from "./lib";
 import { askedText } from "./reach";
 import { finishText } from "./recentData";
 import { useLook, type CardLines } from "./modes";
@@ -76,10 +76,12 @@ function HeldLines({ t, now, lines }: { t: Task; now: number; lines: CardLines }
   const flag = [stale ? `quiet ${spanText(lease)}+` : "", quiet === null ? "" : quietText(quiet)].filter(Boolean).join(" · ");
   // What Claude Code says the session is doing (0048), when it says: the flag stays, quiet, under it.
   const session = sessionWords(t);
+  const order = sendBackLine(t);
   return (
     <>
       {lines !== "brief" && <span className={who ? "card-who" : "card-who nobody"}>{[who || "nobody on it", started].filter(Boolean).join(" · ")}</span>}
       {needsTester(t) && <span className="card-tester">needs a tester</span>}
+      {order && <span className={order.kind === "first" ? "card-first" : "card-behind"}>{order.text}</span>}
       {session && (
         <span className={`card-session ${t.sessionState}`}>
           {t.sessionState === "working" && <i className="dot" aria-hidden="true" />}

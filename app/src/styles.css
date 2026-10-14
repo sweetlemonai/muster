@@ -183,6 +183,10 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 /* Who built it, who tested it, and "needs a tester" (0047): quiet, and wrapped rather than cut,
    so no name is lost in a narrow column. */
 .card-built, .card-tester { font-size: 11px; line-height: 1.35; color: var(--muted); overflow-wrap: anywhere; }
+/* Which task to fix first (mu-66): the sent-back one in the accent weight, the one behind it quiet. */
+.card-first, .card-behind { font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
+.card-first { color: var(--text); font-weight: 600; }
+.card-behind { color: var(--muted); }
 .card-who.nobody { color: var(--faint); }
 .card-done { color: var(--muted); }
 .card-checkin { color: var(--text); opacity: 0.8; }

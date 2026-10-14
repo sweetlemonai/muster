@@ -414,6 +414,13 @@ pub struct Task {
     /// Who passed it Building → Testing with the gate's line most recently (0047): a builder too,
     /// unlike an override into Testing. "" when nobody has.
     pub gated_by: String,
+    /// Sent back to its builder (mu-66): in Building, and the latest stage line is Testing →
+    /// Building (a review's findings, or `muster return` from Testing). It stays so until it
+    /// moves on.
+    pub sent_back: bool,
+    /// The task of the same holder that comes before this one (`block::derive`): the lowest id
+    /// among the holder's sent-back tasks in Building, when this isn't it. "" when none does.
+    pub behind: String,
     /// Who passed it into Your check from an earlier stage most recently (its tester, or the
     /// owner's override), or "".
     pub tested_by: String,
@@ -1129,6 +1136,10 @@ pub fn parse_task(
         })
         .map(|(s, _)| s.who.clone())
         .unwrap_or_default();
+    let sent_back = stage == "building"
+        && steps
+            .last()
+            .is_some_and(|(s, _)| s.from == "testing" && s.to == "building");
     let tested_by = steps
         .iter()
         .rev()
@@ -1171,6 +1182,8 @@ pub fn parse_task(
         held_by: get("held-by"),
         built_by,
         gated_by,
+        sent_back,
+        behind: String::new(),
         tested_by,
         stage_since,
         checkins,

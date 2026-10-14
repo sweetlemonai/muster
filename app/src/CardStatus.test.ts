@@ -113,6 +113,25 @@ describe("the card's who and progress lines", () => {
     const html = renderToStaticMarkup(createElement(CardStatus, { t: task({ stage: "your-check", ownerCriteria: [crit(1, false, long)] }), now: NOW }));
     expect(html).toMatch(/<span class="card-next" title="Try: look at (every part of the sidebar ){5}every part of the sidebar">Try: look at every part[^<]*…<\/span>/);
   });
+  it("a task sent back from Testing says to fix it first, and the holder's other task says it waits behind (mu-66)", () => {
+    const base = { ...building, prefix: "mu", id: "0059" };
+    expect(lines({ ...base, sentBack: true })).toEqual([
+      ["card-who", "wt-a · wt-0030 · 7b5e8856 · started 2 h ago"],
+      ["card-first", "fix mu-59 first (sent back by the review)"],
+    ]);
+    expect(lines({ ...base, id: "0061", behind: "0059" })).toEqual([
+      ["card-who", "wt-a · wt-0030 · 7b5e8856 · started 2 h ago"],
+      ["card-behind", "waiting behind mu-59 (sent back by the review)"],
+    ]);
+    // A send-back that is blocked is waiting on something else, not first; the plain card is unchanged.
+    expect(lines({ ...base, sentBack: true, blocked: true, waitingOn: "owner" }).map(([c]) => c)).toEqual(["card-who"]);
+    expect(lines({ ...base }).map(([c]) => c)).toEqual(["card-who"]);
+    // Every look keeps them: they say which to do first.
+    for (const look of ["brief", "status"] as const) {
+      const html = renderToStaticMarkup(createElement(CardStatus, { t: task({ ...base, sentBack: true }), now: NOW, lines: look }));
+      expect(html, look).toContain("fix mu-59 first (sent back by the review)");
+    }
+  });
   it("in Ready says nobody is on it yet, and Backlog, Shaping and Done say nothing", () => {
     expect(lines({ stage: "ready" })).toEqual([["card-who nobody", "nobody on it"]]);
     expect(lines({ stage: "ready", claimedBy: "wt-b" })).toEqual([["card-who", "wt-b"]]);

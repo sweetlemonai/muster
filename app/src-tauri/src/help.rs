@@ -112,14 +112,14 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "claim",
         usage: "muster claim <id> [--as <who>]",
-        what: "Take a Ready task: it moves to Building, held by you, with its lease started (heartbeat). Inside a Claude Code session muster adds the session to who you are (name, short id, checkout, account), so you never type it. Refused while you already hold another task in Building in this queue (pass, return or block that first), when it's blocked, when a task it depends on isn't merged yet (an agent's task counts once it's in Your check, the owner's own once it's Done), when it isn't in Ready any more, and for a human task (the owner's own) unless you're the owner. Says which queue it claimed in.",
+        what: "Take a Ready task: it moves to Building, held by you, with its lease started (heartbeat). Inside a Claude Code session muster adds the session to who you are (name, short id, checkout, account), so you never type it. Refused while you already hold another task in Building in this queue (pass, return or block that first; a task sent back to you from Testing counts, and comes first), when it's blocked, when a task it depends on isn't merged yet (an agent's task counts once it's in Your check, the owner's own once it's Done), when it isn't in Ready any more, and for a human task (the owner's own) unless you're the owner. Says which queue it claimed in.",
         options: &[("--as", "who you are (your branch or worktree); default $MUSTER_AS, then the folder's git user.name")],
         examples: &["muster claim 0007 --as wt-a", "muster claim 0007 --as wt-a --queue drover"],
     },
     Command {
         name: "next",
         usage: "muster next [--as <who>]",
-        what: "Claim the top Ready task you may take: not blocked, not held by someone else, everything it depends on merged (in Your check or Done; the owner's own task, Done), and never a human task (the owner's own) unless you're the owner; high priority first, then normal, then low, then the lowest id. Prints \"nothing ready\" and exits 1 when there's none. Refused while you already hold a task in Building. When more of the agents' tasks wait in Your check than the project's limit (5 unless set in the app's Settings › Projects; the owner's own tasks don't count), it says so first, on stderr (\"muster: 7 tasks wait in Your check (limit 5): the owner's review is the bottleneck.\"), and still claims: it warns, never refuses.",
+        what: "Claim the top Ready task you may take: not blocked, not held by someone else, everything it depends on merged (in Your check or Done; the owner's own task, Done), and never a human task (the owner's own) unless you're the owner; high priority first, then normal, then low, then the lowest id. Prints \"nothing ready\" and exits 1 when there's none. Refused while you already hold a task in Building; when one of them was sent back from Testing, it says to fix that one first. When more of the agents' tasks wait in Your check than the project's limit (5 unless set in the app's Settings › Projects; the owner's own tasks don't count), it says so first, on stderr (\"muster: 7 tasks wait in Your check (limit 5): the owner's review is the bottleneck.\"), and still claims: it warns, never refuses.",
         options: &[("--as", "who you are; default $MUSTER_AS, then the folder's git user.name")],
         examples: &["muster next --as wt-a", "muster next --as wt-a --queue muster"],
     },
@@ -215,7 +215,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "return",
         usage: "muster return <id> \"<why>\" [--to <stage>]",
-        what: "Send a task back one stage, or to an earlier stage with --to, with the reason (one line, 500 characters). Back to Building gives it to whoever last claimed it there. Sent back from Your check (merged), the tasks that depend on it and haven't started show blocked by it again; ones already under way keep going, with a note on their log (\"0002 went back to Building: <why>\").",
+        what: "Send a task back one stage, or to an earlier stage with --to, with the reason (one line, 500 characters). Back to Building gives it to whoever last claimed it there. A send-back from Testing is always allowed, even when that holder already holds another task in Building: it isn't a new claim. It comes first (`muster next` says \"fix mu-59 first (sent back by the review)\", and the card does), and the holder's other task waits behind it. Sent back from Your check (merged), the tasks that depend on it and haven't started show blocked by it again; ones already under way keep going, with a note on their log (\"0002 went back to Building: <why>\").",
         options: &[("--to", "an earlier stage: backlog, shaping, ready, building, testing or your-check")],
         examples: &[
             "muster return 0007 \"AC2 fails: the board still flickers\"",

@@ -60,6 +60,11 @@ export type Task = {
   builtBy?: string;
   /** Who last passed it Building → Testing with the gate's line (0047), a builder too, or "". */
   gatedBy?: string;
+  /** Sent back from Testing to Building (mu-66): its latest stage change. Optional, like the other
+   *  later fields. */
+  sentBack?: boolean;
+  /** The id of the task its holder has to fix first (mu-66), or "": this one waits behind it. */
+  behind?: string;
   /** Who passed it into Your check most recently: its tester, or the owner's override; or "". */
   testedBy?: string;
   /** When the current stage began (the latest stage line into it), or "". */

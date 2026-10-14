@@ -3646,6 +3646,59 @@ mod tests {
     }
 
     #[test]
+    fn a_return_from_testing_goes_through_while_the_builder_holds_the_next_task() {
+        // mu-66: the send-back comes first; `next` says so, and a third claim is still refused.
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let args = |who: &str, a: &[&str]| {
+            let mut v = sv(a);
+            v.extend(sv(&["--queue", &q, "--as", who]));
+            v
+        };
+        let code = |who: &str, a: &[&str]| main(&args(who, a));
+        for title in ["One", "Two", "Three"] {
+            assert_eq!(code("owner", &["new", title]), 0);
+        }
+        assert_eq!(code("wt-a", &["claim", "0001"]), 0);
+        assert_eq!(
+            code(
+                "wt-a",
+                &["pass", "0001", "--from", "building", "--gate", "green"]
+            ),
+            0
+        );
+        assert_eq!(code("wt-a", &["claim", "0002"]), 0);
+        assert_eq!(
+            code("qa", &["return", "0001", "AC1 fails", "--to", "building"]),
+            0
+        );
+        let t = |id: &str| queue::read_task(d.path(), id).unwrap();
+        let prefix = crate::key::prefix_for(d.path());
+        let (k1, k2) = (
+            crate::key::key(&prefix, "0001"),
+            crate::key::key(&prefix, "0002"),
+        );
+        assert_eq!(
+            (t("0001").stage, t("0002").stage),
+            ("building".into(), "building".into())
+        );
+        assert_eq!(
+            (t("0001").claimed_by, t("0002").claimed_by),
+            ("wt-a".into(), "wt-a".into())
+        );
+        assert_eq!(
+            run(&args("wt-a", &["next"])).unwrap_err(),
+            format!("fix {k1} first (sent back by the review); you also hold {k2}, which waits behind it")
+        );
+        assert_eq!(
+            code("wt-a", &["claim", "0003"]),
+            1,
+            "a third claim is still refused"
+        );
+        assert_eq!(t("0003").stage, "ready");
+    }
+
+    #[test]
     fn human_tasks_on_the_command_line() {
         // 0022: new --human (the owner's only), set for, and an agent's claim refused.
         let d = v2_queue();

@@ -120,6 +120,16 @@ export function sameHolder(a: string, b: string): boolean {
   return x.label === y.label && (!x.id || !y.id || x.id === y.id);
 }
 
+/** What a card says about the order a holder works their tasks in (mu-66): a task sent back from
+ *  Testing comes first, and the holder's other tasks in Building wait behind it. Nothing for a
+ *  blocked one, which isn't held; the core's `ops::sent_back_first` says the same for `next`. */
+export function sendBackLine(t: Pick<Task, "prefix" | "id" | "blocked" | "sentBack" | "behind">): { kind: "first" | "behind"; text: string } | null {
+  if (t.blocked) return null;
+  if (t.sentBack && !t.behind) return { kind: "first", text: `fix ${taskKey(t)} first (sent back by the review)` };
+  if (t.behind) return { kind: "behind", text: `waiting behind ${keyOf(t.prefix, t.behind)} (sent back by the review)` };
+  return null;
+}
+
 /** An agent's task in Testing still held by one of its builders (0047, `builders`): a session
  *  that didn't build it has to test it and pass it on (or the owner). */
 export function needsTester(t: Pick<Task, "stage" | "heldBy" | "builtBy" | "gatedBy" | "forWho">): boolean {

@@ -1847,6 +1847,51 @@ mod tests {
     }
 
     #[test]
+    fn a_round_with_findings_returns_the_task_even_while_its_builder_holds_the_next_one() {
+        let d = queue();
+        let id = in_testing(d.path(), "app/");
+        let next = ops::create_task(
+            d.path(),
+            &NewTask {
+                title: "The next one".into(),
+                body: "## Acceptance criteria\n- [ ] AC1: done — verify: command".into(),
+                ..Default::default()
+            },
+            "owner",
+            T0,
+        )
+        .unwrap()
+        .id;
+        ops::claim_task(d.path(), &next, "wt-a", "2026-10-13 11:30").unwrap();
+        let json = rec(
+            HEAD1,
+            &[finding_json(
+                "Unbounded output",
+                "unbounded-output",
+                "should",
+            )],
+            "",
+        );
+        let r = record(
+            d.path(),
+            &id,
+            &json,
+            "qa",
+            "2026-10-13 12:00",
+            &span(HEAD1, None),
+        )
+        .unwrap();
+        assert_eq!((r.then.as_str(), r.then_failed.as_str()), ("returned", ""));
+        let (back, waiting) = (task(d.path(), &id), task(d.path(), &next));
+        assert_eq!(
+            (back.stage.as_str(), waiting.stage.as_str()),
+            ("building", "building")
+        );
+        assert!(same_holder(&back.claimed_by, "wt-a") && same_holder(&waiting.claimed_by, "wt-a"));
+        assert!(back.sent_back);
+    }
+
+    #[test]
     fn a_round_with_findings_is_written_into_the_task_and_returns_it_to_its_builder() {
         let d = queue();
         let id = in_testing(d.path(), "app/");

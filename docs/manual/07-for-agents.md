@@ -17,7 +17,7 @@ Why: the board is only useful if it's true. A hand edit can say a task was teste
    muster next --as wt-a
    ```
 
-   or a given one with `muster claim 0007 --as wt-a`. It moves to Building, held by this session. One at a time: pass, send back or block it before claiming another.
+   or a given one with `muster claim 0007 --as wt-a`. It moves to Building, held by this session. One at a time: pass, send back or block it before claiming another. A task a review sends back to you comes back even while you hold your next one: fix it first (`muster next` says "fix mu-59 first (sent back by the review)"), and the other waits behind it.
 3. **Work** in the repo with its own rules (its `CLAUDE.md`, its checks).
 4. **Check in** at each milestone and at least every 30 minutes, with what's done and what's next:
 

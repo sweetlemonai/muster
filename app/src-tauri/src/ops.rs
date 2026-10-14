@@ -1306,7 +1306,10 @@ fn change_locked(
         let held_before = now.stage == "building" && !now.blocked && !now.claimed_by.is_empty();
         let held_after = c.stage == "building" && !c.blocked && !c.claimed_by.is_empty();
         let new_hold = held_after && !(held_before && same_holder(&now.claimed_by, &c.claimed_by));
-        if new_hold && !is_owner(&c.claimed_by) {
+        // A send-back from Testing isn't starting anything (mu-66): its builder gets it back even
+        // while holding another task, which then waits behind it.
+        let sent_back = now.stage == "testing" && c.stage == "building";
+        if new_hold && !sent_back && !is_owner(&c.claimed_by) {
             let tasks = tasks_now(root);
             // Still blocked by tasks it depends on (0024): waiting, not held.
             let depends = match &c.depends {
@@ -2167,6 +2170,34 @@ fn keys_of(root: &Path, ids: &[String]) -> String {
         .join(", ")
 }
 
+/// What `next` says to a holder with a task sent back (mu-66): fix the lowest-id one first, and
+/// the others it holds wait behind it. None when none of theirs was sent back.
+fn sent_back_first(root: &Path, tasks: &[queue::Task], who: &str) -> Option<String> {
+    let mine = |t: &&queue::Task| {
+        t.stage == "building"
+            && t.blocked_kind.is_empty()
+            && !t.claimed_by.is_empty()
+            && same_holder(&t.claimed_by, who)
+    };
+    let first = tasks.iter().filter(mine).find(|t| t.sent_back)?;
+    let others: Vec<String> = tasks
+        .iter()
+        .filter(mine)
+        .filter(|t| t.id != first.id)
+        .map(|t| t.id.clone())
+        .collect();
+    let key = keys_of(root, std::slice::from_ref(&first.id));
+    Some(if others.is_empty() {
+        format!("fix {key} first (sent back by the review); pass, return or block it before you take another")
+    } else {
+        format!(
+            "fix {key} first (sent back by the review); you also hold {}, which {} behind it",
+            keys_of(root, &others),
+            if others.len() == 1 { "waits" } else { "wait" }
+        )
+    })
+}
+
 fn already_holds(id: &str) -> String {
     format!("you already hold {id}; pass, return or block it first")
 }
@@ -2250,7 +2281,7 @@ pub fn next_task(root: &Path, who: &str, stamp: &str) -> Result<Option<Claimed>,
         // Checked before picking, so a holder is told so rather than handed a refusal for one
         // task; `change` checks again. The owner may hold several.
         if let Some(held) = holding(&tasks, &who, "").filter(|_| !is_owner(&who)) {
-            return Err(already_holds(&held));
+            return Err(sent_back_first(root, &tasks, &who).unwrap_or_else(|| already_holds(&held)));
         }
         let Some(top) = tasks
             .iter()
@@ -5773,14 +5804,19 @@ mod tests {
             "wt-a already holds op-2 in Building; one claim per holder, so they pass, return or block it first"
         );
         assert!(task_of(d.path(), "0001").blocked);
-        // A return to the builder who now holds another task: refused too.
+        // A send-back from Testing to the builder who now holds another task isn't a new claim
+        // (mu-66): it goes through, and the builder holds both.
         claim_task(d.path(), "0003", "wt-b", T).unwrap();
         pass_task(d.path(), "0003", "wt-b", T, &gate()).unwrap();
         claim_task(d.path(), "0004", "wt-b", T).unwrap();
-        assert!(return_task(d.path(), "0003", "AC1 fails", None, "qa", T)
-            .unwrap_err()
-            .starts_with("wt-b already holds op-4 in Building"));
-        assert_eq!(task_of(d.path(), "0003").stage, "testing");
+        return_task(d.path(), "0003", "AC1 fails", Some("building"), "qa", T).unwrap();
+        assert_eq!(
+            (
+                task_of(d.path(), "0003").stage,
+                task_of(d.path(), "0003").claimed_by
+            ),
+            ("building".into(), "wt-b".into())
+        );
         // The owner may hold several.
         pass_task(d.path(), "0005", "owner", T, &no_gate()).unwrap();
         set_stage(d.path(), "0002", "ready", None, "owner", T).unwrap();
@@ -5791,6 +5827,129 @@ mod tests {
             "nothing left, but not refused"
         );
         assert!(state(d.path()).problems.is_empty());
+    }
+
+    /// `wt-a` holds 0001, sent back from Testing, and 0002, which it claimed meanwhile; 0003 waits
+    /// in Ready.
+    fn sent_back_while_holding_another() -> tempfile::TempDir {
+        let d = queue();
+        for id in ["0001", "0002", "0003"] {
+            put_task(d.path(), "todo", id, &ready_fm("normal"));
+        }
+        claim_task(d.path(), "0001", "wt-a", T).unwrap();
+        pass_task(d.path(), "0001", "wt-a", T, &gate()).unwrap();
+        claim_task(d.path(), "0002", "wt-a", T).unwrap();
+        return_task(d.path(), "0001", "AC1 fails", None, "qa", T).unwrap();
+        d
+    }
+
+    /// Each task's (sent back, waits behind), in id order.
+    fn order_of(d: &Path) -> Vec<(bool, String)> {
+        tasks_now(d)
+            .into_iter()
+            .map(|t| (t.sent_back, t.behind))
+            .collect()
+    }
+
+    #[test]
+    fn a_send_back_is_marked_and_comes_before_the_other_task_its_holder_holds() {
+        let d = sent_back_while_holding_another();
+        assert_eq!(
+            order_of(d.path()),
+            [
+                (true, "".into()),
+                (false, "0001".into()),
+                (false, "".into())
+            ],
+            "0002 waits behind 0001; Ready 0003 is nobody's"
+        );
+        assert_eq!(task_of(d.path(), "0001").stage, "building");
+        assert_eq!(task_of(d.path(), "0002").stage, "building");
+        // Passed to Testing again, it's no longer sent back, and nothing waits behind it.
+        pass_task(d.path(), "0001", "wt-a", T, &gate()).unwrap();
+        assert_eq!(
+            order_of(d.path()),
+            [(false, "".into()), (false, "".into()), (false, "".into())]
+        );
+    }
+
+    #[test]
+    fn a_blocked_send_back_holds_nothing_so_nothing_waits_behind_it() {
+        let d = sent_back_while_holding_another();
+        block_task(d.path(), "0001", "owner: pick a colour", "wt-a", T).unwrap();
+        assert_eq!(order_of(d.path())[1], (false, "".into()));
+    }
+
+    #[test]
+    fn next_names_the_sent_back_task_and_a_third_claim_stays_refused() {
+        let d = sent_back_while_holding_another();
+        assert_eq!(
+            next_task(d.path(), "wt-a", T).unwrap_err(),
+            "fix op-1 first (sent back by the review); you also hold op-2, which waits behind it"
+        );
+        assert_eq!(
+            claim_task(d.path(), "0003", "wt-a", T).unwrap_err(),
+            "you already hold 0001; pass, return or block it first"
+        );
+        assert_eq!(task_of(d.path(), "0003").stage, "ready");
+        // Holding only the sent-back one: still named, with nothing waiting behind it.
+        block_task(d.path(), "0002", "owner: pick a colour", "wt-a", T).unwrap();
+        assert_eq!(
+            next_task(d.path(), "wt-a", T).unwrap_err(),
+            "fix op-1 first (sent back by the review); pass, return or block it before you take another"
+        );
+        // Not sent back: the plain refusal, as before.
+        pass_task(d.path(), "0001", "wt-a", T, &gate()).unwrap();
+        unblock_task(d.path(), "0002", "wt-a", T).unwrap();
+        assert_eq!(
+            next_task(d.path(), "wt-a", T).unwrap_err(),
+            "you already hold 0002; pass, return or block it first"
+        );
+    }
+
+    #[test]
+    fn with_two_sent_back_the_lowest_comes_first() {
+        let d = queue();
+        for id in ["0001", "0002", "0003"] {
+            put_task(d.path(), "todo", id, &ready_fm("normal"));
+        }
+        for id in ["0001", "0002"] {
+            claim_task(d.path(), id, "wt-a", T).unwrap();
+            pass_task(d.path(), id, "wt-a", T, &gate()).unwrap();
+        }
+        claim_task(d.path(), "0003", "wt-a", T).unwrap();
+        // The later one first: the order is by id, not by when it was sent back.
+        return_task(d.path(), "0002", "x", None, "qa", T).unwrap();
+        return_task(d.path(), "0001", "y", None, "qa", T).unwrap();
+        assert_eq!(
+            order_of(d.path()),
+            [
+                (true, "".into()),
+                (true, "0001".into()),
+                (false, "0001".into())
+            ]
+        );
+        assert_eq!(
+            next_task(d.path(), "wt-a", T).unwrap_err(),
+            "fix op-1 first (sent back by the review); you also hold op-2, op-3, which wait behind it"
+        );
+    }
+
+    #[test]
+    fn a_return_from_your_check_is_not_a_send_back() {
+        let d = queue();
+        put(
+            d.path(),
+            "todo/0001-t.md",
+            &task_text("status: todo\nclaimed-by:\nwaiting_on:", TICKED),
+        );
+        claim_task(d.path(), "0001", "wt-a", T).unwrap();
+        pass_task(d.path(), "0001", "wt-a", T, &gate()).unwrap();
+        // One stage back from Testing is Building; from Your check it is Testing, never sent back.
+        pass_task(d.path(), "0001", "qa", T, &no_gate()).unwrap();
+        return_task(d.path(), "0001", "x", None, "owner", T).unwrap();
+        assert_eq!(task_of(d.path(), "0001").stage, "testing");
+        assert_eq!(order_of(d.path()), [(false, "".into())]);
     }
 
     #[test]
