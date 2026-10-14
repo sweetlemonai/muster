@@ -4,6 +4,11 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Decision 0008 accepted (agent teams)
+**Decided:** the owner accepted decision 0008: a teammate is session + agent id; teams only for the
+planning room and review lenses, not parallel building; smaller models for workers and reviewers,
+one combined review+QA agent per task; a TeammateIdle hook later. mu-40's AC3 ticked.
+
 ## 2026-10-14 — Coordinator (Muster_Team_Lead): Asghar's six merged, Gholi's eight tested
 **Did:** reviews of record (one agent per task, never the builder) and merges by `muster pass`:
 mu-57 811d06b, mu-62 5c1058d, mu-68 a6fe0bb, mu-70 3bf2af4 (owner ask: DashAfzar folding), mu-67

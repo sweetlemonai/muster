@@ -1,6 +1,6 @@
 # 0008 — Agent teams: where Muster uses them, and who a teammate is
 
-Date: 2026-10-14 · Status: proposed (Gholi, from the mu-40 spike; the owner says yes or changes it).
+Date: 2026-10-14 · Status: accepted (the owner, 2026-10-14). Proposed by Gholi from the mu-40 spike.
 
 ## What the spike found
 
