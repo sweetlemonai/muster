@@ -113,7 +113,7 @@ export type TaskActions = ReturnType<typeof useTaskActions>;
 
 /** What the pane says after a pause or resume: what it means, and whether its session was told. */
 export function pausedMsg(p: Paused, paused: boolean): string {
-  const head = paused ? "Paused: it keeps its place and claim, and nobody works it until you resume it." : "Resumed: it carries on as it was.";
+  const head = paused ? "Paused: it's in the Paused lane with its stage and claim, and nobody works it until you resume it." : "Resumed: it's back in its column and carries on as it was.";
   if (p.session) return `${head} Session ${p.session} is asked to ${paused ? "stop at a safe point" : "carry on"} after its next tool call.`;
   return p.unreached ? `${head} Its session can't be told: ${p.unreached}.` : head;
 }

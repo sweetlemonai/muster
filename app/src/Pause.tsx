@@ -5,8 +5,8 @@ import type { Task } from "./types";
 import { Button } from "./ui";
 
 // Pausing a task (0045): "not now, keep it as it is". The core decides (pause.rs): a paused task
-// keeps its stage, claim and place on the board, nobody claims or passes it, and its session is
-// asked to stop. It isn't blocked, so it's never red: a calm grey chip with the pause glyph
+// keeps its stage and claim but leaves the working columns for the Paused lane (0059) until
+// Resume puts it back; nobody claims or passes it, and its session is asked to stop. It isn't blocked, so it's never red: a calm grey chip with the pause glyph
 // (docs/DESIGN.md: neutral, not a stage colour).
 
 /** The stages a task can be paused in (pause::PAUSABLE): Backlog through Testing. */
@@ -77,7 +77,7 @@ export function CardPause({ t }: { t: Task }) {
       <Button
         type="button"
         disabled={busy}
-        title={paused ? "Carry on as it was; its session is told to carry on" : "Not now: it keeps its place and claim, nobody works it, and its session is asked to stop"}
+        title={paused ? "Back to its column as it was; its session is told to carry on" : "Not now: it goes to the Paused lane with its stage and claim, nobody works it, and its session is asked to stop"}
         onClick={() => void go()}
       >
         {paused ? "Resume" : "Pause"}
@@ -93,7 +93,7 @@ export function PanePause({ task, busy, onPause, onResume }: { task: Task; busy:
   const [why, setWhy] = useState("");
   if (task.paused) {
     return (
-      <Button type="button" className="pause-btn" disabled={busy} title="Carry on as it was; its session is told to carry on" onClick={onResume}>
+      <Button type="button" className="pause-btn" disabled={busy} title="Back to its column as it was; its session is told to carry on" onClick={onResume}>
         Resume
       </Button>
     );
@@ -110,7 +110,7 @@ export function PanePause({ task, busy, onPause, onResume }: { task: Task; busy:
         });
       }}
     >
-      <Button type="submit" className="pause-btn" disabled={busy} title="Not now: it keeps its place and claim, nobody works it, and its session is asked to stop">
+      <Button type="submit" className="pause-btn" disabled={busy} title="Not now: it goes to the Paused lane with its stage and claim, nobody works it, and its session is asked to stop">
         Pause
       </Button>
       <input value={why} onChange={(e) => setWhy(e.target.value)} placeholder="why (optional)" aria-label="Why pause it (optional)" />

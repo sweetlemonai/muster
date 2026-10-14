@@ -125,12 +125,12 @@ describe("the pane's status line", () => {
 describe("what the pane says after a pause or resume", () => {
   it("whether its session was told, or why it couldn't be", () => {
     expect(pausedMsg({ path: "", session: "7b5e8856", unreached: "" }, true)).toBe(
-      "Paused: it keeps its place and claim, and nobody works it until you resume it. Session 7b5e8856 is asked to stop at a safe point after its next tool call.",
+      "Paused: it's in the Paused lane with its stage and claim, and nobody works it until you resume it. Session 7b5e8856 is asked to stop at a safe point after its next tool call.",
     );
     expect(pausedMsg({ path: "", session: "", unreached: "this claim has no session to reach; ask its session to re-claim" }, false)).toBe(
-      "Resumed: it carries on as it was. Its session can't be told: this claim has no session to reach; ask its session to re-claim.",
+      "Resumed: it's back in its column and carries on as it was. Its session can't be told: this claim has no session to reach; ask its session to re-claim.",
     );
-    expect(pausedMsg({ path: "", session: "", unreached: "" }, false)).toBe("Resumed: it carries on as it was.");
+    expect(pausedMsg({ path: "", session: "", unreached: "" }, false)).toBe("Resumed: it's back in its column and carries on as it was.");
   });
 });
 

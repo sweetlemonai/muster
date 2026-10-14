@@ -4,6 +4,14 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Pause's help and the Pause button say it goes to the Paused lane (mu-68)
+**Fixed:** `muster help pause`, its manual page, the Pause and Resume tooltips, Pause.tsx's comment
+and the paused/resumed message still said a paused task stays where it is (mu-45's behaviour) →
+they say it goes to the Paused lane and Resume puts it back in its column (help.rs, Pause.tsx,
+useTaskActions.ts, manual 05 regenerated). The badge's glossary line no longer says "where it is".
+**Verified:** `muster help | grep ' pause '` names the lane; `muster help pause | grep -c 'where it
+is'` prints 0; AC3's grep finds nothing; `commands_page` passes; `bin/gate` green.
+
 ## 2026-10-14 — Decision 0010: the queue lives in local files, not GitHub Issues
 **Decided:** tasks stay markdown files read through `muster`; GitHub gets a mirror later if
 wanted, never the store. Why, the options and when to revisit:

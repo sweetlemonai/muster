@@ -246,7 +246,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "pause",
         usage: "muster pause <id> [\"<why>\"]",
-        what: "Not now, keep it as it is: the task keeps its stage, write-up, claim and worktree, and shows Paused (not blocked) where it is. Nobody can claim, pass or pick it (next, ready), and nobody, the owner included, returns it, moves its stage or releases it (return, stage, move, release) until it's resumed; its lease doesn't run while it's paused (reclaim skips it); the tasks that depend on it still wait. A task (not a goal or feature), from Backlog through Testing. In Building or Testing its session gets a stop request through its mailbox: stop at a safe point, check in (in Testing, a note) what's done and next, and end its turn. Logged as \"paused (why)\"; the timeline and the Work section's time leave paused stretches out.",
+        what: "Not now, keep it as it is: the task keeps its stage, write-up, claim and worktree and goes to the Paused lane, out of the working columns, until Resume puts it back in its column. It isn't blocked. Nobody can claim, pass or pick it (next, ready), and nobody, the owner included, returns it, moves its stage or releases it (return, stage, move, release) until it's resumed; its lease doesn't run while it's paused (reclaim skips it); the tasks that depend on it still wait. A task (not a goal or feature), from Backlog through Testing. In Building or Testing its session gets a stop request through its mailbox: stop at a safe point, check in (in Testing, a note) what's done and next, and end its turn. Logged as \"paused (why)\"; the timeline and the Work section's time leave paused stretches out.",
         options: &[("--as", "who's pausing it: owner, or your own label")],
         examples: &[
             "muster pause 0042 \"the design changes first\" --as owner",
@@ -668,7 +668,7 @@ pub const APP: &[(&str, &str)] = &[
     ),
     (
         "needs you",
-        "the orange badge on a card waiting on you, where it is: in Your check, a question escalated to you, blocked on you or by a permission, or its session waiting for input in Claude Code. With your own tasks to do and doing, it's the count in the sidebar and on Waiting for you",
+        "the orange badge on a card waiting on you, wherever it waits: in Your check, a question escalated to you, blocked on you or by a permission, or its session waiting for input in Claude Code. With your own tasks to do and doing, it's the count in the sidebar and on Waiting for you",
     ),
     (
         "working · waiting for input in Claude Code · session ended",
