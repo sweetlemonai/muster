@@ -1317,6 +1317,20 @@ fn started_text(root: &Path, prefix: &str, id: &str, s: &crate::parallel::Starte
     out
 }
 
+/// `start` and `init` in a repo (0067): the work log's merge driver in the repo's own git config,
+/// for the keys git doesn't have yet, said when it writes any. A failure is said on stderr and
+/// stops nothing: without the driver a work log clash is a conflict, as before.
+fn set_merge_driver(dir: &Path) {
+    match crate::merge_log::configure(dir) {
+        Ok(keys) if keys.is_empty() => {}
+        Ok(keys) => println!(
+            "set {} in the repo's git config, so work log entries merge whole (muster merge-log)",
+            keys.join(" and ")
+        ),
+        Err(e) => eprintln!("muster: couldn't set the work log's merge driver: {e}"),
+    }
+}
+
 /// One line per task for `muster ready`: key, priority, title, and what it touches.
 fn ready_line(t: &queue::Task) -> String {
     let touches = if t.touches.is_empty() {
@@ -1424,6 +1438,10 @@ fn main_with(argv: &[String], env: Env) -> i32 {
 }
 
 fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
+    // Git's merge driver (0067): three file paths, as git gives them, never options.
+    if argv.first().map(String::as_str) == Some("merge-log") {
+        return crate::merge_log::run(&argv[1..]);
+    }
     let a = parse(argv)?;
     let cmd = a.pos.first().map(String::as_str).unwrap_or("help");
     let stamp = local_stamp();
@@ -1494,6 +1512,9 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
                 "created {} (prefix {prefix}: its tasks are {prefix}-1, {prefix}-2…)",
                 q.display()
             );
+            if q.file_name().is_some_and(|n| n == crate::layout::DIR) {
+                set_merge_driver(&dir);
+            }
             Ok(0)
         }
         // Every queue Muster knows (0059), or the one --queue names.
@@ -1959,6 +1980,7 @@ fn run_on(
             warn_your_check(root, prefix);
             let s = crate::parallel::start(root, id, &me(), stamp, cwd, &place)?;
             print!("{}", started_text(root, prefix, id, &s));
+            set_merge_driver(cwd);
             Ok(0)
         }
         "ready" => ready_cmd(a, root, prefix),
@@ -4079,6 +4101,11 @@ mod tests {
         assert_eq!(
             crate::layout::read_config(&main_dir.join(".muster")),
             Ok(crate::layout::Config { local: true })
+        );
+        // The work log's merge driver (0067), in the repo's own config.
+        assert_eq!(
+            crate::parallel::tests::g(&main_dir, &["config", "--local", "merge.muster-log.driver"]),
+            "muster merge-log %O %A %B"
         );
         assert_eq!(main(&sv(&["migrate", &q, &m, "--dry-run"])), 1);
         assert_eq!(main(&sv(&["migrate", &q])), 2, "needs the repo");

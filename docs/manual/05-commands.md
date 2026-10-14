@@ -546,7 +546,7 @@ muster move 0007 done
 
 ## Claims
 
-Who's on a task. A coding session claims a Ready task, keeps the claim alive while it works, and checks in to say how far it got. See [Claims, leases and check-ins](02-concepts.md#claims-leases-and-check-ins). Sessions that work side by side each start a task in its own worktree: `muster ready --parallel` says which tasks are safe together, `muster start` claims one with a branch and a worktree, passing it from Testing merges it into main and cleans up, and `muster release --clean` gives it up.
+Who's on a task. A coding session claims a Ready task, keeps the claim alive while it works, and checks in to say how far it got. See [Claims, leases and check-ins](02-concepts.md#claims-leases-and-check-ins). Sessions that work side by side each start a task in its own worktree: `muster ready --parallel` says which tasks are safe together, `muster start` claims one with a branch and a worktree, passing it from Testing merges it into main and cleans up, and `muster release --clean` gives it up. Work log entries both sides added on top merge by themselves (`muster merge-log`, git's merge driver for `docs/WORKLOG.md`).
 
 ### muster claim
 
@@ -707,7 +707,7 @@ muster ready --parallel 2 --json
 
 ### muster start
 
-Claim a Ready task (claim's rules) in its own git worktree, to work beside other sessions: a branch task/\<id\>-\<slug\> from the local main's commit (however dirty the main checkout is) and a worktree for it, at \<project\>/worktrees/\<repo\>/\<id\>-\<slug\> unless --at says where. Run it in the project's repo or a worktree of it. The task records worktree: and branch:, and start prints both with the brief: the task file, what it touches, its criteria. Work there; pass from Building as always. Passing it from Testing merges it (muster pass). A task started before (sent back to Ready, reclaimed) is picked up in its worktree again. Refused claims leave nothing behind. Warns on stderr, as next does, when Your check is over the project's limit, and still starts.
+Claim a Ready task (claim's rules) in its own git worktree, to work beside other sessions: a branch task/\<id\>-\<slug\> from the local main's commit (however dirty the main checkout is) and a worktree for it, at \<project\>/worktrees/\<repo\>/\<id\>-\<slug\> unless --at says where. Run it in the project's repo or a worktree of it. The task records worktree: and branch:, and start prints both with the brief: the task file, what it touches, its criteria. Work there; pass from Building as always. Passing it from Testing merges it (muster pass). A task started before (sent back to Ready, reclaimed) is picked up in its worktree again. Refused claims leave nothing behind. It also sets git's merge driver for the work log in the repo's own config (merge.muster-log.name and .driver, muster merge-log), when git has none yet, touching nothing else, so a rebase in any worktree keeps both sides' new entries whole. Warns on stderr, as next does, when Your check is over the project's limit, and still starts.
 
 ```
 muster start <id> [--at <path>|--here]
@@ -754,6 +754,24 @@ muster release 0031 --clean
 
 ```
 muster release 0031 --clean --force --as owner
+```
+
+### muster merge-log
+
+Git's merge driver for the work log (decision 0009): git runs it, you don't. The repo's .gitattributes names it for docs/WORKLOG.md (docs/WORKLOG.md merge=muster-log), start and init write it to the repo's git config (merge.muster-log.driver = muster merge-log %O %A %B), and a merge (muster pass --from testing) passes it to its rebase itself, so it works with no config. It merges the three versions git gives it as git would, and when they clash only because both sides added whole ## entries on top, it keeps both, each whole, newest date first and, on the same date, the incoming side (the commit a rebase replays, the branch a merge brings in) on top. Anything else (the text above the entries changed on both sides, the same older entry changed both ways, entries removed) gets git's conflict markers. The result goes into \<ours\>; it exits 0 when it's clean, 1 with conflicts. Without muster on the PATH git can't run it, and the log conflicts as it did before.
+
+```
+muster merge-log <base> <ours> <theirs>
+```
+
+Examples:
+
+```
+muster merge-log %O %A %B
+```
+
+```
+git config merge.muster-log.driver "muster merge-log %O %A %B"
 ```
 
 ## Review
@@ -1121,7 +1139,7 @@ muster projects set braindump prefix bd
 
 ### muster init
 
-In a git repo (its main checkout or any worktree of it; the current folder when none is named): create the repo's queue, .muster/ in the main checkout, with config.toml (its prefix in it), .gitignore, a README with the rules, tasks/, backlog/, attachments/ and INDEX.md. Task files live in tasks/ and never move. Local by default: it stays on this Mac. Sessions in the repo and its worktrees need no setup of their own: muster finds it from any folder of the repo, and Muster's rule (rules/muster-queue.md) and answer hook (bin/answer-hook.py) reach them through the personal layer. Refuses if .muster/ is there already, and in a repo without a main checkout (a bare repo's worktree, a submodule). Outside a repo it creates \<folder\>/tasks, the old layout: status folders, README with the rules and its prefix, the tool stand-ins and its own git, never over an existing tasks/; only for a folder named on purpose: with none, it writes nothing and says to run it in the repo. Either way it refuses a prefix that isn't 2 to 4 lowercase letters or that another project has.
+In a git repo (its main checkout or any worktree of it; the current folder when none is named): create the repo's queue, .muster/ in the main checkout, with config.toml (its prefix in it), .gitignore, a README with the rules, tasks/, backlog/, attachments/ and INDEX.md. Task files live in tasks/ and never move. Local by default: it stays on this Mac. Sessions in the repo and its worktrees need no setup of their own: muster finds it from any folder of the repo, and Muster's rule (rules/muster-queue.md) and answer hook (bin/answer-hook.py) reach them through the personal layer. Refuses if .muster/ is there already, and in a repo without a main checkout (a bare repo's worktree, a submodule). Outside a repo it creates \<folder\>/tasks, the old layout: status folders, README with the rules and its prefix, the tool stand-ins and its own git, never over an existing tasks/; only for a folder named on purpose: with none, it writes nothing and says to run it in the repo. Either way it refuses a prefix that isn't 2 to 4 lowercase letters or that another project has. In a repo it also sets git's merge driver for the work log (merge.muster-log, muster merge-log), as start does.
 
 ```
 muster init [<folder>] [--local|--committed] [--prefix <p>]

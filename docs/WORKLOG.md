@@ -4,6 +4,26 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Work log entries merge by themselves: a muster merge driver for docs/WORKLOG.md (mu-67)
+**Did:** `muster merge-log %O %A %B` (`merge_log.rs`): a plain three-way merge when it's clean;
+when both sides only added whole dated entries on top, both sides' entries go above the base,
+newest date first, the incoming side first on the same date; anything else is a normal conflict.
+`.gitattributes` names it for `docs/WORKLOG.md`; `muster start` and `init` set
+`merge.muster-log` in the repo's config when it's missing; Muster's merge rebase passes it with
+`-c`, so a log-only conflict rebases clean and the review is carried. Help, manual, PROTOCOL and
+AS_BUILT updated.
+**Decided:** a driver, not `merge=union` (it interleaves entries that share a line and drops one)
+and not one file per entry (the index conflicts again, and it breaks the one-page convention):
+`docs/decisions/0009-work-log-merges-through-a-muster-merge-driver.md`. An undated new entry, or
+the same preamble added on both sides, is a conflict; a driver key set in global git config counts
+as present.
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; 12
+merge_log tests (incl. the union-breaking case, CRLF, a real rebase from a path with a space and a
+quote), a parallel.rs test with no driver config landing both entries with the review carried, and
+a Python test where a hand `git rebase main` after `muster start` merges cleanly. Temp repos only.
+**Open:** only checked with git 2.54. Other repos with a running log can opt in with one
+`.gitattributes` line later.
+
 ## 2026-10-14 — Category headings fold; a group folder can carry a name, e.g. persianUtils → DashAfzar (mu-70)
 **Did:** a sidebar heading folds by its chevron or ←/→ (`fold_category`, projects.json `folded`);
 folded, it shows its name, project count, needs-you and working counts, and the selected project

@@ -159,7 +159,7 @@ pub fn next_after<'a>(tasks: &'a [Task], merged: &str) -> Option<&'a Task> {
 // ---------------------------------------------------------------------------------------------
 // Git, as argument arrays
 
-fn git_output(dir: &Path, args: &[&str]) -> Result<Output, String> {
+pub(crate) fn git_output(dir: &Path, args: &[&str]) -> Result<Output, String> {
     Command::new("git")
         .arg("-C")
         .arg(dir)
@@ -186,7 +186,7 @@ fn last_lines(text: &str, n: usize) -> String {
 }
 
 /// `git -C <dir> <args>`: its output, trimmed, or what went wrong.
-fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
+pub(crate) fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
     let out = git_output(dir, args)?;
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).trim_end().to_string())
@@ -966,6 +966,10 @@ pub fn merge(
     let reviewed = review.words.clone();
     // Checked now so a gate isn't run for nothing; checked again under the lock, before the merge.
     main_ready(&repo)?;
+    // The work log's merge driver (0067), run by this binary, whatever the repo's config says.
+    let driver = crate::merge_log::config_args(&crate::merge_log::this_muster()?)?;
+    let mut rebase: Vec<&str> = driver.iter().map(String::as_str).collect();
+    rebase.extend(["rebase", &repo.trunk]);
 
     // 1. One merge at a time in this repo.
     let _lock = merge_lock(&repo, say)?;
@@ -981,7 +985,7 @@ pub fn merge(
         if review.stands {
             crate::review::still_stands(root, id, &before)?;
         }
-        if let Err(e) = git(&wt, &["rebase", &trunk]) {
+        if let Err(e) = git(&wt, &rebase) {
             let files = conflicted(&wt);
             let aborted = git(&wt, &["rebase", "--abort"]);
             if files.is_empty() {
@@ -2434,6 +2438,82 @@ pub(crate) mod tests {
         assert_eq!(g(&s.worktree, &["rev-parse", "HEAD"]), tip);
         assert_eq!(g(&s.worktree, &["status", "--porcelain"]), "");
         assert_eq!(g(&f.repo, &["rev-parse", "main"]), main_before);
+    }
+
+    #[test]
+    fn a_work_log_only_conflict_rebases_clean_gates_and_lands_with_both_entries_and_its_review() {
+        let f = fx();
+        let pre = "# Work log\n\nNewest first.\n\n";
+        let old = "## 2026-10-12 — Old\n**Did:** old\n**Verified:** `gate: green (pnpm check)`\n\n";
+        commit(
+            &f.repo,
+            ".gitattributes",
+            "docs/WORKLOG.md merge=muster-log\n",
+            "attributes",
+        );
+        commit(&f.repo, "docs/WORKLOG.md", &format!("{pre}{old}"), "log");
+        // The repo's config says nothing of the driver: the merge brings its own.
+        assert!(git(
+            &f.repo,
+            &["config", "--get-regexp", "^merge\\.muster-log\\."]
+        )
+        .is_err());
+        let id = task(&f.root, "Logged", "l/");
+        let s = start(&f.root, &id, "wt-a", T0, &f.repo, &Place::Default).unwrap();
+        let entry = |what: &str| {
+            format!("## 2026-10-14 — {what}\n**Did:** {what}\n**Verified:** `gate: green (pnpm check)`\n\n")
+        };
+        fs::create_dir_all(s.worktree.join("l")).unwrap();
+        fs::write(s.worktree.join("l/x.txt"), "built\n").unwrap();
+        commit(
+            &s.worktree,
+            "docs/WORKLOG.md",
+            &format!("{pre}{}{old}", entry("The task")),
+            "build it, log it",
+        );
+        to_testing(&f, &id);
+        // Another task landed first, with its own entry on top.
+        commit(
+            &f.repo,
+            "docs/WORKLOG.md",
+            &format!("{pre}{}{old}", entry("Landed before")),
+            "another task",
+        );
+        let reviewed = g(&s.worktree, &["rev-parse", "HEAD"]);
+        let (r, said) = run_merge(&f, &id, &green(&f));
+        let Merge::Merged {
+            commit: merged,
+            report,
+            ..
+        } = r.unwrap()
+        else {
+            panic!("not merged: {said:?}")
+        };
+        assert_eq!(g(&f.repo, &["rev-parse", "main"]), merged, "a fast-forward");
+        assert_eq!(
+            fs::read_to_string(f.repo.join("docs/WORKLOG.md")).unwrap(),
+            format!("{pre}{}{}{old}", entry("The task"), entry("Landed before")),
+            "both whole, the one landing now on top"
+        );
+        assert!(
+            said.iter().any(|l| l == "gate: green (fake, 2 steps)"),
+            "{said:?}"
+        );
+        // The review of record was carried to the replayed commit, not reopened.
+        assert!(
+            report.contains(&format!("· review clean at {} (round 1) ·", &reviewed[..7])),
+            "{report}"
+        );
+        assert_eq!(
+            crate::review::load(&f.root, &id).unwrap().unwrap().head,
+            merged
+        );
+        assert_eq!(read(&f.root, &id).stage, "your-check");
+        assert!(git(
+            &f.repo,
+            &["config", "--get-regexp", "^merge\\.muster-log\\."]
+        )
+        .is_err());
     }
 
     #[test]

@@ -160,7 +160,10 @@
 >    worktree for it at `<project>/worktrees/<repo>/<key>-<slug>` (`--at <path>` for another place, `--here` when a
 >    runner already put you in a worktree of your own: it's switched to the task's branch), records
 >    both as `worktree:` and `branch:` in the task, and prints them with the brief: the task file,
->    what it touches, its criteria. Work in that worktree only.
+>    what it touches, its criteria. Work in that worktree only. It also writes the work log's
+>    merge driver (`merge.muster-log.name` and `.driver`, `muster merge-log %O %A %B`) to the
+>    repo's own git config when git has none, so a hand `git rebase main` in the worktree merges
+>    the log the same way (`muster init` does too).
 > 3. **Build.** Check in at each milestone and at least every 30 minutes
 >    (`muster checkin <id> "<done, next>" --pct <n>`). Commit on the task's branch. When the
 >    project's gate is green, `muster pass <id> --from building --gate "<its result line>"`, as
@@ -172,7 +175,10 @@
 >    order, stopping at the first failure: it takes the repo's merge lock (a flock on
 >    `<git common dir>/muster/merge.lock`, so one merge runs at a time); rebases the branch on the
 >    local main (**a conflict aborts the rebase and returns the task to Building with the files
->    named**); runs the project's gate in the worktree (**red returns it with the gate line**;
+>    named**; work log entries that both sides added on top of `docs/WORKLOG.md` aren't a
+>    conflict: the rebase runs `muster merge-log` as git's merge driver, given with `git -c`, which
+>    keeps both entries whole, newest date first and the task landing now on top on the same date,
+>    decision 0009); runs the project's gate in the worktree (**red returns it with the gate line**;
 >    any gate line saying RED is red), without `MUSTER_ROOT` or `TASKS_ROOT`; if main moved while
 >    the gate ran, rebases and gates again, twice at most, then stops with "main keeps moving;
 >    pass again", so **main only ever gets a tree the gate saw**; fast-forwards the local main

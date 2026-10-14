@@ -190,8 +190,8 @@ class CommandFiles(unittest.TestCase):
         # building, which may not be in this muster yet.
         m = re.search(r"^Not routed: (.+?)(?:; being built \(task \d{4}\): (.+))?$", self.router, re.M)
         self.assertIsNotNone(m, "the Not routed line")
-        built = set(re.findall(r"`([a-z]+)`", m.group(1)))
-        planned = set(re.findall(r"`([a-z]+)`", m.group(2) or ""))
+        built = set(re.findall(r"`([a-z][a-z-]*)`", m.group(1)))
+        planned = set(re.findall(r"`([a-z][a-z-]*)`", m.group(2) or ""))
         self.assertTrue(built)
         cmds = help_commands()
         routed = set().union(*ROUTES.values())
@@ -420,6 +420,103 @@ class RoutesRunOnARealQueue(unittest.TestCase):
                 self.assertEqual(r.returncode, 2)
                 self.assertIn('unknown command "add"', r.stderr)
                 self.assertIn('unknown command "add"', ROUTER.read_text(encoding="utf-8"))
+
+
+class WorkLogMergeDriver(unittest.TestCase):
+    """0067: after `muster start`, a hand `git rebase main` in the new worktree merges two work
+    log entries added on top with no other setup, through the `muster` on the PATH; and start
+    leaves a merge.muster-log config that's already there, and every other key, as they were.
+    Everything in a temp folder with a space in its path, and a home of its own."""
+
+    PRE = "# Work log\n\nNewest first.\n\n"
+    OLD = "## 2026-10-12 — Old\n**Did:** old\n**Verified:** `gate: green (pnpm check)`\n\n"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name) / "the playground"
+        home = Path(self.tmp.name) / "home"
+        bin_dir = home / "bin"
+        bin_dir.mkdir(parents=True)
+        (bin_dir / "muster").symlink_to(MUSTER)
+        self.env = {**os.environ, "HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config"),
+                    "MUSTER_BASE": str(base), "GIT_CONFIG_NOSYSTEM": "1", "MUSTER_AS": "wt-a",
+                    "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"}
+        for k in ("MUSTER_ROOT", "TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "GIT_DIR", "GIT_WORK_TREE"):
+            self.env.pop(k, None)
+        self.repo = base / "log proj" / "main"
+        self.repo.mkdir(parents=True)
+        self.git(self.repo, "init", "-q", "-b", "main")
+        hooks = Path(self.tmp.name) / "no hooks"
+        hooks.mkdir()
+        for k, v in (("user.name", "Test Person"), ("user.email", "test@example.com"),
+                     ("commit.gpgsign", "false"), ("core.hooksPath", str(hooks))):
+            self.git(self.repo, "config", k, v)
+        (self.repo / "docs").mkdir()
+        (self.repo / ".gitattributes").write_text("docs/WORKLOG.md merge=muster-log\n", encoding="utf-8")
+        self.log(self.repo, self.OLD, "base")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def git(self, cwd: Path, *args: str) -> str:
+        r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, env=self.env)
+        self.assertEqual(r.returncode, 0, f"git {args}: {r.stdout}{r.stderr}")
+        return r.stdout.strip()
+
+    def muster(self, *args: str) -> subprocess.CompletedProcess:
+        r = subprocess.run(["muster", *args], cwd=self.repo, capture_output=True, text=True,
+                           env=self.env)
+        self.assertEqual(r.returncode, 0, f"muster {args}: {r.stdout}{r.stderr}")
+        return r
+
+    def entry(self, what: str) -> str:
+        return f"## 2026-10-14 — {what}\n**Did:** {what}\n**Verified:** `gate: green (pnpm check)`\n\n"
+
+    def log(self, cwd: Path, entries: str, msg: str) -> None:
+        (cwd / "docs" / "WORKLOG.md").write_text(self.PRE + entries, encoding="utf-8")
+        self.git(cwd, "add", "-A")
+        self.git(cwd, "commit", "-qm", msg)
+
+    def local_config(self) -> list[str]:
+        return self.git(self.repo, "config", "--local", "--list").splitlines()
+
+    def start(self) -> Path:
+        key = self.muster("new", "Synthetic logged task", "--touches", "src/").stdout.split()[0]
+        out = self.muster("start", key).stdout
+        m = re.search(r"^worktree: (.+)$", out, re.M)
+        self.assertIsNotNone(m, out)
+        return Path(m.group(1))
+
+    def test_a_hand_rebase_in_a_started_worktree_merges_the_work_log(self):
+        self.muster("init")
+        driver = "merge.muster-log.driver=muster merge-log %O %A %B"
+        self.assertIn(driver, self.local_config(), "init sets it")
+        # Gone again: start puts it back, and nothing else changes.
+        self.git(self.repo, "config", "--local", "--remove-section", "merge.muster-log")
+        before = self.local_config()
+        wt = self.start()
+        after = self.local_config()
+        self.assertEqual([k for k in after if not k.startswith("merge.muster-log.")], before)
+        self.assertIn(driver, after)
+        self.assertTrue(any(k.startswith("merge.muster-log.name=") for k in after), after)
+        self.assertIn(" ", str(wt), "a path with a space")
+        self.log(wt, self.entry("The task") + self.OLD, "the task's entry")
+        self.log(self.repo, self.entry("Landed before") + self.OLD, "another task's entry")
+        self.git(wt, "rebase", "-q", "main")
+        self.assertEqual((wt / "docs" / "WORKLOG.md").read_text(encoding="utf-8"),
+                         self.PRE + self.entry("The task") + self.entry("Landed before") + self.OLD)
+        self.assertEqual(self.git(wt, "status", "--porcelain"), "")
+
+    def test_start_leaves_a_driver_already_set_and_every_other_key_alone(self):
+        self.git(self.repo, "config", "merge.muster-log.name", "the owner's own")
+        self.git(self.repo, "config", "merge.muster-log.driver", "true")
+        self.git(self.repo, "config", "some.other", "kept")
+        self.muster("init")
+        before = self.local_config()
+        self.start()
+        self.assertEqual(self.local_config(), before)
+        self.assertIn("merge.muster-log.driver=true", before)
+        self.assertIn("some.other=kept", before)
 
 
 if __name__ == "__main__":

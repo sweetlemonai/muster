@@ -1,0 +1,3 @@
+# The work log merges by itself: both sides' new entries on top stay whole, newest first
+# (muster merge-log, decision 0009). Without the driver in git config it's a plain merge.
+docs/WORKLOG.md merge=muster-log

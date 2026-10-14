@@ -19,6 +19,7 @@ pub mod key;
 pub mod labels;
 pub mod layout;
 pub mod lessons;
+pub mod merge_log;
 pub mod migrate;
 pub mod notify;
 pub mod old_pause;
