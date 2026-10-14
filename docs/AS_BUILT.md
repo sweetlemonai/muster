@@ -612,10 +612,9 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   `rename_category`; unknown entries are dropped when read, a refused change writes nothing);
   `remove_project` clears them and `carry_over` carries them.
 - **Headings fold, and a group can be named** (task 0070, `arrange.rs`, `projectOrder.ts`,
-  `SidebarProjects.tsx`): a heading's chevron, or ← and → on a focused heading, folds it to its name,
-  "N projects", what needs you, what's being worked on and its tasks, in every display mode and
-  under every chip; the selected project and every one that needs you (its tasks and its lessons
-  waiting, as the row's badge counts) still show under it as chips that pick them. A project put
+  `SidebarProjects.tsx`): a heading's chevron, or ← and → on a focused heading, folds it to its one
+  line (below, 0082), in every display mode and under every chip; nothing of its projects shows
+  under it (owner, 2026-10-14: mu-70's chips are gone), its needs-you count carries them. A project put
   under a folded heading unfolds it, in the core (`arrange::put_under`, under the lock with the write):
   a drag, ⌥↑/⌥↓, Settings' ↑/↓ and Settings' Category field alike. A heading a change leaves with no
   project the sidebar draws (shown: not hidden, still a queue; 0073) loses its fold, so one made
@@ -629,6 +628,17 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   new one, as before; renaming it back to the folder's name clears it; a fold and a place move with
   a rename, and a merge is folded if either heading was. A migrated queue outside its group keeps
   the group's heading as its category (`carry_over`).
+- **Sidebar headings read as headings** (task 0082, `ProjectList.tsx` `CategoryHead`,
+  `projectOrder.ts` `headingCounts`/`countsText`, styles.css): a 1px `--line` divider starts each
+  group; the name is 13px, weight 650, in `--text` (a project's is 13px, 550), `unicode-bidi:
+  plaintext` for a Persian name; the chevron is a 20px `Pill` with `aria-expanded`, mirrored with
+  `:dir(rtl)`. One line of labelled counts, the same open, folded and in every mode: "77 need you ·
+  17 projects · 18 working" (needs from tasks and lessons, as the row badge; 0 left out but the
+  projects), the needs part in the row's `.count.warn` chip with `--on-status` words (4.5:1 in
+  every theme; the row badge's own `--accent-ink` reads at about 2.2:1 in light themes) and never
+  shrinking, the rest ending in an ellipsis; the tasks in the tooltip, the counts in the heading's
+  `aria-label`. Projects indent 14px with `margin-inline-start` in every mode. Folded is that one
+  line alone.
 - **One builder for the sidebar's state** (task 0073, `projects::read_state`): the shown queues read
   with their tasks' keys (each project's prefix) and this Mac's settings, then each queue's Your
   check limit, label and heading, and colour, places and fold. The poll (`state` in lib.rs) calls

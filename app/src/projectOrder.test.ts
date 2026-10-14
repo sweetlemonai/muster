@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accepts, dropMove, grouped, headingFolds, headingRanks, needsOf, peeks, readFolds, settleFolds, trackFold, trackUnfold, unfoldFor, type Layout, layoutOf, orderHeadings, type Pending, planMove, settle, shownLayout, sidebarGroups, track } from "./projectOrder";
+import { accepts, dropMove, grouped, headingCounts, countsText, headingFolds, headingRanks, needsOf, readFolds, settleFolds, trackFold, trackUnfold, unfoldFor, type Layout, layoutOf, orderHeadings, type Pending, planMove, settle, shownLayout, sidebarGroups, track } from "./projectOrder";
 import { byCategory } from "./labels";
 
 // The sidebar's own arrangement (0057): headings and projects as the owner puts them, by drag or
@@ -288,16 +288,17 @@ describe("folded headings (0070)", () => {
     expect(settleFolds({ Tools: true, Apps: false }, headingFolds(rows, {}))).toEqual({ Tools: true, Apps: false });
     expect(settleFolds({ Tools: false, Apps: true }, headingFolds(rows, {}))).toEqual({});
   });
-  it("still show the selected project and every one that needs you, in order, on a folded heading", () => {
-    const rows = [row("a", "Apps"), row("b", "Apps", { needs: 2 }), row("c", "Apps"), row("d", "Apps", { needs: 1 })];
-    expect(peeks(rows, "c").map((r) => r.name)).toEqual(["b", "c", "d"]);
-    expect(peeks(rows, "all").map((r) => r.name)).toEqual(["b", "d"]);
-    expect(peeks([row("a", "Apps")], "zeta")).toEqual([]);
-  });
-  it("count lessons waiting as needing you, as the row's badge does (review R2)", () => {
-    const rows = [row("a", "Apps"), row("b", "Apps", { lessons: 2 }), row("c", "Apps", { needs: 1, lessons: 1 })];
-    expect(peeks(rows, "all").map((r) => r.name)).toEqual(["b", "c"]);
-    expect(rows.map(needsOf)).toEqual([0, 2, 2]);
+  it("count, for a heading, what needs you first, then its projects and what's being worked on, in words (0082)", () => {
+    const busy = (name: string, needs: number, lessons: number, working: number) => ({ ...row(name, "Apps", { needs, lessons }), activity: { working, stalled: false, last: null }, tasks: [] });
+    // Lessons waiting need you too, as the row's badge counts them (0070 review R2).
+    const c = headingCounts([busy("a", 2, 1, 0), busy("b", 0, 0, 3), busy("c", 0, 0, 0)]);
+    expect(c).toEqual({ needs: 3, projects: 3, working: 3 });
+    expect(countsText(c)).toBe("3 need you · 3 projects · 3 working");
+    expect(countsText({ needs: 1, projects: 1, working: 1 })).toBe("1 needs you · 1 project · 1 working");
+    // What's 0 isn't said, but a heading always says how many projects it holds.
+    expect(countsText({ needs: 0, projects: 4, working: 0 })).toBe("4 projects");
+    expect(countsText({ needs: 77, projects: 17, working: 18 })).toBe("77 need you · 17 projects · 18 working");
+    expect([0, 2].map((lessons) => needsOf({ needs: 1, lessons }))).toEqual([1, 3]);
   });
   it("a move under a folded heading opens it; one under an open heading, or a reorder, opens nothing (review R4)", () => {
     const folds = new Map([["Apps", true], ["Tools", false]]);

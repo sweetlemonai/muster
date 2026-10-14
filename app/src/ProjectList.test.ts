@@ -182,17 +182,18 @@ describe("labels and categories in the sidebar (0044)", () => {
 
   it("groups the projects under their category headings, A–Z with Other last, each row by its label", () => {
     const html = render();
-    expect(heads(html)).toEqual(["Apps 1 1", "Tools 1 2 working 3", "Other 2"]);
+    // Each heading's counts in words (0082): what needs you, its projects, what's being worked on.
+    expect(heads(html)).toEqual(["Apps 1 needs you · 1 project", "Tools 1 needs you · 2 projects · 2 working", "Other 1 project"]);
     expect(rows(html)).toEqual(["All", "Alpha app", "zeta", "Muster", "beta"]);
     // Each heading wraps its own rows.
     expect(html).toMatch(/<div class="side-group" role="group" aria-label="Tools"><div class="side-cat" data-heading="Tools"/);
   });
-  it("says each heading's totals in its titles: tasks, projects, needs you and working", () => {
+  it("says each heading's counts and its tasks in its tooltip, in the tokens a row uses (0082)", () => {
     const html = render();
-    expect(html).toContain('<small title="3 tasks in 2 projects">3</small>');
-    expect(html).toContain('<small title="2 tasks in 1 project">2</small>');
-    expect(html).toContain('<span class="count warn" title="1 needs you in Tools">1</span>');
-    expect(html).toMatch(/<span class="side-working" title="2 tasks being worked on now in Tools[^"]*"><i class="dot" aria-hidden="true"><\/i>2 working<\/span>/);
+    expect(html).toContain('<span class="side-cat-counts" title="1 needs you · 2 projects · 2 working · 3 tasks">');
+    expect(html).toContain('<span class="side-cat-counts" title="1 project · 2 tasks">');
+    expect(html).toContain('<span class="side-cat-needs"><span class="count warn">1</span> needs you</span>');
+    expect(html).toContain('<span class="side-working"><i class="dot" aria-hidden="true"></i>2 working</span>');
   });
   it("sorts by the order chips within each heading: A–Z goes by the label", () => {
     vi.stubGlobal("localStorage", { getItem: () => "az" });
@@ -205,9 +206,9 @@ describe("labels and categories in the sidebar (0044)", () => {
     // The name keeps the row's tooltip, where the pointer is (review): the real name first.
     expect(muster).toContain('<span class="side-name" title="muster · /p/muster/tasks\nDouble-click to change the label">Muster</span>');
   });
-  it("keeps the headings and their needs-you counts in Focus's narrow sidebar", () => {
+  it("keeps the headings and the same counts in Focus's narrow sidebar (0082: the same in every mode)", () => {
     const html = render("focus");
-    expect(heads(html)).toEqual(["Apps 1", "Tools 1", "Other"]);
+    expect(heads(html)).toEqual(["Apps 1 needs you · 1 project", "Tools 1 needs you · 2 projects · 2 working", "Other 1 project"]);
     expect(rows(html)).toEqual(["All", "Alpha app", "zeta", "Muster", "beta"]);
   });
 });
@@ -271,8 +272,8 @@ describe("the sidebar arranged in place (0057)", () => {
   it("makes every heading focusable and draggable, says how to move and rename it", () => {
     const html = render();
     // A heading, focusable for its keys (0070: its chevron is a button inside it, so not a button itself).
-    expect(html).toContain('<div class="side-cat" data-heading="Apps" tabindex="0" role="heading" aria-level="2" aria-keyshortcuts="ArrowLeft ArrowRight Alt+ArrowUp Alt+ArrowDown" aria-label="Apps, category heading, 2 projects: ↩ renames it, ⌥↑ ⌥↓ move it, ← → fold it" title="Double-click or ↩ to rename; drag it, or ⌥↑ ⌥↓, to move it with its projects; ← → fold it" draggable="true">');
-    expect(html).toContain('aria-label="Tools, category heading, 1 project: ↩ renames it, ⌥↑ ⌥↓ move it, ← → fold it"');
+    expect(html).toContain('<div class="side-cat" data-heading="Apps" tabindex="0" role="heading" aria-level="2" aria-keyshortcuts="ArrowLeft ArrowRight Alt+ArrowUp Alt+ArrowDown" aria-label="Apps, category heading: 2 projects; ↩ renames it, ⌥↑ ⌥↓ move it, ← → fold it" title="Double-click or ↩ to rename; drag it, or ⌥↑ ⌥↓, to move it with its projects; ← → fold it" draggable="true">');
+    expect(html).toContain('aria-label="Tools, category heading: 1 project, 1 working; ↩ renames it, ⌥↑ ⌥↓ move it, ← → fold it"');
   });
   it("puts each project's colour as a dot at the left of its row, a button that lays the colours out", () => {
     const html = render();
@@ -359,6 +360,52 @@ describe("headings made and renamed in place (0057)", () => {
   });
 });
 
+describe("a heading reads as a heading (0082 AC1)", () => {
+  /** Every declaration of `sel`, in the order styles.css has them; the last one of a property wins. */
+  const decls = (sel: string) => {
+    const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const out = new Map<string, string>();
+    for (const m of css.matchAll(new RegExp(`(?:^|\\n)${esc} \\{([^}]*)\\}`, "g")))
+      for (const d of m[1].split(";").map((x) => x.trim()).filter(Boolean)) out.set(d.slice(0, d.indexOf(":")).trim(), d.slice(d.indexOf(":") + 1).trim());
+    return out;
+  };
+  const px = (v: string | undefined) => Number(/^(\d+(?:\.\d+)?)px$/.exec(v ?? "")?.[1] ?? NaN);
+  it("its name is at least as large and as heavy as a project's name, in the text colour", () => {
+    // A project's name: the body's 13px, weight 550 (.side-name).
+    const body = px(/font: (\d+px)\//.exec(css)?.[1]);
+    expect(body).toBe(13);
+    expect(Number(decls(".side-name").get("font-weight"))).toBe(550);
+    const head = decls(".side-cat");
+    expect(px(head.get("font-size"))).toBeGreaterThanOrEqual(body);
+    expect(head.get("color")).toBe("var(--text)");
+    expect(Number(decls(".side-cat-name").get("font-weight"))).toBeGreaterThanOrEqual(550);
+  });
+  it("starts its group with a divider, and its chevron is a Pill-size button", () => {
+    expect(decls(".side-cat").get("border-top")).toBe("1px solid var(--line)");
+    const fold = decls(".side-cat-fold.ui-pill");
+    expect(px(fold.get("min-width"))).toBeGreaterThanOrEqual(20);
+    expect(px(fold.get("min-height"))).toBeGreaterThanOrEqual(20);
+  });
+  it("indents its projects under it in every mode, mirrored in right-to-left text", () => {
+    // Logical properties only, so the indent sits on the start side whichever way the text runs.
+    for (const sel of [".side-group > .side-row", ".side-group > .side-item", ".side-group > .side-ping"]) {
+      const d = decls(sel);
+      expect(px(d.get("margin-inline-start")), sel).toBeGreaterThanOrEqual(12);
+      expect([...d.keys()].some((k) => /margin-(left|right)/.test(k)), sel).toBe(false);
+    }
+    // No mode's rule takes the indent away.
+    expect(css).not.toMatch(/data-sidebar="narrow"\][^{]*\.side-group > \.side-row \{[^}]*margin-inline-start: 0/);
+    expect(decls(".side-group .side-item").get("text-align")).toBe("start");
+    // The folded chevron points to where the text starts.
+    expect(decls(".side-cat-fold:dir(rtl)").get("transform")).toBe("scaleX(-1)");
+    expect(decls(".side-cat-name").get("unicode-bidi")).toBe("plaintext");
+  });
+  it("has no more of the chips mu-70 folded under it (owner, 0082: choice A)", () => {
+    expect(css).not.toMatch(/\.side-peek/);
+    expect(listSource).not.toMatch(/Peeks|peeks\(/);
+  });
+});
+
 describe("the fold wiring follows the tested rules (0070 review R4, R5, R7)", () => {
   it("a move under a folded heading opens it at once and says both", () => {
     expect(listSource).toContain("const opened = unfoldFor(p, folds);");
@@ -430,14 +477,6 @@ describe("folded headings in the sidebar (0070)", () => {
   const render = (mode: DisplayMode = "adhd", current = "alpha") =>
     renderToStaticMarkup(createElement(Mode.Provider, { value: mode }, createElement(ProjectList, { queues, tasks, notes: [], activity: [], now: NOW, current, onPick: () => {}, onLabel: async () => {}, edit: edits })));
   const rows = (html: string) => [...html.matchAll(/<span class="side-name"[^>]*>([^<]*)<\/span>/g)].map((m) => m[1]);
-  // Each chip as "name" or "name count": the name in its own span, so a long one ends in an ellipsis
-  // and never pushes the count out (review R3).
-  const peekNames = (html: string) =>
-    [...html.matchAll(/<button type="button"[^>]*class="ui-pill(?: ui-pill--on)? side-peek"[^>]*>([\s\S]*?)<\/button>/g)].map((m) => {
-      const name = /<span class="side-peek-name">([^<]*)<\/span>/.exec(m[1])?.[1] ?? "?";
-      const count = /<span class="count warn"[^>]*>(\d+)<\/span>/.exec(m[1])?.[1];
-      return count ? `${name} ${count}` : name;
-    });
   const heading = (html: string, name: string) => {
     const at = html.indexOf(`data-heading="${name}"`);
     return html.slice(html.lastIndexOf("<div", at), html.indexOf("</div>", at));
@@ -445,28 +484,30 @@ describe("folded headings in the sidebar (0070)", () => {
 
   afterEach(() => vi.unstubAllGlobals());
 
-  it("folds to its name and counts: projects, what needs you, what's being worked on, its tasks", () => {
+  /** A heading's labelled counts, as read: "1 needs you · 3 projects · 1 working". */
+  const counts = (h: string) => plain(/<span class="side-cat-counts"[^>]*>([\s\S]*)$/.exec(h.split("</div>")[0])?.[1] ?? "");
+  const countsOf = (h: string) => /<span class="side-cat-counts"[\s\S]*$/.exec(h)?.[0] ?? "";
+  it("folds to one line: its chevron, its name and its labelled counts, what needs you first (0082)", () => {
     const html = render();
     const apps = heading(html, "Apps");
     expect(apps).toMatch(/^<div class="side-cat folded" data-heading="Apps"/);
-    expect(apps).toMatch(/<button type="button" aria-expanded="false" aria-label="Unfold Apps" title="Unfold Apps \(→\)" class="ui-pill side-cat-fold">▸<\/button>/);
-    expect(plain(apps)).toMatch(/Apps/);
-    expect(apps).toContain('<small class="side-cat-projects" title="3 projects in Apps, folded">3 projects</small>');
-    expect(apps).toContain('<span class="count warn" title="1 needs you in Apps">1</span>');
-    expect(plain(apps)).toContain("1 working");
-    expect(apps).toContain('<small title="3 tasks in 3 projects">3</small>');
-    // Its rows are folded away; the open heading's stay, with its chevron open.
+    expect(apps).toMatch(/<button type="button" aria-expanded="false" aria-label="Unfold Apps" title="Unfold Apps \(→\)" class="ui-pill side-cat-fold">▸<\/button><span class="side-cat-name">Apps<\/span><span class="side-cat-counts"/);
+    expect(counts(apps)).toBe("1 needs you · 3 projects · 1 working");
+    // The counts in words for a screen reader, on the heading itself; all of them, and its tasks, in the tooltip.
+    expect(apps).toContain('aria-label="Apps, category heading, folded: 1 needs you, 3 projects, 1 working; ↩ renames it, ⌥↑ ⌥↓ move it, ← → fold it"');
+    expect(apps).toContain('title="1 needs you · 3 projects · 1 working · 3 tasks"');
+    // What needs you is the same chip a project's row has; working the same dot.
+    expect(apps).toContain('<span class="side-cat-needs"><span class="count warn">1</span> needs you</span>');
+    expect(apps).toContain('<span class="side-working"><i class="dot" aria-hidden="true"></i>1 working</span>');
+    // Its rows are folded away, and nothing of them shows under it: the heading's count carries it.
     expect(rows(html)).toEqual(["All", "zeta"]);
+    expect(html).not.toContain("side-peek");
     expect(heading(html, "Tools")).toMatch(/aria-expanded="true" aria-label="Fold Tools"/);
-    expect(heading(html, "Tools")).not.toContain("side-cat-projects");
   });
-  it("still shows the selected project and the ones that need you on the folded heading", () => {
-    const html = render();
-    expect(peekNames(html)).toEqual(["Alpha app", "Muster 1"]);
-    expect(html).toMatch(/<div class="side-peeks" role="group" aria-label="Shown from folded Apps">/);
-    expect(html).toMatch(/aria-pressed="true"[^>]*class="ui-pill ui-pill--on side-peek"[^>]*><i class="side-swatch-dot" data-colour="lime"/);
-    // Nothing selected in it: only what needs you.
-    expect(peekNames(render("adhd", "zeta"))).toEqual(["Muster 1"]);
+  it("says its counts the same way open and folded (0082 AC2)", () => {
+    const open = renderToStaticMarkup(createElement(ProjectList, { queues: queues.map((q) => ({ ...q, categoryFolded: false })), tasks, notes: [], activity: [], now: NOW, current: "alpha", onPick: () => {}, edit: edits }));
+    expect(countsOf(heading(open, "Apps"))).toBe(countsOf(heading(render(), "Apps")));
+    expect(counts(heading(open, "Tools"))).toBe("1 project");
   });
   it("says its keys: ← folds, → unfolds, as well as moving and renaming", () => {
     expect(heading(render(), "Apps")).toContain('aria-keyshortcuts="ArrowLeft ArrowRight Alt+ArrowUp Alt+ArrowDown"');
@@ -474,16 +515,11 @@ describe("folded headings in the sidebar (0070)", () => {
   });
   for (const mode of ["adhd", "standard", "focus"] as const) {
     for (const chip of ["working", "az", "needs", "mine"]) {
-      it(`holds in ${mode} under ${chip}, with its counts`, () => {
+      it(`holds in ${mode} under ${chip}, one line with its counts`, () => {
         vi.stubGlobal("localStorage", { getItem: () => chip });
         const html = render(mode);
         expect(rows(html)).toEqual(["All", "zeta"]);
-        // In the order the chip gives: the one that needs you first under Needs you, else A–Z here.
-        expect(peekNames(html)).toEqual(chip === "needs" ? ["Muster 1", "Alpha app"] : ["Alpha app", "Muster 1"]);
-        const apps = heading(html, "Apps");
-        expect(apps).toContain("3 projects");
-        expect(apps).toContain('title="1 needs you in Apps"');
-        expect(plain(apps)).toContain("1 working");
+        expect(counts(heading(html, "Apps"))).toBe("1 needs you · 3 projects · 1 working");
       });
     }
   }
@@ -505,14 +541,26 @@ describe("folded headings in the sidebar (0070)", () => {
     // The folder keeps its name (in the rows' tooltips); no heading has it any more.
     expect(html).not.toContain('data-heading="persianUtils"');
   });
-  it("shows a project whose only needs-you is lessons waiting, with its count, on the folded heading (review R2)", () => {
+  it("counts a project whose only needs-you is lessons waiting on its folded heading (0070 review R2)", () => {
     const withLessons = queues.map((q) => (q.name === "beta" ? { ...q, lessonsWaiting: 2 } : q));
     const html = renderToStaticMarkup(createElement(ProjectList, { queues: withLessons, tasks, notes: [], activity: [], now: NOW, current: "zeta", onPick: () => {}, edit: edits }));
-    expect(peekNames(html).sort()).toEqual(["Muster 1", "beta 2"]);
-    expect(heading(html, "Apps")).toContain('<span class="count warn" title="3 need you in Apps">3</span>');
+    expect(counts(heading(html, "Apps"))).toBe("3 need you · 3 projects · 1 working");
   });
-  it("draws a chip's name to end in an ellipsis and its count never to shrink (review R3)", () => {
-    expect(css).toMatch(/\.side-peek-name \{[^}]*min-width: 0;[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/);
-    expect(css).toContain(".side-peek .count { flex: none; }");
+  it("17 projects that all need you fold to the heading alone, one line (0082 AC3)", () => {
+    const many: QueueInfo[] = Array.from({ length: 17 }, (_, i) => ({ name: `p${i}`, path: `/p/p${i}/tasks`, counts: { ready: 1 }, label: `Project ${i}`, category: "Dast Afzar", categoryFolded: true }));
+    const waiting = many.flatMap((q) => [task({ queue: q.name, id: "0001", waitingForOwner: true }), task({ queue: q.name, id: "0002", waitingForOwner: true })]);
+    const html = renderToStaticMarkup(createElement(ProjectList, { queues: many, tasks: waiting, notes: [], activity: [], now: NOW, current: "p3", onPick: () => {}, edit: edits }));
+    const group = /<div class="side-group" role="group" aria-label="Dast Afzar">([\s\S]*?)<\/div><\/div>(?=<button)/.exec(html)?.[1] ?? "";
+    // The group is its heading and nothing else: no row, no chip, not even the selected project's.
+    expect(group).toMatch(/^<div class="side-cat folded" data-heading="Dast Afzar"/);
+    expect(group.match(/<div/g)).toHaveLength(1);
+    expect(group).not.toMatch(/side-row|side-item|side-peek/);
+    expect(counts(group + "</div>")).toBe("34 need you · 17 projects");
+    // And the heading is one line: it never wraps; its counts after what needs you end in an
+    // ellipsis, and what needs you never shrinks.
+    const rule = (sel: string) => [...css.matchAll(new RegExp(`(?:^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`, "g"))].map((m) => m[1]).join(";");
+    expect(rule(".side-cat.folded")).toContain("flex-wrap: nowrap");
+    expect(rule(".side-cat-needs")).toContain("flex: none");
+    expect(rule(".side-cat-rest")).toMatch(/min-width: 0;.*overflow: hidden;.*text-overflow: ellipsis;.*white-space: nowrap/);
   });
 });

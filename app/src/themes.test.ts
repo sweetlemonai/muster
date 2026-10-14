@@ -456,6 +456,31 @@ describe("a block's look (0060): the owner's in needs-you orange, the rest neutr
   }
 });
 
+describe("a sidebar heading reads in every theme (0082)", () => {
+  // The heading's name in --text, its counts in --muted, on the sidebar's panel and on a hovered
+  // fill; its needs-you chip the needs orange with --on-status words, as a stage pill's (the row
+  // badge's --accent-ink reads at only about 2.2:1 on it in the light themes).
+  for (const t of THEMES) {
+    for (const a of ACCENTS) {
+      it(`${t.name} × ${a.name}: its name, counts and needs-you chip at 4.5:1`, () => {
+        const v = variables(t, a);
+        for (const under of [v["--panel"], v["--hover"]]) {
+          expect(contrast(v["--text"], under)).toBeGreaterThanOrEqual(4.5);
+          expect(contrast(v["--muted"], under)).toBeGreaterThanOrEqual(4.5);
+        }
+        expect(contrast(v["--on-status"], v["--st-needs"])).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+  }
+  it("the CSS draws the heading with those tokens", () => {
+    const rule = (sel: string) => [...css.matchAll(new RegExp(`(?:^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`, "g"))].map((m) => m[1]).join(";");
+    expect(rule(".side-cat")).toContain("color: var(--text)");
+    expect(rule(".side-cat-counts")).toContain("color: var(--muted)");
+    expect(rule(".side-cat-needs .count.warn")).toContain("color: var(--on-status)");
+    expect(rule(".count.warn")).toContain("background: var(--st-needs)");
+  });
+});
+
 describe("project colours (0057): a dot where a project is named, never read as a stage or a priority", () => {
   // Every colour that means something on a card or row, as it shows in a theme with an accent:
   // the stage, blocked and needs-you fills and their edges, the owner's gold and the priorities.

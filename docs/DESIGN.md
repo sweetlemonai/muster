@@ -18,7 +18,10 @@ have their own short sets below. Every other section here applies in all three.
   leaves a labelled chip, strip or header in the same spot, with a count where there is one, and
   one click or key opens it there. Nothing a mode folds is more than one click or key away.
 - **What needs you never folds:** the Waiting for you count, the sidebar's counts, the needs-you
-  and blocked words on a card, and a folded column's needs-you count.
+  and blocked words on a card, and a folded column's needs-you count. A folded sidebar heading is
+  one line, and its own needs-you count carries what's under it (owner, 2026-10-14, task 0082):
+  it comes first on the line, in the needs chip a project's row has, and is never the part cut
+  where the sidebar is narrow. Nothing of its projects shows under it.
 - **No overlays, fixed places, no layout jumps, the colour code:** as below, the same in all three.
   Switching modes moves nothing: every control keeps its place.
 - **One table:** `app/src/modes.ts` lists every element that differs, with what it does in each
@@ -100,6 +103,18 @@ strips didn't line up.
 - **Recently finished folds to a strip** with its name and count beside the board, opened in place
   with a click: finished work isn't what needs doing now, but it stays one click away.
 - **The task pane folds as in Standard.**
+
+## Sidebar categories (task 0082)
+
+- **A heading reads as a heading.** It starts its group with a thin divider, its name is at least
+  as large and heavy as its projects' names, in the text colour, and its chevron is a real button
+  (Pill-size, saying open or folded). Its projects are indented under it, on the side the text
+  starts (mirrored for right-to-left names), in every mode.
+- **Its counts are words, the same open and folded,** in every mode: "77 need you · 17 projects ·
+  18 working", what needs you first, in the tokens a project's row uses (the needs chip, the
+  Building dot); what's 0 is left out, but never the projects. Its tasks are in the tooltip.
+- **Folded is one line:** the chevron, the name and those counts. What doesn't fit ends in an
+  ellipsis, never what needs you; the whole line is in the tooltip and read out on the heading.
 
 ## The colour code
 

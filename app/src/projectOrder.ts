@@ -240,10 +240,21 @@ export function settleFolds(set: Readonly<Record<string, boolean>>, core: Readon
  *  badge counts them (0070 review R2). */
 export const needsOf = (r: { needs: number; lessons: number }): number => r.needs + r.lessons;
 
-/** What a folded heading still shows of its projects (0070, nothing out of mind): the selected
- *  one (`current`) and every one that needs you (`needsOf`), in the order given. */
-export function peeks<T extends { name: string; needs: number; lessons: number }>(rows: T[], current: string): T[] {
-  return rows.filter((r) => r.name === current || needsOf(r) > 0);
+/** A heading's counts (0082): how much its projects need you (`needsOf`, as their rows' badges),
+ *  how many projects it holds, and how many of their tasks are being worked on. */
+export type HeadingCounts = { needs: number; projects: number; working: number };
+export function headingCounts(rows: { needs: number; lessons: number; activity: { working: number } }[]): HeadingCounts {
+  return { needs: rows.reduce((n, r) => n + needsOf(r), 0), projects: rows.length, working: rows.reduce((n, r) => n + r.activity.working, 0) };
+}
+
+/** A heading's counts in words, the same open and folded (0082): what needs you first, so at the
+ *  sidebar's narrowest it's never the part cut; what's 0 left out, but never the projects. */
+export function countsText(c: HeadingCounts, sep = " · "): string {
+  return [
+    c.needs > 0 && `${c.needs} ${c.needs === 1 ? "needs" : "need"} you`,
+    `${c.projects} ${c.projects === 1 ? "project" : "projects"}`,
+    c.working > 0 && `${c.working} working`,
+  ].filter(Boolean).join(sep);
 }
 
 /** The folded heading a move opens (0070, review R4): the one a project was moved under, so it

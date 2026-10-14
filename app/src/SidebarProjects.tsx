@@ -125,13 +125,15 @@ export function SideRow({ rowKey, label, colour, swatches, onDot, onColour, onFo
 
 /** A category heading (0044) as it moves (0057): focusable, dragged with its projects, a drop
  *  target for a project (into it) or a heading (before or after it); a double click or ↩ renames
- *  it in place. With `onFold` (0070) its chevron, ← and → fold it to its name and counts and
- *  unfold it. A new heading (`fresh`) has no project yet: it says how to give it one, and Remove
- *  takes it away. */
-export function HeadingFrame({ name, count, fresh = false, folded = false, drag, onRename, onRemove, onFold, children }: {
+ *  it in place. With `onFold` (0070) its chevron, ← and → fold it to its one line (its name and
+ *  counts, 0082) and unfold it. A new heading (`fresh`) has no project yet: it says how to give it
+ *  one, and Remove takes it away. */
+export function HeadingFrame({ name, count, summary, fresh = false, folded = false, drag, onRename, onRemove, onFold, children }: {
   name: string;
-  /** Its projects, for what a screen reader hears. */
+  /** Its projects, for what a screen reader hears without `summary`. */
   count: number;
+  /** Its counts in words, for a screen reader (0082): "1 needs you, 3 projects, 1 working". */
+  summary?: string;
   fresh?: boolean;
   folded?: boolean;
   drag?: DragProps;
@@ -140,7 +142,7 @@ export function HeadingFrame({ name, count, fresh = false, folded = false, drag,
   onFold?: (folded: boolean) => void;
   children: ReactNode;
 }) {
-  const said = fresh ? "new, no projects yet" : `${count} ${count === 1 ? "project" : "projects"}${folded ? ", folded" : ""}`;
+  const said = fresh ? "new, no projects yet" : (summary ?? `${count} ${count === 1 ? "project" : "projects"}`);
   const can = [onRename && "↩ renames it", drag && "⌥↑ ⌥↓ move it", onFold && "← → fold it"].filter(Boolean).join(", ");
   const keys = [onFold && FOLD_KEYS, drag && MOVE_KEYS].filter(Boolean).join(" ");
   const focusable = Boolean(drag || onRename || onFold);
@@ -155,7 +157,7 @@ export function HeadingFrame({ name, count, fresh = false, folded = false, drag,
       role={focusable ? "heading" : undefined}
       aria-level={focusable ? 2 : undefined}
       aria-keyshortcuts={keys || undefined}
-      aria-label={`${name}, category heading, ${said}${can ? `: ${can}` : ""}`}
+      aria-label={fresh ? `${name}, category heading, ${said}${can ? `: ${can}` : ""}` : `${name}, category heading${folded ? ", folded" : ""}: ${said}${can ? `; ${can}` : ""}`}
       title={onRename ? `Double-click or ↩ to rename${drag ? "; drag it, or ⌥↑ ⌥↓, to move it with its projects" : ""}${onFold ? "; ← → fold it" : ""}` : undefined}
       {...attrs}
       onKeyDown={(e) => {

@@ -10,8 +10,7 @@ import { inProgress } from "./lib";
 import { useLook } from "./modes";
 import { PAUSE_GLYPH } from "./Pause";
 import { QuietPing } from "./Ping";
-import { accepts, dropMove, type DropTarget, grouped, headingFolds, layoutOf, needsOf, peeks, readFolds, trackFold, trackUnfold, unfoldFor, type Move, type Pending, type Plan, planMove, settle, sidebarGroups, track, withFresh } from "./projectOrder";
-import { ColourDot } from "./ProjectSwatches";
+import { accepts, dropMove, type DropTarget, countsText, grouped, headingCounts, headingFolds, layoutOf, readFolds, trackFold, trackUnfold, unfoldFor, type Move, type Pending, type Plan, planMove, settle, sidebarGroups, track, withFresh } from "./projectOrder";
 import { pressed } from "./shortcuts";
 import { cleanHeading, type DragProps, half, HeadingEdit, HeadingFrame, MOVE_KEYS, NewCategory, SideRow } from "./SidebarProjects";
 import type { Activity, Note, QueueInfo, Task } from "./types";
@@ -278,7 +277,6 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
                 onFold={edit && !isFresh ? (v) => fold(g.name, v) : undefined}
               />
             )}
-            {isFolded && <Peeks heading={g.name} rows={peeks(g.rows, current)} current={current} onPick={onPick} />}
             {!isFolded && g.rows.map((r) => {
               const q = queues.find((x) => x.name === r.name);
               if (editing === r.name && onLabel && q) {
@@ -364,46 +362,39 @@ function CategoryHead({ name, rows, total, fresh = false, drag, onRename, onRemo
   onRename?: () => void;
   onRemove?: () => void;
   into?: DragProps;
-  /** Folded (0070): it says how many projects it holds, and what's being worked on in every mode. */
+  /** Folded (0070): its one line, and no project under it (0082). */
   folded?: boolean;
   onFold?: (folded: boolean) => void;
 }) {
-  const full = useLook("sidebar") === "full";
-  const needs = rows.reduce((n, r) => n + needsOf(r), 0);
-  const working = rows.reduce((n, r) => n + r.activity.working, 0);
-  const projects = `${rows.length} ${rows.length === 1 ? "project" : "projects"}`;
+  const c = headingCounts(rows);
+  const said = countsText(c);
+  const projects = `${c.projects} ${c.projects === 1 ? "project" : "projects"}`;
+  // One line, the same open and folded, in every mode (0082): what needs you first, in the chip a
+  // project's row has, then its projects and what's being worked on, in words; the rest ends in
+  // an ellipsis where the sidebar is narrow, never what needs you. Its tasks are in the tooltip.
   return (
-    <HeadingFrame name={name} count={rows.length} fresh={fresh} folded={folded} drag={drag ?? into} onRename={onRename} onRemove={onRemove} onFold={onFold}>
+    <HeadingFrame name={name} count={rows.length} summary={countsText(c, ", ")} fresh={fresh} folded={folded} drag={drag ?? into} onRename={onRename} onRemove={onRemove} onFold={onFold}>
       <span className="side-cat-name">{name}</span>
-      <span className="side-badges">
-        {folded && <small className="side-cat-projects" title={`${projects} in ${name}, folded`}>{projects}</small>}
-        {needs > 0 && <span className="count warn" title={`${needs} need${needs === 1 ? "s" : ""} you in ${name}`}>{needs}</span>}
-        {(full || folded) && working > 0 && (
-          <span className="side-working" title={`${working} ${working === 1 ? "task" : "tasks"} being worked on now in ${name}: ${WORKING_HINT}`}>
-            <i className="dot" aria-hidden="true" />
-            {working} working
+      {!fresh && (
+        <span className="side-cat-counts" title={`${said} · ${total} ${total === 1 ? "task" : "tasks"}`}>
+          {c.needs > 0 && (
+            <span className="side-cat-needs">
+              <span className="count warn">{c.needs}</span>
+              {` ${c.needs === 1 ? "needs" : "need"} you`}
+            </span>
+          )}
+          <span className="side-cat-rest">
+            {`${c.needs > 0 ? " · " : ""}${projects}${c.working > 0 ? " · " : ""}`}
+            {c.working > 0 && (
+              <span className="side-working">
+                <i className="dot" aria-hidden="true" />
+                {`${c.working} working`}
+              </span>
+            )}
           </span>
-        )}
-        {full && !fresh && <small title={`${total} ${total === 1 ? "task" : "tasks"} in ${projects}`}>{total}</small>}
-      </span>
+        </span>
+      )}
     </HeadingFrame>
-  );
-}
-
-/** What a folded heading still shows (0070): the selected project and the ones that need you, as
- *  chips under it, each with its colour and what needs you; a click picks it. */
-function Peeks({ heading, rows, current, onPick }: { heading: string; rows: ProjectRow[]; current: string; onPick: (queue: string) => void }) {
-  if (rows.length === 0) return null;
-  return (
-    <div className="side-peeks" role="group" aria-label={`Shown from folded ${heading}`}>
-      {rows.map((r) => (
-        <Pill key={r.name} type="button" on={current === r.name} aria-pressed={current === r.name} className="side-peek" title={`${r.title}: in ${heading}, folded`} onClick={() => onPick(r.name)}>
-          <ColourDot name={r.label} colour={r.colour} />
-          <span className="side-peek-name">{r.label}</span>
-          {needsOf(r) > 0 && <span className="count warn" title={`${needsOf(r)} need${needsOf(r) === 1 ? "s" : ""} you`}>{needsOf(r)}</span>}
-        </Pill>
-      ))}
-    </div>
   );
 }
 

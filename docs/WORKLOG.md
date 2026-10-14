@@ -4,6 +4,22 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Sidebar categories read right: a strong heading, labelled counts, a fold that folds to one line (mu-82)
+**Fixed:** "category UI is not good" (owner) → headings were smaller and greyer than their projects,
+folding still showed every project that needed you as a chip, the counts had no words and the
+indent didn't tie projects to their heading. Headings now start with a divider, set the name at
+least as strong as a project's, with a chevron Pill (aria-expanded); projects indent with logical
+margins (RTL mirrors); one labelled count line, the same open and folded ("77 need you · 17
+projects · 18 working", needs first, so it's never the part cut at 150px); a folded heading is one
+line (owner's choice A), mu-70's peek chips removed.
+**Decided:** a folded heading's needs-you count is what keeps it in sight (DESIGN.md, "Sidebar
+categories"); the stale "persianUtils" category on three projects is the owner's data, left alone.
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; render
+tests (17 projects that all need you fold to one line; counts identical open, folded and in every
+mode); heading and count contrast ≥ 4.5:1 in every theme; break-checks on each rule.
+**Open:** release-app screenshots (AC4) not taken: the sandbox blocks headless Chrome; HTML renders
+are in the task's notes. The row's needs-you badge reads ~2.2:1 in light themes (pre-existing; filed).
+
 ## 2026-10-14 — Coordinator (Muster_Team_Lead_2 and _3): mu-81, mu-78, mu-80 and mu-83 merged, mu-82 sent back, mu-77 rebased
 **Did:** after release-app QA, merged mu-81 (721a34c) and mu-78 (43d7d8b, 72f34df). mu-74 passed to
 Your check after its live AC4 run. The layer's main fast-forwarded to 713be8f (mu-74's round-1
