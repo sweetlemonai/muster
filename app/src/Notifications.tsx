@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "./api";
 import { HomePath } from "./HomePath";
+import { Pill } from "./ui";
 import type { SettingsInfo } from "./settingsData";
 
 /** Settings › Notifications (0052) with its data: the switch saved by the core, which shows its
@@ -37,9 +38,9 @@ export function NotificationsView({ info, error = "", onSet }: { info: SettingsI
         <div className="look-colour" role="group" aria-label="Mac notifications">
           <span className="meta">Notify me</span>
           {[true, false].map((v) => (
-            <button key={String(v)} type="button" className={on === v ? "chip on" : "chip"} aria-pressed={on === v} onClick={() => onSet(v)}>
+            <Pill key={String(v)} type="button" on={on === v} aria-pressed={on === v} onClick={() => onSet(v)}>
               {v ? "On" : "Off"}
-            </button>
+            </Pill>
           ))}
         </div>
         {error && <p className="err" role="alert">{error}</p>}

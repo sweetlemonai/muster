@@ -40,13 +40,13 @@ describe("Notifications (0052)", () => {
 
   it("shows On and Off with the one in force lit, on unless turned off", () => {
     const chips = (html: string) => /<div[^>]*aria-label="Mac notifications"[^>]*>([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "";
-    expect(chips(view())).toMatch(/class="chip on" aria-pressed="true">On</);
-    expect(chips(view())).toMatch(/class="chip" aria-pressed="false">Off</);
+    expect(chips(view())).toMatch(/aria-pressed="true" class="ui-pill ui-pill--on">On</);
+    expect(chips(view())).toMatch(/aria-pressed="false" class="ui-pill">Off</);
     const off = view({ info: { ...INFO, settings: { ...INFO.settings, notify: false } } });
-    expect(chips(off)).toMatch(/class="chip on" aria-pressed="true">Off</);
+    expect(chips(off)).toMatch(/aria-pressed="true" class="ui-pill ui-pill--on">Off</);
     // A core from before notifications sends none: on, its default.
     const older = view({ info: { ...INFO, settings: { leaseMinutes: 720, liveMinutes: 5 } } });
-    expect(chips(older)).toMatch(/class="chip on" aria-pressed="true">On</);
+    expect(chips(older)).toMatch(/aria-pressed="true" class="ui-pill ui-pill--on">On</);
   });
 
   it("turns them off and on through the core", () => {
