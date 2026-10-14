@@ -4,6 +4,27 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Run from the app: start a project's run command, watch it, stop it (mu-79)
+**Did:** `run.rs` starts a project's run command in its main checkout (no shell, its own process
+group, no stdin, without the queue variables), keeps its output in a 2,000-line / 256 KB ring and
+sends it as `run` events at most every 200 ms; Stop, Restart and quitting end the group (SIGTERM,
+SIGKILL after 5 s). `run_start`/`run_stop`/`run_state` take a project name only. Your check gets a
+Try line (Run with the command) and a Run block (state, Stop/Restart, last 12 lines, All output);
+Settings › Projects gets Run; the sidebar row says "running" (`Run.tsx`, `runData.ts`).
+**Fixed:** `bin/run` started the second Muster with `open -n`, which hands it to launchd, out of
+the run's group, so Stop could never end it → it now `exec`s the build's binary (the Info.plist's
+CFBundleExecutable).
+**Decided:** a run has ended when its leader exited and both streams closed (no polling; a
+grandchild still writing keeps it running). Gate's launcher (`parallel::program_in`,
+`gate_command`) shared, not copied. An exited run's group isn't killed at quit: its id may be
+reused. Chip state rides on the 2 s poll (`QueueInfo.running`), not a fourth command.
+**Verified:** `cargo test run::` 11 (grandchild gone after Stop, Restart and quit; SIGTERM ignored
+→ SIGKILL; 100,000 lines → events ≥ 200 ms apart, ring bounded); mutants (no process group, no
+batch pause, resent lines) caught. `vitest` Run 15; `bin/run` tests 6 (the binary runs as the
+process Run started). Gate below.
+**Open:** AC4 (release app: Run on a Muster task builds and opens a second Muster, Stop ends it,
+light and dark screenshots) needs the release app, which this sandbox can't launch.
+
 ## 2026-10-14 — Muster's handoff rule follows the automatic handoff (task 0075)
 **Did:** decision 0011 amends 0004 point 3: a session hands off by itself at ~60% context or the
 token cap (150k, 300k for the lead), at a gap, and a named background successor resumes it.

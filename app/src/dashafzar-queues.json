@@ -11,6 +11,7 @@
     "path": "<base>/alpha/tasks",
     "prefix": "al",
     "rank": null,
+    "running": false,
     "yourCheck": 0,
     "yourCheckLimit": 5
   },
@@ -26,6 +27,7 @@
     "path": "<base>/persianUtils/colors/tasks",
     "prefix": "co",
     "rank": 1,
+    "running": false,
     "yourCheck": 0,
     "yourCheckLimit": 3
   },
@@ -41,6 +43,7 @@
     "path": "<base>/persianUtils/dates/tasks",
     "prefix": "da",
     "rank": 0,
+    "running": false,
     "yourCheck": 0,
     "yourCheckLimit": null
   },
@@ -56,6 +59,7 @@
     "path": "<base>/drover/tasks",
     "prefix": "dr",
     "rank": null,
+    "running": false,
     "yourCheck": 0,
     "yourCheckLimit": 5
   },
@@ -71,6 +75,7 @@
     "path": "<base>/muster/tasks",
     "prefix": "mu",
     "rank": null,
+    "running": false,
     "yourCheck": 0,
     "yourCheckLimit": 5
   }

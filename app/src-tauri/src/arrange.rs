@@ -746,6 +746,7 @@ mod tests {
             category_rank: None,
             category_folded: false,
             lessons_waiting: 0,
+            running: false,
         }
     }
 

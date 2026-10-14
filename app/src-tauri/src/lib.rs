@@ -34,6 +34,7 @@ pub mod projects;
 pub mod queue;
 pub mod review;
 mod review_cmds;
+pub mod run;
 pub mod search;
 pub mod session;
 pub mod settings;
@@ -64,6 +65,8 @@ pub(crate) struct AppState {
     badge: badge::Badge,
     /// What the Mac notifications have seen, and the project the window shows (0052).
     notify: notify::Notifier,
+    /// Each project's latest run from the app (0079), in memory only.
+    runs: run::Runs,
 }
 
 /// The folder queues are found under, from `projects::places`.
@@ -143,6 +146,11 @@ async fn state(
         let sessions = monitor.poll(&s.tasks, s.now);
         agents::apply(&mut s.tasks, &sessions);
         notify_new(&h, &s, &sessions);
+        // The sidebar's "running" chip (0079).
+        let running = h.state::<AppState>().runs.running();
+        for q in &mut s.queues {
+            q.running = running.contains(&q.name);
+        }
         Ok((s, cache))
     })
     .await?;
@@ -1435,6 +1443,42 @@ async fn remove_project(handle: tauri::AppHandle, key: String) -> Result<(), Str
     .await
 }
 
+/// Run (0079): starts the run command of the project named `project` in its main checkout,
+/// restarting a run of it that's still going. The window gives the name only: the command and the
+/// folder are the core's own, from projects.json and the project's queue.
+#[tauri::command]
+async fn run_start(handle: tauri::AppHandle, project: String) -> Result<run::View, String> {
+    blocking(move || {
+        let app = handle.state::<AppState>();
+        let list = projects::list(&base(), &projects::load(&app.config_file));
+        app.runs.start_named(&list, &project)
+    })
+    .await
+}
+
+/// Stop (0079): ends the run of the project named `project` and everything it started.
+#[tauri::command]
+async fn run_stop(handle: tauri::AppHandle, project: String) -> Result<run::View, String> {
+    blocking(move || {
+        let app = handle.state::<AppState>();
+        let list = projects::list(&base(), &projects::load(&app.config_file));
+        app.runs.stop_named(&list, &project)
+    })
+    .await
+}
+
+/// What Run knows of the project named `project` (0079): its command, its checkout, why it
+/// can't run, and its latest run with the output kept.
+#[tauri::command]
+async fn run_state(handle: tauri::AppHandle, project: String) -> Result<run::View, String> {
+    blocking(move || {
+        let app = handle.state::<AppState>();
+        let list = projects::list(&base(), &projects::load(&app.config_file));
+        app.runs.view(&list, &project)
+    })
+    .await
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -1451,6 +1495,7 @@ pub fn run() {
                 settings_file: dir.join(settings::FILE),
                 badge: badge::Badge::default(),
                 notify: notify::Notifier::new(dir.join(notify::FILE)),
+                runs: run::Runs::new(run_events(app.handle().clone())),
             });
             watch_badge(app.handle().clone());
             Ok(())
@@ -1521,10 +1566,28 @@ pub fn run() {
             pause_cmds::set_old_pauses_offered,
             review_cmds::review_brief,
             review_cmds::lessons,
-            review_cmds::decide_lessons
+            review_cmds::decide_lessons,
+            run_start,
+            run_stop,
+            run_state
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Muster");
+        .build(tauri::generate_context!())
+        .expect("error while building Muster")
+        .run(|handle, event| {
+            // Quitting ends every run and everything it started (0079). Hiding the window
+            // doesn't: the app stays alive for the Dock badge, and so do the runs.
+            if let tauri::RunEvent::Exit = event {
+                handle.state::<AppState>().runs.stop_all();
+            }
+        });
+}
+
+/// A run's output and state to the window, as `run` events (0079).
+fn run_events(handle: tauri::AppHandle) -> run::Emit {
+    use tauri::Emitter;
+    Arc::new(move |snap: &run::Snap| {
+        let _ = handle.emit("run", snap);
+    })
 }
 
 #[cfg(test)]

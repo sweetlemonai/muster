@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import plistlib
 import re
 import shlex
 import shutil
@@ -558,12 +559,15 @@ class WorkLogMergeDriver(unittest.TestCase):
 
 
 class RunScript(unittest.TestCase):
-    """0077: bin/run, Muster's run command, builds the release app and opens that build with
-    `open -n`, never the running Muster. `pnpm` and `open` are stand-ins first on the PATH that log
-    each argument in brackets, so a path split at its space shows, and nothing is built or
-    launched; the target folder is a temp one with a space in its path."""
+    """0077, 0079: bin/run, Muster's run command, builds the release app, then becomes that
+    build's own binary (`exec`), never `open`, so the second Muster stays in the process group
+    Muster's Run started and its Stop ends it. `pnpm` is a stand-in first on the PATH that logs
+    each argument in brackets, so a path split at its space shows; its release:build "builds" a
+    stand-in .app whose binary logs how it was started instead of being Muster. The target folder
+    is a temp one with a space in its path."""
 
     RUN = REPO / "bin" / "run"
+    LOG = 'printf %s "$0" >> "$CALLS"\nfor a; do printf "[%s]" "$a" >> "$CALLS"; done\necho >> "$CALLS"\n'
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -571,16 +575,22 @@ class RunScript(unittest.TestCase):
         stubs = tmp / "stubs"
         stubs.mkdir()
         self.calls = tmp / "calls.log"
+        self.pid = tmp / "exe.pid"
         self.target = tmp / "the target"
-        # pnpm: logs; its release:build then fails with $STUB_FAIL, or "builds" the .app when
-        # $STUB_BUNDLE is set. An install, in a checkout with no node_modules, just succeeds.
-        log = 'printf %s "$(basename "$0")" >> "$CALLS"\nfor a; do printf "[%s]" "$a" >> "$CALLS"; done\necho >> "$CALLS"\n'
-        self.stub(stubs / "pnpm", log + 'for a; do [ "$a" != release:build ] || build=1; done\n'
+        # The .app a build leaves: an Info.plist naming its binary, and the binary, which logs
+        # its own path and arguments and its process id.
+        self.template = tmp / "template.app"
+        self.bundle(self.template, "muster")
+        # pnpm: logs; its release:build then fails with $STUB_FAIL, or "builds" the .app at
+        # $STUB_BUNDLE when that's set. An install, in a checkout with no node_modules, just succeeds.
+        self.stub(stubs / "pnpm", self.LOG.replace("$0", '$(basename "$0")')
+                  + 'for a; do [ "$a" != release:build ] || build=1; done\n'
                   '[ -n "${build:-}" ] || exit 0\n'
                   '[ -z "${STUB_FAIL:-}" ] || exit "$STUB_FAIL"\n'
-                  '[ -z "${STUB_BUNDLE:-}" ] || mkdir -p "$STUB_BUNDLE"\n')
-        self.stub(stubs / "open", log)
-        self.env = {**os.environ, "CALLS": str(self.calls), "CARGO_TARGET_DIR": str(self.target),
+                  '[ -z "${STUB_BUNDLE:-}" ] || { mkdir -p "$(dirname "$STUB_BUNDLE")" && '
+                  'cp -R "$STUB_TEMPLATE" "$STUB_BUNDLE"; }\n')
+        self.env = {**os.environ, "CALLS": str(self.calls), "PIDFILE": str(self.pid),
+                    "CARGO_TARGET_DIR": str(self.target), "STUB_TEMPLATE": str(self.template),
                     "PATH": f"{stubs}{os.pathsep}{os.environ.get('PATH', '')}"}
         self.app = self.target / "release" / "bundle" / "macos" / "Muster.app"
 
@@ -592,9 +602,23 @@ class RunScript(unittest.TestCase):
         path.write_text("#!/bin/sh\n" + body, encoding="utf-8")
         path.chmod(0o755)
 
-    def run_it(self, **env: str) -> subprocess.CompletedProcess:
-        return subprocess.run(["sh", str(self.RUN)], cwd=Path(self.tmp.name), capture_output=True,
-                              text=True, env={**self.env, **env})
+    def bundle(self, app: Path, exe: str | None) -> None:
+        """A stand-in .app at `app` whose Info.plist names `exe` (None: names none)."""
+        (app / "Contents" / "MacOS").mkdir(parents=True)
+        info = {"CFBundleIdentifier": "ai.sweetlemon.muster"}
+        if exe is not None:
+            info["CFBundleExecutable"] = exe
+        (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps(info))
+        self.stub(app / "Contents" / "MacOS" / "muster", self.LOG + 'echo $$ > "$PIDFILE"\n')
+
+    def run_it(self, run: Path | None = None, env: dict[str, str] | None = None,
+               **more: str) -> tuple[subprocess.CompletedProcess, int]:
+        """bin/run (or `run`) as Muster's Run starts it; with the process id it ran as."""
+        p = subprocess.Popen(["sh", str(run or self.RUN)], cwd=Path(self.tmp.name),
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                             env={**(env or self.env), **more})
+        out, err = p.communicate(timeout=60)
+        return subprocess.CompletedProcess(p.args, p.returncode, out, err), p.pid
 
     @staticmethod
     def call(*argv: object) -> str:
@@ -602,46 +626,62 @@ class RunScript(unittest.TestCase):
         return str(argv[0]) + "".join(f"[{a}]" for a in argv[1:])
 
     BUILD = call.__func__("pnpm", "--dir", REPO / "app", "release:build")
-    INSTALL = call.__func__("pnpm", "--dir", REPO / "app", "install", "--frozen-lockfile")
 
     def logged(self) -> list[str]:
         """What ran, without the install a checkout with no node_modules does first."""
         lines = self.calls.read_text(encoding="utf-8").splitlines() if self.calls.exists() else []
-        return [line for line in lines if line != self.INSTALL]
+        return [line for line in lines if not line.endswith("[install][--frozen-lockfile]")]
 
-    def test_it_builds_then_opens_that_build_as_a_new_instance(self):
-        r = self.run_it(STUB_BUNDLE=str(self.app))
+    def test_it_builds_then_becomes_that_builds_binary_in_its_own_place(self):
+        r, pid = self.run_it(STUB_BUNDLE=str(self.app))
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn(" ", str(self.app))
-        self.assertEqual(self.logged(), [self.BUILD, self.call("open", "-n", self.app)])
-        self.assertIn(f"started {self.app} beside the Muster already running", r.stdout)
+        exe = self.app / "Contents" / "MacOS" / "muster"
+        self.assertEqual(self.logged(), [self.BUILD, self.call(exe)])
+        # exec: the binary is the process Run started, so it's in Run's group and Stop reaches it.
+        self.assertEqual(int(self.pid.read_text(encoding="utf-8")), pid)
+        self.assertIn(f"starting {self.app} beside the Muster already running", r.stdout)
 
-    def test_a_failed_build_opens_nothing(self):
-        r = self.run_it(STUB_FAIL="3", STUB_BUNDLE=str(self.app))
+    def test_a_failed_build_starts_nothing(self):
+        r, _ = self.run_it(STUB_FAIL="3", STUB_BUNDLE=str(self.app))
         self.assertEqual(r.returncode, 3)
         self.assertEqual(self.logged(), [self.BUILD])
 
-    def test_a_build_that_leaves_no_app_opens_nothing_and_says_where_it_looked(self):
-        r = self.run_it()
+    def test_a_build_that_leaves_no_app_starts_nothing_and_says_where_it_looked(self):
+        r, _ = self.run_it()
         self.assertEqual(r.returncode, 1)
         self.assertIn(f"the build finished, but {self.app} is not there", r.stderr)
         self.assertEqual(self.logged(), [self.BUILD])
 
+    def test_an_app_whose_info_plist_names_no_binary_starts_nothing(self):
+        for exe in (None, "", "../muster", "."):
+            with self.subTest(exe=exe):
+                shutil.rmtree(self.template)
+                self.bundle(self.template, exe)
+                shutil.rmtree(self.target, ignore_errors=True)
+                self.calls.unlink(missing_ok=True)
+                r, _ = self.run_it(STUB_BUNDLE=str(self.app))
+                self.assertEqual(r.returncode, 1)
+                self.assertIn(f"{self.app}/Contents/Info.plist names no executable", r.stderr)
+                self.assertEqual(self.logged(), [self.BUILD])
+
     def test_the_app_is_in_the_checkouts_own_target_folder_by_default(self):
+        # A copy of the script in a checkout of its own, so the default target is a temp folder
+        # and no real build of this checkout is ever started.
+        repo = Path(self.tmp.name) / "a checkout"
+        (repo / "bin").mkdir(parents=True)
+        (repo / "app" / "node_modules").mkdir(parents=True)
+        shutil.copy(self.RUN, repo / "bin" / "run")
+        repo = repo.resolve()  # as the script's `pwd -P` sees it (/tmp is /private/tmp)
+        own =repo / "app" / "src-tauri" / "target" / "release" / "bundle" / "macos" / "Muster.app"
         env = {k: v for k, v in self.env.items() if k != "CARGO_TARGET_DIR"}
-        r = subprocess.run(["sh", str(self.RUN)], cwd=Path(self.tmp.name), capture_output=True,
-                           text=True, env=env)
-        own = REPO / "app" / "src-tauri" / "target" / "release" / "bundle" / "macos" / "Muster.app"
-        # This checkout may have built one already: then it's opened (by the stand-in), else named.
-        if own.is_dir():
-            self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertEqual(self.logged()[-1], self.call("open", "-n", own))
-        else:
-            self.assertEqual(r.returncode, 1)
-            self.assertIn(f"{own} is not there", r.stderr)
+        r, _ = self.run_it(repo / "bin" / "run", env, STUB_BUNDLE=str(own))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.logged(), [self.call("pnpm", "--dir", repo / "app", "release:build"),
+                                         self.call(own / "Contents" / "MacOS" / "muster")])
 
     def test_a_relative_target_folder_is_refused_before_anything_runs(self):
-        r = self.run_it(CARGO_TARGET_DIR="target")
+        r, _ = self.run_it(CARGO_TARGET_DIR="target")
         self.assertEqual(r.returncode, 2)
         self.assertIn("give it as an absolute path", r.stderr)
         self.assertFalse(self.calls.exists())

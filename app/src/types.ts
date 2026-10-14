@@ -266,7 +266,34 @@ export type QueueInfo = {
   /** How many lessons from reviews wait for the owner's yes (0027); optional so an older core
    *  reads as none. */
   lessonsWaiting?: number;
+  /** A run from the app (0079) is going: the sidebar's "running" chip. Optional so an older core
+   *  reads as none. */
+  running?: boolean;
 };
+
+/** Where a run from the app stands (0079): going, ended on its own (its exit code, null when a
+ *  signal ended it), or ended by Stop, Restart or Muster quitting. */
+export type RunStatus = { kind: "running" } | { kind: "exited"; code: number | null } | { kind: "stopped" };
+
+/** A run from the app (0079), as the core sends it: from `run_state` with every line it keeps, or
+ *  in a `run` event with what's new. `id` counts up across runs, so a restart's run is told from
+ *  the one before; `first` is where `lines[0]` is among every line the run printed. Times are in
+ *  seconds since 1970. */
+export type RunSnap = {
+  project: string;
+  id: number;
+  command: string;
+  folder: string;
+  status: RunStatus;
+  since: number;
+  ended: number | null;
+  first: number;
+  lines: string[];
+};
+
+/** What Run knows of a project (0079): its run command ("" for none), the checkout it runs in,
+ *  why it can't run ("" when it can), and its latest run since Muster started. */
+export type RunView = { project: string; command: string; folder: string; refused: string; run: RunSnap | null };
 
 export type State = {
   queues: QueueInfo[];

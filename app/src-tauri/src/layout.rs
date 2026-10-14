@@ -95,7 +95,7 @@ pub fn is_queue(dir: &Path) -> bool {
 }
 
 /// What a project's own checkout is called: `<project>/main` (or `master`) holds the repo.
-const MAIN_NAMES: [&str; 2] = ["main", "master"];
+pub(crate) const MAIN_NAMES: [&str; 2] = ["main", "master"];
 
 /// Is this `.muster`'s checkout a project's `main` or `master`?
 fn checkout_is_main(root: &Path) -> bool {

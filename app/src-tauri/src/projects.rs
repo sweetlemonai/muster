@@ -32,8 +32,8 @@ pub struct Config {
     pub gate: HashMap<String, String>,
     /// The project's run command by queue folder (0077): what the app's Run starts in the main
     /// checkout to try the project (`bin/run`, `swift run`), split into words without a shell as
-    /// the gate is. Stored and shown only. An entry `set_run` wouldn't keep is left out when read,
-    /// and never stops the rest of the file loading.
+    /// the gate is; `run::plan` splits it again on every start (0079). An entry `set_run`
+    /// wouldn't keep is left out when read, and never stops the rest of the file loading.
     #[serde(deserialize_with = "read_commands")]
     pub run: HashMap<String, String>,
     /// The Your check limit by queue folder (0050, `check_limit`): a number, or "off". A bad
@@ -378,7 +378,7 @@ pub fn set_run(config: &mut Config, base: &Path, name: &str, cmd: &str) -> Resul
 /// Why `cmd`, trimmed, isn't a command projects.json keeps as `what`: not one line (a line or
 /// paragraph separator counts), a character that reorders the text around it (an RTL override
 /// can make the command read as another one, `index::is_bidi_control`), or too long.
-fn command_refused(what: &str, cmd: &str) -> Option<String> {
+pub(crate) fn command_refused(what: &str, cmd: &str) -> Option<String> {
     if cmd
         .chars()
         .any(|c| c.is_control() || c == '\u{2028}' || c == '\u{2029}')

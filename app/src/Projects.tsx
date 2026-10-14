@@ -8,6 +8,7 @@ import { CATEGORY_MAX, LABEL_MAX, OTHER, otherCategories } from "./labels";
 import { queueTotal } from "./lib";
 import { type Layout, layoutOf, type Pending, planMove, settle, shownLayout, sidebarGroups, track } from "./projectOrder";
 import { Swatches } from "./ProjectSwatches";
+import { RunControls } from "./Run";
 import type { Project, QueueInfo } from "./types";
 import { Button } from "./ui";
 
@@ -263,13 +264,14 @@ export function PrefixCell({ name, prefix, editing, value, error, canSet, onEdit
 export const PROJECT_COLUMNS = 9;
 
 /** A project's gate on a line under its row, with room to wrap like text; a column of it left the
- *  folder and the gate a word or a few letters wide. Its run command (0077) is the line under it. */
+ *  folder and the gate a word or a few letters wide. Its run command (0077) is the line under it,
+ *  with Run, or Stop while it runs (0079). */
 export function GateRow({ name, gate, run, hidden }: { name: string; gate: string; run: string; hidden: boolean }) {
   return (
     <tr className={hidden ? "gate-row dim" : "gate-row"}>
       <td colSpan={PROJECT_COLUMNS}>
         <div><b className="gate-label">Gate</b> <GateCell name={name} gate={gate} /></div>
-        <div><b className="gate-label">Run</b> <RunCell name={name} run={run} /></div>
+        <div><b className="gate-label">Run</b> <RunCell name={name} run={run} />{run && <> <RunControls project={name} /></>}</div>
       </td>
     </tr>
   );

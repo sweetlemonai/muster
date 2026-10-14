@@ -298,7 +298,7 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
                     }}
                     drag={edit ? rowDrag(r) : undefined}
                   >
-                    <ProjectItem name={r.label} title={r.title} total={totalOf(r)} tasks={r.tasks} lessons={r.lessons} on={current === r.name} onClick={() => onPick(r.name)} onRename={onLabel ? () => setEditing(r.name) : undefined} keys={edit ? MOVE_KEYS : undefined} working={r.activity.working > 0} stalled={r.activity.stalled ? "stalled" : ""} alert={<SideLimit q={q} />}>
+                    <ProjectItem name={r.label} title={r.title} total={totalOf(r)} tasks={r.tasks} lessons={r.lessons} on={current === r.name} onClick={() => onPick(r.name)} onRename={onLabel ? () => setEditing(r.name) : undefined} keys={edit ? MOVE_KEYS : undefined} working={r.activity.working > 0} stalled={r.activity.stalled ? "stalled" : ""} running={q?.running === true} alert={<SideLimit q={q} />}>
                       <ActivityLine a={r.activity} now={now} />
                     </ProjectItem>
                   </SideRow>
@@ -324,8 +324,10 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
  *  them its activity line. Narrowed (Focus, 0038), the name, the working dot, "stalled" in the attention colour (the activity line's word, or "2
  *  stalled" on All), the needs-you count and the paused count. `alert` shows in every mode, under
  *  them: over its Your check limit (0050), how many wait and the limit. With `onRename`, a double
- *  click on the name sets its label. `keys` are the keys that move it (0057), for a screen reader. */
-export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClick, onRename, keys, working = false, stalled = "", alert, children }: { name: string; title?: string; total: number; tasks: Task[]; lessons?: number; on: boolean; onClick: () => void; onRename?: () => void; keys?: string; working?: boolean; stalled?: string; alert?: ReactNode; children: ReactNode }) {
+ *  click on the name sets its label. `keys` are the keys that move it (0057), for a screen reader.
+ *  While a run from the app goes (0079), a "running" chip, in every mode, so a dev server isn't
+ *  forgotten; it's part of the row, so a click on it selects the project too. */
+export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClick, onRename, keys, working = false, stalled = "", running = false, alert, children }: { name: string; title?: string; total: number; tasks: Task[]; lessons?: number; on: boolean; onClick: () => void; onRename?: () => void; keys?: string; working?: boolean; stalled?: string; running?: boolean; alert?: ReactNode; children: ReactNode }) {
   const doing = tasks.filter(inProgress).length;
   const needs = needsYouCount(tasks) + lessons;
   const full = useLook("sidebar") === "full";
@@ -337,6 +339,7 @@ export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClic
         <span className="side-name" title={onRename ? (title ? `${title}\n${RENAME_HINT}` : RENAME_HINT) : undefined} onDoubleClick={onRename}>{name}</span>
         {!full && stalled && <span className="side-stalled" title={`Stalled: ${STALLED_HINT}`}>{stalled}</span>}
         <span className="side-badges">
+          {running && <span className="run-chip" title="A run from Muster is going: its Run block, in a task in Your check, or Settings › Projects stops it">running</span>}
           {needs > 0 && <span className="count warn" title={`${needs} need you`}>{needs}</span>}
           {full && doing > 0 && <span className="side-doing" title={`${doing} in progress (Building or Testing)`}>{doing}</span>}
           {paused > 0 && <span className="side-paused" title={`${paused} paused`}>{`${PAUSE_GLYPH} ${paused}`}</span>}

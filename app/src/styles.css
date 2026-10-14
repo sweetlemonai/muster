@@ -963,6 +963,16 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 @media (prefers-reduced-motion: reduce) {
   .proof-thumb, .proof-thumb img { transition: none; animation: none; }
 }
+/* Run from the app (mu-79): the Run line's command beside its button; the Run block's output, the
+   last lines in monospace, each line set right to left or left to right by its own text so a
+   Persian path or message reads right without flipping the block; All output opens it in place,
+   bounded and scrolled. The "running" chip, in the sidebar and in Settings, says it in words and
+   never moves. */
+.run-line-cmd code { overflow-wrap: anywhere; }
+.run-output { font: 11.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; overflow-x: auto; }
+.run-output.all { max-height: 60vh; overflow-y: auto; }
+.run-out-line { white-space: pre-wrap; overflow-wrap: anywhere; unicode-bidi: plaintext; text-align: start; }
+.run-chip { flex: none; padding: 0 5px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); font-size: 10.5px; line-height: 15px; animation: none; transition: none; }
 .tp-side .attach { font-size: 11px; padding: 0 7px; line-height: 17px; }
 
 .stage-form { padding: 6px; background: var(--hover); border-radius: 6px; align-items: center; }

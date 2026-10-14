@@ -476,12 +476,7 @@ pub fn run_gate(argv: &[String], dir: &Path) -> Result<GateRun, String> {
     let Some(prog) = argv.first() else {
         return Err("the gate command is empty".into());
     };
-    let program = if prog.contains('/') && Path::new(prog).is_relative() {
-        dir.join(prog)
-    } else {
-        PathBuf::from(prog)
-    };
-    let out = gate_command(&program, argv, dir)
+    let out = gate_command(&program_in(prog, dir), argv, dir)
         .output()
         .map_err(|e| format!("couldn't run the gate {prog:?}: {e}"))?;
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -525,10 +520,21 @@ pub fn run_gate(argv: &[String], dir: &Path) -> Result<GateRun, String> {
     })
 }
 
+/// The program a command's first word `prog` names, run in `dir`: a relative path with a `/`
+/// (`bin/gate`) is the repo's script, found from `dir`; a bare name is looked up on the PATH.
+/// The gate's rule, and the app's Run's (0079).
+pub(crate) fn program_in(prog: &str, dir: &Path) -> PathBuf {
+    if prog.contains('/') && Path::new(prog).is_relative() {
+        dir.join(prog)
+    } else {
+        PathBuf::from(prog)
+    }
+}
+
 /// The gate as a process: `program` with `argv`'s arguments, in `dir`, with no stdin, and without
 /// the queue variables (`MUSTER_ROOT`, `TASKS_ROOT`), so muster in a gate's tests can't write to
-/// the queue this merge runs on.
-fn gate_command(program: &Path, argv: &[String], dir: &Path) -> Command {
+/// the queue this merge runs on. The app's Run starts its command the same way (0079).
+pub(crate) fn gate_command(program: &Path, argv: &[String], dir: &Path) -> Command {
     let mut cmd = Command::new(program);
     cmd.args(argv.get(1..).unwrap_or_default())
         .current_dir(dir)

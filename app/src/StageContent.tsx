@@ -1,16 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { claimant, fmtMinutes, fmtTokens, stageLabel, stamp, stampMinutes } from "./lib";
 import { estimateLeft, isWork, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
 import Markdown from "./Markdown";
 import { siblingKey, taskKey } from "./taskKey";
 import OwnerChecklist from "./OwnerChecklist";
+import { useRunParts } from "./Run";
 import { criteriaSection, fmtWall, IMAGE, timeInWork } from "./paneData";
 import type { Criterion, Task } from "./types";
 import { StatusPill } from "./ui";
 import { acceptWords, criterionWords, type NamedView } from "./yourCheck";
 
 /** The task pane's left column: what this stage needs. Building and Testing: the work so far.
- *  Your check: what you're accepting (mu-78), the owner's checklist and the history. Backlog, Shaping and Ready: the criteria and
+ *  Your check: what you're accepting (mu-78) with its Run (mu-79), the owner's checklist and the history. Backlog, Shaping and Ready: the criteria and
  *  the estimate. Done (and a stage the window doesn't know): the history. A goal or feature: its
  *  roll-up. `body` is the write-up as loaded (null while it loads). */
 export default function StageContent({ task, nowSecs, body, childTasks, busy, onTick, onView, images = {} }: {
@@ -33,7 +34,7 @@ export default function StageContent({ task, nowSecs, body, childTasks, busy, on
     case "your-check":
       return (
         <>
-          <WhatYoureAccepting task={task} images={images} />
+          <WhatYoureAccepting task={task} images={images} nowSecs={nowSecs} />
           <div className="stage-block" data-part="checklist">
             <span className="lbl">Your checklist</span>
             {task.ownerCriteria.length > 0 ? (
@@ -67,23 +68,32 @@ export function toggled(open: ReadonlySet<string>, key: string): Set<string> {
 }
 
 /** Your check's "What you're accepting" (mu-78): which thumbnails are open, shut again for
- *  another task. The screenshots come from the pane's one map (`images`), which Files reads too. */
-function WhatYoureAccepting({ task, images }: { task: Task; images: Record<string, string> }) {
+ *  another task. The screenshots come from the pane's one map (`images`), which Files reads too.
+ *  Its Run line, and the Run block under it once the project has a run (mu-79). */
+function WhatYoureAccepting({ task, images, nowSecs }: { task: Task; images: Record<string, string>; nowSecs: number }) {
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => setOpen(new Set()), [task.queue, task.id]);
-  return <AcceptingBlock task={task} urls={images} open={open} onToggle={(k) => setOpen((o) => toggled(o, k))} />;
+  const run = useRunParts(task.queue, nowSecs);
+  return (
+    <>
+      <AcceptingBlock task={task} urls={images} open={open} onToggle={(k) => setOpen((o) => toggled(o, k))} runLine={run.line} />
+      {run.block}
+    </>
+  );
 }
 
 /** What you're accepting, drawn: what was built (the builder's one-line summary, as plain text,
  *  or the title and how to add one), what Accept does (`acceptWords`), and each criterion in one
  *  line with its proof in words and the screenshots it names as thumbnails under it, each opening
  *  large in place (`open`, keyed `<n>/<file>`) and shrinking on a second click. Then the merge
- *  line from the log. Every line's words are isolated (`dir="auto"`) for right-to-left text. */
-export function AcceptingBlock({ task, urls, open, onToggle }: {
+ *  line from the log. Every line's words are isolated (`dir="auto"`) for right-to-left text.
+ *  `runLine` is the Run line (mu-79): Run with the project's command, to try it. */
+export function AcceptingBlock({ task, urls, open, onToggle, runLine }: {
   task: Task;
   urls: Record<string, string>;
   open: ReadonlySet<string>;
   onToggle: (key: string) => void;
+  runLine?: ReactNode;
 }) {
   const criteria = task.criteria ?? [];
   const accept = acceptWords(task);
@@ -106,6 +116,12 @@ export function AcceptingBlock({ task, urls, open, onToggle }: {
         <span className="lbl">Accept</span>
         <span className={`small accept-${accept.kind}`}>{accept.text}</span>
       </p>
+      {runLine && (
+        <p className="wline">
+          <span className="lbl">Try</span>
+          {runLine}
+        </p>
+      )}
       <p className="wline">
         <span className="lbl">Proof</span>
         {criteria.length === 0 && <span className="small meta">No acceptance criteria are written.</span>}

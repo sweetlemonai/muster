@@ -725,6 +725,8 @@ pub struct QueueInfo {
     pub category_folded: bool,
     /// Lessons from reviews proposed and waiting for the owner (0027, `lessons::waiting`).
     pub lessons_waiting: usize,
+    /// A run from the app (0079) is going: the window's poll sets it from `run::Runs`.
+    pub running: bool,
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
@@ -1620,6 +1622,7 @@ fn read_state_from(
             category_rank: None,
             category_folded: false,
             lessons_waiting: crate::lessons::waiting(root),
+            running: false,
         });
         state.tasks.extend(tasks);
         let notes = crate::backlog::read_notes(name, root, &mut cache.notes, &mut seen);

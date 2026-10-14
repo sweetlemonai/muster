@@ -1028,7 +1028,7 @@ fn read_capped(r: impl std::io::Read, what: &str) -> Result<String, String> {
 /// separates words; '…' is literal; in "…" a backslash escapes `"` and `\` only; elsewhere a
 /// backslash escapes the next character. Nothing is expanded. None for an unclosed quote or a
 /// trailing backslash.
-fn split_words(line: &str) -> Option<Vec<String>> {
+pub(crate) fn split_words(line: &str) -> Option<Vec<String>> {
     let mut words = Vec::new();
     let mut word: Option<String> = None;
     let mut chars = line.chars();
@@ -5442,7 +5442,7 @@ mod tests {
 
     #[test]
     fn the_projects_run_command_is_set_checked_and_cleared() {
-        // 0077: beside the gate, with the gate's checks, and stored only: nothing runs it.
+        // 0077: beside the gate, with the gate's checks; only the app's Run starts it (0079).
         let base = tempfile::tempdir().unwrap();
         let (q, _) = project(base.path(), "proj");
         let mut c = projects::Config::default();

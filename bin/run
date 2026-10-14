@@ -1,8 +1,10 @@
 #!/bin/sh
 # Muster's run command (task 0077): builds the release app from the checkout it's in and starts
 # that build as a second Muster beside the one running (`muster projects set muster run bin/run`).
-# Both have one bundle id, so it's `open -n` on this build's own .app: a plain `open` would only
-# bring the running Muster forward.
+# It becomes that build's own binary (`exec`, no `open`), so the second Muster runs in this
+# script's place: in the process group Muster's Run started (0079), whose Stop, or quitting the
+# first Muster, ends it, and in a terminal until it quits (or Ctrl-C). `open -n` would hand it to
+# launchd, out of reach of Stop. The binary's name is the bundle's CFBundleExecutable.
 # The .app is where tauri puts it: <target>/release/bundle/macos/Muster.app, the target folder
 # being $CARGO_TARGET_DIR (an absolute path) or app/src-tauri/target.
 set -eu
@@ -28,5 +30,12 @@ if [ ! -d "$app" ]; then
   printf 'bin/run: the build finished, but %s is not there\n' "$app" >&2
   exit 1
 fi
-open -n "$app"
-printf 'bin/run: started %s beside the Muster already running\n' "$app"
+exe=$(plutil -extract CFBundleExecutable raw -o - "$app/Contents/Info.plist" 2>/dev/null) || exe=
+case $exe in
+  '' | */* | . | ..)
+    printf 'bin/run: %s/Contents/Info.plist names no executable\n' "$app" >&2
+    exit 1
+    ;;
+esac
+printf 'bin/run: starting %s beside the Muster already running; quitting it ends the run\n' "$app"
+exec "$app/Contents/MacOS/$exe"

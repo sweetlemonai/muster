@@ -1,4 +1,5 @@
-// Settings › Projects' Run line (0077): each project's run command under its gate, read-only.
+// Settings › Projects' Run line (0077): each project's run command under its gate, read-only,
+// with Run beside it when there is one (0079).
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { GateRow, ProjectGateRow, RunCell } from "./Projects";
@@ -15,11 +16,13 @@ const row = (gate: string, run: string, name = "muster") =>
   );
 
 describe("the Run line", () => {
-  it("shows the run command under the gate, with its label, in the gate line's look", () => {
+  it("shows the run command under the gate, with its label, in the gate line's look, and Run beside it", () => {
     const html = row("bin/gate", "bin/run --fresh");
-    expect(text(html)).toBe("Gate bin/gate Run bin/run --fresh");
+    expect(text(html)).toBe("Gate bin/gate Run bin/run --fresh Run");
     // Its own line after the gate's, both in the one row that spans the table.
-    expect(html).toContain('<div><b class="gate-label">Gate</b> <code class="path">bin/gate</code></div><div><b class="gate-label">Run</b> <code class="path" dir="ltr">bin/run --fresh</code></div>');
+    expect(html).toContain('<div><b class="gate-label">Gate</b> <code class="path">bin/gate</code></div><div><b class="gate-label">Run</b> <code class="path" dir="ltr">bin/run --fresh</code> <span class="run-controls">');
+    // The button names the project (0079).
+    expect(html).toMatch(/<button[^>]*aria-label="Run muster"[^>]*>Run<\/button>/);
   });
 
   it("says how to set one when there's none, beside the gate's own hint", () => {
@@ -30,7 +33,7 @@ describe("the Run line", () => {
   it("is filled from the project the core listed: its own run command, or the hint", () => {
     const p: Project = { key: "/q", name: "muster", path: "/q", source: "found", group: "", hidden: false, ok: true, gate: "bin/gate", run: "bin/run" };
     const of = (q: Project) => text(renderToStaticMarkup(<table><tbody><ProjectGateRow p={q} /></tbody></table>));
-    expect(of(p)).toBe("Gate bin/gate Run bin/run");
+    expect(of(p)).toBe("Gate bin/gate Run bin/run Run");
     expect(of({ ...p, run: undefined })).toBe('Gate bin/gate Run none: say what starts it, to try it. muster projects set muster run "<command>"');
     expect(renderToStaticMarkup(<table><tbody><ProjectGateRow p={{ ...p, hidden: true }} /></tbody></table>)).toContain('<tr class="gate-row dim">');
   });

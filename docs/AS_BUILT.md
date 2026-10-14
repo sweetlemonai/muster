@@ -137,6 +137,7 @@ here):
 | `settings.rs` | This Mac's settings: lease, LIVE window, notifications, the old-pauses offer |
 | `badge.rs` | The Dock badge's count, set from Rust |
 | `notify.rs` | Mac notifications of what newly waits for the owner, and `notified.json` |
+| `run.rs` | Run from the app: a project's run command in its main checkout, its output in a bounded ring, Stop and quitting end its process group |
 | `helper.rs` | The AI helper: the owner's own `claude`, restricted to `muster` and reading |
 | `helper_cmds.rs` | The app's commands for the helper |
 | `pause_cmds.rs` | The app's commands for pause, resume and old pauses |
@@ -157,7 +158,7 @@ is `core:default` (`capabilities/default.json`): no file system, shell, dialog, 
 network permission. Folders are picked by the core's own dialog, and the window names a queue by
 its project name, never by a path.
 
-The 66 commands it can call (`generate_handler!` in `lib.rs`), by what they do:
+The 69 commands it can call (`generate_handler!` in `lib.rs`), by what they do:
 
 | Group | Commands |
 |---|---|
@@ -169,6 +170,7 @@ The 66 commands it can call (`generate_handler!` in `lib.rs`), by what they do:
 | Review | `review_brief`, `lessons`, `decide_lessons` |
 | Helper | `helper_info`, `helper_set_account`, `helper_set_model`, `helper_reset`, `helper_stop`, `helper_send`, `helper_login` |
 | Links | `open_link` (a task's https links only) |
+| Run | `run_start`, `run_stop`, `run_state` (a project's name only) |
 
 ### The `muster` command line
 
@@ -197,7 +199,7 @@ Every script in `bin/` (the same test fails when one is missing here):
 | `bin/answer-hook.py` | Claude Code hook: hands a session the mail waiting in its mailbox (answers, check-in and pause requests, the owner's messages), framed as information. Reads the mailbox and `.git` files itself, about 10 ms a call | the layer's `hooks/muster-answer`, on PostToolUse, UserPromptSubmit and SessionStart |
 | `bin/manifest.py` | Builds `tasks.json` from the task files and `--check` reports queue problems, both layouts | by hand, and by `muster migrate` |
 | `bin/gate` | The gate: `pnpm check` (typecheck, UI tests, build, `cargo fmt --check`, clippy with warnings as errors, `cargo test`), both Python suites, and `cargo test` again in the Kiritimati time zone, each in a temporary home. Prints `gate: green (…)` or `gate: RED (…)` last | builders before `muster pass --from building`, and the merge (`muster projects set muster gate bin/gate`) |
-| `bin/run` | Muster's run command (0077): builds the release app from the checkout it's in and opens that build with `open -n` as a second Muster beside the one running | the owner, through `muster projects set muster run bin/run` |
+| `bin/run` | Muster's run command (0077): builds the release app from the checkout it's in and becomes that build's binary (`exec`, 0079), a second Muster beside the one running, in the process group the app's Run started | the app's Run, through `muster projects set muster run bin/run`; or by hand |
 | `bin/test_task.py` | Tests for `bin/task` and the answer hook | `bin/gate` |
 | `bin/test_commands.py` | Tests for `/muster` and `/mu` against `docs/COMMANDS.md` and `muster help --json`, and the merge driver end to end | `bin/gate` |
 
@@ -327,7 +329,8 @@ is in section 6.
 | `/muster` and `/mu` | Built, tested, linked into the personal layer | mu-3 |
 | Other projects: `muster init` in a repo, the layer's rule and hook | Built: Muster's side tested, the layer's committed 2026-10-14; one live session in a new project is left (mu-4 AC2) | mu-4 |
 | Hermetic tests (no test reads this Mac's projects) | Built | mu-62 |
-| A run command per project, beside its gate | On its branch, not on main | mu-77 |
+| A run command per project, beside its gate | Built, tested, merged 2026-10-14 (`666a760`) | mu-77 |
+| Run from the app: a project's run command, its output, Stop | Built, tested on its branch; the release-app check (AC4) is the owner's | mu-79 |
 | Your check says what you're accepting: the builder's summary, what Accept does, each criterion's proof | Built, tested, merged 2026-10-14 (`72f34df`) | mu-78 |
 | Automatic handoff at about 60% context | In the personal layer, in Testing | mu-74 |
 | Orchestration (Muster decides, Drover runs the agents) | Not built | mu-9 |
@@ -761,12 +764,13 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   with no direction marks or overrides, at most 500 characters, "" clears it), listed by `muster projects` and `--json`, carried
   by `muster migrate`, and read leniently (`projects::read_commands`: a file without `run`, a
   `run` that isn't an object, or an entry `set_run` wouldn't keep reads as none, and the rest of
-  the file loads). The command shows left to right (`dir="ltr"`). It's stored and shown only:
-  nothing runs it yet. Muster's own is `bin/run`: it builds the release app
-  (`pnpm --dir app release:build`) and opens that build's
-  `app/src-tauri/target/release/bundle/macos/Muster.app` (or under an absolute
-  `$CARGO_TARGET_DIR`) with `open -n`, so it starts beside the installed Muster instead of
-  bringing that one forward. Your check's view buttons
+  the file loads). The command shows left to right (`dir="ltr"`), with Run beside it (0079,
+  `Run.tsx` `RunControls`): Run, or while it runs a "running" chip with Stop and Restart. Muster's
+  own is `bin/run`: it builds the release app (`pnpm --dir app release:build`) and becomes that
+  build's binary in `app/src-tauri/target/release/bundle/macos/Muster.app` (or under an absolute
+  `$CARGO_TARGET_DIR`), the `Info.plist`'s `CFBundleExecutable`, with `exec` (0079): it starts
+  beside the installed Muster, in the run's own process group, so Stop ends it. `open -n` would
+  hand it to launchd, where Stop can't reach it. Your check's view buttons
   (0043) open Settings for Appearance, Projects and Settings. **About** shows the version, the
   settings folder and its files, and every folder the app reads: the queues found on their own,
   then the ones added by you (or that there are none), with paths under the home folder as `~/`.
@@ -1160,6 +1164,41 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     `usePaneImages`, through `api.image`, once per task and set of files), which Files reads too,
     so nothing is fetched twice. No motion, and
     `prefers-reduced-motion` turns any off. The merge report goes last, in small type.
+- **Run from the app** (task mu-79, `run.rs`, `Run.tsx`, `runData.ts`):
+  - **Starting.** `run_start`, `run_stop` and `run_state` take a project's name and nothing else:
+    the core finds the project in `projects::list`, its `run` command, and its main checkout
+    (`run::checkout`: the repo a `.muster/` queue is in; for an old `<project>/tasks`, the
+    `<project>/main` or `master` git checkout beside it, else refused with why). `run::plan`
+    splits the command again (`cli::split_words`, refused on an unclosed quote, never handed to a
+    shell) and checks it as projects.json does (`projects::command_refused`). It starts as the
+    gate does (`parallel::program_in`, `parallel::gate_command`: `bin/run` from the checkout, no
+    stdin, without `MUSTER_ROOT` and `TASKS_ROOT`), both streams piped, leading a process group of
+    its own. It runs as the owner would start it, on their real data (Q2). One run per project:
+    Run while one goes restarts it. Runs live in `AppState.runs`, in memory only.
+  - **Its output.** A reader thread per stream splits lines (`run::read_lines`: lenient UTF-8, a
+    line past 4,096 bytes cut with "…") into a ring of the last 2,000 lines or 256 KB, whichever
+    is smaller. A sender thread emits `run` events (`run::Snap`: the run's id, state, times and
+    the new lines with where they start) at most once every 200 ms, and a last one when it ends.
+    A waiter thread reaps the leader. Nothing is logged or written to disk, and nothing polls the
+    process: a run has ended when its leader exited and both streams closed, so a grandchild still
+    writing keeps it running.
+  - **Stopping.** Stop, Restart and quitting (`RunEvent::Exit` → `Runs::stop_all`, every run at
+    once) send SIGTERM to the group, then SIGKILL (to the leader too) after 5 s, through
+    `/bin/kill` with an argument array as `agents.rs` does. After SIGKILL it's Stopped within 2 s
+    even if something that left the group still holds the streams. Hiding the window stops
+    nothing: the app stays alive for the Dock badge.
+  - **The window.** `useRun` listens for `run` events, then reads `run_state`; `runData.ts`
+    `merged` puts the two together by the lines' places and the run's id (an older run's late
+    event changes nothing, an ended run stays ended) within the same bounds. Your check's What
+    you're accepting has a **Try** line (`RunLine`): Run (Restart while it runs) named for the
+    project, with the command beside it as code, or "No run command: `muster projects set <name>
+    run …`". Under the block, once the project has a run, the **Run** block (`RunBlock`): the
+    state in an `aria-live="polite"` span that changes with the state only ("Running bin/run in
+    muster/main", "Exited 0 after 2m 10s", "Stopped after 4s"), the running time ticking each
+    second beside it, Stop and Restart (or Run again), and the last 12 lines in a labelled
+    `role="log"` that isn't live; **All output** opens every line kept in place. Lines are text,
+    each `unicode-bidi: plaintext`. While a run goes, the state's `running` puts a "running" chip
+    on the project's sidebar row, in words, with no motion.
 - **A limit on Your check per project** (task 0050, `check_limit.rs`, `yourCheckLimit.ts`,
   `CheckLimit.tsx`): `projects.json`'s `yourCheck` maps a queue folder (the project's key, as
   `gate`, `names` and `hidden` do) to 1–50 or `"off"`, so a rename keeps it and two projects shown

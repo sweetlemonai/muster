@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SearchIndex } from "./search";
 import type { SettingsInfo } from "./settingsData";
-import type { LessonListing, Project, State, Work } from "./types";
+import type { LessonListing, Project, RunView, State, Work } from "./types";
 import type { AcceptResult } from "./yourCheck";
 
 // The only way the window talks to the core. Queues are named, never given as paths.
@@ -143,6 +143,12 @@ export const api = {
   helperStop: (queue: string) => invoke<void>("helper_stop", { queue }),
   helperSend: (queue: string, message: string, files: [string, string][], stamp: string) =>
     invoke<void>("helper_send", { queue, message, files, stamp }),
+  // Run from the app (0079), by the project's name only: the core looks up its run command and
+  // checkout itself. Start restarts a run still going; Stop ends it and everything it started.
+  // Output and state then come as `run` events (RunSnap).
+  runStart: (project: string) => invoke<RunView>("run_start", { project }),
+  runStop: (project: string) => invoke<RunView>("run_stop", { project }),
+  runState: (project: string) => invoke<RunView>("run_state", { project }),
 };
 
 /** A project moved under another heading by an arrangement (0057): its key and the heading. */
