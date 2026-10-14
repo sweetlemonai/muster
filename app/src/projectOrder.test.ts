@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accepts, dropMove, dropTarget, grouped, headingRanks, type Layout, layoutOf, orderHeadings, planMove, settle, shownLayout, sidebarGroups } from "./projectOrder";
+import { accepts, dropMove, grouped, headingRanks, type Layout, layoutOf, orderHeadings, type Pending, planMove, settle, shownLayout, sidebarGroups, track } from "./projectOrder";
 import { byCategory } from "./labels";
 
 // The sidebar's own arrangement (0057): headings and projects as the owner puts them, by drag or
@@ -171,12 +171,11 @@ describe("where a drop lands (0057 review R1)", () => {
     expect([accepts(heading, row("/a")), accepts(heading, head("Apps")), accepts(heading, group("Apps"))]).toEqual([false, true, true]);
     expect(accepts(null, head("Apps"))).toBe(false);
   });
-  it("goes to the innermost target that takes it: a heading dropped on another group's row lands on that group", () => {
-    // The pointer is over Apps' row /a, inside the Apps group.
-    const path = [row("/a"), group("Apps")];
-    expect(dropTarget(heading, path)).toEqual(group("Apps"));
-    expect(dropTarget(project, path)).toEqual(row("/a"));
-    expect(dropTarget(null, path)).toBeNull();
+  it("a heading dropped on another group's row: the row lets it go on, and the group takes it", () => {
+    // The pointer is over Apps' row /a, inside the Apps group: the drop bubbles from the row.
+    expect(accepts(heading, row("/a"))).toBe(false);
+    expect(accepts(heading, group("Apps"))).toBe(true);
+    expect(dropMove(LAYOUT, heading, row("/a"), "before")).toBeNull();
     const before = dropMove(LAYOUT, heading, group("Apps"), "before")!;
     expect(before).toEqual({ kind: "heading", name: "Other", before: "Apps" });
     expect(planMove(LAYOUT, before, label)!.categories).toEqual(["Other", "Apps", "Tools"]);
@@ -222,5 +221,59 @@ describe("a move shown before the core has it (0057 review R3)", () => {
     const second = planMove(shown, { kind: "step-project", key: "/c", by: -1 }, label)!;
     expect(second.order).toEqual(["/b", "/c", "/a"]);
     expect(shownLayout(null, three)).toBe(three);
+  });
+});
+
+describe("a move's bookkeeping, shared by the sidebar and Settings (0057 review R6)", () => {
+  // The component's state, as React's functional setter keeps it.
+  const holder = () => {
+    let state: Pending | null = null;
+    return { set: (f: (p: Pending | null) => Pending | null) => (state = f(state)), get: () => state };
+  };
+  const three: Layout = [{ name: "Apps", keys: ["/a", "/b", "/c"] }];
+  const deferred = () => {
+    let done!: () => void, fail!: (e: unknown) => void;
+    const promise = new Promise<void>((res, rej) => ((done = res), (fail = rej)));
+    return { promise, done, fail };
+  };
+  it("shows the move at once, and marks it saved when the core has it", async () => {
+    const s = holder();
+    const plan = planMove(three, { kind: "step-project", key: "/a", by: 1 }, label)!;
+    const save = deferred();
+    const out = track(plan, s.set, () => save.promise);
+    expect(s.get()).toEqual({ layout: plan.layout, saved: false, reads: 0 });
+    save.done();
+    await out;
+    expect(s.get()).toEqual({ layout: plan.layout, saved: true, reads: 0 });
+    // Then the queues read back take over.
+    expect(settle(s.get(), plan.layout)).toBeNull();
+  });
+  it("drops it, and passes the refusal on, when the core refuses", async () => {
+    const s = holder();
+    const plan = planMove(three, { kind: "step-project", key: "/a", by: 1 }, label)!;
+    await expect(track(plan, s.set, () => Promise.reject("no such project"))).rejects.toBe("no such project");
+    expect(s.get()).toBeNull();
+  });
+  it("two quick clicks: the second plans from the first, and the first's late answer leaves the second alone", async () => {
+    const s = holder();
+    const first = planMove(three, { kind: "step-project", key: "/a", by: 1 }, label)!;
+    const one = deferred();
+    const a = track(first, s.set, () => one.promise);
+    const second = planMove(shownLayout(s.get(), three), { kind: "step-project", key: "/c", by: -1 }, label)!;
+    expect(second.order).toEqual(["/b", "/c", "/a"]);
+    const two = deferred();
+    const b = track(second, s.set, () => two.promise);
+    one.done();
+    await a;
+    expect(s.get()).toEqual({ layout: second.layout, saved: false, reads: 0 });
+    // A refused first one doesn't drop the second either.
+    const s2 = holder();
+    const late = track(first, s2.set, () => Promise.reject("x"));
+    void track(second, s2.set, () => new Promise<void>(() => {}));
+    await late.catch(() => {});
+    expect(s2.get()?.layout).toBe(second.layout);
+    two.done();
+    await b;
+    expect(s.get()).toEqual({ layout: second.layout, saved: true, reads: 0 });
   });
 });

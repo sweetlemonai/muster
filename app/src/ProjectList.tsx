@@ -10,7 +10,7 @@ import { inProgress } from "./lib";
 import { useLook } from "./modes";
 import { PAUSE_GLYPH } from "./Pause";
 import { QuietPing } from "./Ping";
-import { accepts, dropMove, type DropTarget, grouped, layoutOf, type Move, type Pending, type Plan, planMove, settle, sidebarGroups, withFresh } from "./projectOrder";
+import { accepts, dropMove, type DropTarget, grouped, layoutOf, type Move, type Pending, type Plan, planMove, settle, sidebarGroups, track, withFresh } from "./projectOrder";
 import { pressed } from "./shortcuts";
 import { cleanHeading, type DragProps, half, HeadingEdit, HeadingFrame, MOVE_KEYS, NewCategory, SideRow } from "./SidebarProjects";
 import type { Activity, Note, QueueInfo, Task } from "./types";
@@ -107,22 +107,17 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
   const run = (p: Plan | null, then: Focus | null) => {
     if (!p || !edit) return;
     pick(p.chip);
-    setPending({ layout: p.layout, saved: false, reads: 0 });
     setSaid(p.said);
     setProblem("");
     if (then) setFocus({ ...then });
-    // Only the latest move's pending layout is marked saved or dropped.
-    const mine = (x: Pending | null) => x?.layout === p.layout;
-    edit.arrange(p.order, p.categories, p.moved).then(
+    track(p, setPending, () => edit.arrange(p.order, p.categories, p.moved)).then(
       () => {
-        setPending((x) => (x && mine(x) ? { ...x, saved: true } : x));
         if (p.moved) {
           const made = p.moved.category;
           setFresh((f) => f.filter((x) => x !== made));
         }
       },
       (e: unknown) => {
-        setPending((x) => (mine(x) ? null : x));
         setProblem(`Couldn't keep that order: ${String(e)}`);
       },
     );
@@ -133,7 +128,7 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
     setDrag(null);
     setOver(null);
   };
-  /** A drop on `t` (the innermost target that takes it, projectOrder.dropTarget): its move. */
+  /** A drop on `t` (the innermost target that takes it: one that doesn't lets it bubble on): its move. */
   const dropOn = (t: DropTarget, side: "before" | "after") => {
     const m = dropMove(layout, drag, t, side);
     if (m) move(m);

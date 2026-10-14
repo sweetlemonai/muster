@@ -175,12 +175,6 @@ export function accepts(drag: Dragged | null, t: DropTarget): boolean {
   return t.kind === "row" ? drag.kind === "project" : drag.kind === "heading";
 }
 
-/** The target a drag or drop lands on, of those under the pointer (`path`, innermost first): the
- *  first that takes it, as the events bubble. */
-export function dropTarget(drag: Dragged | null, path: DropTarget[]): DropTarget | null {
-  return path.find((t) => accepts(drag, t)) ?? null;
-}
-
 /** The move a drop on `t` makes, on its upper or lower half (`side`): a project before or after a
  *  row, or at the top of a heading; a heading before or after a heading or a group. Null for a
  *  target that doesn't take it. */
@@ -202,6 +196,22 @@ export type Pending = { layout: Layout; saved: boolean; reads: number };
 
 /** The layout to show, and to plan the next move from: the pending move's, else the core's. */
 export const shownLayout = (p: Pending | null, core: Layout): Layout => p?.layout ?? core;
+
+/** A move's bookkeeping, the sidebar's and Settings' (review R6): `plan` shows at once (and the
+ *  next move plans from it, `shownLayout`), `send` saves it, and then it's marked saved, or
+ *  dropped if the core refused, which is passed on. A newer move's pending layout is left alone
+ *  by an older one's answer. `set` is the component's functional state setter. */
+export function track(plan: Plan, set: (f: (p: Pending | null) => Pending | null) => void, send: () => Promise<void>): Promise<void> {
+  const ours = (p: Pending | null) => p?.layout === plan.layout;
+  set(() => ({ layout: plan.layout, saved: false, reads: 0 }));
+  return send().then(
+    () => set((p) => (p && ours(p) ? { ...p, saved: true } : p)),
+    (e: unknown) => {
+      set((p) => (ours(p) ? null : p));
+      throw e;
+    },
+  );
+}
 
 /** A pending move after the queues were read again (`core`, the layout they give): gone once they
  *  say the same, or at the second read after the save whatever they say (another window may have

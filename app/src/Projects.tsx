@@ -6,7 +6,7 @@ import { HomePath } from "./HomePath";
 import InlineField from "./InlineField";
 import { CATEGORY_MAX, LABEL_MAX, OTHER, otherCategories } from "./labels";
 import { queueTotal } from "./lib";
-import { type Layout, layoutOf, type Pending, planMove, settle, shownLayout, sidebarGroups } from "./projectOrder";
+import { type Layout, layoutOf, type Pending, planMove, settle, shownLayout, sidebarGroups, track } from "./projectOrder";
 import { Swatches } from "./ProjectSwatches";
 import type { Project, QueueInfo } from "./types";
 import { Button } from "./ui";
@@ -81,18 +81,12 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
     const [up, down] = [step(-1), step(1)];
     const go = (plan: typeof up) => {
       if (!plan) return;
-      setPending({ layout: plan.layout, saved: false, reads: 0 });
-      const mine = (x: Pending | null) => x?.layout === plan.layout;
-      api.arrangeProjects(plan.order, plan.categories, plan.moved).then(
+      track(plan, setPending, () => api.arrangeProjects(plan.order, plan.categories, plan.moved)).then(
         () => {
-          setPending((x) => (x && mine(x) ? { ...x, saved: true } : x));
           onChanged();
           return load();
         },
-        (e: unknown) => {
-          setPending((x) => (mine(x) ? null : x));
-          setMsg({ ok: false, text: String(e) });
-        },
+        (e: unknown) => setMsg({ ok: false, text: String(e) }),
       );
     };
     return <PlaceCell name={name} canUp={up !== null} canDown={down !== null} onUp={() => go(up)} onDown={() => go(down)} />;

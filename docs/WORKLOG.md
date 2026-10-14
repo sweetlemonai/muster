@@ -20,6 +20,9 @@ the drop) → one pure drop routing (`dropMove`); a fresh heading's name squeeze
 wraps; Settings ↑/↓ twice before a refresh undid the first → plans from a pending layout
 (`settle`); a group folder over 24 characters couldn't be renamed or ranked → one cut form on both
 sides; the drop line stayed after leaving → cleared on the nav.
+**Fixed (review round 2):** the pending-move bookkeeping had no test that could fail → one pure
+`track()` shared by the sidebar and Settings, tested so removing any arm fails; About names colours
+and the sidebar order; an unused `dropTarget` removed.
 **Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; vitest
 1405, cargo 591 lib + integration; the palette distance test across every theme and accent.
 **Open:** native drag in the running WKWebView, the drop lines and the look of the dots aren't

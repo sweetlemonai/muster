@@ -380,6 +380,11 @@ describe("the drag wiring follows the tested rules (0057 review R1, R3, R5)", ()
     expect(listSource).toContain("onDragOver={drag ? (e) => !e.isDefaultPrevented() && hover(null) : undefined}");
     expect(listSource).toMatch(/onDragLeave=\{drag \? \(e\) => !\(e\.relatedTarget instanceof Node && e\.currentTarget\.contains\(e\.relatedTarget\)\) && hover\(null\) : undefined\}/);
   });
+  it("both keep a move's bookkeeping through track, never by hand (review R6)", () => {
+    expect(listSource).toContain("track(p, setPending, () => edit.arrange(p.order, p.categories, p.moved))");
+    expect(projectsSource).toContain("track(plan, setPending, () => api.arrangeProjects(plan.order, plan.categories, plan.moved))");
+    for (const src of [listSource, projectsSource]) expect(src).not.toMatch(/setPending\(\{|setPending\(\(x\)/);
+  });
   it("Settings plans each ↑ ↓ from the move it showed last", () => {
     expect(projectsSource).toContain("const layout = shownLayout(pending, core);");
     expect(projectsSource).toContain("useEffect(() => setPending((p) => settle(p, core)), [core]);");
