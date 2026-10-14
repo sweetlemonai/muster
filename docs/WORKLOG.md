@@ -4,6 +4,15 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Notifications, review round 1: an account first wanted after launch posts its news (mu-69)
+**Fixed:** R1. A builder claiming on a new account after launch had its waiting session taken as
+baseline (its first read counted as "couldn't know yet") → held back every account not yet read →
+`Known` now says which accounts a read wanted as well as read, and `Seen::unread` holds only those
+wanted on the first read (or the first after Off) until a read knows them or a read doesn't want
+them. That replaces the `every` latch: nothing wanted at start leaves `unread` empty.
+**Verified:** `cargo test notify agents` 47 green; R1's scenario at `decide` and `after_read`;
+mutants (old rule, and keeping unwanted accounts) fail 4 and 1 tests. Gate below.
+
 ## 2026-10-14 — Notifications latch "sessions known" per Claude account (mu-69)
 **Fixed:** with two accounts, one whose first `claude agents` read failed, its sessions already
 waiting at launch were posted as new once it read → the latch was one bool, set by any account's

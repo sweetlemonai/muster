@@ -367,46 +367,29 @@ pub fn read_all(fetch: &Fetch, accounts: &[String]) -> Snapshot {
     snap
 }
 
-/// The accounts whose sessions a read knows (0069): every one, or those named.
+/// What one read says of the Claude accounts (0069): those it wanted, and those whose sessions it
+/// knows.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Known {
-    /// Nothing was wanted of Claude Code: no session to know of, so any that comes is known.
-    pub every: bool,
+    /// The accounts the open work's stamps name (`wanted`), read or not.
+    pub wanted: HashSet<String>,
     /// The accounts read.
     pub accounts: HashSet<String>,
 }
 
 impl Known {
-    /// Every account is known.
-    pub fn every() -> Self {
-        Known {
-            every: true,
-            accounts: HashSet::new(),
-        }
-    }
-
     /// Does it know the sessions of `account`?
     pub fn knows(&self, account: &str) -> bool {
-        self.every || self.accounts.contains(account)
-    }
-
-    /// Takes in what `other` knows too: known once stays known.
-    pub fn add(&mut self, other: &Known) {
-        self.every |= other.every;
-        self.accounts.extend(other.accounts.iter().cloned());
+        self.accounts.contains(account)
     }
 }
 
-/// Which accounts `snap` says the sessions of `tasks` of: every one when nothing is wanted of
-/// Claude Code (no session to know of), else each account it read. None before the first read
-/// lands, nor for an account that couldn't be read, so a session waiting for input there isn't
-/// known to wait yet.
+/// What `snap` says of the accounts `tasks` want: each one wanted, and each one it read. None is
+/// read before the first read lands, nor one that couldn't be read, so a session waiting for
+/// input there isn't known to wait yet.
 pub fn known(tasks: &[Task], snap: &Snapshot) -> Known {
-    if wanted(tasks).is_empty() {
-        return Known::every();
-    }
     Known {
-        every: false,
+        wanted: wanted(tasks).into_iter().collect(),
         accounts: snap
             .accounts
             .iter()
@@ -1231,18 +1214,26 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
     }
 
     #[test]
-    fn the_sessions_are_known_per_account_read_or_every_one_when_none_is_wanted() {
+    fn a_read_says_which_accounts_it_wanted_and_which_it_read() {
         let tasks = vec![task("0001", "building", A)];
         let read = |r: Result<usize, &str>| Snapshot {
             states: HashMap::new(),
             accounts: vec![("hg".to_string(), r.map_err(String::from))],
         };
-        // Before the first read lands: none known.
-        assert_eq!(known(&tasks, &Snapshot::default()), Known::default());
+        let hg_wanted: HashSet<String> = ["hg".to_string()].into();
+        // Before the first read lands: wanted, none read.
+        assert_eq!(
+            known(&tasks, &Snapshot::default()),
+            Known {
+                wanted: hg_wanted.clone(),
+                accounts: HashSet::new(),
+            }
+        );
         let hg = known(&tasks, &read(Ok(0)));
-        assert!(hg.knows("hg") && !hg.every);
-        // An account that couldn't be read says nothing of its sessions.
-        assert!(!known(&tasks, &read(Err("claude isn't installed"))).knows("hg"));
+        assert!(hg.knows("hg") && hg.wanted == hg_wanted);
+        // An account that couldn't be read says nothing of its sessions, and is still wanted.
+        let failed = known(&tasks, &read(Err("claude isn't installed")));
+        assert!(!failed.knows("hg") && failed.wanted == hg_wanted);
         // Each account on its own: one read Ok doesn't make another known.
         let two = Snapshot {
             states: HashMap::new(),
@@ -1253,22 +1244,9 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
         };
         let k = known(&tasks, &two);
         assert!(k.knows("hg") && !k.knows("mg"));
-        // Nothing to read: no session waits, and that's known of every account.
+        // Nothing to read: nothing wanted, none read.
         let unstamped = vec![task("0002", "building", "wt-unstamped")];
-        assert!(known(&unstamped, &Snapshot::default()).knows("mg"));
-    }
-
-    #[test]
-    fn known_once_stays_known_and_every_takes_in_any_account() {
-        let mut k = Known::default();
-        k.add(&Known {
-            every: false,
-            accounts: ["hg".to_string()].into(),
-        });
-        k.add(&Known::default());
-        assert!(k.knows("hg") && !k.knows("mg"));
-        k.add(&Known::every());
-        assert!(k.knows("mg") && k.knows("hg"));
+        assert_eq!(known(&unstamped, &Snapshot::default()), Known::default());
     }
 
     #[test]

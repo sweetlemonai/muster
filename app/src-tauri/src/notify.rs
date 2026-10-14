@@ -5,8 +5,8 @@
 //! session waiting for input, their own task) and one for each lesson. An item is notified once
 //! and never again. What waited when the app started, when its project first showed or when
 //! notifications were turned on again, counts as seen, so nothing floods; so does a session the
-//! first read of its Claude account finds waiting for input, and what comes in while the window is
-//! focused on its project. News from another project waits while the window is focused (macOS
+//! first read of its Claude account finds waiting for input when the account was wanted since
+//! then, and what comes in while the window is focused on its project. News from another project waits while the window is focused (macOS
 //! shows no banner then) and comes once it isn't. While Settings has notifications off, nothing is
 //! read for them. Several new at once go in one notification.
 //! The keys seen are kept, bounded, in `notified.json` beside `settings.json`, so a restart
@@ -164,10 +164,11 @@ fn cut(line: &str, n: usize) -> String {
 /// What to notify after a read of `queues` (by name) found `items` waiting: the items not seen
 /// before, each taken as seen now. What waited before Muster could know of it is seen, not news:
 /// in a project the last read didn't have (on the first read since the app started, none had),
-/// and a session waiting for input until a read before this one knew its account's sessions
-/// (`sessions`, `agents::known`; 0069: each account on its own, so on an account's first good
-/// read what it says waits is the baseline). While the window is `focused`, macOS shows no banner, so news is never
-/// posted then: what the window shows (the project named `viewing`, or every one for "all") is
+/// and a session waiting for input on an account Muster couldn't know yet (`Seen::unread`; 0069:
+/// each account on its own, so the first good read of an account wanted since then is its
+/// baseline, while an account first wanted later posts its first read's news). `sessions` is what
+/// this read says of the accounts (`agents::known`). While the window is `focused`, macOS shows
+/// no banner, so news is never posted then: what the window shows (the project named `viewing`, or every one for "all") is
 /// seen there, and the rest waits, neither posted nor seen, for the first read once it isn't
 /// focused. Also says whether the keys seen changed, to save them. Past `KEEP` keys, the oldest
 /// go, unless they still wait.
@@ -180,8 +181,6 @@ pub fn decide(
     viewing: &str,
 ) -> (Vec<Item>, bool) {
     let before = seen.queues.replace(queues.iter().cloned().collect());
-    let sessions_before = seen.sessions.clone();
-    seen.sessions.add(sessions);
     let mut new = Vec::new();
     let mut changed = false;
     for i in items {
@@ -189,7 +188,7 @@ pub fn decide(
             continue;
         }
         let read_before = before.as_ref().is_some_and(|b| b.contains(&i.queue));
-        let news = read_before && (!i.input || sessions_before.knows(&i.account));
+        let news = read_before && !(i.input && seen.unread.contains(&i.account));
         if news && focused() && viewing != "all" && viewing != i.queue {
             continue;
         }
@@ -199,6 +198,11 @@ pub fn decide(
             new.push(i.clone());
         }
     }
+    if before.is_none() {
+        seen.unread.extend(sessions.wanted.iter().cloned());
+    }
+    seen.unread
+        .retain(|a| sessions.wanted.contains(a) && !sessions.knows(a));
     if seen.order.len() > KEEP {
         let still: HashSet<&str> = items.iter().map(|i| i.key.as_str()).collect();
         let mut over = seen.order.len() - KEEP;
@@ -246,15 +250,19 @@ pub fn message(items: &[Item]) -> (String, String) {
 }
 
 /// What has been seen: every key, oldest first, the projects of the last read, and the accounts
-/// whose sessions a read knew.
+/// whose sessions no read has known since Muster could first know of them.
 #[derive(Debug, Default)]
 pub struct Seen {
     order: VecDeque<String>,
     keys: HashSet<String>,
     /// None before the first read since the app started, or since notifications were turned on.
     queues: Option<HashSet<String>>,
-    /// The accounts some read since the app started knew the sessions of (`agents::known`).
-    sessions: Known,
+    /// The Claude accounts wanted on the first read since the app started (or since notifications
+    /// were turned on) and on every read since, none of which knew their sessions: a session of
+    /// theirs found waiting for input may have waited from then, so it isn't news. A read that
+    /// knows an account's sessions, or doesn't want it (none of its sessions applies, so none
+    /// waits), takes it out for good.
+    unread: HashSet<String>,
 }
 
 impl Seen {
@@ -399,8 +407,8 @@ impl Notifier {
         }
     }
 
-    /// After a read of `queues` (by name) found `items` waiting, knowing the sessions of the
-    /// accounts in `sessions` (`agents::known`): notifies through `post` what's new, and returns what it notified.
+    /// After a read of `queues` (by name) found `items` waiting, wanting and knowing the sessions
+    /// of the accounts in `sessions` (`agents::known`): notifies through `post` what's new, and returns what it notified.
     pub fn read(
         &self,
         items: &[Item],
@@ -584,21 +592,17 @@ mod tests {
         }
     }
 
-    /// Every account's sessions known, as when nothing is wanted.
+    /// Nothing wanted of Claude Code: no session to know of, so none is held back.
     fn every() -> Known {
-        Known::every()
-    }
-
-    /// No account's sessions known, as before the first read lands.
-    fn none() -> Known {
         Known::default()
     }
 
-    /// The sessions of `accounts` known.
-    fn of(accounts: &[&str]) -> Known {
+    /// The accounts in `wanted` wanted, of which those in `read` were read.
+    fn wants(wanted: &[&str], read: &[&str]) -> Known {
+        let set = |a: &[&str]| a.iter().map(|a| a.to_string()).collect();
         Known {
-            every: false,
-            accounts: accounts.iter().map(|a| a.to_string()).collect(),
+            wanted: set(wanted),
+            accounts: set(read),
         }
     }
 
@@ -785,10 +789,11 @@ mod tests {
         let mut seen = Seen::default();
         let qs = ["a".to_string()];
         // At start, before the first `claude agents` read lands: no session states yet.
-        decide(&mut seen, &[], &qs, &none(), AWAY, "all");
+        decide(&mut seen, &[], &qs, &wants(&[""], &[]), AWAY, "all");
         // The first read lands: what it says waits for input waited already.
         let first = [item("a/1/input", "a"), item("a/2/own", "a")];
-        let (new, changed) = decide(&mut seen, &first, &qs, &every(), AWAY, "all");
+        let read = wants(&[""], &[""]);
+        let (new, changed) = decide(&mut seen, &first, &qs, &read, AWAY, "all");
         assert_eq!(
             new,
             [item("a/2/own", "a")],
@@ -797,11 +802,11 @@ mod tests {
         assert!(changed && seen.contains("a/1/input"));
         // From then on a session that comes to wait is news.
         let later = [item("a/1/input", "a"), item("a/3/input", "a")];
-        let (new, _) = decide(&mut seen, &later, &qs, &every(), AWAY, "all");
+        let (new, _) = decide(&mut seen, &later, &qs, &read, AWAY, "all");
         assert_eq!(new, [item("a/3/input", "a")]);
         // Known once is enough: a later read that doesn't know them doesn't hold news back.
         let more = [item("a/4/input", "a")];
-        let (new, _) = decide(&mut seen, &more, &qs, &none(), AWAY, "all");
+        let (new, _) = decide(&mut seen, &more, &qs, &wants(&[""], &[]), AWAY, "all");
         assert_eq!(new, more);
     }
 
@@ -809,14 +814,15 @@ mod tests {
     fn each_account_takes_its_own_first_good_read_as_the_baseline_of_its_waiting_sessions() {
         let mut seen = Seen::default();
         let qs = ["a".to_string()];
-        // At start: hg reads, mg's first read fails.
-        decide(&mut seen, &[], &qs, &of(&["hg"]), AWAY, "all");
+        // At start hg and mg are wanted: hg reads, mg's first read fails.
+        let both = &["hg", "mg"];
+        decide(&mut seen, &[], &qs, &wants(both, &["hg"]), AWAY, "all");
         // mg's first good read finds two of its sessions that already waited: the baseline.
         let waited = [
             input_on("a/1/input", "a", "mg"),
             input_on("a/2/input", "a", "mg"),
         ];
-        let (new, changed) = decide(&mut seen, &waited, &qs, &of(&["hg", "mg"]), AWAY, "all");
+        let (new, changed) = decide(&mut seen, &waited, &qs, &wants(both, both), AWAY, "all");
         assert!(
             new.is_empty(),
             "an mg session waiting at launch isn't posted"
@@ -828,7 +834,7 @@ mod tests {
             input_on("a/3/input", "a", "mg"),
             input_on("a/4/input", "a", "hg"),
         ];
-        let (new, _) = decide(&mut seen, &later, &qs, &of(&["hg", "mg"]), AWAY, "all");
+        let (new, _) = decide(&mut seen, &later, &qs, &wants(both, both), AWAY, "all");
         assert_eq!(
             new,
             [
@@ -838,12 +844,53 @@ mod tests {
         );
         // Known once stays known: mg failing again doesn't hold its news back.
         let more = [input_on("a/5/input", "a", "mg")];
-        let (new, _) = decide(&mut seen, &more, &qs, &of(&["hg"]), AWAY, "all");
+        let (new, _) = decide(&mut seen, &more, &qs, &wants(both, &["hg"]), AWAY, "all");
         assert_eq!(new, more);
-        // A third account's first good read is its own baseline too, and what isn't input posts.
+        // ih is first wanted after launch (a builder claims on cc-ih), and by its first read
+        // that session waits: it came to wait after Muster could know of it, so it's news.
+        let three = &["hg", "ih", "mg"];
+        decide(&mut seen, &more, &qs, &wants(three, both), AWAY, "all");
         let ih = [input_on("a/6/input", "a", "ih"), item("a/7/own", "a")];
-        let (new, _) = decide(&mut seen, &ih, &qs, &of(&["ih"]), AWAY, "all");
-        assert_eq!(new, [item("a/7/own", "a")], "what isn't input is untouched");
+        let (new, _) = decide(&mut seen, &ih, &qs, &wants(three, three), AWAY, "all");
+        assert_eq!(
+            new, ih,
+            "an account first wanted later posts its first read"
+        );
+    }
+
+    #[test]
+    fn an_account_wanted_at_launch_holds_back_until_it_reads_or_isnt_wanted() {
+        let mut seen = Seen::default();
+        let qs = ["a".to_string()];
+        // ih is wanted at launch and its reads keep failing: still held back when one lands.
+        decide(&mut seen, &[], &qs, &wants(&["ih"], &[]), AWAY, "all");
+        decide(&mut seen, &[], &qs, &wants(&["ih"], &[]), AWAY, "all");
+        let one = [input_on("a/1/input", "a", "ih")];
+        let (new, _) = decide(&mut seen, &one, &qs, &wants(&["ih"], &["ih"]), AWAY, "all");
+        assert!(new.is_empty(), "it may have waited from launch");
+        // mg is wanted at launch, unread, then not wanted on a read: none of its sessions waited
+        // then, so one that waits by its first read later came after, and is news.
+        let mut seen = Seen::default();
+        decide(&mut seen, &[], &qs, &wants(&["mg"], &[]), AWAY, "all");
+        decide(&mut seen, &[], &qs, &every(), AWAY, "all");
+        decide(&mut seen, &[], &qs, &wants(&["mg"], &[]), AWAY, "all");
+        let two = [input_on("a/2/input", "a", "mg")];
+        let (new, _) = decide(&mut seen, &two, &qs, &wants(&["mg"], &["mg"]), AWAY, "all");
+        assert_eq!(new, two);
+        // Notifications turned on again (`Notifier::off` forgets the projects): mg, wanted then
+        // and failing, waited unread through the time they were off, so it's held back again.
+        seen.queues = None;
+        decide(&mut seen, &two, &qs, &wants(&["mg"], &[]), AWAY, "all");
+        let three = [input_on("a/3/input", "a", "mg")];
+        let (new, _) = decide(
+            &mut seen,
+            &three,
+            &qs,
+            &wants(&["mg"], &["mg"]),
+            AWAY,
+            "all",
+        );
+        assert!(new.is_empty(), "it may have waited while they were off");
     }
 
     #[test]
@@ -852,9 +899,10 @@ mod tests {
         let qs = ["a".to_string()];
         // No stamped holder at start: no session to know of, so none waited.
         decide(&mut seen, &[], &qs, &every(), AWAY, "all");
-        // A session claims later on mg, whose first read fails, and comes to wait: news.
+        // A session claims later on mg, whose first read fails, then lands with it waiting: news.
+        decide(&mut seen, &[], &qs, &wants(&["mg"], &[]), AWAY, "all");
         let one = [input_on("a/1/input", "a", "mg")];
-        let (new, _) = decide(&mut seen, &one, &qs, &none(), AWAY, "all");
+        let (new, _) = decide(&mut seen, &one, &qs, &wants(&["mg"], &["mg"]), AWAY, "all");
         assert_eq!(new, one);
     }
 
@@ -1107,8 +1155,10 @@ mod tests {
         for t in &mut before.tasks {
             t.session_state = SessionState::Unknown;
         }
-        before.tasks.retain(|t| t.id != "0009");
-        assert!(!crate::agents::known(&before.tasks, &Snapshot::default()).knows(""));
+        let t = before.tasks.iter_mut().find(|t| t.id == "0009").unwrap();
+        t.waiting_for_owner = false;
+        let unread = crate::agents::known(&before.tasks, &Snapshot::default());
+        assert!(unread.wanted.contains("") && !unread.knows(""));
         assert!(after_read(&n, &before, &Snapshot::default(), &fake).is_empty());
         // The read lands 2-10 s later: the session waited already.
         let known = Snapshot {
@@ -1144,7 +1194,8 @@ mod tests {
             .tasks
             .iter_mut()
             .for_each(|t| t.session_state = SessionState::Unknown);
-        before.tasks.retain(|t| t.id != "0009");
+        let t = before.tasks.iter_mut().find(|t| t.id == "0009").unwrap();
+        t.waiting_for_owner = false;
         let failed = snap(Err("timed out".into()));
         assert!(after_read(&n, &before, &failed, &fake).is_empty());
         // mg reads later and says 0009's session waits: it waited already, so it isn't posted.
@@ -1167,6 +1218,22 @@ mod tests {
         assert_eq!(
             new.iter().map(|i| i.key.as_str()).collect::<Vec<_>>(),
             ["muster/0004/input"]
+        );
+        // A builder claims 0007 on cc-ih well after launch. ih isn't read until its first read
+        // lands, and by then the session waits: it came to wait after Muster could know of it.
+        let t = s.tasks.iter_mut().find(|t| t.id == "0007").unwrap();
+        t.claimed_by = "wt-d (session dddd4444 · cc-ih)".into();
+        assert!(after_read(&n, &s, &snap(Ok(1)), &fake).is_empty());
+        let t = s.tasks.iter_mut().find(|t| t.id == "0007").unwrap();
+        t.session_state = SessionState::NeedsInput;
+        let with_ih = Snapshot {
+            accounts: vec![("ih".to_string(), Ok(1)), ("mg".to_string(), Ok(2))],
+            ..Snapshot::default()
+        };
+        let new = after_read(&n, &s, &with_ih, &fake);
+        assert_eq!(
+            new.iter().map(|i| i.key.as_str()).collect::<Vec<_>>(),
+            ["muster/0007/input"]
         );
     }
 
