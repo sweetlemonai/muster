@@ -90,8 +90,8 @@ describe("Settings (0036)", () => {
     expect(gate("bin/gate full")).toBe("bin/gate full");
     expect(gate("")).toBe('none: merges wait for one. muster projects set muster gate "<command>"');
     // On a line of its own under the project's row, so no column of it crushes the folder (0061).
-    const row = (g: string, hidden = false) => renderToStaticMarkup(createElement("table", null, createElement("tbody", null, createElement(GateRow, { name: "muster", gate: g, hidden }))));
-    expect(text(row("bin/gate full"))).toBe("Gate bin/gate full");
+    const row = (g: string, hidden = false) => renderToStaticMarkup(createElement("table", null, createElement("tbody", null, createElement(GateRow, { name: "muster", gate: g, run: "bin/run", hidden }))));
+    expect(text(row("bin/gate full"))).toBe("Gate bin/gate full Run bin/run");
     expect(row("bin/gate")).toContain('<tr class="gate-row"><td colSpan="9">');
     // Across every column the table has, the Colour and Mine order ones too (0057).
     expect(settings("projects").match(/<th[ >]/g)).toHaveLength(PROJECT_COLUMNS);

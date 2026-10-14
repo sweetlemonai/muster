@@ -4,6 +4,21 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Each project has a run command beside its gate; Muster's is bin/run (mu-77)
+**Did:** `muster projects set <name> run "<command>"` stores what the app's Run will start to try a
+project, with the gate's rules (one line, ≤500 characters, quotes checked, empty clears); `muster
+projects`, `--json`, migrate and Settings › Projects (a Run line under Gate, `dir="ltr"`) show and
+carry it. Nothing runs it yet (mu-79). `bin/run` builds Muster's release app and opens that build
+as a second instance (`open -n`), beside the installed one.
+**Decided:** gate and run share one setter and a lenient reader with the same checks, so a bad
+entry reads as none and the rest of projects.json still loads. Other projects' run commands are for
+their owners: Tauri apps `pnpm tauri dev`, SwiftPM apps `swift run`, choopan `pnpm dev`.
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; Rust
+tests for the rules, lenient reads and migrate; a render test for the Run line and hint; bin/run's
+tests with stand-in pnpm and open (with `open` instead of `open -n` the test fails).
+**Open:** `muster projects set muster run bin/run` and AC4 (bin/run starting a second Muster, both
+in `ps`) are for QA or the owner: they write the real projects.json and launch the app.
+
 ## 2026-10-14 — Sidebar categories read right: a strong heading, labelled counts, a fold that folds to one line (mu-82)
 **Fixed:** "category UI is not good" (owner) → headings were smaller and greyer than their projects,
 folding still showed every project that needed you as a chip, the counts had no words and the

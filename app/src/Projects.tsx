@@ -148,7 +148,7 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
                   {p.source === "added" && <Button onClick={() => void act(() => api.removeProject(p.key))}>Remove</Button>}
                 </td>
               </tr>
-              <GateRow name={p.name} gate={p.gate ?? ""} hidden={p.hidden} />
+              <GateRow name={p.name} gate={p.gate ?? ""} run={p.run ?? ""} hidden={p.hidden} />
             </Fragment>
           ))}
         </tbody>
@@ -263,12 +263,13 @@ export function PrefixCell({ name, prefix, editing, value, error, canSet, onEdit
 export const PROJECT_COLUMNS = 9;
 
 /** A project's gate on a line under its row, with room to wrap like text; a column of it left the
- *  folder and the gate a word or a few letters wide. */
-export function GateRow({ name, gate, hidden }: { name: string; gate: string; hidden: boolean }) {
+ *  folder and the gate a word or a few letters wide. Its run command (0077) is the line under it. */
+export function GateRow({ name, gate, run, hidden }: { name: string; gate: string; run: string; hidden: boolean }) {
   return (
     <tr className={hidden ? "gate-row dim" : "gate-row"}>
       <td colSpan={PROJECT_COLUMNS}>
-        <b className="gate-label">Gate</b> <GateCell name={name} gate={gate} />
+        <div><b className="gate-label">Gate</b> <GateCell name={name} gate={gate} /></div>
+        <div><b className="gate-label">Run</b> <RunCell name={name} run={run} /></div>
       </td>
     </tr>
   );
@@ -281,6 +282,18 @@ export function GateCell({ name, gate }: { name: string; gate: string }) {
   return (
     <span className="meta">
       none: merges wait for one. <code>muster projects set {name} gate "&lt;command&gt;"</code>
+    </span>
+  );
+}
+
+/** A project's run command (0077), shown as it is: what the app's Run starts in the main checkout
+ *  to try the project. Left to right on its own (`dir="ltr"`), so a right-to-left word in or
+ *  beside it can't reorder it. Set with `muster projects set`, as the gate is. */
+export function RunCell({ name, run }: { name: string; run: string }) {
+  if (run) return <code className="path" dir="ltr">{run}</code>;
+  return (
+    <span className="meta">
+      none: say what starts it, to try it. <code dir="ltr">muster projects set {name} run "&lt;command&gt;"</code>
     </span>
   );
 }

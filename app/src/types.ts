@@ -296,6 +296,8 @@ export type Project = {
   ok: boolean;
   /** The project's gate command (0023), "" when none is set; set with `muster projects set`. */
   gate?: string;
+  /** Its run command (0077), "" when none is set; set with `muster projects set`, as the gate is. */
+  run?: string;
   /** What its tasks' keys start with (0033): stored with its queue, or its default. The core
    *  always sends it. */
   prefix?: string;

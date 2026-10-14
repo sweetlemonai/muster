@@ -5,7 +5,7 @@
 //! `tasks/` folder, never inside a git work tree, and never over an existing folder.
 
 use crate::{layout, queue};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -30,6 +30,12 @@ pub struct Config {
     /// The project's gate command by queue folder (0023): what a merge runs in the task's
     /// worktree, split into words without a shell (`bin/gate`, `make check`).
     pub gate: HashMap<String, String>,
+    /// The project's run command by queue folder (0077): what the app's Run starts in the main
+    /// checkout to try the project (`bin/run`, `swift run`), split into words without a shell as
+    /// the gate is. Stored and shown only. An entry `set_run` wouldn't keep is left out when read,
+    /// and never stops the rest of the file loading.
+    #[serde(deserialize_with = "read_commands")]
+    pub run: HashMap<String, String>,
     /// The Your check limit by queue folder (0050, `check_limit`): a number, or "off". A bad
     /// entry is left out when read, and never stops the rest of the file loading.
     #[serde(deserialize_with = "crate::check_limit::read_limits")]
@@ -72,6 +78,8 @@ pub struct Project {
     pub ok: bool,
     /// Its gate command (0023), or "" when none is set.
     pub gate: String,
+    /// Its run command (0077), or "" when none is set.
+    pub run: String,
     /// What its tasks' keys start with (0033): `mu` in `mu-12`, stored or its default
     /// (`key::prefixes`).
     pub prefix: String,
@@ -274,6 +282,7 @@ pub fn list(base: &Path, config: &Config) -> Vec<Project> {
             ok: looks_like_queue(&path),
             hidden: hidden.contains(key.as_str()),
             gate: config.gate.get(&key).cloned().unwrap_or_default(),
+            run: config.run.get(&key).cloned().unwrap_or_default(),
             prefix: String::new(),
             label: config.labels.get(&key).cloned().unwrap_or_default(),
             category: config.categories.get(&key).cloned().unwrap_or_default(),
@@ -351,32 +360,72 @@ pub fn shown(list: &[Project]) -> Vec<(String, PathBuf)> {
         .collect()
 }
 
-/// The longest gate command projects.json keeps.
+/// The longest gate or run command projects.json keeps.
 const MAX_GATE: usize = 500;
 
 /// Set (or, with an empty `cmd`, clear) the gate command of the project named `name`. The caller
 /// has checked it splits into words (`cli::split_words`); here it's one line of at most 500
 /// characters. Returns the project's queue folder.
 pub fn set_gate(config: &mut Config, base: &Path, name: &str, cmd: &str) -> Result<String, String> {
+    set_command(config, base, name, cmd, "gate", |c| &mut c.gate)
+}
+
+/// `set_gate` for the project's run command (0077), with the same checks.
+pub fn set_run(config: &mut Config, base: &Path, name: &str, cmd: &str) -> Result<String, String> {
+    set_command(config, base, name, cmd, "run", |c| &mut c.run)
+}
+
+/// Why `cmd`, trimmed, isn't a command projects.json keeps as `what`: not one line, or too long.
+fn command_refused(what: &str, cmd: &str) -> Option<String> {
+    if cmd.chars().any(char::is_control) {
+        return Some(format!(
+            "the {what} command is one line, without control characters"
+        ));
+    }
+    (cmd.chars().count() > MAX_GATE)
+        .then(|| format!("the {what} command is longer than {MAX_GATE} characters"))
+}
+
+fn set_command(
+    config: &mut Config,
+    base: &Path,
+    name: &str,
+    cmd: &str,
+    what: &str,
+    map: fn(&mut Config) -> &mut HashMap<String, String>,
+) -> Result<String, String> {
     let p = list(base, config)
         .into_iter()
         .find(|p| p.name == name)
         .ok_or_else(|| format!("no project named {name:?} (see `muster projects`)"))?;
     let cmd = cmd.trim();
-    if cmd.chars().any(char::is_control) {
-        return Err("the gate command is one line, without control characters".into());
-    }
-    if cmd.chars().count() > MAX_GATE {
-        return Err(format!(
-            "the gate command is longer than {MAX_GATE} characters"
-        ));
+    if let Some(why) = command_refused(what, cmd) {
+        return Err(why);
     }
     if cmd.is_empty() {
-        config.gate.remove(&p.key);
+        map(config).remove(&p.key);
     } else {
-        config.gate.insert(p.key.clone(), cmd.to_string());
+        map(config).insert(p.key.clone(), cmd.to_string());
     }
     Ok(p.key)
+}
+
+/// projects.json's `run` (0077), entry by entry: one that isn't text, or that `set_run` would
+/// refuse or clear, is left out, and anything but an object reads as none, so the rest of the
+/// file still loads.
+fn read_commands<'de, D: Deserializer<'de>>(d: D) -> Result<HashMap<String, String>, D::Error> {
+    let v = serde_json::Value::deserialize(d)?;
+    Ok(v.as_object()
+        .map(|m| {
+            m.iter()
+                .filter_map(|(folder, v)| {
+                    let cmd = v.as_str()?.trim();
+                    (!cmd.is_empty() && command_refused("run", cmd).is_none())
+                        .then(|| (folder.clone(), cmd.to_string()))
+                })
+                .collect()
+        })
+        .unwrap_or_default())
 }
 
 /// The gate command of the project whose queue is `root` (the same folder, through symlinks
@@ -547,7 +596,7 @@ pub fn create(
 }
 
 /// After `muster migrate` (0005): what `projects.json` says of the old queue `old` (its gate,
-/// name, label and category, colour and place in the sidebar's order, hidden, Your check limit), said of the new one `new` too, under the
+/// run command, name, label and category, colour and place in the sidebar's order, hidden, Your check limit), said of the new one `new` too, under the
 /// key the app lists it by; a new queue the base doesn't find is added, so it shows as the old one
 /// did. The old queue keeps its own, until it's retired. Returns a line for each thing carried.
 pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> Vec<String> {
@@ -556,6 +605,11 @@ pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> V
     let is_old = |k: &String| canon(Path::new(k)) == old;
     let gate = config
         .gate
+        .iter()
+        .find(|(k, _)| is_old(k))
+        .map(|(_, v)| v.clone());
+    let run = config
+        .run
         .iter()
         .find(|(k, _)| is_old(k))
         .map(|(_, v)| v.clone());
@@ -598,6 +652,7 @@ pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> V
         .map(crate::labels::shown_category);
     let found = new_project.map(|p| p.key.clone());
     let carried = gate.is_some()
+        || run.is_some()
         || name.is_some()
         || label.is_some()
         || category.is_some()
@@ -624,6 +679,10 @@ pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> V
             "projects.json: gate {g:?} carried to the new queue"
         ));
         config.gate.insert(key.clone(), g);
+    }
+    if let Some(r) = run {
+        lines.push(format!("projects.json: run {r:?} carried to the new queue"));
+        config.run.insert(key.clone(), r);
     }
     if let Some(n) = name {
         lines.push(format!(
@@ -1089,6 +1148,111 @@ mod tests {
         let mut c = Config::default();
         assert!(carry_over(&mut c, &base, &old, &new).is_empty());
         assert_eq!(c, Config::default());
+    }
+
+    #[test]
+    fn a_migrated_queue_keeps_its_run_command() {
+        // 0077: a run command alone carries, as a gate does, and the old queue keeps its own.
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let old = base.join("proj/tasks");
+        make_queue(&old);
+        let main = base.join("proj/main");
+        fs::create_dir_all(main.join(".git")).unwrap();
+        let new = main.join(layout::DIR);
+        fs::create_dir(&new).unwrap();
+        fs::write(new.join(layout::CONFIG), layout::config_text(true, None)).unwrap();
+        let key = old.to_string_lossy().to_string();
+        let new_key = new.to_string_lossy().to_string();
+        let mut c = Config::default();
+        c.run.insert(key.clone(), "bin/run".into());
+        let lines = carry_over(&mut c, &base, &old, &new);
+        assert_eq!(c.run.get(&new_key).map(String::as_str), Some("bin/run"));
+        assert_eq!(
+            c.run.get(&key).map(String::as_str),
+            Some("bin/run"),
+            "the old keeps its own"
+        );
+        assert_eq!(
+            lines,
+            ["projects.json: run \"bin/run\" carried to the new queue"]
+        );
+        let p = list(&base, &c)
+            .into_iter()
+            .find(|p| p.key == new_key)
+            .unwrap();
+        assert_eq!(p.run, "bin/run");
+    }
+
+    #[test]
+    fn a_run_command_is_set_shown_and_cleared_with_the_gates_rules() {
+        // 0077: one line, at most 500 characters, trimmed, "" clears it, an unknown project is
+        // refused; the gate beside it is left alone.
+        let base = tempfile::tempdir().unwrap();
+        make_queue(&base.path().join("proj/tasks"));
+        let mut c = Config::default();
+        let key = set_run(&mut c, base.path(), "proj", "  bin/run --fresh ").unwrap();
+        assert_eq!(c.run.get(&key).map(String::as_str), Some("bin/run --fresh"));
+        let p = list(base.path(), &c).remove(0);
+        assert_eq!((p.run.as_str(), p.gate.as_str()), ("bin/run --fresh", ""));
+        assert_eq!(serde_json::to_value(&p).unwrap()["run"], "bin/run --fresh");
+        for (cmd, says) in [
+            ("bin/run\nrm -rf x", "the run command is one line"),
+            ("bin/run\tx", "the run command is one line"),
+            (
+                &"x".repeat(501)[..],
+                "the run command is longer than 500 characters",
+            ),
+        ] {
+            let e = set_run(&mut c, base.path(), "proj", cmd).unwrap_err();
+            assert!(e.contains(says), "{cmd:?}: {e}");
+        }
+        let e = set_run(&mut c, base.path(), "nope", "bin/run").unwrap_err();
+        assert!(e.contains("no project named \"nope\""), "{e}");
+        assert_eq!(c.run.len(), 1, "a refusal changes nothing");
+        // 500 characters, counted as characters: a Persian command that long is kept.
+        let long = "ب".repeat(500);
+        set_run(&mut c, base.path(), "proj", &long).unwrap();
+        assert_eq!(c.run.get(&key), Some(&long));
+        set_gate(&mut c, base.path(), "proj", "bin/gate").unwrap();
+        set_run(&mut c, base.path(), "proj", "  ").unwrap();
+        assert!(c.run.is_empty(), "blank clears it");
+        assert_eq!(c.gate.get(&key).map(String::as_str), Some("bin/gate"));
+        assert_eq!(list(base.path(), &c)[0].run, "");
+    }
+
+    #[test]
+    fn run_commands_are_read_leniently() {
+        // 0077: a file from before run loads with none; a run that isn't an object, or an entry
+        // that isn't a command set_run would keep, is left out, and the rest of the file loads.
+        let d = tempfile::tempdir().unwrap();
+        let f = d.path().join("projects.json");
+        let read = |text: &str| {
+            fs::write(&f, text).unwrap();
+            load(&f)
+        };
+        let old = read(r#"{"added": ["/a"], "gate": {"/a": "bin/gate"}}"#);
+        assert!(old.run.is_empty());
+        assert_eq!(old.added, ["/a"]);
+        for wrong in [r#""bin/run""#, "5", "[\"bin/run\"]", "null", "true"] {
+            let c = read(&format!(
+                r#"{{"added": ["/a"], "gate": {{"/a": "bin/gate"}}, "run": {wrong}}}"#
+            ));
+            assert!(c.run.is_empty(), "{wrong}: {:?}", c.run);
+            assert_eq!(c.added, ["/a"], "{wrong}: the rest loads");
+            assert_eq!(c.gate.get("/a").map(String::as_str), Some("bin/gate"));
+        }
+        let long = "x".repeat(501);
+        let c = read(&format!(
+            r#"{{"run": {{"/a": " bin/run ", "/b": 7, "/c": "a\nb", "/d": "", "/e": "{long}", "/f": ["x"]}}}}"#
+        ));
+        assert_eq!(
+            c.run,
+            HashMap::from([("/a".to_string(), "bin/run".to_string())])
+        );
+        // And what's saved reads back the same.
+        save(&f, &c).unwrap();
+        assert_eq!(load(&f), c);
     }
 
     #[test]

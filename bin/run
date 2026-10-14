@@ -1,0 +1,32 @@
+#!/bin/sh
+# Muster's run command (task 0077): builds the release app from the checkout it's in and starts
+# that build as a second Muster beside the one running (`muster projects set muster run bin/run`).
+# Both have one bundle id, so it's `open -n` on this build's own .app: a plain `open` would only
+# bring the running Muster forward.
+# The .app is where tauri puts it: <target>/release/bundle/macos/Muster.app, the target folder
+# being $CARGO_TARGET_DIR (an absolute path) or app/src-tauri/target.
+set -eu
+cd "$(dirname "$0")/.."
+root=$(pwd -P)
+
+target=${CARGO_TARGET_DIR:-$root/app/src-tauri/target}
+case $target in
+  /*) ;;
+  *)
+    printf 'bin/run: CARGO_TARGET_DIR is %s: give it as an absolute path\n' "$target" >&2
+    exit 2
+    ;;
+esac
+app="$target/release/bundle/macos/Muster.app"
+
+# A fresh worktree has no node_modules yet.
+if [ ! -d "$root/app/node_modules" ]; then
+  pnpm --dir "$root/app" install --frozen-lockfile
+fi
+pnpm --dir "$root/app" release:build
+if [ ! -d "$app" ]; then
+  printf 'bin/run: the build finished, but %s is not there\n' "$app" >&2
+  exit 1
+fi
+open -n "$app"
+printf 'bin/run: started %s beside the Muster already running\n' "$app"

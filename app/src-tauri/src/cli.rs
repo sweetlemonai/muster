@@ -1120,7 +1120,7 @@ fn edit_in_editor(id: &str, text: &str) -> Result<(String, PathBuf), String> {
 
 /// One line of `muster projects`: the name, its prefix (0033), where it came from (found under
 /// ~/playground, or added in the app), the folder, whether it's hidden or no longer a queue, its
-/// gate, and the label and category the app shows it with (0044), when set.
+/// gate and run command (0077), and the label and category the app shows it with (0044), when set.
 fn project_line(p: &projects::Project) -> String {
     let state = if p.hidden {
         " (hidden)"
@@ -1128,11 +1128,6 @@ fn project_line(p: &projects::Project) -> String {
         " (not a queue)"
     } else {
         ""
-    };
-    let gate = if p.gate.is_empty() {
-        String::new()
-    } else {
-        format!("  gate: {}", p.gate)
     };
     let shown = |what: &str, v: &str| {
         if v.is_empty() {
@@ -1142,48 +1137,57 @@ fn project_line(p: &projects::Project) -> String {
         }
     };
     format!(
-        "{:<16} {:<4} {:<6} {}{state}{gate}{}{}",
+        "{:<16} {:<4} {:<6} {}{state}{}{}{}{}",
         p.name,
         p.prefix,
         p.source,
         p.path,
+        shown("gate", &p.gate),
+        shown("run", &p.run),
         shown("label", &p.label),
         shown("category", &p.category)
     )
 }
 
-/// `muster projects set <name> gate "<command>"` (0023), on `config`: the command must split into
-/// words the way the gate will be run (no shell), one argument (quoted), empty to clear it.
+/// `muster projects set <name> gate|run "<command>"` (0023, 0077), on `config`: the command must
+/// split into words the way it will be run (no shell), one argument (quoted), empty to clear it.
 /// Returns what to print.
-fn set_project_gate(
+fn set_project_command(
     a: &Args,
     config: &mut projects::Config,
     base: &Path,
 ) -> Result<String, String> {
     let name = need(a, 2, "a project name")?;
-    let field = need(a, 3, "the field to set (gate or prefix)")?;
-    if field != "gate" {
-        return Err(format!(
-            "projects set takes gate or prefix, not {field:?} (see `muster help`)"
-        ));
-    }
-    let cmd = need(a, 4, "the gate command, in quotes (\"\" clears it)")?;
+    let field = need(a, 3, "the field to set (gate, run or prefix)")?;
+    let set = match field {
+        "gate" => projects::set_gate,
+        "run" => projects::set_run,
+        _ => {
+            return Err(format!(
+                "projects set takes gate, run or prefix, not {field:?} (see `muster help`)"
+            ))
+        }
+    };
+    let cmd = need(
+        a,
+        4,
+        &format!("the {field} command, in quotes (\"\" clears it)"),
+    )?;
     if a.pos.len() > 5 {
-        return Err(
-            "put the gate command in quotes: muster projects set <name> gate \"<command>\" (see `muster help`)"
-                .into(),
-        );
+        return Err(format!(
+            "put the {field} command in quotes: muster projects set <name> {field} \"<command>\" (see `muster help`)"
+        ));
     }
     if !cmd.trim().is_empty() {
         split_words(cmd).ok_or_else(|| {
-            format!("the gate command has an unclosed quote or a trailing backslash: {cmd:?}")
+            format!("the {field} command has an unclosed quote or a trailing backslash: {cmd:?}")
         })?;
     }
-    projects::set_gate(config, base, name, cmd)?;
+    set(config, base, name, cmd)?;
     Ok(if cmd.trim().is_empty() {
-        format!("{name}: gate cleared")
+        format!("{name}: {field} cleared")
     } else {
-        format!("{name}: gate set to {}", cmd.trim())
+        format!("{name}: {field} set to {}", cmd.trim())
     })
 }
 
@@ -1476,7 +1480,7 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
                     );
                     return Ok(0);
                 }
-                let said = projects::edit(&file, |c| set_project_gate(&a, c, &base()))?;
+                let said = projects::edit(&file, |c| set_project_command(&a, c, &base()))?;
                 println!("{said}");
                 return Ok(0);
             }
@@ -1563,7 +1567,7 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
             for line in &r.lines {
                 println!("{line}");
             }
-            // What projects.json says of the old queue (gate, name, hidden, Your check limit), said
+            // What projects.json says of the old queue (gate, run, name, hidden, Your check limit), said
             // of the new.
             let carried =
                 carry_projects(&config_file(), &base(), Path::new(old), &r.queue, a.dry_run)?;
@@ -5317,6 +5321,12 @@ mod tests {
         projects::add(&mut c, base.path(), &added).unwrap();
         c.gate
             .insert(top.to_string_lossy().to_string(), "bin/gate".into());
+        c.run
+            .insert(top.to_string_lossy().to_string(), "bin/run".into());
+        c.run.insert(
+            added.canonicalize().unwrap().to_string_lossy().to_string(),
+            "swift run".into(),
+        );
         c.hidden.push(nested.to_string_lossy().to_string());
         let lines: Vec<String> = projects::list(base.path(), &c)
             .iter()
@@ -5327,11 +5337,14 @@ mod tests {
             lines,
             vec![
                 format!(
-                    "drover           dr   found  {}  gate: bin/gate",
+                    "drover           dr   found  {}  gate: bin/gate  run: bin/run",
                     top.display()
                 ),
                 format!("colors           co   found  {} (hidden)", nested.display()),
-                format!("notes            no   added  {}", added.display()),
+                format!(
+                    "notes            no   added  {}  run: swift run",
+                    added.display()
+                ),
             ]
         );
     }
@@ -5342,7 +5355,7 @@ mod tests {
         let (q, _) = project(base.path(), "proj");
         let mut c = projects::Config::default();
         let set = |c: &mut projects::Config, args: &[&str]| {
-            set_project_gate(&parse(&sv(args)).unwrap(), c, base.path())
+            set_project_command(&parse(&sv(args)).unwrap(), c, base.path())
         };
         assert_eq!(
             set(
@@ -5385,6 +5398,87 @@ mod tests {
         assert!(gate_words("proj", "")
             .unwrap_err()
             .contains("no gate set for proj"));
+    }
+
+    #[test]
+    fn the_projects_run_command_is_set_checked_and_cleared() {
+        // 0077: beside the gate, with the gate's checks, and stored only: nothing runs it.
+        let base = tempfile::tempdir().unwrap();
+        let (q, _) = project(base.path(), "proj");
+        let mut c = projects::Config::default();
+        let set = |c: &mut projects::Config, args: &[&str]| {
+            set_project_command(&parse(&sv(args)).unwrap(), c, base.path())
+        };
+        assert_eq!(
+            set(
+                &mut c,
+                &[
+                    "projects",
+                    "set",
+                    "proj",
+                    "run",
+                    "pnpm --dir app 'tauri dev'"
+                ]
+            ),
+            Ok("proj: run set to pnpm --dir app 'tauri dev'".into())
+        );
+        let key = q.to_string_lossy().to_string();
+        assert_eq!(
+            c.run.get(&key).map(String::as_str),
+            Some("pnpm --dir app 'tauri dev'")
+        );
+        assert!(c.gate.is_empty(), "the gate is its own");
+        let long = "x".repeat(501);
+        let listed = projects::list(base.path(), &c);
+        assert_eq!(listed[0].run, "pnpm --dir app 'tauri dev'");
+        assert_eq!(
+            serde_json::to_value(&listed).unwrap()[0]["run"],
+            "pnpm --dir app 'tauri dev'",
+            "projects --json has it"
+        );
+        for (args, says) in [
+            (
+                &["projects", "set", "proj", "run", "'bin/run"][..],
+                "the run command has an unclosed quote",
+            ),
+            (
+                &["projects", "set", "proj", "run", "bin/run\\"][..],
+                "trailing backslash",
+            ),
+            (
+                &["projects", "set", "proj", "run", "bin/run", "fast"][..],
+                "put the run command in quotes",
+            ),
+            (
+                &["projects", "set", "nope", "run", "bin/run"][..],
+                "no project named",
+            ),
+            (
+                &["projects", "set", "proj", "run", "a\nb"][..],
+                "the run command is one line",
+            ),
+            (
+                &["projects", "set", "proj", "run", long.as_str()][..],
+                "the run command is longer than 500 characters",
+            ),
+            (
+                &["projects", "set", "proj", "run"][..],
+                "the run command, in quotes",
+            ),
+            (
+                &["projects", "set", "proj", "start", "x"][..],
+                "takes gate, run or prefix",
+            ),
+        ] {
+            let e = set(&mut c, args).unwrap_err();
+            assert!(e.contains(says), "{args:?}: {e}");
+        }
+        assert_eq!(c.run.len(), 1, "a refusal changes nothing");
+        assert_eq!(
+            set(&mut c, &["projects", "set", "proj", "run", ""]),
+            Ok("proj: run cleared".into())
+        );
+        assert!(c.run.is_empty());
     }
 
     #[test]
