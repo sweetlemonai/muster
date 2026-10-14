@@ -38,6 +38,10 @@ budgeted; only `muster` writes state, agents never edit status, claims or times 
 | Your check | the owner | try it on main; tick the owner-only criteria (0028); Accept | 0014, 0028 |
 | Done | — | actuals stamped (0017, 0025) | 0017 |
 
+**Agent teams** (decision 0008): roles that argue (the planning room, review lenses) run as a
+team inside one session; building stays one worker per worktree. A teammate is `session + agent`,
+so who built and who tested a task can be told apart even inside one lead's team.
+
 **Blocked** is a flag on any stage with a kind (0024): by tasks (derived from `depends:`, never
 typed twice), on you, by a permission, by a question, by something outside.
 
