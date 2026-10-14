@@ -1,6 +1,6 @@
 // Settings (0036): its groups in the order they show, this machine's settings as the core sends
 // them (the claim lease and the LIVE window, saved in the app's settings.json, which `muster`
-// reads too, and whether Mac notifications are on, 0052), and the words for them. No React views here; Settings.tsx has those.
+// reads too, whether Mac notifications are on, 0052, and the menu bar icon, 0085), and the words for them. No React views here; Settings.tsx has those.
 import { createContext } from "react";
 import type { HelpTopic } from "./helpTopics";
 import { LEASE_SECS } from "./lib";
@@ -59,8 +59,9 @@ export function spanInput(minutes: number): string {
 
 /** The core's answer for Settings: the settings with their bounds, and what About shows. */
 export type SettingsInfo = {
-  /** `notify`: Mac notifications on (0052); a core from before them sends none, which reads as on. */
-  settings: MachineSettings & { notify?: boolean };
+  /** `notify`: Mac notifications on (0052); `menuBar`: the menu bar icon on (0085). A core from
+   *  before them sends none, which reads as on. */
+  settings: MachineSettings & { notify?: boolean; menuBar?: boolean };
   leaseBounds: [number, number];
   liveBounds: [number, number];
   version: string;

@@ -40,7 +40,8 @@ import { blockedCount, ChoiceChips, ColumnHead, ModeChip } from "./ModeViews";
 import ColumnCards from "./ColumnCards";
 import { PausedColumn } from "./PausedLane";
 import OldPausesOffer from "./OldPauses";
-import logo from "./logo.png";
+import logoDark from "./logo-dark.svg";
+import logoLight from "./logo-light.svg";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
 const TaskPanel = lazy(() => import("./TaskPanel"));
@@ -394,7 +395,7 @@ export default function App() {
     <ProjectColours.Provider value={colours}>
     <div className="app shell">
       <aside className="sidebar" aria-label="Projects" data-sidebar={sidebarLook} style={{ width: sidebarWidth }}>
-        <div className="brand"><img src={logo} alt="" width={22} height={22} /> Muster</div>
+        <div className="brand"><img className="logo-dark" src={logoDark} alt="" width={22} height={22} /><img className="logo-light" src={logoLight} alt="" width={22} height={22} /> Muster</div>
         <ProjectList queues={state?.queues ?? []} tasks={state?.tasks ?? []} notes={allNotes} activity={state?.activity ?? []} now={now} current={queue} onPick={setQueue} onLabel={(k, label) => api.setProjectLabel(k, label).then(refresh)} edit={projectEdits(refresh)} />
         <button className="side-add" onClick={() => openSettings("projects")} title="New or existing project queue, in Settings">+ Project</button>
       </aside>

@@ -12,6 +12,8 @@ The app reads the queues every 2 seconds while its window is visible, and stops 
 
 **The Dock badge:** Muster's icon in the Dock shows how many tasks need you, across every project you show, so you see it without opening the window. It's the same count as the sidebar's with **All** selected (see [What needs you](02-concepts.md#what-needs-you)), and there's no badge at 0. While the window is hidden or minimized, the app still reads the queues every 15 seconds for the badge alone. It's there while the app runs; quitting Muster takes it away.
 
+**The menu bar icon:** Muster's robot head in the menu bar shows the same count from the same reads: plain while nothing waits for you, with its antenna tips filled in when something does. macOS tints it to match the menu bar, light or dark. Point at it for the count in words ("Muster · 3 things wait for you"); click it to bring the window forward; right-click or Control-click it for **Show Muster**, the count and **Quit Muster**. It names a count, never a task. Turn it off in [Notifications](#notifications).
+
 **Notifications:** when something new waits for you, Muster posts one Mac notification, with several new things in one. See [Notifications](#notifications) to turn them off.
 
 ## Resizing the sidebar and the pane
@@ -247,10 +249,12 @@ Type a span the way `muster reclaim --after` takes it: `30m`, `2h`, `1.25h` or `
 
 macOS asks whether Muster may notify the first time it has something to tell you, not when it starts; change your answer later in System Settings › Notifications. The notifications are local: nothing leaves this Mac. They come while Muster runs, the window open or hidden. The switch is saved in `settings.json`, and what Muster won't notify again in `notified.json` beside it: what it notified and what you'd already seen (the last 500, plus whatever still waits).
 
+**Menu bar icon:** **On** (the default) or **Off**, apart from the notifications. On, the robot head sits in the menu bar (see [The window at a glance](#the-window-at-a-glance)); Off takes it away at once, and On puts it back with the latest count. It's saved in `settings.json` too.
+
 ### About
 
 - **Version:** the app's version.
-- **Settings on this Mac:** the app's settings folder (`~/Library/Application Support/ai.sweetlemon.muster`) and what's in it: `projects.json` (the projects you added or hid, their labels, categories, colours, gates and Your check limits, and the sidebar's order), `settings.json` (the claim lease, the LIVE window and whether notifications are on), `notified.json` (what Muster won't notify you of again: what it notified, and what you'd already seen) and `helper/` (the helper's account, model and conversations). Appearance, the display mode, text size, Group by, saved views and the pane's width are kept by the window itself.
+- **Settings on this Mac:** the app's settings folder (`~/Library/Application Support/ai.sweetlemon.muster`) and what's in it: `projects.json` (the projects you added or hid, their labels, categories, colours, gates and Your check limits, and the sidebar's order), `settings.json` (the claim lease, the LIVE window, whether notifications are on and whether the menu bar icon shows), `notified.json` (what Muster won't notify you of again: what it notified, and what you'd already seen) and `helper/` (the helper's account, model and conversations). Appearance, the display mode, text size, Group by, saved views and the pane's width are kept by the window itself.
 - **What it reads:** the queues it found on its own (at `~/playground/<project>/tasks`, and one level deeper), then the ones you added (or that you added none), each with its folder, and the folders of the Claude Code session transcripts. All of it is read on this Mac and nothing is sent anywhere; only what you write to the helper goes to Anthropic, through your own Claude Code.
 
 ## Colours

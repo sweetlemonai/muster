@@ -274,6 +274,8 @@ export function apply(c: Choice) {
   const root = document.documentElement;
   for (const [k, v] of Object.entries(variables(theme, accent))) root.style.setProperty(k, v);
   root.style.colorScheme = theme.mode;
+  // The sidebar's logo (0085) follows the theme's mode, not the system's.
+  root.dataset.mode = theme.mode;
   const { cards, cardColour } = cardChoice(c);
   root.dataset.cards = cards;
   root.dataset.cardColour = cardColour;

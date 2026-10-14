@@ -348,12 +348,22 @@ describe("apply() puts the card look on the page (0026)", () => {
   it("as the attributes the board CSS selects on", () => {
     const root = page();
     apply({ ...DEFAULT_CHOICE, cards: "tint", cardColour: "priority" });
-    expect(root.dataset).toEqual({ cards: "tint", cardColour: "priority" });
+    expect(root.dataset).toEqual({ mode: "dark", cards: "tint", cardColour: "priority" });
   });
   it("falls back for unknown values", () => {
     const root = page();
     apply({ ...DEFAULT_CHOICE, cards: "neon" as never, cardColour: "mood" as never });
-    expect(root.dataset).toEqual({ cards: "stripe", cardColour: "stage" });
+    expect(root.dataset).toEqual({ mode: "dark", cards: "stripe", cardColour: "stage" });
+  });
+  it("with the theme's mode, which picks the sidebar's logo (0085)", () => {
+    const root = page();
+    for (const t of THEMES) {
+      apply({ ...DEFAULT_CHOICE, matchSystem: false, theme: t.id });
+      expect(root.dataset.mode, t.id).toBe(t.mode);
+    }
+    expect(css).toContain(".brand .logo-light { display: none; }");
+    expect(css).toContain(':root[data-mode="light"] .brand .logo-dark { display: none; }');
+    expect(css).toContain(':root[data-mode="light"] .brand .logo-light { display: inline; }');
   });
 });
 

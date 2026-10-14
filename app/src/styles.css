@@ -84,6 +84,10 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .top { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .brand { display: flex; align-items: center; gap: 7px; font-weight: 700; font-size: 15px; letter-spacing: 0.2px; }
 .brand img { border-radius: 0; }
+/* The logo in the theme's mode (0085): the dark icon unless the theme is a light one. */
+.brand .logo-light { display: none; }
+:root[data-mode="light"] .brand .logo-dark { display: none; }
+:root[data-mode="light"] .brand .logo-light { display: inline; }
 .queues, .views { display: flex; gap: 4px; }
 .views { margin-left: auto; }
 .ui-pill { border: 1px solid transparent; background: none; border-radius: 999px; padding: 3px 10px; color: var(--muted); }

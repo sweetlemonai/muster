@@ -4,6 +4,33 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Muster wears the owner's new icons: app icon light and dark, sidebar logo, menu bar icon (mu-85, Gholi_2 → Gholi_4)
+**Did:** the owner's icon set is in `app/src-tauri/icons/original/`. The app icon follows macOS's
+light or dark look through an Icon Composer `Muster.icon` compiled to `Assets.car`
+(`bundle.macOS.files`, `Info.plist` `CFBundleIconName`), with `icon.icns` and the PNGs rebuilt by
+`icons/build-icons.sh`. The sidebar's logo is the same icon as SVG, light or dark with the theme's
+mode. A menu bar icon (`tray.rs`) is idle or waiting on the Dock badge's count from the same reads,
+says the count in its tooltip and menu, brings the window forward on a click, and has Show and Quit.
+Settings › Notifications has its On/Off (`settings.json` `menuBar`).
+**Fixed:** turning the menu bar icon off stopped the app (SIGTRAP in `NSStatusBar
+_removeStatusItem` → the tray was dropped on the poll's thread, and AppKit removes status items
+only on the main thread). Review R1: each Off then On added another menu handler, so Show and Quit
+ran once per toggle (Tauri keeps a tray's `on_menu_event` for the app's life). Both are fixed by
+making the icon once and hiding it (`set_visible`) instead of removing it; the test
+`toggling_many_times_leaves_one_menu_handler` toggles 50 times and finds one.
+**Decided:** light and dark ship together through an asset catalog, as Braindump does, rather than
+Tauri CLI's own `.icon` support (it needs Xcode 26 at every build) or dark only. With the
+`tray-icon` feature, `core:default` would give the window tray rights, so the capability lists the
+other eight sets; decision 0001 amended.
+**Verified:** release build in a temporary HOME with a synthetic queue: the new Dock icon, the tray
+idle at 0 and waiting at 1 (tooltip "Muster · 1 thing waits for you"), a click brings the window
+forward, Off and On twice with the app alive (before R1; after it, hide and show weren't seen on screen:
+accessibility listed no windows or status items for any Muster then, the owner's included); `assetutil` shows Aqua, DarkAqua and tinted
+renditions. Size: app 9.6 → 10.3 MB, binary +178 KB. Screenshots in the task's attachments.
+**Open:** the tray menu itself and the light Dock icon weren't seen on screen (the menu opens only
+on a real right-click; the system's look wasn't changed). The light logo was checked as a render
+and by test, since the webview's storage is shared with the owner's running Muster.
+
 ## 2026-10-14 — Sidebar headings, round 3: "N need you" always in words, the name gives way first (mu-82)
 **Fixed:** review R2: at the default 210px "Dast Afzar", "persianUtils" and a Persian name showed
 only the orange number; the words came at 240-280px and the rest only at 320. The name kept its

@@ -266,7 +266,7 @@ export function AboutView({ info, projects, error = "" }: { info: SettingsInfo; 
         <p><HomePath className="path" path={info.configDir} home={info.home} /></p>
         <ul className="about-list">
           <li><code>projects.json</code>: the projects you added or hid, their labels, categories, colours, gates and Your check limits, and the sidebar's order</li>
-          <li><code>settings.json</code>: the claim lease, the LIVE window and whether notifications are on; the muster command reads it too</li>
+          <li><code>settings.json</code>: the claim lease, the LIVE window, whether notifications are on and whether the menu bar icon shows; the muster command reads it too</li>
           <li><code>notified.json</code>: what Muster won't notify you of again: what it notified, and what you'd already seen (waiting at start or when notifications were turned on, or shown in the window in front)</li>
           <li><code>helper/</code>: the helper's account, model and conversations</li>
         </ul>

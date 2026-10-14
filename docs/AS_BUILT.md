@@ -134,8 +134,9 @@ here):
 | `labels.rs` | A project's label and category |
 | `arrange.rs` | The sidebar's order, headings, colours and folds |
 | `check_limit.rs` | The limit on Your check per project |
-| `settings.rs` | This Mac's settings: lease, LIVE window, notifications, the old-pauses offer |
+| `settings.rs` | This Mac's settings: lease, LIVE window, notifications, the menu bar icon, the old-pauses offer |
 | `badge.rs` | The Dock badge's count, set from Rust |
+| `tray.rs` | The menu bar icon: idle or waiting, its tooltip and menu, from the badge's count |
 | `notify.rs` | Mac notifications of what newly waits for the owner, and `notified.json` |
 | `run.rs` | Run from the app: a project's run command in its main checkout, its output in a bounded ring, Stop and quitting end its process group |
 | `helper.rs` | The AI helper: the owner's own `claude`, restricted to `muster` and reading |
@@ -154,8 +155,9 @@ such as `App.tsx`, `TaskPanel.tsx`, `WaitingList.tsx`, `Settings.tsx`, `Helper.t
 and `Views.tsx`; pure logic in `lib.ts`, `filters.ts`, `search.ts` and `modes.ts`; the atoms in
 `app/src/ui/`; the shared fixtures (`*-cases.json`) that hold the core and the window to the same
 answers. The task pane, the backlog note pane and the helper load on first open. Its one capability
-is `core:default` (`capabilities/default.json`): no file system, shell, dialog, notification or
-network permission. Folders are picked by the core's own dialog, and the window names a queue by
+(`capabilities/default.json`) lists `core:default`'s sets but the tray's (task 0085: with the
+`tray-icon` feature on, `core:default` would include `core:tray:default`; a test in `tray.rs`
+holds it): no file system, shell, dialog, notification, tray or network permission. Folders are picked by the core's own dialog, and the window names a queue by
 its project name, never by a path.
 
 The 69 commands it can call (`generate_handler!` in `lib.rs`), by what they do:
@@ -324,6 +326,7 @@ is in section 6.
 | Your check: next step, effort groups, Accept all, the limit per project | Built, tested | mu-43, mu-50 |
 | Dock badge | Built, tested | mu-6 |
 | Mac notifications | Built, tested, merged 2026-10-13 (`5e1baa2`) | mu-52 |
+| The owner's icons: app icon light and dark, the sidebar's logo, the menu bar icon | Built, tested; on its branch, not on main | mu-85 |
 | The AI helper | Built; checked end to end once, by hand | mu-8 |
 | The manual and the Help tab | Built, tested; no screenshots | mu-35 |
 | `/muster` and `/mu` | Built, tested, linked into the personal layer | mu-3 |
@@ -831,7 +834,26 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   two stages are closer than a colour distance of 30. Contrast is checked to WCAG AA. Dark
   buttons use dark text on violet. In the light theme, status colours are fills behind dark
   text, with darker variants for coloured words.
-- **Icon:** a bot face with a visor eye and a check, drawn by capture as a vector
+- **Icon (task 0085, the owner's set of 2026-10-14):** the robot head with a check, violet on a
+  near-black gradient (dark) or on lavender (light). The owner's files are kept byte for byte in
+  `app/src-tauri/icons/original/` (named so because the worktree guard refuses commands with
+  the word for it): the SVGs, `png/` 16–1024, `Muster.iconset/` (its 2x files end in `-2x`), the
+  menu bar templates and `web/` (favicons, apple-touch and 192/512 icons, stored for a future site;
+  the manual has no HTML). macOS 26 shows the light or dark app icon with the system's look:
+  `icons/Muster.icon` (Icon Composer: the robot as a light and a dark layer on the two fills)
+  compiled by `actool` into `icons/Assets.car` (Aqua, DarkAqua and tinted renditions), copied
+  into the bundle by `bundle.macOS.files` and named by `CFBundleIconName` in `src-tauri/Info.plist`,
+  as Braindump does. `icon.icns` is actool's flat fallback for older macOS; the other PNGs and
+  `icon.ico` come from `tauri icon` on the dark 1024 PNG (dark is the default theme).
+  `icons/build-icons.sh` rebuilds them all (Xcode 26); the outputs are committed, so builds don't
+  need Xcode 26. Icon Composer's `ictool` preview crashes on this file (an assertion in
+  IconComposerKit), so the check is `xcrun assetutil --info icons/Assets.car` and the Dock.
+  The sidebar's logo is the same icon as an SVG (`app/src/logo-{dark,light}.svg`, the owner's
+  without its C2PA metadata), picked by the theme's mode (`data-mode` on the page, set by
+  `apply()`). Release size with all of it, 2026-10-14: the app 10.3 MB (was 9.6 MB: Assets.car
+  660 KB, icon.icns 100 KB smaller; +740 KB in all), the binary 10.11 MB (was 9.93 MB: +178 KB for the tray
+  and the two images).
+- **Icon before 0085:** a bot face with a visor eye and a check, drawn by capture as a vector
   (the queue's `attachments/0010/`). In use: **B**, the lineup's style (violet bot on near-black
   `#16131F`, eye and check cut out), like Drover's orange crook on navy. **A** (light face on a
   `#2E1F66`→`#170F38` gradient) is ready if the owner prefers it. `dock-preview-drover-a-drover-b.png`
@@ -1323,7 +1345,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Dock badge** (task 0006): Muster's Dock icon shows how many tasks need the owner in every
   shown project (the needs-you count; no badge at 0), so it's seen without opening the window.
   `badge.rs` counts in the core and sets it from Rust (`set_badge_count`), so the window has no
-  permission for it (still `core:default` only). Each window poll sets it when the count
+  permission for it. Each window poll sets it when the count
   changes; while the window is hidden and doesn't poll, a thread reads the queues every 15 s for
   the badge alone (7 ms each on the real queues), and applies Claude Code's session states as the
   poll does (0048), so a session waiting for input stays on the badge. That starts at most one
@@ -1331,6 +1353,19 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   in Building or Testing has a stamped holder. `needs_you` mirrors `human.ts`'s `needsYou`
   (the owner's own paused task left out, 0045);
   `app/src/needs-cases.json` holds both to the same answers. It adds 16 KB to the binary.
+- **Menu bar icon** (task 0085): `tray.rs`, through Tauri's tray (Cargo feature `tray-icon`; its
+  `tray-icon` and `muda` crates were already in the lockfile). The owner's template images
+  (`icons/original/png/menubar-{idle,waiting}-template-2x.png`, black and alpha, read at compile
+  time) so macOS tints them for the menu bar; the waiting one fills in the antennas' tips, so it
+  isn't told apart by colour alone. Idle at 0, waiting from 1, on `badge::dock_count`, the Dock
+  badge's count: each window poll and each hidden read pass it on (`MenuBar::sync`), so it adds
+  no reads, and the icon changes only when the count does. Tooltip "Muster · 3 things wait for
+  you" ("Muster" before the first read); a click brings the window forward; its menu
+  (right-click or Control-click) is Show Muster, the count in words (disabled) and Quit Muster,
+  only built-in actions, never a task's text. Settings › Notifications turns it off
+  (`settings.json` `menuBar`, on unless turned off, a bad value reads as on); `set_setting`
+  applies the switch at once. The status item is removed on the main thread (AppKit stops the
+  app otherwise, found in QA). The window has no tray permission.
 - **Mac notifications** (task 0052): one notification when something new waits for the owner.
   `notify.rs` splits what the badge counts into items, one per reason a task waits (Your check,
   keyed by when it came in, so a second arrival is new; each escalated question; blocked on you
@@ -1355,7 +1390,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   twice. Permission: asked at the first thing to say, never at start
   (`tauri-plugin-notification` 2.6.0 on desktop grants it itself; macOS asks the owner on the
   first post; no usage string exists for notifications). Posted from Rust through the plugin, so
-  the window has no notification permission (still `core:default` only); local only, the plugin
+  the window has no notification permission; local only, the plugin
   has no network code. Under `tauri dev` they show as Terminal's (the plugin's rule for unbundled
   builds); the built app shows them as Muster's.
 

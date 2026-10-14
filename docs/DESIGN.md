@@ -197,6 +197,14 @@ Visible doesn't mean loud. Controls are always there but never between the owner
   is spent only on what's waiting on the owner or broken.
 - **Lead with what matters** (title, stage, what's waiting); details below, still on screen.
 
+## The icon (task 0085)
+
+The owner's robot head with a check, in violet. One drawing everywhere: the app icon (light or
+dark with macOS), the sidebar's logo (light or dark with the theme's mode, never the system's),
+and the menu bar icon, a template macOS tints, plain while nothing waits and with its antenna
+tips filled in when something does: a change of shape, not only of colour. The sources are in
+`app/src-tauri/icons/original/`; a new drawing replaces them and `icons/build-icons.sh` runs.
+
 ## Checking a design
 
 A design passes when the owner, looking at the screen without clicking, can answer: what is this,

@@ -11,7 +11,10 @@ part of Drover later)
   picker, called from Rust only, so the window gets no dialog permission; `serde`, `serde_json`, `tempfile` for
   tests; `react`, `react-dom`, `@tauri-apps/api`, `markdown-it`). **Amended 2026-10-13 (task
   0052):** plus `tauri-plugin-notification` 2.6.0 (Drover's version; the owner said yes), called
-  from Rust only, so the window gets no notification permission either. The Rust lockfile was seeded
+  from Rust only, so the window gets no notification permission either. **Amended 2026-10-14
+  (task 0085):** plus `tauri`'s own `tray-icon` feature for the menu bar icon (no new crate: its
+  `tray-icon` and `muda` were already in the lockfile), driven from Rust only; the window's
+  capability lists `core:default`'s sets but the tray's. The Rust lockfile was seeded
   from Drover's so the versions match. No libc: file locking uses std's `File::lock` (Rust
   1.89+), and the answer's time stamp comes from the window's local clock, validated in Rust.
 - **Layout:** the app lives in `app/` inside the Muster repo (`app/src`, `app/src-tauri`),

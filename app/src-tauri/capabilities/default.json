@@ -1,7 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: Muster's own commands and core APIs only",
+  "description": "The main window: Muster's own commands and core APIs only, without the tray's (the Rust core owns the menu bar icon)",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:path:default",
+    "core:event:default",
+    "core:window:default",
+    "core:webview:default",
+    "core:app:default",
+    "core:image:default",
+    "core:resources:default",
+    "core:menu:default"
+  ]
 }

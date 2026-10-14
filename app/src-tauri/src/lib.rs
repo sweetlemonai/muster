@@ -39,6 +39,7 @@ pub mod search;
 pub mod session;
 pub mod settings;
 pub mod transcripts;
+pub mod tray;
 pub mod vision;
 pub mod work;
 
@@ -67,6 +68,8 @@ pub(crate) struct AppState {
     notify: notify::Notifier,
     /// Each project's latest run from the app (0079), in memory only.
     runs: run::Runs,
+    /// The menu bar icon's latest count and what it shows (0085), fed by the same reads.
+    menu_bar: tray::MenuBar,
 }
 
 /// The folder queues are found under, from `projects::places`.
@@ -130,7 +133,7 @@ async fn state(
     let reader = app.transcripts.clone();
     let monitor = app.agents.clone();
     let h = handle.clone();
-    let (state, cache) = blocking(move || {
+    let (state, cache, menu_bar) = blocking(move || {
         let mut cache = cache;
         // Read every poll, so a change in Settings (or by hand) applies at the next one.
         let settings = settings::load(&settings_file);
@@ -151,15 +154,13 @@ async fn state(
         for q in &mut s.queues {
             q.running = running.contains(&q.path);
         }
-        Ok((s, cache))
+        Ok((s, cache, settings.menu_bar))
     })
     .await?;
     *app.cache.lock().map_err(|e| e.to_string())? = cache;
-    show_badge(
-        &handle,
-        &app.badge,
-        badge::dock_count(&state.tasks, &state.queues),
-    );
+    let n = badge::dock_count(&state.tasks, &state.queues);
+    show_badge(&handle, &app.badge, n);
+    app.menu_bar.sync(menu_bar, Some(n), &tray::Tray(&handle));
     Ok(state)
 }
 
@@ -223,9 +224,9 @@ fn waiting_in(
     Ok((s, sessions))
 }
 
-/// Keeps the Dock badge current while the window is hidden and doesn't poll (0006): every
-/// `badge::HIDDEN_EVERY` with no poll in between, it reads the queues itself, and notifies what's
-/// new (0052). A read that fails leaves the badge as it was until the next one. Runs as long as
+/// Keeps the Dock badge and the menu bar icon (0085) current while the window is hidden and
+/// doesn't poll (0006): every `badge::HIDDEN_EVERY` with no poll in between, it reads the queues
+/// itself, and notifies what's new (0052). A read that fails leaves the badge as it was until the next one. Runs as long as
 /// the app does.
 fn watch_badge(handle: tauri::AppHandle) {
     std::thread::spawn(move || loop {
@@ -233,7 +234,10 @@ fn watch_badge(handle: tauri::AppHandle) {
         let app = handle.state::<AppState>();
         if app.badge.due(std::time::Instant::now()) {
             if let Ok((s, sessions)) = waiting_now(&app) {
-                show_badge(&handle, &app.badge, badge::dock_count(&s.tasks, &s.queues));
+                let n = badge::dock_count(&s.tasks, &s.queues);
+                show_badge(&handle, &app.badge, n);
+                let on = settings::load(&app.settings_file).menu_bar;
+                app.menu_bar.sync(on, Some(n), &tray::Tray(&handle));
                 notify_new(&handle, &s, &sessions);
             }
         }
@@ -1154,7 +1158,8 @@ async fn settings_info(handle: tauri::AppHandle) -> Result<SettingsInfo, String>
 }
 
 /// Change one of this machine's settings, `lease` or `live`, to a span like `12h` or `5m` (empty
-/// is the default). The core checks the name, the units and the bounds; the next poll uses it.
+/// is the default), or a switch (`settings::set`). The core checks the name, the units and the
+/// bounds; the next poll uses it, and the menu bar icon follows its switch at once.
 #[tauri::command]
 async fn set_setting(
     handle: tauri::AppHandle,
@@ -1166,7 +1171,11 @@ async fn set_setting(
         let app = handle.state::<AppState>();
         {
             let _guard = app.config.lock().map_err(|e| e.to_string())?;
-            settings::set(&app.settings_file, &name, &value)?;
+            let now = settings::set(&app.settings_file, &name, &value)?;
+            if name == "menu-bar" {
+                // At once, with the latest count; the next read keeps it current.
+                app.menu_bar.sync(now.menu_bar, None, &tray::Tray(&handle));
+            }
         }
         Ok(info_for(
             &app.settings_file,
@@ -1499,7 +1508,12 @@ pub fn run() {
                 badge: badge::Badge::default(),
                 notify: notify::Notifier::new(dir.join(notify::FILE)),
                 runs: run::Runs::new(run_events(app.handle().clone())),
+                menu_bar: tray::MenuBar::default(),
             });
+            // Up at launch, before the first read has a count, unless Settings turned it off.
+            let state = app.state::<AppState>();
+            let on = settings::load(&state.settings_file).menu_bar;
+            state.menu_bar.sync(on, None, &tray::Tray(app.handle()));
             watch_badge(app.handle().clone());
             Ok(())
         })
@@ -1927,7 +1941,7 @@ mod tests {
                 .unwrap();
         assert!(
             json.contains(
-                r#""settings":{"leaseMinutes":720,"liveMinutes":15,"notify":true,"oldPausesOffered":false}"#
+                r#""settings":{"leaseMinutes":720,"liveMinutes":15,"notify":true,"menuBar":true,"oldPausesOffered":false}"#
             ),
             "{json}"
         );

@@ -1,5 +1,5 @@
 //! Per-machine settings that both the app and `muster` read (task 0036): the claim lease, the
-//! LIVE window, and whether Mac notifications are on (0052); and one only the app reads, whether
+//! LIVE window, whether Mac notifications are on (0052) and whether the menu bar icon is (0085); and one only the app reads, whether
 //! it has offered to turn the old pauses into pauses (0059), so it offers once. Saved as
 //! `settings.json` beside `projects.json` in the app's config folder
 //! (`~/Library/Application Support/ai.sweetlemon.muster/`). A missing or broken file, or a value
@@ -33,6 +33,8 @@ pub struct Settings {
     pub live_minutes: u64,
     /// A Mac notification when something new waits for the owner (0052): on unless turned off.
     pub notify: bool,
+    /// The menu bar icon (0085, `tray`): on unless turned off.
+    pub menu_bar: bool,
     /// The app has offered, on load, to turn the old paused blocks into pauses (0059,
     /// `old_pause`); it offers once.
     pub old_pauses_offered: bool,
@@ -44,6 +46,7 @@ impl Default for Settings {
             lease_minutes: ops::LEASE_MINUTES,
             live_minutes: LIVE_MINUTES,
             notify: true,
+            menu_bar: true,
             old_pauses_offered: false,
         }
     }
@@ -78,6 +81,10 @@ pub fn load(file: &Path) -> Settings {
             .get("notify")
             .and_then(|n| n.as_bool())
             .unwrap_or(d.notify),
+        menu_bar: v
+            .get("menuBar")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(d.menu_bar),
         old_pauses_offered: v
             .get("oldPausesOffered")
             .and_then(serde_json::Value::as_bool)
@@ -138,7 +145,8 @@ fn minutes(input: &str, what: &str) -> Result<u64, String> {
 }
 
 /// Change one setting, `lease` or `live`, to a span like `12h` or `5m` (empty is the default),
-/// checked against its bounds, `notify` to `on` or `off` (empty is on), or `old-pauses-offered`
+/// checked against its bounds, `notify` or `menu-bar` to `on` or `off` (empty is on), or
+/// `old-pauses-offered`
 /// to `yes` or `no` (empty is no), and save. Returns the settings now in force.
 pub fn set(file: &Path, name: &str, value: &str) -> Result<Settings, String> {
     if name == "old-pauses-offered" {
@@ -156,15 +164,27 @@ pub fn set(file: &Path, name: &str, value: &str) -> Result<Settings, String> {
         return Ok(s);
     }
     let d = Settings::default();
-    if name == "notify" {
+    if name == "notify" || name == "menu-bar" {
+        let what = if name == "notify" {
+            "notifications are"
+        } else {
+            "the menu bar icon is"
+        };
         let on = match value.trim() {
-            "" => d.notify,
+            "" => true,
             "on" => true,
             "off" => false,
-            _ => return Err(format!("notifications are on or off, not {value:?}")),
+            other => {
+                let other: String = other.chars().take(24).collect();
+                return Err(format!("{what} on or off, not {other:?}"));
+            }
         };
         let mut s = load(file);
-        s.notify = on;
+        if name == "notify" {
+            s.notify = on;
+        } else {
+            s.menu_bar = on;
+        }
         save(file, &s)?;
         return Ok(s);
     }
@@ -408,6 +428,7 @@ mod tests {
                 lease_minutes: 120,
                 live_minutes: 5,
                 notify: true,
+                menu_bar: true,
                 old_pauses_offered: false
             }
         );
@@ -430,7 +451,52 @@ mod tests {
         assert!(!load(&f).old_pauses_offered);
         assert_eq!(
             serde_json::to_string(&Settings::default()).unwrap(),
-            r#"{"leaseMinutes":720,"liveMinutes":5,"notify":true,"oldPausesOffered":false}"#
+            r#"{"leaseMinutes":720,"liveMinutes":5,"notify":true,"menuBar":true,"oldPausesOffered":false}"#
+        );
+    }
+
+    #[test]
+    fn the_menu_bar_icon_is_on_unless_turned_off_and_a_bad_value_reads_as_on() {
+        let d = tempfile::tempdir().unwrap();
+        let f = file(&d);
+        assert!(Settings::default().menu_bar);
+        assert!(load(&f).menu_bar, "no file: on");
+        assert!(!set(&f, "menu-bar", "off").unwrap().menu_bar);
+        assert!(!load(&f).menu_bar, "remembered");
+        // It and the notifications are separate switches, and the others keep it off.
+        assert!(load(&f).notify);
+        assert!(!set(&f, "notify", "off").unwrap().menu_bar);
+        assert!(!set(&f, "lease", "2h").unwrap().menu_bar);
+        assert!(set(&f, "menu-bar", " on ").unwrap().menu_bar);
+        assert!(!load(&f).notify, "turning it on keeps notifications off");
+        set(&f, "menu-bar", "off").unwrap();
+        assert!(
+            set(&f, "menu-bar", "").unwrap().menu_bar,
+            "empty is the default"
+        );
+        set(&f, "menu-bar", "off").unwrap();
+        let before = fs::read_to_string(&f).unwrap();
+        assert_eq!(
+            set(&f, "menu-bar", "maybe").unwrap_err(),
+            "the menu bar icon is on or off, not \"maybe\""
+        );
+        assert_eq!(fs::read_to_string(&f).unwrap(), before);
+        assert!(before.contains("\"menuBar\": false"), "{before}");
+        for bad in [
+            r#"{"menuBar": "off"}"#,
+            r#"{"menuBar": 0}"#,
+            r#"{"menuBar": null}"#,
+        ] {
+            fs::write(&f, bad).unwrap();
+            assert!(load(&f).menu_bar, "{bad}");
+        }
+        fs::write(&f, r#"{"menuBar": false, "leaseMinutes": 5}"#).unwrap();
+        assert_eq!(
+            load(&f),
+            Settings {
+                menu_bar: false,
+                ..Settings::default()
+            }
         );
     }
 

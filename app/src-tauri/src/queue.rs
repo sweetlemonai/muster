@@ -3655,7 +3655,7 @@ mod tests {
         );
         assert_eq!(s.settings, short);
         assert!(serde_json::to_string(&s).unwrap().contains(
-            r#""settings":{"leaseMinutes":120,"liveMinutes":10,"notify":true,"oldPausesOffered":false}"#
+            r#""settings":{"leaseMinutes":120,"liveMinutes":10,"notify":true,"menuBar":true,"oldPausesOffered":false}"#
         ));
         assert_eq!(
             quiet("2026-10-12 03:01"),

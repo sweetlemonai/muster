@@ -54,7 +54,10 @@ describe("Notifications (0052)", () => {
     const b = buttons(NotificationsView({ info: INFO, onSet }));
     b.find((x) => x.words === "Off")!.click();
     b.find((x) => x.words === "On")!.click();
-    expect(onSet.mock.calls).toEqual([[false], [true]]);
+    expect(onSet.mock.calls).toEqual([
+      ["notify", false],
+      ["notify", true],
+    ]);
   });
 
   it("says what notifies, when it doesn't, who asks for leave, and that nothing leaves the Mac", () => {
@@ -70,7 +73,38 @@ describe("Notifications (0052)", () => {
     expect(t).toContain("macOS asks whether Muster may notify the first time it has something to tell you");
     expect(t).toContain("System Settings › Notifications");
     expect(t).toContain("Nothing leaves this Mac");
-    expect(t).toContain("Saved on this Mac, in ~/Library/Application Support/ai.sweetlemon.muster/settings.json");
+    expect(t).toContain("Both are saved on this Mac, in ~/Library/Application Support/ai.sweetlemon.muster/settings.json");
+  });
+
+  it("shows the menu bar icon's On and Off (0085), on unless turned off, apart from notifications", () => {
+    const chips = (html: string) => /<div[^>]*aria-label="Menu bar icon"[^>]*>([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "";
+    expect(view()).toContain("<h2>Menu bar icon</h2>");
+    expect(chips(view())).toMatch(/aria-pressed="true" class="ui-pill ui-pill--on">On</);
+    const off = view({ info: { ...INFO, settings: { ...INFO.settings, menuBar: false } } });
+    expect(chips(off)).toMatch(/aria-pressed="true" class="ui-pill ui-pill--on">Off</);
+    // Notifications off leaves the icon on, and the other way round.
+    const notifyOff = view({ info: { ...INFO, settings: { ...INFO.settings, notify: false } } });
+    expect(chips(notifyOff)).toMatch(/aria-pressed="true" class="ui-pill ui-pill--on">On</);
+    // A core from before the icon sends no menuBar: on, its default.
+    const older = view({ info: { ...INFO, settings: { leaseMinutes: 720, liveMinutes: 5, notify: true } } });
+    expect(chips(older)).toMatch(/aria-pressed="true" class="ui-pill ui-pill--on">On</);
+  });
+
+  it("turns the menu bar icon off and on through the core, by its own name", () => {
+    const onSet = vi.fn();
+    const b = buttons(NotificationsView({ info: INFO, onSet })).filter((x) => x.words === "Off");
+    expect(b).toHaveLength(2);
+    b[1].click();
+    expect(onSet.mock.calls).toEqual([["menu-bar", false]]);
+  });
+
+  it("says what the menu bar icon shows, what clicking does, and that it names a count, never a task", () => {
+    const t = text(view());
+    expect(t).toContain("plain while nothing waits for you and with its antenna tips filled in when something does");
+    expect(t).toContain("the same count as the Dock badge, from the same reads");
+    expect(t).toContain("say the count in words, never a task's text");
+    expect(t).toContain("Click it to bring Muster's window forward");
+    expect(t).toContain("Right-click or Control-click it for Show Muster, the count and Quit Muster");
   });
 
   it("shows why a change was refused", () => {

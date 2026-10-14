@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- macOS 26's app icon, light, dark and tinted, from the asset catalog that
+       icons/build-icons.sh compiles out of icons/Muster.icon (task 0085);
+       tauri.conf.json copies it in as Resources/Assets.car. icon.icns is the
+       fallback for earlier macOS. -->
+  <key>CFBundleIconName</key>
+  <string>Muster</string>
+</dict>
+</plist>
