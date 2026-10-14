@@ -1,7 +1,9 @@
 import { createElement, createRef, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { Badge, Button, Pill, Segment, Segmented, StatusPill } from ".";
+import { Badge, type BadgeVariant, Button, Pill, type PillStatus, Segment, Segmented, StatusPill } from ".";
+import { STAGES, type StageId } from "../lib";
+import css from "../styles.css?raw";
 
 const html = (node: ReactNode) => renderToStaticMarkup(node);
 
@@ -12,12 +14,18 @@ describe("Button", () => {
     expect(html(createElement(Button, { variant: "primary", className: "new" }, "+ New task"))).toBe('<button class="ui-button ui-button--primary new">+ New task</button>');
   });
 
-  it("passes native props and ref through, and forces no type", () => {
-    const ref = createRef<HTMLButtonElement>();
-    const out = html(createElement(Button, { ref, disabled: true, title: "t", "aria-pressed": true, type: "submit" }, "Save"));
+  it("passes native props through, and forces no type", () => {
+    const out = html(createElement(Button, { disabled: true, title: "t", "aria-pressed": true, type: "submit" }, "Save"));
     expect(out).toBe('<button disabled="" title="t" aria-pressed="true" type="submit" class="ui-button">Save</button>');
     // Without one, a button in a form still submits, as before.
     expect(html(createElement(Button, null, "Send"))).not.toContain("type=");
+  });
+
+  it("hands its ref to the <button> (a prop in React 19; static markup never attaches one)", () => {
+    const ref = createRef<HTMLButtonElement>();
+    const el = Button({ ref, children: "Save" });
+    expect(el.type).toBe("button");
+    expect(el.props.ref).toBe(ref);
   });
 });
 
@@ -69,5 +77,24 @@ describe("Segmented and Segment", () => {
     expect(html(createElement(Segmented, { className: "x" }))).toBe('<div role="group" class="ui-segmented x"></div>');
     // A caller's pressed state wins over the default.
     expect(html(createElement(Segment, { "aria-pressed": undefined }, "a"))).toBe('<button class="ui-segment">a</button>');
+  });
+});
+
+describe("styles.css", () => {
+  // Every class an atom can put on the page, from its types: a missing key is a type error.
+  const flags: Record<Exclude<PillStatus, StageId>, true> = { blocked: true, paused: true };
+  const variants: Record<BadgeVariant, true> = { warn: true, blocked: true, paused: true, note: true, est: true, level: true };
+  const selectors = css.replace(/\/\*[\s\S]*?\*\//g, "").match(/[^{}]+(?=\{)/g)?.join(",") ?? "";
+  const styled = (cls: string) => new RegExp(`\\.${cls}(?![\\w-])`).test(selectors);
+
+  it("has a rule for every status a StatusPill can say", () => {
+    for (const s of [...STAGES.map((st) => st.id), ...Object.keys(flags)]) expect(styled(`ui-status-pill--${s}`), s).toBe(true);
+  });
+  it("has a rule for every Badge variant", () => {
+    for (const v of Object.keys(variants)) expect(styled(`ui-badge--${v}`), v).toBe(true);
+  });
+  it("and the check sees a missing one", () => {
+    expect(styled("ui-badge--nope")).toBe(false);
+    expect(styled("ui-status-pill--your")).toBe(false);
   });
 });

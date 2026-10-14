@@ -18,6 +18,13 @@ or Lightbox. Not taken: Drover's radius scale (from a 6px base; Muster's is 8px)
 (`ui/adoption.test.ts`: no old classes, no plain `<button>`), token names and aliases
 (`themes.test.ts`); contrast tests unchanged and green. Tests that compared markup now expect the
 new classes (and Drover's attribute order: class last).
+**Fixed (review):** the "one colour, one meaning" guards passed vacuously after the rename (they
+looked for `--err` and `--accent`, so `var(--bad)` on `.kind.bug` or `var(--selected)`/`var(--focus)`
+on `.tag` got through); they now build each colour family from `OLD_TOKEN_NAMES` plus the new names,
+and go red on each of those three breaks. The adoption check now reads strings inside a template's
+`${…}` and in single quotes. The Button test no longer claims static markup shows the ref; a new test
+checks the ref reaches the `<button>`. New: styles.css has a rule for every `StatusPill` status and
+`Badge` variant (lists from `STAGES` and the atoms' types). Two comments named old tokens.
 **Open:** the screens weren't looked at in the running app in this session.
 
 ## 2026-10-13 — Board columns scroll without scrollbars; a fade and '+N below' say there's more (owner)

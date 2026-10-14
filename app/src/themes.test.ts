@@ -153,7 +153,7 @@ describe("the owner's own task's hatch (0022, owner 2026-10-13: one board, human
         const v = variables(t, a);
         // The title and other text at 7:1 (AAA), as on the plain card.
         expect(contrast(v["--text"], stripe(t))).toBeGreaterThanOrEqual(7);
-        // Secondary words: meta (muted), the project name (accent-text), warnings (err).
+        // Secondary words: meta (muted), the project name (accent-text), warnings (bad).
         for (const w of ["--muted", "--accent-text", "--bad"]) expect(contrast(v[w], stripe(t)), w).toBeGreaterThanOrEqual(4.5);
         // The You ribbon's border still stands out on it.
         expect(contrast(v["--edge-human"], stripe(t))).toBeGreaterThanOrEqual(3);
@@ -198,7 +198,7 @@ describe("card looks (0026)", () => {
         const v = variables(t, a);
         for (const [k, c] of fills) {
           const tinted = mix(c, t.surface, CARD_TINT[t.mode]);
-          // Title and meta (text, muted), the project name (.q, accent-text), a bug's kind (.kind.bug, err).
+          // Title and meta (text, muted), the project name (.q, accent-text), a bug's kind (.kind.bug, bad).
           for (const w of ["--text", "--muted", "--accent-text", "--bad"]) expect(contrast(v[w], tinted), `${w} on ${k}`).toBeGreaterThanOrEqual(4.5);
           // The Tint look's border is the edge colour: 3:1 on the tinted card too.
           expect(contrast(v[`--edge-${k}`], tinted), `edge on tinted ${k}`).toBeGreaterThanOrEqual(3);
@@ -351,12 +351,17 @@ describe("one colour, one meaning (owner, 2026-10-13)", () => {
   });
   it("the CSS gives priority, tags and types their own colours, not a stage's or the accent", () => {
     const rule = (sel: string) => css.slice(css.indexOf(`${sel} {`), css.indexOf("}", css.indexOf(`${sel} {`)));
+    // A colour family by its names, Drover's and the old ones (0053), as a prefix: --accent is
+    // --accent-strong and --accent-text too.
+    const family = (...now: string[]) => new RegExp([...now, ...Object.keys(OLD_TOKEN_NAMES).filter((old) => now.includes(OLD_TOKEN_NAMES[old])), "--st-"].join("|"));
     expect(rule(".pri-high")).toContain("var(--pri-high");
     expect(rule(".pri-high")).not.toContain("--st-");
     expect(rule(".ui-pill.ui-pill--on.pchip-high")).toContain("var(--pri-high");
     expect(rule(".ui-pill.ui-pill--on.pchip-high")).not.toContain("--st-");
-    expect(rule(".tag")).not.toMatch(/--accent|--st-/);
-    expect(rule(".kind.bug")).not.toMatch(/--err|--st-/);
+    expect(family("--bad").source).toBe("--bad|--err|--st-");
+    expect(family("--accent", "--selected", "--focus").source).toBe("--accent|--selected|--focus|--accent-soft|--st-");
+    expect(rule(".tag")).not.toMatch(family("--accent", "--selected", "--focus"));
+    expect(rule(".kind.bug")).not.toMatch(family("--bad"));
   });
 });
 

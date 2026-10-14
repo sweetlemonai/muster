@@ -994,7 +994,7 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .rail-fold:hover, .rail-fold:focus-visible { color: var(--text); background: var(--hover); }
 .rail-fold small { margin: 4px; text-transform: none; letter-spacing: 0; }
 .rail-unfold { margin-left: 8px; font-size: 10.5px; padding: 0 7px; text-transform: none; letter-spacing: 0; }
-/* The Your check limit (0050): words in the needs-you orange (--needs-text, 4.5:1). The column's
+/* The Your check limit (0050): words in the needs-you orange (--warn, 4.5:1). The column's
    short line (two lines) and the line above the board (one) always have their places, so nothing
    moves when they come or go. */
 .over-limit { color: var(--warn); font-weight: 600; }
