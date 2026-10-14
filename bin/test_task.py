@@ -99,13 +99,21 @@ class MusterDirTests(unittest.TestCase):
         (self.main / "README.md").write_text("code\n")
         git(self.main, "add", "-A")
         git(self.main, "commit", "-q", "-m", "first")
-        # Its own home (task 0062), so `muster init` never reads this Mac's projects.json or ~/playground.
+        # A decoy the leak would see (task 0072): an outer home whose playground holds `proto`, a queue
+        # that takes the prefix "pr". The env starts from that outer home and base, as a session's would.
+        outer = base / "outer"
+        decoy = outer / "playground" / "proto" / "tasks"
+        (decoy / "todo").mkdir(parents=True)
+        (decoy / "README.md").write_text("decoy queue\n")
+        outside = {**os.environ, "HOME": str(outer), "MUSTER_BASE": str(outer / "playground")}
+        # Its own home (task 0062), so `muster init` never reads the outer projects.json or playground.
         home = base / "home"
         home.mkdir()
-        self.env = {**os.environ, "MUSTER_BIN": str(MUSTER), "HOME": str(home)}
+        self.env = {**outside, "MUSTER_BIN": str(MUSTER), "HOME": str(home)}
         for k in ("MUSTER_ROOT", "TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS", "MUSTER_BASE"):
             self.env.pop(k, None)
-        # The default beside no other projects: none of this Mac's count.
+        # "pr" is free only if init sees no other projects: with the outer HOME or MUSTER_BASE leaking
+        # in, `proto` holds "pr" and init picks another prefix, so this fails.
         self.assertIn("(prefix pr:", self.muster("init", str(self.main), "--local"))
         self.q = self.main / ".muster"
         git(self.main, "add", "-A")

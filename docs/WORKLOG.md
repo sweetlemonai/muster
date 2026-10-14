@@ -4,6 +4,15 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Two tests that couldn't be trusted: the lessons test and init's prefix check (mu-72)
+**Fixed:** the lessons test failed now and then → it checked the brief for a bare "L1", which a
+random temp folder name can contain; it now checks the lesson block is absent (cli.rs). Init's
+prefix check in test_task.py could never fail → setUp now starts from an outer HOME and
+MUSTER_BASE whose playground holds a `proto` queue that takes "pr", so a leak picks "pro".
+**Verified:** with `TMPDIR` in a folder named `xL1y` the old assertion fails and the new one
+passes; removing test_task.py's HOME override, or its MUSTER_BASE pop, fails setUp with "prefix
+pro" (4 failures each), both restored; `bin/gate` green.
+
 ## 2026-10-14 — Decision 0008 accepted (agent teams)
 **Decided:** the owner accepted decision 0008: a teammate is session + agent id; teams only for the
 planning room and review lenses, not parallel building; smaller models for workers and reviewers,

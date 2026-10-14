@@ -5051,7 +5051,8 @@ mod tests {
         // Another area's start doesn't get it.
         let e = task(&f.root, "Task 5", "elsewhere/");
         assert_eq!(run_in(&f.repo, &["start", &e, "--as", "wt-e"]), Ok(0));
-        assert!(!started(&e).contains("L1"));
+        // The lesson block, not a bare "L1": the brief holds a temp path that may contain it.
+        assert!(!started(&e).contains("lessons (the owner accepted these"));
     }
 
     #[test]
