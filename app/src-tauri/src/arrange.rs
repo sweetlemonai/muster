@@ -199,10 +199,14 @@ pub fn rename_category(
     Ok(())
 }
 
-/// The headings `list`'s projects go under by what `c` says now, after a change to `c` that `list`
-/// (read before it) doesn't have yet: each one's category and its group's display name are `c`'s.
+/// The headings the sidebar draws: those `list`'s shown projects (not hidden, still a queue) go
+/// under by what `c` says now, after a change to `c` that `list` (read before it) doesn't have yet:
+/// each one's category and its group's display name are `c`'s.
 fn headings_now(c: &Config, list: &[Project]) -> HashSet<String> {
+    // Only the projects the sidebar draws (projects::shown): a heading only hidden or broken
+    // queues are under isn't one there (0073, review R13).
     list.iter()
+        .filter(|p| !p.hidden && p.ok)
         .map(|p| {
             let mut now = p.clone();
             now.category = c.categories.get(&p.key).cloned().unwrap_or_default();
@@ -874,13 +878,33 @@ mod tests {
     fn the_state_after_naming_a_group_is_what_the_sidebars_render_test_draws() {
         const FIXTURE: &str = include_str!("../../src/dashafzar-queues.json");
         let (base, mut c) = grouped();
+        // A Your check limit of their own for two of them (0050), so the fixture shows the step.
+        let (co, da) = (
+            key(base.path(), &c, "colors"),
+            key(base.path(), &c, "dates"),
+        );
+        crate::check_limit::set(&mut c.your_check, &co, "3").unwrap();
+        crate::check_limit::set(&mut c.your_check, &da, "off").unwrap();
+        // And a colour, a Mine order and a heading order (0057), so arrange::apply shows too.
+        set_colour(&mut c, &co, "mint").unwrap();
         let list = projects::list(base.path(), &c);
+        arrange(
+            &mut c,
+            &list,
+            &[da.clone(), co.clone()],
+            &["Tools".into(), "persianUtils".into()],
+            None,
+        )
+        .unwrap();
         rename_category(&mut c, &list, "persianUtils", "DashAfzar").unwrap();
         let list = projects::list(base.path(), &c);
-        let mut s =
-            crate::queue::read_state(&projects::shown(&list), &mut crate::queue::Cache::default());
-        labels::apply(&list, &mut s.queues);
-        apply(&c, &list, &mut s.queues);
+        // The poll's own builder (review R12), with this Mac's settings as a fresh Mac has them.
+        let mut s = projects::read_state(
+            &c,
+            &list,
+            &crate::settings::Settings::default(),
+            &mut crate::queue::Cache::default(),
+        );
         s.queues.sort_by(|a, b| a.name.cmp(&b.name));
         let root = base.path().to_string_lossy().to_string();
         let mut got = serde_json::to_value(&s.queues).unwrap();
@@ -894,6 +918,46 @@ mod tests {
             want,
             "the state changed: if that's meant, put this in app/src/dashafzar-queues.json:\n{}",
             serde_json::to_string_pretty(&got).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_heading_only_hidden_projects_are_under_loses_its_fold_and_a_rename_onto_it_comes_back_open(
+    ) {
+        // Review R13 (0073): the sidebar draws only the shown projects (projects::shown), so a
+        // heading whose shown projects all left is gone there, and so is its fold.
+        let (base, mut c) = grouped();
+        make_queue(&base.path().join("beta/tasks"));
+        let (al, be) = (key(base.path(), &c, "alpha"), key(base.path(), &c, "beta"));
+        labels::set(&mut c.categories, &be, "Tools", MAX_CATEGORY);
+        c.hidden.push(be);
+        let list = projects::list(base.path(), &c);
+        set_folded(&mut c, &list, "Tools", true).unwrap();
+        // alpha, the one Tools project the sidebar draws, moves to Apps: Tools' fold goes.
+        let moved = Moved {
+            key: al,
+            category: "Apps".into(),
+        };
+        arrange(&mut c, &list, &[], &[], Some(&moved)).unwrap();
+        assert!(!c.folded.contains(&"Tools".to_string()), "{:?}", c.folded);
+        // Renaming another heading onto Tools brings it back open.
+        let list = projects::list(base.path(), &c);
+        rename_category(&mut c, &list, "persianUtils", "Tools").unwrap();
+        assert!(!c.folded.contains(&"Tools".to_string()), "{:?}", c.folded);
+        assert!(headings_of(base.path(), &c)
+            .iter()
+            .filter(|(_, h, _)| h == "Tools")
+            .all(|(_, _, f)| !f));
+        // Nor can a heading the sidebar doesn't draw be folded.
+        let mut c = Config::default();
+        make_queue(&base.path().join("gamma/tasks"));
+        let ga = key(base.path(), &c, "gamma");
+        labels::set(&mut c.categories, &ga, "Attic", MAX_CATEGORY);
+        c.hidden.push(ga);
+        let list = projects::list(base.path(), &c);
+        assert_eq!(
+            set_folded(&mut c, &list, "Attic", true).unwrap_err(),
+            "no category named \"Attic\""
         );
     }
 

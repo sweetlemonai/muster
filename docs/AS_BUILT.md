@@ -102,7 +102,9 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   waiting, as the row's badge counts) still show under it as chips that pick them. A project put
   under a folded heading unfolds it, in the core (`arrange::put_under`, under the lock with the write):
   a drag, ⌥↑/⌥↓, Settings' ↑/↓ and Settings' Category field alike. A heading a change leaves with no
-  project loses its fold, so one made again by that name, by a move or a rename, comes back open. Headings are
+  project the sidebar draws (shown: not hidden, still a queue; 0073) loses its fold, so one made
+  again by that name, by a move or a rename, comes back open, and only a heading the sidebar draws
+  can be folded. Headings are
   `role="heading"` (focusable, with `aria-keyshortcuts`); the chevron is a `Pill` with
   `aria-expanded`. `projects.json` keeps `folded` (headings, read leniently, `fold_category`;
   `QueueInfo.categoryFolded`) and `groupNames` (a group folder's display name). Renaming a group's
@@ -111,6 +113,13 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   new one, as before; renaming it back to the folder's name clears it; a fold and a place move with
   a rename, and a merge is folded if either heading was. A migrated queue outside its group keeps
   the group's heading as its category (`carry_over`).
+- **One builder for the sidebar's state** (task 0073, `projects::read_state`): the shown queues read
+  with their tasks' keys (each project's prefix) and this Mac's settings, then each queue's Your
+  check limit, label and heading, and colour, places and fold. The poll (`state` in lib.rs) calls
+  it and adds the live dot, Claude Code's session states and notifications. So does the test that
+  holds `app/src/dashafzar-queues.json`, the state the sidebar's render test draws (AC2 of 0070),
+  to the core: dropping a step fails it. The hidden window's badge reader (`waiting_in`) reads
+  on its own, for the Dock badge only.
 - **Reaching a working session** (0039, `ping.rs`, `Ping.tsx`, `reach.ts`): **Ask for a
   check-in** under a quiet card ("no check-in for N min"; a strip joined to the card's bottom,
   since the card is a button), in the task pane's **Session** strip (Building and Testing, an

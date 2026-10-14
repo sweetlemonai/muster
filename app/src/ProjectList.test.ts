@@ -497,9 +497,10 @@ describe("folded headings in the sidebar (0070)", () => {
     // their group's name alone, drover and muster by the category they had by hand.
     const html = renderToStaticMarkup(createElement(ProjectList, { queues: dashafzar as QueueInfo[], tasks: [], notes: [], activity: [], now: NOW, current: "all", onPick: () => {}, edit: edits }));
     const groups = [...html.matchAll(/<div class="side-group[^"]*" role="group" aria-label="([^"]*)">([\s\S]*?)(?=<div class="side-group|<button type="button" title="A new heading)/g)].map((m) => [m[1], rows(m[2]).sort()]);
+    // In the owner's heading order the fixture has: Tools, then DashAfzar (0073).
     expect(groups).toEqual([
-      ["DashAfzar", ["colors", "dates", "drover", "muster"]],
       ["Tools", ["alpha"]],
+      ["DashAfzar", ["colors", "dates", "drover", "muster"]],
     ]);
     // The folder keeps its name (in the rows' tooltips); no heading has it any more.
     expect(html).not.toContain('data-heading="persianUtils"');

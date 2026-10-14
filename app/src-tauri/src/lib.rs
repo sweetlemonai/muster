@@ -132,21 +132,9 @@ async fn state(
         let settings = settings::load(&settings_file);
         let config = projects::load(&file);
         let list = projects::list(&base(), &config);
-        // Each project's prefix, for its tasks' keys (0033).
-        let prefix_of = |name: &str| {
-            list.iter()
-                .find(|p| p.name == name)
-                .map(|p| p.prefix.clone())
-                .unwrap_or_default()
-        };
-        let mut s =
-            queue::read_state_keyed(&projects::shown(&list), &mut cache, &settings, &prefix_of);
-        // Each project's Your check limit (0050), kept by folder beside its gate.
-        check_limit::apply(&config.your_check, &mut s.queues);
-        // What the window calls each one and the heading it goes under (0044).
-        labels::apply(&list, &mut s.queues);
-        // Its colour and its place in the sidebar, and its heading's (0057).
-        arrange::apply(&config, &list, &mut s.queues);
+        // The queues with their keys, limits, labels, headings and places (0073: one builder,
+        // which the DashAfzar fixture's test calls too).
+        let mut s = projects::read_state(&config, &list, &settings, &mut cache);
         // The cards' live dot: file times only, about a millisecond for 50 sessions.
         reader.set_live_secs(settings.live_secs());
         work::mark_live(&mut s.tasks, &reader, s.now);

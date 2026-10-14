@@ -4,6 +4,15 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — The poll and the DashAfzar fixture share one state builder; folds follow only drawn projects (mu-73)
+**Fixed:** the fixture the sidebar's render test draws was built by a different pipeline from the
+app's poll (no prefixes, no Your check limit) → `projects::read_state` builds the state for both,
+and the fixture is regenerated from it. A heading whose only projects are hidden kept its fold and
+came back folded on a rename → live headings count only the projects the sidebar draws.
+**Verified:** removing `check_limit::apply`, `labels::apply` or `arrange::apply` from
+`read_state` fails the fixture test; the Tools/alpha/beta rename test fails against the old
+`headings_now`; the fixture has no empty prefix; `bin/gate` green.
+
 ## 2026-10-14 — Two tests that couldn't be trusted: the lessons test and init's prefix check (mu-72)
 **Fixed:** the lessons test failed now and then → it checked the brief for a bare "L1", which a
 random temp folder name can contain; it now checks the lesson block is absent (cli.rs). Init's

@@ -319,6 +319,30 @@ pub fn active(base: &Path, config: &Config) -> Vec<(String, PathBuf)> {
     shown(&list(base, config))
 }
 
+/// The state the window's sidebar and board are drawn from (0073, review R12): the shown queues of
+/// `list` read with their tasks' keys (each project's prefix, 0033) and this Mac's `settings`, then
+/// each queue's Your check limit (0050), label and heading (0044), and colour, places and fold
+/// (0057, 0070) from `config`. The poll calls it, and so does the test that holds the window's
+/// DashAfzar fixture to it; the poll adds the live dot, Claude Code's states and notifications.
+pub fn read_state(
+    config: &Config,
+    list: &[Project],
+    settings: &crate::settings::Settings,
+    cache: &mut queue::Cache,
+) -> queue::State {
+    let prefix_of = |name: &str| {
+        list.iter()
+            .find(|p| p.name == name)
+            .map(|p| p.prefix.clone())
+            .unwrap_or_default()
+    };
+    let mut s = queue::read_state_keyed(&shown(list), cache, settings, &prefix_of);
+    crate::check_limit::apply(&config.your_check, &mut s.queues);
+    crate::labels::apply(list, &mut s.queues);
+    crate::arrange::apply(config, list, &mut s.queues);
+    s
+}
+
 /// `active`, of a list already made.
 pub fn shown(list: &[Project]) -> Vec<(String, PathBuf)> {
     list.iter()
