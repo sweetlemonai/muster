@@ -10,6 +10,7 @@ import { isWork } from "./levels";
 import Links from "./Links";
 import { ownerOpen } from "./OwnerChecklist";
 import TagEditor from "./Tags";
+import { Button, Segment, Segmented } from "./ui";
 import type { Task } from "./types";
 import type { TaskActions } from "./useTaskActions";
 
@@ -82,32 +83,33 @@ function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a: TaskAc
     <div className="next-step" role="group" aria-label="Next step" data-part="next-step">
       <span className="lbl">Next step</span>
       {showPass && (
-        <button
+        <Button
           type="button"
-          className="primary"
+          variant="primary"
           disabled={task.blocked || Boolean(task.paused) || a.busy || yoursOpen}
           title={task.paused ? "Paused: resume it first" : yoursOpen ? "Tick yours in the checklist first" : undefined}
           onClick={a.pass}
         >
           {pass}
-        </button>
+        </Button>
       )}
       {stale && (
-        <button
+        <Button
           type="button"
-          className={showPass ? "release" : "primary"}
+          variant={showPass ? "default" : "primary"}
+          className={showPass ? "release" : undefined}
           disabled={a.busy}
           title="Back to Ready, with the claim released and logged as reclaimed"
           onClick={a.release}
         >
           Release
-        </button>
+        </Button>
       )}
-      {back.length > 0 && <button type="button" disabled={a.busy} onClick={() => a.open("back")}>Send back</button>}
+      {back.length > 0 && <Button type="button" disabled={a.busy} onClick={() => a.open("back")}>Send back</Button>}
       {task.blocked ? (
-        <button type="button" disabled={a.busy} onClick={a.unblock}>Unblock</button>
+        <Button type="button" disabled={a.busy} onClick={a.unblock}>Unblock</Button>
       ) : (
-        <button type="button" disabled={a.busy} onClick={() => a.open("block")}>Block</button>
+        <Button type="button" disabled={a.busy} onClick={() => a.open("block")}>Block</Button>
       )}
       {holder && (
         <p className="meta small">
@@ -153,9 +155,7 @@ export function ValueChipView({ label, value, options, open, onOpen, onClose, on
   // A value the options don't name (P1 from an older tool) still shows, as the one pressed.
   const shown = options.includes(value) ? options : [value, ...options];
   return (
-    <span
-      className="seg"
-      role="group"
+    <Segmented
       aria-label={label}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
@@ -170,9 +170,9 @@ export function ValueChipView({ label, value, options, open, onOpen, onClose, on
       }}
     >
       {shown.map((o) => (
-        <button key={o} type="button" className={o === value ? "on" : undefined} aria-pressed={o === value} autoFocus={o === value} onClick={() => onPick(o)}>{o}</button>
+        <Segment key={o} type="button" active={o === value} autoFocus={o === value} onClick={() => onPick(o)}>{o}</Segment>
       ))}
-    </span>
+    </Segmented>
   );
 }
 
@@ -250,7 +250,7 @@ function Files({ task, onAttach }: { task: Task; onAttach: () => void }) {
           </button>
         ))}
         {others.map((n) => <span key={n} className="other-file" title={n}>{n}</span>)}
-        <button type="button" className="attach" onClick={onAttach}>+ Attach</button>
+        <Button type="button" className="attach" onClick={onAttach}>+ Attach</Button>
       </span>
       {big !== null && names[big] && (
         <div className="lightbox" onClick={() => setBig(null)} role="dialog" aria-label={names[big]}>

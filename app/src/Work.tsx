@@ -3,6 +3,7 @@ import { api } from "./api";
 import { fmtMinutes, ofEstimate, shortTokens, stageLabel, stamp } from "./lib";
 import Markdown from "./Markdown";
 import type { SessionRow, Task, Tokens, Work as WorkData } from "./types";
+import { Button } from "./ui";
 
 /** A session's transcript as the core folded it, or why it couldn't. */
 type Transcript = { id: string; md?: string; error?: string };
@@ -130,7 +131,7 @@ export function WorkView({ work, error, viewing, transcript, onView }: {
           <div className="transcript-bar">
             <span className="transcript-title">Session {viewing}</span>
             <span className="meta">read on this Mac, not sent anywhere</span>
-            <button type="button" onClick={() => onView(null)}>Close</button>
+            <Button type="button" onClick={() => onView(null)}>Close</Button>
           </div>
           {transcript?.id !== viewing ? (
             <p className="none">Reading the transcript…</p>
@@ -167,7 +168,7 @@ function SessionLine({ r, on, onView }: { r: SessionRow; on: boolean; onView: (s
         </td>
       )}
       <td>
-        <button type="button" disabled={r.found !== "read"} aria-pressed={on} onClick={() => onView(on ? null : r.id)}>View</button>
+        <Button type="button" disabled={r.found !== "read"} aria-pressed={on} onClick={() => onView(on ? null : r.id)}>View</Button>
       </td>
     </tr>
   );

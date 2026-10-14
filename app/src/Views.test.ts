@@ -20,8 +20,8 @@ const controls = (scale: Scale, offset = 0) =>
 
 describe("the timeline's scale chips", () => {
   it("shows Day, Week and Month as a row of chips, the current one pressed, not a dropdown", () => {
-    const chips = [...controls("week").matchAll(/<button class="chip( on)?" aria-pressed="(true|false)">(Day|Week|Month)<\/button>/g)];
-    expect(chips.map((m) => `${m[3]}:${m[2]}`)).toEqual(["Day:false", "Week:true", "Month:false"]);
+    const chips = [...controls("week").matchAll(/<button aria-pressed="(true|false)" class="ui-pill( ui-pill--on)?">(Day|Week|Month)<\/button>/g)];
+    expect(chips.map((m) => `${m[3]}:${m[1]}`)).toEqual(["Day:false", "Week:true", "Month:false"]);
     expect(controls("week")).not.toContain("<select");
   });
   it("steps back and forward, goes back to the current period, and names the window", () => {

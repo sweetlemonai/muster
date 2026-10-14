@@ -212,7 +212,7 @@ describe("grouped table", () => {
       createElement(TableView, { tasks: all, now: 0, multi: false, openKey: null, onOpen: () => {}, groups: groupItems(all, all, "feature"), by: "feature", words: ["ship", "5"] }),
     );
     // The goal is a row in No feature: its level badge, then its title with the word marked.
-    expect(html).toContain('<span class="badge level">Goal</span> <mark>Ship</mark> 1.0');
+    expect(html).toContain('<span class="ui-badge ui-badge--level">Goal</span> <mark>Ship</mark> 1.0');
     expect(html).toContain('<td class="id" title="muster · 0005"><mark>0005</mark></td>');
   });
 });
@@ -220,7 +220,7 @@ describe("grouped table", () => {
 describe("Group by chips", () => {
   it("shows every choice, the current one lit", () => {
     const html = renderToStaticMarkup(createElement(GroupByChips, { value: "goal", onChange: () => {} }));
-    const chips = [...html.matchAll(/<button class="([^"]+)"[^>]*>([^<]+)<\/button>/g)].map((m) => `${m[2]}${m[1].includes("on") ? "*" : ""}`);
+    const chips = [...html.matchAll(/<button[^>]*class="([^"]+)">([^<]+)<\/button>/g)].map((m) => `${m[2]}${m[1].includes("ui-pill--on") ? "*" : ""}`);
     expect(chips).toEqual(["None", "Feature", "Goal*"]);
   });
 });

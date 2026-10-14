@@ -3,6 +3,7 @@ import { api } from "./api";
 import { stamp } from "./lib";
 import Markdown from "./Markdown";
 import type { Task } from "./types";
+import { Button } from "./ui";
 import { commentNotice, editKey } from "./writeUp";
 
 /** The task's comment thread under the description, oldest first, then a box to add one (⌘↩
@@ -113,9 +114,9 @@ export default function Comments({ task, onChanged, onDirty = () => {}, nudge = 
           }}
         />
         <div className="answer-bar">
-          <button type="button" disabled={!text.trim() || state === "saving"} onClick={() => void send()}>
+          <Button type="button" disabled={!text.trim() || state === "saving"} onClick={() => void send()}>
             {state === "saving" ? "Sending…" : "Comment"}
-          </button>
+          </Button>
           {notice && <span className="err">{notice}</span>}
           {!notice && msg && <span className={state === "error" ? "err" : "ok"}>{msg}</span>}
         </div>

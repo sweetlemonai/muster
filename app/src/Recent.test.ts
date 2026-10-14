@@ -62,7 +62,7 @@ describe("Recently finished on the board (AC1)", () => {
     expect(html).toMatch(/^<aside class="recent" aria-label="Recently finished">/);
     expect(plain(html)).toContain("Recently finished last 7 days");
     expect(html).toContain('role="group" aria-label="Show what finished"');
-    expect(html.match(/class="chip on" aria-pressed="true"[^>]*>([^<]*)</)?.[1]).toBe("All");
+    expect(html.match(/aria-pressed="true"[^>]*class="ui-pill ui-pill--on">([^<]*)</)?.[1]).toBe("All");
   });
   it("lists merged and accepted rows newest first, grouped by day with counts, each saying when from the log", () => {
     const html = render();
@@ -84,7 +84,7 @@ describe("Recently finished on the board (AC1)", () => {
   it("uses the remembered chip", () => {
     vi.stubGlobal("localStorage", { getItem: (k: string) => (k === "muster.recentKind" ? "accepted" : null) });
     const html = render();
-    expect(html.match(/class="chip on" aria-pressed="true"[^>]*>([^<]*)</)?.[1]).toBe("Accepted");
+    expect(html.match(/aria-pressed="true"[^>]*class="ui-pill ui-pill--on">([^<]*)</)?.[1]).toBe("Accepted");
     expect(rowsOf(html).map((r) => r.split(" ")[0])).toEqual(["0043", "0031"]);
     expect(heads(html)).toEqual(["Today 1", "Sun 11 Oct 1"]);
     vi.stubGlobal("localStorage", { getItem: () => "merged" });

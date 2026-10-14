@@ -10,6 +10,7 @@ import { isWork, levelLabel, shownStageClass, shownStageLabel } from "./levels";
 import { isHuman } from "./human";
 import { PanePause, PausedChip } from "./Pause";
 import type { Task } from "./types";
+import { Button, StatusPill } from "./ui";
 import YouRibbon from "./YouRibbon";
 import ProjectName from "./ProjectName";
 
@@ -77,8 +78,8 @@ export function TitleEdit({ value, onChange, onSave, onCancel }: { value: string
         maxLength={200}
         aria-label="Title"
       />
-      <button type="submit" disabled={!value.trim()}>Save</button>
-      <button type="button" onClick={onCancel}>Cancel</button>
+      <Button type="submit" disabled={!value.trim()}>Save</Button>
+      <Button type="button" onClick={onCancel}>Cancel</Button>
     </form>
   );
 }
@@ -98,8 +99,8 @@ export function StatusLine({ task, now, onOpenTask, pause }: { task: Task; now: 
   const work = isWork(task);
   const known = isStage(task.stage);
   const pill = work
-    ? <span className={`status-pill s-${stageOf(task)}`}>{known ? stageLabel(task.stage) : `${task.stage || "no stage"} (unknown)`}</span>
-    : <span className={`status-pill s-${shownStageClass(task)}`}>{shownStageLabel(task)}</span>;
+    ? <StatusPill status={stageOf(task)}>{known ? stageLabel(task.stage) : `${task.stage || "no stage"} (unknown)`}</StatusPill>
+    : <StatusPill status={shownStageClass(task)}>{shownStageLabel(task)}</StatusPill>;
   // The owner's own task (0022) is theirs in every stage, whatever the stage's usual role.
   const role = work ? (known ? (isHuman(task) ? "your own task" : STAGES.find((s) => s.id === task.stage)?.role) : "") : levelLabel(task.level);
   const who = holderOf(task);

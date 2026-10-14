@@ -6,6 +6,7 @@ import InlineField from "./InlineField";
 import { CATEGORY_MAX, LABEL_MAX, OTHER, otherCategories } from "./labels";
 import { queueTotal } from "./lib";
 import type { Project, QueueInfo } from "./types";
+import { Button } from "./ui";
 
 /** Settings' Projects group (0036): every project with its label and category (0044), prefix
  *  (0033), folder and task count, New queue and Add existing. A folder under `home` shows as `~/…`. */
@@ -71,8 +72,8 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
   return (
     <div className="projects">
       <div className="projects-bar">
-        <button onClick={() => void act(api.createProject, "Queue created and added.")}>New queue…</button>
-        <button onClick={() => void act(api.addProject, "Queue added.")}>Add existing queue…</button>
+        <Button onClick={() => void act(api.createProject, "Queue created and added.")}>New queue…</Button>
+        <Button onClick={() => void act(api.addProject, "Queue added.")}>Add existing queue…</Button>
         {msg && <span className={msg.ok ? "ok" : "err"}>{msg.text}</span>}
       </div>
       <p className="meta">
@@ -110,8 +111,8 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
               <td>{limit(p)}</td>
               <td><GateCell name={p.name} gate={p.gate ?? ""} /></td>
               <td className="actions">
-                <button onClick={() => void act(() => api.hideProject(p.key, !p.hidden))}>{p.hidden ? "Show" : "Hide"}</button>
-                {p.source === "added" && <button onClick={() => void act(() => api.removeProject(p.key))}>Remove</button>}
+                <Button onClick={() => void act(() => api.hideProject(p.key, !p.hidden))}>{p.hidden ? "Show" : "Hide"}</Button>
+                {p.source === "added" && <Button onClick={() => void act(() => api.removeProject(p.key))}>Remove</Button>}
               </td>
             </tr>
           ))}
@@ -185,7 +186,7 @@ export function PrefixCell({ name, prefix, editing, value, error, canSet, onEdit
         aria-label={`${name}'s prefix`}
         placeholder="2–4 letters"
       />{" "}
-      <button type="submit">Save</button> <button type="button" onClick={onCancel}>Cancel</button>
+      <Button type="submit">Save</Button> <Button type="button" onClick={onCancel}>Cancel</Button>
       {error && <p className="err small" role="alert">{error}</p>}
     </form>
   );

@@ -164,6 +164,19 @@ export function resolve(choice: Choice, systemDark: boolean): { theme: Theme; ac
   return { theme, accent };
 }
 
+/** Muster's CSS variable names before 0053, each with the Drover token it became. styles.css keeps
+ *  them as aliases (`--surface: var(--panel)`) so code written against them still draws; nothing
+ *  in this repo uses them any more (themes.test.ts checks). */
+export const OLD_TOKEN_NAMES: Record<string, string> = {
+  "--surface": "--panel",
+  "--border": "--line",
+  "--tint": "--hover",
+  "--accent-soft": "--selected",
+  "--on-accent": "--accent-ink",
+  "--err": "--bad",
+  "--needs-text": "--warn",
+};
+
 /** CSS variables for a theme and accent. Text on the accent is whichever of the theme's text or
  *  background reads better on it. */
 export function variables(theme: Theme, accent: Accent): Record<string, string> {
@@ -172,12 +185,13 @@ export function variables(theme: Theme, accent: Accent): Record<string, string> 
   const st = STATUS_TEXT[theme.mode];
   const edge = (c: string) => edgeColour(c, [theme.surface, mix(c, theme.surface, CARD_TINT[theme.mode])], theme.mode);
   const stages: Record<string, string> = { ...STAGE_COLOURS, building: buildingColour(accent).colour };
+  // Drover's token names (0053) where Drover has the token, Muster's own for the rest.
   return {
     "--bg": theme.bg,
-    "--surface": theme.surface,
+    "--panel": theme.surface,
     "--popover": theme.popover,
-    "--tint": theme.popover,
-    "--border": theme.border,
+    "--hover": theme.popover,
+    "--line": theme.border,
     "--text": theme.text,
     "--muted": theme.muted,
     "--faint": theme.faint,
@@ -186,12 +200,13 @@ export function variables(theme: Theme, accent: Accent): Record<string, string> 
     // Accent-coloured words (links, project names) use the strong shade: it reads at 4.5:1 on
     // every surface, where the accent itself is for fills, borders and selection (3:1).
     "--accent-text": strong,
-    "--accent-soft": mix(acc, theme.bg, theme.mode === "dark" ? 0.2 : 0.12),
-    "--on-accent": onAccent,
-    "--err": st.err,
+    "--selected": mix(acc, theme.bg, theme.mode === "dark" ? 0.2 : 0.12),
+    "--accent-ink": onAccent,
+    "--focus": acc,
+    "--bad": st.err,
     "--ok": st.ok,
     "--gold-text": st.gold,
-    "--needs-text": st.needs,
+    "--warn": st.needs,
     ...Object.fromEntries(Object.entries(stages).map(([s, c]) => [`--st-${s}`, c])),
     "--on-status": ON_STATUS,
     // Card looks (0026): edges at 3:1 on the card, priority colours, and the tint amount.

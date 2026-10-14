@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
+import { Button, Pill } from "./ui";
 import { mayLeave } from "./writeUp";
 import { ago, columns, estimateTotal, feed, key, STAGES } from "./lib";
 import { keyIndex } from "./taskKey";
@@ -373,25 +374,25 @@ export default function App() {
       </aside>
       <div className="main-col">
       <header className="top">
-        <button className="new" onClick={() => go({ kind: "new" })} disabled={!state?.queues.length} title="New task (⌘N)">+ New task</button>
+        <Button variant="primary" className="new" onClick={() => go({ kind: "new" })} disabled={!state?.queues.length} title="New task (⌘N)">+ New task</Button>
         <nav className="views" aria-label="Views">
           <span className="view-group" role="group" aria-label="Project views">
-            <button className={view === "board" ? "tab on" : "tab"} onClick={() => setView("board")}>Board</button>
-            <button className={view === "table" ? "tab on" : "tab"} onClick={() => setView("table")}>Table</button>
-            <button className={view === "timeline" ? "tab on" : "tab"} onClick={() => setView("timeline")}>Timeline</button>
-            <button className={view === "graph" ? "tab on" : "tab"} onClick={() => setView("graph")} title="What waits on what">Graph</button>
+            <Pill on={view === "board"} onClick={() => setView("board")}>Board</Pill>
+            <Pill on={view === "table"} onClick={() => setView("table")}>Table</Pill>
+            <Pill on={view === "timeline"} onClick={() => setView("timeline")}>Timeline</Pill>
+            <Pill on={view === "graph"} onClick={() => setView("graph")} title="What waits on what">Graph</Pill>
           </span>
-          <button className={view === "helper" ? "tab on" : "tab"} onClick={() => setView("helper")}>Helper</button>
-          <button className={view === "waiting" ? "tab on" : "tab"} onClick={() => setView("waiting")} title="Your own tasks to do and doing, and what the agents wait on you for: the needs-you count">
+          <Pill on={view === "helper"} onClick={() => setView("helper")}>Helper</Pill>
+          <Pill on={view === "waiting"} onClick={() => setView("waiting")} title="Your own tasks to do and doing, and what the agents wait on you for: the needs-you count">
             Waiting for you{needs ? <b className="count warn">{needs}</b> : null}
-          </button>
-          <button className={view === "activity" ? "tab on" : "tab"} onClick={() => setView("activity")}>Activity</button>
-          <button className={view === "problems" ? "tab on" : "tab"} onClick={() => setView("problems")}>
+          </Pill>
+          <Pill on={view === "activity"} onClick={() => setView("activity")}>Activity</Pill>
+          <Pill on={view === "problems"} onClick={() => setView("problems")}>
             Problems{problems.length ? <b className="count">{problems.length}</b> : null}
             {unchecked.length ? <small className="count quiet" title="Shaping tasks with no vision check yet">{unchecked.length}</small> : null}
-          </button>
-          <button className={view === "help" ? "tab on" : "tab"} onClick={() => setView("help")}>Help</button>
-          <button className={view === "settings" ? "tab on" : "tab"} onClick={() => setView("settings")} title="Appearance, projects, agents and about">Settings</button>
+          </Pill>
+          <Pill on={view === "help"} onClick={() => setView("help")}>Help</Pill>
+          <Pill on={view === "settings"} onClick={() => setView("settings")} title="Appearance, projects, agents and about">Settings</Pill>
         </nav>
         <ModeChip mode={modes.mode} onOpen={() => openSettings("display")} />
         <span className="live" title={error || "Updates every 2 seconds while the window is visible"}>

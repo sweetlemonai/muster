@@ -4,6 +4,7 @@ import { oneAtATime, stamp } from "./lib";
 import Markdown from "./Markdown";
 import { copyNow } from "./NotePanel";
 import type { Task } from "./types";
+import { Button } from "./ui";
 import { conflictTitles, visionSection, visionStatus } from "./Vision";
 
 /** The task pane's Vision section (0029): where the check stands, Resolve for each open conflict
@@ -70,7 +71,7 @@ export default function VisionPanel({ task, body, onChanged }: { task: Task; bod
       <h2>Vision <small>{visionStatus(task)}</small></h2>
       <div className="control-row">
         {open.map((id) => (
-          <button
+          <Button
             key={id}
             type="button"
             className={resolving === id ? "on" : undefined}
@@ -83,11 +84,11 @@ export default function VisionPanel({ task, body, onChanged }: { task: Task; bod
             }}
           >
             {`Resolve ${id}`}
-          </button>
+          </Button>
         ))}
-        <button type="button" disabled={brief.text === null} title={brief.text === null && !brief.error ? "Loading the brief…" : undefined} onClick={() => void copy()}>
+        <Button type="button" disabled={brief.text === null} title={brief.text === null && !brief.error ? "Loading the brief…" : undefined} onClick={() => void copy()}>
           Copy vision brief
-        </button>
+        </Button>
       </div>
       {brief.error && <p className="err small">Couldn't load the vision brief: {brief.error}</p>}
       {resolving && (
@@ -99,8 +100,8 @@ export default function VisionPanel({ task, body, onChanged }: { task: Task; bod
           }}
         >
           <input autoFocus value={how} onChange={(e) => setHow(e.target.value)} placeholder={`How ${resolving} was settled, in one line`} aria-label={`How ${resolving} was settled`} maxLength={500} />
-          <button type="submit" disabled={busy || !how.trim()}>{`Resolve ${resolving}`}</button>
-          <button type="button" onClick={() => setWhich(null)}>Cancel</button>
+          <Button type="submit" disabled={busy || !how.trim()}>{`Resolve ${resolving}`}</Button>
+          <Button type="button" onClick={() => setWhich(null)}>Cancel</Button>
         </form>
       )}
       {msg && <p className={msg.ok ? "ok small" : "err small"}>{msg.text}</p>}

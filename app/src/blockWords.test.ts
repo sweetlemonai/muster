@@ -87,9 +87,9 @@ describe("the block's words on screen", () => {
   const html = (t: Block, opts: { short?: boolean; onOpenTask?: (id: string) => void } = {}) =>
     renderToStaticMarkup(createElement(BlockWhy, { t, ...opts }));
   it("puts the kind in bold, and nothing when it isn't blocked", () => {
-    expect(html(b("you", "pick a colour"))).toBe('<span class="status-pill blocked block-why"><b>Blocked on you</b>: pick a colour</span>');
+    expect(html(b("you", "pick a colour"))).toBe('<span class="ui-status-pill ui-status-pill--blocked block-why"><b>Blocked on you</b>: pick a colour</span>');
     expect(html(b("", ""))).toBe("");
-    expect(html(b("you", ""))).toBe('<span class="status-pill blocked block-why"><b>Blocked on you</b></span>');
+    expect(html(b("you", ""))).toBe('<span class="ui-status-pill ui-status-pill--blocked block-why"><b>Blocked on you</b></span>');
   });
   it("makes each task a link that opens it, with its stage, when it can open tasks", () => {
     const t = b("tasks", "", [by("0014", "building", "codex"), by("0016", "ready")]);
@@ -98,6 +98,6 @@ describe("the block's words on screen", () => {
     expect(out).toContain('<button type="button" class="link" title="Open 0014">0014</button> (Building, codex), ');
     expect(out).toContain('<button type="button" class="link" title="Open 0016">0016</button> (Ready)');
     // The card's short form: ids only, plain text (the card itself is the button).
-    expect(html(t, { short: true })).toBe('<span class="badge blocked block-why"><b>Blocked by tasks</b>: 0014, 0016</span>');
+    expect(html(t, { short: true })).toBe('<span class="ui-badge ui-badge--blocked block-why"><b>Blocked by tasks</b>: 0014, 0016</span>');
   });
 });

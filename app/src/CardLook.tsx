@@ -3,6 +3,7 @@ import { priorityName, stageLabel } from "./lib";
 import { Machine } from "./settingsData";
 import { CARD_LOOKS, type CardColour, type CardLook } from "./themes";
 import type { Task } from "./types";
+import { Pill } from "./ui";
 import YouRibbon from "./YouRibbon";
 
 /** A board card's classes: its priority (for colour by priority), and the states that take over
@@ -74,9 +75,9 @@ export function CardLookPicker({ look, colour, onLook, onColour }: { look: CardL
       <div className="look-colour" role="group" aria-label="Card colour shows">
         <span className="meta">Colour shows</span>
         {(["stage", "priority"] as const).map((c) => (
-          <button key={c} type="button" className={colour === c ? "chip on" : "chip"} onClick={() => onColour(c)} aria-pressed={colour === c}>
+          <Pill key={c} type="button" on={colour === c} onClick={() => onColour(c)} aria-pressed={colour === c}>
             {c === "stage" ? "Stage" : "Priority"}
-          </button>
+          </Pill>
         ))}
       </div>
     </>

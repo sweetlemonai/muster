@@ -191,6 +191,12 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   remembered. Default: Muster's violet, following the Mac. A test checks every theme and accent
   pair: text 7:1, secondary text 4.5:1, accent-coloured words 4.5:1 (they use the strong shade),
   button text 4.5:1, fills 3:1.
+- **Drover's names** (task 0053): the CSS variables carry Drover's token names (`--panel`, `--line`,
+  `--hover`, `--selected`, `--accent-ink`, `--focus`, `--bad`, `--warn`; table in DESIGN.md), with
+  Muster's values; the old names stay as aliases in `styles.css`'s `:root`. Buttons, chips, stage
+  pills, badges and the pane's value picker are atoms in `app/src/ui` shaped like Drover's (`Button`,
+  `Pill`, `StatusPill`, `Badge`, `Segmented`/`Segment`, classes `ui-<name>`), drawn in Muster's own
+  look. `ui/adoption.test.ts` fails on a screen using the old classes or a plain `<button>`.
 - **Look** (Muster task 0010): a violet palette (accent `#8B6CF0` dark and `#6D4AE0` light, with
   violet-tinted backgrounds and surfaces), chosen because orange belongs to Drover and Braindump
   and blue to 127. Stage colours (task 0034, colours people know from boards): Backlog grey,
@@ -479,7 +485,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   and sends it with the limit in the state (`QueueInfo.yourCheck`, `yourCheckLimit`, null for off;
   the `state` command fills the limit from projects.json with `check_limit::apply`). Over the limit
   (more than it, not equal), the Your check header reads "7 of 5" (the project's whole pile,
-  whatever the filters show) in `--needs-text` (the orange on dark themes, #A84300 on light ones:
+  whatever the filters show) in `--warn` (the orange on dark themes, #A84300 on light ones:
   4.5:1) on the plain board. A Group by band's Your check keeps its own count, orange (with the
   pile in its title) when it holds tasks of a project over its limit. Under the plain board's
   header a short line ("Over your limit of 5", or "2 projects over limit" in All; at most 24

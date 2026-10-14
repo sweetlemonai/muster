@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CardLookPicker } from "./CardLook";
 import { stageLabel } from "./lib";
+import { Button, Pill } from "./ui";
 import { loadZoom, setZoom, ZOOM_EVENT, ZOOMS } from "./zoom";
 import { ACCENTS, apply, buildingColour, cardChoice, type Choice, DEFAULT_CHOICE, load, resolve, save, THEMES, variables } from "./themes";
 
@@ -81,7 +82,7 @@ export default function Appearance() {
         <p className="meta">Blocked and "needs you" take over the colour in every look, and keep their words on the card.</p>
       </section>
       <section>
-        <button onClick={() => setC((p) => ({ ...DEFAULT_CHOICE, cards: p.cards, cardColour: p.cardColour }))}>Back to Muster's violet</button>
+        <Button onClick={() => setC((p) => ({ ...DEFAULT_CHOICE, cards: p.cards, cardColour: p.cardColour }))}>Back to Muster's violet</Button>
       </section>
     </div>
   );
@@ -108,9 +109,9 @@ export function TextSize({ initial }: { initial?: number }) {
   return (
     <div className="look-colour" role="group" aria-label="Text size">
       {ZOOMS.map((z) => (
-        <button key={z} type="button" className={size === z ? "chip on" : "chip"} aria-pressed={size === z} onClick={() => setSize(setZoom(z))}>
+        <Pill key={z} type="button" on={size === z} aria-pressed={size === z} onClick={() => setSize(setZoom(z))}>
           {Math.round(z * 100)}%
-        </button>
+        </Pill>
       ))}
     </div>
   );

@@ -5,6 +5,7 @@ import { blockLead, isBlocked } from "./blockWords";
 import { ago, holder, key, stageLabel, stageOf } from "./lib";
 import { PAUSE_GLYPH } from "./Pause";
 import type { Task } from "./types";
+import { Badge, Pill, StatusPill } from "./ui";
 import {
   axis, barTitle, layout, nowAt, parseScale, SCALES, segmentTitle, parseTableSort, sortTasks, TABLE_SORT_KEY, spans, timeWindow, wallMinutes, windowLabel,
   type Placed, type Scale, type SortKey, type Tick,
@@ -69,7 +70,7 @@ export function TableView({ tasks, now, multi, openKey, onOpen, groups, by: grou
           <tr>
             {cols.map((c) => (
               <th key={c.key} aria-sort={by === c.key ? (desc ? "descending" : "ascending") : "none"}>
-                <button onClick={() => sortBy(by === c.key ? { by, desc: !desc } : { by: c.key, desc: false })}>
+                <button className="sort" onClick={() => sortBy(by === c.key ? { by, desc: !desc } : { by: c.key, desc: false })}>
                   {c.label}
                   {by === c.key ? (desc ? " ↓" : " ↑") : ""}
                 </button>
@@ -107,17 +108,17 @@ function Row({ t, now, multi, active, onOpen, words }: { t: Task; now: number; m
       <TaskKey t={t} as="td"><HlId t={t} words={words} /></TaskKey>
       <td className="t-title">
         {isHuman(t) && <YouRibbon />}
-        {parentLevel && <span className="badge level">{levelLabel(t.level)}</span>}
-        {t.waitingForOwner && <span className="badge warn">needs you</span>} <Hl text={t.title} words={words} />
+        {parentLevel && <Badge variant="level">{levelLabel(t.level)}</Badge>}
+        {t.waitingForOwner && <Badge variant="warn">needs you</Badge>} <Hl text={t.title} words={words} />
         {parentLevel && <span className="meta rollup">{progressText(t.progress)}</span>}
-        {t.openQuestions > 0 && <span className="badge">{t.openQuestions} open Q</span>}
+        {t.openQuestions > 0 && <Badge>{t.openQuestions} open Q</Badge>}
       </td>
       <td className={`kind ${t.kind}`}>{t.kind}</td>
       <td><span className={`pri pri-${t.priority || "normal"}`}>{t.priority || "normal"}</span></td>
       <td>
-        {parentLevel ? <span className={`status-pill s-${shownStageClass(t)}`}>{shownStageLabel(t)}</span> : <span className={`status-pill s-${stageOf(t)}`}>{stageLabel(t.stage)}</span>}
-        {t.paused && <span className="status-pill paused">{`${PAUSE_GLYPH} Paused`}</span>}
-        {isBlocked(t) && <span className="status-pill blocked">blocked</span>}
+        {parentLevel ? <StatusPill status={shownStageClass(t)}>{shownStageLabel(t)}</StatusPill> : <StatusPill status={stageOf(t)}>{stageLabel(t.stage)}</StatusPill>}
+        {t.paused && <StatusPill status="paused">{`${PAUSE_GLYPH} Paused`}</StatusPill>}
+        {isBlocked(t) && <StatusPill status="blocked">blocked</StatusPill>}
       </td>
       <td className="meta">{isBlocked(t) ? <BlockWhy t={t} short pill={false} /> : holder(t)}</td>
       <td className="meta est-cell">{own || (parentLevel ? estimateLeft(t.progress) : "")}</td>
@@ -178,14 +179,14 @@ export function TimelineControls({ scale, offset, label, onScale, onStep, onToda
     <div className="tl-controls" role="toolbar" aria-label="Timeline scale">
       <span className="meta">Scale</span>
       {SCALES.map((s) => (
-        <button key={s.id} className={s.id === scale ? "chip on" : "chip"} aria-pressed={s.id === scale} onClick={() => onScale(s.id)}>
+        <Pill key={s.id} on={s.id === scale} aria-pressed={s.id === scale} onClick={() => onScale(s.id)}>
           {s.label}
-        </button>
+        </Pill>
       ))}
       <span className="tl-nav">
-        <button className="chip" onClick={() => onStep(-1)} title={`Previous ${scale}`} aria-label={`Previous ${scale}`}>◀</button>
-        <button className="chip" onClick={onToday} disabled={offset === 0}>{CURRENT[scale]}</button>
-        <button className="chip" onClick={() => onStep(1)} title={`Next ${scale}`} aria-label={`Next ${scale}`}>▶</button>
+        <Pill onClick={() => onStep(-1)} title={`Previous ${scale}`} aria-label={`Previous ${scale}`}>◀</Pill>
+        <Pill onClick={onToday} disabled={offset === 0}>{CURRENT[scale]}</Pill>
+        <Pill onClick={() => onStep(1)} title={`Next ${scale}`} aria-label={`Next ${scale}`}>▶</Pill>
         <span className="tl-window">{label}</span>
       </span>
     </div>

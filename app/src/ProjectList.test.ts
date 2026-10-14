@@ -75,7 +75,7 @@ describe("the order chips", () => {
     const html = renderToStaticMarkup(createElement(OrderChips, { value: "az", onChange: () => {} }));
     expect(html).toContain('role="group" aria-label="Order projects"');
     expect(html.match(/<button[^>]*>([^<]*)<\/button>/g)?.map(plain)).toEqual(["Working", "A–Z", "Needs you"]);
-    expect(html.match(/class="chip on" aria-pressed="true"[^>]*>([^<]*)</)?.[1]).toBe("A–Z");
+    expect(html.match(/aria-pressed="true"[^>]*class="ui-pill ui-pill--on">([^<]*)</)?.[1]).toBe("A–Z");
     expect(html.match(/aria-pressed="false"/g)).toHaveLength(2);
   });
 });
@@ -103,7 +103,7 @@ describe("the sidebar", () => {
   it("orders Working first by default, with nothing stored (storage absent, as in a test run)", () => {
     const html = render();
     expect(rows(html)).toEqual(["All", "zeta", "alpha", "muster"]);
-    expect(html.match(/class="chip on" aria-pressed="true"[^>]*>([^<]*)</)?.[1]).toBe("Working");
+    expect(html.match(/aria-pressed="true"[^>]*class="ui-pill ui-pill--on">([^<]*)</)?.[1]).toBe("Working");
   });
   it("shows each row's state: working with its count, quiet, stalled", () => {
     const html = render();
@@ -121,7 +121,7 @@ describe("the sidebar", () => {
     const pings = [...html.matchAll(/<div class="side-ping">([\s\S]*?)<\/div>/g)].map((m) => plain(m[1].replace(/></g, "> <")));
     // Only muster is stalled; its one quiet claim has no session stamp.
     expect(pings).toEqual(["Ask all quiet sessions for a check-in none of its quiet claims has a session to reach"]);
-    expect(html).toMatch(/<button type="button" disabled="">Ask all quiet sessions for a check-in<\/button>/);
+    expect(html).toMatch(/<button type="button" disabled="" class="ui-button">Ask all quiet sessions for a check-in<\/button>/);
     expect(html.indexOf('class="side-ping"')).toBeGreaterThan(html.indexOf('side-name">muster<'));
   });
   it("keeps the counts it had: needs you, in progress and the total", () => {

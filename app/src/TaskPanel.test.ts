@@ -26,7 +26,7 @@ function pane(over: Partial<Task>, now = 0, childTasks?: Task[]) {
   const buttons = [...next.matchAll(/<button([^>]*)>([^<]*)<\/button>/g)].map((m) => `${m[2]}${m[1].includes("disabled") ? " (disabled)" : ""}`);
   const line = text(part(html, "status"));
   const parts = [...html.matchAll(/data-part="([\w-]+)"/g)].map((m) => m[1]);
-  const primary = [...html.matchAll(/<button[^>]*class="primary"[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
+  const primary = [...html.matchAll(/<button[^>]*class="ui-button ui-button--primary"[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
   return { html, buttons, line, next, parts, primary };
 }
 
@@ -56,7 +56,7 @@ describe("task pane stage controls", () => {
   it("a blocked task keeps its stage; Pass waits for Unblock", () => {
     const p = pane({ stage: "your-check", blocked: true, status: "blocked", waitingOn: "pick a colour", blockedKind: "you", blockDetail: "pick a colour" });
     expect(p.line).toBe("Your check Blocked on you : pick a colour LIVE Your turn owner Waiting on you: accept or send back · blocked on you");
-    expect(p.html).toContain('<span class="status-pill blocked block-why"><b>Blocked on you</b>: pick a colour</span>');
+    expect(p.html).toContain('<span class="ui-status-pill ui-status-pill--blocked block-why"><b>Blocked on you</b>: pick a colour</span>');
     expect(p.buttons).toEqual(["Accept (disabled)", "Send back", "Unblock"]);
     expect(p.html).toContain("Blocked on you: pick a colour. Unblock it to pass it on.");
   });
@@ -364,7 +364,7 @@ describe("the pane's layout by stage (D2)", () => {
     expect(text(pane({}).html)).toContain("commit none · todo/0007-t.md");
     expect(p.html).toContain('<span class="lbl">Files <small>2</small></span>');
     expect(p.html).toContain('<span class="other-file" title="notes.txt">notes.txt</span>');
-    expect(p.html).toContain('<button type="button" class="attach">+ Attach</button>');
+    expect(p.html).toContain('<button type="button" class="ui-button attach">+ Attach</button>');
   });
   it("every control is in the markup, none behind a menu or popover", () => {
     const html = pane({ stage: "ready" }).html;

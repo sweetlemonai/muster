@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import css from "./styles.css?raw";
-import { ACCENTS, apply, buildingColour, CARD_LOOKS, colourDistance, SAME_AT_A_GLANCE, CARD_TINT, cardChoice, contrast, DEFAULT_CHOICE, edgeColour, HUMAN_COLOUR, HUMAN_HATCH, mix, NEEDS_COLOUR, PRIORITY_COLOURS, resolve, STAGE_COLOURS, THEMES, variables } from "./themes";
+import { ACCENTS, apply, buildingColour, OLD_TOKEN_NAMES, CARD_LOOKS, colourDistance, SAME_AT_A_GLANCE, CARD_TINT, cardChoice, contrast, DEFAULT_CHOICE, edgeColour, HUMAN_COLOUR, HUMAN_HATCH, mix, NEEDS_COLOUR, PRIORITY_COLOURS, resolve, STAGE_COLOURS, THEMES, variables } from "./themes";
 
 describe("every theme and accent pair is readable (WCAG AA)", () => {
   for (const t of THEMES) {
@@ -19,18 +19,18 @@ describe("every theme and accent pair is readable (WCAG AA)", () => {
         // Accent-coloured words use --accent-text: 4.5:1 on every surface.
         for (const surface of [t.bg, t.surface, t.popover]) expect(contrast(v["--accent-text"], surface)).toBeGreaterThanOrEqual(4.5);
         // Button text on the accent.
-        expect(contrast(v["--on-accent"], v["--accent"])).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(v["--accent-ink"], v["--accent"])).toBeGreaterThanOrEqual(4.5);
         // Text on the soft accent (selected chips).
-        expect(contrast(t.text, v["--accent-soft"])).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(t.text, v["--selected"])).toBeGreaterThanOrEqual(4.5);
       });
     }
     it(`${t.name}: coloured status words`, () => {
       const v = variables(t, ACCENTS[0]);
-      for (const k of ["--err", "--ok", "--gold-text", "--needs-text"]) expect(contrast(v[k], t.surface), k).toBeGreaterThanOrEqual(4.5);
+      for (const k of ["--bad", "--ok", "--gold-text", "--warn"]) expect(contrast(v[k], t.surface), k).toBeGreaterThanOrEqual(4.5);
       // Needs-you words (the Your check limit, 0050) sit on the board, the sidebar and Settings too.
-      for (const surface of [t.bg, t.popover]) expect(contrast(v["--needs-text"], surface)).toBeGreaterThanOrEqual(4.5);
+      for (const surface of [t.bg, t.popover]) expect(contrast(v["--warn"], surface)).toBeGreaterThanOrEqual(4.5);
       // Still the needs-you orange: the same hue family, the colour itself where it reads.
-      if (t.mode === "dark") expect(v["--needs-text"]).toBe(NEEDS_COLOUR);
+      if (t.mode === "dark") expect(v["--warn"]).toBe(NEEDS_COLOUR);
     });
     it(`${t.name}: words on stage colours (pills, badges)`, () => {
       const v = variables(t, ACCENTS[0]);
@@ -154,7 +154,7 @@ describe("the owner's own task's hatch (0022, owner 2026-10-13: one board, human
         // The title and other text at 7:1 (AAA), as on the plain card.
         expect(contrast(v["--text"], stripe(t))).toBeGreaterThanOrEqual(7);
         // Secondary words: meta (muted), the project name (accent-text), warnings (err).
-        for (const w of ["--muted", "--accent-text", "--err"]) expect(contrast(v[w], stripe(t)), w).toBeGreaterThanOrEqual(4.5);
+        for (const w of ["--muted", "--accent-text", "--bad"]) expect(contrast(v[w], stripe(t)), w).toBeGreaterThanOrEqual(4.5);
         // The You ribbon's border still stands out on it.
         expect(contrast(v["--edge-human"], stripe(t))).toBeGreaterThanOrEqual(3);
       });
@@ -199,7 +199,7 @@ describe("card looks (0026)", () => {
         for (const [k, c] of fills) {
           const tinted = mix(c, t.surface, CARD_TINT[t.mode]);
           // Title and meta (text, muted), the project name (.q, accent-text), a bug's kind (.kind.bug, err).
-          for (const w of ["--text", "--muted", "--accent-text", "--err"]) expect(contrast(v[w], tinted), `${w} on ${k}`).toBeGreaterThanOrEqual(4.5);
+          for (const w of ["--text", "--muted", "--accent-text", "--bad"]) expect(contrast(v[w], tinted), `${w} on ${k}`).toBeGreaterThanOrEqual(4.5);
           // The Tint look's border is the edge colour: 3:1 on the tinted card too.
           expect(contrast(v[`--edge-${k}`], tinted), `edge on tinted ${k}`).toBeGreaterThanOrEqual(3);
         }
@@ -247,7 +247,7 @@ describe("the card CSS uses what the tests check (0026)", () => {
     return { at: i, body: css.slice(i, css.indexOf("}", i)) };
   };
   it("the Tint look washes the card in its fill by --card-tint, over the surface (as mix() in the tests)", () => {
-    expect(css).toContain("--card-bg: color-mix(in srgb, var(--card-fill) var(--card-tint, 8%), var(--surface));");
+    expect(css).toContain("--card-bg: color-mix(in srgb, var(--card-fill) var(--card-tint, 8%), var(--panel));");
   });
   it("the Tint look's border is the edge colour", () => {
     expect(css).toContain("--card-tint-border: var(--card-c);");
@@ -270,7 +270,7 @@ describe("the card CSS uses what the tests check (0026)", () => {
     expect(css).toContain(`--human-hatch: ${Math.round(HUMAN_HATCH * 100)}%;`);
     const body = rule(".card.human").body;
     // Stripes of the gold mixed into the card's own background (the tested colours), so a Tint wash stays under them.
-    expect(body).toContain("background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--st-human) var(--human-hatch), var(--card-bg, var(--surface))) 0 5px, transparent 5px 11px);");
+    expect(body).toContain("background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--st-human) var(--human-hatch), var(--card-bg, var(--panel))) 0 5px, transparent 5px 11px);");
     expect(body).not.toMatch(/url\(/);
     // It's the card's own rule, after the base card and the states, and no look, state or hover
     // sets a background image over it: blocked and needs you keep their colour, the hatch its pattern.
@@ -353,8 +353,48 @@ describe("one colour, one meaning (owner, 2026-10-13)", () => {
     const rule = (sel: string) => css.slice(css.indexOf(`${sel} {`), css.indexOf("}", css.indexOf(`${sel} {`)));
     expect(rule(".pri-high")).toContain("var(--pri-high");
     expect(rule(".pri-high")).not.toContain("--st-");
-    expect(rule(".chip.on.pchip-high")).not.toContain("--st-");
+    expect(rule(".ui-pill.ui-pill--on.pchip-high")).toContain("var(--pri-high");
+    expect(rule(".ui-pill.ui-pill--on.pchip-high")).not.toContain("--st-");
     expect(rule(".tag")).not.toMatch(/--accent|--st-/);
     expect(rule(".kind.bug")).not.toMatch(/--err|--st-/);
+  });
+});
+
+describe("Drover's token names (0053)", () => {
+  const drover = ["--bg", "--panel", "--line", "--text", "--muted", "--accent", "--accent-ink", "--hover", "--selected", "--ok", "--bad", "--warn", "--focus"];
+  const noComments = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const aliases = /\/\* Old names[\s\S]*?\*\/([^}]*)/.exec(css)?.[1] ?? "";
+  it("every theme sets Drover's names, with Muster's own values", () => {
+    for (const t of THEMES)
+      for (const a of ACCENTS) {
+        const v = variables(t, a);
+        for (const k of drover) expect(v[k], `${t.id} ${k}`).toMatch(/^#[0-9A-F]{6}$/i);
+        expect([v["--bg"], v["--panel"], v["--line"], v["--hover"], v["--text"], v["--muted"]]).toEqual([t.bg, t.surface, t.border, t.popover, t.text, t.muted]);
+        expect(v["--accent"]).toBe(a[t.mode][0]);
+        expect(v["--focus"]).toBe(v["--accent"]);
+        expect(v["--warn"]).toBe(t.mode === "dark" ? NEEDS_COLOUR : "#A84300");
+      }
+  });
+  it("and none of the old ones: styles.css aliases those", () => {
+    const v = variables(THEMES[0], ACCENTS[0]);
+    for (const [old, now] of Object.entries(OLD_TOKEN_NAMES)) {
+      expect(v[old], old).toBeUndefined();
+      expect(drover).toContain(now);
+      expect(aliases).toContain(`${old}: var(${now});`);
+    }
+  });
+  it("styles.css uses only the new names, outside the alias block", () => {
+    const rest = noComments.replace(aliases, "");
+    for (const old of Object.keys(OLD_TOKEN_NAMES)) expect(rest.match(new RegExp(`var\\(${old}[,)]`, "g")) ?? [], old).toEqual([]);
+    for (const k of drover) expect(noComments, k).toContain(`var(${k}`);
+  });
+  it("the page has every Drover name before apply(), light and dark", () => {
+    const block = (from: number) => noComments.slice(from, noComments.indexOf("}", from));
+    const root = block(noComments.indexOf(":root {"));
+    const night = block(noComments.indexOf(":root {", noComments.indexOf("prefers-color-scheme: dark")));
+    for (const k of drover) {
+      expect(root, k).toMatch(new RegExp(`\\n  ${k}: #[0-9A-F]{6};`));
+      expect(night, k).toMatch(new RegExp(`\\n    ${k}: #[0-9A-F]{6};`));
+    }
   });
 });

@@ -3,6 +3,7 @@ import { api } from "./api";
 import type { ManualAt } from "./helpTopics";
 import { manualPages, neighbours, type Page, type PageInfo, resolve, search } from "./manual";
 import Markdown from "./Markdown";
+import { Pill } from "./ui";
 
 /** The Help tab: the manual (docs/manual), with the Commands page from the core's help (help.rs),
  *  the same list `muster help` prints. Where it's open lives in the window (`at`, `onGo`), so a
@@ -98,7 +99,7 @@ export function ManualView({ pages, at, query, onQuery, onGo, error = "" }: {
               <ul>
                 {hits.map((h) => (
                   <li key={`${h.file}#${h.slug}`}>
-                    <button type="button" onClick={() => go(h.file, h.slug)}>
+                    <button type="button" className="hit" onClick={() => go(h.file, h.slug)}>
                       <span className="meta">{`${h.title} ›`}</span> {h.section}
                       <span className="snippet">{h.snippet}</span>
                     </button>
@@ -155,8 +156,8 @@ export function ManualView({ pages, at, query, onQuery, onGo, error = "" }: {
 function PageSteps({ prev, next, onGo }: { prev: PageInfo | null; next: PageInfo | null; onGo: (file: string, slug: string) => void }) {
   return (
     <div className="manual-steps">
-      <button type="button" className="chip" disabled={!prev} onClick={() => prev && onGo(prev.file, "")}>{prev ? `◀ ${prev.title}` : "◀"}</button>
-      <button type="button" className="chip" disabled={!next} onClick={() => next && onGo(next.file, "")}>{next ? `${next.title} ▶` : "▶"}</button>
+      <Pill type="button" disabled={!prev} onClick={() => prev && onGo(prev.file, "")}>{prev ? `◀ ${prev.title}` : "◀"}</Pill>
+      <Pill type="button" disabled={!next} onClick={() => next && onGo(next.file, "")}>{next ? `${next.title} ▶` : "▶"}</Pill>
     </div>
   );
 }

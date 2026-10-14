@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { modeLabel, useLook, type ColumnFold, type DisplayMode } from "./modes";
 import type { Task } from "./types";
+import { Pill } from "./ui";
 
 // The small views the display modes (0038) share: the header's mode chip, a board column's head
 // (a strip that opens when Focus folds it), a task pane section folded to its header, and a row
@@ -9,9 +10,9 @@ import type { Task } from "./types";
 /** The header's mode: its name, as a chip that opens Settings › Display. */
 export function ModeChip({ mode, onOpen }: { mode: DisplayMode; onOpen: () => void }) {
   return (
-    <button type="button" className="chip mode-chip" onClick={onOpen} title="Display mode: change it in Settings, Display. ⌘. turns Focus on and off">
+    <Pill type="button" className="mode-chip" onClick={onOpen} title="Display mode: change it in Settings, Display. ⌘. turns Focus on and off">
       {modeLabel(mode)}
-    </button>
+    </Pill>
   );
 }
 
@@ -110,14 +111,14 @@ export function ChoiceChips<T extends string>({ label, className, aria, metaClas
     <span className={className} role="group" aria-label={aria}>
       <span className={metaClass}>{label}</span>
       {how === "value" && !open ? (
-        <button className="chip on" aria-label={`${label}: ${current.label}, click to change`} onClick={() => setOpen(true)}>
+        <Pill on aria-label={`${label}: ${current.label}, click to change`} onClick={() => setOpen(true)}>
           {current.label}
-        </button>
+        </Pill>
       ) : (
         options.map((o) => (
-          <button key={o.id} className={value === o.id ? "chip on" : "chip"} aria-pressed={value === o.id} onClick={() => pick(o.id)}>
+          <Pill key={o.id} on={value === o.id} aria-pressed={value === o.id} onClick={() => pick(o.id)}>
             {o.label}
-          </button>
+          </Pill>
         ))
       )}
     </span>

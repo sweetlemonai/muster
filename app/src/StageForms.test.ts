@@ -8,7 +8,7 @@ import type { Question } from "./types";
 const q = (n: number, text: string, ticked = false): Question => ({ n, ticked, asker: "wt-a", text, escalated: false, ownerAnswered: false });
 const view = (kind: BlockKind | null, detail = "", questions: Question[] = [], busy = false, prefix?: string) =>
   renderToStaticMarkup(createElement(BlockFormView, { kind, detail, questions, prefix, busy, onKind: () => {}, onDetail: () => {}, onSubmit: () => {}, onCancel: () => {} }));
-const chips = (html: string) => [...html.matchAll(/<button type="button" class="chip( on)?" aria-pressed="(true|false)"[^>]*>([^<]*)<\/button>/g)].map((m) => `${m[3]}${m[1] ? " (on)" : ""}`);
+const chips = (html: string) => [...html.matchAll(/<button type="button" aria-pressed="(true|false)"[^>]*class="ui-pill( ui-pill--on)?">([^<]*)<\/button>/g)].map((m) => `${m[3]}${m[2] ? " (on)" : ""}`);
 const block = (html: string) => /<button type="submit"([^>]*)>Block<\/button>/.exec(html)?.[1].includes("disabled") ? "disabled" : "enabled";
 
 describe("the Block form (0024)", () => {

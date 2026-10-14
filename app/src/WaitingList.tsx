@@ -9,6 +9,7 @@ import { isWork } from "./levels";
 import { PausedChip } from "./Pause";
 import PickOne from "./PickOne";
 import type { QueueInfo, Task } from "./types";
+import { Button } from "./ui";
 import YouRibbon from "./YouRibbon";
 import { nextStep } from "./yourCheck";
 import ProjectName from "./ProjectName";
@@ -75,7 +76,7 @@ function WaitingItem({ t, now, multi, active, onOpen, onChanged }: { t: Task; no
       {(t.blockedKind === "you" || t.blockedKind === "permission") && <p><BlockWhy t={t} /></p>}
       {t.sessionState === "needs-input" && <p>Waiting for input in Claude Code: answer it there.</p>}
       {step && <p className="next-step-line">{`${step.full}${step.more ? ` · ${step.more} more` : ""}`}</p>}
-      <button onClick={() => onOpen(t)}>{asked.length > 0 || t.blockedKind === "you" ? "Open to answer" : "Open"}</button>
+      <Button onClick={() => onOpen(t)}>{asked.length > 0 || t.blockedKind === "you" ? "Open to answer" : "Open"}</Button>
     </article>
   );
 }

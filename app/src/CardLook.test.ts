@@ -75,8 +75,8 @@ describe("Appearance's Cards picker", () => {
   });
   it("offers stage and priority, the current one pressed", () => {
     const html = picker("stripe", "priority");
-    expect(html).toMatch(/class="chip on" aria-pressed="true">Priority</);
-    expect(html).toMatch(/class="chip" aria-pressed="false">Stage</);
+    expect(html).toMatch(/aria-pressed="true" class="ui-pill ui-pill--on">Priority</);
+    expect(html).toMatch(/aria-pressed="false" class="ui-pill">Stage</);
   });
 });
 

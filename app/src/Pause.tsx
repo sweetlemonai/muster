@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api, type Paused } from "./api";
 import { agoText, minutesSince, stamp } from "./lib";
 import type { Task } from "./types";
+import { Button } from "./ui";
 
 // Pausing a task (0045): "not now, keep it as it is". The core decides (pause.rs): a paused task
 // keeps its stage, claim and place on the board, nobody claims or passes it, and its session is
@@ -66,14 +67,14 @@ export function CardPause({ t }: { t: Task }) {
   };
   return (
     <>
-      <button
+      <Button
         type="button"
         disabled={busy}
         title={paused ? "Carry on as it was; its session is told to carry on" : "Not now: it keeps its place and claim, nobody works it, and its session is asked to stop"}
         onClick={() => void go()}
       >
         {paused ? "Resume" : "Pause"}
-      </button>
+      </Button>
       {note && <span className="why">{note}</span>}
       {error && <span className="err">{error}</span>}
     </>
@@ -85,9 +86,9 @@ export function PanePause({ task, busy, onPause, onResume }: { task: Task; busy:
   const [why, setWhy] = useState("");
   if (task.paused) {
     return (
-      <button type="button" className="pause-btn" disabled={busy} title="Carry on as it was; its session is told to carry on" onClick={onResume}>
+      <Button type="button" className="pause-btn" disabled={busy} title="Carry on as it was; its session is told to carry on" onClick={onResume}>
         Resume
-      </button>
+      </Button>
     );
   }
   if (!pausable(task)) return null;
@@ -102,9 +103,9 @@ export function PanePause({ task, busy, onPause, onResume }: { task: Task; busy:
         });
       }}
     >
-      <button type="submit" className="pause-btn" disabled={busy} title="Not now: it keeps its place and claim, nobody works it, and its session is asked to stop">
+      <Button type="submit" className="pause-btn" disabled={busy} title="Not now: it keeps its place and claim, nobody works it, and its session is asked to stop">
         Pause
-      </button>
+      </Button>
       <input value={why} onChange={(e) => setWhy(e.target.value)} placeholder="why (optional)" aria-label="Why pause it (optional)" />
     </form>
   );

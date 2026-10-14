@@ -1,4 +1,5 @@
 import type { Task } from "./types";
+import { Button } from "./ui";
 import { criterionEffort, criterionWords, EFFORTS, namedViews, type NamedView, VIEW_NAMES } from "./yourCheck";
 
 export { criterionWords };
@@ -31,7 +32,7 @@ export default function OwnerChecklist({ task, busy, onTick, onView }: {
               <span className="words">{c.label && <b>{c.label}</b>} {criterionWords(c.text.replace(/^AC\d+:\s*/, ""))}</span>
               {!c.ticked && <span className="effort meta">{EFFORTS.find((e) => e.id === criterionEffort(c.text))?.label}</span>}
               <span className="crit-actions">
-                <button
+                <Button
                   type="button"
                   className="tick"
                   aria-pressed={c.ticked}
@@ -40,11 +41,11 @@ export default function OwnerChecklist({ task, busy, onTick, onView }: {
                   title={c.ticked ? `Untick ${which}` : `Tick ${which}: you've checked it`}
                 >
                   {c.ticked ? "Untick" : "Tick"}
-                </button>
+                </Button>
                 {views.map((v) => (
-                  <button key={v} type="button" className="view-btn" onClick={() => onView?.(v)}>
+                  <Button key={v} type="button" className="view-btn" onClick={() => onView?.(v)}>
                     Open {VIEW_NAMES.find((n) => n.id === v)?.label}
-                  </button>
+                  </Button>
                 ))}
               </span>
             </li>

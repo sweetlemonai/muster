@@ -34,7 +34,7 @@ describe("a card on the one board (0022, owner 2026-10-13)", () => {
     for (const t of needs) {
       const html = card(t);
       expect(classOf(html).split(" "), t.id).toContain("needs-you");
-      expect(html, t.id).toContain('<span class="badge warn">needs you</span>');
+      expect(html, t.id).toContain('<span class="ui-badge ui-badge--warn">needs you</span>');
     }
     expect(text(card(needs[1]))).toContain("1 open Q");
     expect(card(needs[2])).toContain("<b>Blocked on you</b>: which colour?");
@@ -45,7 +45,7 @@ describe("a card on the one board (0022, owner 2026-10-13)", () => {
   it("says an agent's task waiting on the owner's unfinished task is blocked by it, in 0024's one sentence (AC8)", () => {
     const html = card(task("0054", { depends: ["0041"], blockedKind: "tasks", blockedBy: [{ id: "0041", stage: "ready", holder: "" }] }));
     expect(classOf(html).split(" ")).toContain("blocked");
-    expect(html).toContain('<span class="badge blocked block-why"><b>Blocked by tasks</b>: 0041</span>');
+    expect(html).toContain('<span class="ui-badge ui-badge--blocked block-why"><b>Blocked by tasks</b>: 0041</span>');
     expect(html.match(/0041/g)).toHaveLength(1);
     expect(html).not.toContain("blocked by yours");
     expect(html).not.toContain("waits-you");

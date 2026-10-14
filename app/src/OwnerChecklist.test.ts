@@ -52,12 +52,12 @@ describe("the owner's checklist in Your check", () => {
       "criterion ticked: ✓ AC4 tried it Untick",
     ]);
     // Tick says which, for the core; it's pressed when ticked.
-    expect(list(t)).toMatch(/<button type="button" class="tick" aria-pressed="false"[^>]*>Tick<\/button>/);
-    expect(list(t)).toMatch(/<button type="button" class="tick" aria-pressed="true"[^>]*>Untick<\/button>/);
+    expect(list(t)).toMatch(/<button type="button" aria-pressed="false"[^>]*class="ui-button tick">Tick<\/button>/);
+    expect(list(t)).toMatch(/<button type="button" aria-pressed="true"[^>]*class="ui-button tick">Untick<\/button>/);
   });
   it("gives an open criterion a button for each view it names (0043)", () => {
     const t = task({ ownerCriteria: [crit(1, false, "AC1: the Graph tab and the Timeline agree, then Appearance — verify: owner"), crit(2, true, "AC2: the Graph — verify: owner")] });
-    const views = [...withViews(t).matchAll(/<button type="button" class="view-btn"[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
+    const views = [...withViews(t).matchAll(/<button type="button" class="ui-button view-btn"[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
     expect(views).toEqual(["Open Timeline", "Open Graph", "Open Appearance"]);
     // Without a way to open views, none are drawn.
     expect(list(t)).not.toContain("view-btn");
@@ -69,7 +69,7 @@ describe("the owner's checklist in Your check", () => {
 });
 
 describe("Accept waits for the owner's criteria", () => {
-  const accept = (t: Task) => /<button[^>]*class="primary"[^>]*>\s*Accept\s*<\/button>/.exec(renderToStaticMarkup(createElement(TaskPanel, { task: t, now: 0, onClose: () => {}, onChanged: () => {} })))?.[0] ?? "";
+  const accept = (t: Task) => /<button[^>]*class="ui-button ui-button--primary"[^>]*>\s*Accept\s*<\/button>/.exec(renderToStaticMarkup(createElement(TaskPanel, { task: t, now: 0, onClose: () => {}, onChanged: () => {} })))?.[0] ?? "";
   it("is disabled while one is open, with the reason", () => {
     const b = accept(task({ ownerCriteria: [crit(1, true), crit(2, false)] }));
     expect(b).toContain("disabled");

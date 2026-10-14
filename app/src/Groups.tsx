@@ -10,6 +10,7 @@ import { needsYouCount } from "./human";
 import { blockedCount, ChoiceChips, ColumnHead, FoldCounts } from "./ModeViews";
 import type { ColumnFolds } from "./modes";
 import { BandCount } from "./CheckLimit";
+import { StatusPill } from "./ui";
 import type { Over } from "./yourCheckLimit";
 import ProjectName from "./ProjectName";
 
@@ -42,8 +43,8 @@ export function BandHead({ group, by, multi, active, onOpen }: {
       <button className={`band-title link${active ? " active" : ""}`} onClick={() => onOpen(h)} title={`Open ${levelLabel(h.level).toLowerCase()} ${taskKey(h)}`}>
         {multi && <ProjectName name={h.queue} />} <span className="level">{levelLabel(h.level)}</span> <span className="id">{taskKey(h)}</span> {h.title || "(no title)"}
       </button>
-      <span className={`status-pill s-${shownStageClass(h)}`}>{shownStageLabel(h)}</span>
-      {h.blocked && <span className="status-pill blocked">blocked</span>}
+      <StatusPill status={shownStageClass(h)}>{shownStageLabel(h)}</StatusPill>
+      {h.blocked && <StatusPill status="blocked">blocked</StatusPill>}
       <span className="meta">{progressText(h.progress)}</span>
       {left && <span className="meta">{left}</span>}
       {h.due && <span className="meta">due {h.due}</span>}

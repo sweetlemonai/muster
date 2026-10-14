@@ -5,6 +5,7 @@ import { ago, oneAtATime, queueTotal, stamp } from "./lib";
 import type { Note, Task } from "./types";
 import ProjectName from "./ProjectName";
 import { labelOf, Labels } from "./labels";
+import { Badge, Pill } from "./ui";
 
 /** A note's title on the board; an empty note says so. */
 export const noteTitle = (n: Pick<Note, "title">) => n.title.trim() || "(empty note)";
@@ -52,7 +53,7 @@ export function NoteCard({ n, now, multi, active, onOpen, words }: { n: Note; no
       <span className="title">{n.title.trim() ? <Hl text={noteTitle(n)} words={words} /> : noteTitle(n)}</span>
       <span className="note-meta">
         {multi && <ProjectName name={n.queue} />}
-        <span className="badge note">note</span>
+        <Badge variant="note">note</Badge>
         <span className="age">{ago(now, n.added)}</span>
       </span>
     </button>
@@ -122,14 +123,14 @@ export function QuickAdd({ queues, onAdded }: { queues: string[]; onAdded: () =>
         <div className="quick-add-to" role="group" aria-label="Which project">
           {picking ? (
             queues.map((q) => (
-              <button key={q} type="button" className={q === queue ? "chip on" : "chip"} aria-pressed={q === queue} onClick={() => { setTarget(q); setPicking(false); }}>
+              <Pill key={q} type="button" on={q === queue} aria-pressed={q === queue} onClick={() => { setTarget(q); setPicking(false); }}>
                 {labelOf(labels, q)}
-              </button>
+              </Pill>
             ))
           ) : (
-            <button type="button" className="chip" title="The project the note goes to; click to change it" onClick={() => setPicking(true)}>
+            <Pill type="button" title="The project the note goes to; click to change it" onClick={() => setPicking(true)}>
               {`to ${labelOf(labels, queue)}`}
-            </button>
+            </Pill>
           )}
         </div>
       )}

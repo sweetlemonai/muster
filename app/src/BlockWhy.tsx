@@ -2,6 +2,7 @@ import { Fragment } from "react";
 import { blockedByText, blockWords } from "./blockWords";
 import { keyOf } from "./taskKey";
 import type { Task } from "./types";
+import { Badge, StatusPill } from "./ui";
 
 /** Why a task is blocked, in the red pill, the kind in bold (0024). In full, each task it's
  *  blocked by is a link that opens it, when `onOpenTask` is given; `short` is the card's form
@@ -16,9 +17,8 @@ export default function BlockWhy({ t, short = false, pill = true, onOpenTask }: 
   if (!t.blockedKind) return null;
   const { lead, text, tasks } = blockWords(t, short);
   const links = !short && onOpenTask && tasks.length > 0;
-  const look = !pill ? "block-why" : short ? "badge blocked block-why" : "status-pill blocked block-why";
-  return (
-    <span className={look}>
+  const words = (
+    <>
       <b>{lead}</b>
       {links ? (
         <>
@@ -34,6 +34,8 @@ export default function BlockWhy({ t, short = false, pill = true, onOpenTask }: 
       ) : (
         text && `: ${text}`
       )}
-    </span>
+    </>
   );
+  if (!pill) return <span className="block-why">{words}</span>;
+  return short ? <Badge variant="blocked" className="block-why">{words}</Badge> : <StatusPill status="blocked" className="block-why">{words}</StatusPill>;
 }

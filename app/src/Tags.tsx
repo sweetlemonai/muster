@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { Pill } from "./ui";
 
 export const SUGGESTED_TAGS = ["spike", "chore", "tech-debt", "code", "docs", "design", "research", "test", "perf", "security"];
 
@@ -36,9 +37,9 @@ export default function TagEditor({ tags, onChange }: { tags: string[]; onChange
   return (
     <div className="tag-editor">
       {tags.map((t) => (
-        <button type="button" key={t} className="chip on" onClick={() => remove(t)} title={`Remove #${t}`} aria-label={`Remove tag ${t}`}>
+        <Pill type="button" key={t} on onClick={() => remove(t)} title={`Remove #${t}`} aria-label={`Remove tag ${t}`}>
           #{t} ×
-        </button>
+        </Pill>
       ))}
       <input
         value={text}

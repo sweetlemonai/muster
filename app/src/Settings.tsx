@@ -11,6 +11,7 @@ import { homePath } from "./lib";
 import type { DisplayMode } from "./modes";
 import { DEFAULT_MACHINE, SETTINGS_GROUPS, type SettingsGroup, type SettingsInfo, spanInput, spanText } from "./settingsData";
 import type { Project, QueueInfo } from "./types";
+import { Button, Pill } from "./ui";
 
 /** Settings (0036): one place for Appearance, Display, Projects, Agents and About. A view in the
  *  header's row, never a window: the groups are a docked list on the left, and the open group's
@@ -158,9 +159,9 @@ export function AgentsView({ info, helper, helperError = "", onHelper, onModel, 
             <div className="look-colour" role="group" aria-label="Helper model">
               <span className="meta">Model</span>
               {helper.models.map((m) => (
-                <button key={m} type="button" className={helper.model === m ? "chip on" : "chip"} aria-pressed={helper.model === m} onClick={() => onModel(m)}>
+                <Pill key={m} type="button" on={helper.model === m} aria-pressed={helper.model === m} onClick={() => onModel(m)}>
                   {MODEL_NAMES[m] ?? m}
-                </button>
+                </Pill>
               ))}
             </div>
             <p className="meta">
@@ -207,10 +208,10 @@ export function SpanSetting({ label, minutes, def, bounds, what, onSet }: {
         }}
       >
         <input value={text} onChange={(e) => setText(e.target.value)} size={7} maxLength={12} aria-label={`${label}, as 30m, 2h or 1d`} disabled={busy} />
-        <button type="submit" disabled={busy || text.trim() === spanInput(minutes)}>Save</button>
-        <button type="button" disabled={busy || minutes === def} onClick={() => void save("")}>
+        <Button type="submit" disabled={busy || text.trim() === spanInput(minutes)}>Save</Button>
+        <Button type="button" disabled={busy || minutes === def} onClick={() => void save("")}>
           Back to {spanText(def)}
-        </button>
+        </Button>
         <span className="meta">From {spanText(bounds[0])} to {spanText(bounds[1])}.</span>
       </form>
       {error && <p className="err" role="alert">{error}</p>}

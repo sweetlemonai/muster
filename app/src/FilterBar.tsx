@@ -8,6 +8,7 @@ import { searchBoxKey } from "./keys";
 import { highlights, idHit } from "./search";
 import { taskKey } from "./taskKey";
 import type { Task } from "./types";
+import { Pill } from "./ui";
 
 /** Text with the search's words marked. */
 export function Hl({ text, words }: { text: string; words: string[] }) {
@@ -74,7 +75,7 @@ export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views,
   if (how === "on-key" && !out && !forced) {
     return (
       <div className="filter-bar summon" aria-label="Search and filters">
-        <button type="button" className="chip" onClick={onSummon}>Search and filters <small>⌘F</small></button>
+        <Pill type="button" onClick={onSummon}>Search and filters <small>⌘F</small></Pill>
         {help}
       </div>
     );
@@ -105,13 +106,13 @@ export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views,
             const on = sameQuery(v, query);
             return (
               <span key={v.name} className="view-item">
-                <button className={on ? "chip view on" : "chip view"} aria-pressed={on} onClick={() => onQuery({ search: v.search, filters: v.filters, sort: v.sort })}>{v.name}</button>
+                <Pill on={on} className="view" aria-pressed={on} onClick={() => onQuery({ search: v.search, filters: v.filters, sort: v.sort })}>{v.name}</Pill>
                 <button className="chip-x" aria-label={`Delete view ${v.name}`} title="Delete this saved view" onClick={() => onViews(deleteView(views, v.name))}>✕</button>
               </span>
             );
           })}
           {naming === null ? (
-            <button className="chip add" onClick={() => setNaming("")} title="Save the search, filters and sort under a name">+ Save view</button>
+            <Pill className="add" onClick={() => setNaming("")} title="Save the search, filters and sort under a name">+ Save view</Pill>
           ) : (
             <span className="view-name">
               <input
@@ -129,15 +130,15 @@ export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views,
                   }
                 }}
               />
-              <button className="chip on" onClick={save} disabled={!naming.trim()}>Save</button>
-              <button className="chip" onClick={() => setNaming(null)}>Cancel</button>
+              <Pill on onClick={save} disabled={!naming.trim()}>Save</Pill>
+              <Pill onClick={() => setNaming(null)}>Cancel</Pill>
             </span>
           )}
         </span>
         {how === "folded" && (
-          <button type="button" className={unfolded ? "chip filters-fold on" : "chip filters-fold"} aria-expanded={unfolded} onClick={() => setUnfolded((u) => !u)} title="The filter groups and Sort, under the bar">
+          <Pill type="button" on={unfolded} className="filters-fold" aria-expanded={unfolded} onClick={() => setUnfolded((u) => !u)} title="The filter groups and Sort, under the bar">
             Filters{filterCount > 0 && <> <b className="count">{filterCount}</b></>}
-          </button>
+          </Pill>
         )}
         {/* Group by pushes itself right (`.group-by`); without it, the count does. */}
         {arrange}
@@ -146,7 +147,7 @@ export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views,
           {shown === total ? `${total} tasks` : `${shown} of ${total} tasks`}
         </span>
         {how === "on-key" && !forced && (
-          <button type="button" className="chip" onClick={onHide} title="Put the bar away again: ⌘F brings it back">Hide</button>
+          <Pill type="button" onClick={onHide} title="Put the bar away again: ⌘F brings it back">Hide</Pill>
         )}
         {help}
       </div>
@@ -161,9 +162,9 @@ export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views,
               {values.map((v) => {
                 const on = selected.includes(v);
                 return (
-                  <button key={v} className={on ? `chip on${g.id === "priority" ? ` pchip-${v}` : ""}` : "chip"} aria-pressed={on} onClick={() => set({ filters: toggleFilter(query.filters, g.id, v) })}>
+                  <Pill key={v} on={on} className={on && g.id === "priority" ? `pchip-${v}` : undefined} aria-pressed={on} onClick={() => set({ filters: toggleFilter(query.filters, g.id, v) })}>
                     {g.chip(v)}
-                  </button>
+                  </Pill>
                 );
               })}
             </span>
@@ -173,9 +174,9 @@ export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views,
           <span className="fgroup" role="group" aria-label="Sort each column">
             <span className="meta sep">Sort</span>
             {BOARD_SORTS.map((s) => (
-              <button key={s.id} className={query.sort === s.id ? "chip on" : "chip"} aria-pressed={query.sort === s.id} title={s.title} onClick={() => set({ sort: s.id })}>
+              <Pill key={s.id} on={query.sort === s.id} aria-pressed={query.sort === s.id} title={s.title} onClick={() => set({ sort: s.id })}>
                 {s.label}
-              </button>
+              </Pill>
             ))}
           </span>
         )}
@@ -199,7 +200,7 @@ export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views,
               </Fragment>
             ))}
             <span className={hidden > 0 ? "hidden-count some" : "hidden-count"}>{hiddenLine(hidden, true)}</span>
-            <button className="chip" onClick={() => set({ search: "", filters: {} })}>Clear all</button>
+            <Pill onClick={() => set({ search: "", filters: {} })}>Clear all</Pill>
           </>
         ) : (
           <span className="meta">No filters: every task shows</span>

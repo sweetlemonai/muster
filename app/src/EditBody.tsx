@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { stamp } from "./lib";
 import type { Task } from "./types";
+import { Button } from "./ui";
 import { editKey, isDirty, savedText, UNSAVED } from "./writeUp";
 
 /** The task's write-up as text, in place of its rendering: ⌘S saves, Esc cancels. `opened` is the
@@ -94,8 +95,8 @@ export default function EditBody({ task, opened, onClose, onSaved, onDirty = () 
         }}
       />
       <div className="edit-bar">
-        <button type="button" className="primary" disabled={busy} onClick={() => void save()}>{busy ? "Saving…" : "Save"}</button>
-        <button type="button" disabled={busy} onClick={() => (dirty && !armed ? setArmed(true) : onClose())}>Cancel</button>
+        <Button type="button" variant="primary" disabled={busy} onClick={() => void save()}>{busy ? "Saving…" : "Save"}</Button>
+        <Button type="button" disabled={busy} onClick={() => (dirty && !armed ? setArmed(true) : onClose())}>Cancel</Button>
         {armed && <span className="meta">Esc or Cancel again to throw your changes away</span>}
         {error && <span className="err">{error}</span>}
       </div>

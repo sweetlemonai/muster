@@ -11,6 +11,7 @@ import { PAUSE_GLYPH } from "./Pause";
 import { QuietPing } from "./Ping";
 import { pressed } from "./shortcuts";
 import type { Activity, Note, QueueInfo, Task } from "./types";
+import { Pill } from "./ui";
 
 /** The sidebar's projects (0037): All first, then the order chips and one row per queue under its
  *  category's heading (0044), each called by its label and saying whether it's being worked on
@@ -235,9 +236,9 @@ export function OrderChips({ value, onChange }: { value: SidebarOrder; onChange:
   return (
     <span className="side-order" role="group" aria-label="Order projects">
       {SIDEBAR_ORDERS.map((o) => (
-        <button key={o.id} type="button" className={value === o.id ? "chip on" : "chip"} aria-pressed={value === o.id} title={o.title} onClick={() => onChange(o.id)}>
+        <Pill key={o.id} type="button" on={value === o.id} aria-pressed={value === o.id} title={o.title} onClick={() => onChange(o.id)}>
           {o.label}
-        </button>
+        </Pill>
       ))}
     </span>
   );

@@ -36,7 +36,7 @@ describe("the Your check column by effort (0043)", () => {
     expect([...html.matchAll(/<h3 class="effort-head">([^<]*) <small>(\d+)<\/small>/g)].map((m) => `${m[1]} ${m[2]}`)).toEqual(["Just accept 2", "One look 2", "Needs a session 1"]);
   });
   it("puts Accept all in Just accept, with its count", () => {
-    expect(groups(CHECK)).toMatch(/aria-label="Just accept">.*<button type="button" class="accept-all">Accept all 2<\/button>/);
+    expect(groups(CHECK)).toMatch(/aria-label="Just accept">.*<button type="button" class="ui-button accept-all">Accept all 2<\/button>/);
     // Nothing to accept: no button.
     expect(groups([CHECK[0]])).not.toContain("accept-all");
   });
@@ -65,17 +65,17 @@ describe("Accept all's confirm, in place (0043)", () => {
   const view = (over: Partial<Parameters<typeof AcceptAllView>[0]>) =>
     renderToStaticMarkup(createElement(AcceptAllView, { count: 2, asked: null, busy: false, msg: null, onAsk: () => {}, onConfirm: () => {}, onCancel: () => {}, ...over }));
   it("first shows the count", () => {
-    expect(view({})).toBe('<span class="accept-all-bar"><button type="button" class="accept-all">Accept all 2</button></span>');
+    expect(view({})).toBe('<span class="accept-all-bar"><button type="button" class="ui-button accept-all">Accept all 2</button></span>');
   });
   it("then asks, in its own place, naming each task, with the second click and Cancel", () => {
     const html = view({ asked: ["0014", "0021"] });
     expect(text(html)).toBe("Accept 2: 0014, 0021? Yes, accept 2 Cancel");
     expect(html).toContain('role="group" aria-label="Confirm Accept all"');
-    expect(html).toMatch(/<button type="button" class="primary">Yes, accept 2<\/button>/);
+    expect(html).toMatch(/<button type="button" class="ui-button ui-button--primary">Yes, accept 2<\/button>/);
     expect(html).not.toContain("dialog");
   });
   it("is off while it runs, then says what came of it", () => {
-    expect(view({ asked: ["0014"], busy: true })).toMatch(/<button type="button" class="primary" disabled="">Accepting…<\/button><button type="button" disabled="">Cancel<\/button>/);
+    expect(view({ asked: ["0014"], busy: true })).toMatch(/<button type="button" disabled="" class="ui-button ui-button--primary">Accepting…<\/button><button type="button" disabled="" class="ui-button">Cancel<\/button>/);
     expect(view({ count: 0, msg: { ok: true, text: "Accepted 2: they're done." } })).toBe('<span class="accept-all-bar"><span class="ok small" role="status">Accepted 2: they&#x27;re done.</span></span>');
     expect(view({ count: 1, msg: { ok: false, text: "Accepted none. Not accepted: muster 0014: no." } })).toContain('<span class="err small" role="status">');
     expect(view({ count: 0 })).toBe("");
@@ -101,7 +101,7 @@ describe("Waiting for you by effort (0043)", () => {
       "0051 · Task 0051 Q2 Child webview or a window? Open to answer",
       "You 0041 · Buy the domain Yours to do: in To do. Start it when you do. Open",
     ]);
-    expect(html).toContain('<button type="button" class="accept-all">Accept all 1</button>');
+    expect(html).toContain('<button type="button" class="ui-button accept-all">Accept all 1</button>');
   });
   it("says when nothing is waiting, and leaves out the effort groups with no Your check", () => {
     expect(text(list([]))).toBe("Nothing is waiting for you.");
@@ -111,7 +111,7 @@ describe("Waiting for you by effort (0043)", () => {
   });
   it("leaves a goal or feature in Your check out of the effort groups and Accept all (review, round 1)", () => {
     const html = list([task("0001", { level: "goal", title: "Ship 1.0" }), task("0014")]);
-    expect(html).toContain('<button type="button" class="accept-all">Accept all 1</button>');
+    expect(html).toContain('<button type="button" class="ui-button accept-all">Accept all 1</button>');
     const other = /aria-label="Questions, blocks and your own tasks">([\s\S]*)<\/div>/.exec(html)?.[1] ?? "";
     expect(text(other)).toContain("0001 · Ship 1.0");
   });

@@ -4,6 +4,22 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Muster wears Drover's token names and atoms, keeping its own look (task 0053)
+**Did:** CSS variables renamed to Drover's tokens (`--surface`→`--panel`, `--border`→`--line`,
+`--tint`→`--hover`, `--accent-soft`→`--selected`, `--on-accent`→`--accent-ink`, `--err`→`--bad`,
+`--needs-text`→`--warn`, new `--focus`) in `themes.ts` and `styles.css`, the old names kept as
+aliases in `:root`. Atoms in `app/src/ui` shaped like Drover's: `Button`, `Pill`, `StatusPill`,
+`Badge`, `Segmented`/`Segment`, used on every screen (`.chip`/`.tab`→`ui-pill`, `.badge`→`ui-badge`,
+`.status-pill`→`ui-status-pill`, `.seg`→`ui-segmented`, `.primary`→`ui-button--primary`). Selectors
+were renamed class for class, so specificity and order, and with them the look, are unchanged.
+**Decided:** owner's option (a) (WAITING-FOR-OWNER #4): names only; no Menu, Modal, Overlay, Select
+or Lightbox. Not taken: Drover's radius scale (from a 6px base; Muster's is 8px) and its font tokens.
+**Verified:** `bin/gate`: green. New tests: atom markup (`ui/ui.test.ts`), adoption
+(`ui/adoption.test.ts`: no old classes, no plain `<button>`), token names and aliases
+(`themes.test.ts`); contrast tests unchanged and green. Tests that compared markup now expect the
+new classes (and Drover's attribute order: class last).
+**Open:** the screens weren't looked at in the running app in this session.
+
 ## 2026-10-13 — Board columns scroll without scrollbars; a fade and '+N below' say there's more (owner)
 **Did:** the board's column lists hide their scrollbars (`styles.css`, `.board .cards`) and still
 scroll. While a list overflows, its edge with more fades and a fixed strip says "+N above" or
@@ -40,6 +56,7 @@ the builder once first. Hatched cards' contrast: fix the text, keep the wash (ba
 (`claude agents --json --all` reports a live session as failed, interactive ones not at all); mu-6
 waits on the notification task; layout defects (Settings › Projects table, pane status column, graph
 chips, table header, Focus Ready strip) sent to muster-lead to queue.
+||||||| parent of ab6877c (Muster wears Drover's token names and atoms, keeping its own look (task 0053))
 
 ## 2026-10-13 — Muster's own queue moved into `muster/main/.muster/` (task 0005, AC5)
 **Did:** `muster migrate ~/playground/muster/tasks ~/playground/muster/main` (local): 51 tasks, 8 notes,
