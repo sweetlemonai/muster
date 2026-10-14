@@ -310,10 +310,10 @@ describe("blocked stretches (0031)", () => {
   it("says why it's blocked in the bar's tooltip", () => {
     const base = { captured: "2026-10-14", stage: "building", claimedOn: "2026-10-14" };
     expect(barTitle(t({ ...base, blocked: true, blockedKind: "you", blockDetail: "pick a colour" }), true)).toBe(
-      "Building · Blocked on you: pick a colour · captured 2026-10-14 · started 2026-10-14",
+      "Building · Your action: pick a colour · captured 2026-10-14 · started 2026-10-14",
     );
     expect(barTitle(t({ ...base, blockedKind: "tasks", blockedBy: [{ id: "0014", stage: "testing", holder: "qa" }] }), false)).toBe(
-      "Building · Blocked by tasks: 0014 (Testing, qa) · captured 2026-10-14 · started 2026-10-14 · dates only",
+      "Building · After 0014 (Testing, qa) · captured 2026-10-14 · started 2026-10-14 · dates only",
     );
     expect(barTitle(t({ ...base, doneOn: "2026-10-15", stage: "done" }), true)).toBe("Done · captured 2026-10-14 · started 2026-10-14 · done 2026-10-15");
   });

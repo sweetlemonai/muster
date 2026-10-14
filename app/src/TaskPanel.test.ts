@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { answerId } from "./answerFocus";
 import { TitleEdit } from "./PaneHeader";
 import { ValueChipView } from "./Sidebar";
 import StageTrack from "./StageTrack";
@@ -55,17 +56,25 @@ describe("task pane stage controls", () => {
   });
   it("a blocked task keeps its stage; Pass waits for Unblock", () => {
     const p = pane({ stage: "your-check", blocked: true, status: "blocked", waitingOn: "pick a colour", blockedKind: "you", blockDetail: "pick a colour" });
-    expect(p.line).toBe("Your check Blocked on you : pick a colour LIVE Your turn owner Waiting on you: accept or send back · blocked on you");
-    expect(p.html).toContain('<span class="status-pill blocked block-why"><b>Blocked on you</b>: pick a colour</span>');
+    expect(p.line).toBe("Your check Your action : pick a colour LIVE Your turn owner Waiting on you: accept or send back · blocked on you");
+    expect(p.html).toContain('<span class="status-pill block-why for-you look-action"><b>Your action</b>: pick a colour</span>');
     expect(p.buttons).toEqual(["Accept (disabled)", "Send back", "Unblock"]);
-    expect(p.html).toContain("Blocked on you: pick a colour. Unblock it to pass it on.");
+    expect(p.html).toContain("Your action: pick a colour. Unblock it to pass it on.");
+  });
+  it("puts Answer on a block waiting on the owner's answer, next to the question's own box (0060)", () => {
+    const q = { n: 2, ticked: false, asker: "wt-a", text: "which colour for the button?", escalated: true, ownerAnswered: false };
+    const t = task({ blocked: true, blockedKind: "question", blockDetail: "Q2", questions: [q], openQuestions: 1 });
+    const html = renderToStaticMarkup(createElement(TaskPanel, { task: t, now: 0, onClose: () => {}, onChanged: () => {} }));
+    expect(part(html, "status")).toContain('<span class="status-pill block-why for-you look-answer"><b>Your answer</b>: Q2 which colour for the button? <button type="button" class="block-answer">Answer</button></span>');
+    // Answer takes the owner to this box (focusAnswer, by its id).
+    expect(html).toContain(`<textarea id="${answerId(t, 2)}"`);
   });
   it("says why it's blocked by tasks, each a link that opens it, with Block still there (0024)", () => {
     const blockedBy = [{ id: "0014", stage: "building", holder: "codex" }, { id: "0016", stage: "ready", holder: "" }];
     const html = renderToStaticMarkup(
       createElement(TaskPanel, { task: task({ blockedKind: "tasks", blockedBy, depends: ["0014", "0016"] }), now: 0, onClose: () => {}, onChanged: () => {}, onOpenTask: () => {} }),
     );
-    expect(text(part(html, "status"))).toContain("Blocked by tasks : 0014 (Building, codex), 0016 (Ready)");
+    expect(text(part(html, "status"))).toContain("After 0014 (Building, codex), 0016 (Ready)");
     expect(part(html, "status")).toContain('<button type="button" class="link" title="Open 0014">0014</button>');
     // Not a flag: there's nothing to unblock; it clears by itself.
     const next = part(html, "next-step");

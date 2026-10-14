@@ -7672,10 +7672,7 @@ mod human_tests {
             let t = s.tasks.iter().find(|t| t.id == "0002").unwrap();
             crate::block::sentence_of(t, false)
         };
-        assert_eq!(
-            blocked(d.path()),
-            "Blocked by tasks: 0001 (Your check, owner)"
-        );
+        assert_eq!(blocked(d.path()), "After 0001 (Your check, owner)");
         assert_eq!(file(d.path(), "0002"), before);
         pass_task(d.path(), "0001", "owner", T, &no_gate()).unwrap();
         assert_eq!(

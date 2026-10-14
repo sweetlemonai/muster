@@ -664,8 +664,8 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
 
 - 0001 [Ship 1.0](todo/0001-ship.md) · Goal · In progress · 0 of 2 done · due 2026-12-01 · high
   - 0002 [Stage track](todo/0002-track.md) · Feature · In progress · 0 of 1 done · normal
-    - 0003 [Pass button](doing/0003-pass.md) · Building · Blocked by tasks: 0004 (Testing) · normal · bug · est agent 2h · test 30m · 400k
-  - 0004 [Waiting](blocked/0004-wait.md) · Testing · Blocked by tasks: 0012 · normal · code
+    - 0003 [Pass button](doing/0003-pass.md) · Building · After 0004 (Testing) · normal · bug · est agent 2h · test 30m · 400k
+  - 0004 [Waiting](blocked/0004-wait.md) · Testing · After 0012 · normal · code
 
 ## Tasks without a goal or feature
 
@@ -866,7 +866,7 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
         let text = index_md(&s, "p");
         assert!(
             text.contains(
-                "· Ready · Blocked on you: \\<b\\>now\\</b\\> \\[x\\](y) · \\[p\\](x) · \\|t\\|\n"
+                "· Ready · Your action: \\<b\\>now\\</b\\> \\[x\\](y) · \\[p\\](x) · \\|t\\|\n"
             ),
             "{text}"
         );
@@ -1037,7 +1037,7 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
         // stage, so there's no second "waits on".
         assert!(
             text.contains(
-                "- 0002 [Set up DNS](todo/0002-b.md) · Ready · Blocked by tasks: 0001 (Ready) · normal · code\n"
+                "- 0002 [Set up DNS](todo/0002-b.md) · Ready · After 0001 (Ready) · normal · code\n"
             ),
             "{text}"
         );
@@ -1065,7 +1065,7 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
         let text = index_md(&s, "p");
         assert!(
             text.contains(
-                "- 0001 [Buy the domain](todo/0001-a.md) · you · Ready · Blocked by outside: the registrar's reply · ⚠ 1 vision · normal · code\n"
+                "- 0001 [Buy the domain](todo/0001-a.md) · you · Ready · Outside: the registrar's reply · ⚠ 1 vision · normal · code\n"
             ),
             "{text}"
         );
@@ -1075,7 +1075,9 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
         }
         let text = index_md(&s, "p");
         assert!(
-            text.contains("- 0001 [Buy the domain](todo/0001-a.md) · you · Ready · paused · Blocked by outside"),
+            text.contains(
+                "- 0001 [Buy the domain](todo/0001-a.md) · you · Ready · paused · Outside"
+            ),
             "{text}"
         );
     }
@@ -1218,7 +1220,7 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
         };
         ops::set_field(p, "0002", "depends", "0001", "owner", t).unwrap();
         assert!(
-            second().contains(" · Ready · Blocked by tasks: ix-1 (Ready) · "),
+            second().contains(" · Ready · After ix-1 (Ready) · "),
             "{}",
             second()
         );

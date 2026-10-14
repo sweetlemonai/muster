@@ -149,7 +149,7 @@ fn muster_list_says_what_each_task_is_blocked_by() {
             .find(|l| l.contains(&format!("{} ", key(id))))
             .unwrap_or_else(|| panic!("{id} in {text}"));
         let ids: Vec<String> = by.iter().map(|b| key(b["id"].as_str().unwrap())).collect();
-        let short = format!("[Blocked by tasks: {}]", ids.join(", "));
+        let short = format!("[After {}]", ids.join(", "));
         assert_eq!(line.contains(&short), !ids.is_empty(), "{line}");
     }
 }

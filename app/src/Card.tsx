@@ -29,7 +29,7 @@ export default function Card(props: CardProps) {
 
 /** The card itself. The owner's own task (0022) is hatched in the human gold and carries the You
  *  ribbon, in the same columns as the agents' tasks. Why it's blocked is 0024's one sentence (by
- *  tasks too: an agent's task waiting on the owner's unfinished one says "Blocked by tasks: 0041");
+ *  tasks too: an agent's task waiting on the owner's unfinished one says "After 0041");
  *  one waiting on the owner (Your check, an escalated question, blocked on you or by a permission)
  *  is a needs-you card. */
 function CardButton({ t, now, multi, parent, onOpen, active, words }: CardProps) {

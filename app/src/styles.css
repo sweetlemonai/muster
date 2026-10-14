@@ -806,6 +806,17 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
    are a row of chips, and the detail each needs opens under them in the same place. */
 .block-why b { font-weight: 700; }
 .block-why .link { color: inherit; text-decoration: underline; font-weight: 600; }
+/* Each kind its own look (0060): what the owner acts on (your answer, your action, a permission)
+   in the needs-you orange with the red block mark; what clears without them (other tasks,
+   something outside, a question capture still has) neutral, with a smaller red mark. The mark is
+   the error red, which keeps 3:1 on every ground (themes.test.ts); on the orange it's ringed. */
+.block-why::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 1px; background: var(--err); vertical-align: 1px; }
+.block-why.for-you::before { width: 8px; height: 8px; box-shadow: 0 0 0 1px var(--on-status); vertical-align: 0; }
+.badge.block-why.for-you, .status-pill.block-why.for-you { background: var(--st-needs); color: var(--on-status); }
+.badge.block-why.not-you, .status-pill.block-why.not-you { background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
+.block-why.plain.for-you { color: var(--needs-text); }
+.block-why.plain.not-you { color: var(--text); }
+.block-why .block-answer { margin-left: 2px; padding: 0 8px; font-size: 11px; line-height: 16px; border-radius: 999px; }
 .block-form { display: flex; flex-direction: column; gap: 6px; }
 .block-form .chip-row { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; font-size: 12px; }
 .block-form .control-row { align-items: center; min-height: 28px; }

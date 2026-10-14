@@ -91,7 +91,7 @@ describe("the next step when the owner has to answer or unblock", () => {
   });
   it("says Unblock with what it waits on, when blocked on the owner or by a permission", () => {
     expect(nextStep(task("0001", { blocked: true, blockedKind: "you", blockDetail: "pick a colour" }))).toEqual({ kind: "block", text: "Unblock: pick a colour", full: "Unblock: pick a colour", more: 0 });
-    expect(nextStep(task("0001", { blocked: true, blockedKind: "permission", blockDetail: "", ownerCriteria: [crit(1, false, "look")] })).text).toBe("Unblock: Blocked by permission");
+    expect(nextStep(task("0001", { blocked: true, blockedKind: "permission", blockDetail: "", ownerCriteria: [crit(1, false, "look")] })).text).toBe("Unblock: Permission");
   });
   it("ignores answered questions and ones only for an agent", () => {
     expect(nextStep(task("0001", { questions: [q(1, "x", { ticked: true }), q(2, "y", { escalated: false })] })).kind).toBe("accept");

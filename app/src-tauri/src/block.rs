@@ -8,9 +8,10 @@
 //! (`guess`) and `muster check` warns until it's blocked again with one. Decision 0003 keeps the
 //! kind in the live state with the flag; until task 0005 builds that state, it's in the file.
 //!
-//! `sentence` is mirrored, word for word, by the window's `blockWords.ts`.
+//! `sentence` is mirrored, word for word, by the window's `blockWords.ts`; 0060 gave each kind its
+//! own words ("Your answer", "Your action", "Permission", "After", "Outside") and look.
 
-use crate::queue::{stage_label, Task};
+use crate::queue::{stage_label, Question, Task};
 use serde::Serialize;
 use std::collections::HashMap;
 
@@ -142,15 +143,37 @@ pub fn split_on(on: &str) -> (String, String) {
     (word.to_lowercase(), rest.to_string())
 }
 
-/// The words a block's sentence starts with, the kind's, bold in the window: "Blocked by tasks",
-/// "Blocked on you", "Blocked by permission", "Blocked by a question", "Blocked by outside".
-pub fn lead(kind: &str) -> &'static str {
+/// How a block looks (0060), from its kind and, for a question, the question it waits on: "answer"
+/// (a question escalated to the owner and still open), "action" (blocked on you), "permission",
+/// "question" (one the capture session still has), "tasks", "outside", or "" with no kind.
+pub fn look(kind: &str, asked: Option<&Question>) -> &'static str {
     match kind {
-        "tasks" => "Blocked by tasks",
-        "you" => "Blocked on you",
-        "permission" => "Blocked by permission",
-        "question" => "Blocked by a question",
-        "outside" => "Blocked by outside",
+        "question" if asked.is_some_and(|q| q.escalated && !q.ticked) => "answer",
+        "question" => "question",
+        "you" => "action",
+        "permission" => "permission",
+        "tasks" => "tasks",
+        "outside" => "outside",
+        _ => "",
+    }
+}
+
+/// Does a look need the owner (your answer, your action, a permission)? Those take the needs-you
+/// orange in the window; the rest, which clear without them, are neutral.
+pub fn for_owner(look: &str) -> bool {
+    matches!(look, "answer" | "action" | "permission")
+}
+
+/// The words a block's sentence starts with, the look's, bold in the window: "Your answer", "Your
+/// action", "Permission", "Question", "After", "Outside".
+pub fn lead(look: &str) -> &'static str {
+    match look {
+        "answer" => "Your answer",
+        "action" => "Your action",
+        "permission" => "Permission",
+        "question" => "Question",
+        "tasks" => "After",
+        "outside" => "Outside",
         _ => "Blocked",
     }
 }
@@ -165,16 +188,23 @@ fn cut(text: &str) -> String {
 }
 
 /// What follows the lead: the tasks with their stage and holder ("0014 (Building, codex), 0016
-/// (Ready)"; ids only in the short form), a question's detail and "waiting on capture", or the
-/// detail as written. The short form, the card's, cuts a detail at `SHORT` characters.
-pub fn words(kind: &str, detail: &str, by: &[BlockedBy], short: bool) -> String {
+/// (Ready)"; ids only in the short form), a question's number and its first line (and "waiting on
+/// capture" while capture has it), or the detail as written. The short form, the card's, cuts a
+/// detail at `SHORT` characters.
+pub fn words(
+    kind: &str,
+    detail: &str,
+    by: &[BlockedBy],
+    asked: Option<&Question>,
+    short: bool,
+) -> String {
     let detail = detail.trim();
-    let shown = if short {
-        cut(detail)
-    } else {
-        detail.to_string()
+    let detail = match asked.and_then(|q| q.text.lines().next()).map(str::trim) {
+        Some(q) if kind == "question" && !q.is_empty() => format!("{detail} {q}"),
+        _ => detail.to_string(),
     };
-    match kind {
+    let shown = if short { cut(&detail) } else { detail };
+    match look(kind, asked) {
         "tasks" if !by.is_empty() => by
             .iter()
             .map(|b| {
@@ -193,15 +223,36 @@ pub fn words(kind: &str, detail: &str, by: &[BlockedBy], short: bool) -> String 
     }
 }
 
-/// The sentence for a block, kind first: "Blocked by tasks: 0014 (Building, codex), 0016
-/// (Ready)", "Blocked on you: set the API key", "Blocked by a question: Q2, waiting on capture".
-/// Just the lead when there's nothing after it. Pure; `blockWords.ts` gives the same words.
-pub fn sentence(kind: &str, detail: &str, by: &[BlockedBy], short: bool) -> String {
-    let lead = lead(kind);
-    match words(kind, detail, by, short) {
+/// The sentence for a block, saying plainly what it waits for (0060): "After 0014 (Building,
+/// codex), 0016 (Ready)", "Your action: set the API key", "Your answer: Q2 which colour?",
+/// "Question: Q2 which colour?, waiting on capture". Just the lead when there's nothing after it.
+/// `asked` is the question a question block waits on, when there is one. Pure; `blockWords.ts`
+/// gives the same words.
+pub fn sentence(
+    kind: &str,
+    detail: &str,
+    by: &[BlockedBy],
+    asked: Option<&Question>,
+    short: bool,
+) -> String {
+    let look = look(kind, asked);
+    let lead = lead(look);
+    match words(kind, detail, by, asked, short) {
+        w if look == "tasks" && !by.is_empty() => format!("{lead} {w}"),
+        w if look == "tasks" && w.is_empty() => format!("{lead} other tasks"),
+        w if look == "tasks" => format!("{lead} other tasks: {w}"),
         w if w.is_empty() => lead.to_string(),
         w => format!("{lead}: {w}"),
     }
+}
+
+/// The question a task's question block waits on, by the number in its detail.
+pub fn asked(t: &Task) -> Option<&Question> {
+    if t.blocked_kind != "question" {
+        return None;
+    }
+    let n = question_number(&t.block_detail)?;
+    t.questions.iter().find(|q| q.n == Some(n))
 }
 
 /// `sentence` for a task: "" when nothing blocks it. The tasks it's blocked by are named by their
@@ -218,7 +269,7 @@ pub fn sentence_of(t: &Task, short: bool) -> String {
             ..b.clone()
         })
         .collect();
-    sentence(&t.blocked_kind, &t.block_detail, &by, short)
+    sentence(&t.blocked_kind, &t.block_detail, &by, asked(t), short)
 }
 
 /// Is a task in `stage` met as a dependency (0042)? An agent's task once it's merged: work merges
@@ -464,61 +515,128 @@ mod tests {
         }
     }
 
+    /// The question `n` (Q2), escalated to the owner or not, its text's first line `text`.
+    fn asked(text: &str, escalated: bool) -> Question {
+        Question {
+            n: Some(2),
+            ticked: false,
+            asker: "wt-a".into(),
+            text: format!("{text}\n**Escalated to owner** by capture."),
+            escalated,
+            owner_answered: false,
+            choices: None,
+        }
+    }
+
+    /// Each kind has its own look (0060): the three the owner acts on, and the three they can't.
+    #[test]
+    fn each_kind_has_its_look() {
+        let mut answered = asked("which colour?", true);
+        assert_eq!(look("question", Some(&answered)), "answer");
+        answered.ticked = true;
+        assert_eq!(look("question", Some(&answered)), "question");
+        assert_eq!(
+            look("question", Some(&asked("which colour?", false))),
+            "question"
+        );
+        assert_eq!(look("question", None), "question");
+        assert_eq!(look("you", None), "action");
+        assert_eq!(look("permission", None), "permission");
+        assert_eq!(look("tasks", None), "tasks");
+        assert_eq!(look("outside", None), "outside");
+        assert_eq!(look("", None), "");
+        for (l, owner) in [
+            ("answer", true),
+            ("action", true),
+            ("permission", true),
+            ("question", false),
+            ("tasks", false),
+            ("outside", false),
+            ("", false),
+        ] {
+            assert_eq!(for_owner(l), owner, "{l}");
+        }
+    }
+
     /// The same cases as blockWords.test.ts: the window and the core say the same words.
     #[test]
-    fn the_sentence_says_the_kind_first() {
+    fn the_sentence_says_plainly_what_it_waits_for() {
         let tasks = [by("0014", "building", "codex"), by("0016", "ready", "")];
         assert_eq!(
-            sentence("tasks", "", &tasks, false),
-            "Blocked by tasks: 0014 (Building, codex), 0016 (Ready)"
+            sentence("tasks", "", &tasks, None, false),
+            "After 0014 (Building, codex), 0016 (Ready)"
         );
         assert_eq!(
-            sentence("tasks", "", &tasks, true),
-            "Blocked by tasks: 0014, 0016"
+            sentence("tasks", "", &tasks, None, true),
+            "After 0014, 0016"
         );
         assert_eq!(
-            sentence("tasks", "", &[by("0099", "", "")], false),
-            "Blocked by tasks: 0099"
+            sentence("tasks", "", &[by("0099", "", "")], None, false),
+            "After 0099"
         );
+        assert_eq!(sentence("tasks", "", &[], None, false), "After other tasks");
         assert_eq!(
-            sentence("you", "set the API key in the Keychain", &[], false),
-            "Blocked on you: set the API key in the Keychain"
+            sentence("you", "set the API key in the Keychain", &[], None, false),
+            "Your action: set the API key in the Keychain"
         );
         assert_eq!(
             sentence(
                 "permission",
                 "write to ~/playground/x/tasks (sandbox), grant in the layer's write list",
                 &[],
+                None,
                 false
             ),
-            "Blocked by permission: write to ~/playground/x/tasks (sandbox), grant in the layer's write list"
+            "Permission: write to ~/playground/x/tasks (sandbox), grant in the layer's write list"
+        );
+        // A question escalated to the owner waits on their answer, and says which.
+        let theirs = asked("which colour for the button?", true);
+        assert_eq!(
+            sentence("question", "Q2", &[], Some(&theirs), false),
+            "Your answer: Q2 which colour for the button?"
         );
         assert_eq!(
-            sentence("question", "Q2", &[], false),
-            "Blocked by a question: Q2, waiting on capture"
+            sentence("question", "Q2", &[], Some(&theirs), true),
+            "Your answer: Q2 which colour for the button?"
+        );
+        // One the capture session still has isn't theirs yet.
+        let capture = asked("which colour for the button?", false);
+        assert_eq!(
+            sentence("question", "Q2", &[], Some(&capture), false),
+            "Question: Q2 which colour for the button?, waiting on capture"
         );
         assert_eq!(
-            sentence("question", "Q2", &[], true),
-            "Blocked by a question: Q2"
+            sentence("question", "Q2", &[], Some(&capture), true),
+            "Question: Q2 which colour for the button?"
         );
         assert_eq!(
-            sentence("question", "", &[], false),
-            "Blocked by a question: waiting on capture"
+            sentence("question", "Q2", &[], None, false),
+            "Question: Q2, waiting on capture"
+        );
+        assert_eq!(sentence("question", "Q2", &[], None, true), "Question: Q2");
+        assert_eq!(
+            sentence("question", "", &[], None, false),
+            "Question: waiting on capture"
         );
         assert_eq!(
-            sentence("outside", "Apple review", &[], false),
-            "Blocked by outside: Apple review"
+            sentence("outside", "Apple review", &[], None, false),
+            "Outside: Apple review"
         );
-        assert_eq!(sentence("you", "", &[], false), "Blocked on you");
-        assert_eq!(sentence("", "x", &[], false), "Blocked: x");
+        assert_eq!(sentence("you", "", &[], None, false), "Your action");
+        assert_eq!(sentence("", "x", &[], None, false), "Blocked: x");
         let long = "é".repeat(70);
         assert_eq!(
-            sentence("outside", &long, &[], true),
-            format!("Blocked by outside: {}…", "é".repeat(60))
+            sentence("outside", &long, &[], None, true),
+            format!("Outside: {}…", "é".repeat(60))
         );
         assert_eq!(
-            sentence("outside", &long, &[], false),
-            format!("Blocked by outside: {long}")
+            sentence("outside", &long, &[], None, false),
+            format!("Outside: {long}")
+        );
+        let wordy = asked(&"é".repeat(70), true);
+        assert_eq!(
+            sentence("question", "Q2", &[], Some(&wordy), true),
+            format!("Your answer: Q2 {}…", "é".repeat(57))
         );
     }
 
@@ -595,10 +713,7 @@ mod tests {
         );
         assert_eq!(kind("0005"), ("outside", "Apple review", true, false));
         let t4 = s.tasks.iter().find(|t| t.id == "0004").unwrap();
-        assert_eq!(
-            sentence_of(t4, false),
-            "Blocked by tasks: 0001 (Ready), 0099"
-        );
+        assert_eq!(sentence_of(t4, false), "After 0001 (Ready), 0099");
         assert_eq!(serde_json::to_value(t4).unwrap()["blockedKind"], "tasks");
         // Warnings: shown, but the check doesn't fail on them.
         assert!(s.problems.iter().all(|p| is_warning(p)), "{:?}", s.problems);
@@ -648,28 +763,28 @@ mod tests {
                 "you",
                 "set the API key in the Keychain",
                 "owner: set the API key in the Keychain",
-                "Blocked on you: set the API key in the Keychain",
+                "Your action: set the API key in the Keychain",
                 true,
             ),
             (
                 "permission",
                 "write to ~/x/tasks (sandbox), grant in the layer's write list",
                 "write to ~/x/tasks (sandbox), grant in the layer's write list",
-                "Blocked by permission: write to ~/x/tasks (sandbox), grant in the layer's write list",
+                "Permission: write to ~/x/tasks (sandbox), grant in the layer's write list",
                 true,
             ),
             (
                 "question",
                 "q1",
                 "capture: Q1",
-                "Blocked by a question: Q1, waiting on capture",
+                "Question: Q1 Which port?, waiting on capture",
                 false,
             ),
             (
                 "outside",
                 "Apple review ✓",
                 "Apple review ✓",
-                "Blocked by outside: Apple review ✓",
+                "Outside: Apple review ✓",
                 false,
             ),
         ] {
@@ -815,9 +930,9 @@ mod tests {
         );
         assert_eq!(
             sentence_of(&t, false),
-            "Blocked by tasks: 0002 (Ready), 0003 (Building, codex), 0001 (Ready)"
+            "After 0002 (Ready), 0003 (Building, codex), 0001 (Ready)"
         );
-        assert_eq!(sentence_of(&t, true), "Blocked by tasks: 0002, 0003, 0001");
+        assert_eq!(sentence_of(&t, true), "After 0002, 0003, 0001");
         assert!(last_log(p, "0004")
             .ends_with("wt-a: blocked on tasks: bk-3, bk-1 (after the API lands)"));
         let file = fs::read_to_string(p.join("todo/0004-t.md")).unwrap();
@@ -955,7 +1070,7 @@ mod tests {
         block_task(p, "0004", "you: sign off", "wt-a", T).unwrap();
         set_stage(p, "0001", "done", None, "owner", "2026-10-13 10:00").unwrap();
         let t = task(p, "0003");
-        assert_eq!(sentence_of(&t, false), "Blocked by tasks: 0002 (Ready)");
+        assert_eq!(sentence_of(&t, false), "After 0002 (Ready)");
         assert!(last_log(p, "0003").ends_with("wt-a: blocked on tasks: bk-1, bk-2"));
         pass_task(p, "0002", "wt-b", T, &PassOpts::default()).unwrap();
         set_stage(p, "0002", "done", None, "owner", "2026-10-13 11:00").unwrap();
@@ -1192,10 +1307,7 @@ mod tests {
             e,
             "0002 depends on 0001, not merged yet (an agent's task counts once it's in Your check, the owner's own once it's Done); pick another (muster next)"
         );
-        assert_eq!(
-            sentence_of(&task(p, "0002"), false),
-            "Blocked by tasks: 0001 (Testing)"
-        );
+        assert_eq!(sentence_of(&task(p, "0002"), false), "After 0001 (Testing)");
         assert_eq!(next_task(p, "wt-a", T).unwrap().unwrap().id, "0003");
         // Merged after Testing, it waits in Your check: that counts.
         pass_task(p, "0001", "qa", T, &PassOpts::default()).unwrap();
@@ -1264,7 +1376,7 @@ mod tests {
         );
         assert!(last_log(p, "0006").ends_with("capture: created"));
         let t = task(p, "0006");
-        assert_eq!(sentence_of(&t, false), "Blocked by tasks: 0003 (Ready)");
+        assert_eq!(sentence_of(&t, false), "After 0003 (Ready)");
         // Accepted later: it was free already, so Done writes nothing more on it.
         pass_task(p, "0001", "owner", T, &PassOpts::default()).unwrap();
         assert!(last_log(p, "0004").ends_with("qa: unblocked: bk-1 in Your check"));
@@ -1309,7 +1421,7 @@ mod tests {
         .unwrap();
         // Not claimed yet: blocked again, derived, with nothing written.
         let t = task(p, "0002");
-        assert_eq!(sentence_of(&t, false), "Blocked by tasks: 0001 (Building)");
+        assert_eq!(sentence_of(&t, false), "After 0001 (Building)");
         assert_eq!(
             fs::read_to_string(p.join("todo/0002-t.md")).unwrap(),
             before
@@ -1401,7 +1513,7 @@ mod tests {
         let t = task(p, "0002");
         assert_eq!(
             (t.stage.as_str(), sentence_of(&t, false).as_str()),
-            ("ready", "Blocked by tasks: 0001 (Building)")
+            ("ready", "After 0001 (Building)")
         );
         // The owner's override still moves it, logged as one.
         set_stage(p, "0002", "building", None, "owner", T).unwrap();

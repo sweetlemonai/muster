@@ -68,7 +68,18 @@ muster block 0012 --on you "which colour for the button?"
 muster block 0012 --on 0014,0016
 ```
 
-The card, the table, the timeline and the task pane say why in words, the kind first: "Blocked on you: which colour for the button?", "Blocked by tasks: mu-14 (Building, codex), mu-16 (Ready)". In the pane each task's key opens that task. A task blocked on you or by a permission also counts as waiting for you. `muster unblock 0012` lets it go on. In the task pane, use **Block** (pick the kind from its chips) and **Unblock**.
+The card, the table, the timeline, the task pane and `muster list` say plainly what it waits for, each kind in its own words:
+
+| It waits for | Reads | Looks |
+|---|---|---|
+| your answer to a question escalated to you | "Your answer: Q2 which colour for the button?" | needs-you orange, red mark |
+| you to do or decide something | "Your action: set the API key" | needs-you orange, red mark |
+| a permission | "Permission: write to ~/x/tasks, grant in the layer's write list" | needs-you orange, red mark |
+| a question the capture session still has | "Question: Q2 which port?, waiting on capture" | neutral, small red mark |
+| other tasks | "After mu-14 (Building, codex), mu-16 (Ready)" (on the card, "After mu-14, mu-16") | neutral, small red mark |
+| something outside | "Outside: Apple review" | neutral, small red mark |
+
+The orange ones are yours to act on, so they count as waiting for you; the neutral ones clear without you. In the pane each task's key opens that task, and **Answer** takes you to the question's answer box. In [Waiting for you](04-in-the-app.md#waiting-for-you) answers come first, then actions, then permissions: **Answer** opens the answer box right there (with the options as chips when it has them), and **Done, unblock** or **Granted, unblock** lets the task go on once you've done it. `muster unblock 0012` does the same. In the task pane, use **Block** (pick the kind from its chips) and **Unblock**.
 
 ## Paused
 
@@ -107,7 +118,7 @@ See [Levels](05-commands.md#levels) and decision [0003](../decisions/0003-muster
 
 A task can **depend on** other tasks in the same queue: it shouldn't start until they're merged. You set it with `muster set 0018 depends 0014,0016` (an empty value clears it).
 
-A dependency counts once it's **merged**. An agent's work merges into main after Testing passes, then waits in Your check for your look, so the next tasks can build on it: a task in **Your check or Done** counts. One in Testing or earlier doesn't. Your own tasks (human tasks) count only when they're **Done**, since nothing merges for them. `muster claim` and `muster next` won't take a task while anything it depends on isn't merged, and the card, the table, `muster list` and the Graph all show it "Blocked by tasks" until then. When the last one reaches Your check, the waiting task's log says so: `unblocked: 0014 in Your check`.
+A dependency counts once it's **merged**. An agent's work merges into main after Testing passes, then waits in Your check for your look, so the next tasks can build on it: a task in **Your check or Done** counts. One in Testing or earlier doesn't. Your own tasks (human tasks) count only when they're **Done**, since nothing merges for them. `muster claim` and `muster next` won't take a task while anything it depends on isn't merged, and the card, the table, `muster list` and the Graph all show "After mu-14 …" until then. When the last one reaches Your check, the waiting task's log says so: `unblocked: 0014 in Your check`.
 
 If you send a task back from Your check (**Send back**, or `muster return 0014 "<why>" --to building`), the tasks that depend on it and haven't started show blocked by it again. Ones already under way (in Building with someone on them, or in Testing or Your check) keep going: nothing moves them back, and their log gets a note naming where it went, `0014 went back to Building: <why>`.
 

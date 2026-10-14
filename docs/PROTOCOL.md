@@ -211,7 +211,7 @@
 > human|ai` switches who does a task while nobody is on it (made human in Backlog or Shaping, it moves to To do). An agent's task can wait on a human
 > task with `depends:` ("needs the API key first"): it can't be claimed until the human task is
 > Done, even if it's put in Your check, since nothing merges for it (0042), with no field changed
-> (it shows "Blocked by tasks" until then and logs `unblocked: … done` when it frees, as below). `muster list` marks human tasks `[you]`, and INDEX.md "you".
+> (it shows "After 0014" until then and logs `unblocked: … done` when it frees, as below). `muster list` marks human tasks `[you]`, and INDEX.md "you".
 > A file without `for:` (every older one) is an agent's.
 >
 > **Blocked says why (Muster 0024, 2026-10-13).** A block has a kind: **tasks**, **you**,
@@ -225,7 +225,7 @@
 > "owner …" as needing the owner), `waiting_on` keeps the old words in front for you and question:
 > `owner: set the API key`, `capture: Q2`; the detail is what follows them. **Tasks is never a
 > flag:** the ids go into `depends:` (0019), so there's one record of what waits on what, and the
-> task shows "Blocked by tasks: 0014 (Building, codex), 0016 (Ready)" until they're all merged (in
+> task shows "After 0014 (Building, codex), 0016 (Ready)" until they're all merged (in
 > Your check or Done, a human task Done: see 0042 above), then clears by itself (logged
 > `unblocked: 0014, 0016 done`; emptying its depends logs `unblocked: no
 > open depends left`). When it frees itself in Building, the holder's lease starts again; if the
@@ -235,7 +235,7 @@
 > Answers written by other tools under the file contract (Drover's) don't clear it yet; `muster
 > unblock` does. You, permission and outside stay until `muster unblock`. Blocked on you or by a
 > permission counts as waiting for the owner. The card, table, timeline, task pane, `muster list`
-> and INDEX.md say it in words, the kind first. A file blocked before kinds has no `blocked-kind:`:
+> and INDEX.md say plainly what it waits for (0060): "Your answer: Q2 …", "Your action: …", "Permission: …", "Question: Q2 …, waiting on capture", "After 0014 …", "Outside: …". A file blocked before kinds has no `blocked-kind:`:
 > its kind is read from `waiting_on` (owner → you, capture → question, a task id → tasks, anything
 > else → outside), and `muster check` and `manifest.py --check` warn about it until it's blocked
 > again with one. Blocking an old block on task ids again moves the ones still open into

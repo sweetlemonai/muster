@@ -191,7 +191,7 @@ describe("a card in each mode", () => {
     for (const mode of ALL) {
       expect(card(mode, needs), mode).toContain('<span class="badge warn">needs you</span>');
       expect(text(card(mode, needs)), mode).toContain("Your turn");
-      expect(card(mode, blocked), mode).toContain("<b>Blocked on you</b>: which colour?");
+      expect(card(mode, blocked), mode).toContain("<b>Your action</b>: which colour?");
       expect(card(mode, quiet), mode).toContain('class="card-quiet"');
     }
   });

@@ -358,3 +358,38 @@ describe("one colour, one meaning (owner, 2026-10-13)", () => {
     expect(rule(".kind.bug")).not.toMatch(/--err|--st-/);
   });
 });
+
+describe("a block's look (0060): the owner's in needs-you orange, the rest neutral, each with its red mark", () => {
+  const rule = (selector: string) => {
+    const i = css.indexOf(`${selector} {`);
+    expect(i, selector).toBeGreaterThanOrEqual(0);
+    return css.slice(i, css.indexOf("}", i));
+  };
+  it("the CSS paints each look with the tokens checked below", () => {
+    expect(rule(".badge.block-why.for-you, .status-pill.block-why.for-you")).toContain("background: var(--st-needs); color: var(--on-status);");
+    expect(rule(".badge.block-why.not-you, .status-pill.block-why.not-you")).toContain("background: var(--surface); color: var(--text);");
+    expect(rule(".block-why.plain.for-you")).toContain("color: var(--needs-text);");
+    expect(rule(".block-why.plain.not-you")).toContain("color: var(--text);");
+    expect(rule(".block-why::before")).toContain("background: var(--err);");
+    // On the orange, the red mark is ringed in the words' colour so it still reads.
+    expect(rule(".block-why.for-you::before")).toContain("box-shadow: 0 0 0 1px var(--on-status);");
+  });
+  for (const t of THEMES) {
+    for (const a of ACCENTS) {
+      it(`${t.name} × ${a.name} (${t.mode}): every look's words read at 4.5:1, and its mark at 3:1`, () => {
+        const v = variables(t, a);
+        // A pill in the pane, a badge on the card.
+        expect(contrast(v["--on-status"], v["--st-needs"]), "for you").toBeGreaterThanOrEqual(4.5);
+        expect(contrast(v["--text"], v["--surface"]), "not you").toBeGreaterThanOrEqual(4.5);
+        // Words alone, in the table, on the board or the pane.
+        for (const s of [t.bg, t.surface, t.popover]) {
+          expect(contrast(v["--needs-text"], s), "for you, plain").toBeGreaterThanOrEqual(4.5);
+          expect(contrast(v["--text"], s), "not you, plain").toBeGreaterThanOrEqual(4.5);
+          expect(contrast(v["--err"], s), "the red mark").toBeGreaterThanOrEqual(3);
+        }
+        expect(contrast(v["--err"], v["--surface"]), "the red mark on a neutral badge").toBeGreaterThanOrEqual(3);
+        expect(contrast(v["--on-status"], v["--st-needs"]), "the mark's ring on orange").toBeGreaterThanOrEqual(3);
+      });
+    }
+  }
+});

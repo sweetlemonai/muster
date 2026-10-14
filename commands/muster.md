@@ -98,11 +98,11 @@ on it.
      marked `verify: owner`, or else the unticked ones. Act: Accept in the app's task pane, or
      `/mu pass <id> --from your-check --as owner`; or send it back with the reason,
      `/mu return <id> --as owner <why>`. With no answer it stays in Your check.
-   - **Blocked on you:** it waits on the owner (`muster list` says "Blocked on you: …"). Say what
+   - **Blocked on you:** it waits on the owner (`muster list` says "Your action: …"). Say what
      it needs from you, in plain words. With no answer it stays blocked. Act: once it's settled,
      `/mu unblock <id> --as owner`.
-   - **Blocked by permission:** access the agent lacks (`muster list` says "Blocked by
-     permission: …"). Say what to grant and where, in plain words. With no answer it stays
+   - **Blocked by permission:** access the agent lacks (`muster list` says
+     "Permission: …"). Say what to grant and where, in plain words. With no answer it stays
      blocked. Act: once it's granted, `/mu unblock <id> --as owner`.
 
    Then each line marked `[you]` that isn't under Done: a **task of yours**, one only you can do

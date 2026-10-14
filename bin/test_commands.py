@@ -326,7 +326,7 @@ class RoutesRunOnARealQueue(unittest.TestCase):
         self.assertIn(f"claimed {self.b}", self.route("next", MUSTER_AS="wt-b")[0].stdout)
         # Task ids go into depends, with no flag: it shows blocked by them until they're done.
         out = self.route("block", self.b)[0].stdout
-        self.assertIn(f"Blocked by tasks: {self.b} (Building, wt-b)", out)
+        self.assertIn(f"After {self.b} (Building, wt-b)", out)
         self.assertIn(f"depends: [{ident(self.b)}]", self.task(self.a))
         self.assertNotIn("blocked-kind: tasks", self.task(self.a))
         self.route("check")

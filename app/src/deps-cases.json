@@ -35,11 +35,11 @@
     "0018": { "blockedBy": [{ "id": "0001", "stage": "your-check", "holder": "owner" }], "ready": false }
   },
   "sentences": {
-    "0011": "Blocked by tasks: 0002 (Testing, wt-q)",
-    "0013": "Blocked by tasks: 0004 (Your check, owner)",
-    "0014": "Blocked by tasks: 0005 (Building, wt-e)",
-    "0016": "Blocked by tasks: 0002 (Testing, wt-q)",
-    "0017": "Blocked by tasks: 0006 (Ready)"
+    "0011": "After 0002 (Testing, wt-q)",
+    "0013": "After 0004 (Your check, owner)",
+    "0014": "After 0005 (Building, wt-e)",
+    "0016": "After 0002 (Testing, wt-q)",
+    "0017": "After 0006 (Ready)"
   },
   "agentClaims": ["0010", "0012"],
   "next": "0010",

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { answerId } from "./answerFocus";
 import { api } from "./api";
 import Comments from "./Comments";
 import EditBody from "./EditBody";
@@ -264,7 +265,9 @@ function Checkins({ task }: { task: Task }) {
   );
 }
 
-function AnswerBox({ task, q, onChanged, keys, onLink }: { task: Task; q: Question; onChanged: () => void; keys?: Map<string, string>; onLink?: (href: string) => void }) {
+/** One open question with a box to answer it (⌘↩ sends) and its options as chips (0049): in the
+ *  pane, and in place under a block waiting on it in Waiting for you (0060). */
+export function AnswerBox({ task, q, onChanged, keys, onLink }: { task: Task; q: Question; onChanged: () => void; keys?: Map<string, string>; onLink?: (href: string) => void }) {
   const [text, setText] = useState("");
   const [state, setState] = useState<"idle" | "saving" | "done" | "error">("idle");
   const [msg, setMsg] = useState("");
@@ -291,6 +294,7 @@ function AnswerBox({ task, q, onChanged, keys, onLink }: { task: Task; q: Questi
       <Markdown text={q.choices ? q.choices.question : q.text} keys={keys} onLink={onLink} />
       {q.choices && <PickOne task={task} q={q} choices={q.choices} extra={text} onAnswered={() => setText("")} onChanged={onChanged} />}
       <textarea
+        id={q.n === null ? undefined : answerId(task, q.n)}
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder={q.choices ? "Something else, or words to add to a pick (⌘↩ sends them as your answer)" : "Your answer (⌘↩ to send)"}

@@ -1,6 +1,7 @@
 import { Fragment, useContext, useState } from "react";
 import { HelpButton } from "./HelpButton";
 import { ago, builtTested, holderOf, isStage, splitHolder, stageHolders, stageLabel, stageOf, STAGES, startedAgo } from "./lib";
+import { focusAnswer } from "./answerFocus";
 import BlockWhy from "./BlockWhy";
 import { taskKey } from "./taskKey";
 import { isLive, waitingOnYou } from "./paneData";
@@ -116,7 +117,7 @@ export function StatusLine({ task, now, onOpenTask, pause }: { task: Task; now: 
       {pill}
       <PausedChip t={task} now={now} />
       {pause && work && <PanePause task={task} busy={pause.busy} onPause={pause.onPause} onResume={pause.onResume} />}
-      <BlockWhy t={task} onOpenTask={onOpenTask} />
+      <BlockWhy t={task} onOpenTask={onOpenTask} onAnswer={(q) => { if (q.n !== null) focusAnswer(task, q.n); }} />
       {(who || started || earlier.length > 0 || built) && (
         <span className="holder">
           {who && (

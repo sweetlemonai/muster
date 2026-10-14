@@ -374,7 +374,7 @@ muster return 0007 "the spec misses the empty state" --to shaping
 
 ### muster block
 
-Mark a task blocked, and say why: the card, the table, the timeline and the task pane say it in words, the kind first ("Blocked on you: …"). It stays in its stage and keeps its claim; blocked is a flag, not a stage. Task ids go into its depends instead of a flag: it shows blocked by them until they're all merged (in Your check or Done; the owner's own task, Done), and clears by itself then (logged). A block on a question clears when it's answered. You, permission and outside stay until muster unblock. Blocked on you or by a permission counts as waiting for you. Refused: an unknown kind, no detail, a question that isn't open in the task.
+Mark a task blocked, and say why: the card, the table, the timeline and the task pane say plainly what it waits for ("Your answer: Q2 …", "Your action: …", "Permission: …", "After mu-14", "Outside: …"). It stays in its stage and keeps its claim; blocked is a flag, not a stage. Task ids go into its depends instead of a flag: it shows blocked by them until they're all merged (in Your check or Done; the owner's own task, Done), and clears by itself then (logged). A block on a question clears when it's answered. You, permission and outside stay until muster unblock. Blocked on you or by a permission counts as waiting for you. Refused: an unknown kind, no detail, a question that isn't open in the task.
 
 ```
 muster block <id> --on <0014,0016|you|permission|question|outside> ["<what it waits on>"]

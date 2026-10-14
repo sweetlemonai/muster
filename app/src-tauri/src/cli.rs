@@ -2734,7 +2734,7 @@ mod tests {
             code(&["block", "0001", "--on", "you", "set the API key"]),
             0
         );
-        assert_eq!(why("0001"), "Blocked on you: set the API key");
+        assert_eq!(why("0001"), "Your action: set the API key");
         assert_eq!(
             code(&[
                 "block",
@@ -2745,19 +2745,16 @@ mod tests {
             ]),
             0
         );
-        assert_eq!(
-            why("0001"),
-            "Blocked by permission: write to ~/x/tasks (sandbox)"
-        );
+        assert_eq!(why("0001"), "Permission: write to ~/x/tasks (sandbox)");
         assert_eq!(code(&["block", "0001", "--on", "question", "Q1"]), 0);
-        assert_eq!(why("0001"), "Blocked by a question: Q1, waiting on capture");
+        assert_eq!(why("0001"), "Question: Q1 Which port?, waiting on capture");
         assert_eq!(code(&["block", "0001", "--on", "outside: Apple review"]), 0);
-        assert_eq!(why("0001"), "Blocked by outside: Apple review");
+        assert_eq!(why("0001"), "Outside: Apple review");
         // The old words still work, as you and question.
         assert_eq!(code(&["block", "0001", "--on", "owner: which colour?"]), 0);
-        assert_eq!(why("0001"), "Blocked on you: which colour?");
+        assert_eq!(why("0001"), "Your action: which colour?");
         assert_eq!(code(&["block", "0001", "--on", "capture", "Q1"]), 0);
-        assert_eq!(why("0001"), "Blocked by a question: Q1, waiting on capture");
+        assert_eq!(why("0001"), "Question: Q1 Which port?, waiting on capture");
         assert_eq!(
             code(&["block", "0001", "--on", "capture", "Q1"]),
             1,
@@ -2767,7 +2764,7 @@ mod tests {
         assert_eq!(code(&["block", "0003", "--on", "0001,0002"]), 0);
         let three = t("0003");
         assert_eq!((three.blocked, three.depends.len()), (false, 2));
-        assert_eq!(why("0003"), "Blocked by tasks: 0001 (Ready), 0002 (Ready)");
+        assert_eq!(why("0003"), "After 0001 (Ready), 0002 (Ready)");
         assert_eq!(
             code(&["block", "0003", "--on", "0001"]),
             1,
@@ -3101,7 +3098,7 @@ mod tests {
         assert!(s.backlog.is_empty());
         assert_eq!(
             text,
-            "Backlog (1)\n  0004 code      normal  Raw\nShaping (1)\n  0003 code      normal  Shaping it  ~agent 2h · test 30m · 400k\nTesting (1)\n  0002 code      normal  Under test [Blocked by tasks: 0012]  #ui\nDone (1)\n  0001 code      normal  Shipped\n"
+            "Backlog (1)\n  0004 code      normal  Raw\nShaping (1)\n  0003 code      normal  Shaping it  ~agent 2h · test 30m · 400k\nTesting (1)\n  0002 code      normal  Under test [After 0012]  #ui\nDone (1)\n  0001 code      normal  Shipped\n"
         );
         // Backlog notes come first, by file name and title, and only where Backlog is listed.
         for (name, text, secs) in [
@@ -3152,12 +3149,12 @@ mod tests {
         // After a change: the stage, and what it waits on; a failed re-read still says it changed.
         assert_eq!(
             stage_message(d.path(), "", "0002", "blocked/0002-b.md"),
-            "0002: Testing, Blocked by tasks: 0012 (blocked/0002-b.md)"
+            "0002: Testing, After 0012 (blocked/0002-b.md)"
         );
         // By keys (0033), the tasks it waits on too.
         assert_eq!(
             stage_message(d.path(), "mu", "0002", "blocked/0002-b.md"),
-            "mu-2: Testing, Blocked by tasks: mu-12 (blocked/0002-b.md)"
+            "mu-2: Testing, After mu-12 (blocked/0002-b.md)"
         );
         assert_eq!(
             stage_message(d.path(), "mu", "0009", "doing/0009-x.md"),

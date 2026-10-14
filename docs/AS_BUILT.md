@@ -307,7 +307,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Depends, met once merged** (tasks 0019, 0024, 0042): a task's `depends:` hold it back until
   each is merged, which for an agent's task is Your check or Done (work merges into main after
   Testing passes) and for a human task only Done. One rule in `block.rs` (`met_at`, `holds`)
-  feeds every reader: `claim` and `next` (`waiting_on_deps`), the derived "Blocked by tasks"
+  feeds every reader: `claim` and `next` (`waiting_on_deps`), the derived "After 0014" block
   (`block::derive`) that the card, table, timeline, pane, `muster list`, INDEX.md's "waits on"
   and `check` show, the Graph's "ready" (`readyToStart` reads the core's verdict), and
   `manifest.py`, which mirrors it. A change that merges a task logs `unblocked: 0014 done; 0017 in
@@ -378,7 +378,9 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   plain text, **Reject…** with why, **Accept all** (the core's `decide_lessons` as the owner);
   the queue's waiting lessons count in the tab's needs-you count, the sidebar's and the Dock's.
 - **Board:** one column per stage, with its role under the name. Blocked cards stay in their stage
-  with a rose badge that says why, the kind first ("Blocked on you: …", task 0024), and Your check
+  with a badge that says plainly what it waits for (task 0024; each kind its words and look, task
+  0060: "Your answer: Q2 …", "Your action: …", "Permission: …" in needs-you orange, "After mu-14",
+  "Outside: …", "Question: Q2 …, waiting on capture" neutral, each with a red mark), and Your check
   cards count as "needs you". The task pane has a
   stage picker, Pass to <next> (with the gate line out of Building), Send back with a reason,
   Block/Unblock, and Accept / Send back in Your check. Only one action runs at a time. Cards show the id, title, type, priority (on every card: HIGH filled magenta, normal outlined, low faint), tags,

@@ -37,15 +37,15 @@ describe("a card on the one board (0022, owner 2026-10-13)", () => {
       expect(html, t.id).toContain('<span class="badge warn">needs you</span>');
     }
     expect(text(card(needs[1]))).toContain("1 open Q");
-    expect(card(needs[2])).toContain("<b>Blocked on you</b>: which colour?");
-    expect(card(needs[3])).toContain("<b>Blocked by permission</b>: repo write");
+    expect(card(needs[2])).toContain("<b>Your action</b>: which colour?");
+    expect(card(needs[3])).toContain("<b>Permission</b>: repo write");
     // Agents' work that doesn't wait on the owner isn't a needs-you card.
     expect(card(task("0060", { stage: "building", claimedBy: "wt-b" }))).not.toContain("needs you");
   });
   it("says an agent's task waiting on the owner's unfinished task is blocked by it, in 0024's one sentence (AC8)", () => {
     const html = card(task("0054", { depends: ["0041"], blockedKind: "tasks", blockedBy: [{ id: "0041", stage: "ready", holder: "" }] }));
     expect(classOf(html).split(" ")).toContain("blocked");
-    expect(html).toContain('<span class="badge blocked block-why"><b>Blocked by tasks</b>: 0041</span>');
+    expect(html).toContain('<span class="badge block-why not-you look-tasks"><b>After</b> 0041</span>');
     expect(html.match(/0041/g)).toHaveLength(1);
     expect(html).not.toContain("blocked by yours");
     expect(html).not.toContain("waits-you");
@@ -62,7 +62,7 @@ describe("a card names its task by its key (0033)", () => {
     expect(searched(["br-0012"])).toContain('<span class="id" title="muster · mu-12">mu-12</span>');
     // The tasks it waits on, by their keys too.
     const blocked = task("0013", { prefix: "mu", blockedKind: "tasks", blockedBy: [{ id: "0012", stage: "ready", holder: "" }] });
-    expect(card(blocked)).toContain("<b>Blocked by tasks</b>: mu-12");
+    expect(card(blocked)).toContain("<b>After</b> mu-12");
   });
   it("shows the id as it is when the task has no prefix", () => {
     expect(card(task("0012"))).toContain('<span class="id" title="muster · 0012">0012</span>');
