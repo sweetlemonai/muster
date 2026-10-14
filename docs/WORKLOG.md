@@ -19,6 +19,11 @@ proof splits at the first dashed `proof:` outside a code span; the app's pass ta
 tests for the summary rules (161 characters, newlines, control characters, goals and human tasks
 exempt), the proof split and file matching (`../x.png` matches nothing); a render test in ai-10's
 shape with a Persian proof; `<b>` in a summary shows as text.
+**Fixed (review round 1):** Accept all took a task the card called unproven → an unticked agent
+criterion makes it One look, and the core's Accept all refuses it naming the labels; Drover's
+". Proof:" criteria showed no proof → the split also takes a full stop; criteria are sent only for
+Your check tasks; thumbnails' expand has a test that fires the click; screenshots load once per
+pane for Files and the block; a ticked criterion without a proof reads "ticked", not "proven".
 **Open:** AC4's and AC8's screenshots of ai-10 in the release app (light and dark) need the real ai
 queue and the running app. Enter/Space on thumbnails is native button behaviour, checked from the
 markup only. "Not proven" tasks still group under Just accept in Accept all.

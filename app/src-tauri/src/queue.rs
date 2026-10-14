@@ -369,15 +369,16 @@ pub fn criteria_items(body: &str) -> Vec<Criterion> {
 }
 
 /// A criterion's text and its proof (mu-78): split at the first `— proof:` (an em or en dash, or
-/// a hyphen, between spaces; `proof:` in any case) outside a `code span`, so a criterion that
-/// only mentions the tail keeps its words. None when it has no proof.
+/// a hyphen, between spaces), or `. Proof:` (a full stop then a space, as Drover's criteria have
+/// it, the stop left off the text), `proof:` in any case, outside a `code span`, so a criterion
+/// that only mentions the tail keeps its words. None when it has no proof.
 fn split_proof(text: &str) -> Option<(String, String)> {
     let mut code = false;
     let mut prev_space = true;
     for (i, ch) in text.char_indices() {
         if ch == '`' {
             code = !code;
-        } else if !code && prev_space && matches!(ch, '—' | '–' | '-') {
+        } else if !code && (ch == '.' || (prev_space && matches!(ch, '—' | '–' | '-'))) {
             let after = &text[i + ch.len_utf8()..];
             let rest = after.trim_start();
             if rest.len() < after.len()
@@ -534,7 +535,9 @@ pub struct Task {
     /// pane's checklist in Your check (0028).
     pub owner_criteria: Vec<Criterion>,
     /// Every acceptance criterion, in order, each with its proof and the attachments that names
-    /// (mu-78): Your check's "What you're accepting" and the card's "All N proven".
+    /// (mu-78): Your check's "What you're accepting" and the card's "All N proven". Filled only
+    /// in Your check, its one reader, and left out of the state everywhere else.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub criteria: Vec<Criterion>,
     /// What was built, in one plain line (mu-78, `summary:`, written by `pass --summary` or `set
     /// summary`), or "". Read as at most SUMMARY_MAX characters with no control characters.
@@ -1176,10 +1179,15 @@ pub fn parse_task(
     };
     let attachments = list_attachments(root, &id);
     let mut criteria = criteria_items(body);
-    for c in &mut criteria {
-        c.proof_files = proof_files(&c.proof, &id, &attachments);
-    }
     let owner_criteria: Vec<Criterion> = criteria.iter().filter(|c| c.owner).cloned().collect();
+    // Every criterion with its proof only where it's read: Your check (R4, the state is polled).
+    if stage == "your-check" {
+        for c in &mut criteria {
+            c.proof_files = proof_files(&c.proof, &id, &attachments);
+        }
+    } else {
+        criteria.clear();
+    }
     let rel = path
         .strip_prefix(root)
         .unwrap_or(path)
@@ -4432,6 +4440,55 @@ mod tests {
     }
 
     #[test]
+    fn proof_after_a_full_stop_is_split_as_drover_writes_it() {
+        // mu-78 R2: Drover's old-layout criteria end their verify part with a full stop and then
+        // "Proof:" (synthetic text in that shape).
+        let body = concat!(
+            "## Acceptance criteria\n",
+            "- [x] AC1: no entry shows a copy. — verify: command. Proof: outline.test \"never a copy\"\n",
+            "- [x] AC2: Blocks jump smooth. — verify: command (`pnpm test`). proof: render counter; shot.png\n",
+            "- [x] AC3: a `x. Proof: y` mention in code stays — verify: owner.  PROOF: looked\n",
+            "- [x] AC4: a sentence. Proofs aren't it — verify: command\n",
+            "- [x] AC5: no space after it — verify: command.Proof: stays in the text\n",
+        );
+        let got: Vec<_> = criteria_items(body)
+            .into_iter()
+            .map(|c| (c.text, c.proof, c.owner))
+            .collect();
+        let s = |t: &str, p: &str, o: bool| (t.to_string(), p.to_string(), o);
+        assert_eq!(
+            got,
+            vec![
+                s(
+                    "AC1: no entry shows a copy. — verify: command",
+                    "outline.test \"never a copy\"",
+                    false
+                ),
+                s(
+                    "AC2: Blocks jump smooth. — verify: command (`pnpm test`)",
+                    "render counter; shot.png",
+                    false
+                ),
+                s(
+                    "AC3: a `x. Proof: y` mention in code stays — verify: owner",
+                    "looked",
+                    true
+                ),
+                s(
+                    "AC4: a sentence. Proofs aren't it — verify: command",
+                    "",
+                    false
+                ),
+                s(
+                    "AC5: no space after it — verify: command.Proof: stays in the text",
+                    "",
+                    false
+                ),
+            ]
+        );
+    }
+
+    #[test]
     fn proof_files_name_only_the_tasks_own_attachments() {
         let names: Vec<String> = [
             "0010-ac2-keyboard.png",
@@ -4541,6 +4598,28 @@ mod tests {
             "one extra chunk of 988 B gzipped"
         );
         assert!(json["criteria"][0].get("at").is_none());
+    }
+
+    #[test]
+    fn criteria_with_proofs_are_sent_only_in_your_check() {
+        // mu-78 R4: only Your check reads them, and the state is polled every 2 s; the owner's
+        // checklist still comes in every stage.
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("doing/0001-t.md");
+        let task = |stage: &str| {
+            let text = format!("---\nid: 0001\nstage: {stage}\n---\n\n# T\n\n## Acceptance criteria\n- [x] AC1: a — verify: command — proof: ok\n- [ ] AC2: b — verify: owner\n\n## Log\n");
+            parse_task("q", d.path(), "doing", &path, &text, 0).unwrap()
+        };
+        for stage in ["backlog", "ready", "building", "testing", "done"] {
+            let t = task(stage);
+            assert!(t.criteria.is_empty(), "{stage}");
+            let json = serde_json::to_value(&t).unwrap();
+            assert!(json.get("criteria").is_none(), "{stage}: {json}");
+            assert_eq!(json["ownerCriteria"][0]["label"], "AC2", "{stage}");
+        }
+        let json = serde_json::to_value(task("your-check")).unwrap();
+        assert_eq!(json["criteria"][0]["proof"], "ok");
+        assert_eq!(json["criteria"].as_array().map(Vec::len), Some(2));
     }
 
     #[test]

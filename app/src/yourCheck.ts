@@ -50,14 +50,21 @@ const openOwner = (t: Pick<Task, "ownerCriteria">) => t.ownerCriteria.filter((c)
 const askedOwner = (t: Pick<Task, "questions">) => t.questions.filter((q) => !q.ticked && q.escalated);
 /** Blocked on the owner or by a permission: a person has to act (as the core's needs_owner). */
 const blockedOnOwner = (t: Pick<Task, "blockedKind">) => t.blockedKind === "you" || t.blockedKind === "permission";
+/** A criterion as Your check names it: its label, else its place ("criterion 3"). */
+const critName = (c: Pick<Criterion, "label" | "n">) => c.label || `criterion ${c.n}`;
+/** An agent's criterion not ticked: nothing proves it (mu-78). */
+const unproven = (t: Pick<Task, "criteria">) => (t.criteria ?? []).filter((c) => !c.owner && !c.ticked);
+/** Every criterion ticked, and each of the agents' with its proof written: proven, not only
+ *  ticked. The owner's own, ticked, is their check and needs none. */
+const allProven = (t: Pick<Task, "criteria">) => (t.criteria ?? []).every((c) => c.ticked && (c.owner || !!c.proof));
 
 /** A task's effort: Needs a session when an open owner criterion does; One look for any other
- *  owner work (an open criterion, a question escalated to them, a block on them); else Just
- *  accept. */
+ *  owner work (an open criterion, a question escalated to them, a block on them) and for an
+ *  agent's criterion nobody proved (mu-78: look before accepting it); else Just accept. */
 export function taskEffort(t: StepTask): Effort {
   const open = openOwner(t);
   if (open.some((c) => criterionEffort(c.text) === "session")) return "session";
-  return open.length > 0 || askedOwner(t).length > 0 || blockedOnOwner(t) ? "look" : "accept";
+  return open.length > 0 || askedOwner(t).length > 0 || blockedOnOwner(t) || unproven(t).length > 0 ? "look" : "accept";
 }
 
 /** The tasks by effort, each group in the order given. */
@@ -68,8 +75,8 @@ export function byEffort(tasks: Task[]): Record<Effort, Task[]> {
 }
 
 /** What Accept all accepts: tasks (not goals or features, which a single Accept never offers) in
- *  Your check with nothing open of the owner's, no question for them, and not blocked. The core
- *  refuses the same (lib.rs `accept_all_in`). */
+ *  Your check with nothing open of the owner's, no question for them, every agent's criterion
+ *  ticked, and not blocked. The core refuses the same (lib.rs `accept_all_in`). */
 export const justAccept = (tasks: Task[]) =>
   tasks.filter((t) => t.stage === "your-check" && isWork(t) && !isBlocked(t) && taskEffort(t) === "accept");
 
@@ -115,15 +122,11 @@ export type NextStep = { kind: "question" | "block" | "criterion" | "accept"; te
 
 const step = (kind: NextStep["kind"], full: string, more: number): NextStep => ({ kind, text: cutText(full, CARD_STEP_CHARS), full, more });
 
-/** A criterion as Your check names it: its label, else its place ("criterion 3"). */
-const critName = (c: Pick<Criterion, "label" | "n">) => c.label || `criterion ${c.n}`;
-/** An agent's criterion not ticked: nothing proves it. */
-const unproven = (t: Pick<Task, "criteria">) => (t.criteria ?? []).filter((c) => !c.owner && !c.ticked);
 
 /** The one thing to do next for a task in Your check: answer a question escalated to the owner
  *  ("Answer Q2: …", its first line), unblock a block on them ("Unblock: …"), try the first open
  *  owner criterion as an instruction, or, with none of these, accept it (mu-78): "All 4 proven:
- *  Accept", or what isn't proven ("Not proven: AC2 · …") instead of offering Accept, and
+ *  Accept" ("ticked" when one of the agents' has no proof written), or what isn't proven ("Not proven: AC2 · …") instead of offering Accept, and
  *  "Nothing to try: Accept" when the core sent no criteria. */
 export function nextStep(t: StepTask): NextStep {
   const open = openOwner(t);
@@ -138,15 +141,17 @@ export function nextStep(t: StepTask): NextStep {
     const notYet = unproven(t);
     if (all.length === 0) return step("accept", "Nothing to try: Accept", 0);
     if (notYet.length > 0) return step("accept", `Not proven: ${notYet.map(critName).join(", ")} · send it back, or check it yourself`, 0);
-    return step("accept", `All ${all.length} proven: Accept`, 0);
+    return step("accept", `All ${all.length} ${allProven(t) ? "proven" : "ticked"}: Accept`, 0);
   }
   return step("criterion", tryText(criterionWords(open[0].text.replace(/^AC\d+:\s*/, ""))), open.length - 1);
 }
 
 /** What Accept does, for the pane's "What you're accepting" (mu-78): blocked (the flag: the core
- *  refuses a pass then; a wait on other tasks alone doesn't hold Accept), something not proven (said instead of offering Accept), the owner's own criteria
- *  still open (named), or every criterion proven. "none" when there are no criteria to prove it. */
-export type AcceptWords = { kind: "blocked" | "unproven" | "yours" | "proven" | "none"; text: string };
+ *  refuses a pass then; a wait on other tasks alone doesn't hold Accept), something not proven
+ *  (said instead of offering Accept), the owner's own criteria still open (named), or every
+ *  criterion proven ("ticked" when one of the agents' has no proof written). "none" when there
+ *  are no criteria to prove it. */
+export type AcceptWords = { kind: "blocked" | "unproven" | "yours" | "proven" | "ticked" | "none"; text: string };
 
 export function acceptWords(t: StepTask & Pick<Task, "blocked">): AcceptWords {
   if (t.blocked) return { kind: "blocked", text: `Blocked (${blockSentence(t) || "it waits on something"}): Accept waits until that's cleared.` };
@@ -156,6 +161,7 @@ export function acceptWords(t: StepTask & Pick<Task, "blocked">): AcceptWords {
   if (notYet.length > 0) return { kind: "unproven", text: `Not proven yet: ${notYet.map(critName).join(", ")}. Send it back, or check it yourself before you accept it.` };
   const open = openOwner(t);
   if (open.length > 0) return { kind: "yours", text: `Accept after you check ${open.length}: ${open.map(critName).join(", ")}.` };
+  if (!allProven(t)) return { kind: "ticked", text: "Every criterion is ticked: Accept moves it to Done." };
   return { kind: "proven", text: "Every criterion is proven: Accept moves it to Done." };
 }
 

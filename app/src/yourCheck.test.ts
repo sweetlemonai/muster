@@ -137,6 +137,9 @@ describe("the next step a card names", () => {
     const yours = crit(2, true, "x — verify: owner");
     expect(nextStep(task("0001", { criteria: [agent(1, true, "ok"), yours], ownerCriteria: [yours] })).text).toBe("All 2 proven: Accept");
   });
+  it("says All N ticked: Accept when one of the agents' is ticked with no proof written (mu-78)", () => {
+    expect(nextStep(task("0009", { criteria: [agent(1, true, "ok"), agent(2, true)] })).text).toBe("All 2 ticked: Accept");
+  });
   it("says what isn't proven instead of offering Accept (mu-78)", () => {
     const t = task("0001", { criteria: [agent(1, true, "ok"), agent(2, false), { ...agent(3, false), label: "" }] });
     expect(nextStep(t)).toEqual({ kind: "accept", text: "Not proven: AC2, criterion 3 · send it back, or check it yourself", full: "Not proven: AC2, criterion 3 · send it back, or check it yourself", more: 0 });
@@ -227,6 +230,12 @@ describe("what Accept does, in the pane (mu-78)", () => {
   it("says every criterion is proven and that Accept moves it to Done", () => {
     expect(acceptWords(task("0010", { criteria: four }))).toEqual({ kind: "proven", text: "Every criterion is proven: Accept moves it to Done." });
   });
+  it("says ticked, not proven, when one of the agents' has no proof written", () => {
+    expect(acceptWords(task("0009", { criteria: [agent(1, true, "ok"), agent(2, true)] }))).toEqual({ kind: "ticked", text: "Every criterion is ticked: Accept moves it to Done." });
+    // The owner's own, ticked, is checked: it needs no written proof.
+    const mine = crit(2, true, "x — verify: owner");
+    expect(acceptWords(task("0001", { criteria: [agent(1, true, "ok"), mine], ownerCriteria: [mine] })).kind).toBe("proven");
+  });
   it("names the ones of yours still open, by label or number", () => {
     const a2 = crit(2, false, "x — verify: owner");
     const c3 = { ...crit(3, false, "y — verify: owner"), label: "" };
@@ -250,5 +259,16 @@ describe("what Accept does, in the pane (mu-78)", () => {
   it("says nothing is proven when there are no criteria", () => {
     expect(acceptWords(task("0001", { criteria: [] }))).toEqual({ kind: "none", text: "No acceptance criteria are written, so nothing is proven. Accept moves it to Done." });
     expect(acceptWords(task("0001")).kind).toBe("none");
+  });
+});
+
+describe("an unproven criterion isn't Just accept (mu-78 R1)", () => {
+  it("is One look, so Accept all never takes it", () => {
+    const notYet = task("0001", { criteria: [agent(1, true, "ok"), agent(2, false)] });
+    const proven = task("0002", { criteria: [agent(1, true, "ok")] });
+    expect(taskEffort(notYet)).toBe("look");
+    expect(taskEffort(proven)).toBe("accept");
+    expect(justAccept([notYet, proven]).map((t) => t.id)).toEqual(["0002"]);
+    expect(byEffort([notYet, proven]).look.map((t) => t.id)).toEqual(["0001"]);
   });
 });

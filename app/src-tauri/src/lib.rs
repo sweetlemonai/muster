@@ -500,7 +500,9 @@ pub(crate) fn accept_all_in(
 }
 
 /// Why Accept all leaves a task alone that a single Accept would take: it's a goal or a feature
-/// (Accept all is for tasks), or a question escalated to the owner is still open. Read just before
+/// (Accept all is for tasks), an agent's criterion isn't ticked (nothing proves it, mu-78: the
+/// window files it under One look, not Just accept), or a question escalated to the owner is still
+/// open. Read just before
 /// the pass; the pass itself rechecks the stage, the owner's criteria and blocks under the lock. A
 /// task that can't be read goes on to the pass, which says why.
 fn not_just_accept(t: &queue::Task) -> Option<String> {
@@ -508,6 +510,30 @@ fn not_just_accept(t: &queue::Task) -> Option<String> {
         return Some(format!(
             "{} is a {}; Accept all takes tasks only",
             t.id, t.level
+        ));
+    }
+    let unproven: Vec<String> = t
+        .criteria
+        .iter()
+        .filter(|c| !c.owner && !c.ticked)
+        .map(|c| {
+            if c.label.is_empty() {
+                format!("criterion {}", c.n)
+            } else {
+                c.label.clone()
+            }
+        })
+        .collect();
+    if !unproven.is_empty() {
+        let (what, them) = if unproven.len() == 1 {
+            ("a criterion", "it")
+        } else {
+            ("criteria", "them")
+        };
+        return Some(format!(
+            "{} has {what} nobody has proven ({}); send it back, or check {them} yourself and accept it on its own",
+            t.id,
+            unproven.join(", ")
         ));
     }
     let open: Vec<String> = t
@@ -1710,6 +1736,43 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(d.path().join("doing/0004-t.md")).unwrap(),
             testing
+        );
+    }
+
+    #[test]
+    fn accept_all_leaves_a_task_with_an_unproven_criterion() {
+        // mu-78 R1: the card and the pane say "not proven" for an agent's criterion left unticked
+        // (a hand move into Your check), so Accept all doesn't take it either.
+        let d = tempfile::tempdir().unwrap();
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir(d.path().join(f)).unwrap();
+        }
+        let write = |id: &str, criteria: &str| {
+            let text = format!(
+                "---\nid: {id}\nstage: your-check\nstatus: doing\nclaimed-by:\nheld-by:\nwaiting_on:\ncommit:\n---\n\n# T\n\n## Acceptance criteria\n{criteria}\n## Log\n- 2026-10-12 09:00 capture: created\n"
+            );
+            std::fs::write(d.path().join(format!("doing/{id}-t.md")), &text).unwrap();
+            text
+        };
+        let unproven = write(
+            "0001",
+            "- [x] AC1: built — verify: command — proof: ok\n- [ ] AC2: also — verify: command\n- [ ] no label — verify: command\n",
+        );
+        // The owner's own, open, is the pass's to refuse; all ticked goes.
+        write("0002", "- [x] AC1: built — verify: command — proof: ok\n");
+        let ids: Vec<String> = ["0001", "0002"].into_iter().map(String::from).collect();
+        let r = accept_all_in(d.path(), &ids, "2026-10-13 10:00").unwrap();
+        assert_eq!(r.accepted, ["0002"]);
+        assert_eq!(
+            r.refused,
+            [(
+                "0001".to_string(),
+                "0001 has criteria nobody has proven (AC2, criterion 3); send it back, or check them yourself and accept it on its own".to_string()
+            )]
+        );
+        assert_eq!(
+            std::fs::read_to_string(d.path().join("doing/0001-t.md")).unwrap(),
+            unproven
         );
     }
 

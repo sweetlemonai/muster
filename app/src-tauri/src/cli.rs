@@ -5138,6 +5138,21 @@ mod tests {
         use crate::parallel::tests::{commit, fx, g, green, task, to_testing};
         let f = fx();
         let id = task(&f.root, "From the CLI", "cli/");
+        // Its criterion ticked with a proof (mu-78 R5): the brief lists the proof with it.
+        let file = f.root.join(queue::read_task(&f.root, &id).unwrap().path);
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(
+            text.contains("- [x] AC1: works — verify: command\n"),
+            "{text}"
+        );
+        std::fs::write(
+            &file,
+            text.replace(
+                "- [x] AC1: works — verify: command\n",
+                "- [x] AC1: works — verify: command - proof: it does\n",
+            ),
+        )
+        .unwrap();
         let run_in = |dir: &Path, args: &[&str]| {
             let a = parse(&sv(args)).unwrap();
             run_on(
@@ -5166,7 +5181,7 @@ mod tests {
             },
         );
         assert!(text.starts_with(&format!(
-            "started pj-1 in proj ({})\npj-1: Building (doing/0001-from-the-cli.md)\nworktree: {}\nbranch:   task/pj-1-from-the-cli\nbrief:    {}\ntouches:  cli/\ncriteria:\n  - [x] AC1: works — verify: command\n",
+            "started pj-1 in proj ({})\npj-1: Building (doing/0001-from-the-cli.md)\nworktree: {}\nbranch:   task/pj-1-from-the-cli\nbrief:    {}\ntouches:  cli/\ncriteria:\n  - [x] AC1: works — verify: command — proof: it does\n",
             f.root.display(),
             wt.display(),
             f.root.join("doing/0001-from-the-cli.md").display()

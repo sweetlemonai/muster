@@ -522,12 +522,13 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     Accept" (mu-78).
   - The next step is, in order: an open question escalated to the owner ("Answer Q2: …"), a
     block on them or by a permission ("Unblock: …"), the first open owner criterion, else
-    "All N proven: Accept" when every criterion is ticked, "Not proven: AC3 · send it back, or
-    check it yourself" when an agent's isn't, and "Nothing to try: Accept" only from a core that
-    sends no criteria.
+    "All N proven: Accept" when every criterion is ticked and each of the agents' has its proof
+    ("All N ticked: Accept" when one has none written), "Not proven: AC3 · send it back, or
+    check it yourself" when an agent's isn't ticked, and "Nothing to try: Accept" when the core
+    sent no criteria.
   - Effort is derived from the open owner criteria: any mentioning a session, terminal or command
-    (whole words) → Needs a session; any other open one, an open escalated question or a block on
-    the owner → One look; else Just accept. `— effort: look|session`
+    (whole words) → Needs a session; any other open one, an open escalated question, a block on
+    the owner, or an agent's criterion not ticked (mu-78) → One look; else Just accept. `— effort: look|session`
     on a criterion overrides it, and its words leave it out.
   - The board's Your check column (each band's too, with Group by) and Waiting for you group by
     effort, in that order, each with its count; an empty group keeps its heading.
@@ -557,13 +558,18 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     prefilled with the task's own), and `pass_task` takes it. Reading clamps a hand edit to 160
     characters without control characters (`queue::SUMMARY_MAX`). The state sends it as `summary`.
   - **Each criterion's proof.** `criteria_items` splits the first `— proof:` (em or en dash, or a
-    hyphen, between spaces, any case) outside a code span off the text into `proof`, so a
+    hyphen, between spaces) or `. Proof:` (a full stop and a space, Drover's shape; the stop is
+    left off), `proof:` in any case, outside a code span, off the text into `proof`, so a
     criterion that only mentions the tail keeps its words and a proof's own "verify: owner"
     can't make it the owner's. `parse_task` fills `proofFiles` with the task's attachments that
     proof names (`queue::proof_files`): `attachments/<id>/<file>` or a bare file name, matched
     exactly against `list_attachments`; `../`, another task's folder, an absolute path, a
-    backslash or a subfolder name nothing. The state sends every criterion as `criteria` (the
-    owner's still as `ownerCriteria` too); the start brief prints each with its proof.
+    backslash or a subfolder name nothing. The state sends every criterion as `criteria` only for
+    a task in Your check, its one reader (left out of the JSON elsewhere, so the 2 s poll stays
+    lean); the owner's still come as `ownerCriteria` in every stage. The start brief prints each
+    criterion with its proof.
+  - **Accept all** (`accept_all_in` → `not_just_accept`) also refuses a task with an agent's
+    criterion not ticked, naming them, as the window files it under One look.
   - **The card and Waiting for you:** the next step ("All 4 proven: Accept", above), then the
     summary on one line cut to the width with the whole in its tooltip (`.card-summary`,
     `.summary-line`), shown as text. No images on cards. Every queue, old layout too: it's read
@@ -571,13 +577,14 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   - **The pane:** "What you're accepting" (`StageContent.tsx` `AcceptingBlock`, a labelled group)
     comes first in Your check, above Your checklist: **Built** (the summary in its own `dir="auto"`
     span, as text, or the title and `muster set <key> summary`), **Accept** (`yourCheck.ts`
-    `acceptWords`: blocked, not proven, the owner's still open by name, or every criterion proven:
-    Accept moves it to Done), and **Proof**: each criterion in one line, label first and its
+    `acceptWords`: blocked, not proven, the owner's still open by name, or every criterion proven,
+    or only ticked when one of the agents' has no proof written: Accept moves it to Done), and **Proof**: each criterion in one line, label first and its
     words and proof each `dir="auto"`, how it stands in words, and its proof's images as Files-size
     thumbnails under it. Each is a native button (file name as its label, `aria-expanded`;
     Enter and Space click it) that opens the image large in place, no overlay, and shrinks on a
-    second click; other files are named. The images load through `api.image` once per task and
-    set of files, as Files does, only while the pane shows a task in Your check. No motion, and
+    second click; other files are named. The images come from one map per pane (`TaskPanel.tsx`
+    `usePaneImages`, through `api.image`, once per task and set of files), which Files reads too,
+    so nothing is fetched twice. No motion, and
     `prefers-reduced-motion` turns any off. The merge report goes last, in small type.
 - **A limit on Your check per project** (task 0050, `check_limit.rs`, `yourCheckLimit.ts`,
   `CheckLimit.tsx`): `projects.json`'s `yourCheck` maps a queue folder (the project's key, as

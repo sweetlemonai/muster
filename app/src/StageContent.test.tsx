@@ -2,8 +2,9 @@
 // criterion's proof with its screenshots, rendered as the pane draws it. The fixture is ai-10's
 // shape with synthetic text: four criteria ticked with proofs, two naming screenshots, none the
 // owner's, and a Persian quote in a proof.
+import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import css from "./styles.css?raw";
 import StageContent, { AcceptingBlock, toggled } from "./StageContent";
 import type { Criterion, Task } from "./types";
@@ -38,6 +39,15 @@ const lines = (html: string) => [...html.matchAll(/<li class="proof-line[^"]*">(
 /** Every element that says whether it's expanded: its tag and attributes. */
 const toggles = (html: string) => [...html.matchAll(/<(\w+)([^>]*\baria-expanded="(?:true|false)"[^>]*)>/g)].map((m) => ({ tag: m[1], attrs: m[2] }));
 const attr = (attrs: string, name: string) => new RegExp(`\\b${name}="([^"]*)"`).exec(attrs)?.[1];
+/** The elements a stateless component draws, its own components called through (none of
+ *  AcceptingBlock's holds state), so a test can fire a handler without a DOM. */
+type Props = { children?: ReactNode; onClick?: () => void; "aria-label"?: string };
+function elements(node: ReactNode): ReactElement<Props>[] {
+  if (Array.isArray(node)) return node.flatMap(elements);
+  if (!isValidElement<Props>(node)) return [];
+  if (typeof node.type === "function") return elements((node.type as (p: Props) => ReactNode)(node.props));
+  return [node, ...elements(node.props.children)];
+}
 
 describe("What you're accepting, in Your check (mu-78)", () => {
   it("comes first, above Your checklist and the history, as a labelled group", () => {
@@ -98,6 +108,21 @@ describe("What you're accepting, in Your check (mu-78)", () => {
     expect([...toggled(once, "2/0010-ac2-keyboard.png")]).toEqual([]);
   });
 
+  it("opens a thumbnail on a click (Enter and Space click a button), then shows it large", () => {
+    const onToggle = vi.fn();
+    const urls = { "0010-ac2-keyboard.png": "data:image/png;base64,AAA" };
+    const tree = elements(<AcceptingBlock task={task()} urls={urls} open={new Set()} onToggle={onToggle} />);
+    const thumb = (name: string) => tree.find((e) => e.type === "button" && e.props["aria-label"] === name);
+    thumb("0010-ac2-keyboard.png")?.props.onClick?.();
+    expect(onToggle).toHaveBeenCalledWith("2/0010-ac2-keyboard.png");
+    thumb("0010-ac3-offline.png")?.props.onClick?.();
+    expect(onToggle.mock.calls).toEqual([["2/0010-ac2-keyboard.png"], ["3/0010-ac3-offline.png"]]);
+    // With that key open, the same button says so and holds the large image.
+    const [first] = toggles(block(task(), [onToggle.mock.calls[0][0]], urls));
+    expect(attr(first.attrs, "aria-expanded")).toBe("true");
+    expect(lines(block(task(), [onToggle.mock.calls[0][0]], urls))[1]).toContain('<img class="proof-big" src="data:image/png;base64,AAA" alt=""/>');
+  });
+
   it("makes each thumbnail a button named by its file, that Tab reaches and Enter or Space works", () => {
     for (const b of toggles(block(task()))) {
       // A native button: in the tab order, and Enter and Space click it, which toggles it.
@@ -152,5 +177,14 @@ describe("What you're accepting, in Your check (mu-78)", () => {
     const bare = block(task({ criteria: [{ ...AI10[0], proof: "" }] }));
     expect(lines(bare).map(text)).toEqual(["AC1 · unit tests cover the chat block. · ✓ ticked, no proof written"]);
     expect(text(block(task({ criteria: [] })))).toContain("Proof No acceptance criteria are written.");
+  });
+});
+
+describe("the pane loads each image once (mu-78 R6)", () => {
+  const sources = import.meta.glob<string>("./*.tsx", { query: "?raw", import: "default", eager: true });
+  it("in TaskPanel's one map, which Files and What you're accepting both read", () => {
+    const fetching = Object.entries(sources).filter(([path, text]) => !path.endsWith(".test.tsx") && text.includes("api.image(")).map(([path]) => path);
+    expect(fetching).toEqual(["./TaskPanel.tsx"]);
+    expect(sources["./TaskPanel.tsx"]).toContain("images={images}");
   });
 });

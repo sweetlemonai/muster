@@ -111,8 +111,8 @@ export type Task = {
   openQuestions: number;
   ownerCriteria: Criterion[];
   /** Every acceptance criterion, in order, each with its proof (mu-78): Your check's "What you're
-   *  accepting" and the card's "All N proven". The core always sends it; optional so a task from
-   *  an older core reads as unknown. */
+   *  accepting" and the card's "All N proven". The core sends it only for a task in Your check,
+   *  its one reader; absent elsewhere and from an older core. */
   criteria?: Criterion[];
   /** What was built, in one plain line (mu-78, `summary:`), or "": shown as text, never Markdown. */
   summary?: string;

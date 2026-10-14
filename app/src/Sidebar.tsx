@@ -1,5 +1,4 @@
 import { useContext, useEffect, useState } from "react";
-import { api } from "./api";
 import { blockSentence } from "./blockWords";
 import { BranchPane } from "./Branch";
 import { KINDS } from "./fields";
@@ -19,7 +18,7 @@ import type { TaskActions } from "./useTaskActions";
  *  Block or Unblock; under a rule, priority, type and who does it (the current value; click to choose),
  *  a started task's branch and worktree or its merge (0023), the estimate, tags, files and the
  *  task's links (0017). Every control is always in the same place. */
-export default function Sidebar({ task, nowSecs, a }: { task: Task; nowSecs: number; a: TaskActions }) {
+export default function Sidebar({ task, nowSecs, a, images }: { task: Task; nowSecs: number; a: TaskActions; images: Record<string, string> }) {
   return (
     <aside className="tp-side" aria-label="Actions and settings">
       <NextStep task={task} nowSecs={nowSecs} a={a} />
@@ -57,7 +56,7 @@ export default function Sidebar({ task, nowSecs, a }: { task: Task; nowSecs: num
           <span className="lbl">Tags</span>
           <TagEditor tags={task.tags} onChange={(t) => a.setField("tags", t.join(","), "Tags saved.")} />
         </div>
-        <Files task={task} onAttach={a.attachPick} />
+        <Files task={task} images={images} onAttach={a.attachPick} />
         <Links task={task} />
       </div>
     </aside>
@@ -202,27 +201,12 @@ function Estimate({ task, onSave }: { task: Task; onSave: (field: string, value:
 }
 
 /** The task's files: images as small thumbnails that open large (← → between them, Esc to
- *  close), the others by name, and Attach. Paste or drop files anywhere on the pane too. */
-function Files({ task, onAttach }: { task: Task; onAttach: () => void }) {
-  const [images, setImages] = useState<Record<string, string>>({});
+ *  close), the others by name, and Attach. Paste or drop files anywhere on the pane too. The
+ *  images come loaded from the pane (`images`, by file name), shared with Your check's proof. */
+function Files({ task, images, onAttach }: { task: Task; images: Record<string, string>; onAttach: () => void }) {
   const [big, setBig] = useState<number | null>(null);
   const names = task.attachments.filter((n) => IMAGE.test(n));
   const others = task.attachments.filter((n) => !IMAGE.test(n));
-
-  useEffect(() => {
-    let live = true;
-    setImages({});
-    for (const n of names) {
-      api.image(task.queue, task.id, n).then(
-        (url) => live && setImages((m) => ({ ...m, [n]: url })),
-        () => {},
-      );
-    }
-    return () => {
-      live = false;
-    };
-    // `names` comes from task.attachments, so their joined list is the dependency.
-  }, [task.queue, task.id, task.attachments.join("|")]);
 
   useEffect(() => {
     if (big === null) return;

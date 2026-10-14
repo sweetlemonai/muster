@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { api } from "./api";
 import { claimant, fmtMinutes, fmtTokens, stageLabel, stamp, stampMinutes } from "./lib";
 import { estimateLeft, isWork, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
 import Markdown from "./Markdown";
@@ -14,7 +13,7 @@ import { acceptWords, criterionWords, type NamedView } from "./yourCheck";
  *  Your check: what you're accepting (mu-78), the owner's checklist and the history. Backlog, Shaping and Ready: the criteria and
  *  the estimate. Done (and a stage the window doesn't know): the history. A goal or feature: its
  *  roll-up. `body` is the write-up as loaded (null while it loads). */
-export default function StageContent({ task, nowSecs, body, childTasks, busy, onTick, onView }: {
+export default function StageContent({ task, nowSecs, body, childTasks, busy, onTick, onView, images = {} }: {
   task: Task;
   nowSecs: number;
   body: string | null;
@@ -23,6 +22,8 @@ export default function StageContent({ task, nowSecs, body, childTasks, busy, on
   onTick: (which: string, undo: boolean) => void;
   /** Opens a view an owner criterion names (0043). */
   onView?: (v: NamedView) => void;
+  /** The task's images as data URLs, by file name, loaded once by the pane (TaskPanel). */
+  images?: Record<string, string>;
 }) {
   if (!isWork(task)) return <Rollup task={task} childTasks={childTasks} />;
   switch (task.stage) {
@@ -32,7 +33,7 @@ export default function StageContent({ task, nowSecs, body, childTasks, busy, on
     case "your-check":
       return (
         <>
-          <WhatYoureAccepting task={task} />
+          <WhatYoureAccepting task={task} images={images} />
           <div className="stage-block" data-part="checklist">
             <span className="lbl">Your checklist</span>
             {task.ownerCriteria.length > 0 ? (
@@ -65,28 +66,12 @@ export function toggled(open: ReadonlySet<string>, key: string): Set<string> {
   return next;
 }
 
-/** Your check's "What you're accepting" (mu-78), with the screenshots its proofs name loaded once
- *  per task and set of files, as Files loads its own: not again on every poll. */
-function WhatYoureAccepting({ task }: { task: Task }) {
-  const [urls, setUrls] = useState<Record<string, string>>({});
+/** Your check's "What you're accepting" (mu-78): which thumbnails are open, shut again for
+ *  another task. The screenshots come from the pane's one map (`images`), which Files reads too. */
+function WhatYoureAccepting({ task, images }: { task: Task; images: Record<string, string> }) {
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
-  const names = [...new Set((task.criteria ?? []).flatMap((c) => c.proofFiles ?? []).filter((n) => IMAGE.test(n)))];
-  useEffect(() => {
-    let live = true;
-    setUrls({});
-    setOpen(new Set());
-    for (const n of names) {
-      api.image(task.queue, task.id, n).then(
-        (url) => live && setUrls((m) => ({ ...m, [n]: url })),
-        () => {},
-      );
-    }
-    return () => {
-      live = false;
-    };
-    // `names` comes from the criteria's proof files, so their joined list is the dependency.
-  }, [task.queue, task.id, names.join("|")]);
-  return <AcceptingBlock task={task} urls={urls} open={open} onToggle={(k) => setOpen((o) => toggled(o, k))} />;
+  useEffect(() => setOpen(new Set()), [task.queue, task.id]);
+  return <AcceptingBlock task={task} urls={images} open={open} onToggle={(k) => setOpen((o) => toggled(o, k))} />;
 }
 
 /** What you're accepting, drawn: what was built (the builder's one-line summary, as plain text,

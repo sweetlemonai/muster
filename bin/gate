@@ -1,7 +1,8 @@
 #!/bin/sh
 # Muster's gate (task 0023): every check this repo has, run from the checkout it's in, quietly.
-# A session runs it before `muster pass <id> --from building --gate "<its last line>"`, and a
-# merge runs it in the task's worktree (`muster projects set muster gate bin/gate`).
+# A session runs it before `muster pass <id> --from building --gate "<its last line>"
+# --summary "<what was built>"`, and a merge runs it in the task's worktree (`muster projects set
+# muster gate bin/gate`).
 # Prints one result line last: `gate: green (…)`, or `gate: RED (…)` with exit 1. A failed step's
 # last lines are shown above it; its whole log stays in the folder it names.
 # Every step runs in a home of its own (task 0062): HOME, XDG_CONFIG_HOME and MUSTER_BASE in a

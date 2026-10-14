@@ -11,7 +11,7 @@ import { Fold } from "./ModeViews";
 import { taskKey, taskOfHref } from "./taskKey";
 import PaneHeader from "./PaneHeader";
 import PaneMsg from "./PaneMsg";
-import { isFileDrag, logSummary, releasedBy, undoFor } from "./paneData";
+import { IMAGE, isFileDrag, logSummary, releasedBy, undoFor } from "./paneData";
 import { SessionPing } from "./Ping";
 import { reviewStatus, withoutReview } from "./Review";
 import ReviewPanel from "./ReviewPanel";
@@ -74,6 +74,8 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
     const at = taskOfHref(href);
     if (at) onOpenAt?.(at.queue, at.id);
   };
+
+  const images = usePaneImages(task);
 
   // Reload the text when the file changes (its modified time moves).
   useEffect(() => {
@@ -138,9 +140,9 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
         <StageTrack stage={task.stage} busy={a.busy} onPick={a.move} releases={(to) => releasedBy(task, to)} human={isHuman(task)} paused={task.paused ?? ""} />
         <div className="tp-cols">
           <div className="tp-main">
-            <StageContent task={task} nowSecs={now} body={body === null ? null : shown} childTasks={childTasks} busy={a.busy} onTick={a.tick} onView={onOpenView} />
+            <StageContent task={task} nowSecs={now} body={body === null ? null : shown} childTasks={childTasks} busy={a.busy} onTick={a.tick} onView={onOpenView} images={images} />
           </div>
-          <Sidebar task={task} nowSecs={now} a={a} />
+          <Sidebar task={task} nowSecs={now} a={a} images={images} />
         </div>
         <StageForms task={task} a={a} />
         <SessionPing task={task} now={now} onChanged={onChanged} />
@@ -254,4 +256,26 @@ function Checkins({ task }: { task: Task }) {
       </ol>
     </section>
   );
+}
+
+/** The task's image attachments as data URLs, one map per pane that Files and Your check's proof
+ *  (mu-78) both read: each loaded once per task and set of files, not again on every poll. */
+function usePaneImages(task: Task): Record<string, string> {
+  const [images, setImages] = useState<Record<string, string>>({});
+  const names = task.attachments.filter((n) => IMAGE.test(n));
+  useEffect(() => {
+    let live = true;
+    setImages({});
+    for (const n of names) {
+      api.image(task.queue, task.id, n).then(
+        (url) => live && setImages((m) => ({ ...m, [n]: url })),
+        () => {},
+      );
+    }
+    return () => {
+      live = false;
+    };
+    // `names` comes from task.attachments, so their joined list is the dependency.
+  }, [task.queue, task.id, names.join("|")]);
+  return images;
 }
