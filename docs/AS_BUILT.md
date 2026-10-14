@@ -95,6 +95,19 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   `order` and `categoryOrder` under its lock (`set_project_colour`, `arrange_projects`,
   `rename_category`; unknown entries are dropped when read, a refused change writes nothing);
   `remove_project` clears them and `carry_over` carries them.
+- **Headings fold, and a group can be named** (task 0070, `arrange.rs`, `projectOrder.ts`,
+  `SidebarProjects.tsx`): a heading's chevron, or ← and → on a focused heading, folds it to its name,
+  "N projects", what needs you, what's being worked on and its tasks, in every display mode and
+  under every chip; the selected project and every one that needs you still show under it as chips
+  that pick them, and a project moved under a folded heading unfolds it. Headings are
+  `role="heading"` (focusable, with `aria-keyshortcuts`); the chevron is a `Pill` with
+  `aria-expanded`. `projects.json` keeps `folded` (headings, read leniently, `fold_category`;
+  `QueueInfo.categoryFolded`) and `groupNames` (a group folder's display name). Renaming a group's
+  heading (`rename_category`) sets the group's display name, so its projects, and any it gains,
+  go under it with no category of their own; projects whose own category was the old name take the
+  new one, as before; renaming it back to the folder's name clears it; a fold and a place move with
+  a rename, and a merge is folded if either heading was. A migrated queue outside its group keeps
+  the group's heading as its category (`carry_over`).
 - **Reaching a working session** (0039, `ping.rs`, `Ping.tsx`, `reach.ts`): **Ask for a
   check-in** under a quiet card ("no check-in for N min"; a strip joined to the card's bottom,
   since the card is a button), in the task pane's **Session** strip (Building and Testing, an

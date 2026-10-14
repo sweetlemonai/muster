@@ -75,15 +75,18 @@ pub fn shown_label(p: &Project) -> String {
     }
 }
 
-/// The heading the project goes under: its category, else its group (the folder that holds a
-/// queue one level deeper), else "Other", in any case written "Other". Cleaned as a category is
+/// The heading the project goes under: its category, else its group's display name (0070), else
+/// its group (the folder that holds a queue one level deeper), else "Other", in any case written
+/// "Other". Cleaned as a category is
 /// kept (at most `MAX_CATEGORY` characters), so a long group folder's heading is the same name the
 /// window shows, sends back and projects.json keeps (0057 review R4).
 pub fn shown_category(p: &Project) -> String {
-    let c = if p.category.is_empty() {
-        &p.group
-    } else {
+    let c = if !p.category.is_empty() {
         &p.category
+    } else if !p.group_name.is_empty() {
+        &p.group_name
+    } else {
+        &p.group
     };
     let c = clean(c, MAX_CATEGORY);
     if c.is_empty() || c.eq_ignore_ascii_case(OTHER) {

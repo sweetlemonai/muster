@@ -221,3 +221,23 @@ export function settle(p: Pending | null, core: Layout): Pending | null {
   if (!p.saved) return p;
   return p.reads + 1 >= 2 ? null : { ...p, reads: p.reads + 1 };
 }
+
+/** Each heading's fold (0070): what the core says (`categoryFolded` on its projects), or what
+ *  was set here (`set`) until the core agrees. */
+export function headingFolds(rows: { category: string; categoryFolded: boolean }[], set: Readonly<Record<string, boolean>>): Map<string, boolean> {
+  const out = new Map<string, boolean>();
+  for (const r of rows) if (!out.has(r.category)) out.set(r.category, set[r.category] ?? r.categoryFolded);
+  for (const [name, folded] of Object.entries(set)) if (!out.has(name)) out.set(name, folded);
+  return out;
+}
+
+/** The folds set here that the core doesn't say yet (`core`, headingFolds of its own): the rest go. */
+export function settleFolds(set: Readonly<Record<string, boolean>>, core: ReadonlyMap<string, boolean>): Record<string, boolean> {
+  return Object.fromEntries(Object.entries(set).filter(([name, folded]) => core.get(name) !== folded));
+}
+
+/** What a folded heading still shows of its projects (0070, nothing out of mind): the selected
+ *  one (`current`) and every one that needs you, in the order given. */
+export function peeks<T extends { name: string; needs: number }>(rows: T[], current: string): T[] {
+  return rows.filter((r) => r.name === current || r.needs > 0);
+}

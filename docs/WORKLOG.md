@@ -4,6 +4,22 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Category headings fold; a group folder can carry a name, e.g. persianUtils → DashAfzar (mu-70)
+**Did:** a sidebar heading folds by its chevron or ←/→ (`fold_category`, projects.json `folded`);
+folded, it shows its name, project count, needs-you and working counts, and the selected project
+and any that need you stay as chips under it. Renaming a group's heading stores a display name
+for the group (projects.json `groupNames`), so all its projects, and later ones, show under it
+with no per-project category. Folds follow renames and merges. Manual 04 and AS_BUILT updated.
+**Decided:** projects hand-set to the old name follow a rename (so braindump, muster and drover
+stay under DashAfzar until the owner moves them); renaming back to the folder's name clears the
+display name; a merge is folded if either heading was; "needs you for something new" shows every
+project with a needs-you count as a chip. Headings are `role="heading"` now, not buttons.
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))` with
+HOME in a temp dir; 7 new Rust tests, render tests across 3 modes × 4 order chips; break-checks
+(each key line removed fails tests). The owner's projects.json not touched.
+**Open:** the owner renames persianUtils to DashAfzar and folds it (AC3); chevron and chip look and
+the 150px wrapping not seen in the running app.
+
 ## 2026-10-14 — Pause's help and the Pause button say it goes to the Paused lane (mu-68)
 **Fixed:** `muster help pause`, its manual page, the Pause and Resume tooltips, Pause.tsx's comment
 and the paused/resumed message still said a paused task stays where it is (mu-45's behaviour) →

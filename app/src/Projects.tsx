@@ -175,10 +175,11 @@ export function NameCell({ p, onSave }: { p: Project; onSave: (label: string) =>
 
 /** A project's category (0044), the sidebar heading it goes under, set in place and saved as it's
  *  typed: a new one, or one of `categories` (the other shown projects'), laid out as chips under the
- *  field while it has focus. Empty puts it under its group's heading (a queue one level deeper),
+ *  field while it has focus. Empty puts it under its group's heading (a queue one level deeper; the
+ *  group's display name when it has one, 0070),
  *  else Other, which the field shows greyed. */
 export function CategoryCell({ p, categories, onSave }: { p: Project; categories: string[]; onSave: (category: string) => Promise<unknown> }) {
-  return <InlineField value={p.category ?? ""} onSave={onSave} max={CATEGORY_MAX} placeholder={p.group || OTHER} label={`Category for ${p.name}`} options={categories} />;
+  return <InlineField value={p.category ?? ""} onSave={onSave} max={CATEGORY_MAX} placeholder={p.groupName || p.group || OTHER} label={`Category for ${p.name}`} options={categories} />;
 }
 
 /** A project's colour (0057), the dot by its name: the palette laid out, the current one pressed

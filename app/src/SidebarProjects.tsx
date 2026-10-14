@@ -24,8 +24,17 @@ type Keys = { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean }
 /** ⌥↑ is a step up (-1), ⌥↓ down (1); anything else none. */
 export const stepOf = (e: Keys): -1 | 1 | null => (pressed(e, "move-up") ? -1 : pressed(e, "move-down") ? 1 : null);
 
-/** What a screen reader hears of a row or heading that moves. */
+/** What ← and → do to a heading that's `folded` or not (0070): the fold to set, or null when the
+ *  key isn't one of them, ⌥ is held (⌥↑ ⌥↓ move it), or it's already that way. */
+export function foldKey(e: Keys, folded: boolean): boolean | null {
+  if (e.altKey) return null;
+  const want = pressed(e, "heading-fold") ? true : pressed(e, "heading-unfold") ? false : null;
+  return want === null || want === folded ? null : want;
+}
+
+/** What a screen reader hears of a row or heading that moves, and of a heading that folds (0070). */
 export const MOVE_KEYS = "Alt+ArrowUp Alt+ArrowDown";
+export const FOLD_KEYS = "ArrowLeft ArrowRight";
 
 /** A heading as it's kept: control characters out, trimmed, at most 24 characters, "other" in any
  *  case the Other heading (as the core's arrange::heading). */
@@ -116,29 +125,38 @@ export function SideRow({ rowKey, label, colour, swatches, onDot, onColour, onFo
 
 /** A category heading (0044) as it moves (0057): focusable, dragged with its projects, a drop
  *  target for a project (into it) or a heading (before or after it); a double click or ↩ renames
- *  it in place. A new heading (`fresh`) has no project yet: it says how to give it one, and
- *  Remove takes it away. */
-export function HeadingFrame({ name, count, fresh = false, drag, onRename, onRemove, children }: {
+ *  it in place. With `onFold` (0070) its chevron, ← and → fold it to its name and counts and
+ *  unfold it. A new heading (`fresh`) has no project yet: it says how to give it one, and Remove
+ *  takes it away. */
+export function HeadingFrame({ name, count, fresh = false, folded = false, drag, onRename, onRemove, onFold, children }: {
   name: string;
   /** Its projects, for what a screen reader hears. */
   count: number;
   fresh?: boolean;
+  folded?: boolean;
   drag?: DragProps;
   onRename?: () => void;
   onRemove?: () => void;
+  onFold?: (folded: boolean) => void;
   children: ReactNode;
 }) {
-  const said = fresh ? "new, no projects yet" : `${count} ${count === 1 ? "project" : "projects"}`;
+  const said = fresh ? "new, no projects yet" : `${count} ${count === 1 ? "project" : "projects"}${folded ? ", folded" : ""}`;
+  const can = [onRename && "↩ renames it", drag && "⌥↑ ⌥↓ move it", onFold && "← → fold it"].filter(Boolean).join(", ");
+  const keys = [onFold && FOLD_KEYS, drag && MOVE_KEYS].filter(Boolean).join(" ");
+  const focusable = Boolean(drag || onRename || onFold);
   const attrs = dragAttrs(drag, name);
+  const fold = folded ? "Unfold" : "Fold";
   return (
     <div
-      className={cx("side-cat", fresh && "fresh", drag?.dragging && "dragging", drag?.drop && `drop-${drag.drop}`)}
+      className={cx("side-cat", fresh && "fresh", folded && "folded", drag?.dragging && "dragging", drag?.drop && `drop-${drag.drop}`)}
       data-heading={name}
-      tabIndex={drag || onRename ? 0 : undefined}
-      role={drag || onRename ? "button" : undefined}
-      aria-keyshortcuts={drag ? MOVE_KEYS : undefined}
-      aria-label={`${name}, category heading, ${said}${onRename ? ": ↩ renames it" : ""}${drag ? ", ⌥↑ ⌥↓ move it" : ""}`}
-      title={onRename ? `Double-click or ↩ to rename${drag ? "; drag it, or ⌥↑ ⌥↓, to move it with its projects" : ""}` : undefined}
+      tabIndex={focusable ? 0 : undefined}
+      // A heading, focusable for its keys: its chevron and Remove are buttons inside it.
+      role={focusable ? "heading" : undefined}
+      aria-level={focusable ? 2 : undefined}
+      aria-keyshortcuts={keys || undefined}
+      aria-label={`${name}, category heading, ${said}${can ? `: ${can}` : ""}`}
+      title={onRename ? `Double-click or ↩ to rename${drag ? "; drag it, or ⌥↑ ⌥↓, to move it with its projects" : ""}${onFold ? "; ← → fold it" : ""}` : undefined}
       {...attrs}
       onKeyDown={(e) => {
         if (onRename && pressed(e, "heading-rename") && e.target === e.currentTarget) {
@@ -146,10 +164,32 @@ export function HeadingFrame({ name, count, fresh = false, drag, onRename, onRem
           onRename();
           return;
         }
+        const want = onFold ? foldKey(e, folded) : null;
+        if (onFold && want !== null) {
+          e.preventDefault();
+          onFold(want);
+          return;
+        }
         attrs.onKeyDown?.(e);
       }}
       onDoubleClick={onRename}
     >
+      {onFold && (
+        <Pill
+          type="button"
+          className="side-cat-fold"
+          aria-expanded={!folded}
+          aria-label={`${fold} ${name}`}
+          title={`${fold} ${name} (${folded ? "→" : "←"})`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onFold(!folded);
+          }}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          {folded ? "▸" : "▾"}
+        </Pill>
+      )}
       {children}
       {fresh && (
         <span className="side-cat-fresh">

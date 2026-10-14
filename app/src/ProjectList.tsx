@@ -10,7 +10,8 @@ import { inProgress } from "./lib";
 import { useLook } from "./modes";
 import { PAUSE_GLYPH } from "./Pause";
 import { QuietPing } from "./Ping";
-import { accepts, dropMove, type DropTarget, grouped, layoutOf, type Move, type Pending, type Plan, planMove, settle, sidebarGroups, track, withFresh } from "./projectOrder";
+import { accepts, dropMove, type DropTarget, grouped, headingFolds, layoutOf, peeks, settleFolds, type Move, type Pending, type Plan, planMove, settle, sidebarGroups, track, withFresh } from "./projectOrder";
+import { ColourDot } from "./ProjectSwatches";
 import { pressed } from "./shortcuts";
 import { cleanHeading, type DragProps, half, HeadingEdit, HeadingFrame, MOVE_KEYS, NewCategory, SideRow } from "./SidebarProjects";
 import type { Activity, Note, QueueInfo, Task } from "./types";
@@ -25,6 +26,8 @@ export type ProjectEdits = {
   arrange: (order: string[], categories: string[], moved: Moved | null) => Promise<void>;
   renameCategory: (from: string, to: string) => Promise<void>;
   colour: (key: string, colour: string) => Promise<void>;
+  /** A heading folded or unfolded (0070), by its name. */
+  fold: (heading: string, folded: boolean) => Promise<void>;
 };
 
 /** The edits through the core, each settling once `after` (the window's read of the queues) has. */
@@ -32,6 +35,7 @@ export const projectEdits = (after: () => Promise<void>): ProjectEdits => ({
   arrange: (order, categories, moved) => api.arrangeProjects(order, categories, moved).then(after),
   renameCategory: (from, to) => api.renameCategory(from, to).then(after),
   colour: (key, colour) => api.setProjectColour(key, colour).then(after),
+  fold: (heading, folded) => api.foldCategory(heading, folded).then(after),
 });
 
 /** What's being dragged, and where it would land. */
@@ -82,6 +86,8 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
   const [said, setSaid] = useState("");
   const [problem, setProblem] = useState("");
   const [focus, setFocus] = useState<Focus | null>(null);
+  // Folds set here (0070), shown at once, until the core says the same.
+  const [foldSet, setFoldSet] = useState<Record<string, boolean>>({});
   const nav = useRef<HTMLElement>(null);
   // While a row is dragged the order holds too, so nothing moves under the pointer.
   memo.current = nextOrder(memo.current, rows, order, editing !== null || drag !== null);
@@ -94,6 +100,23 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
   const core = useRef(layout);
   core.current = layoutOf(fromCore);
   useEffect(() => setPending((p) => settle(p, core.current)), [queues]);
+  const folds = headingFolds(rows, foldSet);
+  const coreFolds = useRef(folds);
+  coreFolds.current = headingFolds(rows, {});
+  useEffect(() => setFoldSet((f) => {
+    const kept = settleFolds(f, coreFolds.current);
+    return Object.keys(kept).length === Object.keys(f).length ? f : kept;
+  }), [queues]);
+  /** Fold or unfold a heading: at once, then kept by the core; a refusal puts it back. */
+  const fold = (name: string, folded: boolean) => {
+    if (!edit) return;
+    setFoldSet((f) => ({ ...f, [name]: folded }));
+    setSaid(`${name} ${folded ? "folded" : "unfolded"}`);
+    edit.fold(name, folded).catch((e: unknown) => {
+      setFoldSet((f) => Object.fromEntries(Object.entries(f).filter(([n]) => n !== name)));
+      setProblem(`Couldn't ${folded ? "fold" : "unfold"} ${name}: ${String(e)}`);
+    });
+  };
   useEffect(() => {
     if (!focus) return;
     const sel =
@@ -110,6 +133,8 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
     setSaid(p.said);
     setProblem("");
     if (then) setFocus({ ...then });
+    // A project moved under a folded heading unfolds it, so the row stays in sight (0070).
+    if (p.moved && folds.get(p.moved.category)) fold(p.moved.category, false);
     track(p, setPending, () => edit.arrange(p.order, p.categories, p.moved)).then(
       () => {
         if (p.moved) {
@@ -210,6 +235,7 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
       {full && <OrderChips value={order} onChange={pick} />}
       {groups.map((g) => {
         const isFresh = g.rows.length === 0;
+        const isFolded = Boolean(edit) && !isFresh && folds.get(g.name) === true;
         // A heading dragged over another heading's group lands before or after the whole group.
         const groupDrop = over?.kind === "heading" && over.name === g.name && over.side !== "into" ? `drop-${over.side}` : "";
         return (
@@ -252,9 +278,12 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
                 onRename={edit ? () => setRenaming(g.name) : undefined}
                 onRemove={isFresh ? () => setFresh((f) => f.filter((x) => x !== g.name)) : undefined}
                 into={isFresh && edit && drag?.kind === "project" ? headingDrag(g.name) : undefined}
+                folded={isFolded}
+                onFold={edit && !isFresh ? (v) => fold(g.name, v) : undefined}
               />
             )}
-            {g.rows.map((r) => {
+            {isFolded && <Peeks heading={g.name} rows={peeks(g.rows, current)} current={current} onPick={onPick} />}
+            {!isFolded && g.rows.map((r) => {
               const q = queues.find((x) => x.name === r.name);
               if (editing === r.name && onLabel && q) {
                 return <SideLabelEdit key={r.name} name={r.name} label={r.label} onSave={(v) => onLabel(q.path, labelToSave(v, r.name))} onDone={() => setEditing(null)} />;
@@ -330,7 +359,7 @@ export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClic
  *  and, but in Focus's narrow sidebar, how many of its tasks are being worked on and its tasks.
  *  Arranged in place (0057): `drag` moves it, `onRename` renames it, and a new one (`fresh`) takes
  *  a dragged project (`into`) or Remove. */
-function CategoryHead({ name, rows, total, fresh = false, drag, onRename, onRemove, into }: {
+function CategoryHead({ name, rows, total, fresh = false, drag, onRename, onRemove, into, folded = false, onFold }: {
   name: string;
   rows: ProjectRow[];
   total: number;
@@ -339,17 +368,21 @@ function CategoryHead({ name, rows, total, fresh = false, drag, onRename, onRemo
   onRename?: () => void;
   onRemove?: () => void;
   into?: DragProps;
+  /** Folded (0070): it says how many projects it holds, and what's being worked on in every mode. */
+  folded?: boolean;
+  onFold?: (folded: boolean) => void;
 }) {
   const full = useLook("sidebar") === "full";
   const needs = rows.reduce((n, r) => n + r.needs, 0);
   const working = rows.reduce((n, r) => n + r.activity.working, 0);
   const projects = `${rows.length} ${rows.length === 1 ? "project" : "projects"}`;
   return (
-    <HeadingFrame name={name} count={rows.length} fresh={fresh} drag={drag ?? into} onRename={onRename} onRemove={onRemove}>
+    <HeadingFrame name={name} count={rows.length} fresh={fresh} folded={folded} drag={drag ?? into} onRename={onRename} onRemove={onRemove} onFold={onFold}>
       <span className="side-cat-name">{name}</span>
       <span className="side-badges">
+        {folded && <small className="side-cat-projects" title={`${projects} in ${name}, folded`}>{projects}</small>}
         {needs > 0 && <span className="count warn" title={`${needs} need${needs === 1 ? "s" : ""} you in ${name}`}>{needs}</span>}
-        {full && working > 0 && (
+        {(full || folded) && working > 0 && (
           <span className="side-working" title={`${working} ${working === 1 ? "task" : "tasks"} being worked on now in ${name}: ${WORKING_HINT}`}>
             <i className="dot" aria-hidden="true" />
             {working} working
@@ -358,6 +391,28 @@ function CategoryHead({ name, rows, total, fresh = false, drag, onRename, onRemo
         {full && !fresh && <small title={`${total} ${total === 1 ? "task" : "tasks"} in ${projects}`}>{total}</small>}
       </span>
     </HeadingFrame>
+  );
+}
+
+/** What a folded heading still shows (0070): the selected project and the ones that need you, as
+ *  chips under it, each with its colour and what needs you; a click picks it. */
+function Peeks({ heading, rows, current, onPick }: { heading: string; rows: ProjectRow[]; current: string; onPick: (queue: string) => void }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="side-peeks" role="group" aria-label={`Shown from folded ${heading}`}>
+      {rows.map((r) => (
+        <Pill key={r.name} type="button" on={current === r.name} aria-pressed={current === r.name} className="side-peek" title={`${r.title}: in ${heading}, folded`} onClick={() => onPick(r.name)}>
+          <ColourDot name={r.label} colour={r.colour} />
+          {r.label}
+          {r.needs > 0 && (
+            <>
+              {" "}
+              <span className="count warn" title={`${r.needs} need${r.needs === 1 ? "s" : ""} you`}>{r.needs}</span>
+            </>
+          )}
+        </Pill>
+      ))}
+    </div>
   );
 }
 

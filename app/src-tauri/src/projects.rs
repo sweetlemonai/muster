@@ -44,6 +44,13 @@ pub struct Config {
     /// The sidebar's category headings in the owner's order (0057, `arrange`).
     #[serde(deserialize_with = "crate::arrange::read_category_order")]
     pub category_order: Vec<String>,
+    /// The sidebar's folded headings (0070, `arrange`), by name.
+    #[serde(deserialize_with = "crate::arrange::read_category_order")]
+    pub folded: Vec<String>,
+    /// A group folder's display name (0070, `arrange`): the heading its projects go under when
+    /// they have no category of their own (`persianUtils` → "DashAfzar"). Read as categories are.
+    #[serde(deserialize_with = "crate::labels::read_categories")]
+    pub group_names: HashMap<String, String>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -75,6 +82,8 @@ pub struct Project {
     pub category: String,
     /// Its colour (0057), one of `arrange::COLOURS`, or "" for none.
     pub colour: String,
+    /// Its group's display name (0070), "" for none: the group folder's own name shows then.
+    pub group_name: String,
 }
 
 /// Where the projects Muster knows come from (task 0062): the folder queues are found under and
@@ -269,6 +278,7 @@ pub fn list(base: &Path, config: &Config) -> Vec<Project> {
             label: config.labels.get(&key).cloned().unwrap_or_default(),
             category: config.categories.get(&key).cloned().unwrap_or_default(),
             colour: config.colours.get(&key).cloned().unwrap_or_default(),
+            group_name: config.group_names.get(&group).cloned().unwrap_or_default(),
             path: key.clone(),
             key,
             source: source.to_string(),
@@ -553,15 +563,21 @@ pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> V
         .find(|(k, _)| is_old(k))
         .map(|(_, l)| *l);
     let listed = list(base, config);
-    let old_listed = listed.iter().any(|p| canon(Path::new(&p.path)) == old);
-    let found = listed
-        .into_iter()
-        .find(|p| canon(Path::new(&p.path)) == new)
-        .map(|p| p.key);
+    let old_project = listed.iter().find(|p| canon(Path::new(&p.path)) == old);
+    let old_listed = old_project.is_some();
+    let new_project = listed.iter().find(|p| canon(Path::new(&p.path)) == new);
+    // Under its group's heading, with no category of its own (0070): a new queue outside that
+    // group keeps the heading as its category, so it doesn't drop to another one.
+    let heading = old_project
+        .filter(|p| category.is_none() && !p.group.is_empty())
+        .filter(|p| new_project.is_none_or(|n| n.group != p.group))
+        .map(crate::labels::shown_category);
+    let found = new_project.map(|p| p.key.clone());
     let carried = gate.is_some()
         || name.is_some()
         || label.is_some()
         || category.is_some()
+        || heading.is_some()
         || colour.is_some()
         || placed.is_some()
         || hidden
@@ -602,6 +618,12 @@ pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> V
             "projects.json: category {g:?} carried to the new queue"
         ));
         config.categories.insert(key.clone(), g);
+    }
+    if let Some(h) = heading {
+        lines.push(format!(
+            "projects.json: heading {h:?} carried to the new queue, as its category"
+        ));
+        config.categories.insert(key.clone(), h);
     }
     if let Some(c) = colour {
         lines.push(format!(
@@ -1145,6 +1167,51 @@ mod tests {
         carry_over(&mut c, &base, &old, &new);
         carry_over(&mut c, &base, &old, &new);
         assert_eq!(c.order, [new_key, key]);
+    }
+
+    #[test]
+    fn a_migrated_queue_outside_its_group_keeps_the_groups_heading() {
+        // 0070: a queue under its group's heading (named DashAfzar) migrates to a .muster/ the
+        // base doesn't find in that group: it keeps the heading, as its own category.
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let old = base.join("persianUtils/colors/tasks");
+        make_queue(&old);
+        let main = base.join("persianUtils/colors/main");
+        fs::create_dir_all(main.join(".git")).unwrap();
+        let new = main.join(layout::DIR);
+        fs::create_dir(&new).unwrap();
+        fs::write(new.join(layout::CONFIG), layout::config_text(true, None)).unwrap();
+        let new_key = new.to_string_lossy().to_string();
+        let mut c = Config::default();
+        c.group_names
+            .insert("persianUtils".into(), "DashAfzar".into());
+        let lines = carry_over(&mut c, &base, &old, &new);
+        assert_eq!(
+            c.categories.get(&new_key).map(String::as_str),
+            Some("DashAfzar")
+        );
+        assert!(
+            lines.contains(
+                &"projects.json: heading \"DashAfzar\" carried to the new queue, as its category"
+                    .to_string()
+            ),
+            "{lines:?}"
+        );
+        let p = list(&base, &c)
+            .into_iter()
+            .find(|p| p.key == new_key)
+            .unwrap();
+        assert_eq!(crate::labels::shown_category(&p), "DashAfzar");
+        // A queue with a category of its own carries that, and nothing more.
+        let mut c = Config::default();
+        c.group_names
+            .insert("persianUtils".into(), "DashAfzar".into());
+        c.categories
+            .insert(old.to_string_lossy().to_string(), "Apps".into());
+        let lines = carry_over(&mut c, &base, &old, &new);
+        assert_eq!(c.categories.get(&new_key).map(String::as_str), Some("Apps"));
+        assert!(!lines.iter().any(|l| l.contains("heading")), "{lines:?}");
     }
 
     #[test]

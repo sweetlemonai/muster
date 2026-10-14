@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accepts, dropMove, grouped, headingRanks, type Layout, layoutOf, orderHeadings, type Pending, planMove, settle, shownLayout, sidebarGroups, track } from "./projectOrder";
+import { accepts, dropMove, grouped, headingFolds, headingRanks, peeks, settleFolds, type Layout, layoutOf, orderHeadings, type Pending, planMove, settle, shownLayout, sidebarGroups, track } from "./projectOrder";
 import { byCategory } from "./labels";
 
 // The sidebar's own arrangement (0057): headings and projects as the owner puts them, by drag or
@@ -275,5 +275,23 @@ describe("a move's bookkeeping, shared by the sidebar and Settings (0057 review 
     two.done();
     await b;
     expect(s.get()).toEqual({ layout: second.layout, saved: true, reads: 0 });
+  });
+});
+
+describe("folded headings (0070)", () => {
+  const row = (name: string, category: string, over: Partial<{ categoryFolded: boolean; needs: number }> = {}) => ({ name, category, categoryFolded: false, needs: 0, ...over });
+  it("are the headings the core says are folded, with a fold set here winning until the core agrees", () => {
+    const rows = [row("a", "Apps", { categoryFolded: true }), row("b", "Apps", { categoryFolded: true }), row("t", "Tools")];
+    expect([...headingFolds(rows, {})]).toEqual([["Apps", true], ["Tools", false]]);
+    expect([...headingFolds(rows, { Tools: true, Apps: false })]).toEqual([["Apps", false], ["Tools", true]]);
+    // Once the core says the same, the one set here goes.
+    expect(settleFolds({ Tools: true, Apps: false }, headingFolds(rows, {}))).toEqual({ Tools: true, Apps: false });
+    expect(settleFolds({ Tools: false, Apps: true }, headingFolds(rows, {}))).toEqual({});
+  });
+  it("still show the selected project and every one that needs you, in order, on a folded heading", () => {
+    const rows = [row("a", "Apps"), row("b", "Apps", { needs: 2 }), row("c", "Apps"), row("d", "Apps", { needs: 1 })];
+    expect(peeks(rows, "c").map((r) => r.name)).toEqual(["b", "c", "d"]);
+    expect(peeks(rows, "all").map((r) => r.name)).toEqual(["b", "d"]);
+    expect(peeks([row("a", "Apps")], "zeta")).toEqual([]);
   });
 });

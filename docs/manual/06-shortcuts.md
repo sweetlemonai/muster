@@ -60,6 +60,8 @@ Every keyboard shortcut in the app, and the slash commands for Claude Code. This
 | ⌥↑ | Move the project or the heading up one place, its projects with it. A project at the top of its heading goes to the end of the one above. The first move picks the Mine order | A project or a category heading in the sidebar, once Tab has put the focus on it |
 | ⌥↓ | Move the project or the heading down one place. A project at the bottom of its heading goes to the top of the one below | A project or a category heading in the sidebar, once Tab has put the focus on it |
 | ↩ | Rename the heading in place (a double click does too). A name another heading has puts the two together | A category heading in the sidebar, once Tab has put the focus on it |
+| ← | Fold the heading to its name and counts (its chevron does too); the selected project and the ones that need you still show on it | A category heading in the sidebar, once Tab has put the focus on it |
+| → | Unfold the heading | A category heading in the sidebar, once Tab has put the focus on it |
 | Esc | Fold the colours back without changing the project's colour | A project's colours in the sidebar, after a click on its dot |
 
 ## Slash commands in Claude Code

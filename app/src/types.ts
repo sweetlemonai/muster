@@ -252,6 +252,8 @@ export type QueueInfo = {
   rank?: number | null;
   /** Its heading's place among the sidebar's headings (0057), null when it has none yet. */
   categoryRank?: number | null;
+  /** Its heading is folded in the sidebar (0070); optional so an older core reads as open. */
+  categoryFolded?: boolean;
   /** How many lessons from reviews wait for the owner's yes (0027); optional so an older core
    *  reads as none. */
   lessonsWaiting?: number;
@@ -294,6 +296,8 @@ export type Project = {
   category?: string;
   /** Its colour (0057), "" for none. */
   colour?: string;
+  /** Its group's display name (0070), "" for none: its heading when it has no category. */
+  groupName?: string;
 };
 
 /** A lesson from reviews (0027): a kind of mistake that recurred, as a rule for builders, or one

@@ -740,6 +740,18 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .side-cat.side-editing { flex-direction: column; align-items: stretch; gap: 2px; }
 /* A new heading wraps, so its hint goes under the name instead of squeezing it to nothing (review R2). */
 .side-cat.fresh { flex-wrap: wrap; }
+/* A heading folds (0070): its chevron first; folded, it says how many projects it holds and wraps
+   its counts under its name at the sidebar's narrowest, never squeezing the name out. What it
+   still shows of its projects (the selected one, the ones that need you) sits under it as chips. */
+.side-cat-fold.ui-pill { flex: none; padding: 0 4px; font-size: 10px; line-height: 14px; color: var(--muted); }
+.side-cat-fold.ui-pill:hover, .side-cat-fold.ui-pill:focus-visible { color: var(--text); }
+.side-cat.folded { flex-wrap: wrap; row-gap: 2px; }
+.side-cat.folded .side-cat-name { min-width: 4em; }
+.side-cat.folded .side-badges { flex-wrap: wrap; }
+.side-cat-projects { color: var(--muted); white-space: nowrap; }
+.side-peeks { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 8px 4px 22px; }
+.side-peek.ui-pill { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 0 7px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side-peek .side-swatch-dot { margin: 0; }
 .side-cat-fresh { flex-basis: 100%; display: inline-flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; font-weight: 400; color: var(--muted); }
 .side-cat-remove.ui-pill { font-size: 11px; padding: 0 7px; }
 .side-new-cat.ui-pill { align-self: flex-start; margin: 8px 6px 0; font-size: 11px; padding: 0 7px; color: var(--muted); border: 1px dashed var(--line); }

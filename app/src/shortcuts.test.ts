@@ -102,6 +102,11 @@ describe("pressed", () => {
     expect(pressed(alt("ArrowUp", { metaKey: true }), "move-up")).toBe(false);
     expect(pressed(alt("ArrowUp", { ctrlKey: true }), "move-up")).toBe(false);
   });
+  it("folds a heading with ←, unfolds it with → (0070)", () => {
+    expect(pressed(ev("ArrowLeft"), "heading-fold")).toBe(true);
+    expect(pressed(ev("ArrowRight"), "heading-unfold")).toBe(true);
+    expect(pressed(ev("ArrowRight"), "heading-fold")).toBe(false);
+  });
   it("takes Esc with or without a modifier, as the handlers always have", () => {
     expect(pressed(ev("Escape"), "close-pane")).toBe(true);
     expect(pressed(ev("Escape", true), "close-pane")).toBe(true);

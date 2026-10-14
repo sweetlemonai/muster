@@ -156,6 +156,8 @@ describe("Settings (0036)", () => {
     // The chips to pick from lay out under it only while it has focus: none at rest.
     expect(html).not.toContain("inline-options");
     expect(cell({ group: "" })).toContain('placeholder="Other"');
+    // A group with a display name (0070) shows that as where it goes.
+    expect(cell({ groupName: "DashAfzar" })).toContain('placeholder="DashAfzar"');
     expect(cell({ category: "Tools" })).toContain('value="Tools"');
   });
 

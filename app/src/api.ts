@@ -33,6 +33,8 @@ export const api = {
   setProjectColour: (key: string, colour: string) => invoke<void>("set_project_colour", { key, colour }),
   arrangeProjects: (order: string[], categories: string[], moved: Moved | null) => invoke<void>("arrange_projects", { order, categories, moved }),
   renameCategory: (from: string, to: string) => invoke<void>("rename_category", { from, to }),
+  // A sidebar heading folded or unfolded (0070), by its name; kept in projects.json.
+  foldCategory: (name: string, folded: boolean) => invoke<void>("fold_category", { name, folded }),
   // The window's title for the project shown, by its name ("all" for All projects).
   showProjectTitle: (name: string) => invoke<void>("show_project_title", { name }),
   // What its tasks' keys start with (0033), 2 to 4 lowercase letters; refused when it isn't one

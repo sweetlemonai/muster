@@ -8,7 +8,7 @@ import projectsSource from "./Projects.tsx?raw";
 import sidebarSource from "./SidebarProjects.tsx?raw";
 import ProjectList, { ActivityLine, labelToSave, OrderChips, type ProjectEdits, SideLabelEdit, SumsLine } from "./ProjectList";
 import { ColourDot, Swatches } from "./ProjectSwatches";
-import { cleanHeading, HeadingEdit, HeadingFrame, NewCategory, SideRow, stepOf } from "./SidebarProjects";
+import { cleanHeading, foldKey, HeadingEdit, HeadingFrame, NewCategory, SideRow, stepOf } from "./SidebarProjects";
 import { type DisplayMode, Mode } from "./modes";
 import type { ProjectActivity, Sums } from "./activity";
 import type { Activity, QueueInfo, Task } from "./types";
@@ -237,7 +237,7 @@ describe("the sidebar arranged in place (0057)", () => {
     { name: "beta", path: "/p/beta/tasks", counts: { ready: 2 } },
   ];
   const tasks = [task({ queue: "zeta", id: "0001", stage: "building", claimedBy: "zeta/wt-a", live: true }), task({ queue: "beta", id: "0001" })];
-  const edits: ProjectEdits = { arrange: async () => {}, renameCategory: async () => {}, colour: async () => {} };
+  const edits: ProjectEdits = { arrange: async () => {}, renameCategory: async () => {}, colour: async () => {}, fold: async () => {} };
   // `null` for no way to save.
   const render = (mode: DisplayMode = "adhd", edit: ProjectEdits | null = edits) =>
     renderToStaticMarkup(createElement(Mode.Provider, { value: mode }, createElement(ProjectList, { queues, tasks, notes: [], activity: [], now: NOW, current: "all", onPick: () => {}, onLabel: async () => {}, edit: edit ?? undefined })));
@@ -269,8 +269,9 @@ describe("the sidebar arranged in place (0057)", () => {
   });
   it("makes every heading focusable and draggable, says how to move and rename it", () => {
     const html = render();
-    expect(html).toContain('<div class="side-cat" data-heading="Apps" tabindex="0" role="button" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" aria-label="Apps, category heading, 2 projects: ↩ renames it, ⌥↑ ⌥↓ move it" title="Double-click or ↩ to rename; drag it, or ⌥↑ ⌥↓, to move it with its projects" draggable="true">');
-    expect(html).toContain('aria-label="Tools, category heading, 1 project: ↩ renames it, ⌥↑ ⌥↓ move it"');
+    // A heading, focusable for its keys (0070: its chevron is a button inside it, so not a button itself).
+    expect(html).toContain('<div class="side-cat" data-heading="Apps" tabindex="0" role="heading" aria-level="2" aria-keyshortcuts="ArrowLeft ArrowRight Alt+ArrowUp Alt+ArrowDown" aria-label="Apps, category heading, 2 projects: ↩ renames it, ⌥↑ ⌥↓ move it, ← → fold it" title="Double-click or ↩ to rename; drag it, or ⌥↑ ⌥↓, to move it with its projects; ← → fold it" draggable="true">');
+    expect(html).toContain('aria-label="Tools, category heading, 1 project: ↩ renames it, ⌥↑ ⌥↓ move it, ← → fold it"');
   });
   it("puts each project's colour as a dot at the left of its row, a button that lays the colours out", () => {
     const html = render();
@@ -345,6 +346,12 @@ describe("headings made and renamed in place (0057)", () => {
     expect(cleanHeading("oTHer")).toBe("Other");
     expect(cleanHeading(" \n")).toBe("");
   });
+  it("← folds an open heading, → unfolds a folded one, and nothing else changes it (0070)", () => {
+    const ev = (key: string, altKey = false) => ({ key, altKey, metaKey: false, ctrlKey: false });
+    expect([foldKey(ev("ArrowLeft"), false), foldKey(ev("ArrowRight"), true)]).toEqual([true, false]);
+    expect([foldKey(ev("ArrowLeft"), true), foldKey(ev("ArrowRight"), false)]).toEqual([null, null]);
+    expect([foldKey(ev("ArrowLeft", true), false), foldKey(ev("ArrowUp"), false), foldKey(ev("Enter"), true)]).toEqual([null, null, null]);
+  });
   it("⌥↑ steps up, ⌥↓ down, a plain arrow neither", () => {
     const ev = (key: string, altKey = true) => ({ key, altKey, metaKey: false, ctrlKey: false });
     expect([stepOf(ev("ArrowUp")), stepOf(ev("ArrowDown")), stepOf(ev("ArrowUp", false)), stepOf(ev("Enter"))]).toEqual([-1, 1, null, null]);
@@ -389,5 +396,85 @@ describe("the drag wiring follows the tested rules (0057 review R1, R3, R5)", ()
     expect(projectsSource).toContain("const layout = shownLayout(pending, core);");
     expect(projectsSource).toContain("useEffect(() => setPending((p) => settle(p, core)), [core]);");
     expect(projectsSource).toContain('planMove(layout, { kind: "step-project", key: p.key, by }, named)');
+  });
+});
+
+describe("folded headings in the sidebar (0070)", () => {
+  const queues: QueueInfo[] = [
+    { name: "alpha", path: "/p/alpha/tasks", counts: { ready: 1 }, label: "Alpha app", category: "Apps", colour: "lime", categoryFolded: true },
+    { name: "muster", path: "/p/muster/tasks", counts: { ready: 1 }, label: "Muster", category: "Apps", categoryFolded: true },
+    { name: "beta", path: "/p/beta/tasks", counts: { building: 1 }, label: "beta", category: "Apps", categoryFolded: true },
+    { name: "zeta", path: "/p/zeta/tasks", counts: { ready: 1 }, label: "zeta", category: "Tools" },
+  ];
+  const tasks = [
+    task({ queue: "muster", id: "0001", waitingForOwner: true }),
+    task({ queue: "beta", id: "0001", stage: "building", claimedBy: "beta/wt-a", live: true }),
+    task({ queue: "zeta", id: "0001" }),
+    task({ queue: "alpha", id: "0001" }),
+  ];
+  const edits: ProjectEdits = { arrange: async () => {}, renameCategory: async () => {}, colour: async () => {}, fold: async () => {} };
+  const render = (mode: DisplayMode = "adhd", current = "alpha") =>
+    renderToStaticMarkup(createElement(Mode.Provider, { value: mode }, createElement(ProjectList, { queues, tasks, notes: [], activity: [], now: NOW, current, onPick: () => {}, onLabel: async () => {}, edit: edits })));
+  const rows = (html: string) => [...html.matchAll(/<span class="side-name"[^>]*>([^<]*)<\/span>/g)].map((m) => m[1]);
+  const peekNames = (html: string) => [...html.matchAll(/<button type="button"[^>]*class="ui-pill(?: ui-pill--on)? side-peek"[^>]*>([\s\S]*?)<\/button>/g)].map((m) => plain(m[1]).trim());
+  const heading = (html: string, name: string) => {
+    const at = html.indexOf(`data-heading="${name}"`);
+    return html.slice(html.lastIndexOf("<div", at), html.indexOf("</div>", at));
+  };
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("folds to its name and counts: projects, what needs you, what's being worked on, its tasks", () => {
+    const html = render();
+    const apps = heading(html, "Apps");
+    expect(apps).toMatch(/^<div class="side-cat folded" data-heading="Apps"/);
+    expect(apps).toMatch(/<button type="button" aria-expanded="false" aria-label="Unfold Apps" title="Unfold Apps \(→\)" class="ui-pill side-cat-fold">▸<\/button>/);
+    expect(plain(apps)).toMatch(/Apps/);
+    expect(apps).toContain('<small class="side-cat-projects" title="3 projects in Apps, folded">3 projects</small>');
+    expect(apps).toContain('<span class="count warn" title="1 needs you in Apps">1</span>');
+    expect(plain(apps)).toContain("1 working");
+    expect(apps).toContain('<small title="3 tasks in 3 projects">3</small>');
+    // Its rows are folded away; the open heading's stay, with its chevron open.
+    expect(rows(html)).toEqual(["All", "zeta"]);
+    expect(heading(html, "Tools")).toMatch(/aria-expanded="true" aria-label="Fold Tools"/);
+    expect(heading(html, "Tools")).not.toContain("side-cat-projects");
+  });
+  it("still shows the selected project and the ones that need you on the folded heading", () => {
+    const html = render();
+    expect(peekNames(html)).toEqual(["Alpha app", "Muster 1"]);
+    expect(html).toMatch(/<div class="side-peeks" role="group" aria-label="Shown from folded Apps">/);
+    expect(html).toMatch(/aria-pressed="true"[^>]*class="ui-pill ui-pill--on side-peek"[^>]*><i class="side-swatch-dot" data-colour="lime"/);
+    // Nothing selected in it: only what needs you.
+    expect(peekNames(render("adhd", "zeta"))).toEqual(["Muster 1"]);
+  });
+  it("says its keys: ← folds, → unfolds, as well as moving and renaming", () => {
+    expect(heading(render(), "Apps")).toContain('aria-keyshortcuts="ArrowLeft ArrowRight Alt+ArrowUp Alt+ArrowDown"');
+    expect(heading(render(), "Apps")).toContain('role="heading" aria-level="2"');
+  });
+  for (const mode of ["adhd", "standard", "focus"] as const) {
+    for (const chip of ["working", "az", "needs", "mine"]) {
+      it(`holds in ${mode} under ${chip}, with its counts`, () => {
+        vi.stubGlobal("localStorage", { getItem: () => chip });
+        const html = render(mode);
+        expect(rows(html)).toEqual(["All", "zeta"]);
+        // In the order the chip gives.
+        expect(peekNames(html).sort()).toEqual(["Alpha app", "Muster 1"]);
+        const apps = heading(html, "Apps");
+        expect(apps).toContain("3 projects");
+        expect(apps).toContain('title="1 needs you in Apps"');
+        expect(plain(apps)).toContain("1 working");
+      });
+    }
+  }
+  it("without a way to save, nothing folds", () => {
+    const html = renderToStaticMarkup(createElement(ProjectList, { queues, tasks, notes: [], activity: [], now: NOW, current: "all", onPick: () => {} }));
+    expect(rows(html).sort()).toEqual(["All", "Alpha app", "Muster", "beta", "zeta"]);
+    expect(html).not.toContain("side-cat-fold");
+  });
+  it("a heading renamed after the group's name (DashAfzar) is the heading its projects show under", () => {
+    const renamed = queues.map((q) => (q.category === "Apps" ? { ...q, category: "DashAfzar", categoryFolded: false } : q));
+    const html = renderToStaticMarkup(createElement(ProjectList, { queues: renamed, tasks, notes: [], activity: [], now: NOW, current: "all", onPick: () => {}, edit: edits }));
+    expect(html).toMatch(/<div class="side-group" role="group" aria-label="DashAfzar"[^>]*><div class="side-cat" data-heading="DashAfzar"/);
+    expect(rows(html).sort()).toEqual(["All", "Alpha app", "Muster", "beta", "zeta"]);
   });
 });

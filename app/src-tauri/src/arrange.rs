@@ -152,9 +152,13 @@ fn merged(first: Vec<String>, before: &[String]) -> Vec<String> {
     out
 }
 
-/// Rename the heading `from` to `to`: every project under it (by its category, its group or
-/// Other) goes under `to`, which may be another heading already, and then the two are one, in
-/// `to`'s place. Refused for an empty `to` or a `from` no project in `list` is under.
+/// Rename the heading `from` to `to`: every project under it goes under `to`, which may be another
+/// heading already, and then the two are one, in `to`'s place, folded if either was (0070). A
+/// project there by its group's heading (no category of its own) moves by the group's display
+/// name (0070), so the group's projects, and any it gains later, need no category; `to` being
+/// the group folder's own name clears that. A project there by a category of its own (or by
+/// nothing, under Other) takes `to` as its category. Refused for an empty `to` or a `from` no
+/// project in `list` is under.
 pub fn rename_category(
     c: &mut Config,
     list: &[Project],
@@ -176,20 +180,62 @@ pub fn rename_category(
         return Ok(());
     }
     for p in under {
-        labels::set(&mut c.categories, &p.key, &to, MAX_CATEGORY);
-    }
-    let had_to = c.category_order.contains(&to);
-    if let Some(i) = c.category_order.iter().position(|h| *h == from) {
-        if had_to {
-            c.category_order.remove(i);
+        if p.category.is_empty() && !p.group.is_empty() {
+            if heading(&p.group) == to {
+                c.group_names.remove(&p.group);
+            } else {
+                labels::set(&mut c.group_names, &p.group, &to, MAX_CATEGORY);
+            }
         } else {
-            c.category_order[i] = to;
+            labels::set(&mut c.categories, &p.key, &to, MAX_CATEGORY);
         }
+    }
+    renamed(&mut c.category_order, &from, &to);
+    renamed(&mut c.folded, &from, &to);
+    Ok(())
+}
+
+/// `from` in a list of headings (an order, the folded ones) renamed `to`: in its place, or gone
+/// when `to` is there already.
+fn renamed(list: &mut Vec<String>, from: &str, to: &str) {
+    let had_to = list.iter().any(|h| h == to);
+    if let Some(i) = list.iter().position(|h| h == from) {
+        if had_to {
+            list.remove(i);
+        } else {
+            list[i] = to.to_string();
+        }
+    }
+}
+
+/// Fold (or unfold) the heading `name` in the sidebar (0070). Refused, with nothing changed, for
+/// no name or a heading no project in `list` is under.
+pub fn set_folded(
+    c: &mut Config,
+    list: &[Project],
+    name: &str,
+    folded: bool,
+) -> Result<(), String> {
+    let h = heading(name);
+    if h.is_empty() {
+        return Err("a category needs a name".into());
+    }
+    if !list
+        .iter()
+        .any(|p| heading(&labels::shown_category(p)) == h)
+    {
+        return Err(format!("no category named {h:?}"));
+    }
+    c.folded.retain(|x| *x != h);
+    if folded {
+        c.folded.push(h);
+        c.folded.truncate(MAX_ORDER);
     }
     Ok(())
 }
 
-/// Each queue's colour, its place in the Mine order and its heading's place, in the state, from
+/// Each queue's colour, its place in the Mine order, its heading's place and whether it's folded
+/// (0070), in the state, from
 /// its project in `list` (the same folder) and `c`.
 pub fn apply(c: &Config, list: &[Project], queues: &mut [QueueInfo]) {
     for q in queues {
@@ -198,6 +244,7 @@ pub fn apply(c: &Config, list: &[Project], queues: &mut [QueueInfo]) {
             q.rank = c.order.iter().position(|k| *k == p.key);
             let h = heading(&labels::shown_category(p));
             q.category_rank = c.category_order.iter().position(|x| *x == h);
+            q.category_folded = c.folded.contains(&h);
         }
     }
 }
@@ -433,9 +480,11 @@ mod tests {
         labels::set(&mut c.categories, &dr, "Tools", MAX_CATEGORY);
         c.category_order = vec!["Tools".into(), "persianUtils".into(), "Apps".into()];
         let list = projects::list(base.path(), &c);
-        // A group's heading (colors has no category of its own): renamed, in its place.
+        // A group's heading (colors has no category of its own): renamed, in its place, by the
+        // group's display name (0070), not by a category of colors' own.
         rename_category(&mut c, &list, "persianUtils", " Libraries ").unwrap();
-        assert_eq!(c.categories[&co], "Libraries");
+        assert_eq!(c.group_names["persianUtils"], "Libraries");
+        assert!(!c.categories.contains_key(&co));
         assert_eq!(c.category_order, ["Tools", "Libraries", "Apps"]);
         // Into one that exists: one heading, in the place of the one kept.
         let list = projects::list(base.path(), &c);
@@ -532,6 +581,275 @@ mod tests {
         assert!(shown(&c)
             .iter()
             .all(|(_, h, r)| h == "Libraries" && *r == Some(0)));
+    }
+
+    /// A group of two (`persianUtils/colors`, `persianUtils/dates`), two projects of their own with
+    /// the group's folder name set by hand as their category (`muster`, `drover`), and one under
+    /// `Tools` (`alpha`): synthetic, after this Mac's shape (0070).
+    fn grouped() -> (tempfile::TempDir, Config) {
+        let base = tempfile::tempdir().unwrap();
+        for q in [
+            "persianUtils/colors/tasks",
+            "persianUtils/dates/tasks",
+            "muster/tasks",
+            "drover/tasks",
+            "alpha/tasks",
+        ] {
+            make_queue(&base.path().join(q));
+        }
+        let mut c = Config::default();
+        for (name, cat) in [
+            ("muster", "persianUtils"),
+            ("drover", "persianUtils"),
+            ("alpha", "Tools"),
+        ] {
+            let k = key(base.path(), &c, name);
+            labels::set(&mut c.categories, &k, cat, MAX_CATEGORY);
+        }
+        (base, c)
+    }
+
+    /// Each shown queue's name, heading and whether its heading is folded, as the state says.
+    fn headings_of(base: &Path, c: &Config) -> Vec<(String, String, bool)> {
+        let list = projects::list(base, c);
+        let mut s =
+            crate::queue::read_state(&projects::shown(&list), &mut crate::queue::Cache::default());
+        labels::apply(&list, &mut s.queues);
+        apply(c, &list, &mut s.queues);
+        let mut rows: Vec<_> = s
+            .queues
+            .iter()
+            .map(|q| (q.name.clone(), q.category.clone(), q.category_folded))
+            .collect();
+        rows.sort();
+        rows
+    }
+
+    #[test]
+    fn a_heading_folds_and_unfolds_and_the_state_says_so() {
+        let (base, mut c) = grouped();
+        let list = projects::list(base.path(), &c);
+        set_folded(&mut c, &list, " persianUtils ", true).unwrap();
+        set_folded(&mut c, &list, "persianUtils", true).unwrap();
+        assert_eq!(c.folded, ["persianUtils"], "once");
+        let rows = headings_of(base.path(), &c);
+        assert_eq!(
+            rows,
+            [
+                ("alpha".into(), "Tools".into(), false),
+                ("colors".into(), "persianUtils".into(), true),
+                ("dates".into(), "persianUtils".into(), true),
+                ("drover".into(), "persianUtils".into(), true),
+                ("muster".into(), "persianUtils".into(), true),
+            ]
+        );
+        let json = serde_json::to_value(crate::queue::QueueInfo {
+            category_folded: true,
+            ..sample_queue()
+        })
+        .unwrap();
+        assert_eq!(json["categoryFolded"], true);
+        set_folded(&mut c, &list, "persianUtils", false).unwrap();
+        assert!(c.folded.is_empty());
+        // A heading no project is under, or no name, is refused with nothing changed.
+        assert_eq!(
+            set_folded(&mut c, &list, "Nowhere", true).unwrap_err(),
+            "no category named \"Nowhere\""
+        );
+        assert_eq!(
+            set_folded(&mut c, &list, " ", true).unwrap_err(),
+            "a category needs a name"
+        );
+        assert!(c.folded.is_empty());
+        // Other folds too.
+        let mut c = Config::default();
+        let list = projects::list(base.path(), &c);
+        set_folded(&mut c, &list, "other", true).unwrap();
+        assert_eq!(c.folded, [OTHER]);
+    }
+
+    fn sample_queue() -> crate::queue::QueueInfo {
+        crate::queue::QueueInfo {
+            name: "q".into(),
+            path: "/q".into(),
+            prefix: "q".into(),
+            counts: HashMap::new(),
+            your_check: 0,
+            your_check_limit: None,
+            label: "q".into(),
+            category: OTHER.into(),
+            colour: String::new(),
+            rank: None,
+            category_rank: None,
+            category_folded: false,
+            lessons_waiting: 0,
+        }
+    }
+
+    #[test]
+    fn folds_and_group_names_are_saved_and_read_leniently() {
+        let d = tempfile::tempdir().unwrap();
+        let f = d.path().join("cfg/projects.json");
+        projects::edit(&f, |c| {
+            c.folded = vec!["DashAfzar".into()];
+            c.group_names
+                .insert("persianUtils".into(), "DashAfzar".into());
+            Ok(())
+        })
+        .unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&f).unwrap()).unwrap();
+        assert_eq!(saved["folded"], serde_json::json!(["DashAfzar"]));
+        assert_eq!(
+            saved["groupNames"],
+            serde_json::json!({"persianUtils": "DashAfzar"})
+        );
+        assert_eq!(projects::load(&f).group_names["persianUtils"], "DashAfzar");
+        // An old file has neither; junk entries go, the rest of the file stays.
+        let c = config(r#"{"gate": {"/a": "g"}}"#);
+        assert!(c.folded.is_empty() && c.group_names.is_empty());
+        let c = config(&format!(
+            r#"{{"gate": {{"/a": "g"}}, "folded": ["Tools", 3, "other", "", "Tools", " Apps\n"],
+                "groupNames": {{"persianUtils": " DashAfzar\u0007 ", "x": 4, "y": "  ", "z": "{}"}}}}"#,
+            "n".repeat(40)
+        ));
+        assert_eq!(c.folded, ["Tools", OTHER, "Apps"]);
+        assert_eq!(c.group_names.len(), 2);
+        assert_eq!(c.group_names["persianUtils"], "DashAfzar");
+        assert_eq!(c.group_names["z"].chars().count(), MAX_CATEGORY);
+        for broken in [
+            r#"{"folded": "Tools", "groupNames": ["x"], "gate": {"/a": "g"}}"#,
+            r#"{"folded": null, "groupNames": 3, "gate": {"/a": "g"}}"#,
+        ] {
+            let c = config(broken);
+            assert!(c.folded.is_empty() && c.group_names.is_empty(), "{broken}");
+            assert_eq!(c.gate.len(), 1, "{broken}: the rest is kept");
+        }
+    }
+
+    #[test]
+    fn renaming_a_group_heading_names_the_group_and_takes_the_hand_set_ones_along() {
+        let (base, mut c) = grouped();
+        let (mu, co) = (
+            key(base.path(), &c, "muster"),
+            key(base.path(), &c, "colors"),
+        );
+        c.category_order = vec!["Tools".into(), "persianUtils".into()];
+        let list = projects::list(base.path(), &c);
+        set_folded(&mut c, &list, "persianUtils", true).unwrap();
+        rename_category(&mut c, &list, "persianUtils", "DashAfzar").unwrap();
+        // The group gets the name; its own projects need no category of their own.
+        assert_eq!(
+            c.group_names,
+            HashMap::from([("persianUtils".to_string(), "DashAfzar".to_string())])
+        );
+        assert!(!c.categories.contains_key(&co));
+        // The ones set to the old name by hand stay under the heading, as before.
+        assert_eq!(c.categories[&mu], "DashAfzar");
+        // Its place and its fold go with it.
+        assert_eq!(c.category_order, ["Tools", "DashAfzar"]);
+        assert_eq!(c.folded, ["DashAfzar"]);
+        let under = |c: &Config| -> Vec<String> {
+            headings_of(base.path(), c)
+                .into_iter()
+                .filter(|(_, h, _)| h == "DashAfzar")
+                .map(|(n, _, f)| {
+                    assert!(f, "{n} folded");
+                    n
+                })
+                .collect()
+        };
+        assert_eq!(under(&c), ["colors", "dates", "drover", "muster"]);
+        // A project the group gains later goes under the name too, with nothing set for it.
+        make_queue(&base.path().join("persianUtils/fonts/tasks"));
+        assert_eq!(under(&c), ["colors", "dates", "drover", "fonts", "muster"]);
+        let list = projects::list(base.path(), &c);
+        let fonts = list.iter().find(|p| p.name == "fonts").unwrap();
+        assert_eq!(
+            (fonts.category.as_str(), fonts.group_name.as_str()),
+            ("", "DashAfzar")
+        );
+        assert_eq!(
+            serde_json::to_value(fonts).unwrap()["groupName"],
+            "DashAfzar"
+        );
+    }
+
+    #[test]
+    fn renaming_a_group_heading_back_to_its_folder_clears_the_name() {
+        let (base, mut c) = grouped();
+        let mu = key(base.path(), &c, "muster");
+        let list = projects::list(base.path(), &c);
+        rename_category(&mut c, &list, "persianUtils", "DashAfzar").unwrap();
+        let list = projects::list(base.path(), &c);
+        set_folded(&mut c, &list, "DashAfzar", true).unwrap();
+        rename_category(&mut c, &list, "DashAfzar", " persianUtils").unwrap();
+        assert!(
+            c.group_names.is_empty(),
+            "the folder's own name is no display name"
+        );
+        assert_eq!(c.categories[&mu], "persianUtils");
+        assert_eq!(c.folded, ["persianUtils"]);
+        assert!(headings_of(base.path(), &c)
+            .iter()
+            .filter(|(n, _, _)| n != "alpha")
+            .all(|(_, h, f)| h == "persianUtils" && *f));
+    }
+
+    #[test]
+    fn renaming_a_group_heading_onto_another_heading_merges_them_folded_if_either_was() {
+        let (base, mut c) = grouped();
+        c.category_order = vec!["persianUtils".into(), "Tools".into()];
+        let list = projects::list(base.path(), &c);
+        set_folded(&mut c, &list, "persianUtils", true).unwrap();
+        rename_category(&mut c, &list, "persianUtils", "Tools").unwrap();
+        assert_eq!(c.group_names["persianUtils"], "Tools");
+        assert_eq!(
+            c.category_order,
+            ["Tools"],
+            "one heading, in the kept one's place"
+        );
+        assert_eq!(c.folded, ["Tools"]);
+        assert!(headings_of(base.path(), &c)
+            .iter()
+            .all(|(_, h, f)| h == "Tools" && *f));
+        // The other way: an unfolded one onto a folded one stays folded, its entry not doubled.
+        let (base, mut c) = grouped();
+        let list = projects::list(base.path(), &c);
+        set_folded(&mut c, &list, "Tools", true).unwrap();
+        rename_category(&mut c, &list, "persianUtils", "Tools").unwrap();
+        assert_eq!(c.folded, ["Tools"]);
+        assert!(headings_of(base.path(), &c)
+            .iter()
+            .all(|(_, h, f)| h == "Tools" && *f));
+        // And a hand-set heading renamed onto the group's name joins the group's heading.
+        let (base, mut c) = grouped();
+        let list = projects::list(base.path(), &c);
+        rename_category(&mut c, &list, "persianUtils", "DashAfzar").unwrap();
+        let list = projects::list(base.path(), &c);
+        rename_category(&mut c, &list, "Tools", "DashAfzar").unwrap();
+        assert!(headings_of(base.path(), &c)
+            .iter()
+            .all(|(_, h, _)| h == "DashAfzar"));
+    }
+
+    #[test]
+    fn a_long_group_folder_takes_a_display_name_and_gives_it_back() {
+        let base = tempfile::tempdir().unwrap();
+        let group = "a-very-long-group-folder-name-x";
+        make_queue(&base.path().join(group).join("colors/tasks"));
+        let mut c = Config::default();
+        let list = projects::list(base.path(), &c);
+        let cut = labels::shown_category(&list[0]);
+        assert_eq!(cut.chars().count(), MAX_CATEGORY);
+        rename_category(&mut c, &list, &cut, "Long ones").unwrap();
+        assert_eq!(c.group_names[group], "Long ones");
+        assert_eq!(headings_of(base.path(), &c)[0].1, "Long ones");
+        // Back by the cut name the window showed: no display name left.
+        let list = projects::list(base.path(), &c);
+        rename_category(&mut c, &list, "Long ones", &cut).unwrap();
+        assert!(c.group_names.is_empty());
+        assert_eq!(headings_of(base.path(), &c)[0].1, cut);
     }
 
     #[test]

@@ -646,6 +646,8 @@ pub struct QueueInfo {
     pub rank: Option<usize>,
     /// Its heading's place among the sidebar's headings (0057), None when it has none yet.
     pub category_rank: Option<usize>,
+    /// Its heading is folded in the sidebar (0070, `arrange::apply`).
+    pub category_folded: bool,
     /// Lessons from reviews proposed and waiting for the owner (0027, `lessons::waiting`).
     pub lessons_waiting: usize,
 }
@@ -1528,6 +1530,7 @@ fn read_state_from(
             colour: String::new(),
             rank: None,
             category_rank: None,
+            category_folded: false,
             lessons_waiting: crate::lessons::waiting(root),
         });
         state.tasks.extend(tasks);

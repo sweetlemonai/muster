@@ -1322,6 +1322,19 @@ async fn arrange_projects(
     .await
 }
 
+/// Fold or unfold a sidebar heading (0070), by its name (`arrange::set_folded`).
+#[tauri::command]
+async fn fold_category(handle: tauri::AppHandle, name: String, folded: bool) -> Result<(), String> {
+    blocking(move || {
+        let app = handle.state::<AppState>();
+        edit_config(&app, |c| {
+            let list = projects::list(&base(), c);
+            arrange::set_folded(c, &list, &name, folded)
+        })
+    })
+    .await
+}
+
 /// Rename a sidebar heading (0057): every project under it goes under the new name, which may be
 /// another heading's, and then the two are one (`arrange::rename_category`).
 #[tauri::command]
@@ -1432,6 +1445,7 @@ pub fn run() {
             set_project_colour,
             arrange_projects,
             rename_category,
+            fold_category,
             show_project_title,
             set_project_prefix,
             hide_project,
