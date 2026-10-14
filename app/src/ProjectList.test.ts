@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import appSource from "./App.tsx?raw";
 import css from "./styles.css?raw";
+import dashafzar from "./dashafzar-queues.json";
 import listSource from "./ProjectList.tsx?raw";
 import projectsSource from "./Projects.tsx?raw";
 import sidebarSource from "./SidebarProjects.tsx?raw";
@@ -362,7 +363,7 @@ describe("the fold wiring follows the tested rules (0070 review R4, R5, R7)", ()
   it("a move under a folded heading opens it at once and says both", () => {
     expect(listSource).toContain("const opened = unfoldFor(p, folds);");
     expect(listSource).toContain("setSaid(opened ? `${p.said}; ${opened} unfolded` : p.said);");
-    expect(listSource).toContain("if (opened) setFoldSet((f) => ({ ...f, [opened]: false }));");
+    expect(listSource).toContain("trackUnfold(opened, setFoldSet, track(p, setPending, () => edit.arrange(p.order, p.categories, p.moved)))");
   });
   it("a fold goes through trackFold, and each read of the queues through readFolds", () => {
     expect(listSource).toContain("trackFold(name, folded, setFoldSet, () => edit.fold(name, folded))");
@@ -490,6 +491,18 @@ describe("folded headings in the sidebar (0070)", () => {
     const html = renderToStaticMarkup(createElement(ProjectList, { queues, tasks, notes: [], activity: [], now: NOW, current: "all", onPick: () => {} }));
     expect(rows(html).sort()).toEqual(["All", "Alpha app", "Muster", "beta", "zeta"]);
     expect(html).not.toContain("side-cat-fold");
+  });
+  it("draws the persianUtils group renamed DashAfzar as the core sends it: one heading, its projects under it (AC2)", () => {
+    // The state arrange.rs's test holds the core to (dashafzar-queues.json): colors and dates by
+    // their group's name alone, drover and muster by the category they had by hand.
+    const html = renderToStaticMarkup(createElement(ProjectList, { queues: dashafzar as QueueInfo[], tasks: [], notes: [], activity: [], now: NOW, current: "all", onPick: () => {}, edit: edits }));
+    const groups = [...html.matchAll(/<div class="side-group[^"]*" role="group" aria-label="([^"]*)">([\s\S]*?)(?=<div class="side-group|<button type="button" title="A new heading)/g)].map((m) => [m[1], rows(m[2]).sort()]);
+    expect(groups).toEqual([
+      ["DashAfzar", ["colors", "dates", "drover", "muster"]],
+      ["Tools", ["alpha"]],
+    ]);
+    // The folder keeps its name (in the rows' tooltips); no heading has it any more.
+    expect(html).not.toContain('data-heading="persianUtils"');
   });
   it("shows a project whose only needs-you is lessons waiting, with its count, on the folded heading (review R2)", () => {
     const withLessons = queues.map((q) => (q.name === "beta" ? { ...q, lessonsWaiting: 2 } : q));

@@ -1276,10 +1276,10 @@ async fn set_project_category(
 ) -> Result<(), String> {
     blocking(move || {
         let app = handle.state::<AppState>();
+        // Under the lock with the write: the heading it goes under unfolds (arrange::put_under).
         edit_config(&app, |c| {
-            known_key(c, &key)?;
-            labels::set(&mut c.categories, &key, &category, labels::MAX_CATEGORY);
-            Ok(())
+            let list = projects::list(&base(), c);
+            arrange::set_category(c, &list, &key, &category)
         })
     })
     .await

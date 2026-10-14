@@ -99,9 +99,10 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   `SidebarProjects.tsx`): a heading's chevron, or ← and → on a focused heading, folds it to its name,
   "N projects", what needs you, what's being worked on and its tasks, in every display mode and
   under every chip; the selected project and every one that needs you (its tasks and its lessons
-  waiting, as the row's badge counts) still show under it as chips that pick them. A project moved
-  under a folded heading unfolds it, in the core (`arrange`), so Settings' ↑/↓ does too, and a fold
-  left by a heading that was emptied is dropped when another fold is written. Headings are
+  waiting, as the row's badge counts) still show under it as chips that pick them. A project put
+  under a folded heading unfolds it, in the core (`arrange::put_under`, under the lock with the write):
+  a drag, ⌥↑/⌥↓, Settings' ↑/↓ and Settings' Category field alike. A heading a change leaves with no
+  project loses its fold, so one made again by that name, by a move or a rename, comes back open. Headings are
   `role="heading"` (focusable, with `aria-keyshortcuts`); the chevron is a `Pill` with
   `aria-expanded`. `projects.json` keeps `folded` (headings, read leniently, `fold_category`;
   `QueueInfo.categoryFolded`) and `groupNames` (a group folder's display name). Renaming a group's

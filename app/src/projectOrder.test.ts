@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accepts, dropMove, grouped, headingFolds, headingRanks, needsOf, peeks, readFolds, settleFolds, trackFold, unfoldFor, type Layout, layoutOf, orderHeadings, type Pending, planMove, settle, shownLayout, sidebarGroups, track } from "./projectOrder";
+import { accepts, dropMove, grouped, headingFolds, headingRanks, needsOf, peeks, readFolds, settleFolds, trackFold, trackUnfold, unfoldFor, type Layout, layoutOf, orderHeadings, type Pending, planMove, settle, shownLayout, sidebarGroups, track } from "./projectOrder";
 import { byCategory } from "./labels";
 
 // The sidebar's own arrangement (0057): headings and projects as the owner puts them, by drag or
@@ -333,6 +333,26 @@ describe("folded headings (0070)", () => {
     fail("x");
     await first.catch(() => {});
     expect(t.get()).toEqual({ Apps: false });
+  });
+  it("a move's unfold shows at once, stays when the core keeps the move, and is taken back when it refuses (review R11)", async () => {
+    const s = holder({ Apps: true });
+    await trackUnfold("Apps", s.set, Promise.resolve());
+    expect(s.get()).toEqual({ Apps: false });
+    const t = holder({ Apps: true });
+    await expect(trackUnfold("Apps", t.set, Promise.reject("no such project"))).rejects.toBe("no such project");
+    expect(t.get()).toEqual({ Apps: true });
+    // Folded again meanwhile: that later fold stays.
+    const u = holder();
+    let fail!: (e: unknown) => void;
+    const out = trackUnfold("Apps", u.set, new Promise<void>((_, rej) => (fail = rej)));
+    u.set((x) => ({ ...x, Apps: true }));
+    fail("x");
+    await out.catch(() => {});
+    expect(u.get()).toEqual({ Apps: true });
+    // Nothing to open: the move's answer passes as it is.
+    const v = holder({ Tools: true });
+    await trackUnfold(null, v.set, Promise.resolve());
+    expect(v.get()).toEqual({ Tools: true });
   });
   it("each read of the queues settles the folds set here, keeping the same object when nothing went (review R5)", () => {
     const set = { Apps: true, Tools: false };

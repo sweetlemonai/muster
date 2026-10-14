@@ -264,6 +264,27 @@ export function trackFold(name: string, folded: boolean, set: (f: (s: Record<str
   });
 }
 
+/** A move's unfold (`unfoldFor`'s heading, or null) while the move is saved (`saving`, `track`'s):
+ *  shown at once, kept when the core keeps the move (it unfolds there too), and put back as it was
+ *  if the core refuses, which is passed on, unless the heading was folded again meanwhile (review R11). */
+export function trackUnfold(name: string | null, set: (f: (s: Record<string, boolean>) => Record<string, boolean>) => void, saving: Promise<void>): Promise<void> {
+  if (name === null) return saving;
+  // What this window had set for it before (none: the core's fold shows again).
+  let before: boolean | undefined;
+  set((s) => {
+    before = s[name];
+    return { ...s, [name]: false };
+  });
+  return saving.catch((e: unknown) => {
+    set((s) => {
+      if (s[name] !== false) return s;
+      const rest = Object.fromEntries(Object.entries(s).filter(([n]) => n !== name));
+      return before === undefined ? rest : { ...rest, [name]: before };
+    });
+    throw e;
+  });
+}
+
 /** The folds set here after a read of the queues (`core`, the core's own folds): `settleFolds`,
  *  the same object when nothing went, so the read doesn't render again for nothing. */
 export function readFolds(set: Record<string, boolean>, core: ReadonlyMap<string, boolean>): Record<string, boolean> {

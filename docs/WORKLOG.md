@@ -22,6 +22,10 @@ unfolds on any move and drops folds of gone headings; lessons-only projects got 
 count tasks and lessons as the badge does; long chip names clipped the count → the name truncates;
 unfold-on-move and the fold rollback are pure functions (`unfoldFor`, `trackFold`) with tests that
 fail without them; the announcement names both the move and the unfold.
+**Fixed (review round 2):** typing a folded heading's name in Settings, or renaming onto a name,
+left it folded → one `put_under` helper unfolds the heading a project goes under and drops folds of
+emptied headings, called from move, Settings category and rename; a refused move puts the
+heading's fold back (`trackUnfold`); a DashAfzar render test on a fixture the core is held to.
 **Open:** the owner renames persianUtils to DashAfzar and folds it (AC3); chevron and chip look and
 the 150px wrapping not seen in the running app.
 

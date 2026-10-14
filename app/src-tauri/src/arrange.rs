@@ -125,10 +125,7 @@ pub fn arrange(
             return Err("a category needs a name".into());
         }
         labels::set(&mut c.categories, &m.key, &to, MAX_CATEGORY);
-        // A project moved under a folded heading unfolds it, so it stays in sight, whichever
-        // window moved it; a fold left by a heading that was emptied and is made again goes too
-        // (0070 review R1).
-        c.folded.retain(|h| *h != to);
+        put_under(c, list, &to);
     }
     let mut seen = HashSet::new();
     let sent: Vec<String> = order
@@ -183,6 +180,9 @@ pub fn rename_category(
     if from == to {
         return Ok(());
     }
+    // A fold left by a heading no project is under any more never folds the one this makes; the
+    // renamed heading's own fold goes with it (renamed, below).
+    drop_stale_folds(c, list);
     for p in under {
         if p.category.is_empty() && !p.group.is_empty() {
             if heading(&p.group) == to {
@@ -196,6 +196,62 @@ pub fn rename_category(
     }
     renamed(&mut c.category_order, &from, &to);
     renamed(&mut c.folded, &from, &to);
+    Ok(())
+}
+
+/// The headings `list`'s projects go under by what `c` says now, after a change to `c` that `list`
+/// (read before it) doesn't have yet: each one's category and its group's display name are `c`'s.
+fn headings_now(c: &Config, list: &[Project]) -> HashSet<String> {
+    list.iter()
+        .map(|p| {
+            let mut now = p.clone();
+            now.category = c.categories.get(&p.key).cloned().unwrap_or_default();
+            now.group_name = c.group_names.get(&p.group).cloned().unwrap_or_default();
+            heading(&labels::shown_category(&now))
+        })
+        .collect()
+}
+
+/// The folds of headings no project in `list` is under any more (by `c` now) go.
+fn drop_stale_folds(c: &mut Config, list: &[Project]) {
+    let live = headings_now(c, list);
+    c.folded.retain(|h| live.contains(h));
+}
+
+/// A project was put under the heading `to` (moved there, or its category typed): `to` unfolds, so
+/// the project stays in sight whichever window put it there, and the folds of headings that change
+/// left with no project go, so a heading made again by that name comes back open (0070 review R1,
+/// R10). Every writer that puts a project under a heading calls it, under projects.json's lock.
+pub fn put_under(c: &mut Config, list: &[Project], to: &str) {
+    let to = heading(to);
+    c.folded.retain(|h| *h != to);
+    drop_stale_folds(c, list);
+}
+
+/// Settings' Category field (0044, 0070): the project with the queue folder `key` goes under
+/// `category` (cleaned; "" for its group's heading or Other), which unfolds that heading
+/// (`put_under`). Refused for a project `list` doesn't know, with nothing changed.
+pub fn set_category(
+    c: &mut Config,
+    list: &[Project],
+    key: &str,
+    category: &str,
+) -> Result<(), String> {
+    if !list.iter().any(|p| p.key == key) {
+        return Err("no such project".into());
+    }
+    labels::set(&mut c.categories, key, category, MAX_CATEGORY);
+    let to = list
+        .iter()
+        .find(|p| p.key == key)
+        .map(|p| {
+            let mut now = p.clone();
+            now.category = c.categories.get(key).cloned().unwrap_or_default();
+            now.group_name = c.group_names.get(&p.group).cloned().unwrap_or_default();
+            labels::shown_category(&now)
+        })
+        .unwrap_or_default();
+    put_under(c, list, &to);
     Ok(())
 }
 
@@ -225,15 +281,11 @@ pub fn set_folded(
     if h.is_empty() {
         return Err("a category needs a name".into());
     }
-    let shown: HashSet<String> = list
-        .iter()
-        .map(|p| heading(&labels::shown_category(p)))
-        .collect();
-    if !shown.contains(&h) {
+    if !headings_now(c, list).contains(&h) {
         return Err(format!("no category named {h:?}"));
     }
-    // The folds of headings no project is under any more go as well (review R1).
-    c.folded.retain(|x| *x != h && shown.contains(x));
+    drop_stale_folds(c, list);
+    c.folded.retain(|x| *x != h);
     if folded {
         c.folded.push(h);
         c.folded.truncate(MAX_ORDER);
@@ -740,6 +792,108 @@ mod tests {
             rows.iter()
                 .any(|(n, h, f)| n == "drover" && h == "Tools" && !f),
             "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn a_category_typed_in_settings_unfolds_the_heading_it_puts_the_project_under() {
+        // Review R10 (a): Settings' Category field, as set_project_category calls it.
+        let (base, mut c) = grouped();
+        let (dr, co) = (
+            key(base.path(), &c, "drover"),
+            key(base.path(), &c, "colors"),
+        );
+        let list = projects::list(base.path(), &c);
+        set_folded(&mut c, &list, "Tools", true).unwrap();
+        set_category(&mut c, &list, &dr, " Tools ").unwrap();
+        assert_eq!(c.categories[&dr], "Tools");
+        assert!(c.folded.is_empty());
+        assert!(headings_of(base.path(), &c).iter().all(|(_, _, f)| !f));
+        // Cleared, a category goes back to the group's heading: that one unfolds.
+        let list = projects::list(base.path(), &c);
+        set_folded(&mut c, &list, "persianUtils", true).unwrap();
+        labels::set(&mut c.categories, &co, "Apps", MAX_CATEGORY);
+        let list = projects::list(base.path(), &c);
+        set_category(&mut c, &list, &co, "").unwrap();
+        assert!(!c.categories.contains_key(&co));
+        assert!(
+            !c.folded.contains(&"persianUtils".to_string()),
+            "{:?}",
+            c.folded
+        );
+        // A heading the change empties loses its fold; one that still has projects keeps it.
+        let (base, mut c) = grouped();
+        let al = key(base.path(), &c, "alpha");
+        let list = projects::list(base.path(), &c);
+        set_folded(&mut c, &list, "Tools", true).unwrap();
+        set_folded(&mut c, &list, "persianUtils", true).unwrap();
+        set_category(&mut c, &list, &al, "Apps").unwrap();
+        assert_eq!(c.folded, ["persianUtils"]);
+        // An unknown project is refused, with nothing changed.
+        let before = c.clone();
+        assert_eq!(
+            set_category(&mut c, &list, "/nowhere/tasks", "Tools").unwrap_err(),
+            "no such project"
+        );
+        assert_eq!(c, before);
+    }
+
+    #[test]
+    fn a_heading_a_drag_emptied_loses_its_fold_so_a_rename_onto_it_comes_back_open() {
+        // Review R10 (b).
+        let (base, mut c) = grouped();
+        let al = key(base.path(), &c, "alpha");
+        let list = projects::list(base.path(), &c);
+        set_folded(&mut c, &list, "Tools", true).unwrap();
+        // Tools' only project dragged under the group's heading: Tools is gone, and so is its fold.
+        let moved = Moved {
+            key: al,
+            category: "persianUtils".into(),
+        };
+        arrange(&mut c, &list, &[], &[], Some(&moved)).unwrap();
+        assert!(c.folded.is_empty(), "{:?}", c.folded);
+        // Even a stale fold left from before (a hand-edited file) never folds a heading a rename makes.
+        c.folded.push("Tools".into());
+        let list = projects::list(base.path(), &c);
+        rename_category(&mut c, &list, "persianUtils", "Tools").unwrap();
+        assert!(c.folded.is_empty(), "{:?}", c.folded);
+        assert!(headings_of(base.path(), &c)
+            .iter()
+            .all(|(_, h, f)| h == "Tools" && !f));
+        // A rename still takes its own fold along (AC1).
+        let list = projects::list(base.path(), &c);
+        set_folded(&mut c, &list, "Tools", true).unwrap();
+        rename_category(&mut c, &list, "Tools", "Kit").unwrap();
+        assert_eq!(c.folded, ["Kit"]);
+    }
+
+    /// The queues the state sends the window after the persianUtils heading is renamed DashAfzar
+    /// (AC2): the same JSON `app/src/dashafzar-queues.json` holds, which the sidebar's render test
+    /// draws, so the window is held to what the core really sends. Folders as `<base>/…`.
+    #[test]
+    fn the_state_after_naming_a_group_is_what_the_sidebars_render_test_draws() {
+        const FIXTURE: &str = include_str!("../../src/dashafzar-queues.json");
+        let (base, mut c) = grouped();
+        let list = projects::list(base.path(), &c);
+        rename_category(&mut c, &list, "persianUtils", "DashAfzar").unwrap();
+        let list = projects::list(base.path(), &c);
+        let mut s =
+            crate::queue::read_state(&projects::shown(&list), &mut crate::queue::Cache::default());
+        labels::apply(&list, &mut s.queues);
+        apply(&c, &list, &mut s.queues);
+        s.queues.sort_by(|a, b| a.name.cmp(&b.name));
+        let root = base.path().to_string_lossy().to_string();
+        let mut got = serde_json::to_value(&s.queues).unwrap();
+        for q in got.as_array_mut().unwrap() {
+            let path = q["path"].as_str().unwrap().replace(&root, "<base>");
+            q["path"] = serde_json::Value::String(path);
+        }
+        let want: serde_json::Value = serde_json::from_str(FIXTURE).expect("the fixture is JSON");
+        assert_eq!(
+            got,
+            want,
+            "the state changed: if that's meant, put this in app/src/dashafzar-queues.json:\n{}",
+            serde_json::to_string_pretty(&got).unwrap()
         );
     }
 

@@ -10,7 +10,7 @@ import { inProgress } from "./lib";
 import { useLook } from "./modes";
 import { PAUSE_GLYPH } from "./Pause";
 import { QuietPing } from "./Ping";
-import { accepts, dropMove, type DropTarget, grouped, headingFolds, layoutOf, needsOf, peeks, readFolds, trackFold, unfoldFor, type Move, type Pending, type Plan, planMove, settle, sidebarGroups, track, withFresh } from "./projectOrder";
+import { accepts, dropMove, type DropTarget, grouped, headingFolds, layoutOf, needsOf, peeks, readFolds, trackFold, trackUnfold, unfoldFor, type Move, type Pending, type Plan, planMove, settle, sidebarGroups, track, withFresh } from "./projectOrder";
 import { ColourDot } from "./ProjectSwatches";
 import { pressed } from "./shortcuts";
 import { cleanHeading, type DragProps, half, HeadingEdit, HeadingFrame, MOVE_KEYS, NewCategory, SideRow } from "./SidebarProjects";
@@ -129,10 +129,9 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
     // here, and the core opens it with the move (arrange.rs), for every window.
     const opened = unfoldFor(p, folds);
     setSaid(opened ? `${p.said}; ${opened} unfolded` : p.said);
-    if (opened) setFoldSet((f) => ({ ...f, [opened]: false }));
     setProblem("");
     if (then) setFocus({ ...then });
-    track(p, setPending, () => edit.arrange(p.order, p.categories, p.moved)).then(
+    trackUnfold(opened, setFoldSet, track(p, setPending, () => edit.arrange(p.order, p.categories, p.moved))).then(
       () => {
         if (p.moved) {
           const made = p.moved.category;
