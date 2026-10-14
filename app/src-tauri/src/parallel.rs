@@ -279,6 +279,69 @@ pub(crate) fn is_ancestor(worktree: &str, a: &str, b: &str) -> bool {
         .is_ok_and(|o| o.status.success())
 }
 
+/// Refused, with why, unless a started task's branch (0023) is in the local main: its tip an
+/// ancestor of main's. Such a task reaches Your check or Done by the merge (`muster pass --from
+/// testing`), not by a stage change, which would say merged while the branch never landed.
+/// The repo is the queue's own when the queue is a repo's `.muster/` (the main checkout, from any
+/// worktree), else the task's worktree while it exists. A branch that no longer exists has
+/// nothing left to merge, but only in such a repo: with neither, there is no repo to trust, so
+/// it's refused rather than guessed from where the command happens to run.
+pub(crate) fn check_in_main(
+    id: &str,
+    root: &Path,
+    worktree: &str,
+    branch: &str,
+    to: &str,
+) -> Result<(), String> {
+    let wt = Path::new(worktree);
+    let own = (root.file_name().is_some_and(|n| n == ".muster"))
+        .then(|| root.parent())
+        .flatten()
+        .and_then(|main| repo_of(main).ok());
+    let repo = own
+        .or_else(|| {
+            (!worktree.is_empty() && wt.is_dir())
+                .then(|| repo_of(wt).ok())
+                .flatten()
+        })
+        .ok_or_else(|| {
+            format!(
+                "{id}'s branch {branch} can't be checked against main: its queue isn't a repo's .muster/ and its worktree {worktree} is gone. Run muster release {id} --clean from the project's repo, or muster pass {id} --from testing"
+            )
+        })?;
+    let Ok(tip) = git(
+        &repo.main,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{branch}"),
+        ],
+    ) else {
+        return Ok(());
+    };
+    let out = git_output(
+        &repo.main,
+        &[
+            "merge-base",
+            "--is-ancestor",
+            &tip,
+            &format!("refs/heads/{}", repo.trunk),
+        ],
+    )?;
+    match out.status.code() {
+        Some(0) => Ok(()),
+        Some(1) => Err(format!(
+            "{id} was started on its own branch ({branch}), which isn't in {} yet, so it can't go to {to} by a stage change: run muster pass {id} --from testing to merge it, or muster release {id} --clean to drop the branch",
+            repo.trunk
+        )),
+        _ => Err(format!(
+            "git merge-base --is-ancestor: {}",
+            last_lines(&String::from_utf8_lossy(&out.stderr), 4)
+        )),
+    }
+}
+
 fn branch_exists(repo: &Repo, branch: &str) -> bool {
     git(
         &repo.main,
@@ -2976,5 +3039,154 @@ pub(crate) mod tests {
         ] {
             assert_eq!(branch_task(not), None, "{not}");
         }
+    }
+
+    /// A started task, one commit built on its branch, in Building (not passed).
+    fn started_and_built(f: &Fx, title: &str, file: &str) -> (String, Started) {
+        let id = task(&f.root, title, "m/");
+        let s = start(&f.root, &id, "wt-a", T0, &f.repo, &Place::Default).unwrap();
+        commit(&s.worktree, file, "built\n", "build it");
+        (id, s)
+    }
+
+    #[test]
+    fn a_started_task_cant_go_to_your_check_or_done_before_its_branch_is_in_main() {
+        let f = fx();
+        let (id, s) = started_and_built(&f, "Unmerged", "m/x.txt");
+        for who in ["owner", "wt-a", "capture"] {
+            for to in ["your-check", "done"] {
+                let e = ops::set_stage(&f.root, &id, to, None, who, T0).unwrap_err();
+                assert!(
+                    e.contains(&s.branch)
+                        && e.contains("isn't in main")
+                        && e.contains(&format!("muster pass {id} --from testing"))
+                        && e.contains(&format!("muster release {id} --clean")),
+                    "{who} → {to}: {e}"
+                );
+            }
+        }
+        let e = ops::move_task(&f.root, &id, "done", "", "owner", T0).unwrap_err();
+        assert!(e.contains("isn't in main") && e.contains("Done"), "{e}");
+        // Nothing moved, and the branch and worktree are as they were.
+        let t = read(&f.root, &id);
+        assert_eq!(
+            (t.stage.as_str(), t.branch.as_str()),
+            ("building", s.branch.as_str())
+        );
+        assert!(s.worktree.is_dir());
+        // The other stages are the owner's to put it in, as before.
+        ops::set_stage(&f.root, &id, "testing", None, "owner", T0).unwrap();
+        ops::set_stage(&f.root, &id, "ready", None, "owner", T0).unwrap();
+    }
+
+    #[test]
+    fn it_goes_once_its_branch_is_in_main_by_any_route() {
+        let f = fx();
+        let (id, s) = started_and_built(&f, "Merged by hand", "m/x.txt");
+        g(&f.repo, &["merge", "-q", "--ff-only", &s.branch]);
+        // The branch and its worktree are still there: its tip is in main, which is what counts.
+        ops::set_stage(&f.root, &id, "your-check", None, "owner", T0).unwrap();
+        assert_eq!(read(&f.root, &id).stage, "your-check");
+        ops::move_task(&f.root, &id, "done", "", "owner", T0).unwrap();
+        assert_eq!(read(&f.root, &id).stage, "done");
+        // A branch that has not moved off main has nothing to merge either.
+        let id2 = task(&f.root, "Untouched", "n/");
+        start(&f.root, &id2, "wt-a", T0, &f.repo, &Place::Default).unwrap();
+        ops::set_stage(&f.root, &id2, "done", None, "owner", T0).unwrap();
+        // Still refused for a branch with a commit main lacks, beside the merged one.
+        let (id3, _) = started_and_built(&f, "Not merged", "m/y.txt");
+        assert!(ops::set_stage(&f.root, &id3, "done", None, "owner", T0).is_err());
+    }
+
+    #[test]
+    fn in_a_repos_muster_a_task_whose_worktree_is_gone_is_looked_up_in_that_repo() {
+        let f = fx();
+        let (q, _) = crate::projects::init(&f.repo, true, Some("pj"), &[]).unwrap();
+        assert_eq!(q.file_name().unwrap(), ".muster");
+        let id = task(&q, "Gone", "m/");
+        let s = start(&q, &id, "wt-a", T0, &f.repo, &Place::Default).unwrap();
+        commit(&s.worktree, "m/x.txt", "built\n", "build it");
+        g(
+            &f.repo,
+            &[
+                "worktree",
+                "remove",
+                "--force",
+                s.worktree.to_str().unwrap(),
+            ],
+        );
+        // Unmerged, worktree gone, branch still there: refused as in main's terms.
+        let e = ops::set_stage(&q, &id, "done", None, "owner", T0).unwrap_err();
+        assert!(e.contains("isn't in main"), "{e}");
+        // Merged, then the branch deleted: nothing left to merge, so it goes.
+        g(&f.repo, &["merge", "-q", "--ff-only", &s.branch]);
+        g(&f.repo, &["branch", "-d", &s.branch]);
+        ops::set_stage(&q, &id, "your-check", None, "owner", T0).unwrap();
+        ops::move_task(&q, &id, "done", "", "owner", T0).unwrap();
+        assert_eq!(read(&q, &id).stage, "done");
+        // Its repo is the queue's, from the queue's path alone, whatever the worktree says.
+        assert_eq!(check_in_main("x", &q, "", "task/pj-9-x", "Done"), Ok(()));
+    }
+
+    #[test]
+    fn with_no_repo_of_its_own_and_its_worktree_gone_nothing_is_guessed() {
+        let f = fx();
+        let (id, s) = started_and_built(&f, "Gone", "m/x.txt");
+        g(
+            &f.repo,
+            &[
+                "worktree",
+                "remove",
+                "--force",
+                s.worktree.to_str().unwrap(),
+            ],
+        );
+        // The old layout (`proj/tasks`, beside its repo): unmerged, refused.
+        let hint = format!("muster release {id} --clean");
+        let e = ops::set_stage(&f.root, &id, "done", None, "owner", T0).unwrap_err();
+        assert!(
+            e.contains("can't be checked against main") && e.contains(&hint),
+            "{e}"
+        );
+        // Merged and the branch deleted: still refused, a missing branch is only trusted in a
+        // repo the queue or the worktree names.
+        g(&f.repo, &["merge", "-q", "--ff-only", &s.branch]);
+        g(&f.repo, &["branch", "-d", &s.branch]);
+        let e = ops::move_task(&f.root, &id, "done", "", "owner", T0).unwrap_err();
+        assert!(e.contains(&hint), "{e}");
+        assert_eq!(read(&f.root, &id).stage, "building");
+        // A `.muster` that isn't in a repo is no repo either.
+        let loose = f.base.join("loose/.muster");
+        fs::create_dir_all(&loose).unwrap();
+        let e = check_in_main(
+            &id,
+            &loose,
+            &s.worktree.to_string_lossy(),
+            &s.branch,
+            "Done",
+        );
+        assert!(e.unwrap_err().contains(&hint));
+    }
+
+    #[test]
+    fn tasks_without_a_branch_and_the_owners_own_are_not_held_to_the_merge() {
+        let f = fx();
+        let plain = task(&f.root, "Plain", "p/");
+        ops::set_stage(&f.root, &plain, "your-check", None, "owner", T0).unwrap();
+        ops::move_task(&f.root, &plain, "done", "", "owner", T0).unwrap();
+        let mine = ops::create_task(
+            &f.root,
+            &NewTask {
+                title: "Mine".into(),
+                for_who: "human".into(),
+                ..Default::default()
+            },
+            "owner",
+            T0,
+        )
+        .unwrap()
+        .id;
+        ops::move_task(&f.root, &mine, "done", "", "owner", T0).unwrap();
+        assert_eq!(read(&f.root, &mine).stage, "done");
     }
 }

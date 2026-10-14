@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { answerId } from "./answerFocus";
 import { TitleEdit } from "./PaneHeader";
+import PaneMsg from "./PaneMsg";
 import { ValueChipView } from "./Sidebar";
 import StageTrack from "./StageTrack";
 import { trackSteps } from "./paneData";
@@ -499,5 +500,22 @@ describe("keys in the pane's comments and questions (0033)", () => {
   });
   it("leave them as text without the projects' prefixes", () => {
     expect(pane(false)).not.toContain('class="task-key"');
+  });
+});
+
+describe("the pane's message", () => {
+  const refusal =
+    "0007 was started on its own branch (task/mu-7-t), which isn't in main yet, so it can't go to Your check by a stage change: run muster pass 0007 --from testing to merge it, or muster release 0007 --clean to drop the branch";
+  it("shows the core's refusal of a move on the track as is, in the pane and not an overlay", () => {
+    const html = renderToStaticMarkup(createElement(PaneMsg, { msg: { ok: false, text: refusal }, undo: null, busy: false, onUndo: () => {} }));
+    expect(html).toBe(`<p class="err small pane-msg" role="status">${refusal.replace(/'/g, "&#x27;")}</p>`);
+    expect(html).not.toMatch(/dialog|modal|overlay/);
+  });
+  it("keeps a done move's Undo beside it", () => {
+    const html = renderToStaticMarkup(
+      createElement(PaneMsg, { msg: { ok: true, text: "Put in Testing.", undo: { back: "building", to: "testing" } }, undo: { back: "building", to: "testing" }, busy: false, onUndo: () => {} }),
+    );
+    expect(html).toContain('class="ok small pane-msg"');
+    expect(text(html)).toBe("Put in Testing. Undo: back to Building");
   });
 });

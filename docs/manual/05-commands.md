@@ -466,7 +466,7 @@ muster resume 0042 --as owner
 
 ### muster stage
 
-Put a task in any stage (the owner's or capture's override), logged as set. Leaving Building releases its claim. A builder can't use it to skip its tester: from Testing or before to Your check or Done it's refused for whoever built the task, as pass is; the owner's is logged as the owner's override.
+Put a task in any stage (the owner's or capture's override), logged as set. Leaving Building releases its claim. A builder can't use it to skip its tester: from Testing or before to Your check or Done it's refused for whoever built the task, as pass is; the owner's is logged as the owner's override. A task made with muster start can't be put in Your check or Done until its branch is in main (the merge is how it gets there), for the owner too: it is refused with muster pass \<id\> --from testing to merge it or muster release \<id\> --clean to drop the branch; once the branch is in main (merged some other way, even deleted since) it goes. Tasks with no branch, and the owner's own, aren't held to it.
 
 ```
 muster stage <id> <stage> [--from <stage>]
@@ -520,7 +520,7 @@ muster untick 0026 AC1
 
 ### muster move
 
-The old way to change a task, kept for scripts: inbox puts it in Backlog, todo in Ready, done in Done (and unblocks it; refused for whoever built the task, as stage is), blocked is muster block. Use pass, return, block and stage instead.
+The old way to change a task, kept for scripts: inbox puts it in Backlog, todo in Ready, done in Done (and unblocks it; refused for whoever built the task, as stage is, and for a task made with muster start whose branch isn't in main yet), blocked is muster block. Use pass, return, block and stage instead.
 
 ```
 muster move <id> <inbox|todo|blocked|done> [--on "<what it waits on>"]

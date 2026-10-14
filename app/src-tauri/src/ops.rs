@@ -1034,6 +1034,7 @@ pub fn move_task(
         if t.stage == stage && !t.blocked {
             return Err(format!("{id} is already in {}", stage_label(stage)));
         }
+        merge_rule(id, root, t, stage)?;
         // Like `set_stage`, the move doesn't let a builder skip its tester (0047).
         let note = tester_rule(id, t, &who, stage)?;
         let mut log = Vec::new();
@@ -1103,6 +1104,8 @@ struct Current {
     /// The branch `muster start` made for it (0023), or "": passing such a task from Testing is
     /// the merge's (`parallel::merge`), not a plain pass.
     branch: String,
+    /// Its worktree (0023), "" when it has none: where the branch is looked up.
+    worktree: String,
     /// Whom it holds back as a dependency (0042, `block::holds`): tasks not started yet, and
     /// tasks under way.
     kept_back: (bool, bool),
@@ -1268,6 +1271,7 @@ fn current(root: &Path, path: &Path, text: &str) -> Result<Current, String> {
         modified,
         level: t.level,
         branch: t.branch,
+        worktree: t.worktree,
         paused: t.paused,
     })
 }
@@ -1910,6 +1914,16 @@ fn check_seen(id: &str, t: &Current, expected: Option<&str>) -> Result<(), Strin
         )),
         None => Ok(()),
     }
+}
+
+/// A started task (0023) goes to Your check or Done by the merge, so a stage change or move there
+/// is refused until its branch is in main (merged some other way); the owner too, as this is about
+/// the merge, not who asks. The owner's own tasks and tasks with no branch aren't held to it.
+fn merge_rule(id: &str, root: &Path, t: &Current, to: &str) -> Result<(), String> {
+    if t.human || t.branch.is_empty() || !matches!(to, "your-check" | "done") {
+        return Ok(());
+    }
+    crate::parallel::check_in_main(id, root, &t.worktree, &t.branch, stage_label(to))
 }
 
 /// The tester isn't the builder (0047). Moving an agent's task from Testing (or before it) to Your
@@ -2987,6 +3001,7 @@ pub fn set_stage(
         if t.stage == stage {
             return Err(format!("{id} is already in {}", stage_label(stage)));
         }
+        merge_rule(id, root, t, stage)?;
         // The override doesn't let a builder skip its tester (0047).
         let note = tester_rule(id, t, &who, stage)?;
         Ok(Change {

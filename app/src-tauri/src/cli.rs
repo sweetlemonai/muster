@@ -4876,4 +4876,47 @@ mod tests {
         assert_eq!(json["tasks"][0]["sessionState"], "unknown");
         assert_eq!(json["tasks"][0]["waitingForOwner"], false);
     }
+
+    #[test]
+    fn stage_and_move_refuse_a_started_task_until_its_branch_is_in_main() {
+        use crate::parallel::tests::{commit, fx, g, task};
+        let f = fx();
+        let run_in = |args: &[&str]| {
+            let a = parse(&sv(args)).unwrap();
+            run_on(
+                &a,
+                args[0],
+                &f.root,
+                "pj",
+                "2026-10-13 10:00",
+                &no_env,
+                Some(&f.repo),
+            )
+        };
+        let id = task(&f.root, "Unmerged", "m/");
+        assert_eq!(run_in(&["start", &id, "--as", "wt-a"]), Ok(0));
+        let t = queue::read_task(&f.root, &id).unwrap();
+        commit(Path::new(&t.worktree), "m/x.txt", "built\n", "build it");
+        for args in [
+            ["stage", &id, "your-check", "--as", "owner"],
+            ["stage", &id, "done", "--as", "owner"],
+            ["move", &id, "done", "--as", "owner"],
+        ] {
+            let e = run_in(&args).unwrap_err();
+            assert!(
+                e.contains("isn't in main")
+                    && e.contains(&format!("muster pass {id} --from testing"))
+                    && e.contains(&format!("muster release {id} --clean")),
+                "{args:?}: {e}"
+            );
+        }
+        assert_eq!(queue::read_task(&f.root, &id).unwrap().stage, "building");
+        g(&f.repo, &["merge", "-q", "--ff-only", &t.branch]);
+        assert_eq!(
+            run_in(&["stage", &id, "your-check", "--as", "owner"]),
+            Ok(0)
+        );
+        assert_eq!(run_in(&["move", &id, "done", "--as", "owner"]), Ok(0));
+        assert_eq!(queue::read_task(&f.root, &id).unwrap().stage, "done");
+    }
 }

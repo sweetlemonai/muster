@@ -6,11 +6,11 @@ import Comments from "./Comments";
 import EditBody from "./EditBody";
 import { splitLog, withoutComments } from "./fields";
 import { isHuman } from "./human";
-import { stageLabel } from "./lib";
 import Markdown from "./Markdown";
 import { Fold } from "./ModeViews";
 import { taskKey, taskOfHref } from "./taskKey";
 import PaneHeader from "./PaneHeader";
+import PaneMsg from "./PaneMsg";
 import { isFileDrag, logSummary, releasedBy, undoFor } from "./paneData";
 import { SessionPing } from "./Ping";
 import { reviewStatus, withoutReview } from "./Review";
@@ -144,16 +144,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
         </div>
         <StageForms task={task} a={a} />
         <SessionPing task={task} now={now} onChanged={onChanged} />
-        {a.msg && (
-          <p className={a.msg.ok ? "ok small pane-msg" : "err small pane-msg"} role="status">
-            {a.msg.text}
-            {undo && (
-              <Button type="button" className="undo" disabled={a.busy} onClick={() => a.undo(undo)}>
-                Undo: back to {stageLabel(undo.back)}
-              </Button>
-            )}
-          </p>
-        )}
+        {a.msg && <PaneMsg msg={a.msg} undo={undo} busy={a.busy} onUndo={a.undo} />}
         <div className="pathline" data-part="path" title={task.path}>
           {task.commit ? `commit ${task.commit}` : "commit none"} · {task.path}
         </div>
