@@ -24,7 +24,7 @@ import WaitingList from "./WaitingList";
 import { lessonsWaiting } from "./Lessons";
 import Recent from "./Recent";
 import { clampPane, clampSidebar, layoutWidth, PANE_DEFAULT, paneRange, railBeside, SIDEBAR, SIDEBAR_NARROW, sidebarRange } from "./paneSize";
-import { PANE_KEY, SIDEBAR_KEY, useSplitWidth } from "./splitter";
+import { PANE_KEY, PANE_LEGACY_KEY, SIDEBAR_KEY, useSplitWidth } from "./splitter";
 import { ZOOM_EVENT } from "./zoom";
 import EffortGroups, { useAcceptResults } from "./EffortGroups";
 import { CheckCount, ColumnLine, OverLine } from "./CheckLimit";
@@ -204,11 +204,11 @@ export default function App() {
   // its room. On the board, Recently finished (0051) goes under the board when the row can't hold
   // it beside (paneSize.ts).
   const win = usePageWidth();
-  const [sideAsked, setSideAsked, resetSide] = useSplitWidth(SIDEBAR_KEY);
-  const [paneAsked, setPaneAsked, resetPane] = useSplitWidth(PANE_KEY);
+  const sideSplit = useSplitWidth(SIDEBAR_KEY);
+  const paneSplit = useSplitWidth(PANE_KEY, PANE_LEGACY_KEY);
   const sidebarLook = look("sidebar", modes.mode);
-  const sidebarWidth = clampSidebar(sideAsked ?? (sidebarLook === "narrow" ? SIDEBAR_NARROW : SIDEBAR), win);
-  const paneWidth = clampPane(paneAsked ?? PANE_DEFAULT, win, sidebarWidth);
+  const sidebarWidth = clampSidebar(sideSplit.width ?? (sidebarLook === "narrow" ? SIDEBAR_NARROW : SIDEBAR), win);
+  const paneWidth = clampPane(paneSplit.width ?? PANE_DEFAULT, win, sidebarWidth);
   const railSide = railBeside(win, pane ? paneWidth : 0, sidebarWidth);
   // The columns Focus folds that a click opened, and the filter bar ⌘F brought out in Focus: both
   // until the mode changes.
@@ -383,7 +383,7 @@ export default function App() {
         <ProjectList queues={state?.queues ?? []} tasks={state?.tasks ?? []} notes={allNotes} activity={state?.activity ?? []} now={now} current={queue} onPick={setQueue} onLabel={(k, label) => api.setProjectLabel(k, label).then(refresh)} />
         <button className="side-add" onClick={() => openSettings("projects")} title="New or existing project queue, in Settings">+ Project</button>
       </aside>
-      <Splitter {...sidebarRange(win)} width={sidebarWidth} side="left" label="Projects width" onWidth={(w) => setSideAsked(clampSidebar(w, pageWidth()))} onReset={resetSide} />
+      <Splitter {...sidebarRange(win)} width={sidebarWidth} side="left" label="Projects width" onWidth={(w) => sideSplit.set(clampSidebar(w, pageWidth()))} onDrag={(w) => sideSplit.drag(clampSidebar(w, pageWidth()))} onDragEnd={sideSplit.settle} onReset={sideSplit.reset} />
       <div className="main-col">
       <header className="top">
         <Button variant="primary" className="new" onClick={() => go({ kind: "new" })} disabled={!state?.queues.length} title="New task (⌘N)">+ New task</Button>
@@ -566,7 +566,7 @@ export default function App() {
 
         {pane && (
           <>
-            <Splitter {...paneRange(win, sidebarWidth)} width={paneWidth} side="right" label="Details width" onWidth={(w) => setPaneAsked(clampPane(w, pageWidth(), sidebarWidth))} onReset={resetPane} />
+            <Splitter {...paneRange(win, sidebarWidth)} width={paneWidth} side="right" label="Details width" onWidth={(w) => paneSplit.set(clampPane(w, pageWidth(), sidebarWidth))} onDrag={(w) => paneSplit.drag(clampPane(w, pageWidth(), sidebarWidth))} onDragEnd={paneSplit.settle} onReset={paneSplit.reset} />
             <aside className="pane" style={{ width: paneWidth }} aria-label="Details">
               {pane.kind === "task" && openTask && (
                 <Suspense fallback={<p className="none">Loading…</p>}>

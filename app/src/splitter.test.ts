@@ -2,12 +2,12 @@ import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { PANE_MIN, paneRange, SIDEBAR, SIDEBAR_MAX, SIDEBAR_MIN, sidebarRange } from "./paneSize";
-import { dragWidth, loadSplit, PANE_KEY, SIDEBAR_KEY, SPLIT_STEP, SPLIT_STEP_BIG, splitKey, storeSplit } from "./splitter";
+import { dragWidth, loadSplit, PANE_KEY, PANE_LEGACY_KEY, SIDEBAR_KEY, SPLIT_STEP, SPLIT_STEP_BIG, splitKey, storeSplit } from "./splitter";
 import { Splitter, type SplitterProps } from "./ui";
 import appSource from "./App.tsx?raw";
 import css from "./styles.css?raw";
 
-const props = (over: Partial<SplitterProps> = {}): SplitterProps => ({ width: 300, min: 150, max: 320, side: "left", label: "Projects width", onWidth: () => {}, onReset: () => {}, ...over });
+const props = (over: Partial<SplitterProps> = {}): SplitterProps => ({ width: 300, min: 150, max: 320, side: "left", label: "Projects width", onWidth: () => {}, onDrag: () => {}, onDragEnd: () => {}, onReset: () => {}, ...over });
 /** The handle's element, from calling the (hook-free) component: its handlers can be called. */
 const handle = (over: Partial<SplitterProps> = {}) => Splitter(props(over)) as ReactElement<Record<string, (e: unknown) => void>>;
 
@@ -50,6 +50,7 @@ describe("the remembered width", () => {
   const keys = { PANE_KEY, SIDEBAR_KEY };
   it("has a key of its own for each pane, and a version in it", () => {
     expect(keys).toEqual({ PANE_KEY: "muster.pane.v1", SIDEBAR_KEY: "muster.sidebar.v1" });
+    expect(PANE_LEGACY_KEY).toBe("muster.paneWidth");
   });
   it("is read back as the whole pixels it was stored as", () => {
     expect(loadSplit(SIDEBAR_KEY, () => "260")).toBe(260);
@@ -62,13 +63,39 @@ describe("the remembered width", () => {
     expect(loadSplit(SIDEBAR_KEY, () => { throw new Error("denied"); })).toBeNull();
   });
   it("is written as whole pixels, and forgotten with null", () => {
-    const wrote: (string | null)[] = [];
-    expect(storeSplit(SIDEBAR_KEY, 260.4, (v) => wrote.push(v))).toBe(true);
-    expect(storeSplit(SIDEBAR_KEY, null, (v) => wrote.push(v))).toBe(true);
-    expect(wrote).toEqual(["260", null]);
+    const wrote: [string, string | null][] = [];
+    expect(storeSplit(SIDEBAR_KEY, 260.4, (k, v) => wrote.push([k, v]))).toBe(true);
+    expect(storeSplit(SIDEBAR_KEY, null, (k, v) => wrote.push([k, v]))).toBe(true);
+    expect(wrote).toEqual([[SIDEBAR_KEY, "260"], [SIDEBAR_KEY, null]]);
   });
   it("says so when storage refuses, and does not throw", () => {
     expect(storeSplit(SIDEBAR_KEY, 260, () => { throw new Error("full"); })).toBe(false);
+  });
+  it("reads the pane's width from before the key was versioned, when there's none under the new one", () => {
+    const store: Record<string, string> = { [PANE_LEGACY_KEY]: "612" };
+    const read = (k: string) => store[k] ?? null;
+    expect(loadSplit(PANE_KEY, read, PANE_LEGACY_KEY)).toBe(612);
+    // Not for a splitter that has no old key, and the new key wins.
+    expect(loadSplit(SIDEBAR_KEY, read)).toBeNull();
+    store[PANE_KEY] = "480";
+    expect(loadSplit(PANE_KEY, read, PANE_LEGACY_KEY)).toBe(480);
+    // A damaged old width is the default.
+    expect(loadSplit(PANE_KEY, (k) => (k === PANE_KEY ? null : "wide"), PANE_LEGACY_KEY)).toBeNull();
+  });
+  it("drops the old key once the new one is written, and with a reset, so a reset doesn't bring it back", () => {
+    const store: Record<string, string> = { [PANE_LEGACY_KEY]: "612" };
+    const write = (k: string, v: string | null) => (v === null ? delete store[k] : (store[k] = v));
+    expect(storeSplit(PANE_KEY, 640, write, PANE_LEGACY_KEY)).toBe(true);
+    expect(store).toEqual({ [PANE_KEY]: "640" });
+    store[PANE_LEGACY_KEY] = "612";
+    expect(storeSplit(PANE_KEY, null, write, PANE_LEGACY_KEY)).toBe(true);
+    expect(store).toEqual({});
+    expect(loadSplit(PANE_KEY, (k) => store[k] ?? null, PANE_LEGACY_KEY)).toBeNull();
+  });
+  it("keeps the old key when the new one couldn't be written", () => {
+    const store: Record<string, string> = { [PANE_LEGACY_KEY]: "612" };
+    expect(storeSplit(PANE_KEY, 640, () => { throw new Error("full"); }, PANE_LEGACY_KEY)).toBe(false);
+    expect(store[PANE_LEGACY_KEY]).toBe("612");
   });
   it("round-trips through the real storage calls of the default reader and writer", () => {
     const mem = new Map<string, string>();
@@ -141,31 +168,37 @@ describe("the Splitter", () => {
 
   it("captures the pointer on press, follows it, and lets go on release", () => {
     const asked: number[] = [];
+    const keys: number[] = [];
+    let ended = 0;
     const { el, listeners, log, attrs } = fakeEl();
-    expect(down(handle({ width: 560, side: "right", onWidth: (w) => asked.push(w) }), el)).toBe(true);
+    expect(down(handle({ width: 560, side: "right", onWidth: (w) => keys.push(w), onDrag: (w) => asked.push(w), onDragEnd: () => ended++ }), el)).toBe(true);
     expect(log).toEqual(["capture 7"]);
     expect(attrs.has("data-dragging")).toBe(true);
     listeners.get("pointermove")?.({ clientX: 700 });
     listeners.get("pointermove")?.({ clientX: 900 });
     listeners.get("pointermove")?.({ clientX: 800 });
+    // A drag reports every move as a drag, not as a width to keep, and says when it ends.
     expect(asked).toEqual([660, 460, 560]);
+    expect([keys, ended]).toEqual([[], 0]);
     listeners.get("pointerup")?.({});
+    expect(ended).toBe(1);
     expect(log).toEqual(["capture 7", "release 7"]);
     expect(attrs.size).toBe(0);
     expect(listeners.size).toBe(0);
   });
   it("also stops when the pointer is cancelled or taken away", () => {
     for (const end of ["pointercancel", "lostpointercapture"]) {
+      let ended = 0;
       const { el, listeners, attrs } = fakeEl();
-      down(handle(), el);
+      down(handle({ onDragEnd: () => ended++ }), el);
       listeners.get(end)?.({});
-      expect([end, listeners.size, attrs.size]).toEqual([end, 0, 0]);
+      expect([end, listeners.size, attrs.size, ended]).toEqual([end, 0, 0, 1]);
     }
   });
   it("counts layout pixels under Text size: the box is 9 client px for 6 layout px at 150%", () => {
     const asked: number[] = [];
     const { el, listeners } = fakeEl(9, 6);
-    down(handle({ width: 210, side: "left", onWidth: (w) => asked.push(w) }), el, { clientX: 100 });
+    down(handle({ width: 210, side: "left", onDrag: (w) => asked.push(w) }), el, { clientX: 100 });
     listeners.get("pointermove")?.({ clientX: 190 });
     expect(asked).toEqual([270]);
   });
@@ -199,9 +232,13 @@ describe("both panes use the one splitter (0058)", () => {
     expect(appSource).toContain("{...sidebarRange(win)} width={sidebarWidth}");
     expect(appSource).toContain("{...paneRange(win, sidebarWidth)} width={paneWidth}");
     expect(appSource).toContain("useSplitWidth(SIDEBAR_KEY)");
-    expect(appSource).toContain("useSplitWidth(PANE_KEY)");
-    expect(appSource).toContain("onReset={resetSide}");
-    expect(appSource).toContain("onReset={resetPane}");
+    expect(appSource).toContain("useSplitWidth(PANE_KEY, PANE_LEGACY_KEY)");
+    expect(appSource).toContain("onReset={sideSplit.reset}");
+    expect(appSource).toContain("onReset={paneSplit.reset}");
+    // Keys keep at once; a drag keeps once, where it ends.
+    expect(appSource).toContain("onDrag={(w) => sideSplit.drag(");
+    expect(appSource).toContain("onDragEnd={sideSplit.settle}");
+    expect(appSource).toContain("onDragEnd={paneSplit.settle}");
   });
   it("sits the sidebar's handle right after the sidebar, before the content", () => {
     const side = appSource.indexOf('<aside className="sidebar"');

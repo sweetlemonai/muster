@@ -11,8 +11,12 @@ export type SplitterProps = {
   side: SplitSide;
   /** What it resizes, for screen readers: "Projects" */
   label: string;
-  /** The width asked for, not clamped: the caller fits it to the window. */
+  /** The width a key asks for, not clamped: the caller fits it to the window and keeps it. */
   onWidth: (w: number) => void;
+  /** The width at each move of a drag, and the drag's end (release or cancel): the caller needn't
+   *  keep it before the end. */
+  onDrag: (w: number) => void;
+  onDragEnd: () => void;
   /** Double-click: back to the default width. */
   onReset: () => void;
   className?: string;
@@ -30,7 +34,7 @@ function scaleOf(el: HTMLElement): number {
  *  task pane: drag it, double-click for the default width, or Tab to it and press ← → (Shift for
  *  bigger steps). The pointer is captured, so the drag holds over anything and the pane follows the
  *  edge without jumping. Always in the same place, its edge lit on hover, focus and drag. */
-export function Splitter({ width, min, max, side, label, onWidth, onReset, className }: SplitterProps) {
+export function Splitter({ width, min, max, side, label, onWidth, onDrag, onDragEnd, onReset, className }: SplitterProps) {
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     const next = splitKey(e.key, e.shiftKey, side, width);
     if (next === null) return;
@@ -46,7 +50,7 @@ export function Splitter({ width, min, max, side, label, onWidth, onReset, class
     const scale = scaleOf(el);
     el.setPointerCapture(id);
     el.setAttribute("data-dragging", "");
-    const move = (ev: globalThis.PointerEvent) => onWidth(dragWidth(width, startX, ev.clientX, side, scale));
+    const move = (ev: globalThis.PointerEvent) => onDrag(dragWidth(width, startX, ev.clientX, side, scale));
     const end = () => {
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", end);
@@ -54,6 +58,7 @@ export function Splitter({ width, min, max, side, label, onWidth, onReset, class
       el.removeEventListener("lostpointercapture", end);
       el.removeAttribute("data-dragging");
       if (el.hasPointerCapture(id)) el.releasePointerCapture(id);
+      onDragEnd();
     };
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", end);

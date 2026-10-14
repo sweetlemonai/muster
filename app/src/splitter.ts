@@ -2,7 +2,7 @@
 // projects sidebar's right edge and the task pane's left edge. The rules without React or the DOM:
 // what a drag and a key do to the width, and the width remembered per Mac. The handle itself is
 // ui/Splitter.tsx; the minimum and maximum come from paneSize.ts. Tested in splitter.test.ts.
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 /** Which side of the splitter the pane it sizes is on: the sidebar is on its left, the task pane
  *  on its right. */
@@ -14,6 +14,8 @@ export const SPLIT_STEP_BIG = 120;
 
 /** The remembered widths. The key says the format: a width changes meaning, take a new one. */
 export const PANE_KEY = "muster.pane.v1";
+/** The pane's key before it was versioned (0058): its width is read from here once. */
+export const PANE_LEGACY_KEY = "muster.paneWidth";
 export const SIDEBAR_KEY = "muster.sidebar.v1";
 
 /** The pane's width after dragging from x `startX` to `x`, when it was `start` wide: the edge
@@ -35,43 +37,64 @@ export function splitKey(key: string, shift: boolean, side: SplitSide, width: nu
 }
 
 /** A remembered width read back: a positive, whole-pixel number; null (the default width) for
- *  anything else, and for storage that's off, denied or absent (a test run). */
-export function loadSplit(key: string, read: () => string | null = () => localStorage.getItem(key)): number | null {
+ *  anything else, and for storage that's off, denied or absent (a test run). A width under the
+ *  `legacy` key, from before the key was versioned, is read when there's none under `key`. */
+export function loadSplit(key: string, read: (k: string) => string | null = (k) => localStorage.getItem(k), legacy?: string): number | null {
   try {
-    const raw = read();
-    if (raw === null || !/^\d{1,5}$/.test(raw)) return null;
-    const n = Number(raw);
-    return n > 0 ? n : null;
+    return parseSplit(read(key)) ?? (legacy === undefined ? null : parseSplit(read(legacy)));
   } catch {
     return null;
   }
 }
 
+function parseSplit(raw: string | null): number | null {
+  if (raw === null || !/^\d{1,5}$/.test(raw)) return null;
+  const n = Number(raw);
+  return n > 0 ? n : null;
+}
+
 /** Remembers a width, or forgets it (null: back to the default); false when storage refused
- *  (full, off), and the width holds for now. */
-export function storeSplit(key: string, width: number | null, write: (v: string | null) => void = (v) => (v === null ? localStorage.removeItem(key) : localStorage.setItem(key, v))): boolean {
+ *  (full, off), and the width holds for now. The `legacy` key goes with it: once the new one is
+ *  written it has done its part, and left behind after a reset it would bring the old width back. */
+export function storeSplit(
+  key: string,
+  width: number | null,
+  write: (k: string, v: string | null) => void = (k, v) => (v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v)),
+  legacy?: string,
+): boolean {
   try {
-    write(width === null ? null : String(Math.round(width)));
+    write(key, width === null ? null : String(Math.round(width)));
+    if (legacy !== undefined) write(legacy, null);
     return true;
   } catch {
     return false;
   }
 }
 
-/** A splitter's remembered width: null until the owner sets one; `set` keeps a width, `reset` goes
- *  back to the default. */
-export function useSplitWidth(key: string): [number | null, (w: number) => void, () => void] {
-  const [w, setW] = useState(() => loadSplit(key));
+/** A splitter's remembered width: `width` is null until the owner sets one. Keys and `reset` keep
+ *  it at once; a drag `drag`s it through state alone, and `settle` keeps where it ended (once,
+ *  not at every pointer move). */
+export function useSplitWidth(key: string, legacy?: string) {
+  const [width, setWidth] = useState(() => loadSplit(key, undefined, legacy));
+  const latest = useRef(width);
+  const drag = useCallback((v: number) => {
+    latest.current = v;
+    setWidth(v);
+  }, []);
+  const settle = useCallback(() => {
+    if (latest.current !== null) storeSplit(key, latest.current, undefined, legacy);
+  }, [key, legacy]);
   const set = useCallback(
     (v: number) => {
-      setW(v);
-      storeSplit(key, v);
+      drag(v);
+      storeSplit(key, v, undefined, legacy);
     },
-    [key],
+    [drag, key, legacy],
   );
   const reset = useCallback(() => {
-    setW(null);
-    storeSplit(key, null);
-  }, [key]);
-  return [w, set, reset];
+    latest.current = null;
+    setWidth(null);
+    storeSplit(key, null, undefined, legacy);
+  }, [key, legacy]);
+  return { width, set, drag, settle, reset };
 }
