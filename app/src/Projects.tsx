@@ -6,7 +6,7 @@ import { HomePath } from "./HomePath";
 import InlineField from "./InlineField";
 import { CATEGORY_MAX, LABEL_MAX, OTHER, otherCategories } from "./labels";
 import { queueTotal } from "./lib";
-import { type Layout, layoutOf, planMove, sidebarGroups } from "./projectOrder";
+import { type Layout, layoutOf, type Pending, planMove, settle, shownLayout, sidebarGroups } from "./projectOrder";
 import { Swatches } from "./ProjectSwatches";
 import type { Project, QueueInfo } from "./types";
 import { Button } from "./ui";
@@ -66,15 +66,35 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
     const q = queues.find((x) => x.path === p.path);
     return q ? queueTotal(q.counts) : null;
   };
-  // The sidebar's Mine order (0057), which ↑ ↓ here change as ⌥↑ ⌥↓ do there.
-  const layout = useMemo(() => mineLayout(queues), [queues]);
+  // The sidebar's Mine order (0057), which ↑ ↓ here change as ⌥↑ ⌥↓ do there. A move shows at
+  // once and the next one plans from it, until the queues read back take over (projectOrder.settle),
+  // so a second click before the refresh never undoes the first (review R3).
+  const core = useMemo(() => mineLayout(queues), [queues]);
+  const [pending, setPending] = useState<Pending | null>(null);
+  useEffect(() => setPending((p) => settle(p, core)), [core]);
+  const layout = shownLayout(pending, core);
   const place = (p: Project) => {
     if (!layout.some((g) => g.keys.includes(p.key))) return "—";
     const name = p.label || p.name;
     const named = (k: string) => list?.find((x) => x.key === k)?.label || k;
     const step = (by: -1 | 1) => planMove(layout, { kind: "step-project", key: p.key, by }, named);
     const [up, down] = [step(-1), step(1)];
-    const go = (plan: typeof up) => plan && void act(() => api.arrangeProjects(plan.order, plan.categories, plan.moved));
+    const go = (plan: typeof up) => {
+      if (!plan) return;
+      setPending({ layout: plan.layout, saved: false, reads: 0 });
+      const mine = (x: Pending | null) => x?.layout === plan.layout;
+      api.arrangeProjects(plan.order, plan.categories, plan.moved).then(
+        () => {
+          setPending((x) => (x && mine(x) ? { ...x, saved: true } : x));
+          onChanged();
+          return load();
+        },
+        (e: unknown) => {
+          setPending((x) => (mine(x) ? null : x));
+          setMsg({ ok: false, text: String(e) });
+        },
+      );
+    };
     return <PlaceCell name={name} canUp={up !== null} canDown={down !== null} onUp={() => go(up)} onDown={() => go(down)} />;
   };
   // The Your check limit (0050) of a project the board reads; a hidden one has none in use.

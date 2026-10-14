@@ -167,7 +167,7 @@ pub fn rename_category(
     }
     let under: Vec<&Project> = list
         .iter()
-        .filter(|p| labels::shown_category(p) == from)
+        .filter(|p| heading(&labels::shown_category(p)) == from)
         .collect();
     if under.is_empty() {
         return Err(format!("no category named {from:?}"));
@@ -196,7 +196,7 @@ pub fn apply(c: &Config, list: &[Project], queues: &mut [QueueInfo]) {
         if let Some(p) = list.iter().find(|p| p.path == q.path) {
             q.colour = p.colour.clone();
             q.rank = c.order.iter().position(|k| *k == p.key);
-            let h = labels::shown_category(p);
+            let h = heading(&labels::shown_category(p));
             q.category_rank = c.category_order.iter().position(|x| *x == h);
         }
     }
@@ -475,6 +475,63 @@ mod tests {
             .iter()
             .filter(|p| p.key != co)
             .all(|p| labels::shown_category(p) == OTHER));
+    }
+
+    #[test]
+    fn a_group_folder_longer_than_a_heading_can_be_renamed_ranked_and_dropped_onto() {
+        // Review R4: the heading the window shows, sends back and the core keeps are one form.
+        let base = tempfile::tempdir().unwrap();
+        let group = "a-very-long-group-folder-name-x";
+        assert_eq!(group.chars().count(), 31);
+        make_queue(&base.path().join(group).join("colors/tasks"));
+        make_queue(&base.path().join("muster/tasks"));
+        let mut c = Config::default();
+        let shown = |c: &Config| -> Vec<(String, String, Option<usize>)> {
+            let list = projects::list(base.path(), c);
+            let mut s = crate::queue::read_state(
+                &projects::shown(&list),
+                &mut crate::queue::Cache::default(),
+            );
+            labels::apply(&list, &mut s.queues);
+            apply(c, &list, &mut s.queues);
+            let mut rows: Vec<_> = s
+                .queues
+                .iter()
+                .map(|q| (q.name.clone(), q.category.clone(), q.category_rank))
+                .collect();
+            rows.sort();
+            rows
+        };
+        // The window is sent the heading cut as a category is, never longer.
+        let heading_of = |c: &Config| shown(c)[0].1.clone();
+        let h = heading_of(&c);
+        assert_eq!(h, "a-very-long-group-folder");
+        assert_eq!(h.chars().count(), MAX_CATEGORY);
+        // Ranked: the heading's place comes back with the state.
+        let list = projects::list(base.path(), &c);
+        arrange(&mut c, &list, &[], &[h.clone(), OTHER.into()], None).unwrap();
+        assert_eq!(shown(&c)[0], ("colors".into(), h.clone(), Some(0)));
+        // A project dropped onto it goes under the same heading, not a second one.
+        let mu = key(base.path(), &c, "muster");
+        let moved = Moved {
+            key: mu,
+            category: h.clone(),
+        };
+        arrange(&mut c, &list, &[], &[], Some(&moved)).unwrap();
+        assert_eq!(
+            shown(&c),
+            [
+                ("colors".into(), h.clone(), Some(0)),
+                ("muster".into(), h.clone(), Some(0))
+            ]
+        );
+        // Renamed by the name the window shows, or by the whole folder name an older window sent.
+        let list = projects::list(base.path(), &c);
+        rename_category(&mut c, &list, group, "Libraries").unwrap();
+        assert_eq!(c.category_order, ["Libraries", OTHER]);
+        assert!(shown(&c)
+            .iter()
+            .all(|(_, h, r)| h == "Libraries" && *r == Some(0)));
     }
 
     #[test]

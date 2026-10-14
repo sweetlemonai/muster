@@ -2,6 +2,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import appSource from "./App.tsx?raw";
+import css from "./styles.css?raw";
+import listSource from "./ProjectList.tsx?raw";
+import projectsSource from "./Projects.tsx?raw";
+import sidebarSource from "./SidebarProjects.tsx?raw";
 import ProjectList, { ActivityLine, labelToSave, OrderChips, type ProjectEdits, SideLabelEdit, SumsLine } from "./ProjectList";
 import { ColourDot, Swatches } from "./ProjectSwatches";
 import { cleanHeading, HeadingEdit, HeadingFrame, NewCategory, SideRow, stepOf } from "./SidebarProjects";
@@ -323,6 +327,10 @@ describe("headings made and renamed in place (0057)", () => {
   it("a new heading has no projects yet: it says how to give it one, and Remove takes it away", () => {
     const html = renderToStaticMarkup(createElement(HeadingFrame, { name: "Later", count: 0, fresh: true, onRename: () => {}, onRemove: () => {}, children: createElement("span", { className: "side-cat-name" }, "Later") }));
     expect(html).toContain('aria-label="Later, category heading, new, no projects yet: ↩ renames it"');
+    // Its row wraps, so the hint goes under the name and never squeezes it out (review R2).
+    expect(html).toMatch(/^<div class="side-cat fresh" data-heading="Later"[^>]*><span class="side-cat-name">Later<\/span><span class="side-cat-fresh">/);
+    expect(css).toContain(".side-cat.fresh { flex-wrap: wrap; }");
+    expect(css).toMatch(/\.side-cat-fresh \{ flex-basis: 100%;/);
     expect(plain(html)).toContain("empty: drag a project here, or ⌥↓ the last one above");
     expect(html).toContain('<button type="button" title="Take this new heading away" class="ui-pill side-cat-remove">Remove</button>');
   });
@@ -350,5 +358,31 @@ describe("the window wires it (0057)", () => {
     // Inside the labels' provider, around the whole window.
     expect(appSource).toMatch(/<Labels\.Provider value=\{labels\}>\s*<ProjectColours\.Provider value=\{colours\}>\s*<div className="app shell">/);
     expect(appSource).toMatch(/<\/ProjectColours\.Provider>\s*<\/Labels\.Provider>/);
+  });
+});
+
+describe("the drag wiring follows the tested rules (0057 review R1, R3, R5)", () => {
+  it("a row or heading that doesn't take the drag lets its dragover and its drop go on to the group", () => {
+    const attrs = sidebarSource.slice(sidebarSource.indexOf("function dragAttrs"), sidebarSource.indexOf("/** A project's row in the sidebar"));
+    const over = attrs.slice(attrs.indexOf("onDragOver:"), attrs.indexOf("onDrop:"));
+    const drop = attrs.slice(attrs.indexOf("onDrop:"), attrs.indexOf("onKeyDown:"));
+    for (const h of [over, drop]) {
+      const guard = h.indexOf("if (!d.accepts) return;");
+      expect(guard, h).toBeGreaterThanOrEqual(0);
+      expect(guard, h).toBeLessThan(h.indexOf("e.stopPropagation()"));
+    }
+  });
+  it("the sidebar routes drops through dropMove and accepts, and settles a move as settle says", () => {
+    expect(listSource).toContain("const m = dropMove(layout, drag, t, side);");
+    expect(listSource).toContain("accepts: accepts(drag, t),");
+    expect(listSource).toContain("useEffect(() => setPending((p) => settle(p, core.current)), [queues]);");
+    // Over nothing that takes the drag, or off the sidebar: no drop line.
+    expect(listSource).toContain("onDragOver={drag ? (e) => !e.isDefaultPrevented() && hover(null) : undefined}");
+    expect(listSource).toMatch(/onDragLeave=\{drag \? \(e\) => !\(e\.relatedTarget instanceof Node && e\.currentTarget\.contains\(e\.relatedTarget\)\) && hover\(null\) : undefined\}/);
+  });
+  it("Settings plans each ↑ ↓ from the move it showed last", () => {
+    expect(projectsSource).toContain("const layout = shownLayout(pending, core);");
+    expect(projectsSource).toContain("useEffect(() => setPending((p) => settle(p, core)), [core]);");
+    expect(projectsSource).toContain('planMove(layout, { kind: "step-project", key: p.key, by }, named)');
   });
 });

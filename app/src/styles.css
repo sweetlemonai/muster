@@ -738,6 +738,8 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .side-cat.drop-into { outline: 1px dashed var(--accent); outline-offset: 2px; border-radius: 4px; color: var(--text); }
 .side-cat:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 .side-cat.side-editing { flex-direction: column; align-items: stretch; gap: 2px; }
+/* A new heading wraps, so its hint goes under the name instead of squeezing it to nothing (review R2). */
+.side-cat.fresh { flex-wrap: wrap; }
 .side-cat-fresh { flex-basis: 100%; display: inline-flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; font-weight: 400; color: var(--muted); }
 .side-cat-remove.ui-pill { font-size: 11px; padding: 0 7px; }
 .side-new-cat.ui-pill { align-self: flex-start; margin: 8px 6px 0; font-size: 11px; padding: 0 7px; color: var(--muted); border: 1px dashed var(--line); }

@@ -161,3 +161,53 @@ function plan(layout: Layout, moved: Moved | null, said: string): Plan {
   const kept = layout.filter((g) => g.keys.length > 0);
   return { layout, order: kept.flatMap((g) => g.keys), categories: kept.map((g) => g.name), moved, chip: "mine", said };
 }
+
+/** What's being dragged: a project by its key, or a heading by its name. */
+export type Dragged = { kind: "project"; key: string } | { kind: "heading"; name: string };
+/** What a drag is over: a project's row, a heading, or the group (a heading and its rows) around them. */
+export type DropTarget = { kind: "row"; key: string } | { kind: "heading"; name: string } | { kind: "group"; name: string };
+
+/** Whether `t` takes what's dragged: a row takes a project, a heading either, the group around them
+ *  a heading. One that doesn't lets the drag (and the drop) go on to the group around it (review R1). */
+export function accepts(drag: Dragged | null, t: DropTarget): boolean {
+  if (!drag) return false;
+  if (t.kind === "heading") return true;
+  return t.kind === "row" ? drag.kind === "project" : drag.kind === "heading";
+}
+
+/** The target a drag or drop lands on, of those under the pointer (`path`, innermost first): the
+ *  first that takes it, as the events bubble. */
+export function dropTarget(drag: Dragged | null, path: DropTarget[]): DropTarget | null {
+  return path.find((t) => accepts(drag, t)) ?? null;
+}
+
+/** The move a drop on `t` makes, on its upper or lower half (`side`): a project before or after a
+ *  row, or at the top of a heading; a heading before or after a heading or a group. Null for a
+ *  target that doesn't take it. */
+export function dropMove(layout: Layout, drag: Dragged | null, t: DropTarget, side: "before" | "after"): Move | null {
+  if (!drag || !accepts(drag, t)) return null;
+  if (drag.kind === "project") {
+    if (t.kind === "row") return { kind: "project", key: drag.key, to: side === "before" ? { before: t.key } : { after: t.key } };
+    return t.kind === "heading" ? { kind: "project", key: drag.key, to: { into: t.name } } : null;
+  }
+  if (t.kind === "row") return null;
+  const i = layout.findIndex((g) => g.name === t.name);
+  const before = side === "before" ? t.name : (layout[i + 1]?.name ?? null);
+  return { kind: "heading", name: drag.name, before };
+}
+
+/** A move shown before the core has it: its layout, whether the save came back, and how many
+ *  times the queues were read since (review R3). */
+export type Pending = { layout: Layout; saved: boolean; reads: number };
+
+/** The layout to show, and to plan the next move from: the pending move's, else the core's. */
+export const shownLayout = (p: Pending | null, core: Layout): Layout => p?.layout ?? core;
+
+/** A pending move after the queues were read again (`core`, the layout they give): gone once they
+ *  say the same, or at the second read after the save whatever they say (another window may have
+ *  moved something too); kept while the save is out. */
+export function settle(p: Pending | null, core: Layout): Pending | null {
+  if (!p || sameLayout(core, p.layout)) return null;
+  if (!p.saved) return p;
+  return p.reads + 1 >= 2 ? null : { ...p, reads: p.reads + 1 };
+}

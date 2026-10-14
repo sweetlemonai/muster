@@ -15,6 +15,11 @@ shortcuts), DESIGN.md colour code, AS_BUILT updated.
 project ("empty categories disappear"); renaming onto an existing heading merges; only five
 colours, because no blue, cyan, violet, amber, orange, green or red keeps the distance from every
 theme's stage, priority and accent colours.
+**Fixed (review round 1):** a heading dropped on another group's rows did nothing (the row swallowed
+the drop) → one pure drop routing (`dropMove`); a fresh heading's name squeezed to nothing → it
+wraps; Settings ↑/↓ twice before a refresh undid the first → plans from a pending layout
+(`settle`); a group folder over 24 characters couldn't be renamed or ranked → one cut form on both
+sides; the drop line stayed after leaving → cleared on the nav.
 **Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; vitest
 1405, cargo 591 lib + integration; the palette distance test across every theme and accent.
 **Open:** native drag in the running WKWebView, the drop lines and the look of the dots aren't

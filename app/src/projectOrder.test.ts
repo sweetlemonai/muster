@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { grouped, headingRanks, type Layout, layoutOf, orderHeadings, planMove, sidebarGroups } from "./projectOrder";
+import { accepts, dropMove, dropTarget, grouped, headingRanks, type Layout, layoutOf, orderHeadings, planMove, settle, shownLayout, sidebarGroups } from "./projectOrder";
 import { byCategory } from "./labels";
 
 // The sidebar's own arrangement (0057): headings and projects as the owner puts them, by drag or
@@ -157,5 +157,70 @@ describe("⌥↑ and ⌥↓ (0057)", () => {
   it("don't count a new, empty heading among the ones kept", () => {
     const withNew: Layout = [{ name: "Later", keys: [] }, ...LAYOUT];
     expect(planMove(withNew, { kind: "step-project", key: "/a", by: 1 }, label)!.categories).toEqual(["Apps", "Tools", "Other"]);
+  });
+});
+
+describe("where a drop lands (0057 review R1)", () => {
+  const project = { kind: "project", key: "/c" } as const;
+  const heading = { kind: "heading", name: "Other" } as const;
+  const row = (key: string) => ({ kind: "row", key }) as const;
+  const head = (name: string) => ({ kind: "heading", name }) as const;
+  const group = (name: string) => ({ kind: "group", name }) as const;
+  it("a row takes a project, a heading takes both, a group around them takes a heading", () => {
+    expect([accepts(project, row("/a")), accepts(project, head("Apps")), accepts(project, group("Apps"))]).toEqual([true, true, false]);
+    expect([accepts(heading, row("/a")), accepts(heading, head("Apps")), accepts(heading, group("Apps"))]).toEqual([false, true, true]);
+    expect(accepts(null, head("Apps"))).toBe(false);
+  });
+  it("goes to the innermost target that takes it: a heading dropped on another group's row lands on that group", () => {
+    // The pointer is over Apps' row /a, inside the Apps group.
+    const path = [row("/a"), group("Apps")];
+    expect(dropTarget(heading, path)).toEqual(group("Apps"));
+    expect(dropTarget(project, path)).toEqual(row("/a"));
+    expect(dropTarget(null, path)).toBeNull();
+    const before = dropMove(LAYOUT, heading, group("Apps"), "before")!;
+    expect(before).toEqual({ kind: "heading", name: "Other", before: "Apps" });
+    expect(planMove(LAYOUT, before, label)!.categories).toEqual(["Other", "Apps", "Tools"]);
+    // On the lower half: after Apps, before the heading below it.
+    expect(dropMove(LAYOUT, heading, group("Apps"), "after")).toEqual({ kind: "heading", name: "Other", before: "Tools" });
+    expect(dropMove(LAYOUT, { kind: "heading", name: "Apps" }, group("Other"), "after")).toEqual({ kind: "heading", name: "Apps", before: null });
+  });
+  it("a project lands before or after the row, at the top of a heading, and nowhere else", () => {
+    expect(dropMove(LAYOUT, project, row("/a"), "before")).toEqual({ kind: "project", key: "/c", to: { before: "/a" } });
+    expect(dropMove(LAYOUT, project, row("/t"), "after")).toEqual({ kind: "project", key: "/c", to: { after: "/t" } });
+    expect(dropMove(LAYOUT, project, head("Tools"), "after")).toEqual({ kind: "project", key: "/c", to: { into: "Tools" } });
+    expect(dropMove(LAYOUT, project, group("Tools"), "before")).toBeNull();
+    expect(dropMove(LAYOUT, heading, row("/a"), "before")).toBeNull();
+    expect(dropMove(LAYOUT, null, row("/a"), "before")).toBeNull();
+  });
+  it("a heading dropped on a heading goes before or after it", () => {
+    expect(dropMove(LAYOUT, heading, head("Tools"), "before")).toEqual({ kind: "heading", name: "Other", before: "Tools" });
+    expect(dropMove(LAYOUT, heading, head("Apps"), "after")).toEqual({ kind: "heading", name: "Other", before: "Tools" });
+  });
+});
+
+describe("a move shown before the core has it (0057 review R3)", () => {
+  const moved: Layout = [{ name: "Apps", keys: ["/b", "/a", "/c"] }];
+  const core: Layout = [{ name: "Apps", keys: ["/a", "/b", "/c"] }];
+  it("stays while the save is out, whatever the queues say", () => {
+    const p = { layout: moved, saved: false, reads: 0 };
+    expect(settle(p, core)).toBe(p);
+  });
+  it("goes once the queues say the same, or at the second read after the save whatever they say", () => {
+    expect(settle({ layout: moved, saved: true, reads: 0 }, moved)).toBeNull();
+    expect(settle({ layout: moved, saved: false, reads: 0 }, moved)).toBeNull();
+    const once = settle({ layout: moved, saved: true, reads: 0 }, core);
+    expect(once).toEqual({ layout: moved, saved: true, reads: 1 });
+    expect(settle(once, core)).toBeNull();
+    expect(settle(null, core)).toBeNull();
+  });
+  it("a second move plans from it: two quick clicks both count", () => {
+    const three: Layout = [{ name: "Apps", keys: ["/a", "/b", "/c"] }];
+    const first = planMove(three, { kind: "step-project", key: "/a", by: 1 }, label)!;
+    expect(first.order).toEqual(["/b", "/a", "/c"]);
+    // Before the queues are read again, the next click plans from what the first one showed.
+    const shown = shownLayout({ layout: first.layout, saved: false, reads: 0 }, three);
+    const second = planMove(shown, { kind: "step-project", key: "/c", by: -1 }, label)!;
+    expect(second.order).toEqual(["/b", "/c", "/a"]);
+    expect(shownLayout(null, three)).toBe(three);
   });
 });

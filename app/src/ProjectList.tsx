@@ -10,7 +10,7 @@ import { inProgress } from "./lib";
 import { useLook } from "./modes";
 import { PAUSE_GLYPH } from "./Pause";
 import { QuietPing } from "./Ping";
-import { grouped, type Layout, layoutOf, type Move, type Plan, planMove, sameLayout, sidebarGroups, withFresh } from "./projectOrder";
+import { accepts, dropMove, type DropTarget, grouped, layoutOf, type Move, type Pending, type Plan, planMove, settle, sidebarGroups, withFresh } from "./projectOrder";
 import { pressed } from "./shortcuts";
 import { cleanHeading, type DragProps, half, HeadingEdit, HeadingFrame, MOVE_KEYS, NewCategory, SideRow } from "./SidebarProjects";
 import type { Activity, Note, QueueInfo, Task } from "./types";
@@ -75,7 +75,7 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
   // being renamed; the row whose colours are laid out; what a screen reader hears; a refusal.
   const [drag, setDrag] = useState<Drag | null>(null);
   const [over, setOver] = useState<Over | null>(null);
-  const [pending, setPending] = useState<Layout | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null);
   const [fresh, setFresh] = useState<string[]>([]);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [swatch, setSwatch] = useState<string | null>(null);
@@ -83,29 +83,17 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
   const [problem, setProblem] = useState("");
   const [focus, setFocus] = useState<Focus | null>(null);
   const nav = useRef<HTMLElement>(null);
-  const saves = useRef(0);
-  const saving = useRef<{ n: number; saved: boolean; polls: number } | null>(null);
   // While a row is dragged the order holds too, so nothing moves under the pointer.
   memo.current = nextOrder(memo.current, rows, order, editing !== null || drag !== null);
   const byName = new Map(rows.map((r) => [r.name, r]));
   const shown = memo.current.names.flatMap((n) => byName.get(n) ?? []);
   const fromCore = sidebarGroups(shown, fresh);
-  const groups = pending ? withFresh(grouped(shown, pending), fresh) : fromCore;
+  const groups = pending ? withFresh(grouped(shown, pending.layout), fresh) : fromCore;
   const layout = layoutOf(groups);
-  // A move shows at once; once it's saved, the queues read back take over when they say the same,
-  // or at the second read whatever they say (another window may have moved something too).
-  const latest = useRef({ core: layout, pending });
-  latest.current = { core: layoutOf(fromCore), pending };
-  useEffect(() => {
-    const s = saving.current;
-    if (!s?.saved) return;
-    s.polls += 1;
-    const { core, pending: p } = latest.current;
-    if (s.polls >= 2 || (p !== null && sameLayout(core, p))) {
-      saving.current = null;
-      setPending(null);
-    }
-  }, [queues]);
+  // A move shows at once; once it's saved, the queues read back take over (projectOrder.settle).
+  const core = useRef(layout);
+  core.current = layoutOf(fromCore);
+  useEffect(() => setPending((p) => settle(p, core.current)), [queues]);
   useEffect(() => {
     if (!focus) return;
     const sel =
@@ -119,25 +107,22 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
   const run = (p: Plan | null, then: Focus | null) => {
     if (!p || !edit) return;
     pick(p.chip);
-    const n = ++saves.current;
-    saving.current = { n, saved: false, polls: 0 };
-    setPending(p.layout);
+    setPending({ layout: p.layout, saved: false, reads: 0 });
     setSaid(p.said);
     setProblem("");
     if (then) setFocus({ ...then });
+    // Only the latest move's pending layout is marked saved or dropped.
+    const mine = (x: Pending | null) => x?.layout === p.layout;
     edit.arrange(p.order, p.categories, p.moved).then(
       () => {
-        if (saving.current?.n === n) saving.current.saved = true;
+        setPending((x) => (x && mine(x) ? { ...x, saved: true } : x));
         if (p.moved) {
           const made = p.moved.category;
           setFresh((f) => f.filter((x) => x !== made));
         }
       },
       (e: unknown) => {
-        if (saving.current?.n === n) {
-          saving.current = null;
-          setPending(null);
-        }
+        setPending((x) => (mine(x) ? null : x));
         setProblem(`Couldn't keep that order: ${String(e)}`);
       },
     );
@@ -148,51 +133,39 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
     setDrag(null);
     setOver(null);
   };
-  /** The heading after `name`, which a heading dropped after it goes before; null for last. */
-  const after = (name: string) => {
-    const i = layout.findIndex((g) => g.name === name);
-    return layout[i + 1]?.name ?? null;
-  };
-  const dropHeading = (name: string, side: "before" | "after") => {
-    if (drag?.kind === "heading") move({ kind: "heading", name: drag.name, before: side === "before" ? name : after(name) });
+  /** A drop on `t` (the innermost target that takes it, projectOrder.dropTarget): its move. */
+  const dropOn = (t: DropTarget, side: "before" | "after") => {
+    const m = dropMove(layout, drag, t, side);
+    if (m) move(m);
     endDrag();
   };
+  /** Where the drop line goes for what's dragged over `t`: none over the dragged one itself. */
+  const overOf = (t: DropTarget, side: "before" | "after"): Over | null => {
+    if (!drag) return null;
+    if (t.kind === "row") return drag.kind === "project" && drag.key !== t.key ? { kind: "row", key: t.key, side } : null;
+    if (drag.kind === "project") return { kind: "heading", name: t.name, side: "into" };
+    return drag.name === t.name ? null : { kind: "heading", name: t.name, side };
+  };
+  const targetDrag = (t: DropTarget, own: Drag, onStep: (by: -1 | 1) => void): Omit<DragProps, "dragging" | "drop"> => ({
+    onDragStart: () => {
+      setSwatch(null);
+      setDrag(own);
+    },
+    onDragEnd: endDrag,
+    accepts: accepts(drag, t),
+    onOver: (side) => hover(overOf(t, side)),
+    onDrop: (side) => dropOn(t, side),
+    onStep,
+  });
   const rowDrag = (r: ProjectRow): DragProps => ({
     dragging: drag?.kind === "project" && drag.key === r.key,
     drop: over?.kind === "row" && over.key === r.key ? over.side : null,
-    onDragStart: () => {
-      setSwatch(null);
-      setDrag({ kind: "project", key: r.key });
-    },
-    onDragEnd: endDrag,
-    onOver: (side) => {
-      if (drag?.kind !== "project") return false;
-      hover(drag.key === r.key ? null : { kind: "row", key: r.key, side });
-      return true;
-    },
-    onDrop: (side) => {
-      if (drag?.kind === "project") move({ kind: "project", key: drag.key, to: side === "before" ? { before: r.key } : { after: r.key } });
-      endDrag();
-    },
-    onStep: (by) => move({ kind: "step-project", key: r.key, by }, { kind: "row", key: r.key }),
+    ...targetDrag({ kind: "row", key: r.key }, { kind: "project", key: r.key }, (by) => move({ kind: "step-project", key: r.key, by }, { kind: "row", key: r.key })),
   });
   const headingDrag = (name: string): DragProps => ({
     dragging: drag?.kind === "heading" && drag.name === name,
     drop: over?.kind === "heading" && over.name === name && over.side === "into" ? "into" : null,
-    onDragStart: () => setDrag({ kind: "heading", name }),
-    onDragEnd: endDrag,
-    onOver: (side) => {
-      if (!drag) return false;
-      if (drag.kind === "project") hover({ kind: "heading", name, side: "into" });
-      else hover(drag.name === name ? null : { kind: "heading", name, side });
-      return true;
-    },
-    onDrop: (side) => {
-      if (drag?.kind === "project") move({ kind: "project", key: drag.key, to: { into: name } });
-      if (drag?.kind === "heading") return dropHeading(name, side);
-      endDrag();
-    },
-    onStep: (by) => move({ kind: "step-heading", name, by }, { kind: "heading", name }),
+    ...targetDrag({ kind: "heading", name }, { kind: "heading", name }, (by) => move({ kind: "step-heading", name, by }, { kind: "heading", name })),
   });
   /** A heading renamed: a new one (no project yet) here, any other by the core. */
   const rename = (from: string, to: string): Promise<void> => {
@@ -227,7 +200,14 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
   // a stalled project keeps its Ask all quiet sessions under it.
   const full = useLook("sidebar") === "full";
   return (
-    <nav className="projects-nav" ref={nav}>
+    <nav
+      className="projects-nav"
+      ref={nav}
+      // Over nothing that takes the drag (a gap, + Category, past the last group), or off the
+      // sidebar: no drop line (review R5).
+      onDragOver={drag ? (e) => !e.isDefaultPrevented() && hover(null) : undefined}
+      onDragLeave={drag ? (e) => !(e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) && hover(null) : undefined}
+    >
       <ProjectItem name="All" total={tasks.length + notes.length} tasks={tasks} lessons={lessonsWaiting(queues, "all")} on={current === "all"} onClick={() => onPick("all")} working={sums.working > 0} stalled={sums.stalled > 0 ? `${sums.stalled} stalled` : ""}>
         <SumsLine s={sums} now={now} />
       </ProjectItem>
@@ -246,19 +226,21 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
             onDragOver={
               edit
                 ? (e) => {
-                    if (drag?.kind !== "heading") return;
+                    const t = { kind: "group", name: g.name } as const;
+                    if (!accepts(drag, t)) return;
                     e.preventDefault();
                     e.dataTransfer.dropEffect = "move";
-                    hover(drag.name === g.name ? null : { kind: "heading", name: g.name, side: half(e) });
+                    hover(overOf(t, half(e)));
                   }
                 : undefined
             }
             onDrop={
               edit
                 ? (e) => {
-                    if (drag?.kind !== "heading") return;
+                    const t = { kind: "group", name: g.name } as const;
+                    if (!accepts(drag, t)) return;
                     e.preventDefault();
-                    dropHeading(g.name, half(e));
+                    dropOn(t, half(e));
                   }
                 : undefined
             }

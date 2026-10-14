@@ -42,8 +42,11 @@ export type DragProps = {
   drop: Side | null;
   onDragStart: () => void;
   onDragEnd: () => void;
-  /** Something is dragged over it, on this half: true when it can land here. */
-  onOver: (side: "before" | "after") => boolean;
+  /** It takes what's being dragged (projectOrder.accepts). One that doesn't lets the drag and the
+   *  drop go on to the group around it, which may take them (review R1). */
+  accepts: boolean;
+  /** What it takes is dragged over it, on this half. */
+  onOver: (side: "before" | "after") => void;
   onDrop: (side: "before" | "after") => void;
   onStep: (by: -1 | 1) => void;
 };
@@ -62,12 +65,15 @@ function dragAttrs(d: DragProps | undefined, text: string) {
     },
     onDragEnd: d.onDragEnd,
     onDragOver: (e: DragEvent<HTMLElement>) => {
-      if (!d.onOver(half(e))) return;
+      if (!d.accepts) return;
       e.preventDefault();
       e.stopPropagation();
       e.dataTransfer.dropEffect = "move";
+      d.onOver(half(e));
     },
+    // As the dragover: a drop it doesn't take goes on to the group around it.
     onDrop: (e: DragEvent<HTMLElement>) => {
+      if (!d.accepts) return;
       e.preventDefault();
       e.stopPropagation();
       d.onDrop(half(e));
@@ -126,7 +132,7 @@ export function HeadingFrame({ name, count, fresh = false, drag, onRename, onRem
   const attrs = dragAttrs(drag, name);
   return (
     <div
-      className={cx("side-cat", drag?.dragging && "dragging", drag?.drop && `drop-${drag.drop}`)}
+      className={cx("side-cat", fresh && "fresh", drag?.dragging && "dragging", drag?.drop && `drop-${drag.drop}`)}
       data-heading={name}
       tabIndex={drag || onRename ? 0 : undefined}
       role={drag || onRename ? "button" : undefined}
