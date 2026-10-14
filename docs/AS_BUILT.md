@@ -196,6 +196,7 @@ Every script in `bin/` (the same test fails when one is missing here):
 | `bin/answer-hook.py` | Claude Code hook: hands a session the mail waiting in its mailbox (answers, check-in and pause requests, the owner's messages), framed as information. Reads the mailbox and `.git` files itself, about 10 ms a call | the layer's `hooks/muster-answer`, on PostToolUse, UserPromptSubmit and SessionStart |
 | `bin/manifest.py` | Builds `tasks.json` from the task files and `--check` reports queue problems, both layouts | by hand, and by `muster migrate` |
 | `bin/gate` | The gate: `pnpm check` (typecheck, UI tests, build, `cargo fmt --check`, clippy with warnings as errors, `cargo test`), both Python suites, and `cargo test` again in the Kiritimati time zone, each in a temporary home. Prints `gate: green (…)` or `gate: RED (…)` last | builders before `muster pass --from building`, and the merge (`muster projects set muster gate bin/gate`) |
+| `bin/run` | Muster's run command (0077): builds the release app from the checkout it's in and opens that build with `open -n` as a second Muster beside the one running | the owner, through `muster projects set muster run bin/run` |
 | `bin/test_task.py` | Tests for `bin/task` and the answer hook | `bin/gate` |
 | `bin/test_commands.py` | Tests for `/muster` and `/mu` against `docs/COMMANDS.md` and `muster help --json`, and the merge driver end to end | `bin/gate` |
 
