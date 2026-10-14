@@ -758,20 +758,29 @@ tip, or the owner's override, said in the report) and `review::carry` after each
 **The work log's merge driver** (task 0067, decision 0009, `merge_log.rs`): `muster merge-log
 %O %A %B` is git's merge driver for `docs/WORKLOG.md` (`.gitattributes`:
 `docs/WORKLOG.md merge=muster-log`). It runs `git merge-file -p` and keeps a clean result. On a
-conflict it splits the three versions at their `## ` lines (the preamble, then whole entries,
-bytes as they are: CRLF, a missing last line end and non-UTF-8 text are kept). When each side is
+conflict it splits the three versions at their `## ` lines outside fenced code blocks (``` and
+~~~, CommonMark's opening and closing rules, an unclosed one running to the end) into the
+preamble, then whole entries (bytes as they are: CRLF, a missing last line end and non-UTF-8 text are kept). When each side is
 the base's preamble and entries with dated entries (`## YYYY-MM-DD…`) added on top, it writes the
 base with both sides' new entries merged by date, newest first, theirs (`%B`) first on a tie,
 each side's own order kept, an entry both added kept once. Anything else gets merge-file's
-conflict markers (labels `ours`, `base`, `theirs`) and exit 1; an error (a missing file, over
-64 MB, merge-file failing) leaves `%A` as it was, which git counts as a conflict too.
+conflict markers (labels `ours`, `base`, `theirs`) and exit 1. When it can't merge (a missing
+file, over 64 MB, merge-file failing, `%A` it can't write) it runs `git merge-file` in place
+(markers and 1, or its clean result and 0); only if that fails too is `%A` left as it was, with
+exit 2. A driver that exits non-zero with `%A` unwritten would leave git a conflicted file
+holding only ours, so the configured driver is
+`muster merge-log %O %A %B; s=$?; [ $s -le 1 ] && exit $s; git merge-file -L ours -L base -L theirs %A %O %B`:
+a muster that isn't on the PATH, was killed or exited 2 hands over to merge-file (tested with a
+rebase under `PATH=/usr/bin:/bin` plus git).
 `merge_log::configure` (called by `muster start` from where it runs, and by `muster init` for a
 repo's `.muster/`) sets `merge.muster-log.name` and `merge.muster-log.driver`
-(`muster merge-log %O %A %B`) with `git config --local` only for a key `git config --get` doesn't
+(that command) with `git config --local` only for a key `git config --get` doesn't
 find, and prints a line when it wrote one. A failure is a warning on stderr and stops nothing.
 `parallel::merge` puts `merge_log::config_args(this_muster())` before its `rebase` (`-c` for both
-keys, the binary's path shell-quoted), so the merge's rebase uses this binary whatever the config
-says. A clash of only new entries on top no longer sends a task back to Building.
+keys, the same command with the binary's path, `%` doubled and shell-quoted), so the merge's rebase uses this binary whatever the config
+says. A clash of only new entries on top no longer sends a task back to Building. Its unit tests
+build the muster binary they run as the driver once per test run (`cargo build --bin muster`
+into the harness's own target and profile), so `cargo test --lib` works in a fresh target too.
 **Lessons** (`lessons.rs`): `reviews/lessons.json` (truth) and `lessons.md` (rendered) in the
 queue (`layout::reviews_dir`, `layout::lessons_file`: `.muster/reviews/` and `.muster/lessons.md`
 in a repo's queue; `muster migrate` copies both, never moves them). `propose_locked` runs under the lock of each record and settle: a `kind` confirmed on 2+

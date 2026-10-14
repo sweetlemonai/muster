@@ -4105,7 +4105,7 @@ mod tests {
         // The work log's merge driver (0067), in the repo's own config.
         assert_eq!(
             crate::parallel::tests::g(&main_dir, &["config", "--local", "merge.muster-log.driver"]),
-            "muster merge-log %O %A %B"
+            crate::merge_log::driver_command("muster")
         );
         assert_eq!(main(&sv(&["migrate", &q, &m, "--dry-run"])), 1);
         assert_eq!(main(&sv(&["migrate", &q])), 2, "needs the repo");

@@ -161,7 +161,8 @@
 >    runner already put you in a worktree of your own: it's switched to the task's branch), records
 >    both as `worktree:` and `branch:` in the task, and prints them with the brief: the task file,
 >    what it touches, its criteria. Work in that worktree only. It also writes the work log's
->    merge driver (`merge.muster-log.name` and `.driver`, `muster merge-log %O %A %B`) to the
+>    merge driver (`merge.muster-log.name` and `.driver`: `muster merge-log %O %A %B`, then
+>    `git merge-file` with its conflict markers when muster can't run) to the
 >    repo's own git config when git has none, so a hand `git rebase main` in the worktree merges
 >    the log the same way (`muster init` does too).
 > 3. **Build.** Check in at each milestone and at least every 30 minutes

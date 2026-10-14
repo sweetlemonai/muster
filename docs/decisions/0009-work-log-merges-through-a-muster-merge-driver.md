@@ -22,18 +22,28 @@ round, for two log entries that never really clashed.
   top (theirs, `%B`: the commit a rebase replays, the branch a merge brings in), since it lands
   last. In any other case it writes git's conflict markers and exits 1: the preamble changed, the
   same older entry changed both ways, a side removed entries, or a new entry has no date. It never
-  drops a line or reorders the lines inside an entry.
+  drops a line or reorders the lines inside an entry. A `## ` line inside a fenced code block
+  (``` or ~~~, CommonMark's rules) is part of its entry, never a new one.
 - **Git config isn't committed, so muster writes it.** `muster start` and `muster init` set
-  `merge.muster-log.name` and `merge.muster-log.driver` (`muster merge-log %O %A %B`) in the
-  repo's own `.git/config`, which every worktree reads. They only set a key git doesn't have yet,
-  and leave every other key alone. That way a hand `git rebase main` in a worktree resolves the
-  log the same way.
-- **Muster's own merge never depends on that config.** Its rebase runs as
-  `git -c merge.muster-log.name=… -c merge.muster-log.driver='<this muster binary>' merge-log %O %A %B rebase main`.
-  The path is quoted for the shell git runs the driver in.
-- **If the driver can't run** (muster isn't on the PATH, or the config is missing in a hand merge),
-  git treats the log as a conflict, or falls back to its own text merge. That's how it worked
-  before this change, and it never gives a wrong merge.
+  `merge.muster-log.name` and `merge.muster-log.driver` in the repo's own `.git/config`, which
+  every worktree reads. They only set a key git doesn't have yet, and leave every other key alone.
+  That way a hand `git rebase main` in a worktree resolves the log the same way. The driver they
+  write is `muster merge-log %O %A %B; s=$?; [ $s -le 1 ] && exit $s; git merge-file -L ours -L base -L theirs %A %O %B`
+  (git runs it through `sh`).
+- **Muster's own merge never depends on that config.** Its rebase passes the same driver with
+  `git -c`, with this muster binary's absolute path in place of `muster`. The path's `%` is
+  doubled (git expands `%A` and the rest before the shell sees it), then it's quoted for the shell.
+- **When muster can't merge, git's merge-file does, so both sides always show.** A driver that
+  exits non-zero without writing `%A` makes git mark the log conflicted with only our side in it:
+  no markers, the other side's entry gone, and `git add` would lose it. So muster never leaves it
+  like that. When it can't merge (a file it can't read or over 64 MB, merge-file failing, `%A` it
+  can't write), `muster merge-log` runs `git merge-file` in place: its markers and exit 1, or its
+  clean result. Only if that fails too does it leave `%A` alone and exit 2. The driver's shell
+  part covers a muster that never ran (not on the PATH, as for a GUI git client or
+  `PATH=/usr/bin:/bin`), was killed, or exited 2: it runs `git merge-file` itself. Muster's own
+  merge also aborts the rebase on any conflict, so nothing half-merged lands. With no driver in
+  config at all (a hand merge in a repo muster never started in), git does its own text merge,
+  markers and all, as before this change.
 
 ## Options considered
 

@@ -758,7 +758,7 @@ muster release 0031 --clean --force --as owner
 
 ### muster merge-log
 
-Git's merge driver for the work log (decision 0009): git runs it, you don't. The repo's .gitattributes names it for docs/WORKLOG.md (docs/WORKLOG.md merge=muster-log), start and init write it to the repo's git config (merge.muster-log.driver = muster merge-log %O %A %B), and a merge (muster pass --from testing) passes it to its rebase itself, so it works with no config. It merges the three versions git gives it as git would, and when they clash only because both sides added whole ## entries on top, it keeps both, each whole, newest date first and, on the same date, the incoming side (the commit a rebase replays, the branch a merge brings in) on top. Anything else (the text above the entries changed on both sides, the same older entry changed both ways, entries removed) gets git's conflict markers. The result goes into \<ours\>; it exits 0 when it's clean, 1 with conflicts. Without muster on the PATH git can't run it, and the log conflicts as it did before.
+Git's merge driver for the work log (decision 0009): git runs it, you don't. The repo's .gitattributes names it for docs/WORKLOG.md (docs/WORKLOG.md merge=muster-log), start and init write it to the repo's git config (merge.muster-log.driver: muster merge-log %O %A %B, then git merge-file when muster can't run), and a merge (muster pass --from testing) passes it to its rebase itself, so it works with no config. It merges the three versions git gives it as git would, and when they clash only because both sides added whole ## entries on top (a ## line inside a \`\`\` or ~~~ code block is part of its entry), it keeps both, each whole, newest date first and, on the same date, the incoming side (the commit a rebase replays, the branch a merge brings in) on top. Anything else (the text above the entries changed on both sides, the same older entry changed both ways, entries removed) gets git's conflict markers. The result goes into \<ours\>; it exits 0 when it's clean, 1 with conflicts. When it can't merge (a file it can't read or over 64 MB, git merge-file failing), git merge-file merges in its place, so a conflict always has both sides in its markers; only when that fails too is \<ours\> left as it was, with exit 2. When git can't start muster (not on the PATH, as for a GUI git client), the configured driver runs git merge-file itself, with the same result.
 
 ```
 muster merge-log <base> <ours> <theirs>
@@ -768,10 +768,6 @@ Examples:
 
 ```
 muster merge-log %O %A %B
-```
-
-```
-git config merge.muster-log.driver "muster merge-log %O %A %B"
 ```
 
 ## Review

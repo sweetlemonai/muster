@@ -463,9 +463,9 @@ class WorkLogMergeDriver(unittest.TestCase):
         self.assertEqual(r.returncode, 0, f"git {args}: {r.stdout}{r.stderr}")
         return r.stdout.strip()
 
-    def muster(self, *args: str) -> subprocess.CompletedProcess:
+    def muster(self, *args: str, input: str | None = None) -> subprocess.CompletedProcess:
         r = subprocess.run(["muster", *args], cwd=self.repo, capture_output=True, text=True,
-                           env=self.env)
+                           env=self.env, input=input)
         self.assertEqual(r.returncode, 0, f"muster {args}: {r.stdout}{r.stderr}")
         return r
 
@@ -489,7 +489,8 @@ class WorkLogMergeDriver(unittest.TestCase):
 
     def test_a_hand_rebase_in_a_started_worktree_merges_the_work_log(self):
         self.muster("init")
-        driver = "merge.muster-log.driver=muster merge-log %O %A %B"
+        driver = ("merge.muster-log.driver=muster merge-log %O %A %B; s=$?; [ $s -le 1 ] && exit $s; "
+                  "git merge-file -L ours -L base -L theirs %A %O %B")
         self.assertIn(driver, self.local_config(), "init sets it")
         # Gone again: start puts it back, and nothing else changes.
         self.git(self.repo, "config", "--local", "--remove-section", "merge.muster-log")
@@ -506,6 +507,31 @@ class WorkLogMergeDriver(unittest.TestCase):
         self.assertEqual((wt / "docs" / "WORKLOG.md").read_text(encoding="utf-8"),
                          self.PRE + self.entry("The task") + self.entry("Landed before") + self.OLD)
         self.assertEqual(self.git(wt, "status", "--porcelain"), "")
+
+    def test_musters_own_merge_runs_this_binary_as_the_driver(self):
+        # The merge (pass --from testing) of a started task whose only clash with main is the log:
+        # it lands, both entries whole, the task's on top, with no driver in the repo's config.
+        self.muster("init")
+        self.git(self.repo, "config", "--local", "--remove-section", "merge.muster-log")
+        [project] = [p["name"] for p in json.loads(self.muster("projects", "--json").stdout)
+                     if Path(p["path"]).resolve() == (self.repo / ".muster").resolve()]
+        self.muster("projects", "set", project, "gate", "true")
+        body = "## Acceptance criteria\\n- [x] AC1: synthetic, ticked\\n"
+        key = self.muster("new", "Synthetic merged task", "--touches", "src/",
+                          "--body", body).stdout.split()[0]
+        wt = Path(re.search(r"^worktree: (.+)$", self.muster("start", key).stdout, re.M).group(1))
+        self.git(self.repo, "config", "--local", "--remove-section", "merge.muster-log")
+        self.log(wt, self.entry("The task") + self.OLD, "the task's entry")
+        self.muster("pass", key, "--from", "building", "--gate", "gate: green (synthetic)")
+        tip = self.git(wt, "rev-parse", "HEAD")
+        self.muster("review", key, "--record", "-", "--as", "qa",
+                    input=json.dumps({"head": tip, "tier": "light"}))
+        self.log(self.repo, self.entry("Landed before") + self.OLD, "another task's entry")
+        out = self.muster("pass", key, "--from", "testing", "--as", "qa").stdout
+        self.assertIn("(fast-forward, not pushed: no origin)", out)
+        self.assertEqual((self.repo / "docs" / "WORKLOG.md").read_text(encoding="utf-8"),
+                         self.PRE + self.entry("The task") + self.entry("Landed before") + self.OLD)
+        self.assertFalse(any(k.startswith("merge.muster-log.") for k in self.local_config()))
 
     def test_start_leaves_a_driver_already_set_and_every_other_key_alone(self):
         self.git(self.repo, "config", "merge.muster-log.name", "the owner's own")

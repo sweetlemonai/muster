@@ -21,6 +21,12 @@ as present.
 merge_log tests (incl. the union-breaking case, CRLF, a real rebase from a path with a space and a
 quote), a parallel.rs test with no driver config landing both entries with the review carried, and
 a Python test where a hand `git rebase main` after `muster start` merges cleanly. Temp repos only.
+**Fixed (review round 1):** a driver that couldn't run left only ours with no markers, so a
+`git add` lost the task's entry → on any error the driver writes git's own markers, and the
+configured command falls back to `git merge-file` when muster can't start; a dated heading inside
+a code fence split an entry → fences are skipped per CommonMark; `%` in the binary's path is
+doubled; the merge tests build muster themselves; the real `muster pass --from testing` path and
+the CRLF separator are tested.
 **Open:** only checked with git 2.54. Other repos with a running log can opt in with one
 `.gitattributes` line later.
 

@@ -15,10 +15,18 @@ use std::process::{Command, Stdio};
 pub const DRIVER: &str = "muster-log";
 /// What git says the driver is (`merge.muster-log.name`).
 const NAME: &str = "muster work log: entries stay whole, newest on top";
-/// The driver as `configure` writes it: the `muster` on the PATH.
-const COMMAND: &str = "muster merge-log %O %A %B";
-/// A larger file is no work log: it's left to git as a conflict.
+/// A larger file is no work log: git's own merge-file merges it (`run`).
 const MAX_BYTES: u64 = 64 << 20;
+
+/// The driver git runs, through `sh`, with `program` (a word for the shell, `%` doubled) as the
+/// muster to run. When that muster can't start or gives up (exit 2 and up: not on the PATH, as
+/// for a GUI git client; killed; its own fallback failed), git's merge-file writes the conflict
+/// markers in its place, so a log git can't merge always shows both sides, never ours alone.
+pub(crate) fn driver_command(program: &str) -> String {
+    format!(
+        "{program} merge-log %O %A %B; s=$?; [ $s -le 1 ] && exit $s; git merge-file -L ours -L base -L theirs %A %O %B"
+    )
+}
 
 /// A log split at its `## ` headings: what comes before the first one, then each entry, from its
 /// heading to the next. Every byte is in one part, so the parts put back together are the file.
@@ -27,12 +35,35 @@ struct Log<'a> {
     entries: Vec<&'a [u8]>,
 }
 
+/// A fence line (CommonMark): up to 3 spaces, then 3 or more backticks or tildes. Its character,
+/// how many, and what follows them.
+fn fence(line: &[u8]) -> Option<(u8, usize, &[u8])> {
+    let indent = line.iter().take_while(|&&b| b == b' ').count();
+    let rest = line.get(indent..).filter(|_| indent <= 3)?;
+    let c = *rest.first().filter(|c| matches!(c, b'`' | b'~'))?;
+    let n = rest.iter().take_while(|&&b| b == c).count();
+    (n >= 3).then(|| (c, n, &rest[n..]))
+}
+
+/// Split at every `## ` line outside a fenced code block, so a heading quoted in an entry's
+/// code stays in that entry. A fence closes on the same character, at least as many, and
+/// nothing after them but spaces; one never closed runs to the end of the file.
 fn split(text: &[u8]) -> Log<'_> {
     let mut starts = Vec::new();
     let mut at = 0;
+    let mut open: Option<(u8, usize)> = None;
     for line in text.split_inclusive(|&b| b == b'\n') {
-        if line.starts_with(b"## ") {
-            starts.push(at);
+        match (open, fence(line)) {
+            (Some((c, n)), Some((c2, n2, rest)))
+                if c2 == c && n2 >= n && rest.iter().all(|b| b" \t\r\n".contains(b)) =>
+            {
+                open = None
+            }
+            (Some(_), _) => {}
+            // A backtick fence's info string can't hold a backtick (then it's inline code).
+            (None, Some((c, n, rest))) if c == b'~' || !rest.contains(&b'`') => open = Some((c, n)),
+            (None, _) if line.starts_with(b"## ") => starts.push(at),
+            (None, _) => {}
         }
         at += line.len();
     }
@@ -115,13 +146,13 @@ pub enum Merged {
     Conflict(Vec<u8>),
 }
 
-fn read(path: &Path) -> Result<Vec<u8>, String> {
+fn read(path: &Path, max: u64) -> Result<Vec<u8>, String> {
     let size = fs::metadata(path)
         .map_err(|e| format!("{}: {e}", path.display()))?
         .len();
-    if size > MAX_BYTES {
+    if size > max {
         return Err(format!(
-            "{} is {size} bytes, more than a work log's {MAX_BYTES}: left to git as a conflict",
+            "{} is {size} bytes, more than a work log's {max}",
             path.display()
         ));
     }
@@ -132,7 +163,12 @@ fn read(path: &Path) -> Result<Vec<u8>, String> {
 /// (`git merge-file`) when it's clean, else both sides' new top entries (`both_on_top`) when
 /// that's all they added, else the three-way merge's conflict markers.
 pub fn merge(base: &Path, ours: &Path, theirs: &Path) -> Result<Merged, String> {
-    let (b, o, t) = (read(base)?, read(ours)?, read(theirs)?);
+    merge_capped(base, ours, theirs, MAX_BYTES)
+}
+
+/// `merge`, refusing a file over `max` bytes.
+fn merge_capped(base: &Path, ours: &Path, theirs: &Path, max: u64) -> Result<Merged, String> {
+    let (b, o, t) = (read(base, max)?, read(ours, max)?, read(theirs, max)?);
     let out = Command::new("git")
         .args([
             "merge-file",
@@ -163,25 +199,64 @@ pub fn merge(base: &Path, ours: &Path, theirs: &Path) -> Result<Merged, String> 
 }
 
 /// `muster merge-log <base> <ours> <theirs>`, as git runs a merge driver: the result is written
-/// into `ours`; 0 when it's clean, 1 with conflict markers. An error leaves `ours` as it was,
-/// which git takes as a conflict too.
+/// into `ours`; 0 when it's clean, 1 with conflict markers. When it can't merge (a file it can't
+/// read or over 64 MB, merge-file failing, `ours` it can't write), git's merge-file merges in
+/// place instead: its markers, or its clean result. When even that fails, `ours` is left as it
+/// was and it's 2, which the configured driver hands to merge-file again (`driver_command`).
 pub fn run(args: &[String]) -> Result<i32, String> {
+    run_capped(args, MAX_BYTES)
+}
+
+/// `run`, with `merge_capped`'s limit.
+fn run_capped(args: &[String], max: u64) -> Result<i32, String> {
     let [base, ours, theirs] = args else {
         return Err(
             "merge-log takes the three files git gives a merge driver: muster merge-log %O %A %B (see `muster help`)"
                 .into(),
         );
     };
-    let ours = Path::new(ours);
-    let (text, code) = match merge(Path::new(base), ours, Path::new(theirs))? {
-        Merged::Clean(t) => (t, 0),
-        Merged::Conflict(t) => (t, 1),
+    let (base, ours, theirs) = (Path::new(base), Path::new(ours), Path::new(theirs));
+    let merged = merge_capped(base, ours, theirs, max).and_then(|m| {
+        let (text, code) = match m {
+            Merged::Clean(t) => (t, 0),
+            Merged::Conflict(t) => (t, 1),
+        };
+        fs::write(ours, text).map_err(|e| format!("{}: {e}", ours.display()))?;
+        Ok(code)
+    });
+    let e = match merged {
+        Ok(0) => return Ok(0),
+        Ok(code) => {
+            eprintln!("muster merge-log: both sides changed more than new entries on top; left the conflict markers");
+            return Ok(code);
+        }
+        Err(e) => e,
     };
-    fs::write(ours, text).map_err(|e| format!("{}: {e}", ours.display()))?;
-    if code == 1 {
-        eprintln!("muster merge-log: both sides changed more than new entries on top; left the conflict markers");
+    let out = Command::new("git")
+        .args(["merge-file", "-L", "ours", "-L", "base", "-L", "theirs"])
+        .args([ours, base, theirs])
+        .stdin(Stdio::null())
+        .output();
+    match out.as_ref().map(|o| o.status.code()) {
+        Ok(Some(0)) => {
+            eprintln!("muster merge-log: {e}; git merge-file merged it");
+            Ok(0)
+        }
+        Ok(Some(1..=127)) => {
+            eprintln!("muster merge-log: {e}; git merge-file left the conflict markers");
+            Ok(1)
+        }
+        _ => {
+            let why = match &out {
+                Ok(o) => String::from_utf8_lossy(&o.stderr).trim().to_string(),
+                Err(e) => e.to_string(),
+            };
+            eprintln!(
+                "muster merge-log: {e}; git merge-file failed too ({why}), so it's as it was"
+            );
+            Ok(2)
+        }
     }
-    Ok(code)
 }
 
 /// Write the driver to the repo's own config (`.git/config`, which every worktree reads) for
@@ -189,13 +264,16 @@ pub fn run(args: &[String]) -> Result<i32, String> {
 /// a custom one, and every other key, are left as they are. Returns the keys it wrote.
 pub fn configure(dir: &Path) -> Result<Vec<String>, String> {
     let mut wrote = Vec::new();
-    for (key, value) in [("name", NAME), ("driver", COMMAND)] {
+    for (key, value) in [
+        ("name", NAME.to_string()),
+        ("driver", driver_command("muster")),
+    ] {
         let key = format!("merge.{DRIVER}.{key}");
         let out = git_output(dir, &["config", "--get", &key])?;
         match out.status.code() {
             Some(0) => {}
             Some(1) => {
-                git(dir, &["config", "--local", &key, value])?;
+                git(dir, &["config", "--local", &key, &value])?;
                 wrote.push(key);
             }
             _ => {
@@ -210,8 +288,10 @@ pub fn configure(dir: &Path) -> Result<Vec<String>, String> {
 }
 
 /// `-c` options that define the driver for one git command, run by the muster binary at
-/// `muster`, so a merge works with no config written at all. Git runs the driver through a
-/// shell, so the path is quoted for it.
+/// `muster`, so a merge works with no config written at all. Git expands `%` in the driver
+/// before its shell sees it, so the path's `%` is doubled, then quoted for the shell. The
+/// fallback is the configured one's: muster's own merge aborts on any conflict anyway, but a
+/// muster that dies still leaves both sides.
 pub fn config_args(muster: &Path) -> Result<Vec<String>, String> {
     let path = muster
         .to_str()
@@ -221,8 +301,8 @@ pub fn config_args(muster: &Path) -> Result<Vec<String>, String> {
         format!("merge.{DRIVER}.name={NAME}"),
         "-c".into(),
         format!(
-            "merge.{DRIVER}.driver={} merge-log %O %A %B",
-            sh_quote(path)
+            "merge.{DRIVER}.driver={}",
+            driver_command(&sh_quote(&path.replace('%', "%%")))
         ),
     ])
 }
@@ -231,7 +311,7 @@ pub fn config_args(muster: &Path) -> Result<Vec<String>, String> {
 fn sh_quote(s: &str) -> String {
     let plain = !s.is_empty()
         && s.bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"/._-+,:@%".contains(&b));
+            .all(|b| b.is_ascii_alphanumeric() || b"/._-+,:@".contains(&b));
     if plain {
         s.to_string()
     } else {
@@ -245,13 +325,53 @@ fn sh_quote(s: &str) -> String {
 pub fn this_muster() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| format!("can't find this muster binary: {e}"))?;
     #[cfg(test)]
-    let exe = exe
-        .parent()
-        .and_then(Path::parent)
-        .map(|d| d.join("muster"))
-        .filter(|p| p.is_file())
-        .ok_or("no muster binary beside the test harness: build it (cargo test builds it with the integration tests)")?;
+    let exe = built_muster(&exe)?;
     Ok(exe)
+}
+
+/// The muster binary for a unit test, which runs in cargo's test harness
+/// (`<target>/<profile>/deps/…`): built once per test run (`cargo build --bin muster`, quick when
+/// it's up to date), into the same target and profile, so `cargo test --lib` gets a current one
+/// too.
+#[cfg(test)]
+fn built_muster(harness: &Path) -> Result<PathBuf, String> {
+    static BUILT: std::sync::OnceLock<Result<PathBuf, String>> = std::sync::OnceLock::new();
+    BUILT
+        .get_or_init(|| {
+            let profile_dir = harness
+                .parent()
+                .and_then(Path::parent)
+                .ok_or("the test harness isn't in <target>/<profile>/deps")?;
+            let target = profile_dir
+                .parent()
+                .ok_or("the test harness has no target folder")?;
+            let profile = match profile_dir.file_name().and_then(|n| n.to_str()) {
+                Some("debug") => "dev",
+                Some(p) => p,
+                None => return Err("the test harness's profile folder has no name".into()),
+            };
+            let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+            let out = Command::new(cargo)
+                .args(["build", "--quiet", "--bin", "muster", "--profile", profile])
+                .arg("--manifest-path")
+                .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"))
+                .arg("--target-dir")
+                .arg(target)
+                .stdin(Stdio::null())
+                .output()
+                .map_err(|e| format!("couldn't run cargo to build the muster binary: {e}"))?;
+            let bin = profile_dir.join("muster");
+            if out.status.success() && bin.is_file() {
+                Ok(bin)
+            } else {
+                Err(format!(
+                    "couldn't build the muster binary the merge tests run as git's driver ({}): {}",
+                    bin.display(),
+                    String::from_utf8_lossy(&out.stderr).trim()
+                ))
+            }
+        })
+        .clone()
 }
 
 #[cfg(test)]
@@ -532,14 +652,14 @@ mod tests {
         assert!(fs::read_to_string(p("our s"))
             .unwrap()
             .contains("<<<<<<< ours\n"));
-        // Wrong arguments, or a file that isn't there: an error, and ours as it was.
+        // Wrong arguments: an error. A file that isn't there: 2, and ours as it was.
         assert!(run(&args("our s")[..2])
             .unwrap_err()
             .contains("see `muster help`"));
         let before = fs::read(p("our s")).unwrap();
         let mut gone = args("our s");
         gone[0] = p("missing").to_str().unwrap().into();
-        assert!(run(&gone).is_err());
+        assert_eq!(run(&gone), Ok(2));
         assert_eq!(fs::read(p("our s")).unwrap(), before);
     }
 
@@ -548,14 +668,15 @@ mod tests {
         assert_eq!(sh_quote("/usr/local/bin/muster"), "/usr/local/bin/muster");
         assert_eq!(sh_quote("/a b/it's/muster"), "'/a b/it'\\''s/muster'");
         assert_eq!(sh_quote(""), "''");
-        let args = config_args(Path::new("/x y/muster")).unwrap();
+        assert_eq!(sh_quote("/a/100%/muster"), "'/a/100%/muster'");
+        let args = config_args(Path::new("/x y/100%A/muster")).unwrap();
         assert_eq!(
             args,
             [
                 "-c",
                 "merge.muster-log.name=muster work log: entries stay whole, newest on top",
                 "-c",
-                "merge.muster-log.driver='/x y/muster' merge-log %O %A %B",
+                "merge.muster-log.driver='/x y/100%%A/muster' merge-log %O %A %B; s=$?; [ $s -le 1 ] && exit $s; git merge-file -L ours -L base -L theirs %A %O %B",
             ]
         );
     }
@@ -603,8 +724,9 @@ mod tests {
         g(&repo, &["commit", "-qam", "main's entry"]);
         fs::write(wt.join("docs/WORKLOG.md"), format!("{PRE}{b}{OLD}")).unwrap();
         g(&wt, &["commit", "-qam", "the task's entry"]);
-        // The binary in a folder with a space and a quote, as git's shell must find it.
-        let bin = dir.path().join("muster's bin");
+        // The binary in a folder with a space, a quote and a %A git mustn't expand, as git's shell
+        // must find it.
+        let bin = dir.path().join("muster's 100%A bin");
         fs::create_dir(&bin).unwrap();
         std::os::unix::fs::symlink(this_muster().unwrap(), bin.join("muster")).unwrap();
         let args = config_args(&bin.join("muster")).unwrap();
@@ -634,7 +756,7 @@ mod tests {
         );
         assert_eq!(
             g(&repo, &["config", "--local", "merge.muster-log.driver"]),
-            COMMAND
+            driver_command("muster")
         );
         assert_eq!(
             g(&repo, &["config", "--local", "merge.muster-log.name"]),
@@ -676,5 +798,147 @@ mod tests {
         );
         // Not a repo: an error, nothing written.
         assert!(configure(dir.path()).is_err());
+    }
+
+    #[test]
+    fn merge_log_ignores_headings_inside_code_fences() {
+        let base = format!("{PRE}{OLD}");
+        let y = entry("2026-10-13", "Y");
+        // A dated heading in a ``` fence, then in a ~~~ fence that a shorter ~~~ doesn't close,
+        // indented up to 3 spaces: each stays inside its entry.
+        let x = "## 2026-10-14 — X\n**Did:** x, with an example:\n```md\n## 2026-10-12 — example\n```\n\n";
+        let z = "## 2026-10-14 — Z\n  ~~~~\n## 2026-10-10 — a\n~~~\n## 2026-10-09 — b\n~~~~~ \n\n";
+        for e in [x, z] {
+            assert_eq!(
+                split(format!("{PRE}{e}{OLD}").as_bytes()).entries.len(),
+                2,
+                "{e}"
+            );
+            let got = clean(merged(
+                &base,
+                &format!("{PRE}{e}{OLD}"),
+                &format!("{PRE}{y}{OLD}"),
+            ));
+            assert_eq!(got, format!("{PRE}{e}{y}{OLD}"));
+        }
+        // A backtick fence's info can't hold a backtick, so "``` a`b" opens nothing.
+        let text = "## 2026-10-14 — N\n``` a`b\n## 2026-10-13 — real\n";
+        assert_eq!(split(text.as_bytes()).entries.len(), 2);
+        // Four spaces is code, not a fence.
+        let text = "## 2026-10-14 — N\n    ```\n## 2026-10-13 — real\n";
+        assert_eq!(split(text.as_bytes()).entries.len(), 2);
+        // An unclosed fence runs to the end of the file, the base's entries inside it: not
+        // just entries on top, so it's a conflict.
+        let open = "## 2026-10-14 — U\n```\n## 2026-10-10 — inside\n";
+        assert_eq!(
+            split(format!("{PRE}{open}{OLD}").as_bytes()).entries.len(),
+            1
+        );
+        conflict(merged(
+            &base,
+            &format!("{PRE}{open}{OLD}"),
+            &format!("{PRE}{y}{OLD}"),
+        ));
+    }
+
+    #[test]
+    fn merge_log_puts_a_crlf_line_end_between_entries_that_had_none() {
+        let crlf = |s: &str| s.replace('\n', "\r\n");
+        let got = clean(merged(
+            &crlf(PRE),
+            &format!("{}## 2026-10-13 — A\r\n**Did:** a", crlf(PRE)),
+            &format!("{}## 2026-10-14 — B\r\n**Did:** b", crlf(PRE)),
+        ));
+        assert_eq!(
+            got,
+            format!(
+                "{}## 2026-10-14 — B\r\n**Did:** b\r\n## 2026-10-13 — A\r\n**Did:** a",
+                crlf(PRE)
+            )
+        );
+    }
+
+    #[test]
+    fn merge_log_falls_back_to_gits_markers_when_it_cant_merge() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = |n: &str| dir.path().join(n);
+        let (a, b) = (entry("2026-10-14", "A"), entry("2026-10-13", "B"));
+        fs::write(p("base"), format!("{PRE}{OLD}")).unwrap();
+        fs::write(p("ours"), format!("{PRE}{a}{OLD}")).unwrap();
+        fs::write(p("theirs"), format!("{PRE}{b}{OLD}")).unwrap();
+        let args = [p("base"), p("ours"), p("theirs")].map(|x| x.to_str().unwrap().to_string());
+        // Over the size limit: git's own markers, both entries in them, and a conflict.
+        assert_eq!(run_capped(&args, 16), Ok(1));
+        let text = fs::read_to_string(p("ours")).unwrap();
+        assert!(
+            text.contains("<<<<<<< ours\n") && text.contains(">>>>>>> theirs\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("**Did:** A,") && text.contains("**Did:** B,"),
+            "{text}"
+        );
+        // Not even that works (the base is gone): ours as it was, and 2, which the configured
+        // driver's own fallback takes over from.
+        fs::write(p("ours"), format!("{PRE}{a}{OLD}")).unwrap();
+        fs::remove_file(p("base")).unwrap();
+        assert_eq!(run(&args), Ok(2));
+        assert_eq!(
+            fs::read_to_string(p("ours")).unwrap(),
+            format!("{PRE}{a}{OLD}")
+        );
+    }
+
+    /// The folder this test's `git` is in.
+    fn git_dir() -> PathBuf {
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        std::env::split_paths(&path)
+            .find(|d| d.join("git").is_file())
+            .expect("git on the PATH")
+    }
+
+    #[test]
+    fn merge_log_a_driver_git_cant_start_still_leaves_markers_with_both_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = log_repo(dir.path());
+        configure(&repo).unwrap();
+        let wt = dir.path().join("the worktree");
+        g(
+            &repo,
+            &["worktree", "add", "-q", "-b", "task", wt.to_str().unwrap()],
+        );
+        let (a, b) = (
+            entry("2026-10-14", "Main's"),
+            entry("2026-10-14", "The task's"),
+        );
+        fs::write(repo.join("docs/WORKLOG.md"), format!("{PRE}{a}{OLD}")).unwrap();
+        g(&repo, &["commit", "-qam", "main's entry"]);
+        fs::write(wt.join("docs/WORKLOG.md"), format!("{PRE}{b}{OLD}")).unwrap();
+        g(&wt, &["commit", "-qam", "the task's entry"]);
+        // A PATH with git and no muster, as a GUI git client may have.
+        let gits = git_dir();
+        assert!(!gits.join("muster").exists(), "{}", gits.display());
+        let path = format!("/usr/bin:/bin:{}", gits.display());
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(&wt)
+            .args(["rebase", "main"])
+            .env("PATH", &path)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(!out.status.success(), "the rebase stops on it");
+        let text = fs::read_to_string(wt.join("docs/WORKLOG.md")).unwrap();
+        assert!(
+            text.contains("<<<<<<< ours\n") && text.contains(">>>>>>> theirs\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("**Did:** Main's,") && text.contains("**Did:** The task's,"),
+            "{text}"
+        );
+        g(&wt, &["rebase", "--abort"]);
     }
 }
