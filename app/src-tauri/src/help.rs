@@ -513,14 +513,16 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "init",
-        usage: "muster init <folder> [--local|--committed] [--prefix <p>]",
-        what: "In a git repo (its main checkout or any worktree of it): create the repo's queue, .muster/ in the main checkout, with config.toml (its prefix in it), .gitignore, a README with the rules, tasks/, backlog/, attachments/ and INDEX.md. Task files live in tasks/ and never move. Local by default: it stays on this Mac. Refuses if .muster/ is there already, and in a repo without a main checkout (a bare repo's worktree, a submodule). Outside a repo it creates <folder>/tasks, the old layout: status folders, README with the rules and its prefix, the tool stand-ins and its own git, never over an existing tasks/. Either way it refuses a prefix that isn't 2 to 4 lowercase letters or that another project has.",
+        usage: "muster init [<folder>] [--local|--committed] [--prefix <p>]",
+        what: "In a git repo (its main checkout or any worktree of it; the current folder when none is named): create the repo's queue, .muster/ in the main checkout, with config.toml (its prefix in it), .gitignore, a README with the rules, tasks/, backlog/, attachments/ and INDEX.md. Task files live in tasks/ and never move. Local by default: it stays on this Mac. Sessions in the repo and its worktrees need no setup of their own: muster finds it from any folder of the repo, and Muster's rule (rules/muster-queue.md) and answer hook (bin/answer-hook.py) reach them through the personal layer. Refuses if .muster/ is there already, and in a repo without a main checkout (a bare repo's worktree, a submodule). Outside a repo it creates <folder>/tasks, the old layout: status folders, README with the rules and its prefix, the tool stand-ins and its own git, never over an existing tasks/. Either way it refuses a prefix that isn't 2 to 4 lowercase letters or that another project has.",
         options: &[
             ("--local", "the default: .muster/.gitignore keeps all but config.toml out of git, and every worktree of the repo uses the main checkout's .muster/"),
             ("--committed", "commit the queue with the code. For now every claim and pass changes tracked files in the main checkout (merges pass over them), until the live state moves to .git/muster/"),
             ("--prefix", "what its tasks' keys start with (mu in mu-12); default the first 2 letters of the project's name, more when another project has them"),
         ],
         examples: &[
+            "muster init",
+            "muster init --committed",
             "muster init ~/playground/braindump/main",
             "muster init ~/playground/braindump",
             "muster init ~/playground/germ/main --prefix gm",

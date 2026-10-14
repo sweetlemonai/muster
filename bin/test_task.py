@@ -229,6 +229,154 @@ class MusterDirTests(unittest.TestCase):
         self.assertEqual((r.returncode, r.stdout), (0, ""))
 
 
+class OtherProjectsTests(unittest.TestCase):
+    """Muster in any repo (task 0004): `muster init` from inside it, and the answer hook, run by
+    the personal layer for every session, keeping each project's mail to its own sessions."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.base = Path(self.tmp.name).resolve()
+        # Its own home, so the app's projects.json on this Mac is never read or written.
+        home = self.base / "home"
+        home.mkdir()
+        self.env = {**os.environ, "MUSTER_BIN": str(MUSTER), "HOME": str(home)}
+        for k in ("MUSTER_ROOT", "TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS", "MUSTER_BASE"):
+            self.env.pop(k, None)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def repo(self, project: str) -> Path:
+        main = self.base / project / "main"
+        main.mkdir(parents=True)
+        git(main, "init", "-q", "-b", "main")
+        (main / "README.md").write_text("code\n")
+        git(main, "add", "-A")
+        git(main, "commit", "-q", "-m", "first")
+        return main
+
+    def run_muster(self, *args, cwd):
+        return subprocess.run([str(MUSTER), *args], env=self.env, cwd=cwd, capture_output=True, text=True)
+
+    def muster(self, *args, cwd):
+        r = self.run_muster(*args, cwd=cwd)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout
+
+    def test_init_in_a_repo_makes_a_queue_that_passes_check_committed_and_local(self):
+        for mode in ("--local", "--committed"):
+            with self.subTest(mode=mode):
+                project = mode.strip("-")
+                main = self.repo(project)
+                wt = self.base / project / "wt-1"
+                git(main, "worktree", "add", "-q", "-b", "wt-1", str(wt))
+                # No folder: the one it runs in. From a worktree, the queue goes in the main checkout.
+                out = self.muster("init", mode, cwd=wt)
+                q = main / ".muster"
+                self.assertIn(f"created {q}", out)
+                self.assertFalse((wt / ".muster").exists())
+                for d in ("tasks", "backlog", "attachments"):
+                    self.assertTrue((q / d).is_dir(), d)
+                self.assertIn("docs/PROTOCOL.md", (q / "README.md").read_text())
+                self.assertEqual(self.muster("check", cwd=main), "")
+                # A task and a note later, still clean, from the worktree too.
+                self.muster("new", "First", "--as", "owner", cwd=wt)
+                self.muster("add", "A note", "--as", "owner", cwd=main)
+                self.assertEqual(self.muster("check", cwd=wt), "")
+                # Once is all: a second init leaves the queue as it was.
+                r = self.run_muster("init", cwd=main)
+                self.assertEqual(r.returncode, 1)
+                self.assertIn("already exists", r.stderr)
+                # Local: only config.toml and the .gitignore that says so can be committed.
+                # Committed: the tasks too, never the mail or the lists muster rebuilds.
+                status = git(main, "status", "--porcelain", "--untracked-files=all", "--", ".muster")
+                shown = sorted(line[3:] for line in status.splitlines())
+                if mode == "--local":
+                    self.assertEqual(shown, [".muster/.gitignore", ".muster/config.toml"])
+                else:
+                    [note] = [p.name for p in (q / "backlog").glob("*.md")]
+                    self.assertEqual(shown, [".muster/.gitignore", ".muster/README.md", f".muster/backlog/{note}",
+                                             ".muster/config.toml", ".muster/tasks/0001-first.md"])
+                    for kept_out in ("INDEX.md", "mail/.lock"):
+                        self.assertTrue((q / kept_out).exists(), kept_out)
+                        git(main, "check-ignore", "-q", f".muster/{kept_out}")
+                # A clone of a committed queue (or a fresh checkout of a local one's config) still checks.
+                git(main, "add", "-A")
+                git(main, "commit", "-q", "-m", "queue")
+                clone = self.base / project / "clone"
+                git(self.base, "clone", "-q", str(main), str(clone))
+                self.assertEqual(self.muster("check", cwd=clone), "")
+
+    def test_the_layers_rule_says_where_the_queue_and_its_rules_are_and_stays_short(self):
+        rule = (HERE.parent / "rules" / "muster-queue.md").read_text(encoding="utf-8")
+        for must in (".muster/config.toml", ".muster/README.md", "docs/PROTOCOL.md", "muster init"):
+            self.assertIn(must, rule)
+        # It names the hook's mail by the words the hook frames it with.
+        self.assertIn('"from the task queue"', rule)
+        self.assertIn("from the task queue", HOOK.read_text(encoding="utf-8"))
+        # Every session in every repo loads it.
+        self.assertLess(len(rule), 1200)
+
+    def test_init_without_a_folder_outside_a_repo_refuses_a_mode_and_writes_nothing(self):
+        outside = self.base / "loose"
+        outside.mkdir()
+        r = self.run_muster("init", "--local", cwd=outside)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("isn't in a git repo", r.stderr)
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_the_hook_delivers_to_sessions_of_two_projects_at_once_without_mixing_them_up(self):
+        # Two repos, each with its queue and a worktree, a session working in each worktree. Each
+        # asks Q1 on its project's task 0001, and each answer is different.
+        sessions = {"alpha": "aaaa1111", "beta": "bbbb2222"}
+        wts = {}
+        for project, session in sessions.items():
+            main = self.repo(project)
+            self.muster("init", cwd=main)
+            self.muster("new", f"{project} task", "--as", "owner", cwd=main)
+            wt = self.base / project / "worktrees" / "wt-1"
+            git(main, "worktree", "add", "-q", "-b", "wt-1", str(wt))
+            wts[project] = wt
+            r = subprocess.run([sys.executable, "-I", str(TASK), "ask", "0001", "Which port?",
+                                "--session", session], env=self.env, cwd=wt, capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.muster("answer", "0001", "Q1", "--as", "owner", "--", f"{project}-port", cwd=main)
+        # Mail for the other project's session in each mailbox too: a session only ever gets its own.
+        stray = self.base / "alpha" / "main" / ".muster" / "mail" / "bbbb2222"
+        stray.mkdir(parents=True)
+        (stray / "0001-Q9.md").write_text("Answer to Q9 on task 0001 (x), from owner:\nAnswer: stray\n")
+
+        def start(project):
+            data = {"session_id": sessions[project] + "-0000-full-id", "hook_event_name": "PostToolUse",
+                    "cwd": str(wts[project])}
+            p = subprocess.Popen([sys.executable, "-I", str(HOOK)], stdin=subprocess.PIPE,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self.env,
+                                 cwd=self.base, text=True)
+            p.stdin.write(json.dumps(data))
+            p.stdin.close()
+            return p
+
+        # Both at once, a few times over, as two live sessions' tool calls would land.
+        got = {"alpha": [], "beta": []}
+        for _ in range(3):
+            running = {project: start(project) for project in sessions}
+            for project, p in running.items():
+                out = p.stdout.read()
+                self.assertEqual((p.wait(), p.stderr.read()), (0, ""))
+                if out:
+                    got[project].append(json.loads(out)["hookSpecificOutput"]["additionalContext"])
+                p.stdout.close()
+                p.stderr.close()
+        self.assertEqual([len(got["alpha"]), len(got["beta"])], [1, 1], got)
+        self.assertIn("Answer: alpha-port", got["alpha"][0])
+        self.assertIn("Answer: beta-port", got["beta"][0])
+        self.assertNotIn("beta", got["alpha"][0])
+        self.assertNotIn("alpha", got["beta"][0])
+        self.assertNotIn("stray", got["beta"][0])
+        # The stray mail is alpha's, for when that session works in alpha: it waits where it was.
+        self.assertTrue((stray / "0001-Q9.md").is_file())
+
+
 class TaskTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

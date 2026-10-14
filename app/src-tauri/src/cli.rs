@@ -1385,21 +1385,17 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
             Ok(0)
         }
         "init" => {
-            let dir = Path::new(need(&a, 1, "the project folder")?);
-            let local = local_or_committed(&a)?;
+            // The folder it runs in when none is named (0004): `muster init` in a repo.
+            let dir = match a.pos.get(1) {
+                Some(d) => PathBuf::from(d),
+                None => std::env::current_dir().map_err(|e| format!("the current folder: {e}"))?,
+            };
+            local_or_committed(&a)?;
+            let committed = (a.local || a.committed).then_some(a.committed);
             let wanted = a.flags.get("prefix").map(String::as_str);
             let known = crate::key::known();
             // In a repo, its `.muster/` (0005); elsewhere, the old `<folder>/tasks`.
-            let (q, prefix) = if crate::layout::main_checkout(dir).is_some() {
-                projects::init(dir, local, wanted, &known)?
-            } else if a.local || a.committed {
-                return Err(format!(
-                    "{} isn't in a git repo: --local and --committed are for a repo's .muster/",
-                    dir.display()
-                ));
-            } else {
-                projects::create(dir, &tools_dir(), wanted, &known)?
-            };
+            let (q, prefix) = projects::new_queue(&dir, committed, wanted, &known, &tools_dir())?;
             println!(
                 "created {} (prefix {prefix}: its tasks are {prefix}-1, {prefix}-2…)",
                 q.display()

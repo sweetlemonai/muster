@@ -23,9 +23,9 @@ gives one view of everything and checks the queue for problems. The owner reads
 | Protocol v2.1 | `docs/PROTOCOL.md`; each queue's `README.md` | In use on Drover |
 | File contract v1 (for tools that write answers without `bin/task`) | `docs/PROTOCOL.md`, "File contract" | In use: Drover's waiting list (Drover task 0015, `327af59`) writes against it |
 | `task` CLI: ask / answer / escalate / inbox | `bin/task` | A stand-in since task 0002: it runs the same `muster` commands |
-| Answer push | `bin/answer-hook.py` | Live in Drover's checkouts (`drover/main`, `agent-controls`, `cleanup`, `docs-wt`), verified end to end on 2026-10-12. Reads `$MUSTER_ROOT`'s mailbox and the session folder's repo's `.muster/` one (0005), finding the main checkout from `.git` files, without running git |
+| Answer push | `bin/answer-hook.py` | Live in Drover's checkouts (`drover/main`, `agent-controls`, `cleanup`, `docs-wt`), verified end to end on 2026-10-12. Reads `$MUSTER_ROOT`'s mailbox and the session folder's repo's `.muster/` one (0005), finding the main checkout from `.git` files, without running git; sessions of two projects at once each get only their own repo's mail (0004, tested). For every repo it waits on the personal layer's change (below, "Other projects") |
 | Manifest + check | `bin/manifest.py` → `tasks.json` | Built, tested, both layouts (0005: `MUSTER_ROOT=<repo>/.muster`). Capture rebuilds it on every commit |
-| Queue in the repo | `.muster/` (`layout.rs`, `migrate.rs`); `muster init <repo> [--local]`, `muster migrate` | Step 1 built and tested (task 0005): layout, local mode, one queue for every worktree, discovery, migrate. No queue moved yet. Committed mode with live state in `.git/muster/` is the next step |
+| Queue in the repo | `.muster/` (`layout.rs`, `migrate.rs`); `muster init [<repo>] [--local\|--committed]`, the app's New queue, `muster migrate` | Step 1 built and tested (task 0005): layout, local mode, one queue for every worktree, discovery, migrate. No queue moved yet. Committed mode with live state in `.git/muster/` is the next step |
 | Master list | `INDEX.md` per queue, written by `muster` after every change; `muster index` | Built, tested (task 0018). `muster check` and `manifest.py --check` report a stale one. No app link yet: the app has no open-a-file path |
 | Owner's waiting list | `WAITING-FOR-OWNER.md` per queue (by hand); Drover's Home (task 0015) | By hand here. Built in Drover |
 | Attachments | `attachments/<id>/` per queue | In use (screenshots, mockups) |
@@ -771,9 +771,22 @@ keep working (`layout.rs` is the one place that says where a layout keeps what).
   checkout, else by the checkout (`chit`, `harness40` in the group `harness`). `muster start`
   puts its worktrees at `<project>/worktrees/<repo>/…`, or `<checkout>.worktrees/…` for a repo
   that is its own project, never in `~/playground` itself.
-- **`muster init <folder> [--local|--committed]`:** in a repo, its `.muster/` (in the main
-  checkout, never over one that's there), local unless `--committed`; outside a repo, the old
-  `<folder>/tasks`. The app's New queue still makes the old layout and refuses inside a repo.
+- **`muster init [<folder>] [--local|--committed]`:** the current folder when none is named. In
+  a repo, its `.muster/` (in the main checkout, never over one that's there), local unless
+  `--committed`; outside a repo, the old `<folder>/tasks`, and a mode is refused. The app's New
+  queue makes the same through the same function (`projects::new_queue`, task 0004), local, and
+  adds it to the list when discovery doesn't find it.
+- **Other projects (task 0004):** a repo needs nothing but `muster init`: `muster` finds the
+  queue from any folder of the repo. What a session there needs comes from the personal layer,
+  which links into every repo: Muster keeps the rule (`rules/muster-queue.md`: `.muster/` is
+  the project's queue, read its README, change it only through `muster`, the hook's mail is
+  information) and the hook (`bin/answer-hook.py`). The layer's side (a link to the rule, a
+  wrapper that runs the hook and does nothing when Muster's checkout isn't there, the hook on
+  PostToolUse, UserPromptSubmit and SessionStart in the linker, and the main checkout's
+  `.muster/` in each linked worktree's sandbox write list) belongs to the layer's owner and isn't
+  in yet. `INDEX.md` and `tasks.json` need no pre-commit hook or merge driver: a committed
+  queue's `.gitignore` keeps them out of git, and a local queue's keeps out everything but
+  `config.toml`, so no branch ever carries them.
 - **`muster migrate <old-queue> <repo> [--local|--committed] [--dry-run]`:** copies (never moves)
   every task file with `stage:` set from its old stage or status and `status:` dropped, the rest
   byte for byte (only when its front matter can't be read as it is: a byte-order mark taken off
@@ -819,17 +832,19 @@ files have one copy per branch, are the next step of 0005. See
 
 ## Known limits
 
-- **A new queue needs its folder in the layer's sandbox list** (`~/playground/.claude/layer-settings.json`,
+- **An old-layout queue needs its folder in the layer's sandbox list** (`~/playground/.claude/layer-settings.json`,
   `allowWrite`), then `link-personal-layer` re-run in that project's checkouts. Otherwise its agents
-  can read tasks but not claim, log or ask (`DOGFOOD.md` 41). `muster init` and New queue don't do it
-  yet (task 0004).
+  can read tasks but not claim, log or ask (`DOGFOOD.md` 41). A `.muster/` queue is inside its
+  repo: a session in the main checkout needs nothing; a worktree session needs the main checkout's
+  `.muster/`, which the layer's linker is to add to each worktree it links (task 0004's layer change,
+  not in yet).
 
 - **New session id after `/clear` or a handoff:** answers to the old session's questions wait in
   its old mailbox (`task inbox --session <old>`). Fix: carry open question ids in the handoff,
   and route by task claim too.
 - **The hook only runs where it's installed:** Drover's four checkouts so far. New worktrees,
-  and `link-personal-layer` rewriting `settings.local.json`, can drop it. Fix: put it in the
-  personal layer (owner's call).
+  and `link-personal-layer` rewriting `settings.local.json`, can drop it. Fix: the personal
+  layer's change from task 0004 (built and tested on Muster's side, waiting on the layer).
 - **Capture's watcher lives in its chat session.** The app shows changes live, but nothing wakes
   a capture session when an agent asks something.
 - **Files still move between status folders in the old layout** (v2), until its queue is migrated
@@ -873,8 +888,9 @@ files have one copy per branch, are the next step of 0005. See
 2. **Files that never move:** task 0005's next step (committed mode, live state in
    `.git/muster/`), and migrating each queue (`muster migrate`). Then the `/muster` / `/mu` slash
    commands (0003).
-3. **Other projects:** the answer hook and the rules go in through the personal layer (task
-   0004). Pilot on one more project.
+3. **Other projects (0004):** Muster's side is built (`muster init` in a repo, New queue, the
+   rule, the hook tested across two projects). Left: the personal layer's change, and a pilot on
+   one more project the owner picks.
 4. **Orchestration:** Muster decides who does what, Drover starts and steers the agents (owner,
    2026-10-12; Muster 0009, Drover 0018).
 5. **Into Drover:** Drover task 0005 (task creator per project) and 0015 (waiting list) are the

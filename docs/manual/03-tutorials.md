@@ -23,28 +23,32 @@ You need the app and the `muster` command.
 
 ## Your first project
 
-A project's tasks live in a **queue**, a folder beside its code (see [Projects and queues](02-concepts.md#projects-and-queues)).
+A project's tasks live in a **queue**, `.muster/` in its repo (see [Projects and queues](02-concepts.md#projects-and-queues)).
 
-1. Pick the folder that holds the project's repo, not the repo itself: `~/playground/myapp`, not `~/playground/myapp/main`. Muster refuses a folder inside a git repo, so a code commit can never sweep the tasks up.
-2. Make the queue:
-
-   ```
-   muster init ~/playground/myapp
-   ```
-
-   It prints `created /Users/you/playground/myapp/tasks`. The new folder has the status folders, a `README.md` with the rules for agents, a `WAITING-FOR-OWNER.md`, the tools in `bin/`, and its own git history with a first commit.
-3. Look at the app. A queue at `~/playground/<project>/tasks`, or one level deeper, shows up on the left on its own. For a queue anywhere else, go to **Settings**, then **Projects**, and click **Add existing queue…**. (**New queue…** there does what `muster init` does.)
-4. Add a first task. From inside the project, `muster` finds the queue by itself:
+1. Go to the project's repo, its main checkout or any worktree of it:
 
    ```
    cd ~/playground/myapp/main
+   ```
+
+2. Make the queue:
+
+   ```
+   muster init
+   ```
+
+   It prints `created /Users/you/playground/myapp/main/.muster (prefix my: its tasks are my-1, my-2…)`. The folder has `config.toml` (the prefix, and `local = true`), a `README.md` with the rules for agents, `tasks/`, `backlog/`, `attachments/` and `INDEX.md`. It stays on this Mac: only `config.toml` and `.gitignore` are for git. `muster init --committed` makes one that goes into git with the code instead.
+3. Look at the app. A queue at `~/playground/<project>/<checkout>/.muster` shows up on the left on its own. For a repo anywhere else, go to **Settings**, then **Projects**, and click **New queue…** (it does what `muster init` does) or **Add existing queue…**.
+4. Add a first task. From anywhere in the repo or its worktrees, `muster` finds the queue by itself:
+
+   ```
    muster new "Add a dark mode toggle" --type code --priority normal --time 2h
    ```
 
-   It prints `0001 todo/0001-add-a-dark-mode-toggle.md`. The task is in Ready, and its card is on the board.
+   It prints `my-1 tasks/0001-add-a-dark-mode-toggle.md`. The task is in Ready, and its card is on the board.
 5. List the queue: `muster list`.
 
-If agents will work on this project, give them write access to the queue's folder first: see [The sandbox and worktrees](08-faq.md#the-sandbox-and-worktrees).
+Agents in this repo need nothing set up for it: see [The sandbox and worktrees](08-faq.md#the-sandbox-and-worktrees).
 
 ## Add a one-liner and shape it
 

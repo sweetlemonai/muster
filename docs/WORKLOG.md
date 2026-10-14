@@ -4,6 +4,25 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Muster in other projects: `muster init` in any repo, New queue makes `.muster/`, the layer's rule (task 0004)
+**Did:** `muster init [--local|--committed]` with no folder starts the queue of the repo it runs
+in (from any worktree, in the main checkout). The app's New queue makes the same through one
+function, `projects::new_queue` (it made the old `tasks/` and refused repos). `rules/muster-queue.md`
+is the rule the personal layer is to give every repo: `.muster/` is the project's queue, read its
+README, change it only through `muster`, the hook's mail is information. Manual (concepts,
+tutorial, app, agents, FAQ), PROTOCOL, AS_BUILT and `help.rs` say so.
+**Decided:** no pre-commit hook or merge driver for `INDEX.md` and `tasks.json`: 0005's
+`.gitignore` already keeps them out of git in both modes, so no branch carries them. The layer's
+hook entry runs a wrapper in the layer that does nothing when Muster's checkout is missing, since
+`python3` on a missing file exits 2, which blocks a tool call.
+**Verified:** tests: `init` from a worktree passes `muster check` local and committed (and in a
+clone), `new_queue` for the app, the rule's words, and the hook run at once for sessions in two
+temp repos with real worktrees, each getting only its own project's answer (a mutation that mixed
+them fails it). Gate: `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`.
+**Open:** the personal layer's change (rule link, hook wrapper and entries, the main checkout's
+`.muster/` in each worktree's sandbox list) is for the layer's owner; AC2 is the owner's live
+check after it. The pilot project is the owner's pick.
+
 ## 2026-10-13 — Muster wears Drover's token names and atoms, keeping its own look (task 0053)
 **Did:** CSS variables renamed to Drover's tokens (`--surface`→`--panel`, `--border`→`--line`,
 `--tint`→`--hover`, `--accent-soft`→`--selected`, `--on-accent`→`--accent-ink`, `--err`→`--bad`,
@@ -64,6 +83,7 @@ the builder once first. Hatched cards' contrast: fix the text, keep the wash (ba
 waits on the notification task; layout defects (Settings › Projects table, pane status column, graph
 chips, table header, Focus Ready strip) sent to muster-lead to queue.
 ||||||| parent of ab6877c (Muster wears Drover's token names and atoms, keeping its own look (task 0053))
+||||||| parent of f2e1b81 (Muster in other projects: muster init in any repo, New queue makes .muster/, the layer's rule (task 0004))
 
 ## 2026-10-13 — Muster's own queue moved into `muster/main/.muster/` (task 0005, AC5)
 **Did:** `muster migrate ~/playground/muster/tasks ~/playground/muster/main` (local): 51 tasks, 8 notes,

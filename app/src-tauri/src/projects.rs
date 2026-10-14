@@ -500,6 +500,28 @@ pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> V
     lines
 }
 
+/// A new queue for the folder `dir`, as `muster init` and the app's New queue make it (task
+/// 0004): in a git repo, its `.muster/` (`init`; `local` unless `committed` is `Some(true)`);
+/// elsewhere the old `<dir>/tasks` (`create`), where a mode is refused, since it's for a repo.
+pub fn new_queue(
+    dir: &Path,
+    committed: Option<bool>,
+    wanted: Option<&str>,
+    known: &[Project],
+    tools: &Path,
+) -> Result<(PathBuf, String), String> {
+    if layout::main_checkout(dir).is_some() {
+        init(dir, committed != Some(true), wanted, known)
+    } else if committed.is_some() {
+        Err(format!(
+            "{} isn't in a git repo: --local and --committed are for a repo's .muster/",
+            dir.display()
+        ))
+    } else {
+        create(dir, tools, wanted, known)
+    }
+}
+
 /// `muster init <folder> [--local]` in a repo (task 0005, decision 0003): a `.muster/` queue in
 /// the repo's main checkout, wherever in the repo or its worktrees `dir` is. Committed by
 /// default; `local` keeps it on this Mac. Refused outside a git repo, and when the repo already
@@ -1109,6 +1131,37 @@ mod tests {
             .unwrap_err()
             .contains("inside a git repository"));
         assert!(!repo.join("sub/tasks").exists());
+    }
+
+    #[test]
+    fn a_new_queue_goes_in_the_repos_muster_local_unless_committed_else_beside_it() {
+        // What the app's New queue makes, and `muster init` (0004).
+        use crate::layout::{read_config, resolve::repo, Config};
+        let base = tempfile::tempdir().unwrap();
+        let canon = |p: &Path| p.canonicalize().unwrap();
+        let main = repo(base.path(), "app");
+        let (q, prefix) = new_queue(&main.join("."), None, None, &[], Path::new("/x")).unwrap();
+        assert_eq!(canon(&q), canon(&main.join(".muster")));
+        assert_eq!(
+            (read_config(&q), prefix.as_str()),
+            (Ok(Config { local: true }), "ap")
+        );
+        let e = new_queue(&main, Some(true), None, &[], Path::new("/x")).unwrap_err();
+        assert!(e.contains("already exists"), "{e}");
+        let other = repo(base.path(), "web");
+        let q = new_queue(&other, Some(true), Some("wb"), &[], Path::new("/x"))
+            .unwrap()
+            .0;
+        assert_eq!(read_config(&q), Ok(Config { local: false }));
+        // Outside a repo: the old tasks/, and a mode is refused with nothing written.
+        let loose = base.path().join("loose");
+        fs::create_dir(&loose).unwrap();
+        let e = new_queue(&loose, Some(false), None, &[], Path::new("/x")).unwrap_err();
+        assert!(e.contains("isn't in a git repo"), "{e}");
+        assert_eq!(fs::read_dir(&loose).unwrap().count(), 0);
+        let (q, _) = new_queue(&loose, None, None, &[], Path::new("/x")).unwrap();
+        assert_eq!(canon(&q), canon(&loose.join("tasks")));
+        assert!(looks_like_queue(&q));
     }
 
     #[test]
