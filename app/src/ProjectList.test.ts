@@ -193,7 +193,9 @@ describe("labels and categories in the sidebar (0044)", () => {
     expect(html).toContain('<span class="side-cat-counts" title="1 needs you · 2 projects · 2 working · 3 tasks">');
     expect(html).toContain('<span class="side-cat-counts" title="1 project · 2 tasks">');
     expect(html).toContain('<span class="side-cat-needs"><span class="count warn">1</span> <span class="side-cat-needs-words">needs you</span></span>');
-    expect(html).toContain('<span class="side-working"><i class="dot" aria-hidden="true"></i>2 working</span>');
+    expect(html).toContain('<span class="side-cat-part side-working">\u00a0· <i class="dot" aria-hidden="true"></i>2 working</span>');
+    // The name says itself whole in its tooltip, as it may end in "…" (0082 round 3).
+    expect(html).toContain('<span class="side-cat-text"><span class="side-cat-name" title="Tools">Tools</span>');
   });
   it("sorts by the order chips within each heading: A–Z goes by the label", () => {
     vi.stubGlobal("localStorage", { getItem: () => "az" });
@@ -360,7 +362,7 @@ describe("headings made and renamed in place (0057)", () => {
   });
 });
 
-describe("a heading's one line fits the sidebar at its narrowest (0082 review R1)", () => {
+describe("a heading's line: the name gives way first, what needs you is always whole and in words (0082 round 3)", () => {
   const all = (sel: string) => {
     const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const out = new Map<string, string>();
@@ -369,38 +371,74 @@ describe("a heading's one line fits the sidebar at its narrowest (0082 review R1
     return out;
   };
   const px = (v: string | undefined) => Number(/^(\d+(?:\.\d+)?)px$/.exec(v ?? "")?.[1] ?? NaN);
-  it("keeps the needs-you number whole and lets its words go first, then drops them where they can't fit", () => {
+  const em = (v: string | undefined) => Number(/(\d+(?:\.\d+)?)em$/.exec(v ?? "")?.[1] ?? NaN);
+  // The widths, from styles.css: room = sidebar − 1 border − 16 nav padding − 16 heading margins;
+  // the name and counts get what the chevron and its gap leave.
+  const fold = px(all(".side-cat-fold.ui-pill").get("min-width"));
+  const gap = px(all(".side-cat").get("gap"));
+  const textGap = px(all(".side-cat-text").get("gap")?.split(" ")[1]);
+  const nameLeast = em(all(".side-cat-name").get("flex")) * px(all(".side-cat-name").get("font-size"));
+  const box = (sidebar: number) => sidebar - 1 - 16 - 16 - fold - gap;
+  // "N need you": the chip (a digit about 0.62em of its 11px) and the words (about 0.55em a
+  // character), measured in headless Chrome at 73px for 17 and 80px for 120.
+  const count = all(".count");
+  const chipFont = px(count.get("font-size"));
+  const needs = (digits: number) =>
+    Math.max(px(count.get("min-width")), digits * 0.62 * chipFont + 2 * px(count.get("padding")?.split(" ")[1])) + 0.3 * chipFont + 8 * 0.55 * chipFont;
+
+  it("keeps \"N need you\" one piece that never shrinks, wraps or ends in \"…\", and never hides its words", () => {
+    expect(all(".side-cat-needs").get("flex")).toBe("none");
     expect(all(".side-cat-needs .count.warn").get("flex")).toBe("none");
-    const words = all(".side-cat-needs-words");
-    expect([words.get("min-width"), words.get("overflow"), words.get("text-overflow"), words.get("white-space")]).toEqual(["0", "hidden", "ellipsis", "nowrap"]);
-    // The rest ("· 17 projects · 18 working") shrinks before the words do.
-    expect(all(".side-cat-rest").get("flex")).toBe("0 100 auto");
-    // The nav is the container, so the splitter's narrowest (no data-sidebar) counts as well as Focus.
-    expect(all(".projects-nav").get("container-type")).toBe("inline-size");
-    const q = /@container \(max-width: (\d+)px\) \{([\s\S]*?)\n\}/.exec(css);
-    expect(q?.[2]).toContain(".side-cat-needs-words { display: none; }");
-    // Below the width the whole line's fixed parts need, measured as the nav's content box (the
-    // query's): its padding (8 + 8) and the heading's margins (8 + 8) come off it first.
-    const nav = 150 - 1 - 16;
-    const room = nav - 16;
-    expect(room).toBe(117);
-    expect(Number(q?.[1])).toBeGreaterThanOrEqual(nav);
+    for (const sel of [".side-cat-needs", ".side-cat-needs-words", ".side-cat-counts"]) {
+      const d = all(sel);
+      expect(d.has("text-overflow") || d.has("flex-wrap") || d.get("overflow") === "hidden", sel).toBe(false);
+    }
+    // The counts may grow but never get narrower than what needs you: their least width is their
+    // content's (no min-width: 0), and the rest after it adds nothing to it.
+    const counts = all(".side-cat-counts");
+    expect(counts.get("flex")).toBe("1 1 0");
+    expect(counts.has("min-width")).toBe(false);
+    expect(counts.get("white-space")).toBe("nowrap");
+    expect(all(".side-cat-rest").get("contain")).toBe("inline-size");
+    // No mode or width hides the words some other way (round 2 dropped them at 150px).
+    expect(css).not.toMatch(/\.side-cat-needs(-words)? \{[^}]*display: none/);
+    expect(css).not.toContain("@container");
   });
-  it("fits in 117px with the words gone: chevron, gaps, the name's least and a 3-digit needs number", () => {
-    const fold = px(all(".side-cat-fold.ui-pill").get("min-width"));
-    const gap = px(all(".side-cat").get("gap"));
-    const font = px(all(".side-cat").get("font-size"));
-    const nameMin = Number(/^(\d+(?:\.\d+)?)em$/.exec(all(".side-cat-name").get("min-width") ?? "")?.[1]) * font;
-    const count = all(".count");
-    const chipFont = px(count.get("font-size"));
-    const pad = px(count.get("padding")?.split(" ")[1]);
-    // A digit at about 0.62em of the chip's 11px; "314" needs you is the widest the owner has.
-    const chip = Math.max(px(count.get("min-width")), 3 * 0.62 * chipFont + 2 * pad);
-    const fixed = fold + 2 * gap + nameMin + chip;
-    expect(fixed).toBeLessThanOrEqual(117);
-    // With the words (" need you", about 8 characters at 0.55em of 11px) it doesn't, which is why
-    // they go below the query's width.
-    expect(fixed + 0.3 * chipFont + 8 * 0.55 * chipFont).toBeGreaterThan(117);
+  it("lets the name give way first, down to about 4em with an ellipsis, and never grows it past itself", () => {
+    const name = all(".side-cat-name");
+    // Grows a thousand times faster than the counts, so it takes the room up to its own width
+    // (max-content) before the rest after "need you" gets any.
+    expect(name.get("flex")).toMatch(/^1000 1 4em$/);
+    expect([name.get("max-width"), name.get("min-width"), name.get("overflow"), name.get("text-overflow"), name.get("white-space")]).toEqual(["max-content", "0", "hidden", "ellipsis", "nowrap"]);
+    expect(nameLeast).toBe(60);
+  });
+  it("shows \"· N projects\" and \"· N working\" each whole or not at all", () => {
+    const rest = all(".side-cat-rest");
+    expect([rest.get("flex-wrap"), rest.get("overflow"), rest.get("align-content"), rest.get("min-width")]).toEqual(["wrap", "hidden", "flex-start", "0"]);
+    expect(px(rest.get("height"))).toBe(px(all(".side-cat-counts").get("line-height")));
+    const part = all(".side-cat-part");
+    expect(part.get("flex")).toBe("none");
+    expect(part.has("text-overflow")).toBe(false);
+    // A flex line always takes its first item: an empty first piece of the line's height makes a
+    // piece too wide for the room wrap out of sight instead of showing cut ("· 1" at 150px).
+    const first = all(".side-cat-rest::before");
+    expect([first.get("content"), first.get("flex"), first.get("height")]).toEqual(['""', "none", "100%"]);
+  });
+  it("is one line at the default 210px, a long name and a 3-digit count; under the name only where that can't fit (150px)", () => {
+    expect(all(".side-cat-text").get("flex-wrap")).toBe("wrap");
+    // 210: the name's least and "120 need you" fit beside each other.
+    expect(nameLeast + textGap + needs(3)).toBeLessThanOrEqual(box(210));
+    // 150: they don't, so the counts take the line under the name, where even "1200 need you" fits.
+    expect(nameLeast + textGap + needs(1)).toBeGreaterThan(box(150));
+    expect(needs(4)).toBeLessThanOrEqual(box(150));
+  });
+  it("says the name and every count whole in the tooltip and the aria-label, whatever shows", () => {
+    const qs = [{ name: "a", path: "/p/a/tasks", counts: { ready: 120, building: 1 }, label: "a", category: "ابزارهای فارسی" }] as QueueInfo[];
+    const ts = [...Array.from({ length: 120 }, (_, i) => task({ queue: "a", id: String(i + 1).padStart(4, "0"), waitingForOwner: true })), task({ queue: "a", id: "0200", stage: "building", live: true })];
+    const html = renderToStaticMarkup(createElement(ProjectList, { queues: qs, tasks: ts, notes: [], activity: [], now: NOW, current: "a", onPick: () => {}, onLabel: async () => {}, edit: { arrange: async () => {}, renameCategory: async () => {}, colour: async () => {}, fold: async () => {} } }));
+    expect(html).toContain('<span class="side-cat-name" title="ابزارهای فارسی">ابزارهای فارسی</span>');
+    expect(html).toContain('title="120 need you · 1 project · 1 working · 121 tasks"');
+    expect(html).toMatch(/aria-label="ابزارهای فارسی, category heading: 120 need you, 1 project, 1 working;/);
   });
 });
 
@@ -414,21 +452,32 @@ describe("a heading reads as a heading (0082 AC1)", () => {
     return out;
   };
   const px = (v: string | undefined) => Number(/^(\d+(?:\.\d+)?)px$/.exec(v ?? "")?.[1] ?? NaN);
-  it("its name is at least as large and as heavy as a project's name, in the text colour", () => {
-    // A project's name: the body's 13px, weight 550 (.side-name).
+  it("its name is plainly larger and heavier than a project's name, in the text colour (owner, 0082 round 2)", () => {
+    // A project's name: the body's 13px, weight 550 (.side-name). The owner, 2026-10-14: "the
+    // category and projects seems the same font and font size" at 13px 650 against 13px 550.
     const body = px(/font: (\d+px)\//.exec(css)?.[1]);
     expect(body).toBe(13);
-    expect(Number(decls(".side-name").get("font-weight"))).toBe(550);
-    const head = decls(".side-cat");
-    expect(px(head.get("font-size"))).toBeGreaterThanOrEqual(body);
-    expect(head.get("color")).toBe("var(--text)");
-    expect(Number(decls(".side-cat-name").get("font-weight"))).toBeGreaterThanOrEqual(550);
+    const project = Number(decls(".side-name").get("font-weight"));
+    expect(project).toBe(550);
+    expect(decls(".side-cat").get("color")).toBe("var(--text)");
+    const name = decls(".side-cat-name");
+    expect(px(name.get("font-size"))).toBeGreaterThanOrEqual(body + 2);
+    expect(Number(name.get("font-weight"))).toBeGreaterThanOrEqual(project + 150);
+    // Nothing later in the sheet (a mode, the narrow sidebar) brings it back down.
+    expect(css).not.toMatch(/\.side-cat-name \{[^}]*font-size: 1[0-4]px/);
+  });
+  it("its chevron is a drawn chevron in the text colour, turned down when open", () => {
+    const icon = decls(".side-cat-chevron");
+    expect(px(icon.get("width"))).toBeGreaterThanOrEqual(14);
+    expect(px(icon.get("height"))).toBeGreaterThanOrEqual(14);
+    expect(decls(".side-cat-fold.ui-pill").get("color")).toBe("var(--text)");
+    expect(decls('.side-cat-fold[aria-expanded="true"] .side-cat-chevron').get("transform")).toBe("rotate(90deg)");
   });
   it("starts its group with a divider, and its chevron is a Pill-size button", () => {
     expect(decls(".side-cat").get("border-top")).toBe("1px solid var(--line)");
     const fold = decls(".side-cat-fold.ui-pill");
-    expect(px(fold.get("min-width"))).toBeGreaterThanOrEqual(20);
-    expect(px(fold.get("min-height"))).toBeGreaterThanOrEqual(20);
+    expect(px(fold.get("min-width"))).toBeGreaterThanOrEqual(22);
+    expect(px(fold.get("min-height"))).toBeGreaterThanOrEqual(22);
   });
   it("indents its projects under it in every mode, mirrored in right-to-left text", () => {
     // Logical properties only, so the indent sits on the start side whichever way the text runs.
@@ -529,24 +578,26 @@ describe("folded headings in the sidebar (0070)", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   /** A heading's labelled counts, as read: "1 needs you · 3 projects · 1 working". */
-  const counts = (h: string) => plain(/<span class="side-cat-counts"[^>]*>([\s\S]*)$/.exec(h.split("</div>")[0])?.[1] ?? "");
+  const counts = (h: string) => plain(/<span class="side-cat-counts"[^>]*>([\s\S]*)$/.exec(h.split("</div>")[0])?.[1] ?? "").replace(/\u00a0/g, " ");
   const countsOf = (h: string) => /<span class="side-cat-counts"[\s\S]*$/.exec(h)?.[0] ?? "";
   it("folds to one line: its chevron, its name and its labelled counts, what needs you first (0082)", () => {
     const html = render();
     const apps = heading(html, "Apps");
     expect(apps).toMatch(/^<div class="side-cat folded" data-heading="Apps"/);
-    expect(apps).toMatch(/<button type="button" aria-expanded="false" aria-label="Unfold Apps" title="Unfold Apps \(→\)" class="ui-pill side-cat-fold">▸<\/button><span class="side-cat-name">Apps<\/span><span class="side-cat-counts"/);
+    expect(apps).toMatch(/<button type="button" aria-expanded="false" aria-label="Unfold Apps" title="Unfold Apps \(→\)" class="ui-pill side-cat-fold"><svg class="side-cat-chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><\/path><\/svg><\/button><span class="side-cat-text"><span class="side-cat-name" title="Apps">Apps<\/span><span class="side-cat-counts"/);
     expect(counts(apps)).toBe("1 needs you · 3 projects · 1 working");
     // The counts in words for a screen reader, on the heading itself; all of them, and its tasks, in the tooltip.
     expect(apps).toContain('aria-label="Apps, category heading, folded: 1 needs you, 3 projects, 1 working; ↩ renames it, ⌥↑ ⌥↓ move it, ← → fold it"');
     expect(apps).toContain('title="1 needs you · 3 projects · 1 working · 3 tasks"');
     // What needs you is the same chip a project's row has; working the same dot.
     expect(apps).toContain('<span class="side-cat-needs"><span class="count warn">1</span> <span class="side-cat-needs-words">needs you</span></span>');
-    expect(apps).toContain('<span class="side-working"><i class="dot" aria-hidden="true"></i>1 working</span>');
+    expect(apps).toContain('<span class="side-cat-rest"><span class="side-cat-part">\u00a0· 3 projects</span><span class="side-cat-part side-working">\u00a0· <i class="dot" aria-hidden="true"></i>1 working</span></span>');
     // Its rows are folded away, and nothing of them shows under it: the heading's count carries it.
     expect(rows(html)).toEqual(["All", "zeta"]);
     expect(html).not.toContain("side-peek");
-    expect(heading(html, "Tools")).toMatch(/aria-expanded="true" aria-label="Fold Tools"/);
+    expect(heading(html, "Tools")).toMatch(/aria-expanded="true" aria-label="Fold Tools"[^>]*><svg class="side-cat-chevron"/);
+    // One drawn chevron, turned by CSS: no text glyph (▸ ▾) left, which was tiny and faint.
+    expect(html).not.toMatch(/[▸▾]/);
   });
   it("says its counts the same way open and folded (0082 AC2)", () => {
     const open = renderToStaticMarkup(createElement(ProjectList, { queues: queues.map((q) => ({ ...q, categoryFolded: false })), tasks, notes: [], activity: [], now: NOW, current: "alpha", onPick: () => {}, edit: edits }));
@@ -600,11 +651,10 @@ describe("folded headings in the sidebar (0070)", () => {
     expect(group.match(/<div/g)).toHaveLength(1);
     expect(group).not.toMatch(/side-row|side-item|side-peek/);
     expect(counts(group + "</div>")).toBe("34 need you · 17 projects");
-    // And the heading is one line: it never wraps; its counts after what needs you end in an
-    // ellipsis, and what needs you never shrinks.
+    // And the heading is its line: what needs you never shrinks, and its counts after it are whole
+    // or wrap out of sight (the widths are tested in "a heading's line").
     const rule = (sel: string) => [...css.matchAll(new RegExp(`(?:^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`, "g"))].map((m) => m[1]).join(";");
-    expect(rule(".side-cat.folded")).toContain("flex-wrap: nowrap");
-    expect(rule(".side-cat-needs .count.warn")).toContain("flex: none");
-    expect(rule(".side-cat-rest")).toMatch(/min-width: 0;.*overflow: hidden;.*text-overflow: ellipsis;.*white-space: nowrap/);
+    expect(rule(".side-cat-needs")).toContain("flex: none");
+    expect(rule(".side-cat-rest")).toMatch(/flex-wrap: wrap;.*height: 16px;.*overflow: hidden/);
   });
 });

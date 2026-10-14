@@ -189,7 +189,10 @@ export function HeadingFrame({ name, count, summary, fresh = false, folded = fal
           }}
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          {folded ? "▸" : "▾"}
+          {/* One drawn chevron pointing where the text starts, turned down by CSS when open (0082). */}
+          <svg className="side-cat-chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+            <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </Pill>
       )}
       {children}

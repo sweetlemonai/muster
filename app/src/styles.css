@@ -600,10 +600,11 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .side-order .ui-pill { font-size: 11px; padding: 0 7px; }
 /* Category headings (0044): always shown, quiet, with their totals; each wraps its projects. */
 .side-group { display: flex; flex-direction: column; gap: 1px; }
-/* A category heading (0082): it starts its group with a divider, its name as large and heavy as
-   its projects' (13px, 550) in the text colour, a Persian name kept in its own direction. */
+/* A category heading (0082): it starts its group with a divider, its name plainly larger and
+   heavier than its projects' (15px 750 against 13px 550; the owner saw 13px 650 as the same font)
+   in the text colour, a Persian name kept in its own direction. */
 .side-cat { display: flex; align-items: center; gap: 6px; margin: 8px 8px 2px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 13px; color: var(--text); }
-.side-cat-name { flex: 0 1 auto; min-width: 3em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; unicode-bidi: plaintext; }
+.side-cat-name { flex: 1000 1 4em; max-width: max-content; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 750; line-height: 1.25; unicode-bidi: plaintext; }
 .side-cat .side-working { font-size: 11px; }
 /* A label set in place takes its row's place and height. */
 .side-editing { gap: 2px; }
@@ -754,30 +755,33 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .side-cat.side-editing { flex-direction: column; align-items: stretch; gap: 2px; }
 /* A new heading wraps, so its hint goes under the name instead of squeezing it to nothing (review R2). */
 .side-cat.fresh { flex-wrap: wrap; }
-/* A heading's chevron (0070), a Pill-size button that points where the text starts (0082); its
+/* A heading's chevron (0070), a Pill-size button with a drawn chevron in the text colour that
+   points where the text starts, turned down when open (0082; the owner found the ▸ glyph bad); its
    one line, open or folded, of labelled counts: what needs you first and never cut, in a row's
-   needs chip (with --on-status words, 4.5:1 in every theme), the rest ending in an ellipsis at the
-   sidebar's narrowest. Folded, nothing of its projects shows under it: its count carries them. Its
-   projects indent under it on the side the text starts, in every mode. */
-.side-cat-fold.ui-pill { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 20px; min-height: 20px; padding: 0; font-size: 12px; line-height: 1; color: var(--muted); }
-.side-cat-fold.ui-pill:hover, .side-cat-fold.ui-pill:focus-visible { color: var(--text); }
+   needs chip (with --on-status words, 4.5:1 in every theme). Folded, nothing of its projects shows
+   under it: its count carries them. Its projects indent under it on the side the text starts, in
+   every mode. */
+.side-cat-fold.ui-pill { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 22px; min-height: 22px; padding: 0; line-height: 1; color: var(--text); }
+.side-cat-chevron { display: block; width: 14px; height: 14px; transition: transform 120ms ease; }
+.side-cat-fold[aria-expanded="true"] .side-cat-chevron { transform: rotate(90deg); }
 .side-cat-fold:dir(rtl) { transform: scaleX(-1); }
-.side-cat.folded { flex-wrap: nowrap; }
-.side-cat-counts { display: flex; align-items: center; min-width: 0; flex: 0 100 auto; margin-inline-start: auto; font-size: 11px; font-weight: 400; color: var(--muted); white-space: nowrap; }
-/* At the sidebar's narrowest (review R1): the needs number never shrinks; its words and the rest
-   do, the rest first. The nav is the container, so the splitter's narrowest counts as well as
-   Focus: in 117px (150 − 1 border − 16 nav padding − 16 heading margins) the chevron (20), the
-   gaps (2 × 6), the name's least (3em, 39) and a 3-digit number (≈ 29) fit, with " need you"
-   (≈ 52) they don't, so below 164px of nav (a 181px sidebar) the words go; the tooltip and the
-   heading's aria-label keep saying them. */
-.projects-nav { container-type: inline-size; }
-.side-cat-needs { flex: 0 1 auto; display: flex; align-items: center; gap: 0.3em; min-width: 0; color: var(--warn); }
+/* One line, open or folded (0082 round 3): the name gives way first, down to 4em with an ellipsis
+   (its tooltip and the heading's aria-label say it whole); "N need you" is one piece that never
+   shrinks, so its words always show; "· N projects" and "· N working" each show whole where there's
+   room, otherwise they wrap onto a second line the rest's one-line height hides. Where even the
+   name's 4em and "N need you" don't fit beside the chevron (the narrowest sidebar, 150px), the
+   counts take a second line under the name, whole and labelled: name and counts sit in one
+   wrapping box, and the counts' least width is the needs piece's. The tooltip and the heading's
+   aria-label always say them all. */
+.side-cat-text { flex: 1 1 0; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+.side-cat-counts { display: flex; align-items: center; flex: 1 1 0; line-height: 16px; font-size: 11px; font-weight: 400; color: var(--muted); white-space: nowrap; }
+.side-cat-needs { flex: none; display: flex; align-items: center; column-gap: 0.3em; color: var(--warn); }
 .side-cat-needs .count.warn { flex: none; margin: 0; color: var(--on-status); }
-.side-cat-needs-words { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.side-cat-rest { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@container (max-width: 164px) {
-  .side-cat-needs-words { display: none; }
-}
+.side-cat-rest { flex: 1 1 0; min-width: 0; contain: inline-size; display: flex; flex-wrap: wrap; align-content: flex-start; height: 16px; overflow: hidden; }
+/* An empty first piece the line's height: a flex line always takes its first item, so without it
+   a piece too wide for the room would show cut instead of wrapping onto the hidden second line. */
+.side-cat-rest::before { content: ""; flex: none; height: 100%; }
+.side-cat-part { flex: none; }
 .side-group > .side-row { margin-inline-start: 14px; }
 .side-group > .side-item { margin-inline-start: 14px; width: auto; }
 .side-group > .side-ping { margin-inline-start: 14px; }
@@ -962,6 +966,7 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .merge-line { margin-top: 2px; }
 @media (prefers-reduced-motion: reduce) {
   .proof-thumb, .proof-thumb img { transition: none; animation: none; }
+  .side-cat-chevron { transition: none; }
 }
 /* Run from the app (mu-79): the Run line's command beside its button; the Run block's output, the
    last lines in monospace, each line set right to left or left to right by its own text so a

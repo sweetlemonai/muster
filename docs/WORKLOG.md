@@ -4,6 +4,43 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Sidebar headings, round 3: "N need you" always in words, the name gives way first (mu-82)
+**Fixed:** review R2: at the default 210px "Dast Afzar", "persianUtils" and a Persian name showed
+only the orange number; the words came at 240-280px and the rest only at 320. The name kept its
+room and the counts got what was left. Now the name gives way first (ellipsis down to 4em, whole in
+its tooltip), "N need you" is one piece that never shrinks, and "· N projects" / "· N working" each
+show whole when there's room. Where the name's 4em and "N need you" can't share the line (150px)
+the counts go under the name (`ProjectList.tsx`, `styles.css`; DESIGN.md, AS_BUILT, manual 04).
+**Decided:** the second line comes from the flex wrap itself, not a width query, so it appears
+exactly when one line can't hold the name's least and the needs, at any sidebar width (the lead's
+call: two lines at the narrowest only; at 150px that's every heading with something that needs
+you, at 210px none, 3-digit counts included).
+**Fixed:** a flex line always takes its first item, so a piece too wide showed cut ("· 2" at
+150px); an empty `::before` of the line's height goes first now, and the piece wraps out of sight.
+**Verified:** gate (below); `ProjectList.test.ts` rewritten for the rule (each of 5 CSS reverts
+fails a test); headless Chrome renders of the real stylesheet at 150, 210 and 320px, Violet night
+and day, with "Apps", "Dast Afzar", "persianUtils" and "ابزارهای فارسی" (120 need you), measured:
+"N need you" whole at every width, one line at 210 and 320, two at 150, nothing past the edge.
+**Open:** release-app screenshots with real data and the owner's look (AC5) are the lead's.
+
+## 2026-10-14 — Sidebar headings, round 2: a drawn chevron and a heading plainly bigger than its projects (mu-82)
+**Fixed:** the owner sent mu-82 back ("icon to expand collapse is bad, the category and projects
+seems the same font and font size"): the chevron was a 12px ▸/▾ text glyph in `--muted`, and the
+heading 13px 650 against a project's 13px 550. Now a drawn 14px SVG chevron in `--text` in a 22px
+Pill, turned down when open, and the name 15px 750 (`SidebarProjects.tsx`, `styles.css`).
+**Fixed:** with the bigger name, renders showed the "17" chip spilling past a 150px sidebar (the
+counts shrank to 7px) and "need …" cut at 210px. The counts now take what the name leaves, never
+less than the chip (`data-needs-digits`), and the words and the rest are whole or hidden (they
+wrap onto a hidden second line); the container query that dropped the words is gone
+(`ProjectList.tsx`, `styles.css`; DESIGN.md, AS_BUILT, manual 04).
+**Verified:** gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati)); new and
+updated tests in `ProjectList.test.ts` (3 fail on a reverted size, wrap or chip floor); headless
+Chrome renders of the real stylesheet at 210 and 150px, Violet night and day, with 1-, 2- and
+3-digit counts and a Persian name, measured: nothing past the edge.
+**Open:** release-app screenshots with real data are the coordinator's (a launched build doesn't
+come to the front here, so a screen grab shows the owner's other windows). At default width a
+long name leaves only the number; the words are in the tooltip and the aria-label.
+
 ## 2026-10-14 — Run from the app, review round 2: the login shell in its own session, read to its mark (mu-79)
 **Fixed:** R3: under a terminal, `zsh -ilc` in a background group stopped on SIGTTOU until the
 5 s timeout → `run::new_session` calls `setsid` before exec (it leads its group too, so the

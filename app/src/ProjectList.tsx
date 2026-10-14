@@ -372,31 +372,37 @@ function CategoryHead({ name, rows, total, fresh = false, drag, onRename, onRemo
   const c = headingCounts(rows);
   const said = countsText(c);
   const projects = `${c.projects} ${c.projects === 1 ? "project" : "projects"}`;
-  // One line, the same open and folded, in every mode (0082): what needs you first, in the chip a
-  // project's row has, then its projects and what's being worked on, in words; the rest ends in
-  // an ellipsis where the sidebar is narrow, never what needs you. Its tasks are in the tooltip.
+  // One line, the same open and folded, in every mode (0082): the name, then what needs you in the
+  // chip a project's row has and in words, never cut; then its projects and what's being worked on,
+  // each whole where there's room. The name gives way first; where the sidebar is too narrow for
+  // the name's least and what needs you, the counts go under it (styles.css). Its tasks are in the
+  // tooltip; everything is in the tooltip and the heading's aria-label.
   return (
     <HeadingFrame name={name} count={rows.length} summary={countsText(c, ", ")} fresh={fresh} folded={folded} drag={drag ?? into} onRename={onRename} onRemove={onRemove} onFold={onFold}>
-      <span className="side-cat-name">{name}</span>
-      {!fresh && (
-        <span className="side-cat-counts" title={`${said} · ${total} ${total === 1 ? "task" : "tasks"}`}>
-          {c.needs > 0 && (
-            <span className="side-cat-needs">
-              <span className="count warn">{c.needs}</span>{" "}
-              <span className="side-cat-needs-words">{`${c.needs === 1 ? "needs" : "need"} you`}</span>
-            </span>
-          )}
-          <span className="side-cat-rest">
-            {`${c.needs > 0 ? " · " : ""}${projects}${c.working > 0 ? " · " : ""}`}
-            {c.working > 0 && (
-              <span className="side-working">
-                <i className="dot" aria-hidden="true" />
-                {`${c.working} working`}
+      <span className="side-cat-text">
+        <span className="side-cat-name" title={name}>{name}</span>
+        {!fresh && (
+          <span className="side-cat-counts" title={`${said} · ${total} ${total === 1 ? "task" : "tasks"}`}>
+            {c.needs > 0 && (
+              <span className="side-cat-needs">
+                <span className="count warn">{c.needs}</span>{" "}
+                <span className="side-cat-needs-words">{`${c.needs === 1 ? "needs" : "need"} you`}</span>
               </span>
             )}
+            <span className="side-cat-rest">
+              {/* Each piece brings its own no-break space, so a hidden one leaves no gap. */}
+              <span className="side-cat-part">{`${c.needs > 0 ? "\u00a0· " : ""}${projects}`}</span>
+              {c.working > 0 && (
+                <span className="side-cat-part side-working">
+                  {"\u00a0· "}
+                  <i className="dot" aria-hidden="true" />
+                  {`${c.working} working`}
+                </span>
+              )}
+            </span>
           </span>
-        </span>
-      )}
+        )}
+      </span>
     </HeadingFrame>
   );
 }

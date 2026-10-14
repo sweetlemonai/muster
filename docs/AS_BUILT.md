@@ -644,13 +644,23 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   the group's heading as its category (`carry_over`).
 - **Sidebar headings read as headings** (task 0082, `ProjectList.tsx` `CategoryHead`,
   `projectOrder.ts` `headingCounts`/`countsText`, styles.css): a 1px `--line` divider starts each
-  group; the name is 13px, weight 650, in `--text` (a project's is 13px, 550), `unicode-bidi:
-  plaintext` for a Persian name; the chevron is a 20px `Pill` with `aria-expanded`, mirrored with
-  `:dir(rtl)`. One line of labelled counts, the same open, folded and in every mode: "77 need you ·
+  group; the name is 15px, weight 750, in `--text` (a project's is 13px, 550; the owner saw 13px
+  650 as the same font), `unicode-bidi: plaintext` for a Persian name; the chevron is a 22px
+  `Pill` with `aria-expanded` holding a drawn 14px SVG chevron (`.side-cat-chevron`, 2px stroke in
+  `--text`) that points where the text starts and turns 90° when open (no transition under reduced
+  motion), mirrored with `:dir(rtl)`. One line of labelled counts, the same open, folded and in every mode: "77 need you ·
   17 projects · 18 working" (needs from tasks and lessons, as the row badge; 0 left out but the
   projects), the needs part in the row's `.count.warn` chip with `--on-status` words (4.5:1 in
   every theme; the row badge's own `--accent-ink` reads at about 2.2:1 in light themes) and never
-  shrinking, the rest ending in an ellipsis; the tasks in the tooltip, the counts in the heading's
+  shrinking. The name and counts sit in `.side-cat-text`, a wrapping flex box beside the chevron.
+  The name (`flex: 1000 1 4em`, `max-width: max-content`, ellipsis, its own `title`) grows to its
+  width before the counts get any room and gives way first, down to 4em. "N need you" is one
+  `flex: none` piece, so the counts' least width is its width: where the name's 4em and it don't
+  fit on the line (the 150px sidebar), the counts wrap under the name. "· N projects" and
+  "· N working" are `.side-cat-part` pieces in `.side-cat-rest` (`contain: inline-size`, so it adds
+  nothing to that least width; one-line height, `flex-wrap: wrap`, overflow hidden, and an empty
+  `::before` of the line's height so even the first piece wraps out of sight rather than showing
+  cut); each brings its own no-break space. The tasks in the tooltip, the counts in the heading's
   `aria-label`. Projects indent 14px with `margin-inline-start` in every mode. Folded is that one
   line alone.
 - **One builder for the sidebar's state** (task 0073, `projects::read_state`): the shown queues read

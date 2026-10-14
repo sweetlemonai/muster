@@ -19,9 +19,9 @@ have their own short sets below. Every other section here applies in all three.
   one click or key opens it there. Nothing a mode folds is more than one click or key away.
 - **What needs you never folds:** the Waiting for you count, the sidebar's counts, the needs-you
   and blocked words on a card, and a folded column's needs-you count. A folded sidebar heading is
-  one line, and its own needs-you count carries what's under it (owner, 2026-10-14, task 0082):
-  it comes first on the line, in the needs chip a project's row has, and is never the part cut
-  where the sidebar is narrow. Nothing of its projects shows under it.
+  one line (two at the narrowest sidebar), and its own needs-you count carries what's under it
+  (owner, 2026-10-14, task 0082): it comes first after the name, in the needs chip a project's row
+  has with its words, and is never the part cut where the sidebar is narrow. Nothing of its projects shows under it.
 - **No overlays, fixed places, no layout jumps, the colour code:** as below, the same in all three.
   Switching modes moves nothing: every control keeps its place.
 - **One table:** `app/src/modes.ts` lists every element that differs, with what it does in each
@@ -106,15 +106,27 @@ strips didn't line up.
 
 ## Sidebar categories (task 0082)
 
-- **A heading reads as a heading.** It starts its group with a thin divider, its name is at least
-  as large and heavy as its projects' names, in the text colour, and its chevron is a real button
-  (Pill-size, saying open or folded). Its projects are indented under it, on the side the text
+- **A heading reads as a heading.** It starts its group with a thin divider, its name is plainly
+  larger and heavier than its projects' names (15px 750 against 13px 550: at 13px 650 the owner
+  saw the same font), in the text colour, and its chevron is a real button (Pill-size, saying open
+  or folded) with a drawn chevron in the text colour, turned down when open, not a text glyph. Its projects are indented under it, on the side the text
   starts (mirrored for right-to-left names), in every mode.
 - **Its counts are words, the same open and folded,** in every mode: "77 need you · 17 projects ·
   18 working", what needs you first, in the tokens a project's row uses (the needs chip, the
   Building dot); what's 0 is left out, but never the projects. Its tasks are in the tooltip.
-- **Folded is one line:** the chevron, the name and those counts. What doesn't fit ends in an
-  ellipsis, never what needs you; the whole line is in the tooltip and read out on the heading.
+- **One line, open or folded** (owner, 2026-10-14, round 3: no number without its words): the
+  chevron, the name and those counts.
+  - **The name gives way first:** it ends in "…" down to about 4em (60px), and its tooltip and
+    the heading's aria-label say it whole.
+  - **"N need you" always shows whole, in words,** the chip and "need you" together, at every
+    width down to 150px; it never shrinks, wraps or ends in "…".
+  - **"· N projects" and "· N working"** each show whole where there's room after that; otherwise
+    they're left out whole (never "· 1…") and are in the tooltip and the aria-label.
+  - **Where even the name's 4em and "N need you" don't fit beside the chevron** (the narrowest
+    sidebar, 150px, in Focus or with the splitter at its minimum), the counts take a second line
+    under the name, whole and labelled. At the default 210px and wider it's one line, a 3-digit
+    count included.
+  - The whole line, and the heading's tasks, are in the tooltip and read out on the heading.
 
 ## The colour code
 
