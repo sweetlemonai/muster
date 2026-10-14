@@ -4,6 +4,15 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Both side panes resizable (mu-58)
+**Did:** one splitter (`ui/Splitter.tsx`, `splitter.ts`) for the projects sidebar and the task pane:
+drag, double-click reset, ←/→ (Shift for 120 px), widths remembered (`muster.sidebar.v1`,
+`muster.pane.v1`; the pane's old `muster.paneWidth` is carried over once), clamped so both panes
+and the board fit at any window and Text size; a drag stores once, at the end.
+**Verified:** `bin/gate` → `gate: green (pnpm check, test_task, test_commands, cargo test
+(Kiritimati))` on a9dfa01; real-DOM check in headless Chromium (drag, keys, clamp 150–320, reset,
+storage, one write per drag, old width kept, 820 px window with the pane open).
+
 ## 2026-10-14 — Blocked says plainly what it waits for (mu-60); agent teams spike (mu-40)
 **Did:** each block kind has its own words and look from one table (`blockWords.ts` BLOCK_LOOKS,
 Rust `block::look`): "Your answer: Q2 …" with Answer in place, "Your action: …", "Permission: …"
