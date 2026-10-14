@@ -1,0 +1,73 @@
+# 0011 — Sessions hand off by themselves at ~60% context or the token cap
+
+Date: 2026-10-14 · Status: accepted (the owner, on mu-74: "Sessions hand off by themselves at
+~60% context: finish the step, wait for a gap, write /handoff, a fresh session resumes it, no
+human step", and "I really need it to make the whole process automated."). Amends 0004 point 3;
+0004's points 1, 2, 4 and 5 stand.
+
+## Why
+
+0004 said "hand off at about 150k" and left the handoff to the session: notice the size, write a
+note, have someone start a fresh session. In practice sessions noticed late or not at all, and the
+switch needed the owner. mu-74 built the trigger and the switch into the personal layer
+(`hooks/context-watch.mjs`, the `/handoff` skill, `bin/claude-continue`, `handoff.json`), so the
+rule can say what the hook does.
+
+A second gap came with it. A question asked with `muster ask` is routed to the asking session's
+mailbox by session id, so a successor never saw the answers to its predecessor's questions
+(DOGFOOD 35).
+
+## Decision
+
+1. **The trigger.** A session hands off when its context reaches **60%** of its window or its
+   **token cap**, whichever comes first. The cap is 150k for every session and 300k for
+   `Muster_Team_Lead*` (`caps` in `~/playground/.claude/handoff.json`; other session-name patterns
+   can get their own). From 50% the hook reminds the session to finish its step.
+2. **At a gap.** The hook acts at a Stop with nothing of the session's own running: no subagent,
+   teammate, background shell or workflow. Until then it asks again at each stop.
+3. **The handoff.** The session writes `/handoff` (every owner request with its status, decisions,
+   failed approaches, changes, open questions). Its front matter carries `session:` (the old
+   session id) and `generation:`. A builder holding a claim first runs `muster checkin` with
+   what's done and next, and the handoff names the claim and the open question ids.
+4. **An automatic successor.** `claude-continue` starts a named background session with the same
+   account and permission mode, which runs `/handoff resume`. No human step. Its first command
+   after the resume is `muster inbox --session <old id>`, so answers that went to the old mailbox
+   reach it. It keeps the old `--as` name.
+5. **Off switches and fallbacks.** `PERSONAL_HANDOFF_AUTO=0` keeps the trigger but starts no
+   successor; `PERSONAL_HANDOFF=0` turns the hook off. The hook asks for `/clear` instead of a
+   successor in the desktop app (it can't open a background session without a click), when the
+   permission mode is unknown, and after 5 automatic handoffs in a row with no owner prompt
+   (`maxRotations`). `CLAUDE_HANDOFF_ACT_PCT`, `CLAUDE_HANDOFF_WARN_PCT`,
+   `CLAUDE_HANDOFF_ACT_TOKENS` and `CLAUDE_HANDOFF_MAX_ROTATIONS` override the file for one session.
+6. **What a handoff may hold.** No secrets or tokens: it names where a credential lives, never its
+   value. The session id it carries isn't a secret. Handoffs can quote the owner, so they stay in
+   the untracked `.claude/work/handoffs/` and are never committed or attached to a task.
+
+## Options considered
+
+- *Keep 0004's manual handoff at ~150k:* no new parts, but it relied on the session noticing and
+  on the owner starting the next one, which is the babysitting the owner wants gone.
+- *Let Claude Code's auto-compact do it:* no setup, but it summarizes from memory with nothing to
+  check, drops owner requests and dead ends, and fires only when the context is nearly full, after
+  the expensive turns.
+- *A token cap only:* the same number means 75% of a 200k window and 15% of a 1M one, so it
+  either fires too late on small windows or needs a number per model.
+- *A percentage only:* on a 1M window 60% is 600k, and 0004's measurements say a turn costs about
+  the context's size, so turns would cost four times what the 150k rule allowed.
+- *Chosen:* 60% or the cap, whichever first, acting only at a gap, with an automatic successor.
+
+## Cost
+
+0004's numbers stand: a turn costs about the context's size (a coordinator at ~450k paid ~450k for
+a one-line "merged, pushed"). With the cap, a builder's turn costs at most about 150k, a third of
+that, and the lead's at most about 300k, two thirds of it.
+
+## Still open
+
+- **The claim doesn't carry over yet.** A claim is stamped with the session id, so `muster`
+  refuses the successor's check-in, pass and return on the task it inherited, even under the same
+  `--as` name (backlog note 2026-10-14-0707). Until a takeover is built, the coordinator moves the
+  task with owner overrides (`--as owner`), as the work log of 2026-10-14 describes.
+- **Routing by claim.** Answers still go to the asking session's mailbox; the successor has to
+  read the old one with `--session`. Routing a task's answers to whoever holds its claim isn't
+  built.

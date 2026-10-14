@@ -336,7 +336,7 @@ is in section 6.
 
 ## 5. Decisions
 
-In `docs/decisions/`, newest last. There is no 0011 yet.
+In `docs/decisions/`, newest last. There is no 0012 yet.
 
 | # | Decision |
 |---|---|
@@ -350,6 +350,7 @@ In `docs/decisions/`, newest last. There is no 0011 yet.
 | [0008](decisions/0008-agent-teams-where-muster-uses-them.md) | Agent teams for the planning room and review lenses, not for building; a teammate's stamp becomes session + agent id (not built yet) |
 | [0009](decisions/0009-work-log-merges-through-a-muster-merge-driver.md) | The work log merges through `muster merge-log`, so new entries on top never stop a merge |
 | [0010](decisions/0010-the-queue-lives-in-local-files-not-github-issues.md) | The queue lives in local files, not GitHub Issues |
+| [0011](decisions/0011-sessions-hand-off-by-themselves.md) | Sessions hand off by themselves at \~60% context or the token cap, at a gap, to an automatic successor that reads the old mailbox; amends 0004 point 3 |
 
 ## 6. The queue at a glance
 
@@ -508,7 +509,10 @@ As of 2026-10-14 06:30 (the newest change in a task's log). 83 tasks: 9 Ready, 1
 - **A task's stage can lag its code:** a lead that merges a task by hand has to pass it too.
   mu-52 and mu-53 were merged to main on 2026-10-13 and read Building until 2026-10-14.
 - **New session id after `/clear` or a handoff:** answers to the old session's questions wait in its
-  old mailbox (`muster inbox --session <old>`). mu-75 has the successor take them.
+  old mailbox. The handoff now carries the old session id (its `session:` front matter), and the
+  successor's first step is `muster inbox --session <old>` (PROTOCOL.md, decision 0011). Still open:
+  answers are routed by the asking session, not by the task's claim, and a claim stamped with the old
+  session refuses the successor's check-in and pass until the coordinator moves it.
 - **The hook reaches a session only where the layer is linked**, and a ping or pause reaches a
   session only through the hook: a session without it sees a check-in request, message or stop
   only when it runs `muster inbox`, and a claim with no session stamp can't be reached at all.

@@ -4,6 +4,19 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Muster's handoff rule follows the automatic handoff (task 0075)
+**Did:** decision 0011 amends 0004 point 3: a session hands off by itself at ~60% context or the
+token cap (150k, 300k for the lead), at a gap, and a named background successor resumes it.
+PROTOCOL.md's Sessions rule says what to do at the hook's prompt (check in, `/handoff`, the
+successor runs `muster inbox --session <old id>` first) and that handoffs hold no secrets and stay
+in the untracked `.claude/work/handoffs/`. AS_BUILT and DOGFOOD 35 say the old-mailbox gap is fixed
+in part.
+**Decided:** the brief said the same `--as` name carries the claim on; it doesn't (backlog
+2026-10-14-0707, hit again on this task), so 0011 and PROTOCOL.md list it as open with the
+coordinator's workaround. Options in [0011](decisions/0011-sessions-hand-off-by-themselves.md).
+**Verified:** `bin/gate` green (pnpm install, pnpm check, test_task, test_commands, cargo test); the AC greps (0011 in 0004, no old 150k rule outside 0004, `handoffs/` in PROTOCOL.md).
+**Open:** routing answers by claim, and a claim takeover for a successor.
+
 ## 2026-10-14 — Gate green again on a checkout that ran it before; coordinator hand-over (Muster_Team_Lead_4)
 **Fixed:** `bin/gate` went red on main: mu-80's test that AS_BUILT names every `bin/` entry also
 counted the gitignored `bin/__pycache__`, which the gate's own Python step writes, so any checkout

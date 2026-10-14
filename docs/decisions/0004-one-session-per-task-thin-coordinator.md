@@ -1,6 +1,7 @@
 # 0004 — One session per task, a thin coordinator that hands off early, sessions named by role
 
-Date: 2026-10-13 · Status: accepted (the owner: "yes, do it"). Applies to how agents work
+Date: 2026-10-13 · Status: accepted (the owner: "yes, do it"); point 3 amended by
+[0011](0011-sessions-hand-off-by-themselves.md) on 2026-10-14. Applies to how agents work
 Muster's queue now, and to what 0009 (orchestration) and 0023 (parallel sessions) build.
 
 ## Why
@@ -30,6 +31,9 @@ one-line "merged, pushed", and a fresh builder at ~40k pays a tenth of that per 
    (into the queue: notes, check-ins; plus a short handoff note) and a fresh coordinator takes
    over. Builders that pass ~150k on one task hand off the same way (a check-in with what's done
    and next, then a fresh session resumes the claim).
+   *Amended by [0011](0011-sessions-hand-off-by-themselves.md) (2026-10-14):* sessions now hand off
+   by themselves at ~60% context or the token cap, at a gap, and a named background successor
+   resumes the handoff with no human step. The text above is this record's dated wording.
 4. **Sessions are named by role** (`claude -n` / `/rename`): `muster-lead`, `muster-build-0042`,
    so listings, messages and claim stamps say what each is.
 5. **Several coordinators are the exception.** One coordinator with N one-task sessions is the

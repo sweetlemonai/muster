@@ -643,9 +643,27 @@ and `tasks.json`, which scripts read, keep ids.
   carries its stamp and the owner can reach it.
 - **Coordinators stay thin:** they read `muster list --json` and builders' short reports, merge,
   and talk to other coordinators; subagents read the code.
-- **Hand off at about 150k context**, coordinator or builder: write the state (check-in, notes,
-  a short handoff note) and let a fresh session continue. Don't wait until the context is full;
-  every turn re-reads all of it.
+- **Hand off by yourself at ~60% context or the token cap (decision 0011)**, coordinator or
+  builder, whichever comes first. The cap is 150k, or 300k for `Muster_Team_Lead*`
+  (`~/playground/.claude/handoff.json`). Don't wait until the context is full; every turn re-reads
+  all of it. The layer's `context-watch` hook reminds you from 50% and asks for the handoff at a
+  Stop with nothing of yours running. At its prompt:
+  1. Finish the step. Wait for your subagents, teammates and background shells to land.
+  2. Holding a claim? `muster checkin <id> "<what's done, what's next>"` first.
+  3. Write `/handoff`. It names the claim and your open question ids, and its `session:` front
+     matter is your session id.
+  4. The successor starts by itself (`claude-continue`, same account and permission mode) and runs
+     `/handoff resume`. Its first command after that is `muster inbox --session <old id>` (the
+     handoff's `session:`), so answers that went to the old mailbox reach it. It keeps the same
+     `--as` name.
+  - The claim doesn't carry over yet: it's stamped with the old session id, so `muster` refuses
+    the successor's check-in and pass. Tell the coordinator, which moves the claim with owner
+    overrides (or returns the task to Ready for the successor to claim again).
+  - A handoff holds no secrets or tokens (name where a credential lives, never its value). Handoffs
+    can quote the owner: they stay in the untracked `.claude/work/handoffs/` and are never committed
+    or attached to a task.
+  - `PERSONAL_HANDOFF_AUTO=0` keeps the trigger but starts no successor (run `/clear`, and the new
+    session resumes); `PERSONAL_HANDOFF=0` turns the hook off.
 - **Name sessions by role:** `claude -n muster-lead`, `/rename muster-build-0042`.
 
 ## Working a task (coder)
