@@ -163,6 +163,60 @@ pub const QUIET_ENV: [(&str, &str); 3] = [
 /// output, at most `MAX_OUTPUT` + 1 bytes, or why not: not installed, a non-zero exit, or still
 /// running after `timeout` (then it's stopped).
 pub fn run(claude: &Path, config_dir: Option<&Path>, timeout: Duration) -> Result<Vec<u8>, String> {
+    run_with(claude, config_dir, timeout, &RealClock(Instant::now()))
+}
+
+/// Time as `run` waits on it, so a test can stand in for it instead of depending on how fast the
+/// machine is.
+trait Clock {
+    /// How long since the run started.
+    fn elapsed(&self) -> Duration;
+    /// Wait a moment before looking at the process again.
+    fn pause(&self);
+}
+
+struct RealClock(Instant);
+
+impl Clock for RealClock {
+    fn elapsed(&self) -> Duration {
+        self.0.elapsed()
+    }
+
+    fn pause(&self) {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// How waiting on a process ended.
+enum Wait<T> {
+    Done(T),
+    TimedOut,
+    Failed(std::io::ErrorKind),
+}
+
+/// Look at the process (`poll`: Some once it's finished) until it is, or `timeout` has gone by on
+/// `clock`. A finish seen at the deadline still counts: it's looked at before the time is.
+fn wait<T>(
+    mut poll: impl FnMut() -> std::io::Result<Option<T>>,
+    clock: &impl Clock,
+    timeout: Duration,
+) -> Wait<T> {
+    loop {
+        match poll() {
+            Ok(Some(done)) => return Wait::Done(done),
+            Ok(None) if clock.elapsed() < timeout => clock.pause(),
+            Ok(None) => return Wait::TimedOut,
+            Err(e) => return Wait::Failed(e.kind()),
+        }
+    }
+}
+
+fn run_with(
+    claude: &Path,
+    config_dir: Option<&Path>,
+    timeout: Duration,
+    clock: &impl Clock,
+) -> Result<Vec<u8>, String> {
     let mut cmd = Command::new(claude);
     cmd.args(["agents", "--json", "--all"])
         .stdin(Stdio::null())
@@ -192,22 +246,18 @@ pub fn run(claude: &Path, config_dir: Option<&Path>, timeout: Duration) -> Resul
             let _ = tx.send(buf);
         });
     }
-    let deadline = Instant::now() + timeout;
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
-            Ok(None) => {
-                stop(&mut child);
-                return Err(format!("claude agents didn't finish within {timeout:?}"));
-            }
-            Err(e) => {
-                stop(&mut child);
-                return Err(format!("couldn't wait for claude ({})", e.kind()));
-            }
+    let status = match wait(|| child.try_wait(), clock, timeout) {
+        Wait::Done(status) => status,
+        Wait::TimedOut => {
+            stop(&mut child);
+            return Err(format!("claude agents didn't finish within {timeout:?}"));
+        }
+        Wait::Failed(kind) => {
+            stop(&mut child);
+            return Err(format!("couldn't wait for claude ({kind})"));
         }
     };
-    let left = deadline.saturating_duration_since(Instant::now());
+    let left = timeout.saturating_sub(clock.elapsed());
     let out = rx
         .recv_timeout(left.max(Duration::from_millis(200)))
         .unwrap_or_default();
@@ -724,7 +774,7 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
         let claude = fake(d.path(), RECORD);
         let read = |p: &str| fs::read_to_string(d.path().join(p)).unwrap();
         let dir = d.path().join(".claude-hg");
-        let out = run(&claude, Some(&dir), Duration::from_secs(5)).unwrap();
+        let out = run(&claude, Some(&dir), GENEROUS).unwrap();
         assert_eq!(
             parse(&out).unwrap(),
             [entry("7b5e8856", SessionState::Working)]
@@ -733,38 +783,190 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
         assert_eq!(read("claude.env"), dir.to_string_lossy());
         assert_eq!(read("claude.quiet"), "1 1 1 ", "its usage reporting is off");
         // The default account: no CLAUDE_CONFIG_DIR at all, whatever this process has.
-        run(&claude, None, Duration::from_secs(5)).unwrap();
+        run(&claude, None, GENEROUS).unwrap();
         assert_eq!(read("claude.env"), "unset");
     }
 
+    /// For runs that are expected to finish: far past any machine's slowness, and never waited out
+    /// (a run that finishes returns at once). Timeouts are tested on a fake clock instead.
+    const GENEROUS: Duration = Duration::from_secs(60);
+
+    /// A clock that only moves when the test says so.
+    struct Steps(std::cell::Cell<Duration>);
+
+    impl Clock for Steps {
+        fn elapsed(&self) -> Duration {
+            self.0.get()
+        }
+
+        fn pause(&self) {
+            self.0.set(self.0.get() + Duration::from_millis(20));
+        }
+    }
+
+    /// A clock that stays at zero until `ready` (the fake claude has started what the test needs
+    /// to see stopped), then reports `after`: the timeout fires when the test is ready for it,
+    /// however slowly the machine started the process. Past a minute of real time it fires anyway,
+    /// so a broken fake fails the test instead of hanging it.
+    struct WhenReady<F: Fn() -> bool> {
+        ready: F,
+        after: Duration,
+        started: Instant,
+    }
+
+    impl<F: Fn() -> bool> Clock for WhenReady<F> {
+        fn elapsed(&self) -> Duration {
+            if (self.ready)() || self.started.elapsed() > Duration::from_secs(60) {
+                self.after
+            } else {
+                Duration::ZERO
+            }
+        }
+
+        fn pause(&self) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     #[test]
-    fn the_runner_falls_back_with_the_reason_on_a_missing_binary_an_exit_or_a_timeout() {
-        let d = tempfile::tempdir().unwrap();
-        let t = Duration::from_secs(5);
+    fn waiting_gives_up_at_the_timeout_on_the_clock_it_is_given() {
+        let polls = std::cell::Cell::new(0);
+        let clock = Steps(std::cell::Cell::new(Duration::ZERO));
+        let started = Instant::now();
+        let waited = wait(
+            || {
+                polls.set(polls.get() + 1);
+                Ok::<_, std::io::Error>(None::<()>)
+            },
+            &clock,
+            Duration::from_secs(10),
+        );
+        assert!(matches!(waited, Wait::TimedOut));
         assert_eq!(
-            run(&d.path().join("no-claude"), None, t).unwrap_err(),
+            clock.elapsed(),
+            Duration::from_secs(10),
+            "to the timeout, no further"
+        );
+        assert_eq!(
+            polls.get(),
+            501,
+            "a look every 20 ms of its time, and one at the end"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "none of it was real time"
+        );
+    }
+
+    #[test]
+    fn waiting_returns_what_finished_and_looks_before_it_judges_the_time() {
+        let clock = Steps(std::cell::Cell::new(Duration::ZERO));
+        let mut left = 3;
+        let waited = wait(
+            || {
+                left -= 1;
+                Ok(if left == 0 { Some("done") } else { None })
+            },
+            &clock,
+            Duration::from_secs(10),
+        );
+        assert!(matches!(waited, Wait::Done("done")));
+        assert_eq!(
+            clock.elapsed(),
+            Duration::from_millis(40),
+            "paused between looks only"
+        );
+        // Finished just as the time ran out: still finished.
+        let late = Steps(std::cell::Cell::new(Duration::from_secs(10)));
+        assert!(matches!(
+            wait(
+                || Ok::<_, std::io::Error>(Some(1)),
+                &late,
+                Duration::from_secs(10)
+            ),
+            Wait::Done(1)
+        ));
+        // No time at all: one look, then out.
+        let none = Steps(std::cell::Cell::new(Duration::ZERO));
+        assert!(matches!(
+            wait(
+                || Ok::<_, std::io::Error>(None::<()>),
+                &none,
+                Duration::ZERO
+            ),
+            Wait::TimedOut
+        ));
+    }
+
+    #[test]
+    fn waiting_reports_a_failed_look_without_waiting_on() {
+        let clock = Steps(std::cell::Cell::new(Duration::ZERO));
+        let waited = wait(
+            || Err::<Option<()>, _>(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+            &clock,
+            Duration::from_secs(10),
+        );
+        assert!(matches!(
+            waited,
+            Wait::Failed(std::io::ErrorKind::PermissionDenied)
+        ));
+        assert_eq!(clock.elapsed(), Duration::ZERO);
+    }
+
+    #[test]
+    fn the_runner_falls_back_with_the_reason_on_a_missing_binary_or_an_exit() {
+        let d = tempfile::tempdir().unwrap();
+        assert_eq!(
+            run(&d.path().join("no-claude"), None, GENEROUS).unwrap_err(),
             "claude isn't installed"
         );
         let failing = fake(d.path(), "echo '[]'; exit 3");
         assert_eq!(
-            run(&failing, None, t).unwrap_err(),
+            run(&failing, None, GENEROUS).unwrap_err(),
             "claude agents exited with code 3"
         );
-        let slow = fake(d.path(), "exec sleep 30");
+        // Output past the cap: stopped reading, not available.
+        let loud = fake(d.path(), "head -c 2000000 /dev/zero | tr '\\0' ' '");
+        assert_eq!(
+            run(&loud, None, GENEROUS).unwrap_err(),
+            "its output is over 1 MB"
+        );
+        assert_eq!(TIMEOUT, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn the_runner_stops_a_run_that_is_past_its_timeout_and_what_it_started() {
+        let d = tempfile::tempdir().unwrap();
+        let timeout = Duration::from_millis(300);
+        // The clock runs out once the fake has said it is running (a file next to it).
+        let clock = |marker: PathBuf| WhenReady {
+            ready: move || marker.exists(),
+            after: timeout,
+            started: Instant::now(),
+        };
+        let slow = fake(d.path(), "touch \"$0.up\"\nexec sleep 30");
         let started = Instant::now();
         assert_eq!(
-            run(&slow, None, Duration::from_millis(300)).unwrap_err(),
+            run_with(&slow, None, timeout, &clock(d.path().join("claude.up"))).unwrap_err(),
             "claude agents didn't finish within 300ms"
         );
-        assert!(started.elapsed() < Duration::from_secs(5), "it was stopped");
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "it was stopped"
+        );
         // A child it started (holding the pipe) is stopped with it: the whole group goes.
         let parent = fake(
             d.path(),
-            "sleep 30 &\necho $! > \"$0.child\"\nexec sleep 30",
+            "sleep 30 &\necho $! > \"$0.child.tmp\"\nmv \"$0.child.tmp\" \"$0.child\"\nexec sleep 30",
         );
-        assert!(run(&parent, None, Duration::from_millis(300))
-            .unwrap_err()
-            .contains("didn't finish"));
+        assert!(run_with(
+            &parent,
+            None,
+            timeout,
+            &clock(d.path().join("claude.child"))
+        )
+        .unwrap_err()
+        .contains("didn't finish"));
         let child = fs::read_to_string(d.path().join("claude.child")).unwrap();
         let alive = || {
             Command::new("/bin/kill")
@@ -774,15 +976,11 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
                 .unwrap()
                 .success()
         };
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + Duration::from_secs(30);
         while alive() && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(20));
         }
         assert!(!alive(), "the child it started was stopped too");
-        // Output past the cap: stopped reading, not available.
-        let loud = fake(d.path(), "head -c 2000000 /dev/zero | tr '\\0' ' '");
-        assert_eq!(run(&loud, None, t).unwrap_err(), "its output is over 1 MB");
-        assert_eq!(TIMEOUT, Duration::from_secs(10));
     }
 
     #[test]
@@ -1054,27 +1252,34 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
         let wait = Mutex::new(wait);
         let reads = Arc::new(AtomicUsize::new(0));
         let seen = Arc::clone(&reads);
+        let unreleased = Arc::new(AtomicUsize::new(0));
+        let gave_up = Arc::clone(&unreleased);
         let fetch: Fetch = Arc::new(move |_account: &str| {
             seen.fetch_add(1, Ordering::SeqCst);
-            // Hold the read until the test lets it go, like a slow `claude`.
-            let _ = wait.lock().unwrap().recv_timeout(Duration::from_secs(10));
+            // Hold the read until the test lets it go, like a slow `claude`. The bound is far
+            // past any machine's slowness; a read that reaches it was never let go.
+            if wait
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(60))
+                .is_err()
+            {
+                gave_up.fetch_add(1, Ordering::SeqCst);
+            }
             Ok(br#"[{"sessionId": "7b5e8856", "state": "blocked"}]"#.to_vec())
         });
         let m = Monitor::new(fetch, on_thread);
         let tasks = vec![task("0001", "building", A)];
-        let started = Instant::now();
+        // The read is held until the test lets it go, below: a poll that waited for it would sit
+        // here until the read gave up (`unreleased`), not return.
         let first = m.poll(&tasks, 1000);
-        assert!(
-            started.elapsed() < Duration::from_secs(2),
-            "the poll didn't wait"
-        );
         assert_eq!(first, Snapshot::default(), "nothing read yet");
         assert_eq!(m.summary(), "reading…");
         // Due again by the clock, but the first read is still running: no second one.
         m.poll(&tasks, 1100);
         release.send(()).unwrap();
         // Then, polled again before the next read is due, the first read's result shows.
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + Duration::from_secs(60);
         let s = loop {
             let s = m.poll(&tasks, 1001);
             if !s.states.is_empty() || Instant::now() > deadline {
@@ -1092,6 +1297,11 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
         assert_eq!(m.poll(&tasks, 1000 + MAX_AGE_SECS), s, "still fresh enough");
         assert_eq!(m.poll(&tasks, 5000), Snapshot::default());
         release.send(()).unwrap();
+        assert_eq!(
+            unreleased.load(Ordering::SeqCst),
+            0,
+            "no read waited on its own: the poll never held one up"
+        );
     }
 
     #[test]
