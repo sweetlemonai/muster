@@ -4,6 +4,35 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Mac notifications: one notification when something new waits for you (task 0052)
+**Did:** `app/src-tauri/src/notify.rs` splits what the Dock badge counts into items (Your check by
+when it came in, each escalated question, blocked on you or by a permission, a session waiting for
+input, the owner's own task, each lesson to approve) and posts what's new once, several in one
+notification. Seen without a notification: everything at start and in a project that just showed,
+what the focused window shows (`show_project_title` tells the core), everything while Off. Keys
+kept in `notified.json` (last 500 plus what still waits). The poll and the hidden badge read
+(`waiting_in`, now keyed and labelled) feed it; no extra reads. Settings › Notifications
+(`Notifications.tsx`): On/Off, saved as `settings.json` `notify` (default on). Manual, AS_BUILT,
+DESIGN, VISION and decision 0001 (dependency list, Live) updated.
+**Decided:** an item is a task's reason, not the task, so a task reaching Your check after an
+escalation still notifies, while a session flapping in and out of waiting for input doesn't. The
+plugin is called from Rust only: no capability added (the narrowest: none).
+**Vetted** `tauri-plugin-notification` 2.6.0 (Drover's version, for tauri 2.12; owner said yes,
+WAITING #3): Apache-2.0 OR MIT, Tauri Programme (tauri-apps/plugins-workspace). Build script only
+generates its permission files. On macOS it goes through `notify-rust` 4.18.2 (MIT OR Apache-2.0)
+and `mac-notification-sys` 0.6.15 (MIT/Apache-2.0, build script compiles its one Objective-C file
+with `cc`). No network code and no telemetry in any of the three (only doc links); local
+`NSUserNotificationCenter`. Desktop `request_permission` grants without a prompt; macOS asks on the
+first post, which comes only when something new waits. Added with `cargo add`; no npm package
+(nothing in the window calls it). Binary +325 KiB (release, `cargo build --release`: 9,070,672 →
+9,403,888 bytes).
+**Verified:** `bin/gate`: gate: green (pnpm check, test_task, test_commands, cargo test
+(Kiritimati)); `cargo test` notify:: 13 tests, settings 1 new; vitest `Notifications.test.ts` 5
+tests. Not checked by hand: a real notification on screen (needs the built app launched).
+**Open:** under `tauri dev` notifications show as Terminal's (the plugin's rule for unbundled
+builds). Two tests this change doesn't touch failed once each and passed on rerun (cli: lessons in
+the start brief; migrate: v2 copy, "would both be WAITING-FOR-OWNER.md"): flaky.
+
 ## 2026-10-13 — Muster in other projects: `muster init` in any repo, New queue makes `.muster/`, the layer's rule (task 0004)
 **Did:** `muster init [--local|--committed]` with no folder starts the queue of the repo it runs
 in (from any worktree, in the main checkout). The app's New queue makes the same through one
@@ -36,6 +65,7 @@ test_task, test_commands, cargo test (Kiritimati))`.
 **Open:** the personal layer's change (rule link, hook wrapper and entries, the main checkout's
 `.muster/` in each worktree's sandbox list) is for the layer's owner; AC2 is the owner's live
 check after it. The pilot project is the owner's pick.
+||||||| parent of 6d02ce0 (Mac notifications: one notification when something new waits for you (task 0052))
 
 ## 2026-10-13 — Muster wears Drover's token names and atoms, keeping its own look (task 0053)
 **Did:** CSS variables renamed to Drover's tokens (`--surface`→`--panel`, `--border`→`--line`,
@@ -97,7 +127,10 @@ the builder once first. Hatched cards' contrast: fix the text, keep the wash (ba
 waits on the notification task; layout defects (Settings › Projects table, pane status column, graph
 chips, table header, Focus Ready strip) sent to muster-lead to queue.
 ||||||| parent of ab6877c (Muster wears Drover's token names and atoms, keeping its own look (task 0053))
+||||||| parent of 5f0920f (Mac notifications: one notification when something new waits for you (task 0052))
+
 ||||||| parent of f2e1b81 (Muster in other projects: muster init in any repo, New queue makes .muster/, the layer's rule (task 0004))
+||||||| parent of 6d02ce0 (Mac notifications: one notification when something new waits for you (task 0052))
 
 ## 2026-10-13 — Muster's own queue moved into `muster/main/.muster/` (task 0005, AC5)
 **Did:** `muster migrate ~/playground/muster/tasks ~/playground/muster/main` (local): 51 tasks, 8 notes,

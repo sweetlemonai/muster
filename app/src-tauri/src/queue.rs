@@ -3518,6 +3518,7 @@ mod tests {
         let short = crate::settings::Settings {
             lease_minutes: 120,
             live_minutes: 10,
+            notify: true,
         };
         let s = read_state_at_with(&q, &mut Cache::default(), "2026-10-12 03:01", &short);
         assert_eq!(
@@ -3530,7 +3531,7 @@ mod tests {
         assert_eq!(s.settings, short);
         assert!(serde_json::to_string(&s)
             .unwrap()
-            .contains(r#""settings":{"leaseMinutes":120,"liveMinutes":10}"#));
+            .contains(r#""settings":{"leaseMinutes":120,"liveMinutes":10,"notify":true}"#));
         assert_eq!(
             quiet("2026-10-12 03:01"),
             0,

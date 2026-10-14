@@ -12,6 +12,8 @@ The app reads the queues every 2 seconds while its window is visible, and stops 
 
 **The Dock badge:** Muster's icon in the Dock shows how many tasks need you, across every project you show, so you see it without opening the window. It's the same count as the sidebar's with **All** selected (see [What needs you](02-concepts.md#what-needs-you)), and there's no badge at 0. While the window is hidden or minimized, the app still reads the queues every 15 seconds for the badge alone. It's there while the app runs; quitting Muster takes it away.
 
+**Notifications:** when something new waits for you, Muster posts one Mac notification, with several new things in one. See [Notifications](#notifications) to turn them off.
+
 ## The projects sidebar
 
 **All** shows every project together. Below it is each project, with its numbers: an orange one for the tasks that need you, one in the Building colour for tasks in Building or Testing, "⏸ 2" in grey when some are [paused](02-concepts.md#paused), and the total, notes included. Click a project to see only its tasks. **+ Project** at the bottom opens [Settings](#settings) at [Projects](#projects). A project with more waiting in Your check than its [limit](#your-check) says so under its name, in orange: "7 in Your check, limit 5".
@@ -161,7 +163,7 @@ This manual. The sidebar has the search box, then every page with its sections; 
 
 ## Settings
 
-One place for how the app looks and works on this Mac: **Settings** in the top row. Settings is a view like the others, not a window. The groups are listed down its left side, each with what it holds: **Appearance**, **Display**, **Projects**, **Agents** and **About**. Click one and all of its settings show on the right, each with its current value and what it changes. Every change applies at once and is remembered after the app restarts. The **?** beside a group's name opens its section here. The manual isn't a group: it's the [Help](#help) tab in the top row. A folder in your home folder shows as `~/…`; point at it to see the full path, and copying it copies the full path.
+One place for how the app looks and works on this Mac: **Settings** in the top row. Settings is a view like the others, not a window. The groups are listed down its left side, each with what it holds: **Appearance**, **Display**, **Projects**, **Agents**, **Notifications** and **About**. Click one and all of its settings show on the right, each with its current value and what it changes. Every change applies at once and is remembered after the app restarts. The **?** beside a group's name opens its section here. The manual isn't a group: it's the [Help](#help) tab in the top row. A folder in your home folder shows as `~/…`; point at it to see the full path, and copying it copies the full path.
 
 ### Appearance
 
@@ -205,10 +207,21 @@ Claims come first, then the helper, whose accounts take a moment to check.
 
 Type a span the way `muster reclaim --after` takes it: `30m`, `2h`, `1.25h` or `1d` (a day is 24 hours; decimals count as typed), then ↩ or **Save**. A value out of bounds, or one that isn't a span, is refused with why, and nothing changes. **Back to 12 h** and **Back to 5 min** go back to the defaults. Both are saved on this Mac in `settings.json` in the app's settings folder (see [About](#about)); the `muster` command reads the same file, so the app, `muster reclaim` and `muster check` agree. A missing or broken file means the defaults.
 
+### Notifications
+
+**On** (the default) or **Off**, the one in force lit. On, Muster posts a Mac notification when something new waits for you: a task in Your check, a question escalated to you, a task blocked on you or by a permission, a session that waits for your input in Claude Code, a task of your own, or lessons to approve: what the Dock badge counts (see [What needs you](02-concepts.md#what-needs-you)). Several new at once come as one notification that names the first three and counts the rest.
+
+- **Never twice** for the same thing: a task back in Your check after a return is new again; a second escalated question is new; the same block or the same session waiting again isn't.
+- **No flood:** nothing for what was already waiting when Muster started, or for what waits in a project you just added or showed again.
+- **Not what you're looking at:** nothing for a project while Muster's window is in front showing it (or **All**); those count as seen.
+- **Off** notifies nothing, and turning it on again doesn't bring up what came in meanwhile.
+
+macOS asks whether Muster may notify the first time it has something to tell you, not when it starts; change your answer later in System Settings › Notifications. The notifications are local: nothing leaves this Mac. They come while Muster runs, the window open or hidden. The switch is saved in `settings.json`, and what Muster has notified in `notified.json` beside it (the last 500, plus whatever still waits).
+
 ### About
 
 - **Version:** the app's version.
-- **Settings on this Mac:** the app's settings folder (`~/Library/Application Support/ai.sweetlemon.muster`) and what's in it: `projects.json` (the projects you added or hid, their labels, categories, gates and Your check limits), `settings.json` (the claim lease and the LIVE window) and `helper/` (the helper's account, model and conversations). Appearance, the display mode, text size, Group by, saved views and the pane's width are kept by the window itself.
+- **Settings on this Mac:** the app's settings folder (`~/Library/Application Support/ai.sweetlemon.muster`) and what's in it: `projects.json` (the projects you added or hid, their labels, categories, gates and Your check limits), `settings.json` (the claim lease, the LIVE window and whether notifications are on), `notified.json` (what Muster has notified you of) and `helper/` (the helper's account, model and conversations). Appearance, the display mode, text size, Group by, saved views and the pane's width are kept by the window itself.
 - **What it reads:** the queues it found on its own (at `~/playground/<project>/tasks`, and one level deeper), then the ones you added (or that you added none), each with its folder, and the folders of the Claude Code session transcripts. All of it is read on this Mac and nothing is sent anywhere; only what you write to the helper goes to Anthropic, through your own Claude Code.
 
 ## Colours

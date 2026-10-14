@@ -267,6 +267,6 @@ One list, everywhere, of what's waiting on you:
 - your own tasks (for: human) to do and doing, except the ones you paused,
 - lessons from reviews waiting for your yes (see [The review of record](#the-review-of-record)).
 
-They're counted on the **Waiting for you** tab, beside each project on the left in orange, and on Muster's icon in the Dock (every project you show), and the agents' ones are marked "needs you" on their cards, which sort to the top of their columns.
+They're counted on the **Waiting for you** tab, beside each project on the left in orange, and on Muster's icon in the Dock (every project you show); something new among them brings a Mac notification (see [Notifications](04-in-the-app.md#notifications)); and the agents' ones are marked "needs you" on their cards, which sort to the top of their columns.
 
 Why: you shouldn't have to look for what needs you, in any display mode. See [DESIGN.md](../DESIGN.md#in-every-mode).

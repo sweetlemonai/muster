@@ -34,9 +34,10 @@ export const api = {
   hideProject: (key: string, hidden: boolean) => invoke<void>("hide_project", { key, hidden }),
   removeProject: (key: string) => invoke<void>("remove_project", { key }),
   // This machine's settings (0036) with their bounds, and what Settings' About shows. Set one by
-  // name (`lease` or `live`) to a span like 12h or 5m, empty for the default; the core checks it.
+  // name (`lease` or `live`) to a span like 12h or 5m, empty for the default, or `notify` (0052)
+  // to on or off; the core checks it.
   settingsInfo: () => invoke<SettingsInfo>("settings_info"),
-  setSetting: (name: "lease" | "live", value: string) => invoke<SettingsInfo>("set_setting", { name, value }),
+  setSetting: (name: "lease" | "live" | "notify", value: string) => invoke<SettingsInfo>("set_setting", { name, value }),
   // A project's Your check limit (0050), by its key (queue folder): 1 to 50, "off", or "" for the default (5).
   setYourCheckLimit: (key: string, value: string) => invoke<void>("set_your_check_limit", { key, value }),
   createTask: (queue: string, task: NewTask, files: [string, string][], stamp: string) =>
