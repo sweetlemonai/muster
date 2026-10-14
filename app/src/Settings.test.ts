@@ -6,7 +6,7 @@ import { HELP_TOPICS } from "./helpTopics";
 import { headings } from "./manual";
 import inTheApp from "../../docs/manual/04-in-the-app.md?raw";
 import appSource from "./App.tsx?raw";
-import { CategoryCell, GateCell, GateRow, NameCell, PrefixCell } from "./Projects";
+import { byPlace, CategoryCell, ColourCell, GateCell, GateRow, mineLayout, NameCell, PlaceCell, PrefixCell, PROJECT_COLUMNS } from "./Projects";
 import Settings, { AboutView, AgentsView, SpanSetting, withModel } from "./Settings";
 import { DEFAULT_MACHINE, machineOf, SETTINGS_GROUPS, type SettingsInfo, spanInput, spanText } from "./settingsData";
 import css from "./styles.css?raw";
@@ -92,7 +92,9 @@ describe("Settings (0036)", () => {
     // On a line of its own under the project's row, so no column of it crushes the folder (0061).
     const row = (g: string, hidden = false) => renderToStaticMarkup(createElement("table", null, createElement("tbody", null, createElement(GateRow, { name: "muster", gate: g, hidden }))));
     expect(text(row("bin/gate full"))).toBe("Gate bin/gate full");
-    expect(row("bin/gate")).toContain('<tr class="gate-row"><td colSpan="7">');
+    expect(row("bin/gate")).toContain('<tr class="gate-row"><td colSpan="9">');
+    // Across every column the table has, the Colour and Mine order ones too (0057).
+    expect(settings("projects").match(/<th[ >]/g)).toHaveLength(PROJECT_COLUMNS);
     expect(row("bin/gate", true)).toContain('<tr class="gate-row dim">');
     expect(text(settings("projects"))).not.toMatch(/\bGate\b/);
   });
@@ -155,6 +157,37 @@ describe("Settings (0036)", () => {
     expect(html).not.toContain("inline-options");
     expect(cell({ group: "" })).toContain('placeholder="Other"');
     expect(cell({ category: "Tools" })).toContain('value="Tools"');
+  });
+
+  it("sets each project's colour (0057) from the palette, laid out in place, the current one pressed", () => {
+    const p: Project = { key: "/p/muster/tasks", name: "muster", path: "/p/muster/tasks", source: "found", group: "", hidden: false, ok: true, label: "Muster", colour: "mint" };
+    const html = renderToStaticMarkup(createElement(ColourCell, { p, onSave: async () => {} }));
+    expect(html).toMatch(/^<div class="swatches" role="group" aria-label="Colour for Muster">/);
+    expect(html.match(/aria-pressed="true"[^>]*aria-label="([^"]+)"/)?.[1]).toBe("Mint");
+    // A place for choosing: always laid out, nothing takes the focus.
+    expect(html).not.toContain("autofocus");
+    expect(renderToStaticMarkup(createElement(ColourCell, { p: { ...p, colour: "", label: "" }, onSave: async () => {} }))).toContain('aria-label="Colour for muster"');
+    expect(text(settings("projects"))).toContain("Colour");
+  });
+
+  it("moves each project in the sidebar's Mine order (0057), as ⌥↑ ⌥↓ do there, the rows in that order", () => {
+    const q = (name: string, category: string, rank: number | null, categoryRank: number | null) => ({ name, path: `/p/${name}/tasks`, counts: {}, label: name, category, rank, categoryRank });
+    const queues = [q("muster", "Apps", 1, 1), q("zeta", "Tools", 0, 0), q("alpha", "Apps", 0, 1), q("beta", "Other", null, null)];
+    const layout = mineLayout(queues);
+    expect(layout).toEqual([
+      { name: "Tools", keys: ["/p/zeta/tasks"] },
+      { name: "Apps", keys: ["/p/alpha/tasks", "/p/muster/tasks"] },
+      { name: "Other", keys: ["/p/beta/tasks"] },
+    ]);
+    const project = (name: string, over: Partial<Project> = {}): Project => ({ key: `/p/${name}/tasks`, name, path: `/p/${name}/tasks`, source: "found", group: "", hidden: false, ok: true, ...over });
+    // Shown ones in that order, then a hidden one, as the core listed it.
+    const list = [project("alpha"), project("old", { hidden: true }), project("beta"), project("muster"), project("zeta")];
+    expect(byPlace(list, layout).map((p) => p.name)).toEqual(["zeta", "alpha", "muster", "beta", "old"]);
+    const cell = (canUp: boolean, canDown: boolean) => renderToStaticMarkup(createElement(PlaceCell, { name: "Muster", canUp, canDown, onUp: () => {}, onDown: () => {} }));
+    expect(cell(true, false)).toBe(
+      '<span class="place-cell"><button aria-label="Move Muster up in the sidebar&#x27;s Mine order" title="Up one place in the sidebar&#x27;s Mine order" class="ui-button">↑</button><button disabled="" aria-label="Move Muster down in the sidebar&#x27;s Mine order" title="Down one place in the sidebar&#x27;s Mine order" class="ui-button">↓</button></span>',
+    );
+    expect(text(settings("projects"))).toContain("Mine order");
   });
 
   it("starts the helper's and the core's settings as loading, not as made-up values", () => {

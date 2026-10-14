@@ -34,6 +34,16 @@ pub struct Config {
     /// entry is left out when read, and never stops the rest of the file loading.
     #[serde(deserialize_with = "crate::check_limit::read_limits")]
     pub your_check: HashMap<String, crate::check_limit::Limit>,
+    /// A colour per project, by queue folder (0057, `arrange`): one of `arrange::COLOURS`. An
+    /// unknown one is left out when read.
+    #[serde(deserialize_with = "crate::arrange::read_colours")]
+    pub colours: HashMap<String, String>,
+    /// The sidebar's Mine order (0057, `arrange`): queue folders, first to last.
+    #[serde(deserialize_with = "crate::arrange::read_order")]
+    pub order: Vec<String>,
+    /// The sidebar's category headings in the owner's order (0057, `arrange`).
+    #[serde(deserialize_with = "crate::arrange::read_category_order")]
+    pub category_order: Vec<String>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -63,6 +73,8 @@ pub struct Project {
     /// Its category (0044), the sidebar heading it goes under, or "" for its group or Other;
     /// `labels::shown_category`.
     pub category: String,
+    /// Its colour (0057), one of `arrange::COLOURS`, or "" for none.
+    pub colour: String,
 }
 
 pub fn load(file: &Path) -> Config {
@@ -164,6 +176,7 @@ pub fn list(base: &Path, config: &Config) -> Vec<Project> {
             prefix: String::new(),
             label: config.labels.get(&key).cloned().unwrap_or_default(),
             category: config.categories.get(&key).cloned().unwrap_or_default(),
+            colour: config.colours.get(&key).cloned().unwrap_or_default(),
             path: key.clone(),
             key,
             source: source.to_string(),
@@ -408,7 +421,7 @@ pub fn create(
 }
 
 /// After `muster migrate` (0005): what `projects.json` says of the old queue `old` (its gate,
-/// name, label and category, hidden, Your check limit), said of the new one `new` too, under the
+/// name, label and category, colour and place in the sidebar's order, hidden, Your check limit), said of the new one `new` too, under the
 /// key the app lists it by; a new queue the base doesn't find is added, so it shows as the old one
 /// did. The old queue keeps its own, until it's retired. Returns a line for each thing carried.
 pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> Vec<String> {
@@ -435,6 +448,12 @@ pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> V
         .iter()
         .find(|(k, _)| is_old(k))
         .map(|(_, v)| v.clone());
+    let colour = config
+        .colours
+        .iter()
+        .find(|(k, _)| is_old(k))
+        .map(|(_, v)| v.clone());
+    let placed = config.order.iter().position(is_old);
     let hidden = config.hidden.iter().any(is_old);
     let your_check = config
         .your_check
@@ -451,6 +470,8 @@ pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> V
         || name.is_some()
         || label.is_some()
         || category.is_some()
+        || colour.is_some()
+        || placed.is_some()
         || hidden
         || your_check.is_some();
     // Nothing to say of a queue nobody listed, or of one the new queue is found in place of.
@@ -489,6 +510,17 @@ pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> V
             "projects.json: category {g:?} carried to the new queue"
         ));
         config.categories.insert(key.clone(), g);
+    }
+    if let Some(c) = colour {
+        lines.push(format!(
+            "projects.json: colour {c:?} carried to the new queue"
+        ));
+        config.colours.insert(key.clone(), c);
+    }
+    // In the old one's place, just before it, so the sidebar shows it where the old one was.
+    if let Some(i) = placed.filter(|_| !config.order.contains(&key)) {
+        lines.push("projects.json: place in the sidebar's order carried to the new queue".into());
+        config.order.insert(i, key.clone());
     }
     if let Some(l) = your_check {
         let said = match l {
@@ -977,6 +1009,50 @@ mod tests {
             lines,
             ["projects.json: category \"Apps\" carried to the new queue"]
         );
+    }
+
+    #[test]
+    fn a_migrated_queue_keeps_its_colour_and_its_place_in_the_sidebar() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let old = base.join("proj/tasks");
+        make_queue(&old);
+        let main = base.join("proj/main");
+        fs::create_dir_all(main.join(".git")).unwrap();
+        let new = main.join(layout::DIR);
+        fs::create_dir(&new).unwrap();
+        fs::write(new.join(layout::CONFIG), layout::config_text(true, None)).unwrap();
+        let key = old.to_string_lossy().to_string();
+        let new_key = new.to_string_lossy().to_string();
+        let mut c = Config::default();
+        c.colours.insert(key.clone(), "mint".into());
+        c.order = vec!["/a".into(), key.clone(), "/b".into()];
+        let lines = carry_over(&mut c, &base, &old, &new);
+        assert_eq!(c.colours.get(&new_key).map(String::as_str), Some("mint"));
+        assert_eq!(
+            c.colours.get(&key).map(String::as_str),
+            Some("mint"),
+            "the old keeps its own"
+        );
+        assert_eq!(
+            c.order,
+            ["/a".to_string(), new_key.clone(), key.clone(), "/b".into()]
+        );
+        assert_eq!(
+            lines,
+            [
+                "projects.json: colour \"mint\" carried to the new queue",
+                "projects.json: place in the sidebar's order carried to the new queue",
+            ]
+        );
+        // A place alone carries too, and never twice.
+        let mut c = Config {
+            order: vec![key.clone()],
+            ..Config::default()
+        };
+        carry_over(&mut c, &base, &old, &new);
+        carry_over(&mut c, &base, &old, &new);
+        assert_eq!(c.order, [new_key, key]);
     }
 
     #[test]

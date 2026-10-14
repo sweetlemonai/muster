@@ -1,24 +1,54 @@
-import { Fragment, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { lastLabel, loadOrder, nextOrder, type OrderMemo, type ProjectRow, projectRows, SIDEBAR_ORDERS, storeOrder, sumActivity, type ProjectActivity, type SidebarOrder, type Sums } from "./activity";
 import { projectCount } from "./Backlog";
 import { SideLimit } from "./CheckLimit";
 import { needsYouCount } from "./human";
-import { byCategory, LABEL_MAX } from "./labels";
+import { api, type Moved } from "./api";
+import { LABEL_MAX } from "./labels";
 import { lessonsWaiting } from "./Lessons";
 import { inProgress } from "./lib";
 import { useLook } from "./modes";
 import { PAUSE_GLYPH } from "./Pause";
 import { QuietPing } from "./Ping";
+import { grouped, type Layout, layoutOf, type Move, type Plan, planMove, sameLayout, sidebarGroups, withFresh } from "./projectOrder";
 import { pressed } from "./shortcuts";
+import { cleanHeading, type DragProps, half, HeadingEdit, HeadingFrame, MOVE_KEYS, NewCategory, SideRow } from "./SidebarProjects";
 import type { Activity, Note, QueueInfo, Task } from "./types";
 import { Pill } from "./ui";
+import { cx } from "./ui/cx";
+
+/** What the sidebar asks the core to keep when the owner arranges it in place (0057): the order
+ *  after a move (projects by key, headings, the project that went under another heading), a
+ *  heading renamed, and a project's colour (by key, "" for none). Each settles once the window
+ *  has read the queues again. */
+export type ProjectEdits = {
+  arrange: (order: string[], categories: string[], moved: Moved | null) => Promise<void>;
+  renameCategory: (from: string, to: string) => Promise<void>;
+  colour: (key: string, colour: string) => Promise<void>;
+};
+
+/** The edits through the core, each settling once `after` (the window's read of the queues) has. */
+export const projectEdits = (after: () => Promise<void>): ProjectEdits => ({
+  arrange: (order, categories, moved) => api.arrangeProjects(order, categories, moved).then(after),
+  renameCategory: (from, to) => api.renameCategory(from, to).then(after),
+  colour: (key, colour) => api.setProjectColour(key, colour).then(after),
+});
+
+/** What's being dragged, and where it would land. */
+type Drag = { kind: "project"; key: string } | { kind: "heading"; name: string };
+type Over = { kind: "row"; key: string; side: "before" | "after" } | { kind: "heading"; name: string; side: "before" | "after" | "into" };
+/** What gets the focus back after a move or a pick, which puts rows in new places. */
+type Focus = { kind: "row" | "dot"; key: string } | { kind: "heading"; name: string };
 
 /** The sidebar's projects (0037): All first, then the order chips and one row per queue under its
  *  category's heading (0044), each called by its label and saying whether it's being worked on
  *  now, or stalled, and when it last moved. `now` is the state's clock, seconds since 1970.
  *  `onLabel` saves a label set by double-clicking a row's name (by the project's key, its folder);
- *  without it, names can't be edited here. */
-export default function ProjectList({ queues, tasks, notes, activity, now, current, onPick, onLabel }: {
+ *  without it, names can't be edited here. With `edit` (0057) the owner arranges it in place:
+ *  rows and headings dragged or moved with ⌥↑/⌥↓ (the first move picks Mine), a project dropped
+ *  on another heading goes under it, + Category makes a heading, a double click renames one, and
+ *  a project's dot picks its colour. */
+export default function ProjectList({ queues, tasks, notes, activity, now, current, onPick, onLabel, edit }: {
   queues: QueueInfo[];
   tasks: Task[];
   notes: Note[];
@@ -27,6 +57,7 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
   current: string;
   onPick: (queue: string) => void;
   onLabel?: (key: string, label: string) => Promise<void>;
+  edit?: ProjectEdits;
 }) {
   const [order, setOrder] = useState<SidebarOrder>(() => loadOrder());
   const pick = (o: SidebarOrder) => {
@@ -39,9 +70,156 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
   // The project whose label is being set in place, by its name: while it is, the order holds, so
   // the field never moves under the caret (which would leave it, and save half a label).
   const [editing, setEditing] = useState<string | null>(null);
-  memo.current = nextOrder(memo.current, rows, order, editing !== null);
+  // Arranging in place (0057): what's dragged and where it would land; the layout a move showed
+  // until the queues read back say the same; the new headings with no project yet; the heading
+  // being renamed; the row whose colours are laid out; what a screen reader hears; a refusal.
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const [over, setOver] = useState<Over | null>(null);
+  const [pending, setPending] = useState<Layout | null>(null);
+  const [fresh, setFresh] = useState<string[]>([]);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [swatch, setSwatch] = useState<string | null>(null);
+  const [said, setSaid] = useState("");
+  const [problem, setProblem] = useState("");
+  const [focus, setFocus] = useState<Focus | null>(null);
+  const nav = useRef<HTMLElement>(null);
+  const saves = useRef(0);
+  const saving = useRef<{ n: number; saved: boolean; polls: number } | null>(null);
+  // While a row is dragged the order holds too, so nothing moves under the pointer.
+  memo.current = nextOrder(memo.current, rows, order, editing !== null || drag !== null);
   const byName = new Map(rows.map((r) => [r.name, r]));
   const shown = memo.current.names.flatMap((n) => byName.get(n) ?? []);
+  const fromCore = sidebarGroups(shown, fresh);
+  const groups = pending ? withFresh(grouped(shown, pending), fresh) : fromCore;
+  const layout = layoutOf(groups);
+  // A move shows at once; once it's saved, the queues read back take over when they say the same,
+  // or at the second read whatever they say (another window may have moved something too).
+  const latest = useRef({ core: layout, pending });
+  latest.current = { core: layoutOf(fromCore), pending };
+  useEffect(() => {
+    const s = saving.current;
+    if (!s?.saved) return;
+    s.polls += 1;
+    const { core, pending: p } = latest.current;
+    if (s.polls >= 2 || (p !== null && sameLayout(core, p))) {
+      saving.current = null;
+      setPending(null);
+    }
+  }, [queues]);
+  useEffect(() => {
+    if (!focus) return;
+    const sel =
+      focus.kind === "heading"
+        ? `.side-cat[data-heading="${CSS.escape(focus.name)}"]`
+        : `.side-row[data-key="${CSS.escape(focus.key)}"] ${focus.kind === "dot" ? ".side-swatch-dot" : ".side-item"}`;
+    nav.current?.querySelector<HTMLElement>(sel)?.focus();
+  }, [focus]);
+  const labelOfKey = (key: string) => rows.find((r) => r.key === key)?.label ?? key;
+  /** A move: shown at once, Mine picked (the first move chooses it), kept by the core. */
+  const run = (p: Plan | null, then: Focus | null) => {
+    if (!p || !edit) return;
+    pick(p.chip);
+    const n = ++saves.current;
+    saving.current = { n, saved: false, polls: 0 };
+    setPending(p.layout);
+    setSaid(p.said);
+    setProblem("");
+    if (then) setFocus({ ...then });
+    edit.arrange(p.order, p.categories, p.moved).then(
+      () => {
+        if (saving.current?.n === n) saving.current.saved = true;
+        if (p.moved) {
+          const made = p.moved.category;
+          setFresh((f) => f.filter((x) => x !== made));
+        }
+      },
+      (e: unknown) => {
+        if (saving.current?.n === n) {
+          saving.current = null;
+          setPending(null);
+        }
+        setProblem(`Couldn't keep that order: ${String(e)}`);
+      },
+    );
+  };
+  const move = (m: Move, then: Focus | null = null) => run(planMove(layout, m, labelOfKey), then);
+  const hover = (o: Over | null) => setOver((was) => (JSON.stringify(was) === JSON.stringify(o) ? was : o));
+  const endDrag = () => {
+    setDrag(null);
+    setOver(null);
+  };
+  /** The heading after `name`, which a heading dropped after it goes before; null for last. */
+  const after = (name: string) => {
+    const i = layout.findIndex((g) => g.name === name);
+    return layout[i + 1]?.name ?? null;
+  };
+  const dropHeading = (name: string, side: "before" | "after") => {
+    if (drag?.kind === "heading") move({ kind: "heading", name: drag.name, before: side === "before" ? name : after(name) });
+    endDrag();
+  };
+  const rowDrag = (r: ProjectRow): DragProps => ({
+    dragging: drag?.kind === "project" && drag.key === r.key,
+    drop: over?.kind === "row" && over.key === r.key ? over.side : null,
+    onDragStart: () => {
+      setSwatch(null);
+      setDrag({ kind: "project", key: r.key });
+    },
+    onDragEnd: endDrag,
+    onOver: (side) => {
+      if (drag?.kind !== "project") return false;
+      hover(drag.key === r.key ? null : { kind: "row", key: r.key, side });
+      return true;
+    },
+    onDrop: (side) => {
+      if (drag?.kind === "project") move({ kind: "project", key: drag.key, to: side === "before" ? { before: r.key } : { after: r.key } });
+      endDrag();
+    },
+    onStep: (by) => move({ kind: "step-project", key: r.key, by }, { kind: "row", key: r.key }),
+  });
+  const headingDrag = (name: string): DragProps => ({
+    dragging: drag?.kind === "heading" && drag.name === name,
+    drop: over?.kind === "heading" && over.name === name && over.side === "into" ? "into" : null,
+    onDragStart: () => setDrag({ kind: "heading", name }),
+    onDragEnd: endDrag,
+    onOver: (side) => {
+      if (!drag) return false;
+      if (drag.kind === "project") hover({ kind: "heading", name, side: "into" });
+      else hover(drag.name === name ? null : { kind: "heading", name, side });
+      return true;
+    },
+    onDrop: (side) => {
+      if (drag?.kind === "project") move({ kind: "project", key: drag.key, to: { into: name } });
+      if (drag?.kind === "heading") return dropHeading(name, side);
+      endDrag();
+    },
+    onStep: (by) => move({ kind: "step-heading", name, by }, { kind: "heading", name }),
+  });
+  /** A heading renamed: a new one (no project yet) here, any other by the core. */
+  const rename = (from: string, to: string): Promise<void> => {
+    if (fresh.includes(from)) {
+      setFresh((f) => (groups.some((g) => g.name === to) ? f.filter((x) => x !== from) : f.map((x) => (x === from ? to : x))));
+      return Promise.resolve();
+    }
+    if (!edit) return Promise.resolve();
+    return edit.renameCategory(from, to).then(() => {
+      setSaid(`${from} renamed ${to}`);
+      setFocus({ kind: "heading", name: to });
+    });
+  };
+  const addHeading = (typed: string): string => {
+    const name = cleanHeading(typed);
+    if (groups.some((g) => g.name === name)) return `${name} is a heading already: drag a project onto it`;
+    setFresh((f) => [...f, name]);
+    setSaid(`New heading ${name}: drag a project onto it, or ⌥↓ the last one above`);
+    setFocus({ kind: "heading", name });
+    return "";
+  };
+  const pickColour = (r: ProjectRow, id: string) => {
+    setSwatch(null);
+    setFocus({ kind: "dot", key: r.key });
+    if (!edit || id === r.colour) return;
+    edit.colour(r.key, id).catch((e: unknown) => setProblem(`Couldn't set ${r.label}'s colour: ${String(e)}`));
+  };
   const sums = useMemo(() => sumActivity(rows.map((r) => r.activity)), [rows]);
   const counts = useMemo(() => new Map(queues.map((q) => [q.name, q.counts])), [queues]);
   const totalOf = (r: ProjectRow) => projectCount(counts.get(r.name) ?? {}, notes, r.name);
@@ -49,33 +227,93 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
   // a stalled project keeps its Ask all quiet sessions under it.
   const full = useLook("sidebar") === "full";
   return (
-    <nav className="projects-nav">
+    <nav className="projects-nav" ref={nav}>
       <ProjectItem name="All" total={tasks.length + notes.length} tasks={tasks} lessons={lessonsWaiting(queues, "all")} on={current === "all"} onClick={() => onPick("all")} working={sums.working > 0} stalled={sums.stalled > 0 ? `${sums.stalled} stalled` : ""}>
         <SumsLine s={sums} now={now} />
       </ProjectItem>
       {full && <div className="side-label">Projects</div>}
       {full && <OrderChips value={order} onChange={pick} />}
-      {byCategory(shown).map((g) => (
-        <div key={g.name} className="side-group" role="group" aria-label={g.name}>
-          <CategoryHead name={g.name} rows={g.rows} total={g.rows.reduce((n, r) => n + totalOf(r), 0)} />
-          {g.rows.map((r) => {
-            const q = queues.find((x) => x.name === r.name);
-            if (editing === r.name && onLabel && q) {
-              return <SideLabelEdit key={r.name} name={r.name} label={r.label} onSave={(v) => onLabel(q.path, labelToSave(v, r.name))} onDone={() => setEditing(null)} />;
+      {groups.map((g) => {
+        const isFresh = g.rows.length === 0;
+        // A heading dragged over another heading's group lands before or after the whole group.
+        const groupDrop = over?.kind === "heading" && over.name === g.name && over.side !== "into" ? `drop-${over.side}` : "";
+        return (
+          <div
+            key={g.name}
+            className={cx("side-group", groupDrop)}
+            role="group"
+            aria-label={g.name}
+            onDragOver={
+              edit
+                ? (e) => {
+                    if (drag?.kind !== "heading") return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    hover(drag.name === g.name ? null : { kind: "heading", name: g.name, side: half(e) });
+                  }
+                : undefined
             }
-            return (
-              <Fragment key={r.name}>
-                <ProjectItem name={r.label} title={r.title} total={totalOf(r)} tasks={r.tasks} lessons={lessonsWaiting(queues, r.name)} on={current === r.name} onClick={() => onPick(r.name)} onRename={onLabel ? () => setEditing(r.name) : undefined} working={r.activity.working > 0} stalled={r.activity.stalled ? "stalled" : ""} alert={<SideLimit q={q} />}>
-                  <ActivityLine a={r.activity} now={now} />
-                </ProjectItem>
-                {/* A stalled project offers to ask its quiet sessions for a check-in (0039), under its
-                    row, since the row is itself a button. */}
-                {r.activity.stalled && <QuietPing tasks={r.tasks} now={now} />}
-              </Fragment>
-            );
-          })}
-        </div>
-      ))}
+            onDrop={
+              edit
+                ? (e) => {
+                    if (drag?.kind !== "heading") return;
+                    e.preventDefault();
+                    dropHeading(g.name, half(e));
+                  }
+                : undefined
+            }
+          >
+            {renaming === g.name && edit ? (
+              <HeadingEdit name={g.name} onSave={(to) => rename(g.name, to)} onDone={() => setRenaming(null)} />
+            ) : (
+              <CategoryHead
+                name={g.name}
+                rows={g.rows}
+                total={g.rows.reduce((n, r) => n + totalOf(r), 0)}
+                fresh={isFresh}
+                drag={edit && !isFresh ? headingDrag(g.name) : undefined}
+                onRename={edit ? () => setRenaming(g.name) : undefined}
+                onRemove={isFresh ? () => setFresh((f) => f.filter((x) => x !== g.name)) : undefined}
+                into={isFresh && edit && drag?.kind === "project" ? headingDrag(g.name) : undefined}
+              />
+            )}
+            {g.rows.map((r) => {
+              const q = queues.find((x) => x.name === r.name);
+              if (editing === r.name && onLabel && q) {
+                return <SideLabelEdit key={r.name} name={r.name} label={r.label} onSave={(v) => onLabel(q.path, labelToSave(v, r.name))} onDone={() => setEditing(null)} />;
+              }
+              return (
+                <Fragment key={r.name}>
+                  <SideRow
+                    rowKey={r.key}
+                    label={r.label}
+                    colour={r.colour}
+                    swatches={swatch === r.key}
+                    onDot={edit ? () => setSwatch((s) => (s === r.key ? null : r.key)) : undefined}
+                    onColour={edit ? (id) => pickColour(r, id) : undefined}
+                    onFold={(by) => {
+                      setSwatch(null);
+                      // Esc gives the focus back to the dot; tabbing away leaves it where it went.
+                      if (by === "key") setFocus({ kind: "dot", key: r.key });
+                    }}
+                    drag={edit ? rowDrag(r) : undefined}
+                  >
+                    <ProjectItem name={r.label} title={r.title} total={totalOf(r)} tasks={r.tasks} lessons={lessonsWaiting(queues, r.name)} on={current === r.name} onClick={() => onPick(r.name)} onRename={onLabel ? () => setEditing(r.name) : undefined} keys={edit ? MOVE_KEYS : undefined} working={r.activity.working > 0} stalled={r.activity.stalled ? "stalled" : ""} alert={<SideLimit q={q} />}>
+                      <ActivityLine a={r.activity} now={now} />
+                    </ProjectItem>
+                  </SideRow>
+                  {/* A stalled project offers to ask its quiet sessions for a check-in (0039), under its
+                      row, since the row is itself a button. */}
+                  {r.activity.stalled && <QuietPing tasks={r.tasks} now={now} />}
+                </Fragment>
+              );
+            })}
+          </div>
+        );
+      })}
+      {full && edit && <NewCategory onAdd={addHeading} />}
+      {problem && <p className="side-problem err" role="alert">{problem}</p>}
+      <p className="sr-only" role="status" aria-live="polite">{said}</p>
     </nav>
   );
 }
@@ -86,14 +324,14 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
  *  them its activity line. Narrowed (Focus, 0038), the name, the working dot, "stalled" in the attention colour (the activity line's word, or "2
  *  stalled" on All), the needs-you count and the paused count. `alert` shows in every mode, under
  *  them: over its Your check limit (0050), how many wait and the limit. With `onRename`, a double
- *  click on the name sets its label. */
-export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClick, onRename, working = false, stalled = "", alert, children }: { name: string; title?: string; total: number; tasks: Task[]; lessons?: number; on: boolean; onClick: () => void; onRename?: () => void; working?: boolean; stalled?: string; alert?: ReactNode; children: ReactNode }) {
+ *  click on the name sets its label. `keys` are the keys that move it (0057), for a screen reader. */
+export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClick, onRename, keys, working = false, stalled = "", alert, children }: { name: string; title?: string; total: number; tasks: Task[]; lessons?: number; on: boolean; onClick: () => void; onRename?: () => void; keys?: string; working?: boolean; stalled?: string; alert?: ReactNode; children: ReactNode }) {
   const doing = tasks.filter(inProgress).length;
   const needs = needsYouCount(tasks) + lessons;
   const full = useLook("sidebar") === "full";
   const paused = tasks.filter((t) => t.paused).length;
   return (
-    <button className={on ? "side-item on" : "side-item"} onClick={onClick} title={title}>
+    <button className={on ? "side-item on" : "side-item"} onClick={onClick} title={title} aria-keyshortcuts={keys}>
       <span className="side-line">
         {!full && working && <i className="dot side-dot" title={`Being worked on now: ${WORKING_HINT}`} />}
         <span className="side-name" title={onRename ? (title ? `${title}\n${RENAME_HINT}` : RENAME_HINT) : undefined} onDoubleClick={onRename}>{name}</span>
@@ -112,14 +350,25 @@ export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClic
 }
 
 /** A category's heading (0044), always shown, above its projects: its name, what needs you in it,
- *  and, but in Focus's narrow sidebar, how many of its tasks are being worked on and its tasks. */
-function CategoryHead({ name, rows, total }: { name: string; rows: ProjectRow[]; total: number }) {
+ *  and, but in Focus's narrow sidebar, how many of its tasks are being worked on and its tasks.
+ *  Arranged in place (0057): `drag` moves it, `onRename` renames it, and a new one (`fresh`) takes
+ *  a dragged project (`into`) or Remove. */
+function CategoryHead({ name, rows, total, fresh = false, drag, onRename, onRemove, into }: {
+  name: string;
+  rows: ProjectRow[];
+  total: number;
+  fresh?: boolean;
+  drag?: DragProps;
+  onRename?: () => void;
+  onRemove?: () => void;
+  into?: DragProps;
+}) {
   const full = useLook("sidebar") === "full";
   const needs = rows.reduce((n, r) => n + r.needs, 0);
   const working = rows.reduce((n, r) => n + r.activity.working, 0);
   const projects = `${rows.length} ${rows.length === 1 ? "project" : "projects"}`;
   return (
-    <div className="side-cat">
+    <HeadingFrame name={name} count={rows.length} fresh={fresh} drag={drag ?? into} onRename={onRename} onRemove={onRemove}>
       <span className="side-cat-name">{name}</span>
       <span className="side-badges">
         {needs > 0 && <span className="count warn" title={`${needs} need${needs === 1 ? "s" : ""} you in ${name}`}>{needs}</span>}
@@ -129,9 +378,9 @@ function CategoryHead({ name, rows, total }: { name: string; rows: ProjectRow[];
             {working} working
           </span>
         )}
-        {full && <small title={`${total} ${total === 1 ? "task" : "tasks"} in ${projects}`}>{total}</small>}
+        {full && !fresh && <small title={`${total} ${total === 1 ? "task" : "tasks"} in ${projects}`}>{total}</small>}
       </span>
-    </div>
+    </HeadingFrame>
   );
 }
 

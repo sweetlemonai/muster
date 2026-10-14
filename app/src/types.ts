@@ -245,6 +245,13 @@ export type QueueInfo = {
   label?: string;
   /** The sidebar heading it goes under (0044): its category, its group, else "Other". */
   category?: string;
+  /** Its colour (0057), one of themes.ts PROJECT_COLOURS' ids, "" for none. These three are
+   *  optional so an older core reads as no colour and no place. */
+  colour?: string;
+  /** Its place in the sidebar's Mine order (0057), null when it has none yet. */
+  rank?: number | null;
+  /** Its heading's place among the sidebar's headings (0057), null when it has none yet. */
+  categoryRank?: number | null;
   /** How many lessons from reviews wait for the owner's yes (0027); optional so an older core
    *  reads as none. */
   lessonsWaiting?: number;
@@ -285,6 +292,8 @@ export type Project = {
   label?: string;
   /** Its category (0044) as set, "" for none (it goes under its group, else Other). */
   category?: string;
+  /** Its colour (0057), "" for none. */
+  colour?: string;
 };
 
 /** A lesson from reviews (0027): a kind of mistake that recurred, as a rule for builders, or one

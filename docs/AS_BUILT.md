@@ -80,6 +80,21 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   while it has focus. The sidebar's order holds while a label is edited in place. `set_project_label` and `set_project_category` replace
   `rename_project`: the old `names` are still read, so a project renamed before keeps that name in
   commands, but the window no longer sets them. `carry_over` (0005's migrate) carries both.
+- **Arranged in the sidebar** (task 0057, `arrange.rs`, `projectOrder.ts`, `SidebarProjects.tsx`,
+  `ProjectSwatches.tsx`, `projectColours.ts`): projects and category headings drag to reorder (a
+  heading takes its projects), and ⌥↑/⌥↓ moves a focused row; the first move picks the fourth order
+  chip, **Mine**, built from the order on screen plus that move. Heading order holds under every
+  chip; the chips sort within a heading. Dropping a project on another heading moves it there (at
+  the top), "+ Category" makes an empty heading kept only in the window until a project goes in,
+  double-click or ↩ renames a heading (a name another heading has merges the two), and empty
+  headings go. Each project can have a colour, a left-edge dot on its row: clicking it shows an
+  inline row of five swatches (Lime, Orchid, Pink, Tan, Mint, a shade per theme; `PROJECT_COLOURS`,
+  CIE76 ≥ 30 from every stage, blocked, needs-you, priority and gold colour in every theme and
+  accent, and from each other). The dot shows wherever `ProjectName` names the project. Settings ›
+  Projects has a colour cell and ↑/↓ place cells, in Mine order. `projects.json` keeps `colours`,
+  `order` and `categoryOrder` under its lock (`set_project_colour`, `arrange_projects`,
+  `rename_category`; unknown entries are dropped when read, a refused change writes nothing);
+  `remove_project` clears them and `carry_over` carries them.
 - **Reaching a working session** (0039, `ping.rs`, `Ping.tsx`, `reach.ts`): **Ask for a
   check-in** under a quiet card ("no check-in for N min"; a strip joined to the card's bottom,
   since the card is a button), in the task pane's **Session** strip (Building and Testing, an

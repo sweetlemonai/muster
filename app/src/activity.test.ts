@@ -130,6 +130,10 @@ describe("the sidebar's rows", () => {
     // The tooltip says the real name and the folder (0044): the row shows the label.
     expect(rows.map((r) => [r.name, r.title, r.tasks.length, r.needs])).toEqual([["drover", "drover · /d", 2, 1], ["muster", "muster · /m", 1, 0], ["empty", "empty · /e", 0, 0]]);
     expect(rows.map((r) => [r.label, r.category])).toEqual([["drover", "Other"], ["muster", "Other"], ["empty", "Other"]]);
+    // Its folder is its key, with no colour and no place until the core sends them (0057).
+    expect(rows.map((r) => [r.key, r.colour, r.rank, r.categoryRank])).toEqual([["/d", "", null, null], ["/m", "", null, null], ["/e", "", null, null]]);
+    const placed = projectRows([{ name: "drover", path: "/d", colour: "lime", rank: 3, categoryRank: 0 }], [], [], NOW);
+    expect(placed.map((r) => [r.key, r.colour, r.rank, r.categoryRank])).toEqual([["/d", "lime", 3, 0]]);
     expect(rows.map((r) => r.activity)).toEqual([
       { working: 1, stalled: false, last: 10 },
       { working: 0, stalled: false, last: 60 },
@@ -170,8 +174,8 @@ describe("the sidebar order", () => {
   const rows = [row("muster", 0, 300, 2), row("Drover", 1, 3), row("braindump", 0, null, 1), row("germ", 2, 0), row("chit", 0, 20, 2, true), row("Apple", 0, 300)];
   const names = (by: SidebarOrder) => orderProjects(rows, by).map((r) => r.name);
 
-  it("offers Working first (the default), A–Z and Needs you first", () => {
-    expect(SIDEBAR_ORDERS.map((o) => [o.id, o.label])).toEqual([["working", "Working"], ["az", "A–Z"], ["needs", "Needs you"]]);
+  it("offers Working first (the default), A–Z, Needs you first and Mine (0057)", () => {
+    expect(SIDEBAR_ORDERS.map((o) => [o.id, o.label])).toEqual([["working", "Working"], ["az", "A–Z"], ["needs", "Needs you"], ["mine", "Mine"]]);
     for (const o of SIDEBAR_ORDERS) expect(o.title).not.toBe("");
   });
   it("Working: projects being worked on first, then by last activity, newest first, nothing known last, then by name", () => {
@@ -187,6 +191,10 @@ describe("the sidebar order", () => {
     const labelled = [{ ...row("apple", 0, 1), label: "Zed" }, row("muster", 0, 2), { ...row("Drover", 0, 3), label: "agents" }];
     expect(orderProjects(labelled, "az").map((r) => r.name)).toEqual(["Drover", "muster", "apple"]);
   });
+  it("Mine (0057): the owner's order, then the projects never placed, A–Z by the label", () => {
+    const placed = [{ ...row("muster", 0, 1), rank: 2 }, { ...row("zeta", 0, 1), label: "Alpha" }, { ...row("Drover", 1, 0), rank: 0 }, { ...row("beta", 0, 1), rank: null }, { ...row("chit", 0, 1), rank: 1 }];
+    expect(orderProjects(placed, "mine").map((r) => r.name)).toEqual(["Drover", "chit", "muster", "zeta", "beta"]);
+  });
   it("leaves its input alone", () => {
     const copy = [...rows];
     orderProjects(rows, "az");
@@ -196,7 +204,7 @@ describe("the sidebar order", () => {
 
 describe("the remembered order", () => {
   it("reads back what was stored", () => {
-    for (const o of ["working", "az", "needs"] as const) expect(loadOrder(() => o)).toBe(o);
+    for (const o of ["working", "az", "needs", "mine"] as const) expect(loadOrder(() => o)).toBe(o);
   });
   it("is Working first when nothing or something unknown is stored", () => {
     expect(loadOrder(() => null)).toBe("working");
@@ -265,5 +273,10 @@ describe("review fixes (2026-10-13)", () => {
     // In Needs you order, a change in the counts moves rows.
     const needs = nextOrder(null, [row("a", 0, 5, 1), row("b", 0, 5, 0)], "needs");
     expect(nextOrder(needs, [row("a", 0, 5, 0), row("b", 0, 5, 2)], "needs").names).toEqual(["b", "a"]);
+    // In Mine order (0057), a new place moves rows; working or not doesn't.
+    const mine = nextOrder(null, [{ ...row("a", 0, 5), rank: 0 }, { ...row("b", 0, 5), rank: 1 }], "mine");
+    expect(mine.names).toEqual(["a", "b"]);
+    expect(nextOrder(mine, [{ ...row("a", 1, 5), rank: 0 }, { ...row("b", 0, 5), rank: 1 }], "mine").names).toEqual(["a", "b"]);
+    expect(nextOrder(mine, [{ ...row("a", 0, 5), rank: 1 }, { ...row("b", 0, 5), rank: 0 }], "mine").names).toEqual(["b", "a"]);
   });
 });

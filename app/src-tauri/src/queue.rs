@@ -640,6 +640,12 @@ pub struct QueueInfo {
     pub label: String,
     /// The sidebar heading it goes under (0044): its category, its group, else "Other".
     pub category: String,
+    /// Its colour (0057), one of `arrange::COLOURS`, or ""; `arrange::apply` sets it, and the next two.
+    pub colour: String,
+    /// Its place in the sidebar's Mine order (0057), None when it has none yet.
+    pub rank: Option<usize>,
+    /// Its heading's place among the sidebar's headings (0057), None when it has none yet.
+    pub category_rank: Option<usize>,
     /// Lessons from reviews proposed and waiting for the owner (0027, `lessons::waiting`).
     pub lessons_waiting: usize,
 }
@@ -1517,6 +1523,9 @@ fn read_state_from(
             your_check_limit: Some(crate::check_limit::DEFAULT),
             label: name.clone(),
             category: crate::labels::OTHER.to_string(),
+            colour: String::new(),
+            rank: None,
+            category_rank: None,
             lessons_waiting: crate::lessons::waiting(root),
         });
         state.tasks.extend(tasks);

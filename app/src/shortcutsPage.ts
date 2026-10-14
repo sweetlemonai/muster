@@ -35,10 +35,11 @@ export function shortcutsPage(): string {
   const ctrl = cmdOnly.length
     ? `Ctrl works too wherever ⌘ is shown, except ${list(cmdOnly)}, which ${cmdOnly.length === 1 ? "takes" : "take"} ⌘ only.`
     : "Ctrl works too wherever ⌘ is shown.";
+  const option = SHORTCUTS.some((s) => s.mod === "alt") ? " ⌥ is the Option key." : "";
   const out = [
     "# Shortcuts",
     "",
-    `Every keyboard shortcut in the app, and the slash commands for Claude Code. This page is made from the app's own table of shortcuts, and a test checks every key the app reacts to against that table, so a shortcut can't exist without being listed here. ⌘ is the Command key. ${ctrl} ↩ is Return.`,
+    `Every keyboard shortcut in the app, and the slash commands for Claude Code. This page is made from the app's own table of shortcuts, and a test checks every key the app reacts to against that table, so a shortcut can't exist without being listed here. ⌘ is the Command key. ${ctrl}${option} ↩ is Return.`,
     "",
   ];
   for (const area of AREAS) {

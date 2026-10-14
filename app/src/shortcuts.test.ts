@@ -93,6 +93,15 @@ describe("pressed", () => {
     expect(pressed({ key: "f", metaKey: true, ctrlKey: true }, "search")).toBe(false);
     expect(pressed(ev("f"), "search")).toBe(false);
   });
+  it("takes ⌥↑ and ⌥↓ with ⌥ alone (0057): not the plain arrows, and not with ⌘ or Ctrl", () => {
+    const alt = (key: string, over: Partial<{ metaKey: boolean; ctrlKey: boolean }> = {}) => ({ key, metaKey: false, ctrlKey: false, altKey: true, ...over });
+    expect(pressed(alt("ArrowUp"), "move-up")).toBe(true);
+    expect(pressed(alt("ArrowDown"), "move-down")).toBe(true);
+    expect(pressed(alt("ArrowDown"), "move-up")).toBe(false);
+    expect(pressed(ev("ArrowUp"), "move-up")).toBe(false);
+    expect(pressed(alt("ArrowUp", { metaKey: true }), "move-up")).toBe(false);
+    expect(pressed(alt("ArrowUp", { ctrlKey: true }), "move-up")).toBe(false);
+  });
   it("takes Esc with or without a modifier, as the handlers always have", () => {
     expect(pressed(ev("Escape"), "close-pane")).toBe(true);
     expect(pressed(ev("Escape", true), "close-pane")).toBe(true);
@@ -107,8 +116,8 @@ describe("the Shortcuts page", () => {
       expect(page).toContain(`| ${s.keys} | ${s.what} | ${s.where} |`);
     }
   });
-  it("says which shortcut doesn't take Ctrl for ⌘", () => {
-    expect(page).toContain("Ctrl works too wherever ⌘ is shown, except ⌘F, ⌘+, ⌘− and ⌘0, which take ⌘ only.");
+  it("says which shortcut doesn't take Ctrl for ⌘, and what ⌥ is", () => {
+    expect(page).toContain("Ctrl works too wherever ⌘ is shown, except ⌘F, ⌘+, ⌘− and ⌘0, which take ⌘ only. ⌥ is the Option key.");
   });
   it("has a section per area and the slash commands", () => {
     for (const a of AREAS) expect(page).toContain(`\n## ${a}\n`);

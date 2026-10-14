@@ -1,6 +1,6 @@
 # Shortcuts
 
-Every keyboard shortcut in the app, and the slash commands for Claude Code. This page is made from the app's own table of shortcuts, and a test checks every key the app reacts to against that table, so a shortcut can't exist without being listed here. ⌘ is the Command key. Ctrl works too wherever ⌘ is shown, except ⌘F, ⌘+, ⌘− and ⌘0, which take ⌘ only. ↩ is Return.
+Every keyboard shortcut in the app, and the slash commands for Claude Code. This page is made from the app's own table of shortcuts, and a test checks every key the app reacts to against that table, so a shortcut can't exist without being listed here. ⌘ is the Command key. Ctrl works too wherever ⌘ is shown, except ⌘F, ⌘+, ⌘− and ⌘0, which take ⌘ only. ⌥ is the Option key. ↩ is Return.
 
 ## Anywhere
 
@@ -55,8 +55,12 @@ Every keyboard shortcut in the app, and the slash commands for Claude Code. This
 
 | Keys | What it does | Where |
 | --- | --- | --- |
-| ↩ | Save the label or the category (leaving the field saves it too; in Settings it's saved as you type) | A project's label or category in Settings, Projects, and a project's name in the sidebar after a double click |
-| Esc | Keep the label or the category as it was before you started typing | A project's label or category in Settings, Projects, and a project's name in the sidebar after a double click |
+| ↩ | Save the label or the category (leaving the field saves it too; in Settings it's saved as you type) | A project's label or category in Settings, Projects; in the sidebar, a project's name after a double click, a heading's name after a double click or ↩, and + Category's field |
+| Esc | Keep the label or the category as it was before you started typing | A project's label or category in Settings, Projects; in the sidebar, a project's name after a double click, a heading's name after a double click or ↩, and + Category's field |
+| ⌥↑ | Move the project or the heading up one place, its projects with it. A project at the top of its heading goes to the end of the one above. The first move picks the Mine order | A project or a category heading in the sidebar, once Tab has put the focus on it |
+| ⌥↓ | Move the project or the heading down one place. A project at the bottom of its heading goes to the top of the one below | A project or a category heading in the sidebar, once Tab has put the focus on it |
+| ↩ | Rename the heading in place (a double click does too). A name another heading has puts the two together | A category heading in the sidebar, once Tab has put the focus on it |
+| Esc | Fold the colours back without changing the project's colour | A project's colours in the sidebar, after a click on its dot |
 
 ## Slash commands in Claude Code
 

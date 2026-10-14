@@ -66,9 +66,9 @@ const TABLE = {
   },
   sidebar: {
     label: "Sidebar",
-    adhd: { how: "full", says: "Projects under their category headings (each with its tasks, needs you and working), their counts, the order chips and each one's activity line" },
-    standard: { how: "full", says: "Projects under their category headings (each with its tasks, needs you and working), their counts, the order chips and each one's activity line" },
-    focus: { how: "narrow", says: "Category headings with their needs-you count, project names, the working dot, stalled and the needs-you and paused counts, and a project over its Your check limit says so; a stalled project keeps its Ask for a check-in", reach: "Leave Focus: ⌘. or the mode chip in the header" },
+    adhd: { how: "full", says: "Projects under their category headings (each with its tasks, needs you and working), their counts, the order chips, each one's colour dot and activity line, and + Category" },
+    standard: { how: "full", says: "Projects under their category headings (each with its tasks, needs you and working), their counts, the order chips, each one's colour dot and activity line, and + Category" },
+    focus: { how: "narrow", says: "Category headings with their needs-you count, project names with their colour dot, the working dot, stalled and the needs-you and paused counts, and a project over its Your check limit says so; a stalled project keeps its Ask for a check-in", reach: "Leave Focus: ⌘. or the mode chip in the header" },
   },
 } as const satisfies Record<string, Entry>;
 

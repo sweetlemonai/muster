@@ -12,8 +12,9 @@ export type Shortcut = {
   keys: string;
   /** The `KeyboardEvent.key` values it answers to. */
   codes: readonly string[];
-  /** Needs ⌘ or Ctrl (true), ⌘ alone with Ctrl not held ("cmd"), or neither (false). */
-  mod: boolean | "cmd";
+  /** Needs ⌘ or Ctrl (true), ⌘ alone with Ctrl not held ("cmd"), ⌥ without ⌘ or Ctrl ("alt"), or
+   *  none of them (false). */
+  mod: boolean | "cmd" | "alt";
   what: string;
   where: string;
   area: Area;
@@ -46,23 +47,28 @@ const TABLE = [
   { id: "quick-add", keys: "↩", codes: ["Enter"], mod: false, what: "Add the line to the backlog as a note", where: "Add to the backlog…, at the top of the Backlog column, or of the Backlog band under Group by", area: "The board", files: ["Backlog.tsx"] },
   { id: "quick-add-clear", keys: "Esc", codes: ["Escape"], mod: false, what: "Empty the field", where: "Add to the backlog…, at the top of the Backlog column, or of the Backlog band under Group by", area: "The board", files: ["Backlog.tsx"] },
   { id: "accept-all-cancel", keys: "Esc", codes: ["Escape"], mod: false, what: "Don't accept them: nothing changes", where: "Accept all's confirm, in Your check's Just accept group (the board and Waiting for you)", area: "The board", files: ["EffortGroups.tsx"] },
-  { id: "label-save", keys: "↩", codes: ["Enter"], mod: false, what: "Save the label or the category (leaving the field saves it too; in Settings it's saved as you type)", where: "A project's label or category in Settings, Projects, and a project's name in the sidebar after a double click", area: "Projects", files: ["InlineField.tsx", "ProjectList.tsx"] },
-  { id: "label-revert", keys: "Esc", codes: ["Escape"], mod: false, what: "Keep the label or the category as it was before you started typing", where: "A project's label or category in Settings, Projects, and a project's name in the sidebar after a double click", area: "Projects", files: ["InlineField.tsx", "ProjectList.tsx"] },
+  { id: "label-save", keys: "↩", codes: ["Enter"], mod: false, what: "Save the label or the category (leaving the field saves it too; in Settings it's saved as you type)", where: "A project's label or category in Settings, Projects; in the sidebar, a project's name after a double click, a heading's name after a double click or ↩, and + Category's field", area: "Projects", files: ["InlineField.tsx", "ProjectList.tsx", "SidebarProjects.tsx"] },
+  { id: "label-revert", keys: "Esc", codes: ["Escape"], mod: false, what: "Keep the label or the category as it was before you started typing", where: "A project's label or category in Settings, Projects; in the sidebar, a project's name after a double click, a heading's name after a double click or ↩, and + Category's field", area: "Projects", files: ["InlineField.tsx", "ProjectList.tsx", "SidebarProjects.tsx"] },
+  { id: "move-up", keys: "⌥↑", codes: ["ArrowUp"], mod: "alt", what: "Move the project or the heading up one place, its projects with it. A project at the top of its heading goes to the end of the one above. The first move picks the Mine order", where: "A project or a category heading in the sidebar, once Tab has put the focus on it", area: "Projects", files: ["SidebarProjects.tsx"] },
+  { id: "move-down", keys: "⌥↓", codes: ["ArrowDown"], mod: "alt", what: "Move the project or the heading down one place. A project at the bottom of its heading goes to the top of the one below", where: "A project or a category heading in the sidebar, once Tab has put the focus on it", area: "Projects", files: ["SidebarProjects.tsx"] },
+  { id: "heading-rename", keys: "↩", codes: ["Enter"], mod: false, what: "Rename the heading in place (a double click does too). A name another heading has puts the two together", where: "A category heading in the sidebar, once Tab has put the focus on it", area: "Projects", files: ["SidebarProjects.tsx"] },
+  { id: "colour-close", keys: "Esc", codes: ["Escape"], mod: false, what: "Fold the colours back without changing the project's colour", where: "A project's colours in the sidebar, after a click on its dot", area: "Projects", files: ["ProjectSwatches.tsx"] },
 ] as const satisfies readonly Shortcut[];
 
 /** A shortcut's id: `pressed` takes only one the table has. */
 export type ShortcutId = (typeof TABLE)[number]["id"];
 export const SHORTCUTS: readonly Shortcut[] = TABLE;
 
-type KeyEvent = { key: string; metaKey: boolean; ctrlKey: boolean };
+type KeyEvent = { key: string; metaKey: boolean; ctrlKey: boolean; altKey?: boolean };
 
 /** Whether the modifiers a shortcut needs are held. ⌘-only (⌘F): on macOS Ctrl+F moves a text
  *  field's caret forward a character, and ⌃⌘F is full screen. */
-const modsHeld = (s: Shortcut, e: KeyEvent) => (s.mod === "cmd" ? e.metaKey && !e.ctrlKey : !s.mod || e.metaKey || e.ctrlKey);
+const modsHeld = (s: Shortcut, e: KeyEvent) =>
+  s.mod === "cmd" ? e.metaKey && !e.ctrlKey : s.mod === "alt" ? Boolean(e.altKey) && !e.metaKey && !e.ctrlKey : !s.mod || e.metaKey || e.ctrlKey;
 
 /** Whether a key event is this shortcut: one of its keys, exactly, with ⌘ or Ctrl held when it
- *  needs one (⌘ alone for a ⌘-only one). Other modifiers don't matter, as they never have in
- *  these handlers. */
+ *  needs one (⌘ alone for a ⌘-only one), and ⌥ without either for an ⌥ one. Other modifiers don't
+ *  matter, as they never have in these handlers. */
 export function pressed(e: KeyEvent, id: ShortcutId): boolean {
   return SHORTCUTS.some((s) => s.id === id && s.codes.includes(e.key) && modsHeld(s, e));
 }

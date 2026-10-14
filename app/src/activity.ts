@@ -2,7 +2,7 @@ import { isBlocked } from "./blockWords";
 import { needsYouCount } from "./human";
 import { OTHER } from "./labels";
 import { CHECKIN_MINUTES, splitHolder, stamp, stampMinutes } from "./lib";
-import type { Activity, Task } from "./types";
+import type { Activity, QueueInfo, Task } from "./types";
 
 // Which projects are being worked on now, and which have gone quiet (task 0037). Pure functions
 // of the polled state and its clock (`now`, seconds since 1970), so the sidebar recomputes them
@@ -14,9 +14,23 @@ export type ActivityTask = Pick<Task, "stage" | "blocked" | "blockedKind" | "cla
  *  gone quiet, and minutes since anything happened in it (null when nothing says). */
 export type ProjectActivity = { working: number; stalled: boolean; last: number | null };
 
-/** One sidebar row: a queue, what the window calls it and the heading it goes under (0044), its
- *  tooltip (the real name and the folder), its tasks and what's waiting on the owner in it. */
-export type ProjectRow = { name: string; label: string; category: string; title: string; tasks: Task[]; needs: number; activity: ProjectActivity };
+/** One sidebar row: a queue, its folder (`key`, what projects.json keeps it by), what the window
+ *  calls it and the heading it goes under (0044), its colour and its place and its heading's in
+ *  the owner's order (0057, null when not placed), its tooltip (the real name and the folder), its
+ *  tasks and what's waiting on the owner in it. */
+export type ProjectRow = {
+  name: string;
+  key: string;
+  label: string;
+  category: string;
+  colour: string;
+  rank: number | null;
+  categoryRank: number | null;
+  title: string;
+  tasks: Task[];
+  needs: number;
+  activity: ProjectActivity;
+};
 
 /** The All projects row: projects being worked on, projects stalled, the newest activity. */
 export type Sums = { working: number; stalled: number; last: number | null };
@@ -104,7 +118,7 @@ export function projectActivity(tasks: ActivityTask[], commit: number, now: numb
 }
 
 /** The sidebar's rows, one per queue in the core's order, from one pass over the state. */
-export function projectRows(queues: { name: string; path: string; label?: string; category?: string }[], tasks: Task[], activity: Activity[], now: number): ProjectRow[] {
+export function projectRows(queues: Pick<QueueInfo, "name" | "path" | "label" | "category" | "colour" | "rank" | "categoryRank">[], tasks: Task[], activity: Activity[], now: number): ProjectRow[] {
   const byQueue = new Map<string, Task[]>();
   for (const t of tasks) {
     const list = byQueue.get(t.queue);
@@ -117,8 +131,12 @@ export function projectRows(queues: { name: string; path: string; label?: string
     const own = byQueue.get(q.name) ?? [];
     return {
       name: q.name,
+      key: q.path,
       label: q.label || q.name,
       category: q.category || OTHER,
+      colour: q.colour ?? "",
+      rank: q.rank ?? null,
+      categoryRank: q.categoryRank ?? null,
       title: `${q.name} · ${q.path}`,
       tasks: own,
       needs: needsYouCount(own),
@@ -152,15 +170,17 @@ export function lastText(m: number | null, wall: number | null): string {
 /** `lastText` at the state's clock (`now`, seconds since 1970). */
 export const lastLabel = (m: number | null, now: number) => lastText(m, wallMinutes(now));
 
-export type SidebarOrder = "working" | "az" | "needs";
-/** The sidebar's orders, as chips above the list. Working first is the default. */
+export type SidebarOrder = "working" | "az" | "needs" | "mine";
+/** The sidebar's orders, as chips above the list. Working first is the default; Mine (0057) is the
+ *  owner's own, chosen by the first drag or ⌥↑/⌥↓. */
 export const SIDEBAR_ORDERS: { id: SidebarOrder; label: string; title: string }[] = [
   { id: "working", label: "Working", title: "Projects being worked on now first, then the most recently worked on" },
   { id: "az", label: "A–Z", title: "By name" },
   { id: "needs", label: "Needs you", title: "The most waiting on you first, then the ones being worked on" },
+  { id: "mine", label: "Mine", title: "Your own order: drag a project or a heading, or ⌥↑ ⌥↓ on one (the first move picks this)" },
 ];
 
-type Ranked = Pick<ProjectRow, "name" | "needs" | "activity"> & { label?: string };
+type Ranked = Pick<ProjectRow, "name" | "needs" | "activity"> & { label?: string; rank?: number | null };
 // Plain code-unit order after folding case, so the order is the same on every machine. A–Z goes
 // by what the row shows: its label (0044), else its name.
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
@@ -170,11 +190,17 @@ const byLast = (a: Ranked, b: Ranked) => {
   const x = a.activity.last, y = b.activity.last;
   return x === y ? 0 : x === null ? 1 : y === null ? -1 : x - y;
 };
+// The owner's places first, in order; the rest after them (0057).
+const byRank = (a: Ranked, b: Ranked) => {
+  const x = a.rank ?? null, y = b.rank ?? null;
+  return x === y ? 0 : x === null ? 1 : y === null ? -1 : x - y;
+};
 const byWorking = (a: Ranked, b: Ranked) => Number(b.activity.working > 0) - Number(a.activity.working > 0) || byLast(a, b) || byName(a, b);
 const COMPARE: Record<SidebarOrder, (a: Ranked, b: Ranked) => number> = {
   working: byWorking,
   az: byName,
   needs: (a, b) => b.needs - a.needs || byWorking(a, b),
+  mine: (a, b) => byRank(a, b) || byName(a, b),
 };
 
 /** A sorted copy. */
@@ -184,8 +210,8 @@ export function orderProjects<T extends Ranked>(rows: T[], by: SidebarOrder): T[
 
 /** The order the sidebar shows, kept between polls so rows don't jump (docs/DESIGN.md: nothing
  *  jumps; review, 2026-10-13): it's worked out again only when what defines it changes: the
- *  order chosen, the projects listed and their labels (0044), which projects are working, and, in
- *  Needs you order, the counts. Activity minutes ticking on don't move a row. `hold` keeps the
+ *  order chosen, the projects listed and their labels (0044), which projects are working, in
+ *  Needs you order the counts, and in Mine order the places (0057). Activity minutes ticking on don't move a row. `hold` keeps the
  *  order as it is while a label is edited in place (0044 review): a new project goes last, a gone
  *  one goes, and nothing else moves until it's let go. */
 export type OrderMemo = { by: SidebarOrder; names: string[]; key: string };
@@ -199,7 +225,8 @@ export function nextOrder(prev: OrderMemo | null, rows: (Ranked & { activity: Pr
   const names = rows.map((r) => `${r.name}\n${r.label ?? ""}`).sort();
   const working = rows.filter((r) => r.activity.working > 0).map((r) => r.name).sort();
   const needs = by === "needs" ? rows.map((r) => `${r.name}:${r.needs}`).sort() : [];
-  const key = JSON.stringify([by, names, working, needs]);
+  const ranks = by === "mine" ? rows.map((r) => `${r.name}:${r.rank ?? ""}`).sort() : [];
+  const key = JSON.stringify([by, names, working, needs, ranks]);
   if (prev && prev.key === key) return prev;
   return { by, names: orderProjects(rows, by).map((r) => r.name), key };
 }

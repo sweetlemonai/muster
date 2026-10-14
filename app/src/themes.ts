@@ -76,6 +76,20 @@ export const HUMAN_HATCH = 0.14;
 // magenta for high, a light slate for normal, grey for low.
 export const PRIORITY_COLOURS: Record<string, string> = { high: "#E879C9", normal: "#B4B9C8", low: "#8E8AA6" };
 
+/** A colour per project (0057): a dot at the left of its sidebar row and wherever it's named. A
+ *  shade per mode, as the accents have: light on dark themes, dark on light ones. Every one reads
+ *  apart from each stage, blocked, needs you, the owner's gold and each priority, fill and edge, in
+ *  every theme and accent, and from the others (CIE76 30, SAME_AT_A_GLANCE), at 3:1 on every
+ *  surface (themes.test.ts). That leaves no blue, cyan, violet, amber, orange, green or red: the
+ *  colour code has them. The ids are what projects.json keeps (arrange.rs COLOURS). */
+export const PROJECT_COLOURS: { id: string; name: string; dark: string; light: string }[] = [
+  { id: "lime", name: "Lime", dark: "#B9F368", light: "#4F7109" },
+  { id: "orchid", name: "Orchid", dark: "#E040FB", light: "#6A0080" },
+  { id: "pink", name: "Pink", dark: "#FFB0C8", light: "#7A1F4A" },
+  { id: "tan", name: "Tan", dark: "#F0D2AA", light: "#6B3A1E" },
+  { id: "mint", name: "Mint", dark: "#B8FFE2", light: "#0A4D3A" },
+];
+
 /** How a card shows its colour (0026). Picked in Appearance; applied as CSS only. */
 export type CardLook = "stripe" | "tint" | "top" | "dot" | "outline";
 export const CARD_LOOKS: { id: CardLook; name: string; hint: string }[] = [
@@ -238,6 +252,8 @@ export function variables(theme: Theme, accent: Accent): Record<string, string> 
     ...Object.fromEntries(Object.entries(PRIORITY_COLOURS).map(([p, c]) => [`--pri-${p}`, c])),
     ...Object.fromEntries(Object.entries(PRIORITY_COLOURS).map(([p, c]) => [`--edge-pri-${p}`, edge(c)])),
     "--card-tint": `${Math.round(CARD_TINT[theme.mode] * 100)}%`,
+    // Project colours (0057), the mode's shade.
+    ...Object.fromEntries(PROJECT_COLOURS.map((c) => [`--proj-${c.id}`, c[theme.mode]])),
   };
 }
 

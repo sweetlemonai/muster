@@ -26,6 +26,13 @@ export const api = {
   // to the group or Other. Commands keep the name.
   setProjectLabel: (key: string, label: string) => invoke<void>("set_project_label", { key, label }),
   setProjectCategory: (key: string, category: string) => invoke<void>("set_project_category", { key, category }),
+  // The sidebar's own arrangement (0057): a project's colour by its key (a PROJECT_COLOURS id, ""
+  // for none); the order shown after a drag or ⌥↑/⌥↓, projects by key and headings, first to last,
+  // with the project that moved under another heading; and a heading renamed, which joins another
+  // of that name. The core keeps them in projects.json and refuses what it doesn't know.
+  setProjectColour: (key: string, colour: string) => invoke<void>("set_project_colour", { key, colour }),
+  arrangeProjects: (order: string[], categories: string[], moved: Moved | null) => invoke<void>("arrange_projects", { order, categories, moved }),
+  renameCategory: (from: string, to: string) => invoke<void>("rename_category", { from, to }),
   // The window's title for the project shown, by its name ("all" for All projects).
   showProjectTitle: (name: string) => invoke<void>("show_project_title", { name }),
   // What its tasks' keys start with (0033), 2 to 4 lowercase letters; refused when it isn't one
@@ -135,6 +142,9 @@ export const api = {
   helperSend: (queue: string, message: string, files: [string, string][], stamp: string) =>
     invoke<void>("helper_send", { queue, message, files, stamp }),
 };
+
+/** A project moved under another heading by an arrangement (0057): its key and the heading. */
+export type Moved = { key: string; category: string };
 
 /** What a ping reached: the session's short id, and the task's path. */
 export type Pinged = { session: string; path: string };

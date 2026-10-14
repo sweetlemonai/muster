@@ -3,6 +3,7 @@
 //! the core gave it, never by a path it made up. Folders are picked by the core's own dialog.
 
 pub mod agents;
+pub mod arrange;
 pub mod backlog;
 pub mod badge;
 pub mod block;
@@ -144,6 +145,8 @@ async fn state(
         check_limit::apply(&config.your_check, &mut s.queues);
         // What the window calls each one and the heading it goes under (0044).
         labels::apply(&list, &mut s.queues);
+        // Its colour and its place in the sidebar, and its heading's (0057).
+        arrange::apply(&config, &list, &mut s.queues);
         // The cards' live dot: file times only, about a millisecond for 50 sessions.
         reader.set_live_secs(settings.live_secs());
         work::mark_live(&mut s.tasks, &reader, s.now);
@@ -1283,6 +1286,57 @@ async fn set_project_category(
     .await
 }
 
+/// Set a project's colour (0057), by its key: one of `arrange::COLOURS`, or "" for none.
+#[tauri::command]
+async fn set_project_colour(
+    handle: tauri::AppHandle,
+    key: String,
+    colour: String,
+) -> Result<(), String> {
+    blocking(move || {
+        let app = handle.state::<AppState>();
+        edit_config(&app, |c| {
+            known_key(c, &key)?;
+            arrange::set_colour(c, &key, &colour)
+        })
+    })
+    .await
+}
+
+/// Keep the sidebar's order as the window shows it after a drag or ⌥↑/⌥↓ (0057): the projects by
+/// key and the headings, first to last, and the project that moved under another heading, if one
+/// did (`arrange::arrange`).
+#[tauri::command]
+async fn arrange_projects(
+    handle: tauri::AppHandle,
+    order: Vec<String>,
+    categories: Vec<String>,
+    moved: Option<arrange::Moved>,
+) -> Result<(), String> {
+    blocking(move || {
+        let app = handle.state::<AppState>();
+        edit_config(&app, |c| {
+            let list = projects::list(&base(), c);
+            arrange::arrange(c, &list, &order, &categories, moved.as_ref())
+        })
+    })
+    .await
+}
+
+/// Rename a sidebar heading (0057): every project under it goes under the new name, which may be
+/// another heading's, and then the two are one (`arrange::rename_category`).
+#[tauri::command]
+async fn rename_category(handle: tauri::AppHandle, from: String, to: String) -> Result<(), String> {
+    blocking(move || {
+        let app = handle.state::<AppState>();
+        edit_config(&app, |c| {
+            let list = projects::list(&base(), c);
+            arrange::rename_category(c, &list, &from, &to)
+        })
+    })
+    .await
+}
+
 /// The window's title for the project it shows, named by its name ("all" for All): "<label> —
 /// Muster", or "Muster".
 #[tauri::command]
@@ -1331,6 +1385,8 @@ async fn remove_project(handle: tauri::AppHandle, key: String) -> Result<(), Str
             c.names.remove(&key);
             c.labels.remove(&key);
             c.categories.remove(&key);
+            c.colours.remove(&key);
+            c.order.retain(|k| k != &key);
             c.hidden.retain(|h| h != &key);
             Ok(())
         })
@@ -1374,6 +1430,9 @@ pub fn run() {
             create_project,
             set_project_label,
             set_project_category,
+            set_project_colour,
+            arrange_projects,
+            rename_category,
             show_project_title,
             set_project_prefix,
             hide_project,

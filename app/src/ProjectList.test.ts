@@ -1,7 +1,10 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import ProjectList, { ActivityLine, labelToSave, OrderChips, SideLabelEdit, SumsLine } from "./ProjectList";
+import appSource from "./App.tsx?raw";
+import ProjectList, { ActivityLine, labelToSave, OrderChips, type ProjectEdits, SideLabelEdit, SumsLine } from "./ProjectList";
+import { ColourDot, Swatches } from "./ProjectSwatches";
+import { cleanHeading, HeadingEdit, HeadingFrame, NewCategory, SideRow, stepOf } from "./SidebarProjects";
 import { type DisplayMode, Mode } from "./modes";
 import type { ProjectActivity, Sums } from "./activity";
 import type { Activity, QueueInfo, Task } from "./types";
@@ -74,9 +77,9 @@ describe("the order chips", () => {
   it("are all on screen, the current one pressed", () => {
     const html = renderToStaticMarkup(createElement(OrderChips, { value: "az", onChange: () => {} }));
     expect(html).toContain('role="group" aria-label="Order projects"');
-    expect(html.match(/<button[^>]*>([^<]*)<\/button>/g)?.map(plain)).toEqual(["Working", "A–Z", "Needs you"]);
+    expect(html.match(/<button[^>]*>([^<]*)<\/button>/g)?.map(plain)).toEqual(["Working", "A–Z", "Needs you", "Mine"]);
     expect(html.match(/aria-pressed="true"[^>]*class="ui-pill ui-pill--on">([^<]*)</)?.[1]).toBe("A–Z");
-    expect(html.match(/aria-pressed="false"/g)).toHaveLength(2);
+    expect(html.match(/aria-pressed="false"/g)).toHaveLength(3);
   });
 });
 
@@ -168,7 +171,7 @@ describe("labels and categories in the sidebar (0044)", () => {
   const render = (mode: DisplayMode = "adhd") =>
     renderToStaticMarkup(createElement(Mode.Provider, { value: mode }, createElement(ProjectList, { queues, tasks, notes: [], activity: [], now: NOW, current: "all", onPick: () => {}, onLabel: async () => {} })));
   const rows = (html: string) => [...html.matchAll(/<span class="side-name"[^>]*>([^<]*)<\/span>/g)].map((m) => m[1]);
-  const heads = (html: string) => [...html.matchAll(/<div class="side-cat">([\s\S]*?)<\/div>/g)].map((m) => plain(m[1].replace(/></g, "> <")).replace(/\s+/g, " ").trim());
+  const heads = (html: string) => [...html.matchAll(/<div class="side-cat"[^>]*>([\s\S]*?)<\/div>/g)].map((m) => plain(m[1].replace(/></g, "> <")).replace(/\s+/g, " ").trim());
 
   afterEach(() => vi.unstubAllGlobals());
 
@@ -177,7 +180,7 @@ describe("labels and categories in the sidebar (0044)", () => {
     expect(heads(html)).toEqual(["Apps 1 1", "Tools 1 2 working 3", "Other 2"]);
     expect(rows(html)).toEqual(["All", "Alpha app", "zeta", "Muster", "beta"]);
     // Each heading wraps its own rows.
-    expect(html).toMatch(/<div class="side-group" role="group" aria-label="Tools"><div class="side-cat">/);
+    expect(html).toMatch(/<div class="side-group" role="group" aria-label="Tools"><div class="side-cat" data-heading="Tools"/);
   });
   it("says each heading's totals in its titles: tasks, projects, needs you and working", () => {
     const html = render();
@@ -218,5 +221,134 @@ describe("a label set in place in the sidebar (0044)", () => {
     expect(labelToSave("  muster ", "muster")).toBe("");
     expect(labelToSave("Muster", "muster")).toBe("Muster");
     expect(labelToSave("", "muster")).toBe("");
+  });
+});
+
+describe("the sidebar arranged in place (0057)", () => {
+  const queues: QueueInfo[] = [
+    { name: "alpha", path: "/p/alpha/tasks", counts: { ready: 1 }, label: "Alpha app", category: "Apps", colour: "lime", rank: 2, categoryRank: 1 },
+    { name: "zeta", path: "/p/zeta/tasks", counts: { ready: 1 }, label: "zeta", category: "Tools", rank: 0, categoryRank: 0 },
+    { name: "muster", path: "/p/muster/tasks", counts: { ready: 1 }, label: "Muster", category: "Apps", colour: "orchid", rank: 1, categoryRank: 1 },
+    // Never placed: after the placed ones, and its heading after the placed headings.
+    { name: "beta", path: "/p/beta/tasks", counts: { ready: 2 } },
+  ];
+  const tasks = [task({ queue: "zeta", id: "0001", stage: "building", claimedBy: "zeta/wt-a", live: true }), task({ queue: "beta", id: "0001" })];
+  const edits: ProjectEdits = { arrange: async () => {}, renameCategory: async () => {}, colour: async () => {} };
+  // `null` for no way to save.
+  const render = (mode: DisplayMode = "adhd", edit: ProjectEdits | null = edits) =>
+    renderToStaticMarkup(createElement(Mode.Provider, { value: mode }, createElement(ProjectList, { queues, tasks, notes: [], activity: [], now: NOW, current: "all", onPick: () => {}, onLabel: async () => {}, edit: edit ?? undefined })));
+  const rows = (html: string) => [...html.matchAll(/<span class="side-name"[^>]*>([^<]*)<\/span>/g)].map((m) => m[1]);
+  const headings = (html: string) => [...html.matchAll(/<div class="side-cat[^"]*" data-heading="([^"]*)"/g)].map((m) => m[1]);
+  const pressedChip = (html: string) => html.match(/aria-pressed="true"[^>]*class="ui-pill ui-pill--on">([^<]*)</)?.[1];
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("in Mine order, shows the owner's headings and projects in their places, the rest after", () => {
+    vi.stubGlobal("localStorage", { getItem: () => "mine" });
+    const html = render();
+    expect(pressedChip(html)).toBe("Mine");
+    expect(headings(html)).toEqual(["Tools", "Apps", "Other"]);
+    expect(rows(html)).toEqual(["All", "zeta", "Muster", "Alpha app", "beta"]);
+  });
+  it("keeps the owner's headings in every order; the chips order the projects under them", () => {
+    vi.stubGlobal("localStorage", { getItem: () => "az" });
+    const html = render();
+    expect(headings(html)).toEqual(["Tools", "Apps", "Other"]);
+    expect(rows(html)).toEqual(["All", "zeta", "Alpha app", "Muster", "beta"]);
+  });
+  it("makes every project row draggable, and says ⌥↑ ⌥↓ move it", () => {
+    const html = render();
+    expect(html).toContain('<div class="side-row" data-key="/p/alpha/tasks" draggable="true">');
+    expect(html.match(/<button class="side-item"[^>]*aria-keyshortcuts="Alt\+ArrowUp Alt\+ArrowDown"/g)).toHaveLength(4);
+    // All isn't a project: it doesn't move.
+    expect(html).not.toContain('data-key="all"');
+  });
+  it("makes every heading focusable and draggable, says how to move and rename it", () => {
+    const html = render();
+    expect(html).toContain('<div class="side-cat" data-heading="Apps" tabindex="0" role="button" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" aria-label="Apps, category heading, 2 projects: ↩ renames it, ⌥↑ ⌥↓ move it" title="Double-click or ↩ to rename; drag it, or ⌥↑ ⌥↓, to move it with its projects" draggable="true">');
+    expect(html).toContain('aria-label="Tools, category heading, 1 project: ↩ renames it, ⌥↑ ⌥↓ move it"');
+  });
+  it("puts each project's colour as a dot at the left of its row, a button that lays the colours out", () => {
+    const html = render();
+    expect(html).toContain('<button type="button" class="side-swatch-dot" data-colour="lime" aria-expanded="false" aria-label="Colour for Alpha app: Lime. Click to choose" title="Colour: Lime. Click to choose"></button>');
+    expect(html).toContain('<button type="button" class="side-swatch-dot" aria-expanded="false" aria-label="Colour for zeta: no colour. Click to choose"');
+    // The dot comes before the row's name.
+    const alpha = html.slice(html.indexOf('data-key="/p/alpha/tasks"'));
+    expect(alpha.indexOf("side-swatch-dot")).toBeLessThan(alpha.indexOf('class="side-name"'));
+  });
+  it("offers + Category at the bottom, and a line a screen reader hears moves on", () => {
+    const html = render();
+    expect(html).toMatch(/<button type="button" title="A new heading: then drag a project onto it" class="ui-pill side-new-cat">\+ Category<\/button><p class="sr-only" role="status" aria-live="polite"><\/p><\/nav>$/);
+    // Focus narrows the sidebar: no + Category, but rows and headings still move, with their dots.
+    const focus = render("focus");
+    expect(focus).not.toContain("+ Category");
+    expect(focus).toContain('draggable="true"');
+    expect(focus).toContain('data-colour="lime"');
+  });
+  it("without a way to save, nothing moves: the dots only show the colour", () => {
+    const html = render("adhd", null);
+    expect(html).not.toContain("draggable");
+    expect(html).not.toContain("tabindex");
+    expect(html).not.toContain("+ Category");
+    expect(html).toContain('<i class="side-swatch-dot" data-colour="lime" title="Colour: Lime" aria-hidden="true"></i>');
+  });
+});
+
+describe("a project's colours, laid out in place (0057)", () => {
+  const swatches = (value: string, onClose?: () => void) => renderToStaticMarkup(createElement(Swatches, { name: "Muster", value, onPick: () => {}, onClose }));
+  it("are None and the palette as a group of buttons, the current one pressed", () => {
+    const html = swatches("tan", () => {});
+    expect(html).toMatch(/^<div class="swatches" role="group" aria-label="Colour for Muster">/);
+    expect([...html.matchAll(/aria-label="([^"]+)" title/g)].map((m) => m[1])).toEqual(["None", "Lime", "Orchid", "Pink", "Tan", "Mint"]);
+    expect(html.match(/aria-pressed="true"[^>]*aria-label="([^"]+)"/)?.[1]).toBe("Tan");
+    expect(html).toContain('<button type="button" class="swatch" data-colour="tan" aria-pressed="true" aria-label="Tan" title="Tan" autofocus=""></button>');
+    expect(swatches("")).toMatch(/<button type="button" class="swatch" aria-pressed="true" aria-label="None" title="None"><\/button>/);
+  });
+  it("as the row's dot: open says so", () => {
+    expect(renderToStaticMarkup(createElement(ColourDot, { name: "Muster", colour: "mint", open: true, onClick: () => {} }))).toContain('aria-expanded="true" aria-label="Colour for Muster: Mint. Click to choose"');
+  });
+  it("a row with its colours laid out shows them under it", () => {
+    const html = renderToStaticMarkup(createElement(SideRow, { rowKey: "/m", label: "Muster", colour: "pink", swatches: true, onDot: () => {}, onColour: () => {}, onFold: () => {}, children: createElement("b", null, "row") }));
+    expect(html).toMatch(/^<div class="side-row" data-key="\/m"><span class="side-row-line"><button[^>]*side-swatch-dot[^>]*aria-expanded="true"[^>]*><\/button><b>row<\/b><\/span><div class="swatches" role="group" aria-label="Colour for Muster">/);
+  });
+});
+
+describe("headings made and renamed in place (0057)", () => {
+  it("+ Category opens a field in its place", () => {
+    expect(renderToStaticMarkup(createElement(NewCategory, { onAdd: () => "" }))).toBe('<button type="button" title="A new heading: then drag a project onto it" class="ui-pill side-new-cat">+ Category</button>');
+    const open = renderToStaticMarkup(createElement(NewCategory, { onAdd: () => "", open: true }));
+    expect(open).toContain('<input class="side-label-input" autofocus="" maxLength="24" aria-label="New category" placeholder="New category"/>');
+    expect(plain(open).replace(/&#x27;/g, "'")).toContain("↩ makes it, Esc doesn't · then drag a project onto it");
+  });
+  it("a new heading has no projects yet: it says how to give it one, and Remove takes it away", () => {
+    const html = renderToStaticMarkup(createElement(HeadingFrame, { name: "Later", count: 0, fresh: true, onRename: () => {}, onRemove: () => {}, children: createElement("span", { className: "side-cat-name" }, "Later") }));
+    expect(html).toContain('aria-label="Later, category heading, new, no projects yet: ↩ renames it"');
+    expect(plain(html)).toContain("empty: drag a project here, or ⌥↓ the last one above");
+    expect(html).toContain('<button type="button" title="Take this new heading away" class="ui-pill side-cat-remove">Remove</button>');
+  });
+  it("renaming is a field in the heading's place with its name, at most 24 characters", () => {
+    const html = renderToStaticMarkup(createElement(HeadingEdit, { name: "Tools", onSave: async () => {}, onDone: () => {} }));
+    expect(html).toMatch(/^<div class="side-cat side-editing"><input class="side-label-input" autofocus="" maxLength="24" aria-label="Name of the heading Tools" placeholder="Tools" value="Tools"\/>/);
+    expect(plain(html).replace(/&#x27;/g, "'")).toContain("↩ renames, Esc keeps it · another heading's name joins the two");
+  });
+  it("cleans a heading's name as the core does: no control characters, trimmed, 24 at most, Other in any case", () => {
+    expect(cleanHeading("  Tools\u0007 ")).toBe("Tools");
+    expect(cleanHeading("é".repeat(30))).toBe("é".repeat(24));
+    expect(cleanHeading("oTHer")).toBe("Other");
+    expect(cleanHeading(" \n")).toBe("");
+  });
+  it("⌥↑ steps up, ⌥↓ down, a plain arrow neither", () => {
+    const ev = (key: string, altKey = true) => ({ key, altKey, metaKey: false, ctrlKey: false });
+    expect([stepOf(ev("ArrowUp")), stepOf(ev("ArrowDown")), stepOf(ev("ArrowUp", false)), stepOf(ev("Enter"))]).toEqual([-1, 1, null, null]);
+  });
+});
+
+describe("the window wires it (0057)", () => {
+  it("gives the sidebar its edits, and every place a project is named its colours", () => {
+    expect(appSource).toMatch(/<ProjectList [^\n]*edit=\{projectEdits\(refresh\)\} \/>/);
+    expect(appSource).toContain("const colours = useMemo(() => coloursOf(state?.queues ?? []), [colourText]);");
+    // Inside the labels' provider, around the whole window.
+    expect(appSource).toMatch(/<Labels\.Provider value=\{labels\}>\s*<ProjectColours\.Provider value=\{colours\}>\s*<div className="app shell">/);
+    expect(appSource).toMatch(/<\/ProjectColours\.Provider>\s*<\/Labels\.Provider>/);
   });
 });

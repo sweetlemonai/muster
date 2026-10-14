@@ -93,6 +93,7 @@ to have a solid color code"). `themes.ts` holds the values; tests keep them apar
 | magenta | High priority (a filled chip); normal is an outlined grey chip, low faint text | stages |
 | neutral grey, outlined | tags and types: labels, not states | |
 | muted text grey, outlined, with ⏸ | Paused (0045): a calm state, never a stage's fill or the blocked red | |
+| lime · orchid · pink · tan · mint, a small dot | A project's own colour (0057), by its name wherever it's named: an identity, not a state | stages, priority, needs you, blocked (a test keeps each 30 apart from all of them in every theme) |
 
 A stage colour only ever says a stage. Words carry everything else.
 

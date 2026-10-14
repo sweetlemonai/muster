@@ -4,6 +4,23 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Projects arranged in the sidebar: drag, categories in place, a colour each (mu-57)
+**Did:** drag (and ⌥↑/⌥↓) reorders projects and headings, with a Mine order chip picked on the
+first move; drop on a heading moves a project, "+ Category" and an in-place rename edit headings; a
+colour dot per project from an inline five-swatch row, shown wherever the project is named. Saved
+in projects.json (`arrange.rs`); Settings › Projects edits the same. Manual (In the app,
+shortcuts), DESIGN.md colour code, AS_BUILT updated.
+**Decided:** heading order holds under every chip; the first move starts from the order on screen
+(a drag in A–Z replaces an earlier Mine order); a new empty heading isn't saved until it gets a
+project ("empty categories disappear"); renaming onto an existing heading merges; only five
+colours, because no blue, cyan, violet, amber, orange, green or red keeps the distance from every
+theme's stage, priority and accent colours.
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; vitest
+1405, cargo 591 lib + integration; the palette distance test across every theme and accent.
+**Open:** native drag in the running WKWebView, the drop lines and the look of the dots aren't
+checked by hand; the drag and key handlers have no DOM tests (the move logic and markup do).
+`muster projects` doesn't print the colour.
+
 ## 2026-10-14 — A review can always send a task back; the sent-back one comes first (mu-66)
 **Fixed:** a review that found something couldn't send the task back to Building while its builder
 held the next task (one claim per holder; seen on mu-59) → a Testing → Building change skips that

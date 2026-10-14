@@ -1,0 +1,161 @@
+import { describe, expect, it } from "vitest";
+import { grouped, headingRanks, type Layout, layoutOf, orderHeadings, planMove, sidebarGroups } from "./projectOrder";
+import { byCategory } from "./labels";
+
+// The sidebar's own arrangement (0057): headings and projects as the owner puts them, by drag or
+// ⌥↑/⌥↓, and what the core is asked to keep.
+
+const LAYOUT: Layout = [
+  { name: "Apps", keys: ["/a", "/b", "/c"] },
+  { name: "Tools", keys: ["/t"] },
+  { name: "Other", keys: ["/o1", "/o2"] },
+];
+const names: Record<string, string> = { "/a": "Alpha", "/b": "Beta", "/c": "Gamma", "/t": "Tee", "/o1": "One", "/o2": "Two", "/n": "New" };
+const label = (k: string) => names[k] ?? k;
+const shape = (l: Layout) => l.map((g) => `${g.name}: ${g.keys.join(" ")}`);
+
+describe("headings in the owner's order (0057)", () => {
+  const row = (key: string, category: string, categoryRank: number | null = null) => ({ key, category, categoryRank });
+  it("put the placed headings first, by place, then the rest A–Z with Other last", () => {
+    const rows = [row("/a", "Apps"), row("/t", "Tools", 1), row("/o", "Other", 0), row("/z", "Zed"), row("/b", "Books")];
+    expect(sidebarGroups(rows, []).map((g) => g.name)).toEqual(["Other", "Tools", "Apps", "Books", "Zed"]);
+    expect([...headingRanks(rows)]).toEqual([["Tools", 1], ["Other", 0]]);
+    // Nothing placed: as before 0057, A–Z with Other last.
+    expect(sidebarGroups([row("/o", "Other"), row("/z", "Zed"), row("/a", "Apps")], []).map((g) => g.name)).toEqual(["Apps", "Zed", "Other"]);
+  });
+  it("keep each heading's rows in the order given", () => {
+    const rows = [row("/2", "Apps"), row("/1", "Apps"), row("/t", "Tools", 0)];
+    expect(sidebarGroups(rows, []).map((g) => [g.name, g.rows.map((r) => r.key)])).toEqual([["Tools", ["/t"]], ["Apps", ["/2", "/1"]]]);
+  });
+  it("add a new, still empty heading last, once, and never over one that has projects", () => {
+    const rows = [row("/a", "Apps")];
+    expect(sidebarGroups(rows, ["Later", "Apps", "Later"]).map((g) => [g.name, g.rows.length])).toEqual([["Apps", 1], ["Later", 0]]);
+  });
+  it("orderHeadings leaves byCategory's order for headings without a place", () => {
+    const groups = byCategory([{ category: "b" }, { category: "a" }]);
+    expect(orderHeadings(groups, new Map()).map((g) => g.name)).toEqual(["a", "b"]);
+    expect(orderHeadings(groups, new Map([["b", 3]])).map((g) => g.name)).toEqual(["b", "a"]);
+  });
+});
+
+describe("rows regrouped as a move says, while it's saved (0057)", () => {
+  const rows = [{ key: "/a", category: "Apps" }, { key: "/b", category: "Apps" }, { key: "/t", category: "Tools" }, { key: "/x", category: "Extra" }].map((r) => ({ ...r, categoryRank: null }));
+  it("in the move's headings and order; a row it doesn't have under its own heading, at the end", () => {
+    const g = grouped(rows, [{ name: "Tools", keys: ["/b", "/t"] }, { name: "Apps", keys: ["/a", "/gone"] }]);
+    expect(g.map((x) => [x.name, x.rows.map((r) => r.key)])).toEqual([["Tools", ["/b", "/t"]], ["Apps", ["/a"]], ["Extra", ["/x"]]]);
+  });
+  it("leaves out a heading the move emptied", () => {
+    expect(grouped(rows.slice(0, 2), [{ name: "Apps", keys: [] }, { name: "Tools", keys: ["/a", "/b"] }]).map((x) => x.name)).toEqual(["Tools"]);
+  });
+  it("layoutOf reads a layout back from groups", () => {
+    expect(layoutOf(sidebarGroups(rows, []))).toEqual([
+      { name: "Apps", keys: ["/a", "/b"] },
+      { name: "Extra", keys: ["/x"] },
+      { name: "Tools", keys: ["/t"] },
+    ]);
+  });
+});
+
+describe("a project dragged (0057)", () => {
+  it("before or after another row, in its heading: the order to keep, and Mine is chosen", () => {
+    const plan = planMove(LAYOUT, { kind: "project", key: "/c", to: { before: "/a" } }, label)!;
+    expect(shape(plan.layout)).toEqual(["Apps: /c /a /b", "Tools: /t", "Other: /o1 /o2"]);
+    expect(plan.order).toEqual(["/c", "/a", "/b", "/t", "/o1", "/o2"]);
+    expect(plan.categories).toEqual(["Apps", "Tools", "Other"]);
+    expect(plan.moved).toBeNull();
+    expect(plan.chip).toBe("mine");
+    expect(plan.said).toBe("Gamma moved to 1 of 3 in Apps");
+    expect(shape(planMove(LAYOUT, { kind: "project", key: "/a", to: { after: "/b" } }, label)!.layout)[0]).toBe("Apps: /b /a /c");
+  });
+  it("onto another heading's row or the heading itself: moved under it, the emptied heading gone", () => {
+    const plan = planMove(LAYOUT, { kind: "project", key: "/t", to: { after: "/o1" } }, label)!;
+    expect(shape(plan.layout)).toEqual(["Apps: /a /b /c", "Other: /o1 /t /o2"]);
+    expect(plan.moved).toEqual({ key: "/t", category: "Other" });
+    expect(plan.categories).toEqual(["Apps", "Other"]);
+    expect(plan.said).toBe("Tee moved to 2 of 3 in Other");
+    const into = planMove(LAYOUT, { kind: "project", key: "/b", to: { into: "Tools" } }, label)!;
+    expect(shape(into.layout)).toEqual(["Apps: /a /c", "Tools: /b /t", "Other: /o1 /o2"]);
+    expect(into.moved).toEqual({ key: "/b", category: "Tools" });
+  });
+  it("onto a new, empty heading: it has its first project, and is kept last", () => {
+    const withNew = [...LAYOUT, { name: "Later", keys: [] }];
+    const plan = planMove(withNew, { kind: "project", key: "/a", to: { into: "Later" } }, label)!;
+    expect(shape(plan.layout)).toEqual(["Apps: /b /c", "Tools: /t", "Other: /o1 /o2", "Later: /a"]);
+    expect(plan.categories).toEqual(["Apps", "Tools", "Other", "Later"]);
+    expect(plan.moved).toEqual({ key: "/a", category: "Later" });
+    // A heading the layout doesn't have yet is made, last.
+    expect(shape(planMove(LAYOUT, { kind: "project", key: "/a", to: { into: "Fresh" } }, label)!.layout).at(-1)).toBe("Fresh: /a");
+  });
+  it("changes nothing dropped on itself, back in its own place, or for a project it doesn't know", () => {
+    expect(planMove(LAYOUT, { kind: "project", key: "/b", to: { before: "/b" } }, label)).toBeNull();
+    expect(planMove(LAYOUT, { kind: "project", key: "/b", to: { after: "/a" } }, label)).toBeNull();
+    expect(planMove(LAYOUT, { kind: "project", key: "/a", to: { into: "Apps" } }, label)).toBeNull();
+    expect(planMove(LAYOUT, { kind: "project", key: "/nope", to: { before: "/a" } }, label)).toBeNull();
+    expect(planMove(LAYOUT, { kind: "project", key: "/a", to: { before: "/nope" } }, label)).toBeNull();
+  });
+  it("leaves the layout it was given alone", () => {
+    const copy = JSON.stringify(LAYOUT);
+    planMove(LAYOUT, { kind: "project", key: "/t", to: { into: "Apps" } }, label);
+    expect(JSON.stringify(LAYOUT)).toBe(copy);
+  });
+});
+
+describe("a heading dragged, its projects with it (0057)", () => {
+  it("before another heading, or last", () => {
+    const plan = planMove(LAYOUT, { kind: "heading", name: "Other", before: "Apps" }, label)!;
+    expect(shape(plan.layout)).toEqual(["Other: /o1 /o2", "Apps: /a /b /c", "Tools: /t"]);
+    expect(plan.order).toEqual(["/o1", "/o2", "/a", "/b", "/c", "/t"]);
+    expect(plan.categories).toEqual(["Other", "Apps", "Tools"]);
+    expect(plan.moved).toBeNull();
+    expect(plan.chip).toBe("mine");
+    expect(plan.said).toBe("Other moved to 1 of 3");
+    expect(planMove(LAYOUT, { kind: "heading", name: "Apps", before: null }, label)!.categories).toEqual(["Tools", "Other", "Apps"]);
+  });
+  it("changes nothing in its own place, or for a heading it doesn't know", () => {
+    expect(planMove(LAYOUT, { kind: "heading", name: "Tools", before: "Other" }, label)).toBeNull();
+    expect(planMove(LAYOUT, { kind: "heading", name: "Apps", before: "Apps" }, label)).toBeNull();
+    expect(planMove(LAYOUT, { kind: "heading", name: "Other", before: null }, label)).toBeNull();
+    expect(planMove(LAYOUT, { kind: "heading", name: "Nope", before: "Apps" }, label)).toBeNull();
+  });
+});
+
+describe("⌥↑ and ⌥↓ (0057)", () => {
+  const step = (key: string, by: -1 | 1) => planMove(LAYOUT, { kind: "step-project", key, by }, label);
+  it("move a project one place in its heading", () => {
+    expect(shape(step("/b", -1)!.layout)[0]).toBe("Apps: /b /a /c");
+    expect(shape(step("/b", 1)!.layout)[0]).toBe("Apps: /a /c /b");
+    expect(step("/b", 1)!.chip).toBe("mine");
+    expect(step("/b", 1)!.moved).toBeNull();
+  });
+  it("past its heading's edge: to the end of the heading above, or the top of the one below", () => {
+    const up = step("/t", -1)!;
+    expect(shape(up.layout)).toEqual(["Apps: /a /b /c /t", "Other: /o1 /o2"]);
+    expect(up.moved).toEqual({ key: "/t", category: "Apps" });
+    expect(up.said).toBe("Tee moved to 4 of 4 in Apps");
+    const down = step("/c", 1)!;
+    expect(shape(down.layout)).toEqual(["Apps: /a /b", "Tools: /c /t", "Other: /o1 /o2"]);
+    expect(down.moved).toEqual({ key: "/c", category: "Tools" });
+  });
+  it("do nothing at the top of the first heading or the bottom of the last", () => {
+    expect(step("/a", -1)).toBeNull();
+    expect(step("/o2", 1)).toBeNull();
+  });
+  it("go into a new, empty heading below the last", () => {
+    const withNew = [...LAYOUT, { name: "Later", keys: [] }];
+    const plan = planMove(withNew, { kind: "step-project", key: "/o2", by: 1 }, label)!;
+    expect(shape(plan.layout).slice(-2)).toEqual(["Other: /o1", "Later: /o2"]);
+    expect(plan.moved).toEqual({ key: "/o2", category: "Later" });
+  });
+  it("move a heading past the one above or below, and do nothing at the ends", () => {
+    const up = planMove(LAYOUT, { kind: "step-heading", name: "Tools", by: -1 }, label)!;
+    expect(up.categories).toEqual(["Tools", "Apps", "Other"]);
+    expect(up.order).toEqual(["/t", "/a", "/b", "/c", "/o1", "/o2"]);
+    expect(planMove(LAYOUT, { kind: "step-heading", name: "Tools", by: 1 }, label)!.categories).toEqual(["Apps", "Other", "Tools"]);
+    expect(planMove(LAYOUT, { kind: "step-heading", name: "Apps", by: -1 }, label)).toBeNull();
+    expect(planMove(LAYOUT, { kind: "step-heading", name: "Other", by: 1 }, label)).toBeNull();
+  });
+  it("don't count a new, empty heading among the ones kept", () => {
+    const withNew: Layout = [{ name: "Later", keys: [] }, ...LAYOUT];
+    expect(planMove(withNew, { kind: "step-project", key: "/a", by: 1 }, label)!.categories).toEqual(["Apps", "Tools", "Other"]);
+  });
+});

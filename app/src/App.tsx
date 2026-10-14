@@ -7,7 +7,8 @@ import { keyIndex } from "./taskKey";
 import { Labels, labelsOf } from "./labels";
 import type { Note, State, Task } from "./types";
 import { backlogColumn, backlogNotes, hiddenCount, NoteCard, noteKey, QuickAdd } from "./Backlog";
-import ProjectList from "./ProjectList";
+import ProjectList, { projectEdits } from "./ProjectList";
+import { coloursOf, ProjectColours } from "./projectColours";
 import ProjectName from "./ProjectName";
 import NewTask from "./NewTask";
 import Card from "./Card";
@@ -300,6 +301,9 @@ export default function App() {
   // project is named; the window's title says the one shown.
   const labelText = (state?.queues ?? []).map((q) => `${q.name}\n${q.label ?? ""}`).join("\n");
   const labels = useMemo(() => labelsOf(state?.queues ?? []), [labelText]);
+  // And each one's colour (0057), the dot wherever it's named.
+  const colourText = (state?.queues ?? []).map((q) => `${q.name}\n${q.colour ?? ""}`).join("\n");
+  const colours = useMemo(() => coloursOf(state?.queues ?? []), [colourText]);
   useEffect(() => {
     api.showProjectTitle(queue).catch((e: unknown) => console.warn("Can't set the window's title:", e));
   }, [queue, labelText]);
@@ -379,10 +383,11 @@ export default function App() {
     <Machine.Provider value={machine}>
     <Mode.Provider value={modes.mode}>
     <Labels.Provider value={labels}>
+    <ProjectColours.Provider value={colours}>
     <div className="app shell">
       <aside className="sidebar" aria-label="Projects" data-sidebar={sidebarLook} style={{ width: sidebarWidth }}>
         <div className="brand"><img src={logo} alt="" width={22} height={22} /> Muster</div>
-        <ProjectList queues={state?.queues ?? []} tasks={state?.tasks ?? []} notes={allNotes} activity={state?.activity ?? []} now={now} current={queue} onPick={setQueue} onLabel={(k, label) => api.setProjectLabel(k, label).then(refresh)} />
+        <ProjectList queues={state?.queues ?? []} tasks={state?.tasks ?? []} notes={allNotes} activity={state?.activity ?? []} now={now} current={queue} onPick={setQueue} onLabel={(k, label) => api.setProjectLabel(k, label).then(refresh)} edit={projectEdits(refresh)} />
         <button className="side-add" onClick={() => openSettings("projects")} title="New or existing project queue, in Settings">+ Project</button>
       </aside>
       <Splitter {...sidebarRange(win)} width={sidebarWidth} side="left" label="Projects width" onWidth={(w) => sideSplit.set(clampSidebar(w, pageWidth()))} onDrag={(w) => sideSplit.drag(clampSidebar(w, pageWidth()))} onDragEnd={sideSplit.settle} onReset={sideSplit.reset} />
@@ -600,6 +605,7 @@ export default function App() {
       </div>
       </div>
     </div>
+    </ProjectColours.Provider>
     </Labels.Provider>
     </Mode.Provider>
     </Machine.Provider>

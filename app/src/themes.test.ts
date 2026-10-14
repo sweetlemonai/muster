@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import arrangeRs from "../src-tauri/src/arrange.rs?raw";
 import css from "./styles.css?raw";
-import { ACCENTS, apply, buildingColour, OLD_TOKEN_NAMES, CARD_LOOKS, colourDistance, SAME_AT_A_GLANCE, CARD_TINT, cardChoice, contrast, DEFAULT_CHOICE, edgeColour, HUMAN_COLOUR, HUMAN_HATCH, mix, NEEDS_COLOUR, PRIORITY_COLOURS, resolve, STAGE_COLOURS, THEMES, variables } from "./themes";
+import { ACCENTS, apply, buildingColour, OLD_TOKEN_NAMES, PROJECT_COLOURS, CARD_LOOKS, colourDistance, SAME_AT_A_GLANCE, CARD_TINT, cardChoice, contrast, DEFAULT_CHOICE, edgeColour, HUMAN_COLOUR, HUMAN_HATCH, mix, NEEDS_COLOUR, PRIORITY_COLOURS, resolve, STAGE_COLOURS, THEMES, variables } from "./themes";
 
 describe("every theme and accent pair is readable (WCAG AA)", () => {
   for (const t of THEMES) {
@@ -453,4 +454,45 @@ describe("a block's look (0060): the owner's in needs-you orange, the rest neutr
       });
     }
   }
+});
+
+describe("project colours (0057): a dot where a project is named, never read as a stage or a priority", () => {
+  // Every colour that means something on a card or row, as it shows in a theme with an accent:
+  // the stage, blocked and needs-you fills and their edges, the owner's gold and the priorities.
+  const meanings = (t: (typeof THEMES)[number], a: (typeof ACCENTS)[number]) => {
+    const v = variables(t, a);
+    return [...Object.entries(v).filter(([k]) => /^--(st|edge|pri|edge-pri)-/.test(k)), ["--st-human", HUMAN_COLOUR] as const];
+  };
+  it("are a handful, each with a name, a shade per mode and the id projects.json keeps (arrange.rs COLOURS)", () => {
+    expect(PROJECT_COLOURS.map((c) => c.id)).toEqual(["lime", "orchid", "pink", "tan", "mint"]);
+    const rust = /pub const COLOURS: \[&str; \d+\] = \[([^\]]*)\]/.exec(arrangeRs)?.[1] ?? "";
+    expect([...rust.matchAll(/"([a-z]+)"/g)].map((m) => m[1])).toEqual(PROJECT_COLOURS.map((c) => c.id));
+    for (const c of PROJECT_COLOURS) {
+      expect(c.name, c.id).toMatch(/^[A-Z][a-z]+$/);
+      expect([c.dark, c.light], c.id).toEqual([expect.stringMatching(/^#[0-9A-F]{6}$/), expect.stringMatching(/^#[0-9A-F]{6}$/)]);
+    }
+  });
+  for (const t of THEMES) {
+    for (const a of ACCENTS) {
+      it(`${t.name} × ${a.name}: each reads apart from every stage, blocked, needs-you, gold and priority colour at a glance`, () => {
+        const v = variables(t, a);
+        for (const c of PROJECT_COLOURS) {
+          const shown = v[`--proj-${c.id}`];
+          expect(shown, c.id).toBe(c[t.mode]);
+          for (const [k, m] of meanings(t, a)) expect(colourDistance(shown, m), `${c.id} vs ${k}`).toBeGreaterThanOrEqual(SAME_AT_A_GLANCE);
+        }
+      });
+    }
+    it(`${t.name}: each stands out at 3:1 where a dot sits, and reads apart from the others`, () => {
+      const v = variables(t, ACCENTS[0]);
+      for (const c of PROJECT_COLOURS) {
+        for (const s of [t.bg, t.surface, t.popover]) expect(contrast(c[t.mode], s), `${c.id} on ${s}`).toBeGreaterThanOrEqual(3);
+        for (const d of PROJECT_COLOURS) if (d !== c) expect(colourDistance(c[t.mode], d[t.mode]), `${c.id} vs ${d.id}`).toBeGreaterThanOrEqual(SAME_AT_A_GLANCE);
+      }
+      expect(Object.keys(v).filter((k) => k.startsWith("--proj-"))).toHaveLength(PROJECT_COLOURS.length);
+    });
+  }
+  it("the CSS gives each its own rule, from the theme's variable", () => {
+    for (const c of PROJECT_COLOURS) expect(css, c.id).toContain(`[data-colour="${c.id}"] { --proj: var(--proj-${c.id}); }`);
+  });
 });
