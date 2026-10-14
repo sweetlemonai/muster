@@ -4,6 +4,16 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Notifications latch "sessions known" per Claude account (mu-69)
+**Fixed:** with two accounts, one whose first `claude agents` read failed, its sessions already
+waiting at launch were posted as new once it read → the latch was one bool, set by any account's
+good read (`agents::known`) → `known` now returns the accounts read (`Known`, every one when none
+is wanted), `Seen` keeps their union, and an input `Item` carries its session's account from the
+holder's stamp (`agents::account_of`): it's news only when its own account was known before.
+AS_BUILT's notifications paragraph and the manual say so.
+**Verified:** `cargo test notify` and `cargo test agents` green; the old any-account rule fails
+both new tests (per-account `decide`, and `after_read` with cc-hg and cc-mg stamps). Gate below.
+
 ## 2026-10-14 — Shaping checks the cross-cutting lenses by default, unless a project opts out (mu-76)
 **Did:** `muster shape`'s brief lists every lens (accessibility, i18n and RTL, themes, payments and
 entitlements, architecture, security, privacy, performance, tests, docs) with what to write, and the

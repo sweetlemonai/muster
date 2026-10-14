@@ -1269,9 +1269,10 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   New items are posted once, several in one notification (the first three named, the rest
   counted; each line at most 200 characters). Taken as seen without a notification: everything
   on the first read after start, after Off, and in a project the last read didn't have (no
-  flood); a session waiting for input until a read before knew the sessions (`agents::known`:
-  some account read, or none wanted), so one waiting at launch isn't posted when the first
-  `claude agents` read lands; and what the window shows while it has the focus (its project, or
+  flood); a session waiting for input until a read before knew its own account's sessions
+  (`agents::known`: each account read, or every one when none is wanted; latched per account in
+  `Seen`, task 0069), so one waiting at launch isn't posted when its account's first good
+  `claude agents` read lands, even when another account read fine earlier; and what the window shows while it has the focus (its project, or
   All; the window tells the core with `show_project_title`). News from another project is
   neither posted nor seen while the window has the focus (`mac-notification-sys` shows no banner
   while the app is frontmost) and is posted at the first read once it hasn't. The keys are kept

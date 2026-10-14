@@ -15,7 +15,7 @@
 use crate::queue::Task;
 use crate::session;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -367,11 +367,58 @@ pub fn read_all(fetch: &Fetch, accounts: &[String]) -> Snapshot {
     snap
 }
 
-/// Whether `snap` says what the sessions of `tasks` are doing: nothing is wanted of Claude Code
-/// (no session to know of), or it read some account. False before the first read lands, so a
-/// session waiting for input then isn't known to wait yet.
-pub fn known(tasks: &[Task], snap: &Snapshot) -> bool {
-    wanted(tasks).is_empty() || snap.accounts.iter().any(|(_, r)| r.is_ok())
+/// The accounts whose sessions a read knows (0069): every one, or those named.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Known {
+    /// Nothing was wanted of Claude Code: no session to know of, so any that comes is known.
+    pub every: bool,
+    /// The accounts read.
+    pub accounts: HashSet<String>,
+}
+
+impl Known {
+    /// Every account is known.
+    pub fn every() -> Self {
+        Known {
+            every: true,
+            accounts: HashSet::new(),
+        }
+    }
+
+    /// Does it know the sessions of `account`?
+    pub fn knows(&self, account: &str) -> bool {
+        self.every || self.accounts.contains(account)
+    }
+
+    /// Takes in what `other` knows too: known once stays known.
+    pub fn add(&mut self, other: &Known) {
+        self.every |= other.every;
+        self.accounts.extend(other.accounts.iter().cloned());
+    }
+}
+
+/// Which accounts `snap` says the sessions of `tasks` of: every one when nothing is wanted of
+/// Claude Code (no session to know of), else each account it read. None before the first read
+/// lands, nor for an account that couldn't be read, so a session waiting for input there isn't
+/// known to wait yet.
+pub fn known(tasks: &[Task], snap: &Snapshot) -> Known {
+    if wanted(tasks).is_empty() {
+        return Known::every();
+    }
+    Known {
+        every: false,
+        accounts: snap
+            .accounts
+            .iter()
+            .filter(|(_, r)| r.is_ok())
+            .map(|(a, _)| a.clone())
+            .collect(),
+    }
+}
+
+/// The Claude account of the session a state of `t` would come from (`stamp_of`), if any.
+pub fn account_of(t: &Task) -> Option<String> {
+    stamp_of(t).map(|s| s.account)
 }
 
 /// Who holds what, by session id: the claims (Ready and Building) and the Testing holds (`held-by`
@@ -1184,20 +1231,57 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
     }
 
     #[test]
-    fn the_sessions_are_known_once_an_account_was_read_or_when_none_is_wanted() {
+    fn the_sessions_are_known_per_account_read_or_every_one_when_none_is_wanted() {
         let tasks = vec![task("0001", "building", A)];
         let read = |r: Result<usize, &str>| Snapshot {
             states: HashMap::new(),
             accounts: vec![("hg".to_string(), r.map_err(String::from))],
         };
-        // Before the first read lands: not known.
-        assert!(!known(&tasks, &Snapshot::default()));
-        assert!(known(&tasks, &read(Ok(0))));
+        // Before the first read lands: none known.
+        assert_eq!(known(&tasks, &Snapshot::default()), Known::default());
+        let hg = known(&tasks, &read(Ok(0)));
+        assert!(hg.knows("hg") && !hg.every);
         // An account that couldn't be read says nothing of its sessions.
-        assert!(!known(&tasks, &read(Err("claude isn't installed"))));
-        // Nothing to read: no session waits, and that's known.
+        assert!(!known(&tasks, &read(Err("claude isn't installed"))).knows("hg"));
+        // Each account on its own: one read Ok doesn't make another known.
+        let two = Snapshot {
+            states: HashMap::new(),
+            accounts: vec![
+                ("hg".to_string(), Ok(1)),
+                ("mg".to_string(), Err("timed out".to_string())),
+            ],
+        };
+        let k = known(&tasks, &two);
+        assert!(k.knows("hg") && !k.knows("mg"));
+        // Nothing to read: no session waits, and that's known of every account.
         let unstamped = vec![task("0002", "building", "wt-unstamped")];
-        assert!(known(&unstamped, &Snapshot::default()));
+        assert!(known(&unstamped, &Snapshot::default()).knows("mg"));
+    }
+
+    #[test]
+    fn known_once_stays_known_and_every_takes_in_any_account() {
+        let mut k = Known::default();
+        k.add(&Known {
+            every: false,
+            accounts: ["hg".to_string()].into(),
+        });
+        k.add(&Known::default());
+        assert!(k.knows("hg") && !k.knows("mg"));
+        k.add(&Known::every());
+        assert!(k.knows("mg") && k.knows("hg"));
+    }
+
+    #[test]
+    fn a_task_names_its_sessions_account_only_where_a_state_applies() {
+        assert_eq!(
+            account_of(&task("0001", "building", "wt-d (session 22222222 · cc-hg)")).as_deref(),
+            Some("hg")
+        );
+        assert_eq!(account_of(&task("0002", "building", "wt-unstamped")), None);
+        assert_eq!(
+            account_of(&task("0003", "your-check", "qa (session 33333333 · cc-ih)")),
+            None
+        );
     }
 
     /// A source that counts its reads per account and answers `out`.
