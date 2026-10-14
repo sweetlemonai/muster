@@ -5,6 +5,7 @@
 // (modes.test.ts). Everything else, the colour code, no overlays and fixed places, is the same in
 // all three (docs/DESIGN.md).
 import { createContext, useContext } from "react";
+import { STAGES } from "./lib";
 
 export type DisplayMode = "adhd" | "standard" | "focus";
 export const DEFAULT_MODE: DisplayMode = "adhd";
@@ -168,3 +169,15 @@ export const columnTrack = (s: ColumnState) => (s === "open" ? `minmax(118px, ${
 /** A column's classes. A strip is `col-strip`, with `col-empty` or `folded`: never `empty`, the
  *  empty message's class, whose padding once pushed a strip out of its track. */
 export const columnClass = (stage: string, s: ColumnState) => `column col-${stage}${s === "folded" ? " col-strip folded" : s === "empty" ? " col-strip col-empty" : ""}`;
+
+/** The plain board's columns in their order: the Paused lane, then every stage. */
+export const BOARD_COLUMNS: readonly string[] = ["paused", ...STAGES.map((s) => s.id)];
+
+/** The plain project board (mu-83): each column's state from its fold, its count and whether it's
+ *  kept open with no cards, the grid's track list, and each column's classes. App draws exactly
+ *  this, so the board the owner looks at is the one the tests check. */
+export function plainBoard(fold: (id: string) => ColumnFold, count: (id: string) => number, keepOpen: (id: string) => boolean) {
+  const states = new Map(BOARD_COLUMNS.map((id) => [id, columnState(fold(id), count(id), keepOpen(id))]));
+  const state = (id: string): ColumnState => states.get(id) ?? "empty";
+  return { state, tracks: BOARD_COLUMNS.map((id) => columnTrack(state(id))).join(" "), className: (id: string) => columnClass(id, state(id)) };
+}

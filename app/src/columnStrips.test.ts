@@ -7,7 +7,8 @@ import { GroupedBoard } from "./Groups";
 import { groupItems, isWork } from "./levels";
 import { STAGES } from "./lib";
 import { ColumnHead } from "./ModeViews";
-import { columnClass, columnFold, columnState, columnTrack, look, MODES, OPEN_COLUMN_MAX, type ColumnState, type DisplayMode } from "./modes";
+import { columnClass, columnFold, columnState, columnTrack, look, MODES, OPEN_COLUMN_MAX, plainBoard, type ColumnState, type DisplayMode } from "./modes";
+import appSource from "./App.tsx?raw";
 import { PausedBand, PausedColumn } from "./PausedLane";
 import type { Task } from "./types";
 
@@ -140,5 +141,42 @@ describe("every mode draws the same anatomy", () => {
       const html = head({ empty: state === "empty", fold: columnFold(look("columns", id), "shaping", none) });
       expect(html, id).toMatch(/<(span|button)[^>]*class="(col-head|col-fold)"[^>]*>Shaping <small>empty<\/small>/);
     }
+  });
+});
+
+describe("the plain project board (review R1)", () => {
+  /** The braindump board the owner sent: Ready 66, Done 1, the rest empty; Backlog kept open. */
+  const counts: Record<string, number> = { ready: 66, done: 1 };
+  const board = (mode: DisplayMode) => plainBoard((id) => columnFold(look("columns", mode), id, none), (id) => counts[id] ?? 0, (id) => id === "backlog");
+  it("caps every open column and draws every empty one as a strip, in its order, Paused first", () => {
+    const max = `minmax(118px, ${OPEN_COLUMN_MAX}px)`;
+    for (const mode of ["adhd", "standard"] as const) {
+      expect(board(mode).tracks, mode).toBe(["44px", max, "44px", max, "44px", "44px", "44px", max].join(" "));
+      expect(board(mode).className("shaping"), mode).toBe("column col-shaping col-strip col-empty");
+      expect(board(mode).className("paused"), mode).toBe("column col-paused col-strip col-empty");
+      expect(board(mode).className("ready"), mode).toBe("column col-ready");
+    }
+    const focus = board("focus");
+    expect(focus.tracks).toBe(Array(8).fill("44px").join(" "));
+    expect(focus.className("ready")).toBe("column col-ready col-strip folded");
+    expect(focus.className("building")).toBe("column col-building col-strip col-empty");
+    expect(focus.state("paused")).toBe("folded");
+  });
+  it("is what App draws: its grid, the Paused lane's state and each column's classes come from it", () => {
+    expect(appSource).toContain("const plain = plainBoard(");
+    expect(appSource).toContain('<main className="board" style={{ gridTemplateColumns: plain.tracks }}>');
+    expect(appSource).toContain('state={plain.state("paused")}');
+    expect(appSource).toContain("<section key={c.id} className={plain.className(c.id)}>");
+    const board = appSource.slice(appSource.indexOf('{groupBy === "none" && <main className="board"'), appSource.indexOf("<Recent "));
+    expect(board).not.toMatch(/\b1fr\b|" empty"/);
+  });
+});
+
+describe("a strip's focus ring (review R2)", () => {
+  it("is drawn inside the strip, which clips what spills past its 44px", () => {
+    expect(rule(".column.col-strip")).toContain("overflow: hidden");
+    // button:focus-visible's 2px ring sits 1px outside the button; on a strip it goes inside.
+    expect(rule(".ui-pill:focus-visible, button:focus-visible")).toContain("outline: 2px solid var(--focus); outline-offset: 1px;");
+    expect(rule(".column.col-strip .col-fold:focus-visible")).toContain("outline-offset: -3px");
   });
 });

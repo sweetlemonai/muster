@@ -35,7 +35,7 @@ import { byWho, FOR_FILTERS, FOR_KEY, type ForFilter, needsYouCount, parseForFil
 import { HelpButton, OpenHelp } from "./HelpButton";
 import { HELP_TOPICS, type HelpTopic, type ManualAt } from "./helpTopics";
 import { Machine, machineOf, type SettingsGroup } from "./settingsData";
-import { columnClass, columnFold, columnState, columnTrack, loadMode, look, Mode, pickMode, storeMode, toggleFocus, type ColumnFolds, type ModeState } from "./modes";
+import { columnFold, loadMode, plainBoard, look, Mode, pickMode, storeMode, toggleFocus, type ColumnFolds, type ModeState } from "./modes";
 import { blockedCount, ChoiceChips, ColumnHead, ModeChip } from "./ModeViews";
 import ColumnCards from "./ColumnCards";
 import { PausedColumn } from "./PausedLane";
@@ -341,8 +341,11 @@ export default function App() {
   // Each plain board column open, an empty strip or folded (mu-83). Backlog keeps its quick add;
   // Your check stays open while Accept all's result line has something to say (0043), or to say
   // it's over its limit (0050).
-  const stateOf = (id: string) =>
-    columnState(columnFoldOf.of(id), id === "paused" ? cols.paused.length : (cols[id] ?? []).length + (id === "backlog" ? notes.length : 0), id === "backlog" || (id === "your-check" && (boardResult || overCheck.length > 0)));
+  const plain = plainBoard(
+    columnFoldOf.of,
+    (id) => (id === "paused" ? cols.paused.length : (cols[id] ?? []).length + (id === "backlog" ? notes.length : 0)),
+    (id) => id === "backlog" || (id === "your-check" && (boardResult || overCheck.length > 0)),
+  );
   const card = (t: Task) => (
     <Card key={key(t)} t={t} now={now} multi={multi} parent={parentLine(t, index)} onOpen={() => open(t)} active={openKey === key(t)} words={words} />
   );
@@ -483,8 +486,8 @@ export default function App() {
                   every column but Building, Testing and Your check to a strip that opens with a click.
                   The Paused lane (mu-59) comes first, beside Backlog. An open column is at most
                   OPEN_COLUMN_MAX wide, and the room left over stays at the right (mu-83). */}
-              {groupBy === "none" && <main className="board" style={{ gridTemplateColumns: ["paused", ...STAGES.map((s) => s.id)].map((id) => columnTrack(stateOf(id))).join(" ") }}>
-                <PausedColumn tasks={cols.paused} state={stateOf("paused")} fold={columnFoldOf.of("paused")} onFold={() => columnFoldOf.toggle("paused")} renderCard={card} />
+              {groupBy === "none" && <main className="board" style={{ gridTemplateColumns: plain.tracks }}>
+                <PausedColumn tasks={cols.paused} state={plain.state("paused")} fold={columnFoldOf.of("paused")} onFold={() => columnFoldOf.toggle("paused")} renderCard={card} />
                 {STAGES.map((c) => {
                   const list = cols[c.id] ?? [];
                   const shown = c.id === "done" && !showAllDone ? list.slice(0, 8) : list;
@@ -493,9 +496,9 @@ export default function App() {
                   // Your check stays open while Accept all's result line has something to say (0043).
                   const kept = c.id === "your-check" && boardResult;
                   const fold = columnFoldOf.of(c.id);
-                  const state = stateOf(c.id);
+                  const state = plain.state(c.id);
                   return (
-                    <section key={c.id} className={columnClass(c.id, state)}>
+                    <section key={c.id} className={plain.className(c.id)}>
                       <ColumnHead stage={c} count={count} countNode={c.id === "your-check" && state === "open" ? <CheckCount count={count} over={overCheck} queue={queue} /> : undefined} needs={needsYouCount(list)} blocked={blockedCount(list)} fold={fold} onFold={() => columnFoldOf.toggle(c.id)} empty={state === "empty"}>
                         {c.role && <span className="role">{c.role}</span>}
                       </ColumnHead>

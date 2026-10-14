@@ -18,6 +18,9 @@ columns").
 **Verified:** measured in a headless Chromium render of the real styles.css before and after (strips
 44px, heads at 3px, separate borders, Ready 400px); `columnStrips.test.ts` (11 tests) fails 3 with the
 old class back; `bin/gate` green. Renders (not the release app) attached to the task.
+**Fixed (review round 1):** the plain board's widths and strip classes had no test → `plainBoard`
+(modes.ts) builds them for App and is tested on braindump's shape in every mode; the strips'
+`overflow: hidden` clipped the fold buttons' focus ring → the ring is drawn inside the button.
 **Open:** the owner's look at braindump's board and All (AC4). `.folded` is still shared with the
 sidebar heading and Recently finished (different properties; mu-81's guard isn't on this base yet).
 
