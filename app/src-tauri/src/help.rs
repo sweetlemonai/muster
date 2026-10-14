@@ -411,13 +411,23 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "index",
-        usage: "muster index [--check]",
-        what: "Rebuild INDEX.md, the queue's master list: every goal with its features and tasks, then the tasks under none by stage, the backlog notes, and what's done, each with its stage, the tasks it still waits on, priority, type, estimate (agent time, test time, tokens), how many comments it has and a link to its file. Muster rewrites it after every change it makes, so this is for after a hand edit. It's generated: never edit it by hand.",
-        options: &[(
-            "--check",
-            "write nothing; exit 1 if INDEX.md is missing or isn't exactly what muster would write now",
-        )],
-        examples: &["muster index", "muster index --check --queue drover"],
+        usage: "muster index [--check | --as-built <file>]",
+        what: "Rebuild INDEX.md, the queue's master list: every goal with its features and tasks, then the tasks under none by stage, the backlog notes, and what's done, each with its stage, the tasks it still waits on, priority, type, estimate (agent time, test time, tokens), how many comments it has and a link to its file. Muster rewrites it after every change it makes, so this is for after a hand edit. It's generated: never edit it by hand. With --as-built <file>, the same run also writes the queue at a glance into that document (an as-built doc such as docs/AS_BUILT.md) between the lines <!-- muster:queue-at-a-glance start --> and <!-- muster:queue-at-a-glance end -->: the counts, then every task by stage with its key, title and who's on it, then the backlog notes. Only ids, titles, stages and holders' labels go in, never a write-up or an answer, and $HOME reads as ~. Everything outside the two lines stays byte for byte; without both, each once and in that order, it's refused and nothing is written, INDEX.md included.",
+        options: &[
+            (
+                "--check",
+                "write nothing; exit 1 if INDEX.md is missing or isn't exactly what muster would write now",
+            ),
+            (
+                "--as-built",
+                "also write the queue at a glance between the two marker lines in this file (a plain file, never a symlink)",
+            ),
+        ],
+        examples: &[
+            "muster index",
+            "muster index --check --queue drover",
+            "muster index --as-built docs/AS_BUILT.md",
+        ],
     },
     Command {
         name: "add",
@@ -1419,7 +1429,15 @@ mod tests {
         assert!(command_text("check").unwrap().contains("parent"));
         // The master list (0018): what index does, its --check, and that check reports a stale one.
         let index = command_text("index").unwrap();
-        for words in ["INDEX.md", "--check", "never edit", "exit 1"] {
+        for words in [
+            "INDEX.md",
+            "--check",
+            "never edit",
+            "exit 1",
+            "--as-built",
+            crate::index::GLANCE_START,
+            crate::index::GLANCE_END,
+        ] {
             assert!(index.contains(words), "{words}: {index}");
         }
         assert!(command_text("check").unwrap().contains("INDEX.md"));

@@ -93,7 +93,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             | "--commit" | "--to" | "--from" | "--after" | "--session" | "--level" | "--parent"
             | "--due" | "--pct" | "--remove" | "--record" | "--resolve" | "--search"
             | "--holder" | "--sort" | "--at" | "--touches" | "--prefix" | "--pick"
-            | "--no-answer" | "--fixed" | "--dispute" | "--settle" | "--summary" => {
+            | "--no-answer" | "--fixed" | "--dispute" | "--settle" | "--summary" | "--as-built" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -2252,6 +2252,29 @@ fn run_on(
         }
         "index" => {
             let path = root.join(index::FILE);
+            let as_built = a.flags.get("as-built").map(PathBuf::from);
+            if a.check && as_built.is_some() {
+                return Err(
+                    "--check writes nothing, so it doesn't go with --as-built (see `muster help`)"
+                        .into(),
+                );
+            }
+            if let Some(doc) = as_built {
+                // The caller's home reads as ~ in the section (0080), so no path under it is written.
+                let home = env("HOME").unwrap_or_default();
+                let (rebuilt, wrote) = index::rebuild_with_glance(root, &doc, &home)?;
+                if rebuilt {
+                    println!("rebuilt {}", path.display());
+                } else {
+                    println!("{} is up to date", path.display());
+                }
+                if wrote {
+                    println!("wrote the queue's section of {}", doc.display());
+                } else {
+                    println!("{}'s queue section is up to date", doc.display());
+                }
+                return Ok(0);
+            }
             if a.check {
                 return Ok(match index::status(root) {
                     index::Status::Current => {
@@ -4095,6 +4118,45 @@ mod tests {
         assert!(!queue::is_warning(&stale), "{stale}");
         assert_eq!(index_check_line(index::Status::Missing), None);
         assert_eq!(index_check_line(index::Status::Current), None);
+    }
+
+    #[test]
+    fn index_as_built_fills_the_documents_queue_section_from_the_callers_home() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let out = tempfile::tempdir().unwrap();
+        let file = out.path().join("AS_BUILT.md");
+        let f = file.to_string_lossy().to_string();
+        let home = out.path().join("home").to_string_lossy().to_string();
+        let env = |k: &str| (k == "HOME").then(|| home.clone());
+        let code = |args: &[&str]| {
+            let mut v = sv(&args[..1]);
+            v.extend(sv(&["--queue", &q, "--as", "owner"]));
+            v.extend(sv(&args[1..]));
+            main_with(&v, &env)
+        };
+        assert_eq!(code(&["new", &format!("Under {home}/x")]), 0);
+        let head = "# As built\n\nMine.\n";
+        let doc = format!(
+            "{head}{}\nold\n{}\nAlso mine.\n",
+            index::GLANCE_START,
+            index::GLANCE_END
+        );
+        std::fs::write(&file, &doc).unwrap();
+        assert_eq!(code(&["index", "--as-built", &f]), 0);
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(text.starts_with(&format!("{head}{}\n", index::GLANCE_START)));
+        assert!(text.ends_with(&format!("{}\nAlso mine.\n", index::GLANCE_END)));
+        assert!(text.contains("-1 | Under \\~/x |  |\n"), "{text}");
+        assert!(!text.contains(&home), "{text}");
+        assert_eq!(code(&["index", "--check"]), 0);
+        // Without its markers: exit 1, nothing written.
+        std::fs::write(&file, head).unwrap();
+        assert_eq!(code(&["index", "--as-built", &f]), 1);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), head);
+        // --check writes nothing, so it doesn't go with --as-built.
+        assert_eq!(code(&["index", "--check", "--as-built", &f]), 2);
+        assert_eq!(code(&["index", "--as-built"]), 1);
     }
 
     /// `<base>/<project>/tasks` as a queue, and `<base>/<project>/main` as its repo.

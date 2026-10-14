@@ -4,6 +4,24 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — One as-built document for Muster: architecture, each part's state, decisions, the queue at a glance (mu-80)
+**Did:** AS_BUILT.md restructured (owner: "as built document for the Muster including tasks in
+queue and architecture"): Muster in one page, the architecture (a diagram and a table of every
+core module, the app and its IPC, the CLI, bin/ scripts, hooks, the personal layer's part and the
+files on disk with who reads and writes each), how a task flows, each part's state checked against
+the code, decisions 0001–0010, the queue at a glance and what's left; still-true detail kept under
+"Parts in detail", stale lines fixed. `muster index --as-built <file>` writes the queue section
+between two markers in the same run as INDEX.md, leaving everything outside them byte-identical.
+**Decided:** missing or doubled markers make the command refuse and write nothing; the section holds
+only keys, titles, stages and holders (no write-ups, answers or home paths).
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; index
+tests (matches INDEX.md, outside text byte-identical incl. CRLF and Persian, refusals, no body or
+$HOME path, a title can't forge a marker); a test fails when a module or bin/ script is missing from
+the architecture section (checked by removing a row); the counts of 66 Tauri and 46 CLI commands
+checked by script. Built partly while the task sat in Ready (the pause reached the builder late).
+**Open:** the owner's read (AC4). No decision 0011 exists yet. README.md and projects.rs's module
+comment are stale. The queue section is a snapshot: rerun `muster index --as-built docs/AS_BUILT.md`.
+
 ## 2026-10-14 — Your check says what you're accepting: a summary, what Accept does, each criterion's proof (mu-78)
 **Did:** a task carries `summary:`, one plain line of what was built: `muster pass --from building`
 needs it (`--summary`, or set before), `muster set <id> summary` writes or fixes it, and the app's

@@ -26,8 +26,8 @@ stay the owner's, with `! muster …`.
 Options go right after the id (for `answer`, right after `Q<n>`), or right after the route word
 when there's no id. Everything after them is text.
 
-**Installed:** not yet. They go in the personal layer (`~/playground/.claude/commands/`), so every
-repo gets them, once the owner says yes (asked in `WAITING-FOR-OWNER.md`).
+**Installed:** in the personal layer since 2026-10-13: `~/playground/.claude/commands/mu.md` and
+`muster.md` are links to this repo's `commands/` (layer commit `663a4c7`), so every repo gets them.
 
 Not built yet: anything marked (task NNNN). Until then the route says so and does nothing.
 

@@ -6,6 +6,9 @@
 //! The list is made from the task files and backlog notes alone: no clock and no file times, so
 //! an unchanged queue gives the same file byte for byte. Titles and other front-matter text are
 //! untrusted: they're escaped, so none of them can add a link, a heading or a list item.
+//!
+//! `muster index --as-built <file>` (task 0080) also writes the queue at a glance, from the same
+//! read, between two marker lines of a hand-written document (Muster's `docs/AS_BUILT.md`).
 
 use crate::backlog::{self, Note};
 use crate::queue::{self, State, Task, MAX_TASK_BYTES, STAGES};
@@ -496,7 +499,12 @@ fn current(root: &Path) -> Result<Option<String>, ()> {
 /// Bring INDEX.md up to date, writing it (atomically) only when its text changed. Returns whether
 /// it wrote. The caller holds the queue's lock.
 pub(crate) fn refresh_locked(root: &Path) -> Result<bool, String> {
-    let text = build(root);
+    write_index(root, &read(root))
+}
+
+/// Write INDEX.md for `state`, the queue as `read` found it, when its text changed.
+fn write_index(root: &Path, state: &State) -> Result<bool, String> {
+    let text = file_text(state, "", &sources(root));
     if current(root).is_ok_and(|old| old.as_deref() == Some(text.as_str())) {
         return Ok(false);
     }
@@ -546,6 +554,188 @@ fn shown(text: &str) -> Vec<&str> {
     text.lines()
         .filter(|l| !l.starts_with("As of ") && !l.starts_with(SOURCES_LINE))
         .collect()
+}
+
+/// The lines, each on its own, between which `muster index --as-built <file>` writes the queue at
+/// a glance (task 0080). Everything outside them is the document's own and is never touched.
+pub const GLANCE_START: &str = "<!-- muster:queue-at-a-glance start -->";
+pub const GLANCE_END: &str = "<!-- muster:queue-at-a-glance end -->";
+
+/// The order the glance lists stages in: a goal's or feature's "In progress" after Ready.
+const GLANCE_STAGES: [&str; 8] = [
+    "backlog",
+    "shaping",
+    "ready",
+    "in-progress",
+    "building",
+    "testing",
+    "your-check",
+    "done",
+];
+
+/// The queue at a glance (task 0080), for an as-built document, from the same tasks and notes as
+/// `index_md` (pure): when the list is as of and the counts, then every task of `queue` by the
+/// stage it shows, in id order, as its key (a goal or feature with its level), its title and
+/// who's on it (the holder's label, without the session stamp), then the backlog notes. Nothing
+/// else from a task: no write-up, no answers. Text is escaped as INDEX.md's is, and `home` (the
+/// caller's $HOME, when not "") reads as `~` wherever it appears, so no path under it is written.
+pub fn glance_md(state: &State, queue: &str, home: &str) -> String {
+    let mut tasks: Vec<&Task> = state.tasks.iter().filter(|t| t.queue == queue).collect();
+    tasks.sort_by(|a, b| a.id.cmp(&b.id).then_with(|| a.path.cmp(&b.path)));
+    let mut notes: Vec<&Note> = state.backlog.iter().filter(|n| n.queue == queue).collect();
+    notes.sort_by(|a, b| a.file.cmp(&b.file));
+    let home = home.trim_end_matches('/');
+    let text = |s: &str, max: usize| {
+        if home.is_empty() {
+            md_text(s, max)
+        } else {
+            md_text(&s.replace(home, "~"), max)
+        }
+    };
+    if tasks.is_empty() && notes.is_empty() {
+        return "\nNo tasks and no backlog notes yet.\n\n".into();
+    }
+    // A stage that isn't one is listed under Backlog, as INDEX.md lists it.
+    let mut by_stage: Vec<Vec<&Task>> = vec![Vec::new(); GLANCE_STAGES.len()];
+    for t in &tasks {
+        let at = GLANCE_STAGES
+            .iter()
+            .position(|s| *s == t.shown_stage)
+            .unwrap_or(0);
+        by_stage[at].push(t);
+    }
+    let counts: Vec<String> = GLANCE_STAGES
+        .iter()
+        .zip(&by_stage)
+        .filter(|(_, ts)| !ts.is_empty())
+        .map(|(s, ts)| format!("{} {}", ts.len(), stage_name(s)))
+        .collect();
+    let plural =
+        |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+    let mut out = String::from("\n");
+    if let Some(at) = as_of(&tasks) {
+        out.push_str(&format!("As of {at} (the newest change in a task's log). "));
+    }
+    let tasks_n = plural(tasks.len(), "task", "tasks");
+    if counts.is_empty() {
+        out.push_str(&format!("{tasks_n}. "));
+    } else {
+        out.push_str(&format!("{tasks_n}: {}. ", counts.join(", ")));
+    }
+    out.push_str(&format!(
+        "{}.\n",
+        plural(notes.len(), "backlog note", "backlog notes")
+    ));
+    for (stage, ts) in GLANCE_STAGES.iter().zip(&by_stage) {
+        if ts.is_empty() {
+            continue;
+        }
+        out.push_str(&format!(
+            "\n### {} ({})\n\n| Key | Title | On it |\n| --- | --- | --- |\n",
+            stage_name(stage),
+            ts.len()
+        ));
+        for t in ts {
+            let mut key = text(&crate::key::key(&t.prefix, &t.id), 40);
+            if t.level != "task" {
+                key = format!("{key} · {}", level_name(&t.level));
+            }
+            let title = match text(&t.title, 200) {
+                s if s.is_empty() => "(untitled)".to_string(),
+                s => s,
+            };
+            let on_it = match crate::session::split(t.holder()).0 {
+                "" if t.is_human() => "you".to_string(),
+                who => text(who, 80),
+            };
+            out.push_str(&format!("| {key} | {title} | {on_it} |\n"));
+        }
+    }
+    if !notes.is_empty() {
+        out.push_str(&format!(
+            "\n### Backlog notes ({})\n\n| Note | File |\n| --- | --- |\n",
+            notes.len()
+        ));
+        for n in &notes {
+            let title = match text(&n.title, 200) {
+                t if t.is_empty() => "(empty note)".to_string(),
+                t => t,
+            };
+            out.push_str(&format!("| {title} | {} |\n", text(&n.file, 200)));
+        }
+    }
+    out.push('\n');
+    out
+}
+
+/// `doc` with the text between its glance markers replaced by `section`, every byte outside them
+/// kept. Refused when either marker isn't a line of its own exactly once, or the end comes first.
+fn with_glance(doc: &str, section: &str) -> Result<String, String> {
+    // Each marker's line: where it starts, and where the next line starts.
+    let lines_of = |marker: &str| -> Vec<(usize, usize)> {
+        let mut at = 0;
+        let mut found = Vec::new();
+        for line in doc.split_inclusive('\n') {
+            if line.trim_end_matches(['\n', '\r']) == marker {
+                found.push((at, at + line.len()));
+            }
+            at += line.len();
+        }
+        found
+    };
+    let one = |marker: &str| {
+        match lines_of(marker).as_slice() {
+        [only] => Ok(*only),
+        [] => Err(format!(
+            "there's no line {marker}: put {GLANCE_START} and {GLANCE_END} on lines of their own where the queue's section goes"
+        )),
+        many => Err(format!(
+            "{} lines {marker}: there must be one",
+            many.len()
+        )),
+    }
+    };
+    let (_, from) = one(GLANCE_START)?;
+    let (to, _) = one(GLANCE_END)?;
+    if to < from {
+        return Err(format!("{GLANCE_END} comes before {GLANCE_START}"));
+    }
+    Ok(format!("{}{section}{}", &doc[..from], &doc[to..]))
+}
+
+/// The document `muster index --as-built` writes into: a plain file of a sane size, as text.
+fn read_doc(doc: &Path) -> Result<String, String> {
+    match fs::symlink_metadata(doc) {
+        Ok(m) if m.is_file() && m.len() <= MAX_INDEX_BYTES => {
+            fs::read_to_string(doc).map_err(|e| format!("{}: {e}", doc.display()))
+        }
+        Ok(m) if m.is_file() => Err(format!("{} is over 16 MB", doc.display())),
+        Ok(_) => Err(format!(
+            "{} isn't a plain file (a symlink or a folder is never written through)",
+            doc.display()
+        )),
+        Err(e) => Err(format!("{}: {e}", doc.display())),
+    }
+}
+
+/// `muster index --as-built <doc>` (task 0080): what `rebuild` does, and the queue at a glance
+/// written into `doc` between its markers, from the same read of the queue, under the same lock.
+/// Refused before anything is written, INDEX.md included, when `doc` isn't a plain file or its
+/// markers aren't there once each. Each file is written (atomically) only when its text changed;
+/// returns whether INDEX.md and `doc` were.
+pub fn rebuild_with_glance(root: &Path, doc: &Path, home: &str) -> Result<(bool, bool), String> {
+    queue::hold_lock(root, || {
+        let state = read(root);
+        let old = read_doc(doc)?;
+        let new = with_glance(&old, &glance_md(&state, "", home))
+            .map_err(|e| format!("{}: {e}", doc.display()))?;
+        let index = write_index(root, &state)?;
+        if new == old {
+            return Ok((index, false));
+        }
+        queue::write_atomic(doc, &new)?;
+        Ok((index, true))
+    })
 }
 
 /// The problem `muster check` reports for a stale INDEX.md.
@@ -1362,5 +1552,335 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
         assert!(text.starts_with("# Master list\n"));
         assert!(text.contains("No tasks and no backlog notes yet."));
         assert!(!text.contains("As of"));
+    }
+
+    /// A hand-written document with the queue's markers, its own text around them in bytes a
+    /// rewrite could easily disturb: CRLF lines, trailing spaces, Persian, no last line end.
+    const DOC_HEAD: &str = "# As built\r\n\r\nHand-written: نوشته‌ی دست  \r\n\r\n";
+    const DOC_TAIL: &str = "\r\n## 7. Known limits\n\nStill mine.\t ";
+
+    fn doc(inside: &str) -> String {
+        format!("{DOC_HEAD}{GLANCE_START}\r\n{inside}{GLANCE_END}{DOC_TAIL}")
+    }
+
+    /// The text between the markers.
+    fn between(text: &str) -> &str {
+        let from = text.find(GLANCE_START).unwrap() + GLANCE_START.len();
+        let to = text.find(GLANCE_END).unwrap();
+        &text[from..to]
+    }
+
+    const GLANCE: &str = "
+As of 2026-10-13 08:00 (the newest change in a task's log). 7 tasks: 1 Backlog, 1 Ready, 2 In progress, 1 Building, 1 Testing, 1 Done. 1 backlog note.
+
+### Backlog (1)
+
+| Key | Title | On it |
+| --- | --- | --- |
+| ix-6 | Raw |  |
+
+### Ready (1)
+
+| Key | Title | On it |
+| --- | --- | --- |
+| ix-5 | Loose |  |
+
+### In progress (2)
+
+| Key | Title | On it |
+| --- | --- | --- |
+| ix-1 · Goal | Ship 1.0 |  |
+| ix-2 · Feature | Stage track |  |
+
+### Building (1)
+
+| Key | Title | On it |
+| --- | --- | --- |
+| ix-3 | Pass button | wt-a |
+
+### Testing (1)
+
+| Key | Title | On it |
+| --- | --- | --- |
+| ix-4 | Waiting |  |
+
+### Done (1)
+
+| Key | Title | On it |
+| --- | --- | --- |
+| ix-7 | Old |  |
+
+### Backlog notes (1)
+
+| Note | File |
+| --- | --- |
+| An idea | 2026-10-12-0900-an-idea.md |
+
+";
+
+    #[test]
+    fn the_glance_lists_every_task_by_stage_with_who_is_on_it_the_notes_and_the_counts() {
+        let d = sample();
+        assert_eq!(glance_md(&read(d.path()), "", "/Users/someone"), GLANCE);
+        // Only the queue asked for; an empty one says so.
+        assert_eq!(
+            glance_md(&read(d.path()), "other", ""),
+            "\nNo tasks and no backlog notes yet.\n\n"
+        );
+    }
+
+    /// (key, title) of every task line in INDEX.md, and of every row of the glance.
+    fn index_pairs(text: &str) -> Vec<(String, String)> {
+        let mut v: Vec<(String, String)> = text
+            .lines()
+            .filter_map(|l| {
+                let l = l.trim_start().strip_prefix("- ")?;
+                let (key, rest) = l.split_once(" [")?;
+                let (title, _) = rest.split_once("](")?;
+                Some((key.to_string(), title.to_string()))
+            })
+            .collect();
+        v.sort();
+        v
+    }
+    fn glance_pairs(text: &str) -> Vec<(String, String)> {
+        let mut v: Vec<(String, String)> = text
+            .lines()
+            .filter_map(|l| {
+                let cells: Vec<&str> = l.strip_prefix("| ")?.split(" | ").collect();
+                let key = cells.first()?.split(" · ").next()?;
+                (cells.len() == 3 && !["Key", "---"].contains(&key))
+                    .then(|| (key.to_string(), cells[1].to_string()))
+            })
+            .collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn muster_index_as_built_writes_what_the_master_list_shows_and_only_between_the_markers() {
+        let d = sample();
+        let p = d.path();
+        let out = tempfile::tempdir().unwrap();
+        let file = out.path().join("AS_BUILT.md");
+        fs::write(&file, doc("stale text\n")).unwrap();
+        assert_eq!(rebuild_with_glance(p, &file, "").unwrap(), (true, true));
+        // The same run wrote INDEX.md, and the section names the same tasks with the same titles.
+        assert_eq!(status(p), Status::Current);
+        let index = fs::read_to_string(p.join(FILE)).unwrap();
+        let text = fs::read_to_string(&file).unwrap();
+        let pairs = index_pairs(&index);
+        assert_eq!(pairs.len(), 7, "{index}");
+        assert_eq!(glance_pairs(between(&text)), pairs, "{text}");
+        assert!(index.contains("<summary>Done (1)</summary>"));
+        assert!(between(&text).contains("### Done (1)"));
+        // The hand-written text around the markers is byte for byte what it was.
+        assert_eq!(text, doc(GLANCE));
+        // Run again with nothing changed: nothing is written.
+        let stamp = std::time::UNIX_EPOCH + std::time::Duration::from_secs(9);
+        fs::File::options()
+            .write(true)
+            .open(&file)
+            .unwrap()
+            .set_modified(stamp)
+            .unwrap();
+        assert_eq!(rebuild_with_glance(p, &file, "").unwrap(), (false, false));
+        assert_eq!(fs::metadata(&file).unwrap().modified().unwrap(), stamp);
+        // A change to the queue moves both, and the outside still doesn't move.
+        crate::backlog::add(p, "Another idea", "", "owner", "2026-10-14 09:00").unwrap();
+        assert_eq!(rebuild_with_glance(p, &file, "").unwrap(), (false, true));
+        let text = fs::read_to_string(&file).unwrap();
+        assert!(text.starts_with(&format!("{DOC_HEAD}{GLANCE_START}\r\n")));
+        assert!(text.ends_with(&format!("{GLANCE_END}{DOC_TAIL}")));
+        assert!(between(&text).contains("| Another idea |"), "{text}");
+        // No temp file left beside it.
+        let left: Vec<_> = fs::read_dir(out.path()).unwrap().flatten().collect();
+        assert_eq!(left.len(), 1);
+    }
+
+    #[test]
+    fn a_document_without_its_markers_is_refused_and_nothing_is_written() {
+        let d = sample();
+        let p = d.path();
+        let out = tempfile::tempdir().unwrap();
+        let file = out.path().join("AS_BUILT.md");
+        let one = |marker: &str| format!("{DOC_HEAD}{marker}\n{DOC_TAIL}");
+        let cases = [
+            ("none", format!("{DOC_HEAD}{DOC_TAIL}"), "no line"),
+            ("no end", one(GLANCE_START), "no line"),
+            ("no start", one(GLANCE_END), "no line"),
+            (
+                "end first",
+                format!("{GLANCE_END}\n{GLANCE_START}\n"),
+                "before",
+            ),
+            (
+                "two starts",
+                format!("{GLANCE_START}\n{GLANCE_START}\n{GLANCE_END}\n"),
+                "2 lines",
+            ),
+            (
+                "inside a line",
+                format!("see {GLANCE_START} here\n{GLANCE_END}\n"),
+                "no line",
+            ),
+        ];
+        for (name, text, says) in cases {
+            fs::write(&file, &text).unwrap();
+            let e = rebuild_with_glance(p, &file, "").unwrap_err();
+            assert!(e.contains(says), "{name}: {e}");
+            assert!(
+                e.contains(GLANCE_START) || e.contains(GLANCE_END),
+                "{name}: {e}"
+            );
+            assert_eq!(fs::read_to_string(&file).unwrap(), text, "{name}");
+            // Refused before anything: not even INDEX.md.
+            assert_eq!(status(p), Status::Missing, "{name}");
+        }
+        // Not there, or not a plain file: refused, and a symlink's target is never written.
+        let missing = out.path().join("nope.md");
+        assert!(rebuild_with_glance(p, &missing, "").is_err());
+        assert!(!missing.exists());
+        let target = out.path().join("target.md");
+        fs::write(&target, doc("")).unwrap();
+        let link = out.path().join("link.md");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(rebuild_with_glance(p, &link, "")
+            .unwrap_err()
+            .contains("plain file"));
+        assert_eq!(fs::read_to_string(&target).unwrap(), doc(""));
+        assert!(rebuild_with_glance(p, out.path(), "").is_err());
+        assert_eq!(status(p), Status::Missing);
+    }
+
+    #[test]
+    fn the_glance_keeps_persian_titles_and_shows_no_body_answer_or_home_path() {
+        let d = queue();
+        let p = d.path();
+        let log = "- 2026-10-12 09:00 capture: created\n";
+        // Persian with a zero-width non-joiner, as the owner writes it.
+        let persian = "نمایش یا پنهان کردن ستون‌ها در بورد";
+        task(p, "todo/0001-fa.md", "0001", "stage: ready", persian, log);
+        task(
+            p,
+            "doing/0002-b.md",
+            "0002",
+            "stage: building\nclaimed-by: wt-b (main · session 7b5e8856 · cc-hg)",
+            "Fix /home/me/notes/x.md and C:\\x",
+            log,
+        );
+        // A holder typed by hand, with a path in it.
+        task(
+            p,
+            "doing/0003-c.md",
+            "0003",
+            "stage: building\nclaimed-by: /home/me/agent",
+            "C",
+            log,
+        );
+        let f = p.join("doing/0002-b.md");
+        let text = fs::read_to_string(&f).unwrap().replace(
+            "## Log\n",
+            "The body says SECRET-BODY.\n\n## Questions\n- [x] **Q1 (wt-b, session 7b5e8856, 2026-10-12 10:00):** Which?\n  **A (owner, 2026-10-12 11:00):** SECRET-ANSWER\n\n## Log\n",
+        );
+        fs::write(&f, text).unwrap();
+        fs::write(
+            p.join("inbox/2026-10-12-0900-n.md"),
+            "Look at /home/me/x\n\nSECRET-NOTE-BODY\n",
+        )
+        .unwrap();
+        let g = glance_md(&read(p), "", "/home/me");
+        assert!(g.contains(&format!("| ix-1 | {persian} |  |\n")), "{g}");
+        assert!(!g.contains("/home/me"), "{g}");
+        assert!(g.contains("Fix \\~/notes/x.md and C:\\\\x"), "{g}");
+        // The holder's label, not its stamp.
+        assert!(g.contains(" | wt-b |\n"), "{g}");
+        assert!(g.contains("| ix-3 | C | \\~/agent |\n"), "{g}");
+        for secret in [
+            "SECRET-BODY",
+            "SECRET-ANSWER",
+            "SECRET-NOTE-BODY",
+            "7b5e8856",
+        ] {
+            assert!(!g.contains(secret), "{secret}: {g}");
+        }
+        // No home given: nothing is replaced.
+        assert!(glance_md(&read(p), "", "").contains("/home/me/notes"));
+    }
+
+    #[test]
+    fn a_title_cannot_forge_a_marker_or_a_row() {
+        let d = queue();
+        let p = d.path();
+        let log = "- 2026-10-12 09:00 capture: created\n";
+        task(p, "todo/0001-a.md", "0001", "stage: ready", GLANCE_END, log);
+        task(
+            p,
+            "todo/0002-b.md",
+            "0002",
+            "stage: ready",
+            "a | b | c\n| ix-9 | x |",
+            log,
+        );
+        let out = tempfile::tempdir().unwrap();
+        let file = out.path().join("AS_BUILT.md");
+        fs::write(&file, doc("")).unwrap();
+        rebuild_with_glance(p, &file, "").unwrap();
+        let first = fs::read_to_string(&file).unwrap();
+        assert_eq!(first.matches(GLANCE_END).count(), 1, "{first}");
+        assert!(first.ends_with(&format!("{GLANCE_END}{DOC_TAIL}")));
+        assert_eq!(glance_pairs(between(&first)).len(), 2, "{first}");
+        // And a second run still finds its own markers.
+        assert_eq!(rebuild_with_glance(p, &file, "").unwrap(), (false, false));
+    }
+
+    /// The as-built document's parts (task 0080, AC3): its architecture section names every
+    /// top-level module of the core and every script in bin/, so a new one can't go unnoticed.
+    #[test]
+    fn the_as_built_architecture_names_every_module_and_bin_script() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let text = fs::read_to_string(repo.join("docs/AS_BUILT.md")).unwrap();
+        let start = text
+            .find("\n## 2. Architecture\n")
+            .expect("docs/AS_BUILT.md has a \"## 2. Architecture\" section");
+        let rest = &text[start + 1..];
+        let section = &rest[..rest[3..].find("\n## ").map_or(rest.len(), |i| i + 3)];
+        let names = |dir: &Path| -> Vec<String> {
+            let mut v: Vec<String> = fs::read_dir(dir)
+                .unwrap()
+                .flatten()
+                .filter_map(|e| e.file_name().to_str().map(String::from))
+                .filter(|n| !n.starts_with('.'))
+                .collect();
+            v.sort();
+            v
+        };
+        let mut missing = Vec::new();
+        for name in names(&repo.join("app/src-tauri/src")) {
+            let want = if name.ends_with(".rs") {
+                format!("`{name}`")
+            } else {
+                format!("`{name}/`")
+            };
+            if !section.contains(&want) {
+                missing.push(want);
+            }
+        }
+        for name in names(&repo.join("bin")) {
+            let want = format!("`bin/{name}`");
+            if !section.contains(&want) {
+                missing.push(want);
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "docs/AS_BUILT.md's \"## 2. Architecture\" doesn't name {}",
+            missing.join(", ")
+        );
+        // And the queue's section has its markers, once each, so `muster index --as-built` can
+        // fill it.
+        for m in [GLANCE_START, GLANCE_END] {
+            assert_eq!(text.lines().filter(|l| *l == m).count(), 1, "{m}");
+        }
     }
 }

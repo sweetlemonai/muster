@@ -1,39 +1,555 @@
-# Muster: as built (2026-10-12, updated with the app)
+# Muster: as built
 
-What exists, how it fits together, how it was checked, and what's left. Newest state, not
-history (history is in `DOGFOOD.md` and the queue's git log).
+As of 2026-10-14, main at `72f34df`. What exists, how it fits together, and what's left: the
+newest state, not history. History is in `docs/WORKLOG.md`, `docs/DOGFOOD.md` and each task's
+log. Section 6 is generated from the queue; everything else is written by hand and checked against
+the code.
 
-## In one paragraph
+1. [Muster in one page](#1-muster-in-one-page)
+2. [Architecture](#2-architecture)
+3. [How a task flows](#3-how-a-task-flows)
+4. [Each part's state](#4-each-parts-state)
+5. [Decisions](#5-decisions)
+6. [The queue at a glance](#6-the-queue-at-a-glance) (generated)
+7. [Known limits and what's left](#7-known-limits-and-whats-left)
 
-A **queue** is a folder of Markdown task files, one per task: the repo's `.muster/` (task 0005),
-where files sit in `tasks/` and never move and `stage:` says where each task is, or, for the
-queues not moved yet, the old `<project>/tasks` beside the repo, where the subfolder is the
-status (`inbox/ todo/ doing/ blocked/ done/`). A **capture** session (PM + tech lead) writes the
-owner's words up as tasks, answers technical questions, and escalates product questions to the
-owner in plain terms. **Coder** sessions claim a task by moving its file, work in their repo,
-log, and ask questions with `task ask` without stopping. The answer is written into the task and
-pushed into the asking session by a Claude Code hook. A generated **manifest** (`tasks.json`)
-gives one view of everything and checks the queue for problems. The owner reads
-`WAITING-FOR-OWNER.md` (and, in Drover, the waiting list on Home).
+Then [Parts in detail](#parts-in-detail): every feature as built, for when the tables above
+aren't enough.
 
-## Parts
+## 1. Muster in one page
 
-| Part | Where | State |
+Muster is a task system for coding agents, run by one owner on one Mac. The owner says what they
+want; agents write it up as tasks, shape them, build them in their own worktrees, test them and
+merge them; the owner sees only what really needs them, and checks the result at the end.
+
+**A queue** is a folder of Markdown task files, one per task, plus a backlog of one-line notes.
+Muster's own queue, and any repo set up with `muster init`, is the repo's `.muster/` (decision
+0003, task 0005): files sit in `tasks/` and never move, and `stage:` says where each task is.
+Older queues are `<project>/tasks` beside the repo, with their own git, where the subfolder mirrors
+the stage. Muster's own moved out of that layout on 2026-10-13; the other 19 projects' queues are
+still in it. Drover reads and answers its queue directly (file contract v1, its waiting list).
+
+**Who uses it:**
+
+- **The owner**, in the Muster app (board, task pane, Waiting for you, the Dock badge, Mac
+  notifications) and with `! muster …` in any session. They answer questions, tick what only they
+  can verify, and accept or send back finished work.
+- **Agent sessions** (Claude Code), through the `muster` command, the `/mu` and `/muster` slash
+  commands and the answer hook. A capture or lead session writes the owner's words up as tasks.
+  Shapers make them ready, builders claim and build them, a separate QA session tests and merges
+  them (decision 0004: one session per task).
+- **Other tools** that read or write the same files: Drover (answers through file contract v1),
+  `bin/manifest.py` and `bin/task`.
+
+**The stages** (decision 0003, task 0014): Backlog → Shaping → Ready → Building → Testing → Your
+check → Done. Each has a role: anyone, product + tech + UI agents, claimable, the code agent, the
+QA agent, the owner. Blocked and paused are flags on a stage, not stages. Goals and features group
+tasks; their stage rolls up from their children. The owner's own tasks (`for: human`) go To do →
+Doing → Done on the same board.
+
+**One set of rules:** the app and the command line are the same Rust binary. Every change goes
+through `ops.rs` and its neighbours, under the queue's one lock, with the time stamped by the
+tool and the change logged in the task.
+
+## 2. Architecture
+
+### The picture
+
+```
+                                   owner
+                 ┌───────────────────┴────────────────────┐
+                 ▼                                        ▼
+   Muster.app: React webview                  Claude Code sessions
+   (board, pane, Waiting for you)             (capture, shapers, builders, QA)
+                 │ invoke: 66 Tauri commands      │ muster …, /mu, bin/task
+                 ▼                                ▼
+   ┌───────────────── one Rust crate (app/src-tauri) ──────────────────┐
+   │  lib.rs (the app)                          cli.rs (`muster`)      │
+   │  queue · ops · layout · index · block · backlog · fields · key …  │
+   │  every write: flock on mail/.lock, atomic rename, a log line      │
+   └──────┬──────────────────┬──────────────────┬──────────────────────┘
+          ▼                  ▼                  ▼
+   the queue folder     this Mac's app folder   git (muster start, the merge)
+   .muster/ or          projects.json           worktrees, rebase, bin/gate,
+   <project>/tasks      settings.json           fast-forward main, push
+     tasks/ backlog/    notified.json, helper/
+     mail/ reviews/
+     INDEX.md
+          │ mail/<session8>/…
+          ▼
+   bin/answer-hook.py  (run by the layer's hooks/muster-answer)
+          → the asking session's context, after its next tool call
+
+   read only: ~/.claude*/projects/… transcripts, `claude agents --json`, `claude auth status`
+```
+
+The same picture as a table, part by part:
+
+| Part | Where | What it does |
 |---|---|---|
-| Protocol v2.1 | `docs/PROTOCOL.md`; each queue's `README.md` | In use on Drover |
-| File contract v1 (for tools that write answers without `bin/task`) | `docs/PROTOCOL.md`, "File contract" | In use: Drover's waiting list (Drover task 0015, `327af59`) writes against it |
-| `task` CLI: ask / answer / escalate / inbox | `bin/task` | A stand-in since task 0002: it runs the same `muster` commands |
-| Answer push | `bin/answer-hook.py` | Live in Drover's checkouts (`drover/main`, `agent-controls`, `cleanup`, `docs-wt`), verified end to end on 2026-10-12. Reads `$MUSTER_ROOT`'s mailbox and the session folder's repo's `.muster/` one (0005), finding the main checkout from `.git` files, without running git; sessions of two projects at once each get only their own repo's mail (0004, tested). For every repo it waits on the personal layer's change (below, "Other projects") |
-| Manifest + check | `bin/manifest.py` → `tasks.json` | Built, tested, both layouts (0005: `MUSTER_ROOT=<repo>/.muster`). Capture rebuilds it on every commit |
-| Queue in the repo | `.muster/` (`layout.rs`, `migrate.rs`); `muster init [<repo>] [--local\|--committed]`, the app's New queue, `muster migrate` | Step 1 built and tested (task 0005): layout, local mode, one queue for every worktree, discovery, migrate. No queue moved yet. Committed mode with live state in `.git/muster/` is the next step |
-| Master list | `INDEX.md` per queue, written by `muster` after every change; `muster index` | Built, tested (task 0018). `muster check` and `manifest.py --check` report a stale one. No app link yet: the app has no open-a-file path |
-| Owner's waiting list | `WAITING-FOR-OWNER.md` per queue (by hand); Drover's Home (task 0015) | By hand here. Built in Drover |
-| Attachments | `attachments/<id>/` per queue | In use (screenshots, mockups) |
-| `muster` command line | the app's binary, `bin/muster` shim | Built: new, list, show, move, set, note, attach, answer, check, index, projects, init, the backlog commands add, shape, file, drop, the stage commands pass, return, block, unblock, stage, the claims claim, next, heartbeat, checkin, reclaim, and questions ask, escalate, inbox (same rules as the app) |
-| Commands `/muster`, `/mu` | `docs/COMMANDS.md` | Designed, not built |
-| Desktop app | `app/` (Tauri 2 + React 19, decision 0001) | Built and running: board, new task, task management, waiting for you with answering, files, activity, problems, projects, the AI helper |
+| The core | `app/src-tauri/src/*.rs` | Every rule: reading queues, changing tasks, the lock, INDEX.md, keys, claims, merges, reviews. One crate, `muster_lib` |
+| The app | `lib.rs` + `app/src/` (React 19, Vite, TypeScript) | The window: polls `state` every 2 s while visible, changes tasks only through the core's commands |
+| The command line | `cli.rs`, `help.rs`; `bin/muster` | `muster <command>`: the same binary as the app (`main.rs` picks), 46 commands |
+| Scripts and hooks | `bin/` | The answer hook, the gate, the manifest, the `task` stand-in, the Python tests |
+| The personal layer | `~/playground/.claude` (not in this repo) | Links Muster's rule, hook and slash commands into every repo; the handoff and review engine |
+| The queue | `.muster/` or `<project>/tasks` | Task files, backlog notes, attachments, mail, reviews, INDEX.md |
+| This Mac's settings | `~/Library/Application Support/ai.sweetlemon.muster/` | Which projects show and how, the lease and LIVE window, notifications, the helper |
 
-## The app
+### The core, module by module
+
+Every top-level module in `app/src-tauri/src` (a test in `index.rs` fails when one is missing
+here):
+
+| Module | Does |
+|---|---|
+| `main.rs` | The entry point: with arguments it's `muster` (`cli::main`), with none it's the app (`run`) |
+| `lib.rs` | The app: the Tauri builder, the 66 commands, the state poll, the hidden window's badge thread. Disk and git work runs in `spawn_blocking` |
+| `cli.rs` | `muster` on the command line: options, which queue (`--queue`, `$MUSTER_ROOT`, the folder's), each command |
+| `help.rs` | Every command's usage, options and examples; one source for `muster help`, the Help tab and `docs/manual/05-commands.md` |
+| `queue.rs` | Reading queues (both layouts), the `Task` and `State` types, stages, the lock (`with_lock`, `hold_lock`), `write_atomic`, questions and answers (file contract v1) |
+| `ops.rs` | Changing tasks: create, claim, pass, return, block, set fields, notes, attachments, reclaim. The rules both the app and the CLI use |
+| `layout.rs` | Where a layout keeps what: the old `<project>/tasks` and the repo's `.muster/`, and finding a repo's queue from any worktree |
+| `migrate.rs` | `muster migrate`: copy an old queue into a repo's `.muster/`, never moving the old one |
+| `index.rs` | INDEX.md, the generated master list, rewritten after every change; and the queue at a glance for this document (`--as-built`) |
+| `backlog.rs` | Backlog notes: add, shape (the brief), file as a task, drop |
+| `block.rs` | Why a task is blocked: five kinds, the sentence every screen shows, and `depends:` met once merged |
+| `fields.rs` | A task's links and comments |
+| `choices.rs` | Pick-one questions: 2 to 6 options, a pick, what happens with no answer |
+| `key.rs` | Task keys (`mu-12`): the project's prefix, stored with the queue |
+| `search.rs` | `muster list`'s search, filters and sort, held to the app's by a shared fixture |
+| `vision.rs` | The vision check: the brief, the agent's result recorded, conflicts resolved |
+| `review.rs` | The review of record: the brief, the result recorded, rounds, the merge check |
+| `lessons.rs` | Lessons from reviews: proposed from repeated findings, accepted or rejected by the owner |
+| `pause.rs` | Pause and Resume: a task keeps its stage and claim, nobody works it |
+| `old_pause.rs` | Turning pre-0045 "paused" blocks into pauses (`muster check --fix-pauses`) |
+| `ping.rs` | Asking a working session for a check-in, or sending it a message, through its mailbox |
+| `parallel.rs` | Parallel sessions: which Ready tasks are safe together, `muster start`'s worktree, the merge, `release`, what's left behind |
+| `merge_log.rs` | Git's merge driver for `docs/WORKLOG.md` (`muster merge-log`), and setting it in a repo's config |
+| `session.rs` | The holder stamp (`label (checkout · session 7b5e8856 · cc-hg)`) and when two holders are the same |
+| `work.rs` | Who worked on a task and what it cost, from the sessions its claim and log name |
+| `transcripts.rs` | The one reader of Claude Code transcripts on this Mac (`~/.claude*/projects/…`), sums only |
+| `agents.rs` | Claude Code's own session states (`claude agents --json`), off the main thread, at most every 15 s |
+| `projects.rs` | Which queues the app shows (discovery under `~/playground`, added, hidden), `projects.json` under its lock, new queues, the sidebar's state builder |
+| `labels.rs` | A project's label and category |
+| `arrange.rs` | The sidebar's order, headings, colours and folds |
+| `check_limit.rs` | The limit on Your check per project |
+| `settings.rs` | This Mac's settings: lease, LIVE window, notifications, the old-pauses offer |
+| `badge.rs` | The Dock badge's count, set from Rust |
+| `notify.rs` | Mac notifications of what newly waits for the owner, and `notified.json` |
+| `helper.rs` | The AI helper: the owner's own `claude`, restricted to `muster` and reading |
+| `helper_cmds.rs` | The app's commands for the helper |
+| `pause_cmds.rs` | The app's commands for pause, resume and old pauses |
+| `ping_cmds.rs` | The app's commands for check-ins and messages |
+| `review_cmds.rs` | The app's commands for the review brief and the lessons |
+
+Integration tests are in `app/src-tauri/tests/` (`interop.rs`, `deps_cases.rs`, `search_cases.rs`,
+`keys.rs`); `examples/probe.rs` and `examples/dump.rs` time and print reads of the real queues.
+
+### The app: webview and IPC
+
+The window is React 19 in `app/src/`: about 190 files, each test beside what it tests. Screens
+such as `App.tsx`, `TaskPanel.tsx`, `WaitingList.tsx`, `Settings.tsx`, `Helper.tsx`, `Help.tsx`
+and `Views.tsx`; pure logic in `lib.ts`, `filters.ts`, `search.ts` and `modes.ts`; the atoms in
+`app/src/ui/`; the shared fixtures (`*-cases.json`) that hold the core and the window to the same
+answers. The task pane, the backlog note pane and the helper load on first open. Its one capability
+is `core:default` (`capabilities/default.json`): no file system, shell, dialog, notification or
+network permission. Folders are picked by the core's own dialog, and the window names a queue by
+its project name, never by a path.
+
+The 66 commands it can call (`generate_handler!` in `lib.rs`), by what they do:
+
+| Group | Commands |
+|---|---|
+| Reading | `state` (the 2 s poll), `search_index`, `help`, `task_body`, `image`, `projects`, `settings_info`, `task_sessions`, `session_transcript`, `editable_body`, `shape_note`, `vision_brief` |
+| Changing a task | `create_task`, `pass_task`, `accept_all`, `return_task`, `block_task`, `unblock_task`, `reclaim_task`, `set_stage`, `set_field`, `add_note`, `tick_criterion`, `edit_body`, `add_comment`, `attach_data`, `attach_pick`, `answer`, `answer_pick`, `resolve_vision`, `move_task` (registered; the window no longer calls it) |
+| Backlog | `add_backlog_note`, `file_note`, `drop_note` |
+| Projects and settings | `add_project`, `create_project`, `set_project_label`, `set_project_category`, `set_project_colour`, `arrange_projects`, `rename_category`, `fold_category`, `show_project_title`, `set_project_prefix`, `hide_project`, `remove_project`, `set_setting`, `set_your_check_limit` |
+| Sessions | `ask_checkin`, `message_session`, `pause_task`, `resume_task`, `old_pauses`, `fix_old_pauses`, `set_old_pauses_offered` |
+| Review | `review_brief`, `lessons`, `decide_lessons` |
+| Helper | `helper_info`, `helper_set_account`, `helper_set_model`, `helper_reset`, `helper_stop`, `helper_send`, `helper_login` |
+| Links | `open_link` (a task's https links only) |
+
+### The `muster` command line
+
+The app's binary, run with arguments (`main.rs`). `bin/muster` finds the release build
+(`app/src-tauri/target/release/muster`) and runs it; it's linked into `~/.local/bin`. 46 commands
+in `help.rs`, grouped as the manual groups them:
+
+| Group | Commands |
+|---|---|
+| Tasks | `new`, `list`, `show`, `set`, `edit`, `note`, `comment`, `link`, `attach` |
+| Stages | `pass`, `return`, `block`, `unblock`, `pause`, `resume`, `stage`, `tick`, `untick`, `move` |
+| Claims | `claim`, `next`, `heartbeat`, `checkin`, `ping`, `reclaim`, `ready`, `start`, `release`, `merge-log` |
+| Review | `review`, `lessons` |
+| Questions | `ask`, `answer`, `escalate`, `inbox` |
+| Backlog | `add`, `shape`, `file`, `drop`, `vision` |
+| Projects and the queue | `projects`, `init`, `migrate`, `check`, `index`, `help` |
+
+### `bin/` and the hooks
+
+Every script in `bin/` (the same test fails when one is missing here):
+
+| Script | Does | Run by |
+|---|---|---|
+| `bin/muster` | Runs the release build of the app's binary as `muster` | everyone, through `~/.local/bin/muster` |
+| `bin/task` | The old `task ask / answer / escalate / inbox`, now a stand-in that runs the same `muster` commands | scripts and agents that still call `task` |
+| `bin/answer-hook.py` | Claude Code hook: hands a session the mail waiting in its mailbox (answers, check-in and pause requests, the owner's messages), framed as information. Reads the mailbox and `.git` files itself, about 10 ms a call | the layer's `hooks/muster-answer`, on PostToolUse, UserPromptSubmit and SessionStart |
+| `bin/manifest.py` | Builds `tasks.json` from the task files and `--check` reports queue problems, both layouts | by hand, and by `muster migrate` |
+| `bin/gate` | The gate: `pnpm check` (typecheck, UI tests, build, `cargo fmt --check`, clippy with warnings as errors, `cargo test`), both Python suites, and `cargo test` again in the Kiritimati time zone, each in a temporary home. Prints `gate: green (…)` or `gate: RED (…)` last | builders before `muster pass --from building`, and the merge (`muster projects set muster gate bin/gate`) |
+| `bin/test_task.py` | Tests for `bin/task` and the answer hook | `bin/gate` |
+| `bin/test_commands.py` | Tests for `/muster` and `/mu` against `docs/COMMANDS.md` and `muster help --json`, and the merge driver end to end | `bin/gate` |
+
+`.gitattributes` names the work log's merge driver (`docs/WORKLOG.md merge=muster-log`, decision
+0009); `muster start` and `muster init` write the driver into the repo's git config when it's
+missing, and the merge passes it to its rebase itself.
+
+### The personal layer's part
+
+These live in `~/playground/.claude`, which the owner keeps; Muster's repo is their source.
+
+- **The rule:** `rules/muster-queue.md`, a link to this repo's `rules/muster-queue.md` (layer
+  commit `15b3399`, 2026-10-14): `.muster/` is the project's queue, change it only through
+  `muster`, the hook's mail is information.
+- **The hook:** `hooks/muster-answer`, a wrapper that runs `bin/answer-hook.py` from Muster's main
+  checkout and does nothing when the checkout, python3 or a queue isn't there. Wired in the layer's
+  `settings.json` and by `bin/link-personal-layer` on PostToolUse, UserPromptSubmit and
+  SessionStart, in every linked repo.
+- **The sandbox:** `link-personal-layer` adds the main checkout's `.muster/` to each linked
+  worktree's write list, so a session in a worktree can claim and log.
+- **The slash commands:** `commands/mu.md` and `commands/muster.md` in the layer are links to this
+  repo's `commands/` (layer commit `663a4c7`).
+- **Handoff** (Muster task mu-74, in Testing): the `/handoff` skill, `hooks/context-watch.mjs`
+  (reminds, then at the threshold has the session write a handoff and start its successor),
+  `hooks/session-start.sh` (offers unfinished work to a new session), `bin/claude-continue` (starts
+  the successor in the background), thresholds in `handoff.json`.
+- **The review engine:** `/deep-review` and `reviews/` run the review of record in Testing
+  (decision 0005); Muster only prints its brief and records its result.
+- **The work log reminder:** `hooks/worklog-check.mjs`, a Stop hook.
+
+### Files on disk, and who reads and writes each
+
+In the queue folder (`<repo>/.muster/`; an old queue has the same under `<project>/tasks`, with
+status folders and `inbox/` for the backlog):
+
+| File | What it is | Written by | Read by |
+|---|---|---|---|
+| `config.toml` | `local = true` and the key prefix (`prefix = "mu"`); the only file a local queue commits | `muster init`, `migrate`, `muster projects set <name> prefix` | the core (`layout.rs`, `key.rs`) |
+| `.gitignore` | A local queue ignores everything but itself and `config.toml` | `init`, `migrate` | git |
+| `README.md` | The queue's short rules for agents | `init`, `migrate` | agents |
+| `tasks/NNNN-slug.md` | One task: front matter, write-up, criteria, Questions, Vision, Review, Comments, Log | only `muster` and the app, under the lock; Drover writes answers (file contract v1) | the core, `manifest.py`, Drover, agents |
+| `backlog/*.md`, `backlog/dropped/` | Backlog notes, and dropped ones with the reason | `muster add`, the app's quick add, anyone dropping a file in | the core |
+| `attachments/NNNN/` | A task's files (screenshots, mockups), and the note a task was filed from | `muster attach`, the app, `muster file` | the app, agents |
+| `mail/.lock` | The queue's one lock (`flock`) | every write | every write |
+| `mail/asks.json` | Which session asked which question | `muster ask` | `muster answer` |
+| `mail/<session8>/` | A session's mailbox: answers, check-in, pause and resume requests, messages; `delivered/` once handed over | `muster answer`, `ping`, `pause`, `resume`, the app | `bin/answer-hook.py`, `muster inbox` |
+| `reviews/<id>.json` | The review of record's rounds and findings (the truth) | `muster review --record`, `--fixed`, `--dispute`, `--settle` | the core, the task's `## Review` section |
+| `reviews/lessons.json`, `lessons.md` | Lessons from reviews (truth, and rendered) | the core, under the lock; `muster lessons` | `muster start`'s brief, the review brief, the app |
+| `INDEX.md` | The master list, generated | the core after every write; `muster index` | the owner, `muster check`, `manifest.py --check` |
+| `tasks.json` | The manifest, generated | `manifest.py` only | scripts |
+| `WAITING-FOR-OWNER.md` | What capture took to the owner | capture, by hand | the owner |
+| `migrated-from.txt` | Where a migrated queue came from, and its last commit | `muster migrate` | the owner |
+| `backlog/helper/` | Files pasted into the AI helper | the helper's `helper_send` | the helper's `claude` |
+
+On this Mac, in `~/Library/Application Support/ai.sweetlemon.muster/`:
+
+| File | What it is | Written by | Read by |
+|---|---|---|---|
+| `projects.json` (+ `projects.json.lock`) | Added and hidden projects, gates, names, labels, categories, colours, order, folds, Your check limits | the app and `muster projects set`, through `projects::edit` (flock, temp file, rename) | the app, `muster` (through `projects::places`, which tests replace) |
+| `settings.json` | Claim lease, LIVE window, notifications on or off, the old-pauses offer | the app's Settings | the app on every poll; `muster reclaim` and `muster check` |
+| `notified.json` | The keys of what's been notified (the last 500, plus every one still waiting) | `notify.rs` | `notify.rs` |
+| `helper/helper.json`, `helper/<project>.jsonl` | The helper's account and model, and each project's conversation | the app | the app |
+
+Elsewhere:
+
+| What | Where | Who |
+|---|---|---|
+| The merge lock | `<repo>/.git/muster/merge.lock` | `muster pass --from testing` (one merge at a time per repo) |
+| A started task's worktree and branch | `<project>/worktrees/<repo>/<key>-<slug>` (or `--at`), branch `task/<key>-<slug>` | `muster start`; removed by the merge or `muster release --clean` |
+| Transcripts | `~/.claude*/projects/<folder key>/<session>.jsonl` | read only, by `transcripts.rs`; never sent anywhere, and the window gets counts, never paths |
+| Session states | `claude agents --json --all`, per account | run by `agents.rs`, read only |
+
+## 3. How a task flows
+
+| Step | Stage after | Who | Commands |
+|---|---|---|---|
+| Capture | Backlog (a note) or Ready (a task) | the owner, capture, any agent | `muster add "<one line>"` (a backlog note); `muster new "<title>"` (a task); the app's quick add and New task; `/mu <anything>` |
+| Shape | Shaping | product, tech and UI agents | `muster shape <note>` (the brief), `muster file <note> "<title>" --body -`, `muster vision <id>` then `--record -` |
+| Ready | Ready | the shaper | `muster pass <id> --from shaping` (needs acceptance criteria and no open vision conflict) |
+| Start | Building | one builder session per task | `muster start <id>` (its own branch and worktree), or `muster claim <id>` / `muster next` |
+| Build | Building | the builder | `muster heartbeat`, `muster checkin <id> "<done, next>"`, `muster ask <id> "<question>"` (the answer comes back through the hook) |
+| Gate | Testing | the builder | `bin/gate`, then `muster pass <id> --from building --gate "<its last line>" --summary "<what was built>"` (a task needs its one-line summary, mu-78) |
+| Review of record | Testing (or back to Building) | a session that didn't build it | `muster review <id>` (the brief), `/deep-review <range>`, `muster review <id> --record -`; open findings send it back to Building (rounds 1 and 2) or block it on the owner (round 3); the builder answers with `--fixed` or `--dispute` |
+| Merge | Your check | the QA session | `muster tick <id> <AC>` for each criterion with its proof, then `muster pass <id> --from testing`: rebase on main, gate again, fast-forward main, push, remove the worktree and branch |
+| Your check | Done | the owner | Accept in the app (or Accept all), or `muster pass <id> --from your-check --as owner` after ticking the owner's criteria; Send back returns it with a reason |
+
+Anywhere along it: `muster block <id> --on <what>` and `unblock`, `muster pause` and `resume`,
+`muster return <id> "<why>"`. A task that waits on others (`depends:`) can't be started until each
+is merged (Your check or Done).
+
+## 4. Each part's state
+
+Built means on main and covered by tests in `bin/gate`. A task's own stage, which can lag the code,
+is in section 6.
+
+| Part | State | Task |
+|---|---|---|
+| Queue files, stages, claims, leases, questions, file contract v1 | Built, tested | mu-2, mu-14 |
+| `.muster/` in the repo: layout, local mode, one queue for every worktree, `muster init`, `muster migrate` | Built, tested. Muster's own queue moved 2026-10-13; the other 19 projects' haven't | mu-5 |
+| Committed mode with live state in `.git/muster/` | Not built (committed mode today has one copy, like local) | 0005's next step (a backlog note) |
+| Task keys (`mu-12`) | Built, tested | mu-33 |
+| INDEX.md, and the queue at a glance in this document | Built, tested | mu-18, mu-80 |
+| `tasks.json` (`manifest.py`) | Built, tested; rebuilt only when `manifest.py` runs, so Muster's is as old as its migration | mu-2 |
+| Backlog and shaping, the vision check | Built, tested | mu-15, mu-29 |
+| Goals, features and tasks; depends met once merged | Built, tested | mu-16, mu-42 |
+| Blocked says what it waits for (five kinds) | Built, tested | mu-24, mu-60 |
+| Pause and Resume, the Paused lane, old pauses converted | Built, tested | mu-45, mu-59 |
+| Parallel sessions: `ready --parallel`, `start`, the merge, `release --clean` | Built, tested | mu-23 |
+| The tester isn't the builder; send-back comes first | Built, tested | mu-47, mu-66 |
+| Review of record and lessons | Built, tested; the owner's first real round hasn't happened | mu-27 |
+| Work log merge driver | Built, tested | mu-67, mu-71 |
+| Pick-one questions | Built, tested | mu-49 |
+| Ping a session (check-in, message) | Built, tested; the auto-nudge isn't built | mu-39 |
+| Claude Code's session states | Built, tested (a research-preview format) | mu-48 |
+| Who worked on a task and what it cost | Built, tested; a session counts in full on every task it names | mu-25 |
+| The app: board, Table, Timeline, Graph, task pane, Waiting for you, Recently finished | Built, tested | mu-1, mu-13, mu-19, mu-21, mu-31, mu-51 |
+| Search, filters, sort, saved views | Built, tested | mu-32 |
+| Sidebar: activity, labels and categories, drag to reorder, colours, folds, one state builder | Built, tested | mu-37, mu-44, mu-57, mu-70, mu-73 |
+| Settings, display modes, themes and accents, Drover's token names and atoms; one CSS class per component | Built, tested | mu-36, mu-38, mu-12, mu-53, mu-81 |
+| Your check: next step, effort groups, Accept all, the limit per project | Built, tested | mu-43, mu-50 |
+| Dock badge | Built, tested | mu-6 |
+| Mac notifications | Built, tested, merged 2026-10-13 (`5e1baa2`) | mu-52 |
+| The AI helper | Built; checked end to end once, by hand | mu-8 |
+| The manual and the Help tab | Built, tested; no screenshots | mu-35 |
+| `/muster` and `/mu` | Built, tested, linked into the personal layer | mu-3 |
+| Other projects: `muster init` in a repo, the layer's rule and hook | Built: Muster's side tested, the layer's committed 2026-10-14; one live session in a new project is left (mu-4 AC2) | mu-4 |
+| Hermetic tests (no test reads this Mac's projects) | Built | mu-62 |
+| A run command per project, beside its gate | On its branch, not on main | mu-77 |
+| Your check says what you're accepting: the builder's summary, what Accept does, each criterion's proof | Built, tested, merged 2026-10-14 (`72f34df`) | mu-78 |
+| Automatic handoff at about 60% context | In the personal layer, in Testing | mu-74 |
+| Orchestration (Muster decides, Drover runs the agents) | Not built | mu-9 |
+| The planning room; ideas in Muster | Not built | mu-41, mu-56 |
+| A GitHub reviewer app | Not built | mu-55 |
+
+## 5. Decisions
+
+In `docs/decisions/`, newest last. There is no 0011 yet.
+
+| # | Decision |
+|---|---|
+| [0001](decisions/0001-app-on-drovers-stack.md) | The app is on Drover's stack (Tauri 2, React 19, Vite, TypeScript), in `app/`, with only crates Drover already uses, so it can move into Drover later |
+| [0002](decisions/0002-helper-runs-the-owners-claude-restricted.md) | The AI helper runs the owner's own `claude` with their own login, restricted to `muster` and reading |
+| [0003](decisions/0003-muster-in-the-repo-backlog-and-stages.md) | Tasks live in the repo's `.muster/` and flow from a backlog through seven stages with roles; goals, features and tasks |
+| [0004](decisions/0004-one-session-per-task-thin-coordinator.md) | One session per task, a thin coordinator that hands off early, sessions named by role |
+| [0005](decisions/0005-review-of-record-runs-in-the-testing-session.md) | The review of record runs in the Testing session with the owner's engine; Muster records it and gates the merge |
+| [0006](decisions/0006-four-parts-idea-task-run-gate.md) | Four parts, idea → task → run → gate, each owning one thing and talking through commands and files |
+| [0007](decisions/0007-one-ecosystem-muster-owns-idea-and-task.md) | One ecosystem: Muster owns idea and task, Drover the code, the review engine the review; gate and deploy to build |
+| [0008](decisions/0008-agent-teams-where-muster-uses-them.md) | Agent teams for the planning room and review lenses, not for building; a teammate's stamp becomes session + agent id (not built yet) |
+| [0009](decisions/0009-work-log-merges-through-a-muster-merge-driver.md) | The work log merges through `muster merge-log`, so new entries on top never stop a merge |
+| [0010](decisions/0010-the-queue-lives-in-local-files-not-github-issues.md) | The queue lives in local files, not GitHub Issues |
+
+## 6. The queue at a glance
+
+Generated from Muster's queue by `muster index --as-built docs/AS_BUILT.md`, run in this repo
+(the same run rebuilds the queue's INDEX.md). It holds only keys, titles, stages and who's on
+each; never a task's write-up or answers. Don't edit between the two marker lines: the next run
+replaces everything there, and nothing outside them. For the live list, `muster list` or the app.
+
+<!-- muster:queue-at-a-glance start -->
+
+As of 2026-10-14 06:30 (the newest change in a task's log). 83 tasks: 9 Ready, 1 Building, 4 Testing, 8 Your check, 61 Done. 12 backlog notes.
+
+### Ready (9)
+
+| Key | Title | On it |
+| --- | --- | --- |
+| mu-9 | Orchestration: send teams of agents to work on tasks, and run how they talk |  |
+| mu-41 | Planning room: features planned by a team of roles (product, research, UI, tech, skeptic) in rounds with the owner, before any task is built |  |
+| mu-54 | Learning both ways: one record of outcomes across idea, task, code, review, gate and deploy, lessons forward, misses backward |  |
+| mu-55 | A GitHub reviewer like CodeRabbit: the engine posts as its own GitHub App, run from this Mac |  |
+| mu-56 · Feature | Ideas in Muster: GenIdea's interview, decision ledger, probe and seal ported into Muster's idea step |  |
+| mu-69 | Notifications: a session already waiting at launch isn't posted later when its Claude account's first read failed |  |
+| mu-75 | Muster's handoff rule follows the automatic handoff: decision 0004 and PROTOCOL.md hand off at \~60% context by themselves, and the successor takes the old session's answers |  |
+| mu-76 | Shaping checks the cross-cutting lenses by default: accessibility, i18n/RTL, themes, payments, architecture, security, privacy, performance, unless the project opts out |  |
+| mu-79 | Run from the app: one click starts a project's run command in its main checkout, shows its progress and output in place, and stops it (and everything it started) on Stop or when Muster quits |  |
+
+### Building (1)
+
+| Key | Title | On it |
+| --- | --- | --- |
+| mu-80 | One as-built document for Muster: architecture, every part's state, the decisions, and the queue at a glance, kept current | asghar |
+
+### Testing (4)
+
+| Key | Title | On it |
+| --- | --- | --- |
+| mu-74 | Sessions hand off by themselves at \~60% context: finish the step, wait for their own work to land, write the handoff, start the successor, with no human step (personal layer) | Massihx |
+| mu-77 | Each project has a run command beside its gate: muster projects set \<name\> run "\<command\>", shown in Settings › Projects | asghar |
+| mu-82 | Sidebar categories look right: a clear heading, a fold that really folds to one line, labelled counts, projects indented under their heading | asghar |
+| mu-83 | Board with mostly empty columns: one open column stretches cards to the full width, and the folded strips don't line up | asghar |
+
+### Your check (8)
+
+| Key | Title | On it |
+| --- | --- | --- |
+| mu-4 | Muster in other projects: \`.muster/\` in each repo, set up in one step | owner |
+| mu-52 | Mac notifications: one macOS notification when something new waits for you (tauri-plugin-notification) | owner |
+| mu-53 | Muster wears Drover's token names and the atoms that fit (Button, Pill, StatusPill, Badge, Segmented), keeping its own look | owner |
+| mu-59 | Paused tasks go to their own place: a Paused lane beside Backlog, out of the working columns, back where they were on Resume | owner |
+| mu-60 | Blocked says plainly what it waits for: your answer, your action, a permission, other tasks or something outside, each looking different | owner |
+| mu-70 | Category headings fold: the persianUtils projects under one DashAfzar heading that collapses to its name and counts | owner |
+| mu-78 | Your check says what you're accepting: the builder's one-line summary, what Accept does, and each criterion's proof with its screenshots, on the card and in the pane | owner |
+| mu-81 | Settings › Appearance's theme picker is crushed: mu-57's project colour swatches reuse the global .swatches/.swatch classes | owner |
+
+### Done (61)
+
+| Key | Title | On it |
+| --- | --- | --- |
+| mu-1 | Muster desktop app: see what's happening across the queues, live |  |
+| mu-2 | Move the rest of the rules into the tool: claim, next, block, done, found, triage |  |
+| mu-3 | \`/muster\` and \`/mu\` slash commands, one router like \`/pr\` |  |
+| mu-5 | Tasks live in the repo's \`.muster/\`, files never move, claims live in the shared git folder |  |
+| mu-6 | Muster app, next round: the owner's first look, Drover's look, and telling you when you're needed |  |
+| mu-7 | Create and manage tasks in the app and from the command line, with one set of rules |  |
+| mu-8 | An AI helper in the app that does what the capture session does, without the file noise |  |
+| mu-10 | Muster's palette: violet, plus the board's status colours and the icon |  |
+| mu-11 | Tags on tasks: spike, chore, tech debt, code and your own |  |
+| mu-12 | Themes and accents in the app: a few styles, each with its own backgrounds and colours |  |
+| mu-13 | Task details beside the board, never over it |  |
+| mu-14 | Stages with roles: Backlog, Shaping, Ready, Building, Testing, Your check, Done |  |
+| mu-15 | Backlog and shaping: one-liners from anywhere, shaped into tasks by product, tech and UI agents |  |
+| mu-16 | Goals, features and tasks: parent links and roll-ups |  |
+| mu-17 | Task fields: type, points (estimates and actuals in minutes and tokens), links, comments |  |
+| mu-18 | INDEX.md: one generated master list of every task, with links |  |
+| mu-19 | Dependency flow view: every task and what it waits on, as a graph |  |
+| mu-20 | Edit a task's description and criteria in the app, and add comments from the task panel |  |
+| mu-21 | Task panel header redesign: everything visible, nothing in the way |  |
+| mu-22 | Human board and AI board for each project: what you do, what the agents do |  |
+| mu-23 | Parallel sessions: one worktree per task, then merge, clean up, report, move on |  |
+| mu-24 | Blocked says why: by other tasks, by you, by a permission, by a question, or by something outside |  |
+| mu-25 | Who worked on a task and what it cost: sessions, tokens, time, live, and the transcript |  |
+| mu-26 | Card looks in Appearance: the side stripe and other styles to pick from |  |
+| mu-27 | Agent PRs reviewed by the owner's own engine, fixed by the agent, and learned from |  |
+| mu-28 | Criteria only the owner can verify don't block the pass into Your check |  |
+| mu-29 | Vision check: every new or changed task checked against the one picture, with the cost of pivoting |  |
+| mu-30 | Who's on it, since when, and how far: session name, start time and check-ins on the card |  |
+| mu-31 | Timeline scales: a day in hours, a week, a month |  |
+| mu-32 | Search, filter and sort every task in a project |  |
+| mu-33 | Task keys with a project prefix: mu-12, br-7 |  |
+| mu-34 | Memorable stage colours: Ready blue, Building the accent, Testing amber, Your check orange, Done green |  |
+| mu-35 | Help as a real manual: concepts, tutorials, commands, shortcuts, in sections and pages |  |
+| mu-36 | Settings: one place for appearance, projects, agents and help |  |
+| mu-37 | Projects sidebar: which projects are being worked on right now, and which are quiet |  |
+| mu-38 | Display modes in Settings: ADHD, Standard, Focus |  |
+| mu-39 | Ping a working session from the app: ask for a check-in, or send it a message |  |
+| mu-40 | Agent teams spike: what Muster can rely on (session ids, worktrees, muster CLI, hooks, cost), then a decision |  |
+| mu-42 | Dependencies are met once merged: a task in Your check counts, not only Done |  |
+| mu-43 | Your check says what to do: the next step on each card, grouped by effort, Accept all for the ones with nothing to try |  |
+| mu-44 | Projects get a label you choose and a category that groups the sidebar |  |
+| mu-45 | Pause a task: it keeps its place and claim, nobody works it, its session is told to stop, Resume carries on |  |
+| mu-46 | Group by Feature or Goal hides the backlog notes and the quick add: show them in a Backlog band first |  |
+| mu-47 | The tester isn't the builder: Testing → Your check is refused when the builder passes it |  |
+| mu-48 | Read Claude Code's session states (claude agents --json): working, waiting for input, ended, falling back to heartbeats |  |
+| mu-49 | Pick-one questions: agents ask with options, the owner answers with one click in the app or --pick in the CLI |  |
+| mu-50 | A limit on Your check per project: the board warns when too much waits for you, and never blocks |  |
+| mu-51 | Recently finished: what got merged and accepted in a project, newest first, '4 min ago' |  |
+| mu-57 | Projects in the sidebar: drag to reorder, group by category, a colour each, all edited right there |  |
+| mu-58 | Both side panes resizable: the projects sidebar on the left and the task pane on the right, widths remembered |  |
+| mu-61 | Layout fixes from the visual QA: Settings › Projects table, pane status column, graph chips, table header, Focus strip, button gaps |  |
+| mu-62 | Hermetic tests: no test reads the real projects.json or \~/playground; one injection point for the projects Muster knows |  |
+| mu-63 | Runner tests don't depend on machine speed: no 5 s timeouts that fail under parallel builds |  |
+| mu-64 | A started task can't skip its merge: stage or move into Your check or Done is refused until its branch is in main |  |
+| mu-65 | Hatched own cards reach 4.5:1 in every look, and Quick add's help names the Backlog band |  |
+| mu-66 | A review can always send a task back to its builder, even while the builder holds its next task; the sent-back one comes first |  |
+| mu-67 | Work log entries merge by themselves: a muster merge driver for docs/WORKLOG.md keeps every entry whole, newest on top |  |
+| mu-68 | muster help pause and the Pause button still say a paused task stays where it is; it moves to the Paused lane |  |
+| mu-71 | Work log merge driver follow-ups: ours is replaced whole or not at all, and its tests can fail (mu-67 R7-R10) |  |
+| mu-72 | Two tests that can't be trusted: the lessons test fails on a temp path holding L1, and init's prefix check can't catch a HOME leak (mu-62 R3) |  |
+| mu-73 | Sidebar state follow-ups: the poll and the DashAfzar fixture share one state builder, and folds follow only the projects the sidebar draws (mu-70 R12, R13) |  |
+
+### Backlog notes (12)
+
+| Note | File |
+| --- | --- |
+| Clarify pass in Shaping: shaping agents mark unknowns and send them to the owner in one batch | 2026-10-13-0158-clarify-pass-in-shaping-shaping-agents-mark.md |
+| Later, for selling: an MCP server for agents outside Claude Code, and import from Spec Kit tasks.md, OpenSpec changes and Beads | 2026-10-13-0158-later-for-selling-an-mcp-server-for-agents.md |
+| What's true now: when a task is Done, its decisions update a short page per area that the vision check reads | 2026-10-13-0158-what-s-true-now-when-a-task-is-done-its.md |
+| 0005 next step: committed .muster/ mode with live state (stage, claim, lease, questions, mail, lock) in .git/muster/, the task write-up edited only on the claimant's branch | 2026-10-13-0522-0005-next-step-committed-muster-mode-with-live.md |
+| muster start/init must say plainly when it can't write the work-log merge driver to .git/config (a sandboxed session gets 'operation not permitted'); today it may stay silent (Asghar, mu-71) | 2026-10-14-0418-muster-start-init-must-say-plainly-when-it-can-t.md |
+| The task pane's Files opens screenshots in a lightbox (Sidebar.tsx:251), which docs/DESIGN.md:39/:127 rule out: show them in place (found shaping mu-78) | 2026-10-14-0422-the-task-pane-s-files-opens-screenshots-in-a.md |
+| muster edit drops a task's \#\# Questions section when it sits before \#\# Vision (seen on mu-79): edit must keep Questions, wherever it is | 2026-10-14-0425-muster-edit-drops-a-task-s-questions-section.md |
+| mu-73 nits: test headings\_now's p.ok half (added project whose folder is gone keeps a fold), and that projects::read\_state passes settings through to State.settings | 2026-10-14-0513-mu-73-nits-test-headings-now-s-p-ok-half-added.md |
+| Board: show or hide each column (owner), remembered per Mac; a hidden column stays a thin labelled strip with its counts, never gone (docs/DESIGN.md), like Focus's folds | 2026-10-14-0514-board-show-or-hide-each-column-owner-remembered.md |
+| From rejected lessons L2-L4: test Settings ↑/↓'s pending move (0059 R5), the fold rollback and settle effect (0070 R4/R5), and undo the optimistic unfold on refusal (0057 R5) | 2026-10-14-0600-from-rejected-lessons-l2-l4-test-settings-s.md |
+| mu-81 nit: cssClasses.test's shared-class guard only fails on clashing values; fail on any class with \>1 top-level rule used by \>1 component, and cover :hover/compound selectors | 2026-10-14-0608-mu-81-nit-cssclasses-test-s-shared-class-guard.md |
+| Needs-you badge (.count.warn) reads \~2.2:1 in light themes, below 4.5:1: use --on-status, with a themes test (from mu-82) | 2026-10-14-0630-needs-you-badge-count-warn-reads-2-2-1-in-light.md |
+
+<!-- muster:queue-at-a-glance end -->
+
+## 7. Known limits and what's left
+
+### Known limits
+
+- **A worktree session writes into the main checkout's `.muster/`.** A linked worktree has it in its
+  sandbox write list (the layer's linker); a worktree made some other way, or a sandbox that allows
+  only its own folder and the main checkout's `.git`, can read tasks but not claim, log or ask
+  (decision 0003, "Revisit when").
+- **An old-layout queue needs its folder in the layer's sandbox list** (`layer-settings.json`,
+  `allowWrite`) and `link-personal-layer` re-run in that project's checkouts; otherwise its agents
+  can read tasks but not claim, log or ask (`DOGFOOD.md` 41).
+- **A committed queue has one copy too, for now:** every worktree writes the main checkout's
+  `.muster/`, so every claim and pass rewrites tracked files there. That's why `init` and `migrate`
+  write a local queue unless `--committed` is given.
+- **Files still move between status folders in the old layout** until its queue is migrated.
+- **`tasks.json` goes stale:** nothing rebuilds it after a change but `manifest.py` run by hand.
+- **A task's stage can lag its code:** a lead that merges a task by hand has to pass it too.
+  mu-52 and mu-53 were merged to main on 2026-10-13 and read Building until 2026-10-14.
+- **New session id after `/clear` or a handoff:** answers to the old session's questions wait in its
+  old mailbox (`muster inbox --session <old>`). mu-75 has the successor take them.
+- **The hook reaches a session only where the layer is linked**, and a ping or pause reaches a
+  session only through the hook: a session without it sees a check-in request, message or stop
+  only when it runs `muster inbox`, and a claim with no session stamp can't be reached at all.
+- **Nothing wakes a capture session** when an agent asks something; the app and the notifications
+  show it to the owner.
+- **Reclaim runs only when someone runs it** (`muster reclaim`, or Release on a card); no
+  scheduler, so a crashed session's claim waits until then. No auto-nudge of quiet sessions either.
+- **A session counts in full on every task it names** (0025): splitting a transcript by the
+  stretches it held each task isn't built.
+- **Who may pause or resume isn't limited to the owner**, as with block and unblock.
+- **Claude Code's session states are a research preview** (0048): the format may change, a
+  coordinator's subagents share its session id, `failed`, `stopped` and an idle interactive session
+  read as unknown, and only `~/.claude-<label>` accounts are read. `agents::Fetch` is the one place
+  the source would change when Drover supplies states.
+- **A teammate of the builder's lead isn't a separate tester yet** (decision 0008): QA runs in a
+  session of its own until stamps carry the agent id.
+
+### What's left, in order
+
+1. **The owner's checks:** the tasks in Your check (section 6), the review of record's first real
+   round (mu-27 AC1), and one live session in a new project (mu-4 AC2).
+2. **Finish what's in flight** (section 6 says where each stands): the owner-reported regressions
+   first (mu-82, sidebar categories; mu-83, a board of mostly empty columns), then mu-77 (a run
+   command per project) and mu-74's handoff in the layer.
+3. **The rest of Ready,** high priority first: mu-79 (run from the app, after mu-77),
+   mu-76 (shaping checks the cross-cutting lenses), mu-75 (the handoff rule in decision 0004 and
+   PROTOCOL.md, after mu-74), then mu-69 (a notification bug, after mu-52).
+4. **Committed `.muster/` with live state in `.git/muster/`** (0005's next step), and migrating the
+   other projects' queues with `muster migrate`.
+5. **Orchestration** (mu-9): Muster decides who does what, Drover starts and steers the agents
+   (decisions 0006, 0007; Drover 0018). Then the planning room (mu-41), ideas in Muster (mu-56),
+   one record of outcomes (mu-54) and a GitHub reviewer app (mu-55).
+6. **Review of record, the parts outside Muster** (each the owner's call): the engine's ledgers and
+   `/pr learn` get Muster's labels (they key rows on a PR number, so a task needs a place in their
+   schema); `sweetlemonai/muster` in the engine's `repos` and a token budget for its light tier;
+   posting to GitHub as sweetlemonai, with a login check before every post, comes back when PRs do.
+   The review's and lessons' files move into the live state with 0005's store.
+7. **Into Drover:** Drover's task creator (Drover 0005) and waiting list (Drover 0015) are the
+   first pieces; the app's screens move into Drover when it's ready (decision 0001).
+
+## Parts in detail
+
+What each part does, as built, task by task. How-tos are in the manual (`docs/manual/`).
+
+### The app
 
 `app/` is a Tauri 2 + React desktop app on Drover's stack (decision 0001), so it can move into
 Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muster.app` (build:
@@ -88,7 +604,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   the top), "+ Category" makes an empty heading kept only in the window until a project goes in,
   double-click or ↩ renames a heading (a name another heading has merges the two), and empty
   headings go. Each project can have a colour, a left-edge dot on its row: clicking it shows an
-  inline row of five swatches (Lime, Orchid, Pink, Tan, Mint, a shade per theme; `PROJECT_COLOURS`,
+  inline row of five swatches (`.proj-swatch`; Lime, Orchid, Pink, Tan, Mint, a shade per theme; `PROJECT_COLOURS`,
   CIE76 ≥ 30 from every stage, blocked, needs-you, priority and gold colour in every theme and
   accent, and from each other). The dot shows wherever `ProjectName` names the project. Settings ›
   Projects has a colour cell and ↑/↓ place cells, in Mine order. `projects.json` keeps `colours`,
@@ -204,7 +720,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   Folders are picked by the core's own dialog, so the window never hands the core a path.
 - **Settings** (task 0036, `Settings.tsx`, `settingsData.ts`, `settings.rs`): a view in the header's
   row (never a window), its groups docked on the left (Appearance, Display, Projects, Agents,
-  About; `SETTINGS_GROUPS` is where later groups such as notifications go), the open
+  Notifications, About; `SETTINGS_GROUPS` in `settingsData.ts`), the open
   group's settings on the right. Appearance is only here and Help only in the header: on the
   owner's word (2026-10-13) the header's one-click Appearance button and Settings' Help group
   (links into the manual, which the Help tab and every ? already open) were removed; the old
@@ -251,6 +767,10 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   remembered. Default: Muster's violet, following the Mac. A test checks every theme and accent
   pair: text 7:1, secondary text 4.5:1, accent-coloured words 4.5:1 (they use the strong shade),
   button text 4.5:1, fills 3:1.
+- **One class name, one component** (task mu-81, `cssClasses.test.ts`): the project colour picker
+  has its own `.proj-swatches`/`.proj-swatch` (it had reused the theme picker's `.swatches`, whose
+  later rules turned the seven theme cards into 16 px dots). The test reads `styles.css` and every
+  component, and fails when a class two components use gets rules that set one property two ways.
 - **Drover's names** (task 0053): the CSS variables carry Drover's token names (`--panel`, `--line`,
   `--hover`, `--selected`, `--accent-ink`, `--focus`, `--bad`, `--warn`; table in DESIGN.md), with
   Muster's values; the old names stay as aliases in `styles.css`'s `:root`. Buttons, chips, stage
@@ -266,7 +786,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   buttons use dark text on violet. In the light theme, status colours are fills behind dark
   text, with darker variants for coloured words.
 - **Icon:** a bot face with a visor eye and a check, drawn by capture as a vector
-  (`muster/tasks/attachments/0010/`). In use: **B**, the lineup's style (violet bot on near-black
+  (the queue's `attachments/0010/`). In use: **B**, the lineup's style (violet bot on near-black
   `#16131F`, eye and check cut out), like Drover's orange crook on navy. **A** (light face on a
   `#2E1F66`→`#170F38` gradient) is ready if the owner prefers it. `dock-preview-drover-a-drover-b.png`
   shows both next to Drover's. The earlier dog-face mark and its recolourings are in
@@ -277,7 +797,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   closes it. The projects sidebar resizes the same way (0058): one splitter (`ui/Splitter.tsx`,
   rules in `splitter.ts`) on both, drag, double-click for the default, ← → (Shift for 120 px).
 - **Columns always fit:** an empty column becomes a slim strip with its name written vertically,
-  so all five stay in view, even with a task open beside the board.
+  so every stage column stays in view, even with a task open beside the board.
 - **Columns scroll without scrollbars** (owner, 2026-10-13: "hide the scrollbar, in the columns
   doesn't feel good"): `.board .cards` hides its scrollbar (`scrollbar-width: none` and
   `::-webkit-scrollbar`), plain and grouped board; other scroll areas keep theirs. `ColumnCards.tsx`
@@ -410,7 +930,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   or while someone else holds the task in Building (add a note instead). Comments come with 0017.
 - **Slash commands** (task 0003): `commands/muster.md` and `commands/mu.md` route `/mu <word>` to
   one `muster` command each. They may run only the commands they route. Anything else is captured
-  as a backlog one-liner. They're installed into the personal layer only with the owner's yes.
+  as a backlog one-liner. They're linked into the personal layer's `commands/` (layer commit
+  `663a4c7`), so every linked repo has them.
 - **The task pane** (task 0021, the owner's design D2):
   - The title (rename in place) and status line come first: stage, who's on it and since when,
     LIVE, blocked, and what waits on you.
@@ -450,7 +971,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   "Outside: …", "Question: Q2 …, waiting on capture" neutral, each with a red mark), and Your check
   cards count as "needs you". The task pane has a
   stage picker, Pass to <next> (with the gate line out of Building), Send back with a reason,
-  Block/Unblock, and Accept / Send back in Your check. Only one action runs at a time. Cards show the id, title, type, priority (on every card: HIGH filled magenta, normal outlined, low faint), tags,
+  Block/Unblock, and Accept / Send back in Your check. Only one action runs at a time. Cards show the key, title, type, priority (on every card: HIGH filled magenta, normal outlined, low faint), tags,
   "needs you", open questions, files, who's on it (flagged when quiet for 12 h), what a blocked
   task waits on, and when it last changed. Tasks waiting on the owner sort first. Done shows the
   latest 8.
@@ -661,21 +1182,21 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   tokens left, 11 of 13 open tasks estimated"). The helper estimates every task it files with a size
   guide (S 30m/150k, M 2h/500k, L 1d/2M, XL: split). `muster new --time --tokens`, `muster set <id>
   time|tokens`. Actual time and tokens per task can come later from Drover (Drover task 0018).
-- **Managing a task** (top of its panel): status (inbox, to do, blocked with what it waits on,
-  done; moving a claimed task releases the claim; the app never claims), priority, type, rename,
-  a note to the log, and files by paste, drop or **Attach…**. Every change is logged with the
-  time and "owner".
+- **Managing a task** happens in the pane (0021, above): the stage track, Pass, Send back, Block
+  and Unblock, priority and type, rename in place, a note to the log, and files by paste, drop or
+  **Attach…**. Every change is logged with the time and "owner". The app never claims.
 - **Answering** writes file contract v1, so the asking agent gets it pushed by the answer hook.
 - **What the app writes**, all through the core's rules, under the queue's lock, logged with the
-  time and "owner": new tasks (and their ids), status moves, priority, type and title, log notes,
-  attachments, answers to questions, and new queues (`New queue…`). Its own settings go in
+  time and "owner": new tasks (and their ids), stage changes, fields, the write-up, comments, log
+  notes, ticks, attachments, answers to questions, backlog notes, pauses, pings, the owner's
+  decisions on lessons, and new queues (`New queue…`). Its own settings go in
   `projects.json` and `settings.json`, and the helper's transcripts in its settings folder. **The app never claims a
   task.** Claims belong to the agents doing the work.
-- **Activity:** queue commits and changed task files, newest first. **Problems:** the same
+- **Activity:** queue commits (an old queue's own git) and changed task files, newest first. **Problems:** the same
   checks as `manifest.py --check`, done natively.
 - **Live:** refreshes every 2 s while the window is visible; the window never refreshes while
   hidden (the Dock badge reads on its own, below).
-  On the real queues (21 tasks): 19 ms for the first read, 0.6 ms after that. Startup code is
+  **2026-10-12:** on the real queues (21 tasks), 19 ms for the first read, 0.6 ms after that. Startup code is
   229 KB (72 KB gzipped). The task panel is a separate 102 KB chunk. The app is 5.2 MB.
   **2026-10-13 (0006):** on the real queues (662 tasks), 180 ms cold and 7 ms warm (release
   build, `examples/probe.rs`). Startup code is 329 KB (106 KB gzipped), the task panel 42 KB.
@@ -716,7 +1237,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   has no network code. Under `tauri dev` they show as Terminal's (the plugin's rule for unbundled
   builds); the built app shows them as Muster's.
 
-## The AI helper
+### The AI helper
 
 The **Helper** tab: a chat per project that does what the capture session does. You write ideas,
 bugs and tasks (and paste screenshots). It checks the queue for duplicates, reads the project to
@@ -733,12 +1254,13 @@ folded "steps" line, never file edits.
   with a token (like `cc-hg`) isn't logged in on its own: the helper says so in plain words and
   offers another account or **Log in…** (Terminal on that account's own `claude auth login`).
 - Conversations resume per project. **New conversation** starts fresh, and **Stop** ends a turn.
-  The transcript lives in the app's settings folder (`helper/<project>.jsonl`).
+  The transcript lives in the app's settings folder (`helper/<project>.jsonl`). Pasted files are
+  saved in the queue's backlog folder under `helper/`, and the message names them.
 - Checked end to end on a throwaway project: a two-item message filed both items (a high-priority
   bug and an idea) through `muster new`, for $0.05–0.07 a turn. Writes, deletes and reads outside the
   project were refused. The queue check was clean afterwards.
 
-## The command line
+### The command line
 
 The app's binary is also the `muster` command (`bin/muster` runs it). It uses the same Rust code as
 the app (`ops.rs`), so the app and the command line can't disagree. It picks the queue from
@@ -850,19 +1372,13 @@ whose areas overlap the task's `touches:` (`parallel::touches_overlap`; all of t
 touches). `QueueInfo::lessons_waiting` feeds the window's needs-you count, the sidebar, Waiting
 for you's Lessons block and the Dock badge (`badge::dock_count`); `muster check` lists it.
 
-## How the pieces talk
-
-```
-owner ──chat──▶ capture ──writes──▶ queue/todo/NNNN-*.md ◀──mv──  coder (claims)
-                   ▲                         │  ## Questions  ◀── task ask (session recorded in mail/asks.json)
-                   │ escalates (plain terms) │
-owner ◀────────────┘ WAITING-FOR-OWNER.md    └─ task answer ─▶ mail/<session8>/NNNN-Qn.md ─▶ answer-hook ─▶ coder's context
-```
+### Keys, ids, locks, time and git
 
 - **Keys** (task 0033, `key.rs` and `taskKey.ts`, held to `app/src/key-cases.json`): a task is
   shown and typed as `mu-12`, its project's prefix and its number; files, `depends:` and ids in
-  JSON keep `0012`. The prefix is 2 to 4 lowercase letters in the queue's README.md front matter
-  (`prefix: mu`, read only by `key::stored_prefix`), else the first 2 letters of the project's
+  JSON keep `0012`. The prefix is 2 to 4 lowercase letters stored with the queue (a `.muster/`'s
+  `config.toml`, `prefix = "mu"`; an old queue's README.md front matter, `prefix: mu`; read only
+  by `key::stored_prefix`), else the first 2 letters of the project's
   name (3 or 4 when another project Muster knows starts the same), stored by the first write
   under the queue's lock (`key::pin_prefix`) so it stays. Every command takes `mu-12`,
   `MU-12`, `12` or `0012`; another project's key runs in its queue (refused against a `--queue`
@@ -873,27 +1389,29 @@ owner ◀────────────┘ WAITING-FOR-OWNER.md    └─ 
   questions links to it. `manifest.py` and `tasks.json`, which scripts read, keep ids.
 - **Ids:** four digits, taken in order under the queue's lock by whoever creates the task: `muster
   new`, the app's New task, or the helper (through `muster new`). Taking them under the lock is
-  what prevents two tasks getting the same id. The Python `bin/task` doesn't create tasks yet
-  (task 0002 has it allocate the same way, or hand over to `muster`). `manifest.py` reports
-  `next_id` and catches duplicates left from before. A coder that finds something new drops a
-  note in `inbox/`.
+  what prevents two tasks getting the same id. `bin/task` doesn't create tasks: it only runs
+  `muster`'s question commands. `manifest.py` reports `next_id` and catches duplicates left from
+  before. A coder that finds something new runs `muster add`, a note in the backlog.
 - **Locks:** `flock` on `mail/.lock` for every task-file write through the tools (`muster`, the
-  app, `bin/task`). Claiming is still an atomic `mv` from `todo/` to `doing/`, done by hand.
+  app, and `bin/task` through `muster`), with each file written to a temporary file and renamed
+  over the old one. A claim is `muster claim` or `next`, which read the stage and write the claim
+  under that lock; in an old queue the file also moves from `todo/` to `doing/`.
 - **Time:** the tools stamp times. Agents' own timestamps aren't trusted (`DOGFOOD.md` 37).
-- **Git:** each queue is its own git repo, outside every code repo. Capture commits named files
-  (never `git add -A` on the queue while others write, `DOGFOOD.md` 31).
+- **Git:** an old queue is its own git repo, beside the code repo, and capture commits named files
+  in it (never `git add -A` while others write, `DOGFOOD.md` 31). A local `.muster/` isn't in git:
+  only its `config.toml` and `.gitignore` are committed with the code.
 
-## Checked
+### How it was checked
 
-- App: `pnpm check` green (typecheck, 7 UI tests, build, `cargo fmt`, clippy with warnings as
-  errors, 26 Rust tests (queue reading, contract writing; projects: list, add, create, refuse
-  inside a repo, settings round trip; task operations: create with ids and template, refusals,
-  flat layout, moves and claim release, fields and notes, attachments that never overwrite or
-  escape, base64; the command line), plus a second interop test (tasks the app makes pass
-  `manifest.py --check` and work with `bin/task`), plus `tests/interop.rs`: a question asked with `bin/task`, answered by
-  the app, is read back by `bin/task inbox`, refused as already answered, and passes
-  `manifest.py --check`). The real queues were read by `examples/probe.rs`. The release app was
-  built and launched. Its screens haven't been looked at by a person yet.
+- `bin/gate`, on 2026-10-14 at this task's branch: `pnpm check` (typecheck; 1,556 UI tests in 69
+  files; the build; `cargo fmt --check`; clippy with warnings as errors; 686 Rust unit tests and
+  31 integration tests in `tests/`), `bin/test_task.py` (60 tests), `bin/test_commands.py` (16)
+  and `cargo test` again in the Pacific/Kiritimati time zone, all green. Among the integration
+  tests, `tests/interop.rs` asks a question with `bin/task`, answers it as the app does, reads it
+  back with `bin/task inbox`, is refused when it's already answered, and passes
+  `manifest.py --check`. The real queues are read by `examples/probe.rs`. The release app is built
+  with `pnpm release:build`; its screens have had visual QA rounds (mu-61) and the owner's checks
+  in Your check.
 - Hermetic tests (task 0062): every read of the projects Muster knows (`key::known`,
   `cli::base`, `cli::config_file`, the app's `base`) starts at `projects::places()`, the folder
   queues are found under and projects.json. The app and `muster` get this Mac's
@@ -915,21 +1433,23 @@ owner ◀────────────┘ WAITING-FOR-OWNER.md    └─ 
   `CARGO_HOME`, `RUSTUP_HOME`, `~/.cargo/bin` and pnpm's store and cache stay this Mac's, so
   `pnpm install --frozen-lockfile` in a fresh worktree still links from the real store.
 
-- `bin/test_task.py`: 15 tests (ask/answer/deliver, numbering, refusal of an already answered
-  question, earlier questions listed, old unnumbered questions, sessions from env and text,
-  refusals, control characters and tabs stripped, uppercase session ids, escalate, hook given bad
-  input, the inbox command, atomic manifest).
+- `bin/test_task.py`: 60 tests, among them ask/answer/deliver, numbering, refusal of an already
+  answered question, earlier questions listed, old unnumbered questions, sessions from env and
+  text, control characters and tabs stripped, uppercase session ids, escalate, the hook given bad
+  input, the inbox command and an atomic manifest.
 - Live: a self-test question asked and answered through `task` appeared in the asking session's
   context after its next tool call (2026-10-12).
 - Drover's own implementation of the file contract found three contract bugs within an hour, all
   fixed (`DOGFOOD.md` 36).
 - Hook cost: about 10 ms per tool call with an empty mailbox.
 
-## `.muster/` in the repo (decision 0003, task 0005 step 1)
+### `.muster/` in the repo (decision 0003, task 0005 step 1)
 
-Built: the layout, local mode, one queue for every worktree, discovery and `muster migrate`. No
-queue has moved yet; each queue is still `<project>/tasks` until it's migrated, and both layouts
-keep working (`layout.rs` is the one place that says where a layout keeps what).
+Built: the layout, local mode, one queue for every worktree, discovery and `muster migrate`.
+Muster's own queue moved on 2026-10-13 (`migrated-from.txt`: from `~/playground/muster/tasks`,
+which stays, hidden, as the project `muster-2`). The other 19 projects' queues are still
+`<project>/tasks` until they're migrated, and both layouts keep working (`layout.rs` is the one
+place that says where a layout keeps what).
 
 - **Layout:** `.muster/` in the repo's main checkout: `config.toml` (`local = true|false`, true
   as `init` and `migrate` write it; `prefix = "mu"`, the task keys' prefix (0033), which
@@ -976,8 +1496,9 @@ keep working (`layout.rs` is the one place that says where a layout keeps what).
   information) and the hook (`bin/answer-hook.py`). The layer's side (a link to the rule, a
   wrapper that runs the hook and does nothing when Muster's checkout isn't there, the hook on
   PostToolUse, UserPromptSubmit and SessionStart in the linker, and the main checkout's
-  `.muster/` in each linked worktree's sandbox write list) belongs to the layer's owner and isn't
-  in yet. `INDEX.md` and `tasks.json` need no pre-commit hook or merge driver: a committed
+  `.muster/` in each linked worktree's sandbox write list) is in the layer since 2026-10-14
+  (layer commit `15b3399`); one live session in a new project is still to be checked (mu-4 AC2).
+  `INDEX.md` and `tasks.json` need no pre-commit hook or merge driver: a committed
   queue's `.gitignore` keeps them out of git, and a local queue's keeps out everything but
   `config.toml`, so no branch ever carries them.
 - **`muster migrate <old-queue> <repo> [--local|--committed] [--dry-run]`:** copies (never moves)
@@ -1023,73 +1544,3 @@ Live claims in the repo's shared git folder (`.git/muster/`), for committed queu
 files have one copy per branch, are the next step of 0005. See
 `docs/decisions/0003-muster-in-the-repo-backlog-and-stages.md`.
 
-## Known limits
-
-- **An old-layout queue needs its folder in the layer's sandbox list** (`~/playground/.claude/layer-settings.json`,
-  `allowWrite`), then `link-personal-layer` re-run in that project's checkouts. Otherwise its agents
-  can read tasks but not claim, log or ask (`DOGFOOD.md` 41). A `.muster/` queue is inside its
-  repo: a session in the main checkout needs nothing; a worktree session needs the main checkout's
-  `.muster/`, which the layer's linker is to add to each worktree it links (task 0004's layer change,
-  not in yet).
-
-- **New session id after `/clear` or a handoff:** answers to the old session's questions wait in
-  its old mailbox (`task inbox --session <old>`). Fix: carry open question ids in the handoff,
-  and route by task claim too.
-- **The hook only runs where it's installed:** Drover's four checkouts so far. New worktrees,
-  and `link-personal-layer` rewriting `settings.local.json`, can drop it. Fix: the personal
-  layer's change from task 0004 (built and tested on Muster's side, waiting on the layer).
-- **Capture's watcher lives in its chat session.** The app shows changes live, but nothing wakes
-  a capture session when an agent asks something.
-- **Files still move between status folders in the old layout** (v2), until its queue is migrated
-  into `.muster/`, where they never move. There a claim is safe only because `muster claim` reads
-  the stage and writes the claim under the queue's one lock (task 0002), so agents never edit the
-  stage themselves.
-- **A worktree session writes into the main checkout's `.muster/`.** That folder must be in the
-  session's sandbox write list; a Claude Code worktree's sandbox usually allows its own folder and
-  the main checkout's `.git`, not the main checkout itself (decision 0003, "Revisit when").
-- **A committed queue has one copy too, for now:** every worktree writes the main checkout's
-  `.muster/`, so every claim and pass rewrites tracked files there, which show up as changes to
-  commit (a merge passes over them when it checks main is clean). That's why `init` and
-  `migrate` write a local queue unless `--committed` is given. Live state in `.git/muster/` with
-  the write-up on the claimant's branch is the next step.
-- **A session counts in full on every task it names** (0025): a session that worked on three
-  tasks, or a controller session that passed many, shows its whole transcript's tokens and minutes
-  on each, and its live dot on each open one. Splitting a transcript by the times it held each
-  task isn't built.
-- **Reclaim runs when someone runs it:** `muster reclaim` or Release on a card. No scheduler runs
-  it yet. A crashed session's claim waits until then.
-- **A ping reaches a session only through the answer hook** (0039): a session without the hook
-  installed sees a check-in request or message only when it runs `muster inbox`, and a claim
-  with no session stamp can't be reached at all. Nothing asks quiet sessions on its own yet: the
-  auto-nudge setting isn't built; its place is Settings → Agents (0036).
-- **A pause reaches a session only through the answer hook** (0045), like a ping: a session
-  that has ended its turn gets the stop or carry-on request on its next prompt. Who may pause or
-  resume isn't limited to the owner, as with block and unblock.
-- **Claude Code's states are a research preview** (0048): the format may change, and anything
-  Muster can't read falls back to heartbeats. A coordinator's subagents share its session id, so
-  their tasks never get a state; `failed`, `stopped` and an idle interactive session read as
-  unknown. Only this Mac's accounts are read, and only `~/.claude-<label>` folders. When Drover
-  supplies session states (Drover 0018), `agents::Fetch` is the one place the source changes.
-
-## What's left (in order)
-
-1. **App, next round (0006):** the Dock badge is built. Left: the owner's first look, Drover's
-   look (its `src/ui`; the owner decides how far, since Muster's own palette and DESIGN.md rules
-   differ). The notification is built (0052). The owner's moves (priority, unblock, a stage, Done)
-   are in the task pane, through the core's rules; claims stay with agents.
-2. **Files that never move:** task 0005's next step (committed mode, live state in
-   `.git/muster/`), and migrating each queue (`muster migrate`). Then the `/muster` / `/mu` slash
-   commands (0003).
-3. **Other projects (0004):** Muster's side is built (`muster init` in a repo, New queue, the
-   rule, the hook tested across two projects). Left: the personal layer's change, and a pilot on
-   one more project the owner picks.
-4. **Orchestration:** Muster decides who does what, Drover starts and steers the agents (owner,
-   2026-10-12; Muster 0009, Drover 0018).
-5. **Into Drover:** Drover task 0005 (task creator per project) and 0015 (waiting list) are the
-   first pieces. The app's screens move into Drover when it's ready.
-6. **Review of record, what's left (0027):** the owner's first real round (AC1). Then what needs
-   the personal layer or GitHub, each the owner's call: the engine's ledgers and `/pr learn` get
-   Muster's labels (they key rows on a PR number, so a task needs a place in their schema);
-   `sweetlemonai/muster` in the engine's `repos` and a token budget for its light tier (no such
-   key today); posting to GitHub as sweetlemonai, with a login check before every post, comes back
-   when PRs do. The review's and lessons' files move into the live state with 0005's store.
