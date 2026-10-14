@@ -10,6 +10,10 @@ text goes to a temp file beside it and is renamed over it, so ours stays as it w
 (`merge_log::replace`). Three tests couldn't fail: the pass-from-testing test now runs muster by
 its absolute path with no muster on git's PATH; two code-fence cases test the closing rules; the
 no-muster test puts the found git first on PATH.
+**Fixed (review round 1):** the temp file's cleanup ran in no test → a test fails replace() after
+the temp file exists (rename onto a folder, a missing ours) and checks nothing is left; `sync_all`
+dropped (git reads the file straight back, and full fsync fails on some volumes); a muster killed
+mid-write leaves its temp file, now documented; the read-only test skips where modes are ignored.
 **Verified:** each guard removed by hand fails its test (fs::write instead of replace; muster
 looked up on PATH; `c2 == c`; the trailing-whitespace check), all restored; `bin/gate` green.
 

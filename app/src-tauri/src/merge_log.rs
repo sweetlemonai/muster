@@ -211,7 +211,9 @@ pub fn run(args: &[String]) -> Result<i32, String> {
 /// Replace `path` with `text` whole: written to a new file beside it (the same folder, so the
 /// rename stays on one filesystem), with its permissions, then renamed over it. On any failure
 /// `path` is as it was and the new file is gone, so a write that fails partway (a full disk)
-/// never leaves a cut-off `ours` for the fallback to merge.
+/// never leaves a cut-off `ours` for the fallback to merge. Only a muster killed between making
+/// the new file and renaming it leaves it behind (`.<name>.muster-merge-<pid>`, in the worktree
+/// root, where git makes %A); %A is untouched then too.
 fn replace(path: &Path, text: &[u8]) -> Result<(), String> {
     use std::io::Write;
     let name = path
@@ -227,9 +229,10 @@ fn replace(path: &Path, text: &[u8]) -> Result<(), String> {
         .create_new(true)
         .open(&tmp)
         .map_err(|e| fail("couldn't make", e))?;
+    // No fsync: git reads %A straight back and writes the result itself, and a full sync
+    // (F_FULLFSYNC on macOS) can fail on network and external volumes for no gain here.
     let written = file
         .write_all(text)
-        .and_then(|()| file.sync_all())
         .map_err(|e| fail("couldn't write", e))
         .and_then(|()| {
             let perms = fs::metadata(path)
@@ -992,6 +995,15 @@ mod tests {
         // replace it. Ours is byte for byte as it was, with nothing left beside it.
         let before = fs::read(side.join("ours")).unwrap();
         fs::set_permissions(&side, fs::Permissions::from_mode(0o555)).unwrap();
+        // As root, or where the filesystem ignores modes, the folder stays writable: nothing to
+        // test here then.
+        let probe = side.join("probe");
+        if fs::write(&probe, b"").is_ok() {
+            let _ = fs::remove_file(&probe);
+            fs::set_permissions(&side, fs::Permissions::from_mode(0o755)).unwrap();
+            eprintln!("skipped the read-only part: {} is still writable after chmod 555 (root, or a filesystem that ignores modes)", side.display());
+            return;
+        }
         let refused = replace(&side.join("ours"), b"cut off");
         let after = fs::read(side.join("ours")).unwrap();
         let left = names(&side);
@@ -1011,6 +1023,29 @@ mod tests {
             String::from_utf8_lossy(&expected)
         );
         assert_eq!(left_after, ["base", "ours", "theirs"]);
+    }
+
+    #[test]
+    fn merge_log_replace_removes_its_new_file_when_it_fails_after_making_it() {
+        let dir = tempfile::tempdir().unwrap();
+        // %A is a folder: the new file is made and written, then the rename over it fails.
+        let ours = dir.path().join("ours");
+        fs::create_dir(&ours).unwrap();
+        fs::write(ours.join("inside"), "kept\n").unwrap();
+        let e = replace(&ours, b"merged\n").unwrap_err();
+        assert!(e.starts_with("couldn't rename "), "{e}");
+        assert_eq!(names(dir.path()), ["ours"], "no .ours.muster-merge-… left");
+        assert_eq!(names(&ours), ["inside"]);
+        assert_eq!(fs::read_to_string(ours.join("inside")).unwrap(), "kept\n");
+        // %A isn't there: the new file is made and written, then reading %A's mode fails.
+        let gone = dir.path().join("gone");
+        let e = replace(&gone, b"merged\n").unwrap_err();
+        assert!(e.contains("gone"), "{e}");
+        assert_eq!(
+            names(dir.path()),
+            ["ours"],
+            "no .gone.muster-merge-… left, no gone"
+        );
     }
 
     /// The folder this test's `git` is in.

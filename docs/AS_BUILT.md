@@ -775,7 +775,10 @@ base with both sides' new entries merged by date, newest first, theirs (`%B`) fi
 each side's own order kept, an entry both added kept once. Anything else gets merge-file's
 conflict markers (labels `ours`, `base`, `theirs`) and exit 1. The result replaces `%A` whole or
 not at all (`replace`, task 0071): written to a new `.<name>.muster-merge-<pid>` beside it with
-`%A`'s mode, then renamed over it; on a failure the new file is removed and `%A` is untouched.
+`%A`'s mode, then renamed over it, with no fsync (git reads it straight back, and a full sync
+can fail on network and external volumes). On a failure the new file is removed and `%A` is
+untouched. A muster killed between making the new file and the rename leaves it in the worktree
+root (`%A` untouched); nothing cleans that up.
 When it can't merge (a missing file, over 64 MB, merge-file failing, a `%A` it can't replace)
 it runs `git merge-file` in place on the untouched `%A`
 (markers and 1, or its clean result and 0); only if that fails too is `%A` left as it was, with
