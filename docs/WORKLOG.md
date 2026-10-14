@@ -4,6 +4,16 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Layout fixes from the visual QA (mu-61)
+**Fixed:** Settings › Projects crushed Folder/Gate to a word per line → the gate sits on a line under
+each row, the prefix field is 4ch, Set/Save/Cancel/limit Set are bordered ui Buttons; the pane's
+"quiet 21 min" wrapped by syllable → nowrap; graph chips ran words together and clipped "needs you"
+→ spaced, wrapping, bigger nodes, the empty hint shows a key; rows showed above the table's sticky
+header → no gap above it; the Focus strip's count sat on the BLOCKED pill → spacing along the
+vertical strip; Waiting for you buttons touched → gap.
+**Verified:** `bin/gate` → `gate: green (pnpm check, test_task, test_commands, cargo test
+(Kiritimati))`; before/after headless shots, light and dark (`.claude/work/qa-0033/shots/a61*`).
+
 ## 2026-10-14 — Both side panes resizable (mu-58)
 **Did:** one splitter (`ui/Splitter.tsx`, `splitter.ts`) for the projects sidebar and the task pane:
 drag, double-click reset, ←/→ (Shift for 120 px), widths remembered (`muster.sidebar.v1`,
