@@ -375,11 +375,21 @@ pub fn set_run(config: &mut Config, base: &Path, name: &str, cmd: &str) -> Resul
     set_command(config, base, name, cmd, "run", |c| &mut c.run)
 }
 
-/// Why `cmd`, trimmed, isn't a command projects.json keeps as `what`: not one line, or too long.
+/// Why `cmd`, trimmed, isn't a command projects.json keeps as `what`: not one line (a line or
+/// paragraph separator counts), a character that reorders the text around it (an RTL override
+/// can make the command read as another one, `index::is_bidi_control`), or too long.
 fn command_refused(what: &str, cmd: &str) -> Option<String> {
-    if cmd.chars().any(char::is_control) {
+    if cmd
+        .chars()
+        .any(|c| c.is_control() || c == '\u{2028}' || c == '\u{2029}')
+    {
         return Some(format!(
             "the {what} command is one line, without control characters"
+        ));
+    }
+    if cmd.chars().any(crate::index::is_bidi_control) {
+        return Some(format!(
+            "the {what} command has a direction mark or override, which can make it read as another command"
         ));
     }
     (cmd.chars().count() > MAX_GATE)
@@ -1199,6 +1209,12 @@ mod tests {
         for (cmd, says) in [
             ("bin/run\nrm -rf x", "the run command is one line"),
             ("bin/run\tx", "the run command is one line"),
+            ("bin/run\u{2028}x", "the run command is one line"),
+            ("bin/run\u{2029}x", "the run command is one line"),
+            ("bin/run \u{202e}nur", "a direction mark or override"),
+            ("bin/run \u{2066}x\u{2069}", "a direction mark or override"),
+            ("bin/run\u{200f}", "a direction mark or override"),
+            ("bin/run\u{061c}", "a direction mark or override"),
             (
                 &"x".repeat(501)[..],
                 "the run command is longer than 500 characters",
@@ -1244,7 +1260,7 @@ mod tests {
         }
         let long = "x".repeat(501);
         let c = read(&format!(
-            r#"{{"run": {{"/a": " bin/run ", "/b": 7, "/c": "a\nb", "/d": "", "/e": "{long}", "/f": ["x"]}}}}"#
+            r#"{{"run": {{"/a": " bin/run ", "/b": 7, "/c": "a\nb", "/d": "", "/e": "{long}", "/f": ["x"], "/g": "bin/run \u202enur", "/h": "x\u2028y", "/i": "x\u2066y"}}}}"#
         ));
         assert_eq!(
             c.run,

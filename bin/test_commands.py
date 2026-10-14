@@ -560,8 +560,8 @@ class WorkLogMergeDriver(unittest.TestCase):
 class RunScript(unittest.TestCase):
     """0077: bin/run, Muster's run command, builds the release app and opens that build with
     `open -n`, never the running Muster. `pnpm` and `open` are stand-ins first on the PATH that log
-    their arguments, so nothing is built or launched; the target folder is a temp one with a space
-    in its path."""
+    each argument in brackets, so a path split at its space shows, and nothing is built or
+    launched; the target folder is a temp one with a space in its path."""
 
     RUN = REPO / "bin" / "run"
 
@@ -572,11 +572,14 @@ class RunScript(unittest.TestCase):
         stubs.mkdir()
         self.calls = tmp / "calls.log"
         self.target = tmp / "the target"
-        # pnpm: logs, then fails with $STUB_FAIL, or "builds" the .app when $STUB_BUNDLE is set.
-        self.stub(stubs / "pnpm", 'printf "pnpm %s\\n" "$*" >> "$CALLS"\n'
+        # pnpm: logs; its release:build then fails with $STUB_FAIL, or "builds" the .app when
+        # $STUB_BUNDLE is set. An install, in a checkout with no node_modules, just succeeds.
+        log = 'printf %s "$(basename "$0")" >> "$CALLS"\nfor a; do printf "[%s]" "$a" >> "$CALLS"; done\necho >> "$CALLS"\n'
+        self.stub(stubs / "pnpm", log + 'for a; do [ "$a" != release:build ] || build=1; done\n'
+                  '[ -n "${build:-}" ] || exit 0\n'
                   '[ -z "${STUB_FAIL:-}" ] || exit "$STUB_FAIL"\n'
-                  'case "$*" in *release:build*) [ -z "${STUB_BUNDLE:-}" ] || mkdir -p "$STUB_BUNDLE";; esac\n')
-        self.stub(stubs / "open", 'printf "open %s\\n" "$*" >> "$CALLS"\n')
+                  '[ -z "${STUB_BUNDLE:-}" ] || mkdir -p "$STUB_BUNDLE"\n')
+        self.stub(stubs / "open", log)
         self.env = {**os.environ, "CALLS": str(self.calls), "CARGO_TARGET_DIR": str(self.target),
                     "PATH": f"{stubs}{os.pathsep}{os.environ.get('PATH', '')}"}
         self.app = self.target / "release" / "bundle" / "macos" / "Muster.app"
@@ -593,27 +596,36 @@ class RunScript(unittest.TestCase):
         return subprocess.run(["sh", str(self.RUN)], cwd=Path(self.tmp.name), capture_output=True,
                               text=True, env={**self.env, **env})
 
+    @staticmethod
+    def call(*argv: object) -> str:
+        """A call as the stand-ins log it: the program, then each argument in brackets."""
+        return str(argv[0]) + "".join(f"[{a}]" for a in argv[1:])
+
+    BUILD = call.__func__("pnpm", "--dir", REPO / "app", "release:build")
+    INSTALL = call.__func__("pnpm", "--dir", REPO / "app", "install", "--frozen-lockfile")
+
     def logged(self) -> list[str]:
         """What ran, without the install a checkout with no node_modules does first."""
         lines = self.calls.read_text(encoding="utf-8").splitlines() if self.calls.exists() else []
-        return [line for line in lines if line != f"pnpm --dir {REPO / 'app'} install --frozen-lockfile"]
+        return [line for line in lines if line != self.INSTALL]
 
     def test_it_builds_then_opens_that_build_as_a_new_instance(self):
         r = self.run_it(STUB_BUNDLE=str(self.app))
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.logged(), [f"pnpm --dir {REPO / 'app'} release:build", f"open -n {self.app}"])
+        self.assertIn(" ", str(self.app))
+        self.assertEqual(self.logged(), [self.BUILD, self.call("open", "-n", self.app)])
         self.assertIn(f"started {self.app} beside the Muster already running", r.stdout)
 
     def test_a_failed_build_opens_nothing(self):
         r = self.run_it(STUB_FAIL="3", STUB_BUNDLE=str(self.app))
         self.assertEqual(r.returncode, 3)
-        self.assertEqual(self.logged(), [f"pnpm --dir {REPO / 'app'} release:build"])
+        self.assertEqual(self.logged(), [self.BUILD])
 
     def test_a_build_that_leaves_no_app_opens_nothing_and_says_where_it_looked(self):
         r = self.run_it()
         self.assertEqual(r.returncode, 1)
         self.assertIn(f"the build finished, but {self.app} is not there", r.stderr)
-        self.assertEqual(self.logged(), [f"pnpm --dir {REPO / 'app'} release:build"])
+        self.assertEqual(self.logged(), [self.BUILD])
 
     def test_the_app_is_in_the_checkouts_own_target_folder_by_default(self):
         env = {k: v for k, v in self.env.items() if k != "CARGO_TARGET_DIR"}
@@ -623,7 +635,7 @@ class RunScript(unittest.TestCase):
         # This checkout may have built one already: then it's opened (by the stand-in), else named.
         if own.is_dir():
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertEqual(self.logged()[-1], f"open -n {own}")
+            self.assertEqual(self.logged()[-1], self.call("open", "-n", own))
         else:
             self.assertEqual(r.returncode, 1)
             self.assertIn(f"{own} is not there", r.stderr)

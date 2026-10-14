@@ -148,7 +148,7 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
                   {p.source === "added" && <Button onClick={() => void act(() => api.removeProject(p.key))}>Remove</Button>}
                 </td>
               </tr>
-              <GateRow name={p.name} gate={p.gate ?? ""} run={p.run ?? ""} hidden={p.hidden} />
+              <ProjectGateRow p={p} />
             </Fragment>
           ))}
         </tbody>
@@ -273,6 +273,11 @@ export function GateRow({ name, gate, run, hidden }: { name: string; gate: strin
       </td>
     </tr>
   );
+}
+
+/** The gate row of the project `p` as the core listed it: "" for a gate or run command it doesn't send. */
+export function ProjectGateRow({ p }: { p: Project }) {
+  return <GateRow name={p.name} gate={p.gate ?? ""} run={p.run ?? ""} hidden={p.hidden} />;
 }
 
 /** A project's gate command (0023), shown as it is: a merge runs it in the task's worktree, and

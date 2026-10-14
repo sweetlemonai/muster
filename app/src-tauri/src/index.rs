@@ -356,7 +356,7 @@ fn unlinked(text: &str) -> String {
 
 /// Characters that reorder the text around them (an RTL override can make a title read as
 /// another one).
-fn is_bidi_control(c: char) -> bool {
+pub(crate) fn is_bidi_control(c: char) -> bool {
     matches!(c, '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
 }
 

@@ -746,8 +746,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   the default, field by field. **Projects** also shows each project's gate command (0023),
   read-only, with the `muster projects set` line when none is set, and under it, in the same
   row and look, its run command (0077): `projects.json`'s `run`, by queue folder like `gate`, set
-  with `muster projects set <name> run "<command>"` under the gate's rules (`split_words`, one
-  line, at most 500 characters, "" clears it), listed by `muster projects` and `--json`, carried
+  with `muster projects set <name> run "<command>"` under the gate's rules (`split_words`, one line
+  with no direction marks or overrides, at most 500 characters, "" clears it), listed by `muster projects` and `--json`, carried
   by `muster migrate`, and read leniently (`projects::read_commands`: a file without `run`, a
   `run` that isn't an object, or an entry `set_run` wouldn't keep reads as none, and the rest of
   the file loads). The command shows left to right (`dir="ltr"`). It's stored and shown only:

@@ -16,6 +16,10 @@ their owners: Tauri apps `pnpm tauri dev`, SwiftPM apps `swift run`, choopan `pn
 **Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; Rust
 tests for the rules, lenient reads and migrate; a render test for the Run line and hint; bin/run's
 tests with stand-in pnpm and open (with `open` instead of `open -n` the test fails).
+**Fixed (review round 1):** bin/run's test couldn't tell a quoted app path from a split one → the
+stubs log each argument bracketed and a path with a space is asserted; run and gate commands refuse
+direction marks, overrides and line separators; the failed-build test no longer needs node_modules;
+the table's run wiring is tested through `ProjectGateRow`.
 **Open:** `muster projects set muster run bin/run` and AC4 (bin/run starting a second Muster, both
 in `ps`) are for QA or the owner: they write the real projects.json and launch the app.
 
