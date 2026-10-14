@@ -4,6 +4,26 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Coordinator (Muster_Team_Lead_2): mu-73 and mu-71 merged, four sent back, the owner's open calls made
+**Did:** reviewed and merged mu-73 (1e819a1) and mu-71 (4d7dbc4, round 2). Sent back with their
+review findings: mu-78 (R1–R7: Accept all takes unproven tasks, Drover's ". Proof:" unread,
+criteria on every poll, an untested thumbnail), mu-77 (R1–R4: the bin/run stub can't see a
+missing quote, bidi characters in a run command), mu-74 (R1 blocking: AC6's desktop fallback
+missing; R2–R11: claude-continue interpolates its wrapper, rewrites any file, mode fails open;
+spaced paths and owner resumes break the rotation cap; a worktree handoff isn't found).
+mu-4, mu-52 and mu-53 moved to Your check (branches long in main; their holder was stuck on a
+prompt); their stale worktrees removed.
+**Decided** (the owner said "make the decisions"): mu-79 Q1 and Q2 both (a), the main checkout
+and real data. Lessons L1 and L5 accepted; L2–L4 rejected as single-task bugs and filed as one
+backlog note. mu-74's fix round goes to a new background session (mu74-fix) in the layer, since
+its builder was unreachable. A ticked criterion without a proof reads "ticked", not "proven"
+(note on mu-78). The held big tasks (mu-9, 41, 54, 55, 56) stay held until the weekly usage
+resets. The persianUtils category for braindump, muster and drover stays.
+**Open:** the work-log merge driver still isn't in `.git/config` (the permission check refused
+the write; the owner runs the two `git config` lines). mu-77's AC4 (bin/run opens a second
+Muster) needs `open` outside the sandbox, which was refused; the running Muster is main's own
+bundle, so run it from the worktree. Rejecting L2–L4 also stops those kinds being proposed again.
+
 ## 2026-10-14 — Work log merge driver: ours is replaced whole or not at all, and its tests can fail (mu-71)
 **Fixed:** a failed write could truncate the work log before the fallback merged it → the merged
 text goes to a temp file beside it and is renamed over it, so ours stays as it was on failure
