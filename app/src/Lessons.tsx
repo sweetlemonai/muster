@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { oneAtATime, stamp } from "./lib";
 import type { Lesson, QueueInfo } from "./types";
+import { Button } from "./ui";
 
 // Lessons from reviews (0027): a kind of mistake the review of record kept finding becomes a rule
 // for the next builders, and one it kept getting wrong something reviewers don't flag. They
@@ -115,21 +116,21 @@ function QueueLessons({ queue, label, count, multi, onChanged }: { queue: string
                 }}
               >
                 <input autoFocus value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Why it shouldn't become a rule, in one line" aria-label={`Why ${l.id} is rejected`} maxLength={500} />
-                <button type="submit" disabled={busy || !why.trim()}>{`Reject ${l.id}`}</button>
-                <button type="button" onClick={() => setRejecting(null)}>Cancel</button>
+                <Button type="submit" disabled={busy || !why.trim()}>{`Reject ${l.id}`}</Button>
+                <Button type="button" onClick={() => setRejecting(null)}>Cancel</Button>
               </form>
             ) : (
               <div className="control-row">
-                <button type="button" disabled={busy} onClick={() => setRejecting(l.id)}>{`Reject ${l.id}…`}</button>
+                <Button type="button" disabled={busy} onClick={() => setRejecting(l.id)}>{`Reject ${l.id}…`}</Button>
               </div>
             )}
           </li>
         ))}
       </ul>
       <div className="control-row">
-        <button type="button" className="primary" disabled={busy || lessons.length === 0} onClick={() => decide(acceptAll(lessons), [], "")}>
+        <Button type="button" variant="primary" disabled={busy || lessons.length === 0} onClick={() => decide(acceptAll(lessons), [], "")}>
           {`Accept all ${lessons.length}`}
-        </button>
+        </Button>
       </div>
       {msg && <p className={msg.ok ? "ok small" : "err small"}>{msg.text}</p>}
     </section>

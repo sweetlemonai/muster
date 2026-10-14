@@ -4,15 +4,15 @@ Each idea in Muster, in the order you meet it. Every section says what the idea 
 
 ## Projects and queues
 
-A **queue** is the folder that holds one project's tasks: one Markdown file per task. Today it sits beside the project's code, at `<project>/tasks` (for example `~/playground/myapp/tasks`, next to the repo at `~/playground/myapp/main`), and has its own git history. A **project** is the name the app shows for a queue, taken from the folder it's in.
+A **queue** is the folder that holds one project's tasks: one Markdown file per task. It lives in the project's repo, as `.muster/` in the main checkout (for example `~/playground/myapp/main/.muster`), and every worktree of the repo uses that one. Task files sit in `.muster/tasks/` and never move. A **project** is the name the app shows for a queue, taken from the folder it's in.
 
-Why a folder of files: you, every agent and every tool can read a task with nothing but a text editor, and git keeps its history. The queue stays outside the code repo so a code commit can't sweep it up.
+Why a folder of files: you, every agent and every tool can read a task with nothing but a text editor. A queue is **local** by default: only its `config.toml` goes into git, and the tasks stay on this Mac. A **committed** queue goes into git with the code, so a task's write-up rides in the same commits.
 
-In the app, the projects are listed down the left side, with **All** at the top. The app finds every queue at `~/playground/<project>/tasks` on its own, and one level deeper (`~/playground/<group>/<project>/tasks`); add a queue kept anywhere else in **Settings**, under **Projects**. Inside a queue, the folders `inbox/`, `todo/`, `doing/`, `blocked/` and `done/` mirror each task's stage for older tools. Don't move files between them yourself.
+In the app, the projects are listed down the left side, with **All** at the top. The app finds every queue at `~/playground/<project>/<checkout>/.muster` or `~/playground/<repo>/.muster` on its own, and the older `~/playground/<project>/tasks` ones; add a queue kept anywhere else in **Settings**, under **Projects**. An older queue that hasn't moved into its repo yet (Drover's) still has the folders `inbox/`, `todo/`, `doing/`, `blocked/` and `done/`, which mirror each task's stage for older tools. Don't move files between them yourself.
 
-Commands: `muster projects` lists the queues, and `muster init <project-folder>` starts one. Every command takes `--queue <name>`; without it, `muster` uses the queue of the folder you're in. See [Projects and the queue](05-commands.md#projects-and-the-queue).
+Commands: `muster projects` lists the queues, and `muster init`, in the repo, starts one. Every command takes `--queue <name>`; without it, `muster` uses the queue of the folder you're in. Sessions in any repo know what `.muster/` is and get their answers pushed to them through the personal layer (see [The sandbox and worktrees](08-faq.md#the-sandbox-and-worktrees)). See [Projects and the queue](05-commands.md#projects-and-the-queue).
 
-**Coming (task 0005):** the queue moves into the repo as `.muster/`, and task files stop moving between folders. Decisions: [0001](../decisions/0001-app-on-drovers-stack.md) for how the app finds queues, [0003](../decisions/0003-muster-in-the-repo-backlog-and-stages.md) for `.muster/`.
+Decisions: [0001](../decisions/0001-app-on-drovers-stack.md) for how the app finds queues, [0003](../decisions/0003-muster-in-the-repo-backlog-and-stages.md) for `.muster/`.
 
 ## A task and its file
 

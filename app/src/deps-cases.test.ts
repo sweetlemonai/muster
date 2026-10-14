@@ -46,11 +46,11 @@ describe("the shared dependency cases (the core gives the same)", () => {
   it("the Graph marks ready and blocked as the core says", () => {
     const html = renderToStaticMarkup(createElement(GraphView, { tasks, all: tasks, multi: false, openKey: null, onOpen: () => {} }));
     for (const t of tasks) {
-      const node = new RegExp(`class="(g-node|chip g-loose) [^"]*"[^>]*><(span class="g-top"><span class="id"|span class="id")>${t.id}<`).exec(html)?.[0] ?? "";
+      const node = new RegExp(`class="(g-node|ui-pill(?: ui-pill--on)? g-loose) [^"]*"[^>]*><(span class="g-top"><span class="id"|span class="id")>${t.id}<`).exec(html)?.[0] ?? "";
       expect(node, t.id).not.toBe("");
       const status = html.slice(html.indexOf(node), html.indexOf("</button>", html.indexOf(node)));
       expect(status.includes('class="g-ready"'), `${t.id} ready`).toBe(want[t.id].ready);
-      expect(status.includes("badge blocked"), `${t.id} blocked`).toBe(blockedRed(t));
+      expect(status.includes("ui-badge ui-badge--blocked"), `${t.id} blocked`).toBe(blockedRed(t));
     }
   });
 });

@@ -4,6 +4,7 @@ import { key, oneAtATime, stamp } from "./lib";
 import { pressed } from "./shortcuts";
 import { taskKey } from "./taskKey";
 import type { Task } from "./types";
+import { Button } from "./ui";
 import { type AcceptOutcome, acceptAllRun, byEffort, EFFORTS, justAccept, staleResult } from "./yourCheck";
 import { labelOf, Labels } from "./labels";
 
@@ -162,11 +163,11 @@ export function AcceptAllView({ count, asked, busy, msg, onAsk, onConfirm, onCan
       {asked ? (
         <span className="accept-confirm" role="group" aria-label="Confirm Accept all">
           {`Accept ${asked.length}: ${asked.join(", ")}? `}
-          <button type="button" className="primary" disabled={busy} onClick={onConfirm}>{busy ? "Accepting…" : `Yes, accept ${asked.length}`}</button>
-          <button type="button" disabled={busy} onClick={onCancel} ref={cancelRef}>Cancel</button>
+          <Button type="button" variant="primary" disabled={busy} onClick={onConfirm}>{busy ? "Accepting…" : `Yes, accept ${asked.length}`}</Button>
+          <Button type="button" disabled={busy} onClick={onCancel} ref={cancelRef}>Cancel</Button>
         </span>
       ) : (
-        count > 0 && <button type="button" className="accept-all" onClick={onAsk} ref={buttonRef}>Accept all {count}</button>
+        count > 0 && <Button type="button" className="accept-all" onClick={onAsk} ref={buttonRef}>Accept all {count}</Button>
       )}
       {msg && <span className={msg.ok ? "ok small" : "err small"} role="status">{msg.text}</span>}
     </span>

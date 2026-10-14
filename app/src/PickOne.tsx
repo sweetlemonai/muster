@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "./api";
 import { stamp } from "./lib";
 import type { Choices, Question, Task } from "./types";
+import { Pill } from "./ui";
 
 // Pick-one questions (0049): an agent asks with options, and the owner answers with one click.
 // The core writes the chosen option's text as the answer and mails it to the asking session.
@@ -73,17 +74,17 @@ export default function PickOne({ task, q, choices, extra = "", onAnswered, onCh
   return (
     <div className="pick-one" data-part="pick-one" role="group" aria-label={`Options for Q${q.n}`}>
       {choices.options.map((o, i) => (
-        <button
+        <Pill
           key={i}
           type="button"
-          className={`chip pick-chip${choices.pick === i ? " mine" : ""}`}
+          className={`pick-chip${choices.pick === i ? " mine" : ""}`}
           disabled={off}
           title={`Answer Q${q.n} with (${letter(i)})${extra.trim() ? ", followed by the words in the box" : ""}`}
           onClick={() => void send(i)}
         >
           <b>({letter(i)})</b> {o}
           {choices.pick === i && <small className="pick-tag">pick</small>}
-        </button>
+        </Pill>
       ))}
       {choices.noAnswer !== null && <span className="pick-fallback">with no answer: {letter(choices.noAnswer)}</span>}
       {result && <span className={result.ok ? "ok" : "err"} role="status">{result.text}</span>}

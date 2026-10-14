@@ -27,7 +27,7 @@ function pane(over: Partial<Task>, now = 0, childTasks?: Task[]) {
   const buttons = [...next.matchAll(/<button([^>]*)>([^<]*)<\/button>/g)].map((m) => `${m[2]}${m[1].includes("disabled") ? " (disabled)" : ""}`);
   const line = text(part(html, "status"));
   const parts = [...html.matchAll(/data-part="([\w-]+)"/g)].map((m) => m[1]);
-  const primary = [...html.matchAll(/<button[^>]*class="primary"[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
+  const primary = [...html.matchAll(/<button[^>]*class="ui-button ui-button--primary"[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
   return { html, buttons, line, next, parts, primary };
 }
 
@@ -57,7 +57,7 @@ describe("task pane stage controls", () => {
   it("a blocked task keeps its stage; Pass waits for Unblock", () => {
     const p = pane({ stage: "your-check", blocked: true, status: "blocked", waitingOn: "pick a colour", blockedKind: "you", blockDetail: "pick a colour" });
     expect(p.line).toBe("Your check Your action : pick a colour LIVE Your turn owner Waiting on you: accept or send back · your action");
-    expect(p.html).toContain('<span class="status-pill block-why for-you look-action"><b>Your action</b>: pick a colour</span>');
+    expect(p.html).toContain('<span class="ui-status-pill ui-status-pill--blocked block-why for-you look-action"><b>Your action</b>: pick a colour</span>');
     expect(p.buttons).toEqual(["Accept (disabled)", "Send back", "Unblock"]);
     expect(p.html).toContain("Your action: pick a colour. Unblock it to pass it on.");
   });
@@ -65,7 +65,7 @@ describe("task pane stage controls", () => {
     const q = { n: 2, ticked: false, asker: "wt-a", text: "which colour for the button?", escalated: true, ownerAnswered: false };
     const t = task({ blocked: true, blockedKind: "question", blockDetail: "Q2", questions: [q], openQuestions: 1 });
     const html = renderToStaticMarkup(createElement(TaskPanel, { task: t, now: 0, onClose: () => {}, onChanged: () => {} }));
-    expect(part(html, "status")).toContain('<span class="status-pill block-why for-you look-answer"><b>Your answer</b>: Q2 which colour for the button? <button type="button" class="block-answer">Answer</button></span>');
+    expect(part(html, "status")).toContain('<span class="ui-status-pill ui-status-pill--blocked block-why for-you look-answer"><b>Your answer</b>: Q2 which colour for the button? <button type="button" class="ui-button block-answer">Answer</button></span>');
     // Answer takes the owner to this box (focusAnswer, by its id).
     expect(html).toContain(`<textarea id="${answerId(t, 2)}"`);
   });
@@ -373,7 +373,7 @@ describe("the pane's layout by stage (D2)", () => {
     expect(text(pane({}).html)).toContain("commit none · todo/0007-t.md");
     expect(p.html).toContain('<span class="lbl">Files <small>2</small></span>');
     expect(p.html).toContain('<span class="other-file" title="notes.txt">notes.txt</span>');
-    expect(p.html).toContain('<button type="button" class="attach">+ Attach</button>');
+    expect(p.html).toContain('<button type="button" class="ui-button attach">+ Attach</button>');
   });
   it("every control is in the markup, none behind a menu or popover", () => {
     const html = pane({ stage: "ready" }).html;

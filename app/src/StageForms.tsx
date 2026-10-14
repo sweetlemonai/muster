@@ -2,6 +2,7 @@ import { useState } from "react";
 import { BLOCK_KINDS, type BlockKind, blockRequest } from "./blockWords";
 import { earlierStages } from "./lib";
 import type { Question, Task } from "./types";
+import { Button, Pill } from "./ui";
 import type { TaskActions } from "./useTaskActions";
 
 /** The open stage form, full width under both columns: the gate line out of Building, Send back
@@ -26,8 +27,8 @@ function GateForm({ a }: { a: TaskActions }) {
       }}
     >
       <input autoFocus value={gate} onChange={(e) => setGate(e.target.value)} placeholder="The gate's result line (gate full: green …)" aria-label="The gate's result line" maxLength={500} />
-      <button type="submit" disabled={a.busy || !gate.trim()}>Pass to Testing</button>
-      <button type="button" onClick={a.close}>Cancel</button>
+      <Button type="submit" disabled={a.busy || !gate.trim()}>Pass to Testing</Button>
+      <Button type="button" onClick={a.close}>Cancel</Button>
     </form>
   );
 }
@@ -54,8 +55,8 @@ function BackForm({ task, a }: { task: Task; a: TaskActions }) {
         </select>
       </label>
       <input autoFocus value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Why: what's wrong or missing" aria-label="Why it goes back" maxLength={500} />
-      <button type="submit" disabled={a.busy || !why.trim()}>Send back</button>
-      <button type="button" onClick={a.close}>Cancel</button>
+      <Button type="submit" disabled={a.busy || !why.trim()}>Send back</Button>
+      <Button type="button" onClick={a.close}>Cancel</Button>
     </form>
   );
 }
@@ -116,9 +117,9 @@ export function BlockFormView({ kind, detail, questions, prefix, busy, onKind, o
       <div className="chip-row" role="group" aria-label="Blocked by">
         <span className="lbl">Blocked by</span>
         {BLOCK_KINDS.map((k) => (
-          <button key={k.id} type="button" className={k.id === kind ? "chip on" : "chip"} aria-pressed={k.id === kind} onClick={() => onKind(k.id)}>
+          <Pill key={k.id} type="button" on={k.id === kind} aria-pressed={k.id === kind} onClick={() => onKind(k.id)}>
             {k.label}
-          </button>
+          </Pill>
         ))}
       </div>
       <div className="control-row">
@@ -128,9 +129,9 @@ export function BlockFormView({ kind, detail, questions, prefix, busy, onKind, o
             {open.map((q) => {
               const id = `Q${q.n}`;
               return (
-                <button key={id} type="button" className={detail === id ? "chip on" : "chip"} aria-pressed={detail === id} title={q.text} onClick={() => onDetail(id)}>
+                <Pill key={id} type="button" on={detail === id} aria-pressed={detail === id} title={q.text} onClick={() => onDetail(id)}>
                   {id} {q.text.split("\n")[0].slice(0, 60)}
-                </button>
+                </Pill>
               );
             })}
           </div>
@@ -148,8 +149,8 @@ export function BlockFormView({ kind, detail, questions, prefix, busy, onKind, o
             maxLength={200}
           />
         )}
-        <button type="submit" disabled={busy || !ready}>Block</button>
-        <button type="button" onClick={onCancel}>Cancel</button>
+        <Button type="submit" disabled={busy || !ready}>Block</Button>
+        <Button type="button" onClick={onCancel}>Cancel</Button>
       </div>
       {kind === "tasks" && <p className="meta small">They're added to its depends: it shows blocked by them until they're all merged (in Your check or Done; the owner's own, Done), then clears by itself.</p>}
     </form>

@@ -9,6 +9,7 @@ import { HelpButton } from "./HelpButton";
 import { pressed } from "./shortcuts";
 import { parseKey } from "./taskKey";
 import { labelOf, Labels } from "./labels";
+import { Button, Pill } from "./ui";
 
 /** Who does a new task (0022), as a chip pair: an agent (the default) or you. */
 export const FOR_CHOICES = [
@@ -151,10 +152,10 @@ export default function NewTask({ queues, initial, prefixes = {}, onClose, onCre
         <div className="chip-row" role="group" aria-label="Who does it">
           <span className="meta">For</span>
           {FOR_CHOICES.map((f) => (
-            <button
+            <Pill
               key={f.id}
               type="button"
-              className={forWho === f.id ? "chip on" : "chip"}
+              on={forWho === f.id}
               aria-pressed={forWho === f.id}
               title={f.hint}
               onClick={() => {
@@ -163,23 +164,23 @@ export default function NewTask({ queues, initial, prefixes = {}, onClose, onCre
               }}
             >
               {f.label}
-            </button>
+            </Pill>
           ))}
         </div>
         <div className="row level-pick" role="group" aria-label="Level">
           <span className="meta">Level</span>
           {LEVELS.map((l) => (
-            <button
+            <Pill
               key={l.id}
               type="button"
-              className={level === l.id ? "chip on" : "chip"}
+              on={level === l.id}
               aria-pressed={level === l.id}
               disabled={forWho === "human" && l.id !== "task"}
               title={forWho === "human" && l.id !== "task" ? "Your own task is a task: a goal or feature is its tasks' sum" : undefined}
               onClick={() => setLevel(l.id)}
             >
               {l.label}
-            </button>
+            </Pill>
           ))}
           <label className="parent-field" title={level === "goal" ? "A goal has no parent" : "The feature or goal it sits under, by its key or number"}>
             Parent
@@ -196,7 +197,7 @@ export default function NewTask({ queues, initial, prefixes = {}, onClose, onCre
         <div className="chip-row" role="group" aria-label="Type">
           <span className="meta">Type</span>
           {KINDS.map((k) => (
-            <button key={k} type="button" className={kind === k ? "chip on" : "chip"} aria-pressed={kind === k} onClick={() => setKind(k)}>{k}</button>
+            <Pill key={k} type="button" on={kind === k} aria-pressed={kind === k} onClick={() => setKind(k)}>{k}</Pill>
           ))}
         </div>
         <input ref={titleRef} className="title-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What's wrong or wanted, in one line" maxLength={200} />
@@ -216,7 +217,7 @@ export default function NewTask({ queues, initial, prefixes = {}, onClose, onCre
               <span key={name + i} className="pending-file">
                 {url.startsWith("data:image/") ? <img src={url} alt="" /> : null}
                 {name}
-                <button type="button" onClick={() => setFiles((f) => f.filter((_, j) => j !== i))} aria-label={`Remove ${name}`}>×</button>
+                <button type="button" className="remove" onClick={() => setFiles((f) => f.filter((_, j) => j !== i))} aria-label={`Remove ${name}`}>×</button>
               </span>
             ))}
           </div>
@@ -228,8 +229,8 @@ export default function NewTask({ queues, initial, prefixes = {}, onClose, onCre
           </label>
           {error && <span className="err">{error}</span>}
           <span className="spacer" />
-          <button type="button" onClick={onClose}>Cancel</button>
-          <button type="submit" className="primary" disabled={!title.trim() || busy}>{busy ? "Creating…" : "Create (⌘↩)"}</button>
+          <Button type="button" onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary" disabled={!title.trim() || busy}>{busy ? "Creating…" : "Create (⌘↩)"}</Button>
         </div>
       </form>
     </div>

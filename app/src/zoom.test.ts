@@ -36,7 +36,7 @@ describe("text size (owner, 2026-10-13: zoom the help page and all pages)", () =
   });
   it("shows every size as a chip in Appearance, the current one pressed", () => {
     const html = renderToStaticMarkup(createElement(TextSize, { initial: 1.15 }));
-    expect(html.match(/class="chip( on)?"/g)).toHaveLength(ZOOMS.length);
-    expect(html).toMatch(/class="chip on" aria-pressed="true">115%</);
+    expect(html.match(/class="ui-pill( ui-pill--on)?"/g)).toHaveLength(ZOOMS.length);
+    expect(html).toMatch(/aria-pressed="true" class="ui-pill ui-pill--on">115%</);
   });
 });

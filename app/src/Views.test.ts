@@ -20,8 +20,8 @@ const controls = (scale: Scale, offset = 0) =>
 
 describe("the timeline's scale chips", () => {
   it("shows Day, Week and Month as a row of chips, the current one pressed, not a dropdown", () => {
-    const chips = [...controls("week").matchAll(/<button class="chip( on)?" aria-pressed="(true|false)">(Day|Week|Month)<\/button>/g)];
-    expect(chips.map((m) => `${m[3]}:${m[2]}`)).toEqual(["Day:false", "Week:true", "Month:false"]);
+    const chips = [...controls("week").matchAll(/<button aria-pressed="(true|false)" class="ui-pill( ui-pill--on)?">(Day|Week|Month)<\/button>/g)];
+    expect(chips.map((m) => `${m[3]}:${m[1]}`)).toEqual(["Day:false", "Week:true", "Month:false"]);
     expect(controls("week")).not.toContain("<select");
   });
   it("steps back and forward, goes back to the current period, and names the window", () => {
@@ -152,10 +152,10 @@ describe("a task waiting only on other tasks isn't red in the table (0060)", () 
   const row = (over: Partial<Task>) => renderToStaticMarkup(createElement(TableView, { tasks: [t({ id: "0042", title: "Waits", stage: "ready", ...over })], now: 0, multi: false, openKey: null, onOpen: () => {}, words: [] }));
   it("shows no red blocked pill for it, only its neutral words", () => {
     const after = row({ blockedKind: "tasks", blockedBy: [{ id: "0014", stage: "ready", holder: "" }] });
-    expect(after).not.toContain("status-pill blocked");
+    expect(after).not.toContain("ui-status-pill--blocked");
     expect(after).toContain('<span class="block-why plain not-you look-tasks"><b>After</b> 0014</span>');
     // Every other block is still red.
-    for (const kind of ["you", "permission", "question", "outside"]) expect(row({ blocked: true, blockedKind: kind, blockDetail: "x" }), kind).toContain('<span class="status-pill blocked">blocked</span>');
+    for (const kind of ["you", "permission", "question", "outside"]) expect(row({ blocked: true, blockedKind: kind, blockDetail: "x" }), kind).toContain('<span class="ui-status-pill ui-status-pill--blocked">blocked</span>');
   });
 });
 

@@ -56,7 +56,7 @@ describe("the Your check header over its limit (0050)", () => {
     // One line, never two: at the narrowest it's cut at the end (the title has it whole), so the
     // board under it never moves.
     for (const d of ["white-space: nowrap", "overflow: hidden", "text-overflow: ellipsis"]) expect(rule(".limit-board")).toContain(d);
-    expect(rule(".over-limit")).toContain("color: var(--needs-text)");
+    expect(rule(".over-limit")).toContain("color: var(--warn)");
   });
 
   it("the board: the line above it always (plain or grouped), the count and the short line in Your check, kept open while over", () => {
@@ -130,19 +130,19 @@ describe("Settings › Projects' Your check limit (0050)", () => {
     const h = html(createElement(LimitCell, { q: q("muster", 7, 5), onSet: () => {} }));
     expect(h).toContain('aria-label="Your check limit for muster"');
     expect(h).toContain('<span class="over-limit">limit 5 · 7 waiting</span>');
-    expect(h).toMatch(/<button type="button" class="chip" aria-pressed="false">Off<\/button>/);
+    expect(h).toMatch(/<button type="button" aria-pressed="false" class="ui-pill">Off<\/button>/);
     expect(h).toMatch(/<input type="number" min="1" max="50" aria-label="Limit for muster, 1 to 50" value="5"\/>/);
     // Nothing to set until the number changes.
-    expect(h).toMatch(/<button type="submit" disabled="">Set<\/button>/);
+    expect(h).toMatch(/<button type="submit" disabled="" class="ui-button">Set<\/button>/);
   });
 
   it("within the limit the count is quiet; off, the chip is pressed and the field offers the default", () => {
     expect(html(createElement(LimitCell, { q: q("muster", 2, 5), onSet: () => {} }))).toContain('<span class="meta">limit 5 · 2 waiting</span>');
     const off = html(createElement(LimitCell, { q: q("muster", 9, null), onSet: () => {} }));
     expect(off).toContain('<span class="meta">off · 9 waiting</span>');
-    expect(off).toMatch(/class="chip on" aria-pressed="true">Off</);
+    expect(off).toMatch(/aria-pressed="true" class="ui-pill ui-pill--on">Off</);
     expect(off).toContain('value="5"');
-    expect(off).toMatch(/<button type="submit">Set<\/button>/);
+    expect(off).toMatch(/<button type="submit" class="ui-button">Set<\/button>/);
   });
 
   it("is a column of the projects table, kept by the project's folder (its key), applied live", () => {

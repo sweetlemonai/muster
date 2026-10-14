@@ -157,7 +157,7 @@ describe("Agents", () => {
     expect(text(html)).toContain("~/.claude-mg not logged in");
     const models = /<div[^>]*aria-label="Helper model"[^>]*>([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "";
     expect([...models.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1])).toEqual(["Sonnet", "Haiku", "Opus"]);
-    expect(models).toMatch(/class="chip on" aria-pressed="true">Sonnet</);
+    expect(models).toMatch(/aria-pressed="true" class="ui-pill ui-pill--on">Sonnet</);
     expect(text(html)).toContain("Sonnet unless you pick another");
   });
 
@@ -177,7 +177,7 @@ describe("Agents", () => {
     expect(changed).toContain("Back to 5 min");
     expect(changed).not.toContain(" default ");
     // At the default, the way back is there but off: nothing moves when a value changes.
-    expect(agents()).toMatch(/<button type="button" disabled="">Back to 12 h<\/button>/);
+    expect(agents()).toMatch(/<button type="button" disabled="" class="ui-button">Back to 12 h<\/button>/);
   });
 
   it("says under Claims whether Claude Code's session states are read (0048), or why not", () => {
@@ -203,7 +203,7 @@ describe("Agents", () => {
     expect(withModel(HELPER, "opus")).toEqual({ ...HELPER, model: "opus" });
     expect(withModel(null, "opus")).toBeNull();
     const html = agents({ helper: withModel(HELPER, "haiku") });
-    expect(html).toMatch(/class="chip on" aria-pressed="true">Haiku</);
+    expect(html).toMatch(/aria-pressed="true" class="ui-pill ui-pill--on">Haiku</);
   });
 
   it("without the claude command says so, and still shows the lease and LIVE", () => {
@@ -305,7 +305,7 @@ describe("Help lives only in the header (owner, 2026-10-13)", () => {
   });
   it("the header's Help tab still opens the manual, as the ? buttons do", () => {
     const header = /<header className="top">([\s\S]*?)<\/header>/.exec(appSource)?.[1] ?? "";
-    expect(header).toContain(`onClick={() => setView("help")}>Help</button>`);
+    expect(header).toContain(`onClick={() => setView("help")}>Help</Pill>`);
     expect(appSource).toMatch(/\{view === "help" && \(\s*<Suspense fallback=\{[^}]*\}>\s*<HelpView /);
     expect(appSource).toMatch(/const openHelp = useCallback\(\s*\(topic: HelpTopic\) => \{\s*setView\("help"\);/);
   });
@@ -319,8 +319,8 @@ describe("Appearance lives only in Settings (owner, 2026-10-13)", () => {
     vi.stubGlobal("window", { matchMedia: () => ({ matches: true }) });
     vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {} });
     const header = /<header className="top">([\s\S]*?)<\/header>/.exec(appSource)?.[1] ?? "";
-    expect(header).toContain(">Settings</button>");
-    expect(header).not.toMatch(/Appearance\s*<\/button>|<Appearance\w*/);
+    expect(header).toContain(">Settings</Pill>");
+    expect(header).not.toMatch(/Appearance\s*<\/(button|Pill)>|<Appearance\w*/);
     expect(SETTINGS_GROUPS.some((g) => g.id === "appearance" && g.label === "Appearance")).toBe(true);
     expect(text(settings("appearance"))).toContain("Appearance ? Theme, accent, text size, cards");
     vi.unstubAllGlobals();

@@ -96,6 +96,35 @@ to have a solid color code"). `themes.ts` holds the values; tests keep them apar
 
 A stage colour only ever says a stage. Words carry everything else.
 
+## Names: Drover's tokens and atoms (task 0053)
+
+Muster keeps its own palette and these rules, and takes Drover's names (owner, 2026-10-13, option
+a), so its screens can move into Drover later. The values are Muster's; only the names are shared.
+
+| Drover token | What it is | Muster's old name (still an alias) |
+|---|---|---|
+| `--bg` | the window background | |
+| `--panel` | cards, panes, bars | `--surface` |
+| `--line` | borders and rules | `--border` |
+| `--hover` | a hovered or quiet fill | `--tint` |
+| `--selected` | the chosen chip or row | `--accent-soft` |
+| `--accent`, `--accent-ink` | the accent, and words on it | `--on-accent` |
+| `--focus` | the keyboard focus ring (the accent) | |
+| `--ok`, `--bad`, `--warn` | green words, red words (errors), needs-you orange words | `--err`, `--needs-text` |
+| `--text`, `--muted` | words | |
+
+Muster's own: `--popover`, `--faint`, `--accent-strong`, `--accent-text`, `--gold-text`, the stage
+colours `--st-*` and their edges `--edge-*`, priority `--pri-*`, `--on-status`, `--radius`.
+`themes.ts` `OLD_TOKEN_NAMES` lists the aliases; nothing in the repo uses them.
+
+The patterns are atoms in `app/src/ui`, with Drover's names, props and classes (`ui-<name>`,
+`ui-<name>--<variant>`): **Button** (a bordered button; `variant="primary"` for a place's one next
+step), **Pill** (a rounded chip; `on` for the chosen one), **StatusPill** (a stage, blocked or
+paused, in its colour), **Badge** (a small label: needs you, blocked, paused, a note, an estimate,
+a level), **Segmented** with **Segment**s (the task pane's joined value picker). Screens use them;
+a test fails on a screen that draws one of these with its own class, or leaves a plain `<button>`.
+Drover's Menu, Modal, Overlay, Select and Lightbox are not taken: they hide or cover things.
+
 ## Out of the way
 
 Visible doesn't mean loud. Controls are always there but never between the owner and the work:

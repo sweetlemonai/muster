@@ -11,6 +11,7 @@ import { isWork } from "./levels";
 import { PausedChip } from "./Pause";
 import PickOne from "./PickOne";
 import type { QueueInfo, Task } from "./types";
+import { Button } from "./ui";
 import YouRibbon from "./YouRibbon";
 import { nextStep } from "./yourCheck";
 import AnswerBox from "./AnswerBox";
@@ -94,7 +95,7 @@ function WaitingItem({ t, now, multi, active, onOpen, onChanged }: { t: Task; no
       <BlockLine t={t} answering={answering} onAnswer={() => setAnswering(true)} onChanged={onChanged} />
       {t.sessionState === "needs-input" && <p>Waiting for input in Claude Code: answer it there.</p>}
       {step && <p className="next-step-line">{`${step.full}${step.more ? ` · ${step.more} more` : ""}`}</p>}
-      <button onClick={() => onOpen(t)}>{asked.length > 0 || t.blockedKind === "you" ? "Open to answer" : "Open"}</button>
+      <Button onClick={() => onOpen(t)}>{asked.length > 0 || t.blockedKind === "you" ? "Open to answer" : "Open"}</Button>
     </article>
   );
 }
@@ -138,7 +139,7 @@ function UnblockNow({ t, label, onChanged }: { t: Task; label: string; onChanged
   };
   return (
     <>
-      <button type="button" className="block-unblock" disabled={busy || result?.ok === true} onClick={() => void run()}>{busy ? "Unblocking…" : label}</button>
+      <Button type="button" className="block-unblock" disabled={busy || result?.ok === true} onClick={() => void run()}>{busy ? "Unblocking…" : label}</Button>
       {result && <span className={result.ok ? "ok" : "err"}> {result.text}</span>}
     </>
   );

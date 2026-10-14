@@ -73,7 +73,7 @@ describe("Settings › Display (0038, AC1)", () => {
   it("says the mode in the header as a chip that opens Settings › Display, with no menu", () => {
     for (const mode of ALL) {
       const html = renderToStaticMarkup(createElement(ModeChip, { mode, onOpen: () => {} }));
-      expect(html).toMatch(/^<button type="button" class="chip mode-chip"/);
+      expect(html).toMatch(/^<button type="button" title="[^"]*" class="ui-pill mode-chip"/);
       expect(text(html)).toBe(MODES.find((m) => m.id === mode)?.label);
       expect(html).toContain("Settings, Display");
     }
@@ -116,9 +116,9 @@ describe("the filter bar in each mode", () => {
   it("Standard: the groups behind one Filters chip that says how many are on; the active line stays", () => {
     const html = bar("standard", { query: { filters: { priority: ["high"], tag: ["design"] } } });
     expect(html).not.toContain('class="filters groups"');
-    expect(html).toMatch(/<button type="button" class="chip filters-fold" aria-expanded="false"[^>]*>Filters <b class="count">2<\/b><\/button>/);
+    expect(html).toMatch(/<button type="button" aria-expanded="false"[^>]*class="ui-pill filters-fold">Filters <b class="count">2<\/b><\/button>/);
     expect(text(html)).toContain("Clear all");
-    expect(bar("standard")).toMatch(/class="chip filters-fold" aria-expanded="false"[^>]*>Filters<\/button>/);
+    expect(bar("standard")).toMatch(/aria-expanded="false"[^>]*class="ui-pill filters-fold">Filters<\/button>/);
   });
 
   it("Focus: one Search and filters button until ⌘F, a search or a filter brings the bar back", () => {
@@ -189,7 +189,7 @@ describe("a card in each mode", () => {
     const blocked = task("0052", { blocked: true, waitingOn: "owner: which colour?", blockedKind: "you", blockDetail: "which colour?", waitingForOwner: true });
     const quiet = task("0053", { stage: "building", claimedBy: "muster/wt-x", heartbeat: stamp(NOW - 5 * 3600), stageSince: stamp(NOW - 6 * 3600) });
     for (const mode of ALL) {
-      expect(card(mode, needs), mode).toContain('<span class="badge warn">needs you</span>');
+      expect(card(mode, needs), mode).toContain('<span class="ui-badge ui-badge--warn">needs you</span>');
       expect(text(card(mode, needs)), mode).toContain("Your turn");
       expect(card(mode, blocked), mode).toContain("<b>Your action</b>: which colour?");
       expect(card(mode, quiet), mode).toContain('class="card-quiet"');
@@ -371,7 +371,7 @@ describe("the sidebar in each mode", () => {
 
 describe("what needs you, in every mode (AC3)", () => {
   it("the header's Waiting for you count doesn't read the mode", () => {
-    const tab = /<button className=\{view === "waiting"[\s\S]*?<\/button>/.exec(appSource)?.[0] ?? "";
+    const tab = /<Pill on=\{view === "waiting"[\s\S]*?<\/Pill>/.exec(appSource)?.[0] ?? "";
     expect(tab).toContain("needs ?");
     expect(tab).not.toMatch(/look\(|modes\./);
   });

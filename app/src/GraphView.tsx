@@ -7,6 +7,7 @@ import { holder, key, stageLabel, stageOf } from "./lib";
 import { PAUSE_GLYPH } from "./Pause";
 import { siblingKey, taskKey } from "./taskKey";
 import type { Task } from "./types";
+import { Badge, Pill } from "./ui";
 import YouRibbon from "./YouRibbon";
 import { labelOf, Labels } from "./labels";
 import ProjectName from "./ProjectName";
@@ -33,9 +34,9 @@ export function GraphView({ tasks, all, multi, openKey, onOpen }: { tasks: Task[
   return (
     <main className="graph-view">
       <div className="graph-bar">
-        <button type="button" className={hideDone ? "chip on" : "chip"} aria-pressed={hideDone} onClick={() => setHideDone(!hideDone)}>
+        <Pill type="button" on={hideDone} aria-pressed={hideDone} onClick={() => setHideDone(!hideDone)}>
           Hide done
-        </button>
+        </Pill>
         <span className="meta">
           Arrows point from a task to what waits on it. <span className="g-legend ready">Ready to start</span> has nothing left to wait on.
         </span>
@@ -65,9 +66,9 @@ function Status({ t, ready }: { t: Task; ready: boolean }) {
       <span className="g-stage">{stageLabel(t.stage)}</span>
       {t.priority === "high" && <span className="pri pri-high">high</span>}
       {ready && <span className="g-ready">ready</span>}
-      {t.paused && <span className="badge paused">{`${PAUSE_GLYPH} paused`}</span>}
-      {blockedRed(t) ? <span className="badge blocked">blocked</span> : isBlocked(t) && <BlockWhy t={t} short />}
-      {t.waitingForOwner && <span className="badge warn">needs you</span>}
+      {t.paused && <Badge variant="paused">{`${PAUSE_GLYPH} paused`}</Badge>}
+      {blockedRed(t) ? <Badge variant="blocked">blocked</Badge> : isBlocked(t) && <BlockWhy t={t} short />}
+      {t.waitingForOwner && <Badge variant="warn">needs you</Badge>}
       {who && <span className="g-who">{who}</span>}
     </>
   );
@@ -153,9 +154,9 @@ function QueueGraph({ name, tasks, all, openKey, onOpen }: { name: string; tasks
         <div className="graph-loose">
           <span className="meta">Not linked to any task ({g.loose.length})</span>
           {g.loose.map((t) => (
-            <button key={t.id} type="button" className={`chip g-loose s-${stageOf(t)}${isHuman(t) ? " human" : ""}${key(t) === openKey ? " on" : ""}`} onClick={() => onOpen(t)} title={t.title}>
+            <Pill key={t.id} type="button" on={key(t) === openKey} className={`g-loose s-${stageOf(t)}${isHuman(t) ? " human" : ""}`} onClick={() => onOpen(t)} title={t.title}>
               <span className="id">{taskKey(t)}</span>{isHuman(t) && <YouRibbon />} {t.title.length > 34 ? `${t.title.slice(0, 33)}…` : t.title} <Status t={t} ready={readyToStart(t)} />
-            </button>
+            </Pill>
           ))}
         </div>
       )}

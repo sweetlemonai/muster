@@ -5,6 +5,7 @@ import { siblingKey } from "./taskKey";
 import OwnerChecklist from "./OwnerChecklist";
 import { criteriaSection, fmtWall, timeInWork } from "./paneData";
 import type { Task } from "./types";
+import { StatusPill } from "./ui";
 import type { NamedView } from "./yourCheck";
 
 /** The task pane's left column: what this stage needs. Building and Testing: the work so far.
@@ -150,7 +151,7 @@ function Rollup({ task, childTasks }: { task: Task; childTasks?: Task[] }) {
             const c = byId.get(id);
             return (
               <li key={id}>
-                {c ? <><span className="id">{siblingKey(task, id)}</span> {c.title} <span className={`status-pill s-${shownStageClass(c)}`}>{shownStageLabel(c)}</span></> : siblingKey(task, id)}
+                {c ? <><span className="id">{siblingKey(task, id)}</span> {c.title} <StatusPill status={shownStageClass(c)}>{shownStageLabel(c)}</StatusPill></> : siblingKey(task, id)}
               </li>
             );
           })}

@@ -2,6 +2,7 @@ import { Fragment } from "react";
 import { BLOCK_LOOKS, blockedByText, blockWords } from "./blockWords";
 import { keyOf } from "./taskKey";
 import type { Question, Task } from "./types";
+import { Badge, Button, StatusPill } from "./ui";
 
 /** Why a task is blocked, the lead in bold (0024), in its kind's look (0060): what the owner acts
  *  on in the needs-you orange, the rest neutral, each with its red mark. In full, each task it
@@ -21,10 +22,10 @@ export default function BlockWhy({ t, short = false, pill = true, onOpenTask, on
   const links = !short && onOpenTask && tasks.length > 0;
   const open = !short && asked && !asked.ticked && asked.n !== null ? asked : null;
   const answer = open && onAnswer ? () => onAnswer(open) : null;
-  const shape = !pill ? "block-why plain" : short ? "badge block-why" : "status-pill block-why";
   const sep = look === "tasks" && tasks.length > 0 ? " " : ": ";
-  return (
-    <span className={`${shape} ${BLOCK_LOOKS[look].owner ? "for-you" : "not-you"} look-${look}`}>
+  const looks = `${BLOCK_LOOKS[look].owner ? "for-you" : "not-you"} look-${look}`;
+  const words = (
+    <>
       <b>{lead}</b>
       {links ? (
         <>
@@ -43,9 +44,12 @@ export default function BlockWhy({ t, short = false, pill = true, onOpenTask, on
       {answer && (
         <>
           {" "}
-          <button type="button" className="block-answer" onClick={answer}>Answer</button>
+          <Button type="button" className="block-answer" onClick={answer}>Answer</Button>
         </>
       )}
-    </span>
+    </>
   );
+  if (!pill) return <span className={`block-why plain ${looks}`}>{words}</span>;
+  // The look's colours (styles.css .block-why.for-you / .not-you) take over the atom's own.
+  return short ? <Badge className={`block-why ${looks}`}>{words}</Badge> : <StatusPill status="blocked" className={`block-why ${looks}`}>{words}</StatusPill>;
 }

@@ -5,6 +5,7 @@ import { readFiles, stamp } from "./lib";
 import Markdown from "./Markdown";
 import { HelpButton } from "./HelpButton";
 import { labelOf, Labels } from "./labels";
+import { Button } from "./ui";
 
 type Group = { owner?: HelperLine; replies: HelperLine[]; tools: { cmd: string; result?: string }[]; end?: HelperLine; notes: HelperLine[] };
 
@@ -135,11 +136,11 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
           {info && <> Account: ~/{info.account}. Model: {info.model}.</>}
         </span>
         <span className="spacer" />
-        <button onClick={() => { setPicking(true); void reload(); }} disabled={running}>Change account</button>
-        {running && <button onClick={() => void api.helperStop(queue)}>Stop</button>}
-        <button onClick={() => void api.helperReset(queue).then(() => api.helperInfo(queue)).then((i) => setLines(i.lines))} disabled={running}>
+        <Button onClick={() => { setPicking(true); void reload(); }} disabled={running}>Change account</Button>
+        {running && <Button onClick={() => void api.helperStop(queue)}>Stop</Button>}
+        <Button onClick={() => void api.helperReset(queue).then(() => api.helperInfo(queue)).then((i) => setLines(i.lines))} disabled={running}>
           New conversation
-        </button>
+        </Button>
         <HelpButton topic="helper" />
       </header>
       <div className="chat">
@@ -173,8 +174,8 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
                   that's logged in, or log this one in (it opens Terminal on Claude's own login).
                 </p>
                 <div className="accounts">
-                  <button onClick={() => { setPicking(true); void reload(); }}>Choose another account</button>
-                  <button onClick={() => void api.helperLogin(info.account).catch((e) => setError(String(e)))}>Log in ~/{info.account}…</button>
+                  <Button onClick={() => { setPicking(true); void reload(); }}>Choose another account</Button>
+                  <Button onClick={() => void api.helperLogin(info.account).catch((e) => setError(String(e)))}>Log in ~/{info.account}…</Button>
                 </div>
               </div>
             )}
@@ -208,7 +209,7 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
               <span key={name + i} className="pending-file">
                 {url.startsWith("data:image/") ? <img src={url} alt="" /> : null}
                 {name}
-                <button type="button" onClick={() => setFiles((f) => f.filter((_, j) => j !== i))} aria-label={`Remove ${name}`}>×</button>
+                <button type="button" className="remove" onClick={() => setFiles((f) => f.filter((_, j) => j !== i))} aria-label={`Remove ${name}`}>×</button>
               </span>
             ))}
           </div>
@@ -225,7 +226,7 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
         <div className="modal-bar">
           {error && <span className="err">{error}</span>}
           <span className="spacer" />
-          <button type="submit" className="primary" disabled={running || (!text.trim() && !files.length)}>Send</button>
+          <Button type="submit" variant="primary" disabled={running || (!text.trim() && !files.length)}>Send</Button>
         </div>
       </form>
     </main>
@@ -261,16 +262,16 @@ export function AccountPicker({ info, onPicked, onRefresh, onCancel }: {
                 {a.loggedIn === null && <span className="meta">couldn't check</span>}
               </td>
               <td className="actions">
-                {a.loggedIn !== true && <button onClick={() => void api.helperLogin(a.name).catch((e) => setError(String(e)))}>Log in…</button>}
-                <button onClick={() => pick(a)} disabled={a.loggedIn === false}>Use this one</button>
+                {a.loggedIn !== true && <Button onClick={() => void api.helperLogin(a.name).catch((e) => setError(String(e)))}>Log in…</Button>}
+                <Button onClick={() => pick(a)} disabled={a.loggedIn === false}>Use this one</Button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
       <div className="accounts">
-        <button onClick={onRefresh}>Check again</button>
-        {onCancel && <button onClick={onCancel}>Cancel</button>}
+        <Button onClick={onRefresh}>Check again</Button>
+        {onCancel && <Button onClick={onCancel}>Cancel</Button>}
       </div>
       {error && <p className="err">{error}</p>}
     </>

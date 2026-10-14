@@ -97,7 +97,7 @@ describe("GraphView", () => {
     expect(html.match(/class="g-node /g)).toHaveLength(8);
     expect(html.match(/class="g-edge/g)).toHaveLength(8);
     expect(html).toContain("Not linked to any task (2)");
-    expect(html).toContain('aria-pressed="false">Hide done</button>');
+    expect(html).toContain('aria-pressed="false" class="ui-pill">Hide done</button>');
   });
   it("marks what's ready to start, and what's blocked by the tasks it waits on", () => {
     // As the core gives them: 0002 waits on 0001, which is only in Ready.
@@ -143,19 +143,19 @@ describe("GraphView", () => {
     const html = view(null, loose);
     const chip = (id: string) => new RegExp(`<button[^>]*g-loose[^>]*><span class="id">${id}</span>.*?</button>`).exec(html)?.[0] ?? "";
     expect(chip("0021")).toContain('<span class="g-ready">ready</span>');
-    expect(chip("0022")).toContain('<span class="badge blocked">blocked</span>');
+    expect(chip("0022")).toContain('<span class="ui-badge ui-badge--blocked">blocked</span>');
     expect(chip("0022")).not.toContain("g-ready");
     expect(chip("0023")).toContain('<span class="g-stage">Building</span>');
     expect(chip("0023")).toContain('<span class="g-who">wt-b</span>');
-    expect(chip("0024")).toContain('<span class="badge warn">needs you</span>');
+    expect(chip("0024")).toContain('<span class="ui-badge ui-badge--warn">needs you</span>');
   });
   it("marks a task blocked only by the tasks it depends on as its card does: neutral, after them (0024, 0060)", () => {
     const byTasks = { blockedKind: "tasks", blockedBy: [{ id: "0001", stage: "ready", holder: "" }] };
     const html = view(null, [task("0001", [], { forWho: "human" }), task("0002", ["0001"], byTasks), task("0009", [], byTasks)]);
-    expect(html).toMatch(/class="g-node s-ready"[^>]*><span class="g-top"><span class="id">0002<\/span>.*?<span class="badge block-why not-you look-tasks"><b>After<\/b> 0001<\/span>/);
-    expect(html).not.toContain("badge blocked");
+    expect(html).toMatch(/class="g-node s-ready"[^>]*><span class="g-top"><span class="id">0002<\/span>.*?<span class="ui-badge block-why not-you look-tasks"><b>After<\/b> 0001<\/span>/);
+    expect(html).not.toContain("ui-badge--blocked");
     const chip = new RegExp(`<button[^>]*g-loose[^>]*><span class="id">0009</span>.*?</button>`).exec(html)?.[0] ?? "";
-    expect(chip).toContain('<span class="badge block-why not-you look-tasks"><b>After</b> 0001</span>');
+    expect(chip).toContain('<span class="ui-badge block-why not-you look-tasks"><b>After</b> 0001</span>');
     expect(chip).not.toContain("g-ready");
   });
   it("dims done tasks, but not when they're on the selected chain", () => {
@@ -176,7 +176,7 @@ describe("GraphView", () => {
     const tasks = [task("0001", [], { forWho: "human" }), task("0002", ["0001"]), task("0003", [], { forWho: "human" }), task("0004")];
     const html = view(null, tasks);
     expect(html).toMatch(/class="g-node s-ready human ready"[^>]*><span class="g-top"><span class="id">0001<\/span><span class="you-ribbon"[^>]*>You<\/span>/);
-    expect(html).toMatch(/class="chip g-loose s-ready human"[^>]*><span class="id">0003<\/span><span class="you-ribbon"/);
+    expect(html).toMatch(/class="ui-pill g-loose s-ready human"[^>]*><span class="id">0003<\/span><span class="you-ribbon"/);
     expect(html.match(/class="you-ribbon"/g)).toHaveLength(2);
   });
   it("says how to start when nothing is linked", () => {

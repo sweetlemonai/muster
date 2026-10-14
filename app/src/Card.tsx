@@ -9,6 +9,7 @@ import { cardLines, useLook } from "./modes";
 import { CardPause, pausable, PausedChip } from "./Pause";
 import { CardPing } from "./Ping";
 import type { Task } from "./types";
+import { Badge } from "./ui";
 import YouRibbon from "./YouRibbon";
 import ProjectName, { TaskKey } from "./ProjectName";
 
@@ -60,10 +61,10 @@ function CardButton({ t, now, multi, parent, onOpen, active, words }: CardProps)
       <CardStatus t={t} now={now} lines={lines} />
       <span className="card-bottom">
         <BlockWhy t={t} short />
-        {t.waitingForOwner && <span className="badge warn">needs you</span>}
-        {lines !== "status" && t.openQuestions > 0 && <span className="badge">{t.openQuestions} open Q</span>}
-        {all && t.attachments.length > 0 && <span className="badge">{t.attachments.length} file{t.attachments.length === 1 ? "" : "s"}</span>}
-        {all && estimateText(t) && <span className="badge est" title="Estimated agent time, test time and tokens">{estimateText(t)}</span>}
+        {t.waitingForOwner && <Badge variant="warn">needs you</Badge>}
+        {lines !== "status" && t.openQuestions > 0 && <Badge>{t.openQuestions} open Q</Badge>}
+        {all && t.attachments.length > 0 && <Badge>{t.attachments.length} file{t.attachments.length === 1 ? "" : "s"}</Badge>}
+        {all && estimateText(t) && <Badge variant="est" title="Estimated agent time, test time and tokens">{estimateText(t)}</Badge>}
         {lines !== "status" && <span className="age">{ago(now, t.modified)}</span>}
       </span>
     </button>

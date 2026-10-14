@@ -64,9 +64,9 @@ The Helper's own conversations are kept by the app, one file per project, in `~/
 
 ## The sandbox and worktrees
 
-Claude Code sessions here run in a sandbox that only writes to the folders it allows. A new queue's folder has to be in the personal layer's write list (`~/playground/.claude/layer-settings.json`, `allowWrite`), and the layer re-linked in that project's checkouts. Until then, its agents can read tasks but can't claim, log or ask. `muster init` and **New queue…** don't add it yet (task 0004).
+Claude Code sessions here run in a sandbox that only writes to the folders it allows. A `.muster/` queue is inside its repo, so a session in the main checkout can claim, log and ask with nothing set up. A session in a **worktree** writes the main checkout's `.muster/`, which is outside the worktree: that needs the main checkout's `.muster/` in the session's write list, which the personal layer's linker adds to every worktree it links (task 0004, once the layer has the change). An older queue beside the repo (`<project>/tasks`) has to be in the layer's write list (`~/playground/.claude/layer-settings.json`, `allowWrite`) itself.
 
-A git worktree finds its project's queue on its own, as long as the queue sits beside the repo's folder or beside a folder above the worktree. A new worktree may not have the answer hook installed: sessions there collect answers with `muster inbox`.
+Every repo the personal layer is linked into (`link-personal-layer --install`, once per repo; new worktrees are linked on creation) gets two things from Muster: a short rule that tells each session `.muster/` is the project's queue and where its rules are (`rules/muster-queue.md` in Muster's repo), and the answer hook (`bin/answer-hook.py`), which finds the queue from the session's folder. Until the layer carries the hook, only checkouts where it was installed by hand get it, and sessions elsewhere collect answers with `muster inbox`.
 
 ## INDEX.md says a refresh is due
 

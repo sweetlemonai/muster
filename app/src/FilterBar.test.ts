@@ -64,14 +64,14 @@ describe("the filter bar", () => {
   });
   it("marks selected chips as pressed", () => {
     const { html } = bar({ query: { filters: { tag: ["design"] } } });
-    expect(html).toMatch(/<button class="chip on" aria-pressed="true">#design<\/button>/);
-    expect(html).toMatch(/<button class="chip" aria-pressed="false">#docs<\/button>/);
+    expect(html).toMatch(/<button aria-pressed="true" class="ui-pill ui-pill--on">#design<\/button>/);
+    expect(html).toMatch(/<button aria-pressed="false" class="ui-pill">#docs<\/button>/);
   });
   it("offers the board's sort as chips only where it sorts, the current one pressed", () => {
     expect(bar().group("Sort")).toBeNull();
     const b = bar({ sortable: true, query: { sort: "changed" } });
     expect(b.group("Sort")).toEqual(["priority", "newest", "oldest", "changed", "estimate", "id"]);
-    expect(b.html).toMatch(/<button class="chip on" aria-pressed="true" title="[^"]*">changed<\/button>/);
+    expect(b.html).toMatch(/<button aria-pressed="true" title="[^"]*" class="ui-pill ui-pill--on">changed<\/button>/);
   });
   it("reads the active filters as one line, each with ✕, then the hidden count and Clear all", () => {
     const b = bar({ query: { search: "flick", filters: { stage: ["building"], tag: ["design"], state: ["blocked"] } }, shown: 12, total: 48, hidden: 36 });
@@ -95,8 +95,8 @@ describe("the filter bar", () => {
       { name: "Docs", search: "", filters: { tag: ["docs"] }, sort: "priority" },
     ];
     const { html } = bar({ views, query: { filters: { tag: ["docs"] } } });
-    expect(html).toMatch(/<button class="chip view" aria-pressed="false">My checks<\/button>/);
-    expect(html).toMatch(/<button class="chip view on" aria-pressed="true">Docs<\/button>/);
+    expect(html).toMatch(/<button aria-pressed="false" class="ui-pill view">My checks<\/button>/);
+    expect(html).toMatch(/<button aria-pressed="true" class="ui-pill ui-pill--on view">Docs<\/button>/);
     expect(html).toContain('aria-label="Delete view Docs"');
     expect(html).toContain("Save view");
   });

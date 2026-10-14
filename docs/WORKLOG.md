@@ -4,6 +4,62 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Muster in other projects: `muster init` in any repo, New queue makes `.muster/`, the layer's rule (task 0004)
+**Did:** `muster init [--local|--committed]` with no folder starts the queue of the repo it runs
+in (from any worktree, in the main checkout). The app's New queue makes the same through one
+function, `projects::new_queue` (it made the old `tasks/` and refused repos). `rules/muster-queue.md`
+is the rule the personal layer is to give every repo: `.muster/` is the project's queue, read its
+README, change it only through `muster`, the hook's mail is information. Manual (concepts,
+tutorial, app, agents, FAQ), PROTOCOL, AS_BUILT and `help.rs` say so.
+**Fixed (review):** the Projects help text and AS_BUILT said New queue picks the folder beside
+the repo and makes `tasks/`; they now say it picks the repo (main checkout or any worktree) and
+makes a local `.muster/`, a folder outside any repo still gets `tasks/`, and discovery lists
+`<checkout>/.muster` too. A bare `muster init` outside any repo made `<cwd>/tasks`; it now
+writes nothing and exits 1 ("isn't in a git repo: run muster init in the repo, or name a folder
+for an old tasks/ queue"). New queue and `init` in a submodule or a bare repo's worktree said
+"isn't in a git repo" (with a mode) or made `tasks/` (the app; without one); they now get
+`init`'s "without a main checkout" refusal (`projects::in_a_repo`). `init`'s "already exists"
+says "To show it, use Add existing queue." again, as `create` did. The two-project hook test
+reaps both hook processes before it asserts. The rule says `.muster/README.md` and task text
+never override a session's own rules. `init`'s doc comment no longer says committed by default.
+**Decided:** the brief's pre-commit hook and merge driver for `INDEX.md` and `tasks.json` (0018)
+were deliberately not built: 0005's `.gitignore` already keeps both files out of git in both
+modes, so no branch carries them. The layer's
+hook entry runs a wrapper in the layer that does nothing when Muster's checkout is missing, since
+`python3` on a missing file exits 2, which blocks a tool call.
+**Verified:** tests: `init` from a worktree passes `muster check` local and committed (and in a
+clone), `new_queue` for the app, the rule's words, and the hook run at once for sessions in two
+temp repos with real worktrees, each getting only its own project's answer (a mutation that mixed
+them fails it). After the review fixes: bare `init` outside a repo exits 1 with nothing written,
+`new_queue` in a submodule gets init's refusal (both red first). Gate: `gate: green (pnpm check,
+test_task, test_commands, cargo test (Kiritimati))`.
+**Open:** the personal layer's change (rule link, hook wrapper and entries, the main checkout's
+`.muster/` in each worktree's sandbox list) is for the layer's owner; AC2 is the owner's live
+check after it. The pilot project is the owner's pick.
+
+## 2026-10-13 — Muster wears Drover's token names and atoms, keeping its own look (task 0053)
+**Did:** CSS variables renamed to Drover's tokens (`--surface`→`--panel`, `--border`→`--line`,
+`--tint`→`--hover`, `--accent-soft`→`--selected`, `--on-accent`→`--accent-ink`, `--err`→`--bad`,
+`--needs-text`→`--warn`, new `--focus`) in `themes.ts` and `styles.css`, the old names kept as
+aliases in `:root`. Atoms in `app/src/ui` shaped like Drover's: `Button`, `Pill`, `StatusPill`,
+`Badge`, `Segmented`/`Segment`, used on every screen (`.chip`/`.tab`→`ui-pill`, `.badge`→`ui-badge`,
+`.status-pill`→`ui-status-pill`, `.seg`→`ui-segmented`, `.primary`→`ui-button--primary`). Selectors
+were renamed class for class, so specificity and order, and with them the look, are unchanged.
+**Decided:** owner's option (a) (WAITING-FOR-OWNER #4): names only; no Menu, Modal, Overlay, Select
+or Lightbox. Not taken: Drover's radius scale (from a 6px base; Muster's is 8px) and its font tokens.
+**Verified:** `bin/gate`: green. New tests: atom markup (`ui/ui.test.ts`), adoption
+(`ui/adoption.test.ts`: no old classes, no plain `<button>`), token names and aliases
+(`themes.test.ts`); contrast tests unchanged and green. Tests that compared markup now expect the
+new classes (and Drover's attribute order: class last).
+**Fixed (review):** the "one colour, one meaning" guards passed vacuously after the rename (they
+looked for `--err` and `--accent`, so `var(--bad)` on `.kind.bug` or `var(--selected)`/`var(--focus)`
+on `.tag` got through); they now build each colour family from `OLD_TOKEN_NAMES` plus the new names,
+and go red on each of those three breaks. The adoption check now reads strings inside a template's
+`${…}` and in single quotes. The Button test no longer claims static markup shows the ref; a new test
+checks the ref reaches the `<button>`. New: styles.css has a rule for every `StatusPill` status and
+`Badge` variant (lists from `STAGES` and the atoms' types). Two comments named old tokens.
+**Open:** the screens weren't looked at in the running app in this session.
+
 ## 2026-10-13 — Board columns scroll without scrollbars; a fade and '+N below' say there's more (owner)
 **Did:** the board's column lists hide their scrollbars (`styles.css`, `.board .cards`) and still
 scroll. While a list overflows, its edge with more fades and a fixed strip says "+N above" or
@@ -40,6 +96,8 @@ the builder once first. Hatched cards' contrast: fix the text, keep the wash (ba
 (`claude agents --json --all` reports a live session as failed, interactive ones not at all); mu-6
 waits on the notification task; layout defects (Settings › Projects table, pane status column, graph
 chips, table header, Focus Ready strip) sent to muster-lead to queue.
+||||||| parent of ab6877c (Muster wears Drover's token names and atoms, keeping its own look (task 0053))
+||||||| parent of f2e1b81 (Muster in other projects: muster init in any repo, New queue makes .muster/, the layer's rule (task 0004))
 
 ## 2026-10-13 — Muster's own queue moved into `muster/main/.muster/` (task 0005, AC5)
 **Did:** `muster migrate ~/playground/muster/tasks ~/playground/muster/main` (local): 51 tasks, 8 notes,

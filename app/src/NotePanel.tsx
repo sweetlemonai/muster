@@ -8,6 +8,7 @@ import type { Note } from "./types";
 
 import { KINDS } from "./fields";
 import ProjectName from "./ProjectName";
+import { Button, Pill } from "./ui";
 const PRIORITIES = ["high", "normal", "low"] as const;
 
 /** Put `text` on the clipboard now, in the click that asked: WebKit refuses a write made after an
@@ -108,9 +109,9 @@ export default function NotePanel({ note, now, onClose, onChanged, onFiled }: {
 
       <section className="controls">
         <div className="control-row">
-          <button type="button" className={form === "file" ? "primary on" : "primary"} disabled={busy} onClick={() => setForm("file")}>File as task</button>
-          <button type="button" className={form === "drop" ? "on" : undefined} disabled={busy} onClick={() => setForm("drop")}>Drop</button>
-          <button type="button" disabled={busy || brief.text === null} title={brief.text === null && !brief.error ? "Loading the brief…" : undefined} onClick={() => void copy()}>Copy shaping brief</button>
+          <Button type="button" variant="primary" className={form === "file" ? "on" : undefined} disabled={busy} onClick={() => setForm("file")}>File as task</Button>
+          <Button type="button" className={form === "drop" ? "on" : undefined} disabled={busy} onClick={() => setForm("drop")}>Drop</Button>
+          <Button type="button" disabled={busy || brief.text === null} title={brief.text === null && !brief.error ? "Loading the brief…" : undefined} onClick={() => void copy()}>Copy shaping brief</Button>
         </div>
         {brief.error && <p className="err small">Couldn't load the shaping brief: {brief.error}</p>}
         {form === "file" && (
@@ -125,11 +126,11 @@ export default function NotePanel({ note, now, onClose, onChanged, onFiled }: {
             <div className="chip-row">
               <span className="meta">Type</span>
               {KINDS.map((k) => (
-                <button key={k} type="button" className={draft.kind === k ? "chip on" : "chip"} aria-pressed={draft.kind === k} onClick={() => setDraft((d) => ({ ...d, kind: k }))}>{k}</button>
+                <Pill key={k} type="button" on={draft.kind === k} aria-pressed={draft.kind === k} onClick={() => setDraft((d) => ({ ...d, kind: k }))}>{k}</Pill>
               ))}
               <span className="meta sep">Priority</span>
               {PRIORITIES.map((p) => (
-                <button key={p} type="button" className={draft.priority === p ? `chip on pchip-${p}` : "chip"} aria-pressed={draft.priority === p} onClick={() => setDraft((d) => ({ ...d, priority: p }))}>{p}</button>
+                <Pill key={p} type="button" on={draft.priority === p} className={draft.priority === p ? `pchip-${p}` : undefined} aria-pressed={draft.priority === p} onClick={() => setDraft((d) => ({ ...d, priority: p }))}>{p}</Pill>
               ))}
             </div>
             <textarea
@@ -147,8 +148,8 @@ export default function NotePanel({ note, now, onClose, onChanged, onFiled }: {
             />
             <p className="meta small">It's filed in Shaping, with the note in its files. Pass it to Ready once it has acceptance criteria.</p>
             <div className="control-row">
-              <button type="submit" className="primary" disabled={busy || !draft.title.trim()}>{busy ? "Filing…" : "Save (⌘↩)"}</button>
-              <button type="button" onClick={() => setForm(null)}>Cancel</button>
+              <Button type="submit" variant="primary" disabled={busy || !draft.title.trim()}>{busy ? "Filing…" : "Save (⌘↩)"}</Button>
+              <Button type="button" onClick={() => setForm(null)}>Cancel</Button>
             </div>
           </form>
         )}
@@ -161,8 +162,8 @@ export default function NotePanel({ note, now, onClose, onChanged, onFiled }: {
             }}
           >
             <input autoFocus value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Why: a duplicate of 0012, not needed, done already…" aria-label="Why it's dropped" maxLength={500} />
-            <button type="submit" disabled={busy || !why.trim()}>Drop</button>
-            <button type="button" onClick={() => setForm(null)}>Cancel</button>
+            <Button type="submit" disabled={busy || !why.trim()}>Drop</Button>
+            <Button type="button" onClick={() => setForm(null)}>Cancel</Button>
           </form>
         )}
         {msg && <p className={msg.ok ? "ok small" : "err small"}>{msg.text}</p>}

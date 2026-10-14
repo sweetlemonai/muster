@@ -162,20 +162,21 @@ describe("the block's words on screen, each kind its own look (0060)", () => {
   ];
   it("gives every kind its words and its look, in the pane, on the card and in the table", () => {
     for (const [t, look, lead, rest] of cases) {
-      expect(html(t)).toBe(`<span class="status-pill block-why ${look}"><b>${lead}</b>${rest}</span>`);
-      expect(html(t, { short: true })).toMatch(new RegExp(`^<span class="badge block-why ${look}"><b>${lead}</b>`));
+      expect(html(t)).toBe(`<span class="ui-status-pill ui-status-pill--blocked block-why ${look}"><b>${lead}</b>${rest}</span>`);
+      expect(html(t, { short: true })).toMatch(new RegExp(`^<span class="ui-badge block-why ${look}"><b>${lead}</b>`));
       expect(html(t, { short: true, pill: false })).toMatch(new RegExp(`^<span class="block-why plain ${look}"><b>${lead}</b>`));
     }
-    // Never the needs-you look for what the owner can't act on, and never the old all-red one.
+    // Never the needs-you look for what the owner can't act on, and never the old all-red badge
+    // (the pill keeps the atom's blocked status; the look's colours take over, styles.css).
     for (const [t, look] of cases) expect(html(t)).not.toContain(look.startsWith("for-you") ? "not-you" : "for-you");
-    for (const [t] of cases) expect(html(t)).not.toMatch(/\bblocked\b/);
+    for (const [t] of cases) expect(html(t, { short: true })).not.toContain("ui-badge--blocked");
     expect(html(b("", ""))).toBe("");
-    expect(html(b("you", ""))).toBe('<span class="status-pill block-why for-you look-action"><b>Your action</b></span>');
+    expect(html(b("you", ""))).toBe('<span class="ui-status-pill ui-status-pill--blocked block-why for-you look-action"><b>Your action</b></span>');
   });
   it("puts an Answer button on a question it can answer, which answers that question", () => {
     const got: Question[] = [];
     const onAnswer = (q: Question) => got.push(q);
-    expect(html(onQ(theirs), { onAnswer })).toContain('<b>Your answer</b>: Q2 which colour for the button? <button type="button" class="block-answer">Answer</button>');
+    expect(html(onQ(theirs), { onAnswer })).toContain('<b>Your answer</b>: Q2 which colour for the button? <button type="button" class="ui-button block-answer">Answer</button>');
     buttons(BlockWhy({ t: onQ(theirs), onAnswer })).find((x) => x.words === "Answer")!.click();
     expect(got).toEqual([theirs]);
     // The owner may answer one capture still has, too.
@@ -195,6 +196,6 @@ describe("the block's words on screen, each kind its own look (0060)", () => {
     expect(out).toContain('<button type="button" class="link" title="Open 0014">0014</button> (Building, codex), ');
     expect(out).toContain('<button type="button" class="link" title="Open 0016">0016</button> (Ready)');
     // The card's short form: ids only, plain text (the card itself is the button).
-    expect(html(t, { short: true })).toBe('<span class="badge block-why not-you look-tasks"><b>After</b> 0014, 0016</span>');
+    expect(html(t, { short: true })).toBe('<span class="ui-badge block-why not-you look-tasks"><b>After</b> 0014, 0016</span>');
   });
 });

@@ -87,7 +87,11 @@
 >   old `tasks/` queues; a project with both shows the `.muster/` one under its name. `muster
 >   start` puts worktrees at `<project>/worktrees/<repo>/…`, or for a repo that is its own
 >   project at `<checkout>.worktrees/…` beside it, never in `~/playground` itself.
-> - **Starting one:** `muster init <repo> [--local|--committed]`. **Moving one:** `muster migrate
+> - **Starting one:** `muster init [<repo>] [--local|--committed]`, in the repo when no folder is
+>   named (the app's New queue does the same). A session in the repo needs no setup of its own:
+>   the personal layer gives every repo Muster's rule (`rules/muster-queue.md`: `.muster/` is the
+>   project's queue, read its README) and the answer hook, which finds the queue from the
+>   session's folder (task 0004; the layer's side waits on its owner). **Moving one:** `muster migrate
 >   <old-queue> <repo> [--local|--committed] [--dry-run]` copies every task file (its `stage:` set
 >   from its old stage or status, `status:` dropped, the rest byte for byte; a front matter that
 >   can't be read as it is gets its byte-order mark and CRLF line ends made plain), note, dropped
@@ -250,8 +254,9 @@
 > `muster index`. `muster check` fails on a list that shows something the files no longer say.
 > Tools that write task files outside muster (Drover's answers, under Drover's own lock) leave the
 > list's refresh to the next muster write: until then `muster check` and `manifest.py --check`
-> only warn "INDEX.md: refresh due", without failing. A queue committed with its project (`.muster/`) would see branches conflict on it; the
-> pre-commit hook that rebuilds it and the git merge driver that does the same come with task 0005.
+> only warn "INDEX.md: refresh due", without failing. In a repo's `.muster/`, `INDEX.md` and
+> `tasks.json` never go into git (a committed queue's `.gitignore` leaves them out, a local one's
+> leaves out all but `config.toml`), so branches can't conflict on them and need no merge driver.
 >
 > **Stages (Muster 0014, 2026-10-12).** A task goes Backlog → Shaping (product, tech and UI
 > agents) → Ready → Building (code agent) → Testing (QA agent) → Your check (the owner) → Done.

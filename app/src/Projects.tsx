@@ -6,6 +6,7 @@ import InlineField from "./InlineField";
 import { CATEGORY_MAX, LABEL_MAX, OTHER, otherCategories } from "./labels";
 import { queueTotal } from "./lib";
 import type { Project, QueueInfo } from "./types";
+import { Button } from "./ui";
 
 /** Settings' Projects group (0036): every project with its label and category (0044), prefix
  *  (0033), folder and task count, New queue and Add existing. A folder under `home` shows as `~/…`. */
@@ -71,15 +72,17 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
   return (
     <div className="projects">
       <div className="projects-bar">
-        <button onClick={() => void act(api.createProject, "Queue created and added.")}>New queue…</button>
-        <button onClick={() => void act(api.addProject, "Queue added.")}>Add existing queue…</button>
+        <Button onClick={() => void act(api.createProject, "Queue created and added.")}>New queue…</Button>
+        <Button onClick={() => void act(api.addProject, "Queue added.")}>Add existing queue…</Button>
         {msg && <span className={msg.ok ? "ok" : "err"}>{msg.text}</span>}
       </div>
       <p className="meta">
-        Muster finds the queues at <code>~/playground/&lt;project&gt;/tasks</code> on its own, and one level deeper
-        (<code>~/playground/&lt;group&gt;/&lt;project&gt;/tasks</code>). Add queues kept anywhere else, or start one for a
-        project: pick the project's folder (the one that holds its repo, not the repo itself) and Muster creates its{" "}
-        <code>tasks/</code> folder with the rules, the tools and its own git history. Removing or hiding a project never deletes files.
+        Muster finds the queues in <code>~/playground</code> on its own: a repo's <code>&lt;checkout&gt;/.muster</code>{" "}
+        (<code>~/playground/&lt;checkout&gt;</code> or <code>~/playground/&lt;project&gt;/&lt;checkout&gt;</code>) and the older{" "}
+        <code>&lt;project&gt;/tasks</code>, one level deeper too (<code>~/playground/&lt;group&gt;/&lt;project&gt;/tasks</code>). Add
+        queues kept anywhere else, or start one: New queue picks the project's repo (its main checkout or any worktree of
+        it) and makes a local <code>.muster/</code> in the main checkout, as <code>muster init</code> does. A folder outside
+        any repo still gets the older <code>tasks/</code>. Removing or hiding a project never deletes files.
       </p>
       {list === null && <p className="none">Loading…</p>}
       <table className="projects-table">
@@ -110,8 +113,8 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
               <td>{limit(p)}</td>
               <td><GateCell name={p.name} gate={p.gate ?? ""} /></td>
               <td className="actions">
-                <button onClick={() => void act(() => api.hideProject(p.key, !p.hidden))}>{p.hidden ? "Show" : "Hide"}</button>
-                {p.source === "added" && <button onClick={() => void act(() => api.removeProject(p.key))}>Remove</button>}
+                <Button onClick={() => void act(() => api.hideProject(p.key, !p.hidden))}>{p.hidden ? "Show" : "Hide"}</Button>
+                {p.source === "added" && <Button onClick={() => void act(() => api.removeProject(p.key))}>Remove</Button>}
               </td>
             </tr>
           ))}
@@ -185,7 +188,7 @@ export function PrefixCell({ name, prefix, editing, value, error, canSet, onEdit
         aria-label={`${name}'s prefix`}
         placeholder="2–4 letters"
       />{" "}
-      <button type="submit">Save</button> <button type="button" onClick={onCancel}>Cancel</button>
+      <Button type="submit">Save</Button> <Button type="button" onClick={onCancel}>Cancel</Button>
       {error && <p className="err small" role="alert">{error}</p>}
     </form>
   );

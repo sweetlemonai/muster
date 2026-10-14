@@ -31,9 +31,9 @@ describe("Waiting for you, by what the owner has to do (0060)", () => {
   it("lists answers first, then actions, then permissions, each with its button", () => {
     const out = html([own, permission, action, asked, answer]);
     expect(order(out)).toEqual(["0004", "0001", "0002", "0003", "0005"]);
-    expect(out).toContain('<b>Your answer</b>: Q2 which colour for the button? <button type="button" class="block-answer">Answer</button>');
-    expect(out).toContain('<b>Your action</b>: set the API key</span></p><button type="button" class="block-unblock">Done, unblock</button>');
-    expect(out).toContain('<b>Permission</b>: repo write</span></p><button type="button" class="block-unblock">Granted, unblock</button>');
+    expect(out).toContain('<b>Your answer</b>: Q2 which colour for the button? <button type="button" class="ui-button block-answer">Answer</button>');
+    expect(out).toContain('<b>Your action</b>: set the API key</span></p><button type="button" class="ui-button block-unblock">Done, unblock</button>');
+    expect(out).toContain('<b>Permission</b>: repo write</span></p><button type="button" class="ui-button block-unblock">Granted, unblock</button>');
     // The question the block names is said once, in the block's line, not again above it.
     expect(out.match(/which colour for the button\?/g)).toHaveLength(1);
   });

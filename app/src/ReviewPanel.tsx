@@ -5,6 +5,7 @@ import Markdown from "./Markdown";
 import { copyNow } from "./NotePanel";
 import { reviewSection, reviewStatus } from "./Review";
 import type { Task } from "./types";
+import { Button } from "./ui";
 
 /** The task pane's Review section (0027): where the review of record stands, Copy review brief
  *  for a session to run the next round (a started task only), and the section the core wrote, as
@@ -42,9 +43,9 @@ export default function ReviewPanel({ task, body }: { task: Task; body: string |
       <h2>Review <small>{reviewStatus(task)}</small></h2>
       {started && (
         <div className="control-row">
-          <button type="button" disabled={brief.text === null} title={brief.text === null && !brief.error ? "Loading the brief…" : undefined} onClick={() => void copy()}>
+          <Button type="button" disabled={brief.text === null} title={brief.text === null && !brief.error ? "Loading the brief…" : undefined} onClick={() => void copy()}>
             Copy review brief
-          </button>
+          </Button>
         </div>
       )}
       {brief.error && <p className="err small">Couldn't load the review brief: {brief.error}</p>}

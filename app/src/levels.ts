@@ -1,4 +1,4 @@
-import { fmtMinutes, fmtTokens, key, stageLabel, stageOf, stageRank } from "./lib";
+import { fmtMinutes, fmtTokens, key, type StageId, stageLabel, stageOf, stageRank } from "./lib";
 import { siblingKey, taskKey } from "./taskKey";
 import type { Progress, Task } from "./types";
 
@@ -121,6 +121,6 @@ export function shownStageRank(t: Pick<Task, "stage" | "shownStage">): number {
 }
 
 /** The stage colour to show it in (In progress takes Building's). */
-export function shownStageClass(t: Pick<Task, "stage" | "shownStage">): string {
+export function shownStageClass(t: Pick<Task, "stage" | "shownStage">): StageId {
   return t.shownStage === "in-progress" ? "building" : stageOf({ stage: t.shownStage || t.stage });
 }

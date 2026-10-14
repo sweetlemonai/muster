@@ -5,6 +5,7 @@ import Markdown from "./Markdown";
 import PickOne, { answeredText } from "./PickOne";
 import { pressed } from "./shortcuts";
 import type { Question, Task } from "./types";
+import { Badge, Button } from "./ui";
 
 /** One open question with a box to answer it (⌘↩ sends) and its options as chips (0049): in the
  *  pane, and in place under a block waiting on it in Waiting for you (0060). Its own file so that
@@ -32,7 +33,7 @@ export default function AnswerBox({ task, q, onChanged, keys, onLink, boxId }: {
     <div className={`answer${q.escalated ? " needs-you" : ""}`}>
       <p>
         <b>Q{q.n}</b> <span className="asker">{q.asker}</span>
-        {q.escalated && <span className="badge warn">for you</span>}
+        {q.escalated && <Badge variant="warn">for you</Badge>}
       </p>
       <Markdown text={q.choices ? q.choices.question : q.text} keys={keys} onLink={onLink} />
       {q.choices && <PickOne task={task} q={q} choices={q.choices} extra={text} onAnswered={() => setText("")} onChanged={onChanged} />}
@@ -48,9 +49,9 @@ export default function AnswerBox({ task, q, onChanged, keys, onLink, boxId }: {
         }}
       />
       <div className="answer-bar">
-        <button disabled={!text.trim() || state === "saving"} onClick={() => void send()}>
+        <Button disabled={!text.trim() || state === "saving"} onClick={() => void send()}>
           {state === "saving" ? "Sending…" : "Answer"}
-        </button>
+        </Button>
         {msg && <span className={state === "error" ? "err" : "ok"}>{msg}</span>}
       </div>
     </div>

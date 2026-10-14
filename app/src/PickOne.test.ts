@@ -25,7 +25,7 @@ const PORT: Question = { n: 1, ticked: false, asker: "wt-a", text: "Which port?"
 
 /** The chips in a rendered `pick-one` part: each one's text, and whether it's a button that answers. */
 const chips = (html: string) =>
-  [...html.matchAll(/<button type="button" class="chip pick-chip[^"]*"([^>]*)>([\s\S]*?)<\/button>/g)].map((m) => `${text(m[2])}${m[1].includes("disabled") ? " (disabled)" : ""}`);
+  [...html.matchAll(/<button type="button"([^>]*) class="ui-pill pick-chip[^"]*">([\s\S]*?)<\/button>/g)].map((m) => `${text(m[2])}${m[1].includes("disabled") ? " (disabled)" : ""}`);
 const pickPart = (html: string) => /<div class="pick-one"[^>]*>([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "";
 
 describe("pick-one questions in the task pane (0049)", () => {
@@ -47,7 +47,7 @@ describe("pick-one questions in the task pane (0049)", () => {
     expect(answers).not.toContain("With no answer: (c)");
     // The chips come before the box, which still answers in words.
     expect(answers.indexOf("pick-one")).toBeLessThan(answers.indexOf("<textarea"));
-    expect(answers).toMatch(/<button disabled="">Answer<\/button>/);
+    expect(answers).toMatch(/<button disabled="" class="ui-button">Answer<\/button>/);
     expect(answers).toContain('placeholder="Something else, or words to add to a pick (⌘↩ sends them as your answer)"');
   });
   it("leaves a question in words as it was: no chips, its own placeholder", () => {

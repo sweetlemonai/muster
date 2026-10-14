@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { QueueInfo, Task } from "./types";
+import { Button, Pill } from "./ui";
 import { bandLimit, checkCount, columnLine, LIMIT_DEFAULT, LIMIT_MAX, LIMIT_MIN, limitText, type Over, overLine, overTitle, sideLimit } from "./yourCheckLimit";
 
 // The Your check limit's places (0050): the line above the board, the column's count and its
@@ -59,11 +60,11 @@ export function LimitCell({ q, onSet }: { q: QueueInfo; onSet: (value: string) =
           onSet(text.trim());
         }}
       >
-        <button type="button" className={on ? "chip" : "chip on"} aria-pressed={!on} onClick={() => onSet("off")}>
+        <Pill type="button" on={!on} aria-pressed={!on} onClick={() => onSet("off")}>
           Off
-        </button>
+        </Pill>
         <input type="number" min={LIMIT_MIN} max={LIMIT_MAX} value={text} onChange={(e) => setText(e.target.value)} aria-label={`Limit for ${q.name}, ${LIMIT_MIN} to ${LIMIT_MAX}`} />
-        <button type="submit" disabled={on && text.trim() === String(q.yourCheckLimit)}>Set</button>
+        <Button type="submit" disabled={on && text.trim() === String(q.yourCheckLimit)}>Set</Button>
       </form>
     </div>
   );

@@ -20,6 +20,7 @@ import StageContent from "./StageContent";
 import StageForms from "./StageForms";
 import StageTrack from "./StageTrack";
 import type { Task } from "./types";
+import { Button, Pill } from "./ui";
 import { useTaskActions } from "./useTaskActions";
 import { visionStatus, withoutVision } from "./Vision";
 import VisionPanel from "./VisionPanel";
@@ -147,9 +148,9 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
           <p className={a.msg.ok ? "ok small pane-msg" : "err small pane-msg"} role="status">
             {a.msg.text}
             {undo && (
-              <button type="button" className="undo" disabled={a.busy} onClick={() => a.undo(undo)}>
+              <Button type="button" className="undo" disabled={a.busy} onClick={() => a.undo(undo)}>
                 Undo: back to {stageLabel(undo.back)}
-              </button>
+              </Button>
             )}
           </p>
         )}
@@ -185,9 +186,9 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
         ) : (
           <>
             <div className="body-bar">
-              <button className={raw ? "tab" : "tab on"} onClick={() => setRaw(false)}>Rendered</button>
-              <button className={raw ? "tab on" : "tab"} onClick={() => setRaw(true)}>Raw</button>
-              <button className="tab edit" onClick={startEdit} title="Edit the description, To do and criteria here (⌘S saves, Esc cancels)">Edit</button>
+              <Pill on={!raw} onClick={() => setRaw(false)}>Rendered</Pill>
+              <Pill on={raw} onClick={() => setRaw(true)}>Raw</Pill>
+              <Pill className="edit" onClick={startEdit} title="Edit the description, To do and criteria here (⌘S saves, Esc cancels)">Edit</Pill>
             </div>
             {editMsg && <p className={editMsg.ok ? "ok small" : "err small"}>{editMsg.text}</p>}
             {error && <p className="err">{error}</p>}
@@ -242,7 +243,7 @@ function NoteBar({ onNote, onPaste }: { onNote: (text: string) => void; onPaste:
       }}
     >
       <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note to the log… (or paste / drop files here)" aria-label="Note to the log" maxLength={2000} />
-      <button type="submit" disabled={!note.trim()}>Add to log</button>
+      <Button type="submit" disabled={!note.trim()}>Add to log</Button>
     </form>
   );
 }

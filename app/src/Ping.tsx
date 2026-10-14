@@ -6,6 +6,7 @@ import { taskKey } from "./taskKey";
 import { askedText, cantAsk, MAX_MESSAGE, messageLength, quietToAsk, unreachable } from "./reach";
 import { ANSWER_FIRST } from "./sessionState";
 import type { Task } from "./types";
+import { Button } from "./ui";
 
 // Reaching the session working on a task (0039): ask it for a check-in, or send it a message.
 // Each goes to the holder's session mailbox through the core (ping.rs), and the answer hook hands
@@ -40,14 +41,14 @@ export function CardPing({ t, now, children }: { t: Task; now: number; children?
       {children}
       {quiet && (
         <>
-          <button
+          <Button
             type="button"
             disabled={why !== "" || busy}
             title={why || "Writes to its session's mailbox: it gets the request after its next tool call, and the card says when you asked until it checks in"}
             onClick={() => void ask()}
           >
             Ask for a check-in
-          </button>
+          </Button>
           {why && <span className="why">{why}</span>}
           {error && <span className="err">{error}</span>}
         </>
@@ -95,14 +96,14 @@ export function SessionPing({ task, now, onChanged }: { task: Task; now: number;
   return (
     <div className="session-ping" data-part="ping" role="group" aria-label="Reach the session working on this">
       <span className="lbl">Session</span>
-      <button
+      <Button
         type="button"
         disabled={askWhy !== "" || busy}
         title={askWhy || "Asks it to run muster checkin now, and every 30 minutes"}
         onClick={() => void run(() => api.askCheckin(task.queue, task.id, when()), "Asked. The card says so until it checks in.")}
       >
         Ask for a check-in
-      </button>
+      </Button>
       {asked && <span className="meta">{asked}</span>}
       <form
         className="ping-msg"
@@ -121,7 +122,7 @@ export function SessionPing({ task, now, onChanged }: { task: Task; now: number;
           disabled={why !== "" || busy}
         />
         <MessageCount text={text} />
-        <button type="submit" disabled={why !== "" || busy || !sendable}>Send</button>
+        <Button type="submit" disabled={why !== "" || busy || !sendable}>Send</Button>
       </form>
       <p className="meta small">{note}</p>
       {result && <p className={result.ok ? "ok small" : "err small"} role="status">{result.text}</p>}
@@ -174,7 +175,7 @@ export function QuietPing({ tasks, now }: { tasks: Task[]; now: number }) {
   const label = reachable.length ? `Ask all quiet sessions for a check-in (${reachable.length})` : "Ask all quiet sessions for a check-in";
   return (
     <div className="side-ping">
-      <button type="button" disabled={reachable.length === 0 || busy} onClick={() => void askAll()}>{label}</button>
+      <Button type="button" disabled={reachable.length === 0 || busy} onClick={() => void askAll()}>{label}</Button>
       {reachable.length === 0 && waiting === 0 ? (
         <span className="why">none of its quiet claims has a session to reach</span>
       ) : (

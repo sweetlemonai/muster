@@ -1182,7 +1182,7 @@ async fn add_project(handle: tauri::AppHandle) -> Result<Option<String>, String>
 async fn create_project(handle: tauri::AppHandle) -> Result<Option<String>, String> {
     let Some(dir) = pick_folder(
         handle.clone(),
-        "Choose the project folder (its tasks/ goes inside)",
+        "Choose the project's repo (its .muster/ goes inside)",
     )
     .await?
     else {
@@ -1193,7 +1193,8 @@ async fn create_project(handle: tauri::AppHandle) -> Result<Option<String>, Stri
         let app = h.state::<AppState>();
         // Its prefix is stored with it (0033): the default beside every project's.
         let known = projects::list(&base(), &projects::load(&app.config_file));
-        let (q, _) = projects::create(&dir, &tools(), None, &known)?;
+        // As `muster init` makes it (0004): a repo's local .muster/, else the old tasks/.
+        let (q, _) = projects::new_queue(&dir, None, None, &known, &tools())?;
         edit_config(&app, |c| projects::add(c, &base(), &q)).map(Some)
     })
     .await

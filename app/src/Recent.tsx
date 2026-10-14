@@ -6,6 +6,7 @@ import { taskKey } from "./taskKey";
 import { builtBy, byKind, dayGroups, type DayGroup, type Finish, finishes, KIND_FILTERS, type KindFilter, loadKind, storeKind, whenText } from "./recentData";
 import type { Task } from "./types";
 import ProjectName, { TaskKey } from "./ProjectName";
+import { Pill } from "./ui";
 
 /** A task's time and tokens, the Work section's totals (0025), or why they couldn't be read. */
 export type Cost = { minutes: number; tokens: number; read: number } | { error: string };
@@ -142,16 +143,16 @@ export function RecentList({ groups, older, kind, onKind, weeks, onOlder, now, m
         <h2>
           Recently finished <small>last {days} days</small>
           {onFold && (
-            <button type="button" className="chip rail-unfold" aria-expanded={true} onClick={onFold} title="Fold it back to its strip, as Focus has it">
+            <Pill type="button" className="rail-unfold" aria-expanded={true} onClick={onFold} title="Fold it back to its strip, as Focus has it">
               Fold
-            </button>
+            </Pill>
           )}
         </h2>
         <span className="recent-kinds" role="group" aria-label="Show what finished">
           {KIND_FILTERS.map((k) => (
-            <button key={k.id} type="button" className={kind === k.id ? "chip on" : "chip"} aria-pressed={kind === k.id} title={k.title} onClick={() => onKind(k.id)}>
+            <Pill key={k.id} type="button" on={kind === k.id} aria-pressed={kind === k.id} title={k.title} onClick={() => onKind(k.id)}>
               {k.label}
-            </button>
+            </Pill>
           ))}
         </span>
       </header>

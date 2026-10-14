@@ -172,12 +172,12 @@ describe("paused everywhere a task shows (review)", () => {
     expect(readyToStart(ready)).toBe(false);
     expect(readyToStart(task({ stage: "ready" }))).toBe(true);
     const html = renderToStaticMarkup(createElement(GraphView, { tasks: [ready], all: [ready], multi: false, openKey: null, onOpen: () => {} }));
-    expect(html).toContain('<span class="badge paused">⏸︎ paused</span>');
+    expect(html).toContain('<span class="ui-badge ui-badge--paused">⏸︎ paused</span>');
     expect(html).not.toContain('class="g-ready"');
   });
   it("the table has a grey Paused pill beside the stage", () => {
     const html = renderToStaticMarkup(createElement(TableView, { tasks: [task(paused)], now: NOW, multi: false, openKey: null, onOpen: () => {}, words: [] }));
-    expect(html).toContain('<span class="status-pill s-building">Building</span><span class="status-pill paused">⏸︎ Paused</span>');
+    expect(html).toContain('<span class="ui-status-pill ui-status-pill--building">Building</span><span class="ui-status-pill ui-status-pill--paused">⏸︎ Paused</span>');
   });
   it("a fresh heartbeat on a paused task isn't anyone working", () => {
     const fresh = task({ ...paused, heartbeat: "2026-10-13 11:55" });
