@@ -22,7 +22,11 @@ describe("layout fixes (0061)", () => {
     const r = rule(".column.folded .col-fold");
     expect(r).toContain("display: flex;");
     expect(r).toContain("gap: 6px;");
-    expect(rule(".column.folded .col-fold .count")).toContain("margin: 0;");
+    // Counts pad along the strip (top and bottom), not across it, so a count's text never touches the next one's edge.
+    const count = rule(".column.folded .col-fold .count");
+    expect(count).toContain("margin: 0;");
+    expect(count).toContain("padding: 5px 0;");
+    expect(count).toContain("min-width: 0;");
   });
 
   it("the buttons under a waiting task (Done, unblock; Open to answer) have a gap between them", () => {

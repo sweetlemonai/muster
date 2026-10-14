@@ -116,7 +116,7 @@ describe("Settings (0036)", () => {
     expect(open).toContain('<button type="submit" class="ui-button">Save</button>');
     // 4 characters wide, not the table's 220px, and the buttons style like the other rows' (0061).
     expect(rule(".projects-table .prefix input")).toMatch(/width: 4ch;/);
-    expect(rule(".projects-bar button, .actions button, .prefix button")).toContain("border: 1px solid var(--line)");
+    expect(rule(".projects-bar button, .actions button, .prefix button, .limit-edit button")).toContain("border: 1px solid var(--line)");
     expect(open).not.toContain('role="alert"');
     // The core's refusal shows under the field, which stays open: no overlay.
     const refused = cell({ editing: true, value: "br", error: "braindump has br: a prefix names one project (see `muster projects`)" });
