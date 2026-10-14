@@ -4,6 +4,22 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Coordinator (Muster_Team_Lead): mu-53, mu-4, mu-52 and mu-59 merged; the dr-22 incident
+**Did:** took over muster-lead's three finished tasks (uncommitted at 95%): committed them on their
+branches, one review+QA agent per task (never the builder), fixes by implementer agents, a second
+review of each fix, then rebase, gate and fast-forward: mu-53 98667fb, mu-4 589b642, mu-52 5e1baa2
+(its Notify me choice moved to mu-53's Pill). mu-59 (Asghar) merged by `muster pass` as 8c388bb after
+three review rounds. Release app rebuilt and relaunched; looked at the board, Settings ›
+Notifications and the old-pauses offer (lists dr-22) in the Muster window only.
+**Fixed:** a mu-59 review mutant ran the non-hermetic cli tests against the real projects config and
+converted Drover's dr-22 (committed there as 7597780, credited to the owner); reverted in
+drover/tasks (73d991d) so the owner sees it in the offer first. Reviewers now run nothing that isn't
+hermetic; mu-62 fixes the cause.
+**Open:** mu-4, mu-52 and mu-53 stay in Building in the queue: only their claimant (session
+531266d4) can pass them. mu-4 AC2 waits on the personal-layer change and the owner's pilot pick;
+mu-52's real banner is unchecked. A review that finds something can't send a task back while its
+builder holds another (backlog note).
+
 ## 2026-10-14 — A started task can't skip its merge (mu-64)
 **Fixed:** a task made with `muster start`, moved to Your check or Done with `muster stage`/`move`
 (or the app's stage track), skipped the merge, so its branch never landed on main → the move is
