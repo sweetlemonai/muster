@@ -34,8 +34,10 @@ one-line "merged, pushed", and a fresh builder at ~40k pays a tenth of that per 
    *Amended by [0011](0011-sessions-hand-off-by-themselves.md) (2026-10-14):* sessions now hand off
    by themselves at ~60% context or the token cap, at a gap, and a named background successor
    resumes the handoff with no human step. The text above is this record's dated wording.
-4. **Sessions are named by role** (`claude -n` / `/rename`): `muster-lead`, `muster-build-0042`,
-   so listings, messages and claim stamps say what each is.
+4. **Sessions are named by role** (`claude -n` / `/rename`): `Muster_Team_Lead` (successors
+   `Muster_Team_Lead_2`, `_3`…), `muster-build-0042`, so listings, messages and claim stamps say
+   what each is. *(2026-10-14: the lead's name was `muster-lead`; it's the owner's
+   `Muster_Team_Lead` now, the name 0011's 300k cap matches.)*
 5. **Several coordinators are the exception.** One coordinator with N one-task sessions is the
    default; a second coordinator only when the owner starts one, and then they split the queue by
    message and merge only into a clean main (as main-29 and main-f2 did).

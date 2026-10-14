@@ -509,10 +509,13 @@ As of 2026-10-14 06:30 (the newest change in a task's log). 83 tasks: 9 Ready, 1
 - **A task's stage can lag its code:** a lead that merges a task by hand has to pass it too.
   mu-52 and mu-53 were merged to main on 2026-10-13 and read Building until 2026-10-14.
 - **New session id after `/clear` or a handoff:** answers to the old session's questions wait in its
-  old mailbox. The handoff now carries the old session id (its `session:` front matter), and the
-  successor's first step is `muster inbox --session <old>` (PROTOCOL.md, decision 0011). Still open:
-  answers are routed by the asking session, not by the task's claim, and a claim stamped with the old
-  session refuses the successor's check-in and pass until the coordinator moves it.
+  old mailbox. Covered: the handoff carries the old session id (its `session:` front matter), and
+  PROTOCOL.md (decision 0011) has the writer put `muster inbox --session <old>` first in its Next
+  steps, which the successor follows. Not covered: nothing in the `/handoff` skill, the hooks or
+  `claude-continue` runs or checks that step, so a handoff without it leaves the answers unread
+  (they're still in the task file); answers are routed by the asking session, not by the task's
+  claim; and a claim stamped with the old session refuses the successor's check-in and pass until
+  the coordinator moves it.
 - **The hook reaches a session only where the layer is linked**, and a ping or pause reaches a
   session only through the hook: a session without it sees a check-in request, message or stop
   only when it runs `muster inbox`, and a claim with no session stamp can't be reached at all.

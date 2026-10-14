@@ -22,17 +22,20 @@ mailbox by session id, so a successor never saw the answers to its predecessor's
 1. **The trigger.** A session hands off when its context reaches **60%** of its window or its
    **token cap**, whichever comes first. The cap is 150k for every session and 300k for
    `Muster_Team_Lead*` (`caps` in `~/playground/.claude/handoff.json`; other session-name patterns
-   can get their own). From 50% the hook reminds the session to finish its step.
+   can get their own; the lead is named `Muster_Team_Lead`, then `_2`, `_3`…, per 0004 point 4).
+   From 50%, or from 5/6 of the cap (125k for 150k) if that comes first, the hook reminds the
+   session to finish its step.
 2. **At a gap.** The hook acts at a Stop with nothing of the session's own running: no subagent,
    teammate, background shell or workflow. Until then it asks again at each stop.
 3. **The handoff.** The session writes `/handoff` (every owner request with its status, decisions,
    failed approaches, changes, open questions). Its front matter carries `session:` (the old
    session id) and `generation:`. A builder holding a claim first runs `muster checkin` with
-   what's done and next, and the handoff names the claim and the open question ids.
+   what's done and next, and the handoff names the claim and the open question ids. The
+   handoff's first Next step is `muster inbox --session <old id>`.
 4. **An automatic successor.** `claude-continue` starts a named background session with the same
-   account and permission mode, which runs `/handoff resume`. No human step. Its first command
-   after the resume is `muster inbox --session <old id>`, so answers that went to the old mailbox
-   reach it. It keeps the old `--as` name.
+   account and permission mode, which runs `/handoff resume`. No human step. It follows the
+   handoff's Next steps, so its first command is `muster inbox --session <old id>` and answers that
+   went to the old mailbox reach it. It keeps the old `--as` name.
 5. **Off switches and fallbacks.** `PERSONAL_HANDOFF_AUTO=0` keeps the trigger but starts no
    successor; `PERSONAL_HANDOFF=0` turns the hook off. The hook asks for `/clear` instead of a
    successor in the desktop app (it can't open a background session without a click), when the
@@ -68,6 +71,9 @@ that, and the lead's at most about 300k, two thirds of it.
   refuses the successor's check-in, pass and return on the task it inherited, even under the same
   `--as` name (backlog note 2026-10-14-0707). Until a takeover is built, the coordinator moves the
   task with owner overrides (`--as owner`), as the work log of 2026-10-14 describes.
+- **Nothing but the handoff tells the successor to read the old mailbox.** The `/handoff` skill,
+  the hooks and `claude-continue` don't run `muster inbox`; a handoff written without that first
+  Next step leaves the old answers unread (they're still in the task file).
 - **Routing by claim.** Answers still go to the asking session's mailbox; the successor has to
   read the old one with `--session`. Routing a task's answers to whoever holds its claim isn't
   built.

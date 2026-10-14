@@ -15,7 +15,14 @@ in part.
 2026-10-14-0707, hit again on this task), so 0011 and PROTOCOL.md list it as open with the
 coordinator's workaround. Options in [0011](decisions/0011-sessions-hand-off-by-themselves.md).
 **Verified:** `bin/gate` green (pnpm install, pnpm check, test_task, test_commands, cargo test); the AC greps (0011 in 0004, no old 150k rule outside 0004, `handoffs/` in PROTOCOL.md).
-**Open:** routing answers by claim, and a claim takeover for a successor.
+**Fixed (review round 1):** R1, the 300k lead cap matched `Muster_Team_Lead*` but PROTOCOL.md
+named the lead `muster-lead`: PROTOCOL.md and 0004 point 4 now name it `Muster_Team_Lead` (the
+lead's call: the owner's name, not a wider hook pattern). R2, nothing the successor reads told it
+to run `muster inbox --session <old>`: the handoff's writer now puts it first in Next steps, and
+AS_BUILT and DOGFOOD say what that covers and what it doesn't. R3, the reminder fires at 5/6 of the
+cap when that comes before 50%.
+**Open:** routing answers by claim, a claim takeover for a successor, and the `/handoff` skill
+itself adding the inbox step.
 
 ## 2026-10-14 — Gate green again on a checkout that ran it before; coordinator hand-over (Muster_Team_Lead_4)
 **Fixed:** `bin/gate` went red on main: mu-80's test that AS_BUILT names every `bin/` entry also

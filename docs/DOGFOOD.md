@@ -71,8 +71,9 @@ happened → what it shows → what chit has or lacks.
     context (about 10 ms with an empty mailbox). Known gap: a new session id after `/clear` or a
     handoff misses answers to the old one's questions. → The handoff note should carry open
     question ids. Later, route by task claim as well as by session. *Fixed in part (mu-75,
-    decision 0011):* the handoff carries the old session id, and the successor reads that mailbox
-    with `muster inbox --session <old>`. Routing by claim is still open.
+    decision 0011):* the handoff carries the old session id, and PROTOCOL.md has its writer put
+    `muster inbox --session <old>` first in its Next steps, which the successor follows. Nothing
+    in the skill or hooks enforces that step, and routing by claim is still open.
 
 34. **The same question came back to the owner after it was answered and confirmed.** The 0008
     session relayed Q2 (Settings window, A/B/C) to the owner again, with its own pick (A),
