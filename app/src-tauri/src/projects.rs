@@ -798,8 +798,9 @@ fn muster_readme(project: &str, prefix: &str) -> String {
          passes do too). A claim quiet for 12 h goes back to Ready (`muster reclaim`).\n\
          - Ask without stopping, and the answer is pushed to you:\n  \
          `muster ask NNNN \"<question>\" --as <your branch>`. No answer hook? `muster inbox` collects them.\n\
-         - Built and the gate is green: `muster pass NNNN --as <your branch> --from building --gate \"<the gate's result line>\"`.\n  \
-         Testing ticks each criterion with its proof, then passes it on to the owner's check.\n\
+         - Built and the gate is green: `muster pass NNNN --as <your branch> --from building --gate \"<the gate's result line>\" --summary \"<what was built, one plain line>\"`.\n  \
+         The summary (160 characters, in the owner's words) leads the owner's check; `muster set NNNN summary` fixes it.\n  \
+         Testing ticks each criterion with its proof (`— proof: …`, naming any screenshot in `attachments/NNNN/`), then passes it on to the owner's check.\n\
          - Something's wrong: `muster return NNNN \"<why>\"` sends it back a stage.\n\
          - Waiting on something: `muster block NNNN --on <0014,0016|you|permission|question|outside> \"<what>\"`,\n  \
          then `muster unblock NNNN`. It keeps its stage.\n\
@@ -869,8 +870,9 @@ fn readme(project: &str, q: &Path, prefix: &str) -> String {
          passes do too). A claim quiet for longer than the lease (12 h unless changed in Settings) goes back to Ready (`muster reclaim`).\n\
          - Ask without stopping, and the answer is pushed to you:\n  \
          `muster ask NNNN \"<question>\" --as <your branch>`. No answer hook? `muster inbox` collects them.\n\
-         - Built and the gate is green: `muster pass NNNN --as <your branch> --from building --gate \"<the gate's result line>\"`.\n  \
-         Testing ticks each criterion with its proof, then passes it on to the owner's check.\n\
+         - Built and the gate is green: `muster pass NNNN --as <your branch> --from building --gate \"<the gate's result line>\" --summary \"<what was built, one plain line>\"`.\n  \
+         The summary (160 characters, in the owner's words) leads the owner's check; `muster set NNNN summary` fixes it.\n  \
+         Testing ticks each criterion with its proof (`— proof: …`, naming any screenshot in `attachments/NNNN/`), then passes it on to the owner's check.\n\
          - Something's wrong: `muster return NNNN \"<why>\"` sends it back a stage.\n\
          - Waiting on something: `muster block NNNN --on <0014,0016|you|permission|question|outside> \"<what>\"`,\n  \
          then `muster unblock NNNN`. It keeps its stage. Task ids go into its depends and it clears by\n  \
@@ -888,6 +890,21 @@ fn readme(project: &str, q: &Path, prefix: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn summary_is_in_both_readmes_builder_steps() {
+        // mu-78: a builder passes out of Building with a summary, in either layout's README.
+        for text in [
+            muster_readme("demo", "dm"),
+            readme("demo", Path::new("/q"), "dm"),
+        ] {
+            assert!(
+                text.contains("--from building --gate \"<the gate's result line>\" --summary \"<what was built, one plain line>\"")
+                    && text.contains("muster set NNNN summary"),
+                "{text}"
+            );
+        }
+    }
 
     fn make_queue(dir: &Path) {
         fs::create_dir_all(dir.join("todo")).unwrap();

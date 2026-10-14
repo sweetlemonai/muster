@@ -93,7 +93,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             | "--commit" | "--to" | "--from" | "--after" | "--session" | "--level" | "--parent"
             | "--due" | "--pct" | "--remove" | "--record" | "--resolve" | "--search"
             | "--holder" | "--sort" | "--at" | "--touches" | "--prefix" | "--pick"
-            | "--no-answer" | "--fixed" | "--dispute" | "--settle" => {
+            | "--no-answer" | "--fixed" | "--dispute" | "--settle" | "--summary" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -1291,8 +1291,13 @@ fn started_text(root: &Path, prefix: &str, id: &str, s: &crate::parallel::Starte
         if !items.is_empty() {
             out.push_str("criteria:\n");
             for c in items {
+                let proof = if c.proof.is_empty() {
+                    String::new()
+                } else {
+                    format!(" — proof: {}", c.proof)
+                };
                 out.push_str(&format!(
-                    "  - [{}] {}\n",
+                    "  - [{}] {}{proof}\n",
                     if c.ticked { "x" } else { " " },
                     c.text
                 ));
@@ -1312,7 +1317,7 @@ fn started_text(root: &Path, prefix: &str, id: &str, s: &crate::parallel::Starte
         }
     }
     out.push_str(&format!(
-        "Work in the worktree. Check in every 30 minutes (muster checkin {k} \"…\" --pct <n>); when the gate is green: muster pass {k} --from building --gate \"<the gate's line>\". In Testing the engine reviews the branch (muster review {k}); answer what it finds with muster review {k} --fixed or --dispute.\n"
+        "Work in the worktree. Check in every 30 minutes (muster checkin {k} \"…\" --pct <n>); when the gate is green: muster pass {k} --from building --gate \"<the gate's line>\" --summary \"<what was built, one plain line in the owner's words>\". In Testing the engine reviews the branch (muster review {k}); answer what it finds with muster review {k} --fixed or --dispute.\n"
     ));
     out
 }
@@ -1713,6 +1718,7 @@ fn run_on(
             let opts = ops::PassOpts {
                 gate: a.flags.get("gate").cloned().unwrap_or_default(),
                 commit: a.flags.get("commit").cloned().unwrap_or_default(),
+                summary: a.flags.get("summary").cloned().unwrap_or_default(),
                 from: a.flags.get("from").cloned(),
             };
             let p = ops::pass_task(root, id, &me(), stamp, &opts)?;
@@ -3306,6 +3312,66 @@ mod tests {
     }
 
     #[test]
+    fn summary_from_the_command_line_with_pass_and_set() {
+        let d = tempfile::tempdir().unwrap();
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir(d.path().join(f)).unwrap();
+        }
+        std::fs::write(d.path().join("README.md"), "q").unwrap();
+        let q = d.path().to_string_lossy().to_string();
+        let code_as = |who: &str, args: &[&str]| {
+            let mut v = sv(args);
+            v.extend(sv(&["--queue", &q, "--as", who]));
+            main(&v)
+        };
+        let code = |args: &[&str]| code_as("wt-a", args);
+        let task = || queue::read_task(d.path(), "0001").unwrap();
+        assert_eq!(code(&["new", "Summed"]), 0);
+        std::fs::write(
+            d.path().join("todo/0001-summed.md"),
+            queue::read_body(d.path(), "0001").unwrap().replace(
+                "## Log",
+                "## Acceptance criteria\n- [x] AC1: works — verify: command — proof: it does\n\n## Log",
+            ),
+        )
+        .unwrap();
+        assert_eq!(code(&["claim", "0001"]), 0);
+        let gate = [
+            "pass",
+            "0001",
+            "--from",
+            "building",
+            "--gate",
+            "gate: green",
+        ];
+        // Refused (1) without one, and with one over 160 characters; --summary needs its value.
+        assert_eq!(code(&gate), 1);
+        let long = "a".repeat(161);
+        assert_eq!(code(&[&gate[..], &["--summary", &long]].concat()), 1);
+        assert!(parse(&sv(&["pass", "0001", "--summary"])).is_err());
+        assert_eq!(task().stage, "building");
+        assert_eq!(
+            code(
+                &[
+                    &gate[..],
+                    &["--summary", "A chat you step through; works offline"]
+                ]
+                .concat()
+            ),
+            0
+        );
+        let t = task();
+        assert_eq!(t.stage, "testing");
+        assert_eq!(t.summary, "A chat you step through; works offline");
+        // set fixes it, in any stage, with the same rules; the newline stays a newline.
+        assert_eq!(code(&["set", "0001", "summary", "A", "clearer", "line"]), 0);
+        assert_eq!(task().summary, "A clearer line");
+        assert_eq!(code(&["set", "0001", "summary", "two\nlines"]), 1);
+        assert_eq!(code(&["set", "0001", "summary", &long]), 1);
+        assert_eq!(task().summary, "A clearer line");
+    }
+
+    #[test]
     fn stage_commands_and_their_exit_codes() {
         let d = tempfile::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
@@ -3351,7 +3417,9 @@ mod tests {
                 "--from",
                 "building",
                 "--gate",
-                "gate full: green"
+                "gate full: green",
+                "--summary",
+                "A synthetic summary"
             ]),
             0
         );
@@ -3719,7 +3787,16 @@ mod tests {
         assert_eq!(
             code(
                 "wt-a",
-                &["pass", "0001", "--from", "building", "--gate", "green"]
+                &[
+                    "pass",
+                    "0001",
+                    "--from",
+                    "building",
+                    "--gate",
+                    "green",
+                    "--summary",
+                    "Built one"
+                ]
             ),
             0
         );
@@ -4974,6 +5051,7 @@ mod tests {
         let to_testing = |id: &str, who: &str| {
             let opts = ops::PassOpts {
                 gate: "gate: green (built)".into(),
+                summary: "A synthetic summary".into(),
                 from: Some("building".into()),
                 ..Default::default()
             };

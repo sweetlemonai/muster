@@ -1,6 +1,6 @@
 ---
 description: Muster's task queue from any session. Bare /mu shows what's waiting for you, /mu mu-8 explains a task, /mu add, ask, answer, claim, next, pass, return, block, unblock, heartbeat, note, list, check and help each run one muster command, and anything else is captured as a backlog one-liner.
-argument-hint: "[<id> | waiting | add <text> | answer <id> Q<n> <text> | ask <id> <question> | claim <id> | next | heartbeat <id> | note <id> <text> | pass <id> [--from s] [--gate line] [--commit sha] | return <id> <why> | block <id> <on what> | unblock <id> | list [--stage s] | check | help [<command>] | <any text>]  (bare = what's waiting for you)"
+argument-hint: "[<id> | waiting | add <text> | answer <id> Q<n> <text> | ask <id> <question> | claim <id> | next | heartbeat <id> | note <id> <text> | pass <id> [--from s] [--gate line] [--summary line] [--commit sha] | return <id> <why> | block <id> <on what> | unblock <id> | list [--stage s] | check | help [<command>] | <any text>]  (bare = what's waiting for you)"
 allowed-tools: Bash(muster list:*), Bash(muster show:*), Bash(muster add:*), Bash(muster answer:*), Bash(muster ask:*), Bash(muster claim:*), Bash(muster next:*), Bash(muster heartbeat:*), Bash(muster note:*), Bash(muster pass:*), Bash(muster return:*), Bash(muster block:*), Bash(muster unblock:*), Bash(muster check:*), Bash(muster help:*), Read, Glob, Grep
 ---
 
@@ -42,7 +42,7 @@ mode` is captured, never a claim. Never guess which command was meant.
 | `/mu next` | agent | `muster next` | Claim the top Ready task you may take. |
 | `/mu heartbeat <id>` | agent | `muster heartbeat <id>` | Keep a claim alive. |
 | `/mu note <id> <text>` | agent | `muster note <id> -- '<text>'` | A line in the task's log. |
-| `/mu pass <id> …` | agent | `muster pass <id> …` | Hand on to the next stage, with the options as typed (from, gate line, commit). |
+| `/mu pass <id> …` | agent | `muster pass <id> …` | Hand on to the next stage, with the options as typed (from, gate line, summary, commit). |
 | `/mu return <id> <why>` | agent | `muster return <id> -- '<why>'` | Send back a stage, with the reason (`--to <stage>` passes through). |
 | `/mu block <id> <on what>` | agent | `muster block <id> --on '<on what>'` | Mark it blocked, and why: the text starts with tasks of this project (mu-14,mu-16 or 0014,0016: added to its depends), you, permission, question Q2 or outside, then what it waits on (owner and capture still work). |
 | `/mu unblock <id>` | agent | `muster unblock <id>` | Clear the blocked flag. |
@@ -56,15 +56,15 @@ Not routed: `new`, `move`, `stage`, `pause`, `resume`, `set`, `attach`, `escalat
 
 - One `muster` call per Bash call, and nothing else in the command: no `;`, `&&`, `|`, `$(…)`,
   backticks, redirection or `cd`.
-- Free text (a note, question, answer, reason, one-liner, gate line) goes in single quotes, each
+- Free text (a note, question, answer, reason, one-liner, gate line, summary) goes in single quotes, each
   `'` in it written as `'\''`. Keep the command on one line: a line break in the text becomes a
   space. Put the text after `--` where the table does, so text that starts with `--` stays text.
 - Options go right after the id (for `answer`, right after `Q<n>`), or right after the route word
   for routes with no id (`next`, `list`, `check`). There they (`--as`, `--queue`, `--from`,
-  `--gate`, `--commit`, `--to`, `--stage`, `--tag`, `--status`, `--option`, `--pick`,
-  `--no-answer`) pass through unchanged, before the `--`. Everything after them is the text, as
-  typed, even when it holds `--`: `/mu note mu-8 use --verbose` notes "use --verbose". The shape
-  rule still decides the route first. muster refuses an option it doesn't know.
+  `--gate`, `--summary`, `--commit`, `--to`, `--stage`, `--tag`, `--status`, `--option`,
+  `--pick`, `--no-answer`) pass through unchanged, before the `--`. Everything after them
+  is the text, as typed, even when it holds `--`: `/mu note mu-8 use --verbose` notes
+  "use --verbose". The shape rule still decides the route first. muster refuses an option it doesn't know.
 - `--option` may come up to six times, in order, each with one option's text: as typed, in single
   quotes like free text (`/mu ask mu-7 --option 'A window' --option 'A panel' --pick b Where?`
   runs `muster ask mu-7 --option 'A window' --option 'A panel' --pick b -- 'Where?'`). `--pick`

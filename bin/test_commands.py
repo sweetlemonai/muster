@@ -230,7 +230,8 @@ def render(cmd: str, id_: str, text: str = TEXT) -> list[str]:
     s = re.sub(r" \[[^\]]*\]", "", cmd)  # optional parts left out
     s = re.sub(r"'<[^>]*>'", lambda _m: quote(text), s)  # free text, quoted the router's way
     s = (s.replace("<id>", id_).replace("Q<n>", "Q1")
-         .replace("…", "--gate " + quote("gate full: green (1 step)")))
+         .replace("…", "--gate " + quote("gate full: green (1 step)")
+                  + " --summary " + quote("A synthetic summary: what was built")))
     return shlex.split(s)
 
 
@@ -532,7 +533,8 @@ class WorkLogMergeDriver(unittest.TestCase):
         wt = Path(re.search(r"^worktree: (.+)$", self.muster("start", key).stdout, re.M).group(1))
         self.git(self.repo, "config", "--local", "--remove-section", "merge.muster-log")
         self.log(wt, self.entry("The task") + self.OLD, "the task's entry")
-        self.muster("pass", key, "--from", "building", "--gate", "gate: green (synthetic)")
+        self.muster("pass", key, "--from", "building", "--gate", "gate: green (synthetic)",
+                    "--summary", "A synthetic merged task")
         tip = self.git(wt, "rev-parse", "HEAD")
         self.muster("review", key, "--record", "-", "--as", "qa",
                     input=json.dumps({"head": tip, "tier": "light"}))

@@ -979,6 +979,7 @@ mod flows {
     fn gate() -> PassOpts {
         PassOpts {
             gate: "gate: green (all)".into(),
+            summary: "A synthetic summary".into(),
             ..Default::default()
         }
     }

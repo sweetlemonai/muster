@@ -150,6 +150,7 @@ fn every_stage_passes_the_python_check() {
     };
     let gate = PassOpts {
         gate: "gate full: green".into(),
+        summary: "A synthetic summary".into(),
         ..Default::default()
     };
     ops::pass_task(d.path(), &c.id, "wt-a", t, &PassOpts::default()).unwrap();
@@ -689,6 +690,7 @@ fn an_answer_through_bin_task_cannot_forge_stage_history() {
     assert_eq!(task.open_questions, 0);
     let gate = PassOpts {
         gate: "gate full: green".into(),
+        summary: "A synthetic summary".into(),
         ..Default::default()
     };
     ops::pass_task(d.path(), "0007", "wt-a", t, &gate).unwrap();

@@ -100,3 +100,18 @@ describe("Waiting for you stays out of the startup chunk's way (0060 review)", (
     expect(source).toMatch(/from "\.\/AnswerBox"/);
   });
 });
+
+describe("Waiting for you says what you're accepting (mu-78)", () => {
+  const proven = (n: number) => ({ n, label: `AC${n}`, text: `AC${n}: works — verify: command`, ticked: true, owner: false, proof: "ok", proofFiles: [] });
+  it("says All N proven: Accept with the summary under it, for every queue", () => {
+    const check = task("0010", { queue: "ai", stage: "your-check", waitingForOwner: true, criteria: [1, 2, 3, 4].map(proven), summary: "A chat you step through; works <offline>" });
+    const out = html([check]);
+    expect(out).toContain('<p class="next-step-line">All 4 proven: Accept</p><p class="summary-line" dir="auto" title="A chat you step through; works &lt;offline&gt;">A chat you step through; works &lt;offline&gt;</p>');
+  });
+  it("adds the summary under a step of yours, and nothing without one", () => {
+    const open = { n: 2, label: "AC2", text: "AC2: the owner opens the board. — verify: owner", ticked: false, owner: true };
+    const out = html([task("0011", { stage: "your-check", waitingForOwner: true, criteria: [open], ownerCriteria: [open], summary: "Built it" })]);
+    expect(out).toContain('<p class="next-step-line">Try: open the board</p><p class="summary-line" dir="auto" title="Built it">Built it</p>');
+    expect(html([task("0012", { stage: "your-check", waitingForOwner: true, criteria: [proven(1)] })])).not.toContain("summary-line");
+  });
+});

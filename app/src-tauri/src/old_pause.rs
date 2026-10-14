@@ -743,6 +743,7 @@ mod tests {
         // Its holder can't pass it until it's resumed; resumed, it's Building with its claim.
         let pass = ops::PassOpts {
             gate: "gate: green".into(),
+            summary: "A synthetic summary".into(),
             ..Default::default()
         };
         assert!(ops::pass_task(&q, "0042", A, NOW, &pass)

@@ -321,10 +321,10 @@ describe("the pane's layout by stage (D2)", () => {
     expect(work).toContain("No stage moves in the log yet.");
     expect(work).not.toContain("Tokens");
   });
-  it("Your check: the owner's checklist and the history first, then the next step: Accept", () => {
+  it("Your check: what you're accepting, the owner's checklist and the history first, then the next step: Accept", () => {
     const crit = (n: number, ticked: boolean) => ({ n, label: `AC${n}`, text: `AC${n}: tried it — verify: owner`, ticked, owner: true });
     const p = pane({ stage: "your-check", ownerCriteria: [crit(1, true), crit(2, true)], stageHistory: [...history, step("2026-10-12 17:00", "building", "testing"), step("2026-10-12 17:40", "testing", "your-check", "qa")] });
-    expect(p.parts).toEqual(["title", "status", "track", "checklist", "history", "next-step", "settings", ...after]);
+    expect(p.parts).toEqual(["title", "status", "track", "accepting", "checklist", "history", "next-step", "settings", ...after]);
     expect(p.primary).toEqual(["Accept"]);
     expect(p.html).toContain('aria-label="Yours to verify"');
     expect(text(part(p.html, "history"))).toMatch(/^History from the log, newest first 10-12 17:40 Testing → Your check · qa 10-12 17:00 Building → Testing/);
@@ -335,8 +335,9 @@ describe("the pane's layout by stage (D2)", () => {
     const html = renderToStaticMarkup(createElement(TaskPanel, { task: t, now: 0, onClose: () => {}, onChanged: () => {}, onOpenView: () => {} }));
     const rows = [...html.matchAll(/<li class="(criterion[^"]*)">([\s\S]*?)<\/li>/g)].map((m) => `${m[1]}: ${text(m[2])}`);
     expect(rows).toEqual(["criterion: AC2 the owner opens the Graph and checks the chain One look Tick Open Graph", "criterion ticked: ✓ AC1 it builds Untick"]);
-    // The checklist comes first in the pane's columns, before the history and the next step.
-    expect(pane({ stage: "your-check", ownerCriteria: t.ownerCriteria }).parts.slice(3, 6)).toEqual(["checklist", "history", "next-step"]);
+    // What you're accepting (mu-78), then the checklist, come first in the pane's columns, before
+    // the history and the next step.
+    expect(pane({ stage: "your-check", ownerCriteria: t.ownerCriteria }).parts.slice(3, 7)).toEqual(["accepting", "checklist", "history", "next-step"]);
   });
   it("Your check with none of the criteria the owner's says so", () => {
     expect(text(part(pane({ stage: "your-check" }).html, "checklist"))).toBe("Your checklist None of the criteria are yours to verify. Accept it, or send it back.");

@@ -635,6 +635,9 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .crit-actions .tick[aria-pressed="false"] { border-color: var(--st-needs); color: var(--text); }
 .card-who.your-turn, .holders .your-turn { background: var(--st-needs); color: var(--on-status); font-weight: 600; border-radius: 4px; padding: 0 6px; align-self: flex-start; }
 .card-next { font-size: 11px; line-height: 1.35; color: var(--text); overflow-wrap: anywhere; }
+/* What was built (mu-78): one line under the next step, cut to the width; the tooltip has it all. */
+.card-summary, .summary-line { font-size: 11px; line-height: 1.35; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: 100%; }
+.summary-line { margin: 0 0 4px; font-size: 12px; }
 .effort-group { display: flex; flex-direction: column; gap: 8px; }
 .effort-head { margin: 2px 2px 0; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
 .effort-head small { font-weight: 400; }
@@ -917,6 +920,25 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .mini-thumb img, .mini-img { display: block; width: 34px; height: 22px; object-fit: cover; border-radius: 3px; flex: none; background: var(--hover); }
 .mini-thumb .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .other-file { max-width: 100%; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Your check's What you're accepting (mu-78): one small line per criterion, the screenshots its
+   proof names under it at Files' size, each opening large in place (no overlay) and shrinking on a
+   second click. No motion. */
+.accepting .wline .lbl { width: 52px; }
+.accepting .accept-blocked { color: var(--bad); }
+.accepting .accept-unproven { color: var(--warn); }
+.proof-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.proof-line { color: var(--text); overflow-wrap: anywhere; }
+.proof-line .proof-label { font-weight: 600; }
+.proof-line .proof-state { color: var(--muted); }
+.proof-files { margin-top: 3px; }
+.proof-thumb { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 2px 6px 2px 2px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--muted); font-size: 11px; }
+.proof-thumb:hover, .proof-thumb:focus-visible { color: var(--text); border-color: var(--muted); }
+.proof-thumb.open { flex-direction: column; align-items: flex-start; width: 100%; padding: 4px; }
+.proof-thumb img.proof-big { width: auto; height: auto; max-width: 100%; max-height: 70vh; object-fit: contain; }
+.merge-line { margin-top: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .proof-thumb, .proof-thumb img { transition: none; animation: none; }
+}
 .tp-side .attach { font-size: 11px; padding: 0 7px; line-height: 17px; }
 
 .stage-form { padding: 6px; background: var(--hover); border-radius: 6px; align-items: center; }

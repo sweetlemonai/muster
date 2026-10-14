@@ -9,12 +9,11 @@ import { isHuman } from "./human";
 import { isWork } from "./levels";
 import Links from "./Links";
 import { ownerOpen } from "./OwnerChecklist";
+import { IMAGE } from "./paneData";
 import TagEditor from "./Tags";
 import { Button, Segment, Segmented } from "./ui";
 import type { Task } from "./types";
 import type { TaskActions } from "./useTaskActions";
-
-const IMAGE = /\.(png|jpe?g|gif|webp)$/i;
 
 /** The task pane's right column: the next step as the one primary button, then Send back and
  *  Block or Unblock; under a rule, priority, type and who does it (the current value; click to choose),

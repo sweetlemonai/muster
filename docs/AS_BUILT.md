@@ -353,8 +353,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   and those lines are the stage history. Blocked is a flag (`waiting_on`, with its kind in
   `blocked-kind:`, task 0024) that keeps the task in its
   stage. `pass` moves it on, refusing when the task is blocked, when someone else holds it, or when it
-  has moved since you looked (`--from`). It also refuses Building → Testing without the gate's line,
-  and Testing → Your check with any criterion unticked. `return` sends it back with a reason and
+  has moved since you looked (`--from`). It also refuses Building → Testing without the gate's line
+  (or, for a task, without a summary, mu-78), and Testing → Your check with any criterion unticked. `return` sends it back with a reason and
   hands Building back to its last builder. In the old layout `status:` and the status folder are a
   mirror of the stage for older readers (Drover), and `check` reports a stage whose status doesn't
   match, which is what a hand move leaves. In `.muster/` (0005) no `status:` is written, and one
@@ -518,10 +518,13 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   - Each Your check card says **Your turn** (not "on it: owner"; the pane's status line too) and
     its next step: the first open owner criterion as an instruction ("Try: …", or "Check: …"
     when it isn't written as something the owner does), cut to 90 characters with the whole in
-    its tooltip and the pane, "· n more", or "Nothing to try: Accept".
+    its tooltip and the pane, "· n more", or, with nothing of the owner's open, "All 4 proven:
+    Accept" (mu-78).
   - The next step is, in order: an open question escalated to the owner ("Answer Q2: …"), a
     block on them or by a permission ("Unblock: …"), the first open owner criterion, else
-    "Nothing to try: Accept".
+    "All N proven: Accept" when every criterion is ticked, "Not proven: AC3 · send it back, or
+    check it yourself" when an agent's isn't, and "Nothing to try: Accept" only from a core that
+    sends no criteria.
   - Effort is derived from the open owner criteria: any mentioning a session, terminal or command
     (whole words) → Needs a session; any other open one, an open escalated question or a block on
     the owner → One look; else Just accept. `— effort: look|session`
@@ -543,6 +546,39 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     a button per view it names (Board, Table, Timeline, Graph, Appearance in any case; Helper,
     Waiting for you, Activity, Problems, Projects, Help only capitalized). Ticked ones follow with
     **Untick**.
+- **Your check says what you're accepting** (task mu-78):
+  - **The summary.** `summary:` in the front matter: what was built, one plain line, at most 160
+    characters, no line breaks or control characters (`ops::clean_summary`, which refuses rather
+    than folds them; runs of spaces become one). `muster pass <id> --from building --summary
+    "…"` writes it (logged as `summary set to …`, before the stage line), and a task (not a goal,
+    a feature or the owner's own) is refused out of Building without one, unless it has one
+    already. `--summary` anywhere else is refused. `muster set <id> summary "…"` writes or fixes
+    it in any stage. The window's gate form asks for it beside the gate line (`GateFormView`,
+    prefilled with the task's own), and `pass_task` takes it. Reading clamps a hand edit to 160
+    characters without control characters (`queue::SUMMARY_MAX`). The state sends it as `summary`.
+  - **Each criterion's proof.** `criteria_items` splits the first `— proof:` (em or en dash, or a
+    hyphen, between spaces, any case) outside a code span off the text into `proof`, so a
+    criterion that only mentions the tail keeps its words and a proof's own "verify: owner"
+    can't make it the owner's. `parse_task` fills `proofFiles` with the task's attachments that
+    proof names (`queue::proof_files`): `attachments/<id>/<file>` or a bare file name, matched
+    exactly against `list_attachments`; `../`, another task's folder, an absolute path, a
+    backslash or a subfolder name nothing. The state sends every criterion as `criteria` (the
+    owner's still as `ownerCriteria` too); the start brief prints each with its proof.
+  - **The card and Waiting for you:** the next step ("All 4 proven: Accept", above), then the
+    summary on one line cut to the width with the whole in its tooltip (`.card-summary`,
+    `.summary-line`), shown as text. No images on cards. Every queue, old layout too: it's read
+    from the task file.
+  - **The pane:** "What you're accepting" (`StageContent.tsx` `AcceptingBlock`, a labelled group)
+    comes first in Your check, above Your checklist: **Built** (the summary in its own `dir="auto"`
+    span, as text, or the title and `muster set <key> summary`), **Accept** (`yourCheck.ts`
+    `acceptWords`: blocked, not proven, the owner's still open by name, or every criterion proven:
+    Accept moves it to Done), and **Proof**: each criterion in one line, label first and its
+    words and proof each `dir="auto"`, how it stands in words, and its proof's images as Files-size
+    thumbnails under it. Each is a native button (file name as its label, `aria-expanded`;
+    Enter and Space click it) that opens the image large in place, no overlay, and shrinks on a
+    second click; other files are named. The images load through `api.image` once per task and
+    set of files, as Files does, only while the pane shows a task in Your check. No motion, and
+    `prefers-reduced-motion` turns any off. The merge report goes last, in small type.
 - **A limit on Your check per project** (task 0050, `check_limit.rs`, `yourCheckLimit.ts`,
   `CheckLimit.tsx`): `projects.json`'s `yourCheck` maps a queue folder (the project's key, as
   `gate`, `names` and `hidden` do) to 1–50 or `"off"`, so a rename keeps it and two projects shown

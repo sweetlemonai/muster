@@ -48,7 +48,7 @@ Why: the board is only useful if it's true. A hand edit can say a task was teste
 8. **Hand it on:** tick the criteria you can prove, each with its proof (`muster edit`, or the write-up in your branch), then pass with the gate's result line, as printed:
 
    ```
-   muster pass 0007 --as wt-a --from building --gate "gate full: green (9 steps)"
+   muster pass 0007 --as wt-a --from building --gate "gate full: green (9 steps)" --summary "A board you can group by project; the order is kept"
    ```
 
    That releases the claim. The task goes to Testing.

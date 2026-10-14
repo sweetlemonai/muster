@@ -53,9 +53,9 @@ export const api = {
     invoke<{ id: string; path: string }>("create_task", { queue, task, files, stamp }),
   // Stages: each returns the task's new path. The core refuses what its rules don't allow, with
   // a message to show as is. `from` is the stage the window shows: refused if the task moved on
-  // since. `gate` only for Building → Testing, `commit` only for Your check → Done.
-  passTask: (queue: string, id: string, from: string, gate: string, commit: string, stamp: string) =>
-    invoke<string>("pass_task", { queue, id, from, gate, commit, stamp }),
+  // since. `gate` and `summary` only for Building → Testing, `commit` only for Your check → Done.
+  passTask: (queue: string, id: string, pass: { from: string; gate: string; commit: string; summary: string }, stamp: string) =>
+    invoke<string>("pass_task", { queue, id, pass, stamp }),
   // Accept all (0043): each id passed from Your check to Done as Accept does, in order; what the
   // core refused comes back with why, and the rest still go.
   acceptAll: (queue: string, ids: string[], stamp: string) => invoke<AcceptResult>("accept_all", { queue, ids, stamp }),

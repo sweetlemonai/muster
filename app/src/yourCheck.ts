@@ -5,7 +5,7 @@ import { blockSentence, isBlocked } from "./blockWords";
 import { key } from "./lib";
 import { keyOf } from "./taskKey";
 import { isWork } from "./levels";
-import type { Task } from "./types";
+import type { Criterion, Task } from "./types";
 
 /** How much a task in Your check asks of the owner: nothing to try, one look in the app, or a
  *  session or terminal to run something in. */
@@ -41,9 +41,9 @@ export function criterionEffort(text: string): "look" | "session" {
   return SESSION_WORDS.test(text) ? "session" : "look";
 }
 
-/** What a task in Your check needs for its next step and effort: its owner criteria, questions
- *  and block. */
-export type StepTask = Pick<Task, "ownerCriteria" | "questions" | "blockedKind" | "blockDetail" | "blockedBy">;
+/** What a task in Your check needs for its next step and effort: its criteria (the owner's, and
+ *  all of them for what's proven), questions and block. */
+export type StepTask = Pick<Task, "ownerCriteria" | "questions" | "blockedKind" | "blockDetail" | "blockedBy" | "criteria">;
 
 const openOwner = (t: Pick<Task, "ownerCriteria">) => t.ownerCriteria.filter((c) => !c.ticked);
 /** Open questions escalated to the owner: theirs to answer, like a criterion is theirs to try. */
@@ -115,9 +115,16 @@ export type NextStep = { kind: "question" | "block" | "criterion" | "accept"; te
 
 const step = (kind: NextStep["kind"], full: string, more: number): NextStep => ({ kind, text: cutText(full, CARD_STEP_CHARS), full, more });
 
+/** A criterion as Your check names it: its label, else its place ("criterion 3"). */
+const critName = (c: Pick<Criterion, "label" | "n">) => c.label || `criterion ${c.n}`;
+/** An agent's criterion not ticked: nothing proves it. */
+const unproven = (t: Pick<Task, "criteria">) => (t.criteria ?? []).filter((c) => !c.owner && !c.ticked);
+
 /** The one thing to do next for a task in Your check: answer a question escalated to the owner
  *  ("Answer Q2: …", its first line), unblock a block on them ("Unblock: …"), try the first open
- *  owner criterion as an instruction, or, with none of these, "Nothing to try: Accept". */
+ *  owner criterion as an instruction, or, with none of these, accept it (mu-78): "All 4 proven:
+ *  Accept", or what isn't proven ("Not proven: AC2 · …") instead of offering Accept, and
+ *  "Nothing to try: Accept" when the core sent no criteria. */
 export function nextStep(t: StepTask): NextStep {
   const open = openOwner(t);
   const asked = askedOwner(t);
@@ -126,8 +133,30 @@ export function nextStep(t: StepTask): NextStep {
     return step("question", `Answer Q${asked[0].n ?? "?"}: ${first}`, asked.length - 1 + open.length);
   }
   if (blockedOnOwner(t)) return step("block", `Unblock: ${(t.blockDetail ?? "").trim() || blockSentence(t)}`, open.length);
-  if (open.length === 0) return step("accept", "Nothing to try: Accept", 0);
+  if (open.length === 0) {
+    const all = t.criteria ?? [];
+    const notYet = unproven(t);
+    if (all.length === 0) return step("accept", "Nothing to try: Accept", 0);
+    if (notYet.length > 0) return step("accept", `Not proven: ${notYet.map(critName).join(", ")} · send it back, or check it yourself`, 0);
+    return step("accept", `All ${all.length} proven: Accept`, 0);
+  }
   return step("criterion", tryText(criterionWords(open[0].text.replace(/^AC\d+:\s*/, ""))), open.length - 1);
+}
+
+/** What Accept does, for the pane's "What you're accepting" (mu-78): blocked (the flag: the core
+ *  refuses a pass then; a wait on other tasks alone doesn't hold Accept), something not proven (said instead of offering Accept), the owner's own criteria
+ *  still open (named), or every criterion proven. "none" when there are no criteria to prove it. */
+export type AcceptWords = { kind: "blocked" | "unproven" | "yours" | "proven" | "none"; text: string };
+
+export function acceptWords(t: StepTask & Pick<Task, "blocked">): AcceptWords {
+  if (t.blocked) return { kind: "blocked", text: `Blocked (${blockSentence(t) || "it waits on something"}): Accept waits until that's cleared.` };
+  const all = t.criteria ?? [];
+  if (all.length === 0) return { kind: "none", text: "No acceptance criteria are written, so nothing is proven. Accept moves it to Done." };
+  const notYet = unproven(t);
+  if (notYet.length > 0) return { kind: "unproven", text: `Not proven yet: ${notYet.map(critName).join(", ")}. Send it back, or check it yourself before you accept it.` };
+  const open = openOwner(t);
+  if (open.length > 0) return { kind: "yours", text: `Accept after you check ${open.length}: ${open.map(critName).join(", ")}.` };
+  return { kind: "proven", text: "Every criterion is proven: Accept moves it to Done." };
 }
 
 /** The app's views a criterion can name, in the app's order. "board", "table", "timeline",

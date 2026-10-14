@@ -52,7 +52,7 @@ export function useTaskActions(task: Task, onChanged: () => void) {
       if (ok) setOpened(null);
     });
   // Every pass says the stage it was clicked in, so the core refuses it if the task moved on.
-  const passFrom = (gateLine: string, done: string) => submit(() => api.passTask(task.queue, task.id, task.stage, gateLine, "", now()), done);
+  const passFrom = (gateLine: string, done: string, summary = "") => submit(() => api.passTask(task.queue, task.id, { from: task.stage, gate: gateLine, commit: "", summary }, now()), done);
 
   return {
     msg,

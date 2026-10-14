@@ -102,10 +102,10 @@ This walks one task from Ready to Done with commands, playing every role yoursel
    ```
 
    The card shows "40% · found the cause, fixing it · just now".
-3. **Building → Testing.** This needs the result line of the project's checks (the gate). Without it, `muster` says `passing 0001 Building → Testing needs the gate's result line (--gate "…")`. With it:
+3. **Building → Testing.** This needs the result line of the project's checks (the gate) and a summary: what was built, in one plain line in your words, 160 characters at most. Without the gate line, `muster` says `passing 0001 Building → Testing needs the gate's result line (--gate "…")`; without a summary, that it needs one (`--summary "…"`, or `muster set 0001 summary "…"` first). With both:
 
    ```
-   muster pass 0001 --from building --gate "gate full: green (9 steps)" --as wt-a
+   muster pass 0001 --from building --gate "gate full: green (9 steps)" --summary "A board you can group by project; the order is kept" --as wt-a
    ```
 
 4. **Testing.** The tester ticks each criterion it has proved. Open the write-up with `muster edit 0001` (or **Edit** in the pane), change `- [ ] AC1:` to `- [x] AC1:` and add the proof at the end of the line, then save. Passing before that is refused: `1 of 2 acceptance criteria aren't ticked; tick each with its proof first (1 more are the owner's, checked in Your check)`.

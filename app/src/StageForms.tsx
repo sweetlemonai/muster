@@ -1,34 +1,68 @@
 import { useState } from "react";
 import { BLOCK_KINDS, type BlockKind, blockRequest } from "./blockWords";
 import { earlierStages } from "./lib";
+import { isWork } from "./levels";
 import type { Question, Task } from "./types";
 import { Button, Pill } from "./ui";
 import type { TaskActions } from "./useTaskActions";
 
-/** The open stage form, full width under both columns: the gate line out of Building, Send back
- *  with a reason, or Block with what it waits on. Its text stays while the core refuses it and
- *  goes once it's taken (the form closes). */
+/** The open stage form, full width under both columns: the gate line and the summary out of
+ *  Building, Send back with a reason, or Block with what it waits on. Its text stays while the
+ *  core refuses it and goes once it's taken (the form closes). */
 export default function StageForms({ task, a }: { task: Task; a: TaskActions }) {
-  if (a.form === "gate" && task.stage === "building") return <GateForm a={a} />;
+  if (a.form === "gate" && task.stage === "building") return <GateForm task={task} a={a} />;
   if (a.form === "back" && earlierStages(task.stage).length > 0) return <BackForm task={task} a={a} />;
   if (a.form === "block" && !task.blocked) return <BlockForm task={task} a={a} />;
   return null;
 }
 
-function GateForm({ a }: { a: TaskActions }) {
+/** Out of Building: the gate's result line and what was built in one plain line (mu-78), which
+ *  leads the owner's check. The summary starts as the task's own; a goal or feature needs none. */
+function GateForm({ task, a }: { task: Task; a: TaskActions }) {
   const [gate, setGate] = useState("");
+  const [summary, setSummary] = useState(task.summary ?? "");
+  const needsSummary = isWork(task);
+  return (
+    <GateFormView
+      gate={gate}
+      summary={summary}
+      needsSummary={needsSummary}
+      busy={a.busy}
+      onGate={setGate}
+      onSummary={setSummary}
+      onSubmit={() => {
+        if (gate.trim() && (summary.trim() || !needsSummary)) a.passFrom(gate, "Passed to Testing.", summary.trim());
+      }}
+      onCancel={a.close}
+    />
+  );
+}
+
+/** The gate form, drawn: Pass to Testing waits for the gate line, and for a task the summary. */
+export function GateFormView({ gate, summary, needsSummary, busy, onGate, onSummary, onSubmit, onCancel }: {
+  gate: string;
+  summary: string;
+  needsSummary: boolean;
+  busy: boolean;
+  onGate: (v: string) => void;
+  onSummary: (v: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  const ready = gate.trim() !== "" && (summary.trim() !== "" || !needsSummary);
   return (
     <form
       className="control-row stage-form"
       data-part="form"
       onSubmit={(e) => {
         e.preventDefault();
-        if (gate.trim()) a.passFrom(gate, "Passed to Testing.");
+        onSubmit();
       }}
     >
-      <input autoFocus value={gate} onChange={(e) => setGate(e.target.value)} placeholder="The gate's result line (gate full: green …)" aria-label="The gate's result line" maxLength={500} />
-      <Button type="submit" disabled={a.busy || !gate.trim()}>Pass to Testing</Button>
-      <Button type="button" onClick={a.close}>Cancel</Button>
+      <input autoFocus value={gate} onChange={(e) => onGate(e.target.value)} placeholder="The gate's result line (gate full: green …)" aria-label="The gate's result line" maxLength={500} />
+      <input value={summary} onChange={(e) => onSummary(e.target.value)} placeholder="What was built, in one plain line for the owner's check" aria-label="What was built, in one line" maxLength={160} dir="auto" />
+      <Button type="submit" disabled={busy || !ready}>Pass to Testing</Button>
+      <Button type="button" onClick={onCancel}>Cancel</Button>
     </form>
   );
 }

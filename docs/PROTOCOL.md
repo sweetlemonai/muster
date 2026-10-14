@@ -167,10 +167,12 @@
 >    the log the same way (`muster init` does too).
 > 3. **Build.** Check in at each milestone and at least every 30 minutes
 >    (`muster checkin <id> "<done, next>" --pct <n>`). Commit on the task's branch. When the
->    project's gate is green, `muster pass <id> --from building --gate "<its result line>"`, as
->    always: nothing is pushed and no PR is opened. The worktree stays for Testing.
+>    project's gate is green, `muster pass <id> --from building --gate "<its result line>"
+>    --summary "<what was built, one plain line>"`, as always: nothing is pushed and no PR is
+>    opened. The worktree stays for Testing.
 > 4. **Review and fix.** Testing reviews it and ticks each criterion with its proof, in a session
->    that isn't the builder (0047). A finding the builder must fix is `muster return <id> "<why>"`:
+>    that isn't the builder (0047): `- [x] AC2: … — verify: … — proof: <what showed it>`, naming
+>    any screenshot as `attachments/<id>/<file>` so Your check shows it under that criterion. A finding the builder must fix is `muster return <id> "<why>"`:
 >    back to Building, in the same worktree.
 > 5. **Merge: `muster pass <id> --from testing`.** For a started task this pass is the merge, in
 >    order, stopping at the first failure: it takes the repo's merge lock (a flock on
@@ -270,7 +272,10 @@
 > `stage:` in the front matter is the truth, and only `muster` writes it. Hand a task on with
 > `muster pass <id> --from <the stage you saw> --as <you>`. `--from` makes a pass refuse if the task
 > has moved on since you looked, and the app always sends it. Ready → Building claims it for you, and Building → Testing needs
-> `--gate "<the gate's result line>"`. Testing → Your check needs every criterion ticked except
+> `--gate "<the gate's result line>"` and, for a task, `--summary "<what was built>"`: one plain
+> line in the owner's words, 160 characters at most, kept as `summary:` and shown first in Your
+> check (mu-78; `muster set <id> summary "…"` writes or fixes it, and a task that has one passes
+> without). Testing → Your check needs every criterion ticked except
 > the owner's (`— verify: owner`, checked in Your check), passed by a session that didn't build it
 > (0047, above), and Your check → Done needs those too
 > (the owner ticks them: `muster tick <id> AC2`, or in the task pane) and can take `--commit <sha>`. Send it back with `muster return <id> "<why>"`. Blocked

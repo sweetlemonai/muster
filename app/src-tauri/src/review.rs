@@ -1760,6 +1760,7 @@ mod tests {
     fn to_testing(root: &Path, id: &str) {
         let opts = PassOpts {
             gate: "gate: green (built)".into(),
+            summary: "A synthetic summary".into(),
             from: Some("building".into()),
             ..Default::default()
         };
@@ -2494,6 +2495,7 @@ mod tests {
         let pass = || {
             let opts = PassOpts {
                 gate: "gate: green (fixed)".into(),
+                summary: "A synthetic summary".into(),
                 from: Some("building".into()),
                 ..Default::default()
             };

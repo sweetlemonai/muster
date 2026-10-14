@@ -4,7 +4,7 @@
 
 use crate::queue::{
     self, actor, append_log, find_task, front_matter, mirror_status, with_lock, write_atomic,
-    STATUS_FOLDERS,
+    STATUS_FOLDERS, SUMMARY_MAX,
 };
 pub use crate::queue::{stage_label, stage_role, StageStep, STAGES};
 use crate::session::{is_owner, same_holder};
@@ -245,6 +245,29 @@ pub(crate) fn one_line(text: &str, max: usize, what: &str) -> Result<String, Str
     }
     if t.chars().count() > max {
         return Err(format!("{what} is longer than {max} characters"));
+    }
+    Ok(t)
+}
+
+/// A task's summary (mu-78): what was built, in one plain line of at most `SUMMARY_MAX`
+/// characters. A line break or any other control character is refused, not folded away, so what
+/// the owner reads is what was written; runs of spaces become one.
+pub(crate) fn clean_summary(text: &str) -> Result<String, String> {
+    if text.contains(['\n', '\r']) {
+        return Err("the summary is one line: no line breaks".into());
+    }
+    if text.chars().any(char::is_control) {
+        return Err("the summary can't hold control characters (tabs, escapes)".into());
+    }
+    let t = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if t.is_empty() {
+        return Err("the summary is empty: say what was built, in one line".into());
+    }
+    if t.chars().count() > SUMMARY_MAX {
+        return Err(format!(
+            "the summary is longer than {SUMMARY_MAX} characters ({}): say it in one shorter line",
+            t.chars().count()
+        ));
     }
     Ok(t)
 }
@@ -596,6 +619,7 @@ fn set_for(root: &Path, id: &str, value: &str, who: &str, stamp: &str) -> Result
                     depends: None,
                     claimed_by: t.claimed_by.clone(),
                     commit: None,
+                    summary: None,
                     log: vec![stage_line(stamp, &who, &t.stage, "ready", " (yours to do)")],
                 })
             });
@@ -907,7 +931,7 @@ fn clean_depends(root: &Path, id: &str, value: &str) -> Result<String, String> {
     Ok(format!("[{}]", ids.join(", ")))
 }
 
-/// Set priority, type, title, tags, estimates or depends.
+/// Set priority, type, title, tags, estimates, touches, the summary or depends.
 pub fn set_field(
     root: &Path,
     id: &str,
@@ -935,6 +959,7 @@ pub fn set_field(
         "test-time" | "est-test-time" => ("est-test-time", clean_time(value)?),
         "tokens" | "est-tokens" => ("est-tokens", clean_tokens(value)?),
         "touches" => ("touches", clean_touches(value)?),
+        "summary" => ("summary", clean_summary(value)?),
         // Checked against the other tasks and written under one lock, so two sets at once can't
         // close a loop between them.
         "depends" => {
@@ -973,7 +998,7 @@ pub fn set_field(
         }
         _ => {
             return Err(format!(
-                "can't set {field:?}: use priority, type, title, tags, time, test-time, tokens, touches, level, parent, due, depends or for"
+                "can't set {field:?}: use priority, type, title, tags, time, test-time, tokens, touches, summary, level, parent, due, depends or for"
             ))
         }
     };
@@ -1058,6 +1083,7 @@ pub fn move_task(
             depends: None,
             claimed_by: released(t),
             commit: None,
+            summary: None,
             log,
         })
     })
@@ -1111,6 +1137,8 @@ struct Current {
     kept_back: (bool, bool),
     /// When the owner paused it (0045, `paused:`), "" when it isn't: nobody passes it then.
     paused: String,
+    /// What was built, in one line (mu-78, `summary:`), "" before anyone wrote it.
+    summary: String,
 }
 
 /// What a stage change writes.
@@ -1125,6 +1153,8 @@ struct Change {
     depends: Option<String>,
     claimed_by: String,
     commit: Option<String>,
+    /// A new `summary:` (mu-78, a pass out of Building), or None to leave it.
+    summary: Option<String>,
     log: Vec<String>,
 }
 
@@ -1273,6 +1303,7 @@ fn current(root: &Path, path: &Path, text: &str) -> Result<Current, String> {
         branch: t.branch,
         worktree: t.worktree,
         paused: t.paused,
+        summary: t.summary,
     })
 }
 
@@ -1389,6 +1420,9 @@ fn change_locked(
         new = set_front(&new, "claimed-by", &c.claimed_by)?;
         if let Some(commit) = &c.commit {
             new = set_front(&new, "commit", commit)?;
+        }
+        if let Some(summary) = &c.summary {
+            new = set_front(&new, "summary", summary)?;
         }
         // Testing and Your check have a holder too (0030), shown like the claim but not one: who
         // may pass is unchanged. Testing goes to whoever passes it there from Building; back in
@@ -1512,6 +1546,7 @@ fn log_unblocked(root: &Path, dep_id: &str, waiting: &[String], who: &str, stamp
                         depends: None,
                         claimed_by: String::new(),
                         commit: None,
+                        summary: None,
                         log: vec![
                             line.clone(),
                             stage_line(stamp, who, "building", "ready", &why),
@@ -1591,6 +1626,9 @@ fn set_front_after(text: &str, key: &str, value: &str, after: &str) -> Result<St
 pub struct PassOpts {
     pub gate: String,
     pub commit: String,
+    /// What was built, in one plain line (mu-78): needed to pass a task out of Building, unless
+    /// it has one already; stored as `summary:`.
+    pub summary: String,
     /// The stage the caller saw the task in. When given, the pass is refused if the task has
     /// moved on since (a double click, a stale window), so one click never moves two stages.
     pub from: Option<String>,
@@ -1632,12 +1670,43 @@ pub fn pass_task(
         one_line(&opts.gate, 500, "the gate line")?
     };
     let commit = clean_commit(&opts.commit)?;
+    let summary = if opts.summary.trim().is_empty() {
+        String::new()
+    } else {
+        clean_summary(&opts.summary)?
+    };
     let expected = seen_stage(opts.from.as_deref())?;
     change(root, id, &who, stamp, |t| {
         if t.stage == "testing" && !t.branch.is_empty() {
             return Err(started_pass(id, &t.branch));
         }
-        let c = pass_change(id, t, &who, stamp, &gate, &commit, expected)?;
+        let mut c = pass_change(id, t, &who, stamp, &gate, &commit, expected)?;
+        // What was built, in one line, for the owner's check (mu-78): a task (not a goal, a
+        // feature or the owner's own) leaves Building with one, given now or written before.
+        let out_of_building = t.stage == "building" && c.stage == "testing";
+        if !summary.is_empty() && !out_of_building {
+            return Err(format!(
+                "--summary is only for a task passing Building → Testing; muster set {id} summary \"<line>\" writes or fixes it in any stage"
+            ));
+        }
+        if out_of_building
+            && t.level == "task"
+            && !t.human
+            && summary.is_empty()
+            && t.summary.is_empty()
+        {
+            return Err(format!(
+                "passing {id} Building → Testing needs a summary: what was built, in one plain line in the owner's words, {SUMMARY_MAX} characters at most (--summary \"…\"; or muster set {id} summary \"…\" first)"
+            ));
+        }
+        if !summary.is_empty() && summary != t.summary {
+            let line = free_text_line(
+                format!("{stamp} {who}: summary set to {summary}"),
+                "the summary",
+            )?;
+            c.log.insert(0, line);
+            c.summary = Some(summary.clone());
+        }
         // Into Building from before it is a start, like a claim: refused, for anyone, while what
         // it depends on isn't merged (0042). Read under the lock, before anything is written.
         if c.stage == "building" && stage_index(&t.stage) < stage_index("building") {
@@ -1876,6 +1945,7 @@ pub fn release_task(
                     depends: None,
                     claimed_by: String::new(),
                     commit: None,
+                    summary: None,
                     log: vec![stage_line(stamp, &who, &t.stage, "ready", " (released)")],
                 })
             })?;
@@ -2113,6 +2183,7 @@ fn pass_change(
             released(t)
         },
         commit: (to == "done" && !commit.is_empty()).then(|| commit.to_string()),
+        summary: None,
         log: vec![stage_line(stamp, who, from, to, &with_note(detail, note))],
     })
 }
@@ -2563,6 +2634,7 @@ fn release_change(
         depends: None,
         claimed_by: String::new(),
         commit: None,
+        summary: None,
         log: vec![stage_line(
             stamp,
             who,
@@ -2696,6 +2768,7 @@ pub fn return_task(
                 String::new()
             },
             commit: None,
+            summary: None,
             log: vec![stage_line(
                 stamp,
                 &who,
@@ -2806,6 +2879,7 @@ pub fn block_as(
                 depends: None,
                 claimed_by: t.claimed_by.clone(),
                 commit: None,
+                summary: None,
                 log: vec![line.clone()],
             })
         })
@@ -2893,6 +2967,7 @@ fn block_on_tasks(
                     depends: None,
                     claimed_by: t.claimed_by.clone(),
                     commit: None,
+                    summary: None,
                     log: vec![unblocked_line(stamp, who, &t.waiting_on)],
                 })
             });
@@ -2922,6 +2997,7 @@ fn block_on_tasks(
                 depends: Some(depends.clone()),
                 claimed_by: t.claimed_by.clone(),
                 commit: None,
+                summary: None,
                 log: vec![line.clone()],
             })
         })
@@ -2960,6 +3036,7 @@ pub(crate) fn unblock_answered_locked(
             depends: None,
             claimed_by: c.claimed_by.clone(),
             commit: None,
+            summary: None,
             log: vec![format!("{stamp} {who}: unblocked: Q{n} answered")],
         })
     });
@@ -3003,6 +3080,7 @@ pub fn unblock_task(root: &Path, id: &str, who: &str, stamp: &str) -> Result<Str
                 depends: None,
                 claimed_by: t.claimed_by.clone(),
                 commit: None,
+                summary: None,
                 log: vec![unblocked_line(stamp, &who, &was_waiting(t))],
             })
         })
@@ -3035,6 +3113,7 @@ pub(crate) fn unblock_locked_at(
             depends: None,
             claimed_by: t.claimed_by.clone(),
             commit: None,
+            summary: None,
             log,
         })
     })
@@ -3074,6 +3153,7 @@ pub fn set_stage(
             depends: None,
             claimed_by: released(t),
             commit: None,
+            summary: None,
             log: vec![stage_line(
                 stamp,
                 &who,
@@ -4293,6 +4373,7 @@ mod tests {
         );
         let gate = PassOpts {
             gate: "gate full: green (9 steps)".into(),
+            summary: "A synthetic summary".into(),
             ..Default::default()
         };
         let done = PassOpts {
@@ -4327,6 +4408,178 @@ mod tests {
             text.contains("wt-a: stage building → testing (gate: gate full: green (9 steps))\n")
         );
         assert!(text.ends_with("wt-a: stage your-check → done\n"));
+    }
+
+    fn gate_and_summary(summary: &str) -> PassOpts {
+        PassOpts {
+            gate: "gate: green".into(),
+            summary: summary.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn summary_is_needed_to_pass_a_task_out_of_building() {
+        let d = queue();
+        let path = d.path().join("doing/0001-t.md");
+        put(
+            d.path(),
+            "doing/0001-t.md",
+            &task_text(
+                "status: doing\nstage: building\nclaimed-by: wt-a\nwaiting_on:",
+                TICKED,
+            ),
+        );
+        let before = fs::read_to_string(&path).unwrap();
+        let refused = |summary: &str| {
+            let e = pass_task(d.path(), "0001", "wt-a", T, &gate_and_summary(summary)).unwrap_err();
+            assert_eq!(fs::read_to_string(&path).unwrap(), before, "{summary:?}");
+            e
+        };
+        let e = refused("");
+        assert!(
+            e.contains("--summary") && e.contains("muster set 0001 summary"),
+            "{e}"
+        );
+        assert!(refused("   ").contains("--summary"));
+        // One line of 160 characters at most, with no control characters.
+        assert!(refused(&"a".repeat(161)).contains("160"), "over-long");
+        assert!(refused("one line\nand another").contains("one line"));
+        assert!(refused("a\rb").contains("one line"));
+        assert!(refused("a\u{7}b").contains("control"));
+        // A Persian summary of 160 characters is one line: it counts characters, not bytes.
+        let persian = "چت".repeat(80);
+        pass_task(
+            d.path(),
+            "0001",
+            "wt-a",
+            T,
+            &gate_and_summary(&format!("  {persian} ")),
+        )
+        .unwrap();
+        let t = only(d.path());
+        assert_eq!(
+            (t.stage.as_str(), t.summary.as_str()),
+            ("testing", persian.as_str())
+        );
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains(&format!("\nsummary: {persian}\n")), "{text}");
+        assert!(
+            text.ends_with(&format!(
+                "wt-a: summary set to {persian}\n- {T} wt-a: stage building → testing (gate: gate: green)\n"
+            )),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn summary_written_before_lets_it_pass_and_goals_features_and_human_tasks_need_none() {
+        let d = queue();
+        let put_one = |fm: &str| {
+            put(
+                d.path(),
+                "doing/0001-t.md",
+                &task_text(&format!("status: doing\nwaiting_on:\n{fm}"), TICKED),
+            )
+        };
+        // Already summarised (muster set, or an earlier pass): the gate line is enough.
+        put_one("stage: building\nclaimed-by: wt-a\nsummary: Built it");
+        pass_task(d.path(), "0001", "wt-a", T, &gate_and_summary("")).unwrap();
+        assert_eq!(only(d.path()).summary, "Built it");
+        // A new one replaces it, logged.
+        put_one("stage: building\nclaimed-by: wt-a\nsummary: Built it");
+        pass_task(
+            d.path(),
+            "0001",
+            "wt-a",
+            T,
+            &gate_and_summary("Built it better"),
+        )
+        .unwrap();
+        let t = only(d.path());
+        assert_eq!(t.summary, "Built it better");
+        let text = fs::read_to_string(d.path().join(&t.path)).unwrap();
+        assert!(
+            text.contains("wt-a: summary set to Built it better\n"),
+            "{text}"
+        );
+        // A goal or a feature put in Building, and the owner's own task, pass without one.
+        for level in ["goal", "feature"] {
+            put_one(&format!(
+                "stage: building\nclaimed-by: wt-a\nlevel: {level}"
+            ));
+            pass_task(d.path(), "0001", "wt-a", T, &gate_and_summary("")).unwrap();
+            assert_eq!(only(d.path()).stage, "testing", "{level}");
+        }
+        put_one("stage: building\nclaimed-by: owner\nfor: human");
+        pass_task(d.path(), "0001", "owner", T, &no_gate()).unwrap();
+        assert_eq!(only(d.path()).stage, "done");
+    }
+
+    #[test]
+    fn summary_option_is_only_for_passing_out_of_building() {
+        let d = queue();
+        for fm in [
+            "stage: ready\nclaimed-by:",
+            "stage: testing\nclaimed-by:",
+            "stage: your-check\nclaimed-by:",
+            "stage: building\nclaimed-by: owner\nfor: human",
+        ] {
+            put(
+                d.path(),
+                "doing/0001-t.md",
+                &task_text(&format!("status: doing\nwaiting_on:\n{fm}"), TICKED),
+            );
+            let opts = PassOpts {
+                summary: "Built it".into(),
+                ..Default::default()
+            };
+            let e = pass_task(d.path(), "0001", "owner", T, &opts).unwrap_err();
+            assert!(e.contains("--summary is only for"), "{fm}: {e}");
+            assert_eq!(only(d.path()).summary, "", "{fm}");
+        }
+    }
+
+    #[test]
+    fn set_summary_writes_and_fixes_it_with_its_rules() {
+        let d = queue();
+        let path = d.path().join("doing/0001-t.md");
+        put(
+            d.path(),
+            "doing/0001-t.md",
+            &task_text(
+                "status: doing\nstage: your-check\nheld-by: owner\nclaimed-by:\nwaiting_on:",
+                TICKED,
+            ),
+        );
+        set_field(d.path(), "0001", "summary", "Built  it", "owner", T).unwrap();
+        assert_eq!(only(d.path()).summary, "Built it");
+        set_field(
+            d.path(),
+            "0001",
+            "summary",
+            "Built it, <b>better</b>",
+            "owner",
+            T,
+        )
+        .unwrap();
+        assert_eq!(only(d.path()).summary, "Built it, <b>better</b>");
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("owner: summary set to Built it\n"), "{text}");
+        assert!(
+            text.ends_with("owner: summary set to Built it, <b>better</b>\n"),
+            "{text}"
+        );
+        let before = fs::read_to_string(&path).unwrap();
+        for bad in ["", "  ", "two\nlines", "a\u{1b}b", &"a".repeat(161)] {
+            assert!(
+                set_field(d.path(), "0001", "summary", bad, "owner", T).is_err(),
+                "{bad:?}"
+            );
+        }
+        assert_eq!(fs::read_to_string(&path).unwrap(), before);
+        set_field(d.path(), "0001", "summary", &"a".repeat(160), "owner", T).unwrap();
+        assert_eq!(only(d.path()).summary.chars().count(), 160);
     }
 
     #[test]
@@ -4390,6 +4643,7 @@ mod tests {
                 CRITERIA,
                 PassOpts {
                     gate: "  \n ".into(),
+                    summary: "A synthetic summary".into(),
                     ..Default::default()
                 },
                 "needs the gate's result line",
@@ -4424,6 +4678,7 @@ mod tests {
                 CRITERIA,
                 PassOpts {
                     gate: "green".into(),
+                    summary: "A synthetic summary".into(),
                     ..Default::default()
                 },
                 "--gate is only for",
@@ -4465,6 +4720,7 @@ mod tests {
             T,
             &PassOpts {
                 gate: "green".into(),
+                summary: "A synthetic summary".into(),
                 ..Default::default()
             },
         )
@@ -4922,6 +5178,7 @@ mod tests {
         );
         let gate = PassOpts {
             gate: "green".into(),
+            summary: "A synthetic summary".into(),
             ..Default::default()
         };
         pass_task(d.path(), "0001", "wt-a", T, &no_gate()).unwrap();
@@ -4988,6 +5245,7 @@ mod tests {
         );
         let gate = PassOpts {
             gate: "green".into(),
+            summary: "A synthetic summary".into(),
             ..Default::default()
         };
         pass_task(d.path(), "0001", "wt-a", T, &no_gate()).unwrap();
@@ -5031,6 +5289,7 @@ mod tests {
         );
         let gate = PassOpts {
             gate: "green".into(),
+            summary: "A synthetic summary".into(),
             ..Default::default()
         };
         pass_task(d.path(), "0001", "wt-a", T, &no_gate()).unwrap();
@@ -5450,6 +5709,7 @@ mod tests {
         assert_eq!(task_of(d.path(), "0001").heartbeat, "2026-10-12 11:30");
         let gate = PassOpts {
             gate: "green".into(),
+            summary: "A synthetic summary".into(),
             ..Default::default()
         };
         pass_task(d.path(), "0001", "wt-a", "2026-10-12 12:00", &gate).unwrap();
@@ -5774,6 +6034,7 @@ mod tests {
     fn gate() -> PassOpts {
         PassOpts {
             gate: "green".into(),
+            summary: "A synthetic summary".into(),
             ..Default::default()
         }
     }
@@ -7644,6 +7905,7 @@ mod human_tests {
         // Done straight from Doing: no gate line, no Testing, no Your check.
         let gate = PassOpts {
             gate: "gate full: green".into(),
+            summary: "A synthetic summary".into(),
             ..Default::default()
         };
         assert!(pass_task(d.path(), "0001", "owner", T, &gate)

@@ -6,6 +6,9 @@ import { ownerOpen } from "./OwnerChecklist";
 import type { StageStep, Task } from "./types";
 import type { Msg, Undo } from "./useTaskActions";
 
+/** An attachment the pane draws as an image (Files, and Your check's proof, mu-78). */
+export const IMAGE = /\.(png|jpe?g|gif|webp)$/i;
+
 /** The default LIVE window: the pane's LIVE means the task file changed this recently. */
 export const LIVE_SECS = 5 * 60;
 

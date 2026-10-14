@@ -1,7 +1,10 @@
 import type { SessionState } from "./sessionState";
 
-/** One of the criteria only the owner verifies ("— verify: owner"), from the core (0028). */
-export type Criterion = { n: number; label: string; text: string; ticked: boolean; owner: boolean };
+/** An acceptance criterion from the core (0028): `text` without its proof; `owner` when only the
+ *  owner verifies it ("— verify: owner"). Its proof (mu-78) is the `— proof: …` tail its ticker
+ *  wrote ("" when none), and `proofFiles` the task's own attachments that proof names. Optional,
+ *  like the other later fields. */
+export type Criterion = { n: number; label: string; text: string; ticked: boolean; owner: boolean; proof?: string; proofFiles?: string[] };
 
 export type Question = {
   n: number | null;
@@ -107,6 +110,12 @@ export type Task = {
   questions: Question[];
   openQuestions: number;
   ownerCriteria: Criterion[];
+  /** Every acceptance criterion, in order, each with its proof (mu-78): Your check's "What you're
+   *  accepting" and the card's "All N proven". The core always sends it; optional so a task from
+   *  an older core reads as unknown. */
+  criteria?: Criterion[];
+  /** What was built, in one plain line (mu-78, `summary:`), or "": shown as text, never Markdown. */
+  summary?: string;
   /** The vision check (0029): open conflicts, or null before the first check. Over 0, it can't
    *  pass from Shaping to Ready. */
   visionOpen?: number | null;

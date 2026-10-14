@@ -1522,6 +1522,7 @@ pub(crate) mod tests {
     pub(crate) fn to_testing(f: &Fx, id: &str) {
         let opts = PassOpts {
             gate: "gate: green (built)".into(),
+            summary: "A synthetic summary".into(),
             from: Some("building".into()),
             ..Default::default()
         };
@@ -1723,6 +1724,7 @@ pub(crate) mod tests {
         ops::claim_task(r, &testing, "wt-b", T0).unwrap();
         let opts = PassOpts {
             gate: "gate: green".into(),
+            summary: "A synthetic summary".into(),
             from: Some("building".into()),
             ..Default::default()
         };
@@ -1754,6 +1756,7 @@ pub(crate) mod tests {
         ops::set_field(r, &waits, "depends", &testing, "owner", T0).unwrap();
         let gate = PassOpts {
             gate: "gate: green".into(),
+            summary: "A synthetic summary".into(),
             from: Some("building".into()),
             ..Default::default()
         };
@@ -2697,6 +2700,7 @@ pub(crate) mod tests {
         // Into Testing with no review round yet.
         let opts = PassOpts {
             gate: "gate: green (built)".into(),
+            summary: "A synthetic summary".into(),
             from: Some("building".into()),
             ..Default::default()
         };
@@ -2835,6 +2839,7 @@ pub(crate) mod tests {
         commit(&s.worktree, "o/x.txt", "built\n", "build it");
         let opts = PassOpts {
             gate: "gate: green (built)".into(),
+            summary: "A synthetic summary".into(),
             from: Some("building".into()),
             ..Default::default()
         };

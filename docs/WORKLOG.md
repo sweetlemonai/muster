@@ -4,6 +4,25 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Your check says what you're accepting: a summary, what Accept does, each criterion's proof (mu-78)
+**Did:** a task carries `summary:`, one plain line of what was built: `muster pass --from building`
+needs it (`--summary`, or set before), `muster set <id> summary` writes or fixes it, and the app's
+Pass form has the field. Each criterion's `— proof:` tail is split into its own field, with the
+screenshots it names from the task's own attachments. Your check's pane opens with "What you're
+accepting": what was built, what Accept does (all proven / yours open / not proven / blocked) and
+each criterion's proof with thumbnails that grow in place; cards and Waiting for you say "All N
+proven: Accept" with the summary under it. Every queue, old layout too. Help, manual, PROTOCOL,
+builder briefs and AS_BUILT updated.
+**Decided:** a summary with a control character is refused, not cleaned (Persian ZWNJ kept); the
+proof splits at the first dashed `proof:` outside a code span; the app's pass takes one struct.
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; Rust
+tests for the summary rules (161 characters, newlines, control characters, goals and human tasks
+exempt), the proof split and file matching (`../x.png` matches nothing); a render test in ai-10's
+shape with a Persian proof; `<b>` in a summary shows as text.
+**Open:** AC4's and AC8's screenshots of ai-10 in the release app (light and dark) need the real ai
+queue and the running app. Enter/Space on thumbnails is native button behaviour, checked from the
+markup only. "Not proven" tasks still group under Just accept in Accept all.
+
 ## 2026-10-14 — Settings › Appearance's theme picker is no longer crushed by the project colour picker (mu-81)
 **Fixed:** the seven theme cards were squeezed into 16px dots (owner: "UI bug") → mu-57's project
 colour picker reused the theme picker's `.swatches`/`.swatch` classes, and its later rules won; it

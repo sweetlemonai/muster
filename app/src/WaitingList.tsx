@@ -67,7 +67,7 @@ export function waitRank(t: Task): number {
 
 /** One task waiting on the owner: what it is, that it's paused (0045), each thing it waits on them
  *  for (a pick-one question with its options, answered here in one click, 0049; a block on them
- *  with its button, 0060), and Open. */
+ *  with its button, 0060), in Your check its next step and what was built (mu-78), and Open. */
 function WaitingItem({ t, now, multi, active, onOpen, onChanged }: { t: Task; now: number; multi: boolean; active: boolean; onOpen: (t: Task) => void; onChanged: () => void }) {
   const [answering, setAnswering] = useState(false);
   const blocking = blockWords(t);
@@ -95,6 +95,7 @@ function WaitingItem({ t, now, multi, active, onOpen, onChanged }: { t: Task; no
       <BlockLine t={t} answering={answering} onAnswer={() => setAnswering(true)} onChanged={onChanged} />
       {t.sessionState === "needs-input" && <p>Waiting for input in Claude Code: answer it there.</p>}
       {step && <p className="next-step-line">{`${step.full}${step.more ? ` · ${step.more} more` : ""}`}</p>}
+      {next && t.summary && <p className="summary-line" dir="auto" title={t.summary}>{t.summary}</p>}
       <Button onClick={() => onOpen(t)}>{asked.length > 0 || t.blockedKind === "you" ? "Open to answer" : "Open"}</Button>
     </article>
   );

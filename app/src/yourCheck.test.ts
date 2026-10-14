@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  acceptAllRun, byEffort, criterionEffort, cutText, EFFORTS, justAccept, namedViews, nextStep, refusalText, staleResult, stripEffort, taskEffort, tryText,
+  acceptAllRun, acceptWords, byEffort, criterionEffort, cutText, EFFORTS, justAccept, namedViews, nextStep, refusalText, staleResult, stripEffort, taskEffort, tryText,
 } from "./yourCheck";
 import type { Criterion, Question, Task } from "./types";
 
 const q = (n: number, text: string, over: Partial<Question> = {}): Question => ({ n, ticked: false, asker: "wt-a", text, escalated: true, ownerAnswered: false, ...over });
 
 const crit = (n: number, ticked: boolean, words: string): Criterion => ({ n, label: `AC${n}`, text: `AC${n}: ${words}`, ticked, owner: true });
+/** An agent's criterion (mu-78), ticked with its proof or not. */
+const agent = (n: number, ticked: boolean, proof = ""): Criterion => ({ n, label: `AC${n}`, text: `AC${n}: works — verify: command`, ticked, owner: false, proof, proofFiles: [] });
 const task = (id: string, over: Partial<Task> = {}): Task => ({
   queue: "muster", id, title: `Task ${id}`, kind: "code", priority: "normal", status: "doing", stage: "your-check", blocked: false, stageHistory: [],
   folder: "doing", path: `doing/${id}-t.md`, claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], forWho: "ai", commit: "", captured: "", capturedAt: "", doneAt: "", blockHistory: [], questions: [],
@@ -128,9 +130,24 @@ describe("when Accept all's result line goes", () => {
 });
 
 describe("the next step a card names", () => {
-  it("says Nothing to try: Accept when no owner criterion is open", () => {
+  it("says All N proven: Accept when every criterion is proven and none of yours is open (mu-78)", () => {
+    const four = [agent(1, true, "pnpm test 36/36"), agent(2, true, "headless Chromium"), agent(3, true, "offline"), agent(4, true, "988 B")];
+    expect(nextStep(task("0010", { criteria: four }))).toEqual({ kind: "accept", text: "All 4 proven: Accept", full: "All 4 proven: Accept", more: 0 });
+    // One of yours, ticked, counts among them.
+    const yours = crit(2, true, "x — verify: owner");
+    expect(nextStep(task("0001", { criteria: [agent(1, true, "ok"), yours], ownerCriteria: [yours] })).text).toBe("All 2 proven: Accept");
+  });
+  it("says what isn't proven instead of offering Accept (mu-78)", () => {
+    const t = task("0001", { criteria: [agent(1, true, "ok"), agent(2, false), { ...agent(3, false), label: "" }] });
+    expect(nextStep(t)).toEqual({ kind: "accept", text: "Not proven: AC2, criterion 3 · send it back, or check it yourself", full: "Not proven: AC2, criterion 3 · send it back, or check it yourself", more: 0 });
+  });
+  it("says Nothing to try: Accept when the core sent no criteria", () => {
     expect(nextStep(task("0001"))).toEqual({ kind: "accept", text: "Nothing to try: Accept", full: "Nothing to try: Accept", more: 0 });
     expect(nextStep(task("0001", { ownerCriteria: [crit(1, true, "x — verify: owner")] })).text).toBe("Nothing to try: Accept");
+  });
+  it("keeps the step for something of yours open, whatever is proven", () => {
+    const open = crit(2, false, "the owner opens the board. — verify: owner");
+    expect(nextStep(task("0001", { criteria: [agent(1, true, "ok"), open], ownerCriteria: [open] })).text).toBe("Try: open the board");
   });
   it("turns the first open criterion into an instruction, and counts the rest", () => {
     const t = task("0016", { ownerCriteria: [crit(6, true, "done — verify: owner"), crit(7, false, "the owner groups the board by Feature and checks a goal's progress. — verify: owner"), crit(8, false, "x — verify: owner")] });
@@ -202,5 +219,36 @@ describe("Accept all, across projects", () => {
       return { accepted: ids, refused: [] };
     });
     expect(r).toEqual({ ok: false, text: "Accepted 1. Not accepted: gone: no queue named \"gone\".", refused: ["gone/0001"] });
+  });
+});
+
+describe("what Accept does, in the pane (mu-78)", () => {
+  const four = [agent(1, true, "a"), agent(2, true, "b"), agent(3, true, "c"), agent(4, true, "d")];
+  it("says every criterion is proven and that Accept moves it to Done", () => {
+    expect(acceptWords(task("0010", { criteria: four }))).toEqual({ kind: "proven", text: "Every criterion is proven: Accept moves it to Done." });
+  });
+  it("names the ones of yours still open, by label or number", () => {
+    const a2 = crit(2, false, "x — verify: owner");
+    const c3 = { ...crit(3, false, "y — verify: owner"), label: "" };
+    expect(acceptWords(task("0001", { criteria: [agent(1, true, "ok"), a2, c3], ownerCriteria: [a2, c3] }))).toEqual({ kind: "yours", text: "Accept after you check 2: AC2, criterion 3." });
+    expect(acceptWords(task("0001", { criteria: [agent(1, true, "ok"), a2], ownerCriteria: [a2] })).text).toBe("Accept after you check 1: AC2.");
+  });
+  it("says what isn't proven instead of offering Accept, before what's yours", () => {
+    const a3 = crit(3, false, "x — verify: owner");
+    expect(acceptWords(task("0001", { criteria: [agent(1, true, "ok"), agent(2, false), a3], ownerCriteria: [a3] }))).toEqual({
+      kind: "unproven",
+      text: "Not proven yet: AC2. Send it back, or check it yourself before you accept it.",
+    });
+  });
+  it("says it's blocked, with what it waits on, before anything else", () => {
+    const t = task("0001", { criteria: four, blocked: true, blockedKind: "outside", blockDetail: "Apple review" });
+    expect(acceptWords(t)).toEqual({ kind: "blocked", text: "Blocked (Outside: Apple review): Accept waits until that's cleared." });
+    // A wait on other tasks alone doesn't hold Accept back (the core passes it): it isn't said here.
+    const waits = task("0001", { criteria: four, blockedKind: "tasks", blockedBy: [{ id: "0002", stage: "building", holder: "wt-b" }] });
+    expect(acceptWords(waits).kind).toBe("proven");
+  });
+  it("says nothing is proven when there are no criteria", () => {
+    expect(acceptWords(task("0001", { criteria: [] }))).toEqual({ kind: "none", text: "No acceptance criteria are written, so nothing is proven. Accept moves it to Done." });
+    expect(acceptWords(task("0001")).kind).toBe("none");
   });
 });

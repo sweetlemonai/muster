@@ -148,3 +148,39 @@ describe("the card's who and progress lines", () => {
     expect(html).toContain("can&#x27;t pass from Shaping to Ready");
   });
 });
+
+describe("the card in Your check says what you're accepting (mu-78)", () => {
+  const proven = (n: number) => ({ n, label: `AC${n}`, text: `AC${n}: works — verify: command`, ticked: true, owner: false, proof: "ok", proofFiles: [] });
+  const summary = "A chat example the reader steps through with Next or the keyboard; works offline; under 1 KB";
+  it("says All N proven: Accept, with the summary on the next line, whole in its tooltip", () => {
+    const over = { stage: "your-check", heldBy: "owner", criteria: [1, 2, 3, 4].map(proven), summary };
+    expect(lines(over)).toEqual([
+      ["card-who your-turn", "Your turn"],
+      ["card-next", "All 4 proven: Accept"],
+      ["card-summary", summary],
+    ]);
+    const html = renderToStaticMarkup(createElement(CardStatus, { t: task(over), now: NOW }));
+    expect(html).toContain(`<span class="card-summary" dir="auto" title="${summary}">`);
+    // One line, cut to the card's width; the tooltip has all of it.
+    const rule = [...css.matchAll(/\.card-summary[^{]*\{([^}]*)\}/g)].map((m) => m[1]).join(";");
+    expect(rule).toMatch(/white-space: nowrap/);
+    expect(rule).toMatch(/text-overflow: ellipsis/);
+    expect(rule).toMatch(/overflow: hidden/);
+  });
+  it("keeps the next step when something of yours is open, the summary under it", () => {
+    const open = { n: 2, label: "AC2", text: "AC2: the owner opens the board. — verify: owner", ticked: false, owner: true };
+    expect(lines({ stage: "your-check", heldBy: "owner", criteria: [proven(1), open], ownerCriteria: [open], summary: "Built it" })).toEqual([
+      ["card-who your-turn", "Your turn"],
+      ["card-next", "Try: open the board"],
+      ["card-summary", "Built it"],
+    ]);
+  });
+  it("adds no line without a summary, and only in Your check", () => {
+    expect(lines({ stage: "your-check", heldBy: "owner", criteria: [proven(1)] }).map((l) => l[0])).toEqual(["card-who your-turn", "card-next"]);
+    expect(lines({ stage: "testing", heldBy: "qa", summary: "Built it" }).map((l) => l[0])).toEqual(["card-who"]);
+  });
+  it("shows the summary as text: markup in it stays literal", () => {
+    const html = renderToStaticMarkup(createElement(CardStatus, { t: task({ stage: "your-check", summary: "a <b>bold</b> claim" }), now: NOW }));
+    expect(html).toContain("a &lt;b&gt;bold&lt;/b&gt; claim");
+  });
+});

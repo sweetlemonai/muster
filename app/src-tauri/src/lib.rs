@@ -403,16 +403,28 @@ pub(crate) fn check_id(id: &str) -> Result<(), String> {
     }
 }
 
-/// The owner hands a task to the next stage (the gate line and commit only where they apply).
-/// `from` is the stage the window showed: refused if the task has moved on since.
+/// What the window's Pass sends besides the task: `from`, the stage it showed (refused if the task
+/// has moved on since), and the gate line and summary (Building → Testing, mu-78) and the commit
+/// (Your check → Done), empty where they don't apply.
+#[derive(serde::Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct PassFields {
+    from: String,
+    #[serde(default)]
+    gate: String,
+    #[serde(default)]
+    commit: String,
+    #[serde(default)]
+    summary: String,
+}
+
+/// The owner hands a task to the next stage.
 #[tauri::command]
 async fn pass_task(
     app: tauri::State<'_, AppState>,
     queue: String,
     id: String,
-    from: String,
-    gate: String,
-    commit: String,
+    pass: PassFields,
     stamp: String,
 ) -> Result<String, String> {
     check_id(&id)?;
@@ -421,9 +433,10 @@ async fn pass_task(
     blocking(move || {
         in_queue(&file, &queue, |root| {
             let opts = ops::PassOpts {
-                gate,
-                commit,
-                from: Some(from),
+                gate: pass.gate,
+                commit: pass.commit,
+                summary: pass.summary,
+                from: Some(pass.from),
             };
             ops::pass_task(root, &id, "owner", &stamp, &opts)
         })

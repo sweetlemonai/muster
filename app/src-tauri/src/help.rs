@@ -203,17 +203,18 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "pass",
-        usage: "muster pass <id> [--from <stage>] [--gate \"<gate result line>\"] [--commit <sha>]",
-        what: "Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria and no open vision conflict (muster vision). Building → Testing needs the gate's result line, and every review finding open for the builder answered (muster review), and releases your claim. Testing → Your check needs every criterion ticked except the owner's (\"— verify: owner\"), and a session that didn't build it: the builder (who claimed it, or passed it into Testing; the same --as label, in the same session or with none) is refused, naming who built it, so a fresh QA session with its own --as passes it, or the owner (logged as the owner's override: no separate tester). A tester under another label in the builder's session is let through, and the log says so. Your check → Done needs those ticked too (muster tick). A human task (the owner's own) goes To do (Ready) → Doing (Building) → Done, and only the owner passes it: no gate line, no Testing, no Your check. Refused while it's blocked, when someone else holds it, and into Building (Ready → Building, or the owner's Start) while a task it depends on isn't merged yet, as claim is. A task made with muster start merges when it passes from Testing, once its review of record is clean at its branch's tip (muster review; the owner may merge without one, and the report says so; a commit made while it waits for another merge or while its gate runs stops it, unmerged), in order, stopping at the first failure: one merge at a time per repo; rebase its branch on the local main (a conflict sends it back to Building naming the files); run the project's gate in its worktree (muster projects set <name> gate; red sends it back with the gate line), and again if main moved while it ran (twice at most, then it stops: main keeps moving); fast-forward the local main to it (never a merge commit, so main only gets a tree the gate saw), only if the main checkout is clean and on main; push main to origin (never forced: if origin moved, it fetches and stops); remove the worktree (never a runner's, made with start --here) and delete the branch, and origin's copy only when it's the same commit; record the merge (the commit and a report: gate line, the review, time in Building and Testing, check-ins) and pass it to Your check: the record is written even if the task was blocked or moved meanwhile, and then it says so (use muster stage); then it names the next task to start. Nothing is deleted on any failure before main has the merge. Only the command line does this: the app's Pass is refused for such a task.",
+        usage: "muster pass <id> [--from <stage>] [--gate \"<gate result line>\"] [--summary \"<what was built>\"] [--commit <sha>]",
+        what: "Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria and no open vision conflict (muster vision). Building → Testing needs the gate's result line, a summary of what was built (one plain line, 160 characters at most, no line breaks; the task's own summary: from muster set or an earlier pass does too; a goal, a feature or the owner's own task needs none), and every review finding open for the builder answered (muster review), and releases your claim. The summary leads the owner's check: Your check's card and its What you're accepting. Testing → Your check needs every criterion ticked except the owner's (\"— verify: owner\"), and a session that didn't build it: the builder (who claimed it, or passed it into Testing; the same --as label, in the same session or with none) is refused, naming who built it, so a fresh QA session with its own --as passes it, or the owner (logged as the owner's override: no separate tester). A tester under another label in the builder's session is let through, and the log says so. Your check → Done needs those ticked too (muster tick). A human task (the owner's own) goes To do (Ready) → Doing (Building) → Done, and only the owner passes it: no gate line, no Testing, no Your check. Refused while it's blocked, when someone else holds it, and into Building (Ready → Building, or the owner's Start) while a task it depends on isn't merged yet, as claim is. A task made with muster start merges when it passes from Testing, once its review of record is clean at its branch's tip (muster review; the owner may merge without one, and the report says so; a commit made while it waits for another merge or while its gate runs stops it, unmerged), in order, stopping at the first failure: one merge at a time per repo; rebase its branch on the local main (a conflict sends it back to Building naming the files); run the project's gate in its worktree (muster projects set <name> gate; red sends it back with the gate line), and again if main moved while it ran (twice at most, then it stops: main keeps moving); fast-forward the local main to it (never a merge commit, so main only gets a tree the gate saw), only if the main checkout is clean and on main; push main to origin (never forced: if origin moved, it fetches and stops); remove the worktree (never a runner's, made with start --here) and delete the branch, and origin's copy only when it's the same commit; record the merge (the commit and a report: gate line, the review, time in Building and Testing, check-ins) and pass it to Your check: the record is written even if the task was blocked or moved meanwhile, and then it says so (use muster stage); then it names the next task to start. Nothing is deleted on any failure before main has the merge. Only the command line does this: the app's Pass is refused for such a task.",
         options: &[
             ("--from", "the stage you saw it in; refused if it has moved on since (use it, so a repeat never moves it twice)"),
             ("--gate", "Building → Testing: the gate's result line, verbatim"),
+            ("--summary", "Building → Testing: what was built, in one plain line in the owner's words (160 characters); kept as the task's summary:"),
             ("--commit", "Your check → Done: the commit that ships it"),
             ("--as", "who you are; must match who claimed it to pass it out of Building"),
         ],
         examples: &[
             "muster pass 0007 --as wt-a --from ready",
-            "muster pass 0007 --as wt-a --from building --gate \"gate full: green (9 steps)\"",
+            "muster pass 0007 --as wt-a --from building --gate \"gate full: green (9 steps)\" --summary \"A board you can group by project; the order is kept\"",
             "muster pass 0007 --from your-check --commit 3f2a9c1",
             "muster pass 0041 --from ready --as owner",
             "muster pass 0031 --from testing --as qa",
@@ -276,10 +277,10 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "set",
-        usage: "muster set <id> <priority|type|title|tags|time|test-time|tokens|touches|level|parent|due|depends|for> <value>",
-        what: "Change one field, logged with the time and who. type is one of code, bug, chore, tech-debt, spike, design, docs, research; time is agent time and test-time the QA agent plus your check. touches is where in the repo it works, folders and globs, comma-separated (app/src/TaskPanel*, docs/), which muster ready --parallel keeps apart; empty clears it. level, parent and due keep the rules of muster new (a parent that exists at the right level, no loop, a due date only on a goal); a task in Building or Testing, or held, stays a task. An empty parent or due clears it. for is human or ai: who does it (a human task is the owner's own, hatched on the board with the You ribbon); only a task, and not while it's held, in Building, Testing or Your check; made human in Backlog or Shaping, it moves to Ready (To do).",
+        usage: "muster set <id> <priority|type|title|tags|time|test-time|tokens|touches|summary|level|parent|due|depends|for> <value>",
+        what: "Change one field, logged with the time and who. type is one of code, bug, chore, tech-debt, spike, design, docs, research; time is agent time and test-time the QA agent plus your check. touches is where in the repo it works, folders and globs, comma-separated (app/src/TaskPanel*, docs/), which muster ready --parallel keeps apart; empty clears it. summary is what was built, in one plain line (160 characters at most, no line breaks or control characters), the line that leads the owner's check: it writes or fixes it in any stage, Your check too. level, parent and due keep the rules of muster new (a parent that exists at the right level, no loop, a due date only on a goal); a task in Building or Testing, or held, stays a task. An empty parent or due clears it. for is human or ai: who does it (a human task is the owner's own, hatched on the board with the You ribbon); only a task, and not while it's held, in Building, Testing or Your check; made human in Backlog or Shaping, it moves to Ready (To do).",
         options: &[],
-        examples: &["muster set 0007 priority high", "muster set 0041 for human", "muster set 0007 type tech-debt", "muster set 0007 tags spike,tech-debt", "muster set 0007 tags \"\"", "muster set 0007 time 3h", "muster set 0007 test-time 45m", "muster set 0007 tokens 600k", "muster set 0007 title \"A clearer title\"", "muster set 0031 level feature", "muster set 0032 parent 0031", "muster set 0031 parent \"\"", "muster set 0030 due 2026-12-01", "muster set 0018 depends 0014,0016", "muster set 0018 depends \"\"", "muster set 0031 touches \"app/src/TaskPanel*, docs/\""],
+        examples: &["muster set 0007 priority high", "muster set 0041 for human", "muster set 0007 type tech-debt", "muster set 0007 tags spike,tech-debt", "muster set 0007 tags \"\"", "muster set 0007 time 3h", "muster set 0007 test-time 45m", "muster set 0007 tokens 600k", "muster set 0007 title \"A clearer title\"", "muster set 0031 level feature", "muster set 0032 parent 0031", "muster set 0031 parent \"\"", "muster set 0030 due 2026-12-01", "muster set 0018 depends 0014,0016", "muster set 0018 depends \"\"", "muster set 0031 touches \"app/src/TaskPanel*, docs/\"", "muster set 0007 summary \"A board you can group by project; the order is kept\""],
     },
     Command {
         name: "edit",
@@ -611,7 +612,7 @@ pub const SESSION: &[Topic] = &[
             "Log progress, block, hand on, with the tool stamping the time:",
             "$ muster note 0007 \"Phase 1 done, gate green\" --as <your branch>",
             "$ muster block 0007 --on 0012",
-            "$ muster pass 0007 --as <your branch> --from building --gate \"<the gate's result line>\"",
+            "$ muster pass 0007 --as <your branch> --from building --gate \"<the gate's result line>\" --summary \"<what was built, one plain line in the owner's words>\"",
             "Testing found a problem? Send it back with the reason:",
             "$ muster return 0007 \"AC2 fails: …\"",
             "A task you started on its own branch is reviewed in Testing by a session that didn't build it: muster review prints the brief (run /deep-review on the range it names) and --record takes the result. Findings to fix send it back to you; answer each, then pass it to Testing again. The merge waits for a clean review:",
@@ -1388,6 +1389,7 @@ mod tests {
         assert!(!t.contains("mv ../tasks"));
         assert!(!t.contains("muster move 0007"));
         assert!(command_text("pass").unwrap().contains("--gate"));
+        assert!(command_text("pass").unwrap().contains("--summary"));
         assert!(command_text("return").unwrap().contains("--to"));
         assert!(command_text("new").unwrap().contains("--tags"));
         // list's search, filters and sort (task 0032), and the app's search key.
@@ -1435,5 +1437,22 @@ mod tests {
         ] {
             assert!(app.contains(word), "{word}: {app}");
         }
+    }
+
+    #[test]
+    fn summary_is_in_the_help_the_manual_and_the_session_steps() {
+        // mu-78: pass and set say how to write it, and a session is told to.
+        let pass = command_text("pass").unwrap();
+        assert!(
+            pass.contains("--summary") && pass.contains("160 characters"),
+            "{pass}"
+        );
+        let set = command_text("set").unwrap();
+        assert!(
+            set.contains("|summary|") && set.contains("muster set 0007 summary"),
+            "{set}"
+        );
+        assert!(text().contains("--from building --gate \"<the gate's result line>\" --summary"));
+        assert!(commands_page().contains("--summary"));
     }
 }

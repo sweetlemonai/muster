@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { BlockFormView } from "./StageForms";
+import { BlockFormView, GateFormView } from "./StageForms";
 import type { BlockKind } from "./blockWords";
 import type { Question } from "./types";
 
@@ -46,5 +46,24 @@ describe("the Block form (0024)", () => {
     const none = view("question", "", [q(2, "Which host?", true)]);
     expect(none).toContain("No open question in this task: ask one first");
     expect(block(none)).toBe("disabled");
+  });
+});
+
+describe("the gate form out of Building asks for the summary too (mu-78)", () => {
+  const gate = (g: string, summary: string, needsSummary = true, busy = false) =>
+    renderToStaticMarkup(createElement(GateFormView, { gate: g, summary, needsSummary, busy, onGate: () => {}, onSummary: () => {}, onSubmit: () => {}, onCancel: () => {} }));
+  const pass = (html: string) => /<button type="submit"([^>]*)>Pass to Testing<\/button>/.exec(html)?.[1].includes("disabled") ? "disabled" : "enabled";
+  it("has the gate line and the one-line summary, each labelled, the summary at most 160 characters", () => {
+    const html = gate("", "");
+    expect(html).toContain('aria-label="The gate&#x27;s result line"');
+    expect(html).toMatch(/<input[^>]*placeholder="What was built, in one plain line for the owner&#x27;s check"[^>]*aria-label="What was built, in one line"[^>]*maxLength="160"/);
+  });
+  it("passes only with both for a task; a goal or feature needs no summary", () => {
+    expect(pass(gate("gate: green", ""))).toBe("disabled");
+    expect(pass(gate("", "Built it"))).toBe("disabled");
+    expect(pass(gate("gate: green", "  "))).toBe("disabled");
+    expect(pass(gate("gate: green", "Built it"))).toBe("enabled");
+    expect(pass(gate("gate: green", "Built it", true, true))).toBe("disabled");
+    expect(pass(gate("gate: green", "", false))).toBe("enabled");
   });
 });

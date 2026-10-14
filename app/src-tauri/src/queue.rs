@@ -31,6 +31,8 @@ pub const LEVELS: [&str; 3] = ["goal", "feature", "task"];
 /// is), or the owner (`human`): the owner's own to-do, To do (Ready) → Doing (Building) → Done,
 /// which agents never take.
 pub const FOR_WHO: [&str; 2] = ["ai", "human"];
+/// How long a task's summary (`summary:`, mu-78) may be, in characters: one line on a card.
+pub const SUMMARY_MAX: usize = 160;
 pub(crate) const MAX_TASK_BYTES: u64 = 1024 * 1024;
 /// The queue's master list, INDEX.md (task 0018).
 pub use crate::index::index_md;
@@ -301,6 +303,11 @@ pub struct Criterion {
     /// "— verify: owner (screenshots…)"). "verify: command … and owner" isn't: it needs the
     /// agent's proof first.
     pub owner: bool,
+    /// What proves it (mu-78): the `— proof: …` tail its ticker wrote, split off `text`, or "".
+    pub proof: String,
+    /// The task's own attachments that proof names (`proof_files`), in the order named. Filled
+    /// by `parse_task`, which knows the attachments; empty from `criteria_items` alone.
+    pub proof_files: Vec<String>,
     /// Byte offset of its box line within the body.
     #[serde(skip)]
     pub at: usize,
@@ -336,6 +343,8 @@ pub fn criteria_items(body: &str) -> Vec<Criterion> {
                 text,
                 ticked,
                 owner: false,
+                proof: String::new(),
+                proof_files: Vec::new(),
                 at: base + pos,
             });
             open = true;
@@ -351,7 +360,64 @@ pub fn criteria_items(body: &str) -> Vec<Criterion> {
         pos += line.len();
     }
     for c in &mut out {
+        if let Some((text, proof)) = split_proof(&c.text) {
+            (c.text, c.proof) = (text, proof);
+        }
         c.owner = owner_verifies(&c.text);
+    }
+    out
+}
+
+/// A criterion's text and its proof (mu-78): split at the first `— proof:` (an em or en dash, or
+/// a hyphen, between spaces; `proof:` in any case) outside a `code span`, so a criterion that
+/// only mentions the tail keeps its words. None when it has no proof.
+fn split_proof(text: &str) -> Option<(String, String)> {
+    let mut code = false;
+    let mut prev_space = true;
+    for (i, ch) in text.char_indices() {
+        if ch == '`' {
+            code = !code;
+        } else if !code && prev_space && matches!(ch, '—' | '–' | '-') {
+            let after = &text[i + ch.len_utf8()..];
+            let rest = after.trim_start();
+            if rest.len() < after.len()
+                && rest
+                    .get(..6)
+                    .is_some_and(|p| p.eq_ignore_ascii_case("proof:"))
+            {
+                return Some((
+                    text[..i].trim_end().to_string(),
+                    rest[6..].trim().to_string(),
+                ));
+            }
+        }
+        prev_space = ch.is_whitespace();
+    }
+    None
+}
+
+/// The task's attachments a proof names (mu-78): `attachments/<id>/<file>`, or a bare file name,
+/// each matched exactly against `attachments` (the task's own, `list_attachments`), once each, in
+/// the order named. Any other path (`../`, another task's folder, an absolute path, a backslash,
+/// a subfolder) names nothing.
+pub fn proof_files(proof: &str, id: &str, attachments: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let words = proof.split(|c: char| c.is_whitespace() || ";,()[]{}<>\"'`".contains(c));
+    for w in words {
+        let w = w.trim_end_matches(['.', ':', '!', '?']);
+        let name = match w.strip_prefix("attachments/") {
+            Some(rest) => match rest.split_once('/') {
+                Some((dir, name)) if dir == id => name,
+                _ => continue,
+            },
+            None => w,
+        };
+        if name.is_empty() || name.contains(['/', '\\']) {
+            continue;
+        }
+        if attachments.iter().any(|a| a == name) && !out.iter().any(|o| o == name) {
+            out.push(name.to_string());
+        }
     }
     out
 }
@@ -467,6 +533,12 @@ pub struct Task {
     /// The criteria only the owner verifies (`— verify: owner`), ticked or not, for the task
     /// pane's checklist in Your check (0028).
     pub owner_criteria: Vec<Criterion>,
+    /// Every acceptance criterion, in order, each with its proof and the attachments that names
+    /// (mu-78): Your check's "What you're accepting" and the card's "All N proven".
+    pub criteria: Vec<Criterion>,
+    /// What was built, in one plain line (mu-78, `summary:`, written by `pass --summary` or `set
+    /// summary`), or "". Read as at most SUMMARY_MAX characters with no control characters.
+    pub summary: String,
     /// The vision check (0029): its open conflicts, by the front matter's `vision: <n> open`; None
     /// before the first check. While it's above 0 the task can't pass from Shaping to Ready.
     pub vision_open: Option<usize>,
@@ -1080,10 +1152,6 @@ pub fn parse_task(
         .unwrap_or_default();
     let checkins = log_lines.iter().filter_map(|l| checkin_line(l)).collect();
     let open_questions = questions.iter().filter(|q| !q.ticked).count();
-    let owner_criteria: Vec<Criterion> = criteria_items(body)
-        .into_iter()
-        .filter(|c| c.owner)
-        .collect();
     let (vision_open, bad_vision) = match crate::vision::parse_count(&get("vision")) {
         Some(n) => (n, String::new()),
         None => (None, get("vision").chars().take(40).collect()),
@@ -1107,6 +1175,11 @@ pub fn parse_task(
         None => ("ai".to_string(), raw_for.chars().take(40).collect()),
     };
     let attachments = list_attachments(root, &id);
+    let mut criteria = criteria_items(body);
+    for c in &mut criteria {
+        c.proof_files = proof_files(&c.proof, &id, &attachments);
+    }
+    let owner_criteria: Vec<Criterion> = criteria.iter().filter(|c| c.owner).cloned().collect();
     let rel = path
         .strip_prefix(root)
         .unwrap_or(path)
@@ -1219,6 +1292,12 @@ pub fn parse_task(
         questions,
         open_questions,
         owner_criteria,
+        criteria,
+        summary: get("summary")
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(SUMMARY_MAX)
+            .collect(),
         vision_open,
         vision_ids,
         bad_vision,
@@ -4301,6 +4380,190 @@ mod tests {
             ),
             vec!["", "", "AC12", ""]
         );
+    }
+
+    #[test]
+    fn proof_splits_off_the_criterion_tail() {
+        let body = concat!(
+            "## Acceptance criteria\n",
+            "- [x] AC1: works — verify: command (test) — proof: cargo test 36/36 pass\n",
+            "- [x] AC2: wrapped onto the next line — verify: command —\n",
+            "  proof: 'پیام بعدی' focused; shot.png\n",
+            "- [x] AC3: the `— proof:` tail is split — verify: command – Proof: it is\n",
+            "- [ ] AC4: no proof yet — verify: command\n",
+            "- [x] AC5: a proof that says verify: owner — verify: command — proof: verify: owner was not needed\n",
+            "- [x] AC6: a hyphen too - verify: command - proof: ok\n",
+        );
+        let items = criteria_items(body);
+        let got: Vec<_> = items
+            .iter()
+            .map(|c| (c.text.as_str(), c.proof.as_str(), c.owner))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (
+                    "AC1: works — verify: command (test)",
+                    "cargo test 36/36 pass",
+                    false
+                ),
+                (
+                    "AC2: wrapped onto the next line — verify: command",
+                    "'پیام بعدی' focused; shot.png",
+                    false
+                ),
+                (
+                    "AC3: the `— proof:` tail is split — verify: command",
+                    "it is",
+                    false
+                ),
+                ("AC4: no proof yet — verify: command", "", false),
+                // The proof's own words don't make it the owner's.
+                (
+                    "AC5: a proof that says verify: owner — verify: command",
+                    "verify: owner was not needed",
+                    false
+                ),
+                ("AC6: a hyphen too - verify: command", "ok", false),
+            ]
+        );
+        // Without the task's attachments, nothing is matched.
+        assert!(items.iter().all(|c| c.proof_files.is_empty()));
+    }
+
+    #[test]
+    fn proof_files_name_only_the_tasks_own_attachments() {
+        let names: Vec<String> = [
+            "0010-ac2-keyboard.png",
+            "0010-ac3-offline.png",
+            "log.txt",
+            "x.png",
+        ]
+        .map(String::from)
+        .to_vec();
+        let files = |proof: &str| proof_files(proof, "0010", &names);
+        assert_eq!(
+            files("headless Chromium: Tab focused 'پیام بعدی'; attachments/0010/0010-ac2-keyboard.png"),
+            ["0010-ac2-keyboard.png"]
+        );
+        // A bare name in the task's attachments, in any punctuation, each once, in order.
+        assert_eq!(
+            files("see (0010-ac3-offline.png), log.txt; and 0010-ac3-offline.png."),
+            ["0010-ac3-offline.png", "log.txt"]
+        );
+        // Traversal, another task's folder, an absolute path, a backslash, or a file the task
+        // doesn't have: nothing.
+        for p in [
+            "../x.png",
+            "attachments/0010/../x.png",
+            "attachments/0010/../../x.png",
+            "attachments/0011/x.png",
+            "attachments/x.png",
+            "/Users/someone/attachments/0010/x.png",
+            "tasks/attachments/0010/x.png",
+            "attachments\\0010\\x.png",
+            "attachments/0010/sub/x.png",
+            "missing.png",
+            "..",
+            "",
+        ] {
+            assert!(files(p).is_empty(), "{p:?}: {:?}", files(p));
+        }
+    }
+
+    #[test]
+    fn proof_and_summary_come_with_the_task_in_ai_10s_shape() {
+        // ai-10's shape, synthetic text: four criteria ticked with proofs, two naming screenshots,
+        // none the owner's, in an old-layout queue.
+        let d = tempfile::tempdir().unwrap();
+        for f in STATUS_FOLDERS {
+            fs::create_dir(d.path().join(f)).unwrap();
+        }
+        fs::create_dir_all(d.path().join("attachments/0010")).unwrap();
+        for n in ["0010-ac2-keyboard.png", "0010-ac3-offline.png"] {
+            fs::write(
+                d.path().join("attachments/0010").join(n),
+                [137u8, 80, 78, 71],
+            )
+            .unwrap();
+        }
+        let text = concat!(
+            "---\nid: 0010\ntype: task\nstage: your-check\nstatus: doing\nheld-by: owner\n",
+            "summary: A synthetic chat the reader steps through with Next; works offline\n---\n\n",
+            "# Example chat\n\n## Acceptance criteria\n",
+            "- [x] AC1: unit tests cover it. — verify: command (`pnpm test`) — proof: pnpm test 36/36 pass\n",
+            "- [x] AC2: works with only the keyboard. — verify: screenshot (focused button) — proof: headless Chromium: Tab focused 'پیام بعدی', Enter took it 1 to 4; attachments/0010/0010-ac2-keyboard.png\n",
+            "- [x] AC3: plays offline. — verify: screenshot (offline) — proof: set offline after load: 1 → 3 messages; attachments/0010/0010-ac3-offline.png\n",
+            "- [x] AC4: adds at most 5 KB. — verify: command (size) — proof: one extra chunk of 988 B gzipped\n",
+            "\n## Log\n",
+        );
+        fs::write(d.path().join("doing/0010-example-chat.md"), text).unwrap();
+        let s = read_state(
+            &[("ai".into(), d.path().to_path_buf())],
+            &mut Cache::default(),
+        );
+        let t = &s.tasks[0];
+        assert_eq!(
+            t.summary,
+            "A synthetic chat the reader steps through with Next; works offline"
+        );
+        let got: Vec<_> = t
+            .criteria
+            .iter()
+            .map(|c| (c.label.as_str(), c.ticked, c.owner, c.proof_files.clone()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("AC1", true, false, vec![]),
+                (
+                    "AC2",
+                    true,
+                    false,
+                    vec!["0010-ac2-keyboard.png".to_string()]
+                ),
+                ("AC3", true, false, vec!["0010-ac3-offline.png".to_string()]),
+                ("AC4", true, false, vec![]),
+            ]
+        );
+        assert!(t.owner_criteria.is_empty());
+        assert!(t.criteria[1]
+            .proof
+            .starts_with("headless Chromium: Tab focused 'پیام بعدی'"));
+        let json = serde_json::to_value(t).unwrap();
+        assert_eq!(json["summary"], t.summary.as_str());
+        assert_eq!(
+            json["criteria"][1]["proofFiles"][0],
+            "0010-ac2-keyboard.png"
+        );
+        assert_eq!(
+            json["criteria"][3]["proof"],
+            "one extra chunk of 988 B gzipped"
+        );
+        assert!(json["criteria"][0].get("at").is_none());
+    }
+
+    #[test]
+    fn summary_reads_as_one_plain_line_or_nothing() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("doing/0001-t.md");
+        let summary = |fm: &str| {
+            let text = format!("---\nid: 0001\nstage: your-check\n{fm}---\n\n# T\n");
+            parse_task("q", d.path(), "doing", &path, &text, 0)
+                .unwrap()
+                .summary
+        };
+        assert_eq!(summary(""), "");
+        assert_eq!(summary("summary:\n"), "");
+        assert_eq!(summary("summary: Built the thing\n"), "Built the thing");
+        // A hand edit can't make it more than one line of 160 characters, or control characters.
+        assert_eq!(
+            summary(&format!("summary: {}\n", "a".repeat(200)))
+                .chars()
+                .count(),
+            160
+        );
+        assert_eq!(summary("summary: a\u{1b}[31mb\n"), "a[31mb");
     }
 
     #[test]

@@ -476,6 +476,7 @@ mod tests {
             "2026-10-13 12:30",
             &PassOpts {
                 gate: "gate: green".into(),
+                summary: "A synthetic summary".into(),
                 ..Default::default()
             },
         )

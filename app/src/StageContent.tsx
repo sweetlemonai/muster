@@ -1,15 +1,17 @@
+import { useEffect, useState } from "react";
+import { api } from "./api";
 import { claimant, fmtMinutes, fmtTokens, stageLabel, stamp, stampMinutes } from "./lib";
 import { estimateLeft, isWork, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
 import Markdown from "./Markdown";
-import { siblingKey } from "./taskKey";
+import { siblingKey, taskKey } from "./taskKey";
 import OwnerChecklist from "./OwnerChecklist";
-import { criteriaSection, fmtWall, timeInWork } from "./paneData";
-import type { Task } from "./types";
+import { criteriaSection, fmtWall, IMAGE, timeInWork } from "./paneData";
+import type { Criterion, Task } from "./types";
 import { StatusPill } from "./ui";
-import type { NamedView } from "./yourCheck";
+import { acceptWords, criterionWords, type NamedView } from "./yourCheck";
 
 /** The task pane's left column: what this stage needs. Building and Testing: the work so far.
- *  Your check: the owner's checklist and the history. Backlog, Shaping and Ready: the criteria and
+ *  Your check: what you're accepting (mu-78), the owner's checklist and the history. Backlog, Shaping and Ready: the criteria and
  *  the estimate. Done (and a stage the window doesn't know): the history. A goal or feature: its
  *  roll-up. `body` is the write-up as loaded (null while it loads). */
 export default function StageContent({ task, nowSecs, body, childTasks, busy, onTick, onView }: {
@@ -30,6 +32,7 @@ export default function StageContent({ task, nowSecs, body, childTasks, busy, on
     case "your-check":
       return (
         <>
+          <WhatYoureAccepting task={task} />
           <div className="stage-block" data-part="checklist">
             <span className="lbl">Your checklist</span>
             {task.ownerCriteria.length > 0 ? (
@@ -53,6 +56,118 @@ export default function StageContent({ task, nowSecs, body, childTasks, busy, on
     default:
       return <History task={task} />;
   }
+}
+
+/** Which proof thumbnails are open, by `<criterion n>/<file>`: `key` opened, or shut again. */
+export function toggled(open: ReadonlySet<string>, key: string): Set<string> {
+  const next = new Set(open);
+  if (!next.delete(key)) next.add(key);
+  return next;
+}
+
+/** Your check's "What you're accepting" (mu-78), with the screenshots its proofs name loaded once
+ *  per task and set of files, as Files loads its own: not again on every poll. */
+function WhatYoureAccepting({ task }: { task: Task }) {
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const names = [...new Set((task.criteria ?? []).flatMap((c) => c.proofFiles ?? []).filter((n) => IMAGE.test(n)))];
+  useEffect(() => {
+    let live = true;
+    setUrls({});
+    setOpen(new Set());
+    for (const n of names) {
+      api.image(task.queue, task.id, n).then(
+        (url) => live && setUrls((m) => ({ ...m, [n]: url })),
+        () => {},
+      );
+    }
+    return () => {
+      live = false;
+    };
+    // `names` comes from the criteria's proof files, so their joined list is the dependency.
+  }, [task.queue, task.id, names.join("|")]);
+  return <AcceptingBlock task={task} urls={urls} open={open} onToggle={(k) => setOpen((o) => toggled(o, k))} />;
+}
+
+/** What you're accepting, drawn: what was built (the builder's one-line summary, as plain text,
+ *  or the title and how to add one), what Accept does (`acceptWords`), and each criterion in one
+ *  line with its proof in words and the screenshots it names as thumbnails under it, each opening
+ *  large in place (`open`, keyed `<n>/<file>`) and shrinking on a second click. Then the merge
+ *  line from the log. Every line's words are isolated (`dir="auto"`) for right-to-left text. */
+export function AcceptingBlock({ task, urls, open, onToggle }: {
+  task: Task;
+  urls: Record<string, string>;
+  open: ReadonlySet<string>;
+  onToggle: (key: string) => void;
+}) {
+  const criteria = task.criteria ?? [];
+  const accept = acceptWords(task);
+  return (
+    <div className="stage-block accepting" data-part="accepting" role="group" aria-label="What you're accepting">
+      <span className="lbl">What you're accepting</span>
+      <p className="wline">
+        <span className="lbl">Built</span>
+        <span className="small">
+          {task.summary ? (
+            <span dir="auto">{task.summary}</span>
+          ) : (
+            <>
+              <span dir="auto">{task.title}</span> <span className="meta">(no summary was written; <code>muster set {taskKey(task)} summary</code> adds one)</span>
+            </>
+          )}
+        </span>
+      </p>
+      <p className="wline">
+        <span className="lbl">Accept</span>
+        <span className={`small accept-${accept.kind}`}>{accept.text}</span>
+      </p>
+      <p className="wline">
+        <span className="lbl">Proof</span>
+        {criteria.length === 0 && <span className="small meta">No acceptance criteria are written.</span>}
+      </p>
+      {criteria.length > 0 && (
+        <ul className="proof-list">
+          {criteria.map((c) => (
+            <ProofLine key={c.n} c={c} urls={urls} open={open} onToggle={onToggle} />
+          ))}
+        </ul>
+      )}
+      {task.mergeReport && <p className="meta small merge-line" dir="auto">{task.mergeReport}</p>}
+    </div>
+  );
+}
+
+/** How a criterion stands, in words: proven (with its proof), checked by the owner, ticked with
+ *  no proof, the owner's still to check, or not proven. */
+function standing(c: Criterion): string {
+  if (c.ticked) return c.owner ? "✓ checked by you" : c.proof ? "✓ proven:" : "✓ ticked, no proof written";
+  return c.owner ? "yours to check, in Your checklist" : "not proven yet";
+}
+
+function ProofLine({ c, urls, open, onToggle }: { c: Criterion; urls: Record<string, string>; open: ReadonlySet<string>; onToggle: (key: string) => void }) {
+  const files = c.proofFiles ?? [];
+  const words = criterionWords(c.text.replace(/^AC\d+:\s*/, ""));
+  return (
+    <li className={c.ticked ? "proof-line ticked" : "proof-line"}>
+      <b className="proof-label">{c.label || `criterion ${c.n}`}</b> · <span dir="auto">{words}</span> · <span className="proof-state">{standing(c)}</span>
+      {c.ticked && !c.owner && c.proof && <> <span className="proof-text" dir="auto">{c.proof}</span></>}
+      {files.length > 0 && (
+        <span className="file-list proof-files">
+          {files.map((n) => {
+            const k = `${c.n}/${n}`;
+            if (!IMAGE.test(n)) return <span key={n} className="other-file" title={n}>{n}</span>;
+            const big = open.has(k);
+            return (
+              <button key={n} type="button" className={big ? "mini-thumb proof-thumb open" : "mini-thumb proof-thumb"} aria-expanded={big} aria-label={n} title={n} onClick={() => onToggle(k)}>
+                {urls[n] ? <img className={big ? "proof-big" : undefined} src={urls[n]} alt="" /> : <span className="mini-img" />}
+                <span className="name">{n}</span>
+              </button>
+            );
+          })}
+        </span>
+      )}
+    </li>
+  );
 }
 
 /** Building and Testing: the stage history, time spent against the estimate, and sessions (0025). */

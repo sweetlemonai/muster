@@ -1435,6 +1435,7 @@ mod tests {
             T,
             &PassOpts {
                 gate: "gate full: green".into(),
+                summary: "A synthetic summary".into(),
                 ..Default::default()
             },
         )
@@ -1498,6 +1499,7 @@ mod tests {
             T,
             &PassOpts {
                 gate: "gate full: green".into(),
+                summary: "A synthetic summary".into(),
                 ..Default::default()
             },
         )

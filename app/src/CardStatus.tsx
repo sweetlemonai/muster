@@ -49,7 +49,8 @@ function DoneLine({ t, now }: { t: Task; now: number }) {
 }
 
 /** Your check (0043): whose turn it is (yours, unless the file names someone else) and the one
- *  thing to try, cut to fit with the whole of it in the tooltip, or "Nothing to try: Accept". */
+ *  thing to try, cut to fit with the whole of it in the tooltip, or "All 4 proven: Accept"; then
+ *  what was built (mu-78), the builder's one line cut to the card's width, whole in the tooltip. */
 function YourTurn({ t, lines }: { t: Task; lines: CardLines }) {
   const yours = splitHolder(holderOf(t)).label === "owner";
   const step = nextStep(t);
@@ -58,6 +59,7 @@ function YourTurn({ t, lines }: { t: Task; lines: CardLines }) {
     <>
       {yours ? <span className="card-who your-turn">Your turn</span> : <span className="card-who">{whoLine(t)}</span>}
       {lines !== "status" && <span className="card-next" title={step.full}>{`${step.text}${step.more ? ` · ${step.more} more` : ""}`}</span>}
+      {lines !== "status" && t.summary && <span className="card-summary" dir="auto" title={t.summary}>{t.summary}</span>}
       {lines === "all" && built && <span className="card-built">{built}</span>}
     </>
   );

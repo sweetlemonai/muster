@@ -16,6 +16,7 @@ A card in Building that says **quiet 12 h+** belongs to a session nobody has hea
 - It's **blocked**: unblock it first (**Unblock**, or `muster unblock <id>`).
 - Someone else holds it in Building: only they can pass it on. You can still put it in any stage yourself with the stage track or `muster stage`.
 - "needs the gate's result line": out of Building, add `--gate "<the line your checks printed>"`.
+- "needs a summary": out of Building, add `--summary "<what was built, in one plain line>"` (160 characters, no line breaks), or write it first with `muster set <id> summary "…"`. It's the first thing the owner reads in Your check.
 - "acceptance criteria aren't ticked": out of Testing, every criterion except yours needs a tick with its proof.
 - "of the owner's criteria aren't ticked": out of Your check, tick yours first (`muster tick <id> AC2`, or the checklist in the pane).
 - Out of Shaping, the task needs acceptance criteria.
