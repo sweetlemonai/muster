@@ -4,6 +4,29 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Coordinator (Muster_Team_Lead_3): mu-82, mu-77, mu-76 and mu-69 merged; claims moved by the owner override
+**Did:** merged mu-82 (2f46845, round 2), mu-77 (666a760, round 4 after the rebase), mu-76
+(b9ce0ed, round 2) and mu-69 (a4ba06f, round 2). Set Muster's own run command
+(`muster projects set muster run bin/run`). Rebuilt the release app and CLI from main and
+restarted the running Muster. The builder handed off twice (Asghar → Asghar_2 → Asghar_3).
+**Decided:** the owner said "do it yourself" and "this is a hands free session": the coordinator
+runs `--as owner` queue steps itself. Used for a builder's successor, whose session can't pass or
+answer the old session's claim (backlog 2026-10-14-0707-…): the successor fixes and commits, the
+coordinator moves the task to Building, records the answers with `muster review <id> --fixed R<n>
+--as owner`, moves it to Testing and has it re-reviewed. Lessons L7–L10 accepted (stub argument
+quoting, tests needing `app/node_modules`, the never-shrinking part at the narrowest sidebar,
+splitting markdown inside code fences). mu-76: Muster's config.toml skips no lens, and VISION.md
+needs every lens but payments.
+**Verified:** `bin/gate` green in each worktree and again by each `muster pass`. Release-build QA
+of mu-82: Violet night and Violet day, a heading open and one folded, at the default width and
+with the splitter at its minimum (the words drop, the number stays whole, nothing past the edge).
+projects.json and settings.json byte-identical after QA; theme, mode and splitter back as before.
+**Fixed:** the entry below says Your check held 11; the owner had already accepted most of them,
+so it held 1 at the time.
+**Open:** at the narrowest sidebar a folded heading shows only its orange number (the words are in
+the tooltip and the aria-label): the owner may want to judge that against "unlabelled numbers".
+mu-79 is with Asghar_3.
+
 ## 2026-10-14 — Notifications, review round 1: an account first wanted after launch posts its news (mu-69)
 **Fixed:** R1. A builder claiming on a new account after launch had its waiting session taken as
 baseline (its first read counted as "couldn't know yet") → held back every account not yet read →
