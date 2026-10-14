@@ -4,6 +4,20 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Gate green again on a checkout that ran it before; coordinator hand-over (Muster_Team_Lead_4)
+**Fixed:** `bin/gate` went red on main: mu-80's test that AS_BUILT names every `bin/` entry also
+counted the gitignored `bin/__pycache__`, which the gate's own Python step writes, so any checkout
+failed from its second gate run on. The test skips `__pycache__`, and the gate runs Python with
+`-B` so it no longer writes one (`app/src-tauri/src/index.rs`, `bin/gate`).
+**Did:** mu-82 went back to Ready after the owner sent it back ("icon to expand collapse is bad,
+the category and projects seems the same font and font size"); its brief is in its notes. mu-79's
+review round 1 asked for changes: R1, Muster opened from the Dock has no node on the run's PATH;
+R2, run events carry the start-time project name. Builders: Asghar_4 took over mu-79 then mu-82
+from Asghar_3, and Gholi took mu-75.
+**Verified:** the test fails with `bin/__pycache__` present before the fix and passes after;
+`python3 -I -B bin/test_task.py` leaves no `__pycache__`; `bin/gate` green twice in a row in the
+worktree.
+
 ## 2026-10-14 — Coordinator (Muster_Team_Lead_3): mu-82, mu-77, mu-76 and mu-69 merged; claims moved by the owner override
 **Did:** merged mu-82 (2f46845, round 2), mu-77 (666a760, round 4 after the rebase), mu-76
 (b9ce0ed, round 2) and mu-69 (a4ba06f, round 2). Set Muster's own run command

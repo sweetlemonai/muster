@@ -52,8 +52,8 @@ if [ ! -d app/node_modules ]; then
   step "pnpm install" pnpm --dir app install --frozen-lockfile
 fi
 step "pnpm check" pnpm --dir app check
-step "test_task" python3 -I bin/test_task.py
-step "test_commands" python3 -I bin/test_commands.py
+step "test_task" python3 -I -B bin/test_task.py
+step "test_commands" python3 -I -B bin/test_commands.py
 step "cargo test (Kiritimati)" env TZ=Pacific/Kiritimati cargo test --quiet --manifest-path app/src-tauri/Cargo.toml
 
 if [ -n "$failed" ]; then

@@ -1850,7 +1850,8 @@ As of 2026-10-13 08:00 (the newest change in a task's log). 7 tasks: 1 Backlog, 
                 .unwrap()
                 .flatten()
                 .filter_map(|e| e.file_name().to_str().map(String::from))
-                .filter(|n| !n.starts_with('.'))
+                // Python's bytecode folder is gitignored build output, not a script.
+                .filter(|n| !n.starts_with('.') && n != "__pycache__")
                 .collect();
             v.sort();
             v
