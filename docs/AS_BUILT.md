@@ -1173,14 +1173,19 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     shell) and checks it as projects.json does (`projects::command_refused`). It starts as the
     gate does (`parallel::program_in`, `parallel::gate_command`: `bin/run` from the checkout, no
     stdin, without `MUSTER_ROOT` and `TASKS_ROOT`), both streams piped, leading a process group of
-    its own. It runs as the owner would start it, on their real data (Q2). One run per project:
-    Run while one goes restarts it. Runs live in `AppState.runs`, in memory only.
+    its own, with a PATH of Muster's own plus `~/.cargo/bin`, `~/.local/bin`, `/opt/homebrew/bin`,
+    `/usr/local/bin` and the system's (`run::search_path`: from the Dock, Muster has only the
+    system's). It runs as the owner would start it, on their real data (Q2). One run per project,
+    kept by its queue folder, so a rename or another project's name can't take it; removing a
+    project stops its run. Run while one goes restarts it. Runs live in `AppState.runs`, in memory
+    only.
   - **Its output.** A reader thread per stream splits lines (`run::read_lines`: lenient UTF-8, a
     line past 4,096 bytes cut with "…") into a ring of the last 2,000 lines or 256 KB, whichever
     is smaller. A sender thread emits `run` events (`run::Snap`: the run's id, state, times and
     the new lines with where they start) at most once every 200 ms, and a last one when it ends.
-    A waiter thread reaps the leader. Nothing is logged or written to disk, and nothing polls the
-    process: a run has ended when its leader exited and both streams closed, so a grandchild still
+    A waiter thread reaps the leader only once both streams closed: until then an exited leader
+    stays a zombie holding its id, so no other process group can take the id Stop signals. Nothing
+    is logged or written to disk, and nothing polls the process: a run has ended when its leader exited and both streams closed, so a grandchild still
     writing keeps it running.
   - **Stopping.** Stop, Restart and quitting (`RunEvent::Exit` → `Runs::stop_all`, every run at
     once) send SIGTERM to the group, then SIGKILL (to the leader too) after 5 s, through
@@ -1189,12 +1194,13 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     nothing: the app stays alive for the Dock badge.
   - **The window.** `useRun` listens for `run` events, then reads `run_state`; `runData.ts`
     `merged` puts the two together by the lines' places and the run's id (an older run's late
-    event changes nothing, an ended run stays ended) within the same bounds. Your check's What
+    event changes nothing, a `run_state` answered after an event puts its earlier lines in front,
+    an ended run stays ended) within the same bounds. A polite live region, there before any run
+    (`RunStatusLive`), says the state for screen readers. Your check's What
     you're accepting has a **Try** line (`RunLine`): Run (Restart while it runs) named for the
     project, with the command beside it as code, or "No run command: `muster projects set <name>
     run …`". Under the block, once the project has a run, the **Run** block (`RunBlock`): the
-    state in an `aria-live="polite"` span that changes with the state only ("Running bin/run in
-    muster/main", "Exited 0 after 2m 10s", "Stopped after 4s"), the running time ticking each
+    state ("Running bin/run in muster/main", "Exited 0 after 2m 10s", "Stopped after 4s"), the running time ticking each
     second beside it, Stop and Restart (or Run again), and the last 12 lines in a labelled
     `role="log"` that isn't live; **All output** opens every line kept in place. Lines are text,
     each `unicode-bidi: plaintext`. While a run goes, the state's `running` puts a "running" chip

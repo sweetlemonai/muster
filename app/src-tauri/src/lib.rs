@@ -149,7 +149,7 @@ async fn state(
         // The sidebar's "running" chip (0079).
         let running = h.state::<AppState>().runs.running();
         for q in &mut s.queues {
-            q.running = running.contains(&q.name);
+            q.running = running.contains(&q.path);
         }
         Ok((s, cache))
     })
@@ -1438,7 +1438,10 @@ async fn remove_project(handle: tauri::AppHandle, key: String) -> Result<(), Str
             c.order.retain(|k| k != &key);
             c.hidden.retain(|h| h != &key);
             Ok(())
-        })
+        })?;
+        // Its run, if one goes, ends with it: the window can't name it any more (0079).
+        app.runs.stop(&key);
+        Ok(())
     })
     .await
 }

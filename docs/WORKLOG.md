@@ -22,6 +22,15 @@ reused. Chip state rides on the 2 s poll (`QueueInfo.running`), not a fourth com
 → SIGKILL; 100,000 lines → events ≥ 200 ms apart, ring bounded); mutants (no process group, no
 batch pause, resent lines) caught. `vitest` Run 15; `bin/run` tests 6 (the binary runs as the
 process Run started). Gate below.
+**Fixed (own review, before Testing):** from the Dock the run had the system PATH only, so
+`pnpm` wasn't found → `run::search_path` adds the owner's tool folders. Runs were kept by display
+name, which a rename or another project shifts → kept by queue folder; remove_project stops its
+run. The leader was reaped while a stream holder kept the run going, freeing the group id Stop
+signals → reaped only once the streams close. A thread that failed to start left the run
+"running" → the waiter starts first and owns the child. Window: a `run_state` answered after an
+event dropped the earlier lines → put in front; "Run again" named after its visible words; the
+first "Running" announced from a live region there before any run; a standing refusal no
+longer an alert.
 **Open:** AC4 (release app: Run on a Muster task builds and opens a second Muster, Stop ends it,
 light and dark screenshots) needs the release app, which this sandbox can't launch.
 

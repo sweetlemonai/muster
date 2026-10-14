@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import css from "./styles.css?raw";
 import { ProjectItem } from "./ProjectList";
-import { RunBlock, RunButtons, RunLine } from "./Run";
+import { RunBlock, RunButtons, RunLine, RunStatusLive } from "./Run";
 import { fmtRunTime, KEEP_CHARS, KEEP_LINES, merged, shortFolder, shownLines, SHOWN_LINES, statusWords } from "./runData";
 import StageContent, { AcceptingBlock } from "./StageContent";
 import type { RunSnap, RunView, Task } from "./types";
@@ -40,6 +40,11 @@ describe("what the window holds of a run", () => {
     // The ring rolled past what's held (the window missed lines): it starts again from the push.
     held = merged(held, snap({ first: 50, lines: n(50, 2) }));
     expect([held.first, held.lines]).toEqual([50, n(50, 2)]);
+    // An event landed before run_state answered: the answer's earlier lines go in front.
+    const early = merged(merged(null, snap({ first: 500, lines: n(500, 20) })), snap({ first: 0, lines: n(0, 530) }));
+    expect([early.first, early.lines]).toEqual([0, n(0, 530)]);
+    const later = merged(merged(null, snap({ first: 500, lines: n(500, 20) })), snap({ first: 0, lines: n(0, 510) }));
+    expect([later.first, later.lines]).toEqual([0, n(0, 520)]);
   });
 
   it("keeps an ended run ended, ignores an older run's late event, and takes a restart's run whole", () => {
@@ -107,7 +112,8 @@ describe("the Run line in What you're accepting", () => {
   it("turns Run off with why when the core can't run it, and says what a click was refused", () => {
     const html = line(view({ folder: "", refused: "no checkout to run in: /p/tasks is an old-layout queue" }));
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Run<\/button>/);
-    expect(html).toContain('role="alert"> no checkout to run in');
+    expect(html).toContain("> no checkout to run in");
+    expect(html).not.toContain('role="alert"');
     expect(line(view(), null, { error: "couldn't start \"bin/run\"" })).toContain("couldn&#x27;t start");
     expect(line(view(), null, { busy: true })).toMatch(/disabled=""[^>]*>Run<\/button>/);
     // Loading: a quiet mark, or why it couldn't load.
@@ -130,7 +136,8 @@ describe("the Run line in What you're accepting", () => {
 describe("the Run block", () => {
   it("running: the state in a polite live region, the time beside it, Stop and Restart, the last 12 lines", () => {
     const html = block(snap({ lines: n(0, 20) }));
-    expect(html).toContain('<span class="small" aria-live="polite">Running bin/run in muster/main</span><span class="small meta"> · 1m 20s</span>');
+    expect(html).toContain('<span class="small">Running bin/run in muster/main</span><span class="small meta"> · 1m 20s</span>');
+    expect(html).not.toContain("aria-live=\"polite\"");
     expect(html).toMatch(/aria-label="Stop muster"[^>]*>Stop<\/button>/);
     expect(html).toMatch(/aria-label="Restart muster"[^>]*>Restart<\/button>/);
     const shown = [...html.matchAll(/<div class="run-out-line">([^<]*)<\/div>/g)].map((m) => m[1]);
@@ -149,12 +156,15 @@ describe("the Run block", () => {
 
   it("exited and stopped: how it ended and when, Run again, no ticking time", () => {
     const exited = block(snap({ status: { kind: "exited", code: 0 }, ended: 1130, lines: ["done"] }), false, 99999);
-    expect(exited).toContain('aria-live="polite">Exited 0 after 2m 10s</span>');
+    expect(exited).toContain(">Exited 0 after 2m 10s</span>");
     expect(exited).not.toContain("meta\"> ·");
-    expect(exited).toMatch(/aria-label="Run muster again"[^>]*>Run again<\/button>/);
+    expect(exited).toMatch(/aria-label="Run again muster"[^>]*>Run again<\/button>/);
     expect(exited).not.toContain("Stop muster");
     const stopped = block(snap({ status: { kind: "stopped" }, ended: 1062, lines: [] }));
-    expect(stopped).toContain('aria-live="polite">Stopped after 1m 2s</span>');
+    expect(stopped).toContain(">Stopped after 1m 2s</span>");
+    // Screen readers hear the state from a polite region there before any run, state words only.
+    expect(renderToStaticMarkup(<RunStatusLive run={null} />)).toBe('<span class="sr-only" aria-live="polite"></span>');
+    expect(renderToStaticMarkup(<RunStatusLive run={snap()} />)).toBe('<span class="sr-only" aria-live="polite">Running bin/run in muster/main</span>');
     expect(text(stopped)).toContain("No output yet.");
   });
 

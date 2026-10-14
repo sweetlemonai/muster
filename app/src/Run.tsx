@@ -97,14 +97,14 @@ export function RunLine({ project, info, run, busy, error, onRun }: {
     <span className="small run-line-cmd">
       <Button type="button" aria-label={`${word} ${project}`} disabled={busy || info.refused !== ""} onClick={onRun}>{word}</Button>{" "}
       <code dir="ltr">{info.command}</code>
-      {(info.refused || error) && <span className="err small" role="alert"> {info.refused || error}</span>}
+      {info.refused && <span className="err small"> {info.refused}</span>}
+      {!info.refused && error && <span className="err small" role="alert"> {error}</span>}
     </span>
   );
 }
 
 /** The Run block (0079), under What you're accepting while the project has a run: where it stands
- *  (a polite live region that changes with the state only; the running time ticks beside it, out
- *  of it), Stop and Restart while it runs or Run again after, and its last `SHOWN_LINES` lines in
+ *  (screen readers hear it from `RunStatusLive`; the running time ticks beside it), Stop and Restart while it runs or Run again after, and its last `SHOWN_LINES` lines in
  *  a labelled log that isn't live, which All output opens in place to every line kept. Lines are
  *  plain text, each set right to left or left to right by its own first letters. */
 export function RunBlock({ project, run, nowSecs, busy, all, onAll, onRun, onStop }: {
@@ -122,7 +122,7 @@ export function RunBlock({ project, run, nowSecs, busy, all, onAll, onRun, onSto
     <div className="stage-block run-block" data-part="run" role="group" aria-label={`Run of ${project}`}>
       <span className="lbl">Run</span>
       <p className="wline run-status">
-        <span className="small" aria-live="polite">{statusWords(run)}</span>
+        <span className="small">{statusWords(run)}</span>
         {running && <span className="small meta"> · {fmtRunTime(nowSecs - run.since)}</span>}
       </p>
       <p className="wline">
@@ -132,7 +132,7 @@ export function RunBlock({ project, run, nowSecs, busy, all, onAll, onRun, onSto
             <Button type="button" aria-label={`Restart ${project}`} disabled={busy} onClick={onRun}>Restart</Button>
           </>
         ) : (
-          <Button type="button" aria-label={`Run ${project} again`} disabled={busy} onClick={onRun}>Run again</Button>
+          <Button type="button" aria-label={`Run again ${project}`} disabled={busy} onClick={onRun}>Run again</Button>
         )}
       </p>
       <div className={all ? "run-output all" : "run-output"} role="log" aria-live="off" aria-label={`${project}'s run output`}>
@@ -151,6 +151,12 @@ export function RunBlock({ project, run, nowSecs, busy, all, onAll, onRun, onSto
       )}
     </div>
   );
+}
+
+/** Where the run stands, for screen readers: a polite live region there from the start, before
+ *  any run, so the first "Running …" is announced too, and changing with the state only. */
+export function RunStatusLive({ run }: { run: RunSnap | null }) {
+  return <span className="sr-only" aria-live="polite">{run ? statusWords(run) : ""}</span>;
 }
 
 /** Seconds since 1970, ticking each second while `on`; `fallback` when not. */
@@ -174,7 +180,12 @@ export function useRunParts(project: string, nowSecs: number): { line: ReactElem
   useEffect(() => setAll(false), [project]);
   const now = useTick(going(r.run), nowSecs);
   return {
-    line: <RunLine project={project} info={r.info} run={r.run} busy={r.busy} error={r.error} onRun={r.start} />,
+    line: (
+      <>
+        <RunLine project={project} info={r.info} run={r.run} busy={r.busy} error={r.error} onRun={r.start} />
+        <RunStatusLive run={r.run} />
+      </>
+    ),
     block: r.run && (
       <RunBlock project={project} run={r.run} nowSecs={now} busy={r.busy} all={all} onAll={() => setAll((a) => !a)} onRun={r.start} onStop={r.stop} />
     ),
@@ -210,7 +221,8 @@ export function RunButtons({ project, run, busy, refused, error, onRun, onStop }
       ) : (
         <Button type="button" aria-label={`Run ${project}`} disabled={busy || refused !== ""} onClick={onRun}>Run</Button>
       )}
-      {(refused || error) && <span className="err small" role="alert"> {refused || error}</span>}
+      {refused && <span className="err small"> {refused}</span>}
+      {!refused && error && <span className="err small" role="alert"> {error}</span>}
     </span>
   );
 }

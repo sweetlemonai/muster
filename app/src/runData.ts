@@ -12,11 +12,18 @@ export const SHOWN_LINES = 12;
 /** What the window holds after `push` (a `run_state` snap or a `run` event) came in on `held`.
  *  An older run's late event changes nothing; a newer run replaces the one held. Of the same run,
  *  the lines it doesn't hold yet are added after its own (when the push starts past them, the
- *  ring rolled on: it starts again from the push), and once it has ended, a push that still says
+ *  ring rolled on: it starts again from the push), a push from before them (`run_state` answered
+ *  after an event) puts its earlier lines in front, and once it has ended, a push that still says
  *  running (a `run_state` read before the end, answered after) doesn't bring it back. */
 export function merged(held: RunSnap | null, push: RunSnap): RunSnap {
   if (held && push.id < held.id) return held;
   if (!held || push.id > held.id) return bounded({ ...push, lines: [...push.lines] });
+  if (push.first < held.first) {
+    // A run_state answered after an event: it holds the lines from before the event's too.
+    const end = push.first + push.lines.length;
+    if (end < held.first) return held;
+    return bounded({ ...held, first: push.first, lines: [...push.lines, ...held.lines.slice(end - held.first)] });
+  }
   const next = held.first + held.lines.length;
   const gap = push.first > next;
   const lines = gap ? [...push.lines] : [...held.lines, ...push.lines.slice(next - push.first)];

@@ -347,8 +347,22 @@ impl Live {
         }
     }
 
+    /// Calls a run that couldn't be watched stopped, so nothing waits on it.
+    fn abandon(&self) {
+        let mut st = self.lock();
+        st.stop_asked = true;
+        if st.status == Status::Running {
+            st.status = Status::Stopped;
+            st.ended = Some(queue::now_secs());
+            st.dirty = true;
+        }
+        drop(st);
+        self.changed.notify_all();
+    }
+
     /// Sends `signal` (`-TERM`, `-KILL`) to the run's process group, and with KILL to the leader
-    /// too while it isn't reaped, in case it left its group.
+    /// too while it isn't reaped, in case it left its group. The leader isn't reaped while the run
+    /// goes (`wait_leader`), so its id still names this run's group.
     fn signal(&self, signal: &str) {
         let (pgid, leader_alive) = {
             let st = self.lock();
@@ -404,7 +418,11 @@ impl Runs {
             command: p.run.clone(),
             folder: folder.to_string_lossy().into_owned(),
             refused,
-            run: self.get(&p.name).map(|l| l.lock().snap(0)),
+            run: self.get(&p.key).map(|l| {
+                let mut snap = l.lock().snap(0);
+                snap.project = p.name.clone();
+                snap
+            }),
         })
     }
 
@@ -412,21 +430,27 @@ impl Runs {
     /// that's still going. Refused for a name that isn't a project, and for what `plan` refuses.
     pub fn start_named(&self, list: &[Project], name: &str) -> Result<View, String> {
         let p = find(list, name)?;
-        self.start(&p.name, plan(p)?)?;
+        self.start_as(&p.key, &p.name, plan(p)?)?;
         self.view(list, name)
     }
 
     /// Stop: ends the run of the project named `name` in `list`, if one is going.
     pub fn stop_named(&self, list: &[Project], name: &str) -> Result<View, String> {
         let p = find(list, name)?;
-        self.stop(&p.name);
+        self.stop(&p.key);
         self.view(list, name)
     }
 
     /// Starts `plan` as `project`'s run, stopping the one before if it's still going.
     pub fn start(&self, project: &str, plan: Plan) -> Result<Snap, String> {
+        self.start_as(project, project, plan)
+    }
+
+    /// `start`, keeping the run under `key` (the project's queue folder, which a rename or another
+    /// project's coming or going doesn't change) and naming it `name` to the window.
+    pub fn start_as(&self, key: &str, name: &str, plan: Plan) -> Result<Snap, String> {
         let _one = self.ops.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(old) = self.get(project) {
+        if let Some(old) = self.get(key) {
             self.end(&[old]);
         }
         let Some(prog) = plan.argv.first() else {
@@ -438,7 +462,7 @@ impl Runs {
         let (out, err) = (child.stdout.take(), child.stderr.take());
         let live = Arc::new(Live {
             st: Mutex::new(St {
-                project: project.to_string(),
+                project: name.to_string(),
                 id: self.next.fetch_add(1, Ordering::Relaxed),
                 command: plan.command,
                 folder: plan.folder.to_string_lossy().into_owned(),
@@ -459,7 +483,18 @@ impl Runs {
         self.runs
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(project.to_string(), live.clone());
+            .insert(key.to_string(), live.clone());
+        // The waiter first: it owns the child, and reaps it whatever else fails to start.
+        let slot = Arc::new(Mutex::new(Some(child)));
+        let (l, held) = (live.clone(), slot.clone());
+        if let Err(e) = thread("run-wait", move || wait_leader(&l, &held)) {
+            if let Some(mut child) = slot.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                live.signal("-KILL");
+                let _ = child.wait();
+            }
+            live.abandon();
+            return Err(e);
+        }
         let started = (|| {
             if let Some(out) = out {
                 let l = live.clone();
@@ -469,26 +504,20 @@ impl Runs {
                 let l = live.clone();
                 thread("run-err", move || read_into(&l, err))?;
             }
-            let l = live.clone();
-            thread("run-wait", move || {
-                let code = child.wait().ok().and_then(|s| s.code());
-                let mut st = l.lock();
-                st.leader = Some(code);
-                st.settle();
-                drop(st);
-                l.changed.notify_all();
-            })?;
             let (l, emit) = (live.clone(), self.emit.clone());
             thread("run-send", move || send(&l, &emit))
         })();
         if let Err(e) = started {
+            // Stopped, so the waiter reaps the leader without waiting for streams no one reads.
             live.signal("-KILL");
+            live.abandon();
             return Err(e);
         }
         Ok(snap)
     }
 
-    /// Stops `project`'s run, if one is going.
+    /// Stops the run kept under `project` (a key, or `start`'s name), if one is going. Also for a
+    /// project taken off the list, which the window can't name any more.
     pub fn stop(&self, project: &str) {
         let _one = self.ops.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(live) = self.get(project) {
@@ -509,7 +538,7 @@ impl Runs {
         self.end(&all);
     }
 
-    /// The projects with a run going.
+    /// The keys (queue folders) of the projects with a run going.
     pub fn running(&self) -> HashSet<String> {
         self.runs
             .lock()
@@ -564,9 +593,40 @@ fn command(plan: &Plan) -> Command {
     let prog = plan.argv.first().map(String::as_str).unwrap_or_default();
     let program = parallel::program_in(prog, &plan.folder);
     let mut cmd = parallel::gate_command(&program, &plan.argv, &plan.folder);
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let inherited = std::env::var_os("PATH").unwrap_or_default();
+    cmd.env("PATH", search_path(&crate::home(), &inherited))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
     cmd
+}
+
+/// The PATH a run gets: Muster's own (a terminal's when started from one), then where the owner's
+/// tools live, each once. Muster opened from the Dock or Finder has only the system's PATH, where
+/// `pnpm`, `cargo` or `node` aren't, so a run command, or what it calls, couldn't be found.
+pub fn search_path(home: &Path, inherited: &std::ffi::OsStr) -> std::ffi::OsString {
+    let mut dirs: Vec<PathBuf> = std::env::split_paths(inherited)
+        .filter(|d| !d.as_os_str().is_empty())
+        .collect();
+    let more = [home.join(".cargo/bin"), home.join(".local/bin")]
+        .into_iter()
+        .chain(
+            [
+                "/opt/homebrew/bin",
+                "/usr/local/bin",
+                "/usr/bin",
+                "/bin",
+                "/usr/sbin",
+                "/sbin",
+            ]
+            .map(PathBuf::from),
+        );
+    for d in more {
+        if !dirs.contains(&d) {
+            dirs.push(d);
+        }
+    }
+    std::env::join_paths(dirs).unwrap_or_else(|_| inherited.to_os_string())
 }
 
 /// The project named `name` in `list`. The window names a project only by its name, never by a
@@ -584,6 +644,27 @@ fn thread(name: &str, f: impl FnOnce() + Send + 'static) -> Result<(), String> {
         .spawn(f)
         .map(|_| ())
         .map_err(|e| format!("couldn't start a thread for the run: {e}"))
+}
+
+/// The waiter thread: reaps the leader once both streams closed (or the run was called stopped),
+/// never before. Until then the leader, even exited, stays a zombie that holds its process id, so
+/// no other process group can take that id while Stop may still signal it.
+fn wait_leader(live: &Live, child: &Mutex<Option<std::process::Child>>) {
+    {
+        let mut st = live.lock();
+        while st.streams > 0 && st.status == Status::Running {
+            st = live.changed.wait(st).unwrap_or_else(|e| e.into_inner());
+        }
+    }
+    let Some(mut child) = child.lock().unwrap_or_else(|e| e.into_inner()).take() else {
+        return;
+    };
+    let code = child.wait().ok().and_then(|s| s.code());
+    let mut st = live.lock();
+    st.leader = Some(code);
+    st.settle();
+    drop(st);
+    live.changed.notify_all();
 }
 
 /// A reader thread: each line of `from` into the run's ring, until it closes.
@@ -879,6 +960,16 @@ mod tests {
             .collect();
         assert_eq!(removed, ["MUSTER_ROOT", "TASKS_ROOT"]);
         assert_eq!(cmd.get_program(), repo.join("bin/try"));
+        let path = cmd
+            .get_envs()
+            .find(|(k, _)| *k == "PATH")
+            .and_then(|(_, v)| v)
+            .unwrap();
+        let dirs: Vec<PathBuf> = std::env::split_paths(path).collect();
+        assert!(
+            dirs.contains(&crate::home().join(".cargo/bin"))
+                && dirs.contains(&PathBuf::from("/opt/homebrew/bin"))
+        );
         assert_eq!(cmd.get_current_dir(), Some(repo.as_path()));
         let (r, sent) = runs(GRACE);
         let v = r.start_named(&list, "proj").unwrap();
@@ -886,7 +977,7 @@ mod tests {
             (v.command.as_str(), v.refused.as_str()),
             ("bin/try 'a b'", "")
         );
-        let snap = ended(&r, "proj");
+        let snap = ended(&r, q.to_str().unwrap());
         assert_eq!(snap.status, Status::Exited { code: Some(3) });
         let mut lines = snap.lines.clone();
         lines.sort();
@@ -1085,6 +1176,62 @@ mod tests {
         let e = r.start_named(&list, "proj").unwrap_err();
         assert!(e.contains("couldn't start \"bin/missing\""), "{e}");
         assert!(r.running().is_empty());
+    }
+
+    #[test]
+    fn a_run_gets_the_owners_tool_folders_after_its_own_path_each_once() {
+        let home = Path::new("/Users/someone");
+        let got = search_path(home, std::ffi::OsStr::new("/usr/bin:/bin:/usr/sbin:/sbin"));
+        assert_eq!(
+            got,
+            "/usr/bin:/bin:/usr/sbin:/sbin:/Users/someone/.cargo/bin:/Users/someone/.local/bin:/opt/homebrew/bin:/usr/local/bin"
+        );
+        // A terminal's own comes first and stays as it was; nothing twice, no empty entry.
+        let got = search_path(home, std::ffi::OsStr::new("/my/bin::/opt/homebrew/bin"));
+        assert!(got
+            .to_string_lossy()
+            .starts_with("/my/bin:/opt/homebrew/bin:/Users/someone/.cargo/bin"));
+        assert_eq!(
+            got.to_string_lossy().matches("/opt/homebrew/bin").count(),
+            1
+        );
+        assert_eq!(
+            search_path(home, std::ffi::OsStr::new(""))
+                .to_string_lossy()
+                .split(':')
+                .next(),
+            Some("/Users/someone/.cargo/bin")
+        );
+    }
+
+    #[test]
+    fn a_run_is_kept_by_its_queue_folder_so_a_rename_or_another_project_cant_take_it() {
+        let d = tempfile::tempdir().unwrap();
+        let q = muster_repo(d.path());
+        let s = script(&d.path().join("repo"), "bin/fam", FAMILY);
+        assert!(s.exists());
+        let (r, _) = runs(GRACE);
+        let list = [project("x-2", &q, "bin/fam")];
+        r.start_named(&list, "x-2").unwrap();
+        let leader = word_after(&r, q.to_str().unwrap(), "leader");
+        // Another project now has its old name, and it's called x: it still sees and stops its run.
+        let other = d.path().join("other/tasks");
+        let list = [project("x", &q, "bin/fam"), project("x-2", &other, "")];
+        assert!(
+            r.view(&list, "x-2").unwrap().run.is_none(),
+            "the other project has no run"
+        );
+        let v = r.view(&list, "x").unwrap();
+        assert_eq!(
+            v.run.map(|s| (s.project, s.status)),
+            Some(("x".to_string(), Status::Running))
+        );
+        assert_eq!(
+            r.running(),
+            HashSet::from([q.to_string_lossy().into_owned()])
+        );
+        r.stop_named(&list, "x").unwrap();
+        assert!(gone(&format!("-{leader}")));
     }
 
     #[test]
