@@ -794,6 +794,26 @@ owner ◀────────────┘ WAITING-FOR-OWNER.md    └─ 
   the app, is read back by `bin/task inbox`, refused as already answered, and passes
   `manifest.py --check`). The real queues were read by `examples/probe.rs`. The release app was
   built and launched. Its screens haven't been looked at by a person yet.
+- Hermetic tests (task 0062): every read of the projects Muster knows (`key::known`,
+  `cli::base`, `cli::config_file`, the app's `base`) starts at `projects::places()`, the folder
+  queues are found under and projects.json. The app and `muster` get this Mac's
+  (`$MUSTER_BASE` or `~/playground`, and `~/Library/Application Support/ai.sweetlemon.muster/projects.json`).
+  A lib test gets empty ones in a temp folder of its own thread, unless it sets its own with
+  `projects::use_places(Places { base, config_file })` for the rest of its thread. A thread the
+  test starts gets its own empty ones. In a test build, `projects::load`, `save`, `edit` and
+  `queue::discover` panic on this Mac's real projects.json or `~/playground` and name
+  `projects::use_places`. So `check --fix-pauses` with no `--queue`, and the paused lane's
+  `find_all` and `convert_listed` over the app's queues (0059), see only a test's own queues, and
+  a change that sent them to this Mac's would fail the test before reading anything (a test run
+  once converted Drover's real dr-22 that way). Integration tests build the core without `cfg(test)`, so they have no
+  guard: the ones that call the core in-process call `use_places` (`no_projects` in
+  `tests/interop.rs`), and every `muster` they run gets a temp `HOME` of its own. Checked by
+  running the whole suite with `HOME` set to an empty folder whose projects.json folder and
+  `playground` can't be read.
+- `bin/gate` runs every step in a home of its own (task 0062): `HOME`, `XDG_CONFIG_HOME` and
+  `MUSTER_BASE` in a temporary folder it removes at the end, `MUSTER_ROOT` and `TASKS_ROOT` unset.
+  `CARGO_HOME`, `RUSTUP_HOME`, `~/.cargo/bin` and pnpm's store and cache stay this Mac's, so
+  `pnpm install --frozen-lockfile` in a fresh worktree still links from the real store.
 
 - `bin/test_task.py`: 15 tests (ask/answer/deliver, numbering, refusal of an already answered
   question, earlier questions listed, old unnumbered questions, sessions from env and text,

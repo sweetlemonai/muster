@@ -690,6 +690,8 @@ pub struct Found {
 /// symlink is followed only while it stays inside the base: one that leads out of it, or back to
 /// the base itself, isn't. A queue reached by two paths is found once, by the first.
 pub fn discover(base: &Path) -> Vec<Found> {
+    #[cfg(test)]
+    crate::projects::not_this_macs(base);
     let Ok(root) = fs::canonicalize(base) else {
         return Vec::new();
     };

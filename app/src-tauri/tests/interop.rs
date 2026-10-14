@@ -13,13 +13,27 @@ fn tool(name: &str) -> PathBuf {
         .join(name)
 }
 
-/// Run a Python tool on the queue `root`, from a folder outside any queue.
+/// What the core this test calls knows of projects, for the rest of its thread: none
+/// (`projects::use_places`, folders under the queue `d` that are never made), so a queue with no
+/// stored prefix gets its default and nothing on this Mac changes what the test sees.
+fn no_projects(d: &Path) {
+    muster_lib::projects::use_places(muster_lib::projects::Places {
+        base: d.join("no-playground"),
+        config_file: d.join("no-projects.json"),
+    });
+}
+
+/// Run a Python tool on the queue `root`, from a folder outside any queue, in an empty home, so
+/// the `muster` it runs knows none of this Mac's projects.
 fn run_code(root: &Path, script: &str, args: &[&str]) -> (i32, String) {
+    let home = tempfile::tempdir().unwrap();
     let out = Command::new("python3")
         .arg("-I")
         .arg(tool(script))
         .args(args)
         .current_dir(std::env::temp_dir())
+        .env("HOME", home.path())
+        .env_remove("MUSTER_BASE")
         .env("MUSTER_ROOT", root)
         .env("MUSTER_BIN", env!("CARGO_BIN_EXE_muster"))
         .env_remove("TASKS_ROOT")
@@ -65,6 +79,7 @@ fn hook(root: &Path, session: &str) -> String {
 #[test]
 fn python_asks_app_answers_python_reads() {
     let d = tempfile::tempdir().unwrap();
+    no_projects(d.path());
     for f in muster_lib::queue::STATUS_FOLDERS {
         std::fs::create_dir(d.path().join(f)).unwrap();
     }
@@ -113,6 +128,7 @@ fn python_asks_app_answers_python_reads() {
 fn every_stage_passes_the_python_check() {
     use muster_lib::ops::{self, PassOpts};
     let d = tempfile::tempdir().unwrap();
+    no_projects(d.path());
     for f in muster_lib::queue::STATUS_FOLDERS {
         std::fs::create_dir(d.path().join(f)).unwrap();
     }
@@ -159,6 +175,7 @@ fn every_stage_passes_the_python_check() {
 #[test]
 fn tasks_made_by_the_app_pass_the_python_check() {
     let d = tempfile::tempdir().unwrap();
+    no_projects(d.path());
     for f in muster_lib::queue::STATUS_FOLDERS {
         std::fs::create_dir(d.path().join(f)).unwrap();
     }
@@ -258,6 +275,7 @@ fn goals_features_and_parents_read_the_same_both_ways() {
 /// A fresh queue in the v2 layout (status folders and a README).
 fn queue() -> tempfile::TempDir {
     let d = tempfile::tempdir().unwrap();
+    no_projects(d.path());
     for f in muster_lib::queue::STATUS_FOLDERS {
         std::fs::create_dir(d.path().join(f)).unwrap();
     }
@@ -682,13 +700,16 @@ fn an_answer_through_bin_task_cannot_forge_stage_history() {
 }
 
 /// `muster <args> --queue <root>` with `input` on stdin and `env` set ($VISUAL and $EDITOR only
-/// when given), from a folder outside any queue.
+/// when given), from a folder outside any queue, in an empty home (none of this Mac's projects).
 fn muster_in(root: &Path, env: &[(&str, &str)], args: &[&str], input: &str) -> (i32, String) {
+    let home = tempfile::tempdir().unwrap();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_muster"));
     cmd.args(args)
         .arg("--queue")
         .arg(root)
         .current_dir(std::env::temp_dir())
+        .env("HOME", home.path())
+        .env_remove("MUSTER_BASE")
         .env_remove("MUSTER_ROOT")
         .env_remove("TASKS_ROOT")
         .env_remove("MUSTER_AS")

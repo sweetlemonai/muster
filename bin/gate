@@ -4,11 +4,34 @@
 # merge runs it in the task's worktree (`muster projects set muster gate bin/gate`).
 # Prints one result line last: `gate: green (…)`, or `gate: RED (…)` with exit 1. A failed step's
 # last lines are shown above it; its whole log stays in the folder it names.
+# Every step runs in a home of its own (task 0062): HOME, XDG_CONFIG_HOME and MUSTER_BASE in a
+# temporary folder, removed at the end, and MUSTER_ROOT and TASKS_ROOT unset, so no test can reach
+# this Mac's projects.json or ~/playground. The tools stay this Mac's: CARGO_HOME, RUSTUP_HOME,
+# ~/.cargo/bin on PATH, and pnpm's store and cache, worked out from the real home first.
 set -u
 cd "$(dirname "$0")/.." || exit 2
 logs=$(mktemp -d "${TMPDIR:-/tmp}/muster-gate.XXXXXX") || exit 2
 passed=""
 failed=""
+
+real_home=${HOME:-}
+export CARGO_HOME="${CARGO_HOME:-$real_home/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$real_home/.rustup}"
+export PATH="$PATH:$CARGO_HOME/bin"
+if [ -z "${pnpm_config_store_dir:-}" ] && store=$(pnpm store path 2>/dev/null); then
+  export pnpm_config_store_dir="${store%/*}"
+fi
+if [ -z "${pnpm_config_cache_dir:-}" ]; then
+  if [ "$(uname)" = Darwin ]; then
+    export pnpm_config_cache_dir="$real_home/Library/Caches/pnpm"
+  else
+    export pnpm_config_cache_dir="${XDG_CACHE_HOME:-$real_home/.cache}/pnpm"
+  fi
+fi
+home=$(mktemp -d "${TMPDIR:-/tmp}/muster-gate-home.XXXXXX") || exit 2
+trap 'rm -rf "$home"' EXIT
+export HOME="$home" XDG_CONFIG_HOME="$home/.config" MUSTER_BASE="$home/playground"
+unset MUSTER_ROOT TASKS_ROOT
+mkdir -p "$XDG_CONFIG_HOME" "$MUSTER_BASE" || exit 2
 
 # step <name> <program> [args…]: run one check, its output to its log.
 step() {

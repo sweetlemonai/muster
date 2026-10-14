@@ -4,6 +4,26 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Hermetic tests: one injection point for the projects Muster knows; the gate runs in its own home (mu-62)
+**Did:** `projects::places()` is the one place the core learns the playground and projects.json;
+`use_places` gives a test thread its own, and a test that gives none gets empty temp places.
+`key::known`, the CLI's base and config file and the app's base all go through it. In test builds,
+loading, saving or editing this Mac's projects.json or discovering under its ~/playground panics
+with how to inject. `bin/gate` runs every step with `HOME`, `XDG_CONFIG_HOME` and `MUSTER_BASE` in
+a temp home (real cargo, rustup and pnpm store kept), removed on exit. Integration helpers give
+each spawned muster its own HOME.
+**Fixed:** the dr-22 incident (a review mutation in mu-59 made `check --fix-pauses` fall back to
+`known()` and convert Drover's real dr-22) → that fallback now sees only a test's own queues;
+tests for `--fix-pauses` with no `--queue` and the app's offer prove it.
+**Decided:** an empty fallback rather than a panic for tests that give no places (safe, and no
+test needed changing); no real-HOME check inside integration tests (a production-built core can't
+tell it's under a test; the hermetic gate covers them).
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`, plain
+and with HOME in a temp dir; the whole suite with HOME an empty dir whose config and playground
+are unreadable: lib 614, integration 4 + 15 + 9 + 3, all green; real queues unchanged.
+**Open:** `cargo test` run by hand with the real HOME still reaches the real files in integration
+tests that forget `no_projects`; branches without this change aren't protected until rebased.
+
 ## 2026-10-14 — Projects arranged in the sidebar: drag, categories in place, a colour each (mu-57)
 **Did:** drag (and ⌥↑/⌥↓) reorders projects and headings, with a Mine order chip picked on the
 first move; drop on a heading moves a project, "+ Category" and an in-place rename edit headings; a

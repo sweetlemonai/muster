@@ -64,10 +64,9 @@ pub(crate) struct AppState {
     notify: notify::Notifier,
 }
 
+/// The folder queues are found under, from `projects::places`.
 fn base() -> PathBuf {
-    std::env::var_os("MUSTER_BASE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home().join("playground"))
+    projects::places().base
 }
 
 pub(crate) fn home() -> PathBuf {
@@ -1929,5 +1928,46 @@ mod tests {
         // Waiting for input (a permission prompt) waits on the owner, hidden window or not.
         assert_eq!(count("blocked"), 1);
         assert_eq!(count("working"), 0);
+    }
+
+    /// The paused lane's offer lists and converts old pauses in the queues the app knows (0059):
+    /// in a test, found under the base it gave (`projects::use_places`), else none, never this
+    /// Mac's (task 0062).
+    #[test]
+    fn the_old_pauses_the_app_offers_are_in_the_places_a_test_gave() {
+        let base = tempfile::tempdir().unwrap();
+        let q = base.path().join("drover/tasks");
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir_all(q.join(f)).unwrap();
+        }
+        std::fs::write(q.join("README.md"), "q").unwrap();
+        std::fs::write(
+            q.join("blocked/0022-pets.md"),
+            "---\nid: 0022\ntype: feature\nstatus: blocked\nclaimed-by:\nheartbeat:\nwaiting_on: owner (paused)\n---\n\n# Desk pets\n\n## Log\n- 2026-10-13 02:51 owner: Paused.\n",
+        )
+        .unwrap();
+        let config_file = base.path().join("projects.json");
+        let stamp = "2026-10-13 18:00";
+        let listed = [old_pause::Listed {
+            queue: "drover".into(),
+            id: "0022".into(),
+        }];
+        assert!(queues(&config_file).is_empty(), "not given: none known");
+        let fixed = old_pause::convert_listed(&queues(&config_file), &listed, "owner", stamp);
+        assert_eq!(fixed.failed, ["drover: no queue named \"drover\""]);
+        projects::use_places(projects::Places {
+            base: base.path().to_path_buf(),
+            config_file: config_file.clone(),
+        });
+        let found = old_pause::find_all(&queues(&config_file), stamp);
+        let keys: Vec<&str> = found.iter().map(|p| p.key.as_str()).collect();
+        assert_eq!(
+            keys,
+            ["dr-22"],
+            "the default prefix beside the given projects only"
+        );
+        let fixed = old_pause::convert_listed(&queues(&config_file), &listed, "owner", stamp);
+        assert_eq!((fixed.converted.len(), fixed.failed.len()), (1, 0));
+        assert!(!queue::read_task(&q, "0022").unwrap().blocked);
     }
 }

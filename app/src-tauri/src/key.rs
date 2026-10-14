@@ -342,10 +342,8 @@ fn same_folder(a: &Path, b: &Path) -> bool {
 
 /// Every project Muster knows, with its prefix (`muster projects`).
 pub fn known() -> Vec<projects::Project> {
-    projects::list(
-        &crate::cli::base(),
-        &projects::load(&crate::cli::config_file()),
-    )
+    let p = projects::places();
+    projects::list(&p.base, &projects::load(&p.config_file))
 }
 
 /// The prefix of the queue at `root`: the stored one, else its project's in `muster projects`,

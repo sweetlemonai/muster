@@ -110,8 +110,9 @@ pub fn local_stamp() -> String {
     queue::local_stamp()
 }
 
+/// projects.json, where `projects::places` says it is.
 pub fn config_file() -> PathBuf {
-    home().join("Library/Application Support/ai.sweetlemon.muster/projects.json")
+    projects::places().config_file
 }
 
 /// This machine's settings (0036): `settings.json` beside `projects.json` under the caller's
@@ -188,10 +189,9 @@ fn tools_dir() -> PathBuf {
         .unwrap_or_else(|| home().join("playground/muster/main/bin"))
 }
 
+/// The folder queues are found under, from `projects::places`.
 pub(crate) fn base() -> PathBuf {
-    std::env::var_os("MUSTER_BASE")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home().join("playground"))
+    projects::places().base
 }
 
 /// Where the queue a command runs on came from.
@@ -2766,6 +2766,40 @@ mod tests {
         // Only the queue --queue named: Muster's mu-42 is still an old pause.
         assert!(queue::read_task(&queues[1].1, "0042").unwrap().blocked);
         assert_eq!(code_in(&q, &owner, &["check"]), 0);
+    }
+
+    /// With no --queue, `check --fix-pauses` works on every queue Muster knows: in a test, the
+    /// ones it gave (`projects::use_places`), else none, never this Mac's (task 0062: a test once
+    /// converted Drover's real dr-22 this way).
+    #[test]
+    fn check_fix_pauses_with_no_queue_converts_only_the_projects_the_test_gave() {
+        let (base, queues) = old_pause_queues();
+        let owner = |k: &str| (k == "MUSTER_AS").then(|| "owner".to_string());
+        let fix = sv(&["check", "--fix-pauses"]);
+        let before = files_under(base.path());
+        assert_eq!(main_with(&fix, &owner), 0);
+        assert_eq!(files_under(base.path()), before, "not given: none known");
+        // Drover's found under the base, Muster's `.muster/` (no repo around it) added by hand.
+        let given = tempfile::tempdir().unwrap();
+        let config_file = given.path().join("projects.json");
+        let mut c = projects::Config::default();
+        c.added.push(queues[1].1.to_string_lossy().to_string());
+        projects::save(&config_file, &c).unwrap();
+        projects::use_places(projects::Places {
+            base: base.path().to_path_buf(),
+            config_file,
+        });
+        assert_eq!(main_with(&fix, &owner), 0);
+        let dr = queue::read_task(&queues[0].1, "0022").unwrap();
+        assert_eq!(
+            (dr.paused.as_str(), dr.blocked),
+            ("2026-10-13 02:51", false)
+        );
+        let mu = queue::read_task(&queues[1].1, "0042").unwrap();
+        assert_eq!(
+            (mu.paused_why.as_str(), mu.blocked),
+            ("the design first", false)
+        );
     }
 
     /// `muster list` as text, whole.

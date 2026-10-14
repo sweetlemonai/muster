@@ -77,7 +77,95 @@ pub struct Project {
     pub colour: String,
 }
 
+/// Where the projects Muster knows come from (task 0062): the folder queues are found under and
+/// projects.json. Every read of them starts at `places`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Places {
+    /// `$MUSTER_BASE`, else `~/playground`.
+    pub base: PathBuf,
+    /// `projects.json` in the app's config folder.
+    pub config_file: PathBuf,
+}
+
+impl Places {
+    /// This Mac's, from `$MUSTER_BASE` and `$HOME`.
+    fn this_mac() -> Places {
+        let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
+        Places {
+            base: std::env::var_os("MUSTER_BASE")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| home.join("playground")),
+            config_file: home
+                .join("Library/Application Support/ai.sweetlemon.muster/projects.json"),
+        }
+    }
+
+    /// Empty ones in a folder of this thread's own, removed when the thread ends: what a test
+    /// that gives none gets.
+    #[cfg(test)]
+    fn empty() -> Places {
+        thread_local! {
+            static DIR: tempfile::TempDir =
+                tempfile::tempdir().expect("a temporary folder for a test's empty places");
+        }
+        DIR.with(|d| Places {
+            base: d.path().join("playground"),
+            config_file: d.path().join("projects.json"),
+        })
+    }
+}
+
+thread_local! {
+    static GIVEN: std::cell::RefCell<Option<Places>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The places the projects Muster knows are read from (`key::known`, the command line, the app):
+/// the ones this thread was given (`use_places`), else this Mac's. In a test, else empty ones of
+/// its own, so nothing on this Mac changes what a test sees.
+pub fn places() -> Places {
+    GIVEN
+        .with(|g| g.borrow().clone())
+        .unwrap_or_else(by_default)
+}
+
+#[cfg(not(test))]
+fn by_default() -> Places {
+    Places::this_mac()
+}
+
+#[cfg(test)]
+fn by_default() -> Places {
+    Places::empty()
+}
+
+/// Read the projects Muster knows from `p` for the rest of this thread: a test's own projects
+/// (an integration test's too, whose build of the core reads this Mac's otherwise). A thread it
+/// starts gets its own.
+pub fn use_places(p: Places) {
+    GIVEN.with(|g| *g.borrow_mut() = Some(p));
+}
+
+/// In a test, refuse to read or write this Mac's projects.json or look under its ~/playground:
+/// a test does that only through `places`, never by working the path out itself.
+#[cfg(test)]
+pub(crate) fn not_this_macs(path: &Path) {
+    let canon = |p: &Path| fs::canonicalize(p).ok();
+    let mac = Places::this_mac();
+    for (real, what) in [
+        (&mac.config_file, "this Mac's projects.json"),
+        (&mac.base, "this Mac's ~/playground"),
+    ] {
+        let same = path == real.as_path() || canon(path).is_some_and(|c| Some(c) == canon(real));
+        assert!(
+            !same,
+            "a test used {what}: give it its own with projects::use_places(Places {{ base, config_file }}), or leave it to projects::places(), which gives a test empty ones"
+        );
+    }
+}
+
 pub fn load(file: &Path) -> Config {
+    #[cfg(test)]
+    not_this_macs(file);
     fs::read_to_string(file)
         .ok()
         .and_then(|t| serde_json::from_str(&t).ok())
@@ -88,6 +176,8 @@ pub fn load(file: &Path) -> Config {
 /// counter), then renamed over it, so a reader sees the old file or the new one, never half.
 /// Changes go through `edit`, which holds the lock around the load, the change and this.
 pub fn save(file: &Path, config: &Config) -> Result<(), String> {
+    #[cfg(test)]
+    not_this_macs(file);
     static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     if let Some(dir) = file.parent() {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
@@ -107,6 +197,8 @@ pub fn save(file: &Path, config: &Config) -> Result<(), String> {
 /// beside it the whole time, so the app and `muster projects set` (or two of either) never lose
 /// each other's edits. Nothing is written when `f` refuses.
 pub fn edit<T>(file: &Path, f: impl FnOnce(&mut Config) -> Result<T, String>) -> Result<T, String> {
+    #[cfg(test)]
+    not_this_macs(file);
     if let Some(dir) = file.parent() {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
@@ -1330,5 +1422,76 @@ mod tests {
             .map(|p| p.prefix)
             .collect();
         assert_eq!(prefixes, ["bd", "mu"]);
+    }
+
+    #[test]
+    fn a_test_knows_no_projects_unless_it_gives_its_own() {
+        assert!(
+            crate::key::known().is_empty(),
+            "a test sees none of this Mac's projects"
+        );
+        let p = places();
+        assert_ne!(p, Places::this_mac());
+        assert_eq!(
+            (crate::cli::base(), crate::cli::config_file()),
+            (p.base, p.config_file)
+        );
+        // Given its own, it sees those, and so does every read that starts at `places`.
+        let d = tempfile::tempdir().unwrap();
+        make_queue(&d.path().join("zqmine/tasks"));
+        let file = d.path().join("projects.json");
+        let other = tempfile::tempdir().unwrap();
+        let added = other.path().join("elsewhere/tasks");
+        make_queue(&added);
+        let mut c = Config::default();
+        c.added.push(added.to_string_lossy().to_string());
+        save(&file, &c).unwrap();
+        use_places(Places {
+            base: d.path().to_path_buf(),
+            config_file: file.clone(),
+        });
+        let names: Vec<String> = crate::key::known().into_iter().map(|p| p.name).collect();
+        assert_eq!(names, ["zqmine", "elsewhere"]);
+        assert_eq!(
+            (crate::cli::base(), crate::cli::config_file()),
+            (d.path().to_path_buf(), file)
+        );
+    }
+
+    #[test]
+    fn a_thread_a_test_starts_gets_empty_places_of_its_own() {
+        let d = tempfile::tempdir().unwrap();
+        make_queue(&d.path().join("zqmine/tasks"));
+        use_places(Places {
+            base: d.path().to_path_buf(),
+            config_file: d.path().join("projects.json"),
+        });
+        let theirs = std::thread::spawn(places).join().unwrap();
+        assert_ne!(theirs, places(), "not this thread's");
+        assert_ne!(theirs, Places::this_mac(), "not this Mac's");
+        let known = std::thread::spawn(crate::key::known).join().unwrap();
+        assert!(known.is_empty(), "{known:?}");
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "this Mac's projects.json: give it its own with projects::use_places"
+    )]
+    fn a_test_that_reads_this_macs_projects_json_fails_saying_how_to_give_its_own() {
+        load(&Places::this_mac().config_file);
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "this Mac's projects.json: give it its own with projects::use_places"
+    )]
+    fn a_test_that_writes_this_macs_projects_json_fails_before_it_writes() {
+        let _ = edit(&Places::this_mac().config_file, |_| Ok(()));
+    }
+
+    #[test]
+    #[should_panic(expected = "this Mac's ~/playground: give it its own with projects::use_places")]
+    fn a_test_that_looks_under_this_macs_playground_fails_saying_how_to_give_its_own() {
+        list(&Places::this_mac().base, &Config::default());
     }
 }
