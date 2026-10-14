@@ -41,16 +41,20 @@ pub(crate) async fn old_pauses(
     blocking(move || Ok(old_pause::find_all(&queues(&file), &queue::local_stamp()))).await
 }
 
-/// The owner said yes: every old pause in those queues becomes a pause, with its reason and time,
-/// by the owner. Returns what it converted, and what it couldn't.
+/// The owner said yes to the list they were shown (`items`, each its queue and id): each one
+/// becomes a pause, with its reason and time, by the owner, and nothing that wasn't listed. A
+/// queue the app doesn't know, an id that isn't one, or one that isn't an old pause any more is
+/// in `failed`. Returns what it converted, and what it couldn't.
 #[tauri::command]
 pub(crate) async fn fix_old_pauses(
     app: tauri::State<'_, AppState>,
+    items: Vec<old_pause::Listed>,
 ) -> Result<old_pause::Fixed, String> {
     let file = app.config_file.clone();
     blocking(move || {
-        Ok(old_pause::convert_all(
+        Ok(old_pause::convert_listed(
             &queues(&file),
+            &items,
             "owner",
             &queue::local_stamp(),
         ))

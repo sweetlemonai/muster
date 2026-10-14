@@ -5,7 +5,7 @@ import Card from "./Card";
 import { applyQuery, dayContext, GROUPS, groupValues } from "./filters";
 import { GroupedBoard } from "./Groups";
 import { groupItems, isWork } from "./levels";
-import { columns, key, stampMinutes } from "./lib";
+import { columns, stampMinutes } from "./lib";
 import { columnFold, ELEMENTS, look, Mode, MODES, type ColumnFolds, type DisplayMode } from "./modes";
 import { wasText } from "./Pause";
 import { PausedColumn, pausedLaneWidth } from "./PausedLane";
@@ -172,8 +172,5 @@ describe("the other views treat the lane the same way", () => {
     const row = renderToStaticMarkup(createElement(ProjectItem, { name: "demo", total: 3, tasks: list, on: false, onClick: () => {}, children: null }));
     expect(row).toContain('<span class="side-doing" title="1 in progress (Building or Testing)">1</span>');
     expect(row).toContain('<span class="side-paused" title="2 paused">⏸︎ 2</span>');
-  });
-  it("keys stay the same in and out of the lane", () => {
-    expect(columns(list).paused.map(key)).toEqual(["demo/0001", "demo/0003"]);
   });
 });

@@ -2738,6 +2738,36 @@ mod tests {
         assert_eq!(code_in(&q, &[], &["check"]), 0);
     }
 
+    #[test]
+    fn check_fix_pauses_on_the_command_line_dry_run_first_then_for_real() {
+        let (base, queues) = old_pause_queues();
+        let dr = queues[0].1.clone();
+        let q = dr.to_string_lossy().to_string();
+        let owner = [("MUSTER_AS", "owner")];
+        let before = files_under(base.path());
+        assert_eq!(
+            code_in(&q, &owner, &["check", "--fix-pauses", "--dry-run"]),
+            0
+        );
+        assert_eq!(files_under(base.path()), before, "a dry run writes nothing");
+        assert_eq!(code_in(&q, &owner, &["check", "--fix-pauses"]), 0);
+        let t = queue::read_task(&dr, "0022").unwrap();
+        assert_eq!(
+            (t.paused.as_str(), t.blocked, t.path.as_str()),
+            ("2026-10-13 02:51", false, "todo/0022-pets.md")
+        );
+        let text = std::fs::read_to_string(dr.join("todo/0022-pets.md")).unwrap();
+        assert!(
+            text.contains(
+                "\n- 2026-10-13 02:51 owner: paused\n- 2026-10-13 02:51 owner: unblocked"
+            ),
+            "{text}"
+        );
+        // Only the queue --queue named: Muster's mu-42 is still an old pause.
+        assert!(queue::read_task(&queues[1].1, "0042").unwrap().blocked);
+        assert_eq!(code_in(&q, &owner, &["check"]), 0);
+    }
+
     /// `muster list` as text, whole.
     fn list_text(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> String {
         let (head, tail) = list_parts(notes, tasks);

@@ -16,6 +16,12 @@ export function oldPauseLine(p: OldPause): string {
   return `${p.key} · ${p.title.trim() || "(no title)"} · blocked as paused${p.since ? ` since ${p.since}` : ""}${p.reason ? ` · ${p.reason}` : ""}`;
 }
 
+/** What Make them pauses converts: exactly the old pauses the offer listed, by queue and id, so
+ *  one found since isn't changed without being shown first. */
+export function fixItems(list: OldPause[]): { queue: string; id: string }[] {
+  return list.map((p) => ({ queue: p.queue, id: p.id }));
+}
+
 /** What the board says when some couldn't be converted (each "<key> (<queue>): <why>"); "" when
  *  all were. */
 export function failedLine(failed: string[]): string {

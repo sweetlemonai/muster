@@ -111,10 +111,10 @@ export const api = {
   pauseTask: (queue: string, id: string, why: string, stamp: string) => invoke<Paused>("pause_task", { queue, id, why, stamp }),
   resumeTask: (queue: string, id: string, stamp: string) => invoke<Paused>("resume_task", { queue, id, stamp }),
   // Old pauses (mu-59): blocks from before Pause whose reason says paused, in the queues shown.
-  // Fix makes each a pause with the same reason and time, as the owner. Offered remembers, in this
+  // Fix makes those listed (by queue and id) pauses with the same reason and time, as the owner. Offered remembers, in this
   // machine's settings (`oldPausesOffered` in `state`), that the board made its offer.
   oldPauses: () => invoke<OldPause[]>("old_pauses"),
-  fixOldPauses: () => invoke<FixedPauses>("fix_old_pauses"),
+  fixOldPauses: (items: { queue: string; id: string }[]) => invoke<FixedPauses>("fix_old_pauses", { items }),
   setOldPausesOffered: () => invoke<void>("set_old_pauses_offered"),
   // Opens one of the task's links in the browser: the core opens only an address the task has, and only https.
   openLink: (queue: string, id: string, url: string) => invoke<void>("open_link", { queue, id, url }),

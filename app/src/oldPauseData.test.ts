@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { OldPause } from "./api";
 import { OldPausesNotice } from "./OldPauses";
-import { failedLine, oldPauseLine, offerShown } from "./oldPauseData";
+import { failedLine, fixItems, oldPauseLine, offerShown } from "./oldPauseData";
 
 // The one-time offer on load (mu-59): pauses recorded before Pause existed (0045) are blocks whose
 // reason says paused; the board lists them once and offers to make them real pauses.
@@ -51,8 +51,14 @@ describe("the offer on the board", () => {
     expect([...html.matchAll(/<button[^>]*class="([^"]*)"[^>]*>([^<]*)<\/button>/g)].map((m) => `${m[2]}: ${m[1]}`)).toEqual(["Make them pauses: ui-button ui-button--primary", "Not now: ui-button"]);
     expect(t).toContain("muster check --fix-pauses");
   });
-  it("says one in the singular", () => {
-    expect(text(notice({ list: [old()] }))).toContain("1 task was paused before Pause existed");
+  it("says one in the singular, its button too", () => {
+    const one = notice({ list: [old()] });
+    expect(text(one)).toContain("1 task was paused before Pause existed");
+    expect([...one.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1])).toEqual(["Make it a pause", "Not now"]);
+  });
+  it("converts exactly what it listed: each one's queue and id", () => {
+    expect(fixItems([old(), old({ queue: "muster", id: "0007", key: "mu-7" })])).toEqual([{ queue: "drover", id: "0022" }, { queue: "muster", id: "0007" }]);
+    expect(fixItems([])).toEqual([]);
   });
   it("turns its buttons off while it works, and says what went wrong, keeping the list", () => {
     const busy = notice({ busy: true });

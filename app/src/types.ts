@@ -254,7 +254,7 @@ export type State = {
   activity: Activity[];
   now: number;
   /** This machine's settings the core judged by (0036), in minutes; read with settingsData's
-   *  machineOf, which falls back to the defaults. \`oldPausesOffered\`: the board offered to convert
+   *  machineOf, which falls back to the defaults. oldPausesOffered: the board offered to convert
    *  old pauses once (mu-59); undefined from a core that doesn't say. */
   settings?: { leaseMinutes: number; liveMinutes: number; oldPausesOffered?: boolean };
 };

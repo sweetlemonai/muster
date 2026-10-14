@@ -16,6 +16,10 @@ app, Commands), COMMANDS.md and AS_BUILT updated.
 unblock already does. The converted pause starts at the block's time, so the log gets a pause and
 unblock line with that stamp plus a line stamped now. Paused stays a Flags chip, not a Stage, so
 Stage › Building still finds what was paused there.
+**Fixed (review round 1):** Make them pauses converted whatever it found at click time, not what
+it listed → `fix_old_pauses` takes the listed (queue, id) pairs (`convert_listed`); a CLI test runs
+`check --fix-pauses` with and without `--dry-run`; the offer's buttons get their container rule;
+singular label; the closed-span case of the pause time is tested; docs say lane cards are grey.
 **Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`;
 vitest 1249 passed; `muster check --fix-pauses --dry-run` on the real queues lists only dr-22
 (Drover, paused since 2026-10-13 02:51) and changes nothing.

@@ -14,7 +14,7 @@
 use crate::ops::{self, clear_front, set_front, stamp_minutes};
 use crate::pause::{self, MAX_WHY, PAUSABLE};
 use crate::queue::{self, actor, append_log, with_lock, write_atomic, Task};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -39,7 +39,7 @@ pub struct OldPause {
 }
 
 /// What a conversion did: the old pauses it turned into pauses, and the ones it couldn't, each as
-/// "<key> (<queue>): <why>".
+/// "<key> (<queue>): <why>" ("<queue>: <why>" for a whole queue).
 #[derive(Serialize, Debug, Clone, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Fixed {
@@ -241,16 +241,63 @@ fn convert_locked(root: &Path, p: &OldPause, who: &str, stamp: &str) -> Result<S
     })
 }
 
-/// `find` then `convert` on every queue, by `who`: what the app's offer does once the owner says
-/// yes.
-pub fn convert_all(queues: &[(String, PathBuf)], who: &str, stamp: &str) -> Fixed {
+/// An old pause as the app listed it and sends it back once the owner says yes: its queue's name
+/// and its id.
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Listed {
+    pub queue: String,
+    pub id: String,
+}
+
+/// Convert the old pauses the owner was shown (`items`), by `who`, in `queues` (the ones Muster
+/// knows): nothing else, so one blocked as paused after the list was made stays as it is.
+pub fn convert_listed(
+    queues: &[(String, PathBuf)],
+    items: &[Listed],
+    who: &str,
+    stamp: &str,
+) -> Fixed {
     let mut out = Fixed::default();
-    for (name, root) in queues {
-        let ids: Vec<String> = find(name, root, stamp).into_iter().map(|p| p.id).collect();
+    // Checked first: a queue Muster doesn't know, or an id that isn't one, goes no further.
+    let mut wanted: Vec<(&str, &Path, Vec<String>)> = Vec::new();
+    for item in items {
+        let Some((name, root)) = queues.iter().find(|(n, _)| *n == item.queue) else {
+            let name: String = item.queue.chars().take(60).collect();
+            out.failed.push(format!("{name}: no queue named {name:?}"));
+            continue;
+        };
+        if let Err(e) = crate::check_id(&item.id) {
+            let id: String = item.id.chars().take(12).collect();
+            out.failed.push(format!("{id} ({name}): {e}"));
+            continue;
+        }
+        match wanted.iter_mut().find(|(n, _, _)| *n == name.as_str()) {
+            Some((_, _, ids)) if !ids.contains(&item.id) => ids.push(item.id.clone()),
+            Some(_) => {}
+            None => wanted.push((name.as_str(), root.as_path(), vec![item.id.clone()])),
+        }
+    }
+    // Then each queue in Muster's order, as `muster check --fix-pauses` does it.
+    wanted.sort_by_key(|(n, _, _)| queues.iter().position(|(q, _)| q == n));
+    for (name, root, ids) in wanted {
         match convert(name, root, &ids, who, stamp) {
             Ok(f) => {
+                let prefix = crate::key::prefix_for(root);
+                // Listed, but neither converted nor refused: not an old pause now (resumed,
+                // unblocked or gone since).
+                let gone: Vec<String> = ids
+                    .iter()
+                    .map(|i| crate::key::key(&prefix, i))
+                    .filter(|k| {
+                        !f.converted.iter().any(|p| p.key == *k)
+                            && !f.failed.iter().any(|e| e.starts_with(&format!("{k} (")))
+                    })
+                    .map(|k| format!("{k} ({name}): isn't an old paused block (any more)"))
+                    .collect();
                 out.converted.extend(f.converted);
                 out.failed.extend(f.failed);
+                out.failed.extend(gone);
             }
             Err(e) => out.failed.push(format!("{name}: {e}")),
         }
@@ -522,6 +569,15 @@ mod tests {
             front,
             "- 2026-10-13 09:00 owner: blocked on you: paused\n- 2026-10-13 10:00 owner: paused\n- 2026-10-13 11:00 owner: resumed after 1 h\n",
         );
+        // Its last block over (unblocked), then paused in words and waiting_on edited by hand: the
+        // closed block isn't when it was paused, the line about the pause is.
+        put(
+            r,
+            "blocked",
+            "0006",
+            front,
+            "- 2026-10-13 09:00 owner: blocked on you: pick a colour\n- 2026-10-13 10:00 owner: unblocked (was waiting on you: pick a colour)\n- 2026-10-13 11:00 owner: Paused until the design is back\n",
+        );
         let since: Vec<String> = find("q", r, NOW).into_iter().map(|p| p.since).collect();
         assert_eq!(
             since,
@@ -530,6 +586,7 @@ mod tests {
                 "2026-10-13 02:51",
                 "2026-10-13 09:30",
                 NOW,
+                "2026-10-13 11:00",
                 "2026-10-13 11:00"
             ]
         );
@@ -775,7 +832,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_all_goes_through_every_queue() {
+    fn only_the_listed_ones_are_converted_in_every_queue() {
         let d = old_queue();
         fs::write(d.path().join("blocked/0022-desk-pets.md"), DROVER_22).unwrap();
         let (_m, q) = muster_queue();
@@ -790,12 +847,46 @@ mod tests {
             ("drover".to_string(), d.path().to_path_buf()),
             ("muster".to_string(), q.clone()),
         ];
-        assert_eq!(find_all(&queues, NOW).len(), 2);
-        let f = convert_all(&queues, "owner", NOW);
+        let mut items: Vec<Listed> = find_all(&queues, NOW)
+            .into_iter()
+            .map(|p| Listed {
+                queue: p.queue,
+                id: p.id,
+            })
+            .collect();
+        assert_eq!(items.len(), 2);
+        // Blocked as paused after the owner saw the list: not theirs to convert yet.
+        blocked(d.path(), "0023", "owner (paused)");
+        let listed = |queue: &str, id: &str| Listed {
+            queue: queue.into(),
+            id: id.into(),
+        };
+        items.extend([
+            listed("nowhere", "0001"),
+            listed("drover", "22"),
+            listed("drover", "0099"),
+        ]);
+        let f = convert_listed(&queues, &items, "owner", NOW);
         let keys: Vec<&str> = f.converted.iter().map(|p| p.key.as_str()).collect();
         assert_eq!(keys, ["dr-22", "mu-42"]);
-        assert!(find_all(&queues, NOW).is_empty());
+        assert_eq!(
+            f.failed,
+            [
+                "nowhere: no queue named \"nowhere\"",
+                "22 (drover): bad task id",
+                "dr-99 (drover): isn't an old paused block (any more)",
+            ]
+        );
         assert_eq!(read_task(&q, "0042").unwrap().paused_why, "later");
+        let late = read_task(d.path(), "0023").unwrap();
+        assert!(late.blocked && late.paused.is_empty(), "{late:?}");
+        assert_eq!(
+            find_all(&queues, NOW)
+                .into_iter()
+                .map(|p| p.key)
+                .collect::<Vec<_>>(),
+            ["dr-23"]
+        );
     }
 
     #[test]

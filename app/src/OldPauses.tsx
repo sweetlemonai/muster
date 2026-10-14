@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type OldPause } from "./api";
-import { failedLine, offerShown, oldPauseLine } from "./oldPauseData";
+import { failedLine, fixItems, offerShown, oldPauseLine } from "./oldPauseData";
 import { Button } from "./ui";
 
 /** The offer, inline above the board (no dialog): every old pause it would change, then Make them
@@ -20,7 +20,7 @@ export function OldPausesNotice({ list, busy, error, onFix, onLater }: { list: O
       </ul>
       <p className="old-pauses-do">
         <Button type="button" variant="primary" disabled={busy} onClick={onFix}>
-          Make them pauses
+          {n === 1 ? "Make it a pause" : "Make them pauses"}
         </Button>
         <Button type="button" disabled={busy} onClick={onLater}>
           Not now
@@ -35,7 +35,7 @@ export function OldPausesNotice({ list, busy, error, onFix, onLater }: { list: O
 }
 
 /** Asks the core for old pauses once the state says the board hasn't offered yet, and shows the
- *  offer while there are some. Make them pauses converts them all, then remembers it was offered;
+ *  offer while there are some. Make them pauses converts the ones listed, then remembers it was offered;
  *  Not now only remembers. Then the board reloads (`onDone`); any it couldn't convert are said in
  *  the offer's place. */
 export default function OldPausesOffer({ offered, onDone }: { offered: boolean | undefined; onDone: () => void }) {
@@ -65,7 +65,8 @@ export default function OldPausesOffer({ offered, onDone }: { offered: boolean |
     setBusy(true);
     setError("");
     try {
-      const done = fix ? await api.fixOldPauses() : null;
+      // Exactly what the offer listed.
+      const done = fix ? await api.fixOldPauses(fixItems(list ?? [])) : null;
       await api.setOldPausesOffered();
       setFailed(done?.failed ?? []);
       setAnswered(true);
