@@ -7,14 +7,14 @@ import { GroupedBoard } from "./Groups";
 import { groupItems, isWork } from "./levels";
 import { STAGES } from "./lib";
 import { ColumnHead } from "./ModeViews";
-import { columnClass, columnFold, columnState, columnTrack, look, MODES, OPEN_COLUMN_MAX, plainBoard, type ColumnState, type DisplayMode } from "./modes";
-import appSource from "./App.tsx?raw";
-import { PausedBand, PausedColumn } from "./PausedLane";
+import { columnClass, columnFold, columnState, columnTrack, look, MODES, OPEN_COLUMN_MAX, type ColumnState, type DisplayMode } from "./modes";
+import { PausedBand } from "./PausedLane";
 import type { Task } from "./types";
 
-// The board's columns (mu-83): an open column has a maximum width, and every strip, empty or
-// folded, the Paused lane's too, has one anatomy: the dot and the vertical name at the top, the
-// count under them, the same padding, inside its own 44px track.
+// The board's columns (mu-83): an open column has a maximum width. The Group by bands keep its strips:
+// every one, empty or folded, has one anatomy: the dot and the vertical name at the top, the
+// count under them, the same padding, inside its own 44px track. The plain board has none: its
+// folded and empty columns are chips in one row above it (mu-84, columnRow.test.ts).
 
 const task = (over: Partial<Task>): Task => ({
   queue: "demo", id: "0001", title: "T", kind: "code", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
@@ -94,14 +94,6 @@ describe("one strip anatomy", () => {
     expect(head({ count: 0 })).toBe('<h2 title="Shaping: product + tech + UI agents">Shaping <small>0</small></h2>');
     expect(head({ count: 3 })).toBe('<h2 title="Shaping: product + tech + UI agents">Shaping <small>3</small></h2>');
   });
-  it("the Paused lane's strips are the same", () => {
-    const empty = renderToStaticMarkup(createElement(PausedColumn, { tasks: [], state: "empty", fold: "fixed", onFold: () => {}, renderCard: () => null }));
-    expect(empty).toMatch(/^<section class="column col-paused col-strip col-empty"><h2/);
-    expect(STRIP.exec(/<h2[\s\S]*?<\/h2>/.exec(empty)![0])?.slice(2, 5)).toEqual(["col-head", "⏸︎ Paused", "empty"]);
-    const folded = renderToStaticMarkup(createElement(PausedColumn, { tasks: [task({ paused: "x" })], state: "folded", fold: "folded", onFold: () => {}, renderCard: () => null }));
-    expect(folded).toMatch(/^<section class="column col-paused col-strip folded"><h2/);
-    expect(STRIP.exec(/<h2[\s\S]*?<\/h2>/.exec(folded)![0])?.slice(2, 5)).toEqual(["col-fold", "⏸︎ Paused", "1"]);
-  });
   it("a Group by band's columns are the same strips", () => {
     const items = [task({ id: "0001", stage: "ready" })];
     const html = renderToStaticMarkup(createElement(GroupedBoard, { groups: groupItems(items.filter(isWork), items, "feature"), by: "feature", sort: "priority", multi: false, openKey: null, onOpen: () => {}, renderCard: () => null }));
@@ -141,34 +133,6 @@ describe("every mode draws the same anatomy", () => {
       const html = head({ empty: state === "empty", fold: columnFold(look("columns", id), "shaping", none) });
       expect(html, id).toMatch(/<(span|button)[^>]*class="(col-head|col-fold)"[^>]*>Shaping <small>empty<\/small>/);
     }
-  });
-});
-
-describe("the plain project board (review R1)", () => {
-  /** The braindump board the owner sent: Ready 66, Done 1, the rest empty; Backlog kept open. */
-  const counts: Record<string, number> = { ready: 66, done: 1 };
-  const board = (mode: DisplayMode) => plainBoard((id) => columnFold(look("columns", mode), id, none), (id) => counts[id] ?? 0, (id) => id === "backlog");
-  it("caps every open column and draws every empty one as a strip, in its order, Paused first", () => {
-    const max = `minmax(118px, ${OPEN_COLUMN_MAX}px)`;
-    for (const mode of ["adhd", "standard"] as const) {
-      expect(board(mode).tracks, mode).toBe(["44px", max, "44px", max, "44px", "44px", "44px", max].join(" "));
-      expect(board(mode).className("shaping"), mode).toBe("column col-shaping col-strip col-empty");
-      expect(board(mode).className("paused"), mode).toBe("column col-paused col-strip col-empty");
-      expect(board(mode).className("ready"), mode).toBe("column col-ready");
-    }
-    const focus = board("focus");
-    expect(focus.tracks).toBe(Array(8).fill("44px").join(" "));
-    expect(focus.className("ready")).toBe("column col-ready col-strip folded");
-    expect(focus.className("building")).toBe("column col-building col-strip col-empty");
-    expect(focus.state("paused")).toBe("folded");
-  });
-  it("is what App draws: its grid, the Paused lane's state and each column's classes come from it", () => {
-    expect(appSource).toContain("const plain = plainBoard(");
-    expect(appSource).toContain('<main className="board" style={{ gridTemplateColumns: plain.tracks }}>');
-    expect(appSource).toContain('state={plain.state("paused")}');
-    expect(appSource).toContain("<section key={c.id} className={plain.className(c.id)}>");
-    const board = appSource.slice(appSource.indexOf('{groupBy === "none" && <main className="board"'), appSource.indexOf("<Recent "));
-    expect(board).not.toMatch(/\b1fr\b|" empty"/);
   });
 });
 

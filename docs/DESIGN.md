@@ -15,8 +15,9 @@ have their own short sets below. Every other section here applies in all three.
 ## In every mode
 
 - **Fold in place, never away.** A mode only says how much of an element shows. What it folds
-  leaves a labelled chip, strip or header in the same spot, with a count where there is one, and
-  one click or key opens it there. Nothing a mode folds is more than one click or key away.
+  leaves a labelled chip or header in the same spot (a board column's chip is in the row above the
+  board, mu-84), with a count where there is one, and one click or key opens it there. Nothing a
+  mode folds is more than one click or key away.
 - **What needs you never folds:** the Waiting for you count, the sidebar's counts, the needs-you
   and blocked words on a card, and a folded column's needs-you count. A folded sidebar heading is
   one line (two at the narrowest sidebar), and its own needs-you count carries what's under it
@@ -28,29 +29,57 @@ have their own short sets below. Every other section here applies in all three.
   mode and how to get back what it folds. Components read it and nothing else; a test fails when
   a component reads an element the table doesn't have, or reads the mode around it.
 
-## The board's columns (task 0083)
+## The board's columns (tasks 0083 and 0084)
 
-Decided 2026-10-14, after the owner's "mess in board UI" on a board with one full column (Ready 66)
-and the rest empty: the lone open column stretched its cards into one long line each, and the
-strips didn't line up.
+Decided 2026-10-14. First (0083), after the owner's "mess in board UI" on a board with one full
+column (Ready 66) and the rest empty: the lone open column stretched its cards into one long line
+each, and the strips didn't line up. Then (0084), with the strips lined up: "the board ui for
+closed and empty is still ugly". Of three designs (A, a chip row; B, short stubs; C, empty columns
+stay open) the owner chose **A**.
 
-- **No mode folds an empty column away.** In ADHD and Standard an empty column stays where it is
-  as a narrow strip that says "empty", so the board keeps its shape: every stage in its place, the
-  same order, as tasks come and go. Focus folds what it folds (everything but Building, Testing and
-  Your check); its never-folded columns, empty, are the same strip, just not a button. Considered:
-  folding empty columns in every mode (what the board did by accident; nobody chose it, and in
-  ADHD it hid that a stage exists), and keeping them full width (a board of empty columns pushes
-  the work off screen).
-- **One strip anatomy,** for an empty column, a folded one and the Paused lane: 44px in its own
-  track, the dot at the top, the name down the strip, then the count ("empty" for none; a folded
-  one adds its needs-you and blocked counts), with the same padding, the board's 10px gap and its
-  own top border. It's a folded strip's look, kept for both because its head is one line of parts
-  running down the strip, so "3 blocked" fits in 44px and the whole head is the button.
-- **An open column is at most 400px** (`modes.ts` `OPEN_COLUMN_MAX`), about a card's reading
-  width. The room left over stays empty at the board's right; a card never stretches.
-- **A strip's class is `col-strip`** with `col-empty` or `folded`, never `empty`: that's the
-  empty message's class ("No tasks match"), and its 32px padding is what pushed every empty strip
-  32px down and 22px past its track into its neighbours, merging their top borders.
+- **One row of chips above the board** (`ColumnRow.tsx`), under the filter bar. Every place of the
+  board that isn't open is a chip there, in board order: the Paused lane, the stages, then
+  Recently finished. A place is in the row when the mode folds it (Focus: all but Building, Testing
+  and Your check, and Recently finished), when it's empty (in every mode), or when the owner folded
+  it. A chip is a button with the stage's colour dot, its name and its count, plus "2 need you" and
+  "1 blocked" when there are any; a screen reader hears "Backlog: 16 items, 2 need you, 1 blocked.
+  Open it". Recently finished's count is what its list shows, of the kind its chips pick. The
+  row is a labelled group, always one line of a fixed height ("Every column is open" when nothing
+  is folded on the plain board; nothing under Group by, whose bands fold their own columns), so
+  folding, or a poll changing a count, never moves the bar or the board's top. It never wraps:
+  short of room the chips' names shorten to an ellipsis, breaking anywhere so they keep what fits
+  (never under 2.5em; the full name is in the label and tooltip), while their counts and
+  needs-you and blocked words stay whole. They shorten only when that makes every chip fit: when
+  even shortened they'd overflow, the names stay whole and the chips scroll sideways (round 1
+  review; QA in round 3: "Rea…", "Buildi…" and Paused cut to its icon over a scrolling row bought
+  nothing). Then a cue at the row's end, which
+  never scrolls away, says what's past the edge: "+3 more · 1 needs you", the needs-you count
+  being what the hidden chips need; it's a button ("3 more columns past the edge, 1 needs you.
+  Show them") whose first click scrolls to the first hidden chip that needs you, else the next one
+  past the edge. Each click after goes on to the next chip in board order past the one the last
+  went to, so a chip wider than the row doesn't hold the walk (round 3, R8), and back to the start,
+  the first chip, once the end is in view, so every chip comes into view once a round (QA_4: going
+  back to the first that needs you never reached the chips before it). A new project or mode
+  starts the row at its start. (Round 2 review: macOS shows the scrollbar
+  only while scrolling, so a chip past the edge took its needs-you out of sight). Considered for
+  that: shorter badges ("1 you"), which only move the edge. Considered: B, short stubs at the
+  top of each column's track (still takes width per empty stage and reads as broken columns), and
+  C, empty columns open (a board of empty frames pushes the work off screen).
+- **No strips on the plain board.** The grid holds only the open columns, each at most 400px
+  (`modes.ts` `OPEN_COLUMN_MAX`), about a card's reading width; the room left over stays empty at
+  the board's right, and a card never stretches. With every column folded, the board says so.
+- **Show and hide per column, remembered per mode.** A chip's click opens its column in place; an
+  open column's head, the Paused lane's and Recently finished's have a quiet **Fold** that sends it
+  to the row. The choice is kept on this Mac per display mode (`muster.columns` in the window's
+  storage), only where it differs from what the mode does: folding a column Focus opened forgets
+  the open, and opening a full column the owner hid forgets the hide. So Focus's folds are its
+  defaults, and switching modes resets nothing. Backlog stays open, empty, for its quick add (until
+  the owner or Focus folds it), and Your check while it has Accept all's result or its limit to say.
+- **Group by bands keep 0083's strips** (out of scope): one strip anatomy, 44px in its own track,
+  the dot at the top, the name down the strip, then the count, a folded one with its needs-you and
+  blocked counts. A column the owner hid on the plain board is folded in the bands too. A strip's
+  class is `col-strip` with `col-empty` or `folded`, never `empty`: that's the empty message's
+  class ("No tasks match"), whose 32px padding once pushed strips out of their tracks.
 
 ## ADHD mode: everything visible
 
@@ -90,9 +119,10 @@ strips didn't line up.
 
 ## Focus mode: only what needs doing now
 
-- **The board is Building, Testing and Your check.** The other columns (and the grouped board's
-  Backlog band) are thin strips with their name, count, needs-you count and blocked count; a click
-  opens one until Focus is left. Blocked never hides behind a fold.
+- **The board is Building, Testing and Your check.** The other columns are chips in the row above
+  the board with their name, count, needs-you count and blocked count (the grouped board's Paused
+  and Backlog bands fold to their heads); a click opens one, and Focus remembers it until it's
+  folded again. Blocked never hides behind a fold.
 - **A card is its title and one status line** (who's on it, or Your turn), plus blocked, quiet,
   needs a tester or needs you when it is.
 - **No filter bar until ⌘F,** only a button in its place, and the bar stays while a search or
@@ -100,8 +130,9 @@ strips didn't line up.
 - **The sidebar narrows** to the category headings with their needs-you count, the project names, the working
   dot, stalled and the needs-you and paused counts;
   a stalled project keeps its Ask for a check-in.
-- **Recently finished folds to a strip** with its name and count beside the board, opened in place
-  with a click: finished work isn't what needs doing now, but it stays one click away.
+- **Recently finished folds to a chip** at the end of the row above the board, with its name and
+  count, opened in place with a click: finished work isn't what needs doing now, but it stays one
+  click away.
 - **The task pane folds as in Standard.**
 
 ## Sidebar categories (task 0082)

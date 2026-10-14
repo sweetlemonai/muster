@@ -148,6 +148,12 @@ export function dayGroups(rows: Finish[], now: number, weeks: number): { groups:
   return { groups, older };
 }
 
+/** How many rows Recently finished's first week shows with its kind filter: its count in the row
+ *  of folded columns, and whether it has anything to show (mu-84), the same rows its list draws. */
+export function weekCount(tasks: Task[], now: number, kind: KindFilter): number {
+  return dayGroups(byKind(finishes(tasks), kind), now, 1).groups.reduce((n, g) => n + g.rows.length, 0);
+}
+
 /** Who built it: the session that took it into Building, short ("muster/wt-0051 · main ·
  *  531266d4"); "you" for the owner's own task; "" when the log doesn't say. */
 export function builtBy(t: Task): string {

@@ -10,7 +10,8 @@ import { GroupByChips, GroupedBoard } from "./Groups";
 import groupsSource from "./Groups.tsx?raw";
 import { windowKey } from "./keys";
 import { blockedCount, ChoiceChips, ColumnHead, Fold, ModeChip } from "./ModeViews";
-import { columnFold, ELEMENTS, Mode, MODES, type DisplayMode } from "./modes";
+import { autoOpen, columnFold, ELEMENTS, look, Mode, MODES, RAIL_ID, ROW_ORDER, type DisplayMode } from "./modes";
+import { type KindFilter, weekCount } from "./recentData";
 import { logSummary } from "./paneData";
 import ProjectList from "./ProjectList";
 import Recent from "./Recent";
@@ -207,7 +208,7 @@ describe("board columns in each mode", () => {
 
   it("a folded column is a strip that says its name and count, and opens with a click (AC3)", () => {
     const html = head("folded");
-    expect(html).toMatch(/^<h2 title="Done"><button type="button" class="col-fold" aria-expanded="false" title="[^"]*Focus[^"]*">Done <small>9<\/small><\/button><\/h2>$/);
+    expect(html).toMatch(/^<h2 title="Done"><button type="button" class="col-fold" aria-expanded="false" title="Open Done here">Done <small>9<\/small><\/button><\/h2>$/);
     expect(head("opened")).toContain('aria-expanded="true"');
   });
 
@@ -257,10 +258,15 @@ describe("board columns in each mode", () => {
     }))).toContain('<div class="band-head"><span class="band-title">Backlog · not in a feature yet</span>');
   });
 
-  it("the board and every band fold the same columns", () => {
-    expect(appSource).toContain('of: (id) => columnFold(look("columns", modes.mode), id, opened)');
-    expect(appSource).toContain("const fold = columnFoldOf.of(c.id);");
+  it("the board and every band fold the same columns: the mode's, and the owner's picks in it (mu-84)", () => {
+    expect(appSource).toContain("of: (id) => bandFold(boardLooks, modePicks, id),");
+    expect(appSource).toContain("toggle: (id) => setPicks((p) => toggleBand(p, modes.mode, boardLooks, id)),");
+    expect(appSource).toContain("const plain = plainBoard(boardLooks, modePicks,");
     expect(appSource).toMatch(/<GroupedBoard[\s\S]*?fold=\{columnFoldOf\}/);
+    // A column the owner hid on the plain board is folded in the bands too, in any mode.
+    expect(columnFold("all", "ready", new Set(), new Set(["ready"]))).toBe("folded");
+    expect(columnFold("now", "building", new Set(), new Set(["building"]))).toBe("folded");
+    expect(columnFold("all", "ready", new Set(), new Set(["done"]))).toBe("fixed");
   });
 });
 
@@ -270,21 +276,42 @@ describe("Recently finished and the Done line in each mode", () => {
   const done = (id: string, merged: string, accepted: string) =>
     task(id, { stage: "done", doneAt: accepted, stageHistory: [step("2026-10-13 09:00", "ready", "building", "muster/wt-x"), step(merged, "testing", "your-check"), step(accepted, "your-check", "done", "owner")] });
   const finished = [done("0043", "2026-10-13 10:00", "2026-10-13 13:56"), done("0031", "2026-10-12 09:00", "2026-10-12 09:05")];
-  const rail = (mode: DisplayMode) => inMode(mode, createElement(Recent, { tasks: finished, now: RNOW, multi: false, openKey: null, onOpen: () => {} }));
+  const rail = (mode: DisplayMode, tasks = finished, kind: KindFilter = "all") =>
+    inMode(mode, createElement(Recent, { tasks, now: RNOW, kind, onKind: () => {}, multi: false, openKey: null, onOpen: () => {}, onFold: () => {} }));
+  const looks = (mode: DisplayMode) => ({ columns: look("columns", mode), rail: look("rail", mode) });
 
-  it("ADHD and Standard dock the rail open beside the board, as 0051 made it", () => {
-    for (const mode of ["adhd", "standard"] as const) {
+  it("open, it's the rail 0051 made in every mode, with a Fold that sends it to the row (mu-84)", () => {
+    for (const mode of ALL) {
       const html = rail(mode);
       expect(html, mode).toContain('class="recent-row');
-      expect(html, mode).not.toContain("rail-fold");
-      expect(html, mode).not.toContain("rail-unfold");
+      expect(html, mode).toContain('class="ui-pill rail-unfold"');
+      expect(html, mode).toContain('aria-expanded="true"');
+      expect(html, mode).not.toContain("rail-fold\"");
     }
   });
 
-  it("Focus folds it to a strip with its name and count, which opens it in place (AC3)", () => {
-    const html = rail("focus");
-    expect(html).toBe('<aside class="recent folded" aria-label="Recently finished"><button type="button" class="rail-fold" aria-expanded="false" title="Open Recently finished: Focus folds it">Recently finished <small>4</small></button></aside>');
-    expect(appSource).toContain("<Recent key={`${queue}/${modes.mode}`}");
+  it("ADHD and Standard open it beside the board while it has a week's rows; Focus folds it to the row's last chip", () => {
+    for (const mode of ["adhd", "standard"] as const) {
+      expect(autoOpen(looks(mode), RAIL_ID, 4), mode).toBe(true);
+      expect(autoOpen(looks(mode), RAIL_ID, 0), `${mode}, nothing this week`).toBe(false);
+    }
+    expect(autoOpen(looks("focus"), RAIL_ID, 4)).toBe(false);
+    expect(ROW_ORDER.at(-1)).toBe(RAIL_ID);
+    expect(weekCount(finished, RNOW, "all")).toBe(4);
+    expect(appSource).toContain("{plain.isOpen(RAIL_ID) && <Recent key={`${queue}/${modes.mode}`}");
+  });
+
+  it("its chip counts what its list shows: the remembered kind's rows, not every kind (review R2)", () => {
+    const rows = (html: string) => html.match(/class="recent-row/g)?.length ?? 0;
+    // Two tasks merged and accepted, one merged and waiting in Your check.
+    const two = [...finished, task("0050", { stage: "your-check", stageHistory: [step("2026-10-13 09:00", "ready", "building", "muster/wt-x"), step("2026-10-13 11:00", "testing", "your-check")] })];
+    for (const kind of ["all", "merged", "accepted"] as const) expect(weekCount(two, RNOW, kind), kind).toBe(rows(rail("adhd", two, kind)));
+    expect([weekCount(two, RNOW, "all"), weekCount(two, RNOW, "merged"), weekCount(two, RNOW, "accepted")]).toEqual([5, 3, 2]);
+    // App keeps the kind, so the chip, the list and whether the rail opens by itself use the same rows.
+    expect(appSource).toContain("const [recentKind, setRecentKind] = useState<KindFilter>(() => loadKind());");
+    expect(appSource).toContain("const finishedWeek = useMemo(() => weekCount(inQueue, now, recentKind), [inQueue, now, recentKind]);");
+    expect(appSource).toContain("kind={recentKind} onKind={pickRecentKind}");
+    expect(appSource).toMatch(/const pickRecentKind = \(k: KindFilter\) => \{\s*setRecentKind\(k\);\s*storeKind\(k\);/);
   });
 
   it("keeps the Done card's line in every mode: it's the card's status line", () => {

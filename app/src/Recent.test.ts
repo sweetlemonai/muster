@@ -1,6 +1,6 @@
 import { createElement as h, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import Recent, { costText, RecentList } from "./Recent";
 import { dayGroups, finishes } from "./recentData";
 import type { StageStep, Task } from "./types";
@@ -30,7 +30,7 @@ const TASKS = [
 
 const plain = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 const render = (props: Partial<Parameters<typeof Recent>[0]> = {}) =>
-  renderToStaticMarkup(h(Recent, { tasks: TASKS, now: NOW, multi: false, openKey: null, onOpen: () => {}, ...props }));
+  renderToStaticMarkup(h(Recent, { tasks: TASKS, now: NOW, kind: "all", onKind: () => {}, multi: false, openKey: null, onOpen: () => {}, onFold: () => {}, ...props }));
 const heads = (html: string) => [...html.matchAll(/<h3 class="recent-day-head">([\s\S]*?)<\/h3>/g)].map((m) => plain(m[1]));
 const rowsOf = (html: string) => [...html.matchAll(/<button type="button" class="recent-row[^"]*"[^>]*>([\s\S]*?)<\/button>/g)].map((m) => plain(m[1]));
 
@@ -55,8 +55,6 @@ function buttons(node: ReactNode): { words: string; click: () => void }[] {
 }
 
 describe("Recently finished on the board (AC1)", () => {
-  afterEach(() => vi.unstubAllGlobals());
-
   it("is docked and labelled, with its window and the kind chips on screen", () => {
     const html = render();
     expect(html).toMatch(/^<aside class="recent" aria-label="Recently finished">/);
@@ -81,21 +79,18 @@ describe("Recently finished on the board (AC1)", () => {
   it("says how many older rows there are, with Show older to add a week", () => {
     expect(plain(render())).toContain("Show older · 2 more");
   });
-  it("uses the remembered chip", () => {
-    vi.stubGlobal("localStorage", { getItem: (k: string) => (k === "muster.recentKind" ? "accepted" : null) });
-    const html = render();
+  it("lists the kind App gives it, the remembered chip (App keeps it, so its chip in the row counts the same rows)", () => {
+    const html = render({ kind: "accepted" });
     expect(html.match(/aria-pressed="true"[^>]*class="ui-pill ui-pill--on">([^<]*)</)?.[1]).toBe("Accepted");
     expect(rowsOf(html).map((r) => r.split(" ")[0])).toEqual(["0043", "0031"]);
     expect(heads(html)).toEqual(["Today 1", "Sun 11 Oct 1"]);
-    vi.stubGlobal("localStorage", { getItem: () => "merged" });
-    const merged = rowsOf(render());
+    const merged = rowsOf(render({ kind: "merged" }));
     expect(merged.map((r) => r.split(" ")[0])).toEqual(["0050", "0043", "0031"]);
     expect(merged.every((r) => r.includes(" merged ") && !r.includes(" accepted "))).toBe(true);
   });
   it("says so when nothing finished in the window, in the chip's words", () => {
     expect(plain(render({ tasks: [task("0060", { stage: "building" })] }))).toContain("Nothing merged or accepted in the last 7 days.");
-    vi.stubGlobal("localStorage", { getItem: () => "accepted" });
-    expect(plain(render({ tasks: [finished("0050", "2026-10-13 13:56")] }))).toContain("Nothing accepted in the last 7 days.");
+    expect(plain(render({ tasks: [finished("0050", "2026-10-13 13:56")], kind: "accepted" }))).toContain("Nothing accepted in the last 7 days.");
   });
   it("doesn't offer Show older when there's nothing older", () => {
     expect(plain(render({ tasks: TASKS.slice(0, 3) }))).not.toContain("Show older");
@@ -105,7 +100,7 @@ describe("Recently finished on the board (AC1)", () => {
 describe("a row (AC3)", () => {
   const list = (over: Partial<Parameters<typeof RecentList>[0]> = {}) => {
     const { groups, older } = dayGroups(finishes(TASKS), NOW, 1);
-    return RecentList({ groups, older, kind: "all", onKind: () => {}, weeks: 1, onOlder: () => {}, now: NOW, multi: false, openKey: null, onOpen: () => {}, costs: new Map(), ...over });
+    return RecentList({ groups, older, kind: "all", onKind: () => {}, weeks: 1, onOlder: () => {}, now: NOW, multi: false, openKey: null, onOpen: () => {}, costs: new Map(), onFold: () => {}, ...over });
   };
   it("opens its task", () => {
     const onOpen = vi.fn();

@@ -34,7 +34,7 @@ export function FoldCounts({ needs, blocked }: { needs: number; blocked: number 
 /** A board column's head. A column the mode folds is a button: its name, count, needs-you and
  *  blocked counts on a thin strip, and a click opens the column there (or folds it back). An
  *  empty column's strip has the same head without the button (mu-83: one strip anatomy). */
-export function ColumnHead({ stage, count, countNode, needs, blocked, fold, onFold, empty = false, children }: {
+export function ColumnHead({ stage, count, countNode, needs, blocked, fold, onFold, empty = false, onHide, children }: {
   stage: { id: string; label: string; role: string };
   count: number;
   /** The count as shown, when it says more than the number (Your check over its limit, 0050:
@@ -49,6 +49,8 @@ export function ColumnHead({ stage, count, countNode, needs, blocked, fold, onFo
   /** An empty column's strip (mu-83, modes.ts `columnState`): its head is the strip's, as a
    *  folded column's is, with no role line. */
   empty?: boolean;
+  /** An open column's Fold, on the plain board (mu-84): it sends the column to the row above it. */
+  onHide?: () => void;
   /** After the count in an open column's head (the board's role line). */
   children?: ReactNode;
 }) {
@@ -69,13 +71,18 @@ export function ColumnHead({ stage, count, countNode, needs, blocked, fold, onFo
     return (
       <h2 title={title}>
         {stage.label} {shown}
+        {onHide && (
+          <Pill type="button" className="col-hide" aria-expanded={true} aria-label={`Fold ${stage.label} into the row above the board`} title={`Fold ${stage.label} into the row above the board`} onClick={onHide}>
+            Fold
+          </Pill>
+        )}
         {children}
       </h2>
     );
   }
   return (
     <h2 title={title}>
-      <button type="button" className="col-fold" aria-expanded={!folded} onClick={onFold} title={folded ? `Open ${stage.label}: Focus folds it` : `Fold ${stage.label} back to its strip, as Focus has it`}>
+      <button type="button" className="col-fold" aria-expanded={!folded} onClick={onFold} title={folded ? `Open ${stage.label} here` : `Fold ${stage.label} back to its strip`}>
         {stage.label} {shown}
         <FoldCounts needs={needs} blocked={blocked} />
       </button>

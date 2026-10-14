@@ -90,7 +90,7 @@ describe("a project's colour where it's named (0057)", () => {
     expect(both(createElement(Card, { t: task({}), now: 0, multi: true, parent: "", onOpen: () => {}, active: false, words: [] }))).toContain(DOT);
     expect(both(createElement(WaitingList, { tasks: [task({ stage: "ready", waitingForOwner: true, blockedKind: "you", blocked: true })], multi: true, openKey: null, onOpen: () => {}, onChanged: () => {}, now: 0 }))).toContain(DOT);
     const merged = task({ stage: "your-check", stageHistory: [{ at: "2026-10-13 13:56", who: "muster/main (merge)", from: "testing", to: "your-check" }] });
-    const recent = both(createElement(Recent, { tasks: [merged], now: NOW, multi: true, openKey: null, onOpen: () => {} }));
+    const recent = both(createElement(Recent, { tasks: [merged], now: NOW, kind: "all", onKind: () => {}, multi: true, openKey: null, onOpen: () => {}, onFold: () => {} }));
     expect(recent).toContain(`${DOT}Muster — the queue`);
     expect(both(createElement(TableView, { tasks: [task({})], now: 0, multi: true, openKey: null, onOpen: () => {}, words: [] }))).toContain(`<td class="q" title="muster">${DOT}Muster — the queue</td>`);
     expect(both(createElement(PaneHeader, { task: task({}), now: 0, onClose: () => {}, onRename: () => {} }))).toContain(`<b class="qname" title="muster">${DOT}Muster — the queue</b>`);

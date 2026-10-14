@@ -35,10 +35,12 @@ import { byWho, FOR_FILTERS, FOR_KEY, type ForFilter, needsYouCount, parseForFil
 import { HelpButton, OpenHelp } from "./HelpButton";
 import { HELP_TOPICS, type HelpTopic, type ManualAt } from "./helpTopics";
 import { Machine, machineOf, type SettingsGroup } from "./settingsData";
-import { columnFold, loadMode, plainBoard, look, Mode, pickMode, storeMode, toggleFocus, type ColumnFolds, type ModeState } from "./modes";
+import { bandFold, columnClass, loadMode, loadPicks, plainBoard, look, Mode, pickColumn, pickMode, RAIL_ID, storeMode, storePicks, toggleBand, toggleFocus, type BoardLooks, type ColumnFolds, type ColumnPicks, type ModePicks, type ModeState } from "./modes";
 import { blockedCount, ChoiceChips, ColumnHead, ModeChip } from "./ModeViews";
 import ColumnCards from "./ColumnCards";
+import ColumnRow, { placeCount, type PlaceCounts, type RowChip, rowChipsOf } from "./ColumnRow";
 import { PausedColumn } from "./PausedLane";
+import { type KindFilter, loadKind, storeKind, weekCount } from "./recentData";
 import OldPausesOffer from "./OldPauses";
 import logoDark from "./logo-dark.svg";
 import logoLight from "./logo-light.svg";
@@ -188,7 +190,14 @@ function useDisplayMode(): [ModeState, (f: (s: ModeState) => ModeState) => void]
   return [s, setS];
 }
 
-const NO_COLUMNS: ReadonlySet<string> = new Set();
+/** The columns the owner opened or folded, per display mode, remembered on this Mac (mu-84). */
+function useColumnPicks(): [ColumnPicks, (f: (p: ColumnPicks) => ColumnPicks) => void] {
+  const [p, setP] = useState<ColumnPicks>(() => loadPicks(localStorage));
+  useEffect(() => storePicks(localStorage, p), [p]);
+  return [p, setP];
+}
+
+const NO_PICKS: ModePicks = {};
 
 export default function App() {
   const { state, error, at, refresh } = useQueues();
@@ -214,26 +223,23 @@ export default function App() {
   const sidebarWidth = clampSidebar(sideSplit.width ?? (sidebarLook === "narrow" ? SIDEBAR_NARROW : SIDEBAR), win);
   const paneWidth = clampPane(paneSplit.width ?? PANE_DEFAULT, win, sidebarWidth);
   const railSide = railBeside(win, pane ? paneWidth : 0, sidebarWidth);
-  // The columns Focus folds that a click opened, and the filter bar ⌘F brought out in Focus: both
-  // until the mode changes.
-  const [opened, setOpened] = useState<ReadonlySet<string>>(NO_COLUMNS);
+  // The filter bar ⌘F brought out in Focus, until the mode changes.
   const [barOut, setBarOut] = useState(false);
   const changeMode = useCallback(
     (f: (s: ModeState) => ModeState) => {
       setModes(f);
-      setOpened(NO_COLUMNS);
       setBarOut(false);
     },
     [setModes],
   );
+  // Which board columns are open (mu-84): the mode's folds, and the owner's picks in this mode,
+  // kept on this Mac. The grouped board's bands fold what the mode folds and what the owner hid.
+  const [picks, setPicks] = useColumnPicks();
+  const modePicks = picks[modes.mode] ?? NO_PICKS;
+  const boardLooks: BoardLooks = { columns: look("columns", modes.mode), rail: look("rail", modes.mode) };
   const columnFoldOf: ColumnFolds = {
-    of: (id) => columnFold(look("columns", modes.mode), id, opened),
-    toggle: (id) =>
-      setOpened((o) => {
-        const n = new Set(o);
-        if (!n.delete(id)) n.add(id);
-        return n;
-      }),
+    of: (id) => bandFold(boardLooks, modePicks, id),
+    toggle: (id) => setPicks((p) => toggleBand(p, modes.mode, boardLooks, id)),
   };
   // Where the manual is open in the Help tab; a "?" opens it at its topic, and the pane stays.
   const [helpAt, setHelpAt] = useState<ManualAt>({ file: "01-start-here.md", slug: "", n: 0 });
@@ -339,14 +345,21 @@ export default function App() {
   );
   const open = (t: Task) => go({ kind: "task", key: key(t) });
   const boardResult = useAcceptResults().has("board");
-  // Each plain board column open, an empty strip or folded (mu-83). Backlog keeps its quick add;
-  // Your check stays open while Accept all's result line has something to say (0043), or to say
-  // it's over its limit (0050).
-  const plain = plainBoard(
-    columnFoldOf.of,
-    (id) => (id === "paused" ? cols.paused.length : (cols[id] ?? []).length + (id === "backlog" ? notes.length : 0)),
-    (id) => id === "backlog" || (id === "your-check" && (boardResult || overCheck.length > 0)),
-  );
+  // Each place of the plain board open, or a chip in the row above it (mu-84). Backlog keeps its
+  // quick add; Your check stays open while Accept all's result line has something to say (0043),
+  // or to say it's over its limit (0050). Recently finished counts what its list shows: its first
+  // week, of the kind its chips pick (remembered on this Mac), so its chip and the list agree.
+  const [recentKind, setRecentKind] = useState<KindFilter>(() => loadKind());
+  const pickRecentKind = (k: KindFilter) => {
+    setRecentKind(k);
+    storeKind(k);
+  };
+  const finishedWeek = useMemo(() => weekCount(inQueue, now, recentKind), [inQueue, now, recentKind]);
+  const placeCounts: PlaceCounts = { cols, notes: notes.length, finished: finishedWeek };
+  const plain = plainBoard(boardLooks, modePicks, (id) => placeCount(id, placeCounts), (id) => id === "backlog" || (id === "your-check" && (boardResult || overCheck.length > 0)));
+  const setColumnOpen = (id: string, isOpen: boolean) => setPicks((p) => pickColumn(p, modes.mode, id, isOpen, plain.auto(id)));
+  // The row: every folded place in board order; with Group by, only Recently finished.
+  const rowChips: RowChip[] = rowChipsOf(plain.row, groupBy !== "none", placeCounts);
   const card = (t: Task) => (
     <Card key={key(t)} t={t} now={now} multi={multi} parent={parentLine(t, index)} onOpen={() => open(t)} active={openKey === key(t)} words={words} />
   );
@@ -464,6 +477,9 @@ export default function App() {
               {view === "table" && <TableView tasks={viewTasks} now={now} multi={multi} openKey={openKey} onOpen={open} groups={tableGroups} by={groupBy} words={words} />}
               {view === "graph" && <GraphView tasks={tasks} all={inQueue} multi={multi} openKey={openKey} onOpen={open} />}
               {view === "timeline" && <TimelineView tasks={viewTasks} now={now} multi={multi} openKey={openKey} onOpen={open} words={words} />}
+              {/* Every folded or empty column is a chip in one row under the filter bar, in board order (mu-84). A new
+                  project or mode starts the row afresh, scrolled to its start (QA_4). */}
+              {view === "board" && <ColumnRow key={`${queue}/${modes.mode}`} chips={rowChips} grouped={groupBy !== "none"} onOpen={(id) => setColumnOpen(id, true)} />}
               {/* Recently finished (0051) is docked at the board's right edge, grouped or not; under it when the row is too narrow for both. */}
               {view === "board" && <OverLine over={overCheck} queue={queue} />}
               {view === "board" && <OldPausesOffer offered={state?.settings?.oldPausesOffered} onDone={() => void refresh()} />}
@@ -483,28 +499,28 @@ export default function App() {
                   fold={columnFoldOf}
                 />
               )}
-              {/* Backlog never folds, its quick add is always there, except in Focus (0038), which folds
-                  every column but Building, Testing and Your check to a strip that opens with a click.
-                  The Paused lane (mu-59) comes first, beside Backlog. An open column is at most
+              {/* Only the open columns, each with its Fold; the rest are chips in the row above. Backlog
+                  stays open for its quick add unless Focus (0038) folds it or the owner does. The
+                  Paused lane (mu-59) comes first, beside Backlog. An open column is at most
                   OPEN_COLUMN_MAX wide, and the room left over stays at the right (mu-83). */}
               {groupBy === "none" && <main className="board" style={{ gridTemplateColumns: plain.tracks }}>
-                <PausedColumn tasks={cols.paused} state={plain.state("paused")} fold={columnFoldOf.of("paused")} onFold={() => columnFoldOf.toggle("paused")} renderCard={card} />
-                {STAGES.map((c) => {
+                {plain.open.length === 0 && <p className="none">Every column is folded into the row above: click one to open it.</p>}
+                {plain.isOpen("paused") && <PausedColumn tasks={cols.paused} onHide={() => setColumnOpen("paused", false)} renderCard={card} />}
+                {STAGES.filter((c) => plain.isOpen(c.id)).map((c) => {
                   const list = cols[c.id] ?? [];
                   const shown = c.id === "done" && !showAllDone ? list.slice(0, 8) : list;
                   const backlog = c.id === "backlog";
-                  const count = list.length + (backlog ? notes.length : 0);
+                  const count = placeCount(c.id, placeCounts);
                   // Your check stays open while Accept all's result line has something to say (0043).
                   const kept = c.id === "your-check" && boardResult;
-                  const fold = columnFoldOf.of(c.id);
-                  const state = plain.state(c.id);
+                  const hide = () => setColumnOpen(c.id, false);
                   return (
-                    <section key={c.id} className={plain.className(c.id)}>
-                      <ColumnHead stage={c} count={count} countNode={c.id === "your-check" && state === "open" ? <CheckCount count={count} over={overCheck} queue={queue} /> : undefined} needs={needsYouCount(list)} blocked={blockedCount(list)} fold={fold} onFold={() => columnFoldOf.toggle(c.id)} empty={state === "empty"}>
+                    <section key={c.id} className={columnClass(c.id, "open")}>
+                      <ColumnHead stage={c} count={count} countNode={c.id === "your-check" ? <CheckCount count={count} over={overCheck} queue={queue} /> : undefined} needs={needsYouCount(list)} blocked={blockedCount(list)} fold="fixed" onFold={hide} onHide={hide}>
                         {c.role && <span className="role">{c.role}</span>}
                       </ColumnHead>
                       {c.id === "your-check" && <ColumnLine over={overCheck} queue={queue} />}
-                      {backlog && fold !== "folded" && quickAdd}
+                      {backlog && quickAdd}
                       <ColumnCards>
                         {backlog
                           ? backlogColumn(notes, list).map((item) =>
@@ -528,7 +544,7 @@ export default function App() {
                   );
                 })}
               </main>}
-              <Recent key={`${queue}/${modes.mode}`} tasks={inQueue} now={now} multi={multi} openKey={openKey} onOpen={open} />
+              {plain.isOpen(RAIL_ID) && <Recent key={`${queue}/${modes.mode}`} tasks={inQueue} now={now} kind={recentKind} onKind={pickRecentKind} multi={multi} openKey={openKey} onOpen={open} onFold={() => setColumnOpen(RAIL_ID, false)} />}
               </div>}
             </>
           )}

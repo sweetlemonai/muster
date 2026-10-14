@@ -6,7 +6,7 @@ import { applyQuery, dayContext, GROUPS, groupValues } from "./filters";
 import { GroupedBoard } from "./Groups";
 import { groupItems, isWork } from "./levels";
 import { columns, stampMinutes } from "./lib";
-import { columnFold, columnState, columnTrack, ELEMENTS, look, Mode, MODES, type ColumnFold, type ColumnFolds, type DisplayMode } from "./modes";
+import { columnFold, ELEMENTS, look, Mode, MODES, plainBoard, type ColumnFolds, type DisplayMode, type ModePicks } from "./modes";
 import { wasText } from "./Pause";
 import { PausedColumn } from "./PausedLane";
 import { ProjectItem } from "./ProjectList";
@@ -33,9 +33,10 @@ const paused = { stage: "building", claimedBy: A, stageSince: "2026-10-13 08:00"
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ").trim();
 const inMode = (mode: DisplayMode, el: ReactElement) => renderToStaticMarkup(createElement(Mode.Provider, { value: mode }, el));
 const stub = (t: Task) => createElement("i", { className: "card-stub" }, t.id);
-const column = (tasks: Task[], fold: ColumnFold = "fixed") => renderToStaticMarkup(createElement(PausedColumn, { tasks, state: columnState(fold, tasks.length), fold, onFold: () => {}, renderCard: stub }));
-/** The lane's track in the board's grid, as App works it out. */
-const laneWidth = (count: number, fold: ColumnFold) => columnTrack(columnState(fold, count));
+const column = (tasks: Task[]) => renderToStaticMarkup(createElement(PausedColumn, { tasks, onHide: () => {}, renderCard: stub }));
+/** Whether the lane is open on the plain board, as App works it out, with `count` paused tasks. */
+const laneOpen = (mode: DisplayMode, count: number, picks: ModePicks = {}) =>
+  plainBoard({ columns: look("columns", mode), rail: look("rail", mode) }, picks, (id) => (id === "paused" ? count : 1), () => false).isOpen("paused");
 
 describe("what a card in the Paused lane says", () => {
   it("where it was, since when and why", () => {
@@ -60,27 +61,23 @@ describe("the Paused lane on the board", () => {
   it("holds the paused tasks with its count and what Resume does", () => {
     const html = column([task({ ...paused, id: "0001" }), task({ ...paused, id: "0002", stage: "backlog" })]);
     expect(html).toMatch(/^<section class="column col-paused">/);
-    expect(text(html)).toMatch(/^⏸︎ Paused 2 Resume puts it back in its column/);
+    expect(text(html)).toMatch(/^⏸︎ Paused 2 Fold Resume puts it back in its column/);
     expect([...html.matchAll(/card-stub">(\d+)</g)].map((m) => m[1])).toEqual(["0001", "0002"]);
   });
-  it("is there with nothing in it, as a thin strip with its name that says empty (mu-83)", () => {
-    const html = column([]);
-    expect(html).toMatch(/^<section class="column col-paused col-strip col-empty">/);
-    expect(text(html)).toMatch(/^⏸︎ Paused empty/);
-    expect(laneWidth(0, "fixed")).toBe("44px");
-    expect(laneWidth(2, "fixed")).toBe("minmax(118px, 400px)");
+  it("open, has a Fold that sends it to the row above the board (mu-84)", () => {
+    expect(column([task({ ...paused, id: "0001" })])).toContain('<button type="button" aria-expanded="true" aria-label="Fold ⏸︎ Paused into the row above the board" title="Fold ⏸︎ Paused into the row above the board" class="ui-pill col-hide">Fold</button>');
   });
-  it("folds to its strip in Focus, with its count and what needs you, and opens with a click", () => {
-    const list = [task({ ...paused, id: "0001", waitingForOwner: true }), task({ ...paused, id: "0002" })];
-    const folded = column(list, "folded");
-    expect(folded).toMatch(/^<section class="column col-paused col-strip folded">/);
-    expect(folded).toContain('<button type="button" class="col-fold" aria-expanded="false"');
-    expect(text(folded)).toContain("⏸︎ Paused 2 1");
-    expect(laneWidth(2, "folded")).toBe("44px");
-    expect(column(list, "opened")).toContain('aria-expanded="true"');
-    expect(laneWidth(2, "opened")).toBe("minmax(118px, 400px)");
+  it("with nothing in it, is a chip in the row in every mode, never a strip (mu-84)", () => {
+    for (const { id } of MODES) expect(laneOpen(id, 0), id).toBe(false);
+    expect(laneOpen("adhd", 2)).toBe(true);
+    expect(laneOpen("standard", 2)).toBe(true);
+    // Opened by the owner, it stays open empty; hidden, it stays in the row full.
+    expect(laneOpen("adhd", 0, { paused: "shown" })).toBe(true);
+    expect(laneOpen("adhd", 2, { paused: "hidden" })).toBe(false);
   });
-  it("is open in ADHD and Standard and a strip in Focus, as Settings' Display says", () => {
+  it("is open in ADHD and Standard and a chip in Focus, as Settings' Display says", () => {
+    expect(laneOpen("focus", 2)).toBe(false);
+    expect(laneOpen("focus", 2, { paused: "shown" })).toBe(true);
     expect(MODES.map((m) => columnFold(look("columns", m.id), "paused", new Set()))).toEqual(["fixed", "fixed", "folded"]);
     expect(columnFold(look("columns", "focus"), "paused", new Set(["paused"]))).toBe("opened");
     for (const { id } of MODES) expect(ELEMENTS.columns[id].says, id).toContain("Paused");

@@ -696,7 +696,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   shares) and beside the stage in the pane's status line, with an optional why typed in place. A
   paused task keeps its stage and claim but leaves its column for the **Paused lane** (0059,
   `PausedLane.tsx`, `lib.ts` `columns()`): the board's first column, before Backlog, always shown
-  with its count (a thin labelled strip when empty, folded in Focus), a Paused band first under
+  with its count (a chip in the row above the board when empty or folded, mu-84), a Paused band first under
   Group by; its card says "⏸ was Building · paused 2 h ago · why", and Resume brings it back to its
   column on the next poll. The stage columns' counts and the sidebar's in-progress count leave
   paused tasks out; the sidebar's "⏸ 2" stays. Elsewhere it shows the grey **⏸ Paused** chip with "2 h ago
@@ -800,13 +800,13 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   groups and Sort behind **Filters (n)**, opened in place; Who and Group by as their value; brief
   cards (who, check-in, branch, tags, parent, estimate and files on the selected card); Vision,
   Review, Work, and the Log and check-ins folded to a header each. Focus: Building, Testing and Your check
-  open, the other columns strips with counts, needs-you and blocked counts (a click opens one until
-  the mode changes, in the plain and the grouped board, whose Backlog band folds to its head the
-  same way); cards are the title, one status line and blocked, quiet, needs a tester or needs you; the filter bar is a **Search and filters ⌘F** button until ⌘F, and
+  open, the other columns chips in the row above the plain board with counts, needs-you and blocked
+  counts (a click opens one, remembered in Focus until it's folded again, mu-84), and strips in the
+  grouped board's bands, whose Backlog band folds to its head the same way; cards are the title, one status line and blocked, quiet, needs a tester or needs you; the filter bar is a **Search and filters ⌘F** button until ⌘F, and
   stays while a search, filter or Who hides tasks; the sidebar is 150 px of category headings with their
   needs-you count, names, a working dot,
-  stalled (with its Ask all quiet sessions) and needs-you counts; Recently finished (0051) is a strip with its name and count that opens in
-  place (Fold puts it back), and reads no costs while folded; the Done card's "done 4 min ago" line
+  stalled (with its Ask all quiet sessions) and needs-you counts; Recently finished (0051) is the row's last chip with its name and count, which
+  opens it in place (Fold puts it back), and reads no costs while folded; the Done card's "done 4 min ago" line
   shows in all three; the pane folds as Standard. Needs-you counts and badges show in every mode. A pane fold keeps its
   section mounted in every mode (ADHD's wrapper is `display: contents`), so typed text survives a
   fold or a mode switch; the folded Log's header counts its lines and check-ins.
@@ -864,8 +864,40 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   everything in front of my eyes"). Drag the edge to resize it; the width is remembered. Esc
   closes it. The projects sidebar resizes the same way (0058): one splitter (`ui/Splitter.tsx`,
   rules in `splitter.ts`) on both, drag, double-click for the default, ← → (Shift for 120 px).
-- **Columns always fit:** an empty column becomes a slim strip with its name written vertically,
-  so every stage column stays in view, even with a task open beside the board.
+- **The row of folded columns** (task 0084, the owner's choice A; `ColumnRow.tsx`, `modes.ts`
+  `plainBoard`): every place of the plain board that isn't open (the Paused lane, a stage, Recently
+  finished) is a chip in one row under the filter bar, in board order: its stage dot, name and
+  count, and "2 need you" and "1 blocked" when there are any. A place is in the row when it's
+  empty (every mode), when the mode folds it (Focus: all but Building, Testing and Your check, and
+  Recently finished) or when the owner folded it. The row is a labelled group of buttons, each
+  read out with its counts in words, and keeps its one line of a fixed 34 px ("Every column is
+  open" on the plain board, empty under Group by) so nothing moves: it never wraps
+  (`flex-wrap: nowrap`); short of room the names shorten to an ellipsis (a one-line clamp that
+  breaks anywhere, `word-break: break-all`, at least 2.5em) while counts and needs-you and blocked
+  stay whole. That's only while it makes the chips fit: `measureRow` works out the least room they
+  can take (`leastRoom`: their boxes less what each name could still give up), the same whether
+  they're drawn whole or short, and past the row's room the list gets `col-row-scrolls`, whose
+  chips keep their whole names and scroll sideways in a list of their own (`.col-row-chips`). Then the row ends with a cue that never
+  scrolls away (`RowCue`, review R7): "+3 more · 1 needs you", read as "3 more columns past the
+  edge, 1 needs you. Show them"; its first click scrolls to and focuses the first hidden chip that
+  needs you (past the far edge first), else the next one past the edge. Each click after steps in
+  board order to the next hidden chip past the one the last click went to, while that one is at
+  least partly in view (`cutBy`), so a chip wider than the list, never wholly in view, doesn't hold
+  it (R8); with nothing past it, back to the start, the first hidden chip, so a round reaches every
+  chip once (QA_4). The row is keyed by project and mode, so a new one starts scrolled to its start.
+  `rowCue.ts` `watchRow` measures on a ResizeObserver (row, list, each chip) and on scroll, once a
+  frame, never on a poll that changes no size; a chip is in view only with both edges inside
+  the list's box, so it reads the same right to left, and the cue shows only when the chips need
+  more than the whole row even shortened, so it doesn't keep itself there (`measureRow`, `overflowCue`). App builds the chips with `rowChipsOf` and counts each place with `placeCount` (Backlog
+  with its notes, Recently finished its week of the kind its chips pick: App keeps that pick,
+  `muster.recentKind`, so the chip, the list and whether the rail opens by itself agree); the
+  grouped board's fold click is `toggleBand`. The board's grid holds only the open columns, at most 400 px each; an open column's head
+  (the Paused lane's, Recently finished's too) has a quiet **Fold**. The owner's opens and folds
+  are kept per display mode in `localStorage` (`muster.columns`, read with `loadPicks`, which
+  drops unknown modes, places and values), only where they differ from what the mode does
+  (`pickColumn`), so a mode switch resets nothing. Backlog stays open empty for its quick add, Your
+  check while it has Accept all's result or its limit. With Group by, the bands keep 0083's strips
+  (a column the owner hid is folded there too) and the row holds only Recently finished.
 - **Columns scroll without scrollbars** (owner, 2026-10-13: "hide the scrollbar, in the columns
   doesn't feel good"): `.board .cards` hides its scrollbar (`scrollbar-width: none` and
   `::-webkit-scrollbar`), plain and grouped board; other scroll areas keep theirs. `ColumnCards.tsx`

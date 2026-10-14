@@ -80,7 +80,7 @@ function BacklogBand({ by, parts, tasks, renderCard, fold }: { by: "feature" | "
           <span className="meta">{count}</span>
         </div>
       ) : (
-        <button type="button" className="band-fold" aria-expanded={folded === "opened"} onClick={() => fold?.toggle("backlog")} title={folded === "folded" ? "Open the Backlog: Focus folds it" : "Fold the Backlog back, as Focus has it"}>
+        <button type="button" className="band-fold" aria-expanded={folded === "opened"} onClick={() => fold?.toggle("backlog")} title={folded === "folded" ? "Open the Backlog here" : "Fold the Backlog to its head"}>
           {title} <small>{count}</small>
           <FoldCounts needs={needsYouCount(tasks)} blocked={blockedCount(tasks)} />
         </button>

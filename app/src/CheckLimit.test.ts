@@ -61,7 +61,7 @@ describe("the Your check header over its limit (0050)", () => {
 
   it("the board: the line above it always (plain or grouped), the count and the short line in Your check, kept open while over", () => {
     expect(appSource).toContain('{view === "board" && <OverLine over={overCheck} queue={queue} />}');
-    expect(appSource).toContain("countNode={c.id === \"your-check\" && state === \"open\" ? <CheckCount count={count} over={overCheck} queue={queue} /> : undefined}");
+    expect(appSource).toContain("countNode={c.id === \"your-check\" ? <CheckCount count={count} over={overCheck} queue={queue} /> : undefined}");
     expect(appSource).toContain('{c.id === "your-check" && <ColumnLine over={overCheck} queue={queue} />}');
     expect(appSource).toContain('(id === "your-check" && (boardResult || overCheck.length > 0))');
     expect(appSource).toContain("limit={{ over: overCheck, queue }}");

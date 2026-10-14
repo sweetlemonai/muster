@@ -4,6 +4,57 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Closed and empty board columns are one row of chips above the board; show or hide each column (mu-84)
+**Did:** the plain board draws only its open columns; every empty, folded or hidden place (Paused,
+a stage, Recently finished) is a chip in one row under the filter bar, in board order, with its
+dot, name, count, needs you and blocked (`ColumnRow.tsx`). A chip opens its column in place; an
+open column's head, the Paused lane's and Recently finished's have **Fold**. `modes.ts`
+`plainBoard`, `pickColumn`, `loadPicks`/`storePicks`; `App.tsx`, `PausedLane.tsx`, `Recent.tsx`,
+`ModeViews.tsx`, `styles.css`; DESIGN.md (board section), manual 04, AS_BUILT.
+**Decided:** the owner's choice A (over B, short stubs, and C, empty columns open: DESIGN.md).
+Opens and folds are remembered per display mode on this Mac (AC2), not only until the mode is
+left as the task's prose had it for Focus; they're stored only where they differ from the mode's
+own fold, so Focus's folds stay its defaults. Group by bands keep mu-83's strips (out of scope);
+a column hidden on the plain board folds there too, and the row then holds only Recently finished.
+**Verified:** `columnRow.test.ts` (20 tests: every mode's open/row split, chip markup and words,
+labelled group, RTL-safe CSS, open/fold/persist round trips, broken storage); the gate's line is
+in the task's pass.
+**Fixed (review round 1, Akbar_2):** R1 the row wrapped, so a poll adding a badge moved the board's
+top → it was `flex-wrap: wrap` with only a min-height → one fixed 34 px line (`nowrap`); names
+shorten through a one-line clamp (min 2.5em) while counts stay whole, then it scrolls sideways
+(measured in headless Chromium from 1000 px to 300 px: one line, no count spills). R2 Recently
+finished's chip counted every kind while its list showed the remembered kind → App keeps the kind
+(`Recent` is controlled) and `weekCount` takes it. R3/R4 chip figures and the grouped fold click
+were untested inline code → `rowChipsOf`/`placeCount` (`ColumnRow.tsx`) and `bandFold`/`toggleBand`
+(`modes.ts`), tested, including the folded Paused lane's needs-you count. R5 "Every column is
+open" under Group by → said only on the plain board. R6 a test that couldn't fail → exact open/row
+lists for a hidden full column and a shown empty one.
+**Fixed (review round 2, Akbar_3):** R7 past its room the row scrolled with no cue, so in Focus
+at 690 px Ready, Done and Recently finished, and in a nine-chip row three needs-you badges, were
+out of sight → the chips scroll in a list of their own and a cue after it, which never scrolls
+away, says "+N more · K need you" and scrolls to the hidden chip that needs you (the lead's call;
+shorter badges turned down). `rowCue.ts` (`inView`, `overflowCue`, `measureRow`, `watchRow`).
+Measured in headless Chromium (Playwright, real frames) at 400 to 1100 px, LTR and RTL: the cue
+counts what's hidden, stays in the row, its clicks walk to the end and back, it goes when the
+window widens; the measured spans are the fixtures of `columnRow.test.ts` (43 tests).
+**Fixed (QA and review round 3, Akbar_3):** R8 the cue's clicks stayed on a chip wider than the
+row (Ready, 264 with 7 need you and 9 blocked, at 1400 px with the pane open) → the walk went on
+only from chips wholly in view → it goes on from the last click's chip while that's partly in
+view (`cutBy`, `overflowCue(…, from)`). QA's braindump Focus row showed "Rea…", "Buildi…" and
+Paused as its icon → the clamp broke only between words and names shortened even when the row
+scrolled anyway → `word-break: break-all`, and names shorten only when that makes every chip fit
+(`leastRoom`), else they stay whole and scroll. Measured in headless Chromium: 1100 px whole,
+1000 px shortened just enough, 900 px whole with "+3 more"; at 400 px the walk goes Ready,
+Building, Your check, Recently finished, then back, LTR and RTL; 47 tests.
+**Fixed (QA_4, Akbar_4):** past the end the cue went back to the first hidden chip that needs you
+(Ready), so the chips before it (Paused, Backlog, Shaping) were never reached → the wrap preferred
+needs-you over the start → only the first click (no `from`) goes to what needs you; after it each
+click steps in board order to the next hidden chip and wraps to the first. The row also kept the
+last project's scroll → it's keyed by project and mode (`key={queue/mode}`, as `Recent` is).
+Tests: the `visible = []` walk over Focus's six chips twice, and a 10-chip 1400 px row with a
+560 px Ready: each round reaches each target once, in board order, and shows every chip; 49 tests.
+**Open:** AC4's release-app screenshots and AC5's look are for Testing and the owner.
+
 ## 2026-10-14 — Muster wears the owner's new icons: app icon light and dark, sidebar logo, menu bar icon (mu-85, Gholi_2 → Gholi_4)
 **Did:** the owner's icon set is in `app/src-tauri/icons/original/`. The app icon follows macOS's
 light or dark look through an Icon Composer `Muster.icon` compiled to `Assets.car`

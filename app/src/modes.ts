@@ -49,15 +49,15 @@ const TABLE = {
   },
   columns: {
     label: "Board columns",
-    adhd: { how: "all", says: "Every stage, and Paused before Backlog; an empty one stays a narrow strip that says empty" },
-    standard: { how: "all", says: "Every stage, and Paused before Backlog; an empty one stays a narrow strip that says empty" },
-    focus: { how: "now", says: "Building, Testing and Your check; the others and Paused (the grouped board's Paused and Backlog bands too) are thin strips with their counts, needs you and blocked", reach: "Click a strip to open that column" },
+    adhd: { how: "all", says: "Every stage with tasks, and Paused before Backlog; an empty one, or one you folded, is a chip in the row above the board with its count, needs you and blocked" },
+    standard: { how: "all", says: "Every stage with tasks, and Paused before Backlog; an empty one, or one you folded, is a chip in the row above the board with its count, needs you and blocked" },
+    focus: { how: "now", says: "Building, Testing and Your check; the others and Paused are chips in the row above the board with their counts, needs you and blocked (the grouped board's Paused and Backlog bands fold to their heads)", reach: "Click a chip to open that column; Fold puts it back" },
   },
   rail: {
     label: "Recently finished",
     adhd: { how: "open", says: "Docked beside the board: what merged or was accepted, by day, with time and tokens" },
     standard: { how: "open", says: "Docked beside the board: what merged or was accepted, by day, with time and tokens" },
-    focus: { how: "strip", says: "A thin strip beside the board with its name and count", reach: "Click the strip to open it in place; Fold puts it back" },
+    focus: { how: "strip", says: "A chip at the end of the row above the board, with its name and count", reach: "Click the chip to open it in place; Fold puts it back" },
   },
   "pane-sections": {
     label: "Task pane",
@@ -137,12 +137,15 @@ export function cardLines(how: Look<"card-lines">, active: boolean): CardLines {
 /** The stages Focus keeps open: the work going on now and what waits on the owner. */
 export const NOW_STAGES: readonly string[] = ["building", "testing", "your-check"];
 
-/** A board column in a mode: "fixed" when the mode doesn't fold it (it shows as ever), "folded"
- *  to a strip, or "opened" from its strip by a click. */
-export function columnFold(how: Look<"columns">, stage: string, opened: ReadonlySet<string>): ColumnFold {
+/** A grouped board band's column in a mode: "fixed" when the mode doesn't fold it (it shows as
+ *  ever), "folded" to a strip, or "opened" from its strip by a click. A column the owner hid on the
+ *  plain board (mu-84) is folded in the bands too. */
+export function columnFold(how: Look<"columns">, stage: string, opened: ReadonlySet<string>, hidden: ReadonlySet<string> = NO_IDS): ColumnFold {
+  if (hidden.has(stage)) return "folded";
   if (how === "all" || NOW_STAGES.includes(stage)) return "fixed";
   return opened.has(stage) ? "opened" : "folded";
 }
+const NO_IDS: ReadonlySet<string> = new Set();
 export type ColumnFold = "fixed" | "folded" | "opened";
 
 /** The board's column folds, for the grouped board's bands: each column's, and the click on its strip. */
@@ -173,11 +176,105 @@ export const columnClass = (stage: string, s: ColumnState) => `column col-${stag
 /** The plain board's columns in their order: the Paused lane, then every stage. */
 export const BOARD_COLUMNS: readonly string[] = ["paused", ...STAGES.map((s) => s.id)];
 
-/** The plain project board (mu-83): each column's state from its fold, its count and whether it's
- *  kept open with no cards, the grid's track list, and each column's classes. App draws exactly
- *  this, so the board the owner looks at is the one the tests check. */
-export function plainBoard(fold: (id: string) => ColumnFold, count: (id: string) => number, keepOpen: (id: string) => boolean) {
-  const states = new Map(BOARD_COLUMNS.map((id) => [id, columnState(fold(id), count(id), keepOpen(id))]));
-  const state = (id: string): ColumnState => states.get(id) ?? "empty";
-  return { state, tracks: BOARD_COLUMNS.map((id) => columnTrack(state(id))).join(" "), className: (id: string) => columnClass(id, state(id)) };
+/** Recently finished, docked at the board's right: the last place in the row of folded columns. */
+export const RAIL_ID = "recent";
+/** Every place the row of folded columns can hold, in board order. */
+export const ROW_ORDER: readonly string[] = [...BOARD_COLUMNS, RAIL_ID];
+
+/** The owner's pick for one column in one mode (mu-84): "shown" keeps open a column the mode or
+ *  its emptiness would put in the row, "hidden" puts an open one there. No pick: the mode decides. */
+export type ColumnPick = "shown" | "hidden";
+export type ModePicks = Readonly<Record<string, ColumnPick>>;
+/** The picks per mode, kept on this Mac, so each mode remembers its own board. */
+export type ColumnPicks = Partial<Record<DisplayMode, ModePicks>>;
+export const COLUMNS_KEY = "muster.columns";
+
+/** The kept picks: none for a missing or broken value, and only known modes, places and picks. */
+export function loadPicks(store: Pick<Storage, "getItem">): ColumnPicks {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(store.getItem(COLUMNS_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: ColumnPicks = {};
+  for (const { id } of MODES) {
+    const m: unknown = (raw as Record<string, unknown>)[id];
+    if (!m || typeof m !== "object" || Array.isArray(m)) continue;
+    const kept: Record<string, ColumnPick> = {};
+    for (const [col, v] of Object.entries(m)) if (ROW_ORDER.includes(col) && (v === "shown" || v === "hidden")) kept[col] = v;
+    if (Object.keys(kept).length) out[id] = kept;
+  }
+  return out;
+}
+
+export function storePicks(store: Pick<Storage, "setItem">, picks: ColumnPicks): void {
+  store.setItem(COLUMNS_KEY, JSON.stringify(picks));
+}
+
+/** What the window's mode says about the board, as App reads it from the table. */
+export type BoardLooks = { columns: Look<"columns">; rail: Look<"rail"> };
+
+/** Whether the mode itself folds a place: Focus folds every column but Building, Testing and Your
+ *  check, and Recently finished. */
+export function modeFolds(looks: BoardLooks, id: string): boolean {
+  if (id === RAIL_ID) return looks.rail === "strip";
+  return looks.columns === "now" && !NOW_STAGES.includes(id);
+}
+
+/** Whether a place is open when the owner hasn't picked: the mode doesn't fold it and it has
+ *  something in it. `keepOpen` for one with something to show and no cards (Backlog's quick add,
+ *  Your check's Accept all line or its limit). An empty one goes to the row in every mode. */
+export function autoOpen(looks: BoardLooks, id: string, count: number, keepOpen = false): boolean {
+  return !modeFolds(looks, id) && (count > 0 || keepOpen);
+}
+
+/** A mode's picks after the owner opens (`open` true) or folds a place, kept only where they differ
+ *  from what the mode does now (`auto`): folding a column Focus folds forgets the open, and opening
+ *  a full column the owner hid forgets the hide. */
+export function pickColumn(picks: ColumnPicks, mode: DisplayMode, id: string, open: boolean, auto: boolean): ColumnPicks {
+  const mine: Record<string, ColumnPick> = { ...picks[mode] };
+  if (open === auto) delete mine[id];
+  else mine[id] = open ? "shown" : "hidden";
+  const out = { ...picks };
+  if (Object.keys(mine).length) out[mode] = mine;
+  else delete out[mode];
+  return out;
+}
+
+const idsPicked = (picks: ModePicks, pick: ColumnPick): ReadonlySet<string> => new Set(Object.keys(picks).filter((id) => picks[id] === pick));
+
+/** A grouped board band's column in a mode with the owner's picks in it: what the mode folds, and
+ *  what the owner opened or hid (mu-84), the same columns the plain board folds. */
+export function bandFold(looks: BoardLooks, picks: ModePicks, id: string): ColumnFold {
+  return columnFold(looks.columns, id, idsPicked(picks, "shown"), idsPicked(picks, "hidden"));
+}
+
+/** The picks after a click on a band column's head or strip: a folded one opens, an open one folds,
+ *  kept only where that differs from the mode's own fold. */
+export function toggleBand(picks: ColumnPicks, mode: DisplayMode, looks: BoardLooks, id: string): ColumnPicks {
+  return pickColumn(picks, mode, id, bandFold(looks, picks[mode] ?? {}, id) === "folded", !modeFolds(looks, id));
+}
+
+/** The plain project board (mu-84): every place, Paused to Recently finished, is open or a chip in
+ *  the row above the board; open is the owner's pick, else `autoOpen`. The grid holds only the open
+ *  columns, each at most OPEN_COLUMN_MAX wide, and the row the rest, in board order. App draws
+ *  exactly this, so the board the owner looks at is the one the tests check. */
+export function plainBoard(looks: BoardLooks, picks: ModePicks, count: (id: string) => number, keepOpen: (id: string) => boolean) {
+  const auto = new Map(ROW_ORDER.map((id) => [id, autoOpen(looks, id, count(id), keepOpen(id))]));
+  const isOpen = (id: string) => {
+    const pick = picks[id];
+    return pick ? pick === "shown" : auto.get(id) === true;
+  };
+  const open = BOARD_COLUMNS.filter(isOpen);
+  return {
+    isOpen,
+    /** What the mode does with the place now, for `pickColumn`. */
+    auto: (id: string) => auto.get(id) === true,
+    open,
+    row: ROW_ORDER.filter((id) => !isOpen(id)),
+    /** The grid's tracks; with nothing open, one track for the line that says so. */
+    tracks: open.length ? open.map(() => columnTrack("open")).join(" ") : "minmax(0, 1fr)",
+  };
 }

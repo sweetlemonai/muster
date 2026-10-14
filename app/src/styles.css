@@ -1167,14 +1167,35 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .mode-table th[scope="row"] { font-weight: 600; white-space: nowrap; }
 .mode-table .on { background: var(--selected); }
 .mode-table small { display: block; margin-top: 2px; color: var(--muted); }
-/* Recently finished as Focus folds it: a thin strip beside the board (a bar under it when stacked)
-   with its name and count; the whole strip opens it. */
-.recent.folded { flex: none; min-width: 0; }
-.rail-fold { border: none; background: none; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; padding: 12px 6px; cursor: pointer; text-align: left; }
-.board-row:not(.stacked) .rail-fold { writing-mode: vertical-rl; white-space: nowrap; height: 100%; }
-.rail-fold:hover, .rail-fold:focus-visible { color: var(--text); background: var(--hover); }
-.rail-fold small { margin: 4px; text-transform: none; letter-spacing: 0; }
-.rail-unfold { margin-left: 8px; font-size: 10.5px; padding: 0 7px; text-transform: none; letter-spacing: 0; }
+/* The row of folded columns (mu-84, the owner's choice A): one line under the filter bar, a chip
+   per folded or empty place in board order, Paused to Recently finished. It always has its one
+   line, a fixed height that never wraps, so a column folding or opening, or a poll changing a
+   count, never moves the bar or the board's top. Short of room, the chips' names shorten with an
+   ellipsis (the full name is in the chip's label and title) and their counts and needs-you and
+   blocked words never do; narrower still, the row scrolls sideways. Its padding keeps the chips'
+   focus rings inside it. A chip's count is in tabular figures, so a count changing doesn't shift
+   its neighbours. Flex, start-aligned: it mirrors in right to left. A chip is its stage dot, its
+   name, its count, and its needs-you and blocked words when there are any: the colour is never
+   the only cue. */
+.col-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; height: 34px; padding: 4px 14px 2px; }
+.col-row-chips { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; height: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.col-row-none { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.col-row .col-chip { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border: 1px solid var(--line); font-size: 12px; color: var(--text); white-space: nowrap; }
+.col-row .col-chip > * { flex: none; }
+/* Past the row's room even with names shortened, the chips keep their whole names and scroll. */
+.col-row .col-row-scrolls .col-chip { flex: none; }
+.col-row .col-chip .col-chip-name { flex: 0 1 auto; min-width: 2.5em; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; line-clamp: 1; overflow: hidden; white-space: normal; word-break: break-all; text-align: start; }
+.col-row .col-chip::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--status); }
+.col-row .col-chip.col-paused { border-style: dashed; }
+.col-row .col-chip.col-paused::before, .col-row .col-chip.col-recent::before { content: none; }
+.col-row .col-chip small { margin: 0; font-variant-numeric: tabular-nums; }
+.col-row .col-chip .count { margin: 0; }
+/* Past the row's room, the cue at its end (review R7): never shrinks, never scrolls away. */
+.col-row .col-cue { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border: 1px solid var(--line); background: var(--selected); font-size: 12px; color: var(--text); white-space: nowrap; }
+.col-row .col-cue .count { margin: 0; }
+/* An open column's Fold, quiet at the end of its head, back to full contrast on hover or focus. */
+.column h2 .col-hide { float: inline-end; margin-top: -2px; margin-inline-start: 6px; padding: 0 7px; font-size: 10.5px; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.rail-unfold { margin-inline-start: 8px; font-size: 10.5px; padding: 0 7px; text-transform: none; letter-spacing: 0; }
 /* The Your check limit (0050): words in the needs-you orange (--warn, 4.5:1). The column's
    short line (two lines) and the line above the board (one) always have their places, so nothing
    moves when they come or go. */
