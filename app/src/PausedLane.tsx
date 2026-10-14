@@ -3,7 +3,7 @@ import ColumnCards from "./ColumnCards";
 import { needsYouCount } from "./human";
 import { key } from "./lib";
 import { blockedCount, ColumnHead, FoldCounts } from "./ModeViews";
-import type { ColumnFold, ColumnFolds } from "./modes";
+import { columnClass, type ColumnFold, type ColumnFolds, type ColumnState } from "./modes";
 import { PAUSE_GLYPH } from "./Pause";
 import type { Task } from "./types";
 
@@ -15,15 +15,12 @@ import type { Task } from "./types";
 /** The lane as a board column's head reads it. */
 export const PAUSED_LANE = { id: "paused", label: `${PAUSE_GLYPH} Paused`, role: "Resume puts it back in its column" };
 
-/** The lane's width in the board's grid: a column while it holds anything and isn't folded, else
- *  the strip an empty column narrows to. */
-export const pausedLaneWidth = (count: number, fold: ColumnFold) => (count > 0 && fold !== "folded" ? "minmax(118px, 1fr)" : "44px");
-
-/** The plain board's Paused lane: a column like the stages', first in the row. */
-export function PausedColumn({ tasks, fold, onFold, renderCard }: { tasks: Task[]; fold: ColumnFold; onFold: () => void; renderCard: (t: Task) => ReactNode }) {
+/** The plain board's Paused lane: a column like the stages', first in the row, open, an empty
+ *  strip or folded as modes.ts `columnState` says. */
+export function PausedColumn({ tasks, state, fold, onFold, renderCard }: { tasks: Task[]; state: ColumnState; fold: ColumnFold; onFold: () => void; renderCard: (t: Task) => ReactNode }) {
   return (
-    <section className={`column col-paused${fold === "folded" ? " folded" : tasks.length ? "" : " empty"}`}>
-      <ColumnHead stage={PAUSED_LANE} count={tasks.length} needs={needsYouCount(tasks)} blocked={blockedCount(tasks)} fold={fold} onFold={onFold}>
+    <section className={columnClass("paused", state)}>
+      <ColumnHead stage={PAUSED_LANE} count={tasks.length} needs={needsYouCount(tasks)} blocked={blockedCount(tasks)} fold={fold} onFold={onFold} empty={state === "empty"}>
         <span className="role">{PAUSED_LANE.role}</span>
       </ColumnHead>
       <ColumnCards>
@@ -43,7 +40,7 @@ export function PausedBand({ tasks, renderCard, fold }: { tasks: Task[]; renderC
   const count = `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`;
   const folded = fold?.of(PAUSED_LANE.id) ?? "fixed";
   return (
-    <section className={`band paused-band${tasks.length ? "" : " empty"}`}>
+    <section className={`band paused-band${tasks.length ? "" : " paused-none"}`}>
       {folded === "fixed" ? (
         <div className="band-head" title={PAUSED_LANE.role}>
           <span className="band-title">{PAUSED_LANE.label}</span>

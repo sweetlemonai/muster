@@ -6,9 +6,9 @@ import { applyQuery, dayContext, GROUPS, groupValues } from "./filters";
 import { GroupedBoard } from "./Groups";
 import { groupItems, isWork } from "./levels";
 import { columns, stampMinutes } from "./lib";
-import { columnFold, ELEMENTS, look, Mode, MODES, type ColumnFolds, type DisplayMode } from "./modes";
+import { columnFold, columnState, columnTrack, ELEMENTS, look, Mode, MODES, type ColumnFold, type ColumnFolds, type DisplayMode } from "./modes";
 import { wasText } from "./Pause";
-import { PausedColumn, pausedLaneWidth } from "./PausedLane";
+import { PausedColumn } from "./PausedLane";
 import { ProjectItem } from "./ProjectList";
 import type { Task } from "./types";
 import { sortTasks } from "./viewData";
@@ -33,7 +33,9 @@ const paused = { stage: "building", claimedBy: A, stageSince: "2026-10-13 08:00"
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ").trim();
 const inMode = (mode: DisplayMode, el: ReactElement) => renderToStaticMarkup(createElement(Mode.Provider, { value: mode }, el));
 const stub = (t: Task) => createElement("i", { className: "card-stub" }, t.id);
-const column = (tasks: Task[], fold: "fixed" | "folded" | "opened" = "fixed") => renderToStaticMarkup(createElement(PausedColumn, { tasks, fold, onFold: () => {}, renderCard: stub }));
+const column = (tasks: Task[], fold: ColumnFold = "fixed") => renderToStaticMarkup(createElement(PausedColumn, { tasks, state: columnState(fold, tasks.length), fold, onFold: () => {}, renderCard: stub }));
+/** The lane's track in the board's grid, as App works it out. */
+const laneWidth = (count: number, fold: ColumnFold) => columnTrack(columnState(fold, count));
 
 describe("what a card in the Paused lane says", () => {
   it("where it was, since when and why", () => {
@@ -61,22 +63,22 @@ describe("the Paused lane on the board", () => {
     expect(text(html)).toMatch(/^⏸︎ Paused 2 Resume puts it back in its column/);
     expect([...html.matchAll(/card-stub">(\d+)</g)].map((m) => m[1])).toEqual(["0001", "0002"]);
   });
-  it("is there with nothing in it, as a thin strip with its name and count", () => {
+  it("is there with nothing in it, as a thin strip with its name that says empty (mu-83)", () => {
     const html = column([]);
-    expect(html).toMatch(/^<section class="column col-paused empty">/);
-    expect(text(html)).toMatch(/^⏸︎ Paused 0/);
-    expect(pausedLaneWidth(0, "fixed")).toBe("44px");
-    expect(pausedLaneWidth(2, "fixed")).toBe("minmax(118px, 1fr)");
+    expect(html).toMatch(/^<section class="column col-paused col-strip col-empty">/);
+    expect(text(html)).toMatch(/^⏸︎ Paused empty/);
+    expect(laneWidth(0, "fixed")).toBe("44px");
+    expect(laneWidth(2, "fixed")).toBe("minmax(118px, 400px)");
   });
   it("folds to its strip in Focus, with its count and what needs you, and opens with a click", () => {
     const list = [task({ ...paused, id: "0001", waitingForOwner: true }), task({ ...paused, id: "0002" })];
     const folded = column(list, "folded");
-    expect(folded).toMatch(/^<section class="column col-paused folded">/);
+    expect(folded).toMatch(/^<section class="column col-paused col-strip folded">/);
     expect(folded).toContain('<button type="button" class="col-fold" aria-expanded="false"');
     expect(text(folded)).toContain("⏸︎ Paused 2 1");
-    expect(pausedLaneWidth(2, "folded")).toBe("44px");
+    expect(laneWidth(2, "folded")).toBe("44px");
     expect(column(list, "opened")).toContain('aria-expanded="true"');
-    expect(pausedLaneWidth(2, "opened")).toBe("minmax(118px, 1fr)");
+    expect(laneWidth(2, "opened")).toBe("minmax(118px, 400px)");
   });
   it("is open in ADHD and Standard and a strip in Focus, as Settings' Display says", () => {
     expect(MODES.map((m) => columnFold(look("columns", m.id), "paused", new Set()))).toEqual(["fixed", "fixed", "folded"]);
@@ -129,7 +131,7 @@ describe("the grouped board's Paused band", () => {
   });
   it("is a thin labelled line with nothing paused", () => {
     const html = grouped(all.filter((t) => !t.paused));
-    expect(html).toContain('<section class="band paused-band empty">');
+    expect(html).toContain('<section class="band paused-band paused-none">');
     expect(text(band(html))).toBe("⏸︎ Paused 0 tasks");
     expect(band(html)).not.toContain("col-paused");
   });

@@ -8,7 +8,7 @@ import EffortGroups, { useAcceptResults } from "./EffortGroups";
 import ColumnCards from "./ColumnCards";
 import { needsYouCount } from "./human";
 import { blockedCount, ChoiceChips, ColumnHead, FoldCounts } from "./ModeViews";
-import type { ColumnFolds } from "./modes";
+import { columnClass, columnState, columnTrack, type ColumnFolds } from "./modes";
 import { BandCount } from "./CheckLimit";
 import { StatusPill } from "./ui";
 import type { Over } from "./yourCheckLimit";
@@ -148,13 +148,14 @@ export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderC
             ) : g.items.every((t) => t.paused) ? (
               <p className="none">Every task here is paused: they're in Paused, at the top</p>
             ) : (
-              <div className="board band-board" style={{ gridTemplateColumns: STAGES.map((s) => ((cols[s.id] ?? []).length || kept(s.id)) && fold?.of(s.id) !== "folded" ? "minmax(118px, 1fr)" : "44px").join(" ") }}>
+              <div className="board band-board" style={{ gridTemplateColumns: STAGES.map((s) => columnTrack(columnState(fold?.of(s.id) ?? "fixed", (cols[s.id] ?? []).length, kept(s.id)))).join(" ") }}>
                 {STAGES.map((c) => {
                   const list = cols[c.id] ?? [];
                   const folded = fold?.of(c.id) ?? "fixed";
+                  const state = columnState(folded, list.length, kept(c.id));
                   return (
-                    <section key={c.id} className={`column col-${c.id}${folded === "folded" ? " folded" : list.length || kept(c.id) ? "" : " empty"}`}>
-                      <ColumnHead stage={c} count={list.length} countNode={c.id === "your-check" && limit ? <BandCount tasks={list} over={limit.over} queue={limit.queue} /> : undefined} needs={needsYouCount(list)} blocked={blockedCount(list)} fold={folded} onFold={() => fold?.toggle(c.id)} />
+                    <section key={c.id} className={columnClass(c.id, state)}>
+                      <ColumnHead stage={c} count={list.length} countNode={c.id === "your-check" && limit && list.length > 0 ? <BandCount tasks={list} over={limit.over} queue={limit.queue} /> : undefined} needs={needsYouCount(list)} blocked={blockedCount(list)} fold={folded} onFold={() => fold?.toggle(c.id)} empty={state === "empty"} />
                       <ColumnCards>
                         {c.id === "your-check" && onChanged && (list.length > 0 || kept(c.id))
                           ? <EffortGroups tasks={list} place={place} renderCard={renderCard} onChanged={onChanged} />

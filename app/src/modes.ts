@@ -48,8 +48,8 @@ const TABLE = {
   },
   columns: {
     label: "Board columns",
-    adhd: { how: "all", says: "Every stage, and Paused before Backlog; an empty one narrows to its name" },
-    standard: { how: "all", says: "Every stage, and Paused before Backlog; an empty one narrows to its name" },
+    adhd: { how: "all", says: "Every stage, and Paused before Backlog; an empty one stays a narrow strip that says empty" },
+    standard: { how: "all", says: "Every stage, and Paused before Backlog; an empty one stays a narrow strip that says empty" },
     focus: { how: "now", says: "Building, Testing and Your check; the others and Paused (the grouped board's Paused and Backlog bands too) are thin strips with their counts, needs you and blocked", reach: "Click a strip to open that column" },
   },
   rail: {
@@ -146,3 +146,25 @@ export type ColumnFold = "fixed" | "folded" | "opened";
 
 /** The board's column folds, for the grouped board's bands: each column's, and the click on its strip. */
 export type ColumnFolds = { of: (stage: string) => ColumnFold; toggle: (stage: string) => void };
+
+/** What a board column is (mu-83): open with its cards, an empty strip, or a strip Focus folded.
+ *  No mode folds an empty column away: ADHD and Standard keep it as a narrow strip that says
+ *  empty, so the board keeps its shape; Focus folds what it folds, and its never-folded empty
+ *  columns are the same strip. `keepOpen` for a column that has something to show with no cards
+ *  (Backlog's quick add, Your check's Accept all line or its limit). */
+export type ColumnState = "open" | "empty" | "folded";
+export function columnState(fold: ColumnFold, count: number, keepOpen = false): ColumnState {
+  if (fold === "folded") return "folded";
+  return count > 0 || keepOpen ? "open" : "empty";
+}
+
+/** The widest an open column gets, in px: about a card's reading width. Spare room stays empty at
+ *  the board's right, so a card never stretches into one long line. */
+export const OPEN_COLUMN_MAX = 400;
+
+/** A column's track in the board's grid: open up to OPEN_COLUMN_MAX, a strip 44px. */
+export const columnTrack = (s: ColumnState) => (s === "open" ? `minmax(118px, ${OPEN_COLUMN_MAX}px)` : "44px");
+
+/** A column's classes. A strip is `col-strip`, with `col-empty` or `folded`: never `empty`, the
+ *  empty message's class, whose padding once pushed a strip out of its track. */
+export const columnClass = (stage: string, s: ColumnState) => `column col-${stage}${s === "folded" ? " col-strip folded" : s === "empty" ? " col-strip col-empty" : ""}`;

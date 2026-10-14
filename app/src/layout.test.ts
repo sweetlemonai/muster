@@ -19,11 +19,12 @@ describe("layout fixes (0061)", () => {
   });
 
   it("a folded column's strip lays its name, counts and Blocked out in a gapped line, not as overlapping inline-blocks", () => {
-    const r = rule(".column.folded .col-fold");
+    // One rule for every strip, empty or folded (mu-83).
+    const r = rule(".column.col-strip .col-fold, .column.col-strip .col-head");
     expect(r).toContain("display: flex;");
     expect(r).toContain("gap: 6px;");
     // Counts pad along the strip (top and bottom), not across it, so a count's text never touches the next one's edge.
-    const count = rule(".column.folded .col-fold .count");
+    const count = rule(".column.col-strip .col-fold .count");
     expect(count).toContain("margin: 0;");
     expect(count).toContain("padding: 5px 0;");
     expect(count).toContain("min-width: 0;");

@@ -41,7 +41,7 @@ describe("the Your check column by effort (0043)", () => {
     expect(groups([CHECK[0]])).not.toContain("accept-all");
   });
   it("keeps an empty group's heading, quietly, so nothing moves", () => {
-    expect(groups([CHECK[2]])).toContain('<div class="effort-group effort-look empty" role="group" aria-label="One look"><h3 class="effort-head">One look <small>0</small></h3></div>');
+    expect(groups([CHECK[2]])).toContain('<div class="effort-group effort-look effort-empty" role="group" aria-label="One look"><h3 class="effort-head">One look <small>0</small></h3></div>');
   });
 });
 

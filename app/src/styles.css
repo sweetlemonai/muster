@@ -123,7 +123,6 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .cards.fade-bottom { mask-image: linear-gradient(to top, transparent, #000 28px); }
 .cards.fade-top.fade-bottom { mask-image: linear-gradient(to bottom, transparent, #000 28px, #000 calc(100% - 28px), transparent); }
 .col-more { flex: none; height: 18px; display: flex; align-items: center; justify-content: center; }
-.column.folded .col-more, .column.empty .col-more { display: none; }
 .more-count { border: none; background: none; padding: 0 8px; border-radius: 999px; font: inherit; font-size: 11px; line-height: 16px; color: var(--muted); cursor: pointer; }
 .more-count:hover, .more-count:focus-visible { color: var(--text); background: var(--hover); }
 .none { color: var(--muted); font-size: 12px; margin: 6px 4px; }
@@ -201,7 +200,6 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .card-quiet.calm { color: var(--muted); font-weight: 400; }
 .ui-badge.ui-badge--blocked { background: var(--st-blocked); color: var(--on-status); }
 .column h2 .role { display: block; margin-top: 2px; font-size: 10px; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--muted); }
-.column.empty h2 .role { display: none; }
 .age { margin-left: auto; }
 
 /* The owner's own tasks (0022), in the same columns as the agents': a faint diagonal hatch in the
@@ -614,9 +612,18 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .side-add:hover { border-color: var(--accent); }
 .main-col { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
 
-.column.empty .cards { display: none; }
-.column.empty h2 { writing-mode: vertical-rl; padding: 12px 0; margin: 0 auto; white-space: nowrap; }
-.column.empty h2::before { margin: 0 0 6px; }
+/* One strip (mu-83) for an empty column, in every mode, and a column Focus folds: 44px in its own
+   track and never wider (min-width 0, overflow hidden), so neighbours keep the board's gap and
+   their own top borders. Its head, a span or the fold button, is one flex line running down the
+   strip: the dot, the name, then the count (and on a folded one, needs you and blocked), with the
+   same padding for both kinds. Its class is never `empty`: that's the empty message's, padded
+   32px, which once pushed every empty strip 32px down and 22px past its track. */
+.column.col-strip { min-width: 0; overflow: hidden; }
+.column.col-strip .cards, .column.col-strip .col-more, .column.col-strip .limit-line { display: none; }
+.column.col-strip h2 { padding: 0; margin: 0; }
+.column.col-strip h2::before { content: none; }
+.column.col-strip .col-fold, .column.col-strip .col-head { writing-mode: vertical-rl; white-space: nowrap; display: flex; flex-direction: row; align-items: center; gap: 6px; width: 100%; padding: 12px 4px; }
+.column.col-strip .col-fold::before, .column.col-strip .col-head::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--status); }
 /* Your check: the criteria only the owner verifies (0028). */
 .owner-checklist { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
 .criterion { display: flex; gap: 8px; align-items: baseline; text-align: left; background: none; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; color: var(--text); }
@@ -641,7 +648,7 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .effort-group { display: flex; flex-direction: column; gap: 8px; }
 .effort-head { margin: 2px 2px 0; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
 .effort-head small { font-weight: 400; }
-.effort-group.empty .effort-head { color: var(--faint); font-weight: 400; }
+.effort-group.effort-empty .effort-head { color: var(--faint); font-weight: 400; }
 .accept-all-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; }
 .accept-all { background: none; border: 1px solid var(--st-needs); border-radius: 6px; padding: 2px 10px; color: var(--text); font-size: 12px; }
 .accept-all:hover, .accept-all:focus-visible { background: color-mix(in srgb, var(--st-needs) 16%, transparent); }
@@ -1086,17 +1093,12 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 /* Display modes (0038). Each mode folds things where they stand: a strip, a chip or a header with
    a count, opened in place, never over anything. */
 .mode-chip { font-size: 11.5px; padding: 1px 9px; border-color: var(--line); flex: none; }
-.column.folded .cards { display: none; }
-.column.folded h2 { writing-mode: vertical-rl; white-space: nowrap; padding: 0; margin: 0 auto; }
 /* The strip's head is its button, so the whole strip opens the column. */
 .col-fold { writing-mode: inherit; border: none; background: none; font: inherit; text-transform: inherit; letter-spacing: inherit; color: inherit; text-align: left; padding: 0; cursor: pointer; border-radius: 4px; }
-/* The strip's parts (name, count, needs you, blocked) are items of one flex line, which runs down
-   a vertical strip, with a gap between: inline-blocks in vertical text overlapped (Blocked over "Ready 10"). */
-.column.folded .col-fold { display: flex; flex-direction: row; align-items: center; gap: 6px; padding: 12px 4px; }
 .col-fold:hover, .col-fold:focus-visible { color: var(--text); background: var(--hover); }
 /* The strip reads top to bottom, so a count's own padding runs along it: the .count rule's side
    padding would sit across the strip and leave the text touching its neighbour's edge. */
-.column.folded .col-fold .count { margin: 0; padding: 5px 0; min-width: 0; min-height: 18px; text-align: center; }
+.column.col-strip .col-fold .count { margin: 0; padding: 5px 0; min-width: 0; min-height: 18px; text-align: center; }
 .fold-head { display: block; width: 100%; text-align: left; border: none; border-top: 1px solid var(--line); background: none; padding: 8px 16px; font-weight: 600; font-size: 13px; color: var(--text); }
 .fold-head::before { content: "▸ "; color: var(--muted); }
 .fold.open > .fold-head::before { content: "▾ "; }
@@ -1143,7 +1145,6 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .over-limit { color: var(--warn); font-weight: 600; }
 .column h2 small.over-limit { font-weight: 600; }
 .limit-line { margin: 0 12px 4px; min-height: calc(2 * 1.35em); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
-.column.empty .limit-line { display: none; }
 .limit-board { margin: 4px 14px 0; min-height: 1.35em; font-size: 12px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .side-limit { display: block; font-size: 11px; line-height: 1.35; }
 .limit-cell { display: flex; flex-direction: column; gap: 2px; min-width: 120px; }

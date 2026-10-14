@@ -25,6 +25,30 @@ have their own short sets below. Every other section here applies in all three.
   mode and how to get back what it folds. Components read it and nothing else; a test fails when
   a component reads an element the table doesn't have, or reads the mode around it.
 
+## The board's columns (task 0083)
+
+Decided 2026-10-14, after the owner's "mess in board UI" on a board with one full column (Ready 66)
+and the rest empty: the lone open column stretched its cards into one long line each, and the
+strips didn't line up.
+
+- **No mode folds an empty column away.** In ADHD and Standard an empty column stays where it is
+  as a narrow strip that says "empty", so the board keeps its shape: every stage in its place, the
+  same order, as tasks come and go. Focus folds what it folds (everything but Building, Testing and
+  Your check); its never-folded columns, empty, are the same strip, just not a button. Considered:
+  folding empty columns in every mode (what the board did by accident; nobody chose it, and in
+  ADHD it hid that a stage exists), and keeping them full width (a board of empty columns pushes
+  the work off screen).
+- **One strip anatomy,** for an empty column, a folded one and the Paused lane: 44px in its own
+  track, the dot at the top, the name down the strip, then the count ("empty" for none; a folded
+  one adds its needs-you and blocked counts), with the same padding, the board's 10px gap and its
+  own top border. It's a folded strip's look, kept for both because its head is one line of parts
+  running down the strip, so "3 blocked" fits in 44px and the whole head is the button.
+- **An open column is at most 400px** (`modes.ts` `OPEN_COLUMN_MAX`), about a card's reading
+  width. The room left over stays empty at the board's right; a card never stretches.
+- **A strip's class is `col-strip`** with `col-empty` or `folded`, never `empty`: that's the
+  empty message's class ("No tasks match"), and its 32px padding is what pushed every empty strip
+  32px down and 22px past its track into its neighbours, merging their top borders.
+
 ## ADHD mode: everything visible
 
 - **Options are on screen, not behind something.** No kebab or "…" menus, no hover-only buttons,

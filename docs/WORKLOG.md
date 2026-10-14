@@ -4,6 +4,23 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — The board's columns: empty strips line up, open columns stop at 400px (mu-83)
+**Fixed:** on a mostly empty board the strips sat at different heights, their top borders merged and
+the one open column stretched to ~1400px (owner: "mess in board UI") → an empty column's state class
+was `empty`, the same as the "No tasks match" message, so it got that message's 32px padding: it
+overflowed its 44px track by 12px each side (merged borders) and its label sat ~60px down. Strips now
+use `col-strip` with `col-empty` or `folded` (modes.ts `columnState`, `columnTrack`, `columnClass`),
+one head rule for every strip, the Paused lane and Group by bands included; open columns are
+`minmax(118px, 400px)` in every mode, spare room to the right.
+**Decided:** ADHD and Standard keep an empty column as a narrow strip saying "empty", so the board
+doesn't jump; Focus folds as before, with the same strip anatomy (docs/DESIGN.md, "The board's
+columns").
+**Verified:** measured in a headless Chromium render of the real styles.css before and after (strips
+44px, heads at 3px, separate borders, Ready 400px); `columnStrips.test.ts` (11 tests) fails 3 with the
+old class back; `bin/gate` green. Renders (not the release app) attached to the task.
+**Open:** the owner's look at braindump's board and All (AC4). `.folded` is still shared with the
+sidebar heading and Recently finished (different properties; mu-81's guard isn't on this base yet).
+
 ## 2026-10-14 — One as-built document for Muster: architecture, each part's state, decisions, the queue at a glance (mu-80)
 **Did:** AS_BUILT.md restructured (owner: "as built document for the Muster including tasks in
 queue and architecture"): Muster in one page, the architecture (a diagram and a table of every

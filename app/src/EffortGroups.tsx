@@ -50,7 +50,7 @@ export default function EffortGroups({ tasks, place, renderCard, onChanged }: { 
       {EFFORTS.map((e) => {
         const list = groups[e.id];
         return (
-          <div key={e.id} className={`effort-group effort-${e.id}${list.length ? "" : " empty"}`} role="group" aria-label={e.label}>
+          <div key={e.id} className={`effort-group effort-${e.id}${list.length ? "" : " effort-empty"}`} role="group" aria-label={e.label}>
             <h3 className="effort-head">{e.label} <small>{list.length}</small></h3>
             {e.id === "accept" && accept}
             {list.map((t) => <Fragment key={key(t)}>{renderCard(t)}</Fragment>)}

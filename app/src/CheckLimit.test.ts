@@ -61,9 +61,9 @@ describe("the Your check header over its limit (0050)", () => {
 
   it("the board: the line above it always (plain or grouped), the count and the short line in Your check, kept open while over", () => {
     expect(appSource).toContain('{view === "board" && <OverLine over={overCheck} queue={queue} />}');
-    expect(appSource).toContain("countNode={c.id === \"your-check\" ? <CheckCount count={count} over={overCheck} queue={queue} /> : undefined}");
+    expect(appSource).toContain("countNode={c.id === \"your-check\" && state === \"open\" ? <CheckCount count={count} over={overCheck} queue={queue} /> : undefined}");
     expect(appSource).toContain('{c.id === "your-check" && <ColumnLine over={overCheck} queue={queue} />}');
-    expect(appSource).toContain('(s.id === "your-check" && (boardResult || overCheck.length > 0))');
+    expect(appSource).toContain('(id === "your-check" && (boardResult || overCheck.length > 0))');
     expect(appSource).toContain("limit={{ over: overCheck, queue }}");
   });
 
@@ -83,12 +83,12 @@ describe("the Your check header over its limit (0050)", () => {
     expect(heads(band(two, { over: [], queue: "muster" }))).toEqual(["Your check <small>2</small>"]);
     expect(heads(band(two))).toEqual(["Your check <small>2</small>"]);
     // All: a band of a project within its limit stays plain while another project is over; a
-    // band with nothing in Your check (folded) says 0, plain.
+    // band with nothing in Your check is an empty strip (mu-83) that says so, plain.
     const feature: Task = { ...t("0010"), level: "feature", stage: "ready", shownStage: "ready" };
     const mixed = [t("0001"), { ...t("0003"), queue: "drover" }, feature, { ...t("0011"), stage: "ready", shownStage: "ready", parent: "0010" }];
     const all = { over: overLimit([q("muster", 7, 5), q("drover", 1, 5)], "all"), queue: "all" };
     const h = band(mixed, all);
-    expect(heads(h)).toEqual(['Your check <small>0</small>', 'Your check <small class="over-limit" title="muster: 7 tasks wait in Your check, over your limit of 5">2</small>']);
+    expect(heads(h)).toEqual(['<span class="col-head">Your check <small>empty</small></span>', 'Your check <small class="over-limit" title="muster: 7 tasks wait in Your check, over your limit of 5">2</small>']);
     const droverOnly = band([{ ...t("0003"), queue: "drover" }], all);
     expect(heads(droverOnly)).toEqual(["Your check <small>1</small>"]);
   });
