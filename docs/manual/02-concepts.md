@@ -141,6 +141,18 @@ muster file 2026-10-13-0105-board-flickers-when-the-pane-opens.md "Board flicker
 muster drop 2026-10-13-0105-board-flickers-when-the-pane-opens.md "a duplicate of 0012"
 ```
 
+Every task answers the **lenses**, the concerns all projects share: accessibility, i18n and right-to-left, themes, payments and entitlements, architecture, security, privacy, performance, tests and docs. The shaping brief lists them, and the task's body has a **Lenses:** block with one line for each: what the task must do for it, or "n/a" and why. Every lens applies unless the project says otherwise, for a reason. A project with a `.muster` queue says it in `.muster/config.toml`:
+
+```toml
+[shaping]
+skip = ["payments"]
+
+[shaping.reasons]
+payments = "Muster has no paid features, licences or prices"
+```
+
+An older queue says it in its README.md's front matter, with `shaping-skip: payments` and `shaping-reason-payments: <why>`. The brief names each skipped lens and its reason. A skip with no reason, or of a lens that doesn't exist, doesn't count, and **Problems** and `muster check` list it. `muster file` warns when the body has no line for a lens, naming it, and files the task anyway.
+
 `muster file` makes the task in Shaping and keeps the note in the task's files. Before it goes on to Ready, it's checked against the project's picture ([The vision check](#the-vision-check)). See [Backlog](05-commands.md#backlog), the tutorial [Add a one-liner and shape it](03-tutorials.md#add-a-one-liner-and-shape-it), and decision [0003](../decisions/0003-muster-in-the-repo-backlog-and-stages.md) (task 0015).
 
 ## Claims, leases and check-ins
@@ -230,6 +242,8 @@ See [The task pane](04-in-the-app.md#the-task-pane) (task 0025).
 Before a shaped task goes to Ready, a session checks it against that picture and against the open tasks it touches. Muster doesn't run an agent for this. `muster vision <id>` prints a brief for a session: the task, the picture's files, the tasks it touches (by shared title words, by id in its text, its parent, and what it depends on), and what to look for, which is conflicts, overlaps, gaps and the cost of changing course. The session hands its findings back with `muster vision <id> --record -`, and Muster writes them into the task.
 
 The result is the task's **Vision** section, under its write-up. Each conflict is numbered (V1, V2…) with both sides quoted. While a conflict is open, the card shows "⚠ 2 vision", and the task can't pass from Shaping to Ready: `muster` says "0024 has 2 open vision conflicts (V1, V2): resolve them or record a new check". Overlaps and gaps are listed but never hold a task back. Nor does a missing check: **Problems** and `muster check` list the Shaping tasks that haven't been checked yet.
+
+`docs/VISION.md` can also name the [lenses](#the-backlog-and-shaping) the project can't do without, on one line: `**Lenses needed:** accessibility, i18n`. A task that says "n/a" for one of them is flagged in the brief, and recording the check adds it as a conflict, so the task waits in Shaping until it says what it does for that lens, or the picture changes.
 
 Sometimes fixing a conflict would change the project's direction, because it goes against a decision, the spine, a design rule or an answer you gave earlier. Then the check adds the **cost of pivoting**: the tasks to rewrite, the built work that would change or be thrown away, what's been spent, what redoing it would take, what waiting costs and what keeping course costs, with the session's recommendation. That reaches you as one question in **Waiting for you**.
 

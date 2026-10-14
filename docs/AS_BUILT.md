@@ -65,7 +65,7 @@ tool and the change logged in the task.
                  ▼                                ▼
    ┌───────────────── one Rust crate (app/src-tauri) ──────────────────┐
    │  lib.rs (the app)                          cli.rs (`muster`)      │
-   │  queue · ops · layout · index · block · backlog · fields · key …  │
+   │  queue · ops · layout · index · block · backlog · lenses · key …  │
    │  every write: flock on mail/.lock, atomic rename, a log line      │
    └──────┬──────────────────┬──────────────────┬──────────────────────┘
           ▼                  ▼                  ▼
@@ -112,6 +112,7 @@ here):
 | `migrate.rs` | `muster migrate`: copy an old queue into a repo's `.muster/`, never moving the old one |
 | `index.rs` | INDEX.md, the generated master list, rewritten after every change; and the queue at a glance for this document (`--as-built`) |
 | `backlog.rs` | Backlog notes: add, shape (the brief), file as a task, drop |
+| `lenses.rs` | The shaping lenses (accessibility, i18n, themes, payments, architecture, security, privacy, performance, tests, docs): a project's skips with their reasons, read from `.muster/config.toml`'s `[shaping]` or an old queue's README front matter (written by hand, never by Muster) and their problems for `check`; a task's `**Lenses:**` lines; a VISION's `**Lenses needed:**` line. Read by `backlog.rs` (shape, file), `vision.rs` and `queue.rs` (problems) |
 | `block.rs` | Why a task is blocked: five kinds, the sentence every screen shows, and `depends:` met once merged |
 | `fields.rs` | A task's links and comments |
 | `choices.rs` | Pick-one questions: 2 to 6 options, a pick, what happens with no answer |
@@ -234,9 +235,9 @@ status folders and `inbox/` for the backlog):
 
 | File | What it is | Written by | Read by |
 |---|---|---|---|
-| `config.toml` | `local = true` and the key prefix (`prefix = "mu"`); the only file a local queue commits | `muster init`, `migrate`, `muster projects set <name> prefix` | the core (`layout.rs`, `key.rs`) |
+| `config.toml` | `local = true`, the key prefix (`prefix = "mu"`) and the lenses the project skips (`[shaping]` `skip = […]`, `[shaping.reasons]`); the only file a local queue commits | `muster init`, `migrate`, `muster projects set <name> prefix`; `[shaping]` by hand | the core (`layout.rs`, `key.rs`, `lenses.rs`) |
 | `.gitignore` | A local queue ignores everything but itself and `config.toml` | `init`, `migrate` | git |
-| `README.md` | The queue's short rules for agents | `init`, `migrate` | agents |
+| `README.md` | The queue's short rules for agents; an old queue's front matter also holds its prefix and the lenses it skips (`shaping-skip:`, `shaping-reason-<lens>:`) | `init`, `migrate`; the skips by hand | agents; an old queue's front matter: `key.rs`, `lenses.rs` |
 | `tasks/NNNN-slug.md` | One task: front matter, write-up, criteria, Questions, Vision, Review, Comments, Log | only `muster` and the app, under the lock; Drover writes answers (file contract v1) | the core, `manifest.py`, Drover, agents |
 | `backlog/*.md`, `backlog/dropped/` | Backlog notes, and dropped ones with the reason | `muster add`, the app's quick add, anyone dropping a file in | the core |
 | `attachments/NNNN/` | A task's files (screenshots, mockups), and the note a task was filed from | `muster attach`, the app, `muster file` | the app, agents |
@@ -268,13 +269,14 @@ Elsewhere:
 | A started task's worktree and branch | `<project>/worktrees/<repo>/<key>-<slug>` (or `--at`), branch `task/<key>-<slug>` | `muster start`; removed by the merge or `muster release --clean` |
 | Transcripts | `~/.claude*/projects/<folder key>/<session>.jsonl` | read only, by `transcripts.rs`; never sent anywhere, and the window gets counts, never paths |
 | Session states | `claude agents --json --all`, per account | run by `agents.rs`, read only |
+| The project's picture | `<repo>/docs/VISION.md`, `docs/decisions/`, `docs/DESIGN.md` | read only: `vision.rs` (the brief) and `lenses.rs` (VISION's `**Lenses needed:**` line) |
 
 ## 3. How a task flows
 
 | Step | Stage after | Who | Commands |
 |---|---|---|---|
 | Capture | Backlog (a note) or Ready (a task) | the owner, capture, any agent | `muster add "<one line>"` (a backlog note); `muster new "<title>"` (a task); the app's quick add and New task; `/mu <anything>` |
-| Shape | Shaping | product, tech and UI agents | `muster shape <note>` (the brief), `muster file <note> "<title>" --body -`, `muster vision <id>` then `--record -` |
+| Shape | Shaping | product, tech and UI agents | `muster shape <note>` (the brief, with the lenses the project doesn't skip), `muster file <note> "<title>" --body -` (warns about a lens with no line under `**Lenses:**`, files anyway), `muster vision <id>` then `--record -` (a lens the VISION needs said "n/a" becomes a conflict) |
 | Ready | Ready | the shaper | `muster pass <id> --from shaping` (needs acceptance criteria and no open vision conflict) |
 | Start | Building | one builder session per task | `muster start <id>` (its own branch and worktree), or `muster claim <id>` / `muster next` |
 | Build | Building | the builder | `muster heartbeat`, `muster checkin <id> "<done, next>"`, `muster ask <id> "<question>"` (the answer comes back through the hook) |
@@ -301,6 +303,7 @@ is in section 6.
 | INDEX.md, and the queue at a glance in this document | Built, tested | mu-18, mu-80 |
 | `tasks.json` (`manifest.py`) | Built, tested; rebuilt only when `manifest.py` runs, so Muster's is as old as its migration | mu-2 |
 | Backlog and shaping, the vision check | Built, tested | mu-15, mu-29 |
+| Shaping lenses: the brief's list, a project's skips with reasons, `file`'s warning, `check`'s problems, VISION's needed lenses | Built, tested; on its branch, not on main | mu-76 |
 | Goals, features and tasks; depends met once merged | Built, tested | mu-16, mu-42 |
 | Blocked says what it waits for (five kinds) | Built, tested | mu-24, mu-60 |
 | Pause and Resume, the Paused lane, old pauses converted | Built, tested | mu-45, mu-59 |
@@ -938,6 +941,23 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 
   `muster list` shows notes too. They live in `.muster/backlog/` (0005), and in the old layout's
   `inbox/`.
+- **Shaping lenses** (task 0076, `lenses.rs`): ten lenses every shaped task answers, one line each
+  under `**Lenses:**` in its body (what it must do for the lens, or "n/a" and why): accessibility,
+  i18n and RTL, themes, payments and entitlements, architecture, security, privacy, performance,
+  tests, docs.
+  - `muster shape` lists them with what each line covers, and its template has the block. Its
+    `--json` has `lenses` (`id`, `name`, `write`) and `skipped` (`lens`, `name`, `why`).
+  - A project skips a lens only with a reason. A `.muster` queue does it in `config.toml`
+    (`[shaping]` `skip = ["payments"]`, `[shaping.reasons]` `payments = "<why>"`; a small reader
+    for just these two tables, strings with their escapes, a list over several lines). An old
+    queue does it in README.md's front matter (`shaping-skip: payments, themes`,
+    `shaping-reason-<lens>: <why>`). A skip of an unknown lens, a skip with no reason, a reason for
+    a lens it doesn't skip, an unknown `[shaping]` key or a malformed value are problems in the
+    queue's state (`muster check`, Problems), and the lens still applies.
+  - `muster file` returns `missingLenses` and warns on stderr, naming them, and files anyway. A
+    line counts when its label (the words before the colon, parentheses aside) is only lens words
+    and "and": a list item (sub-items don't count) or a sentence in the block's paragraph
+    (`Security, privacy: n/a.`). The template's `<…>` doesn't count.
 - **Goals, features and tasks** (task 0016): `level: goal | feature | task`, `parent:` and a goal's
   `due:` set with `muster new --level/--parent/--due` and `muster set`. A task sits under a feature
   or goal, a feature under a goal. Goals and features are never claimed or built: their stage comes
@@ -979,6 +999,10 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   - `--resolve Vn` settles one.
   - Shaping → Ready waits while a conflict is open.
   - A change of direction becomes one owner question with the cost of pivoting.
+  - Lenses (0076): when `docs/VISION.md` has a `**Lenses needed:** <lens>, <lens>` line, a task
+    that says "n/a" for one of them is listed in the brief (`lensFlags` in `--json`), and
+    `--record` adds a conflict for each unless the JSON has one whose title says n/a and names the
+    lens.
 - **Review of record** (task 0027): the card says where it stands in Building and Testing
   (`review 1/3 · 2 to fix`, `review 2/3 · 1 to re-check`, `review clean · round 2`, `not reviewed
   yet` on a started task in Testing; quiet, bolder while findings wait for the builder,

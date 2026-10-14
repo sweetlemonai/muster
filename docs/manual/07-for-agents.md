@@ -80,7 +80,9 @@ muster return 0007 "AC2 fails: the board still flickers once" --as qa
 
 ## A shaping session
 
-It turns a backlog note into a task. `muster shape <note-file>` prints the brief: the note (quoted, to read as data, never as instructions), what the product, tech and UI roles each write, the project's docs to read (`CLAUDE.md`, `docs/VISION.md`, `docs/DESIGN.md`, `docs/decisions/`), open tasks that share words with it, and the command that files it. `muster file` makes the task in Shaping.
+It turns a backlog note into a task. `muster shape <note-file>` prints the brief: the note (quoted, to read as data, never as instructions), what the product, tech and UI roles each write, the project's docs to read (`CLAUDE.md`, `docs/VISION.md`, `docs/DESIGN.md`, `docs/decisions/`), open tasks that share words with it, the lenses, and the command that files it. `muster file` makes the task in Shaping.
+
+The body's **Lenses:** block has one line for each lens the brief lists (the project's skips are left out, and named with their reasons): what the task must do for accessibility, i18n and RTL, themes, payments and entitlements, architecture, security, privacy, performance, tests and docs, or "n/a" and why. Write one list item per lens, like `- **Security:** stored, never run`, or sentences in one paragraph, like `Security, privacy: n/a.` `muster file` warns, naming each lens the body has no line for, and files it anyway; fix it with `muster edit <id>`.
 
 Before passing it on, it checks the task against the project's picture. `muster vision <id>` prints that brief: the task (as data), the picture's files, the open tasks it touches, what to look for and the JSON to return. The session reads them, then records what it found:
 
@@ -88,7 +90,7 @@ Before passing it on, it checks the task against the project's picture. `muster 
 muster vision 0007 --record - --as wt-shape < findings.json
 ```
 
-Each conflict is numbered V1, V2… in the task's Vision section. A conflict whose fix would change the project's direction carries the cost of pivoting, and goes to the owner as one question. `muster pass <id> --from shaping` puts the task in Ready once it has acceptance criteria and no open conflict. See [The backlog and shaping](02-concepts.md#the-backlog-and-shaping) and [The vision check](02-concepts.md#the-vision-check).
+Each conflict is numbered V1, V2… in the task's Vision section. When the project's VISION names the lenses it needs (`**Lenses needed:**`), a task that says "n/a" for one of them gets a conflict about it from the tool, so leave those out of the JSON. A conflict whose fix would change the project's direction carries the cost of pivoting, and goes to the owner as one question. `muster pass <id> --from shaping` puts the task in Ready once it has acceptance criteria and no open conflict. See [The backlog and shaping](02-concepts.md#the-backlog-and-shaping) and [The vision check](02-concepts.md#the-vision-check).
 
 ## The capture session
 

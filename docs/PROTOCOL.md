@@ -330,6 +330,25 @@
 > a quick add field, and the same three actions in a note's pane; `muster list` shows them first,
 > under "Backlog notes" (`--json`: `{"tasks": […], "backlog": […]}`). `add`, `file` and `drop` are
 > checked like claims: with `$MUSTER_ROOT` at another project's queue, pass `--queue` to mean it.
+>
+> **Shaping lenses (Muster 0076, 2026-10-14).** Every shaped task answers the concerns all
+> projects share: accessibility, i18n (and RTL), themes, payments (and entitlements),
+> architecture, security, privacy, performance, tests and docs. `muster shape` lists each with
+> what its line covers, and the template has a `**Lenses:**` block with a line for each. The
+> shaper writes what the task must do for the lens, or "n/a" and why: one list item per lens
+> (`- **Security:** …`, sub-items under it if needed) or sentences in one paragraph
+> (`Security, privacy: n/a.`). A line counts when its label is only lens words (`i18n/RTL`,
+> `Payments and entitlements`, `Tests (unit):`), and the template's `<…>` doesn't count. Every
+> lens applies unless the project skips it explicitly, with its reason: a `.muster` queue in
+> `.muster/config.toml` (`[shaping]` `skip = ["payments"]`, then `[shaping.reasons]`
+> `payments = "<why>"`), an old queue in its README.md's front matter (`shaping-skip: payments,
+> themes`, and one `shaping-reason-<lens>: <why>` line each). `muster shape` (and `--json`'s
+> `lenses` and `skipped`) names the skipped ones with their reasons. A skip of a lens that doesn't
+> exist, or with no reason, doesn't count, and `muster check` reports it as a problem.
+> `muster file` warns on stderr, naming each lens the body has no line for (`--json`:
+> `missingLenses`), and files the task anyway. A project's `docs/VISION.md` may say which lenses
+> it can't do without on one line, `**Lenses needed:** accessibility, i18n`: the vision check
+> flags a task that says "n/a" for one of them, and records it as a conflict.
 > The brief quotes the note line by line (`> `) after a line saying it's data, not instructions.
 > `muster check` reports a note over 1 MB, a symlink, or a name with a `\` or control characters
 > in the backlog folder; those aren't listed as notes.
@@ -484,7 +503,11 @@
 > carries a pivot: its cost-of-pivoting table goes in the section, and the record asks the owner
 > one escalated question with all of them and the recommendation. No session asked it, so it
 > carries your label without the session stamp and the answer stays in the task. Settle a
-> conflict with `muster vision <id> --resolve V2 "<how>"`. **`muster pass <id> --from shaping`
+> conflict with `muster vision <id> --resolve V2 "<how>"`. When the project's `docs/VISION.md` has
+> a `**Lenses needed:**` line (0076), a task that says "n/a" for one of those lenses is flagged in
+> the brief, and `--record` adds it as a conflict ("Says n/a for Accessibility, which the
+> project's VISION needs") unless the JSON has one already whose title says n/a and names the
+> lens. **`muster pass <id> --from shaping`
 > refuses while a conflict is open;** overlaps and gaps never hold it, and a task never checked
 > isn't held back (`muster check` lists Shaping tasks with no check, as a warning). **Don't edit
 > the Vision section or `vision:` by hand:** `muster check` reports a count that doesn't match the

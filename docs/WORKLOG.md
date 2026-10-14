@@ -4,6 +4,22 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Shaping checks the cross-cutting lenses by default, unless a project opts out (mu-76)
+**Did:** `muster shape`'s brief lists every lens (accessibility, i18n and RTL, themes, payments and
+entitlements, architecture, security, privacy, performance, tests, docs) with what to write, and the
+template gains a Lenses block (`lenses.rs`). A project skips a lens only explicitly, with a reason:
+`.muster/config.toml` `[shaping] skip` plus `[shaping.reasons]`, or an old queue's README front
+matter. `muster file` warns, naming the lenses the body has no line for, and files anyway; `muster
+check` reports a bad skip. A VISION.md `**Lenses needed:**` line makes the vision check flag a task
+that says only "n/a" for one of them. Help, manual, PROTOCOL and AS_BUILT updated.
+**Decided:** a skip without a known lens or a reason doesn't count (the lens still applies) and is a
+problem, not a warning; a line counts for a lens when its label is only lens words.
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; lenses,
+backlog, vision and CLI tests on synthetic queues in both layouts.
+**Open:** the app's "File as task" doesn't show the missing-lens warning yet; `manifest.py --check`
+doesn't know skips; whether Muster itself skips a lens (payments?) and its VISION's needed lenses are
+the owner's call.
+
 ## 2026-10-14 — Each project has a run command beside its gate; Muster's is bin/run (mu-77)
 **Did:** `muster projects set <name> run "<command>"` stores what the app's Run will start to try a
 project, with the gate's rules (one line, ≤500 characters, quotes checked, empty clears); `muster

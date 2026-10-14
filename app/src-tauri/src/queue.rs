@@ -1604,6 +1604,7 @@ fn read_state_from(
             }
         }
         state.problems.extend(crate::layout::problems(name, root));
+        state.problems.extend(crate::lenses::problems(name, root));
         state.activity.extend(git_activity(name, root, cache));
         state.queues.push(QueueInfo {
             name: name.clone(),

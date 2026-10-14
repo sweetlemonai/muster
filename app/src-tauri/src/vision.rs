@@ -11,9 +11,14 @@
 //! JSON is parsed strictly (an unknown field is refused), every text in it is cleaned to one line
 //! and capped, and a section with a line that would read as tool-written stage history is refused.
 //! Every change holds the queue's lock and writes atomically, like `ops`.
+//!
+//! The lenses (0076): when the project's `docs/VISION.md` has a `**Lenses needed:**` line, a task
+//! whose Lenses block says "n/a" for one of them is flagged in the brief, and `record` adds it as
+//! a conflict unless the agent's JSON has one about it already (its title says "n/a" and names
+//! the lens), so Shaping → Ready waits until the task answers it or the VISION changes.
 
 use crate::queue::{self, actor, append_log, find_task, front_matter, with_lock, write_atomic};
-use crate::{backlog, ops, projects, session};
+use crate::{backlog, lenses, ops, projects, session};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -620,8 +625,9 @@ const ASKER: &str = "vision check";
 /// leaving any `## Vision` in the description be); `vision: <n> open`; and a log line. Conflicts are numbered
 /// V1, V2… in order, all open. The earlier checks' questions the owner hasn't answered are closed
 /// as superseded, and when a conflict changes direction, one new question escalated to the owner
-/// carries them all, with the cost of pivoting. Malformed JSON, or text that would read as a stage
-/// change, is refused and nothing changes.
+/// carries them all, with the cost of pivoting. A lens the VISION needs that the task calls "n/a"
+/// becomes a conflict too (`lens_flags`), unless the JSON has one about it. Malformed JSON, or text
+/// that would read as a stage change, is refused and nothing changes.
 pub fn record(
     root: &Path,
     id: &str,
@@ -630,18 +636,26 @@ pub fn record(
     stamp: &str,
 ) -> Result<Recorded, String> {
     let who = actor(who)?;
-    let check = parse(json)?;
-    let ids: Vec<String> = (1..=check.conflicts.len())
-        .map(|i| format!("V{i}"))
-        .collect();
-    let log = ops::free_text_line(
-        format!("{stamp} {who}: vision check: {}", summary(&check)),
-        "who (--as)",
-    )?;
+    let mut check = parse(json)?;
     with_lock(root, || {
         let path = find_task(root, id)?;
         let text = queue::read_body(root, id)?;
         front_matter(&text).ok_or("the task has no front matter")?;
+        for f in lens_flags(root, &text) {
+            let said = |c: &Conflict| {
+                c.title.to_lowercase().contains("n/a") && lenses::names(&c.title, f.lens)
+            };
+            if !check.conflicts.iter().any(said) {
+                check.conflicts.push(lens_conflict(id, &f));
+            }
+        }
+        let ids: Vec<String> = (1..=check.conflicts.len())
+            .map(|i| format!("V{i}"))
+            .collect();
+        let log = ops::free_text_line(
+            format!("{stamp} {who}: vision check: {}", summary(&check)),
+            "who (--as)",
+        )?;
         // The earlier checks' open questions leave the owner's list: this check replaces them.
         let (mut new, closed) = queue::close_owner_questions(
             &text,
@@ -823,6 +837,64 @@ pub fn resolve(
     })
 }
 
+// ---- The lenses ----
+
+/// A lens the project's VISION needs that the task calls "n/a" (0076).
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LensFlag {
+    pub lens: &'static str,
+    pub name: &'static str,
+    /// The task's line for it, on one line.
+    pub says: String,
+    /// The VISION's `**Lenses needed:**` line.
+    pub needs: String,
+    /// Where that is: `docs/VISION.md:<line>`.
+    pub at: String,
+}
+
+/// The lenses the project's VISION needs that the task's write-up (in its file's `text`) says
+/// "n/a" for, in the lenses' order.
+fn lens_flags(root: &Path, text: &str) -> Vec<LensFlag> {
+    let Some((file, n, needs, needed)) = lenses::vision_needs(root) else {
+        return Vec::new();
+    };
+    lenses::said_na(&write_up_proper(text))
+        .into_iter()
+        .filter(|(id, _)| needed.contains(id))
+        .filter_map(|(id, says)| {
+            let l = lenses::by_id(id)?;
+            Some(LensFlag {
+                lens: l.id,
+                name: l.name,
+                says,
+                needs: needs.clone(),
+                at: format!("{file}:{n}"),
+            })
+        })
+        .collect()
+}
+
+/// The conflict `record` writes for a flagged lens of task `id`.
+fn lens_conflict(id: &str, f: &LensFlag) -> Conflict {
+    Conflict {
+        title: format!("Says n/a for {}, which the project's VISION needs", f.name),
+        this: Side {
+            quote: f.says.clone(),
+            at: id.to_string(),
+        },
+        other: Side {
+            quote: f.needs.clone(),
+            at: f.at.clone(),
+        },
+        fix: format!(
+            "say under **Lenses:** what the task must do for {} (muster edit {id}), or change the VISION if the project no longer needs it",
+            f.name
+        ),
+        pivot: None,
+    }
+}
+
 // ---- The brief ----
 
 /// A task the checked one touches, for the brief.
@@ -861,6 +933,8 @@ pub struct Brief {
     /// The picture files that exist, as absolute paths: VISION.md, the decision records, DESIGN.md.
     pub picture: Vec<String>,
     pub touched: Vec<Touched>,
+    /// The lenses the VISION needs that the task calls "n/a"; `record` adds each as a conflict.
+    pub lens_flags: Vec<LensFlag>,
     pub look_for: Vec<String>,
     /// The JSON to return, with placeholders.
     pub shape: String,
@@ -1017,6 +1091,7 @@ pub fn brief(root: &Path, id: &str) -> Result<Brief, String> {
         root: root.display().to_string(),
         id: id.to_string(),
         touched: touched(root, &me, &text, &tasks),
+        lens_flags: lens_flags(root, &text),
         title: me.title,
         stage: me.stage,
         vision_open: me.vision_open,
@@ -1074,6 +1149,13 @@ pub fn brief_text(b: &Brief) -> String {
     }
     for t in &b.touched {
         out.push_str(&touched_line(t));
+    }
+    if !b.lens_flags.is_empty() {
+        out.push_str("\nLenses the project's VISION needs that the task calls n/a (recording adds each as a conflict, so leave them out of your JSON):\n");
+        for f in &b.lens_flags {
+            // The task's own words stay in its quote above: only the lens and where.
+            out.push_str(&format!("  {} ({} needs it)\n", f.name, f.at));
+        }
     }
     out.push_str("\nWhat to look for:\n");
     for l in &b.look_for {
@@ -1327,6 +1409,72 @@ mod tests {
             from: Some("shaping".into()),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn a_task_that_says_na_for_a_lens_the_vision_needs_is_flagged() {
+        let (base, root) = project();
+        let vision = base.path().join("proj/main/docs/VISION.md");
+        let lenses = "**Lenses:**\n- **Accessibility:** n/a, no new controls\n- **i18n and RTL:** labels mirror in RTL.\n- **Payments and entitlements:** n/a. Muster has none.\n\n## Acceptance criteria\n- [ ] AC1: x — verify: command";
+        put(&root, "0024", "shaping", "Blocked says why", "", lenses);
+        // No **Lenses needed:** line: the VISION asks for none, so nothing is flagged.
+        assert_eq!(brief(&root, "0024").unwrap().lens_flags, []);
+        fs::write(
+            &vision,
+            "# The one picture\n\nEvery screen reads right in Persian, by keyboard.\n**Lenses needed:** accessibility, i18n and RTL\n",
+        )
+        .unwrap();
+        let b = brief(&root, "0024").unwrap();
+        // Payments is n/a too, but the VISION doesn't need it; i18n is needed and answered.
+        assert_eq!(
+            b.lens_flags,
+            [LensFlag {
+                lens: "accessibility",
+                name: "Accessibility",
+                says: "**Accessibility:** n/a, no new controls".into(),
+                needs: "**Lenses needed:** accessibility, i18n and RTL".into(),
+                at: "docs/VISION.md:4".into(),
+            }]
+        );
+        let t = brief_text(&b);
+        assert!(t.contains("\nLenses the project's VISION needs that the task calls n/a (recording adds each as a conflict, so leave them out of your JSON):\n  Accessibility (docs/VISION.md:4 needs it)\n"), "{t}");
+        assert_eq!(
+            serde_json::to_value(&b).unwrap()["lensFlags"][0]["at"],
+            "docs/VISION.md:4"
+        );
+        // Recording a clean check still writes it as a conflict, so Ready waits on it.
+        let r = record(&root, "0024", "{}", "wt-shape", T).unwrap();
+        assert_eq!(r.conflicts, ["V1"]);
+        let text = text_of(&root, "0024");
+        assert!(
+            text.contains(
+                "Checked 2026-10-12 14:05 by wt-shape: 1 conflict (V1), no overlaps, no gaps."
+            ),
+            "{text}"
+        );
+        assert!(text.contains("- [ ] **V1: Says n/a for Accessibility, which the project's VISION needs**\n  - 0024: “**Accessibility:** n/a, no new controls”\n  - docs/VISION.md:4: “**Lenses needed:** accessibility, i18n and RTL”\n  - Fix: say under **Lenses:** what the task must do for Accessibility (muster edit 0024), or change the VISION if the project no longer needs it\n"), "{text}");
+        assert!(text.contains("vision: 1 open\n"));
+        assert!(pass_task(&root, "0024", "wt-shape", T, &from_shaping())
+            .unwrap_err()
+            .contains("1 open vision conflict (V1)"));
+        // The agent's own conflict about it isn't doubled; another one is kept beside it.
+        let json = r#"{"conflicts": [
+            {"title": "Accessibility is n/a, but the VISION needs it", "this": {"quote": "n/a", "at": "0024"}, "other": {"quote": "needed", "at": "docs/VISION.md:4"}, "fix": "say what"},
+            {"title": "Accessibility of the old board", "this": {"quote": "x", "at": "0024"}, "other": {"quote": "y", "at": "0019"}, "fix": "z"}
+        ]}"#;
+        let r = record(&root, "0024", json, "wt-shape", LATER).unwrap();
+        assert_eq!(r.conflicts, ["V1", "V2"]);
+        assert!(!text_of(&root, "0024").contains("Says n/a for"));
+        // Answered: nothing to flag, and a clean check is clean.
+        let fixed = lenses.replace("n/a, no new controls", "the label is read out");
+        put(&root, "0024", "shaping", "Blocked says why", "", &fixed);
+        assert_eq!(brief(&root, "0024").unwrap().lens_flags, []);
+        assert_eq!(
+            record(&root, "0024", "{}", "wt-shape", LATER)
+                .unwrap()
+                .conflicts,
+            Vec::<String>::new()
+        );
     }
 
     #[test]

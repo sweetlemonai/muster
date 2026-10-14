@@ -477,6 +477,20 @@ fn filed_message(root: &Path, prefix: &str, f: &backlog::Filed) -> String {
     )
 }
 
+/// What `muster file` warns, task `k` filed, when its body has no line for some of the project's
+/// lenses (0076), by name; None when it has one for each.
+fn lens_warning(k: &str, missing: &[String]) -> Option<String> {
+    let n = match missing.len() {
+        0 => return None,
+        1 => "1 lens".to_string(),
+        n => format!("{n} lenses"),
+    };
+    Some(format!(
+        "warning: {k} has no Lenses line for {n}: {}. It's filed anyway: add one line each under **Lenses:** (what the task must do for it, or \"n/a\" and why) with muster edit {k}, or skip a lens for the whole project with its reason (muster help shape).",
+        missing.join(", ")
+    ))
+}
+
 /// `Q3`, `q3` or `3`.
 fn question_number(q: &str) -> Result<u32, String> {
     let digits = q.strip_prefix(['Q', 'q']).unwrap_or(q);
@@ -2161,6 +2175,10 @@ fn run_on(
                 print_json(&with_key(serde_json::json!(f), key(&f.id)))?;
             } else {
                 println!("{}", filed_message(root, prefix, &f));
+            }
+            // On stderr, so stdout stays the one line (or the JSON) a script reads.
+            if let Some(w) = lens_warning(&key(&f.id), &f.missing_lenses) {
+                eprintln!("{w}");
             }
             Ok(0)
         }
@@ -4396,6 +4414,18 @@ mod tests {
                 .contains(": not needed\n")
         );
         assert_eq!(code(&["check"]), 0);
+        // A skip with no reason, or of a lens that doesn't exist, fails the check (0076).
+        let readme = d.path().join("README.md");
+        let before = std::fs::read_to_string(&readme).unwrap();
+        std::fs::write(&readme, "---\nshaping-skip: payments\n---\n\nq").unwrap();
+        assert_eq!(code(&["check"]), 1);
+        std::fs::write(
+            &readme,
+            "---\nshaping-skip: payments\nshaping-reason-payments: free\n---\n\nq",
+        )
+        .unwrap();
+        assert_eq!(code(&["check"]), 0);
+        std::fs::write(&readme, before).unwrap();
         // A note over 1 MB isn't read, and check says so.
         std::fs::write(d.path().join("inbox/huge.md"), vec![b'a'; 1024 * 1024 + 1]).unwrap();
         assert_eq!(code(&["check"]), 1);
@@ -4403,6 +4433,7 @@ mod tests {
             id: "0031".into(),
             path: "todo/0031-x.md".into(),
             attachment: "n.md".into(),
+            missing_lenses: vec!["Themes".into(), "Docs".into()],
         };
         let base = tempfile::tempdir().unwrap();
         let (q, _) = project(base.path(), "drover");
@@ -4410,6 +4441,15 @@ mod tests {
             filed_message(&q, "dr", &f),
             "filed dr-31 in drover (Shaping)"
         );
+        // A body with no line for a lens is filed (exit 0 above), with a warning naming them.
+        assert_eq!(
+            lens_warning("dr-31", &f.missing_lenses).as_deref(),
+            Some("warning: dr-31 has no Lenses line for 2 lenses: Themes, Docs. It's filed anyway: add one line each under **Lenses:** (what the task must do for it, or \"n/a\" and why) with muster edit dr-31, or skip a lens for the whole project with its reason (muster help shape).")
+        );
+        assert!(lens_warning("dr-31", &["Docs".into()])
+            .unwrap()
+            .contains(" for 1 lens: Docs. "));
+        assert_eq!(lens_warning("dr-31", &[]), None);
     }
 
     #[test]

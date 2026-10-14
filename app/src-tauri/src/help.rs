@@ -446,7 +446,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "shape",
         usage: "muster shape <note-file> [--json]",
-        what: "The shaping brief for a backlog note: its full text, what the product, tech and UI roles each write, the project's docs to read (CLAUDE.md, docs/VISION.md, docs/DESIGN.md, docs/decisions/), open tasks that share words with it (to catch a duplicate), and the exact muster file command with the task template. Writes nothing.",
+        what: "The shaping brief for a backlog note: its full text, what the product, tech and UI roles each write, the project's docs to read (CLAUDE.md, docs/VISION.md, docs/DESIGN.md, docs/decisions/), open tasks that share words with it (to catch a duplicate), the lenses, and the exact muster file command with the task template. The lenses are the concerns every project shares: accessibility, i18n, themes, payments, architecture, security, privacy, performance, tests, docs. The template has a **Lenses:** block with one line for each, which the shaper fills in: what the task must do for it, or \"n/a\" and why. Every lens applies unless the project skips it, with its reason, and the brief names the skipped ones and why. A .muster queue skips in .muster/config.toml: [shaping] skip = [\"payments\"], then [shaping.reasons] payments = \"<why>\". An old queue skips in its README.md's front matter: shaping-skip: payments, themes, and a shaping-reason-payments: <why> line for each. A skip of a lens that doesn't exist, or one with no reason, doesn't count, so the lens still applies, and muster check reports it. Writes nothing.",
         options: &[("--json", "the same as JSON, for Drover and scripts")],
         examples: &[
             "muster shape 2026-10-12-1405-board-flickers.md",
@@ -456,7 +456,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "file",
         usage: "muster file <note-file> \"<title>\" [--type code|bug|chore|tech-debt|spike|design|docs|research] [--priority high|normal|low] [--tags a,b] [--time 2h] [--test-time 30m] [--tokens 400k] [--touches <folders,globs>] --body <text>|-",
-        what: "File a shaped backlog note as a task: the next id, in Shaping, with your body after a \"From the backlog\" line quoting the note. The note moves into the task's attachments/<id>/, so nothing is lost; all under the queue's lock, so a note is filed once. Then muster pass <id> --from shaping puts it in Ready (it needs acceptance criteria).",
+        what: "File a shaped backlog note as a task: the next id, in Shaping, with your body after a \"From the backlog\" line quoting the note. The note moves into the task's attachments/<id>/, so nothing is lost; all under the queue's lock, so a note is filed once. Then muster pass <id> --from shaping puts it in Ready (it needs acceptance criteria). It warns, on stderr, naming each lens the project doesn't skip that the body has no **Lenses:** line for (or only the template's <…>), and files it anyway; --json gives them as missingLenses.",
         options: &[
             ("--type", "code (default), bug, chore, tech-debt, spike, design, docs or research"),
             ("--priority", "high, normal (default) or low"),
@@ -482,7 +482,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "vision",
         usage: "muster vision <id> [--json] | --record - | --resolve V2 \"<how>\"   ·   muster vision --all [--json]",
-        what: "Check a task against the project's one picture (docs/VISION.md, docs/decisions/, docs/DESIGN.md) and the tasks it touches. Muster runs no agent: muster vision <id> prints the vision brief for one, with the task quoted as data, the picture files that exist, the open tasks it touches (sharing two title words, named in its text, its parent and depends), what to look for (conflicts, overlaps, gaps, the cost of pivoting) and the JSON to return. Writes nothing. --record - reads that JSON from stdin (or takes it as its value): the task gets a ## Vision section under its write-up (above its Comments and Log), replacing the last one, with each conflict numbered V1, V2… and both sides quoted; the front matter's vision: <n> open; and a log line. A conflict whose fix changes direction is also escalated to the owner, as one question per record with the cost of pivoting. --resolve V2 \"<how>\" settles one (one line, 500 characters). While any is open, Shaping → Ready is refused; a task never checked isn't held back. --all lists the inputs for every open task.",
+        what: "Check a task against the project's one picture (docs/VISION.md, docs/decisions/, docs/DESIGN.md) and the tasks it touches. Muster runs no agent: muster vision <id> prints the vision brief for one, with the task quoted as data, the picture files that exist, the open tasks it touches (sharing two title words, named in its text, its parent and depends), what to look for (conflicts, overlaps, gaps, the cost of pivoting) and the JSON to return. Writes nothing. --record - reads that JSON from stdin (or takes it as its value): the task gets a ## Vision section under its write-up (above its Comments and Log), replacing the last one, with each conflict numbered V1, V2… and both sides quoted; the front matter's vision: <n> open; and a log line. A conflict whose fix changes direction is also escalated to the owner, as one question per record with the cost of pivoting. --resolve V2 \"<how>\" settles one (one line, 500 characters). While any is open, Shaping → Ready is refused; a task never checked isn't held back. --all lists the inputs for every open task. A project whose docs/VISION.md has a **Lenses needed:** line (lens names, comma-separated: **Lenses needed:** accessibility, i18n) gets every task that says \"n/a\" for one of them flagged: the brief lists them, and --record adds each as a conflict unless the JSON has one already (its title says n/a and names the lens).",
         options: &[
             ("--json", "the brief, the record or --all as JSON, for Drover and scripts"),
             ("--record -", "the agent's result, as JSON on stdin; malformed JSON is refused with what's wrong"),
@@ -1302,6 +1302,30 @@ mod tests {
             assert!(file.contains(opt), "{opt}: {file}");
         }
         assert!(file.contains("Shaping") && file.contains("attachments"));
+        // The lenses (0076): what shape lists, how a project skips one, file's warning, vision's line.
+        let shape = command_text("shape").unwrap();
+        for words in [
+            "accessibility, i18n, themes, payments, architecture, security, privacy, performance, tests, docs",
+            "**Lenses:**",
+            "\"n/a\" and why",
+            "[shaping]",
+            "skip = [\"payments\"]",
+            "[shaping.reasons]",
+            "shaping-skip: payments",
+            "shaping-reason-payments:",
+            "muster check",
+        ] {
+            assert!(shape.contains(words), "{words}: {shape}");
+        }
+        assert!(
+            file.contains("warns") && file.contains("files it anyway"),
+            "{file}"
+        );
+        let vision = command_text("vision").unwrap();
+        assert!(
+            vision.contains("**Lenses needed:**") && vision.contains("n/a"),
+            "{vision}"
+        );
         assert!(command_text("drop").unwrap().contains("dropped/"));
         let app: String = APP.iter().map(|(k, v)| format!("{k} {v}\n")).collect();
         for word in [

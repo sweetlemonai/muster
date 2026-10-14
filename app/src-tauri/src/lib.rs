@@ -18,6 +18,7 @@ pub mod index;
 pub mod key;
 pub mod labels;
 pub mod layout;
+pub mod lenses;
 pub mod lessons;
 pub mod merge_log;
 pub mod migrate;
