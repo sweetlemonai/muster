@@ -945,6 +945,34 @@ mod tests {
         (Runs::with_grace(emit, grace), sent)
     }
 
+    /// The events sent, once `done` holds for them or after 20 s (then the caller's assertions say
+    /// what's missing): the sending thread may lag well behind `BATCH` on a busy machine.
+    fn sent_once(
+        sent: &Sent,
+        done: impl Fn(&[(Instant, Snap)]) -> bool,
+    ) -> MutexGuard<'_, Vec<(Instant, Snap)>> {
+        let until = Instant::now() + Duration::from_secs(20);
+        loop {
+            let got = sent.lock().unwrap();
+            if done(&got) || Instant::now() > until {
+                return got;
+            }
+            drop(got);
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// `sent_once` the last event says the run ended: the sending thread sends nothing after it.
+    fn sent_to_the_end(sent: &Sent) -> MutexGuard<'_, Vec<(Instant, Snap)>> {
+        sent_once(sent, |s| {
+            s.last().is_some_and(|(_, l)| l.status != Status::Running)
+        })
+    }
+
+    /// Long enough for a stand-in login shell to finish on a machine under heavy load, for tests
+    /// of what is read rather than when.
+    const SLOW_WAIT: Duration = Duration::from_secs(30);
+
     fn plan_of(argv: &[&str], folder: &Path) -> Plan {
         Plan {
             command: argv.join(" "),
@@ -1178,8 +1206,7 @@ mod tests {
         assert_eq!(snap.command, "bin/try 'a b'");
         assert!(snap.ended.is_some_and(|e| e >= snap.since));
         // The last event says it ended, with nothing left unsent.
-        std::thread::sleep(BATCH * 2);
-        let sent = sent.lock().unwrap();
+        let sent = sent_to_the_end(&sent);
         let last = &sent.last().unwrap().1;
         assert_eq!(last.status, Status::Exited { code: Some(3) });
         let n: usize = sent.iter().map(|(_, s)| s.lines.len()).sum();
@@ -1208,9 +1235,8 @@ mod tests {
         assert!(gone(&child), "the grandchild is gone");
         assert_eq!(r.get("proj").unwrap().lock().status, Status::Stopped);
         assert!(r.running().is_empty());
-        std::thread::sleep(BATCH * 2);
         assert_eq!(
-            sent.lock().unwrap().last().unwrap().1.status,
+            sent_to_the_end(&sent).last().unwrap().1.status,
             Status::Stopped
         );
         // Stopping what isn't running does nothing.
@@ -1264,12 +1290,11 @@ mod tests {
         let b_leader = word_after(&r, "b", "leader");
         assert_eq!(r.running().len(), 2);
         // The first run's events say it stopped, under its own id.
-        std::thread::sleep(BATCH * 2);
-        assert!(sent
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|(_, s)| s.id == first.id && s.status == Status::Stopped));
+        let stopped = |s: &[(Instant, Snap)]| {
+            s.iter()
+                .any(|(_, s)| s.id == first.id && s.status == Status::Stopped)
+        };
+        assert!(stopped(&sent_once(&sent, stopped)));
         // Muster quits.
         r.stop_all();
         for g in [&leader, &b_leader] {
@@ -1295,8 +1320,7 @@ mod tests {
         }
         assert_eq!(snap.lines.last().map(String::as_str), Some("100000"));
         assert_eq!(snap.first, 100_000 - KEEP_LINES as u64);
-        std::thread::sleep(BATCH * 2);
-        let sent = sent.lock().unwrap();
+        let sent = sent_to_the_end(&sent);
         for w in sent.windows(2) {
             assert!(w[1].0 - w[0].0 >= BATCH, "{:?} apart", w[1].0 - w[0].0);
         }
@@ -1416,7 +1440,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let shell = stand_in_shell(d.path(), "/nvm/bin:/usr/bin:/bin");
         assert_eq!(
-            login_path(&shell, LOGIN_WAIT),
+            login_path(&shell, SLOW_WAIT),
             Some(OsString::from("/nvm/bin:/usr/bin:/bin"))
         );
         let args = fs::read_to_string(d.path().join("args")).unwrap();
@@ -1457,15 +1481,23 @@ mod tests {
                 pid.display()
             ),
         );
+        // Read to the end of output, it would wait out the whole wait (the sleeper outlives it) and
+        // give None; the bound is half the wait, so a busy machine's slow start doesn't count.
+        let wait = Duration::from_secs(20);
         let t = Instant::now();
-        let got = login_path(&shell, LOGIN_WAIT);
+        let got = login_path(&shell, wait);
         let took = t.elapsed();
-        let sleeper = fs::read_to_string(&pid).unwrap();
-        let _ = Command::new("/bin/kill")
-            .args(["-KILL", sleeper.trim()])
-            .status();
-        assert_eq!(got, Some(OsString::from("/nvm/bin:/usr/bin")));
-        assert!(took < Duration::from_secs(3), "{took:?}");
+        if let Ok(sleeper) = fs::read_to_string(&pid) {
+            let _ = Command::new("/bin/kill")
+                .args(["-KILL", sleeper.trim()])
+                .status();
+        }
+        assert_eq!(
+            got,
+            Some(OsString::from("/nvm/bin:/usr/bin")),
+            "after {took:?}"
+        );
+        assert!(took < wait / 2, "{took:?}");
     }
 
     #[test]
@@ -1477,7 +1509,7 @@ mod tests {
             "if (: </dev/tty) 2>/dev/null; then PATH=/has/a/tty; else PATH=/no/tty; fi\neval \"$2\"\n",
         );
         assert_eq!(
-            login_path(&shell, LOGIN_WAIT),
+            login_path(&shell, SLOW_WAIT),
             Some(OsString::from("/no/tty"))
         );
     }
@@ -1527,10 +1559,12 @@ mod tests {
                 .success(),
             "a terminal of its own"
         );
+        // Stopped, it would give None at the wait; the bound is half of it, for a busy machine.
+        let wait = Duration::from_secs(20);
         let t = Instant::now();
-        let got = login_path(Path::new("/bin/zsh"), Duration::from_secs(4));
+        let got = login_path(Path::new("/bin/zsh"), wait);
         assert!(got.is_some(), "after {:?}", t.elapsed());
-        assert!(t.elapsed() < Duration::from_secs(3), "{:?}", t.elapsed());
+        assert!(t.elapsed() < wait / 2, "{:?}", t.elapsed());
     }
 
     #[test]
@@ -1541,26 +1575,38 @@ mod tests {
             "fails",
             "echo '<muster-path>/a</muster-path>'\nexit 1\n",
         );
-        assert_eq!(login_path(&failing, LOGIN_WAIT), None, "a failing shell");
+        assert_eq!(login_path(&failing, SLOW_WAIT), None, "a failing shell");
         let quiet = script(d.path(), "quiet", "echo hello\n");
-        assert_eq!(login_path(&quiet, LOGIN_WAIT), None, "no PATH printed");
+        assert_eq!(login_path(&quiet, SLOW_WAIT), None, "no PATH printed");
         assert_eq!(
-            login_path(&d.path().join("missing"), LOGIN_WAIT),
+            login_path(&d.path().join("missing"), SLOW_WAIT),
             None,
             "no shell there"
         );
-        // A hung startup file: given up at the wait, and what it started is gone too.
+        // A hung startup file: given up at the wait, and what it started is gone too. The child's
+        // id is written whole (a rename) once it runs; a machine so busy that the wait ran out
+        // before that is tried again with twice the wait.
         let pid = d.path().join("pid");
         let hangs = script(
             d.path(),
             "hangs",
-            &format!("sleep 300 &\necho $! > '{}'\nwait\n", pid.display()),
+            &format!(
+                "sleep 300 &\necho $! > '{0}.new'\nmv '{0}.new' '{0}'\nwait\n",
+                pid.display()
+            ),
         );
-        // Long enough for it to have written its child's id even on a busy machine.
-        let t = Instant::now();
-        assert_eq!(login_path(&hangs, Duration::from_secs(2)), None);
-        assert!(t.elapsed() < Duration::from_secs(6), "{:?}", t.elapsed());
-        let child = fs::read_to_string(&pid).unwrap();
+        let mut wait = Duration::from_secs(2);
+        let child = loop {
+            let t = Instant::now();
+            assert_eq!(login_path(&hangs, wait), None);
+            let took = t.elapsed();
+            assert!(took < wait + Duration::from_secs(10), "{took:?}");
+            if let Ok(child) = fs::read_to_string(&pid) {
+                break child;
+            }
+            assert!(wait < Duration::from_secs(16), "it never started its child");
+            wait *= 2;
+        };
         assert!(gone(child.trim()), "its child is killed");
     }
 
@@ -1572,10 +1618,19 @@ mod tests {
         script(&repo, "bin/path", "echo \"$PATH\"\n");
         let tools = d.path().join("tools");
         let shell = stand_in_shell(d.path(), &format!("{}:/usr/bin:/bin", tools.display()));
-        let r = Runs::with_shell(Arc::new(|_: &Snap| {}), GRACE, Some(shell));
         let list = [project("proj", &q, "bin/path")];
-        r.start_named(&list, "proj").unwrap();
-        let snap = ended(&r, q.to_str().unwrap());
+        // The read gets `LOGIN_WAIT`; a machine so busy that the stand-in hadn't finished in it
+        // gives the run no login PATH, and fresh runs try again.
+        let mut tries = 0;
+        let (r, snap) = loop {
+            let r = Runs::with_shell(Arc::new(|_: &Snap| {}), GRACE, Some(shell.clone()));
+            r.start_named(&list, "proj").unwrap();
+            let snap = ended(&r, q.to_str().unwrap());
+            tries += 1;
+            if tries == 3 || r.login.get() != Some(&None) {
+                break (r, snap);
+            }
+        };
         let path = snap.lines.first().unwrap();
         assert!(
             path.starts_with(&format!("{}:/usr/bin:/bin:", tools.display())),
@@ -1621,8 +1676,7 @@ mod tests {
         assert!(gone(&format!("-{leader}")));
         // Every event says whose run it is by the key, which the window matches on: the name
         // went to another project.
-        std::thread::sleep(BATCH * 2);
-        let sent = sent.lock().unwrap();
+        let sent = sent_to_the_end(&sent);
         assert!(!sent.is_empty());
         assert!(sent.iter().all(|(_, s)| s.key == key), "every event keyed");
     }
