@@ -4,6 +4,16 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — A review can always send a task back; the sent-back one comes first (mu-66)
+**Fixed:** a review that found something couldn't send the task back to Building while its builder
+held the next task (one claim per holder; seen on mu-59) → a Testing → Building change skips that
+check; the sent-back task comes first (`muster next`: "fix mu-59 first (sent back by the review)",
+cards say which comes first and which waits behind). A new claim is still refused.
+**Decided:** send-back always allowed (the rule stops starting two things; a send-back starts
+nothing); overrule in the task.
+**Verified:** `bin/gate` → `gate: green (pnpm check, test_task, test_commands, cargo test
+(Kiritimati))` on 3b2386f; core, review, CLI and render tests.
+
 ## 2026-10-14 — Hatched own cards readable in every look; Quick add's help (mu-65)
 **Fixed:** on the owner's own cards (hatched, YOU) the project name and the red flags fell to
 3.8–4.5:1 over the Tint washes (worst: Graphite `--bad` 3.84 on Testing) → the card uses its own
