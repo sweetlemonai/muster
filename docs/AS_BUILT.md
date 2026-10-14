@@ -423,7 +423,11 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   needs-you wash stays under them) plus the gold "You" ribbon (`#A08428`, never a stage colour),
   in every card look. `themes.test.ts` holds every card word on a stripe over the plain card to
   its contrast in every theme and accent (text 7:1; muted, project name and warnings 4.5:1), the
-  title (7:1) and muted words (4.5:1) on a stripe over a blocked or needs-you wash, the hatch
+  title (7:1) and the muted, project-name and warning words (4.5:1) on a stripe over every wash the
+  Tint look can give the card (each stage, priority, blocked, needs you; mu-65). The project name and
+  the quiet and vision flags sit just under 4.5:1 there in their plain colours, so `.card.human`
+  takes `--human-accent-text` and `--human-bad` (`themes.ts` `wordOnStripes`: the colour mixed toward
+  the theme's text until every stripe reads), the stripes and wash untouched. The hatch
   visible (CIE76 8+ from the surface), and the gold a hue apart from blocked red and needs-you
   orange. The ribbon marks human tasks in Table, Timeline, Graph and the pane too; the pane's
   stage track shows a human task only To do · Doing · Done (`paneData.ts` `trackSteps`), and the

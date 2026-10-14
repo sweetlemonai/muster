@@ -146,7 +146,6 @@ describe("the owner's own task's hatch (0022, owner 2026-10-13: one board, human
   // A stripe is the gold mixed by HUMAN_HATCH into the card's own background: the surface, or in
   // the Tint look the card washed in its colour (blocked, needs you), which stays under the stripes.
   const stripe = (t: (typeof THEMES)[number], under = t.surface) => mix(HUMAN_COLOUR, under, HUMAN_HATCH);
-  const washed = (t: (typeof THEMES)[number]) => [STAGE_COLOURS.blocked, NEEDS_COLOUR].map((c) => mix(c, t.surface, CARD_TINT[t.mode]));
   for (const t of THEMES) {
     for (const a of ACCENTS) {
       it(`${t.name} × ${a.name}: every word a card shows keeps its contrast on a stripe`, () => {
@@ -154,15 +153,21 @@ describe("the owner's own task's hatch (0022, owner 2026-10-13: one board, human
         // The title and other text at 7:1 (AAA), as on the plain card.
         expect(contrast(v["--text"], stripe(t))).toBeGreaterThanOrEqual(7);
         // Secondary words: meta (muted), the project name (accent-text), warnings (bad).
-        for (const w of ["--muted", "--accent-text", "--bad"]) expect(contrast(v[w], stripe(t)), w).toBeGreaterThanOrEqual(4.5);
+        for (const w of ["--muted", "--human-accent-text", "--human-bad"]) expect(contrast(v[w], stripe(t)), w).toBeGreaterThanOrEqual(4.5);
         // The You ribbon's border still stands out on it.
         expect(contrast(v["--edge-human"], stripe(t))).toBeGreaterThanOrEqual(3);
       });
-      it(`${t.name} × ${a.name}: the title and secondary text keep their contrast on a stripe over a blocked or needs-you wash (Tint)`, () => {
+      it(`${t.name} × ${a.name}: every word keeps its contrast on a stripe over whatever the Tint look washes the card in (4.5:1, 7:1 for the title)`, () => {
         const v = variables(t, a);
-        for (const under of washed(t)) {
-          expect(contrast(v["--text"], stripe(t, under)), under).toBeGreaterThanOrEqual(7);
-          expect(contrast(v["--muted"], stripe(t, under)), under).toBeGreaterThanOrEqual(4.5);
+        // The wash is the card's colour: its stage, its priority, blocked or needs you (the Tint
+        // look under any card colour); the stripe is the gold mixed into that wash.
+        const colours = [...Object.keys(STAGE_COLOURS).map((s) => `--st-${s}`), "--st-needs", ...Object.keys(PRIORITY_COLOURS).map((p) => `--pri-${p}`)];
+        for (const k of colours) {
+          const under = mix(v[k], t.surface, CARD_TINT[t.mode]);
+          expect(contrast(v["--text"], stripe(t, under)), `--text on ${k}`).toBeGreaterThanOrEqual(7);
+          // Meta (muted), then the project name and the quiet and vision flags: .card.human shades
+          // accent-text and bad to --human-accent-text and --human-bad (styles.css).
+          for (const w of ["--muted", "--human-accent-text", "--human-bad"]) expect(contrast(v[w], stripe(t, under)), `${w} on ${k}`).toBeGreaterThanOrEqual(4.5);
         }
       });
     }
@@ -279,6 +284,17 @@ describe("the card CSS uses what the tests check (0026)", () => {
     const others = css.replace(body, "");
     expect(others.match(/\.card[^{]*\{[^}]*background-image/g) ?? []).toEqual([]);
     for (const sel of [".card.blocked", ".card.needs-you"]) expect(rule(sel).body).not.toContain("gradient");
+  });
+  it("on the owner's own card the accent and bad words take the --human-* shades, and the page has them before apply() (light and dark)", () => {
+    expect(rule(".card.human").body).not.toContain("--bad");
+    expect(css).toContain(".card.human { --accent-text: var(--human-accent-text); --bad: var(--human-bad); }");
+    const block = (from: number) => css.slice(from, css.indexOf("}", from));
+    const root = block(css.indexOf(":root {"));
+    const night = block(css.indexOf(":root {", css.indexOf("prefers-color-scheme: dark")));
+    for (const [b, t] of [[root, THEMES.find((x) => x.id === "violet-day")!], [night, THEMES.find((x) => x.id === "violet-night")!]] as const) {
+      const v = variables(t, ACCENTS[0]);
+      for (const k of ["--human-accent-text", "--human-bad"]) expect(b, `${k} on ${t.name}`).toContain(`${k}: ${v[k]};`);
+    }
   });
   it("blocked takes over from needs you, and both from the stage or priority colour", () => {
     const needs = rule(".card.needs-you");

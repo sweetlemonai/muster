@@ -30,6 +30,8 @@
   --st-needs: #FB8C3C;
   --st-human: #A08428;
   --human-hatch: 14%;
+  --human-accent-text: #5A38C9;
+  --human-bad: #B5314D;
   --on-status: #1A1730;
   --bad: #C2334F;
   --ok: #177A4B;
@@ -68,6 +70,8 @@
     --ok: #4CC38A;
     --gold-text: #F5C04A;
     --warn: #FB8C3C;
+    --human-accent-text: #A590F5;
+    --human-bad: #EF7C93;
   }
 }
 * { box-sizing: border-box; }
@@ -204,6 +208,10 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
    card's own element in its top-right corner, with the word so colour isn't the only cue. */
 .card.human { position: relative; background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--st-human) var(--human-hatch), var(--card-bg, var(--panel))) 0 5px, transparent 5px 11px); }
 .card.human .card-top { padding-right: 34px; }
+/* The words a card colours with the accent or the bad red sit just under 4.5:1 on a gold stripe,
+   so on the owner's own card they take the --human-* shades (themes.ts wordOnStripes, tested for
+   every theme, accent and wash). The stripes and the Tint wash stay as they are. */
+.card.human { --accent-text: var(--human-accent-text); --bad: var(--human-bad); }
 .you-ribbon { background: var(--st-human); color: var(--on-status); border: 1px solid var(--edge-human, var(--st-human)); font-size: 9.5px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; line-height: 1.4; padding: 0 6px; border-radius: 4px; white-space: nowrap; flex: none; }
 .card .you-ribbon { position: absolute; top: 0; right: 0; z-index: 1; border-radius: 0 0 0 6px; border-top: none; border-right: none; }
 

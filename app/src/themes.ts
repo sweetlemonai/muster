@@ -103,6 +103,17 @@ export function edgeColour(c: string, backgrounds: string | string[], mode: Mode
   return toward;
 }
 
+/** A word colour for the owner's own (hatched) card: the colour itself when it reads at 4.5:1 on
+ *  every given background (the stripes over the card's surface or whatever wash it has), else
+ *  mixed toward the theme's text colour until it does, keeping the hue. */
+export function wordOnStripes(c: string, text: string, backgrounds: string[]): string {
+  for (let t = 0; t <= 1; t += 0.02) {
+    const w = mix(text, c, t);
+    if (backgrounds.every((b) => contrast(w, b) >= 4.5)) return w;
+  }
+  return text;
+}
+
 export function luminance(hex: string): number {
   const h = hex.replace("#", "");
   const c = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
@@ -185,6 +196,10 @@ export function variables(theme: Theme, accent: Accent): Record<string, string> 
   const st = STATUS_TEXT[theme.mode];
   const edge = (c: string) => edgeColour(c, [theme.surface, mix(c, theme.surface, CARD_TINT[theme.mode])], theme.mode);
   const stages: Record<string, string> = { ...STAGE_COLOURS, building: buildingColour(accent).colour };
+  // The owner's own card (0022) is striped in the gold over its surface, or, in the Tint look, over
+  // the card washed in any of its colours: its stage, priority, blocked or needs you.
+  const washes = [...Object.values(stages), NEEDS_COLOUR, ...Object.values(PRIORITY_COLOURS)].map((c) => mix(c, theme.surface, CARD_TINT[theme.mode]));
+  const stripes = [theme.surface, ...washes].map((under) => mix(HUMAN_COLOUR, under, HUMAN_HATCH));
   // Drover's token names (0053) where Drover has the token, Muster's own for the rest.
   return {
     "--bg": theme.bg,
@@ -217,6 +232,9 @@ export function variables(theme: Theme, accent: Accent): Record<string, string> 
     "--st-human": HUMAN_COLOUR,
     "--edge-human": edge(HUMAN_COLOUR),
     "--human-hatch": `${Math.round(HUMAN_HATCH * 100)}%`,
+    // The two coloured words a card shows (the project name, the quiet and vision flags) on those stripes.
+    "--human-accent-text": wordOnStripes(strong, theme.text, stripes),
+    "--human-bad": wordOnStripes(st.err, theme.text, stripes),
     ...Object.fromEntries(Object.entries(PRIORITY_COLOURS).map(([p, c]) => [`--pri-${p}`, c])),
     ...Object.fromEntries(Object.entries(PRIORITY_COLOURS).map(([p, c]) => [`--edge-pri-${p}`, edge(c)])),
     "--card-tint": `${Math.round(CARD_TINT[theme.mode] * 100)}%`,

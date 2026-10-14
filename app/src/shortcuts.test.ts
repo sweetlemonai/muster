@@ -28,6 +28,12 @@ describe("the shortcut table", () => {
     expect(what("close-pane")).toBe("Close the pane: a task, a note or New task");
     expect(what("zoom-in")).toContain("also in Settings, Appearance, Text size");
   });
+  it("says the quick add is at the top of the Backlog column, or of the Backlog band under Group by (mu-65)", () => {
+    for (const id of ["quick-add", "quick-add-clear"]) {
+      const where = SHORTCUTS.find((s) => s.id === id)?.where;
+      expect(where, id).toBe("Add to the backlog…, at the top of the Backlog column, or of the Backlog band under Group by");
+    }
+  });
   it("lists every key a handler in the window acts on, for that file", () => {
     const missing: string[] = [];
     for (const [file, text] of Object.entries(sources)) {
