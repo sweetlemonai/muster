@@ -75,7 +75,6 @@ test_task, test_commands, cargo test (Kiritimati))`.
 **Open:** the personal layer's change (rule link, hook wrapper and entries, the main checkout's
 `.muster/` in each worktree's sandbox list) is for the layer's owner; AC2 is the owner's live
 check after it. The pilot project is the owner's pick.
-||||||| parent of 6d02ce0 (Mac notifications: one notification when something new waits for you (task 0052))
 
 ## 2026-10-13 — Muster wears Drover's token names and atoms, keeping its own look (task 0053)
 **Did:** CSS variables renamed to Drover's tokens (`--surface`→`--panel`, `--border`→`--line`,
@@ -136,11 +135,6 @@ the builder once first. Hatched cards' contrast: fix the text, keep the wash (ba
 (`claude agents --json --all` reports a live session as failed, interactive ones not at all); mu-6
 waits on the notification task; layout defects (Settings › Projects table, pane status column, graph
 chips, table header, Focus Ready strip) sent to muster-lead to queue.
-||||||| parent of ab6877c (Muster wears Drover's token names and atoms, keeping its own look (task 0053))
-||||||| parent of 5f0920f (Mac notifications: one notification when something new waits for you (task 0052))
-
-||||||| parent of f2e1b81 (Muster in other projects: muster init in any repo, New queue makes .muster/, the layer's rule (task 0004))
-||||||| parent of 6d02ce0 (Mac notifications: one notification when something new waits for you (task 0052))
 
 ## 2026-10-13 — Muster's own queue moved into `muster/main/.muster/` (task 0005, AC5)
 **Did:** `muster migrate ~/playground/muster/tasks ~/playground/muster/main` (local): 51 tasks, 8 notes,
@@ -943,7 +937,6 @@ exact capture time became capture + 24 h. Now the core reads the done time from 
 the 24 hours from 20 h before the current hour to 4 h after it (◀ ▶ move a day; "Now" comes
 back), with clock hours on the axis and the weekday where the day changes.
 **Verified:** `pnpm check` green (vitest 345, cargo 192 + interop 12), `test_task.py` OK.
-
 
 ## 2026-10-13 — Who worked on a task and what it cost: sessions, tokens, time, live (task 0025)
 **Did:** the task pane has a Work section: every session that held or logged on the task, with
