@@ -65,7 +65,8 @@ describe("Notifications (0052)", () => {
     expect(t).toContain("Several at once come as one");
     expect(t).toContain("never twice for the same thing");
     expect(t).toContain("not for what was already waiting when Muster started");
-    expect(t).toContain("not while Muster's window is in front showing its project");
+    expect(t).toContain("While Muster's window is in front, what it shows (its project, or All) counts as seen");
+    expect(t).toContain("news from another project waits until you switch away");
     expect(t).toContain("macOS asks whether Muster may notify the first time it has something to tell you");
     expect(t).toContain("System Settings › Notifications");
     expect(t).toContain("Nothing leaves this Mac");

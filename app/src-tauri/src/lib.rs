@@ -149,7 +149,7 @@ async fn state(
         // Claude Code's word on each holder's session (0048): the latest read, never waited on.
         let sessions = monitor.poll(&s.tasks, s.now);
         agents::apply(&mut s.tasks, &sessions);
-        notify_new(&h, &s);
+        notify_new(&h, &s, &sessions);
         Ok((s, cache))
     })
     .await?;
@@ -171,22 +171,21 @@ fn show_badge(handle: &tauri::AppHandle, badge: &badge::Badge, n: usize) {
     });
 }
 
-/// A Mac notification of what's new for the owner in `s` (0052), unless Settings turned them off;
-/// nothing the window, focused, shows already.
-fn notify_new(handle: &tauri::AppHandle, s: &queue::State) {
-    let queues: Vec<String> = s.queues.iter().map(|q| q.name.clone()).collect();
-    handle.state::<AppState>().notify.read(
-        &notify::waiting(&s.tasks, &s.queues),
-        &queues,
-        s.settings.notify,
+/// A Mac notification of what's new for the owner in `s` (0052), whose sessions `sessions` told,
+/// unless Settings turned them off (`notify::after_read`).
+fn notify_new(handle: &tauri::AppHandle, s: &queue::State, sessions: &agents::Snapshot) {
+    notify::after_read(
+        &handle.state::<AppState>().notify,
+        s,
+        sessions,
         &notify::Mac(handle),
     );
 }
 
 /// The shown projects' state, read as the window's poll reads it (with its cache, the tasks' keys,
 /// the projects' labels and Claude Code's session states), for the Dock badge and the
-/// notifications while the window doesn't poll.
-fn waiting_now(app: &AppState) -> Result<queue::State, String> {
+/// notifications while the window doesn't poll; with the session states it applied.
+fn waiting_now(app: &AppState) -> Result<(queue::State, agents::Snapshot), String> {
     waiting_in(
         &base(),
         &app.config_file,
@@ -203,7 +202,7 @@ fn waiting_in(
     settings_file: &std::path::Path,
     cache: &Mutex<queue::Cache>,
     monitor: &Arc<agents::Monitor>,
-) -> Result<queue::State, String> {
+) -> Result<(queue::State, agents::Snapshot), String> {
     let settings = settings::load(settings_file);
     let list = projects::list(base, &projects::load(config_file));
     let prefix_of = |name: &str| {
@@ -220,7 +219,7 @@ fn waiting_in(
     // `claude agents` at most every 15 s, on its own thread, and never holds this up.
     let sessions = monitor.poll(&s.tasks, s.now);
     agents::apply(&mut s.tasks, &sessions);
-    Ok(s)
+    Ok((s, sessions))
 }
 
 /// Keeps the Dock badge current while the window is hidden and doesn't poll (0006): every
@@ -232,9 +231,9 @@ fn watch_badge(handle: tauri::AppHandle) {
         std::thread::sleep(badge::HIDDEN_EVERY);
         let app = handle.state::<AppState>();
         if app.badge.due(std::time::Instant::now()) {
-            if let Ok(s) = waiting_now(&app) {
+            if let Ok((s, sessions)) = waiting_now(&app) {
                 show_badge(&handle, &app.badge, badge::dock_count(&s.tasks, &s.queues));
-                notify_new(&handle, &s);
+                notify_new(&handle, &s, &sessions);
             }
         }
     });
@@ -1796,8 +1795,11 @@ mod tests {
         // No task has a session stamp, so Claude Code is never asked.
         let fetch: agents::Fetch = Arc::new(|_: &str| Err("not asked".to_string()));
         let monitor = agents::Monitor::new(fetch, in_place);
-        let read =
-            || waiting_in(base.path(), &config_file, &settings_file, &cache, &monitor).unwrap();
+        let read = || {
+            waiting_in(base.path(), &config_file, &settings_file, &cache, &monitor)
+                .unwrap()
+                .0
+        };
         let count = || {
             let s = read();
             badge::dock_count(&s.tasks, &s.queues)
@@ -1855,7 +1857,7 @@ mod tests {
             });
             let monitor = agents::Monitor::new(fetch, in_place);
             let cache = Mutex::new(queue::Cache::default());
-            let s =
+            let (s, _) =
                 waiting_in(base.path(), &config_file, &settings_file, &cache, &monitor).unwrap();
             badge::dock_count(&s.tasks, &s.queues)
         };

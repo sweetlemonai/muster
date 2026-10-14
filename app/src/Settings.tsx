@@ -267,7 +267,7 @@ export function AboutView({ info, projects, error = "" }: { info: SettingsInfo; 
         <ul className="about-list">
           <li><code>projects.json</code>: the projects you added or hid, their labels, categories, gates and Your check limits</li>
           <li><code>settings.json</code>: the claim lease, the LIVE window and whether notifications are on; the muster command reads it too</li>
-          <li><code>notified.json</code>: what Muster has notified you of, so it never does twice</li>
+          <li><code>notified.json</code>: what Muster won't notify you of again: what it notified, and what you'd already seen (waiting at start or when notifications were turned on, or shown in the window in front)</li>
           <li><code>helper/</code>: the helper's account, model and conversations</li>
         </ul>
         <p className="meta">Appearance, the display mode, text size, Group by, saved views and the pane's width are kept by the window itself, on this Mac.</p>

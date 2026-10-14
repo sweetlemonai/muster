@@ -212,16 +212,16 @@ Type a span the way `muster reclaim --after` takes it: `30m`, `2h`, `1.25h` or `
 **On** (the default) or **Off**, the one in force lit. On, Muster posts a Mac notification when something new waits for you: a task in Your check, a question escalated to you, a task blocked on you or by a permission, a session that waits for your input in Claude Code, a task of your own, or lessons to approve: what the Dock badge counts (see [What needs you](02-concepts.md#what-needs-you)). Several new at once come as one notification that names the first three and counts the rest.
 
 - **Never twice** for the same thing: a task back in Your check after a return is new again; a second escalated question is new; the same block or the same session waiting again isn't.
-- **No flood:** nothing for what was already waiting when Muster started, or for what waits in a project you just added or showed again.
-- **Not what you're looking at:** nothing for a project while Muster's window is in front showing it (or **All**); those count as seen.
+- **No flood:** nothing for what was already waiting when Muster started, for what waits in a project you just added or showed again, or for a session Claude Code already shows waiting for your input when Muster first reads it.
+- **Not what you're looking at:** nothing for a project while Muster's window is in front showing it (or **All**); those count as seen. News from another project waits while the window is in front, since macOS shows no banner then, and comes once you switch to another app or hide or minimize Muster.
 - **Off** notifies nothing, and turning it on again doesn't bring up what came in meanwhile.
 
-macOS asks whether Muster may notify the first time it has something to tell you, not when it starts; change your answer later in System Settings › Notifications. The notifications are local: nothing leaves this Mac. They come while Muster runs, the window open or hidden. The switch is saved in `settings.json`, and what Muster has notified in `notified.json` beside it (the last 500, plus whatever still waits).
+macOS asks whether Muster may notify the first time it has something to tell you, not when it starts; change your answer later in System Settings › Notifications. The notifications are local: nothing leaves this Mac. They come while Muster runs, the window open or hidden. The switch is saved in `settings.json`, and what Muster won't notify again in `notified.json` beside it: what it notified and what you'd already seen (the last 500, plus whatever still waits).
 
 ### About
 
 - **Version:** the app's version.
-- **Settings on this Mac:** the app's settings folder (`~/Library/Application Support/ai.sweetlemon.muster`) and what's in it: `projects.json` (the projects you added or hid, their labels, categories, gates and Your check limits), `settings.json` (the claim lease, the LIVE window and whether notifications are on), `notified.json` (what Muster has notified you of) and `helper/` (the helper's account, model and conversations). Appearance, the display mode, text size, Group by, saved views and the pane's width are kept by the window itself.
+- **Settings on this Mac:** the app's settings folder (`~/Library/Application Support/ai.sweetlemon.muster`) and what's in it: `projects.json` (the projects you added or hid, their labels, categories, gates and Your check limits), `settings.json` (the claim lease, the LIVE window and whether notifications are on), `notified.json` (what Muster won't notify you of again: what it notified, and what you'd already seen) and `helper/` (the helper's account, model and conversations). Appearance, the display mode, text size, Group by, saved views and the pane's width are kept by the window itself.
 - **What it reads:** the queues it found on its own (at `~/playground/<project>/tasks`, and one level deeper), then the ones you added (or that you added none), each with its folder, and the folders of the Claude Code session transcripts. All of it is read on this Mac and nothing is sent anywhere; only what you write to the helper goes to Anthropic, through your own Claude Code.
 
 ## Colours

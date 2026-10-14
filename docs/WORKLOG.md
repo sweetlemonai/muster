@@ -29,6 +29,16 @@ first post, which comes only when something new waits. Added with `cargo add`; n
 **Verified:** `bin/gate`: gate: green (pnpm check, test_task, test_commands, cargo test
 (Kiritimati)); `cargo test` notify:: 13 tests, settings 1 new; vitest `Notifications.test.ts` 5
 tests. Not checked by hand: a real notification on screen (needs the built app launched).
+**Fixed (review):** focused on project B, news in A was posted and marked seen, but macOS shows no
+banner while Muster is in front, so it was lost; now it's neither posted nor seen until the window
+loses the focus. A session already waiting for input at launch was posted when the first
+`claude agents` read landed; now `input` items are seen, not news, until a read knew the sessions
+(`agents::known`). Off returns before reading anything, and the lessons' rules come from the
+count's `(len, mtime)` cache (`lessons::proposed`), so a poll doesn't re-parse `lessons.json`. The
+glue moved into `notify::after_read`, tested. Each notification line and the title are cut at 200
+characters (a task id had no bound). Wording: `notified.json` is what Muster won't notify again
+(not only what it notified), and `Mac::permit` grants rather than asks. Tests: 5 new in notify,
+1 in agents, the lessons cache test extended.
 **Open:** under `tauri dev` notifications show as Terminal's (the plugin's rule for unbundled
 builds). Two tests this change doesn't touch failed once each and passed on rerun (cli: lessons in
 the start brief; migrate: v2 copy, "would both be WAITING-FOR-OWNER.md"): flaky.

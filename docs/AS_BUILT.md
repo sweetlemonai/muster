@@ -590,18 +590,25 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   keyed by when it came in, so a second arrival is new; each escalated question; blocked on you
   or by a permission; its session waiting for input; the owner's own task) and one per lesson to
   approve, and keeps the keys it has seen. Each window poll and each hidden read (above) passes
-  its state through it, so there are no extra reads. New items are posted once, several in one
-  notification (the first three named, the rest counted). Taken as seen without a notification:
-  everything on the first read after start and in a project the last read didn't have (no
-  flood), what the window shows while it has the focus (its project, or All; the window tells the
-  core with `show_project_title`), and everything while Settings › Notifications is Off
-  (`settings.json` `notify`, default on). The keys are kept in `notified.json` beside it: the last
-  500, plus every one still waiting, so nothing comes up twice. Permission: asked at the first
-  thing to say, never at start (`tauri-plugin-notification` 2.6.0 on desktop grants it itself;
-  macOS asks the owner on the first post; no usage string exists for notifications). Posted
-  from Rust through the plugin, so the window has no notification permission (still
-  `core:default` only); local only, the plugin has no network code. Under `tauri dev` they show as
-  Terminal's (the plugin's rule for unbundled builds); the built app shows them as Muster's.
+  its state through it (`notify::after_read`), so there are no extra reads: the lessons' rules
+  come from the same `(len, mtime)` cache as their count (`lessons::proposed`), and while
+  Settings › Notifications is Off (`settings.json` `notify`, default on) nothing is read for them.
+  New items are posted once, several in one notification (the first three named, the rest
+  counted; each line at most 200 characters). Taken as seen without a notification: everything
+  on the first read after start, after Off, and in a project the last read didn't have (no
+  flood); a session waiting for input until a read before knew the sessions (`agents::known`:
+  some account read, or none wanted), so one waiting at launch isn't posted when the first
+  `claude agents` read lands; and what the window shows while it has the focus (its project, or
+  All; the window tells the core with `show_project_title`). News from another project is
+  neither posted nor seen while the window has the focus (`mac-notification-sys` shows no banner
+  while the app is frontmost) and is posted at the first read once it hasn't. The keys are kept
+  in `notified.json` beside it: the last 500, plus every one still waiting, so nothing comes up
+  twice. Permission: asked at the first thing to say, never at start
+  (`tauri-plugin-notification` 2.6.0 on desktop grants it itself; macOS asks the owner on the
+  first post; no usage string exists for notifications). Posted from Rust through the plugin, so
+  the window has no notification permission (still `core:default` only); local only, the plugin
+  has no network code. Under `tauri dev` they show as Terminal's (the plugin's rule for unbundled
+  builds); the built app shows them as Muster's.
 
 ## The AI helper
 

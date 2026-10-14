@@ -3,9 +3,12 @@
 //! the needs-you count plus the lessons to approve), split into items, one for each reason a task
 //! waits (in Your check, a question escalated to them, blocked on them or by a permission, its
 //! session waiting for input, their own task) and one for each lesson. An item is notified once
-//! and never again. What waited when the app started, or when its project first showed, counts as
-//! seen, so nothing floods; so does what comes in while the window is focused on its project, and
-//! everything while Settings has notifications off. Several new at once go in one notification.
+//! and never again. What waited when the app started, when its project first showed or when
+//! notifications were turned on again, counts as seen, so nothing floods; so does a session the
+//! first read of Claude Code finds waiting for input, and what comes in while the window is
+//! focused on its project. News from another project waits while the window is focused (macOS
+//! shows no banner then) and comes once it isn't. While Settings has notifications off, nothing is
+//! read for them. Several new at once go in one notification.
 //! The keys seen are kept, bounded, in `notified.json` beside `settings.json`, so a restart
 //! doesn't notify again. Posted from the core through `tauri-plugin-notification`, so the window
 //! needs no permission for it. Local only: nothing leaves the Mac.
@@ -16,9 +19,8 @@ use std::sync::{Mutex, MutexGuard};
 
 use serde::{Deserialize, Serialize};
 
-use crate::agents::SessionState;
-use crate::lessons::Lesson;
-use crate::queue::{QueueInfo, Task};
+use crate::agents::{SessionState, Snapshot};
+use crate::queue::{QueueInfo, State, Task};
 
 /// The file of keys seen, in the app's config folder.
 pub const FILE: &str = "notified.json";
@@ -30,6 +32,9 @@ const MAX_FILE: u64 = 1024 * 1024;
 const LINES: usize = 3;
 /// How much of a task's title or a lesson's rule a line shows.
 const SHORT: usize = 80;
+/// How much of one line of a notification shows, title included: a `SHORT` title fits with its
+/// key, why and project, and nothing it names (a task id, a project's name) runs on.
+const LONG: usize = 200;
 
 /// One thing waiting on the owner.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,6 +48,8 @@ pub struct Item {
     pub label: String,
     /// What the notification says about it: `mu-12 Fix the board: ready for your check`.
     pub line: String,
+    /// Its session waits for input: Claude Code's word (0048), known only once it was read.
+    pub input: bool,
 }
 
 /// What waits on the owner in a read: the tasks the needs-you count counts, by why, and the
@@ -60,10 +67,12 @@ pub fn waiting(tasks: &[Task], queues: &[QueueInfo]) -> Vec<Item> {
         })
         .collect();
     for q in queues.iter().filter(|q| q.lessons_waiting > 0) {
-        // A lessons file that doesn't read has nothing to say here; `muster check` reports it.
-        if let Ok(book) = crate::lessons::load(Path::new(&q.path)) {
-            items.extend(lesson_items(q, &book.lessons));
-        }
+        // Parsed only when `lessons.json` changed, as for the count. One that doesn't read has
+        // nothing to say here; `muster check` reports it.
+        items.extend(lesson_items(
+            q,
+            &crate::lessons::proposed(Path::new(&q.path)),
+        ));
     }
     items
 }
@@ -106,6 +115,7 @@ fn task_items(t: &Task, label: &str) -> Vec<Item> {
     let key = crate::key::key(&t.prefix, &t.id);
     why.into_iter()
         .map(|(k, words)| Item {
+            input: k == "input",
             key: format!("{}/{}/{k}", t.queue, t.id),
             queue: t.queue.clone(),
             label: label.to_string(),
@@ -114,24 +124,28 @@ fn task_items(t: &Task, label: &str) -> Vec<Item> {
         .collect()
 }
 
-/// The lessons of `q` waiting for the owner's yes (0027), one item each.
-fn lesson_items(q: &QueueInfo, lessons: &[Lesson]) -> Vec<Item> {
-    lessons
+/// The lessons of `q` waiting for the owner's yes (0027), by id and rule, one item each.
+fn lesson_items(q: &QueueInfo, proposed: &[(String, String)]) -> Vec<Item> {
+    proposed
         .iter()
-        .filter(|l| l.state == "proposed")
-        .map(|l| Item {
-            key: format!("{}/lesson/{}", q.name, l.id),
+        .map(|(id, rule)| Item {
+            key: format!("{}/lesson/{id}", q.name),
             queue: q.name.clone(),
             label: q.label.clone(),
-            line: format!("A lesson to approve: {}", short(&l.rule)),
+            line: format!("A lesson to approve: {}", short(rule)),
+            input: false,
         })
         .collect()
 }
 
 /// The first `SHORT` characters of `text`'s first line, with … when there was more.
 fn short(text: &str) -> String {
-    let line = text.lines().next().unwrap_or("").trim();
-    let mut cut: String = line.chars().take(SHORT).collect();
+    cut(text.lines().next().unwrap_or("").trim(), SHORT)
+}
+
+/// The first `n` characters of `line`, with … when there was more.
+fn cut(line: &str, n: usize) -> String {
+    let mut cut: String = line.chars().take(n).collect();
     if cut.len() < line.len() {
         cut.push('…');
     }
@@ -139,27 +153,39 @@ fn short(text: &str) -> String {
 }
 
 /// What to notify after a read of `queues` (by name) found `items` waiting: the items not seen
-/// before, each taken as seen now. Not one of a project the last read didn't have (on the first
-/// read since the app started, none had), not one the owner is `looking` at in the window, and
-/// none while `on` is false. Also says whether the keys seen changed, to save them. Past `KEEP`
-/// keys, the oldest go, unless they still wait.
+/// before, each taken as seen now. What waited before Muster could know of it is seen, not news:
+/// in a project the last read didn't have (on the first read since the app started, none had),
+/// and a session waiting for input until a read before this one knew the sessions (`sessions`,
+/// `agents::known`). While the window is `focused`, macOS shows no banner, so news is never
+/// posted then: what the window shows (the project named `viewing`, or every one for "all") is
+/// seen there, and the rest waits, neither posted nor seen, for the first read once it isn't
+/// focused. Also says whether the keys seen changed, to save them. Past `KEEP` keys, the oldest
+/// go, unless they still wait.
 pub fn decide(
     seen: &mut Seen,
     items: &[Item],
     queues: &[String],
-    on: bool,
-    looking: &dyn Fn(&str) -> bool,
+    sessions: bool,
+    focused: &dyn Fn() -> bool,
+    viewing: &str,
 ) -> (Vec<Item>, bool) {
     let before = seen.queues.replace(queues.iter().cloned().collect());
+    let sessions_before = seen.sessions;
+    seen.sessions |= sessions;
     let mut new = Vec::new();
     let mut changed = false;
     for i in items {
-        if !seen.add(&i.key) {
+        if seen.contains(&i.key) {
             continue;
         }
-        changed = true;
         let read_before = before.as_ref().is_some_and(|b| b.contains(&i.queue));
-        if on && read_before && !looking(&i.queue) {
+        let news = read_before && (sessions_before || !i.input);
+        if news && focused() && viewing != "all" && viewing != i.queue {
+            continue;
+        }
+        seen.add(&i.key);
+        changed = true;
+        if news && !focused() {
             new.push(i.clone());
         }
     }
@@ -181,7 +207,7 @@ pub fn decide(
 
 /// What a notification of `items` says: its title and its body. One item is named in full;
 /// several are counted, and the first `LINES` named, each with its project when they're from
-/// more than one.
+/// more than one. Each line, the title too, shows at most `LONG` characters.
 pub fn message(items: &[Item]) -> (String, String) {
     let Some(first) = items.first() else {
         return (String::new(), String::new());
@@ -197,25 +223,28 @@ pub fn message(items: &[Item]) -> (String, String) {
         .take(LINES)
         .map(|i| {
             if one_project {
-                i.line.clone()
+                cut(&i.line, LONG)
             } else {
-                format!("{}: {}", i.label, i.line)
+                cut(&format!("{}: {}", i.label, i.line), LONG)
             }
         })
         .collect();
     if items.len() > LINES {
         lines.push(format!("and {} more", items.len() - LINES));
     }
-    (title, lines.join("\n"))
+    (cut(&title, LONG), lines.join("\n"))
 }
 
-/// What has been seen: every key, oldest first, and the projects of the last read.
+/// What has been seen: every key, oldest first, the projects of the last read, and whether a read
+/// knew the sessions.
 #[derive(Debug, Default)]
 pub struct Seen {
     order: VecDeque<String>,
     keys: HashSet<String>,
-    /// None before the first read since the app started.
+    /// None before the first read since the app started, or since notifications were turned on.
     queues: Option<HashSet<String>>,
+    /// Some read since the app started knew what the sessions are doing (`agents::known`).
+    sessions: bool,
 }
 
 impl Seen {
@@ -280,7 +309,7 @@ pub fn save(file: &Path, seen: &Seen) -> Result<(), String> {
 pub trait Post {
     /// Does Muster's window have the Mac's focus (not hidden, minimized or behind another app)?
     fn focused(&self) -> bool;
-    /// Asks whether Muster may notify; true when it may.
+    /// Whether Muster may notify; true when it may.
     fn permit(&self) -> bool;
     /// Shows one notification.
     fn post(&self, title: &str, body: &str) -> Result<(), String>;
@@ -297,6 +326,8 @@ impl<R: tauri::Runtime> Post for Mac<'_, R> {
             .is_some_and(|w| w.is_focused().unwrap_or(false))
     }
 
+    /// The plugin grants it on desktop without asking anyone (2.6.0); whether a notification
+    /// shows is up to System Settings › Notifications.
     fn permit(&self) -> bool {
         use tauri_plugin_notification::NotificationExt;
         matches!(
@@ -328,7 +359,7 @@ struct Inner {
     seen: Option<Seen>,
     /// The project the window shows, by name; "all" for All (`show_project_title`).
     viewing: String,
-    /// Whether Muster may notify, asked the first time there's something to say.
+    /// Whether Muster may notify (`Post::permit`), the first time there's something to say.
     permitted: Option<bool>,
 }
 
@@ -350,9 +381,23 @@ impl Notifier {
         self.inner().viewing = name.to_string();
     }
 
-    /// After a read of `queues` (by name) found `items` waiting: notifies through `post` what's
-    /// new, unless `on` is false, and returns what it notified.
-    pub fn read(&self, items: &[Item], queues: &[String], on: bool, post: &dyn Post) -> Vec<Item> {
+    /// Notifications are off: nothing is read for them, and the first read once they're on again
+    /// takes what waits then as seen, so what came in meanwhile doesn't come up.
+    pub fn off(&self) {
+        if let Some(seen) = &mut self.inner().seen {
+            seen.queues = None;
+        }
+    }
+
+    /// After a read of `queues` (by name) found `items` waiting, knowing the sessions or not
+    /// (`agents::known`): notifies through `post` what's new, and returns what it notified.
+    pub fn read(
+        &self,
+        items: &[Item],
+        queues: &[String],
+        sessions: bool,
+        post: &dyn Post,
+    ) -> Vec<Item> {
         let mut inner = self.inner();
         let Inner {
             seen,
@@ -362,9 +407,8 @@ impl Notifier {
         let seen = seen.get_or_insert_with(|| load(&self.file));
         // Asked only when something is new, and once.
         let focused = std::cell::OnceCell::new();
-        let looking =
-            |q: &str| *focused.get_or_init(|| post.focused()) && (viewing == "all" || viewing == q);
-        let (new, changed) = decide(seen, items, queues, on, &looking);
+        let focused = || *focused.get_or_init(|| post.focused());
+        let (new, changed) = decide(seen, items, queues, sessions, &focused, viewing);
         if changed {
             // Kept in memory either way; a save that fails only loses them across a restart, and
             // what waits then is seen at start, so it brings no flood.
@@ -386,6 +430,23 @@ impl Notifier {
     fn inner(&self) -> MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
+}
+
+/// A Mac notification through `post` of what's new for the owner in the read `s`, whose
+/// sessions Claude Code's `sessions` told (0048), unless Settings turned them off: then nothing
+/// is read for them. Returns what it notified.
+pub fn after_read(n: &Notifier, s: &State, sessions: &Snapshot, post: &dyn Post) -> Vec<Item> {
+    if !s.settings.notify {
+        n.off();
+        return Vec::new();
+    }
+    let queues: Vec<String> = s.queues.iter().map(|q| q.name.clone()).collect();
+    n.read(
+        &waiting(&s.tasks, &s.queues),
+        &queues,
+        crate::agents::known(&s.tasks, sessions),
+        post,
+    )
 }
 
 #[cfg(test)]
@@ -500,10 +561,11 @@ mod tests {
             queue: queue.into(),
             label: queue.to_uppercase(),
             line: format!("{key} line"),
+            input: key.ends_with("/input"),
         }
     }
 
-    const NOBODY: &dyn Fn(&str) -> bool = &|_| false;
+    const AWAY: &dyn Fn() -> bool = &|| false;
 
     #[test]
     fn items_are_what_the_badge_counts_one_for_each_reason_and_lesson() {
@@ -604,13 +666,13 @@ mod tests {
         let a = [item("a/1/own", "a")];
         let qs = ["a".to_string()];
         // At start: what's there is seen, not new.
-        let (new, changed) = decide(&mut seen, &a, &qs, true, NOBODY);
+        let (new, changed) = decide(&mut seen, &a, &qs, true, AWAY, "all");
         assert!(new.is_empty());
         assert!(changed && seen.contains("a/1/own"));
         // A project added or shown again brings what waits in it: seen, not new.
         let both = [item("a/1/own", "a"), item("b/1/own", "b")];
         let qs2 = ["a".to_string(), "b".to_string()];
-        let (new, changed) = decide(&mut seen, &both, &qs2, true, NOBODY);
+        let (new, changed) = decide(&mut seen, &both, &qs2, true, AWAY, "all");
         assert!(new.is_empty());
         assert!(changed && seen.contains("b/1/own"));
         // Then something new in it is news.
@@ -619,7 +681,7 @@ mod tests {
             item("b/1/own", "b"),
             item("b/2/own", "b"),
         ];
-        let (new, _) = decide(&mut seen, &more, &qs2, true, NOBODY);
+        let (new, _) = decide(&mut seen, &more, &qs2, true, AWAY, "all");
         assert_eq!(new, [item("b/2/own", "b")]);
     }
 
@@ -627,16 +689,16 @@ mod tests {
     fn each_new_item_is_notified_once_and_never_again() {
         let mut seen = Seen::default();
         let qs = ["a".to_string()];
-        decide(&mut seen, &[], &qs, true, NOBODY);
+        decide(&mut seen, &[], &qs, true, AWAY, "all");
         let one = [item("a/1/q1", "a")];
-        let (new, changed) = decide(&mut seen, &one, &qs, true, NOBODY);
+        let (new, changed) = decide(&mut seen, &one, &qs, true, AWAY, "all");
         assert_eq!(new, one);
         assert!(changed);
-        let (new, changed) = decide(&mut seen, &one, &qs, true, NOBODY);
+        let (new, changed) = decide(&mut seen, &one, &qs, true, AWAY, "all");
         assert!(new.is_empty() && !changed, "still waiting");
         // Gone, then back: the same item, not news.
-        decide(&mut seen, &[], &qs, true, NOBODY);
-        let (new, _) = decide(&mut seen, &one, &qs, true, NOBODY);
+        decide(&mut seen, &[], &qs, true, AWAY, "all");
+        let (new, _) = decide(&mut seen, &one, &qs, true, AWAY, "all");
         assert!(new.is_empty());
         // Several new in one read come together, once each.
         let three = [
@@ -645,48 +707,85 @@ mod tests {
             item("a/3/input", "a"),
             item("a/3/input", "a"),
         ];
-        let (new, _) = decide(&mut seen, &three, &qs, true, NOBODY);
+        let (new, _) = decide(&mut seen, &three, &qs, true, AWAY, "all");
         assert_eq!(new, [item("a/2/own", "a"), item("a/3/input", "a")]);
     }
 
+    const FOCUSED: &dyn Fn() -> bool = &|| true;
+
     #[test]
-    fn nothing_for_the_project_the_owner_is_looking_at_and_it_counts_as_seen() {
+    fn the_focused_window_sees_its_project_and_the_rest_waits_until_it_loses_the_focus() {
         let mut seen = Seen::default();
         let qs = ["a".to_string(), "b".to_string()];
-        decide(&mut seen, &[], &qs, true, NOBODY);
+        decide(&mut seen, &[], &qs, true, AWAY, "all");
+        // Focused on B: B's news is seen there; A's isn't posted (macOS shows no banner while
+        // Muster is in front) and isn't seen either.
         let items = [item("a/1/own", "a"), item("b/1/own", "b")];
-        let (new, _) = decide(&mut seen, &items, &qs, true, &|q| q == "a");
-        assert_eq!(new, [item("b/1/own", "b")]);
-        let (new, _) = decide(&mut seen, &items, &qs, true, NOBODY);
-        assert!(new.is_empty(), "seen in the window, never notified later");
+        let (new, changed) = decide(&mut seen, &items, &qs, true, FOCUSED, "b");
+        assert!(new.is_empty());
+        assert!(changed && seen.contains("b/1/own"));
+        assert!(!seen.contains("a/1/own"), "waits, not seen");
+        // Still focused on B: still waiting.
+        let (new, changed) = decide(&mut seen, &items, &qs, true, FOCUSED, "b");
+        assert!(new.is_empty() && !changed);
+        assert!(!seen.contains("a/1/own"));
+        // Not focused any more: posted once, and B's isn't brought up.
+        let (new, _) = decide(&mut seen, &items, &qs, true, AWAY, "b");
+        assert_eq!(new, [item("a/1/own", "a")]);
+        let (new, _) = decide(&mut seen, &items, &qs, true, AWAY, "b");
+        assert!(new.is_empty(), "never twice");
+        // Focused on All: everything new is seen in the window, never notified later.
+        let more = [item("a/2/own", "a"), item("b/2/own", "b")];
+        let (new, _) = decide(&mut seen, &more, &qs, true, FOCUSED, "all");
+        assert!(new.is_empty());
+        assert!(seen.contains("a/2/own") && seen.contains("b/2/own"));
+        let (new, _) = decide(&mut seen, &more, &qs, true, AWAY, "all");
+        assert!(new.is_empty());
     }
 
     #[test]
-    fn off_notifies_nothing_and_turning_it_on_again_doesnt_bring_up_what_came_meanwhile() {
+    fn a_session_waiting_for_input_before_claude_code_was_first_read_is_seen_not_news() {
         let mut seen = Seen::default();
         let qs = ["a".to_string()];
-        decide(&mut seen, &[], &qs, false, NOBODY);
-        let items = [item("a/1/own", "a")];
-        let (new, changed) = decide(&mut seen, &items, &qs, false, NOBODY);
-        assert!(new.is_empty() && changed);
-        let (new, _) = decide(&mut seen, &items, &qs, true, NOBODY);
-        assert!(new.is_empty());
-        let more = [item("a/1/own", "a"), item("a/2/own", "a")];
-        let (new, _) = decide(&mut seen, &more, &qs, true, NOBODY);
-        assert_eq!(new, [item("a/2/own", "a")]);
+        // At start, before the first `claude agents` read lands: no session states yet.
+        decide(&mut seen, &[], &qs, false, AWAY, "all");
+        // The first read lands: what it says waits for input waited already.
+        let first = [item("a/1/input", "a"), item("a/2/own", "a")];
+        let (new, changed) = decide(&mut seen, &first, &qs, true, AWAY, "all");
+        assert_eq!(
+            new,
+            [item("a/2/own", "a")],
+            "only the session's is held back"
+        );
+        assert!(changed && seen.contains("a/1/input"));
+        // From then on a session that comes to wait is news.
+        let later = [item("a/1/input", "a"), item("a/3/input", "a")];
+        let (new, _) = decide(&mut seen, &later, &qs, true, AWAY, "all");
+        assert_eq!(new, [item("a/3/input", "a")]);
+        // Known once is enough: a later read that doesn't know them doesn't hold news back.
+        let more = [item("a/4/input", "a")];
+        let (new, _) = decide(&mut seen, &more, &qs, false, AWAY, "all");
+        assert_eq!(new, more);
     }
 
     #[test]
     fn keeps_at_most_keep_keys_the_oldest_going_first_but_never_one_still_waiting() {
         let mut seen = Seen::default();
         let qs = ["a".to_string()];
-        decide(&mut seen, &[], &qs, true, NOBODY);
+        decide(&mut seen, &[], &qs, true, AWAY, "all");
         // The first key seen still waits through it all.
         let first = item("a/0/own", "a");
-        decide(&mut seen, std::slice::from_ref(&first), &qs, true, NOBODY);
+        decide(
+            &mut seen,
+            std::slice::from_ref(&first),
+            &qs,
+            true,
+            AWAY,
+            "all",
+        );
         for n in 1..=KEEP + 10 {
             let items = [first.clone(), item(&format!("a/{n}/own"), "a")];
-            let (new, _) = decide(&mut seen, &items, &qs, true, NOBODY);
+            let (new, _) = decide(&mut seen, &items, &qs, true, AWAY, "all");
             assert_eq!(new.len(), 1);
         }
         assert_eq!(seen.len(), KEEP);
@@ -697,9 +796,9 @@ mod tests {
         let many: Vec<Item> = (0..KEEP + 5)
             .map(|n| item(&format!("b/{n}/own"), "a"))
             .collect();
-        decide(&mut seen, &many, &qs, true, NOBODY);
+        decide(&mut seen, &many, &qs, true, AWAY, "all");
         assert_eq!(seen.len(), KEEP + 5);
-        let (new, _) = decide(&mut seen, &many, &qs, true, NOBODY);
+        let (new, _) = decide(&mut seen, &many, &qs, true, AWAY, "all");
         assert!(new.is_empty());
     }
 
@@ -734,6 +833,30 @@ mod tests {
                 "A: a/1/own line\nB: b/1/own line\nA: a/2/own line\nand 2 more".to_string()
             )
         );
+    }
+
+    #[test]
+    fn every_line_is_cut_on_a_character_however_long_what_it_names() {
+        // A task id, a project name or a label has no bound of its own.
+        let long = Item {
+            key: "a/1/own".into(),
+            queue: "q".repeat(LONG + 5),
+            label: "ü".repeat(LONG + 5),
+            line: format!("mu-{} Title: your task", "9".repeat(LONG + 5)),
+            input: false,
+        };
+        let (title, body) = message(std::slice::from_ref(&long));
+        assert_eq!(title, cut(&format!("New for you in {}", long.label), LONG));
+        assert_eq!(title.chars().count(), LONG + 1);
+        assert!(title.ends_with('…'));
+        assert_eq!(body, format!("mu-{}…", "9".repeat(LONG - 3)));
+        let two = [long.clone(), item("b/1/own", "b")];
+        let (_, body) = message(&two);
+        let lines: Vec<&str> = body.lines().collect();
+        assert_eq!(lines[0], format!("{}…", "ü".repeat(LONG)));
+        assert_eq!(lines[1], "B: b/1/own line");
+        // A line that fits stays whole.
+        assert_eq!(cut("mu-1 Fix: your task", LONG), "mu-1 Fix: your task");
     }
 
     /// A stand-in for the Mac's notifications: what it was asked and what it posted.
@@ -809,9 +932,10 @@ mod tests {
     }
 
     #[test]
-    fn the_focused_window_on_a_project_or_all_holds_back_its_items() {
+    fn the_focused_window_sees_what_it_shows_and_the_rest_is_posted_once_it_loses_the_focus() {
         let d = tempfile::tempdir().unwrap();
-        let n = Notifier::new(d.path().join(FILE));
+        let file = d.path().join(FILE);
+        let n = Notifier::new(file.clone());
         let focused = Fake {
             focused: true,
             ..Fake::default()
@@ -822,16 +946,86 @@ mod tests {
         assert!(n
             .read(&[item("a/1/own", "a")], &qs, true, &focused)
             .is_empty());
+        assert!(load(&file).contains("a/1/own"));
+        // Focused on B: A's news is neither posted nor seen.
         n.viewing("b");
         let items = [
             item("a/1/own", "a"),
             item("a/2/own", "a"),
             item("b/1/own", "b"),
         ];
-        assert_eq!(n.read(&items, &qs, true, &focused), [item("a/2/own", "a")]);
-        // Not focused (another app, hidden, minimized): every project's news.
+        assert!(n.read(&items, &qs, true, &focused).is_empty());
+        assert!(n.read(&items, &qs, true, &focused).is_empty());
+        assert!(focused.posted.borrow().is_empty());
+        let saved = load(&file);
+        assert!(saved.contains("b/1/own") && !saved.contains("a/2/own"));
+        // Not focused (another app, hidden, minimized): posted at the first read, once.
+        let away = Fake::default();
+        assert_eq!(n.read(&items, &qs, true, &away), [item("a/2/own", "a")]);
+        assert!(n.read(&items, &qs, true, &away).is_empty());
+        assert_eq!(away.posted.borrow().len(), 1);
         let items = [item("b/2/own", "b")];
-        assert_eq!(n.read(&items, &qs, true, &Fake::default()), items);
+        assert_eq!(n.read(&items, &qs, true, &away), items);
+    }
+
+    #[test]
+    fn off_reads_and_posts_nothing_and_on_again_doesnt_bring_up_what_came_meanwhile() {
+        let d = queue();
+        let dir = tempfile::tempdir().unwrap();
+        let n = Notifier::new(dir.path().join(FILE));
+        let fake = Fake::default();
+        let mut s = read(&d);
+        let known = Snapshot {
+            accounts: vec![(String::new(), Ok(1))],
+            ..Snapshot::default()
+        };
+        let all = s.tasks.clone();
+        // Started with one task; the rest come in later.
+        s.tasks.retain(|t| t.id == "0001");
+        assert!(after_read(&n, &s, &known, &fake).is_empty());
+        // Off: the rest comes in, and nothing is posted or kept.
+        s.settings.notify = false;
+        s.tasks = all.clone();
+        assert!(after_read(&n, &s, &known, &fake).is_empty());
+        assert!(fake.posted.borrow().is_empty());
+        assert!(!load(&dir.path().join(FILE)).contains("muster/0005/blocked"));
+        // On again: what came while it was off is seen, not news.
+        s.settings.notify = true;
+        assert!(after_read(&n, &s, &known, &fake).is_empty());
+        assert!(fake.posted.borrow().is_empty());
+        // Then what's new is.
+        let t = s.tasks.iter_mut().find(|t| t.id == "0004").unwrap();
+        t.waiting_for_owner = true;
+        let new = after_read(&n, &s, &known, &fake);
+        assert_eq!(
+            new.iter().map(|i| i.key.as_str()).collect::<Vec<_>>(),
+            ["muster/0004/waiting"]
+        );
+        assert_eq!(fake.posted.borrow().len(), 1);
+    }
+
+    #[test]
+    fn a_session_waiting_for_input_when_claude_code_is_first_read_isnt_posted() {
+        let d = queue();
+        let dir = tempfile::tempdir().unwrap();
+        let n = Notifier::new(dir.path().join(FILE));
+        let fake = Fake::default();
+        let s = read(&d);
+        // 0009's holder is stamped, so its session is read; until that read lands it's unknown.
+        let mut before = s.clone();
+        for t in &mut before.tasks {
+            t.session_state = SessionState::Unknown;
+        }
+        before.tasks.retain(|t| t.id != "0009");
+        assert!(!crate::agents::known(&before.tasks, &Snapshot::default()));
+        assert!(after_read(&n, &before, &Snapshot::default(), &fake).is_empty());
+        // The read lands 2-10 s later: the session waited already.
+        let known = Snapshot {
+            accounts: vec![(String::new(), Ok(1))],
+            ..Snapshot::default()
+        };
+        assert!(after_read(&n, &s, &known, &fake).is_empty());
+        assert!(fake.posted.borrow().is_empty());
     }
 
     #[test]
