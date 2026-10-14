@@ -428,6 +428,10 @@
 > stretches are drawn hatched grey on the timeline and left out of the pane's time so far, the
 > Work section's minutes (each stamp read by its own day's offset) and the merge report's Building
 > and Testing times. The owner's own paused task doesn't count as needing them.
+>
+> **Since Muster 0059 (2026-10-13)** the board no longer keeps a paused task in its column: it goes
+> to the **Paused** lane, at the left beside Backlog, its card saying where it was, since when and
+> why, and Resume puts it back in its column. Its stage, claim and worktree are kept as above.
 
 > **Task fields: type, estimates, links, comments (Muster 0017, 2026-10-12).** `type:` is one of
 > code, bug, chore, tech-debt, spike, design, docs, research (`muster new --type`, `muster set <id>

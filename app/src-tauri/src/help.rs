@@ -684,7 +684,7 @@ pub const APP: &[(&str, &str)] = &[
     ),
     (
         "Pause · Resume",
-        "under a card from Backlog through Testing, and in a task's pane beside its stage: one click, no dialog (the pane takes an optional why). A paused task keeps its column, stage and claim, and shows the grey Paused chip with when and why, never red; nobody claims or passes it until you resume it. In Building or Testing its session is asked to stop at a safe point, and told to carry on when you resume",
+        "under a card from Backlog through Testing, and in a task's pane beside its stage: one click, no dialog (the pane takes an optional why). A paused task keeps its stage and claim but goes to the Paused lane, out of the working columns, its card saying where it was, since when and why, never red; nobody claims or passes it until Resume puts it back in its column. In Building or Testing its session is asked to stop at a safe point, and told to carry on when you resume",
     ),
     (
         "Stage picker",
@@ -958,6 +958,37 @@ pub fn command_text(name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pause_is_described_as_the_paused_lane_everywhere() {
+        // mu-59 moved a paused task to its own lane; mu-68 makes every text say so.
+        let summary = text()
+            .lines()
+            .find(|l| l.trim_start().starts_with("pause "))
+            .expect("pause in the summary list")
+            .to_string();
+        let full = command_text("pause").expect("muster help pause");
+        let (_, app) = APP
+            .iter()
+            .find(|(name, _)| *name == "Pause · Resume")
+            .expect("the app glossary's Pause · Resume");
+        for (place, said) in [
+            ("summary", summary.as_str()),
+            ("help pause", full.as_str()),
+            ("app glossary", app),
+        ] {
+            assert!(
+                said.contains("Paused lane"),
+                "{place} should name the Paused lane: {said}"
+            );
+            for stale in ["where it is", "keeps its column", "keeps its place"] {
+                assert!(
+                    !said.contains(stale),
+                    "{place} still says {stale:?}: {said}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn every_command_the_cli_runs_is_documented() {

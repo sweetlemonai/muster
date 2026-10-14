@@ -9,6 +9,10 @@ Newest first. What changed, and how it was checked. The current state is in `AS_
 and the paused/resumed message still said a paused task stays where it is (mu-45's behaviour) →
 they say it goes to the Paused lane and Resume puts it back in its column (help.rs, Pause.tsx,
 useTaskActions.ts, manual 05 regenerated). The badge's glossary line no longer says "where it is".
+**Fixed (review round 1):** the app glossary's Pause · Resume (also in `muster help --json`) still
+said a paused task keeps its column → it names the Paused lane; a help test checks the summary,
+`help pause` and the glossary all say "Paused lane" and none says "where it is" or "keeps its
+column"; PROTOCOL's 0045 pause block gets a line saying the task now goes to the lane (0059).
 **Verified:** `muster help | grep ' pause '` names the lane; `muster help pause | grep -c 'where it
 is'` prints 0; AC3's grep finds nothing; `commands_page` passes; `bin/gate` green.
 
