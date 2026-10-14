@@ -4,6 +4,12 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Decision 0010: the queue lives in local files, not GitHub Issues
+**Decided:** tasks stay markdown files read through `muster`; GitHub gets a mirror later if
+wanted, never the store. Why, the options and when to revisit:
+[0010](decisions/0010-the-queue-lives-in-local-files-not-github-issues.md). Owner asked, and
+wanted it on record.
+
 ## 2026-10-14 — Hermetic tests: one injection point for the projects Muster knows; the gate runs in its own home (mu-62)
 **Did:** `projects::places()` is the one place the core learns the playground and projects.json;
 `use_places` gives a test thread its own, and a test that gives none gets empty temp places.
