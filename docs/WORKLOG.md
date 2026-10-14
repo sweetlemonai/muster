@@ -17,6 +17,11 @@ project with a needs-you count as a chip. Headings are `role="heading"` now, not
 **Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))` with
 HOME in a temp dir; 7 new Rust tests, render tests across 3 modes × 4 order chips; break-checks
 (each key line removed fails tests). The owner's projects.json not touched.
+**Fixed (review round 1):** moves from Settings didn't unfold and stale folds came back → the core
+unfolds on any move and drops folds of gone headings; lessons-only projects got no chip → peeks
+count tasks and lessons as the badge does; long chip names clipped the count → the name truncates;
+unfold-on-move and the fold rollback are pure functions (`unfoldFor`, `trackFold`) with tests that
+fail without them; the announcement names both the move and the unfold.
 **Open:** the owner renames persianUtils to DashAfzar and folds it (AC3); chevron and chip look and
 the 150px wrapping not seen in the running app.
 

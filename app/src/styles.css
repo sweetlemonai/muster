@@ -752,6 +752,9 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .side-peeks { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 8px 4px 22px; }
 .side-peek.ui-pill { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 0 7px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .side-peek .side-swatch-dot { margin: 0; }
+/* The name ends in an ellipsis; the count never shrinks (review R3). */
+.side-peek-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-peek .count { flex: none; }
 .side-cat-fresh { flex-basis: 100%; display: inline-flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; font-weight: 400; color: var(--muted); }
 .side-cat-remove.ui-pill { font-size: 11px; padding: 0 7px; }
 .side-new-cat.ui-pill { align-self: flex-start; margin: 8px 6px 0; font-size: 11px; padding: 0 7px; color: var(--muted); border: 1px dashed var(--line); }

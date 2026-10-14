@@ -236,8 +236,37 @@ export function settleFolds(set: Readonly<Record<string, boolean>>, core: Readon
   return Object.fromEntries(Object.entries(set).filter(([name, folded]) => core.get(name) !== folded));
 }
 
+/** How much a project needs you: its tasks that wait on you and its lessons waiting, as its row's
+ *  badge counts them (0070 review R2). */
+export const needsOf = (r: { needs: number; lessons: number }): number => r.needs + r.lessons;
+
 /** What a folded heading still shows of its projects (0070, nothing out of mind): the selected
- *  one (`current`) and every one that needs you, in the order given. */
-export function peeks<T extends { name: string; needs: number }>(rows: T[], current: string): T[] {
-  return rows.filter((r) => r.name === current || r.needs > 0);
+ *  one (`current`) and every one that needs you (`needsOf`), in the order given. */
+export function peeks<T extends { name: string; needs: number; lessons: number }>(rows: T[], current: string): T[] {
+  return rows.filter((r) => r.name === current || needsOf(r) > 0);
+}
+
+/** The folded heading a move opens (0070, review R4): the one a project was moved under, so it
+ *  stays in sight; null when it moved under an open one, or nobody changed heading. The core opens
+ *  it too (arrange.rs), for every window. */
+export function unfoldFor(plan: Plan, folds: ReadonlyMap<string, boolean>): string | null {
+  return plan.moved && folds.get(plan.moved.category) === true ? plan.moved.category : null;
+}
+
+/** A fold's bookkeeping (0070, review R5), as `track` is a move's: shown at once, kept while the
+ *  core keeps it, taken back if the core refuses (which is passed on), unless a later fold of the
+ *  same heading replaced it. `set` is the component's functional state setter. */
+export function trackFold(name: string, folded: boolean, set: (f: (s: Record<string, boolean>) => Record<string, boolean>) => void, send: () => Promise<void>): Promise<void> {
+  set((s) => ({ ...s, [name]: folded }));
+  return send().catch((e: unknown) => {
+    set((s) => (s[name] === folded ? Object.fromEntries(Object.entries(s).filter(([n]) => n !== name)) : s));
+    throw e;
+  });
+}
+
+/** The folds set here after a read of the queues (`core`, the core's own folds): `settleFolds`,
+ *  the same object when nothing went, so the read doesn't render again for nothing. */
+export function readFolds(set: Record<string, boolean>, core: ReadonlyMap<string, boolean>): Record<string, boolean> {
+  const kept = settleFolds(set, core);
+  return Object.keys(kept).length === Object.keys(set).length ? set : kept;
 }

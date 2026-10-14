@@ -28,6 +28,8 @@ export type ProjectRow = {
   categoryRank: number | null;
   /** Its heading is folded (0070). */
   categoryFolded: boolean;
+  /** Its lessons from reviews waiting for the owner (0027), which need them too (0070 review R2). */
+  lessons: number;
   title: string;
   tasks: Task[];
   needs: number;
@@ -120,7 +122,7 @@ export function projectActivity(tasks: ActivityTask[], commit: number, now: numb
 }
 
 /** The sidebar's rows, one per queue in the core's order, from one pass over the state. */
-export function projectRows(queues: Pick<QueueInfo, "name" | "path" | "label" | "category" | "colour" | "rank" | "categoryRank" | "categoryFolded">[], tasks: Task[], activity: Activity[], now: number): ProjectRow[] {
+export function projectRows(queues: Pick<QueueInfo, "name" | "path" | "label" | "category" | "colour" | "rank" | "categoryRank" | "categoryFolded" | "lessonsWaiting">[], tasks: Task[], activity: Activity[], now: number): ProjectRow[] {
   const byQueue = new Map<string, Task[]>();
   for (const t of tasks) {
     const list = byQueue.get(t.queue);
@@ -140,6 +142,7 @@ export function projectRows(queues: Pick<QueueInfo, "name" | "path" | "label" | 
       rank: q.rank ?? null,
       categoryRank: q.categoryRank ?? null,
       categoryFolded: q.categoryFolded ?? false,
+      lessons: q.lessonsWaiting ?? 0,
       title: `${q.name} · ${q.path}`,
       tasks: own,
       needs: needsYouCount(own),

@@ -99,7 +99,7 @@ pub struct Moved {
 }
 
 /// Keep the order the window shows (`order`, queue folders; `categories`, headings), and move a
-/// project under another heading with it (`moved`). A folder `list` doesn't know is left out; the
+/// project under another heading with it (`moved`), which unfolds that heading (0070). A folder `list` doesn't know is left out; the
 /// ones kept before that aren't in `order` (a hidden project's) stay, after it, as do headings.
 /// Refused, with nothing changed, for more than `MAX_ORDER` of either, a project `list` doesn't
 /// know, or a heading with no name.
@@ -125,6 +125,10 @@ pub fn arrange(
             return Err("a category needs a name".into());
         }
         labels::set(&mut c.categories, &m.key, &to, MAX_CATEGORY);
+        // A project moved under a folded heading unfolds it, so it stays in sight, whichever
+        // window moved it; a fold left by a heading that was emptied and is made again goes too
+        // (0070 review R1).
+        c.folded.retain(|h| *h != to);
     }
     let mut seen = HashSet::new();
     let sent: Vec<String> = order
@@ -208,8 +212,9 @@ fn renamed(list: &mut Vec<String>, from: &str, to: &str) {
     }
 }
 
-/// Fold (or unfold) the heading `name` in the sidebar (0070). Refused, with nothing changed, for
-/// no name or a heading no project in `list` is under.
+/// Fold (or unfold) the heading `name` in the sidebar (0070), and drop the folds of headings no
+/// project in `list` is under any more. Refused, with nothing changed, for no name or a heading no
+/// project is under.
 pub fn set_folded(
     c: &mut Config,
     list: &[Project],
@@ -220,13 +225,15 @@ pub fn set_folded(
     if h.is_empty() {
         return Err("a category needs a name".into());
     }
-    if !list
+    let shown: HashSet<String> = list
         .iter()
-        .any(|p| heading(&labels::shown_category(p)) == h)
-    {
+        .map(|p| heading(&labels::shown_category(p)))
+        .collect();
+    if !shown.contains(&h) {
         return Err(format!("no category named {h:?}"));
     }
-    c.folded.retain(|x| *x != h);
+    // The folds of headings no project is under any more go as well (review R1).
+    c.folded.retain(|x| *x != h && shown.contains(x));
     if folded {
         c.folded.push(h);
         c.folded.truncate(MAX_ORDER);
@@ -684,6 +691,56 @@ mod tests {
             category_folded: false,
             lessons_waiting: 0,
         }
+    }
+
+    #[test]
+    fn a_project_moved_under_a_folded_heading_unfolds_it_from_any_window() {
+        // Review R1: the core keeps the rule, so Settings' ↑ ↓ unfolds too, not only the sidebar.
+        let (base, mut c) = grouped();
+        let co = key(base.path(), &c, "colors");
+        let list = projects::list(base.path(), &c);
+        set_folded(&mut c, &list, "Tools", true).unwrap();
+        // A reorder that moves nobody under another heading leaves the fold alone.
+        arrange(&mut c, &list, std::slice::from_ref(&co), &[], None).unwrap();
+        assert_eq!(c.folded, ["Tools"]);
+        let moved = Moved {
+            key: co.clone(),
+            category: "Tools".into(),
+        };
+        arrange(&mut c, &list, std::slice::from_ref(&co), &[], Some(&moved)).unwrap();
+        assert!(c.folded.is_empty());
+        assert!(headings_of(base.path(), &c).iter().all(|(_, _, f)| !f));
+    }
+
+    #[test]
+    fn a_fold_left_by_an_emptied_heading_never_folds_one_made_again_by_that_name() {
+        // Review R1: Tools folded, then emptied (its one project's category changed by hand).
+        let (base, mut c) = grouped();
+        let (al, dr) = (
+            key(base.path(), &c, "alpha"),
+            key(base.path(), &c, "drover"),
+        );
+        let list = projects::list(base.path(), &c);
+        set_folded(&mut c, &list, "Tools", true).unwrap();
+        labels::set(&mut c.categories, &al, "Apps", MAX_CATEGORY);
+        // Folding something else drops the fold of a heading no project is under any more.
+        let list = projects::list(base.path(), &c);
+        set_folded(&mut c, &list, "Apps", true).unwrap();
+        assert_eq!(c.folded, ["Apps"]);
+        // And made again by a move, a heading with a stale fold opens.
+        c.folded.push("Tools".into());
+        let moved = Moved {
+            key: dr,
+            category: "Tools".into(),
+        };
+        arrange(&mut c, &list, &[], &[], Some(&moved)).unwrap();
+        assert_eq!(c.folded, ["Apps"]);
+        let rows = headings_of(base.path(), &c);
+        assert!(
+            rows.iter()
+                .any(|(n, h, f)| n == "drover" && h == "Tools" && !f),
+            "{rows:?}"
+        );
     }
 
     #[test]

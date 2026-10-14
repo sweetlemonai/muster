@@ -1215,6 +1215,38 @@ mod tests {
     }
 
     #[test]
+    fn a_migrated_queue_found_in_the_same_group_takes_no_heading_of_its_own() {
+        // Review R6: persianUtils/colors/.muster (a repo of its own, not a main checkout) is found
+        // in the group, so it's under the group's heading already.
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let old = base.join("persianUtils/colors/tasks");
+        make_queue(&old);
+        let repo = base.join("persianUtils/colors");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        let new = repo.join(layout::DIR);
+        fs::create_dir(&new).unwrap();
+        fs::write(new.join(layout::CONFIG), layout::config_text(true, None)).unwrap();
+        let mut c = Config::default();
+        c.group_names
+            .insert("persianUtils".into(), "DashAfzar".into());
+        let listed = list(&base, &c);
+        let found = listed
+            .iter()
+            .find(|p| fs::canonicalize(&p.path).ok() == fs::canonicalize(&new).ok())
+            .expect("the new queue is found");
+        assert_eq!(found.group, "persianUtils");
+        let lines = carry_over(&mut c, &base, &old, &new);
+        assert!(c.categories.is_empty(), "{:?}", c.categories);
+        assert!(!lines.iter().any(|l| l.contains("heading")), "{lines:?}");
+        let p = list(&base, &c)
+            .into_iter()
+            .find(|p| p.key == found.key)
+            .unwrap();
+        assert_eq!(crate::labels::shown_category(&p), "DashAfzar");
+    }
+
+    #[test]
     fn a_queue_one_level_deeper_is_named_by_its_own_folder_and_keeps_its_group() {
         let base = tempfile::tempdir().unwrap();
         make_queue(&base.path().join("colors/tasks"));

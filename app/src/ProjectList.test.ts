@@ -358,6 +358,19 @@ describe("headings made and renamed in place (0057)", () => {
   });
 });
 
+describe("the fold wiring follows the tested rules (0070 review R4, R5, R7)", () => {
+  it("a move under a folded heading opens it at once and says both", () => {
+    expect(listSource).toContain("const opened = unfoldFor(p, folds);");
+    expect(listSource).toContain("setSaid(opened ? `${p.said}; ${opened} unfolded` : p.said);");
+    expect(listSource).toContain("if (opened) setFoldSet((f) => ({ ...f, [opened]: false }));");
+  });
+  it("a fold goes through trackFold, and each read of the queues through readFolds", () => {
+    expect(listSource).toContain("trackFold(name, folded, setFoldSet, () => edit.fold(name, folded))");
+    expect(listSource).toContain("useEffect(() => setFoldSet((f) => readFolds(f, coreFolds.current)), [queues]);");
+    expect(listSource).not.toMatch(/setFoldSet\(\(f\) => Object\.fromEntries/);
+  });
+});
+
 describe("the window wires it (0057)", () => {
   it("gives the sidebar its edits, and every place a project is named its colours", () => {
     expect(appSource).toMatch(/<ProjectList [^\n]*edit=\{projectEdits\(refresh\)\} \/>/);
@@ -416,7 +429,14 @@ describe("folded headings in the sidebar (0070)", () => {
   const render = (mode: DisplayMode = "adhd", current = "alpha") =>
     renderToStaticMarkup(createElement(Mode.Provider, { value: mode }, createElement(ProjectList, { queues, tasks, notes: [], activity: [], now: NOW, current, onPick: () => {}, onLabel: async () => {}, edit: edits })));
   const rows = (html: string) => [...html.matchAll(/<span class="side-name"[^>]*>([^<]*)<\/span>/g)].map((m) => m[1]);
-  const peekNames = (html: string) => [...html.matchAll(/<button type="button"[^>]*class="ui-pill(?: ui-pill--on)? side-peek"[^>]*>([\s\S]*?)<\/button>/g)].map((m) => plain(m[1]).trim());
+  // Each chip as "name" or "name count": the name in its own span, so a long one ends in an ellipsis
+  // and never pushes the count out (review R3).
+  const peekNames = (html: string) =>
+    [...html.matchAll(/<button type="button"[^>]*class="ui-pill(?: ui-pill--on)? side-peek"[^>]*>([\s\S]*?)<\/button>/g)].map((m) => {
+      const name = /<span class="side-peek-name">([^<]*)<\/span>/.exec(m[1])?.[1] ?? "?";
+      const count = /<span class="count warn"[^>]*>(\d+)<\/span>/.exec(m[1])?.[1];
+      return count ? `${name} ${count}` : name;
+    });
   const heading = (html: string, name: string) => {
     const at = html.indexOf(`data-heading="${name}"`);
     return html.slice(html.lastIndexOf("<div", at), html.indexOf("</div>", at));
@@ -457,8 +477,8 @@ describe("folded headings in the sidebar (0070)", () => {
         vi.stubGlobal("localStorage", { getItem: () => chip });
         const html = render(mode);
         expect(rows(html)).toEqual(["All", "zeta"]);
-        // In the order the chip gives.
-        expect(peekNames(html).sort()).toEqual(["Alpha app", "Muster 1"]);
+        // In the order the chip gives: the one that needs you first under Needs you, else A–Z here.
+        expect(peekNames(html)).toEqual(chip === "needs" ? ["Muster 1", "Alpha app"] : ["Alpha app", "Muster 1"]);
         const apps = heading(html, "Apps");
         expect(apps).toContain("3 projects");
         expect(apps).toContain('title="1 needs you in Apps"');
@@ -471,10 +491,14 @@ describe("folded headings in the sidebar (0070)", () => {
     expect(rows(html).sort()).toEqual(["All", "Alpha app", "Muster", "beta", "zeta"]);
     expect(html).not.toContain("side-cat-fold");
   });
-  it("a heading renamed after the group's name (DashAfzar) is the heading its projects show under", () => {
-    const renamed = queues.map((q) => (q.category === "Apps" ? { ...q, category: "DashAfzar", categoryFolded: false } : q));
-    const html = renderToStaticMarkup(createElement(ProjectList, { queues: renamed, tasks, notes: [], activity: [], now: NOW, current: "all", onPick: () => {}, edit: edits }));
-    expect(html).toMatch(/<div class="side-group" role="group" aria-label="DashAfzar"[^>]*><div class="side-cat" data-heading="DashAfzar"/);
-    expect(rows(html).sort()).toEqual(["All", "Alpha app", "Muster", "beta", "zeta"]);
+  it("shows a project whose only needs-you is lessons waiting, with its count, on the folded heading (review R2)", () => {
+    const withLessons = queues.map((q) => (q.name === "beta" ? { ...q, lessonsWaiting: 2 } : q));
+    const html = renderToStaticMarkup(createElement(ProjectList, { queues: withLessons, tasks, notes: [], activity: [], now: NOW, current: "zeta", onPick: () => {}, edit: edits }));
+    expect(peekNames(html).sort()).toEqual(["Muster 1", "beta 2"]);
+    expect(heading(html, "Apps")).toContain('<span class="count warn" title="3 need you in Apps">3</span>');
+  });
+  it("draws a chip's name to end in an ellipsis and its count never to shrink (review R3)", () => {
+    expect(css).toMatch(/\.side-peek-name \{[^}]*min-width: 0;[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/);
+    expect(css).toContain(".side-peek .count { flex: none; }");
   });
 });

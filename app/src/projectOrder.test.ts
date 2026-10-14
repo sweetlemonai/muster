@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accepts, dropMove, grouped, headingFolds, headingRanks, peeks, settleFolds, type Layout, layoutOf, orderHeadings, type Pending, planMove, settle, shownLayout, sidebarGroups, track } from "./projectOrder";
+import { accepts, dropMove, grouped, headingFolds, headingRanks, needsOf, peeks, readFolds, settleFolds, trackFold, unfoldFor, type Layout, layoutOf, orderHeadings, type Pending, planMove, settle, shownLayout, sidebarGroups, track } from "./projectOrder";
 import { byCategory } from "./labels";
 
 // The sidebar's own arrangement (0057): headings and projects as the owner puts them, by drag or
@@ -279,7 +279,7 @@ describe("a move's bookkeeping, shared by the sidebar and Settings (0057 review 
 });
 
 describe("folded headings (0070)", () => {
-  const row = (name: string, category: string, over: Partial<{ categoryFolded: boolean; needs: number }> = {}) => ({ name, category, categoryFolded: false, needs: 0, ...over });
+  const row = (name: string, category: string, over: Partial<{ categoryFolded: boolean; needs: number; lessons: number }> = {}) => ({ name, category, categoryFolded: false, needs: 0, lessons: 0, ...over });
   it("are the headings the core says are folded, with a fold set here winning until the core agrees", () => {
     const rows = [row("a", "Apps", { categoryFolded: true }), row("b", "Apps", { categoryFolded: true }), row("t", "Tools")];
     expect([...headingFolds(rows, {})]).toEqual([["Apps", true], ["Tools", false]]);
@@ -293,5 +293,51 @@ describe("folded headings (0070)", () => {
     expect(peeks(rows, "c").map((r) => r.name)).toEqual(["b", "c", "d"]);
     expect(peeks(rows, "all").map((r) => r.name)).toEqual(["b", "d"]);
     expect(peeks([row("a", "Apps")], "zeta")).toEqual([]);
+  });
+  it("count lessons waiting as needing you, as the row's badge does (review R2)", () => {
+    const rows = [row("a", "Apps"), row("b", "Apps", { lessons: 2 }), row("c", "Apps", { needs: 1, lessons: 1 })];
+    expect(peeks(rows, "all").map((r) => r.name)).toEqual(["b", "c"]);
+    expect(rows.map(needsOf)).toEqual([0, 2, 2]);
+  });
+  it("a move under a folded heading opens it; one under an open heading, or a reorder, opens nothing (review R4)", () => {
+    const folds = new Map([["Apps", true], ["Tools", false]]);
+    const plan = (moved: { key: string; category: string } | null) => ({ layout: [], order: [], categories: [], moved, chip: "mine" as const, said: "" });
+    expect(unfoldFor(plan({ key: "/t", category: "Apps" }), folds)).toBe("Apps");
+    expect(unfoldFor(plan({ key: "/a", category: "Tools" }), folds)).toBeNull();
+    expect(unfoldFor(plan({ key: "/a", category: "New" }), folds)).toBeNull();
+    expect(unfoldFor(plan(null), folds)).toBeNull();
+  });
+  // The component's fold state, as React's functional setter keeps it.
+  const holder = (start: Record<string, boolean> = {}) => {
+    let state = start;
+    return { set: (f: (s: Record<string, boolean>) => Record<string, boolean>) => (state = f(state)), get: () => state };
+  };
+  it("a fold shows at once and stays while the core keeps it (review R5)", async () => {
+    const s = holder();
+    let done!: () => void;
+    const out = trackFold("Apps", true, s.set, () => new Promise<void>((res) => (done = res)));
+    expect(s.get()).toEqual({ Apps: true });
+    done();
+    await out;
+    expect(s.get()).toEqual({ Apps: true });
+  });
+  it("a fold the core refuses is taken back, and the refusal passed on; a later one is left alone (review R5)", async () => {
+    const s = holder({ Tools: false });
+    await expect(trackFold("Apps", true, s.set, () => Promise.reject("no category named \"Apps\""))).rejects.toBe("no category named \"Apps\"");
+    expect(s.get()).toEqual({ Tools: false });
+    // Folded, then unfolded before the first answer came back refused: the unfold stays.
+    const t = holder();
+    let fail!: (e: unknown) => void;
+    const first = trackFold("Apps", true, t.set, () => new Promise<void>((_, rej) => (fail = rej)));
+    void trackFold("Apps", false, t.set, () => new Promise<void>(() => {}));
+    fail("x");
+    await first.catch(() => {});
+    expect(t.get()).toEqual({ Apps: false });
+  });
+  it("each read of the queues settles the folds set here, keeping the same object when nothing went (review R5)", () => {
+    const set = { Apps: true, Tools: false };
+    expect(readFolds(set, new Map([["Apps", false], ["Tools", true]]))).toBe(set);
+    expect(readFolds(set, new Map([["Apps", true], ["Tools", true]]))).toEqual({ Tools: false });
+    expect(readFolds(set, new Map([["Apps", true], ["Tools", false]]))).toEqual({});
   });
 });
