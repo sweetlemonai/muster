@@ -17,6 +17,10 @@ categories"); the stale "persianUtils" category on three projects is the owner's
 **Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; render
 tests (17 projects that all need you fold to one line; counts identical open, folded and in every
 mode); heading and count contrast ≥ 4.5:1 in every theme; break-checks on each rule.
+**Fixed (review round 1):** at 150px a folded heading's line spilled past the sidebar → the needs
+number never shrinks, the words "need you" sit in their own ellipsis span and drop below a 164px
+nav (a container query, so Focus and the splitter both count), with the aria-label and tooltip still
+saying them.
 **Open:** release-app screenshots (AC4) not taken: the sandbox blocks headless Chrome; HTML renders
 are in the task's notes. The row's needs-you badge reads ~2.2:1 in light themes (pre-existing; filed).
 

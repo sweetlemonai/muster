@@ -379,8 +379,8 @@ function CategoryHead({ name, rows, total, fresh = false, drag, onRename, onRemo
         <span className="side-cat-counts" title={`${said} · ${total} ${total === 1 ? "task" : "tasks"}`}>
           {c.needs > 0 && (
             <span className="side-cat-needs">
-              <span className="count warn">{c.needs}</span>
-              {` ${c.needs === 1 ? "needs" : "need"} you`}
+              <span className="count warn">{c.needs}</span>{" "}
+              <span className="side-cat-needs-words">{`${c.needs === 1 ? "needs" : "need"} you`}</span>
             </span>
           )}
           <span className="side-cat-rest">

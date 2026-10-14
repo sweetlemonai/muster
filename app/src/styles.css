@@ -764,9 +764,20 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .side-cat-fold:dir(rtl) { transform: scaleX(-1); }
 .side-cat.folded { flex-wrap: nowrap; }
 .side-cat-counts { display: flex; align-items: center; min-width: 0; flex: 0 100 auto; margin-inline-start: auto; font-size: 11px; font-weight: 400; color: var(--muted); white-space: nowrap; }
-.side-cat-needs { flex: none; color: var(--warn); }
-.side-cat-needs .count.warn { margin: 0; color: var(--on-status); }
-.side-cat-rest { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* At the sidebar's narrowest (review R1): the needs number never shrinks; its words and the rest
+   do, the rest first. The nav is the container, so the splitter's narrowest counts as well as
+   Focus: in 117px (150 − 1 border − 16 nav padding − 16 heading margins) the chevron (20), the
+   gaps (2 × 6), the name's least (3em, 39) and a 3-digit number (≈ 29) fit, with " need you"
+   (≈ 52) they don't, so below 164px of nav (a 181px sidebar) the words go; the tooltip and the
+   heading's aria-label keep saying them. */
+.projects-nav { container-type: inline-size; }
+.side-cat-needs { flex: 0 1 auto; display: flex; align-items: center; gap: 0.3em; min-width: 0; color: var(--warn); }
+.side-cat-needs .count.warn { flex: none; margin: 0; color: var(--on-status); }
+.side-cat-needs-words { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-cat-rest { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@container (max-width: 164px) {
+  .side-cat-needs-words { display: none; }
+}
 .side-group > .side-row { margin-inline-start: 14px; }
 .side-group > .side-item { margin-inline-start: 14px; width: auto; }
 .side-group > .side-ping { margin-inline-start: 14px; }
