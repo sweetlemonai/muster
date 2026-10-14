@@ -15,6 +15,9 @@ each spawned muster its own HOME.
 **Fixed:** the dr-22 incident (a review mutation in mu-59 made `check --fix-pauses` fall back to
 `known()` and convert Drover's real dr-22) → that fallback now sees only a test's own queues;
 tests for `--fix-pauses` with no `--queue` and the app's offer prove it.
+**Fixed (review round 1):** two Python test classes spawned muster with the real environment, so
+outside the gate `muster init` picked a prefix from this Mac's projects → their own HOME; the
+write-guard test's closure can't save; the answer-hook test runs in its own root.
 **Decided:** an empty fallback rather than a panic for tests that give no places (safe, and no
 test needed changing); no real-HOME check inside integration tests (a production-built core can't
 tell it's under a test; the hermetic gate covers them).

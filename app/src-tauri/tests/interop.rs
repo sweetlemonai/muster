@@ -54,11 +54,13 @@ fn run(root: &Path, script: &str, args: &[&str]) -> (bool, String) {
     (code == 0, text)
 }
 
-/// The answer hook, as Claude Code runs it after a tool call: the event's JSON on stdin.
+/// The answer hook, as Claude Code runs it after a tool call: the event's JSON on stdin. From the
+/// queue's own folder, so the queue it finds from there is the test's, never this checkout's.
 fn hook(root: &Path, session: &str) -> String {
     let mut child = Command::new("python3")
         .arg("-I")
         .arg(tool("answer-hook.py"))
+        .current_dir(root)
         .env("MUSTER_ROOT", root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

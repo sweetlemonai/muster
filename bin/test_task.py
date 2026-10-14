@@ -99,10 +99,14 @@ class MusterDirTests(unittest.TestCase):
         (self.main / "README.md").write_text("code\n")
         git(self.main, "add", "-A")
         git(self.main, "commit", "-q", "-m", "first")
-        self.env = {**os.environ, "MUSTER_BIN": str(MUSTER)}
-        for k in ("MUSTER_ROOT", "TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS"):
+        # Its own home (task 0062), so `muster init` never reads this Mac's projects.json or ~/playground.
+        home = base / "home"
+        home.mkdir()
+        self.env = {**os.environ, "MUSTER_BIN": str(MUSTER), "HOME": str(home)}
+        for k in ("MUSTER_ROOT", "TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS", "MUSTER_BASE"):
             self.env.pop(k, None)
-        self.muster("init", str(self.main), "--local")
+        # The default beside no other projects: none of this Mac's count.
+        self.assertIn("(prefix pr:", self.muster("init", str(self.main), "--local"))
         self.q = self.main / ".muster"
         git(self.main, "add", "-A")
         git(self.main, "commit", "-q", "-m", "muster")
@@ -390,12 +394,16 @@ class TaskTests(unittest.TestCase):
         (self.root / "README.md").write_text("---\nprefix: tt\n---\nA Muster queue, for the tests.\n")
         (self.root / "doing" / "0042-something.md").write_text(TASK_FILE)
         (self.root / "todo" / "0043-old.md").write_text(OLD_STYLE)
-        self.env = {**os.environ, "MUSTER_ROOT": str(self.root), "MUSTER_BIN": str(MUSTER)}
-        for k in ("TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS"):
+        # A home of its own, outside the queue (task 0062): the projects this Mac has never count.
+        self.home = tempfile.TemporaryDirectory()
+        self.env = {**os.environ, "MUSTER_ROOT": str(self.root), "MUSTER_BIN": str(MUSTER),
+                    "HOME": self.home.name}
+        for k in ("TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "MUSTER_AS", "MUSTER_BASE"):
             self.env.pop(k, None)
 
     def tearDown(self):
         self.tmp.cleanup()
+        self.home.cleanup()
 
     def run_task(self, *args, ok=True):
         r = subprocess.run([sys.executable, "-I", str(TASK), *args], env=self.env, capture_output=True, text=True)

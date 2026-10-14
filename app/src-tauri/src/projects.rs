@@ -1486,7 +1486,10 @@ mod tests {
         expected = "this Mac's projects.json: give it its own with projects::use_places"
     )]
     fn a_test_that_writes_this_macs_projects_json_fails_before_it_writes() {
-        let _ = edit(&Places::this_mac().config_file, |_| Ok(()));
+        // A refusal, so that even with the guard broken nothing is saved over the owner's file.
+        let _ = edit(&Places::this_mac().config_file, |_| {
+            Err::<(), _>("refused".to_string())
+        });
     }
 
     #[test]
