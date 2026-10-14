@@ -37,7 +37,8 @@ round, for two log entries that never really clashed.
   exits non-zero without writing `%A` makes git mark the log conflicted with only our side in it:
   no markers, the other side's entry gone, and `git add` would lose it. So muster never leaves it
   like that. When it can't merge (a file it can't read or over 64 MB, merge-file failing, `%A` it
-  can't write), `muster merge-log` runs `git merge-file` in place: its markers and exit 1, or its
+  can't replace: the result goes to a new file beside it, renamed over it, so a failed write leaves
+  `%A` as it was), `muster merge-log` runs `git merge-file` in place: its markers and exit 1, or its
   clean result. Only if that fails too does it leave `%A` alone and exit 2. The driver's shell
   part covers a muster that never ran (not on the PATH, as for a GUI git client or
   `PATH=/usr/bin:/bin`), was killed, or exited 2: it runs `git merge-file` itself. Muster's own

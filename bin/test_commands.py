@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -443,6 +444,8 @@ class WorkLogMergeDriver(unittest.TestCase):
                     "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"}
         for k in ("MUSTER_ROOT", "TASKS_ROOT", "CLAUDE_CODE_SESSION_ID", "GIT_DIR", "GIT_WORK_TREE"):
             self.env.pop(k, None)
+        # The muster the tests run: the one on the PATH, unless a test names another.
+        self.exe = "muster"
         self.repo = base / "log proj" / "main"
         self.repo.mkdir(parents=True)
         self.git(self.repo, "init", "-q", "-b", "main")
@@ -464,7 +467,7 @@ class WorkLogMergeDriver(unittest.TestCase):
         return r.stdout.strip()
 
     def muster(self, *args: str, input: str | None = None) -> subprocess.CompletedProcess:
-        r = subprocess.run(["muster", *args], cwd=self.repo, capture_output=True, text=True,
+        r = subprocess.run([self.exe, *args], cwd=self.repo, capture_output=True, text=True,
                            env=self.env, input=input)
         self.assertEqual(r.returncode, 0, f"muster {args}: {r.stdout}{r.stderr}")
         return r
@@ -511,6 +514,13 @@ class WorkLogMergeDriver(unittest.TestCase):
     def test_musters_own_merge_runs_this_binary_as_the_driver(self):
         # The merge (pass --from testing) of a started task whose only clash with main is the log:
         # it lands, both entries whole, the task's on top, with no driver in the repo's config.
+        # Muster by its absolute path, and a PATH (the one git gets too) with git and no muster:
+        # a driver that looked muster up on the PATH would fail to start, and the merge with it.
+        self.exe = str(MUSTER.resolve())
+        git_bin = shutil.which("git", path=os.environ.get("PATH", ""))
+        self.assertIsNotNone(git_bin)
+        self.env["PATH"] = os.pathsep.join([str(Path(git_bin).parent), "/usr/bin", "/bin"])
+        self.assertIsNone(shutil.which("muster", path=self.env["PATH"]))
         self.muster("init")
         self.git(self.repo, "config", "--local", "--remove-section", "merge.muster-log")
         [project] = [p["name"] for p in json.loads(self.muster("projects", "--json").stdout)

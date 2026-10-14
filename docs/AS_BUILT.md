@@ -773,14 +773,17 @@ preamble, then whole entries (bytes as they are: CRLF, a missing last line end a
 the base's preamble and entries with dated entries (`## YYYY-MM-DD…`) added on top, it writes the
 base with both sides' new entries merged by date, newest first, theirs (`%B`) first on a tie,
 each side's own order kept, an entry both added kept once. Anything else gets merge-file's
-conflict markers (labels `ours`, `base`, `theirs`) and exit 1. When it can't merge (a missing
-file, over 64 MB, merge-file failing, `%A` it can't write) it runs `git merge-file` in place
+conflict markers (labels `ours`, `base`, `theirs`) and exit 1. The result replaces `%A` whole or
+not at all (`replace`, task 0071): written to a new `.<name>.muster-merge-<pid>` beside it with
+`%A`'s mode, then renamed over it; on a failure the new file is removed and `%A` is untouched.
+When it can't merge (a missing file, over 64 MB, merge-file failing, a `%A` it can't replace)
+it runs `git merge-file` in place on the untouched `%A`
 (markers and 1, or its clean result and 0); only if that fails too is `%A` left as it was, with
 exit 2. A driver that exits non-zero with `%A` unwritten would leave git a conflicted file
 holding only ours, so the configured driver is
 `muster merge-log %O %A %B; s=$?; [ $s -le 1 ] && exit $s; git merge-file -L ours -L base -L theirs %A %O %B`:
 a muster that isn't on the PATH, was killed or exited 2 hands over to merge-file (tested with a
-rebase under `PATH=/usr/bin:/bin` plus git).
+rebase under a PATH of the found git's folder, `/usr/bin` and `/bin`, and no muster).
 `merge_log::configure` (called by `muster start` from where it runs, and by `muster init` for a
 repo's `.muster/`) sets `merge.muster-log.name` and `merge.muster-log.driver`
 (that command) with `git config --local` only for a key `git config --get` doesn't

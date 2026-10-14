@@ -199,12 +199,58 @@ fn merge_capped(base: &Path, ours: &Path, theirs: &Path, max: u64) -> Result<Mer
 }
 
 /// `muster merge-log <base> <ours> <theirs>`, as git runs a merge driver: the result is written
-/// into `ours`; 0 when it's clean, 1 with conflict markers. When it can't merge (a file it can't
-/// read or over 64 MB, merge-file failing, `ours` it can't write), git's merge-file merges in
-/// place instead: its markers, or its clean result. When even that fails, `ours` is left as it
-/// was and it's 2, which the configured driver hands to merge-file again (`driver_command`).
+/// into `ours`, whole or not at all (`replace`); 0 when it's clean, 1 with conflict markers. When
+/// it can't merge (a file it can't read or over 64 MB, merge-file failing, `ours` it can't
+/// replace), git's merge-file merges the untouched `ours` in place instead: its markers, or its
+/// clean result. When even that fails, `ours` is left as it was and it's 2, which the configured
+/// driver hands to merge-file again (`driver_command`).
 pub fn run(args: &[String]) -> Result<i32, String> {
     run_capped(args, MAX_BYTES)
+}
+
+/// Replace `path` with `text` whole: written to a new file beside it (the same folder, so the
+/// rename stays on one filesystem), with its permissions, then renamed over it. On any failure
+/// `path` is as it was and the new file is gone, so a write that fails partway (a full disk)
+/// never leaves a cut-off `ours` for the fallback to merge.
+fn replace(path: &Path, text: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let name = path
+        .file_name()
+        .ok_or_else(|| format!("{} has no file name", path.display()))?;
+    let mut tmp_name = std::ffi::OsString::from(".");
+    tmp_name.push(name);
+    tmp_name.push(format!(".muster-merge-{}", std::process::id()));
+    let tmp = path.with_file_name(tmp_name);
+    let fail = |what: &str, e: std::io::Error| format!("{what} {}: {e}", tmp.display());
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)
+        .map_err(|e| fail("couldn't make", e))?;
+    let written = file
+        .write_all(text)
+        .and_then(|()| file.sync_all())
+        .map_err(|e| fail("couldn't write", e))
+        .and_then(|()| {
+            let perms = fs::metadata(path)
+                .map_err(|e| format!("{}: {e}", path.display()))?
+                .permissions();
+            fs::set_permissions(&tmp, perms).map_err(|e| fail("couldn't set the mode of", e))
+        })
+        .and_then(|()| {
+            fs::rename(&tmp, path).map_err(|e| {
+                format!(
+                    "couldn't rename {} over {}: {e}",
+                    tmp.display(),
+                    path.display()
+                )
+            })
+        });
+    drop(file);
+    if written.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    written
 }
 
 /// `run`, with `merge_capped`'s limit.
@@ -221,7 +267,7 @@ fn run_capped(args: &[String], max: u64) -> Result<i32, String> {
             Merged::Clean(t) => (t, 0),
             Merged::Conflict(t) => (t, 1),
         };
-        fs::write(ours, text).map_err(|e| format!("{}: {e}", ours.display()))?;
+        replace(ours, &text)?;
         Ok(code)
     });
     let e = match merged {
@@ -824,6 +870,18 @@ mod tests {
         // A backtick fence's info can't hold a backtick, so "``` a`b" opens nothing.
         let text = "## 2026-10-14 — N\n``` a`b\n## 2026-10-13 — real\n";
         assert_eq!(split(text.as_bytes()).entries.len(), 2);
+        // A fence closes only on its own character: ``` inside ~~~ doesn't close it.
+        let text = "## 2026-10-14 — T\n~~~\n```\n## 2026-10-13 — quoted\n~~~\n";
+        assert_eq!(split(text.as_bytes()).entries.len(), 1);
+        let both = format!("{text}{OLD}");
+        let log = split(both.as_bytes());
+        assert_eq!(log.entries, [text.as_bytes(), OLD.as_bytes()]);
+        // And only with nothing after it: "``` md" inside ``` opens nothing and closes nothing.
+        let text = "## 2026-10-14 — M\n```\n``` md\n## 2026-10-13 — quoted\n```\n";
+        assert_eq!(split(text.as_bytes()).entries.len(), 1);
+        let both = format!("{text}{OLD}");
+        let log = split(both.as_bytes());
+        assert_eq!(log.entries, [text.as_bytes(), OLD.as_bytes()]);
         // Four spaces is code, not a fence.
         let text = "## 2026-10-14 — N\n    ```\n## 2026-10-13 — real\n";
         assert_eq!(split(text.as_bytes()).entries.len(), 2);
@@ -889,6 +947,72 @@ mod tests {
         );
     }
 
+    /// The names in `dir`, sorted.
+    fn names(dir: &Path) -> Vec<String> {
+        let mut v: Vec<String> = fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn merge_log_replaces_ours_whole_or_not_at_all() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let (side, copy) = (dir.path().join("side"), dir.path().join("copy"));
+        let (a, b) = (entry("2026-10-14", "A"), entry("2026-10-13", "B"));
+        for d in [&side, &copy] {
+            fs::create_dir(d).unwrap();
+            fs::write(d.join("base"), format!("{PRE}{OLD}")).unwrap();
+            fs::write(d.join("ours"), format!("{PRE}{a}{OLD}")).unwrap();
+            fs::write(d.join("theirs"), format!("{PRE}{b}{OLD}")).unwrap();
+        }
+        // A replace that works: the new text, the old file's mode, nothing left beside it.
+        fs::set_permissions(copy.join("ours"), fs::Permissions::from_mode(0o600)).unwrap();
+        replace(&copy.join("ours"), b"new\n").unwrap();
+        assert_eq!(fs::read(copy.join("ours")).unwrap(), b"new\n");
+        let mode = fs::metadata(copy.join("ours"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+        assert_eq!(names(&copy), ["base", "ours", "theirs"]);
+        fs::write(copy.join("ours"), format!("{PRE}{a}{OLD}")).unwrap();
+        // What git merge-file makes of the untouched ours: what the fallback must leave.
+        let out = Command::new("git")
+            .args(["merge-file", "-L", "ours", "-L", "base", "-L", "theirs"])
+            .args([copy.join("ours"), copy.join("base"), copy.join("theirs")])
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(1), "a conflict");
+        let expected = fs::read(copy.join("ours")).unwrap();
+        // %A's folder read-only: nothing new can be made beside it, so the merged text can't
+        // replace it. Ours is byte for byte as it was, with nothing left beside it.
+        let before = fs::read(side.join("ours")).unwrap();
+        fs::set_permissions(&side, fs::Permissions::from_mode(0o555)).unwrap();
+        let refused = replace(&side.join("ours"), b"cut off");
+        let after = fs::read(side.join("ours")).unwrap();
+        let left = names(&side);
+        // The driver: its clean merge can't be written, so merge-file merges the original ours.
+        let args = [side.join("base"), side.join("ours"), side.join("theirs")]
+            .map(|x| x.to_str().unwrap().to_string());
+        let code = run(&args);
+        let merged = fs::read(side.join("ours")).unwrap();
+        let left_after = names(&side);
+        fs::set_permissions(&side, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(refused.unwrap_err().contains("couldn't make"));
+        assert_eq!(after, before);
+        assert_eq!(left, ["base", "ours", "theirs"]);
+        assert_eq!(code, Ok(1));
+        assert_eq!(
+            String::from_utf8_lossy(&merged),
+            String::from_utf8_lossy(&expected)
+        );
+        assert_eq!(left_after, ["base", "ours", "theirs"]);
+    }
+
     /// The folder this test's `git` is in.
     fn git_dir() -> PathBuf {
         let path = std::env::var_os("PATH").unwrap_or_default();
@@ -915,10 +1039,12 @@ mod tests {
         g(&repo, &["commit", "-qam", "main's entry"]);
         fs::write(wt.join("docs/WORKLOG.md"), format!("{PRE}{b}{OLD}")).unwrap();
         g(&wt, &["commit", "-qam", "the task's entry"]);
-        // A PATH with git and no muster, as a GUI git client may have.
+        // A PATH with the suite's git first and no muster, as a GUI git client may have.
         let gits = git_dir();
-        assert!(!gits.join("muster").exists(), "{}", gits.display());
-        let path = format!("/usr/bin:/bin:{}", gits.display());
+        for d in [gits.as_path(), Path::new("/usr/bin"), Path::new("/bin")] {
+            assert!(!d.join("muster").exists(), "{}", d.display());
+        }
+        let path = format!("{}:/usr/bin:/bin", gits.display());
         let out = Command::new("git")
             .arg("-C")
             .arg(&wt)

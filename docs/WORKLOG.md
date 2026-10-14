@@ -4,6 +4,15 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Work log merge driver: ours is replaced whole or not at all, and its tests can fail (mu-71)
+**Fixed:** a failed write could truncate the work log before the fallback merged it → the merged
+text goes to a temp file beside it and is renamed over it, so ours stays as it was on failure
+(`merge_log::replace`). Three tests couldn't fail: the pass-from-testing test now runs muster by
+its absolute path with no muster on git's PATH; two code-fence cases test the closing rules; the
+no-muster test puts the found git first on PATH.
+**Verified:** each guard removed by hand fails its test (fs::write instead of replace; muster
+looked up on PATH; `c2 == c`; the trailing-whitespace check), all restored; `bin/gate` green.
+
 ## 2026-10-14 — The poll and the DashAfzar fixture share one state builder; folds follow only drawn projects (mu-73)
 **Fixed:** the fixture the sidebar's render test draws was built by a different pipeline from the
 app's poll (no prefixes, no Your check limit) → `projects::read_state` builds the state for both,
