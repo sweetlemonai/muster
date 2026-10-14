@@ -2,7 +2,7 @@ import { createElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import BlockWhy from "./BlockWhy";
-import { askedOf, BLOCK_KINDS, BLOCK_LOOKS, blockLead, blockLook, blockRequest, blockSentence, blockWords, isBlocked } from "./blockWords";
+import { askedOf, BLOCK_KINDS, BLOCK_LOOKS, blockedRed, blockLead, blockLook, blockRequest, blockSentence, blockWords, isBlocked } from "./blockWords";
 import type { BlockedBy, Question, Task } from "./types";
 
 const by = (id: string, stage: string, holder = ""): BlockedBy => ({ id, stage, holder });
@@ -86,6 +86,11 @@ describe("why a task is blocked, in words (the same cases as the core's block.rs
     expect(isBlocked({ blocked: true, blockedKind: "you" })).toBe(true);
     expect(isBlocked({ blocked: false, blockedKind: "" })).toBe(false);
     expect(isBlocked({ blocked: false })).toBe(false);
+    // Red only when it doesn't clear by itself: a flag, or any kind but tasks (0060).
+    expect(blockedRed({ blocked: false, blockedKind: "tasks" })).toBe(false);
+    expect(blockedRed({ blocked: true, blockedKind: "tasks" })).toBe(true);
+    expect(blockedRed({ blocked: false, blockedKind: "outside" })).toBe(true);
+    expect(blockedRed({ blocked: false, blockedKind: "" })).toBe(false);
   });
 });
 

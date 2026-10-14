@@ -9,7 +9,7 @@ import { dayContext, EMPTY_QUERY, type Query } from "./filters";
 import { GroupByChips, GroupedBoard } from "./Groups";
 import groupsSource from "./Groups.tsx?raw";
 import { windowKey } from "./keys";
-import { ChoiceChips, ColumnHead, Fold, ModeChip } from "./ModeViews";
+import { blockedCount, ChoiceChips, ColumnHead, Fold, ModeChip } from "./ModeViews";
 import { columnFold, ELEMENTS, Mode, MODES, type DisplayMode } from "./modes";
 import { logSummary } from "./paneData";
 import ProjectList from "./ProjectList";
@@ -209,6 +209,12 @@ describe("board columns in each mode", () => {
     const html = head("folded");
     expect(html).toMatch(/^<h2 title="Done"><button type="button" class="col-fold" aria-expanded="false" title="[^"]*Focus[^"]*">Done <small>9<\/small><\/button><\/h2>$/);
     expect(head("opened")).toContain('aria-expanded="true"');
+  });
+
+  it("counts only the red blocks: a wait on other tasks alone clears by itself (0060)", () => {
+    const byTasks = { blocked: false, blockedKind: "tasks" };
+    expect(blockedCount([byTasks, { blocked: true, blockedKind: "you" }, { blocked: false, blockedKind: "outside" }, { blocked: false, blockedKind: "" }])).toBe(2);
+    expect(blockedCount([byTasks, byTasks])).toBe(0);
   });
 
   it("a folded column still says how many in it need you, and how many are blocked (review)", () => {

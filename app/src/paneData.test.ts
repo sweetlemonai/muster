@@ -43,8 +43,8 @@ describe("what's waiting on the owner", () => {
     const qs = [q({ n: 1, escalated: true }), q({ n: 2, escalated: true }), q({ n: 3 }), q({ n: 4, escalated: true, ticked: true })];
     expect(waitingOnYou(task({ questions: qs }))).toEqual(["2 questions for you"]);
     expect(waitingOnYou(task({ questions: [q({ escalated: true })] }))).toEqual(["1 question for you"]);
-    expect(waitingOnYou(task({ blocked: true, waitingOn: "pick a colour", blockedKind: "you" }))).toEqual(["blocked on you"]);
-    expect(waitingOnYou(task({ blocked: true, waitingOn: "write to ~/x", blockedKind: "permission" }))).toEqual(["blocked by permission"]);
+    expect(waitingOnYou(task({ blocked: true, waitingOn: "pick a colour", blockedKind: "you" }))).toEqual(["your action"]);
+    expect(waitingOnYou(task({ blocked: true, waitingOn: "write to ~/x", blockedKind: "permission" }))).toEqual(["permission"]);
     for (const kind of ["tasks", "question", "outside", ""]) {
       expect(waitingOnYou(task({ blocked: kind !== "tasks" && kind !== "", blockedKind: kind }))).toEqual([]);
     }
@@ -53,7 +53,7 @@ describe("what's waiting on the owner", () => {
   });
   it("all at once, in that order", () => {
     const t = task({ stage: "your-check", blocked: true, waitingOn: "pick", blockedKind: "you", questions: [q({ escalated: true })] });
-    expect(waitingOnYou(t)).toEqual(["accept or send back", "1 question for you", "blocked on you"]);
+    expect(waitingOnYou(t)).toEqual(["accept or send back", "1 question for you", "your action"]);
   });
 });
 

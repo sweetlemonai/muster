@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import cases from "./deps-cases.json";
-import { blockSentence, isBlocked } from "./blockWords";
+import { blockedRed, blockSentence, isBlocked } from "./blockWords";
 import { cardClass } from "./CardLook";
 import { readyToStart } from "./graph";
 import { GraphView } from "./GraphView";
@@ -34,9 +34,9 @@ describe("the shared dependency cases (the core gives the same)", () => {
   for (const t of tasks) {
     const w = want[t.id];
     it(`${t.id} ${t.title}`, () => {
-      // The board: the card's red, and its words.
+      // The board: the card's red (not for a wait on tasks alone, 0060), and its words.
       expect(isBlocked(t)).toBe(t.blocked || w.blockedBy.length > 0);
-      expect(cardClass(t, false).includes(" blocked")).toBe(isBlocked(t));
+      expect(cardClass(t, false).includes(" blocked")).toBe(blockedRed(t));
       if (sentences[t.id]) expect(blockSentence(t)).toBe(sentences[t.id]);
       if (!isBlocked(t)) expect(blockSentence(t)).toBe("");
       // The Graph's ready mark is exactly what the core lets an agent claim (or the owner start).
@@ -50,7 +50,7 @@ describe("the shared dependency cases (the core gives the same)", () => {
       expect(node, t.id).not.toBe("");
       const status = html.slice(html.indexOf(node), html.indexOf("</button>", html.indexOf(node)));
       expect(status.includes('class="g-ready"'), `${t.id} ready`).toBe(want[t.id].ready);
-      expect(status.includes("badge blocked"), `${t.id} blocked`).toBe(isBlocked(t));
+      expect(status.includes("badge blocked"), `${t.id} blocked`).toBe(blockedRed(t));
     }
   });
 });

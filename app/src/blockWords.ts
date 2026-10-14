@@ -104,6 +104,10 @@ export function blockSentence(t: Block, short = false): string {
 /** Blocked, by the flag or by tasks it depends on that aren't merged yet (the core's `blockedKind`). */
 export const isBlocked = (t: Pick<Task, "blocked" | "blockedKind">) => t.blocked || !!t.blockedKind;
 
+/** Blocked in red (0060): by the flag, or by any kind but tasks. A wait on other tasks alone clears
+ *  by itself, so it is neutral (CardLook's cardClass checks the same). */
+export const blockedRed = (t: Pick<Task, "blocked" | "blockedKind">) => t.blocked || (!!t.blockedKind && t.blockedKind !== "tasks");
+
 /** What the Block form sends for a kind and what was typed or picked, or why it can't yet. Tasks
  *  are typed as keys of the task's own project (`prefix`, 0033) or numbers, and sent as ids. */
 export function blockRequest(kind: BlockKind, detail: string, prefix?: string): { ok: true; kind: BlockKind; detail: string } | { ok: false; why: string } {

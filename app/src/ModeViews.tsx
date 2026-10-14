@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { blockedRed } from "./blockWords";
 import { modeLabel, useLook, type ColumnFold, type DisplayMode } from "./modes";
 import type { Task } from "./types";
 
@@ -16,8 +17,8 @@ export function ModeChip({ mode, onOpen }: { mode: DisplayMode; onOpen: () => vo
 }
 
 /** How many of `tasks` are blocked, as a card counts it (`cardClass`): for a folded strip, whose
- *  cards don't show. */
-export const blockedCount = (tasks: Pick<Task, "blocked" | "blockedKind">[]) => tasks.filter((t) => t.blocked || !!t.blockedKind).length;
+ *  cards don't show. Not a wait on other tasks alone, which isn't red (0060). */
+export const blockedCount = (tasks: Pick<Task, "blocked" | "blockedKind">[]) => tasks.filter(blockedRed).length;
 
 /** What a folded strip says about the cards it hides: how many need you and how many are blocked. */
 export function FoldCounts({ needs, blocked }: { needs: number; blocked: number }) {

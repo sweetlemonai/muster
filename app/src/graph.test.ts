@@ -107,7 +107,7 @@ describe("GraphView", () => {
     const html = view(null, two);
     expect(html).toMatch(/class="g-node s-ready ready"[^>]*>.*?0001/);
     expect(html).not.toMatch(/class="g-node s-ready ready"[^>]*>.*?<span class="id">0002/);
-    expect(html).toMatch(/class="g-node s-ready blocked"[^>]*><span class="g-top"><span class="id">0002/);
+    expect(html).toMatch(/class="g-node s-ready"[^>]*><span class="g-top"><span class="id">0002/);
   });
   it("lights the selected task's chain and dims the rest", () => {
     const html = view("muster/0005");
@@ -149,12 +149,13 @@ describe("GraphView", () => {
     expect(chip("0023")).toContain('<span class="g-who">wt-b</span>');
     expect(chip("0024")).toContain('<span class="badge warn">needs you</span>');
   });
-  it("marks a task blocked only by the tasks it depends on as blocked, as its card is (0024)", () => {
+  it("marks a task blocked only by the tasks it depends on as its card does: neutral, after them (0024, 0060)", () => {
     const byTasks = { blockedKind: "tasks", blockedBy: [{ id: "0001", stage: "ready", holder: "" }] };
     const html = view(null, [task("0001", [], { forWho: "human" }), task("0002", ["0001"], byTasks), task("0009", [], byTasks)]);
-    expect(html).toMatch(/class="g-node s-ready blocked"[^>]*><span class="g-top"><span class="id">0002<\/span>.*?<span class="badge blocked">blocked<\/span>/);
+    expect(html).toMatch(/class="g-node s-ready"[^>]*><span class="g-top"><span class="id">0002<\/span>.*?<span class="badge block-why not-you look-tasks"><b>After<\/b> 0001<\/span>/);
+    expect(html).not.toContain("badge blocked");
     const chip = new RegExp(`<button[^>]*g-loose[^>]*><span class="id">0009</span>.*?</button>`).exec(html)?.[0] ?? "";
-    expect(chip).toContain('<span class="badge blocked">blocked</span>');
+    expect(chip).toContain('<span class="badge block-why not-you look-tasks"><b>After</b> 0001</span>');
     expect(chip).not.toContain("g-ready");
   });
   it("dims done tasks, but not when they're on the selected chain", () => {

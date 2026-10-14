@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { estimateText } from "./fields";
 import BlockWhy from "./BlockWhy";
-import { blockLead, isBlocked } from "./blockWords";
+import { blockedRed, blockLead, isBlocked } from "./blockWords";
 import { ago, holder, key, stageLabel, stageOf } from "./lib";
 import { PAUSE_GLYPH } from "./Pause";
 import type { Task } from "./types";
@@ -117,7 +117,7 @@ function Row({ t, now, multi, active, onOpen, words }: { t: Task; now: number; m
       <td>
         {parentLevel ? <span className={`status-pill s-${shownStageClass(t)}`}>{shownStageLabel(t)}</span> : <span className={`status-pill s-${stageOf(t)}`}>{stageLabel(t.stage)}</span>}
         {t.paused && <span className="status-pill paused">{`${PAUSE_GLYPH} Paused`}</span>}
-        {isBlocked(t) && <span className="status-pill blocked">blocked</span>}
+        {blockedRed(t) && <span className="status-pill blocked">blocked</span>}
       </td>
       <td className="meta">{isBlocked(t) ? <BlockWhy t={t} short pill={false} /> : holder(t)}</td>
       <td className="meta est-cell">{own || (parentLevel ? estimateLeft(t.progress) : "")}</td>
@@ -221,7 +221,7 @@ export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen,
             </span>
             <span className="tl-track">
               <span
-                className={`tl-bar s-${stageOf(t)}${p.span.open ? " open" : ""}${isBlocked(t) ? " blocked" : ""}${t.waitingForOwner ? " needs-you" : ""}${p.clipStart ? " clip-start" : ""}${p.clipEnd ? " clip-end" : ""}`}
+                className={`tl-bar s-${stageOf(t)}${p.span.open ? " open" : ""}${blockedRed(t) ? " blocked" : ""}${t.waitingForOwner ? " needs-you" : ""}${p.clipStart ? " clip-start" : ""}${p.clipEnd ? " clip-end" : ""}`}
                 style={{ left: pct(p.left), width: pct(p.width) }}
                 title={barTitle(t, p.span.timed)}
               >

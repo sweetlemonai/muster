@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
+import AnswerBox from "./AnswerBox";
 import { answerId } from "./answerFocus";
 import { api } from "./api";
 import Comments from "./Comments";
 import EditBody from "./EditBody";
 import { splitLog, withoutComments } from "./fields";
 import { isHuman } from "./human";
-import { stageLabel, stamp } from "./lib";
+import { stageLabel } from "./lib";
 import Markdown from "./Markdown";
 import { Fold } from "./ModeViews";
 import { taskKey, taskOfHref } from "./taskKey";
 import PaneHeader from "./PaneHeader";
 import { isFileDrag, logSummary, releasedBy, undoFor } from "./paneData";
-import PickOne, { answeredText } from "./PickOne";
 import { SessionPing } from "./Ping";
 import { reviewStatus, withoutReview } from "./Review";
 import ReviewPanel from "./ReviewPanel";
@@ -19,14 +19,13 @@ import Sidebar from "./Sidebar";
 import StageContent from "./StageContent";
 import StageForms from "./StageForms";
 import StageTrack from "./StageTrack";
-import type { Question, Task } from "./types";
+import type { Task } from "./types";
 import { useTaskActions } from "./useTaskActions";
 import { visionStatus, withoutVision } from "./Vision";
 import VisionPanel from "./VisionPanel";
 import { anyDirty, withPart } from "./writeUp";
 import Work from "./Work";
 import type { NamedView } from "./yourCheck";
-import { pressed } from "./shortcuts";
 
 /** The task pane (0021, the owner's design D2): title and status first, the stage track, then
  *  two columns (what this stage needs; the next step and the task's settings), the stage forms
@@ -163,7 +162,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
         <section className="answers" data-part="questions">
           <h2>Open questions</h2>
           {open.map((q) => (
-            <AnswerBox key={q.n} task={task} q={q} onChanged={onChanged} keys={keys} onLink={openLink} />
+            <AnswerBox key={q.n} task={task} q={q} onChanged={onChanged} keys={keys} onLink={openLink} boxId={q.n === null ? undefined : answerId(task, q.n)} />
           ))}
         </section>
       )}
@@ -262,54 +261,5 @@ function Checkins({ task }: { task: Task }) {
         ))}
       </ol>
     </section>
-  );
-}
-
-/** One open question with a box to answer it (⌘↩ sends) and its options as chips (0049): in the
- *  pane, and in place under a block waiting on it in Waiting for you (0060). */
-export function AnswerBox({ task, q, onChanged, keys, onLink }: { task: Task; q: Question; onChanged: () => void; keys?: Map<string, string>; onLink?: (href: string) => void }) {
-  const [text, setText] = useState("");
-  const [state, setState] = useState<"idle" | "saving" | "done" | "error">("idle");
-  const [msg, setMsg] = useState("");
-  const send = async () => {
-    if (!text.trim() || q.n === null) return;
-    setState("saving");
-    try {
-      const asker = await api.answer(task.queue, task.id, q.n, text, stamp(new Date()));
-      setState("done");
-      setMsg(answeredText(asker));
-      setText("");
-      onChanged();
-    } catch (e) {
-      setState("error");
-      setMsg(String(e));
-    }
-  };
-  return (
-    <div className={`answer${q.escalated ? " needs-you" : ""}`}>
-      <p>
-        <b>Q{q.n}</b> <span className="asker">{q.asker}</span>
-        {q.escalated && <span className="badge warn">for you</span>}
-      </p>
-      <Markdown text={q.choices ? q.choices.question : q.text} keys={keys} onLink={onLink} />
-      {q.choices && <PickOne task={task} q={q} choices={q.choices} extra={text} onAnswered={() => setText("")} onChanged={onChanged} />}
-      <textarea
-        id={q.n === null ? undefined : answerId(task, q.n)}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder={q.choices ? "Something else, or words to add to a pick (⌘↩ sends them as your answer)" : "Your answer (⌘↩ to send)"}
-        rows={3}
-        maxLength={4000}
-        onKeyDown={(e) => {
-          if (pressed(e, "send")) void send();
-        }}
-      />
-      <div className="answer-bar">
-        <button disabled={!text.trim() || state === "saving"} onClick={() => void send()}>
-          {state === "saving" ? "Sending…" : "Answer"}
-        </button>
-        {msg && <span className={state === "error" ? "err" : "ok"}>{msg}</span>}
-      </div>
-    </div>
   );
 }

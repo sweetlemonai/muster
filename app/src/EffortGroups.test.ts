@@ -85,21 +85,21 @@ describe("Accept all's confirm, in place (0043)", () => {
 describe("Waiting for you by effort (0043)", () => {
   const q = (n: number, text: string): Question => ({ n, ticked: false, asker: "wt-a", text, escalated: true, ownerAnswered: false });
   const list = (tasks: Task[]) => renderToStaticMarkup(createElement(WaitingList, { tasks, multi: false, openKey: null, onOpen: () => {}, onChanged: () => {}, now: 0 }));
-  it("groups Your check by effort, with each one's next step in full, then the rest", () => {
+  it("lists the questions, blocks and your own tasks first (0060), then groups Your check by effort, with each one's next step in full", () => {
     const html = list([
       ...CHECK.slice(0, 3),
       task("0051", { stage: "building", claimedBy: "wt-a", questions: [q(2, "Child webview or a window?")], openQuestions: 1 }),
       task("0041", { forWho: "human", stage: "ready", waitingForOwner: false, title: "Buy the domain" }),
     ]);
     const heads = [...html.matchAll(/<h3 class="effort-head">([^<]*) <small>(\d+)<\/small>/g)].map((m) => `${m[1]} ${m[2]}`);
-    expect(heads).toEqual(["Just accept 1", "One look 1", "Needs a session 1", "Questions, blocks and your own tasks 2"]);
+    expect(heads).toEqual(["Questions, blocks and your own tasks 2", "Just accept 1", "One look 1", "Needs a session 1"]);
     const items = [...html.matchAll(/<article[^>]*>([\s\S]*?)<\/article>/g)].map((m) => text(m[1]));
     expect(items).toEqual([
+      "0051 · Task 0051 Q2 Child webview or a window? Open to answer",
+      "You 0041 · Buy the domain Yours to do: in To do. Start it when you do. Open",
       "0014 · Task 0014 Nothing to try: Accept Open",
       "0016 · Task 0016 Try: group the board by Feature and check a goal's progress Open",
       "0003 · Task 0003 Check: every row routes to a working command Open",
-      "0051 · Task 0051 Q2 Child webview or a window? Open to answer",
-      "You 0041 · Buy the domain Yours to do: in To do. Start it when you do. Open",
     ]);
     expect(html).toContain('<button type="button" class="accept-all">Accept all 1</button>');
   });

@@ -1,5 +1,6 @@
 // The task pane's facts (0021), the parts without React: what's live, what waits on the owner,
 // time spent from the stage history, the criteria from the write-up. Tested in paneData.test.ts.
+import { BLOCK_LOOKS } from "./blockWords";
 import { boardColumn, heldByOther, isStage, stageLabel, stageRank, STAGES, stampMinutes } from "./lib";
 import { ownerOpen } from "./OwnerChecklist";
 import type { StageStep, Task } from "./types";
@@ -23,8 +24,9 @@ export function waitingOnYou(t: Pick<Task, "stage" | "ownerCriteria" | "question
   }
   const asked = t.questions.filter((q) => !q.ticked && q.escalated).length;
   if (asked > 0) out.push(`${asked} question${asked === 1 ? "" : "s"} for you`);
-  if (t.blockedKind === "you") out.push("blocked on you");
-  if (t.blockedKind === "permission") out.push("blocked by permission");
+  // In the block's own words (0060).
+  if (t.blockedKind === "you") out.push(BLOCK_LOOKS.action.lead.toLowerCase());
+  if (t.blockedKind === "permission") out.push(BLOCK_LOOKS.permission.lead.toLowerCase());
   // Its session waits on a prompt in Claude Code (0048): the core counts it as needing the owner.
   if (t.sessionState === "needs-input") out.push("input in Claude Code");
   return out;

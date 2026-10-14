@@ -56,7 +56,7 @@ describe("task pane stage controls", () => {
   });
   it("a blocked task keeps its stage; Pass waits for Unblock", () => {
     const p = pane({ stage: "your-check", blocked: true, status: "blocked", waitingOn: "pick a colour", blockedKind: "you", blockDetail: "pick a colour" });
-    expect(p.line).toBe("Your check Your action : pick a colour LIVE Your turn owner Waiting on you: accept or send back · blocked on you");
+    expect(p.line).toBe("Your check Your action : pick a colour LIVE Your turn owner Waiting on you: accept or send back · your action");
     expect(p.html).toContain('<span class="status-pill block-why for-you look-action"><b>Your action</b>: pick a colour</span>');
     expect(p.buttons).toEqual(["Accept (disabled)", "Send back", "Unblock"]);
     expect(p.html).toContain("Your action: pick a colour. Unblock it to pass it on.");

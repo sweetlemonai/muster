@@ -13,11 +13,13 @@ describe("cardClass", () => {
     expect(cardClass({ priority: "high", blocked: false, waitingForOwner: false }, false)).toBe("card p-high");
     expect(cardClass({ priority: "", blocked: true, waitingForOwner: true }, true)).toBe("card p-normal active needs-you blocked");
   });
-  it("is blocked by the tasks it depends on too, with no flag (0024)", () => {
-    expect(cardClass({ priority: "low", blocked: false, blockedKind: "tasks", waitingForOwner: false }, false)).toBe("card p-low blocked");
+  it("isn't red when it waits only on other tasks: they clear by themselves (0060)", () => {
+    expect(cardClass({ priority: "low", blocked: false, blockedKind: "tasks", waitingForOwner: false }, false)).toBe("card p-low");
+    expect(cardClass({ priority: "low", blocked: true, blockedKind: "outside", waitingForOwner: false }, false)).toBe("card p-low blocked");
     expect(cardClass({ priority: "low", blocked: false, blockedKind: "", waitingForOwner: false }, false)).toBe("card p-low");
-    const html = renderToStaticMarkup(createElement(CardBand, { t: { stage: "ready", blocked: false, blockedKind: "tasks", waitingForOwner: false, priority: "" } }));
-    expect(text(html, "by-stage")).toBe("Blocked");
+    const band = (blockedKind: string, blocked: boolean) => text(renderToStaticMarkup(createElement(CardBand, { t: { stage: "ready", blocked, blockedKind, waitingForOwner: false, priority: "" } })), "by-stage");
+    expect(band("tasks", false)).toBe("Ready");
+    expect(band("you", true)).toBe("Blocked");
   });
   it("reads P0–P3 as the board sorts them, and anything unknown as normal", () => {
     const pri = (priority: string) => cardClass({ priority, blocked: false, waitingForOwner: false }, false);

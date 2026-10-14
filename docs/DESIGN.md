@@ -89,7 +89,7 @@ to have a solid color code"). `themes.ts` holds the values; tests keep them apar
 | amber | Testing | |
 | orange | Your check and "needs you" (the same thing: waiting on the owner) | priority |
 | green | Done | |
-| red | Blocked, and errors | a task's type (a bug is the word "bug") |
+| red | Blocked, and errors (a wait on other tasks alone clears by itself: neutral, with a small red mark, 0060) | a task's type (a bug is the word "bug") |
 | magenta | High priority (a filled chip); normal is an outlined grey chip, low faint text | stages |
 | neutral grey, outlined | tags and types: labels, not states | |
 | muted text grey, outlined, with ⏸ | Paused (0045): a calm state, never a stage's fill or the blocked red | |

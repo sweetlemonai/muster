@@ -38,10 +38,10 @@ describe("the shortcut table", () => {
     expect(missing).toEqual([]);
   });
 
-  it("finds the keys of App.tsx, NewTask.tsx, TaskPanel.tsx, EditBody.tsx, keys.ts and FilterBar.tsx", () => {
+  it("finds the keys of App.tsx, NewTask.tsx, the pane's AnswerBox.tsx, EditBody.tsx, keys.ts and FilterBar.tsx", () => {
     // The scan above has something to check in the files the owner named, and in the window's
-    // shortcuts and the filter bar (task 0032).
-    for (const file of ["App.tsx", "NewTask.tsx", "TaskPanel.tsx", "EditBody.tsx", "keys.ts", "FilterBar.tsx"]) {
+    // shortcuts and the filter bar (task 0032). The pane's ⌘↩ moved with its answer box to AnswerBox.tsx (0060).
+    for (const file of ["App.tsx", "NewTask.tsx", "AnswerBox.tsx", "EditBody.tsx", "keys.ts", "FilterBar.tsx"]) {
       expect(keysHandledIn(sources[file]).length + idsReadIn(sources[file]).length, file).toBeGreaterThan(0);
     }
   });

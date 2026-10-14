@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { answerId, focusAnswer } from "./answerFocus";
 import type { Question, Task } from "./types";
 import WaitingList, { BlockLine, unblockNow, waitRank } from "./WaitingList";
+import source from "./WaitingList.tsx?raw";
 
 const task = (id: string, over: Partial<Task> = {}): Task => ({
   queue: "muster", id, title: `Task ${id}`, kind: "code", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
@@ -50,7 +51,9 @@ describe("a question block's Answer opens the answer box in place (0060)", () =>
   it("shows the box right under the block's line, with the question's options as chips", () => {
     expect(line(false)).not.toContain("<textarea");
     const open = line(true);
-    expect(open).toContain(`<textarea id="${answerId(answer, 2)}"`);
+    expect(open).toContain("<textarea");
+    // Only the pane's box has the id Answer focuses: never two with one id when both are open.
+    expect(open).not.toContain(`id="${answerId(answer, 2)}"`);
     expect(open.indexOf("<textarea")).toBeGreaterThan(open.indexOf("Your answer"));
     expect(open).toContain("<b>(a)</b> red");
     expect(open).toContain("<b>(b)</b> blue");
@@ -77,5 +80,23 @@ describe("Done, unblock (0060)", () => {
       throw new Error("0002 isn't blocked");
     });
     expect(await unblockNow(send, action, new Date(2026, 9, 13, 18, 30))).toEqual({ ok: false, text: "Error: 0002 isn't blocked" });
+  });
+});
+
+describe("what blocks agents comes first (0060, QA)", () => {
+  it("puts questions, blocks and your own tasks above Your check's groups", () => {
+    const check = task("0010", { stage: "your-check", waitingForOwner: true });
+    const out = html([check, action]);
+    const band = out.indexOf('aria-label="Questions, blocks and your own tasks"');
+    expect(band).toBeGreaterThanOrEqual(0);
+    expect(out.indexOf("0010 · Task")).toBeGreaterThan(band);
+    expect(out.indexOf("0002 · Task")).toBeLessThan(out.indexOf("0010 · Task"));
+  });
+});
+
+describe("Waiting for you stays out of the startup chunk's way (0060 review)", () => {
+  it("takes the answer box from its own file, not from the lazy task pane", () => {
+    expect(source).not.toMatch(/from "\.\/TaskPanel"/);
+    expect(source).toMatch(/from "\.\/AnswerBox"/);
   });
 });

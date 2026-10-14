@@ -13,15 +13,16 @@ import PickOne from "./PickOne";
 import type { QueueInfo, Task } from "./types";
 import YouRibbon from "./YouRibbon";
 import { nextStep } from "./yourCheck";
-import { AnswerBox } from "./TaskPanel";
+import AnswerBox from "./AnswerBox";
 import ProjectName from "./ProjectName";
 
-/** Waiting for you: every task waiting on the owner, in the order given. The agents' tasks in
- *  Your check come first, by effort (0043) with each one's next step in full and Accept all in
- *  Just accept; then, answers first, then actions, then permissions (0060), questions escalated to
- *  the owner, blocks on them, sessions waiting for input
- *  in Claude Code (0048) and their own tasks. Above them all, the lessons from reviews waiting for
- *  the owner's yes (0027) in `queue` ("all": every one of `queues`). */
+/** Waiting for you: every task waiting on the owner. First what blocks agents (0060, QA: with many
+ *  in Your check it would be out of sight below them): questions escalated to the owner and
+ *  blocks on them, answers first, then actions, then permissions, then sessions waiting for input
+ *  in Claude Code (0048) and their own tasks, each kept in the order given. Then the agents' tasks
+ *  in Your check, by effort (0043) with each one's next step in full and Accept all in Just
+ *  accept. Above them all, the lessons from reviews waiting for the owner's yes (0027) in `queue`
+ *  ("all": every one of `queues`). */
 export default function WaitingList({ tasks, multi, openKey, onOpen, onChanged, now, queues = [], queue = "all" }: {
   tasks: Task[];
   multi: boolean;
@@ -43,14 +44,14 @@ export default function WaitingList({ tasks, multi, openKey, onOpen, onChanged, 
     <main className="list waiting-list">
       <LessonsWaiting queues={queues} queue={queue} onChanged={onChanged} />
       {tasks.length === 0 && lessonsWaiting(queues, queue) === 0 && <p className="empty">Nothing is waiting for you.</p>}
-      {/* With none left in Your check, it still shows what Accept all came to, until the next change. */}
-      <EffortGroups tasks={check} place="waiting" renderCard={item} onChanged={onChanged} />
       {rest.length > 0 && (
         <div className="effort-group effort-other" role="group" aria-label="Questions, blocks and your own tasks">
           <h3 className="effort-head">Questions, blocks and your own tasks <small>{rest.length}</small></h3>
           {rest.map(item)}
         </div>
       )}
+      {/* With none left in Your check, it still shows what Accept all came to, until the next change. */}
+      <EffortGroups tasks={check} place="waiting" renderCard={item} onChanged={onChanged} />
     </main>
   );
 }

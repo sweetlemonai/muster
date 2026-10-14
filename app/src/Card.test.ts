@@ -44,7 +44,8 @@ describe("a card on the one board (0022, owner 2026-10-13)", () => {
   });
   it("says an agent's task waiting on the owner's unfinished task is blocked by it, in 0024's one sentence (AC8)", () => {
     const html = card(task("0054", { depends: ["0041"], blockedKind: "tasks", blockedBy: [{ id: "0041", stage: "ready", holder: "" }] }));
-    expect(classOf(html).split(" ")).toContain("blocked");
+    // Neutral, not red: it clears by itself (0060).
+    expect(classOf(html).split(" ")).not.toContain("blocked");
     expect(html).toContain('<span class="badge block-why not-you look-tasks"><b>After</b> 0041</span>');
     expect(html.match(/0041/g)).toHaveLength(1);
     expect(html).not.toContain("blocked by yours");

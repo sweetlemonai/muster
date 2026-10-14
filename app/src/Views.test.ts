@@ -147,3 +147,27 @@ describe("the timeline's controls do what they say", () => {
     expect(html).toContain("Building · paused");
   });
 });
+
+describe("a task waiting only on other tasks isn't red in the table (0060)", () => {
+  const row = (over: Partial<Task>) => renderToStaticMarkup(createElement(TableView, { tasks: [t({ id: "0042", title: "Waits", stage: "ready", ...over })], now: 0, multi: false, openKey: null, onOpen: () => {}, words: [] }));
+  it("shows no red blocked pill for it, only its neutral words", () => {
+    const after = row({ blockedKind: "tasks", blockedBy: [{ id: "0014", stage: "ready", holder: "" }] });
+    expect(after).not.toContain("status-pill blocked");
+    expect(after).toContain('<span class="block-why plain not-you look-tasks"><b>After</b> 0014</span>');
+    // Every other block is still red.
+    for (const kind of ["you", "permission", "question", "outside"]) expect(row({ blocked: true, blockedKind: kind, blockDetail: "x" }), kind).toContain('<span class="status-pill blocked">blocked</span>');
+  });
+});
+
+describe("a task waiting only on other tasks isn't red on the timeline (0060)", () => {
+  it("draws its bar without the blocked border; a flagged block keeps it", () => {
+    const bar = (over: Partial<Task>) => {
+      const tasks = [t({ id: "0033", title: "Waits", stage: "building", stageHistory: [step("2026-10-14 16:30", "ready", "building")], ...over })];
+      const win = timeWindow("day", NOW, 0);
+      const html = renderToStaticMarkup(createElement(TimelineChart, { scale: "day", rows: layout(spans(tasks, NOW), win, "day"), ticks: axis("day", win, NOW), now: nowAt(win, NOW), multi: false, openKey: null, onOpen: () => {} }));
+      return /class="(tl-bar [^"]*)"/.exec(html)?.[1] ?? "";
+    };
+    expect(bar({ blockedKind: "tasks", blockedBy: [{ id: "0014", stage: "ready", holder: "" }] }).split(" ")).not.toContain("blocked");
+    expect(bar({ blocked: true, blockedKind: "you", blockDetail: "x" }).split(" ")).toContain("blocked");
+  });
+});
