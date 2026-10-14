@@ -4,6 +4,16 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Hatched own cards readable in every look; Quick add's help (mu-65)
+**Fixed:** on the owner's own cards (hatched, YOU) the project name and the red flags fell to
+3.8–4.5:1 over the Tint washes (worst: Graphite `--bad` 3.84 on Testing) → the card uses its own
+`--human-accent-text` and `--human-bad` (`themes.ts` `wordOnStripes`), ≥4.5:1 on every stripe for
+every theme × accent × wash; stripes and the blocked wash kept. Quick add's help names the Backlog
+band under Group by.
+**Verified:** `bin/gate` → `gate: green (pnpm check, test_task, test_commands, cargo test
+(Kiritimati))` on bae4824; the extended contrast matrix failed first (413 combinations); shots of
+hatched blocked cards in Tint, light and dark (`.claude/work/qa-0033/shots/a65-*`).
+
 ## 2026-10-14 — Coordinator (Muster_Team_Lead): mu-53, mu-4, mu-52 and mu-59 merged; the dr-22 incident
 **Did:** took over muster-lead's three finished tasks (uncommitted at 95%): committed them on their
 branches, one review+QA agent per task (never the builder), fixes by implementer agents, a second
