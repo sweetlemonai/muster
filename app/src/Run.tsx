@@ -1,14 +1,15 @@
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import { api } from "./api";
-import { merged, fmtRunTime, shownLines, statusWords, SHOWN_LINES } from "./runData";
+import { keyed, merged, received, fmtRunTime, shownLines, statusWords, SHOWN_LINES, type RunInbox } from "./runData";
 import type { RunSnap, RunView } from "./types";
 import { Button } from "./ui";
 
 /** A project's Run (0079): what the core knows of it (`info`, null while it loads), its latest
  *  run as the window holds it (`run`: `run_state`'s lines, then the `run` events' new ones), and
  *  Run and Stop, each saying what the core refused in `error`. The project is named by its name
- *  only; the core looks up its command and checkout. */
+ *  only; the core looks up its command and checkout. Events are taken by the project's key, which
+ *  `run_state` gives (`RunInbox`). */
 export function useRun(project: string): {
   info: RunView | null;
   run: RunSnap | null;
@@ -21,11 +22,14 @@ export function useRun(project: string): {
   const [run, setRun] = useState<RunSnap | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const inbox = useRef<RunInbox>({ key: null, waiting: [] });
 
   const take = useCallback((v: RunView) => {
     setInfo(v);
     const r = v.run;
-    if (r) setRun((held) => merged(held, r));
+    const k = keyed(inbox.current, v.key);
+    inbox.current = k.inbox;
+    setRun((held) => [...k.take, ...(r ? [r] : [])].reduce<RunSnap | null>((h, push) => merged(h, push), held));
   }, []);
 
   useEffect(() => {
@@ -33,10 +37,15 @@ export function useRun(project: string): {
     setInfo(null);
     setRun(null);
     setError("");
+    inbox.current = { key: null, waiting: [] };
     // Listening first, then reading, so no event falls between the two; `merged` takes the
     // lines both have once.
     const off = listen<RunSnap>("run", (e) => {
-      if (live && e.payload.project === project) setRun((held) => merged(held, e.payload));
+      if (!live) return;
+      const r = received(inbox.current, e.payload);
+      inbox.current = r.inbox;
+      const push = r.take;
+      if (push) setRun((held) => merged(held, push));
     });
     void off.then(() =>
       api.runState(project).then(

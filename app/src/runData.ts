@@ -37,6 +37,26 @@ export function merged(held: RunSnap | null, push: RunSnap): RunSnap {
   });
 }
 
+/** The most `run` events the window keeps while it doesn't know the project's key yet. */
+export const WAITING_EVENTS = 50;
+
+/** Which `run` events a project's Run takes: its own, matched on the key `run_state` gave
+ *  (`key`), never on the name, which may have passed to another project since the run started.
+ *  Until the key is known, events wait in `waiting` (the last `WAITING_EVENTS`); `run_state`'s
+ *  answer then takes the ones of its key (`keyed`). */
+export type RunInbox = { key: string | null; waiting: RunSnap[] };
+
+/** `inbox` after the event `push` came in, and the event to merge, if it's this project's. */
+export function received(inbox: RunInbox, push: RunSnap): { inbox: RunInbox; take: RunSnap | null } {
+  if (inbox.key !== null) return { inbox, take: push.key === inbox.key ? push : null };
+  return { inbox: { key: null, waiting: [...inbox.waiting, push].slice(-WAITING_EVENTS) }, take: null };
+}
+
+/** `inbox` once `run_state` said the project's key, and the waiting events that are its own. */
+export function keyed(inbox: RunInbox, key: string): { inbox: RunInbox; take: RunSnap[] } {
+  return { inbox: { key, waiting: [] }, take: inbox.waiting.filter((e) => e.key === key) };
+}
+
 /** `s` with its oldest lines dropped past `KEEP_LINES` or `KEEP_CHARS`. */
 function bounded(s: RunSnap): RunSnap {
   let chars = s.lines.reduce((n, l) => n + l.length + 1, 0);

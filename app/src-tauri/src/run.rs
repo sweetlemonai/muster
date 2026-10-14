@@ -20,11 +20,12 @@ use crate::projects::Project;
 use crate::{cli, layout, parallel, projects, queue};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::ffi::{OsStr, OsString};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 
 /// The most lines a run's ring keeps; older ones fall out.
@@ -59,6 +60,9 @@ pub enum Status {
 pub struct Snap {
     /// The project's name.
     pub project: String,
+    /// The project's key, its queue folder, which the window matches events on: a name can pass
+    /// to another project while the run goes on.
+    pub key: String,
     /// Counts up across every run, so the window tells a restart's run from the one before.
     pub id: u64,
     /// The command as it was started, and the folder it runs in.
@@ -78,6 +82,8 @@ pub struct Snap {
 #[serde(rename_all = "camelCase")]
 pub struct View {
     pub project: String,
+    /// The project's key (its queue folder): its run's events carry it.
+    pub key: String,
     /// Its run command as projects.json has it, "" for none.
     pub command: String,
     /// The main checkout it runs in, "" when there's none.
@@ -258,6 +264,10 @@ pub struct Runs {
     next: AtomicU64,
     emit: Emit,
     grace: Duration,
+    /// The owner's login shell, whose PATH runs get (`login_path`); None reads none.
+    shell: Option<PathBuf>,
+    /// That PATH, read once; None when there's no shell or it didn't print one in time.
+    login: Arc<OnceLock<Option<OsString>>>,
 }
 
 /// One run, shared by its threads and `Runs`.
@@ -268,6 +278,7 @@ struct Live {
 
 struct St {
     project: String,
+    key: String,
     id: u64,
     command: String,
     folder: String,
@@ -310,6 +321,7 @@ impl St {
         let (first, lines) = self.ring.since(n);
         Snap {
             project: self.project.clone(),
+            key: self.key.clone(),
             id: self.id,
             command: self.command.clone(),
             folder: self.folder.clone(),
@@ -382,20 +394,48 @@ impl Live {
 }
 
 impl Runs {
-    /// No runs yet; each run's events go to `emit`.
+    /// No runs yet; each run's events go to `emit`. Runs get the PATH of the owner's login shell
+    /// (`$SHELL`), read now on a thread of its own, so the first Run seldom waits for it.
     pub fn new(emit: Emit) -> Runs {
-        Runs::with_grace(emit, GRACE)
+        let shell = std::env::var_os("SHELL")
+            .map(PathBuf::from)
+            .filter(|s| s.is_absolute());
+        let runs = Runs::with_shell(emit, GRACE, shell);
+        let (login, shell) = (runs.login.clone(), runs.shell.clone());
+        // Without the thread, the first run reads it instead.
+        let _ = thread("run-path", move || {
+            login.get_or_init(|| shell.and_then(|s| login_path(&s, LOGIN_WAIT)));
+        });
+        runs
     }
 
-    /// `new`, waiting `grace` between SIGTERM and SIGKILL.
+    /// `new`, waiting `grace` between SIGTERM and SIGKILL, and without a login shell's PATH.
     pub fn with_grace(emit: Emit, grace: Duration) -> Runs {
+        Runs::with_shell(emit, grace, None)
+    }
+
+    /// `with_grace`, with runs getting the PATH `shell` prints as a login shell.
+    pub fn with_shell(emit: Emit, grace: Duration, shell: Option<PathBuf>) -> Runs {
         Runs {
             runs: Mutex::new(HashMap::new()),
             ops: Mutex::new(()),
             next: AtomicU64::new(1),
             emit,
             grace,
+            shell,
+            login: Arc::new(OnceLock::new()),
         }
+    }
+
+    /// The login shell's PATH: read once, by the first to ask (the thread `new` starts, or a run).
+    fn login_path(&self) -> Option<&OsStr> {
+        self.login
+            .get_or_init(|| {
+                self.shell
+                    .as_deref()
+                    .and_then(|s| login_path(s, LOGIN_WAIT))
+            })
+            .as_deref()
     }
 
     fn get(&self, project: &str) -> Option<Arc<Live>> {
@@ -415,6 +455,7 @@ impl Runs {
         };
         Ok(View {
             project: p.name.clone(),
+            key: p.key.clone(),
             command: p.run.clone(),
             folder: folder.to_string_lossy().into_owned(),
             refused,
@@ -449,6 +490,8 @@ impl Runs {
     /// `start`, keeping the run under `key` (the project's queue folder, which a rename or another
     /// project's coming or going doesn't change) and naming it `name` to the window.
     pub fn start_as(&self, key: &str, name: &str, plan: Plan) -> Result<Snap, String> {
+        // Before the lock: reading it may take up to `LOGIN_WAIT`, and Stop shouldn't wait on it.
+        let login = self.login_path();
         let _one = self.ops.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(old) = self.get(key) {
             self.end(&[old]);
@@ -456,13 +499,14 @@ impl Runs {
         let Some(prog) = plan.argv.first() else {
             return Err("the run command is empty".into());
         };
-        let mut child = command(&plan)
+        let mut child = command(&plan, login)
             .spawn()
             .map_err(|e| format!("couldn't start {prog:?} in {}: {e}", plan.folder.display()))?;
         let (out, err) = (child.stdout.take(), child.stderr.take());
         let live = Arc::new(Live {
             st: Mutex::new(St {
                 project: name.to_string(),
+                key: key.to_string(),
                 id: self.next.fetch_add(1, Ordering::Relaxed),
                 command: plan.command,
                 folder: plan.folder.to_string_lossy().into_owned(),
@@ -589,26 +633,28 @@ impl Runs {
 
 /// `plan` as a process: as the gate starts (no shell, no stdin, without `MUSTER_ROOT` and
 /// `TASKS_ROOT`), both streams piped, leading a group of its own so Stop ends everything it started.
-fn command(plan: &Plan) -> Command {
+/// Its PATH: `login` (the owner's login shell's, when it was read), Muster's own, and the fixed
+/// folders (`search_path`).
+fn command(plan: &Plan, login: Option<&OsStr>) -> Command {
     let prog = plan.argv.first().map(String::as_str).unwrap_or_default();
     let program = parallel::program_in(prog, &plan.folder);
     let mut cmd = parallel::gate_command(&program, &plan.argv, &plan.folder);
     let inherited = std::env::var_os("PATH").unwrap_or_default();
-    cmd.env("PATH", search_path(&crate::home(), &inherited))
+    cmd.env("PATH", search_path(&crate::home(), login, &inherited))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
     cmd
 }
 
-/// The PATH a run gets: Muster's own (a terminal's when started from one), then where the owner's
-/// tools live, each once. Muster opened from the Dock or Finder has only the system's PATH, where
-/// `pnpm`, `cargo` or `node` aren't, so a run command, or what it calls, couldn't be found.
-pub fn search_path(home: &Path, inherited: &std::ffi::OsStr) -> std::ffi::OsString {
-    let mut dirs: Vec<PathBuf> = std::env::split_paths(inherited)
-        .filter(|d| !d.as_os_str().is_empty())
-        .collect();
-    let more = [home.join(".cargo/bin"), home.join(".local/bin")]
+/// The PATH a run gets, each folder once and only absolute ones: the owner's login shell's
+/// (`login`, what a terminal has, nvm's node and the like included), then Muster's own (a
+/// terminal's when started from one), then where the owner's tools usually live, for when the
+/// login shell's couldn't be read. Muster opened from the Dock or Finder has only the system's
+/// PATH, where `pnpm`, `cargo` or `node` aren't, so a run command, or what it calls, couldn't be
+/// found.
+pub fn search_path(home: &Path, login: Option<&OsStr>, inherited: &OsStr) -> OsString {
+    let fixed = [home.join(".cargo/bin"), home.join(".local/bin")]
         .into_iter()
         .chain(
             [
@@ -621,12 +667,90 @@ pub fn search_path(home: &Path, inherited: &std::ffi::OsStr) -> std::ffi::OsStri
             ]
             .map(PathBuf::from),
         );
-    for d in more {
-        if !dirs.contains(&d) {
+    let given = login
+        .into_iter()
+        .chain([inherited])
+        .flat_map(std::env::split_paths);
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for d in given.chain(fixed) {
+        if d.is_absolute() && !dirs.contains(&d) {
             dirs.push(d);
         }
     }
     std::env::join_paths(dirs).unwrap_or_else(|_| inherited.to_os_string())
+}
+
+/// How long the login shell gets to print its PATH.
+pub const LOGIN_WAIT: Duration = Duration::from_secs(5);
+/// The most bytes read from the login shell; its startup files may print more than the PATH.
+const LOGIN_OUTPUT: u64 = 64 * 1024;
+/// Around the PATH the login shell prints, so what its startup files print isn't taken for it.
+const LOGIN_MARK: &str = "<muster-path>";
+const LOGIN_END: &str = "</muster-path>";
+
+/// The PATH the owner's login shell `shell` sets, as a terminal has it: `shell -ilc` with a
+/// `printf` of `$PATH` between marks, as an argument array, no stdin, leading a group of its own.
+/// None when it can't start, fails, prints no PATH, or hasn't finished within `wait` (then it and
+/// whatever its startup files started are killed). Run it off the main thread: it takes as long as
+/// the owner's startup files (nvm's take most of a second).
+pub fn login_path(shell: &Path, wait: Duration) -> Option<OsString> {
+    let script = format!("printf '\\n{LOGIN_MARK}%s{LOGIN_END}\\n' \"$PATH\"");
+    let mut cmd = Command::new(shell);
+    cmd.args(["-ilc", &script])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    let mut child = cmd.spawn().ok()?;
+    let out = child.stdout.take();
+    let (tx, rx) = std::sync::mpsc::channel();
+    // Read on a thread of its own, so a full pipe never stalls the wait below.
+    let read = out.map(|out| {
+        thread("run-path-read", move || {
+            let mut buf = Vec::new();
+            let _ = out.take(LOGIN_OUTPUT).read_to_end(&mut buf);
+            let _ = tx.send(buf);
+        })
+    });
+    let reading = matches!(read, Some(Ok(())));
+    let until = Instant::now() + wait;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) if reading => break status,
+            Ok(None) if reading && Instant::now() < until => {
+                std::thread::sleep(Duration::from_millis(20))
+            }
+            _ => {
+                // Not reaped yet, so the group's id is still its own: it and whatever its startup
+                // files started go.
+                let _ = Command::new("/bin/kill")
+                    .args(["-KILL", "--", &format!("-{}", child.id())])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    };
+    if !status.success() {
+        return None;
+    }
+    // Something its startup files left going may still hold the pipe: wait no longer than `wait`.
+    let left = until.saturating_duration_since(Instant::now());
+    let buf = rx.recv_timeout(left.max(Duration::from_millis(200))).ok()?;
+    parse_login(&String::from_utf8(buf).ok()?)
+}
+
+/// The PATH between the last marks in what the login shell printed; None without one, for an
+/// empty one, or one with a line break or NUL in it.
+fn parse_login(text: &str) -> Option<OsString> {
+    let start = text.rfind(LOGIN_MARK)? + LOGIN_MARK.len();
+    let len = text[start..].find(LOGIN_END)?;
+    let path = &text[start..start + len];
+    (!path.is_empty() && !path.contains(['\n', '\r', '\0'])).then(|| OsString::from(path))
 }
 
 /// The project named `name` in `list`. The window names a project only by its name, never by a
@@ -952,7 +1076,7 @@ mod tests {
         );
         let list = [project("proj", &q, "bin/try 'a b'")];
         // Without the queue variables, whatever Muster was started with.
-        let cmd = command(&plan(&list[0]).unwrap());
+        let cmd = command(&plan(&list[0]).unwrap(), None);
         let removed: Vec<_> = cmd
             .get_envs()
             .filter(|(_, v)| v.is_none())
@@ -1181,13 +1305,14 @@ mod tests {
     #[test]
     fn a_run_gets_the_owners_tool_folders_after_its_own_path_each_once() {
         let home = Path::new("/Users/someone");
-        let got = search_path(home, std::ffi::OsStr::new("/usr/bin:/bin:/usr/sbin:/sbin"));
+        let search_path = |inherited: &OsStr| super::search_path(home, None, inherited);
+        let got = search_path(OsStr::new("/usr/bin:/bin:/usr/sbin:/sbin"));
         assert_eq!(
             got,
             "/usr/bin:/bin:/usr/sbin:/sbin:/Users/someone/.cargo/bin:/Users/someone/.local/bin:/opt/homebrew/bin:/usr/local/bin"
         );
         // A terminal's own comes first and stays as it was; nothing twice, no empty entry.
-        let got = search_path(home, std::ffi::OsStr::new("/my/bin::/opt/homebrew/bin"));
+        let got = search_path(OsStr::new("/my/bin::/opt/homebrew/bin"));
         assert!(got
             .to_string_lossy()
             .starts_with("/my/bin:/opt/homebrew/bin:/Users/someone/.cargo/bin"));
@@ -1196,7 +1321,7 @@ mod tests {
             1
         );
         assert_eq!(
-            search_path(home, std::ffi::OsStr::new(""))
+            search_path(OsStr::new(""))
                 .to_string_lossy()
                 .split(':')
                 .next(),
@@ -1205,14 +1330,121 @@ mod tests {
     }
 
     #[test]
+    fn the_login_shells_path_comes_first_then_musters_own_then_the_fixed_folders() {
+        let home = Path::new("/Users/someone");
+        let login =
+            OsStr::new("/Users/someone/.nvm/versions/node/v24/bin:/opt/homebrew/bin:bin::.");
+        let got = search_path(home, Some(login), OsStr::new("/usr/bin:/bin:/my/bin"));
+        assert_eq!(
+            got,
+            "/Users/someone/.nvm/versions/node/v24/bin:/opt/homebrew/bin:/usr/bin:/bin:/my/bin:/Users/someone/.cargo/bin:/Users/someone/.local/bin:/usr/local/bin:/usr/sbin:/sbin",
+            "each once, relative and empty folders dropped"
+        );
+    }
+
+    /// A stand-in login shell in `dir`: it keeps its arguments in `args`, prints what a startup
+    /// file might (a mark included), then runs the script it was given with `path` as PATH.
+    fn stand_in_shell(dir: &Path, path: &str) -> PathBuf {
+        let args = dir.join("args");
+        script(
+            dir,
+            "shell",
+            &format!(
+                "printf '%s\\n' \"$@\" > '{}'\necho 'Welcome <muster-path>/old</muster-path> and <muster-path>'\nPATH='{path}'\neval \"$2\"\n",
+                args.display()
+            ),
+        )
+    }
+
+    #[test]
+    fn the_login_shells_path_is_what_it_prints_between_the_last_marks() {
+        let d = tempfile::tempdir().unwrap();
+        let shell = stand_in_shell(d.path(), "/nvm/bin:/usr/bin:/bin");
+        assert_eq!(
+            login_path(&shell, LOGIN_WAIT),
+            Some(OsString::from("/nvm/bin:/usr/bin:/bin"))
+        );
+        let args = fs::read_to_string(d.path().join("args")).unwrap();
+        let args: Vec<&str> = args.lines().collect();
+        assert_eq!(
+            args,
+            [
+                "-ilc",
+                "printf '\\n<muster-path>%s</muster-path>\\n' \"$PATH\""
+            ],
+            "an interactive login shell, one script argument"
+        );
+        assert_eq!(parse_login("a<muster-path></muster-path>"), None, "empty");
+        assert_eq!(parse_login("<muster-path>/a"), None, "no end mark");
+        assert_eq!(parse_login("<muster-path>/a\n/b</muster-path>"), None);
+        assert_eq!(parse_login("nothing"), None);
+    }
+
+    #[test]
+    fn a_login_shell_that_fails_prints_no_path_or_hangs_gives_none() {
+        let d = tempfile::tempdir().unwrap();
+        let failing = script(
+            d.path(),
+            "fails",
+            "echo '<muster-path>/a</muster-path>'\nexit 1\n",
+        );
+        assert_eq!(login_path(&failing, LOGIN_WAIT), None, "a failing shell");
+        let quiet = script(d.path(), "quiet", "echo hello\n");
+        assert_eq!(login_path(&quiet, LOGIN_WAIT), None, "no PATH printed");
+        assert_eq!(
+            login_path(&d.path().join("missing"), LOGIN_WAIT),
+            None,
+            "no shell there"
+        );
+        // A hung startup file: given up at the wait, and what it started is gone too.
+        let pid = d.path().join("pid");
+        let hangs = script(
+            d.path(),
+            "hangs",
+            &format!("sleep 300 &\necho $! > '{}'\nwait\n", pid.display()),
+        );
+        // Long enough for it to have written its child's id even on a busy machine.
+        let t = Instant::now();
+        assert_eq!(login_path(&hangs, Duration::from_secs(2)), None);
+        assert!(t.elapsed() < Duration::from_secs(6), "{:?}", t.elapsed());
+        let child = fs::read_to_string(&pid).unwrap();
+        assert!(gone(child.trim()), "its child is killed");
+    }
+
+    #[test]
+    fn a_run_gets_the_login_shells_path_read_once() {
+        let d = tempfile::tempdir().unwrap();
+        let q = muster_repo(d.path());
+        let repo = d.path().join("repo");
+        script(&repo, "bin/path", "echo \"$PATH\"\n");
+        let tools = d.path().join("tools");
+        let shell = stand_in_shell(d.path(), &format!("{}:/usr/bin:/bin", tools.display()));
+        let r = Runs::with_shell(Arc::new(|_: &Snap| {}), GRACE, Some(shell));
+        let list = [project("proj", &q, "bin/path")];
+        r.start_named(&list, "proj").unwrap();
+        let snap = ended(&r, q.to_str().unwrap());
+        let path = snap.lines.first().unwrap();
+        assert!(
+            path.starts_with(&format!("{}:/usr/bin:/bin:", tools.display())),
+            "{path}"
+        );
+        // Read once: a second run doesn't start the shell again.
+        fs::remove_file(d.path().join("args")).unwrap();
+        r.start_named(&list, "proj").unwrap();
+        ended(&r, q.to_str().unwrap());
+        assert!(!d.path().join("args").exists(), "the shell ran once");
+    }
+
+    #[test]
     fn a_run_is_kept_by_its_queue_folder_so_a_rename_or_another_project_cant_take_it() {
         let d = tempfile::tempdir().unwrap();
         let q = muster_repo(d.path());
         let s = script(&d.path().join("repo"), "bin/fam", FAMILY);
         assert!(s.exists());
-        let (r, _) = runs(GRACE);
+        let (r, sent) = runs(GRACE);
         let list = [project("x-2", &q, "bin/fam")];
         r.start_named(&list, "x-2").unwrap();
+        let key = q.to_string_lossy().into_owned();
         let leader = word_after(&r, q.to_str().unwrap(), "leader");
         // Another project now has its old name, and it's called x: it still sees and stops its run.
         let other = d.path().join("other/tasks");
@@ -1221,10 +1453,12 @@ mod tests {
             r.view(&list, "x-2").unwrap().run.is_none(),
             "the other project has no run"
         );
+        assert_eq!(r.view(&list, "x-2").unwrap().key, other.to_string_lossy());
         let v = r.view(&list, "x").unwrap();
+        assert_eq!(v.key, key);
         assert_eq!(
-            v.run.map(|s| (s.project, s.status)),
-            Some(("x".to_string(), Status::Running))
+            v.run.map(|s| (s.project, s.key, s.status)),
+            Some(("x".to_string(), key.clone(), Status::Running))
         );
         assert_eq!(
             r.running(),
@@ -1232,12 +1466,19 @@ mod tests {
         );
         r.stop_named(&list, "x").unwrap();
         assert!(gone(&format!("-{leader}")));
+        // Every event says whose run it is by the key, which the window matches on: the name
+        // went to another project.
+        std::thread::sleep(BATCH * 2);
+        let sent = sent.lock().unwrap();
+        assert!(!sent.is_empty());
+        assert!(sent.iter().all(|(_, s)| s.key == key), "every event keyed");
     }
 
     #[test]
     fn a_snap_is_sent_to_the_window_in_its_own_words() {
         let snap = Snap {
             project: "muster".into(),
+            key: "/p/muster/main/.muster".into(),
             id: 2,
             command: "bin/run".into(),
             folder: "/p/muster/main".into(),
@@ -1253,6 +1494,7 @@ mod tests {
             serde_json::json!({"kind": "exited", "code": 0})
         );
         assert_eq!(v["first"], 5);
+        assert_eq!(v["key"], "/p/muster/main/.muster");
         assert_eq!(
             serde_json::to_value(Status::Stopped).unwrap(),
             serde_json::json!({"kind": "stopped"})

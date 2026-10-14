@@ -281,6 +281,9 @@ export type RunStatus = { kind: "running" } | { kind: "exited"; code: number | n
  *  seconds since 1970. */
 export type RunSnap = {
   project: string;
+  /** The project's key, its queue folder: events are matched on it, since a name can pass to
+   *  another project while a run goes on. */
+  key: string;
   id: number;
   command: string;
   folder: string;
@@ -293,7 +296,7 @@ export type RunSnap = {
 
 /** What Run knows of a project (0079): its run command ("" for none), the checkout it runs in,
  *  why it can't run ("" when it can), and its latest run since Muster started. */
-export type RunView = { project: string; command: string; folder: string; refused: string; run: RunSnap | null };
+export type RunView = { project: string; key: string; command: string; folder: string; refused: string; run: RunSnap | null };
 
 export type State = {
   queues: QueueInfo[];

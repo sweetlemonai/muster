@@ -6,16 +6,16 @@ import { describe, expect, it } from "vitest";
 import css from "./styles.css?raw";
 import { ProjectItem } from "./ProjectList";
 import { RunBlock, RunButtons, RunLine, RunStatusLive } from "./Run";
-import { fmtRunTime, KEEP_CHARS, KEEP_LINES, merged, shortFolder, shownLines, SHOWN_LINES, statusWords } from "./runData";
+import { fmtRunTime, KEEP_CHARS, KEEP_LINES, keyed, merged, received, shortFolder, shownLines, SHOWN_LINES, statusWords, WAITING_EVENTS, type RunInbox } from "./runData";
 import StageContent, { AcceptingBlock } from "./StageContent";
 import type { RunSnap, RunView, Task } from "./types";
 
 const snap = (over: Partial<RunSnap> = {}): RunSnap => ({
-  project: "muster", id: 1, command: "bin/run", folder: "/Users/someone/playground/muster/main",
+  project: "muster", key: "/q/muster/.muster", id: 1, command: "bin/run", folder: "/Users/someone/playground/muster/main",
   status: { kind: "running" }, since: 1000, ended: null, first: 0, lines: [], ...over,
 });
 const view = (over: Partial<RunView> = {}): RunView => ({
-  project: "muster", command: "bin/run", folder: "/Users/someone/playground/muster/main", refused: "", run: null, ...over,
+  project: "muster", key: "/q/muster/.muster", command: "bin/run", folder: "/Users/someone/playground/muster/main", refused: "", run: null, ...over,
 });
 const n = (from: number, count: number) => Array.from({ length: count }, (_, i) => `line ${from + i}`);
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
@@ -25,6 +25,40 @@ const line = (info: RunView | null, run: RunSnap | null = null, more: { busy?: b
   renderToStaticMarkup(<RunLine project="muster" info={info} run={run} busy={more.busy ?? false} error={more.error ?? ""} onRun={noop} />);
 const block = (run: RunSnap, all = false, nowSecs = 1080) =>
   renderToStaticMarkup(<RunBlock project="muster" run={run} nowSecs={nowSecs} busy={false} all={all} onAll={noop} onRun={noop} onStop={noop} />);
+
+describe("which run events a project's Run takes", () => {
+  it("takes its own by the key run_state gave, never by the name, which may have passed on", () => {
+    const own = snap({ project: "x", key: "/q/x", lines: ["mine"] });
+    // The run started as x-2 and still sends that name; another project is x-2 now.
+    const renamed = snap({ project: "x-2", key: "/q/x", first: 1, lines: ["still mine"] });
+    const other = snap({ project: "x", key: "/q/other", lines: ["not mine"] });
+    let inbox: RunInbox = { key: "/q/x", waiting: [] };
+    expect(received(inbox, own).take).toBe(own);
+    expect(received(inbox, renamed).take).toBe(renamed);
+    expect(received(inbox, other).take).toBeNull();
+    // The new x-2, keyed by its own folder, doesn't take the old run's events that carry its name.
+    expect(received({ key: "/q/new-x-2", waiting: [] }, renamed).take).toBeNull();
+    // Before run_state answers, events wait; its answer takes only the ones of its key, in order.
+    inbox = { key: null, waiting: [] };
+    for (const e of [own, other, renamed]) {
+      const r = received(inbox, e);
+      expect(r.take).toBeNull();
+      inbox = r.inbox;
+    }
+    const k = keyed(inbox, "/q/x");
+    expect(k.take).toEqual([own, renamed]);
+    expect(k.inbox).toEqual({ key: "/q/x", waiting: [] });
+    expect(merged(merged(null, k.take[0]), k.take[1]).lines).toEqual(["mine", "still mine"]);
+  });
+
+  it("keeps only the last events while it waits for the key", () => {
+    let inbox: RunInbox = { key: null, waiting: [] };
+    for (let i = 0; i < WAITING_EVENTS + 10; i++) inbox = received(inbox, snap({ first: i, lines: [`l${i}`] })).inbox;
+    expect(inbox.waiting.length).toBe(WAITING_EVENTS);
+    expect(inbox.waiting[0].first).toBe(10);
+    expect(keyed(inbox, "/q/elsewhere").take).toEqual([]);
+  });
+});
 
 describe("what the window holds of a run", () => {
   it("adds each event's new lines once, whatever the order run_state and the events came in", () => {

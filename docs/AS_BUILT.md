@@ -1173,16 +1173,21 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     shell) and checks it as projects.json does (`projects::command_refused`). It starts as the
     gate does (`parallel::program_in`, `parallel::gate_command`: `bin/run` from the checkout, no
     stdin, without `MUSTER_ROOT` and `TASKS_ROOT`), both streams piped, leading a process group of
-    its own, with a PATH of Muster's own plus `~/.cargo/bin`, `~/.local/bin`, `/opt/homebrew/bin`,
-    `/usr/local/bin` and the system's (`run::search_path`: from the Dock, Muster has only the
-    system's). It runs as the owner would start it, on their real data (Q2). One run per project,
+    its own. Its PATH (`run::search_path`, each folder once, absolute ones only) is the owner's
+    login shell's first, then Muster's own, then `~/.cargo/bin`, `~/.local/bin`,
+    `/opt/homebrew/bin`, `/usr/local/bin` and the system's: from the Dock, Muster has only the
+    system's, and the owner's node is only under `~/.nvm`. The login shell's PATH is read once,
+    on a thread `Runs::new` starts (a run that comes first waits for it, outside the lock Stop
+    takes): `$SHELL -ilc` with a `printf` of `$PATH` between marks, as an argument array, no
+    stdin, its own process group, at most 64 KB read (`run::login_path`). If it fails, prints no
+    PATH or takes over 5 s (then its group is killed), the fixed folders stand in. It runs as the owner would start it, on their real data (Q2). One run per project,
     kept by its queue folder, so a rename or another project's name can't take it; removing a
     project stops its run. Run while one goes restarts it. Runs live in `AppState.runs`, in memory
     only.
   - **Its output.** A reader thread per stream splits lines (`run::read_lines`: lenient UTF-8, a
     line past 4,096 bytes cut with "…") into a ring of the last 2,000 lines or 256 KB, whichever
-    is smaller. A sender thread emits `run` events (`run::Snap`: the run's id, state, times and
-    the new lines with where they start) at most once every 200 ms, and a last one when it ends.
+    is smaller. A sender thread emits `run` events (`run::Snap`: the run's id, the project's name
+    and key (its queue folder), state, times and the new lines with where they start) at most once every 200 ms, and a last one when it ends.
     A waiter thread reaps the leader only once both streams closed: until then an exited leader
     stays a zombie holding its id, so no other process group can take the id Stop signals. Nothing
     is logged or written to disk, and nothing polls the process: a run has ended when its leader exited and both streams closed, so a grandchild still
@@ -1192,7 +1197,10 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     `/bin/kill` with an argument array as `agents.rs` does. After SIGKILL it's Stopped within 2 s
     even if something that left the group still holds the streams. Hiding the window stops
     nothing: the app stays alive for the Dock badge.
-  - **The window.** `useRun` listens for `run` events, then reads `run_state`; `runData.ts`
+  - **The window.** `useRun` listens for `run` events, then reads `run_state`, and takes the
+    events of the project's key, which `run_state` gives (`runData.ts` `received`/`keyed`; until
+    it answers, the last 50 wait), never by name: a run keeps the name it started with, which a
+    rename can pass to another project. `runData.ts`
     `merged` puts the two together by the lines' places and the run's id (an older run's late
     event changes nothing, a `run_state` answered after an event puts its earlier lines in front,
     an ended run stays ended) within the same bounds. A polite live region, there before any run

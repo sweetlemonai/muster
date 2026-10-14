@@ -4,6 +4,21 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Run from the app, review round 1: the login shell's PATH, events by key (mu-79)
+**Fixed:** R1: Muster opened from the Dock ran `bin/run` without node (the owner's is only under
+`~/.nvm`), so pnpm exited 127 → `run::login_path` reads the login shell's PATH once (`$SHELL
+-ilc`, argument array, 5 s, group killed on timeout), and it comes first in `search_path`; the
+fixed folders stay as the fallback. R2: run events carried the name the run started with, so after
+a rename they reached another project's Run block → `Snap` and `View` carry the key (queue folder)
+and `useRun` matches on it (`runData.ts` `received`/`keyed`).
+**Decided:** the PATH is read between marks, so startup files that print don't spoil it; on a
+normal exit the shell's group isn't killed (its id is reaped, so it may be reused). Read before
+the ops lock, so a Stop never waits on it.
+**Verified:** `cargo test run::` 17 (stand-in shells: argv, noise around the marks, failing,
+silent, missing, hung with its child killed; a run's PATH starts with the login shell's, read
+once; every event keyed). `vitest` Run 17. Real zsh with the Dock's env prints the nvm folder
+first (0.7 s). Gate below.
+
 ## 2026-10-14 — Run from the app: start a project's run command, watch it, stop it (mu-79)
 **Did:** `run.rs` starts a project's run command in its main checkout (no shell, its own process
 group, no stdin, without the queue variables), keeps its output in a 2,000-line / 256 KB ring and
