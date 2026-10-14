@@ -218,7 +218,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Layout: nothing covers the board.** A task, a backlog note and New task open in one pane docked
   beside the content, with the board still visible and live beside it (the owner: "need to have
   everything in front of my eyes"). Drag the edge to resize it; the width is remembered. Esc
-  closes it.
+  closes it. The projects sidebar resizes the same way (0058): one splitter (`ui/Splitter.tsx`,
+  rules in `splitter.ts`) on both, drag, double-click for the default, ← → (Shift for 120 px).
 - **Columns always fit:** an empty column becomes a slim strip with its name written vertically,
   so all five stay in view, even with a task open beside the board.
 - **Columns scroll without scrollbars** (owner, 2026-10-13: "hide the scrollbar, in the columns

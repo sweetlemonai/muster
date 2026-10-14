@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import css from "./styles.css?raw";
-import { BOARD_MIN, clampPane, layoutWidth, PANE_FLOOR, PANE_MIN, RAIL_MIN, railBeside, SIDEBAR } from "./paneSize";
+import { BOARD_MIN, clampPane, clampSidebar, layoutWidth, PANE_FLOOR, PANE_MIN, RAIL_MIN, railBeside, SIDEBAR, SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_NARROW } from "./paneSize";
 
 /** The board's width on the board view in a `win` px window with a pane of `pane` px (0 for
  *  none): what's left past the sidebar and the pane, less the rail's narrowest when it's beside. */
@@ -112,5 +112,71 @@ describe("the rail gives way (0051)", () => {
   });
   it("matches the sidebar's width the clamp counts on", () => {
     expect(rule(".sidebar")).toContain(`width: ${SIDEBAR}px;`);
+  });
+});
+
+describe("the sidebar's width (0058): the owner's, within what keeps names readable and the board in view", () => {
+  it("is between SIDEBAR_MIN and SIDEBAR_MAX, in whole pixels", () => {
+    expect([SIDEBAR_MIN, SIDEBAR_MAX]).toEqual([150, 320]);
+    expect(clampSidebar(10, 1440)).toBe(SIDEBAR_MIN);
+    expect(clampSidebar(0, 1440)).toBe(SIDEBAR_MIN);
+    expect(clampSidebar(-50, 1440)).toBe(SIDEBAR_MIN);
+    expect(clampSidebar(10_000, 1440)).toBe(SIDEBAR_MAX);
+    expect(clampSidebar(Infinity, 1440)).toBe(SIDEBAR_MAX);
+    expect(clampSidebar(250.6, 1440)).toBe(251);
+    expect(clampSidebar(SIDEBAR, 1440)).toBe(SIDEBAR);
+  });
+  it("has Focus's narrow default and the default the CSS draws, both inside the range", () => {
+    expect(rule('.sidebar[data-sidebar="narrow"]')).toContain(`width: ${SIDEBAR_NARROW}px;`);
+    expect(SIDEBAR_NARROW).toBeGreaterThanOrEqual(SIDEBAR_MIN);
+    expect(SIDEBAR).toBeLessThanOrEqual(SIDEBAR_MAX);
+  });
+  it("leaves the board its room and the pane its floor at every window width from 820 to 2560, at any width asked", () => {
+    for (const win of WINDOWS) {
+      for (const asked of [0, SIDEBAR_MIN, SIDEBAR, 10_000]) {
+        const side = clampSidebar(asked, win);
+        for (const wanted of [PANE_MIN, 560, 10_000]) {
+          const pane = clampPane(wanted, win, side);
+          expect(win - side - pane, `board in ${win}px, sidebar ${asked}, pane ${wanted}`).toBeGreaterThanOrEqual(BOARD_MIN);
+          expect(pane).toBeGreaterThanOrEqual(PANE_FLOOR);
+        }
+      }
+    }
+  });
+  it("lets the widest sidebar squeeze the pane to its floor, not the board, in the narrowest window", () => {
+    expect(clampSidebar(10_000, 820)).toBe(320);
+    expect(clampPane(560, 820, 320)).toBe(290);
+    expect(clampSidebar(10_000, 770)).toBe(320);
+    expect(clampPane(560, 770, 320)).toBe(PANE_FLOOR);
+    expect(770 - 320 - PANE_FLOOR).toBe(BOARD_MIN);
+    // Past that the sidebar gives way too, so the pane keeps its floor.
+    expect(clampSidebar(10_000, 700)).toBe(250);
+    expect(clampPane(560, 700, 250)).toBe(PANE_FLOOR);
+  });
+  it("keeps the default sidebar whole in the narrowest window under every Text size, with both panes and the board in", () => {
+    // 820 px at 150% is 547 page px: the old floor, where the board is the one that's narrow.
+    for (const zoom of ["0.9", "1", "1.15", "1.3", "1.5"]) {
+      const win = layoutWidth(820, zoom);
+      const side = clampSidebar(SIDEBAR, win);
+      const pane = clampPane(560, win, side);
+      expect(side, zoom).toBe(SIDEBAR);
+      expect(side + pane, zoom).toBeLessThanOrEqual(win);
+      expect(win - side - pane, zoom).toBeGreaterThan(0);
+    }
+  });
+  it("doesn't know whether the pane is open: it always counts the pane's floor, so opening it never moves the edge", () => {
+    expect(clampSidebar.length).toBe(2);
+    expect(clampSidebar(300, 900)).toBe(300);
+    // 900 - 210 - 240 = 450 leaves room for 300; the pane's floor is what stops a wider one at 770.
+    expect(clampSidebar(300, 770)).toBe(300);
+    expect(clampSidebar(300, 650)).toBe(SIDEBAR);
+  });
+  it("moves the pane's room with it: a wider sidebar means a narrower pane at the same window", () => {
+    expect(clampPane(10_000, 1440, SIDEBAR)).toBe(1020);
+    expect(clampPane(10_000, 1440, 320)).toBe(910);
+    expect(clampPane(10_000, 1440, SIDEBAR_MIN)).toBe(1080);
+    expect(railBeside(1440, 560, SIDEBAR)).toBe(true);
+    expect(railBeside(1440, 560, 320)).toBe(true);
+    expect(railBeside(1000, 560, 320)).toBe(false);
   });
 });

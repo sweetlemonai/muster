@@ -13,7 +13,8 @@ Every keyboard shortcut in the app, and the slash commands for Claude Code. This
 | ⌘+ | Make everything larger: the board, the panes and the manual (the size is remembered; also in Settings, Appearance, Text size) | Anywhere in the window |
 | ⌘− | Make everything smaller | Anywhere in the window |
 | ⌘0 | Back to 100% | Anywhere in the window |
-| ← → | Widen or narrow the pane by 40 pixels (the width is remembered) | The pane's edge, once Tab has put the focus on it |
+| ← → | Move the edge of the pane or the projects sidebar 40 pixels: → to the right, ← to the left (the width is remembered) | The edge of the pane or the projects sidebar, once Tab has put the focus on it |
+| Shift ← → | The same in steps of 120 pixels | The edge of the pane or the projects sidebar, once Tab has put the focus on it |
 
 ## Search and views
 

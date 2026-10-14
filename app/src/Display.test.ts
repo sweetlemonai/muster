@@ -351,7 +351,8 @@ describe("the sidebar in each mode", () => {
     expect(html).not.toContain('aria-label="Order projects"');
     expect(html).toMatch(/<i class="dot side-dot" title="Being worked on now: [^"]*"><\/i><span class="side-name">zeta<\/span>/);
     expect(html).not.toMatch(/side-dot[^>]*><\/i><span class="side-name">alpha</);
-    expect(appSource).toContain('data-sidebar={look("sidebar", modes.mode)}');
+    expect(appSource).toContain('const sidebarLook = look("sidebar", modes.mode);');
+    expect(appSource).toContain("data-sidebar={sidebarLook}");
   });
 
   it("Focus still marks a stalled project, and keeps its Ask for a check-in (review)", () => {

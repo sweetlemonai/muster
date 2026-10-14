@@ -4,15 +4,25 @@ Every view and pane of the Muster app, and what each control does. A **?** besid
 
 ## The window at a glance
 
-- **Left:** the projects (see [The projects sidebar](#the-projects-sidebar)).
+- **Left:** the projects (see [The projects sidebar](#the-projects-sidebar)). Drag its right edge to resize it, see [Resizing the sidebar and the pane](#resizing-the-sidebar-and-the-pane).
 - **Top:** **+ New task**, then the views: **Board**, **Table**, **Timeline** and **Graph** (four views of the same tasks), **Helper**, **Waiting for you**, **Activity**, **Problems**, **Help** and **Settings** (where [Appearance](#appearance) is). Then the display mode, **ADHD**, **Standard** or **Focus**, as a chip that opens [Display](#display), and "live" with a dot while the app is reading the queues. If it can't read them, that spot says "Can't read the queues"; point at it to see why.
-- **Right:** the **pane**, when one is open: a task, a backlog note or New task. It docks beside the content, which shrinks and stays live, so nothing ever covers the board. Drag the pane's edge to resize it (the width is remembered; it stops where the board would get too narrow, and in a narrow window, or with the text zoomed in, it's made narrower to fit, down to 240 px), and press Esc to close it.
+- **Right:** the **pane**, when one is open: a task, a backlog note or New task. It docks beside the content, which shrinks and stays live, so nothing ever covers the board. Drag the pane's edge to resize it (see [Resizing the sidebar and the pane](#resizing-the-sidebar-and-the-pane)), and press Esc to close it.
 
 The app reads the queues every 2 seconds while its window is visible, and stops while it's hidden.
 
 **The Dock badge:** Muster's icon in the Dock shows how many tasks need you, across every project you show, so you see it without opening the window. It's the same count as the sidebar's with **All** selected (see [What needs you](02-concepts.md#what-needs-you)), and there's no badge at 0. While the window is hidden or minimized, the app still reads the queues every 15 seconds for the badge alone. It's there while the app runs; quitting Muster takes it away.
 
 **Notifications:** when something new waits for you, Muster posts one Mac notification, with several new things in one. See [Notifications](#notifications) to turn them off.
+
+## Resizing the sidebar and the pane
+
+The projects sidebar on the left and the pane on the right resize the same way, by the thin handle on the edge between each and the board (it lights up when you point at it, focus it or drag it).
+
+- **Drag** the handle. The pane follows the pointer as you go; the board takes up the rest.
+- **Double-click** it to go back to the default width: 210 px for the sidebar (150 px in Focus), 560 px for the pane.
+- **Tab** to it and press **← →** to move the edge 40 px, with **Shift** 120 px. → moves the edge to the right, so it widens the sidebar and narrows the pane. A screen reader hears it as a separator with its width, narrowest and widest.
+- The sidebar goes from 150 to 320 px, so names never shrink to nothing; the pane from 360 px up, as wide as the window leaves room for.
+- Each width is remembered on this Mac, and it follows the window and **Text size**: when the window gets narrower, or the text larger, the pane gives way first (down to 240 px), then the board keeps at least 210 px for as long as the window allows; the sidebar never shrinks below its default except by your hand. If a saved width is damaged, the default is used.
 
 ## The projects sidebar
 

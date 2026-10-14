@@ -9,3 +9,4 @@ export { Pill } from "./Pill";
 export { Segment } from "./Segment";
 export { Segmented } from "./Segmented";
 export { StatusPill, type PillStatus } from "./StatusPill";
+export { Splitter, type SplitterProps } from "./Splitter";

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
-import { Button, Pill } from "./ui";
+import { Button, Pill, Splitter } from "./ui";
 import { mayLeave } from "./writeUp";
 import { ago, columns, estimateTotal, feed, key, STAGES } from "./lib";
 import { keyIndex } from "./taskKey";
@@ -23,7 +23,9 @@ import { focusSearchBox, searchView, windowKey } from "./keys";
 import WaitingList from "./WaitingList";
 import { lessonsWaiting } from "./Lessons";
 import Recent from "./Recent";
-import { clampPane, layoutWidth, PANE_DEFAULT, railBeside } from "./paneSize";
+import { clampPane, clampSidebar, layoutWidth, PANE_DEFAULT, paneRange, railBeside, SIDEBAR, SIDEBAR_NARROW, sidebarRange } from "./paneSize";
+import { PANE_KEY, SIDEBAR_KEY, useSplitWidth } from "./splitter";
+import { ZOOM_EVENT } from "./zoom";
 import EffortGroups, { useAcceptResults } from "./EffortGroups";
 import { CheckCount, ColumnLine, OverLine } from "./CheckLimit";
 import { overLimit } from "./yourCheckLimit";
@@ -47,7 +49,6 @@ type View = "board" | "table" | "timeline" | "graph" | "helper" | "waiting" | "a
 // One docked pane beside the content, never over it (the owner wants everything in view).
 type Pane = { kind: "task"; key: string } | { kind: "note"; key: string } | { kind: "new" } | null;
 const POLL_MS = 2000;
-const PANE_KEY = "muster.paneWidth";
 
 // Poll the core while the window is visible; stop when it's hidden.
 function useQueues() {
@@ -125,14 +126,20 @@ function useSearchIndex(queue: string, tasks: Task[], searching: boolean): { ind
 /** The window's width in the page's pixels, under the ⌘+ zoom (paneSize.ts `layoutWidth`). */
 const pageWidth = () => layoutWidth(window.innerWidth, document.documentElement.style.getPropertyValue("zoom"));
 
-function usePaneWidth(): [number, (w: number) => void] {
-  const [w, setW] = useState(() => Number(localStorage.getItem(PANE_KEY)) || PANE_DEFAULT);
-  const set = useCallback((v: number) => {
-    const c = clampPane(v, pageWidth());
-    setW(c);
-    localStorage.setItem(PANE_KEY, String(c));
+/** The window's width in the page's pixels, kept current: the window resizing and the Text size
+ *  changing both draw the sidebar and the pane again, fitted to what's left. */
+function usePageWidth(): number {
+  const [w, setW] = useState(pageWidth);
+  useEffect(() => {
+    const update = () => setW(pageWidth());
+    window.addEventListener("resize", update);
+    window.addEventListener(ZOOM_EVENT, update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener(ZOOM_EVENT, update);
+    };
   }, []);
-  return [w, set];
+  return w;
 }
 
 /** Group by for the board and the table, remembered between launches. */
@@ -189,16 +196,20 @@ export default function App() {
   const [views, setViews] = useSavedViews(queue);
   const searchRef = useRef<HTMLInputElement>(null);
   const [focusSearch, setFocusSearch] = useState(0);
-  const [width, setWidth] = usePaneWidth();
-  // Fitted to the window each render (every poll is one), so a narrower window still leaves the
-  // board its room. On the board, Recently finished (0051) goes under the board when the row
-  // can't hold it beside (paneSize.ts).
-  const win = pageWidth();
-  const paneWidth = clampPane(width, win);
-  const railSide = railBeside(win, pane ? paneWidth : 0);
   const [groupBy, setGroupBy] = useGroupBy();
   const [who, setWho] = useForFilter();
   const [modes, setModes] = useDisplayMode();
+  // The sidebar's and the pane's widths (0058), the owner's or the default, fitted to the window
+  // each render (and each resize or Text size change), so a narrower window still leaves the board
+  // its room. On the board, Recently finished (0051) goes under the board when the row can't hold
+  // it beside (paneSize.ts).
+  const win = usePageWidth();
+  const [sideAsked, setSideAsked, resetSide] = useSplitWidth(SIDEBAR_KEY);
+  const [paneAsked, setPaneAsked, resetPane] = useSplitWidth(PANE_KEY);
+  const sidebarLook = look("sidebar", modes.mode);
+  const sidebarWidth = clampSidebar(sideAsked ?? (sidebarLook === "narrow" ? SIDEBAR_NARROW : SIDEBAR), win);
+  const paneWidth = clampPane(paneAsked ?? PANE_DEFAULT, win, sidebarWidth);
+  const railSide = railBeside(win, pane ? paneWidth : 0, sidebarWidth);
   // The columns Focus folds that a click opened, and the filter bar ⌘F brought out in Focus: both
   // until the mode changes.
   const [opened, setOpened] = useState<ReadonlySet<string>>(NO_COLUMNS);
@@ -367,11 +378,12 @@ export default function App() {
     <Mode.Provider value={modes.mode}>
     <Labels.Provider value={labels}>
     <div className="app shell">
-      <aside className="sidebar" aria-label="Projects" data-sidebar={look("sidebar", modes.mode)}>
+      <aside className="sidebar" aria-label="Projects" data-sidebar={sidebarLook} style={{ width: sidebarWidth }}>
         <div className="brand"><img src={logo} alt="" width={22} height={22} /> Muster</div>
         <ProjectList queues={state?.queues ?? []} tasks={state?.tasks ?? []} notes={allNotes} activity={state?.activity ?? []} now={now} current={queue} onPick={setQueue} onLabel={(k, label) => api.setProjectLabel(k, label).then(refresh)} />
         <button className="side-add" onClick={() => openSettings("projects")} title="New or existing project queue, in Settings">+ Project</button>
       </aside>
+      <Splitter {...sidebarRange(win)} width={sidebarWidth} side="left" label="Projects width" onWidth={(w) => setSideAsked(clampSidebar(w, pageWidth()))} onReset={resetSide} />
       <div className="main-col">
       <header className="top">
         <Button variant="primary" className="new" onClick={() => go({ kind: "new" })} disabled={!state?.queues.length} title="New task (⌘N)">+ New task</Button>
@@ -554,7 +566,7 @@ export default function App() {
 
         {pane && (
           <>
-            <Splitter width={paneWidth} onWidth={setWidth} />
+            <Splitter {...paneRange(win, sidebarWidth)} width={paneWidth} side="right" label="Details width" onWidth={(w) => setPaneAsked(clampPane(w, pageWidth(), sidebarWidth))} onReset={resetPane} />
             <aside className="pane" style={{ width: paneWidth }} aria-label="Details">
               {pane.kind === "task" && openTask && (
                 <Suspense fallback={<p className="none">Loading…</p>}>
@@ -587,35 +599,5 @@ export default function App() {
     </Mode.Provider>
     </Machine.Provider>
     </OpenHelp.Provider>
-  );
-}
-
-/** The drag handle between the content and the pane. */
-function Splitter({ width, onWidth }: { width: number; onWidth: (w: number) => void }) {
-  return (
-    <div
-      className="splitter"
-      role="separator"
-      aria-orientation="vertical"
-      aria-valuenow={width}
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === "ArrowLeft") onWidth(width + 40);
-        if (e.key === "ArrowRight") onWidth(width - 40);
-      }}
-      onMouseDown={(e) => {
-        e.preventDefault();
-        const startX = e.clientX;
-        const start = width;
-        const move = (ev: MouseEvent) => onWidth(start + (startX - ev.clientX));
-        const up = () => {
-          window.removeEventListener("mousemove", move);
-          window.removeEventListener("mouseup", up);
-        };
-        window.addEventListener("mousemove", move);
-        window.addEventListener("mouseup", up);
-      }}
-      title="Drag to resize"
-    />
   );
 }
