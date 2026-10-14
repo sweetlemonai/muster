@@ -4,6 +4,20 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Blocked says plainly what it waits for (mu-60); agent teams spike (mu-40)
+**Did:** each block kind has its own words and look from one table (`blockWords.ts` BLOCK_LOOKS,
+Rust `block::look`): "Your answer: Q2 …" with Answer in place, "Your action: …", "Permission: …"
+in the needs-you orange; "After mu-14, mu-16" and "Outside: …" neutral. A wait on other tasks alone
+is never red (card, table, timeline, graph, column count). Waiting for you puts questions, blocks
+and your own tasks first. The answer box has its own file, so the pane stays lazy. mu-40: decision
+0008 (agent teams; a teammate is session + agent).
+**Decided:** blocks band above Your check in Waiting for you (they stop agents); a non-escalated
+question stays neutral; the "blocked" filter still matches waits on tasks.
+**Verified:** `bin/gate` → `gate: green (pnpm check, test_task, test_commands, cargo test
+(Kiritimati))` on 8a98616; one reviewer (3 findings, fixed); headless shots of the table and Waiting
+for you, light and dark.
+**Open:** "Done, unblock" and "Open to answer" buttons touch (no gap) in Waiting for you.
+
 ## 2026-10-13 — Mac notifications: one notification when something new waits for you (task 0052)
 **Did:** `app/src-tauri/src/notify.rs` splits what the Dock badge counts into items (Your check by
 when it came in, each escalated question, blocked on you or by a permission, a session waiting for
