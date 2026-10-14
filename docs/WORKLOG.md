@@ -4,6 +4,29 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Coordinator (Muster_Team_Lead_2 and _3): mu-81, mu-78, mu-80 and mu-83 merged, mu-82 sent back, mu-77 rebased
+**Did:** after release-app QA, merged mu-81 (721a34c) and mu-78 (43d7d8b, 72f34df). mu-74 passed to
+Your check after its live AC4 run. The layer's main fast-forwarded to 713be8f (mu-74's round-1
+fixes). Reviewed Testing with one agent per task, no lens subagents: mu-80 approve with a nit
+(merged c755938), mu-83 approve in round 2 (merged c7f9e1b), mu-77 approve in round 3, mu-82 sent
+back (R1: at the 150px sidebar a folded heading's "need you" can't shrink and runs past the edge).
+mu-77's merge hit a rebase conflict (vite.config.ts: mu-78 already had `*.test.{ts,tsx}`) and
+mu-80's test that AS_BUILT names every `bin/` script: rebased keeping main's line, added `bin/run`
+to AS_BUILT §2 (df9a280), back in Building for Asghar to pass again. The release app was rebuilt
+from 72f34df.
+**Decided:** L6 accepted. mu-80's nit (`$HOME` swapped as a plain substring; a wrong commit cited
+for mu-52) and the earlier nits go to backlog notes, not extra rounds. L7 and L8 (unquoted
+arguments in stubs; tests that need `app/node_modules`) are proposed; accepting them needs
+`--as owner`, which the permission check refused, so they wait for the owner.
+**Verified:** `bin/gate` green in each worktree, run outside the sandbox (inside it the gate goes
+red on EPERM only), and again by each `muster pass`. QA in a release build beside the running
+Muster: mu-83 on braindump in Focus and Standard (strips line up, open columns at card width);
+mu-77's `bin/run` built and opened a second Muster (pids 27945 and 41510, different paths).
+projects.json and settings.json byte-identical to the backup after QA; mode back to Focus.
+**Open:** mu-82 R1 with Asghar; mu-77 waits for Asghar's pass. Your check holds 11, over the
+limit of 5. A branch cut before mu-81 still shows the crushed theme picker in its QA build; the
+merge rebases it away.
+
 ## 2026-10-14 — The board's columns: empty strips line up, open columns stop at 400px (mu-83)
 **Fixed:** on a mostly empty board the strips sat at different heights, their top borders merged and
 the one open column stretched to ~1400px (owner: "mess in board UI") → an empty column's state class
