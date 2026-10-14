@@ -4,6 +4,14 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Runner and monitor tests don't depend on machine speed (mu-63)
+**Fixed:** `agents::tests::the_runner_*` and the monitor test went red under parallel builds (5 s
+waits, a `< 2 s` assertion) → the wait loop takes a clock (`run_with`, `wait`), fake clocks test the
+timeout, the real-process timeout test fires when the fake `claude` is ready, a held fetch proves
+the monitor never blocks; bounds that are never waited out are 60 s.
+**Verified:** all 20 `agents::tests` 5 rounds in a row with two release builds compiling (load 23–33):
+5/5 green; `bin/gate` → `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`.
+
 ## 2026-10-14 — Layout fixes from the visual QA (mu-61)
 **Fixed:** Settings › Projects crushed Folder/Gate to a word per line → the gate sits on a line under
 each row, the prefix field is 4ch, Set/Save/Cancel/limit Set are bordered ui Buttons; the pane's
