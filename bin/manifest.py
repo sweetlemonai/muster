@@ -146,6 +146,20 @@ def guess_kind(waiting_on: str) -> str:
     return "outside"
 
 
+# The stages a task can be paused in (0045, pause.rs PAUSABLE), and "paused" as a word in any case
+# (0059, old_pause.rs says_paused).
+PAUSABLE = ["backlog", "shaping", "ready", "building", "testing"]
+PAUSED_WORD = re.compile(r"(?<![^\W_])paused(?![^\W_])", re.I)
+
+
+def old_pause(t: dict, blocked: bool) -> bool:
+    """A pause from before `muster pause` (0059, old_pause.rs is_old_pause): a task in a stage it can
+    be paused in, flagged blocked (not by an old block on a task id) with a reason that says paused,
+    and not paused already. `muster check --fix-pauses` makes it a pause."""
+    return (blocked and not t["paused"] and t["level"] == "task" and t["blocked_kind"] != "tasks"
+            and t["stage"] in PAUSABLE and bool(PAUSED_WORD.search(t["waiting_on"])))
+
+
 def mirror_status(stage: str, blocked: bool) -> str:
     """The old status a stage and the blocked flag mean (ops.rs/queue.rs mirror_status)."""
     if blocked:
@@ -549,7 +563,11 @@ def main():
             typed = fields.get("blocked-kind", "").lower()
             t["blocked_kind"] = (typed if typed in TYPED_KINDS else guess_kind(t["waiting_on"])) if blocked else ""
             t["_kind_guessed"] = blocked and typed not in TYPED_KINDS
-            if t["_kind_guessed"]:
+            if old_pause(t, blocked):
+                block_warnings.append(
+                    f"{rel}: paused the old way, as a block on {t['waiting_on'][:80]!r};"
+                    f" make it a pause: muster check --fix-pauses")
+            elif t["_kind_guessed"]:
                 block_warnings.append(
                     f"{rel}: blocked on {t['waiting_on'][:80]!r} without a kind, read as {t['blocked_kind']};"
                     f" block it again with one to confirm")

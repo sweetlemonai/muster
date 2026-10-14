@@ -700,6 +700,23 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .card-ping.bare { margin-top: -6px; padding: 0 8px 2px; border: 0; background: none; }
 .card-ping.bare button { border-color: transparent; padding: 0 2px; }
 .ui-status-pill.ui-status-pill--paused, .ui-badge.ui-badge--paused { background: none; border: 1px solid var(--muted); color: var(--muted); }
+/* The Paused lane (mu-59), before Backlog: the paused grey, dashed, so it never reads as a stage;
+   the glyph is in its name, so no dot. Its cards take its grey too (paused never takes a stage's
+   colour, docs/DESIGN.md); the card says the stage it was in. Grouped, its band
+   lays the cards side by side, as the Backlog band does. */
+.col-paused { --status: var(--muted); border-top-style: dashed; }
+.col-paused h2::before { display: none; }
+.ui-status-pill.was { margin-left: 4px; }
+.paused-board { grid-template-columns: 1fr; }
+.paused-board .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); align-items: start; overflow: visible; }
+/* The one-time offer to convert old pauses (mu-59): inline above the board, never over it. */
+.old-pauses { flex: none; margin: 4px 14px 0; padding: 8px 12px; border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: var(--radius); font-size: 12.5px; }
+.old-pauses p { margin: 0 0 6px; }
+.old-pauses ul { margin: 0 0 8px; padding-left: 18px; max-height: 9em; overflow-y: auto; }
+.old-pauses-do { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.old-pauses button { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 6px; padding: 4px 12px; }
+.old-pauses button:disabled { opacity: 0.5; }
+.old-pauses .ui-button--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .pause-btn { border: 1px solid var(--line); background: none; color: var(--muted); border-radius: 6px; padding: 0 7px; font-size: 11.5px; line-height: 18px; }
 .pause-btn:not(:disabled):hover, .pause-btn:focus-visible { color: var(--text); border-color: var(--muted); }
 .tl-pause { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--muted) 55%, transparent) 0 3px, var(--panel) 3px 7px); border-left: 1px solid var(--muted); border-right: 1px solid var(--muted); pointer-events: none; }

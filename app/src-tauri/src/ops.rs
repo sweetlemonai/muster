@@ -2978,6 +2978,37 @@ pub fn unblock_task(root: &Path, id: &str, who: &str, stamp: &str) -> Result<Str
     })
 }
 
+/// `unblock_task`'s change for a caller that holds the queue's lock (0059, `old_pause::convert`):
+/// the flag cleared, the status mirror (and in an old queue the folder) back to what the stage
+/// means, the claim's lease restarted at `stamp` as for any unblock. The unblocked line is stamped
+/// `at` instead, and `then` follows it. Refused when it isn't flagged. Returns the new path.
+pub(crate) fn unblock_locked_at(
+    root: &Path,
+    id: &str,
+    who: &str,
+    stamp: &str,
+    at: &str,
+    then: &[String],
+) -> Result<String, String> {
+    change_locked(root, id, who, stamp, |t| {
+        if !t.blocked {
+            return Err(format!("{id} isn't blocked"));
+        }
+        let mut log = vec![unblocked_line(at, who, &was_waiting(t))];
+        log.extend(then.iter().cloned());
+        Ok(Change {
+            stage: t.stage.clone(),
+            blocked: false,
+            waiting_on: String::new(),
+            blocked_kind: String::new(),
+            depends: None,
+            claimed_by: t.claimed_by.clone(),
+            commit: None,
+            log,
+        })
+    })
+}
+
 /// The owner's (or capture's) override: put a task in any stage, logged with `(set)`. Leaving
 /// Building releases its claim; the blocked flag stays. `from` is the stage the caller saw it in:
 /// when given, the move is refused if the task has moved on since (as `pass_task`).

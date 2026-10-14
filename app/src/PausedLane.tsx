@@ -1,0 +1,71 @@
+import { Fragment, type ReactNode } from "react";
+import ColumnCards from "./ColumnCards";
+import { needsYouCount } from "./human";
+import { key } from "./lib";
+import { blockedCount, ColumnHead, FoldCounts } from "./ModeViews";
+import type { ColumnFold, ColumnFolds } from "./modes";
+import { PAUSE_GLYPH } from "./Pause";
+import type { Task } from "./types";
+
+// The Paused lane (mu-59): paused tasks wait at the board's left, beside Backlog, out of the
+// working columns. It's only a view: a paused task keeps its stage and claim (lib.ts `columns`
+// puts it here), so Resume puts it back in its column. Always there with its count, a thin
+// labelled strip when empty, and Focus (0038) folds it as it folds Backlog.
+
+/** The lane as a board column's head reads it. */
+export const PAUSED_LANE = { id: "paused", label: `${PAUSE_GLYPH} Paused`, role: "Resume puts it back in its column" };
+
+/** The lane's width in the board's grid: a column while it holds anything and isn't folded, else
+ *  the strip an empty column narrows to. */
+export const pausedLaneWidth = (count: number, fold: ColumnFold) => (count > 0 && fold !== "folded" ? "minmax(118px, 1fr)" : "44px");
+
+/** The plain board's Paused lane: a column like the stages', first in the row. */
+export function PausedColumn({ tasks, fold, onFold, renderCard }: { tasks: Task[]; fold: ColumnFold; onFold: () => void; renderCard: (t: Task) => ReactNode }) {
+  return (
+    <section className={`column col-paused${fold === "folded" ? " folded" : tasks.length ? "" : " empty"}`}>
+      <ColumnHead stage={PAUSED_LANE} count={tasks.length} needs={needsYouCount(tasks)} blocked={blockedCount(tasks)} fold={fold} onFold={onFold}>
+        <span className="role">{PAUSED_LANE.role}</span>
+      </ColumnHead>
+      <ColumnCards>
+        {tasks.map((t) => (
+          <Fragment key={key(t)}>{renderCard(t)}</Fragment>
+        ))}
+        {tasks.length === 0 && <p className="none">Nothing paused</p>}
+      </ColumnCards>
+    </section>
+  );
+}
+
+/** The grouped board's Paused band, first, as the lane is on the plain board: every paused task
+ *  in view, whichever feature or goal it's under (its card says which), side by side. With nothing
+ *  paused it's its head alone. Focus folds it to its head, a button with its counts. */
+export function PausedBand({ tasks, renderCard, fold }: { tasks: Task[]; renderCard: (t: Task) => ReactNode; fold?: ColumnFolds }) {
+  const count = `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`;
+  const folded = fold?.of(PAUSED_LANE.id) ?? "fixed";
+  return (
+    <section className={`band paused-band${tasks.length ? "" : " empty"}`}>
+      {folded === "fixed" ? (
+        <div className="band-head" title={PAUSED_LANE.role}>
+          <span className="band-title">{PAUSED_LANE.label}</span>
+          <span className="meta">{count}</span>
+        </div>
+      ) : (
+        <button type="button" className="band-fold" aria-expanded={folded === "opened"} onClick={() => fold?.toggle(PAUSED_LANE.id)} title={folded === "folded" ? "Open Paused: Focus folds it" : "Fold Paused back, as Focus has it"}>
+          {PAUSED_LANE.label} <small>{count}</small>
+          <FoldCounts needs={needsYouCount(tasks)} blocked={blockedCount(tasks)} />
+        </button>
+      )}
+      {folded !== "folded" && tasks.length > 0 && (
+        <div className="board band-board paused-board">
+          <section className="column col-paused">
+            <ColumnCards>
+              {tasks.map((t) => (
+                <Fragment key={key(t)}>{renderCard(t)}</Fragment>
+              ))}
+            </ColumnCards>
+          </section>
+        </div>
+      )}
+    </section>
+  );
+}

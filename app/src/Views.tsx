@@ -116,8 +116,17 @@ function Row({ t, now, multi, active, onOpen, words }: { t: Task; now: number; m
       <td className={`kind ${t.kind}`}>{t.kind}</td>
       <td><span className={`pri pri-${t.priority || "normal"}`}>{t.priority || "normal"}</span></td>
       <td>
-        {parentLevel ? <StatusPill status={shownStageClass(t)}>{shownStageLabel(t)}</StatusPill> : <StatusPill status={stageOf(t)}>{stageLabel(t.stage)}</StatusPill>}
-        {t.paused && <StatusPill status="paused">{`${PAUSE_GLYPH} Paused`}</StatusPill>}
+        {/* A paused task (mu-59) reads as the board's Paused lane has it: Paused, then where it was. */}
+        {parentLevel ? (
+          <StatusPill status={shownStageClass(t)}>{shownStageLabel(t)}</StatusPill>
+        ) : t.paused ? (
+          <>
+            <StatusPill status="paused">{`${PAUSE_GLYPH} Paused`}</StatusPill>
+            <StatusPill status={stageOf(t)} className="was">{`was ${stageLabel(t.stage)}`}</StatusPill>
+          </>
+        ) : (
+          <StatusPill status={stageOf(t)}>{stageLabel(t.stage)}</StatusPill>
+        )}
         {blockedRed(t) && <StatusPill status="blocked">blocked</StatusPill>}
       </td>
       <td className="meta">{isBlocked(t) ? <BlockWhy t={t} short pill={false} /> : holder(t)}</td>
@@ -240,7 +249,7 @@ export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen,
                 {p.pauses.map((g) => (
                   <span key={`p${g.left}`} className="tl-pause" style={{ left: pct(g.left), width: pct(g.width) }} />
                 ))}
-                <span className="tl-bar-text">{stageLabel(t.stage)}{t.paused ? " · paused" : ""}{isBlocked(t) ? " · blocked" : ""}{t.priority === "high" ? " · high" : ""}</span>
+                <span className="tl-bar-text">{t.paused ? `Paused · was ${stageLabel(t.stage)}` : stageLabel(t.stage)}{isBlocked(t) ? " · blocked" : ""}{t.priority === "high" ? " · high" : ""}</span>
               </span>
             </span>
           </button>

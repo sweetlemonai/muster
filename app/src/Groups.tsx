@@ -13,6 +13,7 @@ import { BandCount } from "./CheckLimit";
 import { StatusPill } from "./ui";
 import type { Over } from "./yourCheckLimit";
 import ProjectName from "./ProjectName";
+import { PausedBand } from "./PausedLane";
 
 /** Group by: None · Feature · Goal, on screen above the board and the table, the current one lit. */
 export function GroupByChips({ value, onChange }: { value: GroupBy; onChange: (g: GroupBy) => void }) {
@@ -104,7 +105,8 @@ function BacklogBand({ by, parts, tasks, renderCard, fold }: { by: "feature" | "
 /** The board grouped: one band per feature or goal, the stage columns inside each, each column
  *  in the board's sort (task 0032). Goals and features are the bands, never cards in the columns.
  *  With `backlog`, the Backlog band comes first and takes the Backlog tasks of the last band
- *  (No feature or No goal), which then holds the rest. */
+ *  (No feature or No goal), which then holds the rest. The Paused band (mu-59) goes before it and
+ *  takes every band's paused tasks, as the Paused lane does on the plain board. */
 export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderCard, onChanged, backlog, fold, limit }: {
   groups: Group[];
   by: "feature" | "goal";
@@ -123,14 +125,16 @@ export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderC
   limit?: { over: Over[]; queue: string };
 }) {
   const results = useAcceptResults();
+  const paused = columns(groups.flatMap((g) => g.items), sort).paused;
   const loose = backlog ? groups.find((g) => !g.head) : undefined;
   const looseBacklog = loose ? columns(loose.items, sort).backlog : [];
-  const rest = loose ? loose.items.filter((t) => boardColumn(t) !== "backlog") : [];
+  const rest = loose ? loose.items.filter((t) => !t.paused && boardColumn(t) !== "backlog") : [];
   const bands = loose ? groups.flatMap((g) => (g !== loose ? [g] : rest.length ? [{ head: null, items: rest }] : [])) : groups;
   return (
     <main className="bands">
+      <PausedBand tasks={paused} renderCard={renderCard} fold={fold} />
       {backlog && <BacklogBand by={by} parts={backlog} tasks={looseBacklog} renderCard={renderCard} fold={fold} />}
-      {bands.length === 0 && looseBacklog.length === 0 && <p className="empty">No tasks match.</p>}
+      {bands.length === 0 && looseBacklog.length === 0 && paused.length === 0 && <p className="empty">No tasks match.</p>}
       {bands.map((g) => {
         const cols = columns(g.items, sort);
         // The band's Your check keeps its place while Accept all's result line has something to say.
@@ -141,6 +145,8 @@ export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderC
             <BandHead group={g} by={by} multi={multi} active={!!g.head && openKey === key(g.head)} onOpen={onOpen} />
             {g.items.length === 0 ? (
               <p className="none">No tasks yet</p>
+            ) : g.items.every((t) => t.paused) ? (
+              <p className="none">Every task here is paused: they're in Paused, at the top</p>
             ) : (
               <div className="board band-board" style={{ gridTemplateColumns: STAGES.map((s) => ((cols[s.id] ?? []).length || kept(s.id)) && fold?.of(s.id) !== "folded" ? "minmax(118px, 1fr)" : "44px").join(" ") }}>
                 {STAGES.map((c) => {

@@ -56,8 +56,9 @@ describe("stages", () => {
     expect(earlierStages("backlog")).toEqual([]);
     expect(earlierStages("weird")).toEqual([]);
   });
-  it("in progress is Building and Testing", () => {
+  it("in progress is Building and Testing, not while paused (mu-59)", () => {
     expect(STAGES.filter((s) => inProgress(task({ stage: s.id }))).map((s) => s.id)).toEqual(["building", "testing"]);
+    expect(STAGES.filter((s) => inProgress(task({ stage: s.id, paused: "2026-10-13 10:00" })))).toEqual([]);
   });
   it("says who else holds Ready or Building (the owner can't pass those)", () => {
     expect(heldByOther(task({ stage: "building", claimedBy: "drover/main (session 3fba2222)" }))).toBe("drover/main");
@@ -101,8 +102,27 @@ describe("stages", () => {
 });
 
 describe("columns", () => {
-  it("has one column per stage, in order", () => {
-    expect(Object.keys(columns([]))).toEqual(STAGES.map((s) => s.id));
+  it("has the Paused lane, then one column per stage, in order (mu-59)", () => {
+    expect(Object.keys(columns([]))).toEqual(["paused", ...STAGES.map((s) => s.id)]);
+  });
+  it("puts a paused task only in the Paused lane, out of its stage's column; resumed, it's back where it was (mu-59)", () => {
+    const claim = "wt-a (wt-0045 · session 7b5e8856 · cc-hg)";
+    const held = task({ id: "0002", stage: "building", claimedBy: claim, paused: "2026-10-13 10:00", pausedWhy: "later" });
+    const c = columns([task({ id: "0001", stage: "building" }), held, task({ id: "0003", stage: "backlog", paused: "2026-10-13 09:00" }), task({ id: "0004", forWho: "human", stage: "ready", paused: "2026-10-13 09:00" })]);
+    expect(c.paused.map((t) => t.id)).toEqual(["0002", "0003", "0004"]);
+    expect(c.building.map((t) => t.id)).toEqual(["0001"]);
+    expect(c.backlog).toEqual([]);
+    expect(c.ready).toEqual([]);
+    // The lane is only a view: the stage and the claim are the task's, untouched.
+    expect(c.paused[0]).toMatchObject({ stage: "building", claimedBy: claim });
+    // Resume clears the pause and nothing else: the next poll puts it back in its column.
+    const back = columns([task({ id: "0001", stage: "building" }), { ...held, paused: "", pausedWhy: "" }]);
+    expect(back.paused).toEqual([]);
+    expect(back.building.map((t) => [t.id, t.claimedBy])).toEqual([["0001", ""], ["0002", claim]]);
+    // The lane keeps the board's sort.
+    const sorted = columns([task({ id: "0005", paused: "x" }), task({ id: "0006", paused: "x", priority: "high" })]);
+    expect(sorted.paused.map((t) => t.id)).toEqual(["0006", "0005"]);
+    expect(columns([task({ id: "0005", paused: "x" }), task({ id: "0006", paused: "x", priority: "high" })], "id").paused.map((t) => t.id)).toEqual(["0005", "0006"]);
   });
   it("puts each task in its stage's column, blocked ones too, unknown ones in Backlog", () => {
     const c = columns([

@@ -882,6 +882,31 @@ class TaskTests(unittest.TestCase):
         # Blocked on you or by a permission waits on the owner; a question, outside or tasks don't.
         self.assertEqual(sorted(manifest["waiting_for_owner"]), ["0050", "0052", "0057"])
 
+    def test_manifest_warns_about_an_old_pause_as_muster_check_does(self):
+        # Task 0059: a block from before `muster pause` whose reason says paused is pointed at
+        # --fix-pauses, not at giving it a kind; another reason, an old block on a task id, one
+        # paused already and one in Your check keep their own words.
+        def put(folder: str, id_: str, fm: str) -> None:
+            (self.root / folder / f"{id_}-b.md").write_text(
+                TASK_FILE.replace("id: 0042", f"id: {id_}").replace("waiting_on:\n", "")
+                .replace("status: doing", fm).replace("claimed-by: wt-a (session aaaa1111)\n", "claimed-by:\n"))
+        put("blocked", "0050", "status: blocked\nwaiting_on: owner (paused)")
+        put("blocked", "0051", "status: blocked\nstage: building\nwaiting_on: owner: paused\nblocked-kind: you")
+        put("blocked", "0052", "status: blocked\nwaiting_on: owner: unpaused soon")
+        put("blocked", "0053", "status: blocked\nwaiting_on: 0042 (paused)")
+        put("blocked", "0054", "status: blocked\nstage: ready\nwaiting_on: paused\npaused: 2026-10-13 09:00")
+        put("blocked", "0055", "status: blocked\nstage: your-check\nwaiting_on: paused\nblocked-kind: outside")
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        for id_, what in (("0050", "owner (paused)"), ("0051", "owner: paused")):
+            self.assertIn(
+                f"warning: blocked/{id_}-b.md: paused the old way, as a block on {what!r};"
+                " make it a pause: muster check --fix-pauses", r.stdout)
+        self.assertEqual(r.stdout.count("paused the old way"), 2, r.stdout)
+        for id_ in ("0052", "0053", "0054"):
+            self.assertIn(f"blocked/{id_}-b.md: blocked on", r.stdout)
+        self.assertNotIn("0055-b.md", r.stdout)
+
     def test_manifest_reads_blocked_by_tasks_as_the_core_does(self):
         # Task 0042: the shared dependency cases (app/src/deps-cases.json), which `muster list` and
         # the app are held to as well. A dependency is met once merged: an agent's task in Your

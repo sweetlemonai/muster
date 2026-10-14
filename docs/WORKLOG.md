@@ -4,6 +4,30 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-13 — Paused tasks go to their own lane; old "paused" blocks become pauses (task 0059)
+**Did:** a Paused lane before Backlog (`PausedLane.tsx`, `lib.ts` `columns()`): paused tasks show
+there with "was Building · paused 2 h ago · why", not in their column; the stage and claim are
+kept, so Resume puts them back. Column and in-progress counts leave them out; table, timeline and
+Group by follow. Old pauses (blocks whose reason says paused) are found and converted in every
+queue: `muster check --fix-pauses [--dry-run]` (`old_pause.rs`, `cli.rs`) and a one-time inline
+notice on load (`OldPauses.tsx`, setting `old-pauses-offered`). Manual (Concepts › Paused, In the
+app, Commands), COMMANDS.md and AS_BUILT updated.
+**Decided:** an old `status: blocked` file with no stage reads as Ready (`legacy_stage`), as
+unblock already does. The converted pause starts at the block's time, so the log gets a pause and
+unblock line with that stamp plus a line stamped now. Paused stays a Flags chip, not a Stage, so
+Stage › Building still finds what was paused there.
+**Fixed (review round 1):** Make them pauses converted whatever it found at click time, not what
+it listed → `fix_old_pauses` takes the listed (queue, id) pairs (`convert_listed`); a CLI test runs
+`check --fix-pauses` with and without `--dry-run`; the offer's buttons get their container rule;
+singular label; the closed-span case of the pause time is tested; docs say lane cards are grey.
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`;
+vitest 1249 passed; `muster check --fix-pauses --dry-run` on the real queues lists only dr-22
+(Drover, paused since 2026-10-13 02:51) and changes nothing.
+**Open:** not looked at in the running app (AC3 is the owner's). The real conversion of dr-22
+waits for the merge and the owner's click or `muster check --fix-pauses`. An old pause in Building
+whose holder holds another task can't be unblocked (`ops::holding`): it's named, left as it was,
+and the command exits 1. None of the real queues has one.
+
 ## 2026-10-14 — Runner and monitor tests don't depend on machine speed (mu-63)
 **Fixed:** `agents::tests::the_runner_*` and the monitor test went red under parallel builds (5 s
 waits, a `< 2 s` assertion) → the wait loop takes a clock (`run_with`, `wait`), fake clocks test the

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type Paused } from "./api";
-import { agoText, minutesSince, stamp } from "./lib";
+import { agoText, minutesSince, stageLabel, stamp } from "./lib";
 import type { Task } from "./types";
 import { Button } from "./ui";
 
@@ -26,12 +26,19 @@ export function pausedText(t: Pick<Task, "paused" | "pausedWhy">, now: number): 
   return t.pausedWhy ? `${when} · ${t.pausedWhy}` : when;
 }
 
-/** The Paused chip and when and why, on a card and in the pane; nothing for a task that isn't. */
-export function PausedChip({ t, now }: { t: Task; now: number }) {
+/** "was Building · paused 2 h ago · the design changes first": what a card in the Paused lane
+ *  (mu-59) says, where it was, since when and why; "" when it isn't paused. */
+export function wasText(t: Pick<Task, "stage" | "paused" | "pausedWhy">, now: number): string {
+  return t.paused ? `was ${stageLabel(t.stage)} · paused ${pausedText(t, now)}` : "";
+}
+
+/** The Paused chip and when and why, in the pane; nothing for a task that isn't. With `was`, a
+ *  card in the Paused lane: the glyph and where it was (`wasText`), since the lane says Paused. */
+export function PausedChip({ t, now, was = false }: { t: Task; now: number; was?: boolean }) {
   if (!t.paused) return null;
   return (
     <span className="card-paused" title={`Paused since ${t.paused}${t.pausedWhy ? `: ${t.pausedWhy}` : ""}. Nobody claims or passes it until it's resumed`}>
-      <span className="paused-chip">{`${PAUSE_GLYPH} Paused`}</span> {pausedText(t, now)}
+      <span className="paused-chip">{was ? PAUSE_GLYPH : `${PAUSE_GLYPH} Paused`}</span> {was ? wasText(t, now) : pausedText(t, now)}
     </span>
   );
 }

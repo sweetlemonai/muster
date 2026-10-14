@@ -61,12 +61,12 @@ describe("what a paused task says (0045)", () => {
 });
 
 describe("a paused card on the board", () => {
-  it("stays in its stage's look, with the Paused chip, not red, not quiet, and Resume under it", () => {
+  it("stays in its stage's look, saying where it was (its lane, mu-59, says Paused), not red, not quiet, and Resume under it", () => {
     const html = card(paused);
     const cls = classOf(html).split(" ");
     expect(cls).not.toContain("blocked");
     expect(cls).not.toContain("needs-you");
-    expect(text(html)).toContain("Paused 2 h ago · the design changes first");
+    expect(text(html)).toContain("was Building · paused 2 h ago · the design changes first");
     // Three hours without a check-in, but paused: not quiet, so no flag and no Ask for a check-in.
     expect(text(html)).not.toContain("no check-in");
     expect(buttons(html)).toEqual(["Resume"]);
@@ -175,9 +175,9 @@ describe("paused everywhere a task shows (review)", () => {
     expect(html).toContain('<span class="ui-badge ui-badge--paused">⏸︎ paused</span>');
     expect(html).not.toContain('class="g-ready"');
   });
-  it("the table has a grey Paused pill beside the stage", () => {
+  it("the table has a grey Paused pill, then the stage it was in (mu-59)", () => {
     const html = renderToStaticMarkup(createElement(TableView, { tasks: [task(paused)], now: NOW, multi: false, openKey: null, onOpen: () => {}, words: [] }));
-    expect(html).toContain('<span class="ui-status-pill ui-status-pill--building">Building</span><span class="ui-status-pill ui-status-pill--paused">⏸︎ Paused</span>');
+    expect(html).toContain('<span class="ui-status-pill ui-status-pill--paused">⏸︎ Paused</span><span class="ui-status-pill ui-status-pill--building was">was Building</span>');
   });
   it("a fresh heartbeat on a paused task isn't anyone working", () => {
     const fresh = task({ ...paused, heartbeat: "2026-10-13 11:55" });

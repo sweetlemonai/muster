@@ -37,6 +37,8 @@ import { Machine, machineOf, type SettingsGroup } from "./settingsData";
 import { columnFold, loadMode, look, Mode, pickMode, storeMode, toggleFocus, type ColumnFolds, type ModeState } from "./modes";
 import { blockedCount, ChoiceChips, ColumnHead, ModeChip } from "./ModeViews";
 import ColumnCards from "./ColumnCards";
+import { PausedColumn, pausedLaneWidth } from "./PausedLane";
+import OldPausesOffer from "./OldPauses";
 import logo from "./logo.png";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
@@ -450,6 +452,7 @@ export default function App() {
               {view === "timeline" && <TimelineView tasks={viewTasks} now={now} multi={multi} openKey={openKey} onOpen={open} words={words} />}
               {/* Recently finished (0051) is docked at the board's right edge, grouped or not; under it when the row is too narrow for both. */}
               {view === "board" && <OverLine over={overCheck} queue={queue} />}
+              {view === "board" && <OldPausesOffer offered={state?.settings?.oldPausesOffered} onDone={() => void refresh()} />}
               {view === "board" && <div className={railSide ? "board-row" : "board-row stacked"}>
               {groupBy !== "none" && (
                 <GroupedBoard
@@ -467,8 +470,10 @@ export default function App() {
                 />
               )}
               {/* Backlog never folds, its quick add is always there, except in Focus (0038), which folds
-                  every column but Building, Testing and Your check to a strip that opens with a click. */}
-              {groupBy === "none" && <main className="board" style={{ gridTemplateColumns: STAGES.map((s) => ((s.id === "backlog" || (cols[s.id] ?? []).length || (s.id === "your-check" && (boardResult || overCheck.length > 0))) && columnFoldOf.of(s.id) !== "folded" ? "minmax(118px, 1fr)" : "44px")).join(" ") }}>
+                  every column but Building, Testing and Your check to a strip that opens with a click.
+                  The Paused lane (mu-59) comes first, beside Backlog. */}
+              {groupBy === "none" && <main className="board" style={{ gridTemplateColumns: [pausedLaneWidth(cols.paused.length, columnFoldOf.of("paused")), ...STAGES.map((s) => ((s.id === "backlog" || (cols[s.id] ?? []).length || (s.id === "your-check" && (boardResult || overCheck.length > 0))) && columnFoldOf.of(s.id) !== "folded" ? "minmax(118px, 1fr)" : "44px"))].join(" ") }}>
+                <PausedColumn tasks={cols.paused} fold={columnFoldOf.of("paused")} onFold={() => columnFoldOf.toggle("paused")} renderCard={card} />
                 {STAGES.map((c) => {
                   const list = cols[c.id] ?? [];
                   const shown = c.id === "done" && !showAllDone ? list.slice(0, 8) : list;

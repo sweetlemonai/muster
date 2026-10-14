@@ -1696,7 +1696,14 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str, lease: u64) 
                 t.path
             ));
         }
-        if t.kind_guessed {
+        if crate::old_pause::is_old_pause(t) {
+            // A pause from before 0045 (0059): what to do is make it one, not give it a kind.
+            let what = t.waiting_on.chars().take(80).collect::<String>();
+            out.push(format!(
+                "{queue}: {WARNING}{} is paused the old way, as a block on {what:?}; make it a pause: muster check --fix-pauses",
+                t.path
+            ));
+        } else if t.kind_guessed {
             // For an old block on task ids, only those still open: merged (0042) or missing ones
             // don't hold it, and with none left it only needs unblocking.
             let under_way = crate::block::started(t);
@@ -3518,7 +3525,7 @@ mod tests {
         let short = crate::settings::Settings {
             lease_minutes: 120,
             live_minutes: 10,
-            notify: true,
+            ..Default::default()
         };
         let s = read_state_at_with(&q, &mut Cache::default(), "2026-10-12 03:01", &short);
         assert_eq!(
@@ -3529,9 +3536,9 @@ mod tests {
             1
         );
         assert_eq!(s.settings, short);
-        assert!(serde_json::to_string(&s)
-            .unwrap()
-            .contains(r#""settings":{"leaseMinutes":120,"liveMinutes":10,"notify":true}"#));
+        assert!(serde_json::to_string(&s).unwrap().contains(
+            r#""settings":{"leaseMinutes":120,"liveMinutes":10,"notify":true,"oldPausesOffered":false}"#
+        ));
         assert_eq!(
             quiet("2026-10-12 03:01"),
             0,

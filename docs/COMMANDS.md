@@ -105,6 +105,15 @@ the holder's session for a check-in, or sends it a message, through its mailbox.
 session next to `--as`; with no `--as` the actor is `$MUSTER_AS`, then the folder's git user.name,
 never the login name.
 
+Old pauses (task 0059): before `pause` (task 0045), a pause was a block whose reason said so
+(`waiting_on: owner (paused)`). `check` warns about each one, and `check --fix-pauses` makes them
+pauses in every queue Muster knows (`--queue` for one): it lists each (key, title, stage, since
+when, the reason it keeps) before it changes anything, then gives each `paused:` the time of the
+line that blocked it (else the latest line about the pause, else the last line) and `paused-why:`
+what the reason says besides "owner" and "paused", and clears the block as `unblock` does, the
+stage kept. `--dry-run` lists them and changes nothing. No session is told, a block that says
+anything else is never touched, and running it again changes nothing.
+
 The master list (task 0018): `INDEX.md` in the queue folder lists every goal with its features and
 tasks, then the tasks under none by stage, the backlog notes, and what's done (collapsed), each
 with its stage, the tasks it still waits on (`depends:` not merged yet, as "waits on 0014"),
