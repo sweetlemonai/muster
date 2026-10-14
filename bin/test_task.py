@@ -317,13 +317,17 @@ class OtherProjectsTests(unittest.TestCase):
         # Every session in every repo loads it.
         self.assertLess(len(rule), 1200)
 
-    def test_init_without_a_folder_outside_a_repo_refuses_a_mode_and_writes_nothing(self):
+    def test_init_without_a_folder_outside_a_repo_is_refused_and_writes_nothing(self):
+        # The old tasks/ only for a folder named on purpose, never for wherever init was typed.
         outside = self.base / "loose"
         outside.mkdir()
-        r = self.run_muster("init", "--local", cwd=outside)
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("isn't in a git repo", r.stderr)
-        self.assertEqual(list(outside.iterdir()), [])
+        for args in ((), ("--local",), ("--committed",)):
+            with self.subTest(args=args):
+                r = self.run_muster("init", *args, cwd=outside)
+                self.assertEqual(r.returncode, 1)
+                self.assertIn(f"{outside} isn't in a git repo: run muster init in the repo, or name a folder "
+                              "for an old tasks/ queue", r.stderr)
+                self.assertEqual(list(outside.iterdir()), [])
 
     def test_the_hook_delivers_to_sessions_of_two_projects_at_once_without_mixing_them_up(self):
         # Two repos, each with its queue and a worktree, a session working in each worktree. Each
@@ -360,13 +364,12 @@ class OtherProjectsTests(unittest.TestCase):
         got = {"alpha": [], "beta": []}
         for _ in range(3):
             running = {project: start(project) for project in sessions}
-            for project, p in running.items():
-                out = p.stdout.read()
-                self.assertEqual((p.wait(), p.stderr.read()), (0, ""))
+            # Both reaped before anything is asserted, so a failure never leaves one running.
+            done = {project: (*p.communicate(), p.returncode) for project, p in running.items()}
+            for project, (out, err, code) in done.items():
+                self.assertEqual((code, err), (0, ""))
                 if out:
                     got[project].append(json.loads(out)["hookSpecificOutput"]["additionalContext"])
-                p.stdout.close()
-                p.stderr.close()
         self.assertEqual([len(got["alpha"]), len(got["beta"])], [1, 1], got)
         self.assertIn("Answer: alpha-port", got["alpha"][0])
         self.assertIn("Answer: beta-port", got["beta"][0])

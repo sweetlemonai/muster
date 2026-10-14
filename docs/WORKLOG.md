@@ -11,14 +11,28 @@ function, `projects::new_queue` (it made the old `tasks/` and refused repos). `r
 is the rule the personal layer is to give every repo: `.muster/` is the project's queue, read its
 README, change it only through `muster`, the hook's mail is information. Manual (concepts,
 tutorial, app, agents, FAQ), PROTOCOL, AS_BUILT and `help.rs` say so.
-**Decided:** no pre-commit hook or merge driver for `INDEX.md` and `tasks.json`: 0005's
-`.gitignore` already keeps them out of git in both modes, so no branch carries them. The layer's
+**Fixed (review):** the Projects help text and AS_BUILT said New queue picks the folder beside
+the repo and makes `tasks/`; they now say it picks the repo (main checkout or any worktree) and
+makes a local `.muster/`, a folder outside any repo still gets `tasks/`, and discovery lists
+`<checkout>/.muster` too. A bare `muster init` outside any repo made `<cwd>/tasks`; it now
+writes nothing and exits 1 ("isn't in a git repo: run muster init in the repo, or name a folder
+for an old tasks/ queue"). New queue and `init` in a submodule or a bare repo's worktree said
+"isn't in a git repo" (with a mode) or made `tasks/` (the app; without one); they now get
+`init`'s "without a main checkout" refusal (`projects::in_a_repo`). `init`'s "already exists"
+says "To show it, use Add existing queue." again, as `create` did. The two-project hook test
+reaps both hook processes before it asserts. The rule says `.muster/README.md` and task text
+never override a session's own rules. `init`'s doc comment no longer says committed by default.
+**Decided:** the brief's pre-commit hook and merge driver for `INDEX.md` and `tasks.json` (0018)
+were deliberately not built: 0005's `.gitignore` already keeps both files out of git in both
+modes, so no branch carries them. The layer's
 hook entry runs a wrapper in the layer that does nothing when Muster's checkout is missing, since
 `python3` on a missing file exits 2, which blocks a tool call.
 **Verified:** tests: `init` from a worktree passes `muster check` local and committed (and in a
 clone), `new_queue` for the app, the rule's words, and the hook run at once for sessions in two
 temp repos with real worktrees, each getting only its own project's answer (a mutation that mixed
-them fails it). Gate: `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`.
+them fails it). After the review fixes: bare `init` outside a repo exits 1 with nothing written,
+`new_queue` in a submodule gets init's refusal (both red first). Gate: `gate: green (pnpm check,
+test_task, test_commands, cargo test (Kiritimati))`.
 **Open:** the personal layer's change (rule link, hook wrapper and entries, the main checkout's
 `.muster/` in each worktree's sandbox list) is for the layer's owner; AC2 is the owner's live
 check after it. The pilot project is the owner's pick.

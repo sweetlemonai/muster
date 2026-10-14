@@ -77,10 +77,12 @@ export default function Projects({ queues, home, onChanged }: { queues: QueueInf
         {msg && <span className={msg.ok ? "ok" : "err"}>{msg.text}</span>}
       </div>
       <p className="meta">
-        Muster finds the queues at <code>~/playground/&lt;project&gt;/tasks</code> on its own, and one level deeper
-        (<code>~/playground/&lt;group&gt;/&lt;project&gt;/tasks</code>). Add queues kept anywhere else, or start one for a
-        project: pick the project's folder (the one that holds its repo, not the repo itself) and Muster creates its{" "}
-        <code>tasks/</code> folder with the rules, the tools and its own git history. Removing or hiding a project never deletes files.
+        Muster finds the queues in <code>~/playground</code> on its own: a repo's <code>&lt;checkout&gt;/.muster</code>{" "}
+        (<code>~/playground/&lt;checkout&gt;</code> or <code>~/playground/&lt;project&gt;/&lt;checkout&gt;</code>) and the older{" "}
+        <code>&lt;project&gt;/tasks</code>, one level deeper too (<code>~/playground/&lt;group&gt;/&lt;project&gt;/tasks</code>). Add
+        queues kept anywhere else, or start one: New queue picks the project's repo (its main checkout or any worktree of
+        it) and makes a local <code>.muster/</code> in the main checkout, as <code>muster init</code> does. A folder outside
+        any repo still gets the older <code>tasks/</code>. Removing or hiding a project never deletes files.
       </p>
       {list === null && <p className="none">Loading…</p>}
       <table className="projects-table">

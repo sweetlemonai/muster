@@ -255,6 +255,13 @@ fn inside_git_work_tree(dir: &Path) -> bool {
     dir.ancestors().any(|a| a.join(".git").exists())
 }
 
+/// Is `dir` in a git repo, as `new_queue` and `muster init` take it: a `.git` on the way up from
+/// its real path, also where git's folder isn't a `.git` folder (a submodule, a bare repo's
+/// worktree), which `init` then refuses for that reason.
+pub fn in_a_repo(dir: &Path) -> bool {
+    dir.canonicalize().is_ok_and(|d| inside_git_work_tree(&d))
+}
+
 /// Add an existing queue folder picked by the owner.
 pub fn add(config: &mut Config, base: &Path, dir: &Path) -> Result<String, String> {
     let dir = dir.canonicalize().map_err(|e| e.to_string())?;
@@ -503,6 +510,7 @@ pub fn carry_over(config: &mut Config, base: &Path, old: &Path, new: &Path) -> V
 /// A new queue for the folder `dir`, as `muster init` and the app's New queue make it (task
 /// 0004): in a git repo, its `.muster/` (`init`; `local` unless `committed` is `Some(true)`);
 /// elsewhere the old `<dir>/tasks` (`create`), where a mode is refused, since it's for a repo.
+/// A repo without a main checkout gets `init`'s refusal, never `tasks/`.
 pub fn new_queue(
     dir: &Path,
     committed: Option<bool>,
@@ -510,7 +518,7 @@ pub fn new_queue(
     known: &[Project],
     tools: &Path,
 ) -> Result<(PathBuf, String), String> {
-    if layout::main_checkout(dir).is_some() {
+    if layout::main_checkout(dir).is_some() || in_a_repo(dir) {
         init(dir, committed != Some(true), wanted, known)
     } else if committed.is_some() {
         Err(format!(
@@ -523,9 +531,10 @@ pub fn new_queue(
 }
 
 /// `muster init <folder> [--local]` in a repo (task 0005, decision 0003): a `.muster/` queue in
-/// the repo's main checkout, wherever in the repo or its worktrees `dir` is. Committed by
-/// default; `local` keeps it on this Mac. Refused outside a git repo, and when the repo already
-/// has a `.muster`, which is never written over.
+/// the repo's main checkout, wherever in the repo or its worktrees `dir` is. `local` keeps it on
+/// this Mac (what `muster init` and New queue pass unless `--committed`), else it's committed
+/// with the code. Refused outside a git repo, and when the repo already has a `.muster`, which
+/// is never written over.
 pub fn init(
     dir: &Path,
     local: bool,
@@ -539,8 +548,15 @@ pub fn init(
         )
     })?;
     let q = main.join(layout::DIR);
+    // As `create` says it: the app's New queue lands here too.
+    let exists = || {
+        format!(
+            "{} already exists. To show it, use Add existing queue.",
+            q.display()
+        )
+    };
     if fs::symlink_metadata(&q).is_ok() {
-        return Err(format!("{} already exists", q.display()));
+        return Err(exists());
     }
     let project = default_name(&q);
     // As `create` picks it (0033): the one asked for, checked, else the default beside the others.
@@ -556,7 +572,7 @@ pub fn init(
     };
     // Made here, not before: if it's there, it's someone's, and it's left as it is.
     fs::create_dir(&q).map_err(|e| match e.kind() {
-        std::io::ErrorKind::AlreadyExists => format!("{} already exists", q.display()),
+        std::io::ErrorKind::AlreadyExists => exists(),
         _ => format!("{}: {e}", q.display()),
     })?;
     let made = write_muster(&q, local, "", &project, &prefix)
@@ -1147,7 +1163,10 @@ mod tests {
             (Ok(Config { local: true }), "ap")
         );
         let e = new_queue(&main, Some(true), None, &[], Path::new("/x")).unwrap_err();
-        assert!(e.contains("already exists"), "{e}");
+        assert!(
+            e.contains("already exists. To show it, use Add existing queue."),
+            "{e}"
+        );
         let other = repo(base.path(), "web");
         let q = new_queue(&other, Some(true), Some("wb"), &[], Path::new("/x"))
             .unwrap()
@@ -1162,6 +1181,34 @@ mod tests {
         let (q, _) = new_queue(&loose, None, None, &[], Path::new("/x")).unwrap();
         assert_eq!(canon(&q), canon(&loose.join("tasks")));
         assert!(looks_like_queue(&q));
+    }
+
+    #[test]
+    fn a_new_queue_in_a_repo_without_a_main_checkout_is_refused_as_init_refuses_it() {
+        // A submodule is in a git repo, but git's folder isn't its own `.git`: it gets init's
+        // reason, with or without a mode, never the old tasks/ or "isn't in a git repo".
+        use crate::layout::resolve::{git, repo};
+        let base = tempfile::tempdir().unwrap();
+        let outer = repo(base.path(), "outer");
+        let inner = repo(base.path(), "inner");
+        git(
+            &outer,
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                "-q",
+                inner.to_str().unwrap(),
+                "sub",
+            ],
+        );
+        let sub = outer.join("sub");
+        for committed in [None, Some(false), Some(true)] {
+            let e = new_queue(&sub, committed, None, &[], Path::new("/x")).unwrap_err();
+            assert!(e.contains("with a main checkout"), "{committed:?}: {e}");
+        }
+        assert!(!sub.join("tasks").exists() && !sub.join(".muster").exists());
     }
 
     #[test]

@@ -129,17 +129,21 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   seen several seconds on one run, which the 10 s timeout and the background thread cover.
 - **Projects** (in Settings, or **+ Project** under the project list): every project with its folder, task count and where it came from (found
   in `~/playground`, or added). Discovery (`queue::discover`) looks at `<project>/tasks` and one
-  level deeper, `<group>/<project>/tasks`, and no further; it passes over folders named `.*`, `_*`,
+  level deeper, `<group>/<project>/tasks`, and no further, and at a repo's `<checkout>/.muster`
+  at the same two levels, in main checkouts only (see `.muster/` below); it passes over folders named `.*`, `_*`,
   `node_modules`, `worktrees`, `*.worktrees`, `target` and `dist`, follows a symlink only while it
-  stays inside `~/playground`, and keeps only folders with a `README.md` and `todo/` (or
-  `tasks.json`). A nested queue is named by its own project folder and carries its group (the
+  stays inside `~/playground`, and keeps only queues: a `.muster/` with its `config.toml`, or a
+  folder with a `README.md` and `todo/` (or `tasks.json`). A nested queue is named by its own project folder and carries its group (the
   folder above it). A queue both found and added shows once, as found. `muster projects` marks
-  each line found or added. **New queue…** picks a project folder and creates its `tasks/`:
-  status folders, README with the rules, `WAITING-FOR-OWNER.md`, the tools' stand-ins in `bin/`,
-  and its own git with a first commit. It refuses inside a git repo, and refuses if `tasks/`
-  already exists. **Add existing queue…** picks any queue folder. The label and category fields
+  each line found or added. **New queue…** picks the project's repo (its main checkout or any
+  worktree of it) and makes a local `.muster/` in the main checkout, as `muster init` does
+  (`projects::new_queue`, task 0004); it refuses if `.muster/` is there already ("To show it, use
+  Add existing queue.") and in a repo without a main checkout. A folder outside any repo still
+  gets the older `tasks/`: status folders, README with the rules, `WAITING-FOR-OWNER.md`, the
+  tools' stand-ins in `bin/`, and its own git with a first commit, never over an existing
+  `tasks/`. **Add existing queue…** picks any queue folder. The label and category fields
   (0044), Hide/Show, and Remove (added ones only) never touch files. Each project's **Prefix** (0033) shows with **Set** beside
-  it: stored in its queue's README.md, refused (why shows under the field) when it's bad or
+  it: stored in its queue (a `.muster/`'s `config.toml`, an old queue's README.md), refused (why shows under the field) when it's bad or
   another project's; New queue stores the default. Saved in `~/Library/Application Support/ai.sweetlemon.muster/projects.json`.
   Folders are picked by the core's own dialog, so the window never hands the core a path.
 - **Settings** (task 0036, `Settings.tsx`, `settingsData.ts`, `settings.rs`): a view in the header's
@@ -773,9 +777,12 @@ keep working (`layout.rs` is the one place that says where a layout keeps what).
   that is its own project, never in `~/playground` itself.
 - **`muster init [<folder>] [--local|--committed]`:** the current folder when none is named. In
   a repo, its `.muster/` (in the main checkout, never over one that's there), local unless
-  `--committed`; outside a repo, the old `<folder>/tasks`, and a mode is refused. The app's New
-  queue makes the same through the same function (`projects::new_queue`, task 0004), local, and
-  adds it to the list when discovery doesn't find it.
+  `--committed`; outside a repo, the old `<folder>/tasks` for a folder named on purpose, and a
+  mode is refused. With no folder outside any repo it writes nothing and exits 1 ("isn't in a git
+  repo: run muster init in the repo, or name a folder for an old tasks/ queue"). A repo without a
+  main checkout (a submodule, a bare repo's worktree) is refused as `init` refuses it, never given
+  `tasks/`. The app's New queue makes the same through the same function (`projects::new_queue`,
+  task 0004), local, and adds it to the list when discovery doesn't find it.
 - **Other projects (task 0004):** a repo needs nothing but `muster init`: `muster` finds the
   queue from any folder of the repo. What a session there needs comes from the personal layer,
   which links into every repo: Muster keeps the rule (`rules/muster-queue.md`: `.muster/` is

@@ -1385,10 +1385,21 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
             Ok(0)
         }
         "init" => {
-            // The folder it runs in when none is named (0004): `muster init` in a repo.
+            // The folder it runs in when none is named (0004): `muster init` in a repo. Outside
+            // one, the old tasks/ only for a folder named on purpose: nothing is written.
             let dir = match a.pos.get(1) {
                 Some(d) => PathBuf::from(d),
-                None => std::env::current_dir().map_err(|e| format!("the current folder: {e}"))?,
+                None => {
+                    let cwd =
+                        std::env::current_dir().map_err(|e| format!("the current folder: {e}"))?;
+                    if !projects::in_a_repo(&cwd) {
+                        return Err(format!(
+                            "{} isn't in a git repo: run muster init in the repo, or name a folder for an old tasks/ queue",
+                            cwd.display()
+                        ));
+                    }
+                    cwd
+                }
             };
             local_or_committed(&a)?;
             let committed = (a.local || a.committed).then_some(a.committed);
