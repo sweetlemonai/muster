@@ -164,7 +164,7 @@ describe("Settings (0036)", () => {
   it("sets each project's colour (0057) from the palette, laid out in place, the current one pressed", () => {
     const p: Project = { key: "/p/muster/tasks", name: "muster", path: "/p/muster/tasks", source: "found", group: "", hidden: false, ok: true, label: "Muster", colour: "mint" };
     const html = renderToStaticMarkup(createElement(ColourCell, { p, onSave: async () => {} }));
-    expect(html).toMatch(/^<div class="swatches" role="group" aria-label="Colour for Muster">/);
+    expect(html).toMatch(/^<div class="proj-swatches" role="group" aria-label="Colour for Muster">/);
     expect(html.match(/aria-pressed="true"[^>]*aria-label="([^"]+)"/)?.[1]).toBe("Mint");
     // A place for choosing: always laid out, nothing takes the focus.
     expect(html).not.toContain("autofocus");

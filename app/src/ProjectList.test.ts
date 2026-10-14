@@ -304,18 +304,18 @@ describe("a project's colours, laid out in place (0057)", () => {
   const swatches = (value: string, onClose?: () => void) => renderToStaticMarkup(createElement(Swatches, { name: "Muster", value, onPick: () => {}, onClose }));
   it("are None and the palette as a group of buttons, the current one pressed", () => {
     const html = swatches("tan", () => {});
-    expect(html).toMatch(/^<div class="swatches" role="group" aria-label="Colour for Muster">/);
+    expect(html).toMatch(/^<div class="proj-swatches" role="group" aria-label="Colour for Muster">/);
     expect([...html.matchAll(/aria-label="([^"]+)" title/g)].map((m) => m[1])).toEqual(["None", "Lime", "Orchid", "Pink", "Tan", "Mint"]);
     expect(html.match(/aria-pressed="true"[^>]*aria-label="([^"]+)"/)?.[1]).toBe("Tan");
-    expect(html).toContain('<button type="button" class="swatch" data-colour="tan" aria-pressed="true" aria-label="Tan" title="Tan" autofocus=""></button>');
-    expect(swatches("")).toMatch(/<button type="button" class="swatch" aria-pressed="true" aria-label="None" title="None"><\/button>/);
+    expect(html).toContain('<button type="button" class="proj-swatch" data-colour="tan" aria-pressed="true" aria-label="Tan" title="Tan" autofocus=""></button>');
+    expect(swatches("")).toMatch(/<button type="button" class="proj-swatch" aria-pressed="true" aria-label="None" title="None"><\/button>/);
   });
   it("as the row's dot: open says so", () => {
     expect(renderToStaticMarkup(createElement(ColourDot, { name: "Muster", colour: "mint", open: true, onClick: () => {} }))).toContain('aria-expanded="true" aria-label="Colour for Muster: Mint. Click to choose"');
   });
   it("a row with its colours laid out shows them under it", () => {
     const html = renderToStaticMarkup(createElement(SideRow, { rowKey: "/m", label: "Muster", colour: "pink", swatches: true, onDot: () => {}, onColour: () => {}, onFold: () => {}, children: createElement("b", null, "row") }));
-    expect(html).toMatch(/^<div class="side-row" data-key="\/m"><span class="side-row-line"><button[^>]*side-swatch-dot[^>]*aria-expanded="true"[^>]*><\/button><b>row<\/b><\/span><div class="swatches" role="group" aria-label="Colour for Muster">/);
+    expect(html).toMatch(/^<div class="side-row" data-key="\/m"><span class="side-row-line"><button[^>]*side-swatch-dot[^>]*aria-expanded="true"[^>]*><\/button><b>row<\/b><\/span><div class="proj-swatches" role="group" aria-label="Colour for Muster">/);
   });
 });
 

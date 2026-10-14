@@ -723,11 +723,11 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 button.side-swatch-dot { cursor: pointer; }
 button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-swatch-dot[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--muted); }
 /* Six 16px swatches and five 5px gaps fit one line at the sidebar's narrowest (paneSize SIDEBAR_MIN, 150px). */
-.swatches { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin: 2px 0 6px 12px; }
-.swatch { box-sizing: border-box; width: 16px; height: 16px; padding: 0; border-radius: 50%; border: 1px solid var(--proj, var(--faint)); background: var(--proj, transparent); cursor: pointer; }
-.swatch:not([data-colour]) { background: linear-gradient(135deg, transparent 44%, var(--muted) 44% 56%, transparent 56%); }
-.swatch:hover, .swatch:focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--muted); }
-.swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent); }
+.proj-swatches { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin: 2px 0 6px 12px; }
+.proj-swatch { box-sizing: border-box; width: 16px; height: 16px; padding: 0; border-radius: 50%; border: 1px solid var(--proj, var(--faint)); background: var(--proj, transparent); cursor: pointer; }
+.proj-swatch:not([data-colour]) { background: linear-gradient(135deg, transparent 44%, var(--muted) 44% 56%, transparent 56%); }
+.proj-swatch:hover, .proj-swatch:focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--muted); }
+.proj-swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent); }
 .proj-dot { display: inline-block; width: 7px; height: 7px; margin-right: 4px; border-radius: 50%; background: var(--proj); vertical-align: 0.05em; }
 .side-row[draggable="true"], .side-cat[draggable="true"] { cursor: grab; }
 .side-row.dragging, .side-cat.dragging { opacity: 0.45; }
@@ -761,7 +761,7 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .side-new-cat.side-editing { display: flex; flex-direction: column; margin: 8px 6px 0; }
 .side-problem { margin: 6px 8px 0; font-size: 11px; overflow-wrap: anywhere; }
 /* Three to a line in Settings, so the column stays narrow and the folder keeps its room (0061). */
-.projects-table .swatches { margin: 0; max-width: 58px; }
+.projects-table .proj-swatches { margin: 0; max-width: 58px; }
 .place-cell { display: inline-flex; gap: 2px; }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .pane-pause { display: inline-flex; gap: 4px; align-items: center; }

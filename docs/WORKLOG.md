@@ -4,6 +4,15 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Settings › Appearance's theme picker is no longer crushed by the project colour picker (mu-81)
+**Fixed:** the seven theme cards were squeezed into 16px dots (owner: "UI bug") → mu-57's project
+colour picker reused the theme picker's `.swatches`/`.swatch` classes, and its later rules won; it
+now has its own `.proj-swatches`/`.proj-swatch` (ProjectSwatches.tsx, styles.css, tests).
+**Verified:** `cssClasses.test.ts` fails when a class two components use gets rules that set a
+property two ways; on the old code it names `swatches` and `swatch`, on the fix it passes; `.top`
+(one component overriding itself) and `card-top` (not `top`) don't trip it; `bin/gate` green.
+**Open:** AC1's release-app screenshots of both pickers, light and dark, are for QA or the owner.
+
 ## 2026-10-14 — Coordinator (Muster_Team_Lead_2): mu-73 and mu-71 merged, four sent back, the owner's open calls made
 **Did:** reviewed and merged mu-73 (1e819a1) and mu-71 (4d7dbc4, round 2). Sent back with their
 review findings: mu-78 (R1–R7: Accept all takes unproven tasks, Drover's ". Proof:" unread,

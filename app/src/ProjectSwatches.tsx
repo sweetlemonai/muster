@@ -27,7 +27,7 @@ export function Swatches({ name, value, onPick, onClose }: { name: string; value
   const options = [{ id: "", name: "None" }, ...PROJECT_COLOURS];
   return (
     <div
-      className="swatches"
+      className="proj-swatches"
       role="group"
       aria-label={`Colour for ${name}`}
       onKeyDown={(e) => {
@@ -47,7 +47,7 @@ export function Swatches({ name, value, onPick, onClose }: { name: string; value
         <button
           key={c.id || "none"}
           type="button"
-          className="swatch"
+          className="proj-swatch"
           data-colour={c.id || undefined}
           aria-pressed={c.id === value}
           aria-label={c.name}
