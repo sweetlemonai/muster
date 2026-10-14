@@ -30,7 +30,7 @@ describe("paused in every display mode", () => {
     for (const { id } of MODES) {
       for (const active of [false, true]) {
         const html = inMode(id, createElement(Card, { t: paused, now: NOW, multi: false, parent: "", onOpen: () => {}, active, words: [] }));
-        expect(text(html), `${id} ${active}`).toContain("Paused 2 h ago · later");
+        expect(text(html), `${id} ${active}`).toContain("was Building · paused 2 h ago · later");
         expect(buttons(html), `${id} ${active}`).toEqual(["Resume"]);
         expect(text(html), `${id} ${active}`).not.toContain("no check-in");
       }

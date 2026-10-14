@@ -387,10 +387,19 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "check",
-        usage: "muster check",
-        what: "Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet past the lease (12 h unless changed in the app's Settings), blocked with no reason, waiting on a task that doesn't exist, a link that isn't a plain https link, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop, a for that isn't human or ai, a vision count that doesn't match the task's Vision section, an INDEX.md that shows something the task files no longer say (rebuild with muster index; none yet is fine). Exit 1 if any. A goal past its due date with tasks open, a block from before kinds (read as one from what it waits on until it's blocked again with a kind), and an INDEX.md only due a refresh (the files changed outside muster, as Drover's answers do), are warnings: shown, without failing. Also lists, without counting them as problems, what waits on the owner's look, lessons from reviews waiting for the owner's yes, Shaping tasks with no vision check yet, and what parallel sessions left behind: a started task whose worktree is gone, a worktree of a task sent back to Ready, and a worktree on a task/<id>- branch whose task is past Testing, each with the command that cleans it.",
-        options: &[],
-        examples: &["muster check", "muster check --queue braindump"],
+        usage: "muster check [--fix-pauses [--dry-run]]",
+        what: "Problems in the queue: ids used twice, status not matching the folder, a stage that isn't one, Building with no claim or quiet past the lease (12 h unless changed in the app's Settings), blocked with no reason, waiting on a task that doesn't exist, a link that isn't a plain https link, a backlog note over 1 MB or that's a symlink, a parent that doesn't exist or is at the wrong level, parents in a loop, a for that isn't human or ai, a vision count that doesn't match the task's Vision section, an INDEX.md that shows something the task files no longer say (rebuild with muster index; none yet is fine). Exit 1 if any. A goal past its due date with tasks open, a block from before kinds (read as one from what it waits on until it's blocked again with a kind), a pause from before muster pause (a block whose reason says paused: make it a pause with --fix-pauses), and an INDEX.md only due a refresh (the files changed outside muster, as Drover's answers do), are warnings: shown, without failing. Also lists, without counting them as problems, what waits on the owner's look, lessons from reviews waiting for the owner's yes, Shaping tasks with no vision check yet, and what parallel sessions left behind: a started task whose worktree is gone, a worktree of a task sent back to Ready, and a worktree on a task/<id>- branch whose task is past Testing, each with the command that cleans it. With --fix-pauses, in every queue Muster knows (or the one --queue names): lists each block from before muster pause whose reason says paused (\"paused\", \"owner (paused)\") with its stage, since when and the reason it keeps, then makes each a pause with that reason and time: paused-why is what the reason says besides owner and paused, paused the time of the line that blocked it (else the latest line about the pause, else the last line), and the block is cleared as muster unblock clears it, the stage kept (an old blocked file with no stage is Ready, and goes back to todo/). No session is told. A block that says anything else is never touched, and running it again changes nothing. Exit 1 if one couldn't be converted (it's left as it was).",
+        options: &[
+            ("--fix-pauses", "make the old paused blocks pauses, in every queue Muster knows"),
+            ("--dry-run", "with --fix-pauses: list them and change nothing"),
+            ("--as", "with --fix-pauses: who's converting them; default $MUSTER_AS, then the folder's git user.name"),
+        ],
+        examples: &[
+            "muster check",
+            "muster check --queue braindump",
+            "muster check --fix-pauses --dry-run",
+            "muster check --fix-pauses --as owner",
+        ],
     },
     Command {
         name: "index",

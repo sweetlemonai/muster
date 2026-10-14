@@ -1,5 +1,7 @@
 //! Per-machine settings that both the app and `muster` read (task 0036): the claim lease, the
-//! LIVE window, and whether Mac notifications are on (0052). Saved as `settings.json` beside `projects.json` in the app's config folder
+//! LIVE window, and whether Mac notifications are on (0052); and one only the app reads, whether
+//! it has offered to turn the old pauses into pauses (0059), so it offers once. Saved as
+//! `settings.json` beside `projects.json` in the app's config folder
 //! (`~/Library/Application Support/ai.sweetlemon.muster/`). A missing or broken file, or a value
 //! out of bounds, reads as the default, field by field: a bad setting never stops the tools.
 
@@ -31,6 +33,9 @@ pub struct Settings {
     pub live_minutes: u64,
     /// A Mac notification when something new waits for the owner (0052): on unless turned off.
     pub notify: bool,
+    /// The app has offered, on load, to turn the old paused blocks into pauses (0059,
+    /// `old_pause`); it offers once.
+    pub old_pauses_offered: bool,
 }
 
 impl Default for Settings {
@@ -39,6 +44,7 @@ impl Default for Settings {
             lease_minutes: ops::LEASE_MINUTES,
             live_minutes: LIVE_MINUTES,
             notify: true,
+            old_pauses_offered: false,
         }
     }
 }
@@ -72,6 +78,10 @@ pub fn load(file: &Path) -> Settings {
             .get("notify")
             .and_then(|n| n.as_bool())
             .unwrap_or(d.notify),
+        old_pauses_offered: v
+            .get("oldPausesOffered")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(d.old_pauses_offered),
     }
 }
 
@@ -128,9 +138,23 @@ fn minutes(input: &str, what: &str) -> Result<u64, String> {
 }
 
 /// Change one setting, `lease` or `live`, to a span like `12h` or `5m` (empty is the default),
-/// checked against its bounds, or `notify` to `on` or `off` (empty is on), and save. Returns the
-/// settings now in force.
+/// checked against its bounds, `notify` to `on` or `off` (empty is on), or `old-pauses-offered`
+/// to `yes` or `no` (empty is no), and save. Returns the settings now in force.
 pub fn set(file: &Path, name: &str, value: &str) -> Result<Settings, String> {
+    if name == "old-pauses-offered" {
+        let offered = match value.trim() {
+            "yes" => true,
+            "no" | "" => false,
+            other => {
+                let other: String = other.chars().take(24).collect();
+                return Err(format!("old-pauses-offered is yes or no, not {other:?}"));
+            }
+        };
+        let mut s = load(file);
+        s.old_pauses_offered = offered;
+        save(file, &s)?;
+        return Ok(s);
+    }
     let d = Settings::default();
     if name == "notify" {
         let on = match value.trim() {
@@ -211,6 +235,7 @@ mod tests {
                 lease_minutes: 720,
                 live_minutes: 10,
                 notify: true,
+                ..Default::default()
             }
         );
         fs::write(&f, r#"{"leaseMinutes": 120, "liveMinutes": 61}"#).unwrap();
@@ -220,6 +245,7 @@ mod tests {
                 lease_minutes: 120,
                 live_minutes: 5,
                 notify: true,
+                ..Default::default()
             }
         );
         // The bounds themselves are fine.
@@ -230,6 +256,7 @@ mod tests {
                 lease_minutes: 60,
                 live_minutes: 60,
                 notify: true,
+                ..Default::default()
             }
         );
         fs::write(&f, r#"{"leaseMinutes": 10080, "liveMinutes": 1}"#).unwrap();
@@ -239,6 +266,7 @@ mod tests {
                 lease_minutes: 10080,
                 live_minutes: 1,
                 notify: true,
+                ..Default::default()
             }
         );
     }
@@ -255,6 +283,7 @@ mod tests {
                 lease_minutes: 120,
                 live_minutes: 10,
                 notify: true,
+                ..Default::default()
             }
         );
         assert_eq!(
@@ -263,6 +292,7 @@ mod tests {
                 lease_minutes: 120,
                 live_minutes: 10,
                 notify: true,
+                ..Default::default()
             },
             "remembered"
         );
@@ -356,6 +386,51 @@ mod tests {
                 notify: false,
                 ..Settings::default()
             }
+        );
+    }
+
+    #[test]
+    fn the_old_pauses_offer_is_remembered_and_kept_by_the_other_settings() {
+        let d = tempfile::tempdir().unwrap();
+        let f = file(&d);
+        assert!(!load(&f).old_pauses_offered, "not offered yet");
+        assert!(
+            set(&f, "old-pauses-offered", "yes")
+                .unwrap()
+                .old_pauses_offered
+        );
+        assert!(load(&f).old_pauses_offered, "remembered");
+        // Changing the lease keeps it, and it keeps the lease.
+        assert!(set(&f, "lease", "2h").unwrap().old_pauses_offered);
+        assert_eq!(
+            set(&f, "old-pauses-offered", "no").unwrap(),
+            Settings {
+                lease_minutes: 120,
+                live_minutes: 5,
+                notify: true,
+                old_pauses_offered: false
+            }
+        );
+        set(&f, "old-pauses-offered", "yes").unwrap();
+        assert!(
+            !set(&f, "old-pauses-offered", " ")
+                .unwrap()
+                .old_pauses_offered
+        );
+        let before = fs::read_to_string(&f).unwrap();
+        assert_eq!(
+            set(&f, "old-pauses-offered", "maybe").unwrap_err(),
+            "old-pauses-offered is yes or no, not \"maybe\""
+        );
+        assert_eq!(fs::read_to_string(&f).unwrap(), before);
+        // As the window reads it; anything but true or false is the default.
+        fs::write(&f, r#"{"oldPausesOffered": true}"#).unwrap();
+        assert!(load(&f).old_pauses_offered);
+        fs::write(&f, r#"{"oldPausesOffered": "yes"}"#).unwrap();
+        assert!(!load(&f).old_pauses_offered);
+        assert_eq!(
+            serde_json::to_string(&Settings::default()).unwrap(),
+            r#"{"leaseMinutes":720,"liveMinutes":5,"notify":true,"oldPausesOffered":false}"#
         );
     }
 

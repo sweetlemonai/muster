@@ -110,6 +110,12 @@ export const api = {
   // Testing its session is asked to stop, or to carry on. `why` may be "".
   pauseTask: (queue: string, id: string, why: string, stamp: string) => invoke<Paused>("pause_task", { queue, id, why, stamp }),
   resumeTask: (queue: string, id: string, stamp: string) => invoke<Paused>("resume_task", { queue, id, stamp }),
+  // Old pauses (mu-59): blocks from before Pause whose reason says paused, in the queues shown.
+  // Fix makes each a pause with the same reason and time, as the owner. Offered remembers, in this
+  // machine's settings (`oldPausesOffered` in `state`), that the board made its offer.
+  oldPauses: () => invoke<OldPause[]>("old_pauses"),
+  fixOldPauses: () => invoke<FixedPauses>("fix_old_pauses"),
+  setOldPausesOffered: () => invoke<void>("set_old_pauses_offered"),
   // Opens one of the task's links in the browser: the core opens only an address the task has, and only https.
   openLink: (queue: string, id: string, url: string) => invoke<void>("open_link", { queue, id, url }),
   // Files the window holds (pasted or dropped) go as [name, data URL]; picking uses the core's dialog.
@@ -135,6 +141,11 @@ export type Pinged = { session: string; path: string };
 /** What a pause or resume did: the session it told ("" for none), or why none could be ("" when
  *  nobody works on it in its stage). */
 export type Paused = { path: string; session: string; unreached: string };
+/** A pre-0045 pause: a block whose reason says paused. `reason` is the why it keeps ("" for none
+ *  besides paused), `since` when it was paused. */
+export type OldPause = { queue: string; id: string; key: string; title: string; stage: string; reason: string; since: string; path: string };
+/** What converting did: those now paused, and those it couldn't, each "<key> (<queue>): <why>". */
+export type FixedPauses = { converted: OldPause[]; failed: string[] };
 
 export type HelperLine = { role: "owner" | "helper" | "system"; kind: string; text: string; at: number };
 export type AccountInfo = { name: string; loggedIn: boolean | null; plan: string };

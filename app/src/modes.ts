@@ -48,9 +48,9 @@ const TABLE = {
   },
   columns: {
     label: "Board columns",
-    adhd: { how: "all", says: "Every stage; an empty one narrows to its name" },
-    standard: { how: "all", says: "Every stage; an empty one narrows to its name" },
-    focus: { how: "now", says: "Building, Testing and Your check; the others (the grouped board's Backlog band too) are thin strips with their counts, needs you and blocked", reach: "Click a strip to open that column" },
+    adhd: { how: "all", says: "Every stage, and Paused before Backlog; an empty one narrows to its name" },
+    standard: { how: "all", says: "Every stage, and Paused before Backlog; an empty one narrows to its name" },
+    focus: { how: "now", says: "Building, Testing and Your check; the others and Paused (the grouped board's Paused and Backlog bands too) are thin strips with their counts, needs you and blocked", reach: "Click a strip to open that column" },
   },
   rail: {
     label: "Recently finished",

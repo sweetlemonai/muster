@@ -51,8 +51,9 @@ function CardButton({ t, now, multi, parent, onOpen, active, words }: CardProps)
       </span>
       <span className="title">{t.title ? <Hl text={t.title} words={words} /> : "(no title)"}</span>
       {all && parent && <span className="parent-line">{parent}</span>}
-      {/* Paused (0045) shows in every mode: a paused task must never look worked on. */}
-      <PausedChip t={t} now={now} />
+      {/* Paused (0045) shows in every mode: a paused task must never look worked on. Its card is in
+          the Paused lane (mu-59), so it says where it was. */}
+      <PausedChip t={t} now={now} was />
       {all && t.tags.length > 0 && (
         <span className="tags">
           {t.tags.map((g) => <span key={g} className="tag">#<Hl text={g} words={words} /></span>)}

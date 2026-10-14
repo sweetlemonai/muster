@@ -1,7 +1,10 @@
-//! The app's commands for pausing and resuming a task (task 0045, `pause`), as the owner. Kept
-//! beside `pause` so the app's command list grows by two lines.
+//! The app's commands for pausing and resuming a task (task 0045, `pause`), as the owner, and for
+//! turning the old pauses into pauses (0059, `old_pause`). Kept beside `pause` so the app's
+//! command list grows by a few lines.
 
-use crate::{blocking, check_id, check_stamp, in_queue, pause, AppState};
+use crate::{blocking, check_id, check_stamp, in_queue, old_pause, pause, queue, settings};
+use crate::{queues, AppState};
+use tauri::Manager;
 
 /// The owner pauses a task, with an optional reason.
 #[tauri::command]
@@ -27,6 +30,44 @@ pub(crate) async fn resume_task(
 ) -> Result<pause::Paused, String> {
     let file = app.config_file.clone();
     blocking(move || in_queue(&file, &queue, |root| resume_in(root, &id, &stamp))).await
+}
+
+/// Every old pause (0059) in the queues the app shows, for the offer it makes on load.
+#[tauri::command]
+pub(crate) async fn old_pauses(
+    app: tauri::State<'_, AppState>,
+) -> Result<Vec<old_pause::OldPause>, String> {
+    let file = app.config_file.clone();
+    blocking(move || Ok(old_pause::find_all(&queues(&file), &queue::local_stamp()))).await
+}
+
+/// The owner said yes: every old pause in those queues becomes a pause, with its reason and time,
+/// by the owner. Returns what it converted, and what it couldn't.
+#[tauri::command]
+pub(crate) async fn fix_old_pauses(
+    app: tauri::State<'_, AppState>,
+) -> Result<old_pause::Fixed, String> {
+    let file = app.config_file.clone();
+    blocking(move || {
+        Ok(old_pause::convert_all(
+            &queues(&file),
+            "owner",
+            &queue::local_stamp(),
+        ))
+    })
+    .await
+}
+
+/// The app made its offer (whatever the owner said), so it doesn't make it again on this Mac:
+/// `oldPausesOffered` in this machine's settings, as `set_setting("old-pauses-offered", "yes")`.
+#[tauri::command]
+pub(crate) async fn set_old_pauses_offered(handle: tauri::AppHandle) -> Result<(), String> {
+    blocking(move || {
+        let app = handle.state::<AppState>();
+        let _guard = app.config.lock().map_err(|e| e.to_string())?;
+        settings::set(&app.settings_file, "old-pauses-offered", "yes").map(|_| ())
+    })
+    .await
 }
 
 /// What `pause_task` does once it has the queue: its arguments checked, then the core's rules.

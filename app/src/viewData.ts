@@ -26,8 +26,9 @@ export function sortTasks(tasks: Task[], by: SortKey, desc: boolean): Task[] {
   const val = (t: Task): string | number => {
     switch (by) {
       case "priority": return PRIORITY_RANK[t.priority || "normal"] ?? 1;
-      // A goal or feature sorts by the stage it shows (from its children).
-      case "stage": return isWork(t) ? stageRank(t.stage) : shownStageRank(t);
+      // A goal or feature sorts by the stage it shows (from its children); a paused task first, where
+      // the board's Paused lane sits (mu-59).
+      case "stage": return !isWork(t) ? shownStageRank(t) : t.paused ? -1 : stageRank(t.stage);
       case "changed": return t.modified;
       case "estimate": return (t.estMinutes + t.estTestMinutes) * 1e7 + t.estTokenCount;
       case "who": return isBlocked(t) ? blockSentence(t, true) : holder(t);

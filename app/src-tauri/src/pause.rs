@@ -22,7 +22,7 @@ use std::path::Path;
 pub const PAUSABLE: [&str; 5] = ["backlog", "shaping", "ready", "building", "testing"];
 
 /// The longest reason, in characters.
-const MAX_WHY: usize = 200;
+pub(crate) const MAX_WHY: usize = 200;
 
 /// A stretch a task was paused, as `YYYY-MM-DD HH:MM` stamps; `to` is empty while it still is.
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -188,7 +188,7 @@ fn post(
 
 /// A line this module writes, refused if any part of it would read as tool history it isn't (a
 /// stage change, a check-in, a check-in request): the reason is free text.
-fn checked(line: String) -> Result<String, String> {
+pub(crate) fn checked(line: String) -> Result<String, String> {
     let dashed = format!("- {line}");
     if queue::stage_line(&dashed).is_some()
         || queue::checkin_line(&dashed).is_some()

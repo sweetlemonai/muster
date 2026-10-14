@@ -20,6 +20,7 @@ pub mod layout;
 pub mod lessons;
 pub mod migrate;
 pub mod notify;
+pub mod old_pause;
 pub mod ops;
 pub mod parallel;
 pub mod pause;
@@ -1414,6 +1415,9 @@ pub fn run() {
             ping_cmds::message_session,
             pause_cmds::pause_task,
             pause_cmds::resume_task,
+            pause_cmds::old_pauses,
+            pause_cmds::fix_old_pauses,
+            pause_cmds::set_old_pauses_offered,
             review_cmds::review_brief,
             review_cmds::lessons,
             review_cmds::decide_lessons
@@ -1718,7 +1722,9 @@ mod tests {
             serde_json::to_string(&info_for(&file, "0.1.0", &reader, "on (1 account)".into()))
                 .unwrap();
         assert!(
-            json.contains(r#""settings":{"leaseMinutes":720,"liveMinutes":15,"notify":true}"#),
+            json.contains(
+                r#""settings":{"leaseMinutes":720,"liveMinutes":15,"notify":true,"oldPausesOffered":false}"#
+            ),
             "{json}"
         );
         assert!(

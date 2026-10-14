@@ -4,8 +4,8 @@
 
 use crate::session::{self, Session};
 use crate::{
-    agents, backlog, check_limit, fields, index, lessons, ops, pause, ping, projects, queue,
-    review, search, settings, vision,
+    agents, backlog, check_limit, fields, index, lessons, old_pause, ops, pause, ping, projects,
+    queue, review, search, settings, vision,
 };
 use std::path::{Path, PathBuf};
 
@@ -35,8 +35,10 @@ struct Args {
     local: bool,
     /// `init --committed`, `migrate --committed`: a queue committed with the code.
     committed: bool,
-    /// `migrate --dry-run`: the plan, nothing written.
+    /// `migrate --dry-run`, `check --fix-pauses --dry-run`: the plan, nothing written.
     dry_run: bool,
+    /// `check --fix-pauses` (0059): the old paused blocks become pauses, in every queue.
+    fix_pauses: bool,
 }
 
 /// Options and positionals; after `--`, everything is positional (text that starts with `--`).
@@ -58,6 +60,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         local: false,
         committed: false,
         dry_run: false,
+        fix_pauses: false,
     };
     let mut it = argv.iter();
     let mut rest = false;
@@ -84,6 +87,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--local" => a.local = true,
             "--committed" => a.committed = true,
             "--dry-run" => a.dry_run = true,
+            "--fix-pauses" => a.fix_pauses = true,
             "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on"
             | "--tags" | "--tag" | "--time" | "--test-time" | "--tokens" | "--stage" | "--gate"
             | "--commit" | "--to" | "--from" | "--after" | "--session" | "--level" | "--parent"
@@ -855,6 +859,85 @@ fn list_parts(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> (String, Stri
     (head, tail)
 }
 
+/// `muster check --fix-pauses` (0059): every old paused block in `queues` listed (key, queue,
+/// title, stage, since when, the reason it keeps), then, unless `dry_run`, each turned into a pause
+/// by `who` (of its queue's folder), then one line saying what happened. The lines to print, and
+/// the exit code: 1 when one couldn't be converted.
+fn fix_pauses(
+    queues: &[(String, PathBuf)],
+    dry_run: bool,
+    who: &dyn Fn(&Path) -> String,
+    stamp: &str,
+) -> (Vec<String>, i32) {
+    let n = |k: usize, one: &str, many: &str| format!("{k} {}", if k == 1 { one } else { many });
+    let found = old_pause::find_all(queues, stamp);
+    if found.is_empty() {
+        return (
+            vec![format!(
+                "no old paused blocks in {}",
+                n(queues.len(), "queue", "queues")
+            )],
+            0,
+        );
+    }
+    let mut lines: Vec<String> = found
+        .iter()
+        .map(|p| {
+            let why = if p.reason.is_empty() {
+                "no reason given".to_string()
+            } else {
+                format!("reason: {}", p.reason)
+            };
+            format!(
+                "{} ({}) {} · {} · paused since {} · {why}",
+                p.key,
+                p.queue,
+                p.title,
+                queue::stage_label(&p.stage),
+                p.since
+            )
+        })
+        .collect();
+    let blocks = |k: usize| n(k, "old paused block", "old paused blocks");
+    let pauses = |k: usize| if k == 1 { "a pause" } else { "pauses" };
+    if dry_run {
+        lines.push(format!(
+            "dry run: {} would become {}; nothing changed",
+            blocks(found.len()),
+            pauses(found.len())
+        ));
+        return (lines, 0);
+    }
+    // Only what was listed, each checked again under its queue's lock.
+    let mut fixed = old_pause::Fixed::default();
+    for (name, root) in queues {
+        let ids: Vec<String> = found
+            .iter()
+            .filter(|p| p.queue == *name)
+            .map(|p| p.id.clone())
+            .collect();
+        match old_pause::convert(name, root, &ids, &who(root), stamp) {
+            Ok(f) => {
+                fixed.converted.extend(f.converted);
+                fixed.failed.extend(f.failed);
+            }
+            Err(e) => fixed.failed.push(format!("{name}: {e}")),
+        }
+    }
+    lines.extend(fixed.failed.iter().map(|f| format!("not converted: {f}")));
+    let k = fixed.converted.len();
+    let mut done = format!("turned {} into {}", blocks(k), pauses(k));
+    if !fixed.failed.is_empty() {
+        done.push_str(&format!(
+            "; {} couldn't be, and {} as it was",
+            fixed.failed.len(),
+            if fixed.failed.len() == 1 { "is" } else { "are" }
+        ));
+    }
+    lines.push(done);
+    (lines, if fixed.failed.is_empty() { 0 } else { 1 })
+}
+
 /// What `muster check` says about INDEX.md, in the problems' form (`q:` like `tasks_of`'s): a
 /// list that shows something other than the files is a problem; one only due a refresh (the
 /// files changed outside muster, as Drover's answers do) is a warning; none yet is fine.
@@ -1412,6 +1495,29 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
                 q.display()
             );
             Ok(0)
+        }
+        // Every queue Muster knows (0059), or the one --queue names.
+        "check" if a.fix_pauses => {
+            let cwd = std::env::current_dir().ok();
+            let known = || projects::active(&base(), &projects::load(&config_file()));
+            let queues = match a.flags.get("queue") {
+                Some(q) => {
+                    let (root, _) = resolve_queue(Some(q), None, cwd.as_deref(), &known)?;
+                    let name = known()
+                        .into_iter()
+                        .find(|(_, p)| same_folder(p, &root))
+                        .map(|(n, _)| n)
+                        .unwrap_or_else(|| projects::default_name(&root));
+                    vec![(name, root)]
+                }
+                None => known(),
+            };
+            let who = |root: &Path| stamped_who(&label(&a, env, root), env, cwd.as_deref());
+            let (lines, code) = fix_pauses(&queues, a.dry_run, &who, &stamp);
+            for l in &lines {
+                println!("{l}");
+            }
+            Ok(code)
         }
         "migrate" => {
             let old = need(&a, 1, "the old queue's folder")?;
@@ -2038,6 +2144,11 @@ fn run_on(
         "review" => run_review(a, root, prefix, &me, stamp),
         "lessons" => run_lessons(a, root, &me, stamp),
         "check" => {
+            if a.dry_run {
+                return Err(
+                    "--dry-run goes with --fix-pauses: muster check --fix-pauses --dry-run".into(),
+                );
+            }
             // A claim is quiet past this machine's lease (0036), as `reclaim` judges it; each task
             // with its key (0033).
             let s = queue::read_state_keyed(
@@ -2464,6 +2575,167 @@ mod tests {
             machine_settings(&|_: &str| Some(String::new())),
             settings::Settings::default()
         );
+    }
+
+    /// Every file under `root`, with what it says, by path: to see that nothing was written.
+    fn files_under(root: &Path) -> Vec<(PathBuf, String)> {
+        let mut out = Vec::new();
+        let mut dirs = vec![root.to_path_buf()];
+        while let Some(d) = dirs.pop() {
+            for e in std::fs::read_dir(&d).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    dirs.push(p);
+                } else {
+                    out.push((p.clone(), std::fs::read_to_string(&p).unwrap()));
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// Drover's old queue with dr-22 paused before 0045 and a real block beside it, and Muster's
+    /// `.muster/` with mu-42 blocked on you as paused, holding them both.
+    fn old_pause_queues() -> (tempfile::TempDir, Vec<(String, PathBuf)>) {
+        let base = tempfile::tempdir().unwrap();
+        let dr = base.path().join("drover/tasks");
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir_all(dr.join(f)).unwrap();
+        }
+        std::fs::write(dr.join("README.md"), "---\nprefix: dr\n---\n\nq").unwrap();
+        std::fs::write(
+            dr.join("blocked/0022-pets.md"),
+            "---\nid: 0022\ntype: feature\nstatus: blocked\nclaimed-by:\nheartbeat:\nwaiting_on: owner (paused)\n---\n\n# Desk pets\n\n## Log\n- 2026-10-12 capture: created\n- 2026-10-13 02:51 owner: \"pause the pet project\". Paused; claim released.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dr.join("blocked/0023-api.md"),
+            "---\nid: 0023\nstatus: blocked\nstage: ready\nwaiting_on: waiting on the design\nblocked-kind: outside\n---\n\n# The API\n\n## Log\n- 2026-10-13 08:00 capture: created\n",
+        )
+        .unwrap();
+        let mu = base.path().join("muster/main").join(crate::layout::DIR);
+        std::fs::create_dir_all(mu.join("tasks")).unwrap();
+        std::fs::write(
+            mu.join(crate::layout::CONFIG),
+            crate::layout::config_text(true, Some("mu")),
+        )
+        .unwrap();
+        std::fs::write(
+            mu.join("tasks/0042-t.md"),
+            "---\nid: 0042\nstage: building\nclaimed-by: wt-a\nheartbeat: 2026-10-13 09:00\nwaiting_on: owner: paused: the design first\nblocked-kind: you\n---\n\n# The parser\n\n## Log\n- 2026-10-13 08:00 capture: created\n- 2026-10-13 10:00 owner: blocked on you: paused: the design first\n",
+        )
+        .unwrap();
+        let queues = vec![("drover".to_string(), dr), ("muster".to_string(), mu)];
+        (base, queues)
+    }
+
+    #[test]
+    fn fix_pauses_lists_first_then_converts_every_queue_and_a_dry_run_changes_nothing() {
+        let (base, queues) = old_pause_queues();
+        let now = "2026-10-13 18:00";
+        let who = |_: &Path| "owner".to_string();
+        let before = files_under(base.path());
+        let listed = [
+            "dr-22 (drover) Desk pets · Ready · paused since 2026-10-13 02:51 · no reason given",
+            "mu-42 (muster) The parser · Building · paused since 2026-10-13 10:00 · reason: the design first",
+        ];
+        let (lines, code) = fix_pauses(&queues, true, &who, now);
+        assert_eq!(
+            lines,
+            [
+                listed[0],
+                listed[1],
+                "dry run: 2 old paused blocks would become pauses; nothing changed"
+            ]
+        );
+        assert_eq!(code, 0);
+        assert_eq!(
+            files_under(base.path()),
+            before,
+            "nothing written, not even the lock"
+        );
+        let (lines, code) = fix_pauses(&queues, false, &who, now);
+        assert_eq!(
+            lines,
+            [
+                listed[0],
+                listed[1],
+                "turned 2 old paused blocks into pauses"
+            ]
+        );
+        assert_eq!(code, 0);
+        let dr = queue::read_task(&queues[0].1, "0022").unwrap();
+        assert_eq!(
+            (dr.paused.as_str(), dr.blocked, dr.path.as_str()),
+            ("2026-10-13 02:51", false, "todo/0022-pets.md")
+        );
+        assert!(
+            queue::read_task(&queues[0].1, "0023").unwrap().blocked,
+            "a real block stays"
+        );
+        let mu = queue::read_task(&queues[1].1, "0042").unwrap();
+        assert_eq!(
+            (
+                mu.paused_why.as_str(),
+                mu.stage.as_str(),
+                mu.claimed_by.as_str()
+            ),
+            ("the design first", "building", "wt-a")
+        );
+        // Again: nothing to do.
+        let after = files_under(base.path());
+        assert_eq!(
+            fix_pauses(&queues, false, &who, "2026-10-13 19:00"),
+            (vec!["no old paused blocks in 2 queues".to_string()], 0)
+        );
+        assert_eq!(files_under(base.path()), after);
+    }
+
+    #[test]
+    fn fix_pauses_says_which_it_couldnt_convert_and_exits_1() {
+        let (_base, queues) = old_pause_queues();
+        let (lines, _) = fix_pauses(
+            &queues[..1],
+            true,
+            &|_: &Path| "owner".to_string(),
+            "2026-10-13 18:00",
+        );
+        assert_eq!(
+            lines.last().map(String::as_str),
+            Some("dry run: 1 old paused block would become a pause; nothing changed")
+        );
+        // wt-a holds another task in Building, so mu-42 can't be unblocked for them.
+        std::fs::write(
+            queues[1].1.join("tasks/0041-t.md"),
+            "---\nid: 0041\nstage: building\nclaimed-by: wt-a\nheartbeat: 2026-10-13 09:00\nwaiting_on:\n---\n\n# Other\n\n## Log\n- 2026-10-13 08:00 capture: created\n",
+        )
+        .unwrap();
+        let (lines, code) = fix_pauses(
+            &queues,
+            false,
+            &|_: &Path| "owner".to_string(),
+            "2026-10-13 18:00",
+        );
+        assert_eq!(code, 1);
+        assert_eq!(lines.len(), 4, "{lines:?}");
+        assert!(
+            lines[2].starts_with("not converted: mu-42 (muster): wt-a already holds mu-41"),
+            "{lines:?}"
+        );
+        assert_eq!(
+            lines[3],
+            "turned 1 old paused block into a pause; 1 couldn't be, and is as it was"
+        );
+        assert!(queue::read_task(&queues[1].1, "0042").unwrap().blocked);
+    }
+
+    #[test]
+    fn check_takes_dry_run_only_with_fix_pauses() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        assert_eq!(code_in(&q, &[], &["check", "--dry-run"]), 1);
+        assert_eq!(code_in(&q, &[], &["check"]), 0);
     }
 
     /// `muster list` as text, whole.

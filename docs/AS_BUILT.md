@@ -96,14 +96,25 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
 - **Pause and Resume** (0045, `pause.rs`, `pause_cmds.rs`, `Pause.tsx`): **Pause** or **Resume**
   in the strip under a card (Backlog through Testing; the strip a quiet card's Ask for a check-in
   shares) and beside the stage in the pane's status line, with an optional why typed in place. A
-  paused task keeps its stage, claim and column and shows the grey **⏸ Paused** chip with "2 h ago
+  paused task keeps its stage and claim but leaves its column for the **Paused lane** (0059,
+  `PausedLane.tsx`, `lib.ts` `columns()`): the board's first column, before Backlog, always shown
+  with its count (a thin labelled strip when empty, folded in Focus), a Paused band first under
+  Group by; its card says "⏸ was Building · paused 2 h ago · why", and Resume brings it back to its
+  column on the next poll. The stage columns' counts and the sidebar's in-progress count leave
+  paused tasks out; the sidebar's "⏸ 2" stays. Elsewhere it shows the grey **⏸ Paused** chip with "2 h ago
   · why" (never red, never a stage colour); its claim isn't quiet and its lease doesn't run (the
   card's flags, Release, the sidebar's stalled), Pass is off with why, the timeline hatches its
   paused stretches grey (`pauseHistory`), the Flags filter has **paused**, and the sidebar row
-  counts them ("⏸ 2"); the table has a grey ⏸ Paused pill, the graph a paused badge (and never
+  counts them ("⏸ 2"); the table has a grey ⏸ Paused pill and a "was Building" pill (sorted first by
+  Stage), the timeline bar says "Paused · was Building", the graph a paused badge (and never
   "ready"), Waiting for you shows the chip, the owner's own paused task doesn't need them, the
   stage track is off, and the pane's time so far leaves paused time out. In Building or Testing the holder's session is told through its mailbox
   (`<id>-pause.md`, `<id>-resume.md`); the pane says whether it was.
+- **Old pauses** (0059, `old_pause.rs`, `OldPauses.tsx`): a block from before 0045 whose reason says
+  paused ("owner (paused)") is found in every queue and turned into a pause with its reason and the
+  time it was blocked (`muster check --fix-pauses`, below). Once, on load, the board shows an
+  inline notice listing them with **Make them pauses** and **Not now**
+  (`old_pauses`, `fix_old_pauses`, `set_old_pauses_offered`; the setting `old-pauses-offered`).
 - **Claude Code's session states** (0048, `agents.rs`, `sessionState.ts`): the core runs
   `claude agents --json --all` (argument array, `CLAUDE_CONFIG_DIR` per account the stamps in
   Building and Testing name, usage reporting off, in a process group of its own that a 10 s timeout stops whole, 1 MB cap) on a thread of its own,
@@ -679,7 +690,12 @@ logged on the task.
 (`pause.rs`): Backlog through Testing; while paused, `claim`, `next`, `start`, `ready` and every
 pass refuse it and `reclaim` skips it; the holder's session in Building or Testing gets a stop
 request, and on resume a carry-on (and in Building a fresh lease). `muster list` marks it
-`[paused since …]`, INDEX.md "paused".
+`[paused since …]`, INDEX.md "paused". `muster check` warns about old paused blocks (0059), and
+`muster check --fix-pauses [--dry-run]` lists them in every queue Muster knows before changing
+anything, then unblocks each (an old-layout file moves back to `todo/`, stage Ready) and pauses it
+from the original time: a `paused (why)` and `unblocked` line with that stamp, then a line stamped
+now saying it was converted. A dry run changes nothing; a task it can't unblock is named, left as
+it was, and the command exits 1.
 **Session states** (task 0048): `muster list --json` gives each task `sessionState` (`working`,
 `needs-input`, `ended`, `unknown`), read from `claude agents --json` for that listing only, under
 the caller's `$HOME`; no other command runs it, a write never does.

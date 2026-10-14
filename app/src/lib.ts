@@ -51,7 +51,8 @@ export function passLabel(stage: string, human = false): string | null {
 export function earlierStages(stage: string): Stage[] {
   return STAGES.slice(0, Math.max(0, stageIndex(stage))).reverse();
 }
-export const inProgress = (t: Pick<Task, "stage">) => t.stage === "building" || t.stage === "testing";
+/** Being worked: in Building or Testing, and not paused (mu-59: a paused one waits in the Paused lane). */
+export const inProgress = (t: Pick<Task, "stage" | "paused">) => (t.stage === "building" || t.stage === "testing") && !t.paused;
 
 /** Who's on a task in its stage, in full (with the session): the claim in Ready and Building,
  *  `held-by` in Testing and Your check (the owner's when it names nobody), nobody elsewhere. The
@@ -310,10 +311,12 @@ export function boardColumn(t: Pick<Task, "stage" | "forWho">): StageId {
 
 /** Tasks per column, each column in the board's sort (priority unless the Sort chips say
  *  otherwise). Blocked tasks stay in their stage; an unknown stage goes to Backlog; the owner's
- *  own tasks go where `boardColumn` puts them. */
+ *  own tasks go where `boardColumn` puts them. A paused one (mu-59) goes to `paused`, the
+ *  Paused lane beside Backlog, and to no stage's column: it keeps its stage, so resumed, it's
+ *  back in its column. */
 export function columns(tasks: Task[], by: BoardSort = "priority"): Record<string, Task[]> {
-  const out: Record<string, Task[]> = Object.fromEntries(STAGES.map((s) => [s.id, [] as Task[]]));
-  for (const t of sortBoard(tasks, by)) out[boardColumn(t)].push(t);
+  const out: Record<string, Task[]> = Object.fromEntries([["paused", [] as Task[]], ...STAGES.map((s) => [s.id, [] as Task[]])]);
+  for (const t of sortBoard(tasks, by)) out[t.paused ? "paused" : boardColumn(t)].push(t);
   return out;
 }
 
