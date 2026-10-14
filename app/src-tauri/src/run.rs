@@ -683,32 +683,78 @@ pub fn search_path(home: &Path, login: Option<&OsStr>, inherited: &OsStr) -> OsS
 /// How long the login shell gets to print its PATH.
 pub const LOGIN_WAIT: Duration = Duration::from_secs(5);
 /// The most bytes read from the login shell; its startup files may print more than the PATH.
-const LOGIN_OUTPUT: u64 = 64 * 1024;
-/// Around the PATH the login shell prints, so what its startup files print isn't taken for it.
-const LOGIN_MARK: &str = "<muster-path>";
-const LOGIN_END: &str = "</muster-path>";
+const LOGIN_OUTPUT: usize = 64 * 1024;
+
+/// Around the PATH the login shell prints, with a number of this call's own, so nothing its
+/// startup files print is taken for it.
+struct Marks {
+    start: String,
+    end: String,
+}
+
+impl Marks {
+    fn new() -> Marks {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or_default();
+        let n = format!("{}-{nanos}", std::process::id());
+        Marks {
+            start: format!("<muster-path {n}>"),
+            end: format!("</muster-path {n}>"),
+        }
+    }
+
+    /// The PATH between the last marks in `text`; None without both, for an empty one, or one
+    /// with a line break or NUL in it.
+    fn path_in(&self, text: &str) -> Option<OsString> {
+        let start = text.rfind(&self.start)? + self.start.len();
+        let len = text[start..].find(&self.end)?;
+        let path = &text[start..start + len];
+        (!path.is_empty() && !path.contains(['\n', '\r', '\0'])).then(|| OsString::from(path))
+    }
+}
 
 /// The PATH the owner's login shell `shell` sets, as a terminal has it: `shell -ilc` with a
-/// `printf` of `$PATH` between marks, as an argument array, no stdin, leading a group of its own.
-/// None when it can't start, fails, prints no PATH, or hasn't finished within `wait` (then it and
-/// whatever its startup files started are killed). Run it off the main thread: it takes as long as
-/// the owner's startup files (nvm's take most of a second).
+/// `printf` of `$PATH` between marks, as an argument array, no stdin, in a session of its own (so
+/// with no controlling terminal: an interactive zsh in a background group of Muster's terminal
+/// would stop on SIGTTOU). Read up to the end mark, not to the end of output, since something its
+/// startup files leave going may hold the pipe. None when it can't start, fails, prints no PATH,
+/// or hasn't finished within `wait` (then it and whatever its startup files started are killed).
+/// Run it off the main thread: it takes as long as the owner's startup files (nvm's take most of
+/// a second).
 pub fn login_path(shell: &Path, wait: Duration) -> Option<OsString> {
-    let script = format!("printf '\\n{LOGIN_MARK}%s{LOGIN_END}\\n' \"$PATH\"");
+    let marks = Marks::new();
+    let script = format!("printf '\\n{}%s{}\\n' \"$PATH\"", marks.start, marks.end);
     let mut cmd = Command::new(shell);
     cmd.args(["-ilc", &script])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    new_session(&mut cmd);
     let mut child = cmd.spawn().ok()?;
     let out = child.stdout.take();
     let (tx, rx) = std::sync::mpsc::channel();
-    // Read on a thread of its own, so a full pipe never stalls the wait below.
-    let read = out.map(|out| {
+    // Read on a thread of its own, so a full pipe never stalls the wait below; it stops at the end
+    // mark, at the end of the output, or at `LOGIN_OUTPUT`.
+    let end = marks.end.clone();
+    let read = out.map(|mut out| {
         thread("run-path-read", move || {
-            let mut buf = Vec::new();
-            let _ = out.take(LOGIN_OUTPUT).read_to_end(&mut buf);
+            let (mut buf, mut chunk) = (Vec::new(), [0u8; 4096]);
+            while buf.len() < LOGIN_OUTPUT {
+                let n = match out.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(n) => n,
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(_) => break,
+                };
+                buf.extend_from_slice(&chunk[..n]);
+                // Only where the mark could be new: this read, and a mark split across two reads.
+                let from = buf.len().saturating_sub(n + end.len());
+                if buf[from..].windows(end.len()).any(|w| w == end.as_bytes()) {
+                    break;
+                }
+            }
             let _ = tx.send(buf);
         })
     });
@@ -738,19 +784,28 @@ pub fn login_path(shell: &Path, wait: Duration) -> Option<OsString> {
     if !status.success() {
         return None;
     }
-    // Something its startup files left going may still hold the pipe: wait no longer than `wait`.
+    // The end mark came before the shell exited; without one, the end of output or `wait`.
     let left = until.saturating_duration_since(Instant::now());
     let buf = rx.recv_timeout(left.max(Duration::from_millis(200))).ok()?;
-    parse_login(&String::from_utf8(buf).ok()?)
+    marks.path_in(&String::from_utf8(buf).ok()?)
 }
 
-/// The PATH between the last marks in what the login shell printed; None without one, for an
-/// empty one, or one with a line break or NUL in it.
-fn parse_login(text: &str) -> Option<OsString> {
-    let start = text.rfind(LOGIN_MARK)? + LOGIN_MARK.len();
-    let len = text[start..].find(LOGIN_END)?;
-    let path = &text[start..start + len];
-    (!path.is_empty() && !path.contains(['\n', '\r', '\0'])).then(|| OsString::from(path))
+/// `cmd` starts in a session of its own, leading its process group, with no controlling terminal.
+fn new_session(cmd: &mut Command) {
+    extern "C" {
+        fn setsid() -> i32;
+    }
+    // SAFETY: setsid is async-signal-safe and touches no memory of this process; between fork and
+    // exec nothing else runs. It fails only for a process that already leads a group, which a
+    // freshly forked child doesn't.
+    unsafe {
+        std::os::unix::process::CommandExt::pre_exec(cmd, || {
+            if setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
 }
 
 /// The project named `name` in `list`. The window names a project only by its name, never by a
@@ -1367,17 +1422,115 @@ mod tests {
         let args = fs::read_to_string(d.path().join("args")).unwrap();
         let args: Vec<&str> = args.lines().collect();
         assert_eq!(
-            args,
-            [
-                "-ilc",
-                "printf '\\n<muster-path>%s</muster-path>\\n' \"$PATH\""
-            ],
+            args.len(),
+            2,
             "an interactive login shell, one script argument"
         );
-        assert_eq!(parse_login("a<muster-path></muster-path>"), None, "empty");
-        assert_eq!(parse_login("<muster-path>/a"), None, "no end mark");
-        assert_eq!(parse_login("<muster-path>/a\n/b</muster-path>"), None);
-        assert_eq!(parse_login("nothing"), None);
+        assert_eq!(args[0], "-ilc");
+        assert!(
+            args[1].starts_with("printf '\\n<muster-path ") && args[1].ends_with("\\n' \"$PATH\""),
+            "{}",
+            args[1]
+        );
+        let m = Marks {
+            start: "<m>".into(),
+            end: "</m>".into(),
+        };
+        assert_eq!(m.path_in("<m>/a</m> <m>/b</m>"), Some(OsString::from("/b")));
+        assert_eq!(m.path_in("a<m></m>"), None, "empty");
+        assert_eq!(m.path_in("<m>/a"), None, "no end mark");
+        assert_eq!(m.path_in("<m>/a\n/b</m>"), None);
+        assert_eq!(m.path_in("<muster-path>/a</muster-path>"), None);
+        // Each call's marks are its own.
+        assert_ne!(Marks::new().start, Marks::new().start);
+    }
+
+    #[test]
+    fn the_path_is_taken_at_its_end_mark_while_a_startup_file_still_holds_the_output() {
+        let d = tempfile::tempdir().unwrap();
+        let pid = d.path().join("pid");
+        let shell = script(
+            d.path(),
+            "shell",
+            &format!(
+                "sleep 30 &\necho $! > '{}'\nPATH=/nvm/bin:/usr/bin\neval \"$2\"\n",
+                pid.display()
+            ),
+        );
+        let t = Instant::now();
+        let got = login_path(&shell, LOGIN_WAIT);
+        let took = t.elapsed();
+        let sleeper = fs::read_to_string(&pid).unwrap();
+        let _ = Command::new("/bin/kill")
+            .args(["-KILL", sleeper.trim()])
+            .status();
+        assert_eq!(got, Some(OsString::from("/nvm/bin:/usr/bin")));
+        assert!(took < Duration::from_secs(3), "{took:?}");
+    }
+
+    #[test]
+    fn the_login_shell_runs_without_a_controlling_terminal() {
+        let d = tempfile::tempdir().unwrap();
+        let shell = script(
+            d.path(),
+            "shell",
+            "if (: </dev/tty) 2>/dev/null; then PATH=/has/a/tty; else PATH=/no/tty; fi\neval \"$2\"\n",
+        );
+        assert_eq!(
+            login_path(&shell, LOGIN_WAIT),
+            Some(OsString::from("/no/tty"))
+        );
+    }
+
+    /// Under a terminal of its own (`script`), a real interactive zsh with no startup files of the
+    /// owner's (HOME and ZDOTDIR in a temporary folder) prints its PATH at once: in a background
+    /// group of Muster's terminal it would stop on SIGTTOU until the timeout.
+    #[test]
+    fn a_real_zsh_under_a_terminal_prints_its_path_without_stopping() {
+        if !Path::new("/bin/zsh").exists() || !Path::new("/usr/bin/script").exists() {
+            return;
+        }
+        let d = tempfile::tempdir().unwrap();
+        let mut cmd = Command::new("/usr/bin/script");
+        cmd.arg("-q")
+            .arg("/dev/null")
+            .arg(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "run::tests::zsh_inside_a_terminal",
+                "--ignored",
+                "--test-threads=1",
+            ])
+            .stdin(Stdio::null());
+        for var in ["HOME", "ZDOTDIR"] {
+            cmd.env(var, d.path());
+        }
+        let out = cmd.output().unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        if String::from_utf8_lossy(&out.stderr).contains("openpty") {
+            // A sandbox that allows no terminals: nothing to try here.
+            eprintln!("skipped: script can't open a terminal here");
+            return;
+        }
+        assert!(out.status.success(), "{text}");
+        assert!(text.contains("1 passed"), "{text}");
+    }
+
+    #[test]
+    #[ignore = "run by a_real_zsh_under_a_terminal_prints_its_path_without_stopping, under script"]
+    fn zsh_inside_a_terminal() {
+        assert!(
+            Command::new("/bin/sh")
+                .args(["-c", ": </dev/tty"])
+                .status()
+                .unwrap()
+                .success(),
+            "a terminal of its own"
+        );
+        let t = Instant::now();
+        let got = login_path(Path::new("/bin/zsh"), Duration::from_secs(4));
+        assert!(got.is_some(), "after {:?}", t.elapsed());
+        assert!(t.elapsed() < Duration::from_secs(3), "{:?}", t.elapsed());
     }
 
     #[test]

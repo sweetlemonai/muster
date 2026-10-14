@@ -4,6 +4,17 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Run from the app, review round 2: the login shell in its own session, read to its mark (mu-79)
+**Fixed:** R3: under a terminal, `zsh -ilc` in a background group stopped on SIGTTOU until the
+5 s timeout → `run::new_session` calls `setsid` before exec (it leads its group too, so the
+timeout's group kill still works). R4: the PATH was read to the end of output, so a startup file
+leaving something on stdout threw it away → read in chunks up to the end mark, which carries a
+number of the call's own so nothing a startup file prints matches it.
+**Verified:** `cargo test run::` 20 (+1 run only under `script`): a sleeper holding stdout gives
+the PATH in under 3 s; the stand-in shell has no `/dev/tty`; a real zsh under `script` prints its
+PATH in 0.06 s, and with `process_group(0)` instead it fails at the 4 s timeout (run outside the
+sandbox, which allows no pty; inside it the test says so and skips). Gate below.
+
 ## 2026-10-14 — Run from the app, review round 1: the login shell's PATH, events by key (mu-79)
 **Fixed:** R1: Muster opened from the Dock ran `bin/run` without node (the owner's is only under
 `~/.nvm`), so pnpm exited 127 → `run::login_path` reads the login shell's PATH once (`$SHELL

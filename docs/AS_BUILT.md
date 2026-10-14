@@ -1179,7 +1179,10 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     system's, and the owner's node is only under `~/.nvm`. The login shell's PATH is read once,
     on a thread `Runs::new` starts (a run that comes first waits for it, outside the lock Stop
     takes): `$SHELL -ilc` with a `printf` of `$PATH` between marks, as an argument array, no
-    stdin, its own process group, at most 64 KB read (`run::login_path`). If it fails, prints no
+    stdin, in a session of its own (`setsid` before exec: no controlling terminal, so an
+    interactive zsh never stops on SIGTTOU when Muster was started from a terminal), read up to
+    its end mark (a number of the call's own in it), not to the end of output, which something
+    its startup files leave going may hold, at most 64 KB (`run::login_path`). If it fails, prints no
     PATH or takes over 5 s (then its group is killed), the fixed folders stand in. It runs as the owner would start it, on their real data (Q2). One run per project,
     kept by its queue folder, so a rename or another project's name can't take it; removing a
     project stops its run. Run while one goes restarts it. Runs live in `AppState.runs`, in memory
