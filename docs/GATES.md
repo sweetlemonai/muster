@@ -66,6 +66,12 @@ The walkthrough overlay is injected into the app under test, in its own browser.
 Muster's UI, so Muster's no-overlay rule (DESIGN.md) doesn't apply to it. Muster's own screens show
 walkthrough runs and evidence in place, as always.
 
+**Headless for agents:** everything an agent runs (captures, reference QA, Auto replays) runs in
+headless Playwright WebKit with the IPC mocked, and never clicks, types or raises a window on the
+owner's screen. A visible browser opens only for a walkthrough the owner starts, because the owner
+is the one driving it. Native-only checks are screenshots of a window that's already open, with
+no input.
+
 **Fixtures:** captures and walkthroughs run on synthetic fixture data (a fixture queue for Muster),
 with `HOME` and the app's config in `$TMPDIR`. Never the owner's own data, because screenshots get
 shown and kept.
