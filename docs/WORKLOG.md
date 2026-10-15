@@ -3,6 +3,56 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-151: Persian digits and Jalali dates where people read them, search that folds Persian
+**Did (Gholi_48, builder):** Settings › Language has Digits (۱۲۳ · 123) and Calendar (Jalali ·
+Gregorian) under the language chips, each following the language until picked (`settings.rs`
+`digits`, `calendar`; the menu bar's counts follow Digits through `i18n::set_digits`). One set of
+cached Intl formatters (`i18n/numbering.ts`, `format.ts`) now formats `{{count}}` and `fmt.*`:
+counts on columns, bands, the toolbar, the sidebar and the pane, estimates («ایجنت ۲ ساعت ·
+۴۰۰ هزار»), the Timeline (in Jalali, Month is the Jalali month), the pane's history, check-ins and
+comments, a goal's due date, the Table's captured day, Recently finished and the meter's reset
+date, each date in a `<time datetime>`. English with Latin and Gregorian reads as before. Inputs
+send Latin digits to the core (`api.ts`), and a goal's due field takes a Jalali date and shows the
+ISO day it saves. `jalali.ts` ports `@dastafzar/calendar` (MIT); search folds Persian on both
+sides (`search.ts`, `search.rs`, after `@dastafzar/text`); names sort with `Intl.Collator`. Docs:
+AS_BUILT "Digits, calendars and search folding", DESIGN Languages, the glossary's Digits rule,
+`docs/now/languages.md`, and the two Settings rules in `docs/now/settings.md`.
+**Decided:** a pick equal to the language's own saves empty, so it goes on following the
+language; estimates read in words in Persian only (no short unit forms), as written in English;
+a poll asked for before a Settings save can't put the old digits back. Rebased onto mu-147: its
+keyed strings carry the digits through `{{count}}`, so a count inside a sentence is mu-147's key
+and one alone is `fmt.num` (`HeadCount` too); the Timeline keeps mu-147's `views.date` strings
+and names, with the day, month and year in the calendar picked (`viewData.ts` `dayParts`, the
+Jalali month named by Intl, `fmt.wallMonthName`); a goal's due date is `DueDate` (`common:due`),
+so `groups.due` went; one Persian word for due, mu-147's سررسید, so the glossary's موعد row went.
+**Fixed in review (round 2):** R9, in Jalali a Log stamp before 1 AP (a mistyped `0205-10-12`)
+threw from the converter in `dayParts` and blanked the window with the Timeline open → read
+through Intl's persian calendar outside 1–9999 AP, and the clock of a stamp before 1970 no longer
+reads negative; R10, the fa timeline test pinned Gregorian → the same labels again in Jalali (a
+week across Shahrivar–Mehr, one across Gregorian months only, one across Nowruz, a fuzzy
+segment), killing a Gregorian `monthKey` mutant; R11, a session recap's History and Started /
+last-active times stayed Latin Gregorian → `Stamp` and `fmt.stamp`. The lead's call: a Timeline
+bar's tooltip dates are read, not copied, so they're in the calendar and digits picked
+(`fmt.isoDay`).
+**Fixed in review (round 1):** R1, in Jalali a Gregorian ISO read as a Jalali year and a blur
+with nothing typed saved year 2647 → the year says the calendar (1300–1699 Jalali, 1700 on
+Gregorian, before 1300 refused) and text left as shown is never saved; R2, the due field's save
+path was untested → `DueFieldView` and `dueCommit`, tested through its own handlers; R3, a
+comment's Jalali stamp scrambled beside a Latin holder → `dir="auto"`; R4, Recently finished and
+Done cards had no `<time datetime>` → added (the meter's reset date sits inside a line of words,
+AS_BUILT says so); R5–R6, the Your check over-limit count, recap percentages, the No goal count
+and card badges stayed Latin → the digits picked; R7, About and the manual didn't mention Digits
+and Calendar → they do; R8, no fa test showed keys staying Latin → one does. Earlier: a hand-edited impossible due day crashed the pane in Jalali →
+shown as written; the A–Z sidebar order kept the old collation → the language is in its memo key;
+an account's reserve and a role's numbers refused Persian digits → read as Latin; ٫ → a point.
+**Verified:** `bin/gate`: green (pnpm check, test_task, test_commands, test_ac_verifier, cargo test
+(Kiritimati)) after review round 2 and the rebase onto mu-114. Vitest 109 files, 2612 tests.
+Vitest: the 1990–2040 Jalali sweep against Intl, the shared search cases on both sides, formatter
+construction counts, inputs at the IPC boundary. Headless WebKit on the synthetic fixture,
+before and after, ADHD, Standard and Focus × en, fa × light, dark, and the live 123 and Gregorian
+picks (`attachments/0151/`), no page or console errors.
+**Open:** a Persian week still starts on Monday on the Timeline.
+
 ## 2026-10-15 — mu-219: switches_go_through_one_place reads code, not comments
 **Fixed:** a commented-out `app_menu::set(handle)` in `switch_lang` kept the guard green (mu-147 R6)
 → `body()` matched text, comments included → it now checks `code_only(body)`: a test-only stripper in

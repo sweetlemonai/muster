@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { setLocale } from "./i18n/runtime";
 import { byCategory, categoriesOf, keyTitle, labelOf, labelsOf, OTHER, otherCategories } from "./labels";
 
 describe("project labels (0044)", () => {
@@ -21,13 +22,25 @@ describe("project labels (0044)", () => {
 
 describe("categories (0044)", () => {
   const row = (name: string, category: string) => ({ name, category });
+  it("sorts Persian headings in Persian order in فارسی, not by code point (mu-151)", async () => {
+    await setLocale("fa");
+    try {
+      // By code point ل (U+0644) would come before ک (U+06A9) and گ (U+06AF).
+      const groups = byCategory([row("a", "لوح"), row("b", "گل"), row("c", "کتاب")]);
+      expect(groups.map((g) => g.name)).toEqual(["کتاب", "گل", "لوح"]);
+    } finally {
+      await setLocale("en");
+    }
+  });
   it("group rows under headings A–Z with Other last, each keeping its rows' order", () => {
     const groups = byCategory([row("z", "tools"), row("a", ""), row("m", "Apps"), row("b", "Tools"), row("c", "tools"), row("o", OTHER), row("e", "Éclair")]);
+    // In the language's order (Intl.Collator, mu-151): É with the E's, a lowercase word before
+    // its capitalized twin.
     expect(groups.map((g) => [g.name, g.rows.map((r) => r.name)])).toEqual([
       ["Apps", ["m"]],
-      ["Tools", ["b"]],
-      ["tools", ["z", "c"]],
       ["Éclair", ["e"]],
+      ["tools", ["z", "c"]],
+      ["Tools", ["b"]],
       ["Other", ["a", "o"]],
     ]);
   });

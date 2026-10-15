@@ -244,7 +244,7 @@ describe("the grouped board in Persian (mu-147)", () => {
     const html = draw("feature", [...all, task({ id: "0012", title: "Blocked feature", level: "feature", blocked: true, due: "2026-11-01", progress: { done: 0, total: 0, estMinutes: 0, estTokenCount: 0 } })], true);
     expect(html).toContain('title="Open feature 0002"');
     expect(html).toContain('<span class="ui-status-pill ui-status-pill--blocked">blocked</span>');
-    expect(html).toContain('<span class="meta">due 2026-11-01</span>');
+    expect(html).toContain('<span class="meta">due <time dateTime="2026-11-01">2026-11-01</time></span>');
     expect(html).toMatch(/<span class="band-title">No feature<\/span><span class="meta">\d+ items<\/span>/);
     expect(html).toContain('<span class="band-title">Backlog · not in a feature yet</span><span class="meta">0 items</span>');
     expect(html).toContain('<p class="none">Nothing here</p>');
@@ -254,7 +254,8 @@ describe("the grouped board in Persian (mu-147)", () => {
     const html = draw("feature", [...all, task({ id: "0012", title: "Blocked feature", level: "feature", blocked: true, due: "2026-11-01", progress: { done: 0, total: 0, estMinutes: 0, estTokenCount: 0 } })], true);
     expect(html).toContain('title="باز کردن قابلیت ⁨0002⁩"');
     expect(html).toContain(">مسدود</span>");
-    expect(html).toContain('<span class="meta">سررسید ⁨2026-11-01⁩</span>');
+    // The due day in Jalali and Persian digits, the stored day in its <time> (mu-151).
+    expect(html).toContain('<span class="meta">سررسید <time dateTime="2026-11-01">۱۰ آبان ۱۴۰۵</time></span>');
     expect(html).toMatch(/<span class="band-title">بدون قابلیت<\/span><span class="meta">[۰-۹]+ مورد<\/span>/);
     expect(html).toContain('<span class="band-title">بک‌لاگ · هنوز در هیچ قابلیتی نیست</span><span class="meta">۰ مورد</span>');
     expect(html).toContain('<p class="none">اینجا چیزی نیست</p>');

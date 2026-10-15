@@ -574,13 +574,17 @@ describe("the manual and Settings", () => {
     const slugs = headings(inTheApp).map((h) => h.slug);
     for (const s of ["settings", "appearance", "projects", "agents", "accounts", "about"]) expect(slugs).toContain(s);
   });
-  // settings.json holds the language once one is picked (mu-146): About and the manual say so.
+  // settings.json holds the language once one is picked (mu-146), and the digits and calendar
+  // (mu-151): About and the manual say so.
   it("the manual has a Language section, and it and About list the language in settings.json", () => {
     const slugs = headings(inTheApp).map((h) => h.slug);
     expect(slugs).toContain("language");
     expect(slugs.indexOf("language")).toBeLessThan(slugs.indexOf("appearance"));
-    expect(inTheApp).toMatch(/`settings\.json` \([^)]*the language, once you pick one[^)]*\)/);
-    expect(about(PROJECTS)).toMatch(/settings\.json : [^;]*the language, once you pick one/);
+    expect(inTheApp).toMatch(/`settings\.json` \([^)]*the language, digits and calendar, once you pick them[^)]*\)/);
+    expect(about(PROJECTS)).toMatch(/settings\.json : [^;]*the language, digits and calendar, once you pick them/);
+    // And the Language section says what Digits and Calendar do (mu-151, review R7).
+    const language = inTheApp.slice(inTheApp.indexOf("### Language"), inTheApp.indexOf("### Appearance"));
+    expect(language).toMatch(/\*\*Digits\*\*[^\n]*\*\*Calendar\*\*/);
   });
 });
 

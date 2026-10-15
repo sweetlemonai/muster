@@ -10,7 +10,19 @@
     ["Café ếạ", "cafe ếạ"],
     ["Cafe\u0301 e\u0302\u0301a\u0323", "cafe ea"],
     ["fix 🔥 1️⃣ a‍b", "fix   1   a b"],
-    ["١٩ ² １９", "١٩ ² １９"],
+    ["١٩ ² １９", "19 ² １９"],
+    ["۱۲", "12"],
+    ["۰۱۲۳۴۵۶۷۸۹ ٠١٢٣٤٥٦٧٨٩ v۲", "0123456789 0123456789 v2"],
+    ["می\u200cشود", "میشود"],
+    ["كتاب", "کتاب"],
+    ["علي مصطفى مسئول", "علی مصطفی مسیول"],
+    ["خانۀ خانهٔ مدرسة", "خانه خانه مدرسه"],
+    ["آب", "اب"],
+    ["مسئول مؤسسه أحمد إسلام ٱسم", "مسیول موسسه احمد اسلام اسم"],
+    ["شيء ءا", "شی ا"],
+    ["کـتاب", "کتاب"],
+    ["کِتاب كتابًا هٰذا", "کتاب کتابا هذا"],
+    ["ب\u064b\u064c\u064d\u064e\u064f\u0650\u0651\u0652\u0653\u0654\u0655\u0656\u0657\u0658\u0659\u065a\u065b\u065c\u065d\u065e\u065f\u0670\u0640\u200cپ", "بپ"],
     ["àáâãäåāăąǎ çćĉċč ďđð èéêëēĕėęě ĝğġģ ĥħ ìíîïĩīĭįıǐ ĵ ķ ĺļľŀł ñńņňŉ òóôõöøōŏőǒ ŕŗř śŝşšș ţťŧț ùúûüũūŭůűųǔ ŵ ýÿŷ źżž ß æ œ þ", "aaaaaaaaaa ccccc ddd eeeeeeeee gggg hh iiiiiiiiii j k lllll nnnnn oooooooooo rrr sssss tttt uuuuuuuuuuu w yyy zzz ss ae oe th"],
     ["ÀÁÂÃÄÅĀĂĄǍ ÇĆĈĊČ ĎĐÐ ÈÉÊËĒĔĖĘĚ ĜĞĠĢ ĤĦ ÌÍÎÏĨĪĬĮǏ Ĵ Ķ ĹĻĽĿŁ ÑŃŅŇ ÒÓÔÕÖØŌŎŐǑ ŔŖŘ ŚŜŞŠȘ ŢŤŦȚ ÙÚÛÜŨŪŬŮŰŲǓ Ŵ ÝŸŶ ŹŻŽ ẞ Æ Œ Þ", "aaaaaaaaaa ccccc ddd eeeeeeeee gggg hh iiiiiiiii j k lllll nnnn oooooooooo rrr sssss tttt uuuuuuuuuuu w yyy zzz ss ae oe th"]
   ],
@@ -22,6 +34,12 @@
       "parsed": { "search": "board flickers on resume ui design the columns jump when window shrinks log capture created", "blocked": false, "waitingForOwner": false, "estMinutes": 0, "blockedKind": "" }
     },
     {
+      "id": "0012", "title": "كتاب راهنما چاپ می\u200cشود", "type": "chore", "priority": "low", "stage": "backlog", "tags": [],
+      "depends": [], "claimedBy": "", "heldBy": "", "waitingOn": "", "captured": "", "estTime": "", "modified": 10,
+      "body": "صفحهٔ ۱۲ در خانۀ مؤسسه.\n",
+      "parsed": { "search": "کتاب راهنما چاپ میشود صفحه در خانه موسسه", "blocked": false, "waitingForOwner": false, "estMinutes": 0, "blockedKind": "" }
+    },
+    {
       "id": "0019", "title": "Write the guide", "type": "code", "priority": "normal", "stage": "ready", "tags": ["docs"],
       "depends": [], "claimedBy": "", "heldBy": "", "waitingOn": "0007 the board", "captured": "2026-10-03", "estTime": "", "modified": 3000,
       "body": "Explain the café workflow.\n",
@@ -31,7 +49,7 @@
       "id": "0020", "title": "Export CSV", "type": "idea", "priority": "low", "stage": "shaping", "tags": [],
       "depends": [], "claimedBy": "", "heldBy": "", "waitingOn": "", "captured": "2026-10-03", "estTime": "2h", "modified": 2000,
       "body": "Rows as résumé lines, page ١٩.\n",
-      "parsed": { "search": "export csv rows as resume lines page ١٩","blocked": false, "waitingForOwner": false, "estMinutes": 120, "blockedKind": "" }
+      "parsed": { "search": "export csv rows as resume lines page", "blocked": false, "waitingForOwner": false, "estMinutes": 120, "blockedKind": "" }
     },
     {
       "id": "0119", "title": "Release 19 notes", "type": "code", "priority": "P0", "stage": "your-check", "tags": ["docs", "release"],
@@ -71,7 +89,7 @@
     }
   ],
   "cases": [
-    { "query": {}, "ids": ["0007", "0019", "0020", "0119", "0190", "0200", "0201", "0202", "0203"] },
+    { "query": {}, "ids": ["0007", "0012", "0019", "0020", "0119", "0190", "0200", "0201", "0202", "0203"] },
     { "query": { "search": "board" }, "ids": ["0007"] },
     { "query": { "search": "CAFÉ workflow" }, "ids": ["0019"] },
     { "query": { "search": "resume" }, "ids": ["0007", "0020"] },
@@ -85,7 +103,15 @@
     { "query": { "search": "sq-19 board" }, "ids": [] },
     { "query": { "search": "xy-19" }, "ids": [] },
     { "query": { "search": "sq-19,20" }, "ids": [] },
-    { "query": { "search": "١٩" }, "ids": ["0020"] },
+    { "query": { "search": "١٩" }, "ids": ["0019"] },
+    { "query": { "search": "میشود" }, "ids": ["0012"] },
+    { "query": { "search": "می\u200cشود" }, "ids": ["0012"] },
+    { "query": { "search": "کتاب" }, "ids": ["0012"] },
+    { "query": { "search": "كتاب" }, "ids": ["0012"] },
+    { "query": { "search": "خانهٔ مؤسسه" }, "ids": ["0012"] },
+    { "query": { "search": "۱۲" }, "ids": ["0012"] },
+    { "query": { "search": "12 چاپ" }, "ids": ["0012"] },
+    { "query": { "search": "۱۲ board" }, "ids": [] },
     { "query": { "search": "shrinks flick" }, "ids": ["0007"] },
     { "query": { "search": "drover" }, "ids": ["0007"] },
     { "query": { "search": "capture" }, "ids": ["0007", "0200"] },
@@ -106,12 +132,12 @@
     { "query": { "search": "cc hg" }, "ids": [] },
     { "query": { "blocked": true }, "ids": ["0019", "0200", "0203"] },
     { "query": { "blocked": true, "search": "owner" }, "ids": ["0200"] },
-    { "query": { "sort": "priority" }, "ids": ["0119", "0200", "0007", "0201", "0019", "0203", "0020", "0202", "0190"] },
-    { "query": { "sort": "newest" }, "ids": ["0203", "0201", "0202", "0020", "0019", "0119", "0007", "0190", "0200"] },
-    { "query": { "sort": "oldest" }, "ids": ["0190", "0007", "0119", "0019", "0020", "0202", "0201", "0203", "0200"] },
-    { "query": { "sort": "changed" }, "ids": ["0190", "0202", "0019", "0203", "0020", "0007", "0119", "0200", "0201"] },
-    { "query": { "sort": "estimate" }, "ids": ["0119", "0202", "0020", "0007", "0019", "0190", "0200", "0201", "0203"] },
-    { "query": { "sort": "id", "stage": ["done", "backlog"] }, "ids": ["0190", "0201"] },
+    { "query": { "sort": "priority" }, "ids": ["0119", "0200", "0007", "0201", "0019", "0203", "0012", "0020", "0202", "0190"] },
+    { "query": { "sort": "newest" }, "ids": ["0203", "0201", "0202", "0020", "0019", "0119", "0007", "0190", "0200", "0012"] },
+    { "query": { "sort": "oldest" }, "ids": ["0190", "0007", "0119", "0019", "0020", "0202", "0201", "0203", "0012", "0200"] },
+    { "query": { "sort": "changed" }, "ids": ["0190", "0202", "0019", "0203", "0020", "0007", "0119", "0200", "0201", "0012"] },
+    { "query": { "sort": "estimate" }, "ids": ["0119", "0202", "0020", "0007", "0012", "0019", "0190", "0200", "0201", "0203"] },
+    { "query": { "sort": "id", "stage": ["done", "backlog"] }, "ids": ["0012", "0190", "0201"] },
     { "query": { "search": "the", "tag": ["docs", "design"], "sort": "changed" }, "ids": ["0019", "0007", "0119"] }
   ]
 }

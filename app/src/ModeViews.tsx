@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { blockedRed } from "./blockWords";
 import { needsWords } from "./human";
-import { tl, tn, useT } from "./i18n";
+import { fmt, tl, tn, useT } from "./i18n";
 import { modeLabel, useLook, type ColumnFold, type DisplayMode } from "./modes";
 import type { Task } from "./types";
 import { Pill } from "./ui";
@@ -45,7 +45,7 @@ export function FoldCounts({ needs, blocked }: { needs: number; blocked: number 
   useT("board");
   return (
     <>
-      {needs > 0 && <b className="count warn" title={needsWords(needs)}>{needs}</b>}
+      {needs > 0 && <b className="count warn" title={needsWords(needs)}>{fmt.num(needs)}</b>}
       {blocked > 0 && <b className="count blocked-count" title={blockedWords(blocked)}>{blockedWords(blocked)}</b>}
     </>
   );
@@ -78,7 +78,7 @@ export function ColumnHead({ stage, count, countNode, needs, blocked, fold, onFo
   const title = stage.role ? `${stage.label}: ${stage.role}` : stage.label;
   const folded = fold === "folded";
   // A strip, empty or folded, says "empty" for nothing in it: a bare 0 down a strip reads as a mark.
-  const shown = countNode ?? <small>{count === 0 && (empty || folded) ? t("modes.empty") : count}</small>;
+  const shown = countNode ?? <small>{count === 0 && (empty || folded) ? t("modes.empty") : fmt.num(count)}</small>;
   const foldInto = t("modes.foldInto", { name: stage.label });
   if (fold === "fixed") {
     if (empty) {

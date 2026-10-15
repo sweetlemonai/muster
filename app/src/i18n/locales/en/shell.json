@@ -3,7 +3,13 @@
     "label": "Language",
     "meta": "Menus, notifications and help follow it. Agents and task files stay in English.",
     "followsMac": "Following this Mac's language until you pick one.",
-    "failed": "Couldn't change the language: {{error}}"
+    "failed": "Couldn't change the language: {{error}}",
+    "digits": "Digits",
+    "calendar": "Calendar",
+    "jalali": "Jalali",
+    "gregorian": "Gregorian",
+    "numberingMeta": "For dates and numbers you read. Keys, commands, paths and what's saved stay as typed.",
+    "failedNumbering": "Couldn't change it: {{error}}"
   },
   "app": {
     "sidebar": "Projects",
@@ -584,7 +590,7 @@
     "fontsLicence": "Persian text is drawn in Vazirmatn by Saber Rastikerdar, under the SIL Open Font License 1.1; the licence is in <code>{{file}}</code>.",
     "settings": "Settings on this Mac",
     "projectsJson": "<code>{{file}}</code>: the projects you added or hid, their labels, categories, colours, gates and Your check limits, and the sidebar's order",
-    "settingsJson": "<code>{{file}}</code>: the Claude accounts Muster reads, the claim lease, the LIVE window, whether notifications are on, whether the menu bar icon shows and the language, once you pick one; the muster command reads it too",
+    "settingsJson": "<code>{{file}}</code>: the Claude accounts Muster reads, the claim lease, the LIVE window, whether notifications are on, whether the menu bar icon shows, and the language, digits and calendar, once you pick them; the muster command reads it too",
     "notifiedJson": "<code>{{file}}</code>: what Muster won't notify you of again: what it notified, and what you'd already seen (waiting at start or when notifications were turned on, or shown in the window in front)",
     "helperDir": "<code>{{file}}</code>: the helper's account, model and conversations",
     "accountsJson": "<code>{{file}}</code>: each account's profile: plan, roles, models, concurrency, reserve, paused",

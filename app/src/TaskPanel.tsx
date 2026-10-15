@@ -1,3 +1,5 @@
+import { Stamp } from "./Dates";
+import { fmt } from "./i18n";
 import { useCallback, useContext, useEffect, useId, useState } from "react";
 import AnswerBox from "./AnswerBox";
 import { answerId } from "./answerFocus";
@@ -255,12 +257,12 @@ export function Checkins({ task }: { task: Task }) {
   const names = useContext(RoleNamesContext);
   return (
     <section className="checkins">
-      <h2>Check-ins <small>{task.checkins.length}</small></h2>
+      <h2>Check-ins <small>{fmt.num(task.checkins.length)}</small></h2>
       <p className="meta small">The percentages are each session's own estimate.</p>
       <ol>
         {task.checkins.map((c, i) => (
           <li key={i}>
-            <span className="when">{c.at}</span> {c.pct !== null && <b>{c.pct}%</b>} {c.text} <span className="meta" dir="auto">· {shownHolder(c.who, names)}</span>
+            <Stamp className="when" at={c.at} year /> {c.pct !== null && <b>{fmt.number(c.pct / 100, { style: "percent" })}</b>} {c.text} <span className="meta" dir="auto">· {shownHolder(c.who, names)}</span>
           </li>
         ))}
       </ol>

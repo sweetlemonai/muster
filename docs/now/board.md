@@ -41,3 +41,4 @@ covers: app/src/App.tsx, app/src/FeatureGrid.tsx, app/src/ColumnCards.tsx, app/s
 - The window polls every 2 s while visible, never while hidden. (AS_BUILT "Live")
 - A holder with a role slot shows as the role's name now (`کاوه-2` after a rename): cards, pane, filters, search and sort. (mu-112)
 - Sessions is a project view beside Graph; its recap opens in the pane's dock, the list still live. (mu-98)
+- Counts on columns, bands and in the pane read in the digits picked (Persian in فارسی). (mu-151)

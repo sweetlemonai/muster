@@ -1232,7 +1232,7 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .wline .lbl { width: 48px; flex: none; }
 .task-pane .history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
 .task-pane .history li { display: flex; gap: 8px; }
-.h-when { flex: none; width: 74px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.h-when { flex: none; min-width: 74px; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 .tp-side { width: 176px; flex: none; display: flex; flex-direction: column; gap: 8px; padding-left: 12px; border-left: 1px solid var(--line); }
 .tp-side button { border: 1px solid var(--line); background: none; color: var(--muted); border-radius: 6px; padding: 2px 8px; font-size: 12px; line-height: 18px; }
@@ -1261,6 +1261,11 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .tp-side .ui-segmented button.ui-segment--active { background: var(--selected); color: var(--text); font-weight: 650; }
 .est-pair { display: inline-flex; gap: 4px; }
 .est-pair input { width: 46px; font: inherit; font-size: 12px; text-align: center; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px; }
+/* A goal's due date (mu-151): the field, the ISO day it saves beside it, a refusal under both. */
+.due-field { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.due-field input { width: 92px; font: inherit; font-size: 12px; text-align: center; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px; }
+.due-field input[aria-invalid="true"] { border-color: var(--warn); }
+.due-field .err { flex-basis: 100%; font-size: 12px; }
 .tp-side .tag-editor input { width: 72px; }
 .file-list { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; max-width: 100%; }
 /* Files' open images (mu-91): a row under the two columns at the pane's full width, in its flow;
@@ -1407,6 +1412,10 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .settings-lang { padding: 12px 20px 10px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .settings-lang h2 { font-size: 13px; margin: 0; }
 .settings-lang p { margin: 0; font-size: 11.5px; }
+/* Digits and Calendar (mu-151) read as part of Language: one block, two quiet rows under it. */
+.settings-lang:has(+ .settings-numbering) { border-bottom: 0; padding-bottom: 4px; }
+.settings-numbering { padding-top: 4px; }
+.settings-lang h3 { font-size: 12px; font-weight: 600; color: var(--muted); margin: 4px 0 0; }
 .settings-lang .ui-segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 .settings-lang .ui-segment { border: 0; border-inline-start: 1px solid var(--line); border-radius: 0; background: var(--bg); color: var(--text); padding: 2px 12px; }
 .settings-lang .ui-segment:first-child { border-inline-start: 0; }

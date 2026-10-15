@@ -1,6 +1,6 @@
 import { isBlocked } from "./blockWords";
 import { needsYouCount } from "./human";
-import { tl, tn } from "./i18n";
+import { fmt, getLocale, tl, tn } from "./i18n";
 import { OTHER } from "./labels";
 import { CHECKIN_MINUTES, splitHolder, stamp, stampMinutes } from "./lib";
 import type { Activity, QueueInfo, Task } from "./types";
@@ -199,7 +199,8 @@ type Ranked = Pick<ProjectRow, "name" | "needs" | "activity"> & { label?: string
 // by what the row shows: its label (0044), else its name.
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const shownName = (r: Ranked) => r.label || r.name;
-const byName = (a: Ranked, b: Ranked) => cmp(shownName(a).toLowerCase(), shownName(b).toLowerCase()) || cmp(shownName(a), shownName(b)) || cmp(a.name, b.name);
+// In the language's order (Persian order in فارسی, mu-151), then by code point so it never ties.
+const byName = (a: Ranked, b: Ranked) => fmt.compare(shownName(a), shownName(b)) || cmp(shownName(a).toLowerCase(), shownName(b).toLowerCase()) || cmp(shownName(a), shownName(b)) || cmp(a.name, b.name);
 const byLast = (a: Ranked, b: Ranked) => {
   const x = a.activity.last, y = b.activity.last;
   return x === y ? 0 : x === null ? 1 : y === null ? -1 : x - y;
@@ -240,7 +241,8 @@ export function nextOrder(prev: OrderMemo | null, rows: (Ranked & { activity: Pr
   const working = rows.filter((r) => r.activity.working > 0).map((r) => r.name).sort();
   const needs = by === "needs" ? rows.map((r) => `${r.name}:${r.needs}`).sort() : [];
   const ranks = by === "mine" ? rows.map((r) => `${r.name}:${r.rank ?? ""}`).sort() : [];
-  const key = JSON.stringify([by, names, working, needs, ranks]);
+  // The language too: A–Z sorts in its order (mu-151).
+  const key = JSON.stringify([by, names, working, needs, ranks, getLocale()]);
   if (prev && prev.key === key) return prev;
   return { by, names: orderProjects(rows, by).map((r) => r.name), key };
 }

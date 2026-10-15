@@ -6,7 +6,8 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import type { LocaleInfo } from "../types";
 import { isAnyLocale, type AnyLocale } from "./locales";
-import { applyToDocument, getLocale, loadAll, setLocale } from "./runtime";
+import { readNumberingMirror, writeNumberingMirror } from "./numbering";
+import { applyToDocument, getLocale, loadAll, setLocale, setNumbering } from "./runtime";
 import type { Ns } from "./types";
 
 const MIRROR = "muster.locale";
@@ -45,6 +46,21 @@ async function take(effective: unknown) {
  *  without waiting for its event. Both arrive; the second does nothing. */
 export const followLocale = take;
 
+/** When Settings last saved Digits or Calendar (a `performance.now()` time), so a poll asked for
+ *  before that can't put the old values back (its settings were read before the save). */
+let savedAt = -Infinity;
+
+/** The digits and calendar the core's settings say (mu-151; null or missing follows the
+ *  language): from each state poll (`askedAt`, when the poll was asked for) and from Settings'
+ *  save at once (no `askedAt`). A poll asked for before the last save is passed over. Kept in
+ *  localStorage for the next start's first render. */
+export function followNumbering(settings: { digits?: unknown; calendar?: unknown } | null | undefined, askedAt?: number) {
+  if (!settings) return;
+  if (askedAt === undefined) savedAt = performance.now();
+  else if (askedAt < savedAt) return;
+  if (setNumbering({ digits: settings.digits, calendar: settings.calendar })) writeNumberingMirror();
+}
+
 /**
  * Load the last language's text for `namespaces` (plus the shared ones),
  * then follow the core: its language now, and every change after. Resolves
@@ -53,6 +69,7 @@ export const followLocale = take;
  */
 export async function startLocale(namespaces: readonly Ns[]): Promise<void> {
   const saved = readMirror();
+  readNumberingMirror();
   try {
     await loadAll(saved, ["common", ...namespaces]);
     await setLocale(saved);

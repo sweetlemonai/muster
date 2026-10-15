@@ -2,7 +2,7 @@ import { Fragment, useState, type ReactNode, type RefObject } from "react";
 import {
   activeItems, deleteView, GROUPS, groupValues, hiddenLine, isActive, removeFilter, sameQuery, saveView, toggleFilter, type DayContext, type Query, type SavedView,
 } from "./filters";
-import { useT } from "./i18n";
+import { fmt, useT } from "./i18n";
 import { BOARD_SORTS } from "./lib";
 import { useLook } from "./modes";
 import { searchBoxKey } from "./keys";
@@ -139,7 +139,7 @@ export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views,
         </span>
         {how === "folded" && (
           <Pill type="button" on={unfolded} className="filters-fold" aria-expanded={unfolded} onClick={() => setUnfolded((u) => !u)} title={t("filter.filtersTitle")}>
-            {t("filter.filters")}{filterCount > 0 && <> <b className="count">{filterCount}</b></>}
+            {t("filter.filters")}{filterCount > 0 && <> <b className="count">{fmt.num(filterCount)}</b></>}
           </Pill>
         )}
         {/* Group by pushes itself right (`.group-by`); without it, the count does. */}

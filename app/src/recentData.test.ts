@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setLocale, setNumbering } from "./i18n/runtime";
 import { builtBy, byKind, dayGroups, finishes, finishText, KIND_FILTERS, loadKind, RECENT_KEY, storeKind, whenText } from "./recentData";
 import { columns } from "./lib";
 import type { StageStep, Task } from "./types";
@@ -87,6 +88,21 @@ describe("when it finished, in words", () => {
     expect(whenText("2026-10-13 14:30", NOW)).toBe("just now");
     expect(whenText("2026-10-13", NOW)).toBe("");
     expect(whenText("", NOW)).toBe("");
+  });
+  it("in فارسی: Jalali days and Persian digits; Gregorian and 123 when picked (mu-151)", async () => {
+    await setLocale("fa");
+    try {
+      const strip = (s: string) => s.replace(/[⁨⁩]/g, "");
+      expect(strip(whenText("2026-10-11 09:05", NOW))).toBe("یکشنبه ۱۹ مهر ۰۹:۰۵");
+      expect(strip(whenText("2025-12-31 23:59", NOW))).toBe("چهارشنبه ۱۰ دی ۱۴۰۴ ۲۳:۵۹");
+      expect(strip(whenText("2026-10-13 12:00", NOW))).toBe("۲ ساعت پیش");
+      setNumbering({ digits: "latin", calendar: "gregorian" });
+      expect(strip(whenText("2026-10-11 09:05", NOW))).toContain("11");
+      expect(strip(whenText("2026-10-11 09:05", NOW))).toContain("09:05");
+    } finally {
+      setNumbering({});
+      await setLocale("en");
+    }
   });
   it("counts yesterday by the calendar: 40 minutes past midnight is still minutes", () => {
     const early = new Date(2026, 9, 13, 0, 30).getTime() / 1000;

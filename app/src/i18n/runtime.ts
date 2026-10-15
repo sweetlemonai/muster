@@ -11,6 +11,7 @@
 // them and renders again when they're in).
 
 import { dirOf, intlTag, PSEUDO, READY, type AnyLocale } from "./locales";
+import { numberIn, setNumbering as setPicked, type Numbering } from "./numbering";
 import type { Ns } from "./types";
 
 /** A file's content: strings, nested. */
@@ -111,6 +112,15 @@ export function loadAll(locale: AnyLocale, namespaces: readonly Ns[]): Promise<v
   return Promise.all(namespaces.map((ns) => load(locale, ns))).then(() => {});
 }
 
+/** Settings' Digits and Calendar (mu-151): every part of the window renders again with them
+ *  when they change. True when they did. */
+export function setNumbering(n: Partial<Record<keyof Numbering, unknown>>): boolean {
+  if (!setPicked(n)) return false;
+  version++;
+  listeners.forEach((f) => f());
+  return true;
+}
+
 /** Switch language: everything already on screen loads in the new one
  *  first, then every part of the window re-renders at once (no
  *  half-switched screen, no flash of keys). */
@@ -153,12 +163,10 @@ export function pluralCategory(locale: AnyLocale, n: number): Intl.LDMLPluralRul
   return r.select(n);
 }
 
-const numberFormats = new Map<string, Intl.NumberFormat>();
+/** A number filled into text, in the digits picked (numbering.ts, mu-151): the formatters'
+ *  one cache, so `{{count}}` and `fmt.number` always agree. */
 export function formatNumber(locale: AnyLocale, n: number): string {
-  const tag = intlTag(locale);
-  let f = numberFormats.get(tag);
-  if (!f) numberFormats.set(tag, (f = new Intl.NumberFormat(tag)));
-  return f.format(n);
+  return numberIn(locale, n);
 }
 
 function dig(m: Messages | undefined, path: string): string | undefined {

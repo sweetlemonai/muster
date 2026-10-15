@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import { tl, tn, useT } from "./i18n";
+import { fmt, tl, tn, useT } from "./i18n";
 import { oneAtATime, stamp } from "./lib";
 import type { Lesson, QueueInfo } from "./types";
 import { Button } from "./ui";
@@ -105,7 +105,7 @@ function QueueLessons({ queue, label, count, multi, onChanged }: { queue: string
   return (
     <section className="lessons-waiting" aria-label={t("lessons.aria", { label })}>
       <h3>
-        {multi ? t("lessons.titleIn", { label }) : t("lessons.title")} <small className="count warn">{count}</small>
+        {multi ? t("lessons.titleIn", { label }) : t("lessons.title")} <small className="count warn">{fmt.num(count)}</small>
       </h3>
       <p className="meta">{t("lessons.intro")}</p>
       {list.error && <p className="err small">{t("lessons.cantRead", { error: list.error })}</p>}

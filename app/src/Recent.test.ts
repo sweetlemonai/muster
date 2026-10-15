@@ -74,7 +74,7 @@ describe("Recently finished on the board (AC1)", () => {
     ]);
     expect(html).toContain('<span class="recent-kind merged">merged</span>');
     expect(html).toContain('<span class="recent-kind accepted">accepted</span>');
-    expect(html).toContain('<span class="recent-when" title="2026-10-13 13:56">4 min ago</span>');
+    expect(html).toContain('<time class="recent-when" title="2026-10-13 13:56" dateTime="2026-10-13T13:56">4 min ago</time>');
   });
   it("says how many older rows there are, with Show older to add a week", () => {
     expect(plain(render())).toContain("Show older · 2 more");

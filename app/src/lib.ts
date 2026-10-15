@@ -570,8 +570,9 @@ export function fmtMinutes(m: number): string {
 /** "3.2M tokens", "450k tokens". */
 export function fmtTokens(n: number): string {
   if (n <= 0) return "";
-  if (n >= 1e6) return tl("tokensShort", { amount: `${(Math.round(n / 1e5) / 10).toString()}M` });
-  if (n >= 1e3) return tl("tokensShort", { amount: `${Math.round(n / 1e3)}k` });
+  // The digits are the ones picked (mu-151); the k and M stay as they are.
+  if (n >= 1e6) return tl("tokensShort", { amount: `${fmt.number(Math.round(n / 1e5) / 10, { useGrouping: false })}M` });
+  if (n >= 1e3) return tl("tokensShort", { amount: `${fmt.number(Math.round(n / 1e3), { useGrouping: false })}k` });
   return tl("tokens", { count: n });
 }
 /** Totals of what's shown: "≈ 14 h · 3.2M tokens (9 of 24 estimated)". Time is agent time plus

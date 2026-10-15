@@ -1,3 +1,4 @@
+import { fmt } from "./i18n";
 import { useContext, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import BlockWhy from "./BlockWhy";
 import { noteTitle } from "./Backlog";
@@ -223,7 +224,7 @@ export default function FeatureGrid(p: FeatureGridProps) {
               const warn = s.id === "your-check" && check.full;
               return (
                 <div key={s.id} role="columnheader" className={`fg-colhead col-${s.id}${warn ? " fg-full" : ""}`} data-col={s.id} title={`${s.label}: ${sub}`}>
-                  <b>{s.label}</b> <span className="fg-n">{count}</span>
+                  <b>{s.label}</b> <span className="fg-n">{fmt.num(count)}</span>
                   <small dir="auto">{sub}</small>
                 </div>
               );

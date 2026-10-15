@@ -1,6 +1,7 @@
 import { useContext, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
-import { tl, tn } from "./i18n";
+import { stampDateTime } from "./Dates";
+import { fmt, tl, tn } from "./i18n";
 import { fmtHours, key, type RoleNames, shortTokens } from "./lib";
 import { taskKey } from "./taskKey";
 import { builtBy, byKind, dayGroups, type DayGroup, type Finish, finishes, KIND_FILTERS, type KindFilter, whenText } from "./recentData";
@@ -155,7 +156,7 @@ export function RecentList({ groups, older, kind, onKind, weeks, onOlder, now, m
         {groups.length === 0 && <p className="none">{tn("shell", `recent.nothing.${kind}`, { count: days })}</p>}
         {groups.map((g) => (
           <section key={g.day} className="recent-day" aria-label={g.label}>
-            <h3 className="recent-day-head">{g.label} <small>{g.rows.length}</small></h3>
+            <h3 className="recent-day-head">{g.label} <small>{fmt.num(g.rows.length)}</small></h3>
             {g.rows.map((r) => (
               <RecentRow key={`${key(r.task)}:${r.kind}`} r={r} now={now} multi={multi} active={openKey === key(r.task)} onOpen={onOpen} cost={costs.get(key(r.task))} names={names} />
             ))}
@@ -184,7 +185,7 @@ function RecentRow({ r, now, multi, active, onOpen, cost, names }: { r: Finish; 
         <span className="recent-title">{task.title || tn("shell", "recent.noTitle")}</span>
         <span className="recent-kind-when">
           <span className={`recent-kind ${r.kind}`}>{tn("shell", `recent.finish.${r.kind}`)}</span>
-          <span className="recent-when" title={r.at}>{whenText(r.at, now)}</span>
+          <time className="recent-when" title={r.at} dateTime={stampDateTime(r.at)}>{whenText(r.at, now)}</time>
         </span>
       </span>
       <span className="recent-meta">{[by ? tn("shell", "recent.builtBy", { who: by }) : "", costText(cost)].filter(Boolean).join(" · ")}</span>

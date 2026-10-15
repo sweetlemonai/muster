@@ -6,6 +6,8 @@ covers: app/src/Settings, app/src/settingsData.ts, app/src-tauri/src/settings.rs
 - Settings is a view in the header's row, never a window. (mu-36)
 - Its groups: Appearance, Display, Projects, Agents, Accounts, Notifications, About. (mu-113)
 - Language (English · فارسی) sits above the groups, whatever group is open; unset, it follows macOS's language for Muster. (mu-146)
+- Under it, always shown: Digits (۱۲۳ · 123) and Calendar (Jalali · Gregorian), each following the language until picked. (mu-151)
+- Picking the language's own digits or calendar saves it empty, so it follows the language again. (mu-151)
 - A pick switches the window and the menu bar at once and is saved as `lang` in `settings.json`; agents and task files stay English. (mu-146)
 - The shell's text (sidebar, toolbar, filter bar, Settings) comes from the translation files; the guard fails on new English outside them. (mu-146)
 - The filter bar's Type row says every type in the language shown, the older task, feature and idea too; only the core's types are offered, and an unknown one shows as written. (mu-194)

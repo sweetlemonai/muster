@@ -1518,6 +1518,11 @@ async fn set_setting(
                 // At once, with the latest count; the next read keeps it current.
                 app.menu_bar.sync(now.menu_bar, None, &tray::Tray(&handle));
             }
+            if name == "digits" {
+                // The menu bar's count in the digits picked (mu-151), at once.
+                i18n::set_digits(now.digits);
+                app.menu_bar.retext(now.menu_bar, &tray::Tray(&handle));
+            }
             if name == "lang" {
                 let effective = i18n::resolve(now.lang.unwrap_or(""), &i18n::system_languages());
                 switch_lang(&handle, effective, now.menu_bar);
@@ -1877,6 +1882,7 @@ pub fn run() {
             // The app's menus in it (mu-147), in place of Tauri's English ones; ones that can't
             // be made leave Tauri's.
             app_menu::set(app.handle());
+            i18n::set_digits(s.digits);
             state
                 .menu_bar
                 .sync(s.menu_bar, None, &tray::Tray(app.handle()));

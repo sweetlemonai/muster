@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
-import { Trans, useT } from "./i18n";
+import { followNumbering, Trans, useT } from "./i18n";
 import { Button, Pill, Splitter } from "./ui";
 import { mayLeave } from "./writeUp";
 import { ago, columns, estimateTotal, feed, key, STAGES } from "./lib";
@@ -75,7 +75,12 @@ function useQueues() {
     if (busy.current) return;
     busy.current = true;
     try {
-      setState(await api.state());
+      const asked = performance.now();
+      const s = await api.state();
+      // Settings › Language's Digits and Calendar (mu-151), live from every poll; one asked for
+      // before a save in Settings doesn't put the old ones back.
+      followNumbering(s.settings, asked);
+      setState(s);
       setError("");
       setAt(Date.now());
     } catch (e) {

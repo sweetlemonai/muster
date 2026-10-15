@@ -2,6 +2,7 @@
 // marks go, the row's words, when the window asks again, and the profile edits checked before the
 // core sees them.
 import { describe, expect, it } from "vitest";
+import { setLocale } from "./i18n/runtime";
 import {
   type AccountView,
   addEdit,
@@ -61,6 +62,15 @@ describe("reset times", () => {
     expect(resetText(at(2026, 10, 14, 9, 5), NOW)).toBe("09:05");
     expect(resetText(at(2026, 10, 15, 0, 30), NOW)).toBe("15 Oct 00:30");
     expect(resetText(at(2026, 11, 2, 9, 0), NOW)).toBe("2 Nov 09:00");
+  });
+  it("in فارسی, in Persian digits and the Jalali calendar (mu-151)", async () => {
+    await setLocale("fa");
+    try {
+      expect(resetText(at(2026, 10, 14, 9, 5), NOW)).toBe("۰۹:۰۵");
+      expect(resetText(at(2026, 10, 15, 0, 30), NOW)).toBe("۲۳ مهر ۰۰:۳۰");
+    } finally {
+      await setLocale("en");
+    }
   });
 });
 

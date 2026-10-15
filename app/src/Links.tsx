@@ -1,3 +1,4 @@
+import { fmt } from "./i18n";
 import { useState } from "react";
 import { api } from "./api";
 import type { Link, Task } from "./types";
@@ -18,7 +19,7 @@ export default function Links({ task }: { task: Task }) {
   };
   return (
     <div className="kv stack links" aria-label="Links">
-      <span className="lbl">Links <small>{task.links.length}</small></span>
+      <span className="lbl">Links <small>{fmt.num(task.links.length)}</small></span>
       <ul className="link-list">
         {task.links.map((l, i) => (
           <li key={`${i}-${l.url}`}>

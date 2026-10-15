@@ -128,7 +128,7 @@ describe("levels in Persian (mu-147)", () => {
     expect(progressText(progress(3, 7))).toBe("۳ از ۷ انجام شد");
     expect(progressText(empty.progress)).toBe("هنوز تسکی ندارد");
     expect(progressText(null)).toBe("");
-    expect(unmarked(estimateLeft(stageTrack.progress))).toBe("≈ ۲ ساعت · 200k توکن مانده");
+    expect(unmarked(estimateLeft(stageTrack.progress))).toBe("≈ ۲ ساعت · ۲۰۰k توکن مانده");
     expect(unmarked(estimateLeft(progress(0, 1, 45)))).toBe("≈ ۴۵ دقیقه مانده");
     expect(shownStageLabel(stageTrack)).toBe("در جریان");
     expect(shownStageLabel(goal)).toBe("آماده");

@@ -4,6 +4,7 @@
 // (`QueueInfo.label` and `category`, already falling back to the name and to the group or Other).
 // The queue's name stays what commands, folders and the window's own bookkeeping use.
 import { createContext, useContext } from "react";
+import { fmt } from "./i18n";
 import type { QueueInfo } from "./types";
 
 /** The longest label and category, in characters, as the core's labels::MAX_LABEL and MAX_CATEGORY. */
@@ -37,7 +38,8 @@ export const keyTitle = (label: string, key: string) => `${label} · ${key}`;
 
 // Code-unit order after folding case, as the sidebar's A–Z order, so it's the same on every machine.
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-const byHeading = (a: string, b: string) => Number(a === OTHER) - Number(b === OTHER) || cmp(a.toLowerCase(), b.toLowerCase()) || cmp(a, b);
+// Other last, the rest in the language's order (Persian order in فارسی, mu-151), then by code point.
+const byHeading = (a: string, b: string) => Number(a === OTHER) - Number(b === OTHER) || fmt.compare(a, b) || cmp(a.toLowerCase(), b.toLowerCase()) || cmp(a, b);
 
 /** One heading in the sidebar: the category and its rows. */
 export type CategoryGroup<T> = { name: string; rows: T[] };

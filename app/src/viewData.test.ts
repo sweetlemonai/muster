@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { unmarked } from "./i18n";
+import { setLocale, setNumbering } from "./i18n/runtime";
 import { stampMinutes } from "./lib";
 import {
   axis, barTitle, DAY, layout, legendMarks, nowAt, parseScale, segmentTitle, sortTasks, spans, taskSpan, timeWindow, wallMinutes, windowLabel,
@@ -194,6 +196,62 @@ describe("timeline windows and axis", () => {
     expect([month[0].label, month[30].label, month.find((k) => k.current)?.label]).toEqual(["1", "31", "14"]);
     expect(axis("day", timeWindow("day", NOW, -1), NOW).some((k) => k.current)).toBe(false);
   });
+  it("in فارسی: Jalali months and Persian digits on the axis and in the window's name (mu-151)", async () => {
+    await setLocale("fa");
+    try {
+      // Mehr 1405 runs 23 September to 22 October 2026; ◀ ▶ step by Jalali months.
+      const mehr = timeWindow("month", NOW, 0, "jalali");
+      expect(mehr).toEqual({ from: M("2026-09-23 00:00"), to: M("2026-10-23 00:00") });
+      expect(timeWindow("month", NOW, 1, "jalali")).toEqual({ from: M("2026-10-23 00:00"), to: M("2026-11-22 00:00") });
+      expect(timeWindow("month", M("2026-03-21 08:00"), -1, "jalali")).toEqual({ from: M("2026-02-20 00:00"), to: M("2026-03-21 00:00") });
+      expect(unmarked(windowLabel("month", mehr))).toBe("مهر ۱۴۰۵");
+      const month = axis("month", mehr, NOW);
+      expect(month).toHaveLength(30);
+      expect([month[0].label, month[29].label, month.find((k) => k.current)?.label]).toEqual(["۱", "۳۰", "۲۲"]);
+      const week = axis("week", timeWindow("week", NOW, 0), NOW);
+      expect(unmarked(week.find((k) => k.current)?.label ?? "")).toBe("چهارشنبه ۲۲");
+      expect(unmarked(windowLabel("week", timeWindow("week", NOW, 0)))).toBe("۲۰ تا ۲۶ مهر ۱۴۰۵");
+      const day = axis("day", timeWindow("day", NOW, 0), NOW);
+      expect(day.filter((k) => k.current).map((k) => k.label)).toEqual(["۱۷"]);
+      expect(unmarked(segmentTitle({ stage: "building", from: M("2026-10-14 13:00"), to: M("2026-10-14 15:00"), fuzzy: false }))).toContain("۲۲ مهر ۱۳:۰۰ تا ۱۵:۰۰");
+      // Latin digits picked: the same Jalali dates in 123.
+      setNumbering({ digits: "latin" });
+      expect(unmarked(windowLabel("week", timeWindow("week", NOW, 0)))).toBe("20 تا 26 مهر 1405");
+    } finally {
+      setNumbering({});
+      await setLocale("en");
+    }
+  });
+  it("in English with Jalali picked, Intl's month names; with ۱۲۳, the English names in Persian digits", () => {
+    try {
+      setNumbering({ calendar: "jalali" });
+      expect(windowLabel("month", timeWindow("month", NOW, 0, "jalali"))).toBe("Mehr 1405");
+      setNumbering({ digits: "persian" });
+      expect(windowLabel("week", timeWindow("week", NOW, 0))).toBe("۱۲ – ۱۸ Oct ۲۰۲۶");
+    } finally {
+      setNumbering({});
+    }
+  });
+  it("in Jalali, labels a Log stamp before 1 AP through Intl instead of throwing (review R9)", async () => {
+    // A mistyped `0205-10-12`: the log's stamp check reads the digits' shape only, so the span runs
+    // from the year 205 to now and the Timeline labels it. The converter holds 1–9999 AP; Intl's
+    // persian calendar names any year.
+    await setLocale("fa");
+    try {
+      const old = M("0205-10-12 10:00");
+      expect(unmarked(segmentTitle({ stage: "building", from: old, to: NOW, fuzzy: false }))).toBe("در حال ساخت ۲۰ مهر ۱۰:۰۰ تا ۲۲ مهر ۱۷:۲۰");
+      expect(unmarked(segmentTitle({ stage: "waiting", from: old, to: M("0205-10-14 00:00"), fuzzy: true }))).toBe("در انتظار ۲۰ مهر تا ۲۱ مهر");
+      const week = timeWindow("week", old, 0);
+      expect(unmarked(windowLabel("week", week))).toMatch(/^۱۵ تا ۲۱ مهر \S*۴۱۶$/);
+      expect(axis("week", week, NOW).map((k) => unmarked(k.label))[5]).toBe("شنبه ۲۰");
+      expect(unmarked(windowLabel("day", timeWindow("day", old, 0)))).toContain("۲۰ مهر");
+      expect(axis("month", { from: old, to: old + DAY }, NOW).map((k) => k.label)).toEqual(["۲۰"]);
+      // Across the converter's first day, 1 Farvardin 1 AP (21 March 622), the days run on.
+      expect(unmarked(segmentTitle({ stage: "building", from: M("0622-03-20 23:00"), to: M("0622-03-21 08:00"), fuzzy: false }))).toBe("در حال ساخت ۲۹ اسفند ۲۳:۰۰ تا ۱ فروردین ۰۸:۰۰");
+    } finally {
+      await setLocale("en");
+    }
+  });
   it("puts the now line where now falls, and nowhere in a window without it", () => {
     expect(nowAt(timeWindow("day", NOW, 0), NOW)).toBeCloseTo((20 * 60 + 20) / DAY);
     expect(nowAt(timeWindow("week", NOW, 0), NOW)).toBeCloseTo((2 * DAY + 17 * 60 + 20) / (7 * DAY));
@@ -323,6 +381,20 @@ describe("blocked stretches (0031)", () => {
       "Building · After 0014 (Testing, qa) · captured 2026-10-14 · started 2026-10-14 · dates only",
     );
     expect(barTitle(t({ ...base, doneOn: "2026-10-15", stage: "done" }), true)).toBe("Done · captured 2026-10-14 · started 2026-10-14 · done 2026-10-15");
+  });
+  it("dates the bar's tooltip in the calendar and digits picked: it's read, not copied (mu-151)", async () => {
+    const done = t({ captured: "2026-10-14", claimedOn: "2026-10-14", doneOn: "2026-10-15", stage: "done" });
+    await setLocale("fa");
+    try {
+      expect(unmarked(barTitle(done, true))).toBe("انجام شد · ثبت در ۲۲ مهر ۱۴۰۵ · شروع در ۲۲ مهر ۱۴۰۵ · انجام در ۲۳ مهر ۱۴۰۵");
+      setNumbering({ calendar: "gregorian" });
+      expect(unmarked(barTitle(done, true))).toBe("انجام شد · ثبت در ۱۴ اکتبر ۲۰۲۶ · شروع در ۱۴ اکتبر ۲۰۲۶ · انجام در ۱۵ اکتبر ۲۰۲۶");
+      // A hand-edited day that's no day reads as written.
+      expect(unmarked(barTitle(t({ captured: "2026-02-30", stage: "ready" }), false))).toBe("آماده · ثبت در 2026-02-30 · فقط تاریخ‌ها");
+    } finally {
+      setNumbering({});
+      await setLocale("en");
+    }
   });
   it("drops blocks outside the bar and bad stamps", () => {
     const s = taskSpan(building([{ from: "2026-10-01 10:00", to: "2026-10-02 10:00" }, { from: "nope", to: "" }]), NOW)!;

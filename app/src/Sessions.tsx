@@ -1,3 +1,4 @@
+import { fmt } from "./i18n";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { api } from "./api";
 import { HelpButton } from "./HelpButton";
@@ -144,14 +145,14 @@ function SessionGroupList({ id, label, rows, chip, reading, now, all, selected, 
   return (
     <section className={`session-group sg-${id}`} aria-labelledby={head}>
       <h2 id={head}>
-        {label} {!reading && (id === "needs-input" && count > 0 ? <Badge variant="warn">{count}</Badge> : <small>{count}</small>)}
+        {label} {!reading && (id === "needs-input" && count > 0 ? <Badge variant="warn">{fmt.num(count)}</Badge> : <small>{fmt.num(count)}</small>)}
         {chip && opened && (
           <Pill type="button" className="session-fold" aria-expanded={true} onClick={() => setOpened(false)}>{WORDS.fewer}</Pill>
         )}
       </h2>
       {folded ? (
         <Pill type="button" className="session-chip" aria-expanded={false} title={WORDS.open(label, reading ? null : count)} onClick={() => setOpened(true)}>
-          {label} {!reading && <small>{count}</small>}
+          {label} {!reading && <small>{fmt.num(count)}</small>}
         </Pill>
       ) : count === 0 ? (
         !reading && <p className="none">{WORDS.none}</p>

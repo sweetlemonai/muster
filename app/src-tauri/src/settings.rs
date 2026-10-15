@@ -1,7 +1,7 @@
 //! Per-machine settings that both the app and `muster` read (task 0036): the claim lease, the
 //! LIVE window, whether Mac notifications are on (0052), whether the menu bar icon is (0085) and the
 //! Claude accounts Muster reads (0099, `accounts`); and ones only the app reads: the language
-//! (mu-146), and whether it has offered to turn the old pauses into pauses (0059), so it offers
+//! (mu-146), the digits and the calendar dates show in (mu-151), and whether it has offered to turn the old pauses into pauses (0059), so it offers
 //! once. Saved as
 //! `settings.json` beside `projects.json` in the app's config folder
 //! (`~/Library/Application Support/ai.sweetlemon.muster/`). A missing or broken file, or a value
@@ -48,6 +48,25 @@ pub struct Settings {
     /// same file.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lang: Option<&'static str>,
+    /// The digits numbers show in (mu-151, `DIGITS`): `persian` (۱۲۳) or `latin` (123). None
+    /// follows the language (Persian digits in فارسی). Only what people read; what they copy and
+    /// what's stored stay Latin. Written only when picked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub digits: Option<&'static str>,
+    /// The calendar dates show in (mu-151, `CALENDARS`): `jalali` or `gregorian`. None follows
+    /// the language (Jalali in فارسی). Stored dates stay Gregorian ISO. Written only when picked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calendar: Option<&'static str>,
+}
+
+/// The digits setting's values (mu-151), as settingsData.ts `DIGITS` has them.
+pub const DIGITS: [&str; 2] = ["persian", "latin"];
+/// The calendar setting's values (mu-151), as settingsData.ts `CALENDARS` has them.
+pub const CALENDARS: [&str; 2] = ["jalali", "gregorian"];
+
+/// `value` as one of `of`, or None.
+fn one_of(of: &[&'static str], value: &str) -> Option<&'static str> {
+    of.iter().copied().find(|v| *v == value)
 }
 
 impl Default for Settings {
@@ -60,6 +79,8 @@ impl Default for Settings {
             old_pauses_offered: false,
             claude_accounts: accounts::default_labels(),
             lang: None,
+            digits: None,
+            calendar: None,
         }
     }
 }
@@ -106,6 +127,14 @@ pub fn load(file: &Path) -> Settings {
             .get("lang")
             .and_then(serde_json::Value::as_str)
             .and_then(i18n::stored),
+        digits: v
+            .get("digits")
+            .and_then(serde_json::Value::as_str)
+            .and_then(|d| one_of(&DIGITS, d)),
+        calendar: v
+            .get("calendar")
+            .and_then(serde_json::Value::as_str)
+            .and_then(|c| one_of(&CALENDARS, c)),
     }
 }
 
@@ -208,8 +237,9 @@ fn minutes(input: &str, what: &str) -> Result<u64, String> {
 /// Change one setting, `lease` or `live`, to a span like `12h` or `5m` (empty is the default),
 /// checked against its bounds, `notify` or `menu-bar` to `on` or `off` (empty is on),
 /// `old-pauses-offered` to `yes` or `no` (empty is no), `claude-accounts` to a list of labels
-/// (`mg, hg`; empty reads no account), or `lang` to a language Muster has (empty follows
-/// macOS), and save. Returns the settings now in force.
+/// (`mg, hg`; empty reads no account), `lang` to a language Muster has (empty follows
+/// macOS), or `digits` (persian, latin) and `calendar` (jalali, gregorian), empty following the
+/// language, and save. Returns the settings now in force.
 pub fn set(file: &Path, name: &str, value: &str) -> Result<Settings, String> {
     if name == "claude-accounts" {
         let labels = parse_accounts(value)?;
@@ -229,6 +259,30 @@ pub fn set(file: &Path, name: &str, value: &str) -> Result<Settings, String> {
         }
         let mut s = load(file);
         s.lang = i18n::stored(code);
+        save(file, &s)?;
+        return Ok(s);
+    }
+    if name == "digits" || name == "calendar" {
+        let of: &[&'static str] = if name == "digits" {
+            &DIGITS
+        } else {
+            &CALENDARS
+        };
+        let v = value.trim();
+        let picked = one_of(of, v);
+        if picked.is_none() && !v.is_empty() {
+            let v: String = v.chars().take(24).collect();
+            return Err(format!(
+                "{name} is {}, or empty to follow the language, not {v:?}",
+                of.join(" or ")
+            ));
+        }
+        let mut s = load(file);
+        if name == "digits" {
+            s.digits = picked;
+        } else {
+            s.calendar = picked;
+        }
         save(file, &s)?;
         return Ok(s);
     }
@@ -515,6 +569,8 @@ mod tests {
                 old_pauses_offered: false,
                 claude_accounts: vec!["mg".into(), "hg".into()],
                 lang: None,
+                digits: None,
+                calendar: None,
             }
         );
         set(&f, "old-pauses-offered", "yes").unwrap();
@@ -667,6 +723,8 @@ mod tests {
                 old_pauses_offered: true,
                 claude_accounts: vec!["mg".into(), "hg".into()],
                 lang: None,
+                digits: None,
+                calendar: None,
             }
         );
         // Picked, saved and read back, with the others kept.
@@ -720,6 +778,80 @@ mod tests {
         assert!(serde_json::to_string(&fa)
             .unwrap()
             .ends_with(r#""oldPausesOffered":false,"claudeAccounts":["mg","hg"],"lang":"fa"}"#));
+    }
+
+    #[test]
+    fn digits_and_calendar_follow_the_language_until_picked_each_on_its_own() {
+        let d = crate::testkit::tempdir().unwrap();
+        let f = file(&d);
+        let unset = Settings::default();
+        assert_eq!((unset.digits, unset.calendar), (None, None));
+        let text = serde_json::to_string(&unset).unwrap();
+        assert!(
+            !text.contains("digits") && !text.contains("calendar"),
+            "{text}"
+        );
+        // Each saved alone, the other and the language kept.
+        set(&f, "lang", "fa").unwrap();
+        let now = set(&f, "digits", "latin").unwrap();
+        assert_eq!(
+            (now.lang, now.digits, now.calendar),
+            (Some("fa"), Some("latin"), None)
+        );
+        let now = set(&f, "calendar", " gregorian ").unwrap();
+        assert_eq!(
+            (now.digits, now.calendar),
+            (Some("latin"), Some("gregorian"))
+        );
+        assert_eq!(load(&f), now, "remembered");
+        let saved = fs::read_to_string(&f).unwrap();
+        assert!(
+            saved.contains("\"digits\": \"latin\"")
+                && saved.contains("\"calendar\": \"gregorian\""),
+            "{saved}"
+        );
+        assert_eq!(set(&f, "lease", "2h").unwrap().digits, Some("latin"));
+        assert_eq!(
+            set(&f, "digits", "persian").unwrap().digits,
+            Some("persian")
+        );
+        assert_eq!(
+            set(&f, "calendar", "jalali").unwrap().calendar,
+            Some("jalali")
+        );
+        // Empty follows the language again, and the file says nothing of it.
+        let now = set(&f, "digits", "").unwrap();
+        assert_eq!((now.digits, now.calendar), (None, Some("jalali")));
+        assert!(!fs::read_to_string(&f).unwrap().contains("digits"));
+        // Only the values there are, unchanged when refused.
+        let before = fs::read_to_string(&f).unwrap();
+        assert_eq!(
+            set(&f, "digits", "arabic").unwrap_err(),
+            "digits is persian or latin, or empty to follow the language, not \"arabic\""
+        );
+        assert_eq!(
+            set(&f, "calendar", "Jalali").unwrap_err(),
+            "calendar is jalali or gregorian, or empty to follow the language, not \"Jalali\""
+        );
+        assert_eq!(
+            fs::read_to_string(&f).unwrap(),
+            before,
+            "refused: unchanged"
+        );
+        // A value that isn't one reads as unset, field by field.
+        for bad in [
+            r#"{"digits": "arabext", "calendar": 1, "liveMinutes": 9}"#,
+            r#"{"digits": null, "calendar": "GREGORIAN", "liveMinutes": 9}"#,
+            r#"{"digits": ["latin"], "calendar": "", "liveMinutes": 9}"#,
+        ] {
+            fs::write(&f, bad).unwrap();
+            let s = load(&f);
+            assert_eq!(
+                (s.digits, s.calendar, s.live_minutes),
+                (None, None, 9),
+                "{bad}"
+            );
+        }
     }
 
     #[test]

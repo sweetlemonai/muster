@@ -5,12 +5,12 @@
 // and code.
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { backlogColumn, NoteCard, noteTitle, QuickAdd } from "./Backlog";
 import { GraphView } from "./GraphView";
 import { unmarked } from "./i18n";
 import en from "./i18n/locales/en/board.json";
-import { FSI, PDI, setLocale } from "./i18n/runtime";
+import { FSI, PDI, setLocale, setNumbering } from "./i18n/runtime";
 import { stampMinutes } from "./lib";
 import NewTask, { FOR_CHOICES, parentRequest } from "./NewTask";
 import NotePanel, { copyNow } from "./NotePanel";
@@ -188,16 +188,20 @@ describe("the views and the backlog in Persian (mu-147)", () => {
 
   it("writes the timeline's dates with the language's month and weekday names and digits", async () => {
     const M = (s: string) => stampMinutes(s)!;
-    const dates = () => ({
+    const dates = (calendar: "gregorian" | "jalali" = "gregorian") => ({
       day: windowLabel("day", timeWindow("day", NOW, 0)),
       week: windowLabel("week", timeWindow("week", NOW, 0)),
       weeks: windowLabel("week", timeWindow("week", M("2026-10-01 12:00"), 0)),
       years: windowLabel("week", timeWindow("week", M("2026-01-01 12:00"), 0)),
-      month: windowLabel("month", timeWindow("month", NOW, 0)),
+      // Across a month in Jalali only (Shahrivar into Mehr), and across Nowruz.
+      months: windowLabel("week", timeWindow("week", M("2026-09-23 12:00"), 0)),
+      nowruz: windowLabel("week", timeWindow("week", M("2026-03-18 12:00"), 0)),
+      month: windowLabel("month", timeWindow("month", NOW, 0, calendar)),
       ticks: axis("week", timeWindow("week", NOW, 0), NOW).slice(0, 2).map((k) => k.label),
       midnight: axis("day", timeWindow("day", NOW, 0), NOW)[3].label,
       segment: segmentTitle({ stage: "building", from: M("2026-10-14 13:00"), to: M("2026-10-14 15:00"), fuzzy: false }),
       waiting: segmentTitle({ stage: "waiting", from: M("2026-10-11 00:00"), to: M("2026-10-14 13:00"), fuzzy: true }),
+      waitingDays: segmentTitle({ stage: "waiting", from: M("2026-10-11 00:00"), to: M("2026-10-14 00:00"), fuzzy: true }),
       bar: barTitle(TASKS[1], false),
     });
     expect(dates()).toEqual({
@@ -205,25 +209,54 @@ describe("the views and the backlog in Persian (mu-147)", () => {
       week: "12 – 18 Oct 2026",
       weeks: "28 Sep – 4 Oct 2026",
       years: "29 Dec 2025 – 4 Jan 2026",
+      months: "21 – 27 Sep 2026",
+      nowruz: "16 – 22 Mar 2026",
       month: "October 2026",
       ticks: ["Mon 12", "Tue 13"],
       midnight: "Wed",
       segment: "Building 14 Oct 13:00 – 15:00",
       waiting: "Waiting 11 Oct – 14 Oct 13:00",
+      waitingDays: "Waiting 11 Oct – 13 Oct",
       bar: "Building · paused: later · captured 2026-10-14 · dates only",
     });
     await setLocale("fa");
+    // The Gregorian calendar picked: فارسی's own is Jalali (mu-151, viewData.test.ts).
+    setNumbering({ calendar: "gregorian" });
+    onTestFinished(() => {
+      setNumbering({});
+    });
     expect(Object.fromEntries(Object.entries(dates()).map(([k, v]) => [k, Array.isArray(v) ? v.map(unmarked) : unmarked(v)]))).toEqual({
       day: "سه‌شنبه ۱۳ اکتبر ۲۱:۰۰ تا چهارشنبه ۱۴ اکتبر ۲۱:۰۰",
       week: "۱۲ تا ۱۸ اکتبر ۲۰۲۶",
       weeks: "۲۸ سپتامبر تا ۴ اکتبر ۲۰۲۶",
       years: "۲۹ دسامبر ۲۰۲۵ تا ۴ ژانویه ۲۰۲۶",
+      months: "۲۱ تا ۲۷ سپتامبر ۲۰۲۶",
+      nowruz: "۱۶ تا ۲۲ مارس ۲۰۲۶",
       month: "اکتبر ۲۰۲۶",
       ticks: ["دوشنبه ۱۲", "سه‌شنبه ۱۳"],
       midnight: "چهارشنبه",
       segment: "در حال ساخت ۱۴ اکتبر ۱۳:۰۰ تا ۱۵:۰۰",
       waiting: "در انتظار ۱۱ اکتبر تا ۱۴ اکتبر ۱۳:۰۰",
-      bar: "در حال ساخت · متوقف شده: later · ثبت در 2026-10-14 · فقط تاریخ‌ها",
+      waitingDays: "در انتظار ۱۱ اکتبر تا ۱۳ اکتبر",
+      bar: "در حال ساخت · متوقف شده: later · ثبت در ۱۴ اکتبر ۲۰۲۶ · فقط تاریخ‌ها",
+    });
+    // فارسی's own calendar, Jalali (review R10): a week's two ends name one month when they're in
+    // the same Jalali month, whatever the Gregorian months, and the year when the Jalali years differ.
+    setNumbering({});
+    expect(Object.fromEntries(Object.entries(dates("jalali")).map(([k, v]) => [k, Array.isArray(v) ? v.map(unmarked) : unmarked(v)]))).toEqual({
+      day: "سه‌شنبه ۲۱ مهر ۲۱:۰۰ تا چهارشنبه ۲۲ مهر ۲۱:۰۰",
+      week: "۲۰ تا ۲۶ مهر ۱۴۰۵",
+      weeks: "۶ تا ۱۲ مهر ۱۴۰۵",
+      years: "۸ تا ۱۴ دی ۱۴۰۴",
+      months: "۳۰ شهریور تا ۵ مهر ۱۴۰۵",
+      nowruz: "۲۵ اسفند ۱۴۰۴ تا ۲ فروردین ۱۴۰۵",
+      month: "مهر ۱۴۰۵",
+      ticks: ["دوشنبه ۲۰", "سه‌شنبه ۲۱"],
+      midnight: "چهارشنبه",
+      segment: "در حال ساخت ۲۲ مهر ۱۳:۰۰ تا ۱۵:۰۰",
+      waiting: "در انتظار ۱۹ مهر تا ۲۲ مهر ۱۳:۰۰",
+      waitingDays: "در انتظار ۱۹ مهر تا ۲۱ مهر",
+      bar: "در حال ساخت · متوقف شده: later · ثبت در ۲۲ مهر ۱۴۰۵ · فقط تاریخ‌ها",
     });
   });
 

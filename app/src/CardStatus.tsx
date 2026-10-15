@@ -1,6 +1,7 @@
 import { useContext } from "react";
 import { BranchCardLine } from "./Branch";
 import { Trans, useT } from "./i18n";
+import { stampDateTime } from "./Dates";
 import { builtTested, checkinLine, currentCheckin, holderOf, leaseRunOut, needsTester, sendBackLine, quietCheckin, quietText, shortWho, splitHolder, startedAgo, whoLine } from "./lib";
 import { askedText } from "./reach";
 import { finishText } from "./recentData";
@@ -46,11 +47,11 @@ export default function CardStatus({ t, now, lines = "all", named = false }: { t
 }
 
 /** In Done (0051): when it was done, "done 4 min ago", as Recently finished says it; the stamp
- *  in the tooltip. Nothing when the log doesn't know. */
+ *  in the tooltip and in its `<time datetime>` (mu-151). Nothing when the log doesn't know. */
 function DoneLine({ t, now }: { t: Task; now: number }) {
   const tr = useT("board");
   const text = finishText(t, now);
-  return text ? <span className="card-done" title={tr("card.doneTitle", { at: t.doneAt || t.doneOn })}>{text}</span> : null;
+  return text ? <time className="card-done" title={tr("card.doneTitle", { at: t.doneAt || t.doneOn })} dateTime={stampDateTime(t.doneAt) ?? stampDateTime(t.doneOn)}>{text}</time> : null;
 }
 
 /** Your check (0043): whose turn it is (yours, unless the file names someone else) and the one

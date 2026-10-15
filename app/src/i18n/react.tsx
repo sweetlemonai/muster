@@ -3,6 +3,7 @@
 // links, bold) inside a translated sentence.
 import { cloneElement, Fragment, isValidElement, useMemo, useSyncExternalStore, type ReactElement, type ReactNode } from "react";
 import type { AnyLocale } from "./locales";
+import { calendarIn, digitsIn, type Calendar, type Digits } from "./numbering";
 import { getLocale, getTextVersion, interpolate, isLoaded, isolates, load, subscribe, template, translate, type Params } from "./runtime";
 import type { Ns, TKey } from "./types";
 
@@ -11,6 +12,16 @@ export type TFn<N extends Ns> = (key: TKey<N>, params?: Params) => string;
 /** The current language; re-renders on a switch. */
 export function useLocale(): AnyLocale {
   return useSyncExternalStore(subscribe, getLocale, getLocale);
+}
+
+/** The language with the digits and calendar picked (mu-151); a new object whenever any of them
+ *  changes, so a memo that formats can depend on it. */
+export function useNumbering(): { locale: AnyLocale; digits: Digits; calendar: Calendar } {
+  const text = useSyncExternalStore(subscribe, getTextVersion, getTextVersion);
+  return useMemo(() => {
+    const locale = text.slice(0, text.indexOf("#")) as AnyLocale;
+    return { locale, digits: digitsIn(locale), calendar: calendarIn(locale) };
+  }, [text]);
 }
 
 /**

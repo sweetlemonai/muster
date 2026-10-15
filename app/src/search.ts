@@ -10,8 +10,11 @@ import type { Task } from "./types";
 //   the letters in FOLD lose their accent, and anything that isn't a letter or a digit becomes a
 //   space. "Café-RÉSUMÉ" → "cafe resume". No Unicode normalization, as in the core (Rust's std has
 //   none): a letter outside FOLD keeps its accent when it's one character ("ếạ" stays) and loses
-//   it when it's written decomposed (e, U+0302, U+0301 → "e"). Digits of other scripts ("١٩",
-//   "²", "１９") are kept as letters of a word.
+//   it when it's written decomposed (e, U+0302, U+0301 → "e"). Persian folds the way people type
+//   it (`persian`): Arabic ي ى ئ → ی and ك → ک, ۀ ة → ه, آ أ إ ٱ → ا, ؤ → و, and ء, ZWNJ, tatweel and
+//   the harakat (U+064B–U+065F, U+0670) are dropped, so «كتاب» finds «کتاب», «می‌شود» finds
+//   «میشود» and «خانهٔ» finds «خانه». Persian and Arabic-Indic digits are 0–9, so «۱۲» is an id
+//   as 12 is. Other scripts' digits ("²", "１９") are kept as letters of a word.
 // - A query is its folded words. A task matches when every word does, in any order.
 // - A word of digits only (0–9) is an id: it matches the task whose id is all digits and the same
 //   number (19, 0019 and 00019 all find 0019). It never matches text, so dates don't swamp ids.
@@ -30,6 +33,24 @@ export const FOLD: [string, string][] = [
   ["ß", "ss"], ["æ", "ae"], ["œ", "oe"], ["þ", "th"],
 ];
 const FOLD_MAP = new Map(FOLD.flatMap(([from, to]) => [...from].map((c) => [c, to] as const)));
+
+/** Persian and Arabic letters folded to what people type, after lowercasing; "" drops one. The
+ *  rules are @dastafzar/text `foldForSearch` (persianUtils contributors, MIT), one character at
+ *  a time, with ZWNJ dropped rather than a space so «می‌شود» and «میشود» are one word. Mirrors
+ *  search.rs `persian`. */
+function persian(cp: number): string | undefined {
+  if (cp >= 0x6f0 && cp <= 0x6f9) return String.fromCharCode(cp - 0x6f0 + 48);
+  if (cp >= 0x660 && cp <= 0x669) return String.fromCharCode(cp - 0x660 + 48);
+  if ((cp >= 0x64b && cp <= 0x65f) || cp === 0x670 || cp === 0x640 || cp === 0x200c || cp === 0x621) return "";
+  switch (cp) {
+    case 0x64a: case 0x649: case 0x626: return "ی";
+    case 0x643: return "ک";
+    case 0x6c0: case 0x629: return "ه";
+    case 0x622: case 0x623: case 0x625: case 0x671: return "ا";
+    case 0x624: return "و";
+  }
+  return undefined;
+}
 // Rust's char::is_alphanumeric: the Alphabetic property, or a number (Nd, Nl, No).
 const ALNUM = /^[\p{Alphabetic}\p{N}]$/u;
 const DIGITS = /^[0-9]+$/;
@@ -46,7 +67,7 @@ function foldChar(ch: string): string {
   for (const c of ch.toLowerCase()) {
     const cp = c.codePointAt(0) ?? 0;
     if (cp >= 0x300 && cp <= 0x36f) continue;
-    const m = FOLD_MAP.get(c);
+    const m = persian(cp) ?? FOLD_MAP.get(c);
     out += m ?? (ALNUM.test(c) ? c : " ");
   }
   return out;
@@ -170,9 +191,10 @@ export function highlights(text: string, words: string[]): [number, number][] {
     for (let k = 0; k < c.length; k++) from.push(i);
     i += ch.length;
   }
+  // A mark that follows the last letter belongs to it: a combining accent, or a haraka («خانهٔ»).
   const isMark = (at: number) => {
     const cp = text.codePointAt(at) ?? 0;
-    return cp >= 0x300 && cp <= 0x36f;
+    return (cp >= 0x300 && cp <= 0x36f) || (cp >= 0x64b && cp <= 0x65f) || cp === 0x670;
   };
   const found: [number, number][] = [];
   for (const w of look) {

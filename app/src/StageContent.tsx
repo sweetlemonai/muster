@@ -1,6 +1,7 @@
 import { useContext, useEffect, useState, type ReactNode } from "react";
 import { fmtMinutes, fmtTokens, nameOf, stageLabel, stamp, stampMinutes } from "./lib";
 import { estimateLeft, isWork, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
+import { DueDate, Stamp } from "./Dates";
 import Markdown from "./Markdown";
 import { siblingKey, taskKey } from "./taskKey";
 import OwnerChecklist from "./OwnerChecklist";
@@ -231,7 +232,7 @@ function HistoryList({ task }: { task: Task }) {
     <ol className="history">
       {[...task.stageHistory].reverse().map((s, i) => (
         <li key={`${s.at}-${i}`}>
-          <span className="h-when">{s.at.slice(5)}</span>
+          <Stamp className="h-when" at={s.at} />
           <span>
             <b>{stageLabel(s.from)} → {stageLabel(s.to)}</b> <span className="meta" dir="auto">· {nameOf(s.who, names)}</span>
           </span>
@@ -272,7 +273,7 @@ function Rollup({ task, childTasks }: { task: Task; childTasks?: Task[] }) {
     <section className="rollup-panel" aria-label="Roll-up" data-part="rollup">
       <h2>{levelLabel(task.level)} · {progressText(task.progress) || "no tasks yet"}</h2>
       {left && <p className="meta">{left}</p>}
-      {task.due && <p className="meta">due {task.due}</p>}
+      {task.due && <p className="meta"><DueDate iso={task.due} /></p>}
       {task.children.length > 0 && (
         <ul className="children">
           {task.children.map((id) => {

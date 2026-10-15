@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./i18n/react", async (real) => ({ ...(await real<typeof import("./i18n/react")>()), useT: () => (k: string) => k }));
 
-const { LanguageView } = await import("./Settings");
+const { LanguageView, NumberingView } = await import("./Settings");
 
 type Props = { children?: ReactNode; onClick?: () => void; lang?: string };
 
@@ -28,6 +28,15 @@ describe("the Language chips, clicked", () => {
     chip(tree, "fa")?.props.onClick?.();
     chip(tree, "en")?.props.onClick?.();
     expect(onPick.mock.calls).toEqual([["fa"], ["en"]]);
+  });
+
+  it("Digits and Calendar (mu-151) pass each click on, the one on too", () => {
+    const onDigits = vi.fn();
+    const onCalendar = vi.fn();
+    const tree = elements(NumberingView({ digits: "persian", calendar: "jalali", onDigits, onCalendar }));
+    tree.filter((e) => e.type === "button").forEach((b) => b.props.onClick?.());
+    expect(onDigits.mock.calls).toEqual([["persian"], ["latin"]]);
+    expect(onCalendar.mock.calls).toEqual([["jalali"], ["gregorian"]]);
   });
 
   it("pin the shown language when it's macOS's", () => {

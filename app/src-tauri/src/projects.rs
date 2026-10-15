@@ -1945,6 +1945,8 @@ mod tests {
             old_pauses_offered: true,
             claude_accounts: vec!["mg".into()],
             lang: None,
+            digits: None,
+            calendar: None,
         };
         assert_ne!(given, crate::settings::Settings::default());
         let s = read_state(

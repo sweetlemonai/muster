@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { tl, tn, useT } from "./i18n";
+import { fmt, tl, tn, useT } from "./i18n";
 import type { QueueInfo, Task } from "./types";
 import { Button, Pill } from "./ui";
 import { bandLimit, checkCount, columnLine, LIMIT_DEFAULT, LIMIT_MAX, LIMIT_MIN, limitText, type Over, overLine, overTitle, sideLimit } from "./yourCheckLimit";
@@ -33,7 +33,7 @@ export function OverLine({ over, queue }: { over: Over[]; queue: string }) {
 export function BandCount({ tasks, over, queue }: { tasks: Pick<Task, "queue">[]; over: Over[]; queue: string }) {
   useT("board");
   const b = bandLimit(tasks.map((t) => t.queue), over, queue);
-  return b.over ? <small className="over-limit" title={b.title}>{tasks.length}</small> : <small>{tasks.length}</small>;
+  return b.over ? <small className="over-limit" title={b.title}>{fmt.num(tasks.length)}</small> : <small>{fmt.num(tasks.length)}</small>;
 }
 
 /** The short line under the Your check header, in its reserved two lines; empty within the limit. */

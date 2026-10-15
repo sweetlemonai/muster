@@ -4,7 +4,7 @@ import BlockWhy from "./BlockWhy";
 import { BLOCK_LOOKS, blockWords } from "./blockWords";
 import EffortGroups from "./EffortGroups";
 import { humanColumn, isHuman } from "./human";
-import { tn, useT } from "./i18n";
+import { fmt, tn, useT } from "./i18n";
 import { key, stamp } from "./lib";
 import LessonsWaiting, { lessonsWaiting } from "./Lessons";
 import { taskKey } from "./taskKey";
@@ -59,7 +59,7 @@ export default function WaitingList({ tasks, multi, openKey, onOpen, onChanged, 
       )}
       {rest.length > 0 && (
         <div className="effort-group effort-other" role="group" aria-label={w("waiting.other")}>
-          <h3 className="effort-head">{w("waiting.other")} <small>{rest.length}</small></h3>
+          <h3 className="effort-head">{w("waiting.other")} <small>{fmt.num(rest.length)}</small></h3>
           {rest.map(item)}
         </div>
       )}

@@ -223,7 +223,6 @@
     "openTask": "Open task {{key}}",
     "noTitle": "(no title)",
     "blocked": "blocked",
-    "due": "due {{date}}",
     "backlogFeature": "Backlog · not in a feature yet",
     "backlogGoal": "Backlog · not in a goal yet",
     "openBacklog": "Open the Backlog here",

@@ -7,14 +7,14 @@ import { DisplayModes } from "./Display";
 import { AccountPicker } from "./Helper";
 import { HelpButton } from "./HelpButton";
 import { HomePath } from "./HomePath";
-import { dirOf, followLocale, LOCALES, NATIVE_NAMES, tl, tn, Trans, useLocale, useT, type Locale, type TFn } from "./i18n";
+import { calendarIn, CALENDARS, digitsIn, DIGITS, dirOf, followLocale, followNumbering, LOCALES, NATIVE_NAMES, tl, tn, Trans, useLocale, useT, type AnyLocale, type Calendar, type Digits, type Locale, type TFn } from "./i18n";
 import Notifications from "./Notifications";
 import Projects from "./Projects";
 import Roles from "./Roles";
 import { sessionStatesLine } from "./sessionState";
 import { homePath } from "./lib";
 import type { DisplayMode } from "./modes";
-import { ACCOUNTS_WORDS, accountsEdit, DEFAULT_MACHINE, SETTINGS_GROUPS, type SettingsGroup, type SettingsInfo, spanInput, spanText } from "./settingsData";
+import { ACCOUNTS_WORDS, accountsEdit, DEFAULT_MACHINE, numberingSetting, SETTINGS_GROUPS, type SettingsGroup, type SettingsInfo, spanInput, spanText } from "./settingsData";
 import type { Project, QueueInfo } from "./types";
 import { Button, Pill, Segment, Segmented } from "./ui";
 
@@ -91,21 +91,74 @@ export async function pickLanguage(code: Locale | ""): Promise<SettingsInfo> {
  *  settings haven't come yet, so it says nothing either way. */
 function Language({ setting, onInfo }: { setting: string | undefined | null; onInfo: (i: SettingsInfo) => void }) {
   const [error, setError] = useState("");
+  const [numberingError, setNumberingError] = useState("");
+  const shown = useLocale();
+  const pick = (name: "digits" | "calendar", value: string) =>
+    void pickNumbering(name, value, shown).then(
+      (i) => {
+        setNumberingError("");
+        onInfo(i);
+      },
+      (e: unknown) => setNumberingError(String(e)),
+    );
   return (
-    <LanguageView
-      shown={useLocale()}
-      following={setting === undefined}
-      error={error}
-      onPick={(code) =>
-        void pickLanguage(code).then(
-          (i) => {
-            setError("");
-            onInfo(i);
-          },
-          (e: unknown) => setError(String(e)),
-        )
-      }
-    />
+    <>
+      <LanguageView
+        shown={shown}
+        following={setting === undefined}
+        error={error}
+        onPick={(code) =>
+          void pickLanguage(code).then(
+            (i) => {
+              setError("");
+              onInfo(i);
+            },
+            (e: unknown) => setError(String(e)),
+          )
+        }
+      />
+      <NumberingView digits={digitsIn(shown)} calendar={calendarIn(shown)} error={numberingError} onDigits={(d) => pick("digits", d)} onCalendar={(c) => pick("calendar", c)} />
+    </>
+  );
+}
+
+/** Save Digits or Calendar (mu-151) and show it at once. The value the language gives by itself
+ *  saves as "" (`numberingSetting`), so it keeps following the language. */
+export async function pickNumbering(name: "digits" | "calendar", value: string, shown: AnyLocale): Promise<SettingsInfo> {
+  const info = await api.setSetting(name, numberingSetting(name, value, shown));
+  followNumbering(info.settings);
+  return info;
+}
+
+/** The chip rows' text: the digits as themselves (never translated, like the language names),
+ *  the calendars in the language shown. */
+const DIGIT_SAMPLES: Record<Digits, string> = { persian: "۱۲۳", latin: "123" };
+
+/** Settings › Language's Digits and Calendar (mu-151), under the language chips and always
+ *  shown: two quiet chip rows, each with its group label; the chip in effect is on. */
+export function NumberingView({ digits, calendar, error = "", onDigits, onCalendar }: { digits: Digits; calendar: Calendar; error?: string; onDigits: (d: Digits) => void; onCalendar: (c: Calendar) => void }) {
+  const t = useT("shell");
+  return (
+    <section className="settings-lang settings-numbering" aria-label={`${t("language.digits")} · ${t("language.calendar")}`}>
+      <h3>{t("language.digits")}</h3>
+      <Segmented aria-label={t("language.digits")}>
+        {DIGITS.map((d) => (
+          <Segment key={d} type="button" lang={d === "persian" ? "fa" : "en"} dir="ltr" active={d === digits} onClick={() => onDigits(d)}>
+            {DIGIT_SAMPLES[d]}
+          </Segment>
+        ))}
+      </Segmented>
+      <h3>{t("language.calendar")}</h3>
+      <Segmented aria-label={t("language.calendar")}>
+        {CALENDARS.map((c) => (
+          <Segment key={c} type="button" active={c === calendar} onClick={() => onCalendar(c)}>
+            {t(`language.${c}`)}
+          </Segment>
+        ))}
+      </Segmented>
+      <p className="meta">{t("language.numberingMeta")}</p>
+      {error && <p className="err" role="alert">{t("language.failedNumbering", { error })}</p>}
+    </section>
   );
 }
 

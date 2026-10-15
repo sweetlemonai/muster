@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { Stamp } from "./Dates";
 import { HelpButton } from "./HelpButton";
-import { Trans, tl, useT, type TFn } from "./i18n";
+import { fmt, Trans, tl, useT, type TFn } from "./i18n";
 import { fmtMinutes, shortTokens, stageLabel, stamp } from "./lib";
 import Markdown from "./Markdown";
 import { useLook } from "./modes";
@@ -16,7 +17,10 @@ const REFRESH_MS = 15_000;
 const MAX_TRANSCRIPT_MB = 128;
 
 const minutes = (m: number) => fmtMinutes(m) || tl("time.min", { count: 0 });
-const when = (secs: number | null) => (secs === null ? "—" : stamp(new Date(secs * 1000)));
+/** A time as a tool stamp (`2026-10-14 20:22`), "—" when it isn't known. */
+const stampOf = (secs: number | null) => (secs === null ? "—" : stamp(new Date(secs * 1000)));
+/** The same, as people read it (mu-151): «۲۲ مهر ۱۴۰۵ ۲۰:۲۲» in Persian, as stored in English. */
+const when = (secs: number | null) => fmt.stamp(stampOf(secs), true);
 /** Why a session has no numbers, by its `found`. */
 function notRead(t: TFn<"board">, found: Exclude<SessionRow["found"], "read">): string {
   if (found === "missing") return t("work.missing");
@@ -195,7 +199,7 @@ function TasksSection({ tasks, onOpenTask }: { tasks: Recap["tasks"]; onOpenTask
   const tr = useT("board");
   return (
     <section className="recap-tasks" aria-labelledby="recap-tasks">
-      <h2 id="recap-tasks">{tr("recap.tasks")} <small>{tasks.length}</small></h2>
+      <h2 id="recap-tasks">{tr("recap.tasks")} <small>{fmt.num(tasks.length)}</small></h2>
       {tasks.length === 0 ? (
         <p className="none">{WORDS.noTasks}</p>
       ) : (
@@ -223,11 +227,11 @@ function HistorySection({ history }: { history: Recap["history"] }) {
   return (
     <section className="recap-history" aria-labelledby="recap-history">
       {how === "open" ? (
-        <h2 id="recap-history">{t("recap.history")} <small>{history.length}</small></h2>
+        <h2 id="recap-history">{t("recap.history")} <small>{fmt.num(history.length)}</small></h2>
       ) : (
         <h2 id="recap-history">
           <button type="button" className="recap-fold" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-            {t("recap.history")} <small>{history.length}</small>
+            {t("recap.history")} <small>{fmt.num(history.length)}</small>
           </button>
         </h2>
       )}
@@ -238,7 +242,7 @@ function HistorySection({ history }: { history: Recap["history"] }) {
           <ol className="recap-events">
             {history.map((e, i) => (
               <li key={i} className={`recap-event ev-${e.kind}`}>
-                <span className="when">{when(e.at)}</span>
+                <Stamp className="when" at={stampOf(e.at)} year />
                 <span className="kind">{historyKind(e.kind)}</span>
                 {e.key && <bdi className="id">{e.key}</bdi>}
                 {e.pct !== null && <b>{t("recap.pct", { pct: e.pct })}</b>}

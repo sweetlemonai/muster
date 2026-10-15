@@ -2,7 +2,7 @@
 // set for a project, the board, the sidebar and Settings › Projects say so. It only warns. The
 // core counts the waiting tasks and keeps the limits (check_limit.rs, in projects.json by queue
 // folder); these are the words. Tested in yourCheckLimit.test.ts.
-import { tl, tn } from "./i18n";
+import { fmt, tl, tn } from "./i18n";
 import type { QueueInfo } from "./types";
 
 /** The default limit and its bounds, as the core's check_limit::DEFAULT, MIN and MAX. */
@@ -36,7 +36,7 @@ const named = (over: Over[]) => {
  *  whole pile, whatever the filters show), in the attention colour; in All projects the column's
  *  count, in that colour when any is over; else the plain count. */
 export function checkCount(count: number, over: Over[], queue: string): { text: string; over: boolean; title: string } {
-  if (over.length === 0) return { text: String(count), over: false, title: "" };
+  if (over.length === 0) return { text: fmt.num(count), over: false, title: "" };
   if (queue !== "all") {
     const o = over[0];
     return {
@@ -45,7 +45,7 @@ export function checkCount(count: number, over: Over[], queue: string): { text: 
       title: tn("board", "check.limit.pileSettings", { count: o.waiting, limit: o.limit }),
     };
   }
-  return { text: String(count), over: true, title: tn("board", "check.limit.overIn", { list: named(over) }) };
+  return { text: fmt.num(count), over: true, title: tn("board", "check.limit.overIn", { list: named(over) }) };
 }
 
 /** The longest the column's own line gets: it has two short lines of room in a narrow column. */

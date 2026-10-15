@@ -196,6 +196,18 @@
     "test": "test {{time}}"
   },
   "estimateSome": "≈ {{parts}} left ({{est}} of {{open}} open tasks estimated)",
+  "due": "due <time>{{date}}</time>",
+  "dueField": {
+    "label": "Due",
+    "jalali": "A Jalali date, like 1405/07/22, or a Gregorian one, like 2026-10-14",
+    "gregorian": "A date, like 2026-10-14",
+    "stores": "saved as {{iso}}",
+    "saved": "Due date saved.",
+    "format": "Write the date like {{example}}.",
+    "noYear": "{{date}} is no year for a due date: write it like {{example}}.",
+    "noDay": "{{date}} isn't a day in the Jalali calendar.",
+    "noGregorianDay": "{{date}} isn't a day in the calendar."
+  },
   "help": {
     "on": "Help: {{topic}}",
     "topic": {

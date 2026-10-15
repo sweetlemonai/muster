@@ -3,7 +3,7 @@
 // (Claude Code's status line and a run's rate_limit_event) and says what's stale; nothing here is
 // guessed. No React views here; AccountMeter.tsx and Settings.tsx have those. The words are
 // shell.json's `meter` and `profiles` (mu-146's layer), read in the language shown each time.
-import { fmt, tn } from "./i18n";
+import { calendarIn, fmt, getLocale, latinDigits, tn } from "./i18n";
 import { ago } from "./lib";
 
 /** One window's latest reading. `usedPercentage` may pass 100 (over the cap): clamp only to
@@ -76,7 +76,10 @@ export function resetText(resetsAt: number, now: number): string {
   const today = new Date(now * 1000);
   const clock = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
   const sameDay = d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
-  return sameDay ? clock : tn("shell", "meter.date", { day: d.getDate(), month: tn("shell", `recent.date.month.${MONTHS[d.getMonth()]}`), clock });
+  if (sameDay) return clock;
+  // In the Jalali calendar (mu-151), the day and month are Intl's: «۲۳ مهر ۰۰:۳۰».
+  if (calendarIn(getLocale()) === "jalali") return `${fmt.wallShortDate(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 60000)} ${clock}`;
+  return tn("shell", "meter.date", { day: d.getDate(), month: tn("shell", `recent.date.month.${MONTHS[d.getMonth()]}`), clock });
 }
 
 /** When a window resets: "resets 14:20", or, for a stale one whose reset has passed, "was due to
@@ -163,8 +166,9 @@ export const profileForm = (a: AccountView): ProfileForm => ({
   paused: a.paused,
 });
 
+// Typed in any digits, Persian ۲۰ too (mu-151): read as Latin before the check.
 const wholeIn = (text: string, lo: number, hi: number): number | null => {
-  const t = text.trim();
+  const t = latinDigits(text).trim();
   if (!/^\d+$/.test(t)) return null;
   const n = Number(t);
   return n >= lo && n <= hi ? n : null;

@@ -1,5 +1,6 @@
 import { blockedRed, blockSentence, isBlocked } from "./blockWords";
-import { fmt, tn } from "./i18n";
+import { calendarIn, fmt, getLocale, tn, type Calendar } from "./i18n";
+import { epochDayToJalali, jalaliToEpochDay } from "./jalali";
 import { holderShown, stageLabel, stageOf, stageRank, stampMinutes, type RoleNames, type StageId } from "./lib";
 import type { Task } from "./types";
 import { isWork, shownStageRank } from "./levels";
@@ -175,9 +176,10 @@ export function barTitle(t: Task, timed: boolean): string {
     stageLabel(t.stage),
     t.paused ? paused : "",
     blockSentence(t),
-    tn("board", "views.tip.captured", { date: t.captured }),
-    t.claimedOn ? tn("board", "views.tip.started", { date: t.claimedOn }) : "",
-    t.doneOn ? tn("board", "views.tip.done", { date: t.doneOn }) : "",
+    // Read, not copied (mu-151): the dates in the calendar and digits picked, as stored in English.
+    tn("board", "views.tip.captured", { date: fmt.isoDay(t.captured) }),
+    t.claimedOn ? tn("board", "views.tip.started", { date: fmt.isoDay(t.claimedOn) }) : "",
+    t.doneOn ? tn("board", "views.tip.done", { date: fmt.isoDay(t.doneOn) }) : "",
     timed ? "" : tn("board", "views.tip.datesOnly"),
   ]
     .filter(Boolean)
@@ -201,8 +203,9 @@ export function spans(tasks: Task[], now: number): Span[] & { notStarted?: numbe
 
 export type TimeWindow = { from: number; to: number };
 
-/** The window `offset` days, weeks (Monday to Sunday) or months away from the one holding `now`. */
-export function timeWindow(scale: Scale, now: number, offset: number): TimeWindow {
+/** The window `offset` days, weeks (Monday to Sunday) or months away from the one holding `now`.
+ *  A month is the calendar's (mu-151): in Jalali, Mehr runs 23 September to 22 October. */
+export function timeWindow(scale: Scale, now: number, offset: number, calendar: Calendar = "gregorian"): TimeWindow {
   const day = Math.floor(now / DAY);
   // Day is the last 24 hours, not the calendar day (owner, 2026-10-13: just after midnight the
   // calendar day was nearly empty): from 20 hours before the current hour to 4 hours after it,
@@ -216,43 +219,83 @@ export function timeWindow(scale: Scale, now: number, offset: number): TimeWindo
     const monday = day - ((date.getUTCDay() + 6) % 7) + offset * 7;
     return { from: monday * DAY, to: (monday + 7) * DAY };
   }
+  if (calendar === "jalali") {
+    const j = epochDayToJalali(day);
+    const months = j.year * 12 + (j.month - 1) + offset;
+    const start = (n: number) => jalaliToEpochDay(Math.floor(n / 12), (n % 12) + 1, 1) * DAY;
+    return { from: start(months), to: start(months + 1) };
+  }
   const y = date.getUTCFullYear(), m = date.getUTCMonth() + offset;
   return { from: Date.UTC(y, m, 1) / 60000, to: Date.UTC(y, m + 1, 1) / 60000 };
 }
 
 // The language's own names for the days and months (shell.json `recent.date`, as Activity writes
-// them; the months in full from board.json `views.month`), on the Gregorian calendar, and its own
-// digits through fmt: the same on every machine, whatever its region's date format.
+// them; the months in full from board.json `views.month`) and the digits picked, through fmt: the
+// same on every machine, whatever its region's date format. In the Jalali calendar (mu-151) the
+// day, month and year are Jalali's and the month is named by Intl (fmt.wallMonthName); a weekday
+// is the same in either.
 const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"] as const;
 const dateOf = (m: number) => new Date(Math.floor(m / DAY) * 86400000);
 const pad2 = (n: number) => fmt.number(n, { minimumIntegerDigits: 2, useGrouping: false });
-const yearOf = (d: Date) => fmt.number(d.getUTCFullYear(), { useGrouping: false });
-const weekday = (d: Date) => tn("shell", `recent.date.weekday.${WEEKDAYS[d.getUTCDay()]}`);
-const month = (d: Date) => tn("shell", `recent.date.month.${MONTHS[d.getUTCMonth()]}`);
-const clock = (m: number) => `${pad2(Math.floor((m % DAY) / 60))}:${pad2(m % 60)}`;
-const shortDate = (m: number) => {
+const yearText = (y: number) => fmt.number(y, { useGrouping: false });
+
+/** A day in the calendar picked: its day of the month, its month's short and full name, its year
+ *  as shown, and a key equal for two days of the same month. */
+type DayParts = { day: number; month: string; monthLong: string; year: string; monthKey: string };
+let persianFields: Intl.DateTimeFormat | undefined;
+/** The Jalali day of a wall minute. Never throws (review R9): a Log stamp the converter's 1–9999 AP
+ *  doesn't hold, such as a mistyped `0205-10-12`, is read through Intl's persian calendar, which
+ *  names any year (−416 there). */
+function jalaliDay(m: number): { year: number; month: number; day: number } {
+  try {
+    return epochDayToJalali(Math.floor(m / DAY));
+  } catch {
+    persianFields ??= new Intl.DateTimeFormat("en-u-ca-persian-nu-latn", { timeZone: "UTC", year: "numeric", month: "numeric", day: "numeric" });
+    const part = (parts: Intl.DateTimeFormatPart[], type: string) => Number(parts.find((p) => p.type === type)?.value);
+    const parts = persianFields.formatToParts(dateOf(m));
+    return { year: part(parts, "year"), month: part(parts, "month"), day: part(parts, "day") };
+  }
+}
+function dayParts(m: number): DayParts {
+  if (calendarIn(getLocale()) === "jalali") {
+    const j = jalaliDay(m);
+    const name = fmt.wallMonthName(m);
+    return { day: j.day, month: name, monthLong: name, year: yearText(j.year), monthKey: `${j.year}-${j.month}` };
+  }
   const d = dateOf(m);
-  return tn("board", "views.date.dayMonth", { day: d.getUTCDate(), month: month(d) });
+  const id = MONTHS[d.getUTCMonth()];
+  return { day: d.getUTCDate(), month: tn("shell", `recent.date.month.${id}`), monthLong: tn("board", `views.month.${id}`), year: yearText(d.getUTCFullYear()), monthKey: `${d.getUTCFullYear()}-${d.getUTCMonth()}` };
+}
+const weekday = (m: number) => tn("shell", `recent.date.weekday.${WEEKDAYS[dateOf(m).getUTCDay()]}`);
+// The minute of the day counted from the day's start, so a stamp before 1970 reads its clock too.
+const clock = (m: number) => {
+  const t = m - Math.floor(m / DAY) * DAY;
+  return `${pad2(Math.floor(t / 60))}:${pad2(t % 60)}`;
+};
+const shortDate = (m: number) => {
+  const p = dayParts(m);
+  return tn("board", "views.date.dayMonth", { day: p.day, month: p.month });
 };
 /** "14 Oct 13:00". */
 const dateAt = (m: number) => tn("board", "views.date.at", { date: shortDate(m), clock: clock(m) });
 const range = (from: string, to: string) => tn("board", "views.date.range", { from, to });
 
-/** "Tue 13 Oct 21:00 – Wed 14 Oct 21:00", "12 – 18 Oct 2026", "28 Sep – 4 Oct 2026", "October 2026". */
+/** "Tue 13 Oct 21:00 – Wed 14 Oct 21:00", "12 – 18 Oct 2026", "28 Sep – 4 Oct 2026", "October 2026";
+ *  in Persian with Jalali «۲۰ تا ۲۶ مهر ۱۴۰۵», «مهر ۱۴۰۵». */
 export function windowLabel(scale: Scale, w: TimeWindow): string {
-  const a = dateOf(w.from), b = dateOf(w.to - DAY);
-  if (scale === "month") return tn("board", "views.date.monthYear", { month: tn("board", `views.month.${MONTHS[a.getUTCMonth()]}`), year: yearOf(a) });
+  const a = dayParts(w.from), b = dayParts(w.to - DAY);
+  if (scale === "month") return tn("board", "views.date.monthYear", { month: a.monthLong, year: a.year });
   if (scale === "day") {
     const at = (m: number) => {
-      const d = dateOf(m);
-      return tn("board", "views.date.weekdayAt", { weekday: weekday(d), day: d.getUTCDate(), month: month(d), clock: clock(m) });
+      const p = dayParts(m);
+      return tn("board", "views.date.weekdayAt", { weekday: weekday(m), day: p.day, month: p.month, clock: clock(m) });
     };
     return range(at(w.from), at(w.to));
   }
-  const withYear = (d: Date) => tn("board", "views.date.dayMonthYear", { day: d.getUTCDate(), month: month(d), year: yearOf(d) });
-  if (a.getUTCFullYear() !== b.getUTCFullYear()) return range(withYear(a), withYear(b));
-  return range(a.getUTCMonth() === b.getUTCMonth() ? fmt.number(a.getUTCDate()) : shortDate(w.from), withYear(b));
+  const withYear = (p: DayParts) => tn("board", "views.date.dayMonthYear", { day: p.day, month: p.month, year: p.year });
+  if (a.year !== b.year) return range(withYear(a), withYear(b));
+  return range(a.monthKey === b.monthKey ? fmt.number(a.day) : shortDate(w.from), withYear(b));
 }
 
 /** One axis label: where it sits (fractions of the window) and whether now is in it. */
@@ -264,10 +307,9 @@ export function axis(scale: Scale, w: TimeWindow, now: number): Tick[] {
   const len = w.to - w.from;
   const out: Tick[] = [];
   for (let at = w.from; at < w.to; at += step) {
-    const d = dateOf(at);
     // Day: the clock hour, and the weekday at midnight so the change of day shows.
     const hour = Math.floor((((at % DAY) + DAY) % DAY) / 60);
-    const label = scale === "day" ? (hour === 0 ? weekday(d) : pad2(hour)) : scale === "week" ? tn("board", "views.date.weekTick", { weekday: weekday(d), day: d.getUTCDate() }) : fmt.number(d.getUTCDate());
+    const label = scale === "day" ? (hour === 0 ? weekday(at) : pad2(hour)) : scale === "week" ? tn("board", "views.date.weekTick", { weekday: weekday(at), day: dayParts(at).day }) : fmt.number(dayParts(at).day);
     out.push({ at, left: (at - w.from) / len, width: step / len, label, current: now >= at && now < at + step });
   }
   return out;

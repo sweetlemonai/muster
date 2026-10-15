@@ -8,7 +8,11 @@
 //!   digit (`char::is_alphanumeric`) becomes a space. "Café-RÉSUMÉ" → "cafe resume".
 //!   There's no Unicode normalization (std has none): a letter outside `FOLD` keeps its accent
 //!   when it's one character ("ếạ" stays) and loses it when it's written decomposed (e, U+0302,
-//!   U+0301 → "e"). Digits of other scripts ("١٩", "²", "１９") are kept as letters of a word.
+//!   U+0301 → "e"). Persian folds the way people type it (`persian`): Arabic ي ى ئ → ی and
+//!   ك → ک, ۀ ة → ه, آ أ إ ٱ → ا, ؤ → و, and ء, ZWNJ, tatweel and the harakat (U+064B–U+065F,
+//!   U+0670) are dropped, so «كتاب» finds «کتاب», «می‌شود» finds «میشود» and «خانهٔ» finds
+//!   «خانه». Persian and Arabic-Indic digits are 0–9, so «۱۲» is an id as 12 is. Other scripts'
+//!   digits ("²", "１９") are kept as letters of a word.
 //! - A query is its folded words. A task matches when every word does, in any order.
 //! - A word of digits only (0–9) is an id: it matches the task whose id is all digits and the
 //!   same number (19, 0019 and 00019 all find 0019). It never matches text.
@@ -57,6 +61,25 @@ const FOLD: &[(&str, &str)] = &[
     ("þ", "th"),
 ];
 
+/// Persian and Arabic letters folded to what people type, after lowercasing; "" drops one. The
+/// rules are @dastafzar/text `foldForSearch` (persianUtils contributors, MIT), one character at a
+/// time, with ZWNJ dropped rather than a space so «می‌شود» and «میشود» are one word. Mirrors
+/// search.ts `persian`.
+fn persian(c: char) -> Option<&'static str> {
+    const DIGITS: [&str; 10] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+    Some(match c {
+        '\u{6f0}'..='\u{6f9}' => DIGITS[c as usize - 0x6f0],
+        '\u{660}'..='\u{669}' => DIGITS[c as usize - 0x660],
+        '\u{64b}'..='\u{65f}' | '\u{670}' | '\u{640}' | '\u{200c}' | '\u{621}' => "",
+        '\u{64a}' | '\u{649}' | '\u{626}' => "ی",
+        '\u{643}' => "ک",
+        '\u{6c0}' | '\u{629}' => "ه",
+        '\u{622}' | '\u{623}' | '\u{625}' | '\u{671}' => "ا",
+        '\u{624}' => "و",
+        _ => return None,
+    })
+}
+
 fn fold_char(c: char, out: &mut String) {
     // Most text is ASCII: the same answer without the table.
     if c.is_ascii() {
@@ -69,6 +92,10 @@ fn fold_char(c: char, out: &mut String) {
     }
     for l in c.to_lowercase() {
         if ('\u{300}'..='\u{36f}').contains(&l) {
+            continue;
+        }
+        if let Some(to) = persian(l) {
+            out.push_str(to);
             continue;
         }
         match FOLD.iter().find(|(from, _)| from.contains(l)) {
@@ -374,6 +401,30 @@ mod tests {
         assert_eq!(fold("tech-debt/#UI!"), "tech debt  ui ");
         assert_eq!(fold("Задача 任务"), "задача 任务");
         assert_eq!(fold(""), "");
+    }
+
+    #[test]
+    fn fold_reads_persian_as_people_type_it() {
+        assert_eq!(fold("كتاب علي مصطفى مسئول"), "کتاب علی مصطفی مسیول");
+        assert_eq!(fold("خانۀ خانه\u{654} مدرسة"), "خانه خانه مدرسه");
+        assert_eq!(
+            fold("آب أحمد إسلام ٱسم مؤسسه شيء"),
+            "اب احمد اسلام اسم موسسه شی"
+        );
+        assert_eq!(
+            fold("می\u{200c}شود ک\u{640}تاب ک\u{650}تاب ه\u{670}ذا"),
+            "میشود کتاب کتاب هذا"
+        );
+        assert_eq!(
+            fold("۰۱۲۳۴۵۶۷۸۹ ٠١٢٣٤٥٦٧٨٩ ۱2٣"),
+            "0123456789 0123456789 123"
+        );
+        // Persian digits are an id, as typed Latin ones are, and never a word of the text.
+        let t = task("id: 0019\nstage: ready", "# كتاب صفحهٔ ۱۲\n");
+        assert_eq!(t.search, "کتاب صفحه");
+        assert_eq!(query_words("۱۹ كتاب"), ["19", "کتاب"]);
+        assert!(task_matches(&t, &words("٠٠١٩ کتاب")));
+        assert!(!task_matches(&t, &words("۱۲")));
     }
 
     #[test]

@@ -26,11 +26,14 @@ settle it.
 - **ZWNJ (U+200C):** before the plural ها (کامیت‌ها، تسک‌ها), in می‌/نمی‌, and before ی ezafe
   after ه (شاخه‌ی). Compound verbs use a normal space (کامیت کردن).
 - **Quotes:** « »; punctuation ، ؛ ؟ and ٪.
-- **Digits:** not settled here. Drover writes Persian digits (۰–۹) for every number in Persian
-  text, through `Intl.NumberFormat("fa")`; whether Muster does the same is decided in task mu-151.
-  The examples below use Persian digits only because they're Drover's. Keyboard glyphs (⌘N, ⌘.),
-  code, commands, paths, task ids, colour values (#1a2b3c) and anything inside `<code>` stay Latin
-  either way.
+- **Digits (Muster's rule, mu-151):** Persian digits (۰–۹) wherever a person reads a number:
+  counts, ages, estimates, dates and times, a count chip alone too. Latin wherever a number is
+  copied or sits in a Latin identifier: keyboard glyphs (⌘N, ⌘.), code, commands, paths, task ids
+  (mu-12), branch names, colour values (#1a2b3c), anything inside `<code>`, and what an input
+  stores. Dates are Jalali where people read them («۲۲ مهر ۱۴۰۵»). Settings › Language's Digits
+  (۱۲۳ · 123) and Calendar change both; 123 gives Drover's convention (Latin digits for counts,
+  versions and tokens, one choice throughout). Estimates read in words («۲ ساعت», «۴۰۰ هزار»):
+  Persian has no short unit forms.
 - **Letters:** Persian ی and ک (U+06CC, U+06A9), not Arabic ي and ك; search matches both.
 - **Address:** formal plural (کنید، دارید) everywhere, in the UI and to agents. Buttons and menu
   items are infinitives or nouns (باز کردن، بایگانی), confirmations are passive questions
@@ -209,7 +212,7 @@ column header, the stage track and the task's detail.
 | lesson (to approve) | درس | pl. درس‌ها; «درس‌هایی برای تأیید» (mu-147) | (proposed) |
 | dependency / needed first | وابستگی / پیش‌نیاز | the Graph view (mu-147) | common Persian software usage |
 | proven / ticked (a criterion) | اثبات‌شده / تیک‌خورده | «اثبات‌نشده» for not proven (mu-147) | (proposed) |
-| due (date) | سررسید | (mu-147) | common usage |
+| due (date) | سررسید | a goal's due date, «سررسید ۹ آبان ۱۴۰۵» (mu-147, mu-151) | common usage |
 
 ### Roles
 
@@ -305,6 +308,9 @@ Latin script stays in commands, task fields (`claimed-by:`) and anything an agen
 | LIVE | زنده | the LIVE window and badge | (proposed) |
 | prefix / folder | پیشوند / پوشه | | Mozilla |
 | estimate | تخمین | | common usage |
+| digits | ارقام | Settings › Language's ۱۲۳ · 123 (mu-151) | common usage |
+| calendar | تقویم | | Mozilla |
+| Jalali / Gregorian | خورشیدی / میلادی | the Calendar chips; Iran's own words for the two calendars, not جلالی | common usage |
 | token ribbon | روبان توکن | the card's bottom corner: tokens used against the estimate (mu-172); built like روبان دارنده | (proposed) |
 | over (the estimate) | بیش | the token ribbon's one word past the estimate, kept short so the figures and it fit a 100px card; read out in full as «بیشتر از تخمین» | (proposed) |
 | no est / shared / not read (the token ribbon's short words) | بی‌تخمین / مشترک / ناخوانده | short so they fit a 100px card; «مشترک» gives way whole on a narrow card, «ناخوانده» never does (it is the whole message when nothing was read; «خوانده نشد» lost its «نشد»); spoken and in the tooltip in full | (proposed) |
@@ -367,5 +373,4 @@ The "(proposed)" words (شکل‌دهی، در حال ساخت، برداشتن�
 راکد، ساکت، رها کردن، زنده، چشم‌انداز، رونوشت, and mu-172's: روبان توکن، بیش، خواندن از کش، نوشتن
 در کش، نشست مشترک، زمان ایجنت، انتظار شما, and mu-113's: خوانش، رزرو، جا تا رزرو، کهنه، سنجه، توازن, and mu-147's:
 فرستادن، لین «متوقف شده»، در دست گرفتن، انسان / ایجنت، نگهداری، درس، اثبات‌شده / تیک‌خورده) have no source and wait on a native-speaking review.
-The token ribbon writes its figures in Persian digits, with the k and M as they are (۲۱۰k). The digits rule waits on mu-151: until then a number filled into a Persian string is in
-Persian digits (the layer formats it), and a number written alone on screen (a count chip) is not.
+The token ribbon writes its figures in Persian digits, with the k and M as they are (۲۱۰k). Every number people read follows the Digits rule above (mu-151).

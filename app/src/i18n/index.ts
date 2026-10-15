@@ -2,9 +2,10 @@
 // decision 0021, commit a990fc8; mu-146 here). Components use
 // `const t = useT("ns")` and `t("key", { count, name })`; dates and numbers
 // go through `fmt`. The text lives in ./locales/<language>/<ns>.json.
-export { useLocale, useT, Trans, type TFn } from "./react";
+export { useLocale, useNumbering, useT, Trans, type TFn } from "./react";
 export * as fmt from "./format";
-export { followLocale, startLocale, LOCALE_CHANGED } from "./boot";
+export { followLocale, followNumbering, startLocale, LOCALE_CHANGED } from "./boot";
+export { calendarIn, CALENDARS, digitsIn, DIGITS, getNumbering, latinDigits, shownDigits, type Calendar, type Digits } from "./numbering";
 export { getLocale } from "./runtime";
 export { isolate, sentences, tl, tn, unmarked } from "./lib";
 export { withText } from "./prefetch";

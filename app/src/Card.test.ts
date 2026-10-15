@@ -75,9 +75,9 @@ describe("a Done card (0051)", () => {
   const NOW = new Date(2026, 9, 13, 14, 0).getTime() / 1000;
   const at = (t: Task) => renderToStaticMarkup(createElement(Card, { t, now: NOW, multi: false, parent: "", onOpen: () => {}, active: false, words: [] }));
   it("says when it was done, from the log, with the stamp in its tooltip", () => {
-    expect(at(task("0050", { stage: "done", doneAt: "2026-10-13 13:56" }))).toContain('<span class="card-done" title="Done 2026-10-13 13:56">done 4 min ago</span>');
+    expect(at(task("0050", { stage: "done", doneAt: "2026-10-13 13:56" }))).toContain('<time class="card-done" title="Done 2026-10-13 13:56" dateTime="2026-10-13T13:56">done 4 min ago</time>');
     expect(at(task("0051", { stage: "done", doneAt: "2026-10-12 18:20" }))).toContain(">done yesterday 18:20<");
-    expect(at(task("0052", { stage: "done", doneOn: "2026-10-12" }))).toContain('<span class="card-done" title="Done 2026-10-12">done yesterday</span>');
+    expect(at(task("0052", { stage: "done", doneOn: "2026-10-12" }))).toContain('<time class="card-done" title="Done 2026-10-12" dateTime="2026-10-12">done yesterday</time>');
   });
   it("says nothing when the log doesn't know, or the task isn't done", () => {
     expect(at(task("0053", { stage: "done" }))).not.toContain("card-done");

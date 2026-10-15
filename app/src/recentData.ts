@@ -1,5 +1,5 @@
 import { isHuman } from "./human";
-import { fmt, tl, tn } from "./i18n";
+import { calendarIn, fmt, getLocale, tl, tn } from "./i18n";
 import { type RoleNames, stageHolders, stamp, stampMinutes, whoLine } from "./lib";
 import { isWork } from "./levels";
 import type { Task } from "./types";
@@ -91,15 +91,20 @@ const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "
 const wallNow = (now: number) => stampMinutes(stamp(new Date(now * 1000)));
 
 /** A day (whole days since 1970 on the wall clock) as "Sun 11 Oct", with the year when it isn't
- *  `year`. The words are the language's own (shell.json `recent.date`), the same on every machine
- *  whatever its region: not the Mac's date format. */
-function dateText(day: number, year: number): string {
+ *  `today`'s. The words are the language's own (shell.json `recent.date`), the same on every machine
+ *  whatever its region: not the Mac's date format. In the Jalali calendar (mu-151) the day, month
+ *  and year are Intl's in the calendar and digits picked: «شنبه ۱۹ مهر». */
+function dateText(day: number, today: number): string {
   const d = new Date(day * DAY * 60000);
   const y = d.getUTCFullYear();
-  const parts = { weekday: tn("shell", `recent.date.weekday.${WEEKDAYS[d.getUTCDay()]}`), day: d.getUTCDate(), month: tn("shell", `recent.date.month.${MONTHS[d.getUTCMonth()]}`) };
-  return y === year ? tn("shell", "recent.date.day", parts) : tn("shell", "recent.date.dayYear", { ...parts, year: fmt.number(y, { useGrouping: false }) });
+  const weekday = tn("shell", `recent.date.weekday.${WEEKDAYS[d.getUTCDay()]}`);
+  if (calendarIn(getLocale()) === "jalali") {
+    const sameYear = fmt.wallYear(day * DAY) === fmt.wallYear(today * DAY);
+    return `${weekday} ${sameYear ? fmt.wallShortDate(day * DAY) : fmt.wallDate(day * DAY)}`;
+  }
+  const parts = { weekday, day: d.getUTCDate(), month: tn("shell", `recent.date.month.${MONTHS[d.getUTCMonth()]}`) };
+  return y === new Date(today * DAY * 60000).getUTCFullYear() ? tn("shell", "recent.date.day", parts) : tn("shell", "recent.date.dayYear", { ...parts, year: fmt.number(y, { useGrouping: false }) });
 }
-const yearOf = (wall: number) => new Date(wall * 60000).getUTCFullYear();
 
 /** "just now", "4 min ago", "2 h ago" today, "yesterday 18:20", then "Sun 11 Oct 09:05" (with the
  *  year when it isn't this one). Days are calendar days on the wall clock. "" for anything that
@@ -113,9 +118,10 @@ export function whenText(at: string, now: number): string {
   if (m < 60) return tl("time.minAgo", { count: m });
   const days = Math.floor(wall / DAY) - Math.floor(from / DAY);
   if (days <= 0) return tl("time.hAgo", { count: Math.floor(m / 60) });
-  const time = at.slice(11);
+  // The clock in the digits picked (mu-151).
+  const time = fmt.wallClock(from);
   if (days === 1) return tn("shell", "recent.yesterdayAt", { time });
-  return tn("shell", "recent.dateAt", { date: dateText(Math.floor(from / DAY), yearOf(wall)), time });
+  return tn("shell", "recent.dateAt", { date: dateText(Math.floor(from / DAY), Math.floor(wall / DAY)), time });
 }
 
 /** A Done card's finish: "done 4 min ago" from its `doneAt`; else "done today", "done yesterday"
@@ -130,7 +136,7 @@ export function finishText(t: Pick<Task, "stage" | "doneAt" | "doneOn">, now: nu
   const days = Math.floor(wall / DAY) - day / DAY;
   if (days <= 0) return tn("shell", "recent.doneToday");
   if (days === 1) return tn("shell", "recent.doneYesterday");
-  return tn("shell", "recent.done", { when: dateText(day / DAY, yearOf(wall)) });
+  return tn("shell", "recent.done", { when: dateText(day / DAY, Math.floor(wall / DAY)) });
 }
 
 /** One day of the list: "Today", "Yesterday" or "Wed 7 Oct", and its rows, newest first. */
@@ -153,18 +159,18 @@ export function dayGroups(rows: Finish[], now: number, weeks: number): { groups:
     }
     const last = groups.at(-1);
     if (last && last.day === day) last.rows.push(r);
-    else groups.push(dayGroup(day, today, yearOf(wall), r));
+    else groups.push(dayGroup(day, today, r));
   }
   return { groups, older };
 }
 
 /** A day's group, its heading read in the language shown each time (the list keeps its groups
  *  between polls). */
-function dayGroup(day: number, today: number, year: number, first: Finish): DayGroup {
+function dayGroup(day: number, today: number, first: Finish): DayGroup {
   return {
     day,
     get label() {
-      return day === today ? tn("shell", "recent.today") : day === today - 1 ? tn("shell", "recent.yesterday") : dateText(day, year);
+      return day === today ? tn("shell", "recent.today") : day === today - 1 ? tn("shell", "recent.yesterday") : dateText(day, today);
     },
     rows: [first],
   };

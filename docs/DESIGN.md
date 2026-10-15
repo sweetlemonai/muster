@@ -533,6 +533,16 @@ Languages).
 - **No sentence built from parts:** a whole sentence is one string with `{{placeholders}}`, and
   counts use the language's plural forms; a value filled in (a path, a name, a branch) keeps its
   own direction.
+- **Persian digits and Jalali dates where people read them, Latin where they copy** (mu-151): in
+  فارسی, counts, ages, estimates, dates and times read «۳ کار», «۲ ساعت پیش», «۲۲ مهر ۱۴۰۵». What
+  stays Latin and Gregorian: task keys and ids (`mu-12`), commands (`muster pass`), paths,
+  branch names, code, front matter and log lines, an input's stored value, and `--json`. Storage
+  never changes, only display. Settings › Language's Digits (`۱۲۳ · 123`) and Calendar
+  (`Jalali · Gregorian`) sit under the language chips, always shown, quiet Segmented rows; each
+  follows the language until picked, and 123 gives Drover's convention. Inputs take any digits
+  and store Latin ones; a due date is typed in the calendar shown, with the ISO day it saves
+  beside it. Names sort in the language's order, and search folds Persian (ي/ی, ك/ک, ZWNJ,
+  Persian digits) so what was meant is found.
 
 ## Checking a design
 

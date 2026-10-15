@@ -419,7 +419,8 @@ describe("task pane for a goal or feature", () => {
   });
   it("without the children's tasks at hand, lists their ids", () => {
     const p = pane({ id: "0030", level: "goal", due: "2026-12-01", progress, children: ["0031"] });
-    expect(p.html).toContain("due 2026-12-01");
+    // In a <time> with the stored day (mu-151), as stored in English.
+    expect(p.html).toContain('due <time dateTime="2026-12-01">2026-12-01</time>');
     expect(p.html).toContain("<li>0031</li>");
   });
   it("may still be passed on while it's shaped, but never into Building, nor out of it, nor released", () => {

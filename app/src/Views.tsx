@@ -2,7 +2,7 @@ import { useContext, useMemo, useState } from "react";
 import { estimateText, kindLabel } from "./fields";
 import BlockWhy from "./BlockWhy";
 import { blockedRed, blockLead, isBlocked } from "./blockWords";
-import { type TFn, tl, tn, useT } from "./i18n";
+import { fmt, type TFn, tl, tn, useNumbering, useT } from "./i18n";
 import { ago, holderShown, key, priorityName, stageLabel, stageOf } from "./lib";
 import { PAUSE_GLYPH } from "./Pause";
 import type { Task } from "./types";
@@ -131,7 +131,7 @@ function Row({ t, now, multi, active, onOpen, words, tr }: { t: Task; now: numbe
       </td>
       <td className="meta" dir="auto">{isBlocked(t) ? <BlockWhy t={t} short pill={false} /> : holderShown(t, names)}</td>
       <td className="meta est-cell">{own || (parentLevel ? estimateLeft(t.progress) : "")}</td>
-      <td className="meta">{t.captured}</td>
+      <td className="meta">{t.captured && <time dateTime={t.captured}>{fmt.isoDay(t.captured)}</time>}</td>
       <td className="meta">{ago(now, t.modified)}</td>
       <td>{t.tags.map((g) => <span key={g} className="tag" dir="auto">#<Hl text={g} words={words} /></span>)}</td>
     </tr>
@@ -150,9 +150,11 @@ export function TimelineView({ tasks, now, multi, openKey, onOpen, words }: { ta
   // Wall-clock minutes (viewData's unit); changes once a minute, not on every poll.
   const at = wallMinutes(new Date(now * 1000));
   const list = useMemo(() => spans(tasks, at), [tasks, at]);
-  const win = useMemo(() => timeWindow(scale, at, offset), [scale, at, offset]);
+  // The calendar and digits picked (mu-151): the month is the calendar's, and the labels follow both.
+  const numbering = useNumbering();
+  const win = useMemo(() => timeWindow(scale, at, offset, numbering.calendar), [scale, at, offset, numbering.calendar]);
   const rows = useMemo(() => layout(list, win, scale), [list, win, scale]);
-  const ticks = useMemo(() => axis(scale, win, at), [scale, win, at]);
+  const ticks = useMemo(() => axis(scale, win, at), [scale, win, at, numbering]);
   const nowLine = nowAt(win, at);
   const marks = useMemo(() => timelineLegend(legendMarks(rows, nowLine)), [rows, nowLine]);
   // The controls and the chart read their words with `tn`, so they stay plain functions; this

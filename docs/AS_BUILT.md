@@ -149,7 +149,7 @@ here):
 | `arrange.rs` | The sidebar's order, headings, colours and folds |
 | `check_limit.rs` | The limit on Your check per project |
 | `settings.rs` | This Mac's settings: lease, LIVE window, notifications, the menu bar icon, the old-pauses offer, the Claude accounts Muster reads (`claude_accounts`), the language |
-| `i18n.rs` | The core's languages (mu-146, from Drover's): the language in effect (the setting, else macOS's), and the menu bar's text from `native.json` with the same plural rule and digits as the window |
+| `i18n.rs` | The core's languages (mu-146, from Drover's): the language in effect (the setting, else macOS's), and the menu bar's text from `native.json` with the same plural rule and digits as the window (the Digits setting, mu-151) |
 | `badge.rs` | The Dock badge's count, set from Rust |
 | `tray.rs` | The menu bar icon: idle or waiting with the count beside it, its tooltip and menu, from the badge's count, in the language in effect |
 | `app_menu.rs` | The app's menus in the Mac's menu bar (Tauri's default: the app menu, File, Edit, View, Window, Help), titled in the language in effect and set again when it changes (mu-147) |
@@ -2072,6 +2072,71 @@ Rust core reads the same JSON.
   never a string kept at load. A view a test calls as a plain function uses `tn`, not `useT`. A
   string the core shows goes in `native.json` and through `i18n::t`.
 
+### Digits, calendars and search folding (mu-151)
+
+In فارسی what people read is in Persian digits and the Jalali calendar; what they copy or type
+stays Latin. Storage never changes, only display.
+
+- **The settings:** `digits` (`persian`, `latin`) and `calendar` (`jalali`, `gregorian`) in
+  `settings.json` (`settings.rs` `DIGITS`, `CALENDARS`), written only once picked; unset, each
+  follows the language (Persian digits and Jalali in فارسی, Latin and Gregorian in English).
+  Settings › Language shows two Segmented rows under the language chips, always: Digits
+  `۱۲۳ · 123` (the digits as themselves, never translated) and Calendar `Jalali · Gregorian`.
+  Picking the language's own value saves it empty (`settingsData.ts` `numberingSetting`), so it
+  goes on following the language. The window takes them from each state poll and from the pick
+  at once (`followNumbering`), and keeps a copy in `localStorage` (`muster.numbering`) for the
+  next start's first render. The core's own counts (the menu bar) follow `digits` too
+  (`i18n::set_digits`).
+- **One set of formatters** (`app/src/i18n/numbering.ts`): every `Intl` object is made there,
+  cached by its tag (`fa-u-ca-persian-nu-arabext`, `en-u-ca-gregory-nu-latn`…) and options;
+  `{{count}}` in a translation (`runtime.formatNumber`) and `fmt.*` share it (a test counts the
+  constructions). A change re-renders the window as a language switch does. `format.ts` (`fmt`):
+  `num`, `compact` (500k → «۵۰۰ هزار»), `ago`, `duration` and `tokens` (a cleaned estimate:
+  «۲ ساعت» and «۴۰۰ هزار» in Persian, `2h` and `400k` as written in English, `IN_WORDS`, since
+  Persian has no short unit forms), `wallDate`, `wallShortDate`, `wallDay`, `wallWeekday`,
+  `wallMonth`, `wallMonthName`, `wallYear`, `wallClock`, `wallHour` (the board's wall-clock minutes, in UTC),
+  `isoDay` and `stamp` (a stored day or tool stamp; in Latin digits and Gregorian it shows as
+  stored, so English reads as it always did), and `compare` (`Intl.Collator`).
+- **Where:** counts on column heads, bands, the toolbar (`HeadCount`), the sidebar's rows, the
+  filter bar, Sessions, Recent and the pane, a count alone through `fmt.num` and one inside a
+  sentence through mu-147's keyed strings; estimates (`fields.ts` `estimateText`); the
+  Timeline's axis and window name (`viewData.ts` `dayParts`: mu-147's `views.date` strings and
+  names, with the day, month and year in the calendar picked; in Jalali the month is named by
+  Intl, `wallMonthName`, and Month is the Jalali month; a Log stamp outside the converter's
+  1–9999 AP, a mistyped `0205-10-12`, is read through Intl's persian calendar, so a label never
+  throws); a Timeline bar's tooltip dates (`barTitle`, `fmt.isoDay`); the pane's history,
+  check-in and comment times and a session recap's History, Started and last-active times
+  (`Dates.tsx` `Stamp`, `fmt.stamp`); a
+  goal's due date (`DueDate`); the Table's captured date; Recently finished's dates; the account
+  meter's reset date. Dates sit in `<time datetime>` with what's stored (`Stamp`, `DueDate`, the
+  due field's saved day, the Table's captured date, Recently finished, a Done card's line); the
+  meter's reset date doesn't, since it's inside one line of words and a bar's accessible name. A
+  stamp is `dir="auto"`, so it keeps its order beside a Latin name. Names and headings sort
+  with `fmt.compare` (`activity.ts`, `labels.ts`).
+- **What stays Latin:** task keys and ids, commands, paths, branch names, code, front matter, log
+  lines, an input's stored value and `--json`.
+- **Inputs** (`api.ts`, the window's one way to the core): estimates, tokens and the due date
+  (`fields.ts` `storedValue`, `storedEstimates`), the lease and LIVE window, a prefix, the Your
+  check limit and a role's numbers go to the core with Persian and Arabic-Indic digits as 0–9 and
+  the Persian keyboard's ٫ as a point (`latinDigits`), so the core's checks see what they always
+  did; an account's reserve and concurrency are read the same way before their bounds check. A goal's due field (the pane's settings column, `DueField` over the
+  stateless `DueFieldView`) reads the calendar from the year, whichever is picked: 1300–1699 is
+  Jalali (۱۴۰۵/۰۷/۲۲, 1405-7-22), 1700 on Gregorian (2026-10-14, typed out of habit), before 1300
+  refused. It shows the ISO day it saves beside it when that isn't what's typed, refuses a day
+  that doesn't exist (1404/12/30) with why (`fields.ts` `dueStored`), and saves nothing when
+  left with the text it showed, so a hand-edited `due: 2026-02-30` stays as written until it's
+  typed over (`dueSave`, `dueCommit`).
+- **Jalali** (`app/src/jalali.ts`): a port of `@dastafzar/calendar`'s `conversion.ts` (MIT,
+  credited in the file): the astronomical year table for 1200–1600 AP and ICU4X's corrected
+  33-year rule outside it; `parseJalali` reads a typed date. `jalali-cases.json` holds known
+  pairs and impossible dates; mu-152's Rust port reads the same file. The test converts every day
+  1990–2040 both ways against `Intl`'s persian calendar.
+- **Search folds Persian** (`search.ts` `FOLD`, `search.rs`, both one pass a character, credited
+  to `@dastafzar/text` `foldForSearch`, MIT): ي ى ئ → ی, ك → ک, ۀ ة → ه, آ أ إ ٱ → ا, ؤ → و;
+  ZWNJ, tatweel, harakat and ء dropped; Persian and Arabic-Indic digits are 0–9, so ۱۲ is an id
+  word as 12 is. The cases are in the shared `search-cases.json`, run by Vitest and
+  `cargo test --test search_cases`.
+
 ### The AI helper
 
 The **Helper** tab: a chat per project that does what the capture session does. You write ideas,
@@ -2611,8 +2676,9 @@ worktrees and the merge in [parallel](now/parallel.md), Testing and the review i
 the task pane in [board](now/board.md), its words in every language in
 [board words](now/board-words.md), the row of folded columns above the board and its edge cue
 in [column row](now/column-row.md), the projects sidebar in [sidebar](now/sidebar.md), Settings in
-[settings](now/settings.md), the Sessions view and its recap in [sessions](now/sessions.md), the
-Table, Timeline and Graph views in [views](now/views.md), the account meter in
+[settings](now/settings.md), digits, dates and search folding in [languages](now/languages.md),
+the Sessions view and its recap in [sessions](now/sessions.md), the Table, Timeline and Graph views
+in [views](now/views.md), the account meter in
 [accounts](now/accounts.md), and the header's toolbar and how it wraps in [toolbar](now/toolbar.md). The format and the pass rule are in PROTOCOL.md ("What's true now").
 
 - **Reading** (`now.rs`): only plain `*.md` files directly in `docs/now/` (100 at most), each read

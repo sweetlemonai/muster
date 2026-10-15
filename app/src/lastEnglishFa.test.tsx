@@ -1,7 +1,7 @@
 // The last English words Persian screenshots still showed (mu-147): the estimate line of the card
 // and the Table, the owner as a holder in the Table and on the Graph, the tag box of New task and
 // the pane, and the session recap's History kinds. English reads as before; Persian has no English
-// word left, and the figures (2h, 30m, 300k) stay as typed, isolated.
+// word left, and the figures (2h, 30m, 300k) are isolated, in Persian digits and words (mu-151).
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
@@ -53,11 +53,11 @@ describe("the estimate line", () => {
     expect(estimateText({ estTime: "", estTestTime: "", estTokens: "" })).toBe("");
   });
 
-  it("says agent and test in Persian, each figure as typed and isolated", async () => {
+  it("says agent and test in Persian, each figure in Persian digits and words, isolated", async () => {
     await setLocale("fa");
-    expect(estimateText({ estTime: "30m", estTestTime: "", estTokens: "20k" })).toBe(`ایجنت ${FSI}30m${PDI} · ${FSI}20k${PDI}`);
-    expect(estimateText({ estTime: "2h", estTestTime: "20m", estTokens: "300k" })).toBe(`ایجنت ${FSI}2h${PDI} · تست ${FSI}20m${PDI} · ${FSI}300k${PDI}`);
-    expect(estimateText({ estTime: "", estTestTime: "1h", estTokens: "" })).toBe(`تست ${FSI}1h${PDI}`);
+    expect(estimateText({ estTime: "30m", estTestTime: "", estTokens: "20k" })).toBe(`ایجنت ${FSI}۳۰ دقیقه${PDI} · ${FSI}۲۰\u00a0هزار${PDI}`);
+    expect(estimateText({ estTime: "2h", estTestTime: "20m", estTokens: "300k" })).toBe(`ایجنت ${FSI}۲ ساعت${PDI} · تست ${FSI}۲۰ دقیقه${PDI} · ${FSI}۳۰۰\u00a0هزار${PDI}`);
+    expect(estimateText({ estTime: "", estTestTime: "1h", estTokens: "" })).toBe(`تست ${FSI}۱ ساعت${PDI}`);
     expect(estimateText({ estTime: "", estTestTime: "", estTokens: "" })).toBe("");
   });
 
@@ -66,7 +66,7 @@ describe("the estimate line", () => {
     expect(shown(table([ESTIMATED]))).toContain("agent 2h · test 20m · 300k");
     await setLocale("fa");
     for (const html of [card(ESTIMATED), table([ESTIMATED])]) {
-      expect(shown(html)).toContain("ایجنت 2h · تست 20m · 300k");
+      expect(shown(html)).toContain("ایجنت ۲ ساعت · تست ۲۰ دقیقه · ۳۰۰ هزار");
       expect(shown(html)).not.toMatch(/\b(agent|test)\b/);
     }
   });

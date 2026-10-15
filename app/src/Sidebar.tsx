@@ -1,8 +1,8 @@
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import { blockSentence } from "./blockWords";
-import { useT } from "./i18n";
+import { calendarIn, fmt, latinDigits, tn, useLocale, useT, type Calendar } from "./i18n";
 import { BranchPane } from "./Branch";
-import { KINDS } from "./fields";
+import { dueCommit, dueStored, dueTyped, KINDS } from "./fields";
 import { earlierStages, heldByOther, isStage, leaseRunOut, nameOf, passLabel, stageLabel } from "./lib";
 import { Machine, RoleNamesContext, spanText } from "./settingsData";
 import { isHuman } from "./human";
@@ -63,6 +63,12 @@ export default function Sidebar({ task, nowSecs, a, images, files }: {
           <span className="lbl">Est</span>
           <Estimate task={task} onSave={a.setField} />
         </div>
+        {task.level === "goal" && (
+          <div className="kv stack">
+            <span className="lbl">{tn("common", "dueField.label")}</span>
+            <DueField task={task} onSave={a.setField} />
+          </div>
+        )}
         <div className="kv stack">
           <span className="lbl">Tags</span>
           <TagEditor tags={task.tags} onChange={(t) => a.setField("tags", t.join(","), "Tags saved.")} />
@@ -320,6 +326,36 @@ export function ValueChipView({ label, value, options, open, onOpen, onClose, on
   );
 }
 
+/** A goal's due date (mu-151), typed in the calendar Settings › Language picked and in any
+ *  digits: in Jalali, «۱۴۰۵/۰۷/۲۲» or 1405/07/22, with the Gregorian ISO day it saves shown beside
+ *  it. Saved on ↩ or on leaving it; a date that isn't one is refused here, with why, and nothing
+ *  is saved. */
+export function DueField({ task, onSave }: { task: Pick<Task, "due">; onSave: (field: string, value: string, done: string) => void }) {
+  const calendar = calendarIn(useLocale());
+  const [typed, setTyped] = useState(() => dueTyped(task.due, calendar));
+  const [error, setError] = useState("");
+  useEffect(() => setTyped(dueTyped(task.due, calendar)), [task.due, calendar]);
+  const commit = () => setError(dueCommit(typed, calendar, task.due, onSave, tn("common", "dueField.saved")));
+  return <DueFieldView typed={typed} error={error} calendar={calendar} onType={setTyped} onCommit={commit} />;
+}
+
+/** The due field as drawn from what's typed and the refusal (review R2: no state, so a test
+ *  drives its input's own events): the ISO day it saves beside it whenever that isn't what's
+ *  typed, in a `<time>`, and the refusal in an alert. */
+export function DueFieldView({ typed, error, calendar, onType, onCommit }: {
+  typed: string; error: string; calendar: Calendar; onType: (typed: string) => void; onCommit: () => void;
+}) {
+  const parsed = dueStored(typed, calendar);
+  const stores = "iso" in parsed && parsed.iso !== latinDigits(typed).trim() ? parsed.iso : "";
+  return (
+    <span className="due-field">
+      <input value={typed} onChange={(e) => onType(e.target.value)} onBlur={onCommit} onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()} placeholder={calendar === "jalali" ? "1405/07/22" : "2026-10-14"} size={10} maxLength={16} dir="ltr" aria-label={tn("common", "dueField.label")} aria-invalid={error ? true : undefined} title={tn("common", `dueField.${calendar}`)} />
+      {stores && <span className="meta small"><time dateTime={stores}>{tn("common", "dueField.stores", { iso: stores })}</time></span>}
+      {error && <span className="err" role="alert">{error}</span>}
+    </span>
+  );
+}
+
 /** Estimated agent time (review and QA included), test time (the owner's check only) and tokens,
  *  saved when a field loses focus or on Enter. */
 function Estimate({ task, onSave }: { task: Task; onSave: (field: string, value: string, done: string) => void }) {
@@ -365,7 +401,7 @@ export function FilesView({ task, images, open, onToggle, onAttach, openId }: {
   const others = task.attachments.filter((n) => !IMAGE.test(n));
   return (
     <div className="kv stack files" aria-label="Files">
-      <span className="lbl">Files <small>{task.attachments.length}</small></span>
+      <span className="lbl">Files <small>{fmt.num(task.attachments.length)}</small></span>
       <span className="file-list">
         {names.map((n, i) => <ImageThumb key={n} id={thumbId(openId, i)} name={n} url={images[n]} open={open.has(n)} onToggle={() => onToggle(n)} controls={openId} />)}
         {others.map((n) => <span key={n} className="other-file" title={n}>{n}</span>)}

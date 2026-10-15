@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api } from "./api";
-import { useT } from "./i18n";
+import { fmt, useT } from "./i18n";
 import { key, oneAtATime, stamp } from "./lib";
 import { pressed } from "./shortcuts";
 import { taskKey } from "./taskKey";
@@ -55,7 +55,7 @@ export default function EffortGroups({ tasks, place, renderCard, onChanged }: { 
         const label = t(`effort.${e.id}`);
         return (
           <div key={e.id} className={`effort-group effort-${e.id}${list.length ? "" : " effort-empty"}`} role="group" aria-label={label}>
-            <h3 className="effort-head">{label} <small>{list.length}</small></h3>
+            <h3 className="effort-head">{label} <small>{fmt.num(list.length)}</small></h3>
             {e.id === "accept" && accept}
             {list.map((x) => <Fragment key={key(x)}>{renderCard(x)}</Fragment>)}
           </div>

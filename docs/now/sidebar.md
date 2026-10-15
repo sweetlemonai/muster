@@ -15,6 +15,7 @@ covers: app/src/Sidebar.tsx, app/src/SidebarProjects.tsx, app/src/ProjectList, a
 - A heading folds to one line; nothing of its projects shows under it. (mu-70)
 - A project put under a folded heading unfolds it. (mu-70)
 - A heading's counts are words, "77 need you · 17 projects · 18 working", open or folded. (mu-82)
+- Names and headings sort in the language's order (Persian order in فارسی), not by code point. (mu-151)
 - "N need you" comes first after the name and is never cut. (mu-82)
 - Short of room, they take a full-width second line, then words wrap. (mu-212)
 - In Focus the sidebar narrows to headings, names, the working dot, stalled and counts. (DESIGN.md "Focus mode")

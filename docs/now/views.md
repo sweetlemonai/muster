@@ -16,3 +16,4 @@ covers: app/src/Views.tsx, app/src/viewData.ts, app/src/GraphView.tsx, app/src/g
 - The Graph's legend follows Hide done; a loop is the one rule `isLoopEdge`, for drawing and legend. (mu-173)
 - One colour, one meaning: a stage colour only ever says a stage. (DESIGN.md "The colour code")
 - Table heads start on the cells' side right to left; the Timeline and Graph keep drawing left to right. (mu-147)
+- The Timeline's labels follow the calendar and digits picked; in Jalali a month is the Jalali month (Mehr from 23 September). (mu-151)

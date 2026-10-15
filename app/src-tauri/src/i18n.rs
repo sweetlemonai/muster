@@ -10,7 +10,7 @@
 
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::{OnceLock, RwLock};
+use std::sync::{atomic::AtomicU8, atomic::Ordering, OnceLock, RwLock};
 
 /// The languages, as the UI's `LOCALES` (src/i18n/locales.ts).
 pub const LOCALES: [&str; 2] = ["en", "fa"];
@@ -256,10 +256,42 @@ fn number(locale: &str, n: u64) -> String {
     digits(locale, &n.to_string())
 }
 
+/// Settings › Language's Digits (mu-151, `settings::DIGITS`): 0 follows the language, 1 is
+/// Persian, 2 Latin. The window's numbers follow the same setting (numbering.ts).
+static DIGITS: AtomicU8 = AtomicU8::new(0);
+
+/// The Digits setting the core's text follows from now on: `persian`, `latin`, or None for the
+/// language's own.
+pub fn set_digits(picked: Option<&str>) {
+    DIGITS.store(digits_code(picked), Ordering::Relaxed);
+}
+
+fn digits_code(picked: Option<&str>) -> u8 {
+    match picked {
+        Some("persian") => 1,
+        Some("latin") => 2,
+        _ => 0,
+    }
+}
+
+/// Whether `locale` writes Persian digits with the Digits setting `code`.
+fn persian_digits(code: u8, locale: &str) -> bool {
+    match code {
+        1 => true,
+        2 => false,
+        _ => locale == "fa",
+    }
+}
+
 /// A number written in ASCII digits ("80", "-1"), in the language's
-/// digits: Persian's in Persian, the rest as they are.
+/// digits: Persian's in Persian, the rest as they are; or the ones
+/// Settings › Language's Digits picked (mu-151).
 pub(crate) fn digits(locale: &str, s: &str) -> String {
-    if locale != "fa" {
+    digits_with(DIGITS.load(Ordering::Relaxed), locale, s)
+}
+
+fn digits_with(code: u8, locale: &str, s: &str) -> String {
+    if !persian_digits(code, locale) {
         return s.to_string();
     }
     s.chars()
@@ -536,6 +568,11 @@ mod tests {
         );
         assert_eq!(fill("é{{a}}ü", &[("a", "ß")]), "éßü");
         assert_eq!(number("fa", 1209), "۱۲۰۹");
+        // Settings › Language's Digits (mu-151): either language, either digits.
+        assert_eq!(digits_with(digits_code(Some("latin")), "fa", "12"), "12");
+        assert_eq!(digits_with(digits_code(Some("persian")), "en", "12"), "۱۲");
+        assert_eq!(digits_with(digits_code(None), "fa", "12"), "۱۲");
+        assert_eq!(digits_with(digits_code(Some("other")), "en", "12"), "12");
         assert_eq!(number("en", 12), "12");
     }
 

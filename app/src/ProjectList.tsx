@@ -4,7 +4,7 @@ import { projectCount } from "./Backlog";
 import { SideLimit } from "./CheckLimit";
 import { NEEDS_CHIP, needsWords, needsYouCount, stalledProjectsWords, WORKING_IN, workingInParams, workingInWords, workingWords } from "./human";
 import { api, type Moved } from "./api";
-import { tl, tn, Trans, useT } from "./i18n";
+import { fmt, tl, tn, Trans, useT } from "./i18n";
 import { LABEL_MAX } from "./labels";
 import { lessonsWaiting } from "./Lessons";
 import { inProgress } from "./lib";
@@ -338,10 +338,10 @@ export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClic
         <span className="side-badges">
           {!full && stalled && <span className="side-stalled" title={stalledBadge?.title ?? tn("shell", "sidebar.stalledTitle", { hint: tn("shell", "sidebar.stalledHint") })}>{stalledBadge?.text ?? stalled}</span>}
           {running && <span className="run-chip" title={tn("shell", "sidebar.runningTitle")}>{tn("shell", "run.running")}</span>}
-          {needs > 0 && <span className="count warn" title={needsWords(needs)}>{needs}</span>}
-          {full && doing > 0 && <span className="side-doing" title={tn("shell", "sidebar.inProgress", { count: doing })}>{doing}</span>}
-          {paused > 0 && <span className="side-paused" title={tn("shell", "sidebar.paused", { count: paused })}>{`${PAUSE_GLYPH} ${paused}`}</span>}
-          {full && <small>{total}</small>}
+          {needs > 0 && <span className="count warn" title={needsWords(needs)}>{fmt.num(needs)}</span>}
+          {full && doing > 0 && <span className="side-doing" title={tn("shell", "sidebar.inProgress", { count: doing })}>{fmt.num(doing)}</span>}
+          {paused > 0 && <span className="side-paused" title={tn("shell", "sidebar.paused", { count: paused })}>{`${PAUSE_GLYPH} ${fmt.num(paused)}`}</span>}
+          {full && <small>{fmt.num(total)}</small>}
         </span>
       </span>
       {/* Under the line, its activity and its limit: the row's description for a screen reader,

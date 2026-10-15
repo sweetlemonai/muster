@@ -7,6 +7,7 @@ import { estimateLeft, type Group, GROUP_BYS, type GroupBy, levelLabel, progress
 import type { Note, Task } from "./types";
 import EffortGroups, { useAcceptResults } from "./EffortGroups";
 import ColumnCards from "./ColumnCards";
+import { DueDate } from "./Dates";
 import { needsYouCount } from "./human";
 import { blockedCount, ChoiceChips, ColumnHead, FoldCounts, placeWords } from "./ModeViews";
 import { columnClass, columnState, columnTrack, type ColumnFolds } from "./modes";
@@ -51,7 +52,7 @@ export function BandHead({ group, by, multi, active, onOpen }: {
       {h.blocked && <StatusPill status="blocked">{t("groups.blocked")}</StatusPill>}
       <span className="meta">{progressText(h.progress)}</span>
       {left && <span className="meta">{left}</span>}
-      {h.due && <span className="meta">{t("groups.due", { date: h.due })}</span>}
+      {h.due && <span className="meta"><DueDate iso={h.due} /></span>}
     </div>
   );
 }

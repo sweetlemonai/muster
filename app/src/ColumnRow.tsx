@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { needsWords, needsYouCount } from "./human";
-import { tn, Trans, useT } from "./i18n";
+import { fmt, tn, Trans, useT } from "./i18n";
 import { STAGES } from "./lib";
 import { blockedCount, itemWords, placeWords } from "./ModeViews";
 import { RAIL_ID } from "./modes";
@@ -224,7 +224,7 @@ export default function ColumnRow({
         <div ref={list} className={view.overflow ? "col-row-chips col-row-scrolls" : "col-row-chips"}>
           {chips.map((c) => (
             <Pill key={c.id} type="button" className={`col-chip col-${c.id}`} aria-expanded={false} aria-label={chipWords(c)} title={t("row.openHere", { name: c.label })} data-chip={c.id} onClick={() => onOpen(c.id)}>
-              <span className="col-chip-name">{c.label}</span> <small>{c.count}</small>
+              <span className="col-chip-name">{c.label}</span> <small>{fmt.num(c.count)}</small>
               {c.needs > 0 && <b className="count warn">{needsWords(c.needs)}</b>}
               {c.blocked > 0 && <b className="count blocked-count">{t("modes.blocked", { count: c.blocked })}</b>}
             </Pill>

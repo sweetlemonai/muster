@@ -1,3 +1,4 @@
+import { fmt } from "./i18n";
 import { cx } from "./ui/cx";
 
 type Count = { n: number; className?: string; title?: string; quiet?: boolean };
@@ -9,7 +10,7 @@ type Count = { n: number; className?: string; title?: string; quiet?: boolean };
 export function HeadCount({ n, className, title, quiet }: Count) {
   const cls = cx("count", "count-reserve", quiet && "quiet", className);
   const Tag = quiet ? "small" : "b";
-  return n ? <Tag className={cls} title={title}>{n}</Tag> : <Tag className={cls} aria-hidden="true" />;
+  return n ? <Tag className={cls} title={title}>{fmt.num(n)}</Tag> : <Tag className={cls} aria-hidden="true" />;
 }
 
 // A pill's counts, the shown ones first and the empty reserved slots after them, so a hidden slot

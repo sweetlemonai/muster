@@ -27,6 +27,16 @@ describe("fold", () => {
   it("keeps letters of other scripts", () => {
     expect(fold("Задача 任务")).toBe("задача 任务");
   });
+  it("folds Persian as people type it: Arabic letters, hamza, heh, alef, ZWNJ, tatweel, harakat", () => {
+    expect(fold("كتاب علي مصطفى مسئول")).toBe("کتاب علی مصطفی مسیول");
+    expect(fold("خانۀ خانهٔ مدرسة")).toBe("خانه خانه مدرسه");
+    expect(fold("آب أحمد إسلام ٱسم مؤسسه شيء")).toBe("اب احمد اسلام اسم موسسه شی");
+    expect(fold("می\u200cشود کـتاب کِتاب هٰذا")).toBe("میشود کتاب کتاب هذا");
+  });
+  it("reads Persian and Arabic-Indic digits as 0–9", () => {
+    expect(fold("۰۱۲۳۴۵۶۷۸۹ ٠١٢٣٤٥٦٧٨٩")).toBe("0123456789 0123456789");
+    expect(fold("۱2٣")).toBe("123");
+  });
 });
 
 describe("queryWords", () => {
@@ -41,6 +51,9 @@ describe("queryWords", () => {
 describe("searchWords", () => {
   it("is what the core builds: each folded word once, no words of digits only", () => {
     expect(searchWords("Board flickers 2026-10-12 board v2 0019 Café")).toBe("board flickers v2 cafe");
+  });
+  it("leaves out words of Persian digits too, and keeps a word once however it was typed", () => {
+    expect(searchWords("كتاب کتاب صفحهٔ ۱۲ ١٤٠٥/٠٧/٢٢")).toBe("کتاب صفحه");
   });
 });
 
@@ -80,6 +93,20 @@ describe("taskMatches", () => {
   });
   it("a word of digits never matches text, so dates in the log don't swamp an id", () => {
     expect(finds(t({ id: "0001", search: "created 2026 10 19" }), "19")).toBe(false);
+  });
+  it("Persian digits are an id as typed Latin ones are: ۱۹ and ٠٠١٩ find 0019", () => {
+    expect(queryWords("۱۹")).toEqual(["19"]);
+    expect(finds(task, "۱۹")).toBe(true);
+    expect(finds(task, "٠٠١٩ flick")).toBe(true);
+    expect(finds(t({ id: "0119" }), "۱۹")).toBe(false);
+  });
+  it("finds Persian text whichever way it was typed", () => {
+    const fa = t({ id: "0012", search: searchWords("كتاب راهنما چاپ می\u200cشود") });
+    expect(finds(fa, "میشود")).toBe(true);
+    expect(finds(fa, "می\u200cشود")).toBe(true);
+    expect(finds(fa, "کتاب")).toBe(true);
+    expect(finds(fa, "کِتاب")).toBe(true);
+    expect(finds(fa, "دفتر")).toBe(false);
   });
   it("a zero id: 0 finds 0000", () => {
     expect(finds(t({ id: "0000" }), "0")).toBe(true);
@@ -202,5 +229,13 @@ describe("highlights", () => {
   it("marks nothing for no words, and never for words of digits (they're ids)", () => {
     expect(highlights("Board", [])).toEqual([]);
     expect(highlights("Release 19", ["19"])).toEqual([]);
+    expect(highlights("صفحهٔ ۱۲", ["12"])).toEqual([]);
+  });
+  it("marks Persian as shown: through a ZWNJ, tatweel or harakat, and a trailing mark with its letter", () => {
+    expect(highlights("این می\u200cشود", ["میشود"])).toEqual([[4, 10]]);
+    expect(highlights("كتاب", ["کتاب"])).toEqual([[0, 4]]);
+    expect(highlights("کـتاب کِتاب", ["کتاب"])).toEqual([[0, 5], [6, 11]]);
+    expect(highlights("خانهٔ ما", ["خانه"])).toEqual([[0, 5]]);
+    expect(highlights("کتابً", ["کتاب"])).toEqual([[0, 5]]);
   });
 });

@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 import Comments from "./Comments";
 import { estimateText, kindLabel, KINDS, LEGACY_KINDS, splitLog, withoutComments } from "./fields";
-import { setLocale } from "./i18n/runtime";
+import { setLocale, setNumbering } from "./i18n/runtime";
 import { estimateTotal } from "./lib";
 import Links from "./Links";
 import NewTask from "./NewTask";
@@ -85,6 +85,17 @@ describe("estimates", () => {
     expect(estimateText(task({ estTestTime: "1h" }))).toBe("test 1h");
     expect(estimateText(task({ estTime: "45m", estTokens: "150k" }))).toBe("agent 45m · 150k");
     expect(estimateText(task({}))).toBe("");
+  });
+  it("read in Persian words and digits in فارسی, in Latin digits when 123 is picked (mu-151)", async () => {
+    await setLocale("fa");
+    const fa = estimateText(task({ estTime: "2h", estTestTime: "30m", estTokens: "400k" })).replace(/[⁨⁩]/g, "");
+    expect(fa).toBe("ایجنت ۲ ساعت · تست ۳۰ دقیقه · ۴۰۰ هزار");
+    setNumbering({ digits: "latin" });
+    expect(estimateText(task({ estTime: "1.5d" })).replace(/[⁨⁩]/g, "")).toBe("ایجنت 1.5 روز");
+    setNumbering({ digits: "persian" });
+    await setLocale("en");
+    expect(estimateText(task({ estTime: "2h", estTokens: "1.2M" }))).toBe("agent ۲h · ۱.۲M");
+    setNumbering({});
   });
   it("totals count test time with agent time", () => {
     const t = (m: number, tm: number, k: number, stage = "ready") => ({ estMinutes: m, estTestMinutes: tm, estTokenCount: k, stage });

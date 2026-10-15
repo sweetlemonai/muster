@@ -3,7 +3,7 @@
 // reads too, whether Mac notifications are on, 0052, the menu bar icon, 0085, and the Claude accounts Muster reads, 0099), and the words for them. No React views here; Settings.tsx has those.
 import { createContext } from "react";
 import type { HelpTopic } from "./helpTopics";
-import { tl, tn } from "./i18n";
+import { tl, tn, type AnyLocale, type Calendar, type Digits } from "./i18n";
 import { LEASE_SECS } from "./lib";
 import type { LocaleInfo } from "./types";
 
@@ -120,13 +120,26 @@ export function accountsEdit(labels: string[], edit: { add: string } | { remove:
   return { value: [...labels, label].join(" ") };
 }
 
+/** Settings › Language's Digits and Calendar as the core keeps them (mu-151, settings.rs): none
+ *  while they follow the language. */
+export type NumberingSettings = { digits?: Digits; calendar?: Calendar };
+
+/** What a Digits or Calendar chip saves: "" when it's what the language gives by itself (Persian
+ *  digits and Jalali for فارسی, Latin and Gregorian otherwise), so the setting goes on following
+ *  the language; else the value. */
+export function numberingSetting(name: "digits" | "calendar", value: string, shown: AnyLocale): string {
+  const persian = shown === "fa";
+  const own = name === "digits" ? (persian ? "persian" : "latin") : persian ? "jalali" : "gregorian";
+  return value === own ? "" : value;
+}
+
 /** The core's answer for Settings: the settings with their bounds, and what About shows. */
 export type SettingsInfo = {
   /** `notify`: Mac notifications on (0052); `menuBar`: the menu bar icon on (0085). A core from
    *  before them sends none, which reads as on. `claudeAccounts`: the labels of the Claude
    *  accounts Muster reads (0099), `["mg", "hg"]` unless changed; never `.claude`. `lang`: the
    *  language picked in Settings (mu-146); none while it follows macOS. */
-  settings: MachineSettings & { notify?: boolean; menuBar?: boolean; claudeAccounts: string[]; lang?: string };
+  settings: MachineSettings & { notify?: boolean; menuBar?: boolean; claudeAccounts: string[]; lang?: string } & NumberingSettings;
   /** The language setting and the one in effect (mu-146); an older core sends none. */
   locale?: LocaleInfo;
   leaseBounds: [number, number];

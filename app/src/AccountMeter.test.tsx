@@ -122,11 +122,12 @@ describe("the meter and its words in Persian (mu-146's layer)", () => {
   it("says each bar, the reset and the reading in Persian, with Persian digits and the account's name kept", async () => {
     await setLocale("fa");
     const html = draw(info(account(), account({ label: "hg", name: "cc-hg", paused: true, fiveHour: win({ usedPercentage: 104, headroom: -24, stale: true, resetsAt: at(2026, 10, 14, 9, 0) }) })));
+    // The reset day in the Jalali calendar, فارسی's own (mu-151): 18 October is 26 Mehr.
     expect(bars(html).map((b) => unmarked(b.label))).toEqual([
       "cc-mg ۵ ساعت: ۴۲٪ مصرف‌شده، بازنشانی ۱۴:۲۰؛ رزرو ۲۰٪",
-      "cc-mg ۷ روز: ۱۲٪ مصرف‌شده، بازنشانی ۱۸ اکتبر ۰۹:۰۰؛ رزرو ۲۰٪",
+      "cc-mg ۷ روز: ۱۲٪ مصرف‌شده، بازنشانی ۲۶ مهر ۰۹:۰۰؛ رزرو ۲۰٪",
       "cc-hg ۵ ساعت: ۱۰۰٪ مصرف‌شده، بیش از سقف، قرار بود ۰۹:۰۰ بازنشانی شود؛ رزرو ۲۰٪، کهنه، وارد رزرو",
-      "cc-hg ۷ روز: ۱۲٪ مصرف‌شده، بازنشانی ۱۸ اکتبر ۰۹:۰۰؛ رزرو ۲۰٪",
+      "cc-hg ۷ روز: ۱۲٪ مصرف‌شده، بازنشانی ۲۶ مهر ۰۹:۰۰؛ رزرو ۲۰٪",
     ]);
     expect(unmarked(text(html))).toBe("cc-mg بازنشانی ۱۴:۲۰ cc-hg کهنه · متوقف شده");
     expect(unmarked(decode(html))).toContain("باز کردن تنظیمات، حساب‌ها");

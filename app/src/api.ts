@@ -1,11 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AccountsInfo, ProfileSave, Provider } from "./accountsData";
+import { storedEstimates, storedValue } from "./fields";
+import { latinDigits } from "./i18n/numbering";
 import type { SearchIndex } from "./search";
 import type { SettingsInfo } from "./settingsData";
 import type { HistoryState, LessonListing, Project, Role, RoleField, RunView, SessionRecap, SessionsList, State, Work } from "./types";
 import type { AcceptResult } from "./yourCheck";
 
+/** The role fields that hold a number (roles.rs): sent in Latin digits whatever was typed. */
+const ROLE_NUMBERS: ReadonlySet<string> = new Set(["max_turns", "max_budget_usd", "context_cap", "slots"]);
+
 // The only way the window talks to the core. Queues are named, never given as paths.
+// A number or a date typed in Persian or Arabic-Indic digits goes to the core in Latin ones
+// (mu-151): the core checks and stores what it always has.
 export const api = {
   state: () => invoke<State>("state"),
   // Each task's search text by "queue/id", for one queue or every queue (null). Not in `state`:
@@ -48,23 +55,24 @@ export const api = {
   showProjectTitle: (name: string) => invoke<void>("show_project_title", { name }),
   // What its tasks' keys start with (0033), 2 to 4 lowercase letters; refused when it isn't one
   // or another project has it, with a message to show as is.
-  setProjectPrefix: (key: string, prefix: string) => invoke<void>("set_project_prefix", { key, prefix }),
+  setProjectPrefix: (key: string, prefix: string) => invoke<void>("set_project_prefix", { key, prefix: latinDigits(prefix) }),
   hideProject: (key: string, hidden: boolean) => invoke<void>("hide_project", { key, hidden }),
   removeProject: (key: string) => invoke<void>("remove_project", { key }),
   // This machine's settings (0036) with their bounds, and what Settings' About shows. Set one by
   // name (`lease` or `live`) to a span like 12h or 5m, empty for the default, or `notify` (0052)
   // to on or off, `claude-accounts` (0099) to the labels by spaces (empty for none), or `lang`
-  // (mu-146) to en or fa, empty to follow macOS; the core checks it.
+  // (mu-146) to en or fa, empty to follow macOS, or `digits` (persian, latin) and `calendar`
+  // (jalali, gregorian) (mu-151), empty to follow the language; the core checks it.
   settingsInfo: () => invoke<SettingsInfo>("settings_info"),
-  setSetting: (name: "lease" | "live" | "notify" | "menu-bar" | "claude-accounts" | "lang", value: string) => invoke<SettingsInfo>("set_setting", { name, value }),
+  setSetting: (name: "lease" | "live" | "notify" | "menu-bar" | "claude-accounts" | "lang" | "digits" | "calendar", value: string) => invoke<SettingsInfo>("set_setting", { name, value: name === "lease" || name === "live" ? latinDigits(value) : value }),
   // The role profiles (0112) from roles.toml, and one field of one role changed (a list
   // comma-separated); the core checks the whole team and refuses with why.
   rolesInfo: () => invoke<Role[]>("roles_info"),
-  setRole: (id: string, field: RoleField, value: string) => invoke<Role[]>("set_role", { id, field, value }),
+  setRole: (id: string, field: RoleField, value: string) => invoke<Role[]>("set_role", { id, field, value: ROLE_NUMBERS.has(field) ? latinDigits(value) : value }),
   // A project's Your check limit (0050), by its key (queue folder): 1 to 50, "off", or "" for the default (5).
-  setYourCheckLimit: (key: string, value: string) => invoke<void>("set_your_check_limit", { key, value }),
+  setYourCheckLimit: (key: string, value: string) => invoke<void>("set_your_check_limit", { key, value: latinDigits(value) }),
   createTask: (queue: string, task: NewTask, files: [string, string][], stamp: string) =>
-    invoke<{ id: string; path: string }>("create_task", { queue, task, files, stamp }),
+    invoke<{ id: string; path: string }>("create_task", { queue, task: storedEstimates(task), files, stamp }),
   // Stages: each returns the task's new path. The core refuses what its rules don't allow, with
   // a message to show as is. `from` is the stage the window shows: refused if the task moved on
   // since. `gate` and `summary` only for Building → Testing, `commit` only for Your check → Done.
@@ -90,7 +98,7 @@ export const api = {
   setStage: (queue: string, id: string, stage: string, from: string | null, stamp: string) =>
     invoke<string>("set_stage", { queue, id, stage, from, stamp }),
   setField: (queue: string, id: string, field: string, value: string, stamp: string) =>
-    invoke<string>("set_field", { queue, id, field, value, stamp }),
+    invoke<string>("set_field", { queue, id, field, value: storedValue(field, value), stamp }),
   addNote: (queue: string, id: string, note: string, stamp: string) => invoke<string>("add_note", { queue, id, note, stamp }),
   tickCriterion: (queue: string, id: string, which: string, undo: boolean, stamp: string) =>
     invoke<string>("tick_criterion", { queue, id, which, undo, stamp }),
@@ -110,7 +118,7 @@ export const api = {
   // A filed note is an agent's task on its own: its level, parent, due and who does it are set
   // afterwards (`muster set`, or the task pane).
   fileNote: (queue: string, note: string, task: Omit<NewTask, "level" | "parent" | "due" | "forWho">, stamp: string) =>
-    invoke<{ id: string; path: string; attachment: string }>("file_note", { queue, note, task, stamp }),
+    invoke<{ id: string; path: string; attachment: string }>("file_note", { queue, note, task: storedEstimates(task), stamp }),
   dropNote: (queue: string, note: string, why: string, stamp: string) => invoke<string>("drop_note", { queue, note, why, stamp }),
   // The shaping brief as text, for the clipboard.
   shapeNote: (queue: string, note: string) => invoke<string>("shape_note", { queue, note }),

@@ -1,3 +1,5 @@
+import { Stamp } from "./Dates";
+import { fmt } from "./i18n";
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import { api, type Commented } from "./api";
 import { shownHolder, stamp } from "./lib";
@@ -97,12 +99,12 @@ export default function Comments({ task, onChanged, onDirty = () => {}, nudge = 
   };
   return (
     <section className="comments" aria-label="Comments">
-      <h2>Comments <small>{task.comments.length}</small></h2>
+      <h2>Comments <small>{fmt.num(task.comments.length)}</small></h2>
       {task.comments.length === 0 && <p className="none">No comments yet.</p>}
       {task.comments.map((c, i) => (
         <div key={`${i}-${c.at}-${c.who}`} className="comment">
           <p className="meta" dir="auto">
-            {shownHolder(c.who, names)} · {c.at}
+            {shownHolder(c.who, names)} · <Stamp at={c.at} year />
           </p>
           <Markdown text={c.text} keys={keys} onLink={onLink} />
         </div>
