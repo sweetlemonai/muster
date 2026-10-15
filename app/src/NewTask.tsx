@@ -6,6 +6,7 @@ import { readFiles, stamp } from "./lib";
 import TagEditor from "./Tags";
 import { LEVELS } from "./levels";
 import { HelpButton } from "./HelpButton";
+import { useT } from "./i18n";
 import { pressed } from "./shortcuts";
 import { parseKey } from "./taskKey";
 import { labelOf, Labels } from "./labels";
@@ -41,6 +42,7 @@ export default function NewTask({ queues, initial, prefixes = {}, onClose, onCre
   onClose: () => void;
   onCreated: (queue: string, id: string) => void;
 }) {
+  const t = useT("common");
   const [queue, setQueue] = useState(initial);
   const labels = useContext(Labels);
   const [title, setTitle] = useState("");
@@ -136,11 +138,11 @@ export default function NewTask({ queues, initial, prefixes = {}, onClose, onCre
               <option value="low">Low</option>
             </select>
           </label>
-          <label>
+          <label title={t("estimateField.agentTime")}>
             Agent time
             <input value={estTime} onChange={(e) => setEstTime(e.target.value)} placeholder="2h" size={6} maxLength={10} />
           </label>
-          <label title="The QA agent plus your check">
+          <label title={t("estimateField.testTime")}>
             Test time
             <input value={estTestTime} onChange={(e) => setEstTestTime(e.target.value)} placeholder="30m" size={6} maxLength={10} />
           </label>

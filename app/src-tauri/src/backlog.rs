@@ -10,7 +10,7 @@
 use crate::ops::{self, NewTask};
 use crate::queue::{self, actor, with_lock, write_atomic, MAX_TASK_BYTES};
 use crate::session::{is_owner, same_holder};
-use crate::{lenses, now};
+use crate::{lenses, measured, now};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
@@ -1112,7 +1112,7 @@ const ROLES: [Role; 3] = [
     },
     Role {
         role: "Tech",
-        job: "where in the code and how (read it, name the files); estimate agent time and tokens (--time, --tokens); which tasks it depends on.",
+        job: "where in the code and how (read it, name the files); estimate agent time from the measured block below, and tokens (--time, --tokens); which tasks it depends on.",
     },
     Role {
         role: "UI",
@@ -1158,6 +1158,9 @@ pub struct Brief {
     /// The project's rules and design docs that exist, as absolute paths.
     pub docs: Vec<String>,
     pub related: Vec<Related>,
+    /// What the queue's finished tasks took against their estimates (mu-168), for the Tech role's
+    /// estimate: `measured::measure` over the queue's tasks.
+    pub measured: measured::Measured,
     /// The now pages (mu-102) the related tasks' `touches:` cover, each with those tasks: the
     /// rules in force where the note would work. Names only; `shape` fills it in.
     pub now: Vec<now::Listed>,
@@ -1203,6 +1206,7 @@ pub fn brief(
         notice: NOTE_IS_DATA.to_string(),
         title: note_title(&text),
         related: related(&text, tasks),
+        measured: measured::measure(tasks),
         now: Vec::new(),
         text,
         roles: ROLES.to_vec(),
@@ -1297,6 +1301,8 @@ pub fn brief_text(b: &Brief) -> String {
             ));
         }
     }
+    out.push('\n');
+    out.push_str(&measured::text(&b.measured));
     out.push_str(&format!(
         "\nFile it (the task starts in Shaping, and the note moves into its attachments, so nothing is lost):\n  {}\nwith this body on stdin, filled in:\n{}\nUnknowns:\n  {}\nOnce it has criteria, hand it to Ready:\n  {}\nNot worth a task:\n  {}\nYou hold the note while you shape it (0097): filing or dropping it lets go. Leaving it for someone else:\n  {}\n",
         b.command, b.template, b.unknowns, b.then, b.drop, b.release
@@ -2094,7 +2100,9 @@ mod tests {
             "Product:",
             "in the owner's words",
             "Tech:",
-            "agent time and tokens",
+            "agent time from the measured block below, and tokens",
+            "\nEstimates, measured on this queue (",
+            "estimate by scope\n",
             "depends on",
             "UI:",
             "docs/DESIGN.md",
@@ -2325,6 +2333,48 @@ mod tests {
             .unwrap_err()
             .contains("no backlog note gone.md"));
         assert!(shape(&root, "0004-x.md").unwrap_err().contains("is a task"));
+    }
+
+    #[test]
+    fn shape_shows_what_the_queues_finished_tasks_took_against_their_estimates() {
+        let d = v2();
+        put(d.path(), "inbox/n.md", b"Board chips should wrap", 5);
+        // Nothing finished yet: estimate by scope, and the rule still says which time is which.
+        let b = shape(d.path(), "n.md").unwrap();
+        assert_eq!(b.measured.overall.n, 0);
+        let t = brief_text(&b);
+        assert!(t.contains("\nEstimates, measured on this queue (agent time: the first claim to leaving Testing, send-backs, review rounds and QA included, time blocked or paused left out):\n  no finished tasks with an estimate yet: estimate by scope\n  --time is agent time: the first claim to leaving Testing, review rounds and QA included, time blocked or paused left out; --test-time is the owner's check only (QA is in --time); the owner's wait in Your check is neither (too few (0) to measure yet).\n\nFile it"), "{t}");
+        // Five code tasks estimated at 2h took 1h to 5h, then waited 2h each for the owner.
+        for k in 1..=5 {
+            let task = format!(
+                "---\nid: 000{k}\ntype: code\nest-time: 2h\nstage: done\n---\n\n# T{k}\n\n## Log\n- 2026-10-01 09:00 akbar: stage ready → building (claimed)\n- 2026-10-01 {:02}:00 akbar: stage building → testing\n- 2026-10-01 {:02}:00 qa: stage testing → your-check\n- 2026-10-01 {:02}:00 owner: stage your-check → done\n",
+                9 + k - 1,
+                9 + k,
+                11 + k
+            );
+            put(d.path(), &format!("todo/000{k}-t.md"), task.as_bytes(), 5);
+        }
+        let b = shape(d.path(), "n.md").unwrap();
+        let t = brief_text(&b);
+        for want in [
+            "  5 finished: actual is 1.5x the estimate at p50, 2x at p80; median 3 h of agent time\n",
+            "  By type:\n    code: 5 finished: 1.5x at p50, 2x at p80; median 3 h\n",
+            "  By size of the estimate:\n    S (up to 1h): too few (0)\n    M (up to 3h): 5 finished: 1.5x at p50, 2x at p80; median 3 h\n    L (up to 8h): too few (0)\n    XL (over 8h): too few (0)\n",
+            "the owner's wait in Your check is neither (median 2 h on this queue).\n\nFile it",
+            "Tech: where in the code and how (read it, name the files); estimate agent time from the measured block below, and tokens",
+        ] {
+            assert!(t.contains(want), "{want}\n---\n{t}");
+        }
+        // --json carries the same numbers.
+        let v = serde_json::json!(b)["measured"].clone();
+        assert_eq!(v["overall"]["n"], 5);
+        assert_eq!(v["overall"]["p50"], 1.5);
+        assert_eq!(v["overall"]["p80"], 2.0);
+        assert_eq!(v["overall"]["medianHours"], 3.0);
+        assert_eq!(v["byType"][0]["name"], "code");
+        assert_eq!(v["bySize"][0]["p50"], serde_json::Value::Null);
+        assert_eq!(v["bySize"][1]["n"], 5);
+        assert_eq!(v["ownerWait"]["medianHours"], 2.0);
     }
 
     #[test]

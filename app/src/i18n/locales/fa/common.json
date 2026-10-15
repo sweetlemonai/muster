@@ -104,6 +104,10 @@
   "tokens_other": "{{count}} توکن",
   "tokensShort": "{{amount}} توکن",
   "estimate": "≈ {{parts}} مانده",
+  "estimateField": {
+    "agentTime": "زمان ایجنت، بازبینی و تست هم در آن است (45m، 2h، 1.5d)",
+    "testTime": "زمان تست، فقط بررسی شما: تست ایجنت در زمان ایجنت است (30m، 1h)"
+  },
   "estimateSome": "≈ {{parts}} مانده ({{est}} از {{open}} تسک باز تخمین دارد)",
   "help": {
     "on": "راهنما: {{topic}}",

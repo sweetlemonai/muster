@@ -4,6 +4,43 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — The shaping brief shows estimates measured on the queue (mu-168)
+**Did (Akbar_28, builder):** the owner asked whether estimates are any good; 80+ finished tasks
+took p50 0.39x their estimate. New pure `measured.rs`: from each task's stage history, agent wall
+clock (first move into Building → last move from Testing to Your check or Done) against
+`est-time`, as p50/p80 of actual ÷ estimate (nearest rank) and median hours, overall, by type and
+by size (S ≤ 1h, M ≤ 3h, L ≤ 8h, XL); under 5 tasks "too few (n)"; the owner's wait in Your check
+apart. `muster shape` prints it as "Estimates, measured on this queue" before "File it", with the
+rule that `--time` is agent time and `--test-time` the QA agent plus the owner's check; `--json`
+has `measured`; the Tech role points at it; `help shape`/`file`/`new`, PROTOCOL, manual 05 and 07,
+AS_BUILT, docs/now/shaping.md.
+**Fixed (Akbar_31, review round 1):** R1-R3 had no test that could fail. New tests: inexact
+ratios (70-100 min on 3h) whose `--json` and text both say 0.47/0.53/1.4 (fail without the
+rounding); an owner's override Building → Your check counts for the wait, not agent time; types
+with the same count come by name. Each was checked by breaking the code it pins.
+**Fixed (Akbar_34, review round 2):** R4: the app's Agent time and Test time tooltips, in the
+task pane and New task, still said test time was "the QA agent plus your check". They now come
+from the i18n layer (common `estimateField`, en and fa): agent time includes review and QA, test
+time is your check only. The doc comments in Sidebar.tsx, types.ts, ops.rs and queue.rs say the
+same. R5: a block in Testing unblocked after the move to Your check counts only to the span's
+end (30 min, not 90); the test fails with the clamp removed.
+**Decided (lead, 2026-10-15):** `--time` is agent time from the first claim to leaving Testing,
+review rounds and QA included, less the stretches blocked or paused (`block_history`,
+`pause_history`, overlaps once, an open one to the span's end); `--test-time` is the owner's
+check only. The rule line, the block's heading, help new/file/set/shape, the helper prompt,
+PROTOCOL, AS_BUILT, manual 02/05/07 and docs/now/shaping.md say so; a test covers a blocked and
+paused stretch, a block from before the claim and one left open. On a read-only copy of the queue
+today: 99 finished, 0.48x at p50, 1.15x at p80, median 1.2 h; the same copy without the
+subtraction gives 0.48x and 1.17x (the 0.43x of round 1 moved with the queue, not the change).
+**Decided:** the owner's wait is computed live ("median 2.5 h on this queue") instead of the
+brief's fixed "4.2 h, measured 2026-10-14", which would go stale at once. Numbers are rounded in
+the measure (2 places, hours 1), so the text and `--json` say the same.
+**Verified:** on Muster's queue (read-only `shape --peek`): 97 finished, 0.43x at p50, 1.17x at
+p80, median 1.2 h; owner wait 2.5 h; matches an independent script over `muster list --json`.
+500 tasks measured in 0.87 ms (debug). A change review found two span errors, both fixed with
+tests: a Done reached from Testing after a send-back counted the rebuild as the owner's wait, and a
+task sent back from Your check counted as finished. Gate green.
+
 ## 2026-10-15 — mu-143 round 2: the Layout chips and the grid's rows choice in Persian
 **Fixed:** in Persian the Layout chips read "Columns" / "Feature grid" and the grid's rows choice
 "By feature" / "By goal" / "No grouping" → `LAYOUTS` names come from `shell.json`

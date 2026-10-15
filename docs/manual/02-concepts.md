@@ -237,7 +237,7 @@ Three places hold words about a task besides its write-up:
 
 ## Estimates, sessions and cost
 
-A task can carry three **estimates**, set while shaping: agent time (`--time 2h`), test time for the testing agent plus your check (`--test-time 30m`), and tokens (`--tokens 400k`). Cards show them, the filter bar adds up what's left ("≈ 2 d · 3.2M tokens left"), and the pane's **Work so far** shows the time a task has spent in Building and Testing next to its estimate. An agent day counts 8 hours.
+A task can carry three **estimates**, set while shaping: agent time, the testing agent included (`--time 2h`), test time for your own check (`--test-time 30m`), and tokens (`--tokens 400k`). Cards show them, the filter bar adds up what's left ("≈ 2 d · 3.2M tokens left"), and the pane's **Work so far** shows the time a task has spent in Building and Testing next to its estimate. An agent day counts 8 hours.
 
 What a task actually cost comes from the Claude Code sessions that worked on it. `muster` stamps the session's id on the claim, on who holds the task, and on every log line it writes, so Muster knows which sessions to look at. It reads their transcripts on this Mac, where Claude Code keeps them, and sends nothing anywhere. Only sessions whose stamp names an account on your list in [Settings › Agents](04-in-the-app.md#agents) are read; a session stamped with no account (bare `claude`, or a stamp from before accounts were stamped) is never read, so it adds no tokens and its row says "not read: not stamped with a Claude account Muster reads".
 

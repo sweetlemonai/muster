@@ -149,8 +149,8 @@ export type Task = {
    *  blocked on the owner. On the board it's a needs-you card, and it counts in `needsYouCount`. */
   waitingForOwner: boolean;
   tags: string[];
-  /** Estimates: agent time, test time (the QA agent plus the owner's check) and tokens, as written
-   *  ("2h", "30m", "400k"), and as numbers for totals. */
+  /** Estimates: agent time (review and QA included), test time (the owner's check only) and
+   *  tokens, as written ("2h", "30m", "400k"), and as numbers for totals. */
   estTime: string;
   estTestTime: string;
   estTokens: string;

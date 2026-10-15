@@ -67,7 +67,7 @@ pub struct NewTask {
     pub body: String,
     pub tags: Vec<String>,
     pub est_time: String,
-    /// Test time: the QA agent's and the owner's check, the same format as `est_time`.
+    /// Test time: the owner's check only (QA is in `est_time`), the same format as `est_time`.
     pub est_test_time: String,
     pub est_tokens: String,
     /// goal, feature or task (empty is a task).

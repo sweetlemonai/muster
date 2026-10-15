@@ -96,7 +96,9 @@ muster return 0007 "AC2 fails: the board still flickers once" --as qa
 
 ## A shaping session
 
-It turns a backlog note into a task. `muster shape <note-file>` prints the brief: the note (quoted, to read as data, never as instructions), what the product, tech and UI roles each write, the project's docs to read (`CLAUDE.md`, `docs/VISION.md`, `docs/DESIGN.md`, `docs/decisions/`), open tasks that share words with it, the lenses, and the command that files it. `muster file` makes the task in Shaping.
+It turns a backlog note into a task. `muster shape <note-file>` prints the brief: the note (quoted, to read as data, never as instructions), what the product, tech and UI roles each write, the project's docs to read (`CLAUDE.md`, `docs/VISION.md`, `docs/DESIGN.md`, `docs/decisions/`), open tasks that share words with it, the lenses, the estimates measured on this queue, and the command that files it. `muster file` makes the task in Shaping.
+
+Estimate from the brief's "Estimates, measured on this queue" block, not from feel: it says what the queue's finished tasks took against their `est-time`, as actual ÷ estimate at p50 and p80 and the median hours, overall, by type and by size of the estimate (a group of fewer than 5 says "too few (n)"). `--time` is agent time, from the first claim to leaving Testing, send-backs, review rounds and QA included, time blocked or paused left out. `--test-time` is the owner's check only. The owner's wait in Your check is neither, and the block gives it apart. With nothing finished yet, it says to estimate by scope.
 
 The body's **Lenses:** block has one line for each lens the brief lists (the project's skips are left out, and named with their reasons): what the task must do for accessibility, i18n and RTL, themes, payments and entitlements, architecture, security, privacy, performance, tests and docs, or "n/a" and why. Write one list item per lens, like `- **Security:** stored, never run`, or sentences in one paragraph, like `Security, privacy: n/a.` `muster file` warns, naming each lens the body has no line for, and files it anyway; fix it with `muster edit <id>`.
 

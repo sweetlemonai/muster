@@ -1,5 +1,6 @@
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import { blockSentence } from "./blockWords";
+import { useT } from "./i18n";
 import { BranchPane } from "./Branch";
 import { KINDS } from "./fields";
 import { earlierStages, heldByOther, isStage, leaseRunOut, nameOf, passLabel, stageLabel } from "./lib";
@@ -319,9 +320,10 @@ export function ValueChipView({ label, value, options, open, onOpen, onClose, on
   );
 }
 
-/** Estimated agent time, test time (the QA agent plus the owner's check) and tokens, saved when a
- *  field loses focus or on Enter. */
+/** Estimated agent time (review and QA included), test time (the owner's check only) and tokens,
+ *  saved when a field loses focus or on Enter. */
 function Estimate({ task, onSave }: { task: Task; onSave: (field: string, value: string, done: string) => void }) {
+  const t = useT("common");
   const [time, setTime] = useState(task.estTime);
   const [testTime, setTestTime] = useState(task.estTestTime);
   const [tokens, setTokens] = useState(task.estTokens);
@@ -338,8 +340,8 @@ function Estimate({ task, onSave }: { task: Task; onSave: (field: string, value:
   };
   return (
     <span className="est-pair">
-      <input value={time} onChange={(e) => setTime(e.target.value)} onBlur={() => save("time", time, task.estTime)} onKeyDown={keys} placeholder="2h" size={4} maxLength={10} aria-label="Agent time" title="Agent time (45m, 2h, 1.5d)" />
-      <input value={testTime} onChange={(e) => setTestTime(e.target.value)} onBlur={() => save("test-time", testTime, task.estTestTime)} onKeyDown={keys} placeholder="30m" size={4} maxLength={10} aria-label="Test time" title="Test time, the QA agent plus your check (30m, 1h)" />
+      <input value={time} onChange={(e) => setTime(e.target.value)} onBlur={() => save("time", time, task.estTime)} onKeyDown={keys} placeholder="2h" size={4} maxLength={10} aria-label="Agent time" title={t("estimateField.agentTime")} />
+      <input value={testTime} onChange={(e) => setTestTime(e.target.value)} onBlur={() => save("test-time", testTime, task.estTestTime)} onKeyDown={keys} placeholder="30m" size={4} maxLength={10} aria-label="Test time" title={t("estimateField.testTime")} />
       <input value={tokens} onChange={(e) => setTokens(e.target.value)} onBlur={() => save("tokens", tokens, task.estTokens)} onKeyDown={keys} placeholder="500k" size={4} maxLength={10} aria-label="Tokens" title="Tokens (150k, 1.2M)" />
     </span>
   );

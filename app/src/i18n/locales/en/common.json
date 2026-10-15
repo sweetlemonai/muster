@@ -104,6 +104,10 @@
   "tokens_other": "{{count}} tokens",
   "tokensShort": "{{amount}} tokens",
   "estimate": "≈ {{parts}} left",
+  "estimateField": {
+    "agentTime": "Agent time, review and QA included (45m, 2h, 1.5d)",
+    "testTime": "Test time, your check only: QA is in agent time (30m, 1h)"
+  },
   "estimateSome": "≈ {{parts}} left ({{est}} of {{open}} open tasks estimated)",
   "help": {
     "on": "Help: {{topic}}",

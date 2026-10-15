@@ -114,6 +114,7 @@ here):
 | `history.rs` | A local queue's history (mu-109): a bare git at `<git common dir>/muster/history.git` with `.muster/` as its work tree, started by `init` and `migrate` (or the first write); `with_lock` commits the files each write changed, `<key>: <log line>`, never `mail/`, `INDEX.md` or `tasks.json`; writes it couldn't commit, `check`'s lines, `muster restore`, `muster history` and `history removed`; `git gc --auto` after each commit, outside the lock |
 | `index.rs` | INDEX.md, the generated master list, rewritten after every change; and the queue at a glance for this document (`--as-built`) |
 | `backlog.rs` | Backlog notes: add, shape (the brief), file as a task, drop |
+| `measured.rs` | The shaping brief's estimates, measured on this queue (mu-168): actual ÷ `est-time` at p50/p80 and median hours of finished tasks, overall, by type and size, from stage history; pure; mu-115 replaces it |
 | `lenses.rs` | The shaping lenses (accessibility, i18n, themes, payments, architecture, security, privacy, performance, tests, docs): a project's skips with their reasons, read from `.muster/config.toml`'s `[shaping]` or an old queue's README front matter (written by hand, never by Muster) and their problems for `check`; a task's `**Lenses:**` lines; a VISION's `**Lenses needed:**` line. Read by `backlog.rs` (shape, file), `vision.rs` and `queue.rs` (problems) |
 | `block.rs` | Why a task is blocked: five kinds, the sentence every screen shows, and `depends:` met once merged |
 | `fields.rs` | A task's links and comments; the owner's comment @actions (`parse_action`, `comment`: @accept, @sendback, @block, @ask, run before the comment is saved) |
@@ -1267,7 +1268,24 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     attachments.
   - **Drop** it: `muster drop`, kept in `inbox/dropped/` with the reason.
   - **Copy shaping brief:** `muster shape` gives the note, quoted as data, with the roles and the docs
-    to read, related tasks, and the command to file it.
+    to read, related tasks, the estimates measured on this queue, and the command to file it.
+  - **Estimates, measured on this queue** (task mu-168, `measured.rs`, pure): the brief's block
+    before "File it". Each task with an `est-time` whose stage history has a move into Building and
+    a later move from Testing to Your check or Done counts; its agent time runs from the first
+    move into Building to the last such move (send-backs, review rounds and QA included), less the
+    minutes it was blocked or paused in between (`block_history`, `pause_history`, overlaps counted
+    once, an open stretch running to the span's end). A task that went back after it
+    (sent back from Your check, reopened) isn't finished until it leaves Testing again. Stamps read
+    as naive local minutes (`ops::stamp_minutes`); a zero or backwards span, or one blocked throughout, is skipped. It gives
+    actual ÷ estimate at p50 and p80 (nearest rank) and the median hours, overall, by type (most
+    tasks first; no type reads "untyped") and by size (S ≤ 1h, M ≤ 3h, L ≤ 8h, XL), a cell under 5
+    tasks "too few (n)"; and, apart, the owner's wait (last entry into Your check → the last move
+    to Done, when that came from Your check; median). Ratios are rounded to 2 places and hours to
+    1, so `--json`'s `measured` (`overall`, `byType`, `bySize`: `name`, `n`, `p50`, `p80`,
+    `medianHours`, null under 5; `ownerWait`: `n`, `medianHours`) says what the text does. The rule
+    line says `--time` is agent time (review rounds and QA included, blocked and paused left out)
+    and `--test-time` the owner's check only. The Tech
+    role points at the block. Interim: mu-115's calibration replaces it, and the module goes.
   - **Shaping is a claim** (task 0097): `muster shape <note>` also claims the note for the
     caller in `shaping.json` (label, since, heartbeat); running it again renews the heartbeat, and
     someone else's live claim is refused with the holder and since when. `--peek` reads without

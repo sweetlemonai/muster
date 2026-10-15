@@ -675,7 +675,7 @@ pub struct Task {
     pub bad_for: String,
     pub tags: Vec<String>,
     /// Estimates ("2h", "400k"), and the same as numbers for totals. Agent time is `est_time`;
-    /// `est_test_time` is the QA agent's and the owner's check (task 0017).
+    /// `est_test_time` is the owner's check only, QA being in agent time (tasks 0017, mu-168).
     pub est_time: String,
     pub est_test_time: String,
     pub est_tokens: String,

@@ -24,6 +24,7 @@ pub mod labels;
 pub mod layout;
 pub mod lenses;
 pub mod lessons;
+pub mod measured;
 pub mod merge_log;
 pub mod migrate;
 pub mod notify;

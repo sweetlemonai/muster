@@ -641,8 +641,17 @@ its own agent id is another holder, 0090) and logged `(tested under
 > code, bug, chore, tech-debt, spike, design, docs, research (`muster new --type`, `muster set <id>
 > type`). An old `type: task` reads as code, and an old `type: idea` stays as it is, but `new` and
 > `set` refuse idea: an idea goes in the backlog (`muster add`). Estimates are `est-time:` (agent
-> time), `est-test-time:` (the QA agent plus the owner's check, the same format: 30m, 2h, 1.5d) and
+> time), `est-test-time:` (the owner's check only since mu-168; QA is agent time; the same format: 30m, 2h, 1.5d) and
 > `est-tokens:`; `muster new --time --test-time --tokens`, `muster set <id> time|test-time|tokens`.
+> Since mu-168 (2026-10-14) the shaping brief shows the estimates, measured on this queue: for
+> each finished task with an `est-time:`, its agent time (the first move into Building to the last
+> move out of Testing, send-backs, review rounds and QA included, less the stretches it was blocked
+> or paused, `block_history` and `pause_history`, each minute once) against the estimate, as
+> actual ÷ estimate at p50 and p80 (nearest rank) and the median hours, overall, by type and by
+> size of the estimate (S up to 1h, M up to 3h, L up to 8h, XL over); a group of fewer than 5 says
+> "too few (n)". The owner's wait in Your check (entering it to Done) is measured apart and is
+> neither estimate. Estimate `--time` as agent time from that block; `--test-time` is the owner's
+> check only (the lead's call on 2026-10-15; QA is already in `--time`). mu-115's calibration replaces this measure when it lands.
 > **Links** are one front-matter line, `links: The spec <https://…>; <https://…>`: each entry an
 > optional title and the address in `<…>`, entries separated by `;`. Only `muster link <id>
 > <https-url> ["title"]` and `muster link <id> --remove <n|url>` write it: https only, at most 2,000

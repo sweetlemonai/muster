@@ -5644,6 +5644,8 @@ mod tests {
         assert_eq!(v["claim"]["renewed"], true);
         assert_eq!(v["claim"]["hold"]["by"], "shapour");
         assert_eq!(v["note"], serde_json::json!(b)["note"]);
+        assert_eq!(v["measured"], serde_json::json!(b.measured));
+        assert_eq!(v["measured"]["overall"]["n"], 0);
         assert!(shape_json(&b, None).get("claim").is_none());
     }
 
