@@ -213,7 +213,7 @@ describe("board columns in each mode", () => {
 
   it("a folded column is a strip that says its name and count, and opens with a click (AC3)", () => {
     const html = head("folded");
-    expect(html).toMatch(/^<h2 title="Done"><button type="button" class="col-fold" aria-expanded="false" title="Open Done here">Done <small>9<\/small><\/button><\/h2>$/);
+    expect(html).toMatch(/^<h2 title="Done"><button type="button" class="col-fold" aria-expanded="false" aria-label="Done: 9 items" title="Open Done here">Done <small>9<\/small><\/button><\/h2>$/);
     expect(head("opened")).toContain('aria-expanded="true"');
   });
 
@@ -225,7 +225,12 @@ describe("board columns in each mode", () => {
 
   it("a folded column still says how many in it need you, and how many are blocked (review)", () => {
     expect(head("folded", 2)).toContain('<b class="count warn" title="2 need you">2</b>');
+    // One says it as the sidebar does (mu-159).
+    expect(head("folded", 1)).toContain('<b class="count warn" title="1 needs you">1</b>');
     expect(head("folded", 0, 3)).toContain('<b class="count blocked-count" title="3 blocked">3 blocked</b>');
+    // A screen reader hears the counts in words, not a bare digit (mu-159).
+    expect(head("folded", 1, 3)).toContain('aria-label="Done: 9 items, 1 needs you, 3 blocked"');
+    expect(head("opened", 2)).toContain('aria-label="Done: 9 items, 2 need you"');
     expect(head("folded")).not.toContain("blocked");
     // An open column's cards say it themselves.
     expect(head("fixed", 2, 3)).toBe('<h2 title="Done">Done <small>9</small></h2>');
@@ -248,7 +253,8 @@ describe("board columns in each mode", () => {
         }),
       );
     const folded = board([]);
-    expect(folded).toMatch(/<button type="button" class="band-fold" aria-expanded="false"[^>]*>Backlog · not in a feature yet <small>1 item<\/small><b class="count warn" title="1 need you">1<\/b><b class="count blocked-count" title="1 blocked">1 blocked<\/b><\/button>/);
+    expect(folded).toContain('<button type="button" class="band-fold" aria-expanded="false" aria-label="Backlog · not in a feature yet: 1 item, 1 needs you, 1 blocked"');
+    expect(folded).toMatch(/<button type="button" class="band-fold" aria-expanded="false"[^>]*>Backlog · not in a feature yet <small>1 item<\/small><b class="count warn" title="1 needs you">1<\/b><b class="count blocked-count" title="1 blocked">1 blocked<\/b><\/button>/);
     expect(folded).not.toContain("QUICK");
     expect(folded).not.toContain("<i>0009</i>");
     const open = board(["backlog"]);

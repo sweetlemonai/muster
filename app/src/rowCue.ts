@@ -5,6 +5,7 @@
 // sight and what of that needs the owner: what needs you is always in view (docs/DESIGN.md).
 
 import type { RowChip } from "./ColumnRow";
+import { needsWords } from "./human";
 
 /** A chip's place along the row: where it starts and ends, in the same coordinates as the view. */
 export type ChipSpan = { id: string; start: number; end: number };
@@ -59,7 +60,7 @@ export function overflowCue(chips: readonly RowChip[], visible: readonly string[
 /** The cue as a screen reader says it: "3 more columns past the edge, 1 needs you. Show them". */
 export function cueWords(c: Cue): string {
   const what = `${c.more} more ${c.more === 1 ? "column" : "columns"} past the edge`;
-  const needs = c.needs > 0 ? `, ${c.needs} ${c.needs === 1 ? "needs" : "need"} you` : "";
+  const needs = c.needs > 0 ? `, ${needsWords(c.needs)}` : "";
   return `${what}${needs}. Show ${c.more === 1 ? "it" : "them"}`;
 }
 

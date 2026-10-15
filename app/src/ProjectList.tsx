@@ -2,7 +2,7 @@ import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode }
 import { lastLabel, loadOrder, nextOrder, type OrderMemo, type ProjectRow, projectRows, SIDEBAR_ORDERS, storeOrder, sumActivity, type ProjectActivity, type SidebarOrder, type Sums } from "./activity";
 import { projectCount } from "./Backlog";
 import { SideLimit } from "./CheckLimit";
-import { needsYouCount } from "./human";
+import { needsVerb, needsWords, needsYouCount } from "./human";
 import { api, type Moved } from "./api";
 import { LABEL_MAX } from "./labels";
 import { lessonsWaiting } from "./Lessons";
@@ -360,9 +360,6 @@ function rowWords({ name, needs, doing, paused, total, running, working, stalled
   return `${name}: ${counts.filter(Boolean).join(", ")}${states ? `; ${states}` : ""}`;
 }
 
-/** "1 needs you", "2 need you": as the headings say it (projectOrder.ts `countsText`). */
-const needsWords = (n: number) => `${n} ${n === 1 ? "needs" : "need"} you`;
-
 /** A category's heading (0044), always shown, above its projects: its name, what needs you in it,
  *  and, but in Focus's narrow sidebar, how many of its tasks are being worked on and its tasks.
  *  Arranged in place (0057): `drag` moves it, `onRename` renames it, and a new one (`fresh`) takes
@@ -397,7 +394,7 @@ function CategoryHead({ name, rows, total, fresh = false, drag, onRename, onRemo
             {c.needs > 0 && (
               <span className="side-cat-needs">
                 <span className="count warn">{c.needs}</span>{" "}
-                <span className="side-cat-needs-words">{`${c.needs === 1 ? "needs" : "need"} you`}</span>
+                <span className="side-cat-needs-words">{needsVerb(c.needs)}</span>
               </span>
             )}
             <span className="side-cat-rest">

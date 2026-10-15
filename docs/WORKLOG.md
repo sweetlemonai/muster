@@ -4,6 +4,25 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — One needs-you wording app-wide: folded strips and bands say "1 needs you" (mu-159)
+**Did (asghar_28, builder):** `needsWords(n)` ("1 needs you", "2 need you") and `needsVerb(n)` in
+`human.ts` are the one place the words are chosen. `FoldCounts` (the badge of a folded strip,
+Backlog band and Paused band) titled one "1 need you"; it now calls `needsWords`, as do
+`countsText`, `ProjectList` (its local copy gone), the `ColumnRow` chip and cue, and `rowCue.ts`
+`cueWords`. A folded strip's and band's button gets an `aria-label` with its counts in words from
+the new `placeWords` in `ModeViews.tsx` ("Shaping: 1 item, 1 needs you"), which `chipWords` uses too.
+**Fixed:** "1 need you" on a folded strip/band badge → `FoldCounts` built the words inline with no
+singular → it calls `needsWords`.
+**Decided:** `placeWords` takes the count already in words (as shown: "4 items", "2 tasks", "empty"),
+so bands that count tasks and columns that count items share it without a unit switch. A source check
+in `human.test.ts` fails if any non-test file outside `human.ts` builds the count by hand.
+**Verified:** vitest 1882 → all green, tsc clean, bin/gate (line in the task). Headless WebKit
+(mocked IPC, synthetic tasks, Focus, Group by feature): folded Shaping strip and Backlog band with
+one task needing you each, light and dark, pixel-identical to the base build; DOM: badges titled
+"1 needs you", buttons named "Backlog · not in a feature yet: 1 item, 1 needs you, 1 blocked" and
+"Shaping: 1 item, 1 needs you".
+**Open:** mu-147 turns `needsVerb` into one plural i18n key.
+
 ## 2026-10-14 — Session states matched by id across accounts, so moved builders show running (mu-182)
 **Fixed (Akbar_24, builder):** the owner saw no session running while seven worked. Cause: `agents.rs`
 ran `claude agents` only for the accounts the stamps named and matched on (account, id); builders

@@ -949,7 +949,10 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   Review, Work, and the Log and check-ins folded to a header each. Focus: Building, Testing and Your check
   open, the other columns chips in the row above the plain board with counts, needs-you and blocked
   counts (a click opens one, remembered in Focus until it's folded again, mu-84), and strips in the
-  grouped board's bands, whose Backlog band folds to its head the same way; cards are the title, one status line and blocked, quiet, needs a tester or needs you; the filter bar is a **Search and filters ⌘F** button until ⌘F, and
+  grouped board's bands, whose Backlog band folds to its head the same way (a strip's or band's
+  needs-you badge titled "1 needs you" / "2 need you" by `needsWords`, its button named with its
+  counts in words by `placeWords`, "Backlog · not in a feature yet: 1 item, 1 needs you, 1
+  blocked", mu-159); cards are the title, one status line and blocked, quiet, needs a tester or needs you; the filter bar is a **Search and filters ⌘F** button until ⌘F, and
   stays while a search, filter or Who hides tasks; the sidebar is 150 px of category headings with their
   needs-you count, names, a working dot,
   stalled (with its Ask all quiet sessions) and needs-you counts; Recently finished (0051) is the row's last chip with its name and count, which

@@ -23,6 +23,11 @@ have their own short sets below. Every other section here applies in all three.
   one line (two at the narrowest sidebar), and its own needs-you count carries what's under it
   (owner, 2026-10-14, task 0082): it comes first after the name, in the needs chip a project's row
   has with its words, and is never the part cut where the sidebar is narrow. Nothing of its projects shows under it.
+- **One wording for the needs-you count:** "1 needs you", "2 need you", everywhere it's said (the
+  sidebar's rows and headings, the column chips and their cue, a folded strip's, band's and Paused
+  lane's badge), from one helper, `needsWords` in `app/src/human.ts` (task 0159). A folded strip or
+  band is read to a screen reader with its counts in words ("Shaping: 4 items, 1 needs you, 2
+  blocked"), never as a bare digit.
 - **No overlays, fixed places, no layout jumps, the colour code:** as below, the same in all three.
   Switching modes moves nothing: every control keeps its place.
 - **One table:** `app/src/modes.ts` lists every element that differs, with what it does in each

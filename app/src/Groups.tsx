@@ -7,7 +7,7 @@ import type { Note, Task } from "./types";
 import EffortGroups, { useAcceptResults } from "./EffortGroups";
 import ColumnCards from "./ColumnCards";
 import { needsYouCount } from "./human";
-import { blockedCount, ChoiceChips, ColumnHead, FoldCounts } from "./ModeViews";
+import { blockedCount, ChoiceChips, ColumnHead, FoldCounts, placeWords } from "./ModeViews";
 import { columnClass, columnState, columnTrack, type ColumnFolds } from "./modes";
 import { BandCount } from "./CheckLimit";
 import { StatusPill } from "./ui";
@@ -72,6 +72,8 @@ function BacklogBand({ by, parts, tasks, renderCard, fold }: { by: "feature" | "
   const count = `${items.length} ${items.length === 1 ? "item" : "items"}`;
   // Focus (0038) folds it as it folds the plain board's Backlog column: its head is the button.
   const folded = fold?.of("backlog") ?? "fixed";
+  const needs = needsYouCount(tasks);
+  const blocked = blockedCount(tasks);
   return (
     <section className="band backlog-band">
       {folded === "fixed" ? (
@@ -80,9 +82,9 @@ function BacklogBand({ by, parts, tasks, renderCard, fold }: { by: "feature" | "
           <span className="meta">{count}</span>
         </div>
       ) : (
-        <button type="button" className="band-fold" aria-expanded={folded === "opened"} onClick={() => fold?.toggle("backlog")} title={folded === "folded" ? "Open the Backlog here" : "Fold the Backlog to its head"}>
+        <button type="button" className="band-fold" aria-expanded={folded === "opened"} aria-label={placeWords(title, count, needs, blocked)} onClick={() => fold?.toggle("backlog")} title={folded === "folded" ? "Open the Backlog here" : "Fold the Backlog to its head"}>
           {title} <small>{count}</small>
-          <FoldCounts needs={needsYouCount(tasks)} blocked={blockedCount(tasks)} />
+          <FoldCounts needs={needs} blocked={blocked} />
         </button>
       )}
       {folded !== "folded" && <div className="board band-board backlog-board">

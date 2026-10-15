@@ -86,9 +86,16 @@ describe("one strip anatomy", () => {
     expect(empty?.slice(2, 6)).toEqual(["col-head", "Shaping", "empty", ""]);
     expect(folded?.slice(2, 6)).toEqual(["col-fold", "Shaping", "empty", ""]);
     expect(full?.slice(2, 5)).toEqual(["col-fold", "Shaping", "4"]);
-    expect(full?.[5]).toBe('<b class="count warn" title="1 need you">1</b><b class="count blocked-count" title="2 blocked">2 blocked</b>');
+    expect(full?.[5]).toBe('<b class="count warn" title="1 needs you">1</b><b class="count blocked-count" title="2 blocked">2 blocked</b>');
     // No role line on a strip: it's for an open column's head.
     expect(head({ empty: true, children: createElement("span", { className: "role" }, "agents") })).not.toContain("role");
+  });
+  it("a strip's button says its counts in words to a screen reader; an empty strip has no button to name", () => {
+    expect(head({ fold: "folded", count: 4, needs: 1, blocked: 2 })).toContain('<button type="button" class="col-fold" aria-expanded="false" aria-label="Shaping: 4 items, 1 needs you, 2 blocked"');
+    expect(head({ fold: "folded", count: 1 })).toContain('aria-label="Shaping: 1 item"');
+    expect(head({ fold: "folded" })).toContain('aria-label="Shaping: empty"');
+    expect(head({ empty: true })).not.toContain("aria-label");
+    expect(head({ count: 3, needs: 1 })).not.toContain("aria-label");
   });
   it("an open column's head is as it was, 0 included", () => {
     expect(head({ count: 0 })).toBe('<h2 title="Shaping: product + tech + UI agents">Shaping <small>0</small></h2>');
@@ -101,6 +108,27 @@ describe("one strip anatomy", () => {
     expect(html).toContain('<section class="column col-ready">');
     expect(html).toContain("grid-template-columns:44px 44px minmax(118px, 400px) 44px 44px 44px 44px");
     expect(html).not.toMatch(/class="[^"]*(?<![\w-])empty(?![\w-])[^"]*"/);
+  });
+  it("the folded Paused and Backlog bands title the badge \"1 needs you\" and \"2 need you\", and name their button in words (mu-159)", () => {
+    const fold = { of: () => "folded" as const, toggle: () => {} };
+    const waiting = (n: number) => Array.from({ length: n }, (_, i) => task({ id: `000${i + 1}`, stage: "backlog", paused: "2026-10-14 09:00", waitingForOwner: true }));
+    const paused = (n: number) => renderToStaticMarkup(createElement(PausedBand, { tasks: waiting(n), renderCard: () => null, fold }));
+    expect(paused(1)).toContain('<b class="count warn" title="1 needs you">1</b>');
+    expect(paused(1)).toContain('aria-label="⏸︎ Paused: 1 task, 1 needs you"');
+    expect(paused(2)).toContain('<b class="count warn" title="2 need you">2</b>');
+    expect(paused(2)).toContain('aria-label="⏸︎ Paused: 2 tasks, 2 need you"');
+    expect(renderToStaticMarkup(createElement(PausedBand, { tasks: [], renderCard: () => null, fold }))).toContain('aria-label="⏸︎ Paused: 0 tasks"');
+    const backlog = (n: number) => {
+      const items = waiting(n).map((t) => ({ ...t, paused: undefined }));
+      return renderToStaticMarkup(createElement(GroupedBoard, {
+        groups: [{ head: null, items }], by: "goal", sort: "priority", multi: false, openKey: null, onOpen: () => {}, renderCard: () => null,
+        backlog: { notes: [], renderNote: () => null, quickAdd: null }, fold,
+      }));
+    };
+    expect(backlog(1)).toContain('aria-label="Backlog · not in a goal yet: 1 item, 1 needs you"');
+    expect(backlog(1)).toContain('<b class="count warn" title="1 needs you">1</b>');
+    expect(backlog(2)).toContain('aria-label="Backlog · not in a goal yet: 2 items, 2 need you"');
+    expect(backlog(2)).toContain('<b class="count warn" title="2 need you">2</b>');
   });
   it("the Paused band and Your check's effort groups don't take the empty message's class either", () => {
     expect(renderToStaticMarkup(createElement(PausedBand, { tasks: [], renderCard: () => null }))).toMatch(/^<section class="band paused-band paused-none">/);

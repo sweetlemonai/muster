@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { needsYouCount } from "./human";
+import { needsWords, needsYouCount } from "./human";
 import { STAGES } from "./lib";
-import { blockedCount } from "./ModeViews";
+import { blockedCount, itemWords, placeWords } from "./ModeViews";
 import { RAIL_ID } from "./modes";
 import { PAUSED_LANE } from "./PausedLane";
 import { ALL_IN_VIEW, type Cue, cueWords, overflowCue, sameView, watchRow } from "./rowCue";
@@ -42,10 +42,7 @@ export function rowChipsOf(row: readonly string[], grouped: boolean, p: PlaceCou
 /** A chip as a screen reader says it, the counts in words: "Shaping: 4 items, 1 needs you, 2
  *  blocked. Open it". */
 export function chipWords(c: RowChip): string {
-  const parts = [c.count === 0 ? "empty" : `${c.count} ${c.count === 1 ? "item" : "items"}`];
-  if (c.needs > 0) parts.push(`${c.needs} ${c.needs === 1 ? "needs" : "need"} you`);
-  if (c.blocked > 0) parts.push(`${c.blocked} blocked`);
-  return `${c.label}: ${parts.join(", ")}. Open it`;
+  return `${placeWords(c.label, itemWords(c.count), c.needs, c.blocked)}. Open it`;
 }
 
 /** The cue at the row's end when its chips don't all fit (review R7): how many are past the edge
@@ -57,7 +54,7 @@ export function RowCue({ cue, onShow }: { cue: Cue; onShow: () => void }) {
       {cue.needs > 0 && (
         <>
           <span aria-hidden="true">·</span>
-          <b className="count warn">{cue.needs} {cue.needs === 1 ? "needs" : "need"} you</b>
+          <b className="count warn">{needsWords(cue.needs)}</b>
         </>
       )}
     </Pill>
@@ -101,7 +98,7 @@ export default function ColumnRow({ chips, grouped = false, onOpen }: { chips: R
           {chips.map((c) => (
             <Pill key={c.id} type="button" className={`col-chip col-${c.id}`} aria-expanded={false} aria-label={chipWords(c)} title={`Open ${c.label} here`} data-chip={c.id} onClick={() => onOpen(c.id)}>
               <span className="col-chip-name">{c.label}</span> <small>{c.count}</small>
-              {c.needs > 0 && <b className="count warn">{c.needs} {c.needs === 1 ? "needs" : "need"} you</b>}
+              {c.needs > 0 && <b className="count warn">{needsWords(c.needs)}</b>}
               {c.blocked > 0 && <b className="count blocked-count">{c.blocked} blocked</b>}
             </Pill>
           ))}

@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { blockedRed } from "./blockWords";
+import { needsWords } from "./human";
 import { modeLabel, useLook, type ColumnFold, type DisplayMode } from "./modes";
 import type { Task } from "./types";
 import { Pill } from "./ui";
@@ -21,11 +22,24 @@ export function ModeChip({ mode, onOpen }: { mode: DisplayMode; onOpen: () => vo
  *  cards don't show. Not a wait on other tasks alone, which isn't red (0060). */
 export const blockedCount = (tasks: Pick<Task, "blocked" | "blockedKind">[]) => tasks.filter(blockedRed).length;
 
+/** A column's count in words, as its strip and chip say it: "empty", "1 item", "4 items". */
+export const itemWords = (n: number) => (n === 0 ? "empty" : `${n} ${n === 1 ? "item" : "items"}`);
+
+/** A folded place's counts as a screen reader says them (mu-159), its badges in words: "Shaping: 4
+ *  items, 1 needs you, 2 blocked". A strip, a band and a chip in the row above the board say it
+ *  the same way. `count` is its count in words, as shown ("4 items", "2 tasks"). */
+export function placeWords(label: string, count: string, needs: number, blocked: number): string {
+  const parts = [count];
+  if (needs > 0) parts.push(needsWords(needs));
+  if (blocked > 0) parts.push(`${blocked} blocked`);
+  return `${label}: ${parts.join(", ")}`;
+}
+
 /** What a folded strip says about the cards it hides: how many need you and how many are blocked. */
 export function FoldCounts({ needs, blocked }: { needs: number; blocked: number }) {
   return (
     <>
-      {needs > 0 && <b className="count warn" title={`${needs} need you`}>{needs}</b>}
+      {needs > 0 && <b className="count warn" title={needsWords(needs)}>{needs}</b>}
       {blocked > 0 && <b className="count blocked-count" title={`${blocked} blocked`}>{blocked} blocked</b>}
     </>
   );
@@ -82,7 +96,7 @@ export function ColumnHead({ stage, count, countNode, needs, blocked, fold, onFo
   }
   return (
     <h2 title={title}>
-      <button type="button" className="col-fold" aria-expanded={!folded} onClick={onFold} title={folded ? `Open ${stage.label} here` : `Fold ${stage.label} back to its strip`}>
+      <button type="button" className="col-fold" aria-expanded={!folded} aria-label={placeWords(stage.label, itemWords(count), needs, blocked)} onClick={onFold} title={folded ? `Open ${stage.label} here` : `Fold ${stage.label} back to its strip`}>
         {stage.label} {shown}
         <FoldCounts needs={needs} blocked={blocked} />
       </button>

@@ -2,7 +2,7 @@ import { Fragment, type ReactNode } from "react";
 import ColumnCards from "./ColumnCards";
 import { needsYouCount } from "./human";
 import { key } from "./lib";
-import { blockedCount, ColumnHead, FoldCounts } from "./ModeViews";
+import { blockedCount, ColumnHead, FoldCounts, placeWords } from "./ModeViews";
 import { columnClass, type ColumnFolds } from "./modes";
 import { PAUSE_GLYPH } from "./Pause";
 import type { Task } from "./types";
@@ -39,6 +39,8 @@ export function PausedColumn({ tasks, onHide, renderCard }: { tasks: Task[]; onH
 export function PausedBand({ tasks, renderCard, fold }: { tasks: Task[]; renderCard: (t: Task) => ReactNode; fold?: ColumnFolds }) {
   const count = `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`;
   const folded = fold?.of(PAUSED_LANE.id) ?? "fixed";
+  const needs = needsYouCount(tasks);
+  const blocked = blockedCount(tasks);
   return (
     <section className={`band paused-band${tasks.length ? "" : " paused-none"}`}>
       {folded === "fixed" ? (
@@ -47,9 +49,9 @@ export function PausedBand({ tasks, renderCard, fold }: { tasks: Task[]; renderC
           <span className="meta">{count}</span>
         </div>
       ) : (
-        <button type="button" className="band-fold" aria-expanded={folded === "opened"} onClick={() => fold?.toggle(PAUSED_LANE.id)} title={folded === "folded" ? "Open Paused here" : "Fold Paused to its head"}>
+        <button type="button" className="band-fold" aria-expanded={folded === "opened"} aria-label={placeWords(PAUSED_LANE.label, count, needs, blocked)} onClick={() => fold?.toggle(PAUSED_LANE.id)} title={folded === "folded" ? "Open Paused here" : "Fold Paused to its head"}>
           {PAUSED_LANE.label} <small>{count}</small>
-          <FoldCounts needs={needsYouCount(tasks)} blocked={blockedCount(tasks)} />
+          <FoldCounts needs={needs} blocked={blocked} />
         </button>
       )}
       {folded !== "folded" && tasks.length > 0 && (

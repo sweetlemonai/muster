@@ -33,6 +33,16 @@ export function needsYou(t: Pick<Task, "forWho" | "waitingForOwner" | "stage" | 
 /** How many tasks need the owner: their own to do and doing, plus what the agents wait on them for. */
 export const needsYouCount = (tasks: Pick<Task, "forWho" | "waitingForOwner" | "stage" | "paused">[]) => tasks.filter(needsYou).length;
 
+/** The needs-you count's words without the number, for a heading whose digit is its own chip:
+ *  "needs you" for one, "need you" for any other. The one place the app chooses them (mu-159), so
+ *  translating it (mu-147) is one plural key. */
+export const needsVerb = (n: number) => (n === 1 ? "needs you" : "need you");
+
+/** A needs-you count in words, the same everywhere it's said: "1 needs you", "2 need you" (mu-87,
+ *  mu-159): the sidebar's rows and headings, the column chips and their cue, and the folded strips,
+ *  bands and Paused lane. */
+export const needsWords = (n: number) => `${n} ${needsVerb(n)}`;
+
 const PRIORITY_RANK = { high: 0, normal: 1, low: 2 } as const;
 /** What waits on the owner first, then priority, then project and id (as the board's columns). */
 const byAttention = (a: Task, b: Task) =>

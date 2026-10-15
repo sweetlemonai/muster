@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byWho, FOR_FILTERS, humanColumn, isHuman, needsYou, needsYouCount, parseForFilter, waitingForYou, whoFiltersOn, whoShows } from "./human";
+import { byWho, FOR_FILTERS, humanColumn, isHuman, needsVerb, needsWords, needsYou, needsYouCount, parseForFilter, waitingForYou, whoFiltersOn, whoShows } from "./human";
 import { columns } from "./lib";
 import needsCases from "./needs-cases.json";
 import type { Question, Task } from "./types";
@@ -97,6 +97,42 @@ describe("the needs-you count: one definition everywhere", () => {
       const t = task("0001", { forWho, stage, waitingForOwner, paused: paused ? "2026-10-13 10:00" : "" });
       expect(needsYou(t), `${forWho} ${stage} ${waitingForOwner} paused ${paused}`).toBe(needs);
     }
+  });
+});
+
+// Every source file but the tests, as text, for the check that the words have one home (mu-159).
+const sources = import.meta.glob<string>(["./**/*.ts", "./**/*.tsx", "!./**/*.test.ts", "!./**/*.test.tsx", "!./**/*.d.ts"], { query: "?raw", import: "default", eager: true });
+/** A source without its comments: what it says to the owner, not about itself. */
+const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
+/** A needs-you count put into words by hand: a number then "need you", or the singular/plural
+ *  choice spelt out. Prose ("the ones that need you") and the "needs" sort's id aren't counts. */
+const HAND_MADE = /["'`]needs( you)?["'`]\s*:\s*["'`]need( you)?["'`]|["'`]need( you)?["'`]\s*:\s*["'`]needs( you)?["'`]|(\}|\d|["'`] )\s*need you\b|\bneed\$\{/;
+
+describe("the needs-you count in words: one helper app-wide (mu-159)", () => {
+  it('says "1 needs you" and "N need you", as the sidebar has since mu-87', () => {
+    expect(needsWords(1)).toBe("1 needs you");
+    expect(needsWords(2)).toBe("2 need you");
+    expect(needsWords(77)).toBe("77 need you");
+    expect(needsWords(0)).toBe("0 need you");
+    // The words alone, for a heading whose digit is its own chip.
+    expect(needsVerb(1)).toBe("needs you");
+    expect(needsVerb(2)).toBe("need you");
+  });
+
+  it("is the only place in app/src, tests aside, that builds the words", () => {
+    const files = Object.keys(sources);
+    expect(files).toContain("./ModeViews.tsx");
+    expect(files).toContain("./projectOrder.ts");
+    expect(files.some((f) => f.includes(".test."))).toBe(false);
+    const offenders = files.filter((f) => f !== "./human.ts" && HAND_MADE.test(code(sources[f])));
+    expect(offenders).toEqual([]);
+  });
+
+  it("the check catches each way a count was spelt out before, and lets labels and comments be", () => {
+    for (const bad of ["title={`${needs} need you`}", '`${n} ${n === 1 ? "needs" : "need"} you`', '{c.needs} {c.needs === 1 ? "needs" : "need"} you', '{`${c.needs === 1 ? "needs" : "need"} you`}', 'n === 1 ? "needs you" : "need you"', 'n === 1 ? `need you` : `needs you`', 'n + " need you"', '`${n} need${n === 1 ? "s" : ""} you`'])
+      expect(HAND_MADE.test(code(bad)), bad).toBe(true);
+    for (const ok of ['label: "needs you"', '<Badge variant="warn">needs you</Badge>', "// how many need you", "/** tasks that need you */", 'by === "needs" ? rows : []', '"the ones that need you still show on it"'])
+      expect(HAND_MADE.test(code(ok)), ok).toBe(false);
   });
 });
 
