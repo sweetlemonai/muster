@@ -11,4 +11,5 @@ covers: app/src/App.tsx, app/src/HeadCount.tsx
 - Every count in it (Waiting for you, Problems, and Problems' quiet count of unchecked visions) keeps three digits' room, empty and hidden at zero, so a poll that changes them never changes the toolbar's lines or the board's top. (mu-202)
 - A pill's shown counts come first and its empty slots after them, so no blank sits between a label and its count. (mu-202)
 - Where it wraps depends on the window's width, the language, Text size and how many accounts the meter shows, never on a poll's data. (mu-202)
+- Nor on the meter's readings: the meter keeps its width as readings change, each account's status holding the room of its widest words in the language shown, so a reset, a stale window or a new reading never re-wraps the toolbar or moves the board's top. Pausing an account, like adding one, may. (mu-216)
 - Pure CSS, logical sides only: no measuring, no resize script, no state. (mu-202)

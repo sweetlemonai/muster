@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
-import { type AccountsInfo, type AccountView, barLabel, intoReserve, nextAsk, reserveAt, rowLines, rowName, rowStatus, shownPercent, type WindowView, WINDOWS } from "./accountsData";
+import { type AccountsInfo, type AccountView, barLabel, intoReserve, nextAsk, reserveAt, rowLines, rowName, rowStatus, rowStatusWidest, shownPercent, type WindowView, WINDOWS } from "./accountsData";
 import { useT } from "./i18n";
 
 /** setTimeout's longest wait; a week's reset is well inside it. */
@@ -97,7 +97,16 @@ function MeterRow({ a, now, onOpen }: { a: AccountView; now: number; onOpen: () 
           <MeterBar key={w.key} label={barLabel(a.name, w.short, a[w.key], a.reserve, now)} w={a[w.key]} reserve={a.reserve} />
         ))}
       </span>
-      <span className={status.stale ? "meter-when stale" : "meter-when"}>{status.text}</span>
+      {/* The shown words, and in the same cell the widest the readings can give, hidden and never
+          read out, so the row keeps its width as readings change (mu-216). */}
+      <span className={status.stale ? "meter-when stale" : "meter-when"}>
+        <span className="meter-shown">{status.text}</span>
+        {rowStatusWidest(a).map((w) => (
+          <span key={w} className="meter-room" aria-hidden="true">
+            {w}
+          </span>
+        ))}
+      </span>
     </button>
   );
 }

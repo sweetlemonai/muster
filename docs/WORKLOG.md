@@ -3,6 +3,26 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-216: the account meter keeps its width as readings change
+**Did (Akbar_54, builder):** each meter row's status (`.meter-when`) is a one-cell grid with the
+shown words and, stacked hidden and `aria-hidden`, `rowStatusWidest`'s forms (`accountsData.ts`):
+a reset on the 15th of each month with "· 7 d stale", "no 5 h reading · 7 d stale", "· paused"
+after each when paused. The copies are bold like stale words and the digits are tabular. So a
+reset, a stale window or a new reading never re-wraps the toolbar. DESIGN.md, `docs/now/toolbar.md`,
+`docs/now/accounts.md` and AS_BUILT say so.
+**Fixed:** a reading changed the meter's width (en 314 to 457 px), so at the one-line width it
+wrapped the toolbar and moved the board, and fa's stale week took 1100 from 3 lines to 4. Cause:
+`.meter-when` had no width of its own. Fix: the shaped pure-CSS reserve, as mu-202 did for counts.
+**Decided:** one copy per month, since which month's name is widest depends on the language and
+nothing is measured. The 15th gives a two-digit day and twelve different Jalali months. The copies
+are always bold, otherwise turning stale would still widen the row.
+**Verified:** vitest AccountMeter + accountsData 43/43 (7 new). Headless WebKit, main against this
+branch, en and fa, at 1100 and at the one-line width, two accounts, 7 readings by mocked
+`accounts-changed`: the meter's width, lines, header height and board top are the same at every
+reading after the change and move before it (`.muster/attachments/0216/`).
+**Open:** the cost is room. With two accounts the meter is en 572 px (was 354), fa 729 px (was
+353). 1100 is now 4 lines in en and fa, and the one-line width is en 2116, fa 2194 (was 1898,
+1818). mu-179's "needs a login" state goes in the same reserve.
 ## 2026-10-15 — mu-215: docs/now/board.md split into board and pane, shaping.md into shaping and vision-check
 **Did (Akbar_53, builder):** `docs/now/board.md` (4,094 B, 2 under the cap after mu-147 and mu-151)
 keeps the board's 25 rules; the new `docs/now/pane.md` takes the 14 about the task pane and the

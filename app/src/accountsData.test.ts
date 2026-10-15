@@ -2,6 +2,7 @@
 // marks go, the row's words, when the window asks again, and the profile edits checked before the
 // core sees them.
 import { describe, expect, it } from "vitest";
+import { unmarked } from "./i18n";
 import { setLocale } from "./i18n/runtime";
 import {
   type AccountView,
@@ -18,6 +19,7 @@ import {
   reserveAt,
   rowLabel,
   rowStatus,
+  rowStatusWidest,
   shownPercent,
   type WindowView,
   windowLine,
@@ -121,6 +123,52 @@ describe("the row's words", () => {
       "cc-mg 5 h: 42% used, resets 14:20; reserve 20%. cc-mg 7 d: 12% used, resets 18 Oct 09:00; reserve 20%. Open Settings, Accounts",
     );
     expect(rowLabel(account({ paused: true }), NOW)).toContain("reserve 20%. Paused. Open Settings, Accounts");
+  });
+});
+
+describe("the row's widest words (mu-216)", () => {
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  it("are a reset on another day in every month, two-digit day, with a stale week; and no 5 h reading with it", () => {
+    expect(rowStatusWidest(account())).toEqual([...MONTHS.map((m) => `resets 15 ${m} 00:00 · 7 d stale`), "no 5 h reading · 7 d stale"]);
+  });
+
+  it("are the same whatever the readings say, so a reset, a stale window or a new reading never changes them", () => {
+    const fresh = rowStatusWidest(account());
+    for (const a of [
+      account({ fiveHour: win({ stale: true }), sevenDay: win({ stale: true }) }),
+      account({ fiveHour: null, sevenDay: null, readingAt: null, source: null }),
+      account({ fiveHour: null }),
+      account({ fiveHour: win({ resetsAt: at(2026, 10, 15, 0, 30) }) }),
+    ])
+      expect(rowStatusWidest(a)).toEqual(fresh);
+  });
+
+  it("hold every status the row can say, as rowStatus words it", () => {
+    const room = rowStatusWidest(account()).join("\n");
+    for (const a of [account(), account({ sevenDay: win({ stale: true }) }), account({ fiveHour: null, sevenDay: win({ stale: true }) })]) {
+      for (const part of rowStatus(a, NOW).text.split(" · ").filter((p) => !/\d/.test(p))) expect(room).toContain(part);
+    }
+  });
+
+  it("say paused after each, when the account is paused (the owner's switch, which may change the width)", () => {
+    expect(rowStatusWidest(account({ paused: true }))).toEqual(rowStatusWidest(account()).map((w) => `${w} · paused`));
+  });
+
+  it("in فارسی, in Persian digits and twelve Jalali months", async () => {
+    await setLocale("fa");
+    try {
+      const fa = rowStatusWidest(account()).map(unmarked);
+      expect(fa).toHaveLength(13);
+      expect(new Set(fa).size).toBe(13);
+      // 15 January 2026 is 25 Dey 1404; 15 October is 23 Mehr.
+      expect(fa[0]).toBe("بازنشانی ۲۵ دی ۰۰:۰۰ · خوانش هفتگی کهنه");
+      expect(fa[9]).toBe("بازنشانی ۲۳ مهر ۰۰:۰۰ · خوانش هفتگی کهنه");
+      expect(fa[12]).toBe("بدون خوانش ۵ ساعته · خوانش هفتگی کهنه");
+      for (const w of fa) expect(w).not.toMatch(/[0-9]/);
+    } finally {
+      await setLocale("en");
+    }
   });
 });
 

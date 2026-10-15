@@ -687,7 +687,12 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   and Problems' quiet unchecked-visions count, are `HeadCount` (`HeadCount.tsx`): `.count-reserve`,
   three tabular digits wide (the quiet one 2 px more for its outline), hidden empty at zero with a
   zero-width strut so it sits on the same line box; `HeadCounts` puts a pill's shown counts before
-  its empty slots. So a poll doesn't change the lines or the board's top. Pure CSS; no measuring. Under each name, quietly (0037, `activity.ts`): the Building-colour
+  its empty slots. So a poll doesn't change the lines or the board's top. Pure CSS; no measuring.
+  The account meter keeps its width as readings change (mu-216): each row's `.meter-when` is a
+  one-cell grid with the shown words (`.meter-shown`) and, stacked in the same cell, `.meter-room`
+  copies of `rowStatusWidest` (`accountsData.ts`: a reset on the 15th of each month with "· 7 d
+  stale", and "no 5 h reading · 7 d stale", then "· paused" when paused), `visibility: hidden`,
+  `aria-hidden`, bold as stale words are, digits tabular. Under each name, quietly (0037, `activity.ts`): the Building-colour
   dot and "2 working" (tasks with a live session, or a check-in or heartbeat in the last 30
   minutes; never in Done, and in Your check only while live), or **stalled** in the attention
   colour (work in Building, not blocked and not the owner's, and nothing in the project for over

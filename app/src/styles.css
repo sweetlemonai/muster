@@ -710,6 +710,13 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .meter-bar.warn .meter-fill { background: var(--warn); }
 .meter-bar.stale .meter-fill { background: color-mix(in srgb, var(--muted) 60%, transparent); }
 .meter-reserve { position: absolute; inset-block: -2px; inline-size: 2px; background: var(--text); box-shadow: 0 0 0 1px var(--panel); }
+/* The status keeps its width as readings change (mu-216): the shown words and, in the same grid
+   cell, hidden copies of the widest words the readings can give, so the cell is as wide as the
+   widest and shorter words leave their blank at the inline end. The copies are bold, as stale words
+   are, and the digits tabular, so neither a stale window nor another time widens it. */
+.meter-when { display: inline-grid; justify-items: start; font-variant-numeric: tabular-nums; }
+.meter-when > * { grid-area: 1 / 1; }
+.meter-room { visibility: hidden; font-weight: 600; }
 .meter-when.stale { color: var(--text); font-weight: 600; }
 .tasks-table td.meta, .tasks-table .id, .tasks-table .q, .tasks-table td:nth-last-child(2), .tasks-table td:nth-last-child(3) { white-space: nowrap; }
 .tasks-table th.plain { padding: 7px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); font-weight: 600; }

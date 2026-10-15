@@ -459,6 +459,13 @@ Drover's Menu, Modal, Overlay, Select and Lightbox are not taken: they hide or c
 - **Never clipped:** the header wraps instead of hiding. The status unit (meter, mode, live) moves
   to a second line as one piece, with Help and Settings before it, when the row is too narrow (the
   320 px sidebar at 1280 wide). See "Fixed places" for the toolbar's rule (mu-202).
+- **Keeps its width as readings change** (mu-216): each account's status keeps the room of the
+  widest words its readings can give in the language shown ("resets 23 Oct 14:20 · 7 d stale",
+  "no 5 h reading · 7 d stale"), held by hidden copies in the same cell that are never read out. So a
+  reset, a stale window or a new reading never re-wraps the toolbar. Shorter words leave the blank
+  after them, at the row's inline end inside the button, never between the name and the bars.
+  Its width follows only the owner's own changes: adding, removing or pausing an account, the
+  language, digits, calendar and Text size. The cost: the meter is as wide as its widest words all the time.
 - No animation; logical CSS, so it mirrors in RTL. The numbers are the same as `muster accounts` gives.
 
 ## Out of the way

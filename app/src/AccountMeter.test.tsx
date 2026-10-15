@@ -19,8 +19,20 @@ const account = (over: Partial<AccountView> = {}): AccountView => ({
 });
 const info = (...accounts: AccountView[]): AccountsInfo => ({ accounts, now: NOW });
 const draw = (i: AccountsInfo | null, error = "") => renderToStaticMarkup(<AccountMeterView info={i} error={error} onOpen={() => {}} />);
-const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ").trim();
+/** What the meter shows: its words, without the hidden copies that only reserve their room (mu-216). */
+const text = (html: string) =>
+  html
+    .replace(/<span class="meter-room" aria-hidden="true">[^<]*<\/span>/g, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&#x27;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
 const decode = (s: string) => s.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+/** Each status cell's hidden copies, a list per account. */
+const rooms = (html: string) =>
+  [...html.matchAll(/<span class="meter-when[^"]*">(.*?)<\/span><\/button>/g)].map((m) =>
+    [...m[1].matchAll(/<span class="meter-room" aria-hidden="true">([^<]*)<\/span>/g)].map((r) => decode(r[1])),
+  );
 const bars = (html: string) => [...html.matchAll(/<span class="(meter-bar[^"]*)" role="img" aria-label="([^"]*)"/g)].map((m) => ({ cls: m[1], label: decode(m[2]) }));
 /** One CSS rule's body. */
 const rule = (sel: string) => new RegExp(`(?:^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`).exec(css)?.[1] ?? "";
@@ -70,7 +82,7 @@ describe("the header's account meter", () => {
     const html = draw(info(account({ fiveHour: win({ stale: true, resetsAt: at(2026, 10, 14, 10, 0) }) })));
     expect(bars(html)[0]).toEqual({ cls: "meter-bar stale", label: "cc-mg 5 h: 42% used, was due to reset 10:00; reserve 20%, stale" });
     expect(text(html)).toBe("cc-mg stale");
-    expect(html).toContain('<span class="meter-when stale">stale</span>');
+    expect(html).toContain('<span class="meter-when stale"><span class="meter-shown">stale</span>');
     expect(rule(".meter-bar.stale")).toMatch(/repeating-linear-gradient/);
     // The reserve's mark stands out over the hatching (QA): 2 px in the text colour, taller than
     // the bar, with a ring of the header's own background between it and the hatch lines.
@@ -79,6 +91,41 @@ describe("the header's account meter", () => {
     expect(mark).toContain("background: var(--text);");
     expect(mark).toContain("box-shadow: 0 0 0 1px var(--panel);");
     expect(mark).toContain("inset-block: -2px;");
+  });
+
+  it("keeps each status's width as readings change: the shown words and, hidden in the same cell, the widest ones (mu-216)", () => {
+    const html = draw(info(account()));
+    expect(html).toContain('<span class="meter-when"><span class="meter-shown">resets 14:20</span><span class="meter-room" aria-hidden="true">resets 15 Jan 00:00 · 7 d stale</span>');
+    expect(html).toContain('<span class="meter-room" aria-hidden="true">no 5 h reading · 7 d stale</span></span></button>');
+    // The hidden copies are never read out: the row's own name is both bars and what it opens.
+    expect(decode(html)).toContain('aria-label="cc-mg 5 h: 42% used, resets 14:20; reserve 20%. cc-mg 7 d: 12% used, resets 18 Oct 09:00; reserve 20%. Open Settings, Accounts"');
+    expect(text(html)).toBe("cc-mg resets 14:20");
+    // The same room whatever the reading: a reset on another day, stale, no reading, no 5 h reading.
+    const room = rooms(html)[0];
+    expect(room).toHaveLength(13);
+    for (const a of [
+      account({ fiveHour: win({ resetsAt: at(2026, 10, 15, 0, 30) }) }),
+      account({ fiveHour: win({ stale: true, resetsAt: at(2026, 10, 14, 10, 0) }), sevenDay: win({ stale: true }) }),
+      account({ fiveHour: null, sevenDay: null, readingAt: null, source: null }),
+      account({ fiveHour: null }),
+    ])
+      expect(rooms(draw(info(a)))).toEqual([room]);
+    // Two accounts, a cell each.
+    expect(rooms(draw(info(account(), account({ label: "hg", name: "cc-hg" }))))).toEqual([room, room]);
+  });
+
+  it("stacks the shown words and their room in one grid cell at the inline start, the room hidden and bold as stale is", () => {
+    const when = rule(".meter-when");
+    expect(when).toContain("display: inline-grid;");
+    expect(when).toContain("justify-items: start;");
+    expect(when).toContain("font-variant-numeric: tabular-nums;");
+    expect(rule(".meter-when > *")).toContain("grid-area: 1 / 1;");
+    const room = rule(".meter-room");
+    expect(room).toContain("visibility: hidden;");
+    // Stale words are bold, so the room is bold too: turning stale never widens the row.
+    expect(room).toContain("font-weight: 600;");
+    expect(rule(".meter-when.stale")).toContain("font-weight: 600;");
+    for (const sel of [".meter-when", ".meter-when > *", ".meter-room"]) expect(rule(sel)).not.toMatch(/\b(left|right)\b|transition|animation/);
   });
 
   it("says no reading when an account has none, its bars empty in their place", () => {
@@ -135,5 +182,8 @@ describe("the meter and its words in Persian (mu-146's layer)", () => {
     expect(unmarked(readingText(account(), NOW))).toBe("۱ دقیقه پیش خوانده شد، از نوار وضعیت.");
     expect(unmarked(readingText(account({ readingAt: NOW - 20, source: "stream" }), NOW))).toBe("لحظاتی پیش خوانده شد، از یک اجرا.");
     expect(unmarked(text(draw(info())))).toBe("بدون حساب");
+    // The status's room in Persian too (mu-216): Jalali dates, Persian digits, paused when it is.
+    expect(rooms(html)[0].map(unmarked)).toContain("بازنشانی ۲۳ مهر ۰۰:۰۰ · خوانش هفتگی کهنه");
+    expect(rooms(html)[1].map(unmarked)).toContain("بدون خوانش ۵ ساعته · خوانش هفتگی کهنه · متوقف شده");
   });
 });

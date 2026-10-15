@@ -109,7 +109,23 @@ export function rowStatus(a: AccountView, now: number): { text: string; stale: b
   else parts.push(five.stale ? tn("shell", "meter.stale") : tn("shell", "meter.resets", { time: resetText(five.resetsAt, now) }));
   if (week?.stale && !five?.stale) parts.push(tn("shell", "meter.weekStale"));
   if (a.paused) parts.push(tn("shell", "meter.paused"));
-  return { text: parts.join(" · "), stale: Boolean(five?.stale || week?.stale) };
+  return { text: parts.join(STATUS_SEP), stale: Boolean(five?.stale || week?.stale) };
+}
+const STATUS_SEP = " · ";
+
+/** The widest words `rowStatus` can say for this account whatever its readings (mu-216): a reset
+ *  on another day in each month (which month's name is widest depends on the language), its day
+ *  two digits, beside a stale weekly window; and no 5 h reading beside one. Then paused when it is,
+ *  the owner's switch. The meter stacks them hidden in the status's cell, so the cell is as wide
+ *  as the widest of them and a reset, a stale window or a new reading never changes its width. */
+export function rowStatusWidest(a: AccountView): string[] {
+  const tail = [tn("shell", "meter.weekStale"), ...(a.paused ? [tn("shell", "meter.paused")] : [])];
+  // The 15th's midnight: a two-digit day in both calendars, and twelve Jalali months too.
+  const resets = MONTHS.map((_, m) => {
+    const at = new Date(2026, m, 15).getTime() / 1000;
+    return tn("shell", "meter.resets", { time: resetText(at, at + 2 * 86400) });
+  });
+  return [...resets, tn("shell", "meter.noFiveHour")].map((w) => [w, ...tail].join(STATUS_SEP));
 }
 
 /** What the meter row says, a line each: both bars, paused, and what a click does. Its tooltip
