@@ -1,4 +1,5 @@
 import { type DragEvent, type ReactNode, useRef, useState } from "react";
+import { tl, tn } from "./i18n";
 import { CATEGORY_MAX, OTHER } from "./labels";
 import { ColourDot, Swatches } from "./ProjectSwatches";
 import { pressed } from "./shortcuts";
@@ -42,6 +43,10 @@ export function cleanHeading(name: string): string {
   const h = [...name.replace(/\p{Cc}/gu, "").trim()].slice(0, CATEGORY_MAX).join("").trimEnd();
   return h.toLowerCase() === OTHER.toLowerCase() ? OTHER : h;
 }
+
+/** A heading as the sidebar says it: the Other heading in the language shown (its name stays
+ *  "Other" in projects.json and everywhere it's matched), any other as it's named. */
+export const headingName = (name: string): string => (name === OTHER ? tn("shell", "heading.other") : name);
 
 /** The drag handlers a row or heading takes; without them (no way to save) it doesn't move. */
 export type DragProps = {
@@ -142,12 +147,16 @@ export function HeadingFrame({ name, count, summary, fresh = false, folded = fal
   onFold?: (folded: boolean) => void;
   children: ReactNode;
 }) {
-  const said = fresh ? "new, no projects yet" : (summary ?? `${count} ${count === 1 ? "project" : "projects"}`);
-  const can = [onRename && "↩ renames it", drag && "⌥↑ ⌥↓ move it", onFold && "← → fold it"].filter(Boolean).join(", ");
+  const said = fresh ? tn("shell", "heading.fresh") : (summary ?? tn("shell", "heading.projects", { count }));
+  const can = [onRename && tn("shell", "heading.canRename"), drag && tn("shell", "heading.canMove"), onFold && tn("shell", "heading.canFold")].filter(Boolean).join(tl("listSep"));
   const keys = [onFold && FOLD_KEYS, drag && MOVE_KEYS].filter(Boolean).join(" ");
   const focusable = Boolean(drag || onRename || onFold);
   const attrs = dragAttrs(drag, name);
-  const fold = folded ? "Unfold" : "Fold";
+  const shown = headingName(name);
+  const label = fresh
+    ? tn("shell", can ? "heading.freshAriaCan" : "heading.freshAria", { name: shown, said, can })
+    : tn("shell", folded ? (can ? "heading.foldedAriaCan" : "heading.foldedAria") : can ? "heading.ariaCan" : "heading.aria", { name: shown, said, can });
+  const title = [tn("shell", "heading.titleRename"), drag && tn("shell", "heading.titleMove"), onFold && tn("shell", "heading.titleFold")].filter(Boolean).join(tl("clauseSep"));
   return (
     <div
       className={cx("side-cat", fresh && "fresh", folded && "folded", drag?.dragging && "dragging", drag?.drop && `drop-${drag.drop}`)}
@@ -157,8 +166,8 @@ export function HeadingFrame({ name, count, summary, fresh = false, folded = fal
       role={focusable ? "heading" : undefined}
       aria-level={focusable ? 2 : undefined}
       aria-keyshortcuts={keys || undefined}
-      aria-label={fresh ? `${name}, category heading, ${said}${can ? `: ${can}` : ""}` : `${name}, category heading${folded ? ", folded" : ""}: ${said}${can ? `; ${can}` : ""}`}
-      title={onRename ? `Double-click or ↩ to rename${drag ? "; drag it, or ⌥↑ ⌥↓, to move it with its projects" : ""}${onFold ? "; ← → fold it" : ""}` : undefined}
+      aria-label={label}
+      title={onRename ? title : undefined}
       {...attrs}
       onKeyDown={(e) => {
         if (onRename && pressed(e, "heading-rename") && e.target === e.currentTarget) {
@@ -181,8 +190,8 @@ export function HeadingFrame({ name, count, summary, fresh = false, folded = fal
           type="button"
           className="side-cat-fold"
           aria-expanded={!folded}
-          aria-label={`${fold} ${name}`}
-          title={`${fold} ${name} (${folded ? "→" : "←"})`}
+          aria-label={tn("shell", folded ? "heading.unfold" : "heading.fold", { name: shown })}
+          title={tn("shell", folded ? "heading.unfoldTitle" : "heading.foldTitle", { name: shown })}
           onClick={(e) => {
             e.stopPropagation();
             onFold(!folded);
@@ -198,8 +207,8 @@ export function HeadingFrame({ name, count, summary, fresh = false, folded = fal
       {children}
       {fresh && (
         <span className="side-cat-fresh">
-          empty: drag a project here, or ⌥↓ the last one above
-          {onRemove && <Pill type="button" className="side-cat-remove" onClick={onRemove} title="Take this new heading away">Remove</Pill>}
+          {tn("shell", "heading.empty")}
+          {onRemove && <Pill type="button" className="side-cat-remove" onClick={onRemove} title={tn("shell", "heading.removeTitle")}>{tl("remove")}</Pill>}
         </span>
       )}
     </div>
@@ -233,7 +242,7 @@ export function HeadingEdit({ name, onSave, onDone }: { name: string; onSave: (t
         autoFocus
         defaultValue={name}
         maxLength={CATEGORY_MAX}
-        aria-label={`Name of the heading ${name}`}
+        aria-label={tn("shell", "heading.nameAria", { name: headingName(name) })}
         placeholder={name}
         onKeyDown={(e) => {
           if (pressed(e, "label-save")) save(e.currentTarget.value);
@@ -245,7 +254,7 @@ export function HeadingEdit({ name, onSave, onDone }: { name: string; onSave: (t
         }}
         onBlur={(e) => save(e.currentTarget.value)}
       />
-      <small className="meta">↩ renames, Esc keeps it · another heading's name joins the two</small>
+      <small className="meta">{tn("shell", "heading.renameKeys")}</small>
       {error && <small className="err" role="alert">{error}</small>}
     </div>
   );
@@ -268,9 +277,9 @@ export function NewCategory({ onAdd, open: start = false }: { onAdd: (name: stri
           settled.current = false;
           setOpen(true);
         }}
-        title="A new heading: then drag a project onto it"
+        title={tn("shell", "heading.newTitle")}
       >
-        + Category
+        {tn("shell", "heading.new")}
       </Pill>
     );
   }
@@ -292,8 +301,8 @@ export function NewCategory({ onAdd, open: start = false }: { onAdd: (name: stri
         className="side-label-input"
         autoFocus
         maxLength={CATEGORY_MAX}
-        aria-label="New category"
-        placeholder="New category"
+        aria-label={tn("shell", "heading.newName")}
+        placeholder={tn("shell", "heading.newName")}
         onKeyDown={(e) => {
           if (pressed(e, "label-save")) add(e.currentTarget.value);
           if (pressed(e, "label-revert")) {
@@ -303,7 +312,7 @@ export function NewCategory({ onAdd, open: start = false }: { onAdd: (name: stri
         }}
         onBlur={(e) => add(e.currentTarget.value)}
       />
-      <small className="meta">↩ makes it, Esc doesn't · then drag a project onto it</small>
+      <small className="meta">{tn("shell", "heading.newKeys")}</small>
       {error && <small className="err" role="alert">{error}</small>}
     </div>
   );

@@ -1,5 +1,6 @@
 import { isBlocked } from "./blockWords";
 import { needsYouCount } from "./human";
+import { tl, tn } from "./i18n";
 import { OTHER } from "./labels";
 import { CHECKIN_MINUTES, splitHolder, stamp, stampMinutes } from "./lib";
 import type { Activity, QueueInfo, Task } from "./types";
@@ -164,13 +165,13 @@ export function sumActivity(list: ProjectActivity[]): Sums {
  *  Days are calendar days on the wall clock (`wall`, wall-clock minutes): "yesterday" is the day
  *  before today, not 24 to 48 hours ago. */
 export function lastText(m: number | null, wall: number | null): string {
-  if (m === null) return "no activity";
-  if (m < 1) return "now";
-  if (m < 60) return `${m} min ago`;
+  if (m === null) return tl("time.noActivity");
+  if (m < 1) return tl("time.now");
+  if (m < 60) return tl("time.minAgo", { count: m });
   const days = wall === null ? Math.floor(m / 1440) : Math.floor(wall / 1440) - Math.floor((wall - m) / 1440);
-  if (days <= 0) return `${Math.floor(m / 60)} h ago`;
-  if (days === 1) return "yesterday";
-  return `${days} days ago`;
+  if (days <= 0) return tl("time.hAgo", { count: Math.floor(m / 60) });
+  if (days === 1) return tl("time.yesterday");
+  return tl("time.daysAgo", { count: days });
 }
 
 /** `lastText` at the state's clock (`now`, seconds since 1970). */
@@ -179,12 +180,16 @@ export const lastLabel = (m: number | null, now: number) => lastText(m, wallMinu
 export type SidebarOrder = "working" | "az" | "needs" | "mine";
 /** The sidebar's orders, as chips above the list. Working first is the default; Mine (0057) is the
  *  owner's own, chosen by the first drag or ⌥↑/⌥↓. */
-export const SIDEBAR_ORDERS: { id: SidebarOrder; label: string; title: string }[] = [
-  { id: "working", label: "Working", title: "Projects being worked on now first, then the most recently worked on" },
-  { id: "az", label: "A–Z", title: "By name" },
-  { id: "needs", label: "Needs you", title: "The most waiting on you first, then the ones being worked on" },
-  { id: "mine", label: "Mine", title: "Your own order: drag a project or a heading, or ⌥↑ ⌥↓ on one (the first move picks this)" },
-];
+export const SIDEBAR_ORDERS: { readonly id: SidebarOrder; readonly label: string; readonly title: string }[] = (["working", "az", "needs", "mine"] as const).map((id) => ({
+  id,
+  // In the language shown, each time they're read (shell.json, mu-146).
+  get label() {
+    return tn("shell", `order.${id}.label`);
+  },
+  get title() {
+    return tn("shell", `order.${id}.title`);
+  },
+}));
 
 type Ranked = Pick<ProjectRow, "name" | "needs" | "activity"> & { label?: string; rank?: number | null };
 // Plain code-unit order after folding case, so the order is the same on every machine. A–Z goes

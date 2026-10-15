@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { api } from "./api";
 import { HomePath } from "./HomePath";
+import { tl, tn } from "./i18n";
+import { renderTags } from "./i18n/react";
 import { Pill } from "./ui";
 import type { SettingsInfo } from "./settingsData";
 
@@ -8,7 +10,7 @@ import type { SettingsInfo } from "./settingsData";
  *  icon, 0085) saved by the core, which shows its refusal when it can't save. */
 export default function Notifications({ info, onInfo }: { info: SettingsInfo | null; onInfo: (i: SettingsInfo) => void }) {
   const [error, setError] = useState("");
-  if (!info) return <p className="none">Loading…</p>;
+  if (!info) return <p className="none">{tl("loading")}</p>;
   return (
     <NotificationsView
       info={info}
@@ -37,43 +39,32 @@ export function NotificationsView({ info, error = "", onSet }: { info: SettingsI
   const pills = (name: Switch, on: boolean) =>
     [true, false].map((v) => (
       <Pill key={String(v)} type="button" on={on === v} aria-pressed={on === v} onClick={() => onSet(name, v)}>
-        {v ? "On" : "Off"}
+        {v ? tl("on") : tl("off")}
       </Pill>
     ));
   return (
     <div className="settings-sections">
       <section>
-        <h2>Mac notifications</h2>
-        <div className="look-colour" role="group" aria-label="Mac notifications">
-          <span className="meta">Notify me</span>
+        <h2>{tn("shell", "notifications.mac")}</h2>
+        <div className="look-colour" role="group" aria-label={tn("shell", "notifications.mac")}>
+          <span className="meta">{tn("shell", "notifications.notifyMe")}</span>
           {pills("notify", info.settings.notify ?? true)}
         </div>
         {error && <p className="err" role="alert">{error}</p>}
-        <p className="meta">
-          One notification when something new waits for you: a task in Your check, a question escalated to you, a task blocked on you or by a permission, a
-          session that waits for your input in Claude Code, a task of your own, or lessons to approve. Several at once come as one.
-        </p>
-        <p className="meta">
-          It's never twice for the same thing, and not for what was already waiting when Muster started. While Muster's window is in front, what it shows
-          (its project, or All) counts as seen, and news from another project waits until you switch away.
-        </p>
-        <p className="meta">
-          macOS asks whether Muster may notify the first time it has something to tell you; change that later in System Settings › Notifications. Nothing
-          leaves this Mac.
-        </p>
+        <p className="meta">{tn("shell", "notifications.what")}</p>
+        <p className="meta">{tn("shell", "notifications.once")}</p>
+        <p className="meta">{tn("shell", "notifications.macos")}</p>
       </section>
       <section>
-        <h2>Menu bar icon</h2>
-        <div className="look-colour" role="group" aria-label="Menu bar icon">
-          <span className="meta">Show it</span>
+        <h2>{tn("shell", "notifications.menuBar")}</h2>
+        <div className="look-colour" role="group" aria-label={tn("shell", "notifications.menuBar")}>
+          <span className="meta">{tn("shell", "notifications.showIt")}</span>
           {pills("menu-bar", info.settings.menuBar ?? true)}
         </div>
-        <p className="meta">
-          Muster's robot head in the menu bar, plain while nothing waits for you and with its antenna tips filled in when something does: the same count as the Dock
-          badge, from the same reads. Its tooltip and menu say the count in words, never a task's text.
-        </p>
-        <p className="meta">Click it to bring Muster's window forward. Right-click or Control-click it for Show Muster, the count and Quit Muster.</p>
-        <p className="meta">Both are saved on this Mac, in <HomePath path={`${info.configDir}/settings.json`} home={info.home} />, with what it won't notify again beside it.</p>
+        <p className="meta">{tn("shell", "notifications.icon")}</p>
+        <p className="meta">{tn("shell", "notifications.click")}</p>
+        {/* renderTags, not <Trans>: the view is drawn without hooks (its test walks it as plain calls). */}
+        <p className="meta">{renderTags(tn("shell", "notifications.saved"), { path: <HomePath path={`${info.configDir}/settings.json`} home={info.home} /> })}</p>
       </section>
     </div>
   );

@@ -5,6 +5,7 @@ import { DisplayModes } from "./Display";
 import { AccountPicker } from "./Helper";
 import { HelpButton } from "./HelpButton";
 import { HomePath } from "./HomePath";
+import { dirOf, followLocale, LOCALES, NATIVE_NAMES, tl, tn, Trans, useLocale, useT, type Locale, type TFn } from "./i18n";
 import Notifications from "./Notifications";
 import Projects from "./Projects";
 import Roles from "./Roles";
@@ -13,7 +14,7 @@ import { homePath } from "./lib";
 import type { DisplayMode } from "./modes";
 import { ACCOUNTS_WORDS, accountsEdit, DEFAULT_MACHINE, SETTINGS_GROUPS, type SettingsGroup, type SettingsInfo, spanInput, spanText } from "./settingsData";
 import type { Project, QueueInfo } from "./types";
-import { Button, Pill } from "./ui";
+import { Button, Pill, Segment, Segmented } from "./ui";
 
 /** Settings (0036): one place for Appearance, Display, Projects, Agents, Notifications and About. A view in the
  *  header's row, never a window: the groups are a docked list on the left, and the open group's
@@ -40,30 +41,91 @@ export default function Settings({ group, onGroup, queues, onChanged, mode, onMo
       live = false;
     };
   }, []);
+  const t = useT("shell");
   const g = SETTINGS_GROUPS.find((x) => x.id === group) ?? SETTINGS_GROUPS[0];
   return (
     <div className="settings">
-      <nav className="settings-groups" aria-label="Settings groups">
-        {SETTINGS_GROUPS.map((x) => (
-          <button key={x.id} type="button" className={x.id === g.id ? "settings-group on" : "settings-group"} aria-current={x.id === g.id ? "page" : undefined} onClick={() => onGroup(x.id)}>
-            {x.label}<small>{x.holds}</small>
-          </button>
-        ))}
-      </nav>
+      <div className="settings-side">
+        <Language setting={info ? info.settings.lang : null} onInfo={setInfo} />
+        <nav className="settings-groups" aria-label={t("settings.groupsAria")}>
+          {SETTINGS_GROUPS.map((x) => (
+            <button key={x.id} type="button" className={x.id === g.id ? "settings-group on" : "settings-group"} aria-current={x.id === g.id ? "page" : undefined} onClick={() => onGroup(x.id)}>
+              {x.label}<small>{x.holds}</small>
+            </button>
+          ))}
+        </nav>
+      </div>
       <section className="settings-body" aria-label={g.label}>
         <header className="settings-head">
           <h1>{g.label} <HelpButton topic={g.topic} /></h1>
           <p className="meta">{g.holds}</p>
         </header>
-        {error && <p className="err" role="alert">Can't read this Mac's settings: {error}</p>}
+        {error && <p className="err" role="alert">{t("settings.cantRead", { error })}</p>}
         {g.id === "appearance" && <Appearance />}
         {g.id === "display" && <DisplayModes mode={mode} onMode={onMode} />}
         {g.id === "projects" && <Projects queues={queues} home={info?.home ?? ""} onChanged={onChanged} />}
         {g.id === "agents" && <Agents info={info} queues={queues} onInfo={setInfo} onChanged={onChanged} />}
         {g.id === "notifications" && <Notifications info={info} onInfo={setInfo} />}
-        {g.id === "about" && (info ? <About info={info} /> : !error && <p className="none">Loading…</p>)}
+        {g.id === "about" && (info ? <About info={info} /> : !error && <p className="none">{t("common:loading")}</p>)}
       </section>
     </div>
+  );
+}
+
+/** Save the language setting (`code`, or "" to follow macOS) and switch the window to the one
+ *  the core says is in effect, without waiting for its event (mu-146). Resolves to the settings
+ *  now in force. */
+export async function pickLanguage(code: Locale | ""): Promise<SettingsInfo> {
+  const info = await api.setSetting("lang", code);
+  await followLocale(info.locale?.effective ?? code);
+  return info;
+}
+
+/** Settings' Language (mu-146), at the top of Settings whatever group is open: a chip per
+ *  language, each name in its own script and never translated, so a person who can't read the
+ *  language shown can still find theirs. The chip of the language in effect is on; while the
+ *  setting is unset (`setting` undefined) that's macOS's, and a line says so. `null`: the
+ *  settings haven't come yet, so it says nothing either way. */
+function Language({ setting, onInfo }: { setting: string | undefined | null; onInfo: (i: SettingsInfo) => void }) {
+  const [error, setError] = useState("");
+  return (
+    <LanguageView
+      shown={useLocale()}
+      following={setting === undefined}
+      error={error}
+      onPick={(code) =>
+        void pickLanguage(code).then(
+          (i) => {
+            setError("");
+            onInfo(i);
+          },
+          (e: unknown) => setError(String(e)),
+        )
+      }
+    />
+  );
+}
+
+/** Language as drawn: `shown` is the language the window shows, `following` whether that's
+ *  macOS's (no setting saved). Every chip saves its language when clicked, the one on too: `shown`
+ *  changes only once a language's files are in, so a change of mind while one loads must still
+ *  go through (saving and switching are idempotent, and the last pick wins). */
+export function LanguageView({ shown, following, error = "", onPick }: { shown: string; following: boolean; error?: string; onPick: (code: Locale) => void }) {
+  const t = useT("shell");
+  return (
+    <section className="settings-lang" aria-label={t("language.label")}>
+      <h2>{t("language.label")}</h2>
+      <Segmented aria-label={t("language.label")}>
+        {LOCALES.map((l) => (
+          <Segment key={l} type="button" lang={l} dir={dirOf(l)} active={l === shown} onClick={() => onPick(l)}>
+            {NATIVE_NAMES[l]}
+          </Segment>
+        ))}
+      </Segmented>
+      <p className="meta">{t("language.meta")}</p>
+      {following && <p className="meta">{t("language.followsMac")}</p>}
+      {error && <p className="err" role="alert">{t("language.failed", { error })}</p>}
+    </section>
   );
 }
 
@@ -85,7 +147,7 @@ function Agents({ info, queues, onInfo, onChanged }: { info: SettingsInfo | null
       live = false;
     };
   }, [queue, asked]);
-  if (!info) return <p className="none">Loading…</p>;
+  if (!info) return <p className="none">{tl("loading")}</p>;
   return (
     <AgentsView
       info={info}
@@ -142,53 +204,53 @@ export function AgentsView({ info, helper, helperError = "", onHelper, onModel, 
   /** Roles (0112), the last section: its own data, so it's given drawn. */
   roles?: ReactNode;
 }) {
+  // Not useT: the view is a plain function its tests walk; Settings, which holds it, renders it
+  // again on a language switch.
+  const t: TFn<"shell"> = (key, params) => tn("shell", key, params);
   const s = info.settings;
   return (
     <div className="settings-sections">
       <section>
-        <h2>Claims</h2>
+        <h2>{t("agents.claims")}</h2>
         <SpanSetting
           key={`lease-${s.leaseMinutes}`}
-          label="Claim lease"
+          label={t("agents.lease")}
           minutes={s.leaseMinutes}
           def={DEFAULT_MACHINE.leaseMinutes}
           bounds={info.leaseBounds}
-          what="A claim in Building that nobody has heard from for longer than this can go back to Ready: the card says quiet, the task pane offers Release, and muster reclaim takes it."
+          what={t("agents.leaseWhat")}
           onSet={(v) => onSet("lease", v)}
         />
         <SpanSetting
           key={`live-${s.liveMinutes}`}
-          label="LIVE window"
+          label={t("agents.live")}
           minutes={s.liveMinutes}
           def={DEFAULT_MACHINE.liveMinutes}
           bounds={info.liveBounds}
-          what="How recent a change counts as working now: the card's dot (a session's transcript) and the task pane's LIVE (the task's file)."
+          what={t("agents.liveWhat")}
           onSet={(v) => onSet("live", v)}
         />
         {info.sessionStates && <p className="meta">{sessionStatesLine(info.sessionStates)}</p>}
         <AccountsSetting labels={s.claudeAccounts} onSet={(v) => onSet("claude-accounts", v)} />
-        <p className="meta">Saved on this Mac, in <HomePath path={`${info.configDir}/settings.json`} home={info.home} />; the muster command reads the same file.</p>
+        <p className="meta"><Trans ns="shell" k="agents.saved" components={{ path: <HomePath path={`${info.configDir}/settings.json`} home={info.home} /> }} /></p>
       </section>
       <section>
-        <h2>The helper</h2>
+        <h2>{t("agents.helper")}</h2>
         {helperError && <p className="err" role="alert">{helperError}</p>}
-        {helper === null && !helperError && <p className="none">Checking the accounts…</p>}
-        {helper && !helper.claude && <p className="err">Couldn't find the <code>claude</code> command. The helper runs your own Claude Code: install it, then come back here.</p>}
+        {helper === null && !helperError && <p className="none">{t("agents.checking")}</p>}
+        {helper && !helper.claude && <p className="err"><Trans ns="shell" k="agents.noClaude" components={{ code: <code /> }} /></p>}
         {helper?.claude && <AccountPicker info={helper} listed={s.claudeAccounts.length} onPicked={onHelper} onRefresh={onHelper} />}
         {helper && (
           <>
-            <div className="look-colour" role="group" aria-label="Helper model">
-              <span className="meta">Model</span>
+            <div className="look-colour" role="group" aria-label={t("agents.modelAria")}>
+              <span className="meta">{t("agents.model")}</span>
               {helper.models.map((m) => (
                 <Pill key={m} type="button" on={helper.model === m} aria-pressed={helper.model === m} onClick={() => onModel(m)}>
                   {MODEL_NAMES[m] ?? m}
                 </Pill>
               ))}
             </div>
-            <p className="meta">
-              The model the helper files tasks with, from its next message: Sonnet unless you pick another. Haiku is quicker and costs less; Opus
-              thinks hardest and costs most.
-            </p>
+            <p className="meta">{t("agents.modelMeta")}</p>
           </>
         )}
       </section>
@@ -216,10 +278,11 @@ export function SpanSetting({ label, minutes, def, bounds, what, onSet }: {
     setBusy(false);
     setError(refused ?? "");
   };
+  const t = useT("shell");
   return (
     <div className="setting" role="group" aria-label={label}>
       <p className="setting-line">
-        <b>{label}</b> <span className="setting-value">{spanText(minutes)}</span> {minutes === def && <span className="meta">default</span>}
+        <b>{label}</b> <span className="setting-value">{spanText(minutes)}</span> {minutes === def && <span className="meta">{t("agents.default")}</span>}
       </p>
       <p className="meta">{what}</p>
       <form
@@ -229,12 +292,12 @@ export function SpanSetting({ label, minutes, def, bounds, what, onSet }: {
           void save(text);
         }}
       >
-        <input value={text} onChange={(e) => setText(e.target.value)} size={7} maxLength={12} aria-label={`${label}, as 30m, 2h or 1d`} disabled={busy} />
-        <Button type="submit" disabled={busy || text.trim() === spanInput(minutes)}>Save</Button>
+        <input value={text} onChange={(e) => setText(e.target.value)} size={7} maxLength={12} aria-label={t("agents.spanAria", { label })} disabled={busy} />
+        <Button type="submit" disabled={busy || text.trim() === spanInput(minutes)}>{t("common:save")}</Button>
         <Button type="button" disabled={busy || minutes === def} onClick={() => void save("")}>
-          Back to {spanText(def)}
+          {t("agents.backTo", { span: spanText(def) })}
         </Button>
-        <span className="meta">From {spanText(bounds[0])} to {spanText(bounds[1])}.</span>
+        <span className="meta">{t("agents.bounds", { from: spanText(bounds[0]), to: spanText(bounds[1]) })}</span>
       </form>
       {error && <p className="err" role="alert">{error}</p>}
     </div>
@@ -340,10 +403,11 @@ function About({ info }: { info: SettingsInfo }) {
 
 /** One project in About's lists: its name and folder, and whether it's read. */
 function AboutProject({ p, home }: { p: Project; home: string }) {
-  const note = p.hidden ? " (hidden, not read)" : !p.ok ? " (not a queue any more)" : "";
+  const path = <HomePath className="path" path={p.path} home={home} />;
+  const k = p.hidden ? "about.projectHidden" : !p.ok ? "about.projectGone" : "about.project";
   return (
     <li>
-      {p.name}: <HomePath className="path" path={p.path} home={home} />{note}
+      <Trans ns="shell" k={k} params={{ name: p.name }} components={{ path }} />
     </li>
   );
 }
@@ -355,40 +419,42 @@ export function AboutView({ info, projects, error = "" }: { info: SettingsInfo; 
   const found = projects?.filter((p) => p.source === "found") ?? [];
   const added = projects?.filter((p) => p.source === "added") ?? [];
   const where = `${homePath(info.base, info.home)}/<project>/tasks`;
+  const t = useT("shell");
+  const code = { code: <code /> };
   return (
     <div className="settings-sections">
       <section>
-        <h2>Version</h2>
+        <h2>{t("about.version")}</h2>
         <p>Muster {info.version}</p>
       </section>
       <section>
-        <h2>Fonts</h2>
-        <p>Persian text is drawn in Vazirmatn by Saber Rastikerdar, under the SIL Open Font License 1.1; the licence is in <code>Muster.app/Contents/Resources/fonts/Vazirmatn-OFL.txt</code>.</p>
+        <h2>{t("about.fonts")}</h2>
+        <p><Trans ns="shell" k="about.fontsLicence" params={{ file: "Muster.app/Contents/Resources/fonts/Vazirmatn-OFL.txt" }} components={code} /></p>
       </section>
       <section>
-        <h2>Settings on this Mac</h2>
+        <h2>{t("about.settings")}</h2>
         <p><HomePath className="path" path={info.configDir} home={info.home} /></p>
         <ul className="about-list">
-          <li><code>projects.json</code>: the projects you added or hid, their labels, categories, colours, gates and Your check limits, and the sidebar's order</li>
-          <li><code>settings.json</code>: the Claude accounts Muster reads, the claim lease, the LIVE window, whether notifications are on and whether the menu bar icon shows; the muster command reads it too</li>
-          <li><code>notified.json</code>: what Muster won't notify you of again: what it notified, and what you'd already seen (waiting at start or when notifications were turned on, or shown in the window in front)</li>
-          <li><code>helper/</code>: the helper's account, model and conversations</li>
+          <li><Trans ns="shell" k="about.projectsJson" params={{ file: "projects.json" }} components={code} /></li>
+          <li><Trans ns="shell" k="about.settingsJson" params={{ file: "settings.json" }} components={code} /></li>
+          <li><Trans ns="shell" k="about.notifiedJson" params={{ file: "notified.json" }} components={code} /></li>
+          <li><Trans ns="shell" k="about.helperDir" params={{ file: "helper/" }} components={code} /></li>
         </ul>
-        <p className="meta">Appearance, the display mode, text size, Group by, saved views and the pane's width are kept by the window itself, on this Mac.</p>
+        <p className="meta">{t("about.window")}</p>
       </section>
       <section>
-        <h2>What it reads</h2>
-        {error && <p className="err" role="alert">Can't read the projects: {error}</p>}
-        {projects === null && !error && <p className="none">Loading the projects…</p>}
+        <h2>{t("about.reads")}</h2>
+        {error && <p className="err" role="alert">{t("about.cantRead", { error })}</p>}
+        {projects === null && !error && <p className="none">{t("about.loading")}</p>}
         {projects && (
           <>
-            <p>Found on their own ({where} and one level deeper){found.length === 0 && ": none."}</p>
+            <p>{found.length === 0 ? t("about.foundNone", { where }) : t("about.found", { where })}</p>
             {found.length > 0 && (
               <ul className="about-list">
                 {found.map((p) => <AboutProject key={p.key} p={p} home={info.home} />)}
               </ul>
             )}
-            <p>Added by you{added.length === 0 && ": none. Add a queue kept anywhere else in Projects."}</p>
+            <p>{added.length === 0 ? t("about.addedNone") : t("about.added")}</p>
             {added.length > 0 && (
               <ul className="about-list">
                 {added.map((p) => <AboutProject key={p.key} p={p} home={info.home} />)}
@@ -399,11 +465,11 @@ export function AboutView({ info, projects, error = "" }: { info: SettingsInfo; 
         <ul className="about-list">
           {info.transcripts.length === 0 && <li>{ACCOUNTS_WORDS.transcriptsNone(info.settings.claudeAccounts.length)}</li>}
           {info.transcripts.map((f) => (
-            <li key={f}>{ACCOUNTS_WORDS.transcripts} <HomePath className="path" path={f} home={info.home} /></li>
+            <li key={f}><Trans ns="shell" k="about.transcripts" components={{ path: <HomePath className="path" path={f} home={info.home} /> }} /></li>
           ))}
-          {info.transcripts.length > 0 && <li>{ACCOUNTS_WORDS.transcriptsUnder} <HomePath className="path" path={info.transcriptsUnder} home={info.home} /></li>}
+          {info.transcripts.length > 0 && <li><Trans ns="shell" k="about.transcriptsUnder" components={{ path: <HomePath className="path" path={info.transcriptsUnder} home={info.home} /> }} /></li>}
         </ul>
-        <p className="meta">All of it is read on this Mac and nothing is sent anywhere. Only what you write to the helper goes out, to Anthropic, through your own Claude Code.</p>
+        <p className="meta">{t("about.private")}</p>
       </section>
     </div>
   );

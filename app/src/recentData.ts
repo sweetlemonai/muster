@@ -1,4 +1,5 @@
 import { isHuman } from "./human";
+import { fmt, tl, tn } from "./i18n";
 import { type RoleNames, stageHolders, stamp, stampMinutes, whoLine } from "./lib";
 import { isWork } from "./levels";
 import type { Task } from "./types";
@@ -46,11 +47,16 @@ export function finishes(tasks: Task[]): Finish[] {
 
 export type KindFilter = "all" | FinishKind;
 /** The kind chips above the list. */
-export const KIND_FILTERS: { id: KindFilter; label: string; title: string }[] = [
-  { id: "all", label: "All", title: "What landed on main and what you accepted" },
-  { id: "merged", label: "Merged", title: "Testing passed and the work landed on main" },
-  { id: "accepted", label: "Accepted", title: "Moved into Done: your Accept, or your own task done" },
-];
+export const KIND_FILTERS: { readonly id: KindFilter; readonly label: string; readonly title: string }[] = (["all", "merged", "accepted"] as const).map((id) => ({
+  id,
+  // In the language shown, each time they're read (shell.json, mu-146).
+  get label() {
+    return tn("shell", `recent.kind.${id}.label`);
+  },
+  get title() {
+    return tn("shell", `recent.kind.${id}.title`);
+  },
+}));
 export const RECENT_KEY = "muster.recentKind";
 const isKind = (v: unknown): v is KindFilter => KIND_FILTERS.some((k) => k.id === v);
 
@@ -78,18 +84,20 @@ export function storeKind(k: KindFilter, write: (v: string) => void = (v) => loc
 }
 
 const DAY = 1440;
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"] as const;
 
 /** The clock as wall-clock minutes, the count stamps are in (lib.ts stampMinutes). */
 const wallNow = (now: number) => stampMinutes(stamp(new Date(now * 1000)));
 
 /** A day (whole days since 1970 on the wall clock) as "Sun 11 Oct", with the year when it isn't
- *  `year`. Fixed English words, so it reads the same on every machine. */
+ *  `year`. The words are the language's own (shell.json `recent.date`), the same on every machine
+ *  whatever its region: not the Mac's date format. */
 function dateText(day: number, year: number): string {
   const d = new Date(day * DAY * 60000);
   const y = d.getUTCFullYear();
-  return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}${y === year ? "" : ` ${y}`}`;
+  const parts = { weekday: tn("shell", `recent.date.weekday.${WEEKDAYS[d.getUTCDay()]}`), day: d.getUTCDate(), month: tn("shell", `recent.date.month.${MONTHS[d.getUTCMonth()]}`) };
+  return y === year ? tn("shell", "recent.date.day", parts) : tn("shell", "recent.date.dayYear", { ...parts, year: fmt.number(y, { useGrouping: false }) });
 }
 const yearOf = (wall: number) => new Date(wall * 60000).getUTCFullYear();
 
@@ -101,13 +109,13 @@ export function whenText(at: string, now: number): string {
   const wall = wallNow(now);
   if (from === null || wall === null) return "";
   const m = Math.max(0, wall - from);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m} min ago`;
+  if (m < 1) return tl("time.justNow");
+  if (m < 60) return tl("time.minAgo", { count: m });
   const days = Math.floor(wall / DAY) - Math.floor(from / DAY);
-  if (days <= 0) return `${Math.floor(m / 60)} h ago`;
+  if (days <= 0) return tl("time.hAgo", { count: Math.floor(m / 60) });
   const time = at.slice(11);
-  if (days === 1) return `yesterday ${time}`;
-  return `${dateText(Math.floor(from / DAY), yearOf(wall))} ${time}`;
+  if (days === 1) return tn("shell", "recent.yesterdayAt", { time });
+  return tn("shell", "recent.dateAt", { date: dateText(Math.floor(from / DAY), yearOf(wall)), time });
 }
 
 /** A Done card's finish: "done 4 min ago" from its `doneAt`; else "done today", "done yesterday"
@@ -115,12 +123,14 @@ export function whenText(at: string, now: number): string {
 export function finishText(t: Pick<Task, "stage" | "doneAt" | "doneOn">, now: number): string {
   if (t.stage !== "done") return "";
   const when = whenText(t.doneAt, now);
-  if (when) return `done ${when}`;
+  if (when) return tn("shell", "recent.done", { when });
   const day = stampMinutes(`${t.doneOn} 00:00`);
   const wall = wallNow(now);
   if (day === null || wall === null) return "";
   const days = Math.floor(wall / DAY) - day / DAY;
-  return `done ${days <= 0 ? "today" : days === 1 ? "yesterday" : dateText(day / DAY, yearOf(wall))}`;
+  if (days <= 0) return tn("shell", "recent.doneToday");
+  if (days === 1) return tn("shell", "recent.doneYesterday");
+  return tn("shell", "recent.done", { when: dateText(day / DAY, yearOf(wall)) });
 }
 
 /** One day of the list: "Today", "Yesterday" or "Wed 7 Oct", and its rows, newest first. */
@@ -143,9 +153,21 @@ export function dayGroups(rows: Finish[], now: number, weeks: number): { groups:
     }
     const last = groups.at(-1);
     if (last && last.day === day) last.rows.push(r);
-    else groups.push({ day, label: day === today ? "Today" : day === today - 1 ? "Yesterday" : dateText(day, yearOf(wall)), rows: [r] });
+    else groups.push(dayGroup(day, today, yearOf(wall), r));
   }
   return { groups, older };
+}
+
+/** A day's group, its heading read in the language shown each time (the list keeps its groups
+ *  between polls). */
+function dayGroup(day: number, today: number, year: number, first: Finish): DayGroup {
+  return {
+    day,
+    get label() {
+      return day === today ? tn("shell", "recent.today") : day === today - 1 ? tn("shell", "recent.yesterday") : dateText(day, year);
+    },
+    rows: [first],
+  };
 }
 
 /** How many rows Recently finished's first week shows with its kind filter: its count in the row
@@ -158,7 +180,7 @@ export function weekCount(tasks: Task[], now: number, kind: KindFilter): number 
  *  531266d4", a role slot by its role's name now); "you" for the owner's own task; "" when the
  *  log doesn't say. */
 export function builtBy(t: Task, names: RoleNames = {}): string {
-  if (isHuman(t)) return "you";
+  if (isHuman(t)) return tn("shell", "recent.you");
   const who = stageHolders(t).find((h) => h.stage === "building")?.who ?? "";
   return who ? whoLine({ stage: "building", claimedBy: who, heldBy: "" }, names) : "";
 }

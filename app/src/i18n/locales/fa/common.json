@@ -1,0 +1,128 @@
+{
+  "sentences": "{{a}} {{b}}",
+  "loading": "در حال بارگذاری…",
+  "save": "ذخیره",
+  "cancel": "لغو",
+  "remove": "حذف",
+  "set": "تنظیم",
+  "on": "روشن",
+  "off": "خاموش",
+  "none": "هیچ‌کدام",
+  "all": "همه",
+  "you": "شما",
+  "agents": "ایجنت‌ها",
+  "fold": "جمع کردن",
+  "show": "نمایش",
+  "hide": "پنهان کردن",
+  "listSep": "، ",
+  "clauseSep": "؛ ",
+  "choice": {
+    "current": "{{label}}: {{value}}، برای تغییر کلیک کنید"
+  },
+  "pickFor": "انتخاب برای {{label}}",
+  "stage": {
+    "backlog": "بک‌لاگ",
+    "shaping": "شکل‌دهی",
+    "ready": "آماده",
+    "building": "در حال ساخت",
+    "testing": "در حال تست",
+    "your-check": "بررسی شما",
+    "done": "انجام شد"
+  },
+  "role": {
+    "backlog": "هر کسی",
+    "shaping": "ایجنت‌های محصول، فنی و رابط کاربری",
+    "ready": "آماده‌ی برداشتن",
+    "building": "ایجنت کدنویس",
+    "testing": "ایجنت تست",
+    "your-check": "مالک"
+  },
+  "priority": {
+    "high": "بالا",
+    "normal": "عادی",
+    "low": "پایین",
+    "word": "اولویت {{priority}}"
+  },
+  "kind": {
+    "code": "کد",
+    "bug": "باگ",
+    "chore": "کار جانبی",
+    "tech-debt": "بدهی فنی",
+    "spike": "اسپایک",
+    "design": "طراحی",
+    "docs": "مستندات",
+    "research": "پژوهش"
+  },
+  "flag": {
+    "blocked": "مسدود",
+    "needsYou": "نیاز به شما"
+  },
+  "groupBy": {
+    "label": "گروه‌بندی",
+    "none": "هیچ‌کدام",
+    "feature": "قابلیت",
+    "goal": "هدف"
+  },
+  "who": {
+    "all": "همه",
+    "human": "شما",
+    "ai": "ایجنت‌ها"
+  },
+  "youRibbon": {
+    "label": "شما",
+    "quiet": "ساکت",
+    "title": "تسک خود شما: فقط شما انجامش می‌دهید و ایجنت‌ها هرگز آن را برنمی‌دارند"
+  },
+  "sort": {
+    "priority": { "label": "اولویت", "title": "اول آنچه به شما نیاز دارد، بعد از اولویت بالا به پایین؛ در «انجام شد»، تازه‌ترین تمام‌شده اول" },
+    "newest": { "label": "جدیدترین", "title": "آخرین ثبت‌شده اول" },
+    "oldest": { "label": "قدیمی‌ترین", "title": "قدیمی‌ترین ثبت‌شده اول" },
+    "changed": { "label": "آخرین تغییر", "title": "تازه‌ترین تغییر اول" },
+    "estimate": { "label": "تخمین", "title": "کوچک‌ترین تخمین اول، بی‌تخمین‌ها آخر" },
+    "id": { "label": "شناسه", "title": "بر اساس شناسه" }
+  },
+  "time": {
+    "now": "اکنون",
+    "justNow": "لحظاتی پیش",
+    "min_one": "{{count}} دقیقه",
+    "min_other": "{{count}} دقیقه",
+    "h_one": "{{count}} ساعت",
+    "h_other": "{{count}} ساعت",
+    "d_one": "{{count}} روز",
+    "d_other": "{{count}} روز",
+    "join": "{{a}} و {{b}}",
+    "minAgo_one": "{{count}} دقیقه پیش",
+    "minAgo_other": "{{count}} دقیقه پیش",
+    "hAgo_one": "{{count}} ساعت پیش",
+    "hAgo_other": "{{count}} ساعت پیش",
+    "yesterday": "دیروز",
+    "daysAgo_one": "{{count}} روز پیش",
+    "daysAgo_other": "{{count}} روز پیش",
+    "noActivity": "بدون فعالیت"
+  },
+  "tokens_one": "{{count}} توکن",
+  "tokens_other": "{{count}} توکن",
+  "tokensShort": "{{amount}} توکن",
+  "estimate": "≈ {{parts}} مانده",
+  "estimateSome": "≈ {{parts}} مانده ({{est}} از {{open}} تسک باز تخمین دارد)",
+  "help": {
+    "on": "راهنما: {{topic}}",
+    "topic": {
+      "board": "بورد",
+      "table": "جدول",
+      "timeline": "خط زمانی",
+      "graph": "گراف",
+      "helper": "دستیار",
+      "projects": "پروژه‌ها",
+      "task-pane": "پنل تسک",
+      "note-pane": "یادداشت بک‌لاگ",
+      "new-task": "تسک جدید",
+      "appearance": "ظاهر",
+      "display": "نمایش",
+      "agents": "ایجنت‌ها",
+      "notifications": "اعلان‌ها",
+      "about": "درباره"
+    }
+  },
+  "splitter": "برای تغییر اندازه بکشید · دو بار کلیک برای اندازه‌ی پیش‌فرض · ← → وقتی فوکوس اینجاست (Shift: گام‌های بزرگ‌تر)"
+}

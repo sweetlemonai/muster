@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, type HelperInfo } from "./api";
 import { HELP_TOPICS } from "./helpTopics";
+import { tn } from "./i18n";
 import { headings } from "./manual";
 import inTheApp from "../../docs/manual/04-in-the-app.md?raw";
 import appSource from "./App.tsx?raw";
@@ -571,6 +572,14 @@ describe("the manual and Settings", () => {
     const slugs = headings(inTheApp).map((h) => h.slug);
     for (const s of ["settings", "appearance", "projects", "agents", "about"]) expect(slugs).toContain(s);
   });
+  // settings.json holds the language once one is picked (mu-146): About and the manual say so.
+  it("the manual has a Language section, and it and About list the language in settings.json", () => {
+    const slugs = headings(inTheApp).map((h) => h.slug);
+    expect(slugs).toContain("language");
+    expect(slugs.indexOf("language")).toBeLessThan(slugs.indexOf("appearance"));
+    expect(inTheApp).toMatch(/`settings\.json` \([^)]*the language, once you pick one[^)]*\)/);
+    expect(about(PROJECTS)).toMatch(/settings\.json : [^;]*the language, once you pick one/);
+  });
 });
 
 describe("Help lives only in the header (owner, 2026-10-13)", () => {
@@ -581,8 +590,9 @@ describe("Help lives only in the header (owner, 2026-10-13)", () => {
   });
   it("the header's Help tab still opens the manual, as the ? buttons do", () => {
     const header = /<header className="top">([\s\S]*?)<\/header>/.exec(appSource)?.[1] ?? "";
-    expect(header).toContain(`onClick={() => setView("help")}>Help</Pill>`);
-    expect(appSource).toMatch(/\{view === "help" && \(\s*<Suspense fallback=\{[^}]*\}>\s*<HelpView /);
+    expect(header).toContain(`onClick={() => setView("help")}>{t("app.view.help")}</Pill>`);
+    expect(tn("shell", "app.view.help")).toBe("Help");
+    expect(appSource).toMatch(/\{view === "help" && \(\s*<Suspense fallback=\{<p className="none">\{t\("common:loading"\)\}<\/p>\}>\s*<HelpView /);
     expect(appSource).toMatch(/const openHelp = useCallback\(\s*\(topic: HelpTopic\) => \{\s*setView\("help"\);/);
   });
   it("the manual's Settings section has no Help group: Help is the header's tab", () => {
@@ -595,8 +605,9 @@ describe("Appearance lives only in Settings (owner, 2026-10-13)", () => {
     vi.stubGlobal("window", { matchMedia: () => ({ matches: true }) });
     vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {} });
     const header = /<header className="top">([\s\S]*?)<\/header>/.exec(appSource)?.[1] ?? "";
-    expect(header).toContain(">Settings</Pill>");
-    expect(header).not.toMatch(/Appearance\s*<\/(button|Pill)>|<Appearance\w*/);
+    expect(header).toContain('>{t("app.view.settings")}</Pill>');
+    expect(tn("shell", "app.view.settings")).toBe("Settings");
+    expect(header).not.toMatch(/Appearance\s*<\/(button|Pill)>|<Appearance\w*|app\.view\.appearance/);
     expect(SETTINGS_GROUPS.some((g) => g.id === "appearance" && g.label === "Appearance")).toBe(true);
     expect(text(settings("appearance"))).toContain("Appearance ? Theme, accent, text size, cards");
     vi.unstubAllGlobals();

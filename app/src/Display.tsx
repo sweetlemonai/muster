@@ -1,14 +1,16 @@
+import { useT } from "./i18n";
 import { ELEMENTS, MODES, type DisplayMode } from "./modes";
 
 /** Settings' Display group (0038): the three modes as chips, the current one pressed, and every
  *  element that differs between them, side by side, the current mode's column marked. A pick
  *  applies at once and is remembered on this Mac. */
 export function DisplayModes({ mode, onMode }: { mode: DisplayMode; onMode: (m: DisplayMode) => void }) {
+  const t = useT("shell");
   return (
     <div className="settings-sections">
       <section>
-        <h2>Mode</h2>
-        <div className="modes" role="group" aria-label="Display mode">
+        <h2>{t("display.mode")}</h2>
+        <div className="modes" role="group" aria-label={t("display.modeAria")}>
           {MODES.map((m) => (
             <button key={m.id} type="button" className={m.id === mode ? "mode on" : "mode"} aria-pressed={m.id === mode} onClick={() => onMode(m.id)}>
               <b>{m.label}</b>
@@ -16,13 +18,10 @@ export function DisplayModes({ mode, onMode }: { mode: DisplayMode; onMode: (m: 
             </button>
           ))}
         </div>
-        <p className="meta">
-          ⌘. turns Focus on from any mode, and off again back to the mode you were in. The header's mode chip opens this page. In every mode, what waits
-          on you keeps its counts and its badge, and everything a mode folds is one click or key away.
-        </p>
+        <p className="meta">{t("display.modeMeta")}</p>
       </section>
       <section>
-        <h2>What each mode shows</h2>
+        <h2>{t("display.eachShows")}</h2>
         <table className="mode-table">
           <thead>
             <tr>
@@ -46,7 +45,7 @@ export function DisplayModes({ mode, onMode }: { mode: DisplayMode; onMode: (m: 
             ))}
           </tbody>
         </table>
-        <p className="meta">The colour code, the docked panes and where every control sits are the same in all three.</p>
+        <p className="meta">{t("display.same")}</p>
       </section>
     </div>
   );

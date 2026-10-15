@@ -430,3 +430,8 @@ export type LessonListing = {
   expiredOrRejected: number;
   file: string;
 };
+
+/** The language setting and what's in effect (mu-146, Drover's `LocaleInfo` without its agent
+ *  language): `language` is the setting, "" to follow macOS; `system` macOS's languages, first
+ *  first; `effective` the one the window and the menu bar show. */
+export type LocaleInfo = { language: string; system: string[]; effective: string };

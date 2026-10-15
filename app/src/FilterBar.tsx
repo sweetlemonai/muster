@@ -2,6 +2,7 @@ import { Fragment, useState, type ReactNode, type RefObject } from "react";
 import {
   activeItems, deleteView, GROUPS, groupValues, hiddenLine, isActive, removeFilter, sameQuery, saveView, toggleFilter, type DayContext, type Query, type SavedView,
 } from "./filters";
+import { useT } from "./i18n";
 import { BOARD_SORTS } from "./lib";
 import { useLook } from "./modes";
 import { searchBoxKey } from "./keys";
@@ -65,6 +66,7 @@ type Props = {
  *  Filters chip that opens them in place, and Focus leaves only a button until ⌘F, a search or a
  *  filter brings the bar back (0038). The active line shows whenever the bar does. */
 export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views, onViews, shown, total, hidden, estimate, arrange, searchRef, help, out = false, onSummon, onHide }: Props) {
+  const t = useT("shell");
   const [naming, setNaming] = useState<string | null>(null);
   const [unfolded, setUnfolded] = useState(false);
   const how = useLook("filters");
@@ -74,8 +76,8 @@ export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views,
   const forced = active || hidden > 0;
   if (how === "on-key" && !out && !forced) {
     return (
-      <div className="filter-bar summon" aria-label="Search and filters">
-        <Pill type="button" onClick={onSummon}>Search and filters <small>⌘F</small></Pill>
+      <div className="filter-bar summon" aria-label={t("filter.bar")}>
+        <Pill type="button" onClick={onSummon}>{t("filter.bar")} <small>⌘F</small></Pill>
         {help}
       </div>
     );
@@ -87,40 +89,40 @@ export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views,
     setNaming(null);
   };
   return (
-    <div className="filter-bar" aria-label="Search and filters">
+    <div className="filter-bar" aria-label={t("filter.bar")}>
       <div className="filters">
         <input
           type="search"
           className="search"
           ref={searchRef}
           value={query.search}
-          placeholder="Search id, title, text, tags, holder  ⌘F"
-          aria-label="Search tasks"
+          placeholder={t("filter.placeholder")}
+          aria-label={t("filter.searchAria")}
           spellCheck={false}
           onChange={(e) => set({ search: e.target.value })}
           onKeyDown={(e) => searchBoxKey(e, query.search, () => set({ search: "" }))}
         />
-        <span className="fgroup" role="group" aria-label="Saved views">
-          <span className="meta sep">Views</span>
+        <span className="fgroup" role="group" aria-label={t("filter.savedViews")}>
+          <span className="meta sep">{t("filter.views")}</span>
           {views.map((v) => {
             const on = sameQuery(v, query);
             return (
               <span key={v.name} className="view-item">
                 <Pill on={on} className="view" aria-pressed={on} onClick={() => onQuery({ search: v.search, filters: v.filters, sort: v.sort })}>{v.name}</Pill>
-                <button className="chip-x" aria-label={`Delete view ${v.name}`} title="Delete this saved view" onClick={() => onViews(deleteView(views, v.name))}>✕</button>
+                <button className="chip-x" aria-label={t("filter.deleteView", { name: v.name })} title={t("filter.deleteViewTitle")} onClick={() => onViews(deleteView(views, v.name))}>✕</button>
               </span>
             );
           })}
           {naming === null ? (
-            <Pill className="add" onClick={() => setNaming("")} title="Save the search, filters and sort under a name">+ Save view</Pill>
+            <Pill className="add" onClick={() => setNaming("")} title={t("filter.saveViewTitle")}>{t("filter.saveView")}</Pill>
           ) : (
             <span className="view-name">
               <input
                 autoFocus
                 value={naming}
                 maxLength={40}
-                placeholder="Name, e.g. My checks"
-                aria-label="Name for this view"
+                placeholder={t("filter.namePlaceholder")}
+                aria-label={t("filter.nameAria")}
                 onChange={(e) => setNaming(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") save();
@@ -130,24 +132,24 @@ export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views,
                   }
                 }}
               />
-              <Pill on onClick={save} disabled={!naming.trim()}>Save</Pill>
-              <Pill onClick={() => setNaming(null)}>Cancel</Pill>
+              <Pill on onClick={save} disabled={!naming.trim()}>{t("common:save")}</Pill>
+              <Pill onClick={() => setNaming(null)}>{t("common:cancel")}</Pill>
             </span>
           )}
         </span>
         {how === "folded" && (
-          <Pill type="button" on={unfolded} className="filters-fold" aria-expanded={unfolded} onClick={() => setUnfolded((u) => !u)} title="The filter groups and Sort, under the bar">
-            Filters{filterCount > 0 && <> <b className="count">{filterCount}</b></>}
+          <Pill type="button" on={unfolded} className="filters-fold" aria-expanded={unfolded} onClick={() => setUnfolded((u) => !u)} title={t("filter.filtersTitle")}>
+            {t("filter.filters")}{filterCount > 0 && <> <b className="count">{filterCount}</b></>}
           </Pill>
         )}
         {/* Group by pushes itself right (`.group-by`); without it, the count does. */}
         {arrange}
         <span className={arrange ? "meta" : "meta right"}>
           {estimate && <span className="est-total">{estimate} · </span>}
-          {shown === total ? `${total} tasks` : `${shown} of ${total} tasks`}
+          {shown === total ? t("filter.tasks", { count: total }) : t("filter.shownOf", { shown, count: total })}
         </span>
         {how === "on-key" && !forced && (
-          <Pill type="button" onClick={onHide} title="Put the bar away again: ⌘F brings it back">Hide</Pill>
+          <Pill type="button" onClick={onHide} title={t("filter.hideTitle")}>{t("common:hide")}</Pill>
         )}
         {help}
       </div>
@@ -171,8 +173,8 @@ export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views,
           );
         })}
         {sortable && (
-          <span className="fgroup" role="group" aria-label="Sort each column">
-            <span className="meta sep">Sort</span>
+          <span className="fgroup" role="group" aria-label={t("filter.sortAria")}>
+            <span className="meta sep">{t("filter.sort")}</span>
             {BOARD_SORTS.map((s) => (
               <Pill key={s.id} on={query.sort === s.id} aria-pressed={query.sort === s.id} title={s.title} onClick={() => set({ sort: s.id })}>
                 {s.label}
@@ -181,7 +183,7 @@ export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views,
           </span>
         )}
       </div>}
-      <div className="active-line" aria-label="Active filters">
+      <div className="active-line" aria-label={t("filter.active")}>
         {active ? (
           <>
             {items.map((it, i) => (
@@ -191,7 +193,7 @@ export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views,
                   {it.label}
                   <button
                     className="chip-x"
-                    aria-label={`Remove ${it.label}`}
+                    aria-label={t("filter.remove", { label: it.label })}
                     onClick={() => set(it.group === "search" ? { search: "" } : { filters: removeFilter(query.filters, it.group, it.value) })}
                   >
                     ✕
@@ -200,10 +202,10 @@ export default function FilterBar({ tasks, query, onQuery, ctx, sortable, views,
               </Fragment>
             ))}
             <span className={hidden > 0 ? "hidden-count some" : "hidden-count"}>{hiddenLine(hidden, true)}</span>
-            <Pill onClick={() => set({ search: "", filters: {} })}>Clear all</Pill>
+            <Pill onClick={() => set({ search: "", filters: {} })}>{t("filter.clearAll")}</Pill>
           </>
         ) : (
-          <span className="meta">No filters: every task shows</span>
+          <span className="meta">{t("filter.none")}</span>
         )}
       </div>
     </div>

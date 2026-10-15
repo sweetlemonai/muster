@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from "react";
+import { tl } from "./i18n";
 import { backlogColumn, noteKey } from "./Backlog";
 import { boardColumn, type BoardSort, columns, key, STAGES } from "./lib";
 import { taskKey } from "./taskKey";
@@ -17,7 +18,7 @@ import { PausedBand } from "./PausedLane";
 
 /** Group by: None · Feature · Goal, on screen above the board and the table, the current one lit. */
 export function GroupByChips({ value, onChange }: { value: GroupBy; onChange: (g: GroupBy) => void }) {
-  return <ChoiceChips label="Group by" className="group-by" aria="Group by" value={value} options={GROUP_BYS} onPick={onChange} />;
+  return <ChoiceChips label={tl("groupBy.label")} className="group-by" aria={tl("groupBy.label")} value={value} options={GROUP_BYS} onPick={onChange} />;
 }
 
 /** A band's heading: the feature or goal (click to open it), the stage its tasks give it, its

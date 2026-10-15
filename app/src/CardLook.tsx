@@ -1,4 +1,5 @@
 import { useContext } from "react";
+import { tl, tn } from "./i18n";
 import { priorityName, stageLabel } from "./lib";
 import { Machine } from "./settingsData";
 import { CARD_LOOKS, type CardColour, type CardLook } from "./themes";
@@ -17,11 +18,11 @@ export function cardClass(t: Pick<Task, "priority" | "blocked" | "blockedKind" |
 /** The band the Top bar look shows (0026): what the card's colour means, by stage or by priority.
  *  Hidden in the other looks; the column, badges and priority chip say the same in words. */
 export function CardBand({ t }: { t: Pick<Task, "stage" | "blocked" | "blockedKind" | "waitingForOwner" | "priority"> }) {
-  const flag = t.blocked || (t.blockedKind && t.blockedKind !== "tasks") ? "Blocked" : t.waitingForOwner ? "Needs you" : "";
+  const flag = t.blocked || (t.blockedKind && t.blockedKind !== "tasks") ? tl("flag.blocked") : t.waitingForOwner ? tl("flag.needsYou") : "";
   return (
     <span className="card-band" aria-hidden="true">
       <span className="by-stage">{flag || stageLabel(t.stage)}</span>
-      <span className="by-pri">{flag || `${priorityName(t.priority)} priority`}</span>
+      <span className="by-pri">{flag || tl("priority.word", { priority: tl(`priority.${priorityName(t.priority)}`) })}</span>
     </span>
   );
 }
@@ -39,10 +40,10 @@ type Sample = { stage: string; title: string; priority: string; blocked?: boolea
 /** What each preview shows: a plain card, one waiting on the owner, a blocked one, and one of the
  *  owner's own with its You ribbon (0022). */
 export const SAMPLES: Sample[] = [
-  { stage: "building", title: "Board flickers on resize", priority: "high" },
-  { stage: "your-check", title: "Try the new header", priority: "normal", needsYou: true },
-  { stage: "ready", title: "Graph view", priority: "low", blocked: true },
-  { stage: "ready", title: "Buy the domain", priority: "normal", human: true },
+  { stage: "building", get title() { return tn("shell", "appearance.sample.flicker"); }, priority: "high" },
+  { stage: "your-check", get title() { return tn("shell", "appearance.sample.header"); }, priority: "normal", needsYou: true },
+  { stage: "ready", get title() { return tn("shell", "appearance.sample.graph"); }, priority: "low", blocked: true },
+  { stage: "ready", get title() { return tn("shell", "appearance.sample.domain"); }, priority: "normal", human: true },
 ];
 
 /** A small, live preview of a card look: the same classes as the board, so it can't drift. */
@@ -72,11 +73,11 @@ export function CardLookPicker({ look, colour, onLook, onColour }: { look: CardL
           </button>
         ))}
       </div>
-      <div className="look-colour" role="group" aria-label="Card colour shows">
-        <span className="meta">Colour shows</span>
+      <div className="look-colour" role="group" aria-label={tn("shell", "appearance.colourShowsAria")}>
+        <span className="meta">{tn("shell", "appearance.colourShows")}</span>
         {(["stage", "priority"] as const).map((c) => (
           <Pill key={c} type="button" on={colour === c} onClick={() => onColour(c)} aria-pressed={colour === c}>
-            {c === "stage" ? "Stage" : "Priority"}
+            {tn("shell", `appearance.colourBy.${c}`)}
           </Pill>
         ))}
       </div>

@@ -1,3 +1,4 @@
+import { tl } from "./i18n";
 import { priorityName, stageRank } from "./lib";
 import type { Task } from "./types";
 
@@ -62,11 +63,13 @@ export function waitingForYou(tasks: Task[]): Task[] {
 
 /** The Who chips on the Board, Table and Timeline: both kinds, the owner's own tasks, or the agents'. */
 export type ForFilter = "human" | "ai" | "all";
-export const FOR_FILTERS: { id: ForFilter; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "human", label: "You" },
-  { id: "ai", label: "Agents" },
-];
+export const FOR_FILTERS: { readonly id: ForFilter; readonly label: string }[] = (["all", "human", "ai"] as const).map((id) => ({
+  id,
+  // In the language shown (common.json, mu-146).
+  get label() {
+    return tl(`who.${id}`);
+  },
+}));
 export const FOR_KEY = "muster.forFilter";
 /** A remembered filter; All for anything else. */
 export const parseForFilter = (v: string | null): ForFilter => (v === "human" || v === "ai" ? v : "all");

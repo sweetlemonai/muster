@@ -1,0 +1,17 @@
+{
+  "tray": {
+    "show": "Show Muster",
+    "quit": "Quit Muster",
+    "reading": "Reading the queues…",
+    "nothing": "Nothing waits for you",
+    "waiting_one": "{{count}} thing waits for you",
+    "waiting_other": "{{count}} things wait for you",
+    "tooltip": "Muster",
+    "tooltipNothing": "Muster · nothing waits for you",
+    "tooltipWaiting_one": "Muster · {{count}} thing waits for you",
+    "tooltipWaiting_other": "Muster · {{count}} things wait for you"
+  },
+  "list": {
+    "separator": ", "
+  }
+}

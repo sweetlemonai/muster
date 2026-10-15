@@ -1,17 +1,19 @@
+import { tl } from "./i18n";
 import { keyOf, taskKey } from "./taskKey";
 import type { Activity, Checkin, Question, Task } from "./types";
 
 /** The stages a task moves through, in order, with who works each by default. Mirrors the core's
  *  STAGES, stage_label and stage_role (queue.rs); its tests pin the same order. The core leaves
- *  Ready's role empty because nobody holds it; here it says so. */
+ *  Ready's role empty because nobody holds it; here it says so. The words are read in the language
+ *  shown each time (common.json, mu-146), so they follow a switch. */
 export const STAGES = [
-  { id: "backlog", label: "Backlog", role: "anyone" },
-  { id: "shaping", label: "Shaping", role: "product + tech + UI agents" },
-  { id: "ready", label: "Ready", role: "claimable" },
-  { id: "building", label: "Building", role: "code agent" },
-  { id: "testing", label: "Testing", role: "QA agent" },
-  { id: "your-check", label: "Your check", role: "owner" },
-  { id: "done", label: "Done", role: "" },
+  { id: "backlog", get label() { return tl("stage.backlog"); }, get role() { return tl("role.backlog"); } },
+  { id: "shaping", get label() { return tl("stage.shaping"); }, get role() { return tl("role.shaping"); } },
+  { id: "ready", get label() { return tl("stage.ready"); }, get role() { return tl("role.ready"); } },
+  { id: "building", get label() { return tl("stage.building"); }, get role() { return tl("role.building"); } },
+  { id: "testing", get label() { return tl("stage.testing"); }, get role() { return tl("role.testing"); } },
+  { id: "your-check", get label() { return tl("stage.your-check"); }, get role() { return tl("role.your-check"); } },
+  { id: "done", get label() { return tl("stage.done"); }, role: "" },
 ] as const;
 export type Stage = (typeof STAGES)[number];
 export type StageId = Stage["id"];
@@ -421,14 +423,15 @@ export function columns(tasks: Task[], by: BoardSort = "priority"): Record<strin
 
 export type BoardSort = "priority" | "newest" | "oldest" | "changed" | "estimate" | "id";
 /** The board's orders within each column, as chips. The Table sorts by its columns instead. */
-export const BOARD_SORTS: { id: BoardSort; label: string; title: string }[] = [
-  { id: "priority", label: "priority", title: "What needs you first, then high to low; Done newest finished first" },
-  { id: "newest", label: "newest", title: "Latest captured first" },
-  { id: "oldest", label: "oldest", title: "Earliest captured first" },
-  { id: "changed", label: "changed", title: "Latest changed first" },
-  { id: "estimate", label: "estimate", title: "Smallest estimate first, not estimated last" },
-  { id: "id", label: "id", title: "By id" },
-];
+export const BOARD_SORTS: { readonly id: BoardSort; readonly label: string; readonly title: string }[] = (["priority", "newest", "oldest", "changed", "estimate", "id"] as const).map((id) => ({
+  id,
+  get label() {
+    return tl(`sort.${id}.label`);
+  },
+  get title() {
+    return tl(`sort.${id}.title`);
+  },
+}));
 export const isBoardSort = (s: unknown): s is BoardSort => BOARD_SORTS.some((x) => x.id === s);
 
 const rank = (t: Task) => PRIORITY[t.priority] ?? 1;
@@ -465,10 +468,10 @@ export function sortBoard(tasks: Task[], by: BoardSort): Task[] {
 /** "now", "5 min", "3 h", "2 d". */
 export function ago(now: number, at: number): string {
   const s = Math.max(0, now - at);
-  if (s < 60) return "now";
-  if (s < 3600) return `${Math.floor(s / 60)} min`;
-  if (s < 86400) return `${Math.floor(s / 3600)} h`;
-  return `${Math.floor(s / 86400)} d`;
+  if (s < 60) return tl("time.now");
+  if (s < 3600) return tl("time.min", { count: Math.floor(s / 60) });
+  if (s < 86400) return tl("time.h", { count: Math.floor(s / 3600) });
+  return tl("time.d", { count: Math.floor(s / 86400) });
 }
 
 /** Local time as the file contract writes it: YYYY-MM-DD HH:MM. */
@@ -532,18 +535,18 @@ export function fileName(f: { name: string; type: string }, i: number, stampText
 /** "14 h", "2 d 3 h" (8-hour agent days, as the core counts them), "45 min". */
 export function fmtMinutes(m: number): string {
   if (m <= 0) return "";
-  if (m < 60) return `${m} min`;
+  if (m < 60) return tl("time.min", { count: m });
   const h = Math.round(m / 6) / 10;
-  if (h < 8) return `${h} h`;
+  if (h < 8) return tl("time.h", { count: h });
   const d = Math.floor(h / 8), rest = Math.round((h - d * 8) * 10) / 10;
-  return rest ? `${d} d ${rest} h` : `${d} d`;
+  return rest ? tl("time.join", { a: tl("time.d", { count: d }), b: tl("time.h", { count: rest }) }) : tl("time.d", { count: d });
 }
 /** "3.2M tokens", "450k tokens". */
 export function fmtTokens(n: number): string {
   if (n <= 0) return "";
-  if (n >= 1e6) return `${(Math.round(n / 1e5) / 10).toString()}M tokens`;
-  if (n >= 1e3) return `${Math.round(n / 1e3)}k tokens`;
-  return `${n} tokens`;
+  if (n >= 1e6) return tl("tokensShort", { amount: `${(Math.round(n / 1e5) / 10).toString()}M` });
+  if (n >= 1e3) return tl("tokensShort", { amount: `${Math.round(n / 1e3)}k` });
+  return tl("tokens", { count: n });
 }
 /** Totals of what's shown: "≈ 14 h · 3.2M tokens (9 of 24 estimated)". Time is agent time plus
  *  test time. */
@@ -553,7 +556,7 @@ export function estimateTotal(tasks: { estMinutes: number; estTestMinutes: numbe
   if (!est.length) return "";
   const m = est.reduce((a, t) => a + t.estMinutes + t.estTestMinutes, 0), k = est.reduce((a, t) => a + t.estTokenCount, 0);
   const parts = [fmtMinutes(m), fmtTokens(k)].filter(Boolean).join(" · ");
-  return `≈ ${parts} left${est.length < open.length ? ` (${est.length} of ${open.length} open tasks estimated)` : ""}`;
+  return est.length < open.length ? tl("estimateSome", { parts, est: est.length, open: open.length }) : tl("estimate", { parts });
 }
 /** A token count, short and without the word: "1.2M", "70k", "3.5k", "900". */
 export function shortTokens(n: number): string {

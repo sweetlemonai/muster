@@ -1,12 +1,13 @@
 //! Per-machine settings that both the app and `muster` read (task 0036): the claim lease, the
 //! LIVE window, whether Mac notifications are on (0052), whether the menu bar icon is (0085) and the
-//! Claude accounts Muster reads (0099, `accounts`); and one only the app reads, whether
-//! it has offered to turn the old pauses into pauses (0059), so it offers once. Saved as
+//! Claude accounts Muster reads (0099, `accounts`); and ones only the app reads: the language
+//! (mu-146), and whether it has offered to turn the old pauses into pauses (0059), so it offers
+//! once. Saved as
 //! `settings.json` beside `projects.json` in the app's config folder
 //! (`~/Library/Application Support/ai.sweetlemon.muster/`). A missing or broken file, or a value
 //! out of bounds, reads as the default, field by field: a bad setting never stops the tools.
 
-use crate::{accounts, ops, queue, transcripts};
+use crate::{accounts, i18n, ops, queue, transcripts};
 use serde::Serialize;
 use std::fs;
 use std::path::Path;
@@ -42,6 +43,11 @@ pub struct Settings {
     /// The Claude accounts Muster reads (0099): labels, `mg` for `~/.claude-mg`, each valid
     /// (`accounts::is_label`), once. Never `~/.claude`. Empty: no account is read.
     pub claude_accounts: Vec<String>,
+    /// The language picked in Settings (mu-146, `i18n::LOCALES`); None follows macOS's language
+    /// for Muster (`i18n::resolve`). Written only when picked, so a file from before it is the
+    /// same file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lang: Option<&'static str>,
 }
 
 impl Default for Settings {
@@ -53,6 +59,7 @@ impl Default for Settings {
             menu_bar: true,
             old_pauses_offered: false,
             claude_accounts: accounts::default_labels(),
+            lang: None,
         }
     }
 }
@@ -95,6 +102,10 @@ pub fn load(file: &Path) -> Settings {
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(d.old_pauses_offered),
         claude_accounts: account_labels(v.get("claudeAccounts")).unwrap_or(d.claude_accounts),
+        lang: v
+            .get("lang")
+            .and_then(serde_json::Value::as_str)
+            .and_then(i18n::stored),
     }
 }
 
@@ -195,15 +206,29 @@ fn minutes(input: &str, what: &str) -> Result<u64, String> {
 }
 
 /// Change one setting, `lease` or `live`, to a span like `12h` or `5m` (empty is the default),
-/// checked against its bounds, `notify` or `menu-bar` to `on` or `off` (empty is on), or
-/// `old-pauses-offered`
-/// to `yes` or `no` (empty is no), or `claude-accounts` to a list of labels (`mg, hg`; empty
-/// reads no account), and save. Returns the settings now in force.
+/// checked against its bounds, `notify` or `menu-bar` to `on` or `off` (empty is on),
+/// `old-pauses-offered` to `yes` or `no` (empty is no), `claude-accounts` to a list of labels
+/// (`mg, hg`; empty reads no account), or `lang` to a language Muster has (empty follows
+/// macOS), and save. Returns the settings now in force.
 pub fn set(file: &Path, name: &str, value: &str) -> Result<Settings, String> {
     if name == "claude-accounts" {
         let labels = parse_accounts(value)?;
         let mut s = load(file);
         s.claude_accounts = labels;
+        save(file, &s)?;
+        return Ok(s);
+    }
+    if name == "lang" {
+        let code = value.trim();
+        if !i18n::valid_setting(code) {
+            let code: String = code.chars().take(24).collect();
+            return Err(format!(
+                "no language {code:?}: {}, or empty to follow macOS",
+                i18n::LOCALES.join(" or ")
+            ));
+        }
+        let mut s = load(file);
+        s.lang = i18n::stored(code);
         save(file, &s)?;
         return Ok(s);
     }
@@ -489,6 +514,7 @@ mod tests {
                 menu_bar: true,
                 old_pauses_offered: false,
                 claude_accounts: vec!["mg".into(), "hg".into()],
+                lang: None,
             }
         );
         set(&f, "old-pauses-offered", "yes").unwrap();
@@ -616,6 +642,84 @@ mod tests {
             fs::write(&f, text).unwrap();
             assert_eq!(load(&f).claude_accounts, want, "{text}");
         }
+    }
+
+    #[test]
+    fn the_language_follows_macos_until_picked_and_an_old_file_loads() {
+        let d = tempfile::tempdir().unwrap();
+        let f = file(&d);
+        assert_eq!(Settings::default().lang, None, "unset: macOS's language");
+        assert_eq!(load(&f).lang, None, "no file");
+        // A file from before the language (mu-146): everything it has, the language unset.
+        fs::create_dir_all(f.parent().unwrap()).unwrap();
+        fs::write(
+            &f,
+            r#"{"leaseMinutes":120,"liveMinutes":10,"notify":false,"menuBar":true,"oldPausesOffered":true}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            load(&f),
+            Settings {
+                lease_minutes: 120,
+                live_minutes: 10,
+                notify: false,
+                menu_bar: true,
+                old_pauses_offered: true,
+                claude_accounts: vec!["mg".into(), "hg".into()],
+                lang: None,
+            }
+        );
+        // Picked, saved and read back, with the others kept.
+        let now = set(&f, "lang", "fa").unwrap();
+        assert_eq!(
+            (now.lang, now.lease_minutes, now.notify),
+            (Some("fa"), 120, false)
+        );
+        assert_eq!(load(&f), now, "remembered");
+        assert!(fs::read_to_string(&f).unwrap().contains("\"lang\": \"fa\""));
+        // Changing another setting keeps it.
+        assert_eq!(set(&f, "live", "5m").unwrap().lang, Some("fa"));
+        assert_eq!(set(&f, "lang", " en ").unwrap().lang, Some("en"));
+        // Empty goes back to following macOS, and the file says nothing of it.
+        assert_eq!(set(&f, "lang", "").unwrap().lang, None);
+        assert!(!fs::read_to_string(&f).unwrap().contains("lang"));
+        // Only a language Muster has.
+        set(&f, "lang", "fa").unwrap();
+        let before = fs::read_to_string(&f).unwrap();
+        assert_eq!(
+            set(&f, "lang", "de").unwrap_err(),
+            "no language \"de\": en or fa, or empty to follow macOS"
+        );
+        assert!(set(&f, "lang", "fa-IR").is_err());
+        assert_eq!(
+            fs::read_to_string(&f).unwrap(),
+            before,
+            "refused: unchanged"
+        );
+        // A value that isn't one reads as unset, field by field.
+        for bad in [
+            r#"{"lang": "de", "liveMinutes": 9}"#,
+            r#"{"lang": 3, "liveMinutes": 9}"#,
+            r#"{"lang": null, "liveMinutes": 9}"#,
+            r#"{"lang": "FA", "liveMinutes": 9}"#,
+        ] {
+            fs::write(&f, bad).unwrap();
+            assert_eq!((load(&f).lang, load(&f).live_minutes), (None, 9), "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_language_is_sent_only_when_picked() {
+        assert!(!serde_json::to_string(&Settings::default())
+            .unwrap()
+            .contains("lang"));
+        let fa = Settings {
+            lang: Some("fa"),
+            ..Settings::default()
+        };
+        assert!(serde_json::to_string(&fa)
+            .unwrap()
+            .ends_with(r#""oldPausesOffered":false,"claudeAccounts":["mg","hg"],"lang":"fa"}"#));
     }
 
     #[test]

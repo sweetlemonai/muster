@@ -8,7 +8,9 @@
 //! images are template images (black and alpha), so macOS tints them for a light or dark menu bar;
 //! the waiting one fills in the antennas' tips, and the status item's title puts the number right
 //! of the head in the menu bar's own font and tint, so waiting isn't told apart by colour alone.
-//! The title, the tooltip and the menu name a count, never a task's text.
+//! The title, the tooltip and the menu name a count, never a task's text. Their words are in the
+//! language in effect (`i18n`, `native.json`'s `tray`, mu-146), and are set again when it changes
+//! (`MenuBar::retext`); the title keeps Western digits in every language, like the Dock badge.
 
 use std::sync::Mutex;
 
@@ -16,6 +18,8 @@ use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
+
+use crate::i18n;
 
 /// The tray icon's id: there's only ever this one.
 pub const ID: &str = "muster";
@@ -47,12 +51,17 @@ pub fn look(n: usize) -> Look {
     }
 }
 
-/// The count in words, as the menu says it.
+/// A count as the plural forms take it (`usize` is at most 64 bits on every target).
+fn count(n: usize) -> u64 {
+    u64::try_from(n).unwrap_or(u64::MAX)
+}
+
+/// The count in words, as the menu says it, in the language in effect (mu-146:
+/// `native.json`'s `tray`, through `i18n`).
 pub fn words(n: usize) -> String {
     match n {
-        0 => "Nothing waits for you".into(),
-        1 => "1 thing waits for you".into(),
-        n => format!("{n} things wait for you"),
+        0 => i18n::t("tray.nothing"),
+        n => i18n::t_count("tray.waiting", count(n), &[]),
     }
 }
 
@@ -69,13 +78,16 @@ pub fn title(n: usize) -> String {
 /// The tooltip for `n`, or for no read yet.
 pub fn tooltip(n: Option<usize>) -> String {
     match n {
-        Some(n) => format!("Muster · {}", words(n).to_lowercase()),
-        None => "Muster".into(),
+        Some(0) => i18n::t("tray.tooltipNothing"),
+        Some(n) => i18n::t_count("tray.tooltipWaiting", count(n), &[]),
+        None => i18n::t("tray.tooltip"),
     }
 }
 
 /// What the menu says before the first read has a count.
-pub const READING: &str = "Reading the queues…";
+pub fn reading() -> String {
+    i18n::t("tray.reading")
+}
 
 /// Everything the menu bar shows for one count.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -170,6 +182,14 @@ impl MenuBar {
         }
     }
 
+    /// The language changed (mu-146): the menu, the tooltip and the count's words are set again
+    /// in it, now when the icon shows, else when it's shown again. Before the first read there's
+    /// no count to set, and the first read sets it in the new language.
+    pub fn retext(&self, on: bool, bar: &impl Bar) {
+        self.seen().shown = None;
+        self.sync(on, None, bar);
+    }
+
     /// The state behind the lock. Nothing panics while holding it, but a poisoned lock still
     /// holds plain values, so it's used as is.
     fn seen(&self) -> std::sync::MutexGuard<'_, Seen> {
@@ -186,7 +206,7 @@ impl Bar for Tray<'_> {
     }
 
     fn make(&self) -> bool {
-        let Ok(menu) = menu(self.0, READING) else {
+        let Ok(menu) = menu(self.0, &reading()) else {
             return false;
         };
         // Tauri registers the handlers only once the icon exists, so a failed make leaves none.
@@ -240,15 +260,28 @@ impl Bar for Tray<'_> {
     }
 }
 
-/// The menu: Show Muster, the count in words (not a button), Quit Muster.
+/// The menu's items in the language in effect, by id, with their text and whether each can be
+/// picked: Show Muster, the count in words (not a button), Quit Muster.
+pub fn items(count: &str) -> [(&'static str, String, bool); 3] {
+    [
+        (SHOW, i18n::t("tray.show"), true),
+        (COUNT, count.to_string(), false),
+        (QUIT, i18n::t("tray.quit"), true),
+    ]
+}
+
+/// The menu: `items`, with a separator before Quit.
 fn menu(app: &AppHandle, count: &str) -> tauri::Result<Menu<tauri::Wry>> {
+    let [show, words, quit] = items(count);
+    let item =
+        |(id, text, on): (&str, String, bool)| MenuItem::with_id(app, id, text, on, None::<&str>);
     Menu::with_items(
         app,
         &[
-            &MenuItem::with_id(app, SHOW, "Show Muster", true, None::<&str>)?,
-            &MenuItem::with_id(app, COUNT, count, false, None::<&str>)?,
+            &item(show)?,
+            &item(words)?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, QUIT, "Quit Muster", true, None::<&str>)?,
+            &item(quit)?,
         ],
     )
 }
@@ -367,6 +400,72 @@ mod tests {
         m.sync(true, Some(2), &bar);
         m.sync(true, Some(2), &bar);
         assert_eq!(bar.titles.borrow()[5..], ["2", "2"]);
+    }
+
+    #[test]
+    fn the_menu_speaks_english() {
+        crate::i18n::stub::app("en", || {
+            assert_eq!(
+                items("2 things wait for you"),
+                [
+                    (SHOW, "Show Muster".to_string(), true),
+                    (COUNT, "2 things wait for you".to_string(), false),
+                    (QUIT, "Quit Muster".to_string(), true),
+                ]
+            );
+            assert_eq!(reading(), "Reading the queues…");
+            assert_eq!(words(1), "1 thing waits for you");
+            assert_eq!(tooltip(None), "Muster");
+        });
+    }
+
+    #[test]
+    fn the_menu_speaks_persian_with_persian_digits_and_the_title_keeps_western_ones() {
+        crate::i18n::stub::app("fa", || {
+            let s = shows(3);
+            assert_eq!(s.menu, "۳ مورد منتظر شماست");
+            assert_eq!(s.tooltip, "Muster · ۳ مورد منتظر شماست");
+            // Beside the head, like the Dock badge: the number as macOS shows it there.
+            assert_eq!(s.title, "3");
+            assert_eq!(words(0), "چیزی منتظر شما نیست");
+            assert_eq!(words(1), "۱ مورد منتظر شماست");
+            assert_eq!(tooltip(Some(0)), "Muster · چیزی منتظر شما نیست");
+            assert_eq!(tooltip(None), "Muster");
+            assert_eq!(reading(), "در حال خواندن صف‌ها…");
+            assert_eq!(
+                items(&s.menu),
+                [
+                    (SHOW, "نمایش Muster".to_string(), true),
+                    (COUNT, "۳ مورد منتظر شماست".to_string(), false),
+                    (QUIT, "خروج از Muster".to_string(), true),
+                ]
+            );
+        });
+    }
+
+    #[test]
+    fn a_language_change_sets_the_menu_again_now_or_when_shown() {
+        let (m, bar) = (MenuBar::default(), Fake::default());
+        m.sync(true, Some(2), &bar);
+        assert_eq!(bar.took(), ["make", "set 2"]);
+        // The same count would set nothing; a new language sets it again, in that language.
+        m.retext(true, &bar);
+        assert_eq!(bar.took(), ["set 2"]);
+        m.sync(true, Some(2), &bar);
+        assert!(bar.took().is_empty());
+        // While the icon is off, the change waits for it to come back.
+        m.sync(false, None, &bar);
+        assert_eq!(bar.took(), ["hide"]);
+        m.retext(false, &bar);
+        assert!(bar.took().is_empty(), "a hidden icon isn't touched");
+        m.sync(true, None, &bar);
+        assert_eq!(bar.took(), ["show", "set 2"]);
+        // Before the first read there's no count to set: the first read sets it.
+        let (fresh, bar) = (MenuBar::default(), Fake::default());
+        fresh.retext(true, &bar);
+        assert_eq!(bar.took(), ["make"]);
+        fresh.sync(true, Some(0), &bar);
+        assert_eq!(bar.took(), ["set 0"]);
     }
 
     #[test]

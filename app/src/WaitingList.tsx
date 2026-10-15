@@ -4,6 +4,7 @@ import BlockWhy from "./BlockWhy";
 import { BLOCK_LOOKS, blockWords } from "./blockWords";
 import EffortGroups from "./EffortGroups";
 import { humanColumn, isHuman } from "./human";
+import { tn, useT } from "./i18n";
 import { key, stamp } from "./lib";
 import LessonsWaiting, { lessonsWaiting } from "./Lessons";
 import { taskKey } from "./taskKey";
@@ -45,19 +46,20 @@ export default function WaitingList({ tasks, multi, openKey, onOpen, onChanged, 
   const asked = batch.reduce((n, t) => n + t.questions.filter(openEscalated).length, 0);
   const rest = tasks.filter((t) => !inCheck(t) && !fromShaping(t)).sort((a, b) => waitRank(a) - waitRank(b));
   const item = (t: Task) => <WaitingItem key={key(t)} t={t} now={now} multi={multi} active={openKey === key(t)} onOpen={onOpen} onChanged={onChanged} />;
+  const w = useT("shell");
   return (
     <main className="list waiting-list">
       <LessonsWaiting queues={queues} queue={queue} onChanged={onChanged} />
-      {tasks.length === 0 && lessonsWaiting(queues, queue) === 0 && <p className="empty">Nothing is waiting for you.</p>}
+      {tasks.length === 0 && lessonsWaiting(queues, queue) === 0 && <p className="empty">{w("waiting.nothing")}</p>}
       {batch.length > 0 && (
-        <div className="effort-group effort-other from-shaping" role="group" aria-label="From shaping">
-          <h3 className="effort-head">From shaping: {counted(asked, batch.length)}</h3>
+        <div className="effort-group effort-other from-shaping" role="group" aria-label={w("waiting.fromShaping")}>
+          <h3 className="effort-head">{w("waiting.fromShapingHead", { counted: counted(asked, batch.length) })}</h3>
           {batch.map(item)}
         </div>
       )}
       {rest.length > 0 && (
-        <div className="effort-group effort-other" role="group" aria-label="Questions, blocks and your own tasks">
-          <h3 className="effort-head">Questions, blocks and your own tasks <small>{rest.length}</small></h3>
+        <div className="effort-group effort-other" role="group" aria-label={w("waiting.other")}>
+          <h3 className="effort-head">{w("waiting.other")} <small>{rest.length}</small></h3>
           {rest.map(item)}
         </div>
       )}
@@ -77,7 +79,7 @@ export function fromShaping(t: Task): boolean {
 
 /** "3 questions on 2 tasks", as `muster clarify` counts them. */
 export function counted(questions: number, tasks: number): string {
-  return `${questions} question${questions === 1 ? "" : "s"} on ${tasks} task${tasks === 1 ? "" : "s"}`;
+  return tn("shell", "waiting.counted", { questions: tn("shell", "waiting.questions", { count: questions }), tasks: tn("shell", "heading.tasks", { count: tasks }) });
 }
 
 /** Where a task waiting on the owner sits among the questions, blocks and their own tasks (0060):
@@ -100,6 +102,7 @@ function WaitingItem({ t, now, multi, active, onOpen, onChanged }: { t: Task; no
   // A question or a block as the next step is shown above in its own words.
   const next = t.stage === "your-check" && !isHuman(t) && isWork(t) ? nextStep(t) : null;
   const step = next && (next.kind === "criterion" || next.kind === "accept") ? next : null;
+  const w = useT("shell");
   return (
     <article className={active ? "waiting active" : "waiting"}>
       <header>
@@ -108,18 +111,18 @@ function WaitingItem({ t, now, multi, active, onOpen, onChanged }: { t: Task; no
         </button>
       </header>
       {t.paused && <p><PausedChip t={t} now={now} /></p>}
-      {isHuman(t) && <p>Yours to do: {humanColumn(t.stage) === "doing" ? "in Doing. Mark it Done when it is." : "in To do. Start it when you do."}</p>}
+      {isHuman(t) && <p>{humanColumn(t.stage) === "doing" ? w("waiting.yoursDoing") : w("waiting.yoursTodo")}</p>}
       {shown.map((q) => (
         <Fragment key={q.n ?? q.text}>
-          <p><b>Q{q.n}</b> {q.choices ? q.choices.question : q.text}</p>
+          <p><b>{w("waiting.q", { n: q.n ?? "" })}</b> {q.choices ? q.choices.question : q.text}</p>
           {q.choices && <PickOne task={t} q={q} choices={q.choices} onChanged={onChanged} />}
         </Fragment>
       ))}
       <BlockLine t={t} answering={answering} onAnswer={() => setAnswering(true)} onChanged={onChanged} />
-      {t.sessionState === "needs-input" && <p>Waiting for input in Claude Code: answer it there.</p>}
-      {step && <p className="next-step-line">{`${step.full}${step.more ? ` · ${step.more} more` : ""}`}</p>}
+      {t.sessionState === "needs-input" && <p>{w("waiting.needsInput")}</p>}
+      {step && <p className="next-step-line">{step.more ? w("waiting.stepMore", { step: step.full, count: step.more }) : step.full}</p>}
       {next && t.summary && <p className="summary-line" dir="auto" title={t.summary}>{t.summary}</p>}
-      <Button onClick={() => onOpen(t)}>{asked.length > 0 || t.blockedKind === "you" ? "Open to answer" : "Open"}</Button>
+      <Button onClick={() => onOpen(t)}>{asked.length > 0 || t.blockedKind === "you" ? w("waiting.openToAnswer") : w("waiting.open")}</Button>
     </article>
   );
 }
@@ -135,7 +138,7 @@ export function BlockLine({ t, answering, onAnswer, onChanged }: { t: Task; answ
     <>
       <p><BlockWhy t={t} onAnswer={answering ? undefined : onAnswer} /></p>
       {look === "answer" && answering && asked && <AnswerBox task={t} q={asked} onChanged={onChanged} />}
-      {(look === "action" || look === "permission") && <UnblockNow t={t} label={look === "action" ? "Done, unblock" : "Granted, unblock"} onChanged={onChanged} />}
+      {(look === "action" || look === "permission") && <UnblockNow t={t} label={look === "action" ? tn("shell", "waiting.doneUnblock") : tn("shell", "waiting.grantedUnblock")} onChanged={onChanged} />}
     </>
   );
 }
@@ -145,7 +148,7 @@ export function BlockLine({ t, answering, onAnswer, onChanged }: { t: Task; answ
 export async function unblockNow(send: (queue: string, id: string, stamp: string) => Promise<string>, t: Pick<Task, "queue" | "id">, at: Date): Promise<{ ok: boolean; text: string }> {
   try {
     await send(t.queue, t.id, stamp(at));
-    return { ok: true, text: "Unblocked." };
+    return { ok: true, text: tn("shell", "waiting.unblocked") };
   } catch (e) {
     return { ok: false, text: String(e) };
   }
@@ -163,7 +166,7 @@ function UnblockNow({ t, label, onChanged }: { t: Task; label: string; onChanged
   };
   return (
     <>
-      <Button type="button" className="block-unblock" disabled={busy || result?.ok === true} onClick={() => void run()}>{busy ? "Unblocking…" : label}</Button>
+      <Button type="button" className="block-unblock" disabled={busy || result?.ok === true} onClick={() => void run()}>{busy ? tn("shell", "waiting.unblocking") : label}</Button>
       {result && <span className={result.ok ? "ok" : "err"}> {result.text}</span>}
     </>
   );

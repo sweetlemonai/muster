@@ -140,9 +140,10 @@ here):
 | `labels.rs` | A project's label and category |
 | `arrange.rs` | The sidebar's order, headings, colours and folds |
 | `check_limit.rs` | The limit on Your check per project |
-| `settings.rs` | This Mac's settings: lease, LIVE window, notifications, the menu bar icon, the old-pauses offer, the Claude accounts Muster reads (`claude_accounts`) |
+| `settings.rs` | This Mac's settings: lease, LIVE window, notifications, the menu bar icon, the old-pauses offer, the Claude accounts Muster reads (`claude_accounts`), the language |
+| `i18n.rs` | The core's languages (mu-146, from Drover's): the language in effect (the setting, else macOS's), and the menu bar's text from `native.json` with the same plural rule and digits as the window |
 | `badge.rs` | The Dock badge's count, set from Rust |
-| `tray.rs` | The menu bar icon: idle or waiting with the count beside it, its tooltip and menu, from the badge's count |
+| `tray.rs` | The menu bar icon: idle or waiting with the count beside it, its tooltip and menu, from the badge's count, in the language in effect |
 | `notify.rs` | Mac notifications of what newly waits for the owner, and `notified.json` |
 | `run.rs` | Run from the app: a project's run command in its main checkout, its output in a bounded ring, Stop and quitting end its process group |
 | `helper.rs` | The AI helper: the owner's own `claude` on an allowed account, restricted to `muster` and reading |
@@ -190,11 +191,11 @@ is in its range) but draws pixel for pixel the same. `fonts.test.ts` holds the f
 the README, the licence records in its name table and the bundled licence. How to cut it again,
 byte for byte: `app/src/assets/fonts/README.md`. No other fonts are bundled.
 
-The 69 commands it can call (`generate_handler!` in `lib.rs`), by what they do:
+The 76 commands it can call (`generate_handler!` in `lib.rs`), by what they do:
 
 | Group | Commands |
 |---|---|
-| Reading | `state` (the 2 s poll), `search_index`, `help`, `task_body`, `image`, `projects`, `settings_info`, `task_sessions`, `session_transcript`, `editable_body`, `shape_note`, `vision_brief` |
+| Reading | `state` (the 2 s poll), `search_index`, `help`, `task_body`, `image`, `projects`, `settings_info`, `locale_info`, `task_sessions`, `session_transcript`, `editable_body`, `shape_note`, `vision_brief` |
 | Changing a task | `create_task`, `pass_task`, `accept_all`, `return_task`, `block_task`, `unblock_task`, `reclaim_task`, `set_stage`, `set_field`, `add_note`, `tick_criterion`, `edit_body`, `add_comment`, `attach_data`, `attach_pick`, `answer`, `answer_pick`, `resolve_vision`, `move_task` (registered; the window no longer calls it) |
 | Backlog | `add_backlog_note`, `file_note`, `drop_note` |
 | Projects and settings | `add_project`, `create_project`, `set_project_label`, `set_project_category`, `set_project_colour`, `arrange_projects`, `rename_category`, `fold_category`, `show_project_title`, `set_project_prefix`, `hide_project`, `remove_project`, `set_setting`, `set_your_check_limit` |
@@ -296,7 +297,7 @@ On this Mac, in `~/Library/Application Support/ai.sweetlemon.muster/`:
 | File | What it is | Written by | Read by |
 |---|---|---|---|
 | `projects.json` (+ `projects.json.lock`) | Added and hidden projects, gates, names, labels, categories, colours, order, folds, Your check limits | the app and `muster projects set`, through `projects::edit` (flock, temp file, rename) | the app, `muster` (through `projects::places`, which tests replace) |
-| `settings.json` | Claim lease, LIVE window, notifications on or off, the old-pauses offer | the app's Settings | the app on every poll; `muster reclaim` and `muster check` |
+| `settings.json` | Claim lease, LIVE window, notifications on or off, the old-pauses offer, the Claude accounts Muster reads, the language (`lang`, only once picked) | the app's Settings | the app on every poll; `muster reclaim` and `muster check` |
 | `roles.toml` | The role profiles (0112): each role's name, title, stage, prompt, tools, permission, models, caps, workers, slots, stage moves, providers, writes | `roles.rs` from its defaults on first read; Settings › Agents › Roles; the owner by hand | the app's poll (each role's name, for slot stamps), Roles, `muster team`, `instructions`, and `--role` on claim, next and start |
 | `notified.json` | The keys of what's been notified (the last 500, plus every one still waiting) | `notify.rs` | `notify.rs` |
 | `helper/helper.json`, `helper/<project>.jsonl` | The helper's account and model, and each project's conversation | the app | the app |
@@ -1655,6 +1656,77 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   the window has no notification permission; local only, the plugin
   has no network code. Under `tauri dev` they show as Terminal's (the plugin's rule for unbundled
   builds); the built app shows them as Muster's.
+
+### Languages: the i18n layer (mu-146)
+
+Muster speaks English and Persian through **Drover's translation layer, copied from Drover's
+commit `a990fc8`** (Drover task 0007, decision 0021), with the same names and file shapes so the
+move into Drover is a merge. Our own small layer, no library; the files are in i18next's JSON
+format (nested keys, `{{name}}`, plural suffixes `_one`/`_other` from `Intl.PluralRules`), and the
+Rust core reads the same JSON.
+
+- **Files** (`app/src/i18n/`): `runtime.ts` (loading, lookup, plurals, `{{name}}` filling with
+  numbers in the language's digits, FSI/PDI isolation of filled-in values right to left,
+  `applyToDocument` setting `<html lang dir>`, the pseudo-locale), `react.tsx` (`useT`, `useLocale`,
+  `<Trans>` for elements inside a sentence), `lib.ts` (`tn`, `tl`, `isolate`, `unmarked`,
+  `sentences`), `format.ts` (`fmt`: dates, numbers, lists, relative times through cached `Intl`
+  objects), `locales.ts` (`en`, `fa`, and `pseudo` while developing; `fa` is right to left),
+  `types.ts` (keys typed from the English files: a typo fails `tsc`), `boot.ts` (the language at
+  start), `prefetch.ts` (`withText`: a lazy screen's text loads with its code), `index.ts`. Tests:
+  `runtime`, `react`, `lib`, `locales`, `bidi`, `literals`; `testSetup.ts` and `testReader.ts`
+  read the files from disk with English loaded. Muster's differences from Drover's: no agent
+  language (`agent.ts`, `agent.json`; see DESIGN.md › Languages), no `lib` namespace (`tl` reads
+  `common`), and its tests render with react-dom's server renderer, as Muster has no jsdom.
+- **Namespaces** (`app/src/i18n/locales/{en,fa}/<ns>.json`), each area's task editing only its
+  own: `common` (shared words), `shell` (sidebar, toolbar, filter bar, Settings: mu-146), `board`
+  (board, views, backlog, sessions: mu-147), `pane` and `help` (task pane, comments, review, the
+  manual: mu-148), `native` (menu bar, notifications; Rust reads it), `cli` (mu-152), `core`
+  (mu-153).
+- **Lazy:** the files aren't in the JavaScript. `tools/vite-locales.mjs` (Drover's plugin) serves
+  them at `/locales/<language>/<ns>.json` in development and copies them, minified and checked,
+  into the build; the window fetches only the language it shows. Before the first render
+  (`main.tsx`) it loads `common` and `shell` in the language saved in `localStorage`
+  (`muster.locale`, a copy of the core's), sets `<html lang dir>`, then asks the core
+  (`locale_info`) and follows it, and its `locale-changed` event after.
+- **The setting:** `lang` in `settings.json` (`settings.rs`), written only once picked, so a file
+  from before it loads unchanged; unset follows macOS's language for Muster (`i18n.rs`
+  `system_languages`: the app's own choice in System Settings, else the Mac's, read once with
+  `defaults`, as Muster has no objc2 to ask `NSLocale` as Drover does). Settings › Language, at the
+  top of Settings whatever group is open, has a chip per language, `English · فارسی`, each in its
+  own script with its `lang`; the chip of the language in effect is on, and a line says when it's
+  macOS's. A pick goes through `set_setting lang`: the core saves it, switches its own text and
+  rebuilds the menu bar's menu (`MenuBar::retext`), and the window switches at once, no restart.
+- **The core's text** (`i18n.rs`): `include_str!` of each language's `native.json`, the same
+  plural rule as `Intl.PluralRules`, Persian digits for counts; the menu bar's menu, tooltip and
+  count are in it (`tray.rs`), its title keeps Western digits like the Dock badge.
+- **The guard** (`literals.test.ts`): reads every source file with the TypeScript parser and
+  fails on text written straight into a screen (JSX text, text props, text fields, sentences).
+  Until every area has moved, the files still holding text are listed with the task that moves
+  them (mu-147, mu-148); a file off the list fails, and so does a listed one with nothing left.
+  The shell's files are off it. `Sidebar.tsx` is the task pane's right column, not the window's
+  sidebar, so it's mu-148's. mu-155 removes the list.
+- **The shell in the layer** (mu-146): the sidebar, the header, the filter bar, every Settings
+  group, Waiting for you and Recently finished read their words from `shell.json`, and the words
+  more than one area uses (stage names, priorities, types, time units, "Loading…", Save, Cancel)
+  from `common.json`. The parts of other areas' files the shell shows moved with it (the Who and
+  Group by chips, the card previews in Appearance, the helper's account picker, the sidebar's
+  check-in button and Your check limit, a project's Run buttons, the "?" buttons' names), and those
+  files stay listed for their own text. Data lists (`STAGES`, `SETTINGS_GROUPS`, `THEMES`,
+  `MODES`, `GROUPS`, `SIDEBAR_ORDERS`…) keep their ids, which is what's stored and compared, and
+  read their words through getters each time, so a language switch shows at once and nothing
+  keeps English in a constant. What's stored stays as it is: a filter's value, a theme's id, the
+  Other heading ("Other" in projects.json, سایر on screen), a span typed as `30m`. Dates in
+  Recently finished say the weekday and month in the language's own words. `shellFa.test.ts`
+  draws all of it in Persian and fails on any Latin word that isn't a product name, a key or the
+  data shown.
+- **How to add a string:** put it in `app/src/i18n/locales/en/<ns>.json` (nested keys; a count's
+  forms as `key_one`/`key_other` with `{{count}}` in `_other`), and its Persian in
+  `locales/fa/<ns>.json` with the same placeholders and every Persian plural form
+  (`locales.test.ts` checks both); in a component, `const t = useT("<ns>")` and
+  `t("group.key", { count, name })`; outside one, `tn("<ns>", "group.key")`. Values are filled
+  in as text, never HTML. A label in a data list is a getter (`get label() { return tn(…) }`),
+  never a string kept at load. A view a test calls as a plain function uses `tn`, not `useT`. A
+  string the core shows goes in `native.json` and through `i18n::t`.
 
 ### The AI helper
 

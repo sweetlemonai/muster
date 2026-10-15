@@ -14,6 +14,36 @@ name (parallel.rs:1126). 2350 → mu-188 (low, after 0173): drop the timeline's 
 owner's legend note resolved by the later 2026-10-13 rule "each task when started and finished".
 **Verified:** both in Ready; backlog empty; `muster check` nothing on them.
 
+## 2026-10-14 — Persian foundation: Drover's i18n layer, Language setting, shell and menu bar in Persian (mu-146)
+**Did:** ported Drover's `src/i18n/` (a990fc8, task 0007) to `app/src/i18n/` and its `i18n.rs` to
+`app/src-tauri/src/i18n.rs`; namespaces common, shell, board, pane, help, native, cli, core in
+`locales/{en,fa}/`. `lang` in `settings.rs` (unset follows macOS). Language chips at the top of
+Settings. The tray, sidebar, toolbar, filter bar and every Settings group are in Persian.
+`docs/i18n/glossary-fa.md` from Drover's, plus Muster's terms. The guard `literals.test.ts` has an
+allowlist naming mu-147 or mu-148 per file.
+**Fixed (review round 1):** About and manual 04 list the language in `settings.json`, and manual 04
+has a Language section (R1); `Info.plist` declares `CFBundleLocalizations` en, fa and
+`CFBundleDevelopmentRegion` en, so macOS offers a per-app language, with a test against
+`i18n::LOCALES` (R2); the allowlist gives `yourCheckLimit.ts` and `Helper.tsx` to mu-148 and
+`Lessons.tsx` to mu-147, as those tasks list them (R3); the guard checks `name:` fields and `aria`
+props (R4, in part); `code, kbd, pre` are isolated left to right (R5); `.settings-side`'s divider is
+`border-inline-end` (R6); every Language chip saves when clicked, so a change of mind while fa loads
+goes through (R7); the unset-language test renders Settings and can fail (R8).
+**Did (rebase on main):** main's new shell text (accounts, roles, fonts, the sidebar row's
+aria-label, From shaping, History, the holder ribbon setting, Roles, the You ribbon's quiet)
+goes through the layer, with fa; the sidebar's needs-you words are mu-159's ("1 needs you"). The
+card's `HolderRibbon.tsx` is on the allowlist for mu-147.
+**Decided:** the Language block sits above the Settings groups, not as a group, so someone who
+can't read the language shown still finds it. The macOS language is read with `defaults` (no
+objc2 dependency). `Sidebar.tsx` is the task pane's right column, so it goes to mu-148. Shortcuts
+in fa are wrapped in LRI…PDI, with a test. R4's lowercase phrases ("nothing hidden") stay unflagged:
+catching them flags code strings too; mu-155's sweep removes the allowlist.
+**Verified:** see the pass's gate line. AC6: the index chunk shrank (392.26 → 369.83 kB, no Persian
+in it), but the en JSON chunk is preloaded, so the startup set is about the same (~525 vs ~527 kB).
+**Open:** the owner's native-speaker check of the proposed words (چیپ, تسک برداشته‌شده, لاگ,
+سرصفحه, بورد, نقش). Board text is mu-147's. Digits are mixed until mu-151, and RTL mirroring is
+mu-149's.
+
 ## 2026-10-14 — One needs-you wording app-wide: folded strips and bands say "1 needs you" (mu-159)
 **Did (asghar_28, builder):** `needsWords(n)` ("1 needs you", "2 need you") and `needsVerb(n)` in
 `human.ts` are the one place the words are chosen. `FoldCounts` (the badge of a folded strip,

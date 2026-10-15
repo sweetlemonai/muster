@@ -294,6 +294,25 @@ the menu bar's own font and tint, like Mail's), and nothing does while idle (tas
 owner's drawing stays as drawn. The sources are in
 `app/src-tauri/icons/original/`; a new drawing replaces them and `icons/build-icons.sh` runs.
 
+## Languages (task mu-146)
+
+Muster's screens speak English and Persian (Settings › Language; the layer is in AS_BUILT.md ›
+Languages).
+
+- **What people read follows the language; what agents read stays English.** Task files, briefs,
+  `--json`, the protocol and every word a tool parses back are Muster's own format, read by its
+  own tools and by agents, so they're English whatever the screen shows. Menus, notifications,
+  the window and the help follow the language. (When Muster moves into Drover, Drover's Agent
+  language setting covers its briefs.)
+- **Each language's name in its own script, never translated:** the Language chips read
+  `English · فارسی` in every language, each with its own `lang`, so a person who can't read the
+  language shown can still find theirs. They sit at the top of Settings, whatever group is open.
+- **A switch moves nothing but the mirror:** in Persian, `<html lang="fa" dir="rtl">` mirrors the
+  layout (mu-149 makes the CSS logical); every control keeps its place in the mirrored layout.
+- **No sentence built from parts:** a whole sentence is one string with `{{placeholders}}`, and
+  counts use the language's plural forms; a value filled in (a path, a name, a branch) keeps its
+  own direction.
+
 ## Checking a design
 
 A design passes when the owner, looking at the screen without clicking, can answer: what is this,

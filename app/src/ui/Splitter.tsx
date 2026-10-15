@@ -1,4 +1,5 @@
 import type { KeyboardEvent, PointerEvent } from "react";
+import { tl } from "../i18n";
 import { dragWidth, type SplitSide, splitKey } from "../splitter";
 import { cx } from "./cx";
 
@@ -75,7 +76,7 @@ export function Splitter({ width, min, max, side, label, onWidth, onDrag, onDrag
       aria-valuemin={min}
       aria-valuemax={max}
       tabIndex={0}
-      title="Drag to resize · double-click for the default · ← → with the focus here (Shift: bigger steps)"
+      title={tl("splitter")}
       onKeyDown={onKeyDown}
       onDoubleClick={onReset}
       onPointerDown={onPointerDown}

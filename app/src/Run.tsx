@@ -1,6 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import { api } from "./api";
+import { tn } from "./i18n";
 import { keyed, merged, received, fmtRunTime, shownLines, statusWords, SHOWN_LINES, type RunInbox } from "./runData";
 import type { RunSnap, RunView } from "./types";
 import { Button } from "./ui";
@@ -223,12 +224,12 @@ export function RunButtons({ project, run, busy, refused, error, onRun, onStop }
     <span className="run-controls">
       {going(run) ? (
         <>
-          <span className="run-chip">running</span>{" "}
-          <Button type="button" aria-label={`Stop ${project}`} disabled={busy} onClick={onStop}>Stop</Button>{" "}
-          <Button type="button" aria-label={`Restart ${project}`} disabled={busy} onClick={onRun}>Restart</Button>
+          <span className="run-chip">{tn("shell", "run.running")}</span>{" "}
+          <Button type="button" aria-label={tn("shell", "run.stopAria", { project })} disabled={busy} onClick={onStop}>{tn("shell", "run.stop")}</Button>{" "}
+          <Button type="button" aria-label={tn("shell", "run.restartAria", { project })} disabled={busy} onClick={onRun}>{tn("shell", "run.restart")}</Button>
         </>
       ) : (
-        <Button type="button" aria-label={`Run ${project}`} disabled={busy || refused !== ""} onClick={onRun}>Run</Button>
+        <Button type="button" aria-label={tn("shell", "run.runAria", { project })} disabled={busy || refused !== ""} onClick={onRun}>{tn("shell", "run.run")}</Button>
       )}
       {refused && <span className="err small"> {refused}</span>}
       {!refused && error && <span className="err small" role="alert"> {error}</span>}

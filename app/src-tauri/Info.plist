@@ -8,5 +8,16 @@
        fallback for earlier macOS. -->
   <key>CFBundleIconName</key>
   <string>Muster</string>
+  <!-- The languages Muster has (mu-146, i18n::LOCALES and src/i18n/locales.ts),
+       as Drover declares its own: macOS lists Muster for them in System
+       Settings › General › Language & Region › Applications and keeps the
+       one picked there as the app's AppleLanguages, which i18n.rs reads first. -->
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>en</string>
+    <string>fa</string>
+  </array>
 </dict>
 </plist>

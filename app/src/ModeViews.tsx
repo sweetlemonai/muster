@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { blockedRed } from "./blockWords";
 import { needsWords } from "./human";
+import { tl, tn } from "./i18n";
 import { modeLabel, useLook, type ColumnFold, type DisplayMode } from "./modes";
 import type { Task } from "./types";
 import { Pill } from "./ui";
@@ -12,7 +13,7 @@ import { Pill } from "./ui";
 /** The header's mode: its name, as a chip that opens Settings › Display. */
 export function ModeChip({ mode, onOpen }: { mode: DisplayMode; onOpen: () => void }) {
   return (
-    <Pill type="button" className="mode-chip" onClick={onOpen} title="Display mode: change it in Settings, Display. ⌘. turns Focus on and off">
+    <Pill type="button" className="mode-chip" onClick={onOpen} title={tn("shell", "toolbar.modeChip")}>
       {modeLabel(mode)}
     </Pill>
   );
@@ -148,7 +149,7 @@ export function ChoiceChips<T extends string>({ label, className, aria, metaClas
     <span className={className} role="group" aria-label={aria}>
       <span className={metaClass}>{label}</span>
       {how === "value" && !open ? (
-        <Pill on aria-label={`${label}: ${current.label}, click to change`} onClick={() => setOpen(true)}>
+        <Pill on aria-label={tl("choice.current", { label, value: current.label })} onClick={() => setOpen(true)}>
           {current.label}
         </Pill>
       ) : (

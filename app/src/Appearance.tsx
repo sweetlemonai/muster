@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { CardLookPicker } from "./CardLook";
+import { sentences, useT } from "./i18n";
 import { stageLabel } from "./lib";
 import { Button, Pill } from "./ui";
 import { loadZoom, setZoom, ZOOM_EVENT, ZOOMS } from "./zoom";
@@ -8,6 +9,7 @@ import { ACCENTS, apply, buildingColour, cardChoice, type Choice, DEFAULT_CHOICE
 /** Settings' Appearance group (0036): theme, accent, text size and card look, applied live and
  *  remembered on this Mac (the window's own storage). */
 export default function Appearance() {
+  const t = useT("shell");
   const [c, setC] = useState<Choice>(load);
   useEffect(() => {
     apply(c);
@@ -21,41 +23,39 @@ export default function Appearance() {
   };
   const selected = (id: string) => (c.matchSystem ? c.light === id || c.dark === id : c.theme === id);
 
+  const clash = buildingColour(current.accent).clashes;
   return (
     <div className="settings-sections">
       <section>
         <label className="check">
           <input type="checkbox" checked={c.matchSystem} onChange={(e) => setC({ ...c, matchSystem: e.target.checked, theme: current.theme.id })} />
-          Match the Mac's light or dark
+          {t("appearance.matchMac")}
         </label>
-        <p className="meta">
-          {c.matchSystem
-            ? `Pick a dark and a light theme. Now showing ${current.theme.name}.`
-            : "One theme, whatever the Mac uses."}
-        </p>
+        <p className="meta">{c.matchSystem ? t("appearance.pickTwo", { name: current.theme.name }) : t("appearance.oneTheme")}</p>
       </section>
       <section>
-        <h2>Theme</h2>
+        <h2>{t("appearance.themeHead")}</h2>
         <div className="swatches">
-          {THEMES.map((t) => {
-            const v = variables(t, current.accent);
+          {THEMES.map((th) => {
+            const v = variables(th, current.accent);
+            const mode = t(`appearance.mode.${th.mode}`);
             return (
-              <button key={t.id} className={selected(t.id) ? "swatch on" : "swatch"} onClick={() => pickTheme(t.id)} title={`${t.name} (${t.mode})`}>
-                <span className="preview" style={{ background: t.bg, borderColor: t.border }}>
-                  <span style={{ background: t.surface, borderColor: t.border }}>
+              <button key={th.id} className={selected(th.id) ? "swatch on" : "swatch"} onClick={() => pickTheme(th.id)} title={t("appearance.themeTitle", { name: th.name, mode })}>
+                <span className="preview" style={{ background: th.bg, borderColor: th.border }}>
+                  <span style={{ background: th.surface, borderColor: th.border }}>
                     <i style={{ background: v["--accent"] }} />
-                    <b style={{ background: t.text }} />
-                    <b style={{ background: t.muted, width: "60%" }} />
+                    <b style={{ background: th.text }} />
+                    <b style={{ background: th.muted, width: "60%" }} />
                   </span>
                 </span>
-                <span className="swatch-name">{t.name}<small> · {t.mode}</small></span>
+                <span className="swatch-name">{th.name}<small>{t("appearance.themeMode", { mode })}</small></span>
               </button>
             );
           })}
         </div>
       </section>
       <section>
-        <h2>Accent</h2>
+        <h2>{t("appearance.accentHead")}</h2>
         <div className="accents">
           {ACCENTS.map((a) => (
             <button key={a.id} className={c.accent === a.id ? "accent on" : "accent"} onClick={() => setC({ ...c, accent: a.id })} title={a.name}>
@@ -64,25 +64,21 @@ export default function Appearance() {
             </button>
           ))}
         </div>
-        <p className="meta">
-          Building shows in the accent colour.
-          {buildingColour(current.accent).clashes &&
-            ` ${current.accent.name} would look like ${stageLabel(buildingColour(current.accent).clashes)}, so Building stays violet.`}
-        </p>
-        <p className="meta">Blue and orange are left out of the accents: they belong to 127, Drover and Braindump. Every theme and accent pair passes WCAG AA.</p>
+        <p className="meta">{sentences([t("appearance.building"), clash ? t("appearance.clash", { accent: current.accent.name, stage: stageLabel(clash) }) : ""])}</p>
+        <p className="meta">{t("appearance.leftOut")}</p>
       </section>
       <section>
-        <h2>Text size</h2>
+        <h2>{t("appearance.textSize")}</h2>
         <TextSize />
-        <p className="meta">Everything in the window grows or shrinks, the manual too. ⌘+ and ⌘− step through the sizes, ⌘0 goes back to 100%.</p>
+        <p className="meta">{t("appearance.textSizeMeta")}</p>
       </section>
       <section>
-        <h2>Cards</h2>
+        <h2>{t("appearance.cards")}</h2>
         <CardLookPicker {...pickerProps(c, setC)} />
-        <p className="meta">Blocked and "needs you" take over the colour in every look, and keep their words on the card.</p>
+        <p className="meta">{t("appearance.cardsMeta")}</p>
       </section>
       <section>
-        <Button onClick={() => setC((p) => ({ ...DEFAULT_CHOICE, cards: p.cards, cardColour: p.cardColour }))}>Back to Muster's violet</Button>
+        <Button onClick={() => setC((p) => ({ ...DEFAULT_CHOICE, cards: p.cards, cardColour: p.cardColour }))}>{t("appearance.reset")}</Button>
       </section>
     </div>
   );
@@ -100,6 +96,7 @@ function pickerProps(c: Choice, setC: (f: (p: Choice) => Choice) => void) {
 
 /** The text size steps as chips, the current one pressed (zoom.ts). Follows ⌘+ ⌘− ⌘0 too. */
 export function TextSize({ initial }: { initial?: number }) {
+  const t = useT("shell");
   const [size, setSize] = useState(() => initial ?? loadZoom());
   useEffect(() => {
     const on = (e: Event) => setSize((e as CustomEvent<number>).detail);
@@ -107,10 +104,10 @@ export function TextSize({ initial }: { initial?: number }) {
     return () => window.removeEventListener(ZOOM_EVENT, on);
   }, []);
   return (
-    <div className="look-colour" role="group" aria-label="Text size">
+    <div className="look-colour" role="group" aria-label={t("appearance.textSize")}>
       {ZOOMS.map((z) => (
         <Pill key={z} type="button" on={size === z} aria-pressed={size === z} onClick={() => setSize(setZoom(z))}>
-          {Math.round(z * 100)}%
+          {t("appearance.percent", { n: Math.round(z * 100) })}
         </Pill>
       ))}
     </div>

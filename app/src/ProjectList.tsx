@@ -2,8 +2,9 @@ import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode }
 import { lastLabel, loadOrder, nextOrder, type OrderMemo, type ProjectRow, projectRows, SIDEBAR_ORDERS, storeOrder, sumActivity, type ProjectActivity, type SidebarOrder, type Sums } from "./activity";
 import { projectCount } from "./Backlog";
 import { SideLimit } from "./CheckLimit";
-import { needsVerb, needsWords, needsYouCount } from "./human";
+import { needsYouCount } from "./human";
 import { api, type Moved } from "./api";
+import { tl, tn, Trans, useT } from "./i18n";
 import { LABEL_MAX } from "./labels";
 import { lessonsWaiting } from "./Lessons";
 import { inProgress } from "./lib";
@@ -12,7 +13,7 @@ import { PAUSE_GLYPH } from "./Pause";
 import { QuietPing } from "./Ping";
 import { accepts, dropMove, type DropTarget, countsText, grouped, headingCounts, foldHeading, headingFolds, layoutOf, type Move, type Pending, type Plan, planMove, readBack, runMove, sidebarGroups, withFresh } from "./projectOrder";
 import { pressed } from "./shortcuts";
-import { cleanHeading, type DragProps, half, HeadingEdit, HeadingFrame, MOVE_KEYS, NewCategory, SideRow } from "./SidebarProjects";
+import { cleanHeading, type DragProps, half, headingName, HeadingEdit, HeadingFrame, MOVE_KEYS, NewCategory, SideRow } from "./SidebarProjects";
 import type { Activity, Note, QueueInfo, Task } from "./types";
 import { Pill } from "./ui";
 import { cx } from "./ui/cx";
@@ -174,15 +175,15 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
     }
     if (!edit) return Promise.resolve();
     return edit.renameCategory(from, to).then(() => {
-      setSaid(`${from} renamed ${to}`);
+      setSaid(tn("shell", "move.renamed", { from, to }));
       setFocus({ kind: "heading", name: to });
     });
   };
   const addHeading = (typed: string): string => {
     const name = cleanHeading(typed);
-    if (groups.some((g) => g.name === name)) return `${name} is a heading already: drag a project onto it`;
+    if (groups.some((g) => g.name === name)) return tn("shell", "move.headingExists", { name });
     setFresh((f) => [...f, name]);
-    setSaid(`New heading ${name}: drag a project onto it, or ⌥↓ the last one above`);
+    setSaid(tn("shell", "move.newHeading", { name }));
     setFocus({ kind: "heading", name });
     return "";
   };
@@ -190,7 +191,7 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
     setSwatch(null);
     setFocus({ kind: "dot", key: r.key });
     if (!edit || id === r.colour) return;
-    edit.colour(r.key, id).catch((e: unknown) => setProblem(`Couldn't set ${r.label}'s colour: ${String(e)}`));
+    edit.colour(r.key, id).catch((e: unknown) => setProblem(tn("shell", "move.cantColour", { name: r.label, error: String(e) })));
   };
   const sums = useMemo(() => sumActivity(rows.map((r) => r.activity)), [rows]);
   const counts = useMemo(() => new Map(queues.map((q) => [q.name, q.counts])), [queues]);
@@ -198,6 +199,7 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
   // Focus (0038) narrows the sidebar to the names, the working dot, stalled and the needs-you and paused counts;
   // a stalled project keeps its Ask all quiet sessions under it.
   const full = useLook("sidebar") === "full";
+  const t = useT("shell");
   return (
     <nav
       className="projects-nav"
@@ -207,10 +209,10 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
       onDragOver={drag ? (e) => !e.isDefaultPrevented() && hover(null) : undefined}
       onDragLeave={drag ? (e) => !(e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) && hover(null) : undefined}
     >
-      <ProjectItem name="All" total={tasks.length + notes.length} tasks={tasks} lessons={lessonsWaiting(queues, "all")} on={current === "all"} onClick={() => onPick("all")} working={sums.working > 0} stalled={sums.stalled > 0 ? `${sums.stalled} stalled` : ""}>
+      <ProjectItem name={t("sidebar.all")} total={tasks.length + notes.length} tasks={tasks} lessons={lessonsWaiting(queues, "all")} on={current === "all"} onClick={() => onPick("all")} working={sums.working > 0} stalled={sums.stalled > 0 ? t("sidebar.stalledCount", { count: sums.stalled }) : ""}>
         <SumsLine s={sums} now={now} />
       </ProjectItem>
-      {full && <div className="side-label">Projects</div>}
+      {full && <div className="side-label">{t("sidebar.projects")}</div>}
       {full && <OrderChips value={order} onChange={pick} />}
       {groups.map((g) => {
         const isFresh = g.rows.length === 0;
@@ -222,7 +224,7 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
             key={g.name}
             className={cx("side-group", groupDrop)}
             role="group"
-            aria-label={g.name}
+            aria-label={headingName(g.name)}
             onDragOver={
               edit
                 ? (e) => {
@@ -282,7 +284,7 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
                     }}
                     drag={edit ? rowDrag(r) : undefined}
                   >
-                    <ProjectItem name={r.label} title={r.title} total={totalOf(r)} tasks={r.tasks} lessons={r.lessons} on={current === r.name} onClick={() => onPick(r.name)} onRename={onLabel ? () => setEditing(r.name) : undefined} keys={edit ? MOVE_KEYS : undefined} working={r.activity.working > 0} stalled={r.activity.stalled ? "stalled" : ""} running={q?.running === true} alert={<SideLimit q={q} />}>
+                    <ProjectItem name={r.label} title={r.title} total={totalOf(r)} tasks={r.tasks} lessons={r.lessons} on={current === r.name} onClick={() => onPick(r.name)} onRename={onLabel ? () => setEditing(r.name) : undefined} keys={edit ? MOVE_KEYS : undefined} working={r.activity.working > 0} stalled={r.activity.stalled ? t("sidebar.stalled") : ""} running={q?.running === true} alert={<SideLimit q={q} />}>
                       <ActivityLine a={r.activity} now={now} />
                     </ProjectItem>
                   </SideRow>
@@ -328,14 +330,14 @@ export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClic
   return (
     <button className={on ? "side-item on" : "side-item"} onClick={onClick} title={tip} aria-label={said} aria-describedby={title ? `${where} ${more}` : more} aria-keyshortcuts={keys}>
       <span className="side-line">
-        {!full && working && <i className="dot side-dot" title={`Being worked on now: ${WORKING_HINT}`} />}
-        <span className="side-name" title={onRename ? (tip ? `${tip}\n${RENAME_HINT}` : RENAME_HINT) : undefined} onDoubleClick={onRename}>{name}</span>
+        {!full && working && <i className="dot side-dot" title={tn("shell", "sidebar.workingDot", { hint: tn("shell", "sidebar.workingHint") })} />}
+        <span className="side-name" title={onRename ? (tip ? `${tip}\n${tn("shell", "sidebar.renameHint")}` : tn("shell", "sidebar.renameHint")) : undefined} onDoubleClick={onRename}>{name}</span>
         <span className="side-badges">
-          {!full && stalled && <span className="side-stalled" title={`Stalled: ${STALLED_HINT}`}>{stalled}</span>}
-          {running && <span className="run-chip" title="A run from Muster is going: its Run block, in a task in Your check, or Settings › Projects stops it">running</span>}
-          {needs > 0 && <span className="count warn" title={needsWords(needs)}>{needs}</span>}
-          {full && doing > 0 && <span className="side-doing" title={`${doing} in progress (Building or Testing)`}>{doing}</span>}
-          {paused > 0 && <span className="side-paused" title={`${paused} paused`}>{`${PAUSE_GLYPH} ${paused}`}</span>}
+          {!full && stalled && <span className="side-stalled" title={tn("shell", "sidebar.stalledTitle", { hint: tn("shell", "sidebar.stalledHint") })}>{stalled}</span>}
+          {running && <span className="run-chip" title={tn("shell", "sidebar.runningTitle")}>{tn("shell", "run.running")}</span>}
+          {needs > 0 && <span className="count warn" title={tn("shell", "sidebar.needYou", { count: needs })}>{needs}</span>}
+          {full && doing > 0 && <span className="side-doing" title={tn("shell", "sidebar.inProgress", { count: doing })}>{doing}</span>}
+          {paused > 0 && <span className="side-paused" title={tn("shell", "sidebar.paused", { count: paused })}>{`${PAUSE_GLYPH} ${paused}`}</span>}
           {full && <small>{total}</small>}
         </span>
       </span>
@@ -355,9 +357,15 @@ export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClic
 /** A project row's aria-label (0087): its name in full, then every count in words, what's 0 left
  *  out but its tasks; then running, and in Focus the working dot and "stalled" its line shows. */
 function rowWords({ name, needs, doing, paused, total, running, working, stalled }: { name: string; needs: number; doing: number; paused: number; total: number; running: boolean; working: boolean; stalled: string }) {
-  const counts = [needs > 0 ? needsWords(needs) : "", doing > 0 ? `${doing} in progress` : "", paused > 0 ? `${paused} paused` : "", `${total} ${total === 1 ? "task" : "tasks"}`];
-  const states = [running ? "running" : "", working ? "being worked on now" : "", stalled].filter(Boolean).join(", ");
-  return `${name}: ${counts.filter(Boolean).join(", ")}${states ? `; ${states}` : ""}`;
+  const sep = tl("listSep");
+  const counts = [
+    needs > 0 ? tn("shell", "sidebar.needYou", { count: needs }) : "",
+    doing > 0 ? tn("shell", "sidebar.rowInProgress", { count: doing }) : "",
+    paused > 0 ? tn("shell", "sidebar.paused", { count: paused }) : "",
+    tn("shell", "heading.tasks", { count: total }),
+  ].filter(Boolean).join(sep);
+  const states = [running ? tn("shell", "run.running") : "", working ? tn("shell", "sidebar.rowWorking") : "", stalled].filter(Boolean).join(sep);
+  return states ? tn("shell", "sidebar.rowStates", { name, counts, states }) : tn("shell", "sidebar.row", { name, counts });
 }
 
 /** A category's heading (0044), always shown, above its projects: its name, what needs you in it,
@@ -379,7 +387,7 @@ function CategoryHead({ name, rows, total, fresh = false, drag, onRename, onRemo
 }) {
   const c = headingCounts(rows);
   const said = countsText(c);
-  const projects = `${c.projects} ${c.projects === 1 ? "project" : "projects"}`;
+  const projects = tn("shell", "heading.projects", { count: c.projects });
   // One line, the same open and folded, in every mode (0082): the name, then what needs you in the
   // chip a project's row has and in words, never cut; then its projects and what's being worked on,
   // each whole where there's room. The name gives way first; where the sidebar is too narrow for
@@ -388,13 +396,12 @@ function CategoryHead({ name, rows, total, fresh = false, drag, onRename, onRemo
   return (
     <HeadingFrame name={name} count={rows.length} summary={countsText(c, ", ")} fresh={fresh} folded={folded} drag={drag ?? into} onRename={onRename} onRemove={onRemove} onFold={onFold}>
       <span className="side-cat-text">
-        <span className="side-cat-name" title={name}>{name}</span>
+        <span className="side-cat-name" title={headingName(name)}>{headingName(name)}</span>
         {!fresh && (
-          <span className="side-cat-counts" title={`${said} · ${total} ${total === 1 ? "task" : "tasks"}`}>
+          <span className="side-cat-counts" title={tn("shell", "heading.countsTitle", { said, tasks: tn("shell", "heading.tasks", { count: total }) })}>
             {c.needs > 0 && (
               <span className="side-cat-needs">
-                <span className="count warn">{c.needs}</span>{" "}
-                <span className="side-cat-needs-words">{needsVerb(c.needs)}</span>
+                <Trans ns="shell" k="heading.needsChip" params={{ count: c.needs }} components={{ chip: <span className="count warn" />, words: <span className="side-cat-needs-words" /> }} />
               </span>
             )}
             <span className="side-cat-rest">
@@ -404,7 +411,7 @@ function CategoryHead({ name, rows, total, fresh = false, drag, onRename, onRemo
                 <span className="side-cat-part side-working">
                   {"\u00a0· "}
                   <i className="dot" aria-hidden="true" />
-                  {`${c.working} working`}
+                  {tn("shell", "sidebar.working", { count: c.working })}
                 </span>
               )}
             </span>
@@ -444,7 +451,7 @@ export function SideLabelEdit({ name, label, onSave, onDone }: { name: string; l
         autoFocus
         defaultValue={label}
         maxLength={LABEL_MAX}
-        aria-label={`Label for ${name}`}
+        aria-label={tn("shell", "projects.labelFor", { name })}
         placeholder={name}
         onKeyDown={(e) => {
           if (pressed(e, "label-save")) save(e.currentTarget.value);
@@ -457,29 +464,26 @@ export function SideLabelEdit({ name, label, onSave, onDone }: { name: string; l
         }}
         onBlur={(e) => save(e.currentTarget.value)}
       />
-      <small className="meta">{name} · ↩ saves, Esc keeps it</small>
+      <small className="meta">{tn("shell", "sidebar.labelKeys", { name })}</small>
       {error && <small className="err" role="alert">{error}</small>}
     </div>
   );
 }
 
-const RENAME_HINT = "Double-click to change the label";
-const WORKING_HINT = "a live session, or a check-in or heartbeat in the last 30 minutes";
-const STALLED_HINT = "work in Building, but nothing for over 30 minutes: no check-in, heartbeat, stage change, commit or file change";
-
 /** A project's activity, quietly: the Building-colour dot and "2 working", or "stalled" in the
  *  attention colour, then when it last moved. The line is always there, so rows don't jump. */
 export function ActivityLine({ a, now }: { a: ProjectActivity; now: number }) {
+  const t = useT("shell");
   return (
     <span className="side-activity">
       <span className="side-state">
         {a.working > 0 ? (
-          <span className="side-working" title={`${a.working} ${a.working === 1 ? "task" : "tasks"} being worked on now: ${WORKING_HINT}`}>
+          <span className="side-working" title={t("sidebar.tasksWorkingTitle", { count: a.working, hint: t("sidebar.workingHint") })}>
             <i className="dot" aria-hidden="true" />
-            {a.working} working
+            {t("sidebar.working", { count: a.working })}
           </span>
         ) : a.stalled ? (
-          <span className="side-stalled" title={`Stalled: ${STALLED_HINT}`}>stalled</span>
+          <span className="side-stalled" title={t("sidebar.stalledTitle", { hint: t("sidebar.stalledHint") })}>{t("sidebar.stalled")}</span>
         ) : null}
       </span>
       <When m={a.last} now={now} />
@@ -489,18 +493,18 @@ export function ActivityLine({ a, now }: { a: ProjectActivity; now: number }) {
 
 /** The All projects row's sums: projects being worked on, projects stalled, the newest activity. */
 export function SumsLine({ s, now }: { s: Sums; now: number }) {
-  const projects = (n: number) => `${n} ${n === 1 ? "project" : "projects"}`;
+  const t = useT("shell");
   return (
     <span className="side-activity">
       <span className="side-state">
         {s.working > 0 && (
-          <span className="side-working" title={`${projects(s.working)} being worked on now: ${WORKING_HINT}`}>
+          <span className="side-working" title={t("sidebar.projectsWorkingTitle", { count: s.working, hint: t("sidebar.workingHint") })}>
             <i className="dot" aria-hidden="true" />
-            {s.working} working
+            {t("sidebar.working", { count: s.working })}
           </span>
         )}
         {s.working > 0 && s.stalled > 0 && " · "}
-        {s.stalled > 0 && <span className="side-stalled" title={`${projects(s.stalled)} stalled: ${STALLED_HINT}`}>{s.stalled} stalled</span>}
+        {s.stalled > 0 && <span className="side-stalled" title={t("sidebar.projectsStalledTitle", { count: s.stalled, hint: t("sidebar.stalledHint") })}>{t("sidebar.stalledCount", { count: s.stalled })}</span>}
       </span>
       <When m={s.last} now={now} />
     </span>
@@ -508,13 +512,14 @@ export function SumsLine({ s, now }: { s: Sums; now: number }) {
 }
 
 function When({ m, now }: { m: number | null; now: number }) {
-  return <span className="side-when" title={m === null ? "Nothing says when this was last worked on" : `Last activity: ${lastLabel(m, now)}`}>{lastLabel(m, now)}</span>;
+  const t = useT("shell");
+  return <span className="side-when" title={m === null ? t("sidebar.noLast") : t("sidebar.last", { when: lastLabel(m, now) })}>{lastLabel(m, now)}</span>;
 }
 
 /** The sidebar's order, as chips: always on screen, the current one pressed. */
 export function OrderChips({ value, onChange }: { value: SidebarOrder; onChange: (o: SidebarOrder) => void }) {
   return (
-    <span className="side-order" role="group" aria-label="Order projects">
+    <span className="side-order" role="group" aria-label={tn("shell", "order.aria")}>
       {SIDEBAR_ORDERS.map((o) => (
         <Pill key={o.id} type="button" on={value === o.id} aria-pressed={value === o.id} title={o.title} onClick={() => onChange(o.id)}>
           {o.label}

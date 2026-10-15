@@ -16,7 +16,7 @@ covers: app/src/App.tsx, app/src/ColumnRow.tsx, app/src/ColumnCards.tsx, app/src
 - Columns scroll without scrollbars, with "+N above" and "+N below". (AS_BUILT "Columns scroll without scrollbars")
 - A paused task sits in the Paused lane, left of Backlog. (mu-59)
 - What needs you never folds, in any mode. (DESIGN.md "In every mode")
-- A needs-you count reads "1 needs you" / "2 need you" everywhere, from `needsWords`; a folded strip or band is read with its counts in words. (mu-159)
+- A needs-you count reads "1 needs you" / "2 need you" everywhere: on the board from `needsWords`, in the sidebar from shell.json's plural `needYou` (mu-146); a folded strip or band is read with its counts in words. (mu-159)
 - Switching display modes moves no control. (DESIGN.md "In every mode")
 - Every element that differs by mode is in `app/src/modes.ts`; components read only that. (mu-38)
 - One colour, one meaning: a stage colour only ever says a stage. (DESIGN.md "The colour code")

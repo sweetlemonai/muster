@@ -4,7 +4,7 @@
 // what a move says in projects.json (arrange.rs) and sends each queue's place back with the state
 // (`QueueInfo.rank`, `categoryRank`).
 import type { Moved } from "./api";
-import { needsWords } from "./human";
+import { tn } from "./i18n";
 import { byCategory, type CategoryGroup } from "./labels";
 
 /** The headings top to bottom, each with its projects' keys (queue folders) in order. */
@@ -116,7 +116,7 @@ export function planMove(layout: Layout, move: Move, label: (key: string) => str
       to = l.indexOf(g);
     }
     if (same(l, layout)) return null;
-    return plan(l, null, `${move.name} moved to ${to + 1} of ${l.length}`);
+    return plan(l, null, tn("shell", "move.headingMoved", { name: move.name, at: to + 1, of: l.length }));
   }
   const at = find(l, move.key);
   if (!at) return null;
@@ -155,7 +155,7 @@ export function planMove(layout: Layout, move: Move, label: (key: string) => str
   if (!now) return null;
   const g = out[now.g];
   const moved = g.name === was ? null : { key: move.key, category: g.name };
-  return plan(out, moved, `${label(move.key)} moved to ${now.i + 1} of ${g.keys.length} in ${g.name}`);
+  return plan(out, moved, tn("shell", "move.projectMoved", { name: label(move.key), at: now.i + 1, of: g.keys.length, heading: g.name }));
 }
 
 function plan(layout: Layout, moved: Moved | null, said: string): Plan {
@@ -252,9 +252,9 @@ export function headingCounts(rows: { needs: number; lessons: number; activity: 
  *  sidebar's narrowest it's never the part cut; what's 0 left out, but never the projects. */
 export function countsText(c: HeadingCounts, sep = " · "): string {
   return [
-    c.needs > 0 && needsWords(c.needs),
-    `${c.projects} ${c.projects === 1 ? "project" : "projects"}`,
-    c.working > 0 && `${c.working} working`,
+    c.needs > 0 && tn("shell", "heading.needYou", { count: c.needs }),
+    tn("shell", "heading.projects", { count: c.projects }),
+    c.working > 0 && tn("shell", "sidebar.working", { count: c.working }),
   ].filter(Boolean).join(sep);
 }
 
@@ -329,8 +329,8 @@ export function placeSteps(pending: Pending | null, core: Layout, key: string, n
 /** The sidebar's fold or unfold of a heading (0070 R4/R5): said, shown at once (`trackFold`), and a
  *  refusal put back and shown in the problem line. Never rejects. */
 export function foldHeading(name: string, folded: boolean, ui: Voice & { setFolds: Setter<Folds> }, send: () => Promise<void>): Promise<void> {
-  ui.say(`${name} ${folded ? "folded" : "unfolded"}`);
-  return trackFold(name, folded, ui.setFolds, send).catch((e: unknown) => ui.problem(`Couldn't ${folded ? "fold" : "unfold"} ${name}: ${String(e)}`));
+  ui.say(tn("shell", folded ? "move.folded" : "move.unfolded", { name }));
+  return trackFold(name, folded, ui.setFolds, send).catch((e: unknown) => ui.problem(tn("shell", folded ? "move.cantFold" : "move.cantUnfold", { name, error: String(e) })));
 }
 
 /** The sidebar after a read of the queues (0070 R4/R5): the pending move settles against the
@@ -345,13 +345,13 @@ export function readBack(core: Layout, coreFolds: ReadonlyMap<string, boolean>, 
  *  it filled no longer waiting (`setFresh`), and a refusal shown. Never rejects. */
 export function runMove(plan: Plan, ui: Voice & { folds: ReadonlyMap<string, boolean>; setPending: Setter<Pending | null>; setFolds: Setter<Folds>; setFresh: Setter<string[]> }, send: () => Promise<void>): Promise<void> {
   const opened = unfoldFor(plan, ui.folds);
-  ui.say(opened ? `${plan.said}; ${opened} unfolded` : plan.said);
+  ui.say(opened ? tn("shell", "move.movedAndUnfolded", { said: plan.said, name: opened }) : plan.said);
   ui.problem("");
   return trackUnfold(opened, ui.setFolds, track(plan, ui.setPending, send)).then(
     () => {
       const made = plan.moved?.category;
       if (made !== undefined) ui.setFresh((f) => f.filter((x) => x !== made));
     },
-    (e: unknown) => ui.problem(`Couldn't keep that order: ${String(e)}`),
+    (e: unknown) => ui.problem(tn("shell", "move.cantKeep", { error: String(e) })),
   );
 }

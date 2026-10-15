@@ -1,0 +1,661 @@
+{
+  "language": {
+    "label": "Language",
+    "meta": "Menus, notifications and help follow it. Agents and task files stay in English.",
+    "followsMac": "Following this Mac's language until you pick one.",
+    "failed": "Couldn't change the language: {{error}}"
+  },
+  "app": {
+    "sidebar": "Projects",
+    "addProject": "+ Project",
+    "addProjectTitle": "New or existing project queue, in Settings",
+    "sidebarWidth": "Projects width",
+    "detailsWidth": "Details width",
+    "details": "Details",
+    "newTask": "+ New task",
+    "newTaskTitle": "New task (⌘N)",
+    "views": "Views",
+    "projectViews": "Project views",
+    "view": {
+      "board": "Board",
+      "table": "Table",
+      "timeline": "Timeline",
+      "graph": "Graph",
+      "graphTitle": "What waits on what",
+      "helper": "Helper",
+      "waiting": "Waiting for you",
+      "waitingTitle": "Your own tasks to do and doing, and what the agents wait on you for: the needs-you count",
+      "activity": "Activity",
+      "problems": "Problems",
+      "uncheckedTitle": "Shaping tasks with no vision check yet",
+      "help": "Help",
+      "settings": "Settings",
+      "settingsTitle": "Appearance, projects, agents and about"
+    },
+    "liveTitle": "Updates every 2 seconds while the window is visible",
+    "cantRead": "Can't read the queues",
+    "live": "live",
+    "loading": "loading…",
+    "noQueues": "No queues yet. Muster looks for <code>{{path}}</code> folders, and one level deeper, or add one in Settings, under Projects.",
+    "who": "Who",
+    "whoAria": "Who does it",
+    "searchError": "Search can't read the tasks' text: {{error}}",
+    "allFolded": "Every column is folded into the row above: click one to open it.",
+    "showFewer": "Show fewer",
+    "showAll_one": "Show all {{count}}",
+    "showAll_other": "Show all {{count}}",
+    "nothingHere": "Nothing here",
+    "source": {
+      "commit": "commit",
+      "changed": "changed"
+    },
+    "noProblems": "No problems found in the queues.",
+    "vision": "Vision",
+    "taskGone": "That task is gone.",
+    "noteGone": "That note is gone: filed as a task, or dropped."
+  },
+  "toolbar": {
+    "modeChip": "Display mode: change it in Settings, Display. ⌘. turns Focus on and off"
+  },
+  "sidebar": {
+    "all": "All",
+    "projects": "Projects",
+    "stalled": "stalled",
+    "stalledCount_one": "{{count}} stalled",
+    "stalledCount_other": "{{count}} stalled",
+    "working_one": "{{count}} working",
+    "working_other": "{{count}} working",
+    "workingHint": "a live session, or a check-in or heartbeat in the last 30 minutes",
+    "stalledHint": "work in Building, but nothing for over 30 minutes: no check-in, heartbeat, stage change, commit or file change",
+    "renameHint": "Double-click to change the label",
+    "workingDot": "Being worked on now: {{hint}}",
+    "stalledTitle": "Stalled: {{hint}}",
+    "tasksWorkingTitle_one": "{{count}} task being worked on now: {{hint}}",
+    "tasksWorkingTitle_other": "{{count}} tasks being worked on now: {{hint}}",
+    "projectsWorkingTitle_one": "{{count}} project being worked on now: {{hint}}",
+    "projectsWorkingTitle_other": "{{count}} projects being worked on now: {{hint}}",
+    "projectsStalledTitle_one": "{{count}} project stalled: {{hint}}",
+    "projectsStalledTitle_other": "{{count}} projects stalled: {{hint}}",
+    "runningTitle": "A run from Muster is going: its Run block, in a task in Your check, or Settings › Projects stops it",
+    "needYou_one": "{{count}} needs you",
+    "needYou_other": "{{count}} need you",
+    "rowInProgress_one": "{{count}} in progress",
+    "rowInProgress_other": "{{count}} in progress",
+    "rowWorking": "being worked on now",
+    "row": "{{name}}: {{counts}}",
+    "rowStates": "{{name}}: {{counts}}; {{states}}",
+    "inProgress_one": "{{count}} in progress (Building or Testing)",
+    "inProgress_other": "{{count}} in progress (Building or Testing)",
+    "paused_one": "{{count}} paused",
+    "paused_other": "{{count}} paused",
+    "noLast": "Nothing says when this was last worked on",
+    "last": "Last activity: {{when}}",
+    "labelKeys": "{{name}} · ↩ saves, Esc keeps it"
+  },
+  "order": {
+    "aria": "Order projects",
+    "working": { "label": "Working", "title": "Projects being worked on now first, then the most recently worked on" },
+    "az": { "label": "A–Z", "title": "By name" },
+    "needs": { "label": "Needs you", "title": "The most waiting on you first, then the ones being worked on" },
+    "mine": { "label": "Mine", "title": "Your own order: drag a project or a heading, or ⌥↑ ⌥↓ on one (the first move picks this)" }
+  },
+  "heading": {
+    "other": "Other",
+    "fresh": "new, no projects yet",
+    "projects_one": "{{count}} project",
+    "projects_other": "{{count}} projects",
+    "tasks_one": "{{count}} task",
+    "tasks_other": "{{count}} tasks",
+    "needYou_one": "{{count}} needs you",
+    "needYou_other": "{{count}} need you",
+    "needsChip_one": "<chip>{{count}}</chip> <words>needs you</words>",
+    "needsChip_other": "<chip>{{count}}</chip> <words>need you</words>",
+    "countsTitle": "{{said}} · {{tasks}}",
+    "canRename": "↩ renames it",
+    "canMove": "⌥↑ ⌥↓ move it",
+    "canFold": "← → fold it",
+    "freshAria": "{{name}}, category heading, {{said}}",
+    "freshAriaCan": "{{name}}, category heading, {{said}}: {{can}}",
+    "aria": "{{name}}, category heading: {{said}}",
+    "ariaCan": "{{name}}, category heading: {{said}}; {{can}}",
+    "foldedAria": "{{name}}, category heading, folded: {{said}}",
+    "foldedAriaCan": "{{name}}, category heading, folded: {{said}}; {{can}}",
+    "titleRename": "Double-click or ↩ to rename",
+    "titleMove": "drag it, or ⌥↑ ⌥↓, to move it with its projects",
+    "titleFold": "← → fold it",
+    "fold": "Fold {{name}}",
+    "unfold": "Unfold {{name}}",
+    "foldTitle": "Fold {{name}} (←)",
+    "unfoldTitle": "Unfold {{name}} (→)",
+    "empty": "empty: drag a project here, or ⌥↓ the last one above",
+    "removeTitle": "Take this new heading away",
+    "nameAria": "Name of the heading {{name}}",
+    "renameKeys": "↩ renames, Esc keeps it · another heading's name joins the two",
+    "new": "+ Category",
+    "newTitle": "A new heading: then drag a project onto it",
+    "newName": "New category",
+    "newKeys": "↩ makes it, Esc doesn't · then drag a project onto it"
+  },
+  "move": {
+    "headingMoved": "{{name}} moved to {{at}} of {{of}}",
+    "projectMoved": "{{name}} moved to {{at}} of {{of}} in {{heading}}",
+    "movedAndUnfolded": "{{said}}; {{name}} unfolded",
+    "folded": "{{name}} folded",
+    "unfolded": "{{name}} unfolded",
+    "cantFold": "Couldn't fold {{name}}: {{error}}",
+    "cantUnfold": "Couldn't unfold {{name}}: {{error}}",
+    "cantKeep": "Couldn't keep that order: {{error}}",
+    "renamed": "{{from}} renamed {{to}}",
+    "headingExists": "{{name}} is a heading already: drag a project onto it",
+    "newHeading": "New heading {{name}}: drag a project onto it, or ⌥↓ the last one above",
+    "cantColour": "Couldn't set {{name}}'s colour: {{error}}"
+  },
+  "colour": {
+    "lime": "Lime",
+    "orchid": "Orchid",
+    "pink": "Pink",
+    "tan": "Tan",
+    "mint": "Mint",
+    "none": "None",
+    "noColour": "no colour",
+    "dot": "Colour: {{colour}}",
+    "dotAria": "Colour for {{name}}: {{colour}}. Click to choose",
+    "dotTitle": "Colour: {{colour}}. Click to choose",
+    "group": "Colour for {{name}}"
+  },
+  "ping": {
+    "askAll": "Ask all quiet sessions for a check-in",
+    "askAllCount_one": "Ask all quiet sessions for a check-in ({{count}})",
+    "askAllCount_other": "Ask all quiet sessions for a check-in ({{count}})",
+    "unreached_one": "{{count}} of them has no session to reach",
+    "unreached_other": "{{count}} of them have no session to reach",
+    "waiting_one": "{{count}} waits for input in Claude Code: answer it there first",
+    "waiting_other": "{{count}} wait for input in Claude Code: answer it there first",
+    "asked_one": "Asked {{count}} session.",
+    "asked_other": "Asked {{count}} sessions.",
+    "noneReach": "none of its quiet claims has a session to reach"
+  },
+  "limit": {
+    "side": "{{waiting}} in Your check, limit {{limit}}",
+    "on": "limit {{limit}}",
+    "off": "off",
+    "cell": "{{limit}} · {{waiting}}",
+    "waiting_one": "{{count}} waiting",
+    "waiting_other": "{{count}} waiting",
+    "noneWaiting": "none waiting",
+    "cellAria": "Your check limit for {{name}}",
+    "inputAria": "Limit for {{name}}, {{min}} to {{max}}"
+  },
+  "run": {
+    "running": "running",
+    "run": "Run",
+    "stop": "Stop",
+    "restart": "Restart",
+    "runAria": "Run {{project}}",
+    "stopAria": "Stop {{project}}",
+    "restartAria": "Restart {{project}}"
+  },
+  "filter": {
+    "bar": "Search and filters",
+    "placeholder": "Search id, title, text, tags, holder  ⌘F",
+    "searchAria": "Search tasks",
+    "savedViews": "Saved views",
+    "views": "Views",
+    "deleteView": "Delete view {{name}}",
+    "deleteViewTitle": "Delete this saved view",
+    "saveView": "+ Save view",
+    "saveViewTitle": "Save the search, filters and sort under a name",
+    "namePlaceholder": "Name, e.g. My checks",
+    "nameAria": "Name for this view",
+    "filters": "Filters",
+    "filtersTitle": "The filter groups and Sort, under the bar",
+    "tasks_one": "{{count}} task",
+    "tasks_other": "{{count}} tasks",
+    "shownOf_one": "{{shown}} of {{count}} task",
+    "shownOf_other": "{{shown}} of {{count}} tasks",
+    "hideTitle": "Put the bar away again: ⌘F brings it back",
+    "sortAria": "Sort each column",
+    "sort": "Sort",
+    "active": "Active filters",
+    "remove": "Remove {{label}}",
+    "clearAll": "Clear all",
+    "none": "No filters: every task shows",
+    "hidden_one": "{{count}} hidden by filters",
+    "hidden_other": "{{count}} hidden by filters",
+    "nothingHidden": "nothing hidden",
+    "searchItem": "“{{text}}”",
+    "heldBy": "held by {{who}}",
+    "owner": "owner",
+    "group": {
+      "stage": "Stage",
+      "type": "Type",
+      "priority": "Priority",
+      "tag": "Tags",
+      "holder": "Held by",
+      "state": "Flags",
+      "captured": "Captured",
+      "changed": "Changed",
+      "done": "Done"
+    },
+    "state": {
+      "blocked": "blocked",
+      "paused": "paused",
+      "needs-you": "needs you",
+      "questions": "open questions"
+    },
+    "span": {
+      "today": "today",
+      "week": "this week",
+      "month": "this month"
+    },
+    "dated": {
+      "captured": { "today": "captured today", "week": "captured this week", "month": "captured this month" },
+      "changed": { "today": "changed today", "week": "changed this week", "month": "changed this month" },
+      "done": { "today": "done today", "week": "done this week", "month": "done this month" }
+    }
+  },
+  "settings": {
+    "groupsAria": "Settings groups",
+    "cantRead": "Can't read this Mac's settings: {{error}}",
+    "groups": {
+      "appearance": { "label": "Appearance", "holds": "Theme, accent, text size, cards" },
+      "display": { "label": "Display", "holds": "ADHD, Standard or Focus: how much shows" },
+      "projects": { "label": "Projects", "holds": "The queues Muster shows" },
+      "agents": { "label": "Agents", "holds": "The helper, the claim lease, LIVE, roles" },
+      "notifications": { "label": "Notifications", "holds": "A Mac notification when something new waits for you" },
+      "about": { "label": "About", "holds": "Version, settings, what it reads" }
+    }
+  },
+  "appearance": {
+    "matchMac": "Match the Mac's light or dark",
+    "pickTwo": "Pick a dark and a light theme. Now showing {{name}}.",
+    "oneTheme": "One theme, whatever the Mac uses.",
+    "themeHead": "Theme",
+    "themeTitle": "{{name}} ({{mode}})",
+    "themeMode": " · {{mode}}",
+    "mode": {
+      "dark": "dark",
+      "light": "light"
+    },
+    "theme": {
+      "violet-night": "Violet night",
+      "violet-day": "Violet day",
+      "graphite": "Graphite",
+      "midnight": "Midnight",
+      "paper": "Paper",
+      "snow": "Snow",
+      "contrast": "High contrast"
+    },
+    "accentHead": "Accent",
+    "accent": {
+      "violet": "Violet",
+      "teal": "Teal",
+      "rose": "Rose",
+      "gold": "Gold",
+      "green": "Green",
+      "graphite": "Graphite"
+    },
+    "building": "Building shows in the accent colour.",
+    "clash": "{{accent}} would look like {{stage}}, so Building stays violet.",
+    "leftOut": "Blue and orange are left out of the accents: they belong to 127, Drover and Braindump. Every theme and accent pair passes WCAG AA.",
+    "textSize": "Text size",
+    "percent": "{{n}}%",
+    "textSizeMeta": "Everything in the window grows or shrinks, the manual too. ⌘+ and ⌘− step through the sizes, ⌘0 goes back to 100%.",
+    "cards": "Cards",
+    "cardsMeta": "Blocked and \"needs you\" take over the colour in every look, and keep their words on the card.",
+    "reset": "Back to Muster's violet",
+    "look": {
+      "stripe": { "name": "Stripe", "hint": "A bar down the left edge" },
+      "tint": { "name": "Tint", "hint": "The whole card washed in the colour" },
+      "top": { "name": "Top bar", "hint": "A band across the top that names it" },
+      "dot": { "name": "Dot", "hint": "A quiet card with a dot by the id" },
+      "outline": { "name": "Outline", "hint": "The border in the colour" }
+    },
+    "colourShowsAria": "Card colour shows",
+    "colourShows": "Colour shows",
+    "colourBy": {
+      "stage": "Stage",
+      "priority": "Priority"
+    },
+    "sample": {
+      "flicker": "Board flickers on resize",
+      "header": "Try the new header",
+      "graph": "Graph view",
+      "domain": "Buy the domain"
+    }
+  },
+  "agents": {
+    "claims": "Claims",
+    "lease": "Claim lease",
+    "leaseWhat": "A claim in Building that nobody has heard from for longer than this can go back to Ready: the card says quiet, the task pane offers Release, and muster reclaim takes it.",
+    "live": "LIVE window",
+    "liveWhat": "How recent a change counts as working now: the card's dot (a session's transcript) and the task pane's LIVE (the task's file).",
+    "sessionStates": "Claude Code's session states: {{summary}}",
+    "saved": "Saved on this Mac, in <path/>; the muster command reads the same file.",
+    "helper": "The helper",
+    "checking": "Checking the accounts…",
+    "noClaude": "Couldn't find the <code>claude</code> command. The helper runs your own Claude Code: install it, then come back here.",
+    "modelAria": "Helper model",
+    "model": "Model",
+    "modelMeta": "The model the helper files tasks with, from its next message: Sonnet unless you pick another. Haiku is quicker and costs less; Opus thinks hardest and costs most.",
+    "default": "default",
+    "spanAria": "{{label}}, as 30m, 2h or 1d",
+    "backTo": "Back to {{span}}",
+    "bounds": "From {{from}} to {{to}}."
+  },
+  "account": {
+    "which": "Which Claude account should the helper use?",
+    "meta": "The helper runs your own Claude Code with that account's own login, like any session you start, and never reads tokens. What you write here goes to Anthropic, the same as any Claude Code session. You can change it any time.",
+    "default": "{{folder}} (default)",
+    "inUse": " · in use",
+    "loggedIn": "logged in",
+    "loggedInPlan": "logged in · {{plan}}",
+    "notLoggedIn": "not logged in",
+    "couldntCheck": "couldn't check",
+    "logIn": "Log in…",
+    "use": "Use this one",
+    "checkAgain": "Check again"
+  },
+  "roles": {
+    "head": "Roles",
+    "meta": "Who the team is: each role's name, and its slots (Kaveh-1, Kaveh-2) for sessions that claim with <code>--role</code>. A rename shows everywhere at once: claims keep the role and the number, not the name. Saved in <code>roles.toml</code> beside <code>projects.json</code>; <code>muster team</code> lists who holds which slot.",
+    "profile": "{{name}}'s profile",
+    "slots_one": "{{count}} slot",
+    "slots_other": "{{count}} slots",
+    "anyStage": "any stage",
+    "noMoves": "no stage moves",
+    "field": {
+      "name": {
+        "label": "Name",
+        "what": "What the board, the pane, the log and muster team call it. Letters only, any script."
+      },
+      "models": {
+        "label": "Models",
+        "what": "Preferred models, in order: opus, sonnet, haiku, fable, or a model id."
+      },
+      "providers": {
+        "label": "Providers",
+        "what": "Who may serve it: claude, codex."
+      },
+      "slots": {
+        "label": "Slots",
+        "what": "How many may run at once, 1 to 20; --role hands out the lowest free one."
+      },
+      "max_turns": {
+        "label": "Turn cap",
+        "what": "Turns a run may take, 1 to 1000."
+      },
+      "max_budget_usd": {
+        "label": "Budget cap",
+        "what": "Dollars a run may spend, 0 to 1000."
+      },
+      "context_cap": {
+        "label": "Context cap",
+        "what": "Tokens of context before it hands off, 10000 to 1000000."
+      }
+    }
+  },
+  "accounts": {
+    "group": "Claude accounts Muster reads",
+    "label": "Claude accounts Muster reads:",
+    "none": "none: Muster reads no Claude sessions",
+    "never": "Never ~/.claude, the default account.",
+    "add": "Add an account",
+    "remove": "Remove {{chip}} from the accounts Muster reads",
+    "empty": "Type an account's label, like mg for cc-mg.",
+    "defaultAccount": "Never ~/.claude: it's the default account, which Muster doesn't read.",
+    "invalid": "{{typed}} is not a valid account label: 1 to 12 lowercase letters and digits, like mg",
+    "twice": "{{chip}} is already read.",
+    "transcriptsNoneListed": "Session transcripts: none, no Claude account is on the list in Agents",
+    "transcriptsNoneFolder": "Session transcripts: none, no account on the list in Agents has a ~/.claude-<label> folder",
+    "helperNoneUnread": "No Claude account Muster may use was found. Check its list in Settings, Agents.",
+    "helperNoneListed": "No Claude account is on Muster's list of accounts it may use. Add one in Settings, Agents.",
+    "helperNoneFolder": "No account on Muster's list of accounts it may use has a ~/.claude-<label> folder. Check the list in Settings, Agents."
+  },
+  "notifications": {
+    "mac": "Mac notifications",
+    "notifyMe": "Notify me",
+    "what": "One notification when something new waits for you: a task in Your check, a question escalated to you, a task blocked on you or by a permission, a session that waits for your input in Claude Code, a task of your own, or lessons to approve. Several at once come as one.",
+    "once": "It's never twice for the same thing, and not for what was already waiting when Muster started. While Muster's window is in front, what it shows (its project, or All) counts as seen, and news from another project waits until you switch away.",
+    "macos": "macOS asks whether Muster may notify the first time it has something to tell you; change that later in System Settings › Notifications. Nothing leaves this Mac.",
+    "menuBar": "Menu bar icon",
+    "showIt": "Show it",
+    "icon": "Muster's robot head in the menu bar, plain while nothing waits for you and with its antenna tips filled in when something does: the same count as the Dock badge, from the same reads. Its tooltip and menu say the count in words, never a task's text.",
+    "click": "Click it to bring Muster's window forward. Right-click or Control-click it for Show Muster, the count and Quit Muster.",
+    "saved": "Both are saved on this Mac, in <path/>, with what it won't notify again beside it."
+  },
+  "projects": {
+    "created": "Queue created and added.",
+    "added": "Queue added.",
+    "newQueue": "New queue…",
+    "addExisting": "Add existing queue…",
+    "finds": "Muster finds the queues in <code>{{base}}</code> on its own: a repo's <code>{{repo}}</code> (<code>{{under}}</code> or <code>{{deeper}}</code>) and the older <code>{{older}}</code>, one level deeper too (<code>{{olderDeeper}}</code>). Add queues kept anywhere else, or start one: New queue picks the project's repo (its main checkout or any worktree of it) and makes a local <code>{{local}}</code> in the main checkout, as <code>{{init}}</code> does. A folder outside any repo still gets the older <code>{{tasks}}</code>. Removing or hiding a project never deletes files.",
+    "prefixSaved": "{{name}}'s tasks are {{first}}, {{second}}… now.",
+    "col": {
+      "project": "Project",
+      "projectTitle": "What the window calls it; the name under it is what commands take",
+      "category": "Category",
+      "categoryTitle": "The sidebar heading it goes under",
+      "colour": "Colour",
+      "colourTitle": "The dot by its name, in the sidebar and wherever it's named",
+      "mine": "Mine order",
+      "mineTitle": "Its place in the sidebar's Mine order: ↑ ↓ here, or drag it or ⌥↑ ⌥↓ there",
+      "prefix": "Prefix",
+      "prefixTitle": "What its tasks' keys start with: mu in mu-12",
+      "folder": "Folder",
+      "tasks": "Tasks"
+    },
+    "labelFor": "Label for {{name}}",
+    "categoryFor": "Category for {{name}}",
+    "found": " · found in {{base}}",
+    "addedSource": " · added",
+    "hidden": " · hidden",
+    "notQueue": " · not a queue any more",
+    "moveUp": "Move {{name}} up in the sidebar's Mine order",
+    "moveDown": "Move {{name}} down in the sidebar's Mine order",
+    "upTitle": "Up one place in the sidebar's Mine order",
+    "downTitle": "Down one place in the sidebar's Mine order",
+    "setPrefix": "Set {{name}}'s prefix",
+    "prefixOf": "{{name}}'s prefix",
+    "prefixRule": "2 to 4 lowercase letters",
+    "gate": "Gate",
+    "run": "Run",
+    "history": "History",
+    "files_one": "{{count}} file",
+    "files_other": "{{count}} files",
+    "fixed": {
+      "restoreNone": "{{name}}: nothing was missing; its files match its history.",
+      "restore": "{{name}}: {{files}} restored from its history.",
+      "commitNone": "{{name}}: nothing to commit; its history has every file.",
+      "commit": "{{name}}: {{files}} committed to its history.",
+      "removedNone": "{{name}}: nothing was missing.",
+      "removed": "{{name}}: {{files}} recorded as deleted; older commits keep them (muster restore <path>)."
+    },
+    "historyLine": {
+      "pending_one": "warning: {{count}} write not committed",
+      "pending_other": "warning: {{count}} writes not committed",
+      "withError": "{{text}} ({{error}})",
+      "missing_one": "warning: {{count}} file missing since the last commit",
+      "missing_other": "warning: {{count}} files missing since the last commit",
+      "notStarted": "not started yet: the queue's next write starts it",
+      "committed": "committed {{when}}",
+      "changed_one": "{{committed}}; {{count}} file changed outside muster since",
+      "changed_other": "{{committed}}; {{count}} files changed outside muster since"
+    },
+    "fix": {
+      "restore": "Restore",
+      "restoreAria": "Restore {{name}}'s queue files",
+      "commit": "Commit",
+      "commitAria": "Commit {{name}}'s queue files",
+      "removed": "Keep deleted",
+      "removedAria": "Record {{name}}'s missing queue files as deleted"
+    },
+    "noGate": "none: merges wait for one. <code>{{command}}</code>",
+    "noRun": "none: say what starts it, to try it. <code>{{command}}</code>"
+  },
+  "about": {
+    "version": "Version",
+    "fonts": "Fonts",
+    "fontsLicence": "Persian text is drawn in Vazirmatn by Saber Rastikerdar, under the SIL Open Font License 1.1; the licence is in <code>{{file}}</code>.",
+    "settings": "Settings on this Mac",
+    "projectsJson": "<code>{{file}}</code>: the projects you added or hid, their labels, categories, colours, gates and Your check limits, and the sidebar's order",
+    "settingsJson": "<code>{{file}}</code>: the Claude accounts Muster reads, the claim lease, the LIVE window, whether notifications are on, whether the menu bar icon shows and the language, once you pick one; the muster command reads it too",
+    "notifiedJson": "<code>{{file}}</code>: what Muster won't notify you of again: what it notified, and what you'd already seen (waiting at start or when notifications were turned on, or shown in the window in front)",
+    "helperDir": "<code>{{file}}</code>: the helper's account, model and conversations",
+    "window": "Appearance, the display mode, text size, Group by, saved views and the pane's width are kept by the window itself, on this Mac.",
+    "reads": "What it reads",
+    "cantRead": "Can't read the projects: {{error}}",
+    "loading": "Loading the projects…",
+    "found": "Found on their own ({{where}} and one level deeper)",
+    "foundNone": "Found on their own ({{where}} and one level deeper): none.",
+    "added": "Added by you",
+    "addedNone": "Added by you: none. Add a queue kept anywhere else in Projects.",
+    "project": "{{name}}: <path/>",
+    "projectHidden": "{{name}}: <path/> (hidden, not read)",
+    "projectGone": "{{name}}: <path/> (not a queue any more)",
+    "transcripts": "Session transcripts: <path/>",
+    "transcriptsUnder": "In them, only projects under <path/>",
+    "private": "All of it is read on this Mac and nothing is sent anywhere. Only what you write to the helper goes out, to Anthropic, through your own Claude Code."
+  },
+  "waiting": {
+    "nothing": "Nothing is waiting for you.",
+    "fromShaping": "From shaping",
+    "fromShapingHead": "From shaping: {{counted}}",
+    "counted": "{{questions}} on {{tasks}}",
+    "questions_one": "{{count}} question",
+    "questions_other": "{{count}} questions",
+    "other": "Questions, blocks and your own tasks",
+    "yoursDoing": "Yours to do: in Doing. Mark it Done when it is.",
+    "yoursTodo": "Yours to do: in To do. Start it when you do.",
+    "q": "Q{{n}}",
+    "needsInput": "Waiting for input in Claude Code: answer it there.",
+    "stepMore_one": "{{step}} · {{count}} more",
+    "stepMore_other": "{{step}} · {{count}} more",
+    "openToAnswer": "Open to answer",
+    "open": "Open",
+    "doneUnblock": "Done, unblock",
+    "grantedUnblock": "Granted, unblock",
+    "unblocked": "Unblocked.",
+    "unblocking": "Unblocking…"
+  },
+  "recent": {
+    "title": "Recently finished",
+    "lastDays_one": "last {{count}} day",
+    "lastDays_other": "last {{count}} days",
+    "foldTitle": "Fold Recently finished into the row above the board",
+    "kindsAria": "Show what finished",
+    "kind": {
+      "all": { "label": "All", "title": "What landed on main and what you accepted" },
+      "merged": { "label": "Merged", "title": "Testing passed and the work landed on main" },
+      "accepted": { "label": "Accepted", "title": "Moved into Done: your Accept, or your own task done" }
+    },
+    "nothing": {
+      "all_one": "Nothing merged or accepted in the last {{count}} day.",
+      "all_other": "Nothing merged or accepted in the last {{count}} days.",
+      "merged_one": "Nothing merged in the last {{count}} day.",
+      "merged_other": "Nothing merged in the last {{count}} days.",
+      "accepted_one": "Nothing accepted in the last {{count}} day.",
+      "accepted_other": "Nothing accepted in the last {{count}} days."
+    },
+    "older_one": "Show older · {{count}} more",
+    "older_other": "Show older · {{count}} more",
+    "olderTitle": "Add the week before",
+    "noTitle": "(no title)",
+    "finish": {
+      "merged": "merged",
+      "accepted": "accepted"
+    },
+    "builtBy": "built by {{who}}",
+    "you": "you",
+    "costReading": "time and tokens…",
+    "costUnknown": "time and tokens unknown",
+    "noTranscripts": "no transcripts on this Mac",
+    "cost": "{{time}} · {{tokens}}",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "yesterdayAt": "yesterday {{time}}",
+    "dateAt": "{{date}} {{time}}",
+    "done": "done {{when}}",
+    "doneToday": "done today",
+    "doneYesterday": "done yesterday",
+    "date": {
+      "day": "{{weekday}} {{day}} {{month}}",
+      "dayYear": "{{weekday}} {{day}} {{month}} {{year}}",
+      "weekday": { "sun": "Sun", "mon": "Mon", "tue": "Tue", "wed": "Wed", "thu": "Thu", "fri": "Fri", "sat": "Sat" },
+      "month": { "jan": "Jan", "feb": "Feb", "mar": "Mar", "apr": "Apr", "may": "May", "jun": "Jun", "jul": "Jul", "aug": "Aug", "sep": "Sep", "oct": "Oct", "nov": "Nov", "dec": "Dec" }
+    }
+  },
+  "display": {
+    "mode": "Mode",
+    "modeAria": "Display mode",
+    "modeMeta": "⌘. turns Focus on from any mode, and off again back to the mode you were in. The header's mode chip opens this page. In every mode, what waits on you keeps its counts and its badge, and everything a mode folds is one click or key away.",
+    "eachShows": "What each mode shows",
+    "same": "The colour code, the docked panes and where every control sits are the same in all three.",
+    "modes": {
+      "adhd": { "label": "ADHD", "says": "Everything on screen: every filter, option and state, nothing behind a click. Out of sight is out of mind." },
+      "standard": { "label": "Standard", "says": "What most apps do: the filters behind one chip, quieter cards, and the task pane's secondary sections folded." },
+      "focus": { "label": "Focus", "says": "Only what needs doing now: Building, Testing and Your check, each card its title and one status line." }
+    },
+    "elements": {
+      "filters": {
+        "label": "Filter bar",
+        "adhd": "Search, saved views, every filter group and Sort, on screen",
+        "standard": "Search and saved views; the filter groups and Sort behind one Filters chip with the number on",
+        "standardReach": "Click Filters: they open in place, under the bar",
+        "focus": "Hidden, and back while a search or filter is on",
+        "focusReach": "⌘F, or the Search and filters button"
+      },
+      "choices": {
+        "label": "Who and Group by",
+        "adhd": "Every choice as a chip",
+        "standard": "The current choice as one chip",
+        "focus": "The current choice as one chip, in the filter bar",
+        "reach": "Click the chip: the choices lay out in its place"
+      },
+      "cardLines": {
+        "label": "Card lines",
+        "adhd": "Who and since when, the check-in, branch, tags, parent, estimate, files and age on every card",
+        "standard": "Title, kind, priority, age, anything wrong and what Claude Code says the session is doing; who, the check-in, tags, estimate and the rest on the selected card",
+        "standardReach": "Select the card",
+        "focus": "Title and one status line, and blocked, paused, quiet, needs you or what Claude Code says the session is doing, when it is",
+        "focusReach": "Open the card: the task pane has it all"
+      },
+      "doneLine": {
+        "label": "Done line",
+        "adhd": "When it was done (done 4 min ago), on every Done card",
+        "standard": "When it was done, on every Done card: it's the card's status line",
+        "focus": "When it was done, on every Done card: it's the card's one status line"
+      },
+      "holderRibbon": {
+        "label": "Holder ribbon",
+        "adhd": "Who holds a task in Shaping, Building or Testing, and who is shaping a backlog note, in the card's corner",
+        "standard": "Who holds a task in Shaping, Building or Testing, and who is shaping a backlog note, in the card's corner: on the brief card it's the one place the holder shows",
+        "focus": "Who holds a task in Shaping, Building or Testing, and who is shaping a backlog note, in the card's corner: who's on it is status"
+      },
+      "columns": {
+        "label": "Board columns",
+        "all": "Every stage with tasks, and Paused before Backlog; an empty one, or one you folded, is a chip in the row above the board with its count, needs you and blocked",
+        "focus": "Building, Testing and Your check; the others and Paused are chips in the row above the board with their counts, needs you and blocked (the grouped board's Paused and Backlog bands fold to their heads)",
+        "focusReach": "Click a chip to open that column; Fold puts it back"
+      },
+      "rail": {
+        "label": "Recently finished",
+        "open": "Docked beside the board: what merged or was accepted, by day, with time and tokens",
+        "focus": "A chip at the end of the row above the board, with its name and count",
+        "focusReach": "Click the chip to open it in place; Fold puts it back"
+      },
+      "paneSections": {
+        "label": "Task pane",
+        "adhd": "Vision, Review, Work, the Log and Check-ins open, one under another",
+        "folded": "Vision, Review, Work, and the Log and check-ins folded to a header each",
+        "reach": "Click a header to open it"
+      },
+      "sidebar": {
+        "label": "Sidebar",
+        "full": "Projects under their category headings (each with its tasks, needs you and working), their counts, the order chips, each one's colour dot and activity line, and + Category; each heading one line of labelled counts, what needs you first, the same folded",
+        "focus": "Category headings with the same one line of labelled counts, what needs you first, open or folded, project names with their colour dot, the working dot, stalled and the needs-you and paused counts, and a project over its Your check limit says so; a stalled project keeps its Ask for a check-in",
+        "focusReach": "Leave Focus: ⌘. or the mode chip in the header"
+      }
+    }
+  }
+}

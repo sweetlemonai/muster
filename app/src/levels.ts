@@ -1,3 +1,4 @@
+import { tl } from "./i18n";
 import { fmtMinutes, fmtTokens, key, type StageId, stageLabel, stageOf, stageRank } from "./lib";
 import { siblingKey, taskKey } from "./taskKey";
 import type { Progress, Task } from "./types";
@@ -14,11 +15,13 @@ export const LEVELS = [
 ] as const;
 
 export type GroupBy = "none" | "feature" | "goal";
-export const GROUP_BYS: { id: GroupBy; label: string }[] = [
-  { id: "none", label: "None" },
-  { id: "feature", label: "Feature" },
-  { id: "goal", label: "Goal" },
-];
+/** Group by's choices, in the filter bar: their words in the language shown (common.json, mu-146). */
+export const GROUP_BYS: { readonly id: GroupBy; readonly label: string }[] = (["none", "feature", "goal"] as const).map((id) => ({
+  id,
+  get label() {
+    return tl(`groupBy.${id}`);
+  },
+}));
 export const GROUP_KEY = "muster.groupBy";
 
 /** A remembered Group by; anything else is None. */

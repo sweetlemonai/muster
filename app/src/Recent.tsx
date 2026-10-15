@@ -1,5 +1,6 @@
 import { useContext, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
+import { tl, tn } from "./i18n";
 import { fmtMinutes, key, type RoleNames, shortTokens } from "./lib";
 import { taskKey } from "./taskKey";
 import { builtBy, byKind, dayGroups, type DayGroup, type Finish, finishes, KIND_FILTERS, type KindFilter, whenText } from "./recentData";
@@ -13,10 +14,10 @@ export type Cost = { minutes: number; tokens: number; read: number } | { error: 
 
 /** The time and tokens line: "12 min · 450k tokens", or why there's none. Undefined is still reading. */
 export function costText(c: Cost | undefined): string {
-  if (!c) return "time and tokens…";
-  if ("error" in c) return "time and tokens unknown";
-  if (c.read === 0) return "no transcripts on this Mac";
-  return `${fmtMinutes(c.minutes) || "0 min"} · ${shortTokens(c.tokens)} tokens`;
+  if (!c) return tn("shell", "recent.costReading");
+  if ("error" in c) return tn("shell", "recent.costUnknown");
+  if (c.read === 0) return tn("shell", "recent.noTranscripts");
+  return tn("shell", "recent.cost", { time: fmtMinutes(c.minutes) || tl("time.min", { count: 0 }), tokens: tl("tokensShort", { amount: shortTokens(c.tokens) }) });
 }
 
 /** Costs read so far, by "queue/id", with the file's modified time they were read at. The core
@@ -104,7 +105,6 @@ export default function Recent({ tasks, now, kind, onKind, multi, openKey, onOpe
   );
 }
 
-const NOTHING: Record<KindFilter, string> = { all: "merged or accepted", merged: "merged", accepted: "accepted" };
 
 /** The list as drawn: the head with its window and the kind chips, the day groups, Show older. */
 export function RecentList({ groups, older, kind, onKind, weeks, onOlder, now, multi, openKey, onOpen, costs, onFold, names = {} }: {
@@ -126,15 +126,15 @@ export function RecentList({ groups, older, kind, onKind, weeks, onOlder, now, m
 }) {
   const days = weeks * 7;
   return (
-    <aside className="recent" aria-label="Recently finished">
+    <aside className="recent" aria-label={tn("shell", "recent.title")}>
       <header className="recent-head">
         <h2>
-          Recently finished <small>last {days} days</small>
-          <Pill type="button" className="rail-unfold" aria-expanded={true} aria-label="Fold Recently finished into the row above the board" title="Fold Recently finished into the row above the board" onClick={onFold}>
-            Fold
+          {tn("shell", "recent.title")} <small>{tn("shell", "recent.lastDays", { count: days })}</small>
+          <Pill type="button" className="rail-unfold" aria-expanded={true} aria-label={tn("shell", "recent.foldTitle")} title={tn("shell", "recent.foldTitle")} onClick={onFold}>
+            {tl("fold")}
           </Pill>
         </h2>
-        <span className="recent-kinds" role="group" aria-label="Show what finished">
+        <span className="recent-kinds" role="group" aria-label={tn("shell", "recent.kindsAria")}>
           {KIND_FILTERS.map((k) => (
             <Pill key={k.id} type="button" on={kind === k.id} aria-pressed={kind === k.id} title={k.title} onClick={() => onKind(k.id)}>
               {k.label}
@@ -143,7 +143,7 @@ export function RecentList({ groups, older, kind, onKind, weeks, onOlder, now, m
         </span>
       </header>
       <div className="recent-list">
-        {groups.length === 0 && <p className="none">Nothing {NOTHING[kind]} in the last {days} days.</p>}
+        {groups.length === 0 && <p className="none">{tn("shell", `recent.nothing.${kind}`, { count: days })}</p>}
         {groups.map((g) => (
           <section key={g.day} className="recent-day" aria-label={g.label}>
             <h3 className="recent-day-head">{g.label} <small>{g.rows.length}</small></h3>
@@ -153,8 +153,8 @@ export function RecentList({ groups, older, kind, onKind, weeks, onOlder, now, m
           </section>
         ))}
         {older > 0 && (
-          <button type="button" className="more" onClick={onOlder} title="Add the week before">
-            Show older · {older} more
+          <button type="button" className="more" onClick={onOlder} title={tn("shell", "recent.olderTitle")}>
+            {tn("shell", "recent.older", { count: older })}
           </button>
         )}
       </div>
@@ -165,20 +165,20 @@ export function RecentList({ groups, older, kind, onKind, weeks, onOlder, now, m
 /** One row: the project (with All), id and title, what happened and when; under them who built
  *  it and its time and tokens. The whole row opens the task in the pane. */
 function RecentRow({ r, now, multi, active, onOpen, cost, names }: { r: Finish; now: number; multi: boolean; active: boolean; onOpen: (t: Task) => void; cost: Cost | undefined; names: RoleNames }) {
-  const t = r.task;
-  const by = builtBy(t, names);
+  const task = r.task;
+  const by = builtBy(task, names);
   return (
-    <button type="button" className={active ? "recent-row active" : "recent-row"} onClick={() => onOpen(t)}>
+    <button type="button" className={active ? "recent-row active" : "recent-row"} onClick={() => onOpen(task)}>
       <span className="recent-top">
-        {multi && <ProjectName name={t.queue} />}
-        <TaskKey t={t}>{taskKey(t)}</TaskKey>
-        <span className="recent-title">{t.title || "(no title)"}</span>
+        {multi && <ProjectName name={task.queue} />}
+        <TaskKey t={task}>{taskKey(task)}</TaskKey>
+        <span className="recent-title">{task.title || tn("shell", "recent.noTitle")}</span>
         <span className="recent-kind-when">
-          <span className={`recent-kind ${r.kind}`}>{r.kind}</span>
+          <span className={`recent-kind ${r.kind}`}>{tn("shell", `recent.finish.${r.kind}`)}</span>
           <span className="recent-when" title={r.at}>{whenText(r.at, now)}</span>
         </span>
       </span>
-      <span className="recent-meta">{[by ? `built by ${by}` : "", costText(cost)].filter(Boolean).join(" · ")}</span>
+      <span className="recent-meta">{[by ? tn("shell", "recent.builtBy", { who: by }) : "", costText(cost)].filter(Boolean).join(" · ")}</span>
     </button>
   );
 }

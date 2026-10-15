@@ -1,0 +1,128 @@
+{
+  "sentences": "{{a}} {{b}}",
+  "loading": "Loading…",
+  "save": "Save",
+  "cancel": "Cancel",
+  "remove": "Remove",
+  "set": "Set",
+  "on": "On",
+  "off": "Off",
+  "none": "None",
+  "all": "All",
+  "you": "You",
+  "agents": "Agents",
+  "fold": "Fold",
+  "show": "Show",
+  "hide": "Hide",
+  "listSep": ", ",
+  "clauseSep": "; ",
+  "choice": {
+    "current": "{{label}}: {{value}}, click to change"
+  },
+  "pickFor": "Pick for {{label}}",
+  "stage": {
+    "backlog": "Backlog",
+    "shaping": "Shaping",
+    "ready": "Ready",
+    "building": "Building",
+    "testing": "Testing",
+    "your-check": "Your check",
+    "done": "Done"
+  },
+  "role": {
+    "backlog": "anyone",
+    "shaping": "product + tech + UI agents",
+    "ready": "claimable",
+    "building": "code agent",
+    "testing": "QA agent",
+    "your-check": "owner"
+  },
+  "priority": {
+    "high": "high",
+    "normal": "normal",
+    "low": "low",
+    "word": "{{priority}} priority"
+  },
+  "kind": {
+    "code": "code",
+    "bug": "bug",
+    "chore": "chore",
+    "tech-debt": "tech-debt",
+    "spike": "spike",
+    "design": "design",
+    "docs": "docs",
+    "research": "research"
+  },
+  "flag": {
+    "blocked": "Blocked",
+    "needsYou": "Needs you"
+  },
+  "groupBy": {
+    "label": "Group by",
+    "none": "None",
+    "feature": "Feature",
+    "goal": "Goal"
+  },
+  "who": {
+    "all": "All",
+    "human": "You",
+    "ai": "Agents"
+  },
+  "youRibbon": {
+    "label": "You",
+    "quiet": "quiet",
+    "title": "Your own task: only you do it, agents never take it"
+  },
+  "sort": {
+    "priority": { "label": "priority", "title": "What needs you first, then high to low; Done newest finished first" },
+    "newest": { "label": "newest", "title": "Latest captured first" },
+    "oldest": { "label": "oldest", "title": "Earliest captured first" },
+    "changed": { "label": "changed", "title": "Latest changed first" },
+    "estimate": { "label": "estimate", "title": "Smallest estimate first, not estimated last" },
+    "id": { "label": "id", "title": "By id" }
+  },
+  "time": {
+    "now": "now",
+    "justNow": "just now",
+    "min_one": "{{count}} min",
+    "min_other": "{{count}} min",
+    "h_one": "{{count}} h",
+    "h_other": "{{count}} h",
+    "d_one": "{{count}} d",
+    "d_other": "{{count}} d",
+    "join": "{{a}} {{b}}",
+    "minAgo_one": "{{count}} min ago",
+    "minAgo_other": "{{count}} min ago",
+    "hAgo_one": "{{count}} h ago",
+    "hAgo_other": "{{count}} h ago",
+    "yesterday": "yesterday",
+    "daysAgo_one": "{{count}} day ago",
+    "daysAgo_other": "{{count}} days ago",
+    "noActivity": "no activity"
+  },
+  "tokens_one": "{{count}} token",
+  "tokens_other": "{{count}} tokens",
+  "tokensShort": "{{amount}} tokens",
+  "estimate": "≈ {{parts}} left",
+  "estimateSome": "≈ {{parts}} left ({{est}} of {{open}} open tasks estimated)",
+  "help": {
+    "on": "Help: {{topic}}",
+    "topic": {
+      "board": "the board",
+      "table": "the table",
+      "timeline": "the timeline",
+      "graph": "the graph",
+      "helper": "the Helper",
+      "projects": "Projects",
+      "task-pane": "the task pane",
+      "note-pane": "a backlog note",
+      "new-task": "New task",
+      "appearance": "Appearance",
+      "display": "Display",
+      "agents": "Agents",
+      "notifications": "Notifications",
+      "about": "About"
+    }
+  },
+  "splitter": "Drag to resize · double-click for the default · ← → with the focus here (Shift: bigger steps)"
+}

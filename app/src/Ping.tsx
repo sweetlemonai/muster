@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { api } from "./api";
 import { isHuman } from "./human";
+import { sentences, tn } from "./i18n";
 import { holderOf, quietCheckin, splitHolder, stamp } from "./lib";
 import { taskKey } from "./taskKey";
 import { askedText, cantAsk, MAX_MESSAGE, messageLength, quietToAsk, unreachable } from "./reach";
@@ -152,8 +153,8 @@ export function QuietPing({ tasks, now }: { tasks: Task[]; now: number }) {
   const waiting = quiet.filter((t) => cantAsk(t) === ANSWER_FIRST).length;
   const unreached = quiet.length - reachable.length - waiting;
   const why = [
-    unreached > 0 ? `${unreached} of them ${unreached === 1 ? "has" : "have"} no session to reach` : "",
-    waiting > 0 ? `${waiting} ${waiting === 1 ? "waits" : "wait"} for input in Claude Code: answer it there first` : "",
+    unreached > 0 ? tn("shell", "ping.unreached", { count: unreached }) : "",
+    waiting > 0 ? tn("shell", "ping.waiting", { count: waiting }) : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -169,15 +170,15 @@ export function QuietPing({ tasks, now }: { tasks: Task[]; now: number }) {
       }
     }
     const asked = reachable.length - failed.length;
-    setResult({ ok: failed.length === 0, text: [`Asked ${asked} ${asked === 1 ? "session" : "sessions"}.`, ...failed].join(" ") });
+    setResult({ ok: failed.length === 0, text: sentences([tn("shell", "ping.asked", { count: asked }), ...failed]) });
     setBusy(false);
   };
-  const label = reachable.length ? `Ask all quiet sessions for a check-in (${reachable.length})` : "Ask all quiet sessions for a check-in";
+  const label = reachable.length ? tn("shell", "ping.askAllCount", { count: reachable.length }) : tn("shell", "ping.askAll");
   return (
     <div className="side-ping">
       <Button type="button" disabled={reachable.length === 0 || busy} onClick={() => void askAll()}>{label}</Button>
       {reachable.length === 0 && waiting === 0 ? (
-        <span className="why">none of its quiet claims has a session to reach</span>
+        <span className="why">{tn("shell", "ping.noneReach")}</span>
       ) : (
         why && <span className="why">{why}</span>
       )}

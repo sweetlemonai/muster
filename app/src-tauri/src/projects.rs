@@ -1944,6 +1944,7 @@ mod tests {
             menu_bar: false,
             old_pauses_offered: true,
             claude_accounts: vec!["mg".into()],
+            lang: None,
         };
         assert_ne!(given, crate::settings::Settings::default());
         let s = read_state(

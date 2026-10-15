@@ -1,6 +1,7 @@
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { tn } from "./i18n";
 import { PANE_MIN, paneRange, SIDEBAR, SIDEBAR_MAX, SIDEBAR_MIN, sidebarRange } from "./paneSize";
 import { dragWidth, loadSplit, PANE_KEY, PANE_LEGACY_KEY, SIDEBAR_KEY, SPLIT_STEP, SPLIT_STEP_BIG, splitKey, storeSplit } from "./splitter";
 import { Splitter, type SplitterProps } from "./ui";
@@ -227,8 +228,10 @@ describe("the sidebar's and the pane's ranges, which the separator reports", () 
 describe("both panes use the one splitter (0058)", () => {
   it("puts it on the sidebar's right edge and the pane's left, each with its own key and range, fitted to the window", () => {
     expect(appSource.match(/<Splitter /g)).toHaveLength(2);
-    expect(appSource).toContain('side="left" label="Projects width"');
-    expect(appSource).toContain('side="right" label="Details width"');
+    // Their names come from the translation files (mu-146), in English here.
+    expect(appSource).toContain('side="left" label={t("app.sidebarWidth")}');
+    expect(appSource).toContain('side="right" label={t("app.detailsWidth")}');
+    expect([tn("shell", "app.sidebarWidth"), tn("shell", "app.detailsWidth")]).toEqual(["Projects width", "Details width"]);
     expect(appSource).toContain("{...sidebarRange(win)} width={sidebarWidth}");
     expect(appSource).toContain("{...paneRange(win, sidebarWidth)} width={paneWidth}");
     expect(appSource).toContain("useSplitWidth(SIDEBAR_KEY)");

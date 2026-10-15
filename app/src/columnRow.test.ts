@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import appSource from "./App.tsx?raw";
 import columnRowSource from "./ColumnRow.tsx?raw";
 import ColumnRow, { chipWords, placeCount, type PlaceCounts, type RowChip, RowCue, rowChipsOf } from "./ColumnRow";
+import { tn } from "./i18n";
 import { columns, STAGES } from "./lib";
 import { ColumnHead } from "./ModeViews";
 import {
@@ -82,7 +83,8 @@ describe("which places are open and which are chips (AC1)", () => {
     expect(b.open).toEqual([]);
     expect(b.row).toEqual([...ROW_ORDER]);
     expect(b.tracks).toBe("minmax(0, 1fr)");
-    expect(appSource).toContain("{plain.open.length === 0 && <p className=\"none\">Every column is folded into the row above: click one to open it.</p>}");
+    expect(appSource).toContain('{plain.open.length === 0 && <p className="none">{t("app.allFolded")}</p>}');
+    expect(tn("shell", "app.allFolded")).toBe("Every column is folded into the row above: click one to open it.");
   });
   it("App draws only the open columns, never a strip, and the row under the filter bar", () => {
     const plain = appSource.slice(appSource.indexOf('{groupBy === "none" && <main className="board"'), appSource.indexOf("</main>}", appSource.indexOf('{groupBy === "none" && <main className="board"')));

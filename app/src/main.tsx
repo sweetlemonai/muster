@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./styles.css";
 import "./fonts.css";
+import { startLocale } from "./i18n";
 import { apply, load } from "./themes";
 import { installZoomKeys } from "./zoom";
 
@@ -12,8 +13,12 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
 // The remembered text size, and ⌘+ ⌘− ⌘0 (zoom.ts).
 installZoomKeys();
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
+// The last language's text (and <html lang dir>) before the first render, so nothing shows in
+// English first; then the window follows the core's language (i18n/boot.ts, mu-146).
+void startLocale(["shell"]).finally(() =>
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  ),
 );

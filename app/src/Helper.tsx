@@ -1,6 +1,7 @@
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { api, type AccountInfo, type HelperInfo, type HelperLine } from "./api";
+import { tl, tn } from "./i18n";
 import { readFiles, stamp } from "./lib";
 import Markdown from "./Markdown";
 import { HelpButton } from "./HelpButton";
@@ -267,33 +268,30 @@ export function AccountPicker({ info, listed, onPicked, onRefresh, onCancel }: {
   const label = (a: AccountInfo) => `~/${a.name}`;
   return (
     <>
-      <h2>Which Claude account should the helper use?</h2>
-      <p className="meta">
-        The helper runs your own Claude Code with that account's own login, like any session you start, and never reads tokens.
-        What you write here goes to Anthropic, the same as any Claude Code session. You can change it any time.
-      </p>
+      <h2>{tn("shell", "account.which")}</h2>
+      <p className="meta">{tn("shell", "account.meta")}</p>
       {info.accounts.length === 0 && <p className="err">{ACCOUNTS_WORDS.helperNone(listed)}</p>}
       <table className="projects-table">
         <tbody>
           {info.accounts.map((a) => (
             <tr key={a.name}>
-              <td><b>{label(a)}</b>{info.account === a.name && <span className="meta"> · in use</span>}</td>
+              <td><b>{label(a)}</b>{info.account === a.name && <span className="meta">{tn("shell", "account.inUse")}</span>}</td>
               <td>
-                {a.loggedIn === true && <span className="ok">logged in{a.plan ? ` · ${a.plan}` : ""}</span>}
-                {a.loggedIn === false && <span className="err">not logged in</span>}
-                {a.loggedIn === null && <span className="meta">couldn't check</span>}
+                {a.loggedIn === true && <span className="ok">{a.plan ? tn("shell", "account.loggedInPlan", { plan: a.plan }) : tn("shell", "account.loggedIn")}</span>}
+                {a.loggedIn === false && <span className="err">{tn("shell", "account.notLoggedIn")}</span>}
+                {a.loggedIn === null && <span className="meta">{tn("shell", "account.couldntCheck")}</span>}
               </td>
               <td className="actions">
-                {a.loggedIn !== true && <Button onClick={() => void api.helperLogin(a.name).catch((e) => setError(String(e)))}>Log in…</Button>}
-                <Button onClick={() => pick(a)} disabled={a.loggedIn === false}>Use this one</Button>
+                {a.loggedIn !== true && <Button onClick={() => void api.helperLogin(a.name).catch((e) => setError(String(e)))}>{tn("shell", "account.logIn")}</Button>}
+                <Button onClick={() => pick(a)} disabled={a.loggedIn === false}>{tn("shell", "account.use")}</Button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
       <div className="accounts">
-        <Button onClick={onRefresh}>Check again</Button>
-        {onCancel && <Button onClick={onCancel}>Cancel</Button>}
+        <Button onClick={onRefresh}>{tn("shell", "account.checkAgain")}</Button>
+        {onCancel && <Button onClick={onCancel}>{tl("cancel")}</Button>}
       </div>
       {error && <p className="err">{error}</p>}
     </>

@@ -5,77 +5,114 @@
 // (modes.test.ts). Everything else, the colour code, no overlays and fixed places, is the same in
 // all three (docs/DESIGN.md).
 import { createContext, useContext } from "react";
+import { tn, type Key } from "./i18n";
 import { STAGES } from "./lib";
 
 export type DisplayMode = "adhd" | "standard" | "focus";
 export const DEFAULT_MODE: DisplayMode = "adhd";
 
-/** The modes in the order Settings shows them, each with what it's for. */
-export const MODES: readonly { id: DisplayMode; label: string; says: string }[] = [
-  { id: "adhd", label: "ADHD", says: "Everything on screen: every filter, option and state, nothing behind a click. Out of sight is out of mind." },
-  { id: "standard", label: "Standard", says: "What most apps do: the filters behind one chip, quieter cards, and the task pane's secondary sections folded." },
-  { id: "focus", label: "Focus", says: "Only what needs doing now: Building, Testing and Your check, each card its title and one status line." },
-];
+/** The modes in the order Settings shows them, each with what it's for. The words are read in the
+ *  language shown each time (shell.json `display.modes`, mu-146). */
+export const MODES: readonly { readonly id: DisplayMode; readonly label: string; readonly says: string }[] = (["adhd", "standard", "focus"] as const).map((id) => ({
+  id,
+  get label() {
+    return tn("shell", `display.modes.${id}.label`);
+  },
+  get says() {
+    return tn("shell", `display.modes.${id}.says`);
+  },
+}));
 
 /** What an element does in one mode: `how` is what the component reads, `says` and `reach` are
  *  Settings' words. `reach` says how to get back what the mode hides, and only ADHD hides nothing. */
-type Behaviour = { how: string; says: string; reach?: string };
-type Entry = { label: string } & Record<DisplayMode, Behaviour>;
+type Behaviour = { how: string; readonly says: string; readonly reach?: string };
+type Entry = { readonly label: string } & Record<DisplayMode, Behaviour>;
+
+/** A behaviour with Settings' words (shell.json `display.elements`), read in the language shown
+ *  each time they're asked for. */
+function does<H extends string>(how: H, says: Key<"shell">, reach?: Key<"shell">): { how: H; readonly says: string; readonly reach?: string } {
+  const words = {
+    how,
+    get says() {
+      return tn("shell", says);
+    },
+  };
+  if (reach === undefined) return words;
+  return Object.defineProperty(words, "reach", { enumerable: true, get: () => tn("shell", reach) });
+}
 
 const TABLE = {
   filters: {
-    label: "Filter bar",
-    adhd: { how: "open", says: "Search, saved views, every filter group and Sort, on screen" },
-    standard: { how: "folded", says: "Search and saved views; the filter groups and Sort behind one Filters chip with the number on", reach: "Click Filters: they open in place, under the bar" },
-    focus: { how: "on-key", says: "Hidden, and back while a search or filter is on", reach: "⌘F, or the Search and filters button" },
+    get label() {
+      return tn("shell", "display.elements.filters.label");
+    },
+    adhd: does("open", "display.elements.filters.adhd"),
+    standard: does("folded", "display.elements.filters.standard", "display.elements.filters.standardReach"),
+    focus: does("on-key", "display.elements.filters.focus", "display.elements.filters.focusReach"),
   },
   choices: {
-    label: "Who and Group by",
-    adhd: { how: "all", says: "Every choice as a chip" },
-    standard: { how: "value", says: "The current choice as one chip", reach: "Click the chip: the choices lay out in its place" },
-    focus: { how: "value", says: "The current choice as one chip, in the filter bar", reach: "Click the chip: the choices lay out in its place" },
+    get label() {
+      return tn("shell", "display.elements.choices.label");
+    },
+    adhd: does("all", "display.elements.choices.adhd"),
+    standard: does("value", "display.elements.choices.standard", "display.elements.choices.reach"),
+    focus: does("value", "display.elements.choices.focus", "display.elements.choices.reach"),
   },
   "card-lines": {
-    label: "Card lines",
-    adhd: { how: "all", says: "Who and since when, the check-in, branch, tags, parent, estimate, files and age on every card" },
-    standard: { how: "selected", says: "Title, kind, priority, age, anything wrong and what Claude Code says the session is doing; who, the check-in, tags, estimate and the rest on the selected card", reach: "Select the card" },
-    focus: { how: "status", says: "Title and one status line, and blocked, paused, quiet, needs you or what Claude Code says the session is doing, when it is", reach: "Open the card: the task pane has it all" },
+    get label() {
+      return tn("shell", "display.elements.cardLines.label");
+    },
+    adhd: does("all", "display.elements.cardLines.adhd"),
+    standard: does("selected", "display.elements.cardLines.standard", "display.elements.cardLines.standardReach"),
+    focus: does("status", "display.elements.cardLines.focus", "display.elements.cardLines.focusReach"),
   },
   "done-line": {
-    label: "Done line",
-    adhd: { how: "show", says: "When it was done (done 4 min ago), on every Done card" },
-    standard: { how: "show", says: "When it was done, on every Done card: it's the card's status line" },
-    focus: { how: "show", says: "When it was done, on every Done card: it's the card's one status line" },
+    get label() {
+      return tn("shell", "display.elements.doneLine.label");
+    },
+    adhd: does("show", "display.elements.doneLine.adhd"),
+    standard: does("show", "display.elements.doneLine.standard"),
+    focus: does("show", "display.elements.doneLine.focus"),
   },
   "holder-ribbon": {
-    label: "Holder ribbon",
-    adhd: { how: "show", says: "Who holds a task in Shaping, Building or Testing, and who is shaping a backlog note, in the card's corner" },
-    standard: { how: "show", says: "Who holds a task in Shaping, Building or Testing, and who is shaping a backlog note, in the card's corner: on the brief card it's the one place the holder shows" },
-    focus: { how: "show", says: "Who holds a task in Shaping, Building or Testing, and who is shaping a backlog note, in the card's corner: who's on it is status" },
+    get label() {
+      return tn("shell", "display.elements.holderRibbon.label");
+    },
+    adhd: does("show", "display.elements.holderRibbon.adhd"),
+    standard: does("show", "display.elements.holderRibbon.standard"),
+    focus: does("show", "display.elements.holderRibbon.focus"),
   },
   columns: {
-    label: "Board columns",
-    adhd: { how: "all", says: "Every stage with tasks, and Paused before Backlog; an empty one, or one you folded, is a chip in the row above the board with its count, needs you and blocked" },
-    standard: { how: "all", says: "Every stage with tasks, and Paused before Backlog; an empty one, or one you folded, is a chip in the row above the board with its count, needs you and blocked" },
-    focus: { how: "now", says: "Building, Testing and Your check; the others and Paused are chips in the row above the board with their counts, needs you and blocked (the grouped board's Paused and Backlog bands fold to their heads)", reach: "Click a chip to open that column; Fold puts it back" },
+    get label() {
+      return tn("shell", "display.elements.columns.label");
+    },
+    adhd: does("all", "display.elements.columns.all"),
+    standard: does("all", "display.elements.columns.all"),
+    focus: does("now", "display.elements.columns.focus", "display.elements.columns.focusReach"),
   },
   rail: {
-    label: "Recently finished",
-    adhd: { how: "open", says: "Docked beside the board: what merged or was accepted, by day, with time and tokens" },
-    standard: { how: "open", says: "Docked beside the board: what merged or was accepted, by day, with time and tokens" },
-    focus: { how: "strip", says: "A chip at the end of the row above the board, with its name and count", reach: "Click the chip to open it in place; Fold puts it back" },
+    get label() {
+      return tn("shell", "display.elements.rail.label");
+    },
+    adhd: does("open", "display.elements.rail.open"),
+    standard: does("open", "display.elements.rail.open"),
+    focus: does("strip", "display.elements.rail.focus", "display.elements.rail.focusReach"),
   },
   "pane-sections": {
-    label: "Task pane",
-    adhd: { how: "open", says: "Vision, Review, Work, the Log and Check-ins open, one under another" },
-    standard: { how: "folded", says: "Vision, Review, Work, and the Log and check-ins folded to a header each", reach: "Click a header to open it" },
-    focus: { how: "folded", says: "Vision, Review, Work, and the Log and check-ins folded to a header each", reach: "Click a header to open it" },
+    get label() {
+      return tn("shell", "display.elements.paneSections.label");
+    },
+    adhd: does("open", "display.elements.paneSections.adhd"),
+    standard: does("folded", "display.elements.paneSections.folded", "display.elements.paneSections.reach"),
+    focus: does("folded", "display.elements.paneSections.folded", "display.elements.paneSections.reach"),
   },
   sidebar: {
-    label: "Sidebar",
-    adhd: { how: "full", says: "Projects under their category headings (each with its tasks, needs you and working), their counts, the order chips, each one's colour dot and activity line, and + Category; each heading one line of labelled counts, what needs you first, the same folded" },
-    standard: { how: "full", says: "Projects under their category headings (each with its tasks, needs you and working), their counts, the order chips, each one's colour dot and activity line, and + Category; each heading one line of labelled counts, what needs you first, the same folded" },
-    focus: { how: "narrow", says: "Category headings with the same one line of labelled counts, what needs you first, open or folded, project names with their colour dot, the working dot, stalled and the needs-you and paused counts, and a project over its Your check limit says so; a stalled project keeps its Ask for a check-in", reach: "Leave Focus: ⌘. or the mode chip in the header" },
+    get label() {
+      return tn("shell", "display.elements.sidebar.label");
+    },
+    adhd: does("full", "display.elements.sidebar.full"),
+    standard: does("full", "display.elements.sidebar.full"),
+    focus: does("narrow", "display.elements.sidebar.focus", "display.elements.sidebar.focusReach"),
   },
 } as const satisfies Record<string, Entry>;
 

@@ -1,6 +1,8 @@
 import { boardColumn, holder, isBoardSort, priorityName, stageLabel, STAGES, stamp, type BoardSort, type RoleNames } from "./lib";
 import { queryWords, searchWords, taskMatches, textMatches } from "./search";
 import { isBlocked } from "./blockWords";
+import { KINDS } from "./fields";
+import { tl, tn } from "./i18n";
 import { needsYou } from "./human";
 import type { Note, Task } from "./types";
 
@@ -27,8 +29,8 @@ export function dayContext(now: number, names: RoleNames): DayContext {
 
 export type Group = {
   id: string;
-  /** The group's name on the bar. */
-  label: string;
+  /** The group's name on the bar, in the language shown. */
+  readonly label: string;
   /** The values these tasks have, in the group's order. */
   present: (tasks: Task[], ctx: DayContext) => string[];
   has: (t: Task, value: string, ctx: DayContext) => boolean;
@@ -41,67 +43,87 @@ export type Group = {
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const same = (v: string) => v;
 
-/** A group of free values (types, tags, holders): those the tasks have, sorted. */
-function listGroup(id: string, label: string, get: (t: Task, ctx: DayContext) => string[], chip = same, active = chip): Group {
-  return {
-    id,
-    label,
-    present: (tasks, ctx) => [...new Set(tasks.flatMap((t) => get(t, ctx)).filter(Boolean))].sort(cmp),
-    has: (t, v, ctx) => get(t, ctx).includes(v),
+/** The groups by id; each one's name on the bar is in shell.json `filter.group` (mu-146). */
+type GroupId = "stage" | "type" | "priority" | "tag" | "holder" | "state" | "captured" | "changed" | "done";
+
+/** A group's id and its name, read in the language shown each time. */
+const groupOf = (id: GroupId) => ({
+  id,
+  get label() {
+    return tn("shell", `filter.group.${id}`);
+  },
+});
+
+/** A group of free values (types, tags, holders): those the tasks have, sorted. The values are
+ *  the data; `chip` and `active` say them. */
+function listGroup(id: GroupId, get: (t: Task, ctx: DayContext) => string[], chip: (v: string) => string = same, active = chip): Group {
+  return Object.assign(groupOf(id), {
+    present: (tasks: Task[], ctx: DayContext) => [...new Set(tasks.flatMap((t) => get(t, ctx)).filter(Boolean))].sort(cmp),
+    has: (t: Task, v: string, ctx: DayContext) => get(t, ctx).includes(v),
     chip,
     active,
-  };
+  });
 }
 
 /** A group of known values in a fixed order: those some task has. */
-function fixedGroup(id: string, label: string, order: readonly string[], has: Group["has"], chip: (v: string) => string, active = chip): Group {
-  return { id, label, present: (tasks, ctx) => order.filter((v) => tasks.some((t) => has(t, v, ctx))), has, chip, active };
+function fixedGroup(id: GroupId, order: readonly string[], has: Group["has"], chip: (v: string) => string, active = chip): Group {
+  return Object.assign(groupOf(id), { present: (tasks: Task[], ctx: DayContext) => order.filter((v) => tasks.some((t) => has(t, v, ctx))), has, chip, active });
 }
 
-const STATES: Record<string, { label: string; has: (t: Task) => boolean }> = {
+type StateId = "blocked" | "paused" | "needs-you" | "questions";
+const STATES: Record<StateId, (t: Task) => boolean> = {
   // Blocked by the flag, or only by the tasks it depends on (0024), as the red card shows.
-  blocked: { label: "blocked", has: isBlocked },
+  blocked: isBlocked,
   // Paused by the owner (0045): it keeps its stage, so only this finds them all.
-  paused: { label: "paused", has: (t) => Boolean(t.paused) },
+  paused: (t) => Boolean(t.paused),
   // The one needs-you definition (0022): an agent's task waiting on the owner, or the owner's own until done.
-  "needs-you": { label: "needs you", has: needsYou },
-  questions: { label: "open questions", has: (t) => t.openQuestions > 0 },
+  "needs-you": needsYou,
+  questions: (t) => t.openQuestions > 0,
 };
-const SPANS: Record<string, { label: string; from: keyof DayContext }> = {
-  today: { label: "today", from: "today" },
-  week: { label: "this week", from: "week" },
-  month: { label: "this month", from: "month" },
-};
+const isState = (v: string): v is StateId => Object.keys(STATES).includes(v);
+
+type SpanId = "today" | "week" | "month";
+const SPANS: Record<SpanId, "today" | "week" | "month"> = { today: "today", week: "week", month: "month" };
+const isSpan = (v: string): v is SpanId => Object.keys(SPANS).includes(v);
 const changedDay = (t: Task) => (t.modified > 0 ? stamp(new Date(t.modified * 1000)).slice(0, 10) : "");
 
-/** A date group: today, this week, this month (each since its start, local time). */
-function dateGroup(id: string, label: string, verb: string, day: (t: Task) => string): Group {
+/** A date group: today, this week, this month (each since its start, local time). The active
+ *  line says the whole phrase ("captured this week"), one per group and span. */
+function dateGroup(id: "captured" | "changed" | "done", day: (t: Task) => string): Group {
   return fixedGroup(
     id,
-    label,
     Object.keys(SPANS),
     (t, v, ctx) => {
       const d = day(t);
-      const span = SPANS[v];
-      return d !== "" && span !== undefined && d >= ctx[span.from];
+      return d !== "" && isSpan(v) && d >= ctx[SPANS[v]];
     },
-    (v) => SPANS[v]?.label ?? v,
-    (v) => `${verb} ${SPANS[v]?.label ?? v}`,
+    (v) => (isSpan(v) ? tn("shell", `filter.span.${v}`) : v),
+    // i18n-ignore: the next line's template is a key, not text
+    (v) => (isSpan(v) ? tn("shell", `filter.dated.${id}.${v}`) : v),
   );
 }
+
+/** A type as its chip says it: the core's types in the language shown, an older one as it is. */
+const kindChip = (v: string) => (isKind(v) ? tl(`kind.${v}`) : v);
+const isKind = (v: string): v is (typeof KINDS)[number] => (KINDS as readonly string[]).includes(v);
+/** A holder as its chip says it: the owner (lib.ts `holder`'s "owner") in the language shown, a
+ *  session by its name. */
+const holderChip = (v: string) => (v === "owner" ? tn("shell", "filter.owner") : v);
+const PRIORITIES = ["high", "normal", "low"] as const;
+const priorityChip = (v: string) => (PRIORITIES.some((p) => p === v) ? tl(`priority.${v as (typeof PRIORITIES)[number]}`) : v);
 
 export const GROUPS: Group[] = [
   // By the column the board shows it in: the owner's own task (0022) sits in Ready, Building or
   // Done whatever its stage. `muster list --stage` keeps the real stage.
-  fixedGroup("stage", "Stage", STAGES.map((s) => s.id), (t, v) => boardColumn(t) === v, stageLabel),
-  listGroup("type", "Type", (t) => [t.kind]),
-  fixedGroup("priority", "Priority", ["high", "normal", "low"], (t, v) => priorityName(t.priority) === v, same),
-  listGroup("tag", "Tags", (t) => t.tags, (v) => `#${v}`),
-  listGroup("holder", "Held by", (t, ctx) => [holder(t, ctx.names)], same, (v) => `held by ${v}`),
-  fixedGroup("state", "Flags", Object.keys(STATES), (t, v) => STATES[v]?.has(t) ?? false, (v) => STATES[v]?.label ?? v),
-  dateGroup("captured", "Captured", "captured", (t) => t.captured.slice(0, 10)),
-  dateGroup("changed", "Changed", "changed", changedDay),
-  dateGroup("done", "Done", "done", (t) => t.doneOn.slice(0, 10)),
+  fixedGroup("stage", STAGES.map((s) => s.id), (t, v) => boardColumn(t) === v, stageLabel),
+  listGroup("type", (t) => [t.kind], kindChip),
+  fixedGroup("priority", PRIORITIES, (t, v) => priorityName(t.priority) === v, priorityChip),
+  listGroup("tag", (t) => t.tags, (v) => `#${v}`),
+  listGroup("holder", (t, ctx) => [holder(t, ctx.names)], holderChip, (v) => tn("shell", "filter.heldBy", { who: holderChip(v) })),
+  fixedGroup("state", Object.keys(STATES), (t, v) => isState(v) && STATES[v](t), (v) => (isState(v) ? tn("shell", `filter.state.${v}`) : v)),
+  dateGroup("captured", (t) => t.captured.slice(0, 10)),
+  dateGroup("changed", changedDay),
+  dateGroup("done", (t) => t.doneOn.slice(0, 10)),
 ];
 
 /** A group's chips: the values the tasks have, plus any selected one they no longer have (so it
@@ -160,7 +182,7 @@ export type ActiveItem = { group: string; value: string; label: string };
 export function activeItems(q: Query): ActiveItem[] {
   const out: ActiveItem[] = [];
   const s = q.search.trim();
-  if (s) out.push({ group: "search", value: s, label: `“${s}”` });
+  if (s) out.push({ group: "search", value: s, label: tn("shell", "filter.searchItem", { text: s }) });
   for (const g of GROUPS) for (const v of q.filters[g.id] ?? []) out.push({ group: g.id, value: v, label: g.active(v) });
   return out;
 }
@@ -168,7 +190,7 @@ export function activeItems(q: Query): ActiveItem[] {
 /** What the views say when filters hide tasks, so nothing disappears silently. */
 export function hiddenLine(hidden: number, active: boolean): string {
   if (!active) return "";
-  return hidden > 0 ? `${hidden} hidden by filters` : "nothing hidden";
+  return hidden > 0 ? tn("shell", "filter.hidden", { count: hidden }) : tn("shell", "filter.nothingHidden");
 }
 
 // Saved views: a name for a search, filters and sort, per project, in the app's local storage.

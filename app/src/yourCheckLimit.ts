@@ -2,6 +2,7 @@
 // set for a project, the board, the sidebar and Settings › Projects say so. It only warns. The
 // core counts the waiting tasks and keeps the limits (check_limit.rs, in projects.json by queue
 // folder); these are the words. Tested in yourCheckLimit.test.ts.
+import { tn } from "./i18n";
 import type { QueueInfo } from "./types";
 
 /** The default limit and its bounds, as the core's check_limit::DEFAULT, MIN and MAX. */
@@ -88,12 +89,12 @@ export function bandLimit(queues: string[], over: Over[], queue: string): { over
 /** A sidebar row's line when its project is over: "7 in Your check, limit 5"; else "". */
 export function sideLimit(q: QueueInfo | undefined): string {
   const o = q ? overOf(q) : null;
-  return o ? `${o.waiting} in Your check, limit ${o.limit}` : "";
+  return o ? tn("shell", "limit.side", { waiting: o.waiting, limit: o.limit }) : "";
 }
 
 /** A project's limit with its count, for Settings › Projects: "limit 5 · 7 waiting". */
 export function limitText(q: QueueInfo): string {
-  const limit = typeof q.yourCheckLimit === "number" ? `limit ${q.yourCheckLimit}` : "off";
+  const limit = typeof q.yourCheckLimit === "number" ? tn("shell", "limit.on", { limit: q.yourCheckLimit }) : tn("shell", "limit.off");
   const waiting = q.yourCheck ?? 0;
-  return `${limit} · ${waiting === 0 ? "none" : waiting} waiting`;
+  return tn("shell", "limit.cell", { limit, waiting: waiting === 0 ? tn("shell", "limit.noneWaiting") : tn("shell", "limit.waiting", { count: waiting }) });
 }

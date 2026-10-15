@@ -79,6 +79,9 @@ html, body, #root { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--text); }
 button { font: inherit; color: inherit; cursor: pointer; }
 code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+/* Code, paths, commands and shortcuts read left to right in every language; inside a
+   right-to-left sentence they're isolated so they don't scramble it (Drover's rule, mu-146). */
+code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 
 .app { display: flex; flex-direction: column; height: 100%; }
 .top { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
@@ -1127,7 +1130,17 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 /* Settings (0036): a view, never a window. The groups are a docked list on the left, the open
    group's settings beside it, all of them at once. */
 .settings { flex: 1; display: flex; min-height: 0; }
-.settings-groups { flex: none; width: 216px; overflow-y: auto; padding: 12px 10px; border-right: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 55%, var(--bg)); display: flex; flex-direction: column; gap: 2px; }
+/* The left column: Language on top whatever group is open (mu-146), then the groups. */
+.settings-side { flex: none; width: 216px; display: flex; flex-direction: column; min-height: 0; border-inline-end: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 55%, var(--bg)); }
+.settings-lang { padding: 12px 20px 10px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.settings-lang h2 { font-size: 13px; margin: 0; }
+.settings-lang p { margin: 0; font-size: 11.5px; }
+.settings-lang .ui-segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.settings-lang .ui-segment { border: 0; border-inline-start: 1px solid var(--line); border-radius: 0; background: var(--bg); color: var(--text); padding: 2px 12px; }
+.settings-lang .ui-segment:first-child { border-inline-start: 0; }
+.settings-lang .ui-segment:hover, .settings-lang .ui-segment:focus-visible { background: var(--hover); }
+.settings-lang .ui-segment--active, .settings-lang .ui-segment--active:hover { background: var(--selected); font-weight: 650; }
+.settings-groups { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 10px; display: flex; flex-direction: column; gap: 2px; }
 .settings-group { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; border: none; background: none; color: var(--text); padding: 6px 10px; border-radius: 6px; font-weight: 550; }
 .settings-group small { font-weight: 400; font-size: 11.5px; color: var(--muted); }
 .settings-group:hover, .settings-group:focus-visible { background: var(--hover); }

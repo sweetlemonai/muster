@@ -52,9 +52,10 @@ export const api = {
   removeProject: (key: string) => invoke<void>("remove_project", { key }),
   // This machine's settings (0036) with their bounds, and what Settings' About shows. Set one by
   // name (`lease` or `live`) to a span like 12h or 5m, empty for the default, or `notify` (0052)
-  // to on or off, or `claude-accounts` (0099) to the labels by spaces (empty for none); the core checks it.
+  // to on or off, `claude-accounts` (0099) to the labels by spaces (empty for none), or `lang`
+  // (mu-146) to en or fa, empty to follow macOS; the core checks it.
   settingsInfo: () => invoke<SettingsInfo>("settings_info"),
-  setSetting: (name: "lease" | "live" | "notify" | "menu-bar" | "claude-accounts", value: string) => invoke<SettingsInfo>("set_setting", { name, value }),
+  setSetting: (name: "lease" | "live" | "notify" | "menu-bar" | "claude-accounts" | "lang", value: string) => invoke<SettingsInfo>("set_setting", { name, value }),
   // The role profiles (0112) from roles.toml, and one field of one role changed (a list
   // comma-separated); the core checks the whole team and refuses with why.
   rolesInfo: () => invoke<Role[]>("roles_info"),

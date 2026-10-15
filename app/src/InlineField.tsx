@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { type FieldEvent, fieldShows, fieldStep, idleField } from "./fieldSteps";
+import { tl } from "./i18n";
 import { pressed } from "./shortcuts";
 import { Pill } from "./ui";
 
@@ -80,7 +81,7 @@ export default function InlineField({ value, onSave, max, placeholder, label, op
         onBlur={() => run({ kind: "blur" })}
       />
       {field.focused && options.length > 0 && (
-        <span className="inline-options" role="group" aria-label={`Pick for ${label}`}>
+        <span className="inline-options" role="group" aria-label={tl("pickFor", { label })}>
           {options.map((o) => (
             // Picked without taking focus from the field, so the chips stay until it's left.
             <Pill key={o} type="button" on={o === shows} aria-pressed={o === shows} onMouseDown={(e) => e.preventDefault()} onClick={() => run({ kind: "pick", text: o })}>

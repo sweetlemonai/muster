@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
+import { Trans, useT } from "./i18n";
 import { Button, Pill, Splitter } from "./ui";
 import { mayLeave } from "./writeUp";
 import { ago, columns, estimateTotal, feed, key, STAGES } from "./lib";
@@ -200,6 +201,7 @@ function useColumnPicks(): [ColumnPicks, (f: (p: ColumnPicks) => ColumnPicks) =>
 const NO_PICKS: ModePicks = {};
 
 export default function App() {
+  const t = useT("shell");
   const { state, error, at, refresh } = useQueues();
   const [queue, setQueue] = useState("all");
   const [view, setView] = useState<View>("board");
@@ -412,44 +414,44 @@ export default function App() {
     <Labels.Provider value={labels}>
     <ProjectColours.Provider value={colours}>
     <div className="app shell">
-      <aside className="sidebar" aria-label="Projects" data-sidebar={sidebarLook} style={{ width: sidebarWidth }}>
+      <aside className="sidebar" aria-label={t("app.sidebar")} data-sidebar={sidebarLook} style={{ width: sidebarWidth }}>
         <div className="brand"><img className="logo-dark" src={logoDark} alt="" width={22} height={22} /><img className="logo-light" src={logoLight} alt="" width={22} height={22} /> Muster</div>
         <ProjectList queues={state?.queues ?? []} tasks={state?.tasks ?? []} notes={allNotes} activity={state?.activity ?? []} now={now} current={queue} onPick={setQueue} onLabel={(k, label) => api.setProjectLabel(k, label).then(refresh)} edit={projectEdits(refresh)} />
-        <button className="side-add" onClick={() => openSettings("projects")} title="New or existing project queue, in Settings">+ Project</button>
+        <button className="side-add" onClick={() => openSettings("projects")} title={t("app.addProjectTitle")}>{t("app.addProject")}</button>
       </aside>
-      <Splitter {...sidebarRange(win)} width={sidebarWidth} side="left" label="Projects width" onWidth={(w) => sideSplit.set(clampSidebar(w, pageWidth()))} onDrag={(w) => sideSplit.drag(clampSidebar(w, pageWidth()))} onDragEnd={sideSplit.settle} onReset={sideSplit.reset} />
+      <Splitter {...sidebarRange(win)} width={sidebarWidth} side="left" label={t("app.sidebarWidth")} onWidth={(w) => sideSplit.set(clampSidebar(w, pageWidth()))} onDrag={(w) => sideSplit.drag(clampSidebar(w, pageWidth()))} onDragEnd={sideSplit.settle} onReset={sideSplit.reset} />
       <div className="main-col">
       <header className="top">
-        <Button variant="primary" className="new" onClick={() => go({ kind: "new" })} disabled={!state?.queues.length} title="New task (⌘N)">+ New task</Button>
-        <nav className="views" aria-label="Views">
-          <span className="view-group" role="group" aria-label="Project views">
-            <Pill on={view === "board"} onClick={() => setView("board")}>Board</Pill>
-            <Pill on={view === "table"} onClick={() => setView("table")}>Table</Pill>
-            <Pill on={view === "timeline"} onClick={() => setView("timeline")}>Timeline</Pill>
-            <Pill on={view === "graph"} onClick={() => setView("graph")} title="What waits on what">Graph</Pill>
+        <Button variant="primary" className="new" onClick={() => go({ kind: "new" })} disabled={!state?.queues.length} title={t("app.newTaskTitle")}>{t("app.newTask")}</Button>
+        <nav className="views" aria-label={t("app.views")}>
+          <span className="view-group" role="group" aria-label={t("app.projectViews")}>
+            <Pill on={view === "board"} onClick={() => setView("board")}>{t("app.view.board")}</Pill>
+            <Pill on={view === "table"} onClick={() => setView("table")}>{t("app.view.table")}</Pill>
+            <Pill on={view === "timeline"} onClick={() => setView("timeline")}>{t("app.view.timeline")}</Pill>
+            <Pill on={view === "graph"} onClick={() => setView("graph")} title={t("app.view.graphTitle")}>{t("app.view.graph")}</Pill>
           </span>
-          <Pill on={view === "helper"} onClick={() => setView("helper")}>Helper</Pill>
-          <Pill on={view === "waiting"} onClick={() => setView("waiting")} title="Your own tasks to do and doing, and what the agents wait on you for: the needs-you count">
-            Waiting for you{needs ? <b className="count warn">{needs}</b> : null}
+          <Pill on={view === "helper"} onClick={() => setView("helper")}>{t("app.view.helper")}</Pill>
+          <Pill on={view === "waiting"} onClick={() => setView("waiting")} title={t("app.view.waitingTitle")}>
+            {t("app.view.waiting")}{needs ? <b className="count warn">{needs}</b> : null}
           </Pill>
-          <Pill on={view === "activity"} onClick={() => setView("activity")}>Activity</Pill>
+          <Pill on={view === "activity"} onClick={() => setView("activity")}>{t("app.view.activity")}</Pill>
           <Pill on={view === "problems"} onClick={() => setView("problems")}>
-            Problems{problems.length ? <b className="count">{problems.length}</b> : null}
-            {unchecked.length ? <small className="count quiet" title="Shaping tasks with no vision check yet">{unchecked.length}</small> : null}
+            {t("app.view.problems")}{problems.length ? <b className="count">{problems.length}</b> : null}
+            {unchecked.length ? <small className="count quiet" title={t("app.view.uncheckedTitle")}>{unchecked.length}</small> : null}
           </Pill>
-          <Pill on={view === "help"} onClick={() => setView("help")}>Help</Pill>
-          <Pill on={view === "settings"} onClick={() => setView("settings")} title="Appearance, projects, agents and about">Settings</Pill>
+          <Pill on={view === "help"} onClick={() => setView("help")}>{t("app.view.help")}</Pill>
+          <Pill on={view === "settings"} onClick={() => setView("settings")} title={t("app.view.settingsTitle")}>{t("app.view.settings")}</Pill>
         </nav>
         <ModeChip mode={modes.mode} onOpen={() => openSettings("display")} />
-        <span className="live" title={error || "Updates every 2 seconds while the window is visible"}>
-          {error ? <span className="err">Can't read the queues</span> : at ? <><i className="dot" /> live</> : "loading…"}
+        <span className="live" title={error || t("app.liveTitle")}>
+          {error ? <span className="err">{t("app.cantRead")}</span> : at ? <><i className="dot" /> {t("app.live")}</> : t("app.loading")}
         </span>
       </header>
 
       <div className="workspace">
         <div className="content">
           {state && state.queues.length === 0 && (
-            <p className="empty">No queues yet. Muster looks for <code>~/playground/&lt;project&gt;/tasks</code> folders, and one level deeper, or add one in Settings, under Projects.</p>
+            <p className="empty"><Trans ns="shell" k="app.noQueues" params={{ path: "~/playground/<project>/tasks" }} components={{ code: <code /> }} /></p>
           )}
 
           {(view === "board" || view === "table" || view === "timeline" || view === "graph") && (
@@ -468,7 +470,7 @@ export default function App() {
                 estimate={estimateTotal(work)}
                 arrange={
                   <>
-                    {whoFilters && <ChoiceChips label="Who" className="for-filter" aria="Who does it" metaClass="meta sep" value={who} options={FOR_FILTERS} onPick={setWho} />}
+                    {whoFilters && <ChoiceChips label={t("app.who")} className="for-filter" aria={t("app.whoAria")} metaClass="meta sep" value={who} options={FOR_FILTERS} onPick={setWho} />}
                     {view !== "timeline" && <GroupByChips value={groupBy} onChange={setGroupBy} />}
                   </>
                 }
@@ -478,7 +480,7 @@ export default function App() {
                 onSummon={summonSearch}
                 onHide={() => setBarOut(false)}
               />
-              {indexError && <p className="err small" role="alert">Search can't read the tasks' text: {indexError}</p>}
+              {indexError && <p className="err small" role="alert">{t("app.searchError", { error: indexError })}</p>}
               {view === "table" && <TableView tasks={viewTasks} now={now} multi={multi} openKey={openKey} onOpen={open} groups={tableGroups} by={groupBy} words={words} />}
               {view === "graph" && <GraphView tasks={tasks} all={inQueue} multi={multi} openKey={openKey} onOpen={open} />}
               {view === "timeline" && <TimelineView tasks={viewTasks} now={now} multi={multi} openKey={openKey} onOpen={open} words={words} />}
@@ -509,7 +511,7 @@ export default function App() {
                   Paused lane (mu-59) comes first, beside Backlog. An open column is at most
                   OPEN_COLUMN_MAX wide, and the room left over stays at the right (mu-83). */}
               {groupBy === "none" && <main className="board" style={{ gridTemplateColumns: plain.tracks }}>
-                {plain.open.length === 0 && <p className="none">Every column is folded into the row above: click one to open it.</p>}
+                {plain.open.length === 0 && <p className="none">{t("app.allFolded")}</p>}
                 {plain.isOpen("paused") && <PausedColumn tasks={cols.paused} onHide={() => setColumnOpen("paused", false)} renderCard={card} />}
                 {STAGES.filter((c) => plain.isOpen(c.id)).map((c) => {
                   const list = cols[c.id] ?? [];
@@ -540,10 +542,10 @@ export default function App() {
                             : shown.map(card)}
                         {c.id === "done" && list.length > 8 && (
                           <button className="more" onClick={() => setShowAllDone((v) => !v)}>
-                            {showAllDone ? "Show fewer" : `Show all ${list.length}`}
+                            {showAllDone ? t("app.showFewer") : t("app.showAll", { count: list.length })}
                           </button>
                         )}
-                        {count === 0 && !kept && <p className="none">Nothing here</p>}
+                        {count === 0 && !kept && <p className="none">{t("app.nothingHere")}</p>}
                       </ColumnCards>
                     </section>
                   );
@@ -563,7 +565,7 @@ export default function App() {
                   <li key={i}>
                     <span className="when">{ago(now, a.at)}</span>
                     {multi && <ProjectName name={a.queue} />}
-                    <span className={`src ${a.source}`}>{a.source === "commit" ? "commit" : "changed"}</span>
+                    <span className={`src ${a.source}`}>{a.source === "commit" ? t("app.source.commit") : t("app.source.changed")}</span>
                     <span className="what">{a.what}</span>
                   </li>
                 ))}
@@ -573,25 +575,25 @@ export default function App() {
 
           {view === "problems" && (
             <main className="list">
-              {problems.length === 0 ? <p className="empty">No problems found in the queues.</p> : <ul className="problems">{problems.map((p) => <li key={p}>{p}</li>)}</ul>}
-              {unchecked.length > 0 && <ul className="problems warnings">{unchecked.map((w) => <li key={w}><b>Vision</b> {w}</li>)}</ul>}
+              {problems.length === 0 ? <p className="empty">{t("app.noProblems")}</p> : <ul className="problems">{problems.map((p) => <li key={p}>{p}</li>)}</ul>}
+              {unchecked.length > 0 && <ul className="problems warnings">{unchecked.map((w) => <li key={w}><b>{t("app.vision")}</b> {w}</li>)}</ul>}
             </main>
           )}
 
           {view === "helper" && state && state.queues.length > 0 && (
-            <Suspense fallback={<p className="none">Loading…</p>}>
+            <Suspense fallback={<p className="none">{t("common:loading")}</p>}>
               <Helper queues={state.queues.map((q) => q.name)} initial={queue !== "all" ? queue : state.queues[0].name} onChanged={refresh} />
             </Suspense>
           )}
 
           {view === "help" && (
-            <Suspense fallback={<p className="none">Loading…</p>}>
+            <Suspense fallback={<p className="none">{t("common:loading")}</p>}>
               <HelpView at={helpAt} onGo={helpGo} />
             </Suspense>
           )}
 
           {view === "settings" && (
-            <Suspense fallback={<p className="none">Loading…</p>}>
+            <Suspense fallback={<p className="none">{t("common:loading")}</p>}>
               <SettingsView
                 group={settingsAt}
                 onGroup={setSettingsAt}
@@ -606,20 +608,20 @@ export default function App() {
 
         {pane && (
           <>
-            <Splitter {...paneRange(win, sidebarWidth)} width={paneWidth} side="right" label="Details width" onWidth={(w) => paneSplit.set(clampPane(w, pageWidth(), sidebarWidth))} onDrag={(w) => paneSplit.drag(clampPane(w, pageWidth(), sidebarWidth))} onDragEnd={paneSplit.settle} onReset={paneSplit.reset} />
-            <aside className="pane" style={{ width: paneWidth }} aria-label="Details">
+            <Splitter {...paneRange(win, sidebarWidth)} width={paneWidth} side="right" label={t("app.detailsWidth")} onWidth={(w) => paneSplit.set(clampPane(w, pageWidth(), sidebarWidth))} onDrag={(w) => paneSplit.drag(clampPane(w, pageWidth(), sidebarWidth))} onDragEnd={paneSplit.settle} onReset={paneSplit.reset} />
+            <aside className="pane" style={{ width: paneWidth }} aria-label={t("app.details")}>
               {pane.kind === "task" && openTask && (
-                <Suspense fallback={<p className="none">Loading…</p>}>
+                <Suspense fallback={<p className="none">{t("common:loading")}</p>}>
                   <TaskPanel key={openKey} task={openTask} now={now} onClose={() => go(null)} onChanged={refresh} onDirty={onDirty} nudge={nudge} childTasks={childrenOf(openTask, index)} onOpenTask={(id) => go({ kind: "task", key: key({ queue: openTask.queue, id }) })} onOpenView={openView} keys={keys} onOpenAt={(queue, id) => go({ kind: "task", key: key({ queue, id }) })} />
                 </Suspense>
               )}
-              {pane.kind === "task" && !openTask && <p className="none">That task is gone.</p>}
+              {pane.kind === "task" && !openTask && <p className="none">{t("app.taskGone")}</p>}
               {pane.kind === "note" && openNote && (
-                <Suspense fallback={<p className="none">Loading…</p>}>
+                <Suspense fallback={<p className="none">{t("common:loading")}</p>}>
                   <NotePanel key={openNoteKey} note={openNote} now={now} onClose={() => setPane(null)} onChanged={refresh} onFiled={showTask} />
                 </Suspense>
               )}
-              {pane.kind === "note" && !openNote && <p className="none">That note is gone: filed as a task, or dropped.</p>}
+              {pane.kind === "note" && !openNote && <p className="none">{t("app.noteGone")}</p>}
               {pane.kind === "new" && state && state.queues.length > 0 && (
                 <NewTask
                   queues={state.queues.map((q) => q.name)}

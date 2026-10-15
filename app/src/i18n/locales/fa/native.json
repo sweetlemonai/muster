@@ -1,0 +1,17 @@
+{
+  "tray": {
+    "show": "نمایش Muster",
+    "quit": "خروج از Muster",
+    "reading": "در حال خواندن صف‌ها…",
+    "nothing": "چیزی منتظر شما نیست",
+    "waiting_one": "{{count}} مورد منتظر شماست",
+    "waiting_other": "{{count}} مورد منتظر شماست",
+    "tooltip": "Muster",
+    "tooltipNothing": "Muster · چیزی منتظر شما نیست",
+    "tooltipWaiting_one": "Muster · {{count}} مورد منتظر شماست",
+    "tooltipWaiting_other": "Muster · {{count}} مورد منتظر شماست"
+  },
+  "list": {
+    "separator": "، "
+  }
+}

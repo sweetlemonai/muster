@@ -146,7 +146,8 @@ describe("Settings › Projects' Your check limit (0050)", () => {
   });
 
   it("is a column of the projects table, kept by the project's folder (its key), applied live", () => {
-    expect(projectsSource).toContain("<th>Your check</th>");
+    // The column's name is the stage's, from the translation files (mu-146).
+    expect(projectsSource).toContain('<th>{t("common:stage.your-check")}</th>');
     expect(projectsSource).toMatch(/<LimitCell key=\{`\$\{p\.key\}-\$\{q\.yourCheckLimit\}`\} q=\{q\} onSet=\{\(v\) => void act\(\(\) => api\.setYourCheckLimit\(p\.key, v\)\)\} \/>/);
   });
 });

@@ -1,3 +1,4 @@
+import { tn } from "./i18n";
 import type { Task } from "./types";
 
 // Claude Code's word on the session holding a task (0048): the core reads `claude agents --json`
@@ -30,4 +31,4 @@ export function sessionWords(t: Pick<Task, "stage" | "sessionState">): string {
 }
 
 /** Settings > Agents' line (0036): whether the states are read, from the core's summary. */
-export const sessionStatesLine = (summary: string) => `Claude Code's session states: ${summary}`;
+export const sessionStatesLine = (summary: string) => tn("shell", "agents.sessionStates", { summary });

@@ -17,6 +17,7 @@ pub mod help;
 pub mod helper;
 mod helper_cmds;
 pub mod history;
+pub mod i18n;
 pub mod index;
 pub mod key;
 pub mod labels;
@@ -51,7 +52,7 @@ pub mod work;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
 
 pub(crate) struct AppState {
@@ -1229,6 +1230,60 @@ pub(crate) struct SettingsInfo {
     /// Whether Claude Code's session states are read (0048): "on (2 accounts)", or "not
     /// available: <why>" (`agents::Monitor::summary`).
     session_states: String,
+    /// The language setting and the one in effect (mu-146).
+    locale: LocaleInfo,
+}
+
+/// The language setting and what's in effect (mu-146; Drover's `LocaleInfo` without its agent
+/// language).
+#[derive(serde::Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocaleInfo {
+    /// The setting: a language, or "" to follow macOS.
+    language: &'static str,
+    /// macOS's languages for Muster, first first (`i18n::system_languages`).
+    system: Vec<String>,
+    /// The language the window and the menu bar show.
+    effective: &'static str,
+}
+
+fn locale_info_of(settings: &settings::Settings, system: Vec<String>) -> LocaleInfo {
+    let language = settings.lang.unwrap_or("");
+    LocaleInfo {
+        language,
+        effective: i18n::resolve(language, &system),
+        system,
+    }
+}
+
+/// The window switches language on this, with the one in effect.
+const LOCALE_CHANGED: &str = "locale-changed";
+
+/// The language setting and the one in effect, for the window's start (`i18n/boot.ts`).
+#[tauri::command]
+async fn locale_info(app: tauri::State<'_, AppState>) -> Result<LocaleInfo, String> {
+    let file = app.settings_file.clone();
+    blocking(move || {
+        Ok(locale_info_of(
+            &settings::load(&file),
+            i18n::system_languages(),
+        ))
+    })
+    .await
+}
+
+/// Following macOS (no language picked): its languages are read off the main thread, then the
+/// core's text and the menu bar switch to the one in effect.
+fn follow_macos(handle: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        let app = handle.state::<AppState>();
+        let s = settings::load(&app.settings_file);
+        let effective = i18n::resolve(s.lang.unwrap_or(""), &i18n::system_languages());
+        if effective != i18n::current() {
+            i18n::set_current(effective);
+            app.menu_bar.retext(s.menu_bar, &tray::Tray(&handle));
+        }
+    });
 }
 
 /// About for the settings in `settings_file`, with the Claude accounts under `home`.
@@ -1237,6 +1292,7 @@ fn info_for(
     version: &str,
     home: &std::path::Path,
     session_states: String,
+    system: Vec<String>,
 ) -> SettingsInfo {
     let shown = |p: &std::path::Path| p.to_string_lossy().to_string();
     let settings = settings::load(settings_file);
@@ -1245,6 +1301,7 @@ fn info_for(
         .map(|a| shown(a.dir()))
         .collect();
     SettingsInfo {
+        locale: locale_info_of(&settings, system),
         settings,
         lease_bounds: [settings::LEASE_MIN, settings::LEASE_MAX],
         live_bounds: [settings::LIVE_MIN, settings::LIVE_MAX],
@@ -1268,6 +1325,7 @@ async fn settings_info(handle: tauri::AppHandle) -> Result<SettingsInfo, String>
             &version,
             &home(),
             app.agents.summary(),
+            i18n::system_languages(),
         ))
     })
     .await
@@ -1301,8 +1359,9 @@ async fn set_role(
 }
 
 /// Change one of this machine's settings, `lease` or `live`, to a span like `12h` or `5m` (empty
-/// is the default), or a switch (`settings::set`). The core checks the name, the units and the
-/// bounds; the next poll uses it, and the menu bar icon follows its switch at once.
+/// is the default), a switch, or the language (`settings::set`). The core checks the name, the
+/// units and the bounds; the next poll uses it, the menu bar icon follows its switch at once, and
+/// a new language switches the core's text, the menu bar and the window at once (mu-146).
 #[tauri::command]
 async fn set_setting(
     handle: tauri::AppHandle,
@@ -1319,12 +1378,23 @@ async fn set_setting(
                 // At once, with the latest count; the next read keeps it current.
                 app.menu_bar.sync(now.menu_bar, None, &tray::Tray(&handle));
             }
+            if name == "lang" {
+                let effective = i18n::resolve(now.lang.unwrap_or(""), &i18n::system_languages());
+                i18n::set_current(effective);
+                app.menu_bar.retext(now.menu_bar, &tray::Tray(&handle));
+                // The window switches on the answer too; the event is Drover's way (boot.ts).
+                let _ = handle.emit(
+                    LOCALE_CHANGED,
+                    serde_json::json!({ "effective": effective }),
+                );
+            }
         }
         Ok(info_for(
             &app.settings_file,
             &version,
             &home(),
             app.agents.summary(),
+            i18n::system_languages(),
         ))
     })
     .await
@@ -1654,12 +1724,19 @@ pub fn run() {
                 runs: run::Runs::new(run_events(app.handle().clone())),
                 menu_bar: tray::MenuBar::default(),
             });
-            // Up at launch, before the first read has a count, unless Settings turned it off.
+            // Up at launch, before the first read has a count, unless Settings turned it off; in
+            // the language picked (mu-146), or in macOS's once it's read.
             let state = app.state::<AppState>();
-            let settings = settings::load(&state.settings_file);
+            let s = settings::load(&state.settings_file);
+            if let Some(lang) = s.lang {
+                i18n::set_current(lang);
+            }
             state
                 .menu_bar
-                .sync(settings.menu_bar, None, &tray::Tray(app.handle()));
+                .sync(s.menu_bar, None, &tray::Tray(app.handle()));
+            if s.lang.is_none() {
+                follow_macos(app.handle().clone());
+            }
             watch_badge(app.handle().clone());
             Ok(())
         })
@@ -1677,6 +1754,7 @@ pub fn run() {
             commit_history,
             record_removed,
             settings_info,
+            locale_info,
             set_setting,
             roles_info,
             set_role,
@@ -2089,7 +2167,7 @@ mod tests {
         let h = home.path();
         let dir = h.join("Library/Application Support/ai.sweetlemon.muster");
         let file = dir.join(settings::FILE);
-        let info = info_for(&file, "0.1.0", h, "on (1 account)".into());
+        let info = info_for(&file, "0.1.0", h, "on (1 account)".into(), vec![]);
         // Nothing saved yet: the defaults.
         assert_eq!(info.settings, settings::Settings::default());
         assert_eq!(
@@ -2104,8 +2182,14 @@ mod tests {
         assert_eq!(info.transcripts, [shown(".claude-mg"), shown(".claude-hg")]);
         assert_eq!(info.transcripts_under, shown("playground"));
         settings::set(&file, "live", "15m").unwrap();
-        let json =
-            serde_json::to_string(&info_for(&file, "0.1.0", h, "on (1 account)".into())).unwrap();
+        let json = serde_json::to_string(&info_for(
+            &file,
+            "0.1.0",
+            h,
+            "on (1 account)".into(),
+            vec![],
+        ))
+        .unwrap();
         assert!(
             json.contains(
                 r#""settings":{"leaseMinutes":720,"liveMinutes":15,"notify":true,"menuBar":true,"oldPausesOffered":false,"claudeAccounts":["mg","hg"]}"#
@@ -2127,7 +2211,7 @@ mod tests {
         );
         // An empty allowlist: no account is read, and About lists none.
         std::fs::write(&file, r#"{"claudeAccounts":[]}"#).unwrap();
-        assert!(info_for(&file, "0.1.0", h, String::new())
+        assert!(info_for(&file, "0.1.0", h, String::new(), vec![])
             .transcripts
             .is_empty());
         // The home folder, so the window can show paths under it as `~/…`.
@@ -2138,6 +2222,48 @@ mod tests {
             json.contains(r#""sessionStates":"on (1 account)""#),
             "{json}"
         );
+        // The language (mu-146): unset, so macOS's (none read here: English).
+        assert!(
+            json.contains(r#""locale":{"language":"","system":[],"effective":"en"}"#),
+            "{json}"
+        );
+    }
+
+    #[test]
+    fn the_language_in_effect_is_the_setting_else_macos_else_english() {
+        let d = tempfile::tempdir().unwrap();
+        let file = d.path().join(settings::FILE);
+        let mac = || vec!["fa-IR".to_string(), "en-US".to_string()];
+        let info = |system| info_for(&file, "0.1.0", d.path(), String::new(), system);
+        // Nothing picked: macOS's first language Muster has.
+        assert_eq!(
+            info(mac()).locale,
+            LocaleInfo {
+                language: "",
+                system: mac(),
+                effective: "fa"
+            }
+        );
+        assert_eq!(info(vec!["de-DE".into()]).locale.effective, "en");
+        // Picked: that one, whatever macOS says; and saved, so a restart has it.
+        settings::set(&file, "lang", "en").unwrap();
+        let picked = info(mac());
+        assert_eq!(
+            (picked.locale.language, picked.locale.effective),
+            ("en", "en")
+        );
+        assert_eq!(picked.settings.lang, Some("en"));
+        let json = serde_json::to_string(&picked).unwrap();
+        assert!(json.contains(r#""lang":"en""#), "{json}");
+        assert!(
+            json.contains(
+                r#""locale":{"language":"en","system":["fa-IR","en-US"],"effective":"en"}"#
+            ),
+            "{json}"
+        );
+        // Back to following macOS.
+        settings::set(&file, "lang", "").unwrap();
+        assert_eq!(info(mac()).locale.effective, "fa");
     }
 
     #[test]

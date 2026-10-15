@@ -3,6 +3,7 @@
 // the core, which refuses a bad value with why.
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { Trans, useT } from "./i18n";
 import { ROLE_FIELDS, roleLine, slotWords } from "./rolesData";
 import type { Role, RoleField } from "./types";
 import { Button } from "./ui";
@@ -53,16 +54,15 @@ export function RolesView({ roles, error = "", open, onOpen, onSave }: {
   /** Resolves to null when saved, else the core's refusal to show. */
   onSave: (id: string, field: RoleField, value: string) => Promise<string | null>;
 }) {
+  const t = useT("shell");
   return (
     <section aria-labelledby="roles-head">
-      <h2 id="roles-head">Roles</h2>
+      <h2 id="roles-head">{t("roles.head")}</h2>
       <p className="meta">
-        Who the team is: each role's name, and its slots (Kaveh-1, Kaveh-2) for sessions that claim with <code>--role</code>. A rename shows
-        everywhere at once: claims keep the role and the number, not the name. Saved in <code>roles.toml</code> beside projects.json;{" "}
-        <code>muster team</code> lists who holds which slot.
+        <Trans ns="shell" k="roles.meta" components={{ code: <code /> }} />
       </p>
       {error && <p className="err" role="alert">{error}</p>}
-      {roles === null && !error && <p className="none">Loading…</p>}
+      {roles === null && !error && <p className="none">{t("common:loading")}</p>}
       {roles && (
         <ul className="role-list">
           {roles.map((r) => (
@@ -71,7 +71,7 @@ export function RolesView({ roles, error = "", open, onOpen, onSave }: {
                 <b dir="auto">{r.name}</b> <span className="meta">{r.id} · {slotWords(r.slots)}</span>
               </button>
               {open === r.id && (
-                <div className="role-fields" id={`role-${r.id}`} role="group" aria-label={`${r.name}'s profile`}>
+                <div className="role-fields" id={`role-${r.id}`} role="group" aria-label={t("roles.profile", { name: r.name })}>
                   <p className="meta" dir="auto">{roleLine(r)}</p>
                   {ROLE_FIELDS.map((f) => (
                     <RoleFieldEdit key={`${f.field}-${f.value(r)}`} label={f.label} what={f.what} value={f.value(r)} size={f.size} rtl={f.field === "name"} onSave={(v) => onSave(r.id, f.field, v)} />
@@ -100,6 +100,7 @@ function RoleFieldEdit({ label, what, value, size, rtl, onSave }: {
   const [text, setText] = useState(value);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const t = useT("shell");
   return (
     <form
       className="setting-edit"
@@ -115,7 +116,7 @@ function RoleFieldEdit({ label, what, value, size, rtl, onSave }: {
       <label>
         <b>{label}</b> <input value={text} onChange={(e) => setText(e.target.value)} size={size} maxLength={400} dir={rtl ? "auto" : undefined} disabled={busy} />
       </label>
-      <Button type="submit" disabled={busy || text.trim() === value}>Save</Button>
+      <Button type="submit" disabled={busy || text.trim() === value}>{t("common:save")}</Button>
       <span className="meta">{what}</span>
       {error && <span className="err" role="alert">{error}</span>}
     </form>

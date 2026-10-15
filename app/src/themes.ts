@@ -1,6 +1,7 @@
 // Themes (backgrounds, surfaces, borders, text) and accents (the accent colour and its shades).
 // Blue and orange stay out: they belong to 127 and to Drover and Braindump. themes.test.ts checks
 // every theme and accent pair for contrast (WCAG AA).
+import { tn } from "./i18n";
 
 export type Mode = "dark" | "light";
 export type Theme = {
@@ -17,25 +18,39 @@ export type Theme = {
 };
 export type Accent = { id: string; name: string; dark: [string, string]; light: [string, string] };
 
-export const THEMES: Theme[] = [
-  { id: "violet-night", name: "Violet night", mode: "dark", bg: "#14121F", surface: "#1C1930", popover: "#262241", border: "#34304F", text: "#ECEAF5", muted: "#A8A3C2", faint: "#6F6A8A" },
-  { id: "violet-day", name: "Violet day", mode: "light", bg: "#FAF9FD", surface: "#FFFFFF", popover: "#F3F1FA", border: "#E4E1F0", text: "#1A1730", muted: "#5E5978", faint: "#8E8AA6" },
-  { id: "graphite", name: "Graphite", mode: "dark", bg: "#141517", surface: "#1C1D20", popover: "#26272B", border: "#34363B", text: "#ECECEE", muted: "#A6A8AE", faint: "#6E7076" },
-  { id: "midnight", name: "Midnight", mode: "dark", bg: "#0B0B10", surface: "#131319", popover: "#1C1C24", border: "#2A2A35", text: "#F1F0F6", muted: "#A9A7B8", faint: "#6C6A7C" },
-  { id: "paper", name: "Paper", mode: "light", bg: "#FBF8F1", surface: "#FFFDF8", popover: "#F4EFE4", border: "#E6DFD0", text: "#211D16", muted: "#5F5848", faint: "#8F8775" },
-  { id: "snow", name: "Snow", mode: "light", bg: "#F7F7F8", surface: "#FFFFFF", popover: "#F0F0F2", border: "#E2E2E6", text: "#18181B", muted: "#55555C", faint: "#8A8A92" },
-  { id: "contrast", name: "High contrast", mode: "dark", bg: "#000000", surface: "#0C0C0C", popover: "#161616", border: "#5A5A5A", text: "#FFFFFF", muted: "#D2D2D2", faint: "#9A9A9A" },
-];
+// The ids are what the window keeps (`muster.appearance`); each name is read in the language shown
+// each time it's asked for (shell.json `appearance`, mu-146).
+export const THEMES: Theme[] = ([
+  { id: "violet-night", mode: "dark", bg: "#14121F", surface: "#1C1930", popover: "#262241", border: "#34304F", text: "#ECEAF5", muted: "#A8A3C2", faint: "#6F6A8A" },
+  { id: "violet-day", mode: "light", bg: "#FAF9FD", surface: "#FFFFFF", popover: "#F3F1FA", border: "#E4E1F0", text: "#1A1730", muted: "#5E5978", faint: "#8E8AA6" },
+  { id: "graphite", mode: "dark", bg: "#141517", surface: "#1C1D20", popover: "#26272B", border: "#34363B", text: "#ECECEE", muted: "#A6A8AE", faint: "#6E7076" },
+  { id: "midnight", mode: "dark", bg: "#0B0B10", surface: "#131319", popover: "#1C1C24", border: "#2A2A35", text: "#F1F0F6", muted: "#A9A7B8", faint: "#6C6A7C" },
+  { id: "paper", mode: "light", bg: "#FBF8F1", surface: "#FFFDF8", popover: "#F4EFE4", border: "#E6DFD0", text: "#211D16", muted: "#5F5848", faint: "#8F8775" },
+  { id: "snow", mode: "light", bg: "#F7F7F8", surface: "#FFFFFF", popover: "#F0F0F2", border: "#E2E2E6", text: "#18181B", muted: "#55555C", faint: "#8A8A92" },
+  { id: "contrast", mode: "dark", bg: "#000000", surface: "#0C0C0C", popover: "#161616", border: "#5A5A5A", text: "#FFFFFF", muted: "#D2D2D2", faint: "#9A9A9A" },
+] as const).map((t) => ({
+  ...t,
+  get name() {
+    return tn("shell", `appearance.theme.${t.id}`);
+  },
+}));
 
 // [accent, strong] per mode. Light-mode values are darker so they read on light backgrounds.
-export const ACCENTS: Accent[] = [
-  { id: "violet", name: "Violet", dark: ["#8B6CF0", "#A08AF5"], light: ["#6D4AE0", "#5A38C9"] },
-  { id: "teal", name: "Teal", dark: ["#2EC4B6", "#5AD6CB"], light: ["#0E7C73", "#0A6159"] },
-  { id: "rose", name: "Rose", dark: ["#F0647D", "#F48A9C"], light: ["#C2334F", "#A1253F"] },
-  { id: "gold", name: "Gold", dark: ["#F5C04A", "#F8D27A"], light: ["#8A6A00", "#6E5400"] },
-  { id: "green", name: "Green", dark: ["#4CC38A", "#74D3A6"], light: ["#177A4B", "#11603B"] },
-  { id: "graphite", name: "Graphite", dark: ["#B4B2C2", "#CFCDDA"], light: ["#4F4C5E", "#3A3846"] },
-];
+export const ACCENTS: Accent[] = ([
+  { id: "violet", dark: ["#8B6CF0", "#A08AF5"], light: ["#6D4AE0", "#5A38C9"] },
+  { id: "teal", dark: ["#2EC4B6", "#5AD6CB"], light: ["#0E7C73", "#0A6159"] },
+  { id: "rose", dark: ["#F0647D", "#F48A9C"], light: ["#C2334F", "#A1253F"] },
+  { id: "gold", dark: ["#F5C04A", "#F8D27A"], light: ["#8A6A00", "#6E5400"] },
+  { id: "green", dark: ["#4CC38A", "#74D3A6"], light: ["#177A4B", "#11603B"] },
+  { id: "graphite", dark: ["#B4B2C2", "#CFCDDA"], light: ["#4F4C5E", "#3A3846"] },
+] as const).map((a) => ({
+  id: a.id,
+  dark: [a.dark[0], a.dark[1]],
+  light: [a.light[0], a.light[1]],
+  get name() {
+    return tn("shell", `appearance.accent.${a.id}`);
+  },
+}));
 
 // Status colours: fills in both modes; in light themes coloured words use the darker *-text shades.
 const STATUS_TEXT: Record<Mode, { err: string; ok: string; gold: string; needs: string }> = {
@@ -82,23 +97,30 @@ export const PRIORITY_COLOURS: Record<string, string> = { high: "#E879C9", norma
  *  every theme and accent, and from the others (CIE76 30, SAME_AT_A_GLANCE), at 3:1 on every
  *  surface (themes.test.ts). That leaves no blue, cyan, violet, amber, orange, green or red: the
  *  colour code has them. The ids are what projects.json keeps (arrange.rs COLOURS). */
-export const PROJECT_COLOURS: { id: string; name: string; dark: string; light: string }[] = [
-  { id: "lime", name: "Lime", dark: "#B9F368", light: "#4F7109" },
-  { id: "orchid", name: "Orchid", dark: "#E040FB", light: "#6A0080" },
-  { id: "pink", name: "Pink", dark: "#FFB0C8", light: "#7A1F4A" },
-  { id: "tan", name: "Tan", dark: "#F0D2AA", light: "#6B3A1E" },
-  { id: "mint", name: "Mint", dark: "#B8FFE2", light: "#0A4D3A" },
-];
+export const PROJECT_COLOURS: { readonly id: string; readonly name: string; readonly dark: string; readonly light: string }[] = ([
+  { id: "lime", dark: "#B9F368", light: "#4F7109" },
+  { id: "orchid", dark: "#E040FB", light: "#6A0080" },
+  { id: "pink", dark: "#FFB0C8", light: "#7A1F4A" },
+  { id: "tan", dark: "#F0D2AA", light: "#6B3A1E" },
+  { id: "mint", dark: "#B8FFE2", light: "#0A4D3A" },
+] as const).map((c) => ({
+  ...c,
+  get name() {
+    return tn("shell", `colour.${c.id}`);
+  },
+}));
 
 /** How a card shows its colour (0026). Picked in Appearance; applied as CSS only. */
 export type CardLook = "stripe" | "tint" | "top" | "dot" | "outline";
-export const CARD_LOOKS: { id: CardLook; name: string; hint: string }[] = [
-  { id: "stripe", name: "Stripe", hint: "A bar down the left edge" },
-  { id: "tint", name: "Tint", hint: "The whole card washed in the colour" },
-  { id: "top", name: "Top bar", hint: "A band across the top that names it" },
-  { id: "dot", name: "Dot", hint: "A quiet card with a dot by the id" },
-  { id: "outline", name: "Outline", hint: "The border in the colour" },
-];
+export const CARD_LOOKS: { readonly id: CardLook; readonly name: string; readonly hint: string }[] = (["stripe", "tint", "top", "dot", "outline"] as const).map((id) => ({
+  id,
+  get name() {
+    return tn("shell", `appearance.look.${id}.name`);
+  },
+  get hint() {
+    return tn("shell", `appearance.look.${id}.hint`);
+  },
+}));
 /** What the card colour means: the stage it's in, or its priority. */
 export type CardColour = "stage" | "priority";
 /** How much of the colour a tinted card takes, per mode (tested for text contrast). */

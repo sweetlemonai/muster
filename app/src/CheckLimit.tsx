@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { tl, tn } from "./i18n";
 import type { QueueInfo, Task } from "./types";
 import { Button, Pill } from "./ui";
 import { bandLimit, checkCount, columnLine, LIMIT_DEFAULT, LIMIT_MAX, LIMIT_MIN, limitText, type Over, overLine, overTitle, sideLimit } from "./yourCheckLimit";
@@ -51,7 +52,7 @@ export function LimitCell({ q, onSet }: { q: QueueInfo; onSet: (value: string) =
   const [text, setText] = useState(String(on ? q.yourCheckLimit : LIMIT_DEFAULT));
   const over = sideLimit(q) !== "";
   return (
-    <div className="limit-cell" role="group" aria-label={`Your check limit for ${q.name}`}>
+    <div className="limit-cell" role="group" aria-label={tn("shell", "limit.cellAria", { name: q.name })}>
       <span className={over ? "over-limit" : "meta"}>{limitText(q)}</span>
       <form
         className="limit-edit"
@@ -61,10 +62,10 @@ export function LimitCell({ q, onSet }: { q: QueueInfo; onSet: (value: string) =
         }}
       >
         <Pill type="button" on={!on} aria-pressed={!on} onClick={() => onSet("off")}>
-          Off
+          {tl("off")}
         </Pill>
-        <input type="number" min={LIMIT_MIN} max={LIMIT_MAX} value={text} onChange={(e) => setText(e.target.value)} aria-label={`Limit for ${q.name}, ${LIMIT_MIN} to ${LIMIT_MAX}`} />
-        <Button type="submit" disabled={on && text.trim() === String(q.yourCheckLimit)}>Set</Button>
+        <input type="number" min={LIMIT_MIN} max={LIMIT_MAX} value={text} onChange={(e) => setText(e.target.value)} aria-label={tn("shell", "limit.inputAria", { name: q.name, min: LIMIT_MIN, max: LIMIT_MAX })} />
+        <Button type="submit" disabled={on && text.trim() === String(q.yourCheckLimit)}>{tl("set")}</Button>
       </form>
     </div>
   );
