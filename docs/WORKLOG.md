@@ -4,6 +4,17 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Research and a plan for orchestration (mu-9)
+**Did (Pouya, researcher):** compared the owner's orchestration brief with current orchestrators,
+frameworks, standards and the providers' terms (9 web-researcher workers); wrote
+`docs/research/2026-10-14-orchestration.md` and `docs/plans/orchestration-plan.md` (phases 0 to 4,
+work items with criteria, estimates and depends; Pouya added as the Researcher role).
+**Decided (proposed, needs the owner):** drop the brief's soonest-reset-first balancing across
+accounts (terms risk); read usage from Claude Code's `rate_limit_event` and status-line
+`rate_limits` instead of learning it; OpenTelemetry GenAI names for the ledger; decisions 0012
+(terms and accounts) and 0013 (who launches runs) come first.
+**Open:** no fresh-agent citation audit was run; OpenAI's terms read from the Open Terms Archive copy.
+
 ## 2026-10-14 — The lead's handoff cap is 600k (owner)
 **Decided:** the owner raised the `Muster_Team_Lead*` token cap from 300k to 600k
 (`~/playground/.claude/handoff.json`, layer commit fd6d4ff); PROTOCOL.md and decision 0011 say so,
