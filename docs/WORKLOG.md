@@ -4,6 +4,38 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Vazirmatn review round 1: the licence ships, inputs and code take the font (mu-150)
+**Did (akbar_16, builder):** R1: re-cut with `--name-IDs=0,1,2,3,4,5,6,13,14` so the font keeps
+its licence records (44,844 bytes); `tauri.conf.json` bundles `OFL.txt` as
+`Contents/Resources/fonts/Vazirmatn-OFL.txt`; Settings › About and the manual name the font and
+its licence. R2: `fonts.test.ts` hashes the woff2 against the README's sha256 and reads its name
+table. R3: `input, textarea, select { font-family: inherit }` in `fonts.css`. R5: the import-order
+test matches whole lines.
+**Fixed:** Persian in code (the write-up editor, paths, the prefix box) drew in a monospaced Arabic
+→ `ui-monospace` falls back to its own Arabic before reaching a Vazirmatn listed after it → the
+code stacks put Vazirmatn first (Latin unchanged, measured).
+**Verified:** headless WebKit against main: English-only screens pixel-identical at 100% and 150%;
+every input kind computes Vazirmatn first (the Pause box was `system-ui`); a ZWJ emoji title loads
+the face but draws pixel-identical with and without it; with `size-adjust` unknown (WebKit < 17)
+the face still loads and Persian draws about 5% shorter. AC2's `document.fonts.check` proof
+dropped (true before too); the loaded face and screenshots stay.
+
+## 2026-10-14 — Persian text in Vazirmatn: a 44 KB subset, Latin stays SF (mu-150)
+**Did (akbar_13, builder):** `app/src/assets/fonts/Vazirmatn-fa.woff2` (Vazirmatn 33.003 cut with
+the fonts repo's pyftsubset to the Persian ranges, every feature and the weight axis kept) with
+`OFL.txt` and a README holding the exact command; `app/src/fonts.css` (one `@font-face` by
+`unicode-range`, Vazirmatn first in the text stack and before `monospace` in each code stack),
+imported after `styles.css`; `fonts.test.ts`; `vite.config.ts` lets the tests read `fonts.css`.
+No new dependency.
+**Decided:** `size-adjust: 104.8%` puts Vazirmatn's alef at SF's cap height (0.6724 vs 0.7046
+em, the same at every SF optical size); measured in the window: alef and H both 9.156 px at
+13px. The code stacks repeat `styles.css`'s selectors so `styles.css` stays untouched.
+**Verified:** headless WebKit, before and after: Persian cards draw in Vazirmatn at 90%, 100%,
+150% and in a light theme; mixed lines keep the English line height; an English-only screen is
+pixel-identical at 100% and 150% and never fetches the font; first paint median 178 ms before,
+163 ms after (12 runs each, noise). Screenshots in the task's attachments.
+**Open:** a Persian title is wider in Vazirmatn than in the system fallback, so it can wrap one
+line sooner.
 ## 2026-10-15 — Shaping: the backlog emptied into 20 Ready tasks, and the open 1d+ estimates redone
 **Did (vqa, gates coordinator, with Shapour agents):** every backlog note checked against main and
 filed: mu-156 (takeover mail, R7 folded in), 157, 158, 159, 160, 161 (personal layer), 162, 163,

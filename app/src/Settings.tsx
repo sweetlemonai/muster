@@ -357,6 +357,10 @@ export function AboutView({ info, projects, error = "" }: { info: SettingsInfo; 
         <p>Muster {info.version}</p>
       </section>
       <section>
+        <h2>Fonts</h2>
+        <p>Persian text is drawn in Vazirmatn by Saber Rastikerdar, under the SIL Open Font License 1.1; the licence is in <code>Muster.app/Contents/Resources/fonts/Vazirmatn-OFL.txt</code>.</p>
+      </section>
+      <section>
         <h2>Settings on this Mac</h2>
         <p><HomePath className="path" path={info.configDir} home={info.home} /></p>
         <ul className="about-list">

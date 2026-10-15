@@ -1,0 +1,38 @@
+/* Vazirmatn for Persian text (mu-150). The face covers only the Arabic-script ranges Persian uses
+   (with ZWNJ, the bidi marks and «»), so the browser loads it only when such a glyph is on screen
+   and Latin letters and digits keep SF. Loaded after styles.css: the rules below repeat its
+   selectors and change only font-family, so its sizes and weights stand. The file, its licence
+   and how to cut it again are in assets/fonts/README.md.
+   size-adjust: Vazirmatn's alef stands at 0.672 em, SF's capitals at 0.705 em at every optical
+   size, so 104.8% makes a Persian word as tall as the English beside it. */
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("./assets/fonts/Vazirmatn-fa.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  size-adjust: 104.8%;
+  unicode-range: U+0600-06FF, U+200C-200F, U+FB50-FDFF, U+FE70-FEFF, U+AB, U+BB;
+}
+
+/* Text: Vazirmatn first; it has no Latin glyphs, so English falls through to SF. */
+:root { font-family: "Vazirmatn", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+
+/* Inputs, textareas and selects: WebKit gives them the system's control font, and a rule that sets
+   only a size (the pane's Pause box) leaves them in it; this hands them the stack above. The rules
+   in styles.css that set a font on them (font: inherit, the monospace ones) are more specific. */
+input, textarea, select { font-family: inherit; }
+
+/* Code: Persian in a command, path or branch gets Vazirmatn rather than the monospaced Arabic
+   ui-monospace falls back to. First, since ui-monospace draws Arabic itself; Latin isn't in the
+   face's range, so it stays SF Mono (only « » in code take Vazirmatn's). */
+code { font-family: "Vazirmatn", ui-monospace, SFMono-Regular, Menlo, monospace; }
+.card-branch { font-family: "Vazirmatn", ui-monospace, SFMono-Regular, Menlo, monospace; }
+.write-up-edit textarea { font-family: "Vazirmatn", ui-monospace, SFMono-Regular, Menlo, monospace; }
+.raw { font-family: "Vazirmatn", ui-monospace, SFMono-Regular, Menlo, monospace; }
+.projects-table .path { font-family: "Vazirmatn", ui-monospace, SFMono-Regular, Menlo, monospace; }
+.projects-table .prefix input { font-family: "Vazirmatn", ui-monospace, SFMono-Regular, Menlo, monospace; }
+.run-output { font-family: "Vazirmatn", ui-monospace, SFMono-Regular, Menlo, monospace; }
+.pathline { font-family: "Vazirmatn", ui-monospace, SFMono-Regular, Menlo, monospace; }
+.settings .path { font-family: "Vazirmatn", ui-monospace, SFMono-Regular, Menlo, monospace; }
+.account-chip { font-family: "Vazirmatn", ui-monospace, SFMono-Regular, Menlo, monospace; }

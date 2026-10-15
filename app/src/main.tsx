@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./styles.css";
+import "./fonts.css";
 import { apply, load } from "./themes";
 import { installZoomKeys } from "./zoom";
 

@@ -530,6 +530,11 @@ describe("About", () => {
     const titles = [...html.matchAll(/title="([^"]*)"/g)].map((m) => m[1]);
     for (const p of [INFO.configDir, ...PROJECTS.map((q) => q.path), ...INFO.transcripts, INFO.transcriptsUnder]) expect(titles).toContain(p);
   });
+  it("names the bundled font and its licence, and where the licence is (mu-150)", () => {
+    const t = about(PROJECTS);
+    expect(t).toContain("Fonts Persian text is drawn in Vazirmatn by Saber Rastikerdar, under the SIL Open Font License 1.1");
+    expect(t).toContain("Muster.app/Contents/Resources/fonts/Vazirmatn-OFL.txt");
+  });
   it("leaves a path outside home as it is", () => {
     const t = text(renderToStaticMarkup(createElement(AboutView, { info: { ...INFO, transcripts: ["/Volumes/Work/.claude-mg"], transcriptsUnder: "/Volumes/Work/playground" }, projects: [] })));
     expect(t).toContain("Session transcripts: /Volumes/Work/.claude-mg In them, only projects under /Volumes/Work/playground");

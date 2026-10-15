@@ -8,6 +8,7 @@ export default defineConfig({
   // fs.allow: the app's own folder, plus the manual's pages (docs/manual), bundled with ?raw.
   server: { port: 1450, strictPort: true, host: "127.0.0.1", watch: { ignored: ["**/src-tauri/**"] }, fs: { allow: [".", "../docs/manual"] } },
   build: { target: "safari16" },
-  // css: the card-look tests read styles.css (?raw) to check it uses what they test (0026).
-  test: { environment: "node", include: ["src/**/*.test.{ts,tsx}"], css: { include: [/styles\.css/] } },
+  // css: the card-look tests read styles.css (?raw) to check it uses what they test (0026), and
+  // fonts.test.ts reads fonts.css (mu-150).
+  test: { environment: "node", include: ["src/**/*.test.{ts,tsx}"], css: { include: [/styles\.css/, /fonts\.css/] } },
 });

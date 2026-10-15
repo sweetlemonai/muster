@@ -163,6 +163,30 @@ answers. The task pane, the backlog note pane and the helper load on first open.
 holds it): no file system, shell, dialog, notification, tray or network permission. Folders are picked by the core's own dialog, and the window names a queue by
 its project name, never by a path.
 
+**Fonts and their licences** (mu-150). Latin text is the system's SF; code is SF Mono. Persian text
+is **Vazirmatn 33.003** (Saber Rastikerdar, SIL Open Font License 1.1, no Reserved Font Name),
+bundled as `Vazirmatn-fa.woff2`: the variable font (weights 100–900) cut to the Arabic-script
+ranges Persian uses plus ZWNJ, ZWJ, the bidi marks and « », 44,844 bytes, the plain cut (digits
+are the app's choice, not the font's). The licence goes with it three ways: the font's name table
+keeps the licence and its URL (name IDs 13 and 14); `tauri.conf.json` bundles
+`app/src/assets/fonts/OFL.txt` as `Muster.app/Contents/Resources/fonts/Vazirmatn-OFL.txt`; and
+Settings › About names the font, its licence and that file. It comes from the owner's font
+collection at a recorded upstream commit, nothing is fetched at build or run time, and the CSP's
+`font-src 'self'` covers it. `app/src/fonts.css`, imported after `styles.css` in `main.tsx`, holds
+its one `@font-face` (`unicode-range`, so a screen without Persian never loads it; `size-adjust:
+104.8%`, Vazirmatn's alef to SF's cap height) and puts "Vazirmatn" first in the text stack and in
+every code stack (first there too: `ui-monospace` falls back to a monospaced Arabic of its own, so
+a later Vazirmatn is never reached; Latin isn't in its range and stays SF Mono, only « » in code
+take Vazirmatn's), by repeating `styles.css`'s selectors with only `font-family`. `input, textarea,
+select { font-family: inherit }` there too, since WebKit gives form controls the system's control
+font and some rules (the pane's Pause box) set only a size. WebKit before 17 (Safari 16, which
+macOS 11 and older stop at) ignores `size-adjust` and keeps the face: Persian is still Vazirmatn,
+about 5% shorter than the English beside it. An English title with a ZWJ emoji loads the face (U+200D
+is in its range) but draws pixel for pixel the same. `fonts.test.ts` holds the face, the stacks
+(every monospace rule in `styles.css` has its override), the 90 KB budget, the file's sha256 against
+the README, the licence records in its name table and the bundled licence. How to cut it again,
+byte for byte: `app/src/assets/fonts/README.md`. No other fonts are bundled.
+
 The 69 commands it can call (`generate_handler!` in `lib.rs`), by what they do:
 
 | Group | Commands |

@@ -257,6 +257,7 @@ macOS asks whether Muster may notify the first time it has something to tell you
 ### About
 
 - **Version:** the app's version.
+- **Fonts:** Persian text is drawn in Vazirmatn, under the SIL Open Font License 1.1; the licence ships inside the app at `Muster.app/Contents/Resources/fonts/Vazirmatn-OFL.txt`.
 - **Settings on this Mac:** the app's settings folder (`~/Library/Application Support/ai.sweetlemon.muster`) and what's in it: `projects.json` (the projects you added or hid, their labels, categories, colours, gates and Your check limits, and the sidebar's order), `settings.json` (the Claude accounts Muster reads, the claim lease, the LIVE window, whether notifications are on and whether the menu bar icon shows), `notified.json` (what Muster won't notify you of again: what it notified, and what you'd already seen) and `helper/` (the helper's account, model and conversations). Appearance, the display mode, text size, Group by, saved views and the pane's width are kept by the window itself.
 - **What it reads:** the queues it found on its own (at `~/playground/<project>/tasks`, and one level deeper), then the ones you added (or that you added none), each with its folder, and the Claude account folders it reads (only the allowed ones, never `~/.claude`), with the note that only projects under `~/playground` are read. All of it is read on this Mac and nothing is sent anywhere; only what you write to the helper goes to Anthropic, through your own Claude Code.
 
