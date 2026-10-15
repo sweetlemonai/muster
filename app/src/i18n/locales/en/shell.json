@@ -41,6 +41,13 @@
     "noQueues": "No queues yet. Muster looks for <code>{{path}}</code> folders, and one level deeper, or add one in Settings, under Projects.",
     "who": "Who",
     "whoAria": "Who does it",
+    "layout": "Layout",
+    "layoutAria": "Board layout",
+    "layouts": {
+      "columns": "Columns",
+      "grid": "Feature grid"
+    },
+    "allProjects": "All projects",
     "searchError": "Search can't read the tasks' text: {{error}}",
     "allFolded": "Every column is folded into the row above: click one to open it.",
     "showFewer": "Show fewer",

@@ -87,7 +87,7 @@ describe("which places are open and which are chips (AC1)", () => {
     expect(tn("shell", "app.allFolded")).toBe("Every column is folded into the row above: click one to open it.");
   });
   it("App draws only the open columns, never a strip, and the row under the filter bar", () => {
-    const plain = appSource.slice(appSource.indexOf('{groupBy === "none" && <main className="board"'), appSource.indexOf("</main>}", appSource.indexOf('{groupBy === "none" && <main className="board"')));
+    const plain = appSource.slice(appSource.indexOf('{!grid && groupBy === "none" && <main className="board"'), appSource.indexOf("</main>}", appSource.indexOf('{!grid && groupBy === "none" && <main className="board"')));
     expect(plain).toContain('<main className="board" style={{ gridTemplateColumns: plain.tracks }}>');
     expect(plain).toContain('{plain.isOpen("paused") && <PausedColumn');
     expect(plain).toContain("{STAGES.filter((c) => plain.isOpen(c.id)).map((c) => {");
@@ -168,7 +168,7 @@ describe("the row as drawn (AC1, AC3)", () => {
     const grouped = (chips: RowChip[]) => renderToStaticMarkup(createElement(ColumnRow, { chips, grouped: true, onOpen: () => {} }));
     expect(grouped([])).toBe('<div class="col-row" role="group" aria-label="Folded and empty columns"></div>');
     expect(grouped([chip(RAIL_ID, 4)])).toContain("col-chip col-recent");
-    expect(appSource).toContain('<ColumnRow key={`${queue}/${modes.mode}`} chips={rowChips} grouped={groupBy !== "none"} onOpen={(id) => setColumnOpen(id, true)} />');
+    expect(appSource).toContain('<ColumnRow key={`${queue}/${modes.mode}`} chips={grid ? rowChipsOf(plain.row, true, placeCounts) : rowChips} grouped={grid || groupBy !== "none"} onOpen={(id) => setColumnOpen(id, true)} />');
   });
   it("mirrors in right to left: flex from the start, no left or right of its own", () => {
     const rules = [...css.matchAll(/\n(\.col-row[^{]*)\{([^}]*)\}/g)].map((m) => m[2]);
@@ -184,7 +184,7 @@ describe("the row as drawn (AC1, AC3)", () => {
 
 describe("opening and folding (AC2)", () => {
   it("a chip's click opens its column, a head's Fold sends it back", () => {
-    expect(appSource).toContain('<ColumnRow key={`${queue}/${modes.mode}`} chips={rowChips} grouped={groupBy !== "none"} onOpen={(id) => setColumnOpen(id, true)} />');
+    expect(appSource).toContain('<ColumnRow key={`${queue}/${modes.mode}`} chips={grid ? rowChipsOf(plain.row, true, placeCounts) : rowChips} grouped={grid || groupBy !== "none"} onOpen={(id) => setColumnOpen(id, true)} />');
     expect(appSource).toContain("const hide = () => setColumnOpen(c.id, false);");
     expect(appSource).toContain('<PausedColumn tasks={cols.paused} onHide={() => setColumnOpen("paused", false)}');
     expect(appSource).toContain("onFold={() => setColumnOpen(RAIL_ID, false)}");

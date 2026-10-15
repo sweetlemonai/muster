@@ -935,6 +935,83 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .graph-loose { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
 .g-loose { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-left: 3px solid var(--edge, var(--status, var(--line))); border-radius: 6px; font-size: 12px; }
 
+/* The Feature grid (mu-143), the board's second layout: features down the side, stages across.
+   The owner's mockup was the guide; the colours are the app's tokens, in every theme. Logical
+   sides only, so it mirrors in right-to-left. It scrolls inside its frame, never the page; the
+   header row stays at the top and the feature names at the start while it scrolls. */
+/* The board's Layout chips, after Who and Group by in the filter bar. */
+.layout-pick { display: inline-flex; align-items: center; gap: 4px; margin-inline-start: 8px; }
+.layout-pick .meta { margin-inline-end: 2px; }
+.fg { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.board-row > .fg { min-width: 0; }
+.fg-top { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; padding: 8px 14px 2px; }
+.fg-title { margin: 0; font-size: 17px; font-weight: 650; }
+.fg-summary { margin: 0; color: var(--muted); }
+.fg-summary b { color: var(--text); font-weight: 600; }
+.fg-summary b.fg-needs { color: var(--warn); }
+.fg-tools { margin-inline-start: auto; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.fg-by { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--hover); }
+.fg-by .ui-segment { border: 0; background: none; border-radius: 6px; padding: 2px 10px; font-size: 12px; color: var(--muted); }
+.fg-by .ui-segment.ui-segment--active { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: 0 0 0 1px var(--line); }
+.fg-mine-pick { font-size: 12px; border-color: var(--line); }
+/* The alert's place is always there (one line), so the grid never moves when Your check fills. */
+.fg-over { display: flex; align-items: center; gap: 8px; margin: 2px 14px 4px; }
+.fg-over .col-cue { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border: 1px solid var(--line); background: var(--selected); font-size: 12px; color: var(--text); white-space: nowrap; }
+.fg-over .col-cue .count { margin: 0; }
+.fg-alert { flex: 1; min-width: 0; margin: 0; padding: 5px 12px; min-height: calc(1.35em + 10px); border-radius: var(--radius); font-size: 12.5px; line-height: 1.35; }
+.fg-alert.fg-alert-on { background: color-mix(in srgb, var(--st-needs) 16%, var(--panel)); color: var(--text); }
+.fg-alert.fg-alert-on::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--st-needs); margin-inline-end: 8px; vertical-align: 1px; }
+/* The feature names' width is one property, shared by the grid's first track and the frame's
+   scroll-padding, so a cell the keys or the cue scroll to stops clear of the sticky names and
+   header row (review R2; --fg-head-h is the header row's height, kept by FeatureGrid). Stages are
+   140px at least (review R1: 156px pushed Your check out of the default window); Done is as wide
+   as its "Done · N today", never cut. */
+.fg-frame { --fg-names: 160px; flex: 1; min-height: 0; min-width: 0; overflow: auto; margin: 0 14px 12px; scroll-padding-inline-start: var(--fg-names); scroll-padding-top: var(--fg-head-h, 52px); }
+.fg-grid { display: grid; grid-template-columns: var(--fg-names) repeat(6, minmax(140px, 1fr)) max-content; min-width: min-content; }
+.fg-row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; }
+.fg-headrow { position: sticky; top: 0; z-index: 2; background: var(--bg); }
+.fg-corner { position: sticky; inset-inline-start: 0; z-index: 1; background: var(--bg); padding: 8px 10px 6px; border-bottom: 1px solid var(--line); font-weight: 650; }
+.fg-colhead { padding: 8px 10px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; min-width: 0; }
+.fg-colhead b { font-weight: 650; }
+.fg-colhead b::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--status, var(--line)); margin-inline-end: 6px; vertical-align: 1px; }
+.fg-colhead .fg-n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.fg-colhead small { display: block; color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; }
+.fg-colhead.fg-full b, .fg-colhead.fg-full small { color: var(--warn); font-weight: 600; }
+.fg-rowhead { position: sticky; inset-inline-start: 0; z-index: 1; background: var(--bg); padding: 10px; border-bottom: 1px solid var(--line); min-width: 0; }
+/* Long titles end after three lines; the whole title is in the tooltip and the pane. */
+.fg-rowtitle { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; font-weight: 650; color: var(--text); text-align: start; overflow-wrap: anywhere; }
+.fg-rowtitle.fg-active { color: var(--accent-text); }
+.fg-bar { display: block; height: 4px; margin: 6px 0 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.fg-bar i { display: block; height: 100%; background: var(--muted); }
+.fg-rowhead small { color: var(--muted); font-size: 11.5px; }
+/* An empty cell is blank (the mockup's "None" in every cell was noise); its outline stays. */
+.fg-cell { display: flex; flex-direction: column; gap: 6px; min-width: 0; min-height: 56px; padding: 8px; border-bottom: 1px solid var(--line); border-inline-start: 1px solid var(--line); }
+.fg-cell:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.fg-donecell { align-items: center; justify-content: center; color: var(--muted); font-variant-numeric: tabular-nums; }
+.fg-card { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); text-align: start; }
+.fg-card:hover { border-color: var(--faint); }
+.fg-card.fg-you { border-color: var(--st-needs); border-inline-start: 3px solid var(--st-needs); }
+.fg-card.fg-active { border-color: var(--accent); background: var(--selected); }
+.fg-card.fg-dim { opacity: 0.4; }
+.fg-t { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.fg-wait { display: flex; min-width: 0; font-size: 11px; }
+.fg-wait .ui-badge { overflow-wrap: anywhere; }
+/* Trouble (sent back, a quiet claim, no tester yet) is a chip on its own line under the title:
+   the mockup squeezed it between the name and the key. Red words: something is wrong. */
+.fg-trouble { align-self: flex-start; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0 7px; border: 1px solid currentColor; border-radius: 999px; color: var(--bad); font-size: 11px; font-weight: 600; line-height: 1.5; }
+.fg-meta { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11.5px; color: var(--muted); }
+.fg-key { margin-inline-start: auto; white-space: nowrap; }
+.fg-who { display: inline-flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.fg-who .fg-dot { margin: 0; flex: none; }
+.fg-idle { display: inline-block; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.fg-more { align-self: flex-start; padding: 2px 4px; border: 0; border-radius: 999px; background: none; color: var(--muted); font-size: 12px; }
+.fg-more:hover, .fg-more:focus-visible { color: var(--text); background: var(--hover); }
+/* Words in a right-to-left window keep their own order ("+12 more", not "more 12+"), aligned to
+   the window's start. */
+.fg-summary, .fg-alert, .fg-more, .fg-rowhead small, .fg-colhead .fg-n { unicode-bidi: plaintext; text-align: match-parent; }
+/* A column head's who line is dir="auto" instead (review R7): plaintext cut Latin names at their
+   start in right-to-left; its own direction puts the ellipsis at its end. */
+.fg-colhead small { text-align: match-parent; }
 /* Task pane (0021, the owner's design D2): title and status, the stage track, two columns (what the
    stage needs; the sidebar), the forms under both, the path, then the write-up and a note bar fixed
    at the bottom. Theme tokens only, so every theme works light and dark (themes.test.ts checks). */

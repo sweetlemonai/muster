@@ -1388,6 +1388,26 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   "needs you", open questions, files, who's on it (flagged when quiet for 12 h), what a blocked
   task waits on, and when it last changed. Tasks waiting on the owner sort first. Done shows the
   latest 8.
+- **Feature grid** (task mu-143, the owner's mockup): the board's second layout, beside the
+  columns, which stay the default. **Layout** Columns · Feature grid in the filter bar, kept per
+  project in the window's storage (`muster.layout.<project>`, `featureGridData.ts`
+  `loadLayout`/`storeLayout`); the chips' names come from `shell.json` (`app.layouts.*`), and in
+  Persian read ستون‌ها and شبکه‌ی قابلیت‌ها (glossary, proposed). Features (or goals, per the board's Group by, which its own Feature ·
+  Goal · None control sets, with Group by's words) down the side with their progress, Backlog to Your
+  check across with who works each (the holders' names, else the role; Your check "N of L",
+  "full" at the limit) and Done as today's count. Two small cards a cell, then "+N more", which
+  expands in place; a card's title, its trouble on its own line (sent back N times, quiet, needs a
+  tester), why it waits, then one status (who with the live dot, needs you, paused) and its key.
+  The header line, Only what needs me (dims), and one alert line when Your check is full. A second
+  renderer over the board's data (`gridRows` over the filtered work, `groupItems`, the board's
+  sort), no new state beyond the setting. `FeatureGrid.tsx` draws it as an ARIA grid (row and
+  column headers, roving tab stop kept by row id, arrows, Home, End, ↩ and Esc from
+  `shortcuts.ts`), with logical CSS so it mirrors in right-to-left. The frame's scroll-padding
+  (`--fg-names`, `--fg-head-h`) keeps a focused cell clear of the sticky names and header row;
+  columns past the edge get the board's cue (`rowCue.ts` `overflowCue`, `ColumnRow` `RowCue`) at
+  the end of the alert's line, measured by `watchGrid` on resize and scroll (`columnChips`,
+  `viewSpan`). Only what needs me is App's state for the window's life. Tests:
+  `featureGridData.test.ts`, `FeatureGrid.test.tsx`; screenshots from `app/e2e/shot.mjs`.
 - **Human tasks, on the one board** (task 0022; the owner, 2026-10-13: "human board is taking
   space from the ai board", so one board, human cards patterned): `for: human` makes a task the
   owner's own (`muster new --human --as owner`, the Human/AI chips in New task, the For chip in
@@ -2094,6 +2114,14 @@ for you's Lessons block and the Dock badge (`badge::dock_count`); `muster check`
   `manifest.py --check`. The real queues are read by `examples/probe.rs`. The release app is built
   with `pnpm release:build`; its screens have had visual QA rounds (mu-61) and the owner's checks
   in Your check.
+- Headless screens (mu-143): `app/e2e/shot.mjs` serves `app/dist` on 127.0.0.1, drives it in
+  headless WebKit (Playwright from another checkout on this Mac, `$PLAYWRIGHT`; nothing added to
+  Muster's dependencies) and answers Tauri's IPC from a read-only snapshot (`app/e2e/mock.mjs`:
+  `muster list --json` made into the core's `state`; every command that would write is refused).
+  It checks the Feature grid at the app's default 1400×880 window (its grid roles, +N more, a card
+  opening the pane, the layout kept, the arrow keys and the focus clear of the sticky names, the
+  off-edge cue, Only what needs me, the full Your check head, right-to-left as the window in
+  Persian) and the columns, and takes the screenshots, light, dark and right-to-left. `cd app && pnpm build && node e2e/shot.mjs`; it never touches the owner's screen.
 - Hermetic tests (task 0062): every read of the projects Muster knows (`key::known`,
   `cli::base`, `cli::config_file`, the app's `base`) starts at `projects::places()`, the folder
   queues are found under and projects.json. The app and `muster` get this Mac's

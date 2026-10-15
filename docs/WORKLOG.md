@@ -4,6 +4,74 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — mu-143 round 2: the Layout chips and the grid's rows choice in Persian
+**Fixed:** in Persian the Layout chips read "Columns" / "Feature grid" and the grid's rows choice
+"By feature" / "By goal" / "No grouping" → `LAYOUTS` names come from `shell.json`
+(`app.layouts.*`, read each time through a getter), and the grid reuses `GROUP_BYS`'s words, so
+its rows choice and corner say Feature · Goal · None, قابلیت · هدف · هیچ‌کدام (R11). Glossary:
+ستون‌ها / شبکه‌ی قابلیت‌ها (proposed).
+**Verified:** a Vitest drawing the Layout chips and the grid in fa; `bin/gate` result in the pass.
+
+## 2026-10-15 — mu-143 round 1: the Feature grid's off-edge cue, focus clear of the sticky heads, and real tests
+**Fixed:** at the default 1400px window with Recently finished docked, Your check and Done sat past
+the frame's end with no cue → the board's "+2 more · 1 needs you" cue at the end of the alert's
+line (`rowCue.ts` walk, `watchGrid` measures), stages 140px at least (was 156) and Done as wide as
+its words (R1). Arrow-key focus could land under the sticky feature names or header row →
+scroll-padding on the frame from `--fg-names` and the header row's height (R2). In All projects
+the row title took its direction from the project label → `<bdi dir="auto">` (R3). Column heads'
+who line cut at its start in right-to-left → `dir="auto"`, out of the plaintext rule (R7). The Tab
+stop was a row number and drifted on a poll → kept by row id (R10). The trouble chip wrapped in a
+narrow column → one line, ellipsis, whole in its tooltip.
+**Did:** Only what needs me is App's state (`mine`/`onMine`), so a render test can draw it on.
+`docs/now/board.md` has the grid's rules. Role names (0112) landed on main: the grid's who lines
+and cards name a role slot by its role's name now (`RoleNamesContext`), which settles round 0's
+"holders' names, since mu-112 isn't merged". With the i18n layer (mu-146) on main, App's Layout
+chips and the grid's "All projects" title are `t()` keys in en and fa `shell.json`;
+`FeatureGrid.tsx` and `featureGridData.ts` join mu-147's list in the literals guard, with the
+rest of the board's text.
+**Verified:** new Vitest cases for the dimming, the done-today row, the full head's `fg-full` and
+the header's `fg-needs`, three names, the cue's columns and view span, the Tab stop by id; 23 Vitest
+mutants and 9 e2e mutants (one per fix) killed but R8's wrap, which Done's max-content track rules
+out; `node e2e/shot.mjs` at 1400×880: 24 checks green (the cue, focus clear of the heads, Only what
+needs me, the full Your check head in the shot; right-to-left now as the window in Persian, since
+mu-146 sets the page's direction from the language; `.json` served as JSON for its locales);
+`bin/gate` result in the pass.
+**Open:** in right-to-left the cue's words reorder ("needs you 1 · more 2+"), as on the board's
+row of folded columns; the grid's words move into the layer with mu-147.
+
+## 2026-10-14 — mu-143: Feature grid, the board's second layout (features down, stages across), beside the columns
+**Did:** **Layout** Columns · Feature grid in the board's filter bar, kept per project on this Mac
+(`muster.layout.<project>`). The grid (`FeatureGrid.tsx`, model `featureGridData.ts`): a row per
+feature in flight then Other, the stages across with who works each, Done as today's count, two
+small cards a cell then +N more (expands in place), the header line, Only what needs me, and one
+alert line when Your check is full; a card opens the task pane beside it. ARIA grid with arrow
+keys (`shortcuts.ts`), logical CSS for right-to-left, the app's tokens. Columns unchanged.
+Headless harness for this and later tasks: `app/e2e/shot.mjs` and `mock.mjs`.
+**Fixed (the mockup's rough edges):** trouble chip squeezed the holder and key → its own line;
+"Done today" head wrapped → "Done · N today"; "None" in every empty cell → blank cells with their
+outline. Also with real data: long "After mu-112, mu-113…" waits squeezed the key → their own line;
+long titles → three lines, whole in the tooltip. From the review: "+N more" and "Show fewer" were
+two buttons, so pressing one from the keys dropped the focus (and the next Esc closed the pane) →
+one toggle button; a feature the search matched lost its row → kept; folding Recently finished in
+the grid left no chip to reopen it → the row shows its chip, as under Group by; every card was a
+Tab stop → the grid is one, the keys reach the cards and feature names.
+**Decided:** the grid's rows follow the board's Group by (By feature · By goal · No grouping in the
+grid's header, which takes the filter bar's Group by chips' place while the grid shows: one
+control). Who works a stage is the holders' names from the tasks (the role when none hold any),
+since role profiles (mu-112) aren't merged. "Full" is at the limit, not over it, and the alert
+says to check some, not that Muster stops: the limit only warns (0050). Trouble is error red,
+not the mockup's amber, which means Testing here. The grid is the same in every display mode.
+**Verified:** Vitest 1816 tests (`featureGridData.test.ts` 42, `FeatureGrid.test.tsx` 24, the
+existing guards updated where they pin App's source); `node e2e/shot.mjs`: 18 headless checks green
+(grid roles, +N more in place by mouse and keys, card opens the pane, layout kept, arrows, one Tab
+stop, RTL mirrored, Columns unchanged plain and grouped, the full alert); an independent review
+(correctness lens): 4 should-fix findings, all fixed; screenshots light, dark, RTL, Columns in the task's
+attachments; `bin/gate` result in the pass.
+**Open:** in right-to-left, English column-head names cut at the wrong end (the app isn't
+localised yet); the harness needs local port binding, which this sandbox turns off.
+
+## 2026-10-15 — mu-131 round 4 settled (back to Building); notes shaped (mu-187, mu-188)
+**Decided:** mu-131's round 4 (past the 3-round cap) found R13 (restart never writes gates:), R14 (hand-merge
 ## 2026-10-15 — The card's "needs a tester" and "built by" count the takeover chain (mu-186)
 **Did (gholi_37, builder):** `queue::Task.builders` goes to the window (`builders`, no longer
 `serde(skip)`), `Task.builders?` in `types.ts`, and `lib.ts` `builders()` returns the chain, then

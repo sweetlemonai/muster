@@ -43,6 +43,8 @@ const ALLOWED: Record<string, Owner> = {
   "src/ColumnRow.tsx": "mu-147",
   "src/rowCue.ts": "mu-147",
   "src/EffortGroups.tsx": "mu-147",
+  "src/FeatureGrid.tsx": "mu-147", // the board's second layout (mu-143)
+  "src/featureGridData.ts": "mu-147",
   "src/GraphView.tsx": "mu-147",
   "src/Groups.tsx": "mu-147",
   "src/ModeViews.tsx": "mu-147",

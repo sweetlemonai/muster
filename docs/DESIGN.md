@@ -86,6 +86,57 @@ stay open) the owner chose **A**.
   class is `col-strip` with `col-empty` or `folded`, never `empty`: that's the empty message's
   class ("No tasks match"), whose 32px padding once pushed strips out of their tracks.
 
+## The board's two layouts (task mu-143)
+
+Decided 2026-10-14, from the owner's mockup ("just a different idea, do not remove the current one
+just add this"; `muster-board-mockup.html` in the task's attachments). The board has a **Layout**
+choice in the filter bar, **Columns** (the board above, the default, unchanged) and **Feature
+grid**, kept per project on this Mac (`muster.layout.<project>`, beside its saved views; All is a
+project here).
+
+- **Features down the side, stages across.** One row per feature in flight (a task not done yet,
+  something done today, or no tasks yet, so a new feature stays in view), then **Other** with the
+  tasks under none and the backlog notes; Backlog to Your check across, then **Done** as today's
+  count. The rows follow the board's Group by: **Feature · Goal · None** (Group by's own words), a segmented
+  control in the grid's header line, which takes the filter bar's Group by chips' place while the
+  grid shows (one control, not two). A row's head is the feature's name (it opens the feature),
+  its progress bar and "3 of 11 done".
+- **Each column head says who works there:** its count, then the holders of its tasks by name
+  ("asghar_13 and akbar_11", three at most, then "and 2 more"), else the stage's role; Backlog
+  "notes, not shaped yet", Ready how many can start, Your check "3 of 5" against the project's
+  limit and "5 of 5, full" in the needs-you colour at it, and **Done · 45 today** on one line.
+- **Small cards:** the title (three lines at most, whole in its tooltip), any trouble on its own
+  line under it ("sent back twice", "no check-in for 2 h", "needs a tester": red words, something
+  is wrong), why it waits on its own line when it does ("After mu-99", the block's own words and
+  look), then one status and the key: who's on it with the live dot, **needs you**, or paused.
+  A card that waits on you has the needs-you edge. Two cards a cell, then **+N more**, which
+  expands the cell in place (Show fewer folds it). An empty cell is blank, its outline kept.
+- **The header line:** "5 waiting for you, 4 being built, 3 in testing, 66 done today", what waits
+  for you first in the needs-you colour; **Only what needs me** dims the rest (never hides it).
+- **One alert line** when Your check is at its limit, in a place that's always there: "Your check
+  is full (5 of 5): check some before more start." The limit only warns (0050), so the line says
+  what to do, not that Muster stops. It takes the plain board's line above the board in the grid.
+- **Clicking a card opens the task pane beside the grid**, as on the columns. The grid scrolls
+  inside its frame, never the page, the header row staying at the top and the feature names at the
+  start; a cell the keys move to stops clear of both (the frame's scroll-padding). Stages are
+  140px at least and Done as wide as its words, so the whole grid fits once Recently finished is
+  folded. When columns are past the edge (at the default 1400px window with Recently finished
+  docked, Your check and Done are), the board's cue says so at the end of the alert's line, over
+  the grid's end edge: "+2 more · 1 needs you", the same button and walk as the row of folded
+  columns, whose click scrolls what needs you into view first (review R1: what needs you is always
+  in view). Considered: 104px stages to fit the default window (cards too narrow to read), and
+  stacking Recently finished under the grid (takes the height the rows need). It's an ARIA grid and one Tab stop: row and column headers, so a screen reader says
+  "Orchestration, Building" with a card; the arrow keys move between cells (← from Backlog to the
+  feature's name), Home and End to a row's ends, ↩ goes into a cell, ↑ ↓ step through its cards
+  and +N more (one button, Show fewer once open, so the focus stays), Esc comes back to the cell.
+  Recently finished stays docked beside it; folded, it's the one chip in the row above, as under
+  Group by. It mirrors in right-to-left (features
+  on the right, ← moves forward), and is the same in every display mode.
+- **Fixed from the mockup:** the trouble chip had squeezed the holder and key onto three lines; it
+  has its own line. "Done today" wrapped; it's "Done · 66 today". "None" in every empty cell was
+  noise; the cells are blank. The mockup's colours were a guide only: the grid uses the app's
+  tokens in every theme, and trouble is the error red, since amber means Testing here.
+
 ## ADHD mode: everything visible
 
 - **Options are on screen, not behind something.** No kebab or "…" menus, no hover-only buttons,

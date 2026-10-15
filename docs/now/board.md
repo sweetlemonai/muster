@@ -1,11 +1,15 @@
 ---
-covers: app/src/App.tsx, app/src/ColumnRow.tsx, app/src/ColumnCards.tsx, app/src/Card, app/src/TaskPanel, app/src/StageTrack.tsx, app/src/Recent, app/src/modes.ts
+covers: app/src/App.tsx, app/src/FeatureGrid.tsx, app/src/ColumnRow.tsx, app/src/ColumnCards.tsx, app/src/Card, app/src/TaskPanel, app/src/StageTrack.tsx, app/src/Recent, app/src/modes.ts
 ---
 # The board and the task pane
 
 - No overlays: a task, a note and New task open in a pane docked beside the board, which stays live. (DESIGN.md "ADHD mode")
 - Modals only to confirm something destructive. (DESIGN.md "ADHD mode")
 - One column per stage; a blocked card stays in its stage and says what it waits for. (mu-60)
+- Two layouts, kept per project: Columns, the default, and the Feature grid; Columns is the same either way. (mu-143)
+- The Feature grid: features down the side, stages across, Done as today's count; two cards a cell, then +N more in place. (mu-143)
+- Columns past the grid's edge get the board's cue, "+2 more · 1 needs you"; the keys never leave the focus under its sticky heads. (mu-143)
+- Only what needs me dims the rest, never hides it. (mu-143)
 - Status shows on the card: stage, blocked, who holds it, what it waits on, open questions. (DESIGN.md "ADHD mode")
 - The owner's own tasks share the board, hatched gold with the You ribbon. (mu-22)
 - Every place not open is a chip in one fixed-height row above the board, in board order. (mu-84)

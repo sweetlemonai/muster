@@ -49,6 +49,10 @@ Every keyboard shortcut in the app, and the slash commands for Claude Code. This
 | ↩ | Add the line to the backlog as a note | Add to the backlog…, at the top of the Backlog column, or of the Backlog band under Group by |
 | Esc | Empty the field | Add to the backlog…, at the top of the Backlog column, or of the Backlog band under Group by |
 | Esc | Don't accept them: nothing changes | Accept all's confirm, in Your check's Just accept group (the board and Waiting for you) |
+| ← → ↑ ↓ | Move to the next cell of the Feature grid: across the stages, or down the features (← and → swap in right-to-left); ← from Backlog goes to the feature's name, which ↩ opens. Inside a cell, ↑ and ↓ step through its cards and +N more | The Feature grid, once Tab has put the focus on it (the grid is one stop for Tab) |
+| Home, End | Go to the row's first cell (Backlog) or its last (Done today) | A cell of the Feature grid, once Tab has put the focus on it |
+| ↩ or Space | Go into the cell, to its first card (or its +N more); ↩ on a card opens it in the pane beside the board | A cell of the Feature grid, once Tab has put the focus on it |
+| Esc | Back from a card to its cell; the pane stays open | A card or +N more in the Feature grid |
 
 ## Projects
 

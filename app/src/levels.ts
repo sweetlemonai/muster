@@ -100,7 +100,7 @@ export function groupItems(items: Task[], all: Task[], by: "feature" | "goal", s
 }
 
 /** "3 of 7 done", "no tasks yet", or "" for a task. */
-export function progressText(p: Progress | null): string {
+export function progressText(p: Pick<Progress, "done" | "total"> | null): string {
   if (!p) return "";
   return p.total ? `${p.done} of ${p.total} done` : "no tasks yet";
 }

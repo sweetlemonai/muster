@@ -44,6 +44,8 @@ import { PausedColumn } from "./PausedLane";
 import { sessionKey } from "./sessionsData";
 import { type KindFilter, loadKind, storeKind, weekCount } from "./recentData";
 import OldPausesOffer from "./OldPauses";
+import FeatureGrid from "./FeatureGrid";
+import { gridRows, headerLine, type Layout, LAYOUTS, loadLayout, storeLayout } from "./featureGridData";
 import logoDark from "./logo-dark.svg";
 import logoLight from "./logo-light.svg";
 
@@ -177,6 +179,21 @@ function useSavedViews(project: string): [SavedView[], (views: SavedView[]) => v
   return [stored.project === project ? stored.views : [], set];
 }
 
+/** The board's layout (mu-143), Columns or Feature grid, per project ("All" is a project here), on
+ *  this Mac beside the project's saved views. */
+function useLayout(project: string): [Layout, (l: Layout) => void] {
+  const [stored, setStored] = useState(() => ({ project, layout: loadLayout(localStorage, project) }));
+  if (stored.project !== project) setStored({ project, layout: loadLayout(localStorage, project) });
+  const set = useCallback(
+    (layout: Layout) => {
+      storeLayout(localStorage, project, layout);
+      setStored({ project, layout });
+    },
+    [project],
+  );
+  return [stored.project === project ? stored.layout : loadLayout(localStorage, project), set];
+}
+
 /** The Who chips (All · You · Agents, 0022) of the Board, Table and Timeline, remembered between
  *  launches. */
 function useForFilter(): [ForFilter, (f: ForFilter) => void] {
@@ -216,6 +233,11 @@ export default function App() {
   const searchRef = useRef<HTMLInputElement>(null);
   const [focusSearch, setFocusSearch] = useState(0);
   const [groupBy, setGroupBy] = useGroupBy();
+  const [layout, setLayout] = useLayout(queue);
+  // The Feature grid (mu-143) in place of the columns, on the board only.
+  const grid = view === "board" && layout === "grid";
+  // The grid's Only what needs me, for this window's life: it dims, never hides.
+  const [mine, setMine] = useState(false);
   const [who, setWho] = useForFilter();
   const [modes, setModes] = useDisplayMode();
   // The sidebar's and the pane's widths (0058), the owner's or the default, fitted to the window
@@ -305,6 +327,10 @@ export default function App() {
   const cols = useMemo(() => columns(boardWork, query.sort), [boardWork, query.sort]);
   const index = useMemo(() => indexTasks(state?.tasks ?? []), [state]);
   const boardGroups = useMemo(() => (groupBy === "none" ? [] : groupItems(boardWork, inQueue, groupBy, viewTasks)), [groupBy, boardWork, inQueue, viewTasks]);
+  const gridList = useMemo(
+    () => (grid ? gridRows({ work: boardWork, all: inQueue, notes, by: groupBy, today: ctx.today, sort: query.sort, shown: viewTasks }) : []),
+    [grid, boardWork, inQueue, notes, groupBy, ctx.today, query.sort, viewTasks],
+  );
   const tableGroups = useMemo(() => (groupBy === "none" ? undefined : groupItems(viewTasks, inQueue, groupBy)), [groupBy, viewTasks, inQueue]);
   const whoFilters = whoFiltersOn(view);
   const shownCount = whoFilters ? viewTasks.length : tasks.length;
@@ -478,7 +504,9 @@ export default function App() {
                 arrange={
                   <>
                     {whoFilters && <ChoiceChips label={t("app.who")} className="for-filter" aria={t("app.whoAria")} metaClass="meta sep" value={who} options={FOR_FILTERS} onPick={setWho} />}
-                    {view !== "timeline" && <GroupByChips value={groupBy} onChange={setGroupBy} />}
+                    {/* The grid has the same choice above it, as its rows (Feature, Goal, None). */}
+                    {view !== "timeline" && !grid && <GroupByChips value={groupBy} onChange={setGroupBy} />}
+                    {view === "board" && <ChoiceChips label={t("app.layout")} className="layout-pick" aria={t("app.layoutAria")} value={layout} options={LAYOUTS} onPick={setLayout} />}
                   </>
                 }
                 searchRef={searchRef}
@@ -493,12 +521,36 @@ export default function App() {
               {view === "timeline" && <TimelineView tasks={viewTasks} now={now} multi={multi} openKey={openKey} onOpen={open} words={words} />}
               {/* Every folded or empty column is a chip in one row under the filter bar, in board order (mu-84). A new
                   project or mode starts the row afresh, scrolled to its start (QA_4). */}
-              {view === "board" && <ColumnRow key={`${queue}/${modes.mode}`} chips={rowChips} grouped={groupBy !== "none"} onOpen={(id) => setColumnOpen(id, true)} />}
+              {/* In the Feature grid, as under Group by, the row holds only Recently finished when it's folded. */}
+              {view === "board" && <ColumnRow key={`${queue}/${modes.mode}`} chips={grid ? rowChipsOf(plain.row, true, placeCounts) : rowChips} grouped={grid || groupBy !== "none"} onOpen={(id) => setColumnOpen(id, true)} />}
               {/* Recently finished (0051) is docked at the board's right edge, grouped or not; under it when the row is too narrow for both. */}
-              {view === "board" && <OverLine over={overCheck} queue={queue} />}
+              {/* The grid says a full Your check in its own alert line, over it. */}
+              {view === "board" && !grid && <OverLine over={overCheck} queue={queue} />}
               {view === "board" && <OldPausesOffer offered={state?.settings?.oldPausesOffered} onDone={() => void refresh()} />}
               {view === "board" && <div className={railSide ? "board-row" : "board-row stacked"}>
-              {groupBy !== "none" && (
+              {grid && (
+                <FeatureGrid
+                  key={queue}
+                  rows={gridList}
+                  queue={queue}
+                  queues={state?.queues ?? []}
+                  title={queue === "all" ? t("app.allProjects") : (state?.queues.find((q) => q.name === queue)?.label || queue)}
+                  header={headerLine(inQueue.filter(isWork), needs, ctx.today)}
+                  needs={needs}
+                  by={groupBy}
+                  onBy={setGroupBy}
+                  multi={multi}
+                  mine={mine}
+                  onMine={setMine}
+                  now={now}
+                  words={words}
+                  openKey={openKey}
+                  openNoteKey={openNoteKey}
+                  onOpen={open}
+                  onOpenNote={(n) => go({ kind: "note", key: noteKey(n) })}
+                />
+              )}
+              {!grid && groupBy !== "none" && (
                 <GroupedBoard
                   groups={boardGroups}
                   by={groupBy}
@@ -517,7 +569,7 @@ export default function App() {
                   stays open for its quick add unless Focus (0038) folds it or the owner does. The
                   Paused lane (mu-59) comes first, beside Backlog. An open column is at most
                   OPEN_COLUMN_MAX wide, and the room left over stays at the right (mu-83). */}
-              {groupBy === "none" && <main className="board" style={{ gridTemplateColumns: plain.tracks }}>
+              {!grid && groupBy === "none" && <main className="board" style={{ gridTemplateColumns: plain.tracks }}>
                 {plain.open.length === 0 && <p className="none">{t("app.allFolded")}</p>}
                 {plain.isOpen("paused") && <PausedColumn tasks={cols.paused} onHide={() => setColumnOpen("paused", false)} renderCard={card} />}
                 {STAGES.filter((c) => plain.isOpen(c.id)).map((c) => {

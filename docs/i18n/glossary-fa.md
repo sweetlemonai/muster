@@ -243,6 +243,7 @@ Latin script stays in commands, task fields (`claimed-by:`) and anything an agen
 | language | زبان | | Mozilla, Apple |
 | board | بورد | the Board view; transliterated as Persian Scrum and Kanban teams say it, like بک‌لاگ; تابلو reads as a sign or a painting. برد is the other common spelling (Trello users write it), but it's a homograph of برد (range, win, "took"); بورد is used everywhere, and the owner's native-speaker check settles بورد or برد | (proposed) |
 | table / timeline / graph | جدول / خط زمانی / گراف | the other project views | (proposed) |
+| layout: Columns / Feature grid | چیدمان: ستون‌ها / شبکه‌ی قابلیت‌ها | the board's two layouts (mu-143); شبکه, not جدول, which is the Table view | (proposed) |
 | helper | دستیار | the AI helper and its tab | (proposed) |
 | activity / problems / help | فعالیت / مشکلات / راهنما | the header's tabs | Mozilla (راهنما) |
 | view (saved) | نما | «نماهای ذخیره‌شده»; the header's views are نماها too | (proposed) |
