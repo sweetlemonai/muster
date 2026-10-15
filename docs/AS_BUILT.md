@@ -881,10 +881,14 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   scrolls away (`RowCue`, review R7): "+3 more · 1 needs you", read as "3 more columns past the
   edge, 1 needs you. Show them"; its first click scrolls to and focuses the first hidden chip that
   needs you (past the far edge first), else the next one past the edge. Each click after steps in
-  board order to the next hidden chip past the one the last click went to, while that one is at
-  least partly in view (`cutBy`), so a chip wider than the list, never wholly in view, doesn't hold
-  it (R8); with nothing past it, back to the start, the first hidden chip, so a round reaches every
-  chip once (QA_4). The row is keyed by project and mode, so a new one starts scrolled to its start.
+  board order to the next hidden chip past the one the last click went to, measured in view or not,
+  so a chip wider than the list, never wholly in view, doesn't hold it (R8); with nothing past it,
+  back to the start, the first hidden chip, so a round reaches every chip once (QA_4). Task 0086:
+  ColumnRow first passed the last target only while the view measured it in view or cut, so at a
+  board of 400px or less (nothing fits beside the cue, and a scroll's measure can miss it) each
+  click counted as a walk's first and went back to what needs you, landing on the same chip or
+  skipping the plain chip after a needs-you one; now it keeps the target as it is, and a target
+  that's no longer a chip (its column opened) walks on from the list's start. The row is keyed by project and mode, so a new one starts scrolled to its start.
   `rowCue.ts` `watchRow` measures on a ResizeObserver (row, list, each chip) and on scroll, once a
   frame, never on a poll that changes no size; a chip is in view only with both edges inside
   the list's box, so it reads the same right to left, and the cue shows only when the chips need

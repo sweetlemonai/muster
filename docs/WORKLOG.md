@@ -4,6 +4,17 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — The +N more cue walks every chip in board order at a 400px board (task 0086)
+**Fixed:** at a board of 400px or less the cue's clicks landed on the same chip, or skipped a plain
+chip after a needs-you one → ColumnRow passed the last target to `overflowCue` only while the view
+measured it in view or cut, and with nothing fitting beside the cue it often wasn't, so each click
+counted as a walk's first → ColumnRow keeps the target as it is (`ColumnRow.tsx`), and `overflowCue`
+walks a target that's no longer a chip on from the list's start (`rowCue.ts`). DESIGN.md and
+AS_BUILT.md say "measured in view or not".
+**Verified:** `columnRow.test.ts` 51 passed, new cases for `visible = []` (every chip once a round,
+wrap, a gone target); `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`.
+**Open:** AC3's screenshots at a ≤400px board in the release app are Testing's.
+
 ## 2026-10-14 — Citation audit of the orchestration research (mu-9)
 **Did (Pouya, researcher):** a fresh agent checked eight key claims against their sources; five held,
 three were corrected in `docs/research/2026-10-14-orchestration.md`: the 2025-09-15 Usage Policy

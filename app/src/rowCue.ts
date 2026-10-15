@@ -35,11 +35,12 @@ export function cutBy(spans: readonly ChipSpan[], start: number, end: number): s
 /** The cue for the chips not in `visible`, or null when every chip is in view. Its first click
  *  goes to what needs the owner: the first chip past the far end of what's in view with something
  *  that needs them, else the first hidden one that does, else the next chip past the far end.
- *  After that, `from` is the chip the last click went to, while it's still at least partly in view,
- *  and each click steps in board order to the next hidden chip past both it and what's in view,
- *  even when it can't be wholly seen (a chip wider than the row, review R8). With nothing past
- *  that, the walk goes back to the start, the first hidden chip, so every chip comes into view
- *  once per round (QA_4: going back to what needs you first never reached the chips before it). */
+ *  After that, `from` is the chip the last click went to, measured in view or not (mu-86), and each
+ *  click steps in board order to the next hidden chip past both it and what's in view, even when it
+ *  can't be wholly seen (a chip wider than the row, review R8). With nothing past that, the walk
+ *  goes back to the start, the first hidden chip, so every chip comes into view once per round
+ *  (QA_4: going back to what needs you first never reached the chips before it). A `from` that's no
+ *  longer a chip (its column was opened) goes back to the start too. */
 export function overflowCue(chips: readonly RowChip[], visible: readonly string[], from: string | null = null): Cue | null {
   const seen = new Set(visible);
   const hidden = chips.filter((c) => !seen.has(c.id));
@@ -50,7 +51,8 @@ export function overflowCue(chips: readonly RowChip[], visible: readonly string[
     at,
   );
   const beyond = chips.slice(last + 1).filter((c) => !seen.has(c.id));
-  const target = at < 0 ? beyond.find((c) => c.needs > 0) ?? hidden.find((c) => c.needs > 0) ?? beyond[0] ?? hidden[0] : beyond[0] ?? hidden[0];
+  const first = from === null ? beyond.find((c) => c.needs > 0) ?? hidden.find((c) => c.needs > 0) ?? beyond[0] : at < 0 ? hidden[0] : beyond[0];
+  const target = first ?? hidden[0];
   return { more: hidden.length, needs: hidden.reduce((n, c) => n + c.needs, 0), target: target.id };
 }
 

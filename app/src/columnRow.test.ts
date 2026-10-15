@@ -450,8 +450,7 @@ describe("past the row's room: the cue at its end (review R7)", () => {
     const reachedIds: string[] = [];
     for (let click = 0; click < 6; click++) {
       const v = view(scroll);
-      const reached = from !== null && (v.visible.includes(from) || v.cut.includes(from)) ? from : null;
-      const cue = overflowCue(chips, v.visible, reached);
+      const cue = overflowCue(chips, v.visible, from);
       if (!cue) break;
       from = cue.target;
       reachedIds.push(from);
@@ -496,6 +495,35 @@ describe("past the row's room: the cue at its end (review R7)", () => {
     }
     expect(walk).toEqual(["shaping", "ready", "done", RAIL_ID, ...round]);
   });
+  it("with nothing wholly beside the cue, each click steps in board order through every chip and wraps (mu-86)", () => {
+    // A board of 400px or less: no chip fits beside the cue, so `visible` is [] on every click and
+    // the measured view may not hold the last target either. ColumnRow keeps `from` regardless.
+    const chips = [p("paused", "⏸︎ Paused", 1, 1), p("backlog", "Backlog", 0), p("shaping", "Shaping", 0), p("ready", "Ready", 2, 2), p("done", "Done", 0)];
+    const targets: string[] = [];
+    let from: string | null = null;
+    for (let click = 0; click < 11; click++) {
+      from = overflowCue(chips, [], from)!.target;
+      targets.push(from);
+    }
+    const round = ["paused", "backlog", "shaping", "ready", "done"];
+    expect(targets).toEqual([...round, ...round, "paused"]);
+    // Never the same chip twice running, and the plain chip after a needs-you one isn't skipped.
+    expect(targets.every((id, i) => i === 0 || id !== targets[i - 1])).toBe(true);
+    expect(overflowCue(chips, [], "paused")?.target).toBe("backlog");
+    expect(overflowCue(chips, [], "ready")?.target).toBe("done");
+    expect(overflowCue(chips, [], "done")?.target).toBe("paused");
+    // The walk's first click (no `from`) still goes to what needs you first, and on from there.
+    const later = chips.map((c) => (c.id === "paused" ? { ...c, needs: 0 } : c));
+    expect(overflowCue(later, [])?.target).toBe("ready");
+    expect(overflowCue(later, [], "ready")?.target).toBe("done");
+    expect(overflowCue(later, [], "done")?.target).toBe("paused");
+  });
+  it("a last target that's no longer a chip (its column opened meanwhile) walks on from the list's start (mu-86)", () => {
+    const chips = [p("backlog", "Backlog", 0), p("shaping", "Shaping", 0), p("ready", "Ready", 2, 2), p("done", "Done", 0)];
+    expect(overflowCue(chips, [], "paused")).toEqual({ more: 4, needs: 2, target: "backlog" });
+    // With chips in view, the first hidden one: the list's start, not what needs you.
+    expect(overflowCue(chips, ["backlog"], "paused")).toEqual({ more: 3, needs: 2, target: "shaping" });
+  });
   it("QA_4's braindump at 1400px with the pane open: every round shows every chip once and comes back to the start", () => {
     // Ten places; Ready (264, 7 need you, 9 blocked) is wider than the 520px list.
     const chips = [
@@ -524,8 +552,7 @@ describe("past the row's room: the cue at its end (review R7)", () => {
     const scrolls: number[] = [];
     for (let click = 0; click < 16; click++) {
       const v = view(scroll);
-      const reached: string | null = from !== null && (v.visible.includes(from) || v.cut.includes(from)) ? from : null;
-      from = overflowCue(chips, v.visible, reached)!.target;
+      from = overflowCue(chips, v.visible, from)!.target;
       targets.push(from);
       scroll = Math.min(at.find((s) => s.id === from)!.start, max);
       scrolls.push(scroll);
@@ -652,8 +679,9 @@ describe("past the row's room: the cue at its end (review R7)", () => {
   it("ColumnRow wires it: the chips scroll in their list, the cue after it scrolls to its target", () => {
     const src = columnRowSource;
     expect(src).toContain("return watchRow(row.current, list.current, (v) => setView((prev) => (sameView(prev, v) ? prev : v)));");
-    expect(src).toContain("const reached = from !== null && (view.visible.includes(from) || view.cut.includes(from)) ? from : null;");
-    expect(src).toContain("const cue = any && view.overflow ? overflowCue(chips, view.visible, reached) : null;");
+    // The last target is kept whether or not the view measures it (mu-86): no gate on what's in view.
+    expect(src).toContain("const cue = any && view.overflow ? overflowCue(chips, view.visible, from) : null;");
+    expect(src).not.toContain("reached");
     expect(src).toMatch(/onShow=\{\(\) => \{\s*setFrom\(cue\.target\);\s*showChip\(list\.current, cue\.target\);/);
     expect(src).toContain('el.scrollIntoView({ inline: "start", block: "nearest", behavior: still ? "auto" : "smooth" });');
     expect(src).toContain("el.focus({ preventScroll: true });");

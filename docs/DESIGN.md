@@ -57,7 +57,7 @@ stay open) the owner chose **A**.
   being what the hidden chips need; it's a button ("3 more columns past the edge, 1 needs you.
   Show them") whose first click scrolls to the first hidden chip that needs you, else the next one
   past the edge. Each click after goes on to the next chip in board order past the one the last
-  went to, so a chip wider than the row doesn't hold the walk (round 3, R8), and back to the start,
+  went to, measured in view or not (at a board of 400px no chip fits beside the cue, mu-86), so a chip wider than the row doesn't hold the walk (round 3, R8), and back to the start,
   the first chip, once the end is in view, so every chip comes into view once a round (QA_4: going
   back to the first that needs you never reached the chips before it). A new project or mode
   starts the row at its start. (Round 2 review: macOS shows the scrollbar

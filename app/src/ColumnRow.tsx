@@ -83,15 +83,16 @@ export default function ColumnRow({ chips, grouped = false, onOpen }: { chips: R
   const row = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const [view, setView] = useState(ALL_IN_VIEW);
-  // The chip the cue's last click went to: the walk goes on past it while it's in view (R8).
+  // The chip the cue's last click went to: the walk goes on past it whether or not the view measures
+  // it in view (R8, mu-86: at a board of 400px no chip fits beside the cue). A new project or mode
+  // remounts the row (App keys it), which starts a new walk.
   const [from, setFrom] = useState<string | null>(null);
   const any = chips.length > 0;
   useEffect(() => {
     if (!any || !row.current || !list.current) return;
     return watchRow(row.current, list.current, (v) => setView((prev) => (sameView(prev, v) ? prev : v)));
   }, [any]);
-  const reached = from !== null && (view.visible.includes(from) || view.cut.includes(from)) ? from : null;
-  const cue = any && view.overflow ? overflowCue(chips, view.visible, reached) : null;
+  const cue = any && view.overflow ? overflowCue(chips, view.visible, from) : null;
   return (
     <div ref={row} className="col-row" role="group" aria-label="Folded and empty columns">
       {!any && !grouped && <span className="col-row-none">Every column is open</span>}
