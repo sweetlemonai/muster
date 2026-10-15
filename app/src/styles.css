@@ -756,14 +756,59 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .side-more:empty { display: none; }
 .side-badges small { color: var(--muted); font-variant-numeric: tabular-nums; }
 .side-badges .count { margin-left: 0; }
+/* All in Focus (mu-197 round 3): its stalled count is a badge ("2 stalled"), so in a sidebar
+   narrower than 200px, where the name and the badges with it don't fit side by side, the badges
+   always take the line under the name, stall or not, and that line is as tall as "2 stalled"
+   makes it, so a poll that brings a stall moves no row below. From 200px "All", "12 stalled" and a
+   three-digit needs-you count fit on one line. */
+.side-all-focus { container: side-all / inline-size; }
+@container side-all (width < 165px) {
+  .side-all-focus .side-badges { flex: 0 0 100%; line-height: 1.45; min-height: 1.45em; }
+}
 /* No dot of its own: in the sidebar the Building-colour dot means "being worked on now" (0037). */
 .side-doing { font-size: 11px; color: var(--st-building); }
 /* Activity (0037): quiet, one line, always there so rows keep their height. */
 .side-activity { display: flex; align-items: center; gap: 6px; width: 100%; font-size: 11px; line-height: 1.35; color: var(--muted); }
-.side-state { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A row's state words ("8 working", "stalled") never shrink (mu-197); where the
+   line can't hold them and when it last moved, the when gives way, whole, and stays in its tooltip. */
+.side-state { flex: 1; min-width: min-content; overflow: hidden; white-space: nowrap; }
 .side-working .dot { vertical-align: 0; }
 .side-stalled { color: var(--bad); font-weight: 600; }
-.side-when { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.side-when { flex: 0 1 auto; min-width: 0; display: flex; flex-wrap: wrap; height: 1.35em; overflow: hidden; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.side-when::before { content: ""; flex: none; height: 100%; }
+/* All's line (mu-197 round 2): "N working" and the stalled count never give way, the stalled count
+   being All's one always-visible stall signal. Where the line can't hold the rest, the when goes
+   first, then "in N projects", each whole, never cut mid-word, and the room a piece leaves goes back
+   to the others. The rest (.side-sum-rest) is one line tall and shows its last line:
+   "in N projects" comes first, then the tail (the stalled count, then the when). The tail's least
+   width is the stalled count's (the when takes none), so where "in N projects" and the stalled
+   count don't both fit, "in N projects" wraps onto a first line out of sight and the tail has the
+   line to itself; the when grows into what the tail has left and shows only if it fits whole.
+   How many lines the row takes follows the sidebar's width, never the counts (round 3), so a poll
+   that brings a stall or changes a count moves no row below: in a sidebar narrower than the default
+   (All's box under 176px) the rest always has a second line of its own under "N working", stall or
+   not, and the line keeps two lines' height; from the default up it's one line, where
+   "129 working · 12 projects stalled" fits (en and fa). Wider counts than that still wrap rather
+   than hide the stalled count. The " · " before the stalled count is the tail's on one line and the
+   end of "in N projects" on the second, so that line never starts with it. */
+.side-sum-box { display: block; container: sums / inline-size; }
+.side-sums-line { flex-wrap: wrap; gap: 0; }
+.side-sum-working { flex: none; }
+.side-sum-rest { flex: 1 1 0; min-width: 0; display: flex; flex-wrap: wrap; align-content: flex-end; height: 1.35em; overflow: hidden; }
+.side-sum-rest.has-stalled { min-width: min-content; }
+.side-sum-in { flex: none; white-space: pre; }
+.side-sum-tail { flex: 1 1 0; min-width: min-content; display: flex; }
+.side-sum-stalled { flex: none; white-space: pre; }
+.side-sum-tail > .side-when { flex: 1 1 0; width: 0; max-width: max-content; margin-inline-start: auto; }
+/* The when's space before it is its empty first piece, so it counts only where the when shows. */
+.side-sum-tail > .side-when::before { width: 6px; }
+.side-sum-in > .side-sum-sep { display: none; }
+@container sums (width < 195px) {
+  .side-sums-line { min-height: 2.7em; align-content: flex-start; }
+  .side-sum-rest { flex: 1 0 100%; }
+  .side-sum-in > .side-sum-sep { display: inline; }
+  .side-sum-stalled > .side-sum-sep { display: none; }
+}
 .side-order { display: flex; flex-wrap: wrap; gap: 2px; margin: 0 4px 4px; }
 .side-order .ui-pill { font-size: 11px; padding: 0 7px; }
 /* Category headings (0044): always shown, quiet, with their totals; each wraps its projects. */

@@ -143,7 +143,7 @@ describe("the sidebar's rows", () => {
 });
 
 describe("the All projects sums", () => {
-  it("count projects working and stalled, and take the newest activity", () => {
+  it("count the tasks being worked on summed over projects, the projects with any, the projects stalled, and take the newest activity (mu-197)", () => {
     const list: ProjectActivity[] = [
       { working: 2, stalled: false, last: 0 },
       { working: 1, stalled: false, last: 4 },
@@ -151,10 +151,14 @@ describe("the All projects sums", () => {
       { working: 1, stalled: false, last: 12 },
       { working: 0, stalled: false, last: null },
     ];
-    expect(sumActivity(list)).toEqual({ working: 3, stalled: 1, last: 0 });
+    expect(sumActivity(list)).toEqual({ working: 4, projects: 3, stalled: 1, last: 0 });
   });
   it("are nothing for no projects", () => {
-    expect(sumActivity([])).toEqual({ working: 0, stalled: 0, last: null });
+    expect(sumActivity([])).toEqual({ working: 0, projects: 0, stalled: 0, last: null });
+  });
+  it("say 16 tasks in 2 projects for projects with 8, 8 and 0 (mu-197 AC2's fixture)", () => {
+    const s = sumActivity([8, 8, 0].map((working) => ({ working, stalled: false, last: 0 })));
+    expect([s.working, s.projects]).toEqual([16, 2]);
   });
 });
 

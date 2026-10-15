@@ -668,7 +668,25 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   colour (work in Building, not blocked and not the owner's, and nothing in the project for over
   30 minutes), and the last activity ("now", "12 min ago", "3 h ago", "yesterday", "5 days ago":
   the newest stage change, check-in, heartbeat, file change, queue commit or live transcript).
-  The All row sums projects: "3 working · 1 stalled". Chips above the list order it: **Working**
+  "N working" counts tasks everywhere the sidebar says it, from one helper (mu-197, `human.ts`
+  `workingWords`): a row's, a heading's ("· 16 working", the sum of its projects') and All's. The
+  All row (`SumsLine`, `sumActivity`'s `working` and `projects`) says the tasks and, in words, the
+  projects they're in, one sentence (`sidebar.workingIn`, `workingInWords`): "29 working in 9
+  projects · 2 projects stalled" (stalled is a project's state, `stalledProjectsWords`). "N
+  working" and the stalled count never give way; where the line doesn't fit, the when goes first,
+  then "in 9 projects", each whole, and a piece gone gives its room back: the rest of the line
+  (`.side-sum-rest`, one line tall, showing its last line) wraps "in 9 projects" out of sight
+  where it and the stalled count don't both fit, and the when grows into what's left
+  (`.side-sum-tail`). How many lines All takes follows the sidebar's width, never the counts
+  (`.side-sum-box`, a container query): under 230px the rest always has a second line under "N
+  working", stall or not ("in 9 projects · 2 projects stalled", or "in 9 projects" and the when),
+  and from 230px it's one line, where "129 working · 12 projects stalled" fits in en and fa; the
+  " · " before the stalled count is the tail's on one line and the end of "in 9 projects" on the
+  second, so no line starts with it. In Focus All's badge is the short "2 stalled" ("2 projects
+  stalled" in its tooltip and aria-label), and under 200px All's badges always take the line under
+  the name (`.side-all-focus`), so a poll that brings a stall moves no row below. All of it stays in the tooltip and the row's description; a project's row keeps "8 working" whole the same way, its
+  when giving way. In Focus, a row's aria-label says the line's working words behind the dot.
+  Chips above the list order it: **Working**
   (default: working projects first, then by last activity), **A–Z**, **Needs you** (most waiting
   first, then as Working), remembered in `localStorage` (`muster.sidebarOrder`).
 - **Labels and categories** (task 0044, `labels.rs`, `labels.ts`, `ProjectName.tsx`,

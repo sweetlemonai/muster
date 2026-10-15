@@ -2,7 +2,7 @@ import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode }
 import { lastLabel, loadOrder, nextOrder, type OrderMemo, type ProjectRow, projectRows, SIDEBAR_ORDERS, storeOrder, sumActivity, type ProjectActivity, type SidebarOrder, type Sums } from "./activity";
 import { projectCount } from "./Backlog";
 import { SideLimit } from "./CheckLimit";
-import { needsYouCount } from "./human";
+import { needsYouCount, stalledProjectsWords, WORKING_IN, workingInParams, workingInWords, workingWords } from "./human";
 import { api, type Moved } from "./api";
 import { tl, tn, Trans, useT } from "./i18n";
 import { LABEL_MAX } from "./labels";
@@ -209,7 +209,7 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
       onDragOver={drag ? (e) => !e.isDefaultPrevented() && hover(null) : undefined}
       onDragLeave={drag ? (e) => !(e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) && hover(null) : undefined}
     >
-      <ProjectItem name={t("sidebar.all")} total={tasks.length + notes.length} tasks={tasks} lessons={lessonsWaiting(queues, "all")} on={current === "all"} onClick={() => onPick("all")} working={sums.working > 0} stalled={sums.stalled > 0 ? t("sidebar.stalledCount", { count: sums.stalled }) : ""}>
+      <ProjectItem name={t("sidebar.all")} total={tasks.length + notes.length} tasks={tasks} lessons={lessonsWaiting(queues, "all")} on={current === "all"} onClick={() => onPick("all")} all working={sums.working > 0 ? workingInWords(sums.working, sums.projects) : ""} stalled={sums.stalled > 0 ? stalledProjectsWords(sums.stalled) : ""} stalledBadge={sums.stalled > 0 ? { text: t("sidebar.stalledCount", { count: sums.stalled }), title: t("sidebar.projectsStalledTitle", { count: sums.stalled, hint: t("sidebar.stalledHint") }) } : undefined}>
         <SumsLine s={sums} now={now} />
       </ProjectItem>
       {full && <div className="side-label">{t("sidebar.projects")}</div>}
@@ -284,7 +284,7 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
                     }}
                     drag={edit ? rowDrag(r) : undefined}
                   >
-                    <ProjectItem name={r.label} title={r.title} total={totalOf(r)} tasks={r.tasks} lessons={r.lessons} on={current === r.name} onClick={() => onPick(r.name)} onRename={onLabel ? () => setEditing(r.name) : undefined} keys={edit ? MOVE_KEYS : undefined} working={r.activity.working > 0} stalled={r.activity.stalled ? t("sidebar.stalled") : ""} running={q?.running === true} alert={<SideLimit q={q} />}>
+                    <ProjectItem name={r.label} title={r.title} total={totalOf(r)} tasks={r.tasks} lessons={r.lessons} on={current === r.name} onClick={() => onPick(r.name)} onRename={onLabel ? () => setEditing(r.name) : undefined} keys={edit ? MOVE_KEYS : undefined} working={r.activity.working > 0 ? workingWords(r.activity.working) : ""} stalled={r.activity.stalled ? t("sidebar.stalled") : ""} running={q?.running === true} alert={<SideLimit q={q} />}>
                       <ActivityLine a={r.activity} now={now} />
                     </ProjectItem>
                   </SideRow>
@@ -307,8 +307,11 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
 /** One project in the sidebar: its name (its label, 0044) and count, what's in progress, what's
  *  paused (0045) and what needs you (the needs-you count: your own tasks to do and doing, what the
  *  agents wait on you for, and the lessons from reviews waiting for your yes, 0027), and under
- *  them its activity line. Narrowed (Focus, 0038), the name, the working dot, "stalled" in the attention colour (the activity line's word, or "2
- *  stalled" on All), the needs-you count and the paused count. `alert` shows in every mode, under
+ *  them its activity line. Narrowed (Focus, 0038), the name, the working dot (`working`, the
+ *  activity line's working words, said in the aria-label; "" for none), "stalled" in the attention
+ *  colour (the activity line's word; on All `stalledBadge`, the short "2 stalled", mu-197, with
+ *  "2 projects stalled" in its tooltip and the aria-label; `all` keeps All's line count by the
+ *  sidebar's width, styles.css .side-all-focus), the needs-you count and the paused count. `alert` shows in every mode, under
  *  them: over its Your check limit (0050), how many wait and the limit. With `onRename`, a double
  *  click on the name sets its label. `keys` are the keys that move it (0057), for a screen reader.
  *  While a run from the app goes (0079), a "running" chip, in every mode, so a dev server isn't
@@ -317,7 +320,7 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
  *  "stalled" the first of them) don't fit, the badges, each whole, take the line under it. The tooltip
  *  says the name in full, the row's aria-label the name and every count in words, whatever shows,
  *  and its description the tooltip's real queue name and folder, then what's under the line. */
-export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClick, onRename, keys, working = false, stalled = "", running = false, alert, children }: { name: string; title?: string; total: number; tasks: Task[]; lessons?: number; on: boolean; onClick: () => void; onRename?: () => void; keys?: string; working?: boolean; stalled?: string; running?: boolean; alert?: ReactNode; children: ReactNode }) {
+export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClick, onRename, keys, all = false, working = "", stalled = "", stalledBadge, running = false, alert, children }: { name: string; title?: string; total: number; tasks: Task[]; lessons?: number; on: boolean; onClick: () => void; onRename?: () => void; keys?: string; all?: boolean; working?: string; stalled?: string; stalledBadge?: { text: string; title: string }; running?: boolean; alert?: ReactNode; children: ReactNode }) {
   const doing = tasks.filter(inProgress).length;
   const needs = needsYouCount(tasks) + lessons;
   const full = useLook("sidebar") === "full";
@@ -326,14 +329,14 @@ export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClic
   const where = useId();
   // A label isn't the project's own name: the tooltip leads with it, whole.
   const tip = title && !title.startsWith(`${name} · `) ? `${name}\n${title}` : title;
-  const said = rowWords({ name, needs, doing, paused, total, running, working: !full && working, stalled: full ? "" : stalled });
+  const said = rowWords({ name, needs, doing, paused, total, running, working: full ? "" : working, stalled: full ? "" : stalled });
   return (
-    <button className={on ? "side-item on" : "side-item"} onClick={onClick} title={tip} aria-label={said} aria-describedby={title ? `${where} ${more}` : more} aria-keyshortcuts={keys}>
+    <button className={cx("side-item", on && "on", all && !full && "side-all-focus")} onClick={onClick} title={tip} aria-label={said} aria-describedby={title ? `${where} ${more}` : more} aria-keyshortcuts={keys}>
       <span className="side-line">
-        {!full && working && <i className="dot side-dot" title={tn("shell", "sidebar.workingDot", { hint: tn("shell", "sidebar.workingHint") })} />}
+        {!full && working !== "" && <i className="dot side-dot" title={tn("shell", "sidebar.workingDot", { hint: tn("shell", "sidebar.workingHint") })} />}
         <span className="side-name" title={onRename ? (tip ? `${tip}\n${tn("shell", "sidebar.renameHint")}` : tn("shell", "sidebar.renameHint")) : undefined} onDoubleClick={onRename}>{name}</span>
         <span className="side-badges">
-          {!full && stalled && <span className="side-stalled" title={tn("shell", "sidebar.stalledTitle", { hint: tn("shell", "sidebar.stalledHint") })}>{stalled}</span>}
+          {!full && stalled && <span className="side-stalled" title={stalledBadge?.title ?? tn("shell", "sidebar.stalledTitle", { hint: tn("shell", "sidebar.stalledHint") })}>{stalledBadge?.text ?? stalled}</span>}
           {running && <span className="run-chip" title={tn("shell", "sidebar.runningTitle")}>{tn("shell", "run.running")}</span>}
           {needs > 0 && <span className="count warn" title={tn("shell", "sidebar.needYou", { count: needs })}>{needs}</span>}
           {full && doing > 0 && <span className="side-doing" title={tn("shell", "sidebar.inProgress", { count: doing })}>{doing}</span>}
@@ -355,8 +358,9 @@ export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClic
 }
 
 /** A project row's aria-label (0087): its name in full, then every count in words, what's 0 left
- *  out but its tasks; then running, and in Focus the working dot and "stalled" its line shows. */
-function rowWords({ name, needs, doing, paused, total, running, working, stalled }: { name: string; needs: number; doing: number; paused: number; total: number; running: boolean; working: boolean; stalled: string }) {
+ *  out but its tasks; then running, and in Focus the working words ("8 working", on All "29 working
+ *  in 9 projects", mu-197) behind the dot and the "stalled" its line shows. */
+function rowWords({ name, needs, doing, paused, total, running, working, stalled }: { name: string; needs: number; doing: number; paused: number; total: number; running: boolean; working: string; stalled: string }) {
   const sep = tl("listSep");
   const counts = [
     needs > 0 ? tn("shell", "sidebar.needYou", { count: needs }) : "",
@@ -364,7 +368,7 @@ function rowWords({ name, needs, doing, paused, total, running, working, stalled
     paused > 0 ? tn("shell", "sidebar.paused", { count: paused }) : "",
     tn("shell", "heading.tasks", { count: total }),
   ].filter(Boolean).join(sep);
-  const states = [running ? tn("shell", "run.running") : "", working ? tn("shell", "sidebar.rowWorking") : "", stalled].filter(Boolean).join(sep);
+  const states = [running ? tn("shell", "run.running") : "", working, stalled].filter(Boolean).join(sep);
   return states ? tn("shell", "sidebar.rowStates", { name, counts, states }) : tn("shell", "sidebar.row", { name, counts });
 }
 
@@ -411,7 +415,7 @@ function CategoryHead({ name, rows, total, fresh = false, drag, onRename, onRemo
                 <span className="side-cat-part side-working">
                   {"\u00a0· "}
                   <i className="dot" aria-hidden="true" />
-                  {tn("shell", "sidebar.working", { count: c.working })}
+                  {workingWords(c.working)}
                 </span>
               )}
             </span>
@@ -474,46 +478,96 @@ export function SideLabelEdit({ name, label, onSave, onDone }: { name: string; l
  *  attention colour, then when it last moved. The line is always there, so rows don't jump. */
 export function ActivityLine({ a, now }: { a: ProjectActivity; now: number }) {
   const t = useT("shell");
+  // Each piece's tooltip is the whole line, one sentence a line, so the when, which gives way
+  // where the line is short of room (mu-197), is still under the pointer.
+  const state = a.working > 0 ? t("sidebar.tasksWorkingTitle", { count: a.working, hint: t("sidebar.workingHint") }) : a.stalled ? t("sidebar.stalledTitle", { hint: t("sidebar.stalledHint") }) : "";
+  const title = lineTitle([state], a.last, now);
   return (
     <span className="side-activity">
       <span className="side-state">
         {a.working > 0 ? (
-          <span className="side-working" title={t("sidebar.tasksWorkingTitle", { count: a.working, hint: t("sidebar.workingHint") })}>
+          <span className="side-working" title={title}>
             <i className="dot" aria-hidden="true" />
-            {t("sidebar.working", { count: a.working })}
+            {workingWords(a.working)}
           </span>
         ) : a.stalled ? (
-          <span className="side-stalled" title={t("sidebar.stalledTitle", { hint: t("sidebar.stalledHint") })}>{t("sidebar.stalled")}</span>
+          <span className="side-stalled" title={title}>{t("sidebar.stalled")}</span>
         ) : null}
       </span>
-      <When m={a.last} now={now} />
+      <When m={a.last} now={now} title={title} />
     </span>
   );
 }
 
-/** The All projects row's sums: projects being worked on, projects stalled, the newest activity. */
+/** An activity line's tooltip: its state's sentences, then when it last moved, one a line. */
+const lineTitle = (states: string[], m: number | null, now: number) => [...states.filter(Boolean), whenTitle(m, now)].join("\n");
+const whenTitle = (m: number | null, now: number) => (m === null ? tn("shell", "sidebar.noLast") : tn("shell", "sidebar.last", { when: lastLabel(m, now) }));
+
+/** The All projects row's sums (mu-197): the tasks being worked on and, in words, the projects
+ *  they're in ("29 working in 9 projects", one sentence), the projects stalled, the newest activity.
+ *  "N working" and the stalled count never give way; where the line doesn't fit, the when goes
+ *  first, then "in 9 projects", each whole, and the room a piece leaves goes back to the others
+ *  (styles.css .side-sum-rest); every piece's tooltip is the whole line, and the row's description
+ *  reads it all. How many lines it takes follows the sidebar's width, never the counts (round 3):
+ *  in a narrow sidebar the rest always has a second line of its own, stall or not, so a poll that
+ *  changes a count moves no row below (the `.side-sum-box` container, styles.css). */
 export function SumsLine({ s, now }: { s: Sums; now: number }) {
   const t = useT("shell");
+  const working = s.working > 0 ? t("sidebar.workingInTitle", { said: workingInWords(s.working, s.projects), hint: t("sidebar.workingHint") }) : "";
+  const stalled = s.stalled > 0 ? t("sidebar.projectsStalledTitle", { count: s.stalled, hint: t("sidebar.stalledHint") }) : "";
+  const title = lineTitle([working, stalled], s.last, now);
+  const rest = <SumRest s={s} now={now} title={title} />;
   return (
-    <span className="side-activity">
-      <span className="side-state">
-        {s.working > 0 && (
-          <span className="side-working" title={t("sidebar.projectsWorkingTitle", { count: s.working, hint: t("sidebar.workingHint") })}>
-            <i className="dot" aria-hidden="true" />
-            {t("sidebar.working", { count: s.working })}
-          </span>
-        )}
-        {s.working > 0 && s.stalled > 0 && " · "}
-        {s.stalled > 0 && <span className="side-stalled" title={t("sidebar.projectsStalledTitle", { count: s.stalled, hint: t("sidebar.stalledHint") })}>{t("sidebar.stalledCount", { count: s.stalled })}</span>}
+    <span className="side-sum-box">
+      <span className="side-activity side-sums-line">
+        {s.working > 0 ? <Trans ns="shell" k={WORKING_IN} params={workingInParams(s.working, s.projects)} components={{ working: <SumWorking title={title} />, in: rest }} /> : rest}
       </span>
-      <When m={s.last} now={now} />
     </span>
   );
 }
 
-function When({ m, now }: { m: number | null; now: number }) {
-  const t = useT("shell");
-  return <span className="side-when" title={m === null ? t("sidebar.noLast") : t("sidebar.last", { when: lastLabel(m, now) })}>{lastLabel(m, now)}</span>;
+/** All's "N working", with the Building-colour dot: never shrinks. */
+function SumWorking({ title, children }: { title: string; children?: ReactNode }) {
+  return (
+    <span className="side-working side-sum-working" title={title}>
+      <i className="dot" aria-hidden="true" />
+      {children}
+    </span>
+  );
+}
+
+/** The rest of All's line after "N working": "in 9 projects" (the sentence's `<in>` piece, its
+ *  children) then the tail, the stalled count and the when. Where "in 9 projects" and the stalled
+ *  count don't both fit, "in 9 projects" wraps onto a first line out of sight and the tail shows
+ *  alone on the line it leaves, so its room goes to the when. The " · " before the stalled count
+ *  is in both places, and the sidebar's width shows one (round 3): on one line it's the tail's,
+ *  after "N working" or "in 9 projects"; on the rest's own line it's the end of "in 9 projects", so
+ *  it goes with it and the line never starts with it. */
+function SumRest({ s, now, title, children }: { s: Sums; now: number; title: string; children?: ReactNode }) {
+  return (
+    <span className={cx("side-sum-rest", s.stalled > 0 && "has-stalled")}>
+      {children !== undefined && (
+        <span className="side-sum-in" title={title}>
+          {children}
+          {s.stalled > 0 && <span className="side-sum-sep">{" · "}</span>}
+        </span>
+      )}
+      <span className="side-sum-tail">
+        {s.stalled > 0 && (
+          <span className="side-sum-stalled">
+            {s.working > 0 && <span className="side-sum-sep">{" · "}</span>}
+            <span className="side-stalled" title={title}>{stalledProjectsWords(s.stalled)}</span>
+          </span>
+        )}
+        <When m={s.last} now={now} title={title} />
+      </span>
+    </span>
+  );
+}
+
+function When({ m, now, title }: { m: number | null; now: number; title: string }) {
+  useT("shell");
+  return <span className="side-when" title={title}>{lastLabel(m, now)}</span>;
 }
 
 /** The sidebar's order, as chips: always on screen, the current one pressed. */

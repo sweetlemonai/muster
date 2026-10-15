@@ -37,8 +37,9 @@ export type ProjectRow = {
   activity: ProjectActivity;
 };
 
-/** The All projects row: projects being worked on, projects stalled, the newest activity. */
-export type Sums = { working: number; stalled: number; last: number | null };
+/** The All projects row: the tasks being worked on, summed over the projects, the projects they're
+ *  in, the projects stalled, the newest activity. "Working" counts tasks everywhere (mu-197). */
+export type Sums = { working: number; projects: number; stalled: number; last: number | null };
 
 /** The clock as wall-clock minutes (lib.ts stampMinutes), to count the tools' local stamps
  *  against the way quietMinutes does. Null for a clock that isn't a date. */
@@ -152,10 +153,12 @@ export function projectRows(queues: Pick<QueueInfo, "name" | "path" | "label" | 
   });
 }
 
-/** The All projects row: how many projects are being worked on, how many stalled, the newest activity. */
+/** The All projects row: how many tasks are being worked on and in how many projects, how many
+ *  projects stalled, the newest activity. */
 export function sumActivity(list: ProjectActivity[]): Sums {
   return {
-    working: list.filter((a) => a.working > 0).length,
+    working: list.reduce((n, a) => n + a.working, 0),
+    projects: list.filter((a) => a.working > 0).length,
     stalled: list.filter((a) => a.stalled).length,
     last: newest(list.map((a) => a.last)),
   };

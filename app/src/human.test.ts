@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { byWho, FOR_FILTERS, humanColumn, isHuman, needsVerb, needsWords, needsYou, needsYouCount, parseForFilter, waitingForYou, whoFiltersOn, whoShows } from "./human";
+import { afterEach, describe, expect, it } from "vitest";
+import { byWho, FOR_FILTERS, humanColumn, isHuman, needsVerb, needsWords, needsYou, needsYouCount, parseForFilter, stalledProjectsWords, waitingForYou, whoFiltersOn, whoShows, workingInWords, workingWords } from "./human";
+import { setLocale } from "./i18n/runtime";
 import { columns } from "./lib";
 import needsCases from "./needs-cases.json";
 import type { Question, Task } from "./types";
@@ -133,6 +134,45 @@ describe("the needs-you count in words: one helper app-wide (mu-159)", () => {
       expect(HAND_MADE.test(code(bad)), bad).toBe(true);
     for (const ok of ['label: "needs you"', '<Badge variant="warn">needs you</Badge>', "// how many need you", "/** tasks that need you */", 'by === "needs" ? rows : []', '"the ones that need you still show on it"'])
       expect(HAND_MADE.test(code(ok)), ok).toBe(false);
+  });
+});
+
+describe("the working count in words: tasks, one helper (mu-197)", () => {
+  afterEach(async () => {
+    await setLocale("en");
+  });
+  it('says "N working" for the tasks being worked on', () => {
+    expect(workingWords(1)).toBe("1 working");
+    expect(workingWords(2)).toBe("2 working");
+    expect(workingWords(16)).toBe("16 working");
+  });
+  it("says the All row's sentence: the tasks, then the projects they're in, with the projects' plural", () => {
+    expect(workingInWords(29, 9)).toBe("29 working in 9 projects");
+    expect(workingInWords(1, 1)).toBe("1 working in 1 project");
+    expect(workingInWords(5, 1)).toBe("5 working in 1 project");
+    expect(workingInWords(16, 2)).toBe("16 working in 2 projects");
+  });
+  it('says All\'s stalled count as projects: "1 project stalled", "2 projects stalled"', () => {
+    expect(stalledProjectsWords(1)).toBe("1 project stalled");
+    expect(stalledProjectsWords(2)).toBe("2 projects stalled");
+  });
+  it("says them in Persian with Persian digits and the counted noun singular, as Persian does", async () => {
+    await setLocale("fa");
+    expect(workingWords(1)).toBe("۱ در حال کار");
+    expect(workingWords(16)).toBe("۱۶ در حال کار");
+    expect(workingInWords(29, 9)).toBe("۲۹ در حال کار در ۹ پروژه");
+    expect(workingInWords(1, 1)).toBe("۱ در حال کار در ۱ پروژه");
+    expect(stalledProjectsWords(2)).toBe("۲ پروژه راکد");
+  });
+  it("is the only place in app/src, tests aside, that reads the working words' keys", () => {
+    const keys = /["'`]sidebar\.(working|workingIn|projectsStalled)["'`]/;
+    const files = Object.keys(sources);
+    expect(files).toContain("./ProjectList.tsx");
+    const offenders = files.filter((f) => f !== "./human.ts" && keys.test(code(sources[f])));
+    expect(offenders).toEqual([]);
+    // The check sees a read of each key, and not the hint or the dot's title beside them.
+    for (const bad of ['t("sidebar.working", { count: n })', 'tn("shell", "sidebar.working", { count })', 'k="sidebar.workingIn"', 't("sidebar.projectsStalled", { count })']) expect(keys.test(code(bad)), bad).toBe(true);
+    for (const ok of ['t("sidebar.workingHint")', 'tn("shell", "sidebar.workingDot", {})', 't("sidebar.workingInTitle")']) expect(keys.test(code(ok)), ok).toBe(false);
   });
 });
 

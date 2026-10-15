@@ -4,6 +4,58 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — mu-197: the sidebar's "N working" counts tasks everywhere; All says "29 working in 9 projects"
+**Fixed (Gholi_40, builder):** All said "9 working" while its headings said "17 working" → All's
+`sumActivity` counted projects, headings and rows counted tasks, all through the one
+`sidebar.working` key → `Sums` gains the tasks' sum (`working`) beside the projects' count
+(`projects`); `human.ts` has `workingWords` (rows, headings, `countsText`), `workingInWords` and
+`stalledProjectsWords`, the only readers of those keys (a source check in human.test.ts). All's line
+is one sentence, `sidebar.workingIn` with `<working>`/`<in>` pieces: "29 working in 9 projects · 2
+projects stalled", en and fa.
+**Did:** "N working" never shrinks. A project's row keeps "8 working" whole and lets its when go
+(it was "8 worki…" at 150px). Every piece's tooltip is the whole line, when included. In Focus a
+row's aria-label says the working words behind the dot.
+**Fixed (Gholi_42, review round 1, Reviewer_84):** R1 at 210px All read "29 working … now": the
+stalled count, All's one always-visible stall signal, had given way before the when, and its
+flex-grow 1000 piece kept the room it couldn't show in → All's line is now "N working" then the
+rest (`SumRest`, `.side-sum-rest`): one line tall, showing its last line, "in 9 projects" then
+the tail (stalled count, then the when, which takes no least width). The stalled count never
+gives way; the when goes first, then "in 9 projects", each whole; where "in 9 projects" goes, the
+tail has the line and the when shows again if it fits. Where "N working" and the stalled count
+don't fit side by side (150px), the rest takes a second line. R2 the stray `||||||| base` line is
+gone.
+**Decided (QA_10, lead):** the give-way order above, over the brief's "in 9 projects first, then
+the stalled count". Alternatives: a ResizeObserver that measures and hides pieces (a new pattern
+here, and untestable in vitest), container queries (widths can't know the digits or the language).
+**Verified:** vitest 2195 green in round 1 (activity, human en/fa plurals, ProjectList fixture
+8/8/0 → "16 working in 2 projects" / "16 working" / "8 working", tooltips, aria-labels, CSS rules);
+round 2's ProjectList tests pin the new markup in en and fa and the CSS. Headless WebKit on a
+synthetic 20-project, 944-task fixture: round 1 before and after, 150/210/320px, 1100 and 1440,
+ADHD, Standard, Focus, seven themes, فارسی, with a pixel-row diff of two polls
+(`attachments/0197/`); round 2 measures which pieces show at 150 to 320px in every mode, light and
+dark, فارسی, poll b and with nothing stalled (`attachments/0197/r2/`): the stalled count shows in
+every shot. `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`.
+**Fixed (Gholi_44, review round 2, Reviewer_91):** R3 a stall appearing (or 2 → 1) moved every row
+under All by ~15px at 150-200px, and in Focus at 210 → the rest wrapped only when a stalled count
+existed and didn't fit → the line count now follows the width: `.side-sum-box` is a container, and
+under 230px the rest always has its own second line (two lines' height reserved); in Focus All's
+badge is the short "2 stalled" (`stalledCount`, the projects in its tooltip and aria-label) and
+under 200px `.side-all-focus` puts the badges on the line under the name, as tall as "2 stalled".
+R4 the CSS test compares the stalled count's rules whole and lists every rule naming them, so an
+added `overflow` or `max-width` fails (four mutants red). R5 the " · " is in two places, the tail's
+on one line and the end of "in 9 projects" on the second, so no line starts with it.
+**Decided (Gholi_44):** the narrow mode starts under 230px, not the lead's ~210: at 210 "29 working
+· 2 projects stalled" already fills the line, so one more digit ("129 working", "12 projects
+stalled") would wrap and jump at the default width; at 230 "129 working · 12 projects stalled"
+fits in en and fa. The cost is All taking two lines at the default 210 (line 2: "in 9 projects ·
+2 projects stalled"). Counts beyond that still wrap rather than hide the stalled count.
+**Verified (round 3):** headless WebKit, 264 shots: ADHD, Standard and Focus × en and fa × 150-320px
+(11 widths) × 0, 1 and 2 stalled plus 129 working / 12 stalled: at every width the row under All
+is at the same y across the stall counts, the stalled count shows, no separator starts a line, no
+overflow, no page error (`attachments/0197/r3/check.txt`, sheets beside it).
+**Open:** backlog notes from the shots: in فارسی the working dot
+touches its digit; at 150px a Persian heading's "مورد به شما نیاز دارد" spills past the edge.
+
 ## 2026-10-15 — Two migrate tests compare the canonical path (mu-211)
 **Fixed:** with TMPDIR ending in `//` or `/./`, `copies_a_v2_queue_…` and
 `an_unreadable_folder_stops_it_naming_the_folder` failed → they looked for the given path in what

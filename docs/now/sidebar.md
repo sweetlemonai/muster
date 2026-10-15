@@ -5,7 +5,7 @@ covers: app/src/Sidebar.tsx, app/src/SidebarProjects.tsx, app/src/ProjectList, a
 
 - The sidebar lists All, the queues found under `~/playground` and ones added by hand. (AS_BUILT "Projects sidebar")
 - Discovery looks two levels deep, and at `.muster/` only in main checkouts. (AS_BUILT "Projects")
-- A row shows its task count, needs-you count and working count. (AS_BUILT "Projects sidebar")
+- A row shows its tasks, needs you and "N working", which counts tasks everywhere. (mu-197)
 - Working means a live session, or a check-in or heartbeat in the last 30 minutes. (mu-37)
 - Stalled means work in Building, not blocked, and nothing in the project for 30 minutes. (mu-37)
 - Order chips: Working (the default), A–Z, Needs you, and Mine after a drag. (mu-57)

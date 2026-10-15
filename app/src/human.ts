@@ -1,4 +1,4 @@
-import { tl } from "./i18n";
+import { tl, tn } from "./i18n";
 import { priorityName, stageRank } from "./lib";
 import type { Task } from "./types";
 
@@ -43,6 +43,24 @@ export const needsVerb = (n: number) => (n === 1 ? "needs you" : "need you");
  *  mu-159): the sidebar's rows and headings, the column chips and their cue, and the folded strips,
  *  bands and Paused lane. */
 export const needsWords = (n: number) => `${n} ${needsVerb(n)}`;
+
+/** A working count in words, the same everywhere the sidebar says it (mu-197): "1 working",
+ *  "16 working", on a project's row and a heading. It counts tasks being worked on now
+ *  (activity.ts isWorking), never projects or sessions. */
+export const workingWords = (n: number) => tn("shell", "sidebar.working", { count: n });
+
+/** The All row's working sentence's key: the tasks, then the projects they're in, one whole
+ *  sentence: `{{tasks}}`, and the projects as `{{count}}`, the number its plural forms follow.
+ *  `<working>` and `<in>` mark its two pieces, so the row can let "in 9 projects" give way whole
+ *  where it doesn't fit (ProjectList.tsx SumsLine). */
+export const WORKING_IN = "sidebar.workingIn";
+export const workingInParams = (tasks: number, projects: number) => ({ count: projects, tasks });
+
+/** The All row's working sentence as text, for its tooltip and aria-label: "29 working in 9 projects". */
+export const workingInWords = (tasks: number, projects: number) => tn("shell", WORKING_IN, workingInParams(tasks, projects)).replace(/<\/?\w+>/g, "");
+
+/** All's stalled count: stalled is a project's state, so it says so: "2 projects stalled". */
+export const stalledProjectsWords = (n: number) => tn("shell", "sidebar.projectsStalled", { count: n });
 
 const PRIORITY_RANK = { high: 0, normal: 1, low: 2 } as const;
 /** What waits on the owner first, then priority, then project and id (as the board's columns). */

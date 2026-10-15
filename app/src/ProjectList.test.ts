@@ -12,6 +12,7 @@ import { ColourDot, Swatches } from "./ProjectSwatches";
 import { cleanHeading, foldKey, HeadingEdit, HeadingFrame, NewCategory, SideRow, stepOf } from "./SidebarProjects";
 import { type DisplayMode, Mode } from "./modes";
 import { SIDEBAR, SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_NARROW } from "./paneSize";
+import { setLocale } from "./i18n/runtime";
 import { PAUSE_GLYPH } from "./Pause";
 import type { ProjectActivity, Sums } from "./activity";
 import type { Activity, QueueInfo, Task } from "./types";
@@ -29,9 +30,12 @@ const at = (h: number, m: number) => `2026-10-13 ${String(h).padStart(2, "0")}:$
 
 const line = (a: ProjectActivity) => renderToStaticMarkup(createElement(ActivityLine, { a, now: NOW }));
 const sums = (s: Sums) => renderToStaticMarkup(createElement(SumsLine, { s, now: NOW }));
-const state = (html: string) => /<span class="side-state">(.*?)<\/span><span class="side-when"/.exec(html)?.[1];
+const state = (html: string) =>
+  /<span class="side-state[^"]*">([\s\S]*?)<\/span><span class="side-when"/.exec(html)?.[1] ?? /<span class="side-activity side-sums-line">([\s\S]*?)<span class="side-when"/.exec(html)?.[1];
 const when = (html: string) => /<span class="side-when"[^>]*>([^<]*)<\/span>/.exec(html)?.[1];
-const plain = (html: string) => html.replace(/<[^>]+>/g, "");
+// The words as one line shows them: All's " · " at the end of "in N projects" is the second
+// line's (styles.css hides it on one line, round 3).
+const plain = (html: string) => html.replace(/<span class="side-sum-sep"> · <\/span>(?=<\/span><span class="side-sum-tail">)/g, "").replace(/<[^>]+>/g, "");
 
 describe("a project row's activity line", () => {
   it("working: the Building-colour dot and how many, then the last activity", () => {
@@ -42,6 +46,11 @@ describe("a project row's activity line", () => {
   });
   it("one working says task, not tasks, in its title", () => {
     expect(line({ working: 1, stalled: false, last: 4 })).toContain('title="1 task being worked on now');
+  });
+  it("says the whole line, state and when, in both pieces' tooltips, since the when may give way (mu-197)", () => {
+    const whole = "8 tasks being worked on now: a live session, or a check-in or heartbeat in the last 30 minutes\nLast activity: 4 min ago";
+    expect([...line({ working: 8, stalled: false, last: 4 }).matchAll(/title="([^"]*)"/g)].map((m) => m[1])).toEqual([whole, whole]);
+    expect([...line({ working: 0, stalled: false, last: null }).matchAll(/title="([^"]*)"/g)].map((m) => m[1])).toEqual(["Nothing says when this was last worked on"]);
   });
   it("stalled: the word in the attention colour, no dot", () => {
     const html = line({ working: 0, stalled: true, last: 45 });
@@ -62,21 +71,61 @@ describe("a project row's activity line", () => {
 });
 
 describe("the All projects row's sums", () => {
-  it("says how many projects are working and how many stalled", () => {
-    const html = sums({ working: 3, stalled: 1, last: 0 });
-    expect(plain(state(html) ?? "")).toBe("3 working · 1 stalled");
-    expect(html).toContain('title="3 projects being worked on now');
-    expect(html).toContain('<span class="side-stalled" title="1 project stalled: ');
+  it("says the tasks being worked on and, in words, the projects they're in, and the projects stalled (mu-197)", () => {
+    const html = sums({ working: 29, projects: 9, stalled: 2, last: 0 });
+    expect(plain(state(html) ?? "")).toBe("29 working in 9 projects · 2 projects stalled");
+    expect(html).toContain('title="Tasks being worked on now: 29 working in 9 projects. Working: a live session');
+    expect(html).toContain("\n2 projects stalled: work in Building");
     expect(html).toContain('<i class="dot" aria-hidden="true">');
   });
+  it("puts \"N working\" first, then the rest: \"in N projects\", then the tail of the stalled count and the when (round 2)", () => {
+    const html = sums({ working: 29, projects: 9, stalled: 2, last: 0 });
+    expect(html).toMatch(
+      /^<span class="side-sum-box"><span class="side-activity side-sums-line"><span class="side-working side-sum-working" title="[^"]+"><i class="dot" aria-hidden="true"><\/i>29 working<\/span><span class="side-sum-rest has-stalled"><span class="side-sum-in" title="[^"]+"> in 9 projects<span class="side-sum-sep"> · <\/span><\/span><span class="side-sum-tail"><span class="side-sum-stalled"><span class="side-sum-sep"> · <\/span><span class="side-stalled" title="[^"]+">2 projects stalled<\/span><\/span><span class="side-when" title="[^"]+">now<\/span><\/span><\/span><\/span><\/span>$/,
+    );
+    // Stalled alone has nothing to follow, and no "in N projects".
+    expect(sums({ working: 0, projects: 0, stalled: 2, last: 0 })).toMatch(/^<span class="side-sum-box"><span class="side-activity side-sums-line"><span class="side-sum-rest has-stalled"><span class="side-sum-tail"><span class="side-sum-stalled"><span class="side-stalled"/);
+    // Nothing stalled: no least width of its own, and no separator either side.
+    expect(sums({ working: 29, projects: 9, stalled: 0, last: 0 })).toContain('<span class="side-sum-rest"><span class="side-sum-in" title="Tasks being worked on now: 29 working in 9 projects. Working: a live session, or a check-in or heartbeat in the last 30 minutes\nLast activity: now"> in 9 projects</span><span class="side-sum-tail"><span class="side-when"');
+    expect(sums({ working: 29, projects: 9, stalled: 0, last: 0 })).not.toContain("side-sum-sep");
+    expect(sums({ working: 0, projects: 0, stalled: 0, last: 0 })).toBe('<span class="side-sum-box"><span class="side-activity side-sums-line"><span class="side-sum-rest"><span class="side-sum-tail"><span class="side-when" title="Last activity: now">now</span></span></span></span></span>');
+  });
+  it("in Persian too: the same pieces, in the sentence's order", async () => {
+    await setLocale("fa");
+    try {
+      const html = sums({ working: 29, projects: 9, stalled: 2, last: 0 });
+      expect(plain(state(html) ?? "")).toBe("۲۹ در حال کار در ۹ پروژه · ۲ پروژه راکد");
+      expect(html).toMatch(/<\/i>۲۹ در حال کار<\/span><span class="side-sum-rest has-stalled"><span class="side-sum-in" title="[^"]+"> در ۹ پروژه<span class="side-sum-sep"> · <\/span><\/span><span class="side-sum-tail"><span class="side-sum-stalled"><span class="side-sum-sep"> · <\/span>/);
+    } finally {
+      await setLocale("en");
+    }
+  });
+  it("says the whole line in every piece's tooltip, the when's too, since any piece but \"N working\" may give way", () => {
+    const html = sums({ working: 29, projects: 9, stalled: 2, last: 12 });
+    const whole = [
+      "Tasks being worked on now: 29 working in 9 projects. Working: a live session, or a check-in or heartbeat in the last 30 minutes",
+      "2 projects stalled: work in Building, but nothing for over 30 minutes: no check-in, heartbeat, stage change, commit or file change",
+      "Last activity: 12 min ago",
+    ].join("\n");
+    const titles = [...html.matchAll(/title="([^"]*)"/g)].map((m) => m[1]);
+    expect(titles).toEqual([whole, whole, whole, whole]);
+    // Stalled alone, and nothing at all: what there is, then when.
+    expect([...sums({ working: 0, projects: 0, stalled: 1, last: null }).matchAll(/title="([^"]*)"/g)].map((m) => m[1])).toEqual(Array(2).fill("1 project stalled: work in Building, but nothing for over 30 minutes: no check-in, heartbeat, stage change, commit or file change\nNothing says when this was last worked on"));
+    expect(/class="side-when" title="([^"]*)"/.exec(sums({ working: 0, projects: 0, stalled: 0, last: 0 }))?.[1]).toBe("Last activity: now");
+  });
+  it("says one task in one project in the singular", () => {
+    const html = sums({ working: 1, projects: 1, stalled: 1, last: 0 });
+    expect(plain(state(html) ?? "")).toBe("1 working in 1 project · 1 project stalled");
+    expect(html).toContain("\n1 project stalled: ");
+  });
   it("leaves out what's zero", () => {
-    expect(plain(state(sums({ working: 1, stalled: 0, last: 2 })) ?? "")).toBe("1 working");
-    expect(sums({ working: 1, stalled: 0, last: 2 })).toContain('title="1 project being worked on now');
-    const stalled = sums({ working: 0, stalled: 2, last: 40 });
-    expect(plain(state(stalled) ?? "")).toBe("2 stalled");
+    expect(plain(state(sums({ working: 1, projects: 1, stalled: 0, last: 2 })) ?? "")).toBe("1 working in 1 project");
+    expect(sums({ working: 1, projects: 1, stalled: 0, last: 2 })).not.toContain("side-stalled");
+    const stalled = sums({ working: 0, projects: 0, stalled: 2, last: 40 });
+    expect(plain(state(stalled) ?? "")).toBe("2 projects stalled");
     expect(stalled).not.toContain('class="dot"');
-    expect(state(sums({ working: 0, stalled: 0, last: 1500 }))).toBe("");
-    expect(when(sums({ working: 0, stalled: 0, last: 1500 }))).toBe("yesterday");
+    expect(plain(state(sums({ working: 0, projects: 0, stalled: 0, last: 1500 })) ?? "-")).toBe("");
+    expect(when(sums({ working: 0, projects: 0, stalled: 0, last: 1500 }))).toBe("yesterday");
   });
 });
 
@@ -140,9 +189,9 @@ describe("the sidebar", () => {
     expect(row(html, "zeta")).toContain('<span class="side-doing" title="1 in progress (Building or Testing)">1</span>');
     expect(row(html, "zeta")).toContain("<small>2</small>");
   });
-  it("sums the projects in the All row", () => {
+  it("sums the tasks in the All row, and says the projects they're in (mu-197)", () => {
     const all = row(render(), "All");
-    expect(plain(all)).toContain("1 working · 1 stalled");
+    expect(plain(all)).toContain("2 working in 1 project · 1 project stalled");
     expect(when(all)).toBe("now");
   });
   it("uses the remembered order", () => {
@@ -215,6 +264,123 @@ describe("labels and categories in the sidebar (0044)", () => {
     const html = render("focus");
     expect(heads(html)).toEqual(["Apps 1 needs you · 1 project", "Tools 1 needs you · 2 projects · 2 working", "Other 1 project"]);
     expect(rows(html)).toEqual(["All", "Alpha app", "zeta", "Muster", "beta"]);
+  });
+});
+
+describe("one unit for \"N working\": tasks, on All, the headings and the rows (mu-197)", () => {
+  // Three projects under one heading, with 8, 8 and 0 tasks being worked on.
+  const names = ["harbor", "lantern", "quill"];
+  const queues: QueueInfo[] = names.map((name): QueueInfo => ({ name, path: `/p/${name}/tasks`, counts: name === "quill" ? { ready: 1 } : { building: 8 }, label: name, category: "Apps" }));
+  const tasks = [
+    ...Array.from({ length: 8 }, (_, i) => task({ queue: "harbor", id: `00${10 + i}`, stage: "building", live: true })),
+    ...Array.from({ length: 8 }, (_, i) => task({ queue: "lantern", id: `00${10 + i}`, stage: "building", live: true })),
+    task({ queue: "quill", id: "0001" }),
+  ];
+  const render = (mode: DisplayMode) =>
+    renderToStaticMarkup(createElement(Mode.Provider, { value: mode }, createElement(ProjectList, { queues, tasks, notes: [], activity: [], now: NOW, current: "all", onPick: () => {}, onLabel: async () => {} })));
+  const row = (html: string, name: string) => html.split('<button class="side-item').find((r) => new RegExp(`side-name"[^>]*>${name}<`).test(r)) ?? "";
+  const label = (r: string) => /aria-label="([^"]*)"/.exec(r)?.[1];
+  const titles = (r: string) => [...r.matchAll(/title="([^"]*)"/g)].map((m) => m[1]);
+
+  it("All says 16 working in 2 projects, the heading 16 working, each row 8 working", () => {
+    const html = render("adhd");
+    expect(plain(state(row(html, "All")) ?? "")).toBe("16 working in 2 projects");
+    expect(plain(state(row(html, "harbor")) ?? "")).toBe("8 working");
+    expect(plain(state(row(html, "lantern")) ?? "")).toBe("8 working");
+    expect(state(row(html, "quill"))).toBe("");
+    const head = /<div class="side-cat"[^>]*>([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "";
+    expect(plain(head.replace(/></g, "> <")).replace(/\s+/g, " ").trim()).toBe("Apps 3 projects · 16 working");
+  });
+  it("says the same unit in their tooltips and aria-labels", () => {
+    const html = render("adhd");
+    expect(titles(row(html, "All"))).toContain("Tasks being worked on now: 16 working in 2 projects. Working: a live session, or a check-in or heartbeat in the last 30 minutes\nLast activity: now");
+    expect(titles(row(html, "harbor"))).toContain("8 tasks being worked on now: a live session, or a check-in or heartbeat in the last 30 minutes\nLast activity: now");
+    expect(html).toContain('title="3 projects · 16 working · 17 tasks"');
+    expect(html).toMatch(/aria-label="Apps, category heading: 3 projects, 16 working"/);
+    // Focus shows the dot, not the line: the aria-label says the line's words.
+    const focus = render("focus");
+    expect(label(row(focus, "All"))).toBe("All: 16 in progress, 17 tasks; 16 working in 2 projects");
+    expect(label(row(focus, "harbor"))).toBe("harbor: 8 in progress, 8 tasks; 8 working");
+    expect(label(row(focus, "quill"))).toBe("quill: 1 task");
+  });
+  const decls = (body: string) => new Map(body.split(";").map((d) => d.trim()).filter(Boolean).map((d) => [d.slice(0, d.indexOf(":")).trim(), d.slice(d.indexOf(":") + 1).trim()]));
+  const esc = (sel: string) => sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // A top-level rule's declarations (a rule inside an @container block is indented, so not this).
+  const rule = (sel: string) => decls(new RegExp(`(?:^|\\n)${esc(sel)} \\{([^}]*)\\}`).exec(css)?.[1] ?? "");
+  // An @container block's rules, each selector to its declarations; and every block of that name.
+  const container = (name: string) => {
+    const blocks = [...css.matchAll(new RegExp(`@container ${name} \\(([^)]*)\\) \\{\\n((?:  [^\\n]*\\n)*)\\}`, "g"))];
+    return blocks.map((b) => ({ when: b[1], rules: Object.fromEntries([...b[2].matchAll(/^ {2}(\S[^{]*?) \{([^}]*)\}$/gm)].map((r) => [r[1], Object.fromEntries(decls(r[2]))])) }));
+  };
+  it("keeps \"N working\" and the stalled count whole; the when gives way first, then \"in N projects\", and a piece gone gives its room back (styles.css, round 2)", () => {
+    const get = (sel: string, ...props: string[]) => props.map((p) => rule(sel).get(p));
+    expect(rule(".side-state").get("min-width")).toBe("min-content");
+    // A row's when gives way whole, never "8 worki…".
+    expect(get(".side-when", "flex", "flex-wrap", "overflow")).toEqual(["0 1 auto", "wrap", "hidden"]);
+    expect(rule(".side-state").has("text-overflow")).toBe(false);
+    // All's line wraps only where "N working" and the stalled count can't sit side by side: the
+    // rest's least width is the stalled count's, none without one.
+    expect(get(".side-sums-line", "flex-wrap", "gap")).toEqual(["wrap", "0"]);
+    expect(rule(".side-sum-working").get("flex")).toBe("none");
+    // The rest shows its last line: "in N projects" wraps onto the first, out of sight, when it
+    // and the tail's least width (the stalled count) don't both fit. Each rule whole (round 3), so
+    // an added declaration (overflow, a max-width) that could clip the stalled count fails here.
+    expect(Object.fromEntries(rule(".side-sum-rest"))).toEqual({ flex: "1 1 0", "min-width": "0", display: "flex", "flex-wrap": "wrap", "align-content": "flex-end", height: "1.35em", overflow: "hidden" });
+    expect(Object.fromEntries(rule(".side-sum-rest.has-stalled"))).toEqual({ "min-width": "min-content" });
+    expect(Object.fromEntries(rule(".side-sum-in"))).toEqual({ flex: "none", "white-space": "pre" });
+    expect(Object.fromEntries(rule(".side-sum-tail"))).toEqual({ flex: "1 1 0", "min-width": "min-content", display: "flex" });
+    expect(Object.fromEntries(rule(".side-sum-stalled"))).toEqual({ flex: "none", "white-space": "pre" });
+    expect(Object.fromEntries(rule(".side-sum-working"))).toEqual({ flex: "none" });
+    // Nothing else styles the stalled count's pieces: no other rule names them.
+    expect(css.match(/[^\n]*\.side-sum-(tail|stalled)\b[^{\n]*\{/g)).toEqual([".side-sum-tail {", ".side-sum-stalled {", ".side-sum-tail > .side-when {", ".side-sum-tail > .side-when::before {", "  .side-sum-stalled > .side-sum-sep {"]);
+    // The when takes no least width (so it never pushes "in N projects" out), grows into what the
+    // tail has left up to its own width, and wraps out of sight on its own line where it's short.
+    expect(get(".side-sum-tail > .side-when", "flex", "width", "max-width", "margin-inline-start")).toEqual(["1 1 0", "0", "max-content", "auto"]);
+    expect(rule(".side-sum-tail > .side-when").has("padding-inline-start")).toBe(false);
+    expect(rule(".side-sum-tail > .side-when::before").get("width")).toBe("6px");
+    expect(get(".side-when::before", "content", "flex", "height")).toEqual(['""', "none", "100%"]);
+    expect(rule(".side-activity").get("line-height")).toBe("1.35");
+    // Nothing of round 1's grow-and-hide is left: no piece takes room it can't show in.
+    expect(css).not.toMatch(/\.side-sum-part|\.side-sums \{|flex-grow: 1000/);
+  });
+  it("takes as many lines as the sidebar's width says, never the counts, and no line starts with \" · \" (styles.css, round 3)", () => {
+    // All's box is the sidebar less 35px: under 195px (a sidebar under 230px) the rest has its own
+    // second line, stall or not, and the line keeps two lines' height.
+    expect(Object.fromEntries(rule(".side-sum-box"))).toEqual({ display: "block", container: "sums / inline-size" });
+    expect(container("sums")).toEqual([
+      {
+        when: "width < 195px",
+        rules: {
+          ".side-sums-line": { "min-height": "2.7em", "align-content": "flex-start" },
+          ".side-sum-rest": { flex: "1 0 100%" },
+          ".side-sum-in > .side-sum-sep": { display: "inline" },
+          ".side-sum-stalled > .side-sum-sep": { display: "none" },
+        },
+      },
+    ]);
+    // Two lines of the line's own height (line-height 1.35), whatever is on them.
+    expect(rule(".side-activity").get("line-height")).toBe("1.35");
+    // On one line the separator is the tail's; "in N projects"'s own is hidden.
+    expect(Object.fromEntries(rule(".side-sum-in > .side-sum-sep"))).toEqual({ display: "none" });
+    expect(rule(".side-sum-stalled > .side-sum-sep").size).toBe(0);
+    // Focus: All's badges take the line under the name in a sidebar under 200px, as tall as "2 stalled".
+    expect(Object.fromEntries(rule(".side-all-focus"))).toEqual({ container: "side-all / inline-size" });
+    expect(container("side-all")).toEqual([{ when: "width < 165px", rules: { ".side-all-focus .side-badges": { flex: "0 0 100%", "line-height": "1.45", "min-height": "1.45em" } } }]);
+  });
+  it("on All in Focus, the badge says the short \"1 stalled\", its tooltip and aria-label the projects (round 3)", () => {
+    const stalled = [task({ queue: "quill", id: "0002", stage: "building", claimedBy: "quill/wt-q", heartbeat: at(9, 0), modified: secs(9, 0) })];
+    const list = (mode: DisplayMode) => renderToStaticMarkup(createElement(Mode.Provider, { value: mode }, createElement(ProjectList, { queues, tasks: [...tasks, ...stalled], notes: [], activity: [], now: NOW, current: "all", onPick: () => {}, onLabel: async () => {} })));
+    const focus = list("focus");
+    expect(row(focus, "All")).toContain('<span class="side-stalled" title="1 project stalled: work in Building, but nothing for over 30 minutes: no check-in, heartbeat, stage change, commit or file change">1 stalled</span>');
+    expect(label(row(focus, "All"))).toBe("All: 17 in progress, 18 tasks; 16 working in 2 projects, 1 project stalled");
+    expect(row(focus, "All")).toMatch(/^ on side-all-focus"/);
+    // A project's own badge is unchanged: the word, with the stalled hint.
+    expect(row(focus, "quill")).toContain('<span class="side-stalled" title="Stalled: work in Building');
+    expect(row(focus, "quill")).toContain(">stalled</span>");
+    expect(focus.match(/side-all-focus/g)).toHaveLength(1);
+    // The full look has no badge for it and no container: the line says it.
+    expect(list("adhd")).not.toContain("side-all-focus");
+    expect(row(list("adhd"), "All")).not.toContain(">1 stalled<");
   });
 });
 
@@ -566,7 +732,7 @@ describe("a project's row holds at the narrowest sidebar (0087)", () => {
       const said = mode === "focus" ? ", stalled" : "";
       expect(button(html, "Drover the long-named app")).toContain(`aria-label="Drover the long-named app: 2 need you, 1 in progress, 1 paused, 5 tasks; running${said}"`);
       expect(button(html, "calm")).toContain('aria-label="calm: 1 task"');
-      expect(button(html, "All")).toContain(`aria-label="All: 2 need you, 1 in progress, 1 paused, 6 tasks${mode === "focus" ? "; 1 stalled" : ""}"`);
+      expect(button(html, "All")).toContain(`aria-label="All: 2 need you, 1 in progress, 1 paused, 6 tasks${mode === "focus" ? "; 1 project stalled" : ""}"`);
     });
   }
   it("puts the label's full name in the row's tooltip, with the real project and its folder", () => {
@@ -596,16 +762,17 @@ describe("a project's row holds at the narrowest sidebar (0087)", () => {
     expect(html).not.toContain("hidden=");
   });
 
-  const row = (mode: DisplayMode, over: { working?: boolean; tasks?: Task[] }) =>
+  const row = (mode: DisplayMode, over: { working?: string; tasks?: Task[] }) =>
     renderToStaticMarkup(createElement(Mode.Provider, { value: mode }, createElement(ProjectItem, { name: "zeta", total: 1, tasks: [], on: false, onClick: () => {}, children: null, ...over })));
-  it("says \"being worked on now\" where the row shows the working dot (Focus), and not where it doesn't", () => {
-    const focus = row("focus", { working: true });
+  it("says the working count, in the activity line's words, where the row shows the working dot (Focus), and not where it doesn't (mu-197)", () => {
+    const focus = row("focus", { working: "8 working" });
     expect(focus).toContain('<i class="dot side-dot"');
-    expect(focus).toContain('aria-label="zeta: 1 task; being worked on now"');
-    const adhd = row("adhd", { working: true });
+    expect(focus).toContain('aria-label="zeta: 1 task; 8 working"');
+    const adhd = row("adhd", { working: "8 working" });
     expect(adhd).not.toContain("side-dot");
     expect(adhd).toContain('aria-label="zeta: 1 task"');
-    expect(row("focus", { working: false })).toContain('aria-label="zeta: 1 task"');
+    expect(row("focus", { working: "" })).toContain('aria-label="zeta: 1 task"');
+    expect(row("focus", { working: "" })).not.toContain("side-dot");
   });
   it("says \"1 needs you\", as the headings do, and \"2 need you\"", () => {
     const one = row("adhd", { tasks: [task({ queue: "zeta", id: "0001", waitingForOwner: true })] });

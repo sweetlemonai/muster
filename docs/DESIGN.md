@@ -325,6 +325,18 @@ for one project or All.
 - **Its counts are words, the same open and folded,** in every mode: "77 need you · 17 projects ·
   18 working", what needs you first, in the tokens a project's row uses (the needs chip, the
   Building dot); what's 0 is left out, but never the projects. Its tasks are in the tooltip.
+- **One wording for the working count** (mu-197), as for needs you: "N working" counts tasks
+  being worked on now, on a project's row, a heading and All, from one helper (`workingWords`).
+  All adds the projects they're in, in words, one sentence: "29 working in 9 projects · 2
+  projects stalled". "N working" and the stalled count never give way: the stalled count is
+  All's one always-visible stall signal (out of sight is out of mind). Where All's line is short
+  of room, the when goes first, then "in 9 projects", each whole, never cut mid-word; a piece
+  that goes gives its room back, so where "in 9 projects" has gone the when shows again if it
+  fits, and nothing leaves a gap between the words. How many lines All takes follows the
+  sidebar's width, never its counts, so a poll that brings a stall or changes a count moves no
+  row below: in a sidebar under 230px the rest always has a second line under "N working", and
+  no line starts with a "·". In Focus All's badge says the short "2 stalled" and, under 200px,
+  always sits on the line under the name. All of it stays in the tooltip and the aria-label.
 - **One line, open or folded** (owner, 2026-10-14, round 3: no number without its words): the
   chevron, the name and those counts.
   - **The name gives way first:** it ends in "…" down to about 4em (60px), and its tooltip and

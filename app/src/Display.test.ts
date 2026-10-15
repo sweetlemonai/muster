@@ -397,7 +397,7 @@ describe("the sidebar in each mode", () => {
     const stalled = [...tasks, task("0003", { queue: "zeta", stage: "building", claimedBy: "zeta/wt-b", heartbeat: stamp(NOW - 3 * 3600), stageSince: stamp(NOW - 4 * 3600) })];
     const html = inMode("focus", createElement(ProjectList, { queues, tasks: stalled.map((t) => (t.id === "0002" ? { ...t, live: false, stage: "ready", claimedBy: "" } : t)), notes: [], activity, now: NOW, current: "all", onPick: () => {} }));
     expect(html).toMatch(/<span class="side-name">zeta<\/span><span class="side-badges"><span class="side-stalled" title="Stalled: [^"]*">stalled<\/span>/);
-    expect(html).toMatch(/<span class="side-name">All<\/span><span class="side-badges"><span class="side-stalled" title="[^"]*">1 stalled<\/span>/);
+    expect(html).toMatch(/<span class="side-name">All<\/span><span class="side-badges"><span class="side-stalled" title="1 project stalled: [^"]*">1 stalled<\/span>/);
     expect(html).toContain('class="side-ping"');
     expect(html).not.toMatch(/side-name">alpha<\/span><span class="side-badges"><span class="side-stalled/);
   });
