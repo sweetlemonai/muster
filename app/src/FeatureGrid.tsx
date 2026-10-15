@@ -31,6 +31,7 @@ import { key, type RoleNames } from "./lib";
 import { GROUP_BYS, type GroupBy, progressText } from "./levels";
 import { PAUSE_GLYPH } from "./Pause";
 import { type ChipSpan, inView, overflowCue } from "./rowCue";
+import { isRtl } from "./rtl";
 import { RoleNamesContext } from "./settingsData";
 import { pressed } from "./shortcuts";
 import ProjectName from "./ProjectName";
@@ -125,7 +126,7 @@ export default function FeatureGrid(p: FeatureGridProps) {
   // reached with the keys, never with Tab.
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
-    const rtl = grid.current ? getComputedStyle(grid.current).direction === "rtl" : false;
+    const rtl = isRtl();
     const forward = rtl ? "ArrowLeft" : "ArrowRight";
     const back = rtl ? "ArrowRight" : "ArrowLeft";
     const head = target.closest<HTMLElement>("[data-rowhead]");
@@ -395,7 +396,7 @@ function GridCard({ item, dim, roles, ...p }: CardProps) {
       <span className="fg-meta">
         {status.kind !== "blocked" && <StatusLine status={status} />}
         {p.multi && <ProjectName name={t.queue} />}
-        <span className="fg-key">{taskKey(t)}</span>
+        <span className="fg-key"><span className="ltr">{taskKey(t)}</span></span>
       </span>
     </button>
   );

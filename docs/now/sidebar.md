@@ -14,6 +14,7 @@ covers: app/src/Sidebar.tsx, app/src/SidebarProjects.tsx, app/src/ProjectList, a
 - A project's colour is one of five, kept apart from every state colour. (mu-57)
 - A heading folds to one line; nothing of its projects shows under it. (mu-70)
 - A project put under a folded heading unfolds it. (mu-70)
+- A heading's fold keys follow the reading direction: in فارسی ← unfolds and → folds. (mu-149)
 - A heading's counts are words, "77 need you · 17 projects · 18 working", open or folded. (mu-82)
 - Names and headings sort in the language's order (Persian order in فارسی), not by code point. (mu-151)
 - "N need you" comes first after the name and is never cut. (mu-82)

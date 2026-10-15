@@ -188,7 +188,7 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
                   {b.tools.map((t, j) => (
                     <li key={j}>
                       <code>{t.cmd}</code>
-                      {t.result && <span className="meta"> → {t.result}</span>}
+                      {t.result && <span className="meta"> <span className="dir-glyph">→</span> {t.result}</span>}
                     </li>
                   ))}
                 </ul>

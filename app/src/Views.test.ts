@@ -25,13 +25,16 @@ describe("the timeline's scale chips", () => {
     expect(controls("week")).not.toContain("<select");
   });
   it("steps back and forward, goes back to the current period, and names the window", () => {
-    const words = (html: string) => [...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]).slice(3);
+    const words = (html: string) => [...html.matchAll(/<button[^>]*>(.*?)<\/button>/g)].map((m) => m[1].replace(/<[^>]+>/g, "")).slice(3);
     expect(words(controls("day"))).toEqual(["◀", "Now", "▶"]);
     expect(words(controls("week"))).toEqual(["◀", "This week", "▶"]);
     expect(words(controls("month"))).toEqual(["◀", "This month", "▶"]);
     expect(controls("day")).toMatch(/disabled=""[^>]*>Now</);
     expect(controls("day", -1)).not.toContain("disabled");
     expect(controls("week")).toContain("12 – 18 Oct 2026");
+    // The steps point the reading way: right to left ◀ is flipped to point right, back in time (mu-149).
+    expect(controls("week")).toMatch(/aria-label="Previous week"[^>]*><span class="dir-glyph">◀<\/span><\/button>/);
+    expect(controls("week")).toMatch(/aria-label="Next week"[^>]*><span class="dir-glyph">▶<\/span><\/button>/);
   });
 });
 
@@ -68,8 +71,8 @@ describe("the timeline chart", () => {
   it("labels each row with its id and title, and marks the open task", () => {
     const html = chart("week");
     // The title keeps its own direction (dir="auto", mu-147).
-    expect(html).toMatch(/<button class="tl-row"[^>]*><span class="tl-label"> ?<span class="id" title="q · 0031">0031<\/span> <span dir="auto">Timeline scales<\/span><\/span>/);
-    expect(html).toMatch(/<button class="tl-row active"[^>]*><span class="tl-label"> ?<span class="id" title="q · 0032">0032<\/span> <span dir="auto">Still going/);
+    expect(html).toMatch(/<button class="tl-row"[^>]*><span class="tl-label"> ?<span class="id ltr" title="q · 0031">0031<\/span> <span dir="auto">Timeline scales<\/span><\/span>/);
+    expect(html).toMatch(/<button class="tl-row active"[^>]*><span class="tl-label"> ?<span class="id ltr" title="q · 0032">0032<\/span> <span dir="auto">Still going/);
   });
   it("marks the owner's own task with the You ribbon, and only theirs (0022)", () => {
     // The Timeline shows work from when it started: both are in Building (Doing, for the owner's).
@@ -77,14 +80,23 @@ describe("the timeline chart", () => {
     const mixed = [t({ id: "0041", title: "Buy the domain", forWho: "human", ...started }), t({ id: "0042", title: "Agent work", ...started })];
     const win = timeWindow("week", NOW, 0);
     const html = renderToStaticMarkup(createElement(TimelineChart, { scale: "week", rows: layout(spans(mixed, NOW), win, "week"), ticks: axis("week", win, NOW), now: nowAt(win, NOW), multi: false, openKey: null, onOpen: () => {} }));
-    expect(html).toMatch(/<span class="tl-label"><span class="you-ribbon"[^>]*>You<\/span> ?<span class="id" title="q · 0041">0041<\/span> <span dir="auto">Buy the domain<\/span><\/span>/);
-    expect(html).toMatch(/<span class="tl-label"> ?<span class="id" title="q · 0042">0042<\/span> <span dir="auto">Agent work<\/span><\/span>/);
+    expect(html).toMatch(/<span class="tl-label"><span class="you-ribbon"[^>]*>You<\/span> ?<span class="id ltr" title="q · 0041">0041<\/span> <span dir="auto">Buy the domain<\/span><\/span>/);
+    expect(html).toMatch(/<span class="tl-label"> ?<span class="id ltr" title="q · 0042">0042<\/span> <span dir="auto">Agent work<\/span><\/span>/);
     const table = renderToStaticMarkup(createElement(TableView, { tasks: mixed, now: 0, multi: false, openKey: null, onOpen: () => {}, words: [] }));
     expect(table.match(/class="you-ribbon"/g)).toHaveLength(1);
     expect(table).toMatch(/<td class="t-title"><span class="you-ribbon"[^>]*>You<\/span>[^<]*<span dir="auto">Buy the domain/);
   });
+  it("runs time from the reading start, so it runs right to left in فارسی: every piece sits by its inline start, none by its left (mu-149)", () => {
+    for (const scale of ["day", "week", "month"] as const) {
+      const html = chart(scale);
+      const placed = [...html.matchAll(/class="(tl-tick|tl-bar|tl-seg|tl-block|tl-pause|tl-now)[^"]*" style="([^"]*)"/g)];
+      expect(new Set(placed.map((m) => m[1])), scale).toEqual(new Set(["tl-tick", "tl-bar", "tl-seg", "tl-now"]));
+      for (const [, cls, style] of placed) expect(style, `${scale} ${cls}`).toMatch(/^inset-inline-start:[\d.]+%(;width:[\d.]+%)?$/);
+      expect(html, scale).not.toMatch(/style="[^"]*\b(left|right):/);
+    }
+  });
   it("draws the now line where now is, and none in a window without it", () => {
-    expect(chart("day")).toMatch(new RegExp(`class="tl-now" style="left:${(((20 * 60 + 20) / 1440) * 100).toFixed(3)}%"`));
+    expect(chart("day")).toMatch(new RegExp(`class="tl-now" style="inset-inline-start:${(((20 * 60 + 20) / 1440) * 100).toFixed(3)}%"`));
     expect(chart("day", -1)).not.toContain('class="tl-now"');
     expect(chart("day", -1)).not.toContain("tl-row");
   });
@@ -138,12 +150,14 @@ describe("the timeline's controls do what they say", () => {
     const win = timeWindow("day", NOW, 0);
     const html = renderToStaticMarkup(h(TimelineChart, { scale: "day", rows: layout(spans([task], NOW), win, "day"), ticks: axis("day", win, NOW), now: nowAt(win, NOW), multi: false, openKey: null, onOpen: () => {} }));
     expect(html.match(/class="tl-block"/g)).toHaveLength(1);
+    expect(html).toMatch(/class="tl-block" style="inset-inline-start:[\d.]+%;width:[\d.]+%"/);
   });
   it("draws a paused stretch hatched grey, apart from a block, and says paused on the bar", () => {
     const task = t({ stage: "building", paused: "2026-10-14 10:00", pauseHistory: [{ from: "2026-10-14 10:00", to: "" }], stageHistory: [step("2026-10-14 09:00", "ready", "building")] });
     const win = timeWindow("day", NOW, 0);
     const html = renderToStaticMarkup(h(TimelineChart, { scale: "day", rows: layout(spans([task], NOW), win, "day"), ticks: axis("day", win, NOW), now: nowAt(win, NOW), multi: false, openKey: null, onOpen: () => {} }));
     expect(html.match(/class="tl-pause"/g)).toHaveLength(1);
+    expect(html).toMatch(/class="tl-pause" style="inset-inline-start:[\d.]+%;width:[\d.]+%"/);
     expect(html).not.toContain("tl-block");
     expect(html).toContain("Building · paused");
   });

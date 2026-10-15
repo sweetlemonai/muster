@@ -510,7 +510,7 @@ describe("keys in the pane's comments and questions (0033)", () => {
     questions: [{ n: 1, ticked: false, asker: "wt-a", text: "Should this wait for mu-12?", escalated: true, ownerAnswered: false }],
     openQuestions: 1,
   });
-  const link = '<a href="#task/muster/0012" class="task-key" title="muster · mu-12">mu-12</a>';
+  const link = '<a href="#task/muster/0012" class="task-key ltr" title="muster · mu-12">mu-12</a>';
   const pane = (withKeys: boolean) =>
     renderToStaticMarkup(createElement(TaskPanel, { task: t, now: 0, onClose: () => {}, onChanged: () => {}, ...(withKeys ? { keys, onOpenAt: () => {} } : {}) }));
   it("link a key in a comment and in an open question to its task", () => {
@@ -520,7 +520,7 @@ describe("keys in the pane's comments and questions (0033)", () => {
     expect(/<section class="answers"[\s\S]*?<\/section>/.exec(html)?.[0]).toContain(link);
   });
   it("leave them as text without the projects' prefixes", () => {
-    expect(pane(false)).not.toContain('class="task-key"');
+    expect(pane(false)).not.toContain('class="task-key');
   });
 });
 

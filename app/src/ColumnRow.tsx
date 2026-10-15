@@ -4,6 +4,7 @@ import { fmt, tn, Trans, useT } from "./i18n";
 import { STAGES } from "./lib";
 import { blockedCount, itemWords, placeWords } from "./ModeViews";
 import { RAIL_ID } from "./modes";
+import { isRtl } from "./rtl";
 import { PAUSED_LANE } from "./PausedLane";
 import { ALL_IN_VIEW, type Cue, cueWords, type EdgeColumn, type EdgeCue, edgeCue, type EdgeFit, edgeNeeds, edgeText, edgeWords, overflowCue, sameView, scrollDelta, watchBoard, watchEdge, watchRow } from "./rowCue";
 import type { Task } from "./types";
@@ -153,7 +154,7 @@ export function showColumn(board: HTMLElement, id: string) {
   const s = getComputedStyle(board);
   const r = el.getBoundingClientRect();
   const start = board.getBoundingClientRect().left + board.clientLeft;
-  const left = scrollDelta({ start: r.left, end: r.right }, { start, end: start + board.clientWidth }, parseFloat(s.paddingInlineStart) || 0, s.direction === "rtl");
+  const left = scrollDelta({ start: r.left, end: r.right }, { start, end: start + board.clientWidth }, parseFloat(s.paddingInlineStart) || 0, isRtl());
   const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   board.scrollBy({ left, behavior: still ? "auto" : "smooth" });
 }

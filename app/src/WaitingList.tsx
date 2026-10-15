@@ -107,7 +107,7 @@ function WaitingItem({ t, now, multi, active, onOpen, onChanged }: { t: Task; no
     <article className={active ? "waiting active" : "waiting"}>
       <header>
         <button className="link" onClick={() => onOpen(t)}>
-          {isHuman(t) && <YouRibbon />} {multi && <ProjectName name={t.queue} />} {taskKey(t)} · {t.title}
+          {isHuman(t) && <YouRibbon />} {multi && <ProjectName name={t.queue} />} <span className="ltr">{taskKey(t)}</span> · {t.title}
         </button>
       </header>
       {t.paused && <p><PausedChip t={t} now={now} /></p>}

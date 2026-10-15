@@ -31,7 +31,8 @@ describe("layout fixes (0061)", () => {
   });
 
   it("the buttons under a waiting task (Done, unblock; Open to answer) have a gap between them", () => {
-    expect(rule(".waiting > button")).toMatch(/margin: 0 8px 4px 0;/);
+    // On the inline end, so the gap stays between them in فارسی too (mu-149).
+    expect(rule(".waiting > button")).toMatch(/margin-block: 0 4px; margin-inline: 0 8px;/);
   });
 });
 

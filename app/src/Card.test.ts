@@ -56,17 +56,17 @@ describe("a card on the one board (0022, owner 2026-10-13)", () => {
 describe("a card names its task by its key (0033)", () => {
   it("shows mu-12, not the file's 0012, and marks it when the search names it", () => {
     const t = task("0012", { prefix: "mu", title: "Keys" });
-    expect(card(t)).toContain('<span class="id" title="muster · mu-12">mu-12</span>');
+    expect(card(t)).toContain('<span class="id ltr" title="muster · mu-12">mu-12</span>');
     expect(card(t)).not.toContain("0012");
     const searched = (words: string[]) => renderToStaticMarkup(createElement(Card, { t, now: 0, multi: false, parent: "", onOpen: () => {}, active: false, words }));
-    for (const words of [["12"], ["mu-0012"]]) expect(searched(words), words.join()).toContain('<span class="id" title="muster · mu-12"><mark>mu-12</mark></span>');
-    expect(searched(["br-0012"])).toContain('<span class="id" title="muster · mu-12">mu-12</span>');
+    for (const words of [["12"], ["mu-0012"]]) expect(searched(words), words.join()).toContain('<span class="id ltr" title="muster · mu-12"><mark>mu-12</mark></span>');
+    expect(searched(["br-0012"])).toContain('<span class="id ltr" title="muster · mu-12">mu-12</span>');
     // The tasks it waits on, by their keys too.
     const blocked = task("0013", { prefix: "mu", blockedKind: "tasks", blockedBy: [{ id: "0012", stage: "ready", holder: "" }] });
     expect(card(blocked)).toContain("<b>After</b> mu-12");
   });
   it("shows the id as it is when the task has no prefix", () => {
-    expect(card(task("0012"))).toContain('<span class="id" title="muster · 0012">0012</span>');
+    expect(card(task("0012"))).toContain('<span class="id ltr" title="muster · 0012">0012</span>');
   });
 });
 

@@ -39,7 +39,7 @@ export function taskKeyLinks(md: MarkdownIt): void {
           if (k.start > at) out.push(text(t.content.slice(at, k.start)));
           const open = new state.Token("link_open", "a", 1);
           open.attrSet("href", taskHref(k.queue, k.id));
-          open.attrSet("class", "task-key");
+          open.attrSet("class", "task-key ltr");
           if (labels) open.attrSet("title", keyTitle(labelOf(labels, k.queue), t.content.slice(k.start, k.end)));
           out.push(open, text(t.content.slice(k.start, k.end)), new state.Token("link_close", "a", -1));
           at = k.end;

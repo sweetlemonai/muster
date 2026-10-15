@@ -99,7 +99,7 @@ export function RunLine({ project, info, run, busy, error, onRun }: {
   if (!info.command) {
     return (
       <span className="small meta">
-        <Trans ns="board" k="run.noCommand" params={{ project }} components={{ code: <code dir="ltr" /> }} />
+        <Trans ns="board" k="run.noCommand" params={{ project }} components={{ code: <code className="ltr" /> }} />
       </span>
     );
   }
@@ -109,7 +109,7 @@ export function RunLine({ project, info, run, busy, error, onRun }: {
       <Button type="button" aria-label={tn("shell", restart ? "run.restartAria" : "run.runAria", { project })} disabled={busy || info.refused !== ""} onClick={onRun}>
         {tn("shell", restart ? "run.restart" : "run.run")}
       </Button>{" "}
-      <code dir="ltr">{info.command}</code>
+      <code className="ltr">{info.command}</code>
       {info.refused && <span className="err small"> {info.refused}</span>}
       {!info.refused && error && <span className="err small" role="alert"> {error}</span>}
     </span>

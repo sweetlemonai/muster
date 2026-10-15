@@ -14,7 +14,7 @@ import {
   autoOpen, bandFold, COLUMNS_KEY, loadPicks, look, MODES, modeFolds, OPEN_COLUMN_MAX, pickColumn, plainBoard, RAIL_ID, ROW_ORDER, storePicks, toggleBand,
   type BoardLooks, type ColumnPicks, type DisplayMode, type ModePicks,
 } from "./modes";
-import { ALL_IN_VIEW, type ChipSpan, cueWords, cutBy, inView, leastRoom, measureRow, overflowCue, sameView, watchRow } from "./rowCue";
+import { ALL_IN_VIEW, type ChipSpan, type Cue, cueWords, cutBy, inView, leastRoom, measureRow, overflowCue, sameView, watchRow } from "./rowCue";
 import css from "./styles.css?raw";
 import type { Task } from "./types";
 
@@ -433,6 +433,29 @@ describe("past the row's room: the cue at its end (review R7)", () => {
     expect(measureRow(box({ row: 780, list: 600, ...short }).row, box({ row: 780, list: 600, ...short }).list).overflow).toBe(true);
     expect(columnRowSource).toContain('className={view.overflow ? "col-row-chips col-row-scrolls" : "col-row-chips"}');
     expect(css).toContain(".col-row .col-row-scrolls .col-chip { flex: none; }");
+  });
+  it("measures and walks the same right to left (mu-149): chips in board order from the right edge, scrolled leftwards", () => {
+    // Every place in a 500px list, scrolled `s` px from its start: left to right scrollLeft is s,
+    // right to left WebKit's is -s and the chips run from the right edge, Paused first.
+    const ids = ALL9.map((c) => c.id);
+    const ltr = (s: number) => spans(ids, ALL9_AT, s);
+    const rtl = (s: number) => spans(ids, ALL9_AT.map(([a, b]): [number, number] => [500 - b + s, 500 - a + s]));
+    const measure = (chips: ChipSpan[]) => {
+      const b = box({ row: 528, list: 500, chips });
+      return measureRow(b.row, b.list);
+    };
+    expect(measure(rtl(0))).toEqual({ overflow: true, visible: ["paused", "backlog", "shaping"], cut: ["ready"] });
+    let from: string | null = null;
+    for (const s of [0, 480, 870]) {
+      const view = measure(rtl(s));
+      expect(view, `scrolled ${s}`).toEqual(measure(ltr(s)));
+      const cue: Cue = overflowCue(ALL9, view.visible, from)!;
+      expect(cue, `scrolled ${s}`).toEqual(overflowCue(ALL9, measure(ltr(s)).visible, from));
+      from = cue.target;
+    }
+    // The walk as it reads: past the far (left) edge to what needs you, then back to the start.
+    expect(overflowCue(ALL9, measure(rtl(0)).visible)).toEqual({ more: 6, needs: 6, target: "ready" });
+    expect(overflowCue(ALL9, measure(rtl(870)).visible)).toEqual({ more: 5, needs: 5, target: "paused" });
   });
   it("tells a changed view from the same one, so a re-measure that finds nothing new renders nothing", () => {
     const v = (visible: string[], cut: string[] = []) => ({ overflow: true, visible, cut });

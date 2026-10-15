@@ -46,7 +46,7 @@ export function BandHead({ group, by, multi, active, onOpen }: {
   return (
     <div className="band-head">
       <button className={`band-title link${active ? " active" : ""}`} onClick={() => onOpen(h)} title={t(open, { key: taskKey(h) })}>
-        {multi && <ProjectName name={h.queue} />} <span className="level">{levelLabel(h.level)}</span> <span className="id">{taskKey(h)}</span> {h.title ? <bdi dir="auto">{h.title}</bdi> : t("groups.noTitle")}
+        {multi && <ProjectName name={h.queue} />} <span className="level">{levelLabel(h.level)}</span> <span className="id ltr">{taskKey(h)}</span> {h.title ? <bdi dir="auto">{h.title}</bdi> : t("groups.noTitle")}
       </button>
       <StatusPill status={shownStageClass(h)}>{shownStageLabel(h)}</StatusPill>
       {h.blocked && <StatusPill status="blocked">{t("groups.blocked")}</StatusPill>}

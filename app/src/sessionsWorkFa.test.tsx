@@ -85,7 +85,7 @@ describe("Run in Persian", () => {
     expect(latinWords(html)).toEqual([]);
     for (const w of ["اجرا", "اجرای دوباره", "متوقف کردن", "هنوز خروجی‌ای نیست."]) expect(html).toContain(w);
     // How to set a run command: the command is code, the project in it as written.
-    expect(html).toContain("فرمان اجرا تعریف نشده است: <code dir=\"ltr\">muster projects set muster run …</code>");
+    expect(html).toContain("فرمان اجرا تعریف نشده است: <code class=\"ltr\">muster projects set muster run …</code>");
   });
 
   it("says a run's time in full words, the units joined with و", async () => {

@@ -1,5 +1,6 @@
 import type { KeyboardEvent, PointerEvent } from "react";
 import { tl } from "../i18n";
+import { isRtl } from "../rtl";
 import { dragWidth, type SplitSide, splitKey } from "../splitter";
 import { cx } from "./cx";
 
@@ -37,7 +38,7 @@ function scaleOf(el: HTMLElement): number {
  *  edge without jumping. Always in the same place, its edge lit on hover, focus and drag. */
 export function Splitter({ width, min, max, side, label, onWidth, onDrag, onDragEnd, onReset, className }: SplitterProps) {
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
-    const next = splitKey(e.key, e.shiftKey, side, width);
+    const next = splitKey(e.key, e.shiftKey, side, isRtl(), width);
     if (next === null) return;
     e.preventDefault();
     onWidth(next);
@@ -49,9 +50,10 @@ export function Splitter({ width, min, max, side, label, onWidth, onDrag, onDrag
     const id = e.pointerId;
     const startX = e.clientX;
     const scale = scaleOf(el);
+    const rtl = isRtl();
     el.setPointerCapture(id);
     el.setAttribute("data-dragging", "");
-    const move = (ev: globalThis.PointerEvent) => onDrag(dragWidth(width, startX, ev.clientX, side, scale));
+    const move = (ev: globalThis.PointerEvent) => onDrag(dragWidth(width, startX, ev.clientX, side, rtl, scale));
     const end = () => {
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", end);

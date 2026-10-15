@@ -126,12 +126,12 @@ describe("the cards", () => {
   });
   it("put the trouble chip on its own line under the title, the who line and key after it", () => {
     const html = draw();
-    expect(html).toMatch(/<span class="fg-t" dir="auto" title="Agent account allowlist">Agent account allowlist<\/span><span class="fg-trouble" title="sent back twice">sent back twice<\/span><span class="fg-meta"><span class="fg-who"[^>]*>.*?kaveh-3<\/span><span class="fg-key">mu-99<\/span>/);
+    expect(html).toMatch(/<span class="fg-t" dir="auto" title="Agent account allowlist">Agent account allowlist<\/span><span class="fg-trouble" title="sent back twice">sent back twice<\/span><span class="fg-meta"><span class="fg-who"[^>]*>.*?kaveh-3<\/span><span class="fg-key"><span class="ltr">mu-99<\/span><\/span>/);
   });
   it("put why a task waits on its own line, the key still in the line under it", () => {
     const waits = task({ id: "0098", title: "Sessions view", stage: "ready", blockedKind: "tasks", blockedBy: [{ id: "0099", stage: "building", holder: "" }, { id: "0112", stage: "testing", holder: "" }] });
     const html = draw({ rows: gridRows({ work: [waits], all: [waits], notes: [], by: "none", today: TODAY }) });
-    expect(html).toMatch(/Sessions view<\/span><span class="fg-wait"><span class="ui-badge block-why not-you look-tasks"><b>After<\/b> mu-99, mu-112<\/span><\/span><span class="fg-meta"><span class="fg-key">mu-98<\/span><\/span>/);
+    expect(html).toMatch(/Sessions view<\/span><span class="fg-wait"><span class="ui-badge block-why not-you look-tasks"><b>After<\/b> mu-99, mu-112<\/span><\/span><span class="fg-meta"><span class="fg-key"><span class="ltr">mu-98<\/span><\/span><\/span>/);
   });
   it("give a card blocked on you the needs-you edge, with why it waits", () => {
     const t = task({ id: "0110", title: "Branch check", stage: "testing", heldBy: "kia-1", blocked: true, blockedKind: "you", blockDetail: "settle R2", waitingForOwner: true });

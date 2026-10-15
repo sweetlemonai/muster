@@ -19,7 +19,7 @@ const permission = task("0003", { blocked: true, blockedKind: "permission", bloc
 const asked = task("0004", { questions: [q(1, "which port?")], openQuestions: 1, waitingForOwner: true });
 const own = task("0005", { forWho: "human", stage: "ready" });
 const html = (tasks: Task[]) => renderToStaticMarkup(createElement(WaitingList, { tasks, multi: false, openKey: null, onOpen: () => {}, onChanged: () => {}, now: 0 }));
-const order = (out: string) => [...out.matchAll(/(\d{4}) · Task/g)].map((m) => m[1]);
+const order = (out: string) => [...out.matchAll(/(\d{4})<\/span> · Task/g)].map((m) => m[1]);
 
 describe("Waiting for you, by what the owner has to do (0060)", () => {
   it("ranks answers, then actions, then permissions, then the rest", () => {
@@ -91,7 +91,7 @@ describe("the shapers' batch in Waiting for you (mu-103)", () => {
     expect(group).toContain('<h3 class="effort-head">From shaping: 3 questions on 2 tasks</h3>');
     // Both tasks are in it, in the order given, and not again in the band below.
     expect(order(group)).toEqual(["0004", "0011"]);
-    expect(out.match(/0011 · Task/g)).toHaveLength(1);
+    expect(out.match(/0011<\/span> · Task/g)).toHaveLength(1);
     // Each question keeps its chips, the default in words, answered in place.
     expect(group).toContain('aria-label="Options for Q2"');
     expect(group).toContain("going with (b) unless you answer");
@@ -120,8 +120,8 @@ describe("what blocks agents comes first (0060, QA)", () => {
     const out = html([check, action]);
     const band = out.indexOf('aria-label="Questions, blocks and your own tasks"');
     expect(band).toBeGreaterThanOrEqual(0);
-    expect(out.indexOf("0010 · Task")).toBeGreaterThan(band);
-    expect(out.indexOf("0002 · Task")).toBeLessThan(out.indexOf("0010 · Task"));
+    expect(out.indexOf("0010</span> · Task")).toBeGreaterThan(band);
+    expect(out.indexOf("0002</span> · Task")).toBeLessThan(out.indexOf("0010</span> · Task"));
   });
 });
 

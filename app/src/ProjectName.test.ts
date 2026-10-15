@@ -40,7 +40,7 @@ describe("a project's name where a task names it (0044)", () => {
   it("on a card in All projects, with the key's tooltip naming the project", () => {
     const h = html(createElement(Card, { t: task({}), now: 0, multi: true, parent: "", onOpen: () => {}, active: false, words: [] }));
     expect(h).toContain(NAMED);
-    expect(h).toContain('<span class="id" title="Muster — the queue · mu-12">mu-12</span>');
+    expect(h).toContain('<span class="id ltr" title="Muster — the queue · mu-12">mu-12</span>');
   });
   it("in Waiting for you", () => {
     const h = html(createElement(WaitingList, { tasks: [task({ stage: "ready", waitingForOwner: true, blockedKind: "you", blocked: true })], multi: true, openKey: null, onOpen: () => {}, onChanged: () => {}, now: 0 }));
@@ -70,7 +70,7 @@ describe("a task key in a task's text (0044)", () => {
   const keys = keyIndex([{ name: "muster", prefix: "mu" }, { name: "drover", prefix: "dr" }]);
   it("names its project by the label in its tooltip", () => {
     expect(md.render("mu-12 and dr-3", { keys, labels: LABELS })).toBe(
-      '<p><a href="#task/muster/0012" class="task-key" title="Muster — the queue · mu-12">mu-12</a> and <a href="#task/drover/0003" class="task-key" title="drover · dr-3">dr-3</a></p>\n',
+      '<p><a href="#task/muster/0012" class="task-key ltr" title="Muster — the queue · mu-12">mu-12</a> and <a href="#task/drover/0003" class="task-key ltr" title="drover · dr-3">dr-3</a></p>\n',
     );
   });
 });

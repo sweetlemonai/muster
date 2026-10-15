@@ -131,7 +131,7 @@ describe("the Run line in What you're accepting", () => {
   it("shows Run named for the project with the command beside it as code", () => {
     const html = line(view());
     expect(html).toMatch(/<button[^>]*aria-label="Run muster"[^>]*>Run<\/button>/);
-    expect(html).toContain('<code dir="ltr">bin/run</code>');
+    expect(html).toContain('<code class="ltr">bin/run</code>');
     expect(html).not.toContain("disabled");
     // While it runs, the same button restarts it.
     expect(line(view(), snap())).toMatch(/aria-label="Restart muster"[^>]*>Restart<\/button>/);

@@ -414,14 +414,14 @@ export function GateCell({ name, gate }: { name: string; gate: string }) {
 }
 
 /** A project's run command (0077), shown as it is: what the app's Run starts in the main checkout
- *  to try the project. Left to right on its own (`dir="ltr"`), so a right-to-left word in or
+ *  to try the project. Left to right on its own (`.ltr`), so a right-to-left word in or
  *  beside it can't reorder it. Set with `muster projects set`, as the gate is. */
 export function RunCell({ name, run }: { name: string; run: string }) {
-  if (run) return <code className="path" dir="ltr">{run}</code>;
+  if (run) return <code className="path ltr">{run}</code>;
   const command = `muster projects set ${name} run "<command>"`; // i18n-ignore: a command, typed as it is
   return (
     <span className="meta">
-      <Trans ns="shell" k="projects.noRun" params={{ command }} components={{ code: <code dir="ltr" /> }} />
+      <Trans ns="shell" k="projects.noRun" params={{ command }} components={{ code: <code className="ltr" /> }} />
     </span>
   );
 }

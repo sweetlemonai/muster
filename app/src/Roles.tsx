@@ -75,7 +75,7 @@ export function RolesView({ roles, error = "", open, onOpen, onSave }: {
                 <div className="role-fields" id={`role-${r.id}`} role="group" aria-label={t("roles.profile", { name: r.name })}>
                   <p className="meta" dir="auto">{roleLine(r)}</p>
                   <p className="meta">
-                    <Trans ns="shell" k="roles.claimWith" params={{ id: r.id }} components={{ code: <code dir="ltr" /> }} />
+                    <Trans ns="shell" k="roles.claimWith" params={{ id: r.id }} components={{ code: <code className="ltr" /> }} />
                   </p>
                   {ROLE_FIELDS.map((f) => (
                     <RoleFieldEdit key={`${f.field}-${f.value(r)}`} label={f.label} what={f.what} value={f.value(r)} size={f.size} rtl={f.field === "name"} onSave={(v) => onSave(r.id, f.field, v)} />

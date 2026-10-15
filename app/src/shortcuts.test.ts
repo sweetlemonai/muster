@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import muRouter from "../../commands/mu.md?raw";
 import { tn } from "./i18n";
+import { setLocale } from "./i18n/runtime";
 import { AREAS, pressed, SHORTCUTS } from "./shortcuts";
 import { SLASH, shortcutsPage } from "./shortcutsPage";
 
@@ -33,6 +34,25 @@ describe("the shortcut table", () => {
     for (const id of ["quick-add", "quick-add-clear"]) {
       const where = SHORTCUTS.find((s) => s.id === id)?.where;
       expect(where, id).toBe("Add to the backlog…, at the top of the Backlog column, or of the Backlog band under Group by");
+    }
+  });
+  it("says the arrows that mean next and previous follow the reading direction, and the splitter's stay physical (mu-149)", () => {
+    const what = (id: string) => SHORTCUTS.find((s) => s.id === id)?.what;
+    expect(what("heading-fold")).toContain("(→ right to left, where the arrows follow the reading direction)");
+    expect(what("heading-unfold")).toBe("Unfold the heading (← right to left)");
+    expect(what("grid-move")).toContain("(← and → swap right to left, where the arrows follow the reading direction)");
+    expect(what("resize-pane")).toContain("→ to the right, ← to the left, in either reading direction");
+  });
+  it("says the same in فارسی, where they always read right to left (mu-149)", async () => {
+    await setLocale("fa");
+    try {
+      const what = (id: string) => SHORTCUTS.find((s) => s.id === id)?.what;
+      expect(what("heading-fold")).toContain("(در راست‌به‌چپ با ⁦→⁩، چون فلش‌ها پیرو جهت خواندن‌اند)");
+      expect(what("heading-unfold")).toBe("باز کردن سرفصل (در راست‌به‌چپ با ⁦←⁩)");
+      expect(what("grid-move")).toContain("در راست‌به‌چپ ⁦←⁩ به مرحله‌ی بعد می‌رود و ⁦→⁩ به مرحله‌ی قبل");
+      expect(what("resize-pane")).toContain("⁦→⁩ به راست، ⁦←⁩ به چپ، در هر دو جهت خواندن");
+    } finally {
+      await setLocale("en");
     }
   });
   it("lists every key a handler in the window acts on, for that file", () => {

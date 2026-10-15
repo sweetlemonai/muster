@@ -1,48 +1,75 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import arrangeRs from "../src-tauri/src/arrange.rs?raw";
+import { getLocale } from "./i18n";
+import { setLocale } from "./i18n/runtime";
+import { isRtl } from "./rtl";
 import css from "./styles.css?raw";
 import { ACCENTS, apply, buildingColour, OLD_TOKEN_NAMES, PROJECT_COLOURS, CARD_LOOKS, colourDistance, SAME_AT_A_GLANCE, CARD_TINT, cardChoice, contrast, DEFAULT_CHOICE, edgeColour, HUMAN_COLOUR, HUMAN_HATCH, mix, NEEDS_COLOUR, PRIORITY_COLOURS, resolve, STAGE_COLOURS, THEMES, variables } from "./themes";
 
-describe("every theme and accent pair is readable (WCAG AA)", () => {
-  for (const t of THEMES) {
-    it(`${t.name}: text and secondary text`, () => {
-      for (const surface of [t.bg, t.surface, t.popover]) {
-        expect(contrast(t.text, surface)).toBeGreaterThanOrEqual(7);
-        expect(contrast(t.muted, surface)).toBeGreaterThanOrEqual(4.5);
-      }
+/** The colours apply() puts on the page for a theme and an accent, as the window would get them. */
+function painted(theme: string, accent: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const root = { style: { setProperty: (k: string, v: string) => (out[k] = v), colorScheme: "" }, dataset: {} };
+  vi.stubGlobal("document", { documentElement: root });
+  vi.stubGlobal("window", { matchMedia: () => ({ matches: false }) });
+  try {
+    apply({ ...DEFAULT_CHOICE, matchSystem: false, theme, accent });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+  return out;
+}
+
+// In English and in فارسی (mu-149): the language mirrors the layout, never a colour.
+for (const locale of ["en", "fa"] as const) {
+  describe(`every theme and accent pair is readable (WCAG AA), in ${locale}`, () => {
+    beforeAll(() => setLocale(locale));
+    afterAll(() => setLocale("en"));
+    it("with the language set, and the page painted in the tested colours", () => {
+      expect(getLocale()).toBe(locale);
+      expect(isRtl()).toBe(locale === "fa");
+      for (const t of THEMES) for (const a of ACCENTS) expect(painted(t.id, a.id), `${t.id} × ${a.id}`).toEqual(variables(t, a));
     });
-    for (const a of ACCENTS) {
-      it(`${t.name} × ${a.name}: accent and text on it`, () => {
-        const v = variables(t, a);
-        // The accent is for fills, borders and selection: 3:1 against what's around it.
-        expect(contrast(v["--accent"], t.bg)).toBeGreaterThanOrEqual(3);
-        expect(contrast(v["--accent"], t.surface)).toBeGreaterThanOrEqual(3);
-        // Accent-coloured words use --accent-text: 4.5:1 on every surface.
-        for (const surface of [t.bg, t.surface, t.popover]) expect(contrast(v["--accent-text"], surface)).toBeGreaterThanOrEqual(4.5);
-        // Button text on the accent.
-        expect(contrast(v["--accent-ink"], v["--accent"])).toBeGreaterThanOrEqual(4.5);
-        // Text on the soft accent (selected chips).
-        expect(contrast(t.text, v["--selected"])).toBeGreaterThanOrEqual(4.5);
+    for (const t of THEMES) {
+      it(`${t.name}: text and secondary text`, () => {
+        for (const surface of [t.bg, t.surface, t.popover]) {
+          expect(contrast(t.text, surface)).toBeGreaterThanOrEqual(7);
+          expect(contrast(t.muted, surface)).toBeGreaterThanOrEqual(4.5);
+        }
+      });
+      for (const a of ACCENTS) {
+        it(`${t.name} × ${a.name}: accent and text on it`, () => {
+          const v = variables(t, a);
+          // The accent is for fills, borders and selection: 3:1 against what's around it.
+          expect(contrast(v["--accent"], t.bg)).toBeGreaterThanOrEqual(3);
+          expect(contrast(v["--accent"], t.surface)).toBeGreaterThanOrEqual(3);
+          // Accent-coloured words use --accent-text: 4.5:1 on every surface.
+          for (const surface of [t.bg, t.surface, t.popover]) expect(contrast(v["--accent-text"], surface)).toBeGreaterThanOrEqual(4.5);
+          // Button text on the accent.
+          expect(contrast(v["--accent-ink"], v["--accent"])).toBeGreaterThanOrEqual(4.5);
+          // Text on the soft accent (selected chips).
+          expect(contrast(t.text, v["--selected"])).toBeGreaterThanOrEqual(4.5);
+        });
+      }
+      it(`${t.name}: coloured status words`, () => {
+        const v = variables(t, ACCENTS[0]);
+        for (const k of ["--bad", "--ok", "--gold-text", "--warn"]) expect(contrast(v[k], t.surface), k).toBeGreaterThanOrEqual(4.5);
+        // Needs-you words (the Your check limit, 0050) sit on the board, the sidebar and Settings too.
+        for (const surface of [t.bg, t.popover]) expect(contrast(v["--warn"], surface)).toBeGreaterThanOrEqual(4.5);
+        // Still the needs-you orange: the same hue family, the colour itself where it reads.
+        if (t.mode === "dark") expect(v["--warn"]).toBe(NEEDS_COLOUR);
+      });
+      it(`${t.name}: words on stage colours (pills, badges)`, () => {
+        const v = variables(t, ACCENTS[0]);
+        for (const s of Object.keys(STAGE_COLOURS)) expect(contrast(v["--on-status"], v[`--st-${s}`]), s).toBeGreaterThanOrEqual(4.5);
+      });
+      // The needs-you badge (.count.warn, 0087): its digits on the needs orange, in every accent.
+      it(`${t.name}: the needs-you badge's digits`, () => {
+        for (const a of ACCENTS) expect(contrast(variables(t, a)["--on-status"], variables(t, a)["--st-needs"]), a.id).toBeGreaterThanOrEqual(4.5);
       });
     }
-    it(`${t.name}: coloured status words`, () => {
-      const v = variables(t, ACCENTS[0]);
-      for (const k of ["--bad", "--ok", "--gold-text", "--warn"]) expect(contrast(v[k], t.surface), k).toBeGreaterThanOrEqual(4.5);
-      // Needs-you words (the Your check limit, 0050) sit on the board, the sidebar and Settings too.
-      for (const surface of [t.bg, t.popover]) expect(contrast(v["--warn"], surface)).toBeGreaterThanOrEqual(4.5);
-      // Still the needs-you orange: the same hue family, the colour itself where it reads.
-      if (t.mode === "dark") expect(v["--warn"]).toBe(NEEDS_COLOUR);
-    });
-    it(`${t.name}: words on stage colours (pills, badges)`, () => {
-      const v = variables(t, ACCENTS[0]);
-      for (const s of Object.keys(STAGE_COLOURS)) expect(contrast(v["--on-status"], v[`--st-${s}`]), s).toBeGreaterThanOrEqual(4.5);
-    });
-    // The needs-you badge (.count.warn, 0087): its digits on the needs orange, in every accent.
-    it(`${t.name}: the needs-you badge's digits`, () => {
-      for (const a of ACCENTS) expect(contrast(variables(t, a)["--on-status"], variables(t, a)["--st-needs"]), a.id).toBeGreaterThanOrEqual(4.5);
-    });
-  }
-});
+  });
+}
 
 describe("the needs-you badge's CSS uses what the tests check (0087)", () => {
   it("draws its digits in --on-status on the needs orange, and nothing sets them another way", () => {
@@ -418,7 +445,8 @@ describe("the task pane's CSS (0021) follows the theme", () => {
   });
   it("names no colour of its own: every colour is a theme variable every theme sets (or the stage's)", () => {
     expect(block).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i);
-    const themed = new Set([...Object.keys(variables(THEMES[0], ACCENTS[0])), "--status"]);
+    // --to-end is no colour: the timeline's direction, right or left by language (mu-149).
+    const themed = new Set([...Object.keys(variables(THEMES[0], ACCENTS[0])), "--status", "--to-end"]);
     const used = new Set([...block.matchAll(/var\((--[\w-]+)/g)].map((m) => m[1]));
     expect(used.size).toBeGreaterThan(5);
     for (const v of used) expect(themed.has(v), v).toBe(true);

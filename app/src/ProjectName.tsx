@@ -34,15 +34,24 @@ export default function ProjectName({ name, className = "q", as: Tag = "span" }:
 }
 
 /** A task's key where a row or card shows it (`children`: the key, marked by a search), with its
- *  project's label in the tooltip (0044), since the prefix isn't the project's name. */
+ *  project's label in the tooltip (0044), since the prefix isn't the project's name. Left to right
+ *  in any language (`.ltr`, mu-149); a table cell keeps the window's direction for its own sides
+ *  (the first cell's status border) and holds the key in an inner island. */
 export function TaskKey({ t, as: Tag = "span", children }: { t: Pick<Task, "queue" | "prefix" | "id">; as?: "span" | "td"; children: ReactNode }) {
   return (
     <Labels.Consumer>
-      {(labels) => (
-        <Tag className="id" title={keyTitle(labelOf(labels, t.queue), taskKey(t))}>
-          {children}
-        </Tag>
-      )}
+      {(labels) => {
+        const title = keyTitle(labelOf(labels, t.queue), taskKey(t));
+        return Tag === "td" ? (
+          <td className="id" title={title}>
+            <span className="ltr">{children}</span>
+          </td>
+        ) : (
+          <span className="id ltr" title={title}>
+            {children}
+          </span>
+        );
+      }}
     </Labels.Consumer>
   );
 }

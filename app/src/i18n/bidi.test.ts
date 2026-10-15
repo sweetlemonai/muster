@@ -125,7 +125,8 @@ describe("Right to left in the stylesheet", () => {
   // A path in a bare <code> inside a Persian paragraph (app.noQueues,
   // projects.finds) keeps its `~/` on the left: Drover's rule.
   it("isolates code, kbd and pre left to right", () => {
-    const body = rule("code, kbd, pre");
+    // The one LTR-island rule, with the .ltr class every key, branch and path carries (mu-149).
+    const body = rule(".ltr, code, kbd, pre");
     expect(body).toMatch(/direction: ltr;/);
     expect(body).toMatch(/unicode-bidi: isolate;/);
   });

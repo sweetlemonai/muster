@@ -386,9 +386,9 @@ function Estimate({ task, onSave }: { task: Task; onSave: (field: string, value:
   };
   return (
     <span className="est-pair">
-      <input value={time} onChange={(e) => setTime(e.target.value)} onBlur={() => save("time", time, task.estTime)} onKeyDown={keys} placeholder={EST_EXAMPLE.time} size={4} maxLength={10} dir="ltr" aria-label={t("side.estimate.agentTime")} title={t("common:estimateField.agentTime")} />
-      <input value={testTime} onChange={(e) => setTestTime(e.target.value)} onBlur={() => save("test-time", testTime, task.estTestTime)} onKeyDown={keys} placeholder={EST_EXAMPLE.testTime} size={4} maxLength={10} dir="ltr" aria-label={t("side.estimate.testTime")} title={t("common:estimateField.testTime")} />
-      <input value={tokens} onChange={(e) => setTokens(e.target.value)} onBlur={() => save("tokens", tokens, task.estTokens)} onKeyDown={keys} placeholder={EST_EXAMPLE.tokens} size={4} maxLength={10} dir="ltr" aria-label={t("side.estimate.tokens")} title={t("side.estimate.tokensTitle")} />
+      <input value={time} onChange={(e) => setTime(e.target.value)} onBlur={() => save("time", time, task.estTime)} onKeyDown={keys} placeholder={EST_EXAMPLE.time} size={4} maxLength={10} className="ltr" aria-label={t("side.estimate.agentTime")} title={t("common:estimateField.agentTime")} />
+      <input value={testTime} onChange={(e) => setTestTime(e.target.value)} onBlur={() => save("test-time", testTime, task.estTestTime)} onKeyDown={keys} placeholder={EST_EXAMPLE.testTime} size={4} maxLength={10} className="ltr" aria-label={t("side.estimate.testTime")} title={t("common:estimateField.testTime")} />
+      <input value={tokens} onChange={(e) => setTokens(e.target.value)} onBlur={() => save("tokens", tokens, task.estTokens)} onKeyDown={keys} placeholder={EST_EXAMPLE.tokens} size={4} maxLength={10} className="ltr" aria-label={t("side.estimate.tokens")} title={t("side.estimate.tokensTitle")} />
     </span>
   );
 }

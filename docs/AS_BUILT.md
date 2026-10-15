@@ -2179,6 +2179,53 @@ stays Latin. Storage never changes, only display.
   word as 12 is. The cases are in the shared `search-cases.json`, run by Vitest and
   `cargo test --test search_cases`.
 
+### Right to left (mu-149)
+
+In فارسی the layout mirrors through `<html dir="rtl">` (mu-146) and logical CSS. DESIGN.md › Right
+to left says what mirrors and what doesn't.
+
+- **Logical CSS:** `styles.css` has no physical left or right outside the commented list: two
+  inset accent shadows (`.settings-group.on` and `.role-row[aria-expanded]`), each with a
+  `:dir(rtl)` twin, and the 135deg hatches and the no-colour slash, which are textures, not a
+  direction.
+  `logicalCss.test.ts` (ported from Drover's `src/i18n/logicalCss.test.ts`) reads every
+  `src/**/*.css` and every `style={{…}}` in non-test TSX, every string in an inline value
+  included (a ternary's, a template's). It fails on a physical property, a one-sided inset
+  shadow, a gradient at a sideways angle, a horizontal shift or flip (translate, scale below
+  zero, translate3d, matrix) outside a `:dir()` rule, or a bare ◀ ▶ ◂ ▸ → ← outside a
+  `.dir-glyph`. A `physical:` note excuses one declaration: the one right before it on its line,
+  or, on a line of its own, the first one on the next line. `ltrIslands.test.tsx` fails when a
+  class used beside `.ltr` gets a sided logical rule, since `.ltr` would resolve it left to right. Each case has a self-test.
+- **Glyphs:** one commented block at the end of `styles.css` flips `.side-cat-fold`,
+  `.recap-fold`, `.fold-head`, `.band-fold` and `.dir-glyph` under `:dir(rtl)`.
+- **LTR islands:** `.ltr, code, kbd, pre { direction: ltr; unicode-bidi: isolate }`. The class
+  is carried by TaskKey (and through it cards, rows and the table), the Graph's keys, the pane's
+  key, branch, worktree and merge commit, HomePath, Run's command line, the key links in markdown,
+  and the estimate inputs. Pinned by `ltrIslands.test.tsx`.
+- **Direction:** `rtl.ts` `isRtl()` reads `dirOf(getLocale())`. `readingArrow` swaps ← and → in
+  RTL for `foldKey` (SidebarProjects) and the Feature grid's moves. `ColumnRow.showColumn` gets
+  its scroll direction from it too. `rtl.test.ts` fails on any other direction read.
+- **Splitters:** `dragWidth(start, startX, x, side, rtl, scale)` and `splitKey(…, side, rtl, …)`.
+  The pane's side stays logical, the physical side is `(side === "left") !== rtl`, and the width
+  stays clamped either way. Arrow keys stay physical.
+- **Timeline and Graph:** bars, blocks, pauses and the now line are placed with
+  `insetInlineStart`. Gradients run along `--to-end`, which is `to left` under `:dir(rtl)`. Graph
+  nodes use `insetInlineStart`, and the edge `<svg>` (no text) flips with `scaleX(-1)`, markers
+  included.
+- **Colour:** nothing right to left paints. `rtlCss.test.ts` fails when a `:dir(rtl)`,
+  `:lang(fa)` or `[dir=rtl]` rule sets a colour property or a colour variable, or a box shadow
+  that isn't its left-to-right twin mirrored. `themes.test.ts` runs its WCAG checks in en and in
+  fa, and checks that `apply()` paints the tested colours in fa.
+- **Toolbar counts:** `.count` and `.top .count-reserve` keep 6 px on the label's side, logical.
+  Headless WebKit measures 6.0 px in en and fa for Waiting (9, 275) and Problems (0 with 3
+  unchecked, 12 with 3), at 1100 px and on one line (1910 en, 1840 fa). The base build measured
+  0 px in fa and 2 px for the quiet count in en.
+- **Shortcut text:** the reading-direction words for heading fold and unfold, the Feature grid's
+  moves and the splitter's arrows are in `help.json`, en and fa (mu-148's table), and
+  `shortcuts.test.ts` checks them in both. Help's page steps and a stage move's arrow are
+  translated strings written the right way per language, so they carry no `.dir-glyph`.
+- **Not here:** the bidi of mixed criteria lines belongs to mu-152.
+
 ### The AI helper
 
 The **Helper** tab: a chat per project that does what the capture session does. You write ideas,
@@ -2727,7 +2774,8 @@ worktrees and the merge in [parallel](now/parallel.md), Testing and the review i
 header in [pane](now/pane.md), the board's words in every language in
 [board words](now/board-words.md), the row of folded columns above the board and its edge cue
 in [column row](now/column-row.md), the projects sidebar in [sidebar](now/sidebar.md), Settings in
-[settings](now/settings.md), digits, dates and search folding in [languages](now/languages.md),
+[settings](now/settings.md), digits, dates and search folding in [languages](now/languages.md), right to left in
+[rtl](now/rtl.md),
 the Sessions view and its recap in [sessions](now/sessions.md), the Table, Timeline and Graph views
 in [views](now/views.md), the account meter in
 [accounts](now/accounts.md), and the header's toolbar and how it wraps in [toolbar](now/toolbar.md). The format and the pass rule are in PROTOCOL.md ("What's true now").

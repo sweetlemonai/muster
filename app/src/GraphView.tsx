@@ -146,7 +146,7 @@ function QueueGraph({ name, g, tasks, all, openKey, onOpen }: { name: string; g:
                 key={n.id}
                 type="button"
                 className={`g-node s-${stageOf(t)}${isHuman(t) ? " human" : ""}${blockedRed(t) ? " blocked" : ""}${ready ? " ready" : ""}${role(n.id)}`}
-                style={{ left: p.x, top: p.y, width: W, height: H }}
+                style={{ insetInlineStart: p.x, top: p.y, width: W, height: H }}
                 onClick={() => onOpen(t)}
                 title={[
                   `${taskKey(t)} ${t.title}`,
@@ -159,7 +159,7 @@ function QueueGraph({ name, g, tasks, all, openKey, onOpen }: { name: string; g:
                 aria-pressed={n.id === selected}
               >
                 <span className="g-top">
-                  <span className="id">{taskKey(t)}</span>
+                  <span className="id ltr">{taskKey(t)}</span>
                   {isHuman(t) && <YouRibbon />}
                   {up.has(n.id) && <span className="g-rel">{tr("graph.neededFirst")}</span>}
                   {down.has(n.id) && <span className="g-rel">{tr("graph.waitsForIt")}</span>}
@@ -177,7 +177,7 @@ function QueueGraph({ name, g, tasks, all, openKey, onOpen }: { name: string; g:
           <span className="meta">{tr("graph.loose", { count: g.loose.length })}</span>
           {g.loose.map((t) => (
             <Pill key={t.id} type="button" on={key(t) === openKey} className={`g-loose s-${stageOf(t)}${isHuman(t) ? " human" : ""}`} onClick={() => onOpen(t)} title={t.title}>
-              <span className="id">{taskKey(t)}</span>{isHuman(t) && <YouRibbon />} <span dir="auto">{t.title.length > 34 ? `${t.title.slice(0, 33)}…` : t.title}</span> <Status t={t} ready={readyToStart(t)} />
+              <span className="id ltr">{taskKey(t)}</span>{isHuman(t) && <YouRibbon />} <span dir="auto">{t.title.length > 34 ? `${t.title.slice(0, 33)}…` : t.title}</span> <Status t={t} ready={readyToStart(t)} />
             </Pill>
           ))}
         </div>

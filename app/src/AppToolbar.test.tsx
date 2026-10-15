@@ -94,6 +94,18 @@ describe("the toolbar's counts keep their room (mu-202)", () => {
     expect(counts(0, 0)).toBe(hidden + hiddenQuiet);
   });
 
+  it("keeps the first shown count 6 px from its label, on the reading side, whichever it is (mu-149 AC8)", () => {
+    // A count's gap is on its inline start, so in فارسی it stays between the label and the count.
+    expect(rules(".count")).toContain("margin-inline-start: 6px;");
+    expect(css).not.toMatch(/\.count[^{]*\{[^}]*margin-(left|right)/);
+    // In the toolbar the label is a text node, so the first count is :first-child: 6 px, a shown
+    // main count or a quiet one; a count after it sits 2 px from the one before.
+    expect(rules(".top .count-reserve")).toContain("margin-inline-start: 2px;");
+    expect(rules(".top .count-reserve:first-child")).toContain("margin-inline-start: 6px;");
+    // Both outrank a pill's quiet `small` (0,1,1), which once left a first quiet count 2 px away.
+    expect(rules(".ui-pill small")).toContain("margin-inline-start: 2px;");
+  });
+
   it("is what Waiting for you and Problems show, the unchecked-visions count included", () => {
     const nav = inside('<nav className="views"', "</nav>");
     expect(nav).toMatch(/\{t\("app\.view\.waiting"\)\}<HeadCount n=\{needs\} className="warn" \/>/);

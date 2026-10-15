@@ -15,5 +15,6 @@ covers: app/src/Views.tsx, app/src/viewData.ts, app/src/GraphView.tsx, app/src/g
 - Legend names are the i18n layer's `board:legend.*`; nothing from a task file reaches the legend. (mu-173)
 - The Graph's legend follows Hide done; a loop is the one rule `isLoopEdge`, for drawing and legend. (mu-173)
 - One colour, one meaning: a stage colour only ever says a stage. (DESIGN.md "The colour code")
-- Table heads start on the cells' side right to left; the Timeline and Graph keep drawing left to right. (mu-147)
+- Table heads start on the cells' side right to left. (mu-147)
+- In فارسی the Timeline runs from the past at the right to now at the left, and the Graph mirrors with its arrows pointing left. (mu-149)
 - The Timeline's labels follow the calendar and digits picked; in Jalali a month is the Jalali month (Mehr from 23 September). (mu-151)

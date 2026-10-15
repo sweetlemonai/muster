@@ -1,8 +1,9 @@
 import type { ClipboardEvent } from "react";
 import { copiedPath, homePath } from "./lib";
+import { cx } from "./ui/cx";
 
-/** A path with `~` for the home folder (owner, 2026-10-13): the real path is its tooltip, and
- *  copying it, or part of it, copies the real path. */
+/** A path with `~` for the home folder (owner, 2026-10-13), left to right in any language (`.ltr`,
+ *  mu-149): the real path is its tooltip, and copying it, or part of it, copies the real path. */
 export function HomePath({ path, home, className }: { path: string; home: string; className?: string }) {
   const shown = homePath(path, home);
   const onCopy = (e: ClipboardEvent<HTMLSpanElement>) => {
@@ -17,7 +18,7 @@ export function HomePath({ path, home, className }: { path: string; home: string
     e.clipboardData.setData("text/plain", text);
   };
   return (
-    <span className={className} title={path} onCopy={onCopy}>
+    <span className={cx(className, "ltr")} title={path} onCopy={onCopy}>
       {shown}
     </span>
   );

@@ -536,7 +536,7 @@ Languages).
   `English · فارسی` in every language, each with its own `lang`, so a person who can't read the
   language shown can still find theirs. They sit at the top of Settings, whatever group is open.
 - **A switch moves nothing but the mirror:** in Persian, `<html lang="fa" dir="rtl">` mirrors the
-  layout (mu-149 makes the CSS logical); every control keeps its place in the mirrored layout.
+  layout (Right to left, below); every control keeps its place in the mirrored layout.
 - **No sentence built from parts:** a whole sentence is one string with `{{placeholders}}`, and
   counts use the language's plural forms; a value filled in (a path, a name, a branch) keeps its
   own direction.
@@ -550,6 +550,33 @@ Languages).
   and store Latin ones; a due date is typed in the calendar shown, with the ISO day it saves
   beside it. Names sort in the language's order, and search folds Persian (ي/ی, ك/ک, ZWNJ,
   Persian digits) so what was meant is found.
+
+## Right to left (task mu-149)
+
+In فارسی the whole app is a mirror of English, and nothing else changes.
+
+- **What mirrors:** the sidebar sits at the right and the docked pane at the left. Board columns
+  run from Backlog at the right to Done at the left. The Timeline runs from the past at the right
+  to now at the left, and the Graph's dependency arrows point leftwards. Accent edges that mark
+  state sit on the inline-start edge in both directions.
+- **One way to say a side:** styles use logical properties only (`margin-inline-start`,
+  `inset-inline-end`, `border-inline-start`, `text-align: start`). `logicalCss.test.ts` fails on
+  a new physical left or right in CSS or a TSX inline style. The few physical exceptions (the inset
+  accent shadows with `:dir(rtl)` twins, hatch textures) each carry a `physical:` comment, which
+  excuses that one declaration only. Right to left changes no colour.
+- **Glyphs:** chevrons, arrows, back and forward, and the fold arrows mirror. They're listed in
+  one block at the end of `styles.css`, and a `→` or `◀` in markup is a `.dir-glyph` span. The
+  logo, checks, the clock, the head and the open ▾ don't mirror, and neither do key names (`←`
+  is the key, whichever way the page reads).
+- **What stays left to right:** task keys (`mu-12`), commands, paths, branch names, code and the
+  estimate inputs (`2h`, `500k`). Each is an island with the one `.ltr` class
+  (`direction: ltr; unicode-bidi: isolate`), so `mu-12` never reads `12-mu`.
+- **Keys:** arrows that mean next and previous follow the reading direction. In فارسی, ← unfolds
+  a sidebar heading and → folds it, and the Feature grid's moves swap the same way. Arrows on a
+  focused splitter stay physical, so → moves the edge right, which is what the eye expects. A
+  dragged splitter edge follows the pointer.
+- **One direction source:** `isRtl()` (`app/src/rtl.ts`) reads the language. No component reads
+  `document.dir` or a computed `direction`, and a test holds that.
 
 ## Checking a design
 

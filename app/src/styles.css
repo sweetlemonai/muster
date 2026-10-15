@@ -79,9 +79,13 @@ html, body, #root { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--text); }
 button { font: inherit; color: inherit; cursor: pointer; }
 code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
-/* Code, paths, commands and shortcuts read left to right in every language; inside a
-   right-to-left sentence they're isolated so they don't scramble it (Drover's rule, mu-146). */
-code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
+/* LTR islands: task keys, branch names, paths, commands, code, shortcuts and estimates as typed
+   (2h, 500k) read left to right in every language; inside a right-to-left sentence they're
+   isolated so they don't scramble it, `mu-12` and never `12-mu` (Drover's rule, mu-146). One
+   class for all of them, `.ltr` (mu-149); code, kbd and pre are islands by what they are. An island
+   that is a block or a table cell still lines up with the window's start, not its own. */
+.ltr, code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
+.ltr { text-align: match-parent; }
 
 .app { display: flex; flex-direction: column; height: 100%; }
 .top { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
@@ -97,11 +101,11 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 .ui-pill:hover { background: var(--hover); }
 .ui-pill.ui-pill--on { background: var(--selected); color: var(--text); border-color: var(--accent); }
 .ui-pill:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.ui-pill small { color: var(--muted); margin-left: 2px; }
-.count { display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 5px; border-radius: 999px; background: var(--hover); color: var(--text); font-size: 11px; }
+.ui-pill small { color: var(--muted); margin-inline-start: 2px; }
+.count { display: inline-block; min-width: 18px; margin-inline-start: 6px; padding: 0 5px; border-radius: 999px; background: var(--hover); color: var(--text); font-size: 11px; }
 .count.warn { background: var(--st-needs); color: var(--on-status); }
-.live { color: var(--muted); font-size: 12px; min-width: 70px; text-align: right; }
-.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--st-building); margin-right: 4px; }
+.live { color: var(--muted); font-size: 12px; min-width: 70px; text-align: end; }
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--st-building); margin-inline-end: 4px; }
 .err { color: var(--bad); }
 .ok { color: var(--ok); }
 .empty { color: var(--muted); padding: 32px; text-align: center; }
@@ -115,7 +119,7 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 .col-testing, .s-testing, .ui-status-pill--testing { --status: var(--st-testing); --edge: var(--edge-testing, var(--st-testing)); }
 .col-your-check, .s-your-check, .ui-status-pill--your-check { --status: var(--st-your-check); --edge: var(--edge-your-check, var(--st-your-check)); }
 .col-done, .s-done, .ui-status-pill--done { --status: var(--st-done); --edge: var(--edge-done, var(--st-done)); }
-.column h2::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--status); margin-right: 6px; vertical-align: 1px; }
+.column h2::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--status); margin-inline-end: 6px; vertical-align: 1px; }
 .column h2 { margin: 0; padding: 10px 12px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
 .column h2 small { font-weight: 400; }
 .cards { display: flex; flex-direction: column; gap: 8px; padding: 4px 8px 10px; overflow-y: auto; }
@@ -217,7 +221,7 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
    needs-you wash stays under them), so the words on a stripe keep the contrast themes.test.ts
    checks; between them the card is as its look and state make it. The ribbon is the
    card's own element in its top-right corner, with the word so colour isn't the only cue. */
-.card.human { position: relative; background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--st-human) var(--human-hatch), var(--card-bg, var(--panel))) 0 5px, transparent 5px 11px); }
+.card.human { position: relative; background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--st-human) var(--human-hatch), var(--card-bg, var(--panel))) 0 5px, transparent 5px 11px); } /* physical: a hatch texture, not a direction; it needn't mirror */
 .card.human .card-top { padding-inline-end: 34px; }
 /* The words a card colours with the accent or the bad red sit just under 4.5:1 on a gold stripe,
    so on the owner's own card they take the --human-* shades (themes.ts wordOnStripes, tested for
@@ -329,13 +333,13 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 .card .token-ribbon .live-dot { margin: 0; }
 
 /* In the filter bar's arrange slot: Who pushes itself right, and Group by follows it. */
-.for-filter { display: inline-flex; gap: 4px; align-items: center; margin-left: auto; }
-.for-filter + .group-by { margin-left: 8px; }
+.for-filter { display: inline-flex; gap: 4px; align-items: center; margin-inline-start: auto; }
+.for-filter + .group-by { margin-inline-start: 8px; }
 
 .list { flex: 1; overflow-y: auto; padding: 16px 24px; max-width: 980px; }
-.waiting { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--st-needs); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px; }
+.waiting { background: var(--panel); border: 1px solid var(--line); border-inline-start: 3px solid var(--st-needs); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px; }
 .waiting header { font-weight: 600; margin-bottom: 4px; }
-.link { background: none; border: none; padding: 0; font-weight: 600; text-align: left; }
+.link { background: none; border: none; padding: 0; font-weight: 600; text-align: start; }
 .link:hover { text-decoration: underline; }
 .feed { list-style: none; padding: 0; margin: 0; }
 .feed li { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); align-items: baseline; }
@@ -349,30 +353,30 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 .panel h1 { font-size: 17px; margin: 4px 0; line-height: 1.3; }
 .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin: 0 0 8px; }
 .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-.close { margin-left: auto; align-self: flex-start; border: none; background: none; font-size: 22px; line-height: 1; color: var(--muted); }
+.close { margin-inline-start: auto; align-self: flex-start; border: none; background: none; font-size: 22px; line-height: 1; color: var(--muted); }
 .panel section { padding: 14px 18px; border-bottom: 1px solid var(--line); }
 .checkins ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
-.checkins .when { display: inline; width: auto; margin-right: 4px; font-variant-numeric: tabular-nums; }
+.checkins .when { display: inline; width: auto; margin-inline-end: 4px; font-variant-numeric: tabular-nums; }
 .answer { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; }
-.answer.needs-you { border-left: 3px solid var(--st-needs); }
+.answer.needs-you { border-inline-start: 3px solid var(--st-needs); }
 .answer p { margin: 0 0 4px; }
 .asker { color: var(--muted); font-size: 12px; margin: 0 6px; }
 .answer textarea { width: 100%; margin-top: 8px; font: inherit; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px; resize: vertical; }
 .answer-bar { display: flex; gap: 10px; align-items: center; margin-top: 6px; font-size: 12px; }
 .answer-bar button, .waiting > button { background: var(--accent); color: var(--accent-ink); border: none; border-radius: 6px; padding: 4px 12px; }
 /* The buttons under a waiting task (Done, unblock; Open) sit apart, and wrap together on a narrow row. */
-.waiting > button { margin: 0 8px 4px 0; }
+.waiting > button { margin-block: 0 4px; margin-inline: 0 8px; }
 .answer-bar button:disabled { opacity: 0.5; cursor: default; }
 /* Pick-one questions (0049): every option a chip that answers in one click, outlined and neutral
    (a choice isn't a state); the asker's pick says so in words. */
 .pick-one { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 2px; font-size: 12.5px; }
-.pick-one .pick-chip { border-color: var(--line); color: var(--text); text-align: left; white-space: normal; }
+.pick-one .pick-chip { border-color: var(--line); color: var(--text); text-align: start; white-space: normal; }
 .pick-one .pick-chip:hover:not(:disabled) { border-color: var(--accent); }
 .pick-one .pick-chip:disabled { opacity: 0.5; cursor: default; }
-.pick-one .pick-tag { border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; margin-left: 6px; font-size: 10.5px; color: var(--muted); }
+.pick-one .pick-tag { border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; margin-inline-start: 6px; font-size: 10.5px; color: var(--muted); }
 .pick-one .pick-fallback { color: var(--muted); font-size: 12px; }
 .body-bar { display: flex; gap: 4px; margin-bottom: 8px; }
-.body-bar .edit { margin-left: auto; border-color: var(--line); color: var(--text); }
+.body-bar .edit { margin-inline-start: auto; border-color: var(--line); color: var(--text); }
 .write-up-edit { display: flex; flex-direction: column; gap: 6px; }
 .write-up-edit textarea { width: 100%; min-height: 50vh; box-sizing: border-box; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); background: var(--bg); border: 1px solid var(--accent); border-radius: 6px; padding: 10px; resize: vertical; }
 .edit-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; }
@@ -414,16 +418,16 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 .markdown code { background: var(--hover); padding: 0 4px; border-radius: 3px; }
 .markdown pre { background: var(--hover); padding: 10px; border-radius: 6px; overflow-x: auto; }
 .markdown pre code { background: none; padding: 0; }
-.markdown blockquote { margin: 6px 0; padding-left: 10px; border-left: 3px solid var(--line); color: var(--muted); }
+.markdown blockquote { margin: 6px 0; padding-inline-start: 10px; border-inline-start: 3px solid var(--line); color: var(--muted); }
 .markdown table { border-collapse: collapse; margin: 8px 0; }
-.markdown th, .markdown td { border: 1px solid var(--line); padding: 3px 8px; text-align: left; vertical-align: top; }
+.markdown th, .markdown td { border: 1px solid var(--line); padding: 3px 8px; text-align: start; vertical-align: top; }
 .markdown a { color: var(--accent-text); }
 
 .projects-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 12px; }
 .projects-bar button, .actions button, .prefix button, .limit-edit button { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 3px 10px; }
 .projects-bar button:first-child { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .projects-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-.projects-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.projects-table th { text-align: start; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); }
 .projects-table td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .projects-table tr.dim td { opacity: 0.55; }
 .projects-table .path { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); overflow-wrap: anywhere; max-width: 420px; }
@@ -432,13 +436,13 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
    to crush the folder). The rule between projects is under the gate. */
 .projects-table tbody tr:not(.gate-row) td { border-bottom: none; }
 .projects-table .gate-row td { padding-top: 0; font-size: 12px; }
-.gate-label { margin-right: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+.gate-label { margin-inline-end: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
 /* A local queue's history line (0109) when a write isn't committed or a file is missing: the
    warning colour (--warn, 4.5:1), and the words start with "warning:" so colour isn't the only cue. */
 .history-warn { color: var(--warn); font-size: 12px; overflow-wrap: anywhere; }
 .projects-table .gate-row code { font-size: 12px; overflow-wrap: anywhere; }
-.projects-table .actions { white-space: nowrap; text-align: right; }
-.projects-table .actions button { margin-left: 4px; }
+.projects-table .actions { white-space: nowrap; text-align: end; }
+.projects-table .actions button { margin-inline-start: 4px; }
 /* The prefix is 2 to 4 letters: a field 4 characters wide (monospace, so 4ch holds "mmmm"), and a
    gap between it and its buttons, which wrap under it before the column grows. */
 .prefix { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -455,7 +459,7 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 .inline-options { display: flex; flex-wrap: wrap; gap: 2px; max-width: 190px; }
 .inline-options .ui-pill { font-size: 11px; padding: 0 7px; }
 
-.new { margin-left: 8px; background: var(--accent); color: var(--accent-ink); border: none; border-radius: 6px; padding: 4px 12px; font-weight: 600; }
+.new { margin-inline-start: 8px; background: var(--accent); color: var(--accent-ink); border: none; border-radius: 6px; padding: 4px 12px; font-weight: 600; }
 .new:disabled { opacity: 0.4; }
 .modal-back { position: fixed; inset: 0; background: rgb(0 0 0 / 0.35); display: flex; align-items: flex-start; justify-content: center; padding-top: 8vh; z-index: 30; }
 .modal { width: min(720px, 92vw); background: var(--popover); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 20px 60px rgb(0 0 0 / 0.3); padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
@@ -496,7 +500,7 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 .bubble .markdown p:last-child { margin-bottom: 0; }
 .tools { align-self: flex-start; font-size: 12px; color: var(--muted); }
 .tools summary { cursor: pointer; }
-.tools ul { margin: 4px 0; padding-left: 18px; }
+.tools ul { margin: 4px 0; padding-inline-start: 18px; }
 .tools code { font-size: 11px; }
 .note { align-self: center; font-size: 12px; color: var(--muted); margin: 0; }
 .cost { margin: 0; font-size: 11px; }
@@ -518,9 +522,9 @@ button:disabled { opacity: 0.45; cursor: default; }
 .workspace { flex: 1; display: flex; min-height: 0; }
 .content { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .content > .list, .content > .helper { overflow-y: auto; }
-.pane { flex: none; min-width: 240px; max-width: calc(100vw - 420px); background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; display: flex; flex-direction: column; }
+.pane { flex: none; min-width: 240px; max-width: calc(100vw - 420px); background: var(--panel); border-inline-start: 1px solid var(--line); overflow-y: auto; display: flex; flex-direction: column; }
 /* The splitter (0058): the projects sidebar's right edge and the pane's left, one handle. */
-.ui-splitter { flex: none; width: 6px; cursor: col-resize; background: transparent; margin-right: -3px; margin-left: -3px; z-index: 2; touch-action: none; }
+.ui-splitter { flex: none; width: 6px; cursor: col-resize; background: transparent; margin-inline: -3px; z-index: 2; touch-action: none; }
 .ui-splitter:hover, .ui-splitter:focus-visible, .ui-splitter[data-dragging] { background: var(--accent); opacity: 0.6; outline: none; }
 .pane-body { display: flex; flex-direction: column; }
 .pane-body > section { padding: 12px 18px; border-bottom: 1px solid var(--line); }
@@ -536,15 +540,15 @@ button:disabled { opacity: 0.45; cursor: default; }
 
 /* Filters above the board. */
 .filters { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 8px 14px 0; font-size: 12px; }
-.filters .sep { margin-left: 10px; }
-.filters .right { margin-left: auto; }
+.filters .sep { margin-inline-start: 10px; }
+.filters .right { margin-inline-start: auto; }
 .ui-pill.ui-pill--on.pchip-high { background: var(--pri-high, #E879C9); color: var(--on-status); border-color: var(--pri-high, #E879C9); }
 
 /* Search, filter groups, the active line (task 0032): quiet until used, nothing folds away. */
 .filter-bar { flex: none; }
 .filters.groups { padding-top: 4px; row-gap: 2px; }
-.fgroup { display: inline-flex; align-items: center; gap: 2px; flex-wrap: wrap; margin-right: 10px; }
-.fgroup > .meta { margin-right: 2px; }
+.fgroup { display: inline-flex; align-items: center; gap: 2px; flex-wrap: wrap; margin-inline-end: 10px; }
+.fgroup > .meta { margin-inline-end: 2px; }
 .fgroup .ui-pill { padding: 1px 8px; }
 .filters .search { font: inherit; font-size: 13px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; width: 300px; max-width: 40vw; }
 .filters .search:focus, .view-name input:focus { outline: 2px solid var(--focus); outline-offset: 0; border-color: var(--accent); }
@@ -556,7 +560,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 /* Always there (min-height), so a filter going on or off never moves the board. */
 .active-line { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; padding: 4px 14px 2px; min-height: 26px; font-size: 12px; color: var(--text); }
 .active-item { display: inline-flex; align-items: center; }
-.hidden-count { margin: 0 8px 0 12px; color: var(--muted); }
+.hidden-count { margin-block: 0; margin-inline: 12px 8px; color: var(--muted); }
 .hidden-count.some { color: var(--text); font-weight: 600; }
 mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; }
 
@@ -570,7 +574,7 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 /* Appearance. */
 .check { display: flex; gap: 8px; align-items: center; }
 .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
-.swatch { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 6px; display: flex; flex-direction: column; gap: 6px; text-align: left; }
+.swatch { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 6px; display: flex; flex-direction: column; gap: 6px; text-align: start; }
 .swatch.on { outline: 2px solid var(--accent); }
 .swatch .preview { display: block; height: 58px; border-radius: 5px; border: 1px solid; padding: 8px; }
 .swatch .preview > span { display: flex; flex-direction: column; gap: 4px; height: 100%; border: 1px solid; border-radius: 4px; padding: 5px; }
@@ -578,7 +582,7 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .swatch .preview b { display: block; height: 4px; border-radius: 2px; width: 80%; }
 .swatch-name { font-size: 12px; }
 .looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; margin-bottom: 8px; }
-.look { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 6px; display: flex; flex-direction: column; gap: 6px; text-align: left; }
+.look { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 6px; display: flex; flex-direction: column; gap: 6px; text-align: start; }
 .look.on { outline: 2px solid var(--accent); }
 .look-preview { display: flex; flex-direction: column; gap: 4px; }
 .look-preview .card { padding: 4px 6px; gap: 0; font-size: 10px; }
@@ -589,16 +593,16 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .look-preview .card.human .card-top { padding-inline-end: 24px; }
 .look-colour { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
 .accents { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
-.accent { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 3px 12px 3px 6px; }
+.accent { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding-block: 3px; padding-inline: 6px 12px; }
 .accent.on { outline: 2px solid var(--accent); }
 .accent i { width: 16px; height: 16px; border-radius: 50%; display: inline-block; }
 .pane-body section > button { border: 1px solid var(--line); background: var(--bg); border-radius: 6px; padding: 4px 12px; }
 
 /* Project views: Board, Table, Timeline. */
-.view-group { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; margin-right: 6px; }
+.view-group { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; margin-inline-end: 6px; }
 .ui-status-pill { font-size: 11px; border-radius: 999px; padding: 1px 8px; color: var(--on-status); }
 .ui-status-pill { background: var(--status); white-space: nowrap; }
-.ui-status-pill.ui-status-pill--blocked { background: var(--st-blocked); margin-left: 4px; }
+.ui-status-pill.ui-status-pill--blocked { background: var(--st-blocked); margin-inline-start: 4px; }
 .table-view { flex: 1; overflow: auto; padding: 0 14px 14px; }
 .tasks-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
 .tasks-table th { position: sticky; top: 0; background: var(--bg); text-align: start; border-bottom: 1px solid var(--line); padding: 0; z-index: 1; }
@@ -607,44 +611,48 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .tasks-table tr { cursor: pointer; }
 .tasks-table tbody tr:hover td { background: var(--panel); }
 .tasks-table tr.active td { background: var(--selected); }
-.tasks-table td:first-child { border-left: 3px solid var(--status, transparent); }
+.tasks-table td:first-child { border-inline-start: 3px solid var(--status, transparent); }
 .tasks-table .t-title { font-weight: 550; min-width: 260px; }
 .tasks-table .ui-badge { margin: 0 4px; font-weight: 400; }
 /* Timeline (0031): the scale strip stays put above the scrolling chart. */
 .timeline { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .tl-controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 8px 14px 6px; font-size: 12px; }
-.tl-nav { display: inline-flex; gap: 4px; align-items: center; margin-left: 12px; }
-.tl-window { margin-left: 6px; color: var(--text); font-weight: 600; }
+.tl-nav { display: inline-flex; gap: 4px; align-items: center; margin-inline-start: 12px; }
+.tl-window { margin-inline-start: 6px; color: var(--text); font-weight: 600; }
 .tl-scroll { flex: 1; min-height: 0; overflow: auto; padding: 0 14px 14px; }
 .tl-grid { --label: 340px; --grid: color-mix(in srgb, var(--line) 85%, transparent); position: relative; min-width: calc(var(--label) + var(--track)); }
 .tl-head, .tl-row { display: grid; grid-template-columns: var(--label) var(--track); align-items: center; }
 .tl-head { position: sticky; top: 0; background: var(--bg); z-index: 2; height: 28px; border-bottom: 1px solid var(--line); }
-.tl-row { width: 100%; border: none; background: none; text-align: left; padding: 0; height: 30px; border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent); }
+.tl-row { width: 100%; border: none; background: none; text-align: start; padding: 0; height: 30px; border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent); }
 .tl-row:hover { background: var(--panel); }
 .tl-row.active { background: var(--selected); }
-.tl-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0 10px 0 4px; font-size: 12.5px; }
+.tl-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding-block: 0; padding-inline: 4px 10px; font-size: 12.5px; }
 .tl-track { position: relative; height: 100%; }
-.tl-row .tl-track { background-image: repeating-linear-gradient(to right, var(--grid) 0 1px, transparent 1px var(--major)); }
+/* Time runs toward the inline end (mu-149): right in English, left in فارسی. A gradient has no
+   logical direction, so the grid lines and the fuzzy start's fade read theirs from here. */
+.tl-track, .tl-seg { --to-end: to right; }
+.tl-track:dir(rtl), .tl-seg:dir(rtl) { --to-end: to left; }
+.tl-row .tl-track { background-image: repeating-linear-gradient(var(--to-end), var(--grid) 0 1px, transparent 1px var(--major)); }
 .tl-week .tl-row .tl-track {
-  background-image: repeating-linear-gradient(to right, var(--grid) 0 1px, transparent 1px var(--major)),
-    repeating-linear-gradient(to right, color-mix(in srgb, var(--line) 40%, transparent) 0 1px, transparent 1px var(--minor));
+  background-image: repeating-linear-gradient(var(--to-end), var(--grid) 0 1px, transparent 1px var(--major)),
+    repeating-linear-gradient(var(--to-end), color-mix(in srgb, var(--line) 40%, transparent) 0 1px, transparent 1px var(--minor));
 }
 .tl-tick { position: absolute; top: 7px; text-align: center; font-size: 10px; color: var(--muted); overflow: hidden; white-space: nowrap; }
-.tl-day .tl-tick { text-align: left; padding-left: 3px; }
+.tl-day .tl-tick { text-align: start; padding-inline-start: 3px; }
 .tl-tick.now { color: var(--accent-text); font-weight: 700; }
-.tl-now-layer { position: absolute; top: 0; bottom: 0; left: var(--label); width: var(--track); pointer-events: none; z-index: 1; }
-.tl-now { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--accent); opacity: 0.7; }
+.tl-now-layer { position: absolute; top: 0; bottom: 0; inset-inline-start: var(--label); width: var(--track); pointer-events: none; z-index: 1; }
+.tl-now { position: absolute; top: 0; bottom: 0; width: 2px; margin-inline-start: -1px; background: var(--accent); opacity: 0.7; }
 .tl-bar { position: absolute; top: 6px; height: 18px; min-width: 4px; border-radius: 9px; background: var(--panel); border: 1px solid color-mix(in srgb, var(--status) 70%, var(--line)); overflow: hidden; }
-.tl-bar.open { border-top-right-radius: 3px; border-bottom-right-radius: 3px; }
-.tl-bar.clip-start { border-left: none; border-top-left-radius: 0; border-bottom-left-radius: 0; }
-.tl-bar.clip-end { border-right: none; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.tl-bar.open { border-start-end-radius: 3px; border-end-end-radius: 3px; }
+.tl-bar.clip-start { border-inline-start: none; border-start-start-radius: 0; border-end-start-radius: 0; }
+.tl-bar.clip-end { border-inline-end: none; border-start-end-radius: 0; border-end-end-radius: 0; }
 /* Waiting for you shows as the dotted tail (owner, 2026-10-13), not a box round the whole bar. */
 .tl-bar.needs-you { box-shadow: none; }
 .tl-bar.blocked { border-style: dashed; border-color: var(--st-blocked); }
 .tl-seg { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--status) 75%, var(--panel)); }
 .tl-seg.waiting { background: color-mix(in srgb, var(--muted) 14%, var(--panel)); }
 /* Only the day is known: fade the start in. */
-.tl-seg.fuzzy { -webkit-mask-image: linear-gradient(to right, rgb(0 0 0 / 0.25), #000 70%); mask-image: linear-gradient(to right, rgb(0 0 0 / 0.25), #000 70%); }
+.tl-seg.fuzzy { -webkit-mask-image: linear-gradient(var(--to-end), rgb(0 0 0 / 0.25), #000 70%); mask-image: linear-gradient(var(--to-end), rgb(0 0 0 / 0.25), #000 70%); }
 .tl-bar-text { position: relative; font-size: 10px; padding: 0 8px; line-height: 16px; color: var(--text); white-space: nowrap; text-shadow: 0 0 3px var(--panel), 0 0 2px var(--panel); }
 .tl-note { margin-block-start: 10px; max-inline-size: 760px; }
 .tl-strip { flex: none; }
@@ -695,6 +703,11 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .count-reserve:empty::before { content: "\200b"; }
 /* The quiet count's 1 px outline is inside its box too, so it reserves 2 px more. */
 .count-reserve.quiet { min-width: calc(3ch + 12px); }
+/* The first count sits 6 px from its label, whichever count that is, and a count after it 2 px from
+   the one before; on the inline start, so the gap stays by the label in فارسی (mu-149 AC8). The
+   label is a text node, so the first count is :first-child. */
+.top .count-reserve { margin-inline-start: 2px; }
+.top .count-reserve:first-child { margin-inline-start: 6px; }
 /* Help and Settings, their own labelled nav inside the toolbar's end (mu-202 review R3). */
 .end-views { display: flex; gap: 4px; flex: none; }
 /* The account meter (task 0113), in the header's status area: per account a quiet button, its
@@ -708,7 +721,7 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .meter-name { font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); }
 .meter-bars { display: flex; flex-direction: column; gap: 2px; inline-size: 48px; }
 .meter-bar { position: relative; display: block; block-size: 3px; border-radius: 2px; background: var(--line); }
-.meter-bar.stale { background: repeating-linear-gradient(135deg, var(--muted) 0 1px, transparent 1px 3px); }
+.meter-bar.stale { background: repeating-linear-gradient(135deg, var(--muted) 0 1px, transparent 1px 3px); } /* physical: a hatch texture, not a direction; it needn't mirror */
 .meter-fill { position: absolute; inset-block: 0; inset-inline-start: 0; border-radius: 2px; background: var(--accent); }
 .meter-bar.warn .meter-fill { background: var(--warn); }
 .meter-bar.stale .meter-fill { background: color-mix(in srgb, var(--muted) 60%, transparent); }
@@ -726,17 +739,17 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 
 /* Help: the manual, its sidebar docked beside the page (no overlays). */
 .manual { flex: 1; display: flex; min-height: 0; }
-.manual-side { flex: none; width: 236px; overflow-y: auto; padding: 12px 10px 24px 14px; border-right: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 55%, var(--bg)); font-size: 12.5px; }
+.manual-side { flex: none; width: 236px; overflow-y: auto; padding-block: 12px 24px; padding-inline: 14px 10px; border-inline-end: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 55%, var(--bg)); font-size: 12.5px; }
 .manual-search { width: 100%; box-sizing: border-box; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
 .manual-hits { margin: 8px 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
 .manual-hits ul { list-style: none; margin: 0; padding: 0; }
-.manual-hits button { display: block; width: 100%; text-align: left; border: none; background: none; color: var(--text); padding: 4px 6px; border-radius: 6px; }
+.manual-hits button { display: block; width: 100%; text-align: start; border: none; background: none; color: var(--text); padding: 4px 6px; border-radius: 6px; }
 .manual-hits button:hover, .manual-hits button:focus-visible { background: var(--hover); }
 .manual-hits .snippet { display: block; color: var(--muted); font-size: 11.5px; overflow-wrap: anywhere; }
 .manual-pages, .manual-pages ul { list-style: none; margin: 0; padding: 0; }
 .manual-pages > li { margin-top: 8px; }
-.manual-pages ul { margin: 2px 0 0 8px; border-left: 1px solid var(--line); }
-.manual-pages button { display: block; width: 100%; text-align: left; border: none; background: none; border-radius: 6px; padding: 2px 8px; }
+.manual-pages ul { margin-block: 2px 0; margin-inline: 8px 0; border-inline-start: 1px solid var(--line); }
+.manual-pages button { display: block; width: 100%; text-align: start; border: none; background: none; border-radius: 6px; padding: 2px 8px; }
 .manual-pages .page { color: var(--text); font-weight: 600; }
 .manual-pages .section { color: var(--muted); }
 .manual-pages button:hover, .manual-pages button:focus-visible { color: var(--text); background: var(--hover); }
@@ -762,11 +775,11 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 
 /* Left sidebar: the projects. */
 .shell { flex-direction: row; }
-.sidebar { flex: none; width: 210px; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--line); min-height: 0; }
+.sidebar { flex: none; width: 210px; display: flex; flex-direction: column; background: var(--panel); border-inline-end: 1px solid var(--line); min-height: 0; }
 .sidebar .brand { padding: 12px 14px 10px; }
 .projects-nav { flex: 1; overflow-y: auto; padding: 4px 8px; display: flex; flex-direction: column; gap: 2px; }
 .side-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin: 10px 6px 4px; }
-.side-item { display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left; border: 1px solid transparent; background: none; border-radius: 6px; padding: 5px 8px; }
+.side-item { display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: start; border: 1px solid transparent; background: none; border-radius: 6px; padding: 5px 8px; }
 .side-item:hover { background: var(--hover); }
 .side-item.on { background: var(--selected); border-color: var(--accent); }
 /* A row's line (0087): the name gives way first, ending in "…", the badges each whole. The name
@@ -774,16 +787,17 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
    don't fit beside each other, at any sidebar width, the badges take the line under it, at its
    end. A row that fits is one line, as before 0087. Only if the badges are wider than the whole
    row do they wrap among themselves. Focus's "stalled" is the group's first piece, by the badges
-   as before. The name starts by its dot whatever its script (left: the UI is left to right). */
+   as before. The name starts by its dot whatever its script, on the window's start side in either
+   direction: match-parent, since `start` under plaintext would follow the name's own script. */
 .side-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; width: 100%; }
-.side-name { flex: 1000 1 auto; width: 4em; max-width: max-content; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: plaintext; text-align: left; font-weight: 550; }
+.side-name { flex: 1000 1 auto; width: 4em; max-width: max-content; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: plaintext; text-align: match-parent; font-weight: 550; }
 .side-badges { display: inline-flex; flex: none; flex-wrap: wrap; justify-content: flex-end; max-width: 100%; margin-inline-start: auto; gap: 5px; row-gap: 2px; align-items: center; }
 .side-badges > * { flex: none; white-space: nowrap; }
 .side-badges > .side-stalled { margin-inline-end: 3px; }
 .side-more { display: flex; flex-direction: column; gap: 1px; width: 100%; }
 .side-more:empty { display: none; }
 .side-badges small { color: var(--muted); font-variant-numeric: tabular-nums; }
-.side-badges .count { margin-left: 0; }
+.side-badges .count { margin-inline-start: 0; }
 /* All in Focus (mu-197 round 3): its stalled count is a badge ("2 stalled"), so in a sidebar
    narrower than 200px, where the name and the badges with it don't fit side by side, the badges
    always take the line under the name, stall or not, and that line is as tall as "2 stalled"
@@ -872,7 +886,7 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .column.col-strip .col-fold::before, .column.col-strip .col-head::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--status); }
 /* Your check: the criteria only the owner verifies (0028). */
 .owner-checklist { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
-.criterion { display: flex; gap: 8px; align-items: baseline; text-align: left; background: none; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; color: var(--text); }
+.criterion { display: flex; gap: 8px; align-items: baseline; text-align: start; background: none; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; color: var(--text); }
 .criterion .box { flex: none; width: 14px; height: 14px; border: 1.5px solid var(--st-needs); border-radius: 3px; display: inline-grid; place-items: center; font-size: 11px; line-height: 1; transform: translateY(2px); }
 .criterion.ticked { color: var(--muted); }
 .criterion.ticked .box { background: var(--st-needs); color: var(--on-status); }
@@ -914,7 +928,7 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .quick-add-to .ui-pill { padding: 1px 8px; }
 /* Every note keeps a strip the holder ribbon's height above its title (0097), held or not, so the
    title runs full width and a shaper taking it moves nothing. */
-.note-card { display: flex; flex-direction: column; gap: 5px; flex: none; text-align: left; background: transparent; border: 1px dashed var(--line); border-radius: var(--radius); padding: 16px 10px 7px; color: var(--text); position: relative; }
+.note-card { display: flex; flex-direction: column; gap: 5px; flex: none; text-align: start; background: transparent; border: 1px dashed var(--line); border-radius: var(--radius); padding: 16px 10px 7px; color: var(--text); position: relative; }
 .note-card:hover { border-color: var(--accent); }
 .note-card.active { outline: 2px solid var(--accent); outline-offset: 2px; }
 .note-card .title { font-weight: 400; overflow-wrap: anywhere; }
@@ -924,14 +938,14 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .note-file input, .note-file textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
 .note-file textarea { resize: vertical; min-height: 160px; }
 .note-file .chip-row { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; font-size: 12px; }
-.note-file .chip-row .sep { margin-left: 10px; }
+.note-file .chip-row .sep { margin-inline-start: 10px; }
 .note-panel .control-row .on { outline: 2px solid var(--accent); outline-offset: 1px; }
 .note-panel .title-row { display: flex; align-items: center; gap: 8px; }
 
 /* Levels (task 0016): Group by, bands of the grouped board, the card's parent line, goals and
    features in the table, and the New task form's Level chips. */
-.group-by { display: inline-flex; gap: 4px; align-items: center; margin-left: auto; }
-.group-by .meta { margin-right: 2px; }
+.group-by { display: inline-flex; gap: 4px; align-items: center; margin-inline-start: auto; }
+.group-by .meta { margin-inline-end: 2px; }
 .bands { flex: 1; display: flex; flex-direction: column; gap: 12px; padding: 8px 14px 12px; overflow: auto; min-height: 0; }
 .band { flex: none; border: 1px solid var(--line); border-radius: var(--radius); background: color-mix(in srgb, var(--panel) 30%, var(--bg)); }
 .band-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; font-size: 13px; }
@@ -959,7 +973,7 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .rollup-panel .children { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
 .rollup-panel .children .id { color: var(--muted); }
 /* Blocked stretches on a timeline bar (0031): hatched in the blocked colour, over the stages. */
-.tl-block { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--st-blocked) 70%, transparent) 0 3px, transparent 3px 7px); border-left: 1px solid var(--st-blocked); border-right: 1px solid var(--st-blocked); pointer-events: none; }
+.tl-block { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--st-blocked) 70%, transparent) 0 3px, transparent 3px 7px); border-inline: 1px solid var(--st-blocked); pointer-events: none; } /* physical: a hatch texture, not a direction; it needn't mirror */
 /* Paused (0045): neutral grey, never a stage colour or the blocked red. */
 .card-paused { font-size: 11px; line-height: 1.35; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .paused-chip { display: inline-block; border: 1px solid var(--muted); color: var(--muted); border-radius: 4px; padding: 0 5px; font-size: 10.5px; font-weight: 600; line-height: 15px; }
@@ -976,17 +990,17 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .side-row { display: flex; flex-direction: column; border-radius: 6px; }
 .side-row-line { display: flex; align-items: flex-start; }
 .side-row-line > .side-item { flex: 1; min-width: 0; width: auto; }
-.side-swatch-dot { flex: none; box-sizing: border-box; width: 10px; height: 10px; margin: 10px 0 0 2px; padding: 0; border-radius: 50%; border: 1px solid var(--faint); background: var(--proj, transparent); }
+.side-swatch-dot { flex: none; box-sizing: border-box; width: 10px; height: 10px; margin-block: 10px 0; margin-inline: 2px 0; padding: 0; border-radius: 50%; border: 1px solid var(--faint); background: var(--proj, transparent); }
 .side-swatch-dot[data-colour] { border-color: var(--proj); }
 button.side-swatch-dot { cursor: pointer; }
 button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-swatch-dot[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--muted); }
 /* Six 16px swatches and five 5px gaps fit one line at the sidebar's narrowest (paneSize SIDEBAR_MIN, 150px). */
-.proj-swatches { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin: 2px 0 6px 12px; }
+.proj-swatches { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-block: 2px 6px; margin-inline: 12px 0; }
 .proj-swatch { box-sizing: border-box; width: 16px; height: 16px; padding: 0; border-radius: 50%; border: 1px solid var(--proj, var(--faint)); background: var(--proj, transparent); cursor: pointer; }
-.proj-swatch:not([data-colour]) { background: linear-gradient(135deg, transparent 44%, var(--muted) 44% 56%, transparent 56%); }
+.proj-swatch:not([data-colour]) { background: linear-gradient(135deg, transparent 44%, var(--muted) 44% 56%, transparent 56%); } /* physical: the "no colour" slash, a symbol that reads the same in either direction */
 .proj-swatch:hover, .proj-swatch:focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--muted); }
 .proj-swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent); }
-.proj-dot { display: inline-block; width: 7px; height: 7px; margin-right: 4px; border-radius: 50%; background: var(--proj); vertical-align: 0.05em; }
+.proj-dot { display: inline-block; width: 7px; height: 7px; margin-inline-end: 4px; border-radius: 50%; background: var(--proj); vertical-align: 0.05em; }
 .side-row[draggable="true"], .side-cat[draggable="true"] { cursor: grab; }
 .side-row.dragging, .side-cat.dragging { opacity: 0.45; }
 .side-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
@@ -1005,7 +1019,6 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .side-cat-fold.ui-pill { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 22px; min-height: 22px; padding: 0; line-height: 1; color: var(--text); }
 .side-cat-chevron { display: block; width: 14px; height: 14px; transition: transform 120ms ease; }
 .side-cat-fold[aria-expanded="true"] .side-cat-chevron { transform: rotate(90deg); }
-.side-cat-fold:dir(rtl) { transform: scaleX(-1); }
 /* One line, open or folded (0082 round 3): the name gives way first, down to 4em with an ellipsis
    (its tooltip and the heading's aria-label say it whole); "N need you" is one piece that never
    shrinks, so its words always show; "· N projects" and "· N working" each show whole where there's
@@ -1051,20 +1064,20 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
    lays the cards side by side, as the Backlog band does. */
 .col-paused { --status: var(--muted); border-top-style: dashed; }
 .col-paused h2::before { display: none; }
-.ui-status-pill.was { margin-left: 4px; }
+.ui-status-pill.was { margin-inline-start: 4px; }
 .paused-board { grid-template-columns: 1fr; }
 .paused-board .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); align-items: start; overflow: visible; }
 /* The one-time offer to convert old pauses (mu-59): inline above the board, never over it. */
-.old-pauses { flex: none; margin: 4px 14px 0; padding: 8px 12px; border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: var(--radius); font-size: 12.5px; }
+.old-pauses { flex: none; margin: 4px 14px 0; padding: 8px 12px; border: 1px solid var(--line); border-inline-start: 3px solid var(--muted); border-radius: var(--radius); font-size: 12.5px; }
 .old-pauses p { margin: 0 0 6px; }
-.old-pauses ul { margin: 0 0 8px; padding-left: 18px; max-height: 9em; overflow-y: auto; }
+.old-pauses ul { margin: 0 0 8px; padding-inline-start: 18px; max-height: 9em; overflow-y: auto; }
 .old-pauses-do { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .old-pauses button { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 6px; padding: 4px 12px; }
 .old-pauses button:disabled { opacity: 0.5; }
 .old-pauses .ui-button--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .pause-btn { border: 1px solid var(--line); background: none; color: var(--muted); border-radius: 6px; padding: 0 7px; font-size: 11.5px; line-height: 18px; }
 .pause-btn:not(:disabled):hover, .pause-btn:focus-visible { color: var(--text); border-color: var(--muted); }
-.tl-pause { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--muted) 55%, transparent) 0 3px, var(--panel) 3px 7px); border-left: 1px solid var(--muted); border-right: 1px solid var(--muted); pointer-events: none; }
+.tl-pause { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--muted) 55%, transparent) 0 3px, var(--panel) 3px 7px); border-inline: 1px solid var(--muted); pointer-events: none; } /* physical: a hatch texture, not a direction; it needn't mirror */
 .tl-nav .ui-pill:nth-child(2) { min-width: 7.5em; }
 
 /* Graph view (0019): what waits on what. Nodes are buttons over an SVG of arrows. */
@@ -1079,19 +1092,23 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .graph-queue h2 { font-size: 13px; margin: 0 0 8px; color: var(--accent-text); }
 .graph-canvas { position: relative; }
 .graph-canvas svg { position: absolute; inset: 0; overflow: visible; }
+/* Right to left the nodes sit from the inline start (mu-149), so the edges, drawn in x from the
+   left, flip about the canvas's middle to meet them, arrowheads pointing leftwards. The SVG holds
+   no text, so nothing in it reads backwards. */
+.graph-canvas svg:dir(rtl) { transform: scaleX(-1); }
 .g-edge { fill: none; stroke: var(--faint); stroke-width: 1.5; }
 .g-edge.loop { stroke: var(--bad); stroke-dasharray: 4 3; }
 .g-edge.on { stroke: var(--accent); stroke-width: 2.5; }
 .g-edge.dim { opacity: 0.25; }
 .g-head { fill: var(--faint); }
 .g-head-on { fill: var(--accent); }
-.g-node { position: absolute; display: flex; flex-direction: column; gap: 3px; text-align: start; padding: 6px 8px; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--edge, var(--status, var(--line))); border-radius: var(--radius); overflow: clip; }
-.g-node:hover { border-color: var(--accent); border-left-color: var(--edge, var(--status)); }
+.g-node { position: absolute; display: flex; flex-direction: column; gap: 3px; text-align: start; padding: 6px 8px; background: var(--panel); border: 1px solid var(--line); border-inline-start: 4px solid var(--edge, var(--status, var(--line))); border-radius: var(--radius); overflow: clip; }
+.g-node:hover { border-color: var(--accent); border-inline-start-color: var(--edge, var(--status)); }
 .g-node.ready { box-shadow: inset 0 0 0 1.5px var(--ok); }
-.g-node.blocked { border-left-color: var(--st-blocked); }
+.g-node.blocked { border-inline-start-color: var(--st-blocked); }
 .g-node.sel { outline: 2px solid var(--accent); outline-offset: 2px; }
 .g-node.up { border-color: var(--accent); }
-.g-node.down { border-color: var(--accent); border-style: dashed; border-left-style: solid; }
+.g-node.down { border-color: var(--accent); border-style: dashed; border-inline-start-style: solid; }
 .g-rel { color: var(--accent-text); font-weight: 600; }
 .g-who { color: var(--muted); }
 .g-deps { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1109,7 +1126,7 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .g-ready { color: var(--ok); font-weight: 600; }
 .g-title { font-size: 12px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; min-height: 0; -webkit-box-orient: vertical; overflow: hidden; }
 .graph-loose { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
-.g-loose { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-left: 3px solid var(--edge, var(--status, var(--line))); border-radius: 6px; font-size: 12px; }
+.g-loose { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-inline-start: 3px solid var(--edge, var(--status, var(--line))); border-radius: 6px; font-size: 12px; }
 
 /* The Feature grid (mu-143), the board's second layout: features down the side, stages across.
    The owner's mockup was the guide; the colours are the app's tokens, in every theme. Logical
@@ -1201,12 +1218,12 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .qname { color: var(--accent-text); font-weight: 600; }
 .panel .pane-title { margin: 0; font-size: 17px; line-height: 1.3; font-weight: 650; }
 .tid { color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 600; }
-.title-btn { border: 0; background: none; padding: 0 2px; margin: 0 -2px; text-align: left; font-weight: 650; border-radius: 4px; cursor: text; text-decoration: underline dotted color-mix(in srgb, var(--muted) 50%, transparent); text-underline-offset: 4px; text-decoration-thickness: 1px; }
+.title-btn { border: 0; background: none; padding: 0 2px; margin: 0 -2px; text-align: start; font-weight: 650; border-radius: 4px; cursor: text; text-decoration: underline dotted color-mix(in srgb, var(--muted) 50%, transparent); text-underline-offset: 4px; text-decoration-thickness: 1px; }
 .title-btn:hover, .title-btn:focus-visible { background: var(--hover); text-decoration-color: var(--muted); }
 .title-edit { display: flex; gap: 6px; align-items: center; }
 .title-edit input { flex: 1; min-width: 0; font: inherit; font-size: 15px; font-weight: 600; color: var(--text); background: var(--bg); border: 1px solid var(--accent); border-radius: 6px; padding: 3px 8px; }
 .status-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
-.status-line .ui-status-pill.ui-status-pill--blocked { margin-left: 0; }
+.status-line .ui-status-pill.ui-status-pill--blocked { margin-inline-start: 0; }
 .task-pane .holder { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
 /* "quiet 21 min ·" keeps its line; the names beside it give way and wrap (it wrapped a word per line). */
 .task-pane .holder > .meta, .task-pane .holder > .live-badge { flex: none; white-space: nowrap; }
@@ -1223,7 +1240,7 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .track-label { display: flex; gap: 8px; align-items: baseline; }
 .track-label .small { font-size: 11px; }
 .stage-track { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
-.stage-track button { border: 0; background: none; padding: 2px 0 0; text-align: left; color: var(--muted); font-size: 10.5px; line-height: 1.2; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border-radius: 3px; }
+.stage-track button { border: 0; background: none; padding: 2px 0 0; text-align: start; color: var(--muted); font-size: 10.5px; line-height: 1.2; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border-radius: 3px; }
 .stage-track button i { display: block; height: 5px; border-radius: 3px; background: var(--line); margin-bottom: 3px; }
 .stage-track .past i { background: color-mix(in srgb, var(--status) 40%, var(--line)); }
 .stage-track .cur { color: var(--text); font-weight: 700; }
@@ -1236,7 +1253,7 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .tp-main .rollup-panel { padding: 0; border: 0; }
 .stage-block { display: flex; flex-direction: column; gap: 5px; }
 .stage-block .markdown { font-size: 12.5px; }
-.stage-block .markdown ul { padding-left: 18px; margin: 2px 0; }
+.stage-block .markdown ul { padding-inline-start: 18px; margin: 2px 0; }
 .stage-block .owner-checklist { margin: 0; }
 .wline { display: flex; gap: 6px; align-items: baseline; margin: 0; }
 .wline .lbl { width: 48px; flex: none; }
@@ -1244,7 +1261,7 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .task-pane .history li { display: flex; gap: 8px; }
 .h-when { flex: none; min-width: 74px; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
 
-.tp-side { width: 176px; flex: none; display: flex; flex-direction: column; gap: 8px; padding-left: 12px; border-left: 1px solid var(--line); }
+.tp-side { width: 176px; flex: none; display: flex; flex-direction: column; gap: 8px; padding-inline-start: 12px; border-inline-start: 1px solid var(--line); }
 .tp-side button { border: 1px solid var(--line); background: none; color: var(--muted); border-radius: 6px; padding: 2px 8px; font-size: 12px; line-height: 18px; }
 .tp-side button:not(:disabled):hover, .tp-side button:focus-visible { color: var(--text); border-color: var(--muted); }
 .next-step { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; align-items: start; }
@@ -1271,8 +1288,8 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .tp-side .vchip { background: var(--selected); color: var(--text); border-radius: 999px; padding: 0 9px; font-size: 11.5px; font-weight: 600; }
 .tp-side .vchip:hover, .tp-side .vchip:focus-visible { border-color: var(--accent); }
 .task-pane .ui-segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-.tp-side .ui-segmented button { border: 0; border-left: 1px solid var(--line); border-radius: 0; padding: 0 6px; font-size: 11.5px; line-height: 18px; }
-.tp-side .ui-segmented button:first-child { border-left: 0; }
+.tp-side .ui-segmented button { border: 0; border-inline-start: 1px solid var(--line); border-radius: 0; padding: 0 6px; font-size: 11.5px; line-height: 18px; }
+.tp-side .ui-segmented button:first-child { border-inline-start: 0; }
 .tp-side .ui-segmented button.ui-segment--active { background: var(--selected); color: var(--text); font-weight: 650; }
 .est-pair { display: inline-flex; gap: 4px; }
 .est-pair input { width: 46px; font: inherit; font-size: 12px; text-align: center; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px; }
@@ -1292,7 +1309,7 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .file-big-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .file-big img { display: block; width: auto; height: auto; max-width: 100%; max-height: 80vh; object-fit: contain; border-radius: 3px; }
 .file-big figcaption { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
-.tp-side .mini-thumb { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 2px 6px 2px 2px; background: var(--bg); font-size: 11px; }
+.tp-side .mini-thumb { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding-block: 2px; padding-inline: 2px 6px; background: var(--bg); font-size: 11px; }
 .proof-thumb.on { color: var(--text); border-color: var(--accent); background: var(--selected); }
 /* An open thumbnail keeps its accent border while hovered or focused (the side column's buttons turn muted). */
 .tp-side .proof-thumb.on:not(:disabled):hover, .tp-side .proof-thumb.on:focus-visible { border-color: var(--accent); }
@@ -1310,7 +1327,7 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .proof-line .proof-label { font-weight: 600; }
 .proof-line .proof-state { color: var(--muted); }
 .proof-files { margin-top: 3px; }
-.proof-thumb { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 2px 6px 2px 2px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--muted); font-size: 11px; }
+.proof-thumb { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding-block: 2px; padding-inline: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--muted); font-size: 11px; }
 .proof-thumb:hover, .proof-thumb:focus-visible { color: var(--text); border-color: var(--muted); }
 .proof-thumb.open { flex-direction: column; align-items: flex-start; width: 100%; padding: 4px; }
 .proof-thumb img.proof-big { width: auto; height: auto; max-width: 100%; max-height: 70vh; object-fit: contain; }
@@ -1341,13 +1358,13 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
    in the needs-you orange with the red block mark; what clears without them (other tasks,
    something outside, a question capture still has) neutral, with a smaller red mark. The mark is
    the error red (--bad), which keeps 3:1 on every ground (themes.test.ts); on the orange it's ringed. */
-.block-why::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 1px; background: var(--bad); vertical-align: 1px; }
+.block-why::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-inline-end: 5px; border-radius: 1px; background: var(--bad); vertical-align: 1px; }
 .block-why.for-you::before { width: 8px; height: 8px; box-shadow: 0 0 0 1px var(--on-status); vertical-align: 0; }
 .ui-badge.block-why.for-you, .ui-status-pill.block-why.for-you { background: var(--st-needs); color: var(--on-status); }
 .ui-badge.block-why.not-you, .ui-status-pill.block-why.not-you { background: var(--panel); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
 .block-why.plain.for-you { color: var(--warn); }
 .block-why.plain.not-you { color: var(--text); }
-.block-why .block-answer { margin-left: 2px; padding: 0 8px; font-size: 11px; line-height: 16px; border-radius: 999px; }
+.block-why .block-answer { margin-inline-start: 2px; padding: 0 8px; font-size: 11px; line-height: 16px; border-radius: 999px; }
 .block-form { display: flex; flex-direction: column; gap: 6px; }
 .block-form .chip-row { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; font-size: 12px; }
 .block-form .control-row { align-items: center; min-height: 28px; }
@@ -1373,8 +1390,8 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
    like the others), in the colour of what's broken; the pane's Vision section quiet until a
    conflict is open; Problems' Vision lines as warnings. */
 .card-vision { color: var(--bad); font-weight: 600; }
-.panel section.vision.has-open { border-left: 3px solid var(--st-blocked); }
-.vision h2 small { text-transform: none; letter-spacing: 0; margin-left: 4px; }
+.panel section.vision.has-open { border-inline-start: 3px solid var(--st-blocked); }
+.vision h2 small { text-transform: none; letter-spacing: 0; margin-inline-start: 4px; }
 .vision.has-open h2 small { color: var(--bad); }
 .vision .control-row .on { outline: 2px solid var(--accent); outline-offset: 1px; }
 .vision .markdown h3 { font-size: 12px; margin: 10px 0 4px; }
@@ -1383,10 +1400,10 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
    wait for the builder; the pane's Review section as the Vision one. */
 .card-review { font-size: 11px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
 .card-review.open { color: var(--text); font-weight: 600; }
-.review h2 small { text-transform: none; letter-spacing: 0; margin-left: 4px; }
+.review h2 small { text-transform: none; letter-spacing: 0; margin-inline-start: 4px; }
 .review .markdown h3 { font-size: 12px; margin: 10px 0 4px; }
 /* Lessons from reviews waiting for the owner (0027), at the top of Waiting for you. */
-.lessons-waiting { border: 1px solid var(--line); border-left: 3px solid var(--st-needs); border-radius: 8px; padding: 10px 12px; margin: 0 0 12px; }
+.lessons-waiting { border: 1px solid var(--line); border-inline-start: 3px solid var(--st-needs); border-radius: 8px; padding: 10px 12px; margin: 0 0 12px; }
 .lessons-waiting h3 { margin: 0 0 6px; font-size: 13px; }
 .lessons-waiting li { margin: 6px 0; }
 .lessons-waiting .lesson-rule { font-weight: 600; }
@@ -1413,10 +1430,10 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .side-ping button { white-space: normal; max-width: 100%; text-align: start; }
 .count.quiet { background: none; border: 1px solid var(--line); color: var(--muted); }
 .problems.warnings li { color: var(--muted); }
-.problems.warnings b { color: var(--text); font-weight: 600; margin-right: 4px; }
+.problems.warnings b { color: var(--text); font-weight: 600; margin-inline-end: 4px; }
 /* Work only (owner, 2026-10-13): the wait for your check after the work finished is a thin dotted
    tail, not a bar. */
-.tl-seg.s-your-check { top: 35%; bottom: 35%; background: repeating-linear-gradient(90deg, var(--st-your-check) 0 4px, transparent 4px 7px); opacity: 0.9; }
+.tl-seg.s-your-check { top: 35%; bottom: 35%; background: repeating-linear-gradient(var(--to-end), var(--st-your-check) 0 4px, transparent 4px 7px); opacity: 0.9; }
 .tl-not-started { margin: 8px 0 0; }
 
 /* Settings (0036): a view, never a window. The groups are a docked list on the left, the open
@@ -1437,10 +1454,12 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .settings-lang .ui-segment:hover, .settings-lang .ui-segment:focus-visible { background: var(--hover); }
 .settings-lang .ui-segment--active, .settings-lang .ui-segment--active:hover { background: var(--selected); font-weight: 650; }
 .settings-groups { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 10px; display: flex; flex-direction: column; gap: 2px; }
-.settings-group { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; border: none; background: none; color: var(--text); padding: 6px 10px; border-radius: 6px; font-weight: 550; }
+.settings-group { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: start; border: none; background: none; color: var(--text); padding: 6px 10px; border-radius: 6px; font-weight: 550; }
 .settings-group small { font-weight: 400; font-size: 11.5px; color: var(--muted); }
 .settings-group:hover, .settings-group:focus-visible { background: var(--hover); }
+/* physical: the open group's mark on its start edge, an inset shadow, set per direction. */
 .settings-group.on { background: var(--selected); box-shadow: inset 3px 0 0 var(--accent); }
+.settings-group.on:dir(rtl) { box-shadow: inset -3px 0 0 var(--accent); } /* physical: the same, right to left */
 .settings-body { flex: 1; min-width: 0; overflow-y: auto; padding-bottom: 24px; }
 .settings-head { padding: 14px 24px 10px; border-bottom: 1px solid var(--line); }
 .settings-head h1 { font-size: 16px; margin: 0; }
@@ -1469,8 +1488,10 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 /* Settings › Agents › Roles (0112): a row per role, the open one's fields inline under it. */
 .role-list { list-style: none; margin: 8px 0 0; padding: 0; }
 .role-row { display: flex; gap: 8px; align-items: baseline; width: 100%; text-align: start; font: inherit; color: var(--text); background: none; border: 0; border-bottom: 1px solid var(--line); padding: 6px 4px; cursor: pointer; }
+/* physical: the open role's mark on its start edge, an inset shadow, set per direction. */
 .role-row[aria-expanded="true"] { background: var(--selected); box-shadow: inset 3px 0 0 var(--accent); }
-.role-fields { padding: 6px 4px 12px 16px; border-bottom: 1px solid var(--line); }
+.role-row[aria-expanded="true"]:dir(rtl) { box-shadow: inset -3px 0 0 var(--accent); } /* physical: the same, right to left */
+.role-fields { padding-block: 6px 12px; padding-inline: 16px 4px; border-bottom: 1px solid var(--line); }
 .role-fields .setting-edit input { width: auto; }
 /* Settings › Accounts (task 0113): each account's reading, then its fields on one wrapping line,
    the refusal under them in reserved space so it doesn't push what's below. */
@@ -1481,7 +1502,7 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .profile-field input:not([type="checkbox"]) { font: inherit; padding-block: 3px; padding-inline: 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--text); }
 .profile-remove { display: inline-flex; align-items: center; gap: 6px; }
 .profile-error { margin-block: 4px 2px; min-block-size: 1.4em; }
-.about-list { margin: 6px 0; padding-left: 18px; }
+.about-list { margin: 6px 0; padding-inline-start: 18px; }
 .about-list li { margin-bottom: 4px; }
 .settings .path { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); overflow-wrap: anywhere; }
 
@@ -1496,16 +1517,16 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .board-row > .board, .board-row > .bands { min-width: 0; }
 .board-row.stacked { flex-direction: column; }
 .board-row.stacked > .board, .board-row.stacked > .bands { min-height: 0; }
-.recent { flex: 0 1 clamp(200px, 24%, 272px); min-width: 200px; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 35%, var(--bg)); }
-.board-row.stacked > .recent { flex: none; min-width: 0; max-height: 34vh; border-left: none; border-top: 1px solid var(--line); }
+.recent { flex: 0 1 clamp(200px, 24%, 272px); min-width: 200px; display: flex; flex-direction: column; min-height: 0; border-inline-start: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 35%, var(--bg)); }
+.board-row.stacked > .recent { flex: none; min-width: 0; max-height: 34vh; border-inline-start: none; border-top: 1px solid var(--line); }
 .recent-head { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 6px; }
 .recent-head h2 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
-.recent-head h2 small { margin-left: 4px; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.recent-head h2 small { margin-inline-start: 4px; font-weight: 400; text-transform: none; letter-spacing: 0; }
 .recent-kinds { display: inline-flex; gap: 4px; }
 .recent-list { flex: 1; overflow-y: auto; padding: 0 8px 12px; }
 .recent-day-head { margin: 10px 4px 4px; font-size: 12px; font-weight: 600; }
-.recent-day-head small { margin-left: 4px; color: var(--muted); font-weight: 400; }
-.recent-row { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: 6px; padding: 5px 6px; color: var(--text); }
+.recent-day-head small { margin-inline-start: 4px; color: var(--muted); font-weight: 400; }
+.recent-row { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: start; background: none; border: 1px solid transparent; border-radius: 6px; padding: 5px 6px; color: var(--text); }
 .recent-row:hover { background: var(--hover); }
 .recent-row.active { border-color: var(--accent); background: var(--selected); }
 .recent-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; font-size: 12.5px; }
@@ -1521,15 +1542,15 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
    a count, opened in place, never over anything. */
 .mode-chip { font-size: 11.5px; padding: 1px 9px; border-color: var(--line); flex: none; }
 /* The strip's head is its button, so the whole strip opens the column. */
-.col-fold { writing-mode: inherit; border: none; background: none; font: inherit; text-transform: inherit; letter-spacing: inherit; color: inherit; text-align: left; padding: 0; cursor: pointer; border-radius: 4px; }
+.col-fold { writing-mode: inherit; border: none; background: none; font: inherit; text-transform: inherit; letter-spacing: inherit; color: inherit; text-align: start; padding: 0; cursor: pointer; border-radius: 4px; }
 .col-fold:hover, .col-fold:focus-visible { color: var(--text); background: var(--hover); }
 /* The strip reads top to bottom, so a count's own padding runs along it: the .count rule's side
    padding would sit across the strip and leave the text touching its neighbour's edge. */
 .column.col-strip .col-fold .count { margin: 0; padding: 5px 0; min-width: 0; min-height: 18px; text-align: center; }
-.fold-head { display: block; width: 100%; text-align: left; border: none; border-top: 1px solid var(--line); background: none; padding: 8px 16px; font-weight: 600; font-size: 13px; color: var(--text); }
+.fold-head { display: block; width: 100%; text-align: start; border: none; border-top: 1px solid var(--line); background: none; padding: 8px 16px; font-weight: 600; font-size: 13px; color: var(--text); }
 .fold-head::before { content: "▸ "; color: var(--muted); }
 .fold.open > .fold-head::before { content: "▾ "; }
-.fold-head small { font-weight: 400; color: var(--muted); margin-left: 4px; }
+.fold-head small { font-weight: 400; color: var(--muted); margin-inline-start: 4px; }
 .fold-head:hover, .fold-head:focus-visible { background: var(--hover); }
 /* ADHD's wrapper takes no room: the section lays out as it always has. */
 .fold.all, .fold.all > .fold-body { display: contents; }
@@ -1537,23 +1558,23 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .fold.open > .fold-body > section:first-child > h2:first-child { display: none; }
 /* Blocked on a folded strip: in words, in the error colour, so a fold never hides it. */
 .count.blocked-count { background: none; border: 1px solid var(--bad); color: var(--bad); white-space: nowrap; }
-.band-fold { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; width: 100%; text-align: left; border: none; background: none; padding: 8px 12px; font: inherit; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px; }
+.band-fold { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; width: 100%; text-align: start; border: none; background: none; padding: 8px 12px; font: inherit; font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px; }
 .band-fold::before { content: "▸"; color: var(--muted); }
 .band-fold[aria-expanded="true"]::before { content: "▾"; }
 .band-fold small { color: var(--muted); }
-.band-fold .count { margin-left: 0; }
+.band-fold .count { margin-inline-start: 0; }
 .band-fold:hover, .band-fold:focus-visible { background: var(--hover); }
 .filter-bar.summon { display: flex; align-items: center; gap: 8px; }
-.filters-fold .count { margin-left: 4px; }
+.filters-fold .count { margin-inline-start: 4px; }
 .sidebar[data-sidebar="narrow"] { width: 150px; }
 .side-dot { flex: none; }
 .modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 8px; }
-.mode { display: flex; flex-direction: column; gap: 4px; text-align: left; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 10px 12px; color: var(--text); }
+.mode { display: flex; flex-direction: column; gap: 4px; text-align: start; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 10px 12px; color: var(--text); }
 .mode small { color: var(--muted); font-size: 12px; line-height: 1.35; }
 .mode:hover, .mode:focus-visible { border-color: var(--accent); }
 .mode.on { background: var(--selected); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .mode-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.mode-table th, .mode-table td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.mode-table th, .mode-table td { text-align: start; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--line); }
 .mode-table th[scope="col"] { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
 .mode-table th[scope="row"] { font-weight: 600; white-space: nowrap; }
 .mode-table .on { background: var(--selected); }
@@ -1666,8 +1687,6 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .recap-fold { border: none; background: none; padding: 0; color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; }
 .recap-fold::before { content: "▸ "; }
 .recap-fold[aria-expanded="true"]::before { content: "▾ "; }
-.recap-fold:dir(rtl)::before { content: "◂ "; }
-.recap-fold[aria-expanded="true"]:dir(rtl)::before { content: "▾ "; }
 .recap-events { list-style: none; margin: 0; padding: 0; font-size: 12px; }
 .recap-event { display: flex; flex-wrap: wrap; gap: 2px 8px; padding-block: 3px; border-block-end: 1px solid var(--line); align-items: baseline; }
 .recap-event .when { width: auto; font-variant-numeric: tabular-nums; }
@@ -1678,3 +1697,24 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
    heads, bands, chips and labels carry would break its joined letters apart. One rule for every
    one of them (mu-147), so a new head can't forget it. */
 :root:lang(fa) * { letter-spacing: normal !important; }
+
+/* Glyphs that point along the line (mu-149), every one in this block: in right to left each points
+   the reading way, so "previous" points right, and "folded", "next" and "to" point left. A glyph
+   drawn by CSS takes its mirror image's character; an SVG or a text glyph in the markup is flipped.
+   Glyphs that don't point (the logo, a check, the clock, the head, the open ▾, key names such as
+   "← →" in shortcuts and the splitter's tip) aren't here and don't mirror. A text arrow inside a
+   translated string is written the right way in fa itself (levels.parent's ◂, sessions.chainArrow,
+   roles.move, Settings ← …, Help's ◀ and ▶ page steps, a stage move's →), so it's not here either. */
+/* A sidebar heading's drawn chevron (0070): the whole button, so it turns with it when open. */
+.side-cat-fold:dir(rtl) { transform: scaleX(-1); }
+/* The fold triangles: a session recap's history, a task pane section's head (its open one is
+   .fold.open's ▾, which outranks this), and the Backlog band's and the paused lane's heads. */
+.recap-fold:dir(rtl)::before { content: "◂ "; }
+.recap-fold[aria-expanded="true"]:dir(rtl)::before { content: "▾ "; }
+.fold-head:dir(rtl)::before { content: "◂ "; }
+.band-fold:dir(rtl)::before { content: "◂"; }
+.band-fold[aria-expanded="true"]:dir(rtl)::before { content: "▾"; }
+/* A text arrow in the markup (the Timeline's ◀ ▶ stepper, a helper step's → result): an
+   inline-block in both directions, so only its drawing changes with the language, never its box. */
+.dir-glyph { display: inline-block; }
+.dir-glyph:dir(rtl) { transform: scaleX(-1); }

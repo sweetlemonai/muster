@@ -16,7 +16,7 @@ const render = (text: string) => md.render(text, { keys });
 describe("keys in task text", () => {
   it("link to their task, in any project the window has", () => {
     expect(render("Needs mu-12 first, then **BR-7**.")).toBe(
-      '<p>Needs <a href="#task/muster/0012" class="task-key">mu-12</a> first, then <strong><a href="#task/brain%20dump/0007" class="task-key">BR-7</a></strong>.</p>\n',
+      '<p>Needs <a href="#task/muster/0012" class="task-key ltr">mu-12</a> first, then <strong><a href="#task/brain%20dump/0007" class="task-key ltr">BR-7</a></strong>.</p>\n',
     );
     expect(taskOfHref("#task/brain%20dump/0007")).toEqual({ queue: "brain dump", id: "0007" });
   });
@@ -31,7 +31,7 @@ describe("keys in task text", () => {
     expect(md.render("mu-12", { keys: new Map() })).toBe("<p>mu-12</p>\n");
   });
   it("still escape what's around them", () => {
-    expect(render("<b>mu-1</b>")).toBe('<p>&lt;b&gt;<a href="#task/muster/0001" class="task-key">mu-1</a>&lt;/b&gt;</p>\n');
+    expect(render("<b>mu-1</b>")).toBe('<p>&lt;b&gt;<a href="#task/muster/0001" class="task-key ltr">mu-1</a>&lt;/b&gt;</p>\n');
   });
 });
 
@@ -45,7 +45,7 @@ describe("keys in comments (0033)", () => {
   it("link there too, when the pane gives the projects' prefixes", () => {
     const html = renderToStaticMarkup(createElement(Comments, { task, onChanged: () => {}, keys }));
     // Its tooltip names the project (0044): by its name, with no label set.
-    expect(html).toContain('<a href="#task/muster/0012" class="task-key" title="muster · mu-12">mu-12</a>');
+    expect(html).toContain('<a href="#task/muster/0012" class="task-key ltr" title="muster · mu-12">mu-12</a>');
     expect(renderToStaticMarkup(createElement(Comments, { task, onChanged: () => {} }))).not.toContain("task-key");
   });
 });

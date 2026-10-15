@@ -4,9 +4,12 @@
 // ui/Splitter.tsx; the minimum and maximum come from paneSize.ts. Tested in splitter.test.ts.
 import { useCallback, useRef, useState } from "react";
 
-/** Which side of the splitter the pane it sizes is on: the sidebar is on its left, the task pane
- *  on its right. */
+/** Which side of the splitter the pane it sizes is on, as it is left to right: the sidebar on its
+ *  left, the task pane on its right. Right to left (mu-149) each is on the other side. */
 export type SplitSide = "left" | "right";
+
+/** Whether the pane is physically left of its splitter: its side, swapped right to left. */
+const onLeft = (side: SplitSide, rtl: boolean) => (side === "left") !== rtl;
 
 /** An arrow key moves the pane's edge this many pixels; with Shift, the bigger step. */
 export const SPLIT_STEP = 40;
@@ -19,21 +22,23 @@ export const PANE_LEGACY_KEY = "muster.paneWidth";
 export const SIDEBAR_KEY = "muster.sidebar.v1";
 
 /** The pane's width after dragging from x `startX` to `x`, when it was `start` wide: the edge
- *  follows the pointer. `scale` is how many client px a layout px is (the Text size zoom). */
-export function dragWidth(start: number, startX: number, x: number, side: SplitSide, scale = 1): number {
+ *  follows the pointer, in either reading direction (`rtl`). `scale` is how many client px a
+ *  layout px is (the Text size zoom). */
+export function dragWidth(start: number, startX: number, x: number, side: SplitSide, rtl: boolean, scale = 1): number {
   const moved = (x - startX) / (scale > 0 && Number.isFinite(scale) ? scale : 1);
-  return side === "left" ? start + moved : start - moved;
+  return onLeft(side, rtl) ? start + moved : start - moved;
 }
 
-/** The width an arrow key asks for, or null for any other key. → moves the edge right, ← left, so
- *  it widens a pane on the splitter's left and narrows one on its right. Not clamped here. */
-export function splitKey(key: string, shift: boolean, side: SplitSide, width: number): number | null {
+/** The width an arrow key asks for, or null for any other key. → moves the edge right, ← left, in
+ *  either reading direction (`rtl`), so it widens a pane on the splitter's left and narrows one on
+ *  its right. Not clamped here. */
+export function splitKey(key: string, shift: boolean, side: SplitSide, rtl: boolean, width: number): number | null {
   const step = shift ? SPLIT_STEP_BIG : SPLIT_STEP;
   let right: number;
   if (key === "ArrowRight") right = step;
   else if (key === "ArrowLeft") right = -step;
   else return null;
-  return side === "left" ? width + right : width - right;
+  return onLeft(side, rtl) ? width + right : width - right;
 }
 
 /** A remembered width read back: a positive, whole-pixel number; null (the default width) for

@@ -147,17 +147,17 @@ export default function NewTask({ queues, initial, prefixes = {}, onClose, onCre
           <label title={t("common:estimateField.agentTime")}>
             {t("newTask.agentTime")}
             {/* i18n-ignore: an estimate as it's typed */}
-            <input value={estTime} onChange={(e) => setEstTime(e.target.value)} placeholder="2h" size={6} maxLength={10} />
+            <input value={estTime} onChange={(e) => setEstTime(e.target.value)} placeholder="2h" size={6} maxLength={10} className="ltr" />
           </label>
           <label title={t("common:estimateField.testTime")}>
             {t("newTask.testTime")}
             {/* i18n-ignore: an estimate as it's typed */}
-            <input value={estTestTime} onChange={(e) => setEstTestTime(e.target.value)} placeholder="30m" size={6} maxLength={10} />
+            <input value={estTestTime} onChange={(e) => setEstTestTime(e.target.value)} placeholder="30m" size={6} maxLength={10} className="ltr" />
           </label>
           <label>
             {t("newTask.tokens")}
             {/* i18n-ignore: an estimate as it's typed */}
-            <input value={estTokens} onChange={(e) => setEstTokens(e.target.value)} placeholder="500k" size={6} maxLength={10} />
+            <input value={estTokens} onChange={(e) => setEstTokens(e.target.value)} placeholder="500k" size={6} maxLength={10} className="ltr" />
           </label>
         </div>
         <div className="chip-row" role="group" aria-label={t("newTask.whoAria")}>

@@ -522,9 +522,35 @@ describe("headings made and renamed in place (0057)", () => {
   });
   it("← folds an open heading, → unfolds a folded one, and nothing else changes it (0070)", () => {
     const ev = (key: string, altKey = false) => ({ key, altKey, metaKey: false, ctrlKey: false });
-    expect([foldKey(ev("ArrowLeft"), false), foldKey(ev("ArrowRight"), true)]).toEqual([true, false]);
-    expect([foldKey(ev("ArrowLeft"), true), foldKey(ev("ArrowRight"), false)]).toEqual([null, null]);
-    expect([foldKey(ev("ArrowLeft", true), false), foldKey(ev("ArrowUp"), false), foldKey(ev("Enter"), true)]).toEqual([null, null, null]);
+    expect([foldKey(ev("ArrowLeft"), false, false), foldKey(ev("ArrowRight"), true, false)]).toEqual([true, false]);
+    expect([foldKey(ev("ArrowLeft"), true, false), foldKey(ev("ArrowRight"), false, false)]).toEqual([null, null]);
+    expect([foldKey(ev("ArrowLeft", true), false, false), foldKey(ev("ArrowUp"), false, false), foldKey(ev("Enter"), true, false)]).toEqual([null, null, null]);
+  });
+  it("right to left the arrows follow the reading direction: → folds, ← unfolds (mu-149)", () => {
+    const ev = (key: string, altKey = false) => ({ key, altKey, metaKey: false, ctrlKey: false });
+    expect([foldKey(ev("ArrowRight"), false, true), foldKey(ev("ArrowLeft"), true, true)]).toEqual([true, false]);
+    expect([foldKey(ev("ArrowRight"), true, true), foldKey(ev("ArrowLeft"), false, true)]).toEqual([null, null]);
+    expect([foldKey(ev("ArrowRight", true), false, true), foldKey(ev("ArrowUp"), false, true), foldKey(ev("Enter"), true, true)]).toEqual([null, null, null]);
+  });
+  it("a heading's keys follow the language shown: → folds it in فارسی, ← in English", async () => {
+    const press = (key: string) => {
+      const folds: boolean[] = [];
+      const el = HeadingFrame({ name: "Tools", count: 2, onFold: (f) => folds.push(f), children: null }) as { props: { onKeyDown: (e: unknown) => void } };
+      el.props.onKeyDown({ key, altKey: false, metaKey: false, ctrlKey: false, target: null, currentTarget: {}, preventDefault: () => {} });
+      return folds;
+    };
+    expect([press("ArrowLeft"), press("ArrowRight")]).toEqual([[true], []]);
+    const chevron = () => renderToStaticMarkup(createElement(HeadingFrame, { name: "Tools", count: 2, onFold: () => {}, children: null })).match(/title="([^"]*)" class="ui-pill side-cat-fold"/)?.[1];
+    expect(chevron()).toBe("Fold Tools (←)");
+    await setLocale("fa");
+    try {
+      expect([press("ArrowRight"), press("ArrowLeft")]).toEqual([[true], []]);
+      // Its chevron's tooltip names the key that folds it there.
+      expect(chevron()).toMatch(/\(→\)$/);
+      expect(renderToStaticMarkup(createElement(HeadingFrame, { name: "Tools", count: 2, folded: true, onFold: () => {}, children: null }))).toMatch(/title="[^"]*\(←\)" class="ui-pill side-cat-fold"/);
+    } finally {
+      await setLocale("en");
+    }
   });
   it("⌥↑ steps up, ⌥↓ down, a plain arrow neither", () => {
     const ev = (key: string, altKey = true) => ({ key, altKey, metaKey: false, ctrlKey: false });
@@ -660,7 +686,7 @@ describe("a project's row holds at the narrowest sidebar (0087)", () => {
   const dot = all(".side-swatch-dot");
   const item = all(".side-item");
   const line = (sidebar: number) =>
-    sidebar - 1 - 16 - px(all(".side-group > .side-row").get("margin-inline-start")) - px(dot.get("width")) - px(dot.get("margin")?.split(" ")[3]) - 2 * px(item.get("padding")?.split(" ")[1]) - 2;
+    sidebar - 1 - 16 - px(all(".side-group > .side-row").get("margin-inline-start")) - px(dot.get("width")) - px(dot.get("margin-inline")?.split(" ")[0]) - 2 * px(item.get("padding")?.split(" ")[1]) - 2;
   const [rowGap, gap] = (all(".side-line").get("gap") ?? "").split(" ").map(px);
   const nameLeast = 4 * body;
   // drover's badges in ADHD: "17" needs you, "2" in progress, "‖ 1" paused and "48" tasks, at about
@@ -673,9 +699,10 @@ describe("a project's row holds at the narrowest sidebar (0087)", () => {
   it("lets the name give way first, with an ellipsis, its words in their own direction from the dot", () => {
     const name = all(".side-name");
     expect([name.get("overflow"), name.get("text-overflow"), name.get("white-space"), name.get("unicode-bidi")]).toEqual(["hidden", "ellipsis", "nowrap", "plaintext"]);
-    // A Persian name starts beside its dot, like every other (the UI is left to right), not at the
-    // name box's right end, where `start` puts an RTL paragraph.
-    expect(name.get("text-align")).toBe("left");
+    // A name starts beside its dot whatever its script, on the window's start side in either
+    // direction (mu-149): match-parent, not `start`, which under plaintext follows the name's own
+    // script and would put a Persian name at the far end in English, a Latin one in فارسی.
+    expect(name.get("text-align")).toBe("match-parent");
   });
   it("never lets a name go under about 4em, or its own width if that's less, at any sidebar width", () => {
     const name = all(".side-name");

@@ -33,7 +33,7 @@ export default function PaneHeader({ task, now, onClose, onRename, onOpenTask, p
       </div>
       {title === null ? (
         <h1 className="pane-title" data-part="title">
-          <span className="tid">{taskKey(task)}</span>{" "}
+          <span className="tid ltr">{taskKey(task)}</span>{" "}
           <button type="button" className="title-btn" title={t("pane.header.renameTitle")} onClick={() => setTitle(task.title)}>{task.title}</button>{" "}
           <HelpButton topic="task-pane" />
         </h1>

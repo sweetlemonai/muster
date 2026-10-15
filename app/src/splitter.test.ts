@@ -2,7 +2,8 @@ import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { tn } from "./i18n";
-import { PANE_MIN, paneRange, SIDEBAR, SIDEBAR_MAX, SIDEBAR_MIN, sidebarRange } from "./paneSize";
+import { setLocale } from "./i18n/runtime";
+import { clampPane, clampSidebar, PANE_MIN, paneRange, SIDEBAR, SIDEBAR_MAX, SIDEBAR_MIN, sidebarRange } from "./paneSize";
 import { dragWidth, loadSplit, PANE_KEY, PANE_LEGACY_KEY, SIDEBAR_KEY, SPLIT_STEP, SPLIT_STEP_BIG, splitKey, storeSplit } from "./splitter";
 import { Splitter, type SplitterProps } from "./ui";
 import appSource from "./App.tsx?raw";
@@ -14,36 +15,61 @@ const handle = (over: Partial<SplitterProps> = {}) => Splitter(props(over)) as R
 
 describe("the width a drag asks for", () => {
   it("follows the pointer: the edge of a pane on the left moves with it, one on the right against it", () => {
-    expect(dragWidth(210, 100, 150, "left")).toBe(260);
-    expect(dragWidth(210, 100, 50, "left")).toBe(160);
-    expect(dragWidth(560, 800, 700, "right")).toBe(660);
-    expect(dragWidth(560, 800, 900, "right")).toBe(460);
+    expect(dragWidth(210, 100, 150, "left", false)).toBe(260);
+    expect(dragWidth(210, 100, 50, "left", false)).toBe(160);
+    expect(dragWidth(560, 800, 700, "right", false)).toBe(660);
+    expect(dragWidth(560, 800, 900, "right", false)).toBe(460);
   });
   it("is measured from the width at the start, so it doesn't jump and a long drag can come back", () => {
-    expect(dragWidth(560, 800, 800, "right")).toBe(560);
-    expect(dragWidth(210, 100, 100, "left")).toBe(210);
+    expect(dragWidth(560, 800, 800, "right", false)).toBe(560);
+    expect(dragWidth(210, 100, 100, "left", false)).toBe(210);
   });
   it("counts layout pixels under Text size: at 150% the pointer moves 1.5 client px per layout px", () => {
-    expect(dragWidth(210, 100, 190, "left", 1.5)).toBe(270);
-    expect(dragWidth(560, 800, 650, "right", 1.5)).toBe(660);
+    expect(dragWidth(210, 100, 190, "left", false, 1.5)).toBe(270);
+    expect(dragWidth(560, 800, 650, "right", false, 1.5)).toBe(660);
     // A scale that makes no sense counts as 1.
-    expect(dragWidth(210, 100, 150, "left", 0)).toBe(260);
-    expect(dragWidth(210, 100, 150, "left", Number.NaN)).toBe(260);
+    expect(dragWidth(210, 100, 150, "left", false, 0)).toBe(260);
+    expect(dragWidth(210, 100, 150, "left", false, Number.NaN)).toBe(260);
+  });
+  it("follows the pointer right to left too (mu-149): the sidebar is on the right there and the pane on the left", () => {
+    // The sidebar ("left": the reading start) sits right of its splitter: dragging right narrows it.
+    expect(dragWidth(210, 100, 150, "left", true)).toBe(160);
+    expect(dragWidth(210, 100, 50, "left", true)).toBe(260);
+    // The pane ("right": the reading end) sits left of its splitter: dragging right widens it.
+    expect(dragWidth(560, 800, 900, "right", true)).toBe(660);
+    expect(dragWidth(560, 800, 700, "right", true)).toBe(460);
+    expect(dragWidth(560, 800, 650, "right", true, 1.5)).toBe(460);
+  });
+  it("stays within the bounds right to left, dragged past either end either way", () => {
+    // Sidebar: far right (narrower than its least) and far left (wider than its most).
+    expect(clampSidebar(dragWidth(210, 1300, 1440, "left", true), 1440)).toBe(SIDEBAR_MIN);
+    expect(clampSidebar(dragWidth(210, 1300, 0, "left", true), 1440)).toBe(SIDEBAR_MAX);
+    // Pane: far right (wider than the window leaves) and far left (under its least).
+    expect(clampPane(dragWidth(560, 560, 1440, "right", true), 1440, SIDEBAR)).toBe(paneRange(1440, SIDEBAR).max);
+    expect(clampPane(dragWidth(560, 560, 0, "right", true), 1440, SIDEBAR)).toBe(PANE_MIN);
   });
 });
 
 describe("the arrow keys", () => {
   it("move the edge 40 px, 120 with Shift: → widens a pane on the left and narrows one on the right", () => {
     expect([SPLIT_STEP, SPLIT_STEP_BIG]).toEqual([40, 120]);
-    expect(splitKey("ArrowRight", false, "left", 210)).toBe(250);
-    expect(splitKey("ArrowLeft", false, "left", 210)).toBe(170);
-    expect(splitKey("ArrowLeft", false, "right", 560)).toBe(600);
-    expect(splitKey("ArrowRight", false, "right", 560)).toBe(520);
-    expect(splitKey("ArrowRight", true, "left", 210)).toBe(330);
-    expect(splitKey("ArrowLeft", true, "right", 560)).toBe(680);
+    expect(splitKey("ArrowRight", false, "left", false, 210)).toBe(250);
+    expect(splitKey("ArrowLeft", false, "left", false, 210)).toBe(170);
+    expect(splitKey("ArrowLeft", false, "right", false, 560)).toBe(600);
+    expect(splitKey("ArrowRight", false, "right", false, 560)).toBe(520);
+    expect(splitKey("ArrowRight", true, "left", false, 210)).toBe(330);
+    expect(splitKey("ArrowLeft", true, "right", false, 560)).toBe(680);
+  });
+  it("stay physical right to left (mu-149): → still moves the edge right, which narrows the sidebar there and widens the pane", () => {
+    expect(splitKey("ArrowRight", false, "left", true, 210)).toBe(170);
+    expect(splitKey("ArrowLeft", false, "left", true, 210)).toBe(250);
+    expect(splitKey("ArrowRight", false, "right", true, 560)).toBe(600);
+    expect(splitKey("ArrowLeft", false, "right", true, 560)).toBe(520);
+    expect(splitKey("ArrowLeft", true, "left", true, 210)).toBe(330);
+    expect(splitKey("ArrowRight", true, "right", true, 560)).toBe(680);
   });
   it("leave every other key alone", () => {
-    for (const k of ["ArrowUp", "ArrowDown", "Enter", " ", "Home", "a"]) expect(splitKey(k, false, "left", 210), k).toBeNull();
+    for (const rtl of [false, true]) for (const k of ["ArrowUp", "ArrowDown", "Enter", " ", "Home", "a"]) expect(splitKey(k, false, "left", rtl, 210), k).toBeNull();
   });
 });
 
@@ -208,6 +234,28 @@ describe("the Splitter", () => {
     expect(down(handle(), el, { button: 2 })).toBe(false);
     expect(log).toEqual([]);
   });
+  it("in فارسی drags the sidebar's edge with the pointer and keeps the arrows physical (mu-149)", async () => {
+    await setLocale("fa");
+    try {
+      const asked: number[] = [];
+      const { el, listeners } = fakeEl();
+      // The sidebar is on the right: the pointer going left (800 → 750) widens it.
+      down(handle({ width: 210, side: "left", onDrag: (w) => asked.push(w) }), el);
+      listeners.get("pointermove")?.({ clientX: 750 });
+      // The pane is on the left: the pointer going right (800 → 850) widens it.
+      const pane = fakeEl();
+      down(handle({ width: 560, side: "right", onDrag: (w) => asked.push(w) }), pane.el);
+      pane.listeners.get("pointermove")?.({ clientX: 850 });
+      expect(asked).toEqual([260, 610]);
+      const keyed: number[] = [];
+      const key = (key: string) => ({ key, shiftKey: false, preventDefault: () => {} });
+      handle({ width: 210, side: "left", onWidth: (w) => keyed.push(w) }).props.onKeyDown(key("ArrowRight"));
+      handle({ width: 560, side: "right", onWidth: (w) => keyed.push(w) }).props.onKeyDown(key("ArrowRight"));
+      expect(keyed).toEqual([170, 600]);
+    } finally {
+      await setLocale("en");
+    }
+  });
 });
 
 describe("the sidebar's and the pane's ranges, which the separator reports", () => {
@@ -221,7 +269,7 @@ describe("the sidebar's and the pane's ranges, which the separator reports", () 
     expect(paneRange(820, SIDEBAR_MAX)).toEqual({ min: 290, max: 290 });
   });
   it("hold the styles: a splitter is 6 px, straddling its edge", () => {
-    expect(css).toMatch(/^\.ui-splitter \{[^}]*width: 6px;[^}]*margin-right: -3px; margin-left: -3px;/m);
+    expect(css).toMatch(/^\.ui-splitter \{[^}]*width: 6px;[^}]*margin-inline: -3px;/m);
   });
 });
 

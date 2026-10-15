@@ -13,7 +13,7 @@ Every keyboard shortcut in the app, and the slash commands for Claude Code. This
 | ⌘+ | Make everything larger: the board, the panes and the manual (the size is remembered; also in Settings, Appearance, Text size) | Anywhere in the window |
 | ⌘− | Make everything smaller | Anywhere in the window |
 | ⌘0 | Back to 100% | Anywhere in the window |
-| ← → | Move the edge of the pane or the projects sidebar 40 pixels: → to the right, ← to the left (the width is remembered) | The edge of the pane or the projects sidebar, once Tab has put the focus on it |
+| ← → | Move the edge of the pane or the projects sidebar 40 pixels: → to the right, ← to the left, in either reading direction (the width is remembered) | The edge of the pane or the projects sidebar, once Tab has put the focus on it |
 | Shift ← → | The same in steps of 120 pixels | The edge of the pane or the projects sidebar, once Tab has put the focus on it |
 
 ## Search and views
@@ -49,7 +49,7 @@ Every keyboard shortcut in the app, and the slash commands for Claude Code. This
 | ↩ | Add the line to the backlog as a note | Add to the backlog…, at the top of the Backlog column, or of the Backlog band under Group by |
 | Esc | Empty the field | Add to the backlog…, at the top of the Backlog column, or of the Backlog band under Group by |
 | Esc | Don't accept them: nothing changes | Accept all's confirm, in Your check's Just accept group (the board and Waiting for you) |
-| ← → ↑ ↓ | Move to the next cell of the Feature grid: across the stages, or down the features (← and → swap in right-to-left); ← from Backlog goes to the feature's name, which ↩ opens. Inside a cell, ↑ and ↓ step through its cards and +N more | The Feature grid, once Tab has put the focus on it (the grid is one stop for Tab) |
+| ← → ↑ ↓ | Move to the next cell of the Feature grid: across the stages, or down the features (← and → swap right to left, where the arrows follow the reading direction); ← from Backlog goes to the feature's name, which ↩ opens. Inside a cell, ↑ and ↓ step through its cards and +N more | The Feature grid, once Tab has put the focus on it (the grid is one stop for Tab) |
 | Home, End | Go to the row's first cell (Backlog) or its last (Done today) | A cell of the Feature grid, once Tab has put the focus on it |
 | ↩ or Space | Go into the cell, to its first card (or its +N more); ↩ on a card opens it in the pane beside the board | A cell of the Feature grid, once Tab has put the focus on it |
 | Esc | Back from a card to its cell; the pane stays open | A card or +N more in the Feature grid |
@@ -63,8 +63,8 @@ Every keyboard shortcut in the app, and the slash commands for Claude Code. This
 | ⌥↑ | Move the project or the heading up one place, its projects with it. A project at the top of its heading goes to the end of the one above. The first move picks the Mine order | A project or a category heading in the sidebar, once Tab has put the focus on it |
 | ⌥↓ | Move the project or the heading down one place. A project at the bottom of its heading goes to the top of the one below | A project or a category heading in the sidebar, once Tab has put the focus on it |
 | ↩ | Rename the heading in place (a double click does too). A name another heading has puts the two together | A category heading in the sidebar, once Tab has put the focus on it |
-| ← | Fold the heading to its name and counts (its chevron does too); the selected project and the ones that need you still show on it | A category heading in the sidebar, once Tab has put the focus on it |
-| → | Unfold the heading | A category heading in the sidebar, once Tab has put the focus on it |
+| ← | Fold the heading to its name and counts (its chevron does too); the selected project and the ones that need you still show on it (→ right to left, where the arrows follow the reading direction) | A category heading in the sidebar, once Tab has put the focus on it |
+| → | Unfold the heading (← right to left) | A category heading in the sidebar, once Tab has put the focus on it |
 | Esc | Fold the colours back without changing the project's colour | A project's colours in the sidebar, after a click on its dot |
 
 ## Slash commands in Claude Code

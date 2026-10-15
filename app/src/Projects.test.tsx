@@ -22,7 +22,7 @@ describe("the Run line", () => {
     const html = row("bin/gate", "bin/run --fresh");
     expect(text(html)).toBe("Gate bin/gate Run bin/run --fresh Run");
     // Its own line after the gate's, both in the one row that spans the table.
-    expect(html).toContain('<div><b class="gate-label">Gate</b> <code class="path">bin/gate</code></div><div><b class="gate-label">Run</b> <code class="path" dir="ltr">bin/run --fresh</code> <span class="run-controls">');
+    expect(html).toContain('<div><b class="gate-label">Gate</b> <code class="path">bin/gate</code></div><div><b class="gate-label">Run</b> <code class="path ltr">bin/run --fresh</code> <span class="run-controls">');
     // The button names the project (0079).
     expect(html).toMatch(/<button[^>]*aria-label="Run muster"[^>]*>Run<\/button>/);
   });
@@ -41,8 +41,8 @@ describe("the Run line", () => {
   });
 
   it("keeps the command left to right, so right-to-left text around it can't reorder it", () => {
-    expect(renderToStaticMarkup(<RunCell name="muster" run="swift run --product نگار" />)).toBe('<code class="path" dir="ltr">swift run --product نگار</code>');
-    expect(renderToStaticMarkup(<RunCell name="negar" run="" />)).toContain('<code dir="ltr">muster projects set negar run &quot;&lt;command&gt;&quot;</code>');
+    expect(renderToStaticMarkup(<RunCell name="muster" run="swift run --product نگار" />)).toBe('<code class="path ltr">swift run --product نگار</code>');
+    expect(renderToStaticMarkup(<RunCell name="negar" run="" />)).toContain('<code class="ltr">muster projects set negar run &quot;&lt;command&gt;&quot;</code>');
   });
 });
 

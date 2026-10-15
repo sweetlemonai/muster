@@ -3,6 +3,47 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-149: فارسی is a true mirror: logical CSS with a guard, mirrored glyphs, `.ltr` islands, splitters and arrows by reading direction
+**Did (asghar_54, builder):** every physical left/right in `styles.css` and TSX inline styles is
+logical. `logicalCss.test.ts` (Drover's guard, ported and extended) fails on a new one, on a
+sideways gradient or transform, or on a bare arrow glyph. Directional glyphs mirror from one
+block, and keys, branches, paths, code and estimate inputs carry one `.ltr` class. `rtl.ts`
+`isRtl()` is the one direction source. Splitters take `rtl`, and fold keys and Feature grid moves
+follow the reading direction. Timeline and Graph place from the inline start, and the Graph's edge
+svg flips. Toolbar counts sit 6 px from their labels (AC8). Docs: DESIGN.md › Right to left,
+AS_BUILT › Right to left, `docs/now/rtl.md`, regenerated shortcuts manual.
+**Fixed:** in فارسی the toolbar counts touched their labels (0 px) and the quiet count sat 2 px off
+in en → physical `margin-left` on `.count` and `.ui-pill small` → logical margins plus
+`.top .count-reserve` rules. The same cause hid the sidebar's dot gap, the Graph's stripes and
+the Timeline's now line in fa.
+**Decided:** `.ui-pill small` was kept, as logical, because ten other pills rely on it. The
+`.top .count-reserve` rules outrank it. `.side-name` aligns `match-parent`, because under
+`plaintext`, `start` follows each name's script. Splitter arrow keys stay physical. `.ltr` goes on
+an inner span wherever its element also takes a sided rule, because `direction: ltr` resolves
+logical sides left to right (review R1, R2).
+**Verified:** `bin/gate` rebased on main 792eb318 (mu-148 and mu-220 in): gate: green (pnpm check, test_task, test_commands, test_ac_verifier, cargo test (Kiritimati)). After review round 1, on main 3fd76d7: gate: green (pnpm check, test_task, test_commands, test_ac_verifier, cargo test (Kiritimati)). Round 0, on main ad7adc9: gate: green (pnpm check, test_task, test_commands, test_ac_verifier, cargo test (Kiritimati)). Its first run lost only Sessions.test's 50 ms timing test under load. Vitest 112 files, 2657 tests. Headless WebKit, synthetic data, 49 shots before and
+after (`.muster/attachments/0149/`):
+- AC8 measures 6.0 px for every count in en and fa, at 1100 px and on one line (1910 en, 1840 fa).
+  The base build measured 0 px in fa and 2 px in en.
+- en is pixel-identical apart from the quiet count and one sub-pixel glyph.
+- fa controls are the same size and row before and after.
+- Nothing is clipped on the mirrored edge in all 7 themes.
+**Fixed (review round 1, Asghar_58):** the guard let new physical properties through. A
+`physical:` note excused its whole line and the next, so it now excuses only the declaration it
+stands by. Inline values were read only as one string, so a ternary's and a template's strings are
+read now. `translate:`, `scale(-1, …)`, `translate3d` and `matrix` passed, and so did a bare ←;
+all are caught now (R1, R2, R4, R5). The glyph block's comment now says folded points left (R3).
+AC5: the WCAG checks run in fa too, `apply()` must paint the tested colours there, and a
+`:dir(rtl)` or `:lang(fa)` rule that sets a colour fails `rtlCss.test.ts`. Each fix undone alone
+turns its test red: `.muster/attachments/0149/round1-mutants.txt` (9 mutants, 9 red).
+**Rebased on mu-148 (e73a476):** its `shortcuts.ts` text moved to `help.json`, so the
+reading-direction wording for heading fold and unfold, grid moves and the splitter's arrows is in
+`help.json`'s en and fa, checked in both by `shortcuts.test.ts`. The `.ltr` classes went onto
+mu-148's translated Branch, PaneHeader and estimate fields. Help's page steps and the stage
+move's arrow are mu-148's translated strings, already written per language.
+**Open:** pre-existing and not in this task: bidi of mixed criteria lines (mu-152), "Accept all" wrapping in fa, and the filter strip wrapping letter
+by letter beside an open pane.
+
 ## 2026-10-15 — mu-201: Recently finished shows a task once under All, with both stamps
 **Did (Gholi_60, builder):** under the All kind chip, `byKind` (`recentData.ts`) gives one row per
 task, at its latest event, with each event oldest first; `RecentRow` draws "merged 59 min ago ·

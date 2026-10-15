@@ -207,7 +207,7 @@ function TasksSection({ tasks, onOpenTask }: { tasks: Recap["tasks"]; onOpenTask
           {tasks.map((t) => (
             <li key={`${t.queue}/${t.id}`}>
               <button type="button" className="recap-task" onClick={() => onOpenTask(t.queue, t.id)} title={tr("recap.openTask", { key: t.key })}>
-                <bdi className="id">{t.key}</bdi> <span dir="auto">{t.title}</span>
+                <bdi className="id ltr">{t.key}</bdi> <span dir="auto">{t.title}</span>
               </button>
               <span className="meta"> · {stageLabel(t.stage)}{t.holds ? ` · ${WORDS.holds}` : ""}</span>
             </li>
@@ -244,7 +244,7 @@ function HistorySection({ history }: { history: Recap["history"] }) {
               <li key={i} className={`recap-event ev-${e.kind}`}>
                 <Stamp className="when" at={stampOf(e.at)} year />
                 <span className="kind">{historyKind(e.kind)}</span>
-                {e.key && <bdi className="id">{e.key}</bdi>}
+                {e.key && <bdi className="id ltr">{e.key}</bdi>}
                 {e.pct !== null && <b>{t("recap.pct", { pct: e.pct })}</b>}
                 <span className="what" dir="auto">{e.text}</span>
               </li>
@@ -316,7 +316,7 @@ function ProgressSection({ progress }: { progress: Recap["progress"] }) {
         <ul>
           {progress.map((p) => (
             <li key={p.key}>
-              <bdi className="id">{p.key}</bdi> <b>{t("recap.pct", { pct: p.pct })}</b> <span dir="auto">{p.text}</span>
+              <bdi className="id ltr">{p.key}</bdi> <b>{t("recap.pct", { pct: p.pct })}</b> <span dir="auto">{p.text}</span>
               {p.guess && <span className="meta"> {WORDS.guess}</span>}
             </li>
           ))}

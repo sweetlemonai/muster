@@ -133,7 +133,7 @@ describe("the views and the backlog in Persian (mu-147)", () => {
     const heads = [...table.matchAll(/<th [^>]*>(?:<button class="sort">)?([^<]*)/g)].map((m) => unmarked(m[1]).replace(/ [↑↓]$/, ""));
     expect(heads).toEqual(["پروژه", "شناسه", "عنوان", "نوع", "اولویت", "مرحله", "در دست / در انتظار", "تخمین", "تاریخ ثبت", "آخرین تغییر", "تگ‌ها"]);
     const controls = renderToStaticMarkup(createElement(TimelineControls, { scale: "week", offset: 0, label: "x", onScale: () => {}, onStep: () => {}, onToday: () => {} }));
-    expect([...controls.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1])).toEqual(["روز", "هفته", "ماه", "◀", "این هفته", "▶"]);
+    expect([...controls.matchAll(/<button[^>]*>(.*?)<\/button>/g)].map((m) => m[1].replace(/<[^>]+>/g, ""))).toEqual(["روز", "هفته", "ماه", "◀", "این هفته", "▶"]);
     expect(controls).toContain('aria-label="هفته‌ی قبل"');
     expect(SCALES.map((s) => s.label)).toEqual(["روز", "هفته", "ماه"]);
     expect(FOR_CHOICES.map((f) => f.label)).toEqual(["انسان", "ایجنت"]);

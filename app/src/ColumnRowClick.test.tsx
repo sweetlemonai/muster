@@ -15,6 +15,7 @@ vi.mock("react", async (real) => {
 
 const { default: ColumnRow, edgeSaid, showColumn } = await import("./ColumnRow");
 const { ALL_IN_VIEW } = await import("./rowCue");
+const { setLocale } = await import("./i18n/runtime");
 
 type Props = { children?: ReactNode; onClick?: () => void; className?: string };
 
@@ -47,7 +48,7 @@ function board(o: { rtl?: boolean; left?: number; edge?: number; still?: boolean
     scrollBy: (o: unknown) => void scrolls.push(o),
   };
   vi.stubGlobal("CSS", { escape: (s: string) => s });
-  vi.stubGlobal("getComputedStyle", () => ({ direction: o.rtl ? "rtl" : "ltr", paddingInlineStart: "14px" }));
+  vi.stubGlobal("getComputedStyle", () => ({ paddingInlineStart: "14px" }));
   vi.stubGlobal("window", { matchMedia: (q: string) => ({ matches: q === "(prefers-reduced-motion: reduce)" && !!o.still }) });
   return { el: el as unknown as HTMLElement, scrolls, asked };
 }
@@ -63,7 +64,8 @@ const COLUMNS = [
   { id: "done", label: "Done", needs: 0 },
 ];
 
-afterEach(() => {
+afterEach(async () => {
+  await setLocale("en");
   vi.unstubAllGlobals();
   hooks.seeds.clear();
   hooks.sets.length = 0;
@@ -76,15 +78,17 @@ describe("showColumn: where a click scrolls the board", () => {
     expect(b.asked).toEqual(['[data-col="your-check"]']);
     expect(b.scrolls).toEqual([{ left: 768, behavior: "smooth" }]);
   });
-  it("right to left, its right edge to the view's right one: a scroll towards the left", () => {
+  it("right to left (فارسی), its right edge to the view's right one: a scroll towards the left", async () => {
+    await setLocale("fa");
     const b = board({ rtl: true, left: 0 });
     showColumn(b.el, "your-check");
     expect(b.scrolls).toEqual([{ left: -768, behavior: "smooth" }]);
   });
-  it("counts the board's border (clientLeft) in the view's start, both ways", () => {
+  it("counts the board's border (clientLeft) in the view's start, both ways", async () => {
     const ltr = board({ edge: 2 });
     showColumn(ltr.el, "your-check");
     expect(ltr.scrolls).toEqual([{ left: 768, behavior: "smooth" }]);
+    await setLocale("fa");
     const rtl = board({ rtl: true, left: 0, edge: 2 });
     showColumn(rtl.el, "your-check");
     expect(rtl.scrolls).toEqual([{ left: -768, behavior: "smooth" }]);
@@ -119,7 +123,8 @@ describe("the cue's click in the row", () => {
       { init: "", value: "Your check is in view" },
     ]);
   });
-  it("right to left the same click scrolls the other way", () => {
+  it("right to left (فارسی) the same click scrolls the other way", async () => {
+    await setLocale("fa");
     const b = board({ rtl: true, left: 0 });
     rowWith(b).find((e) => e.type === "button" && e.props.className === "ui-pill col-cue col-edge")!.props.onClick!();
     expect(b.scrolls).toEqual([{ left: -768, behavior: "smooth" }]);

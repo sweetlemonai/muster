@@ -19,7 +19,7 @@ export function BranchCardLine({ t }: { t: Task }) {
   const line = branchLine(t);
   if (!line) return null;
   return (
-    <span className="card-branch" title={t.worktree ? tn("board", "branch.worktree", { path: t.worktree }) : undefined}>
+    <span className="card-branch ltr" title={t.worktree ? tn("board", "branch.worktree", { path: t.worktree }) : undefined}>
       {line}
     </span>
   );
@@ -34,11 +34,11 @@ export function BranchPane({ task }: { task: Task }) {
       <div className="branch-pane" data-part="worktree">
         <div className="kv">
           <span className="lbl">{tr("side.branch.branch")}</span>
-          <code>{task.branch}</code>
+          <code className="ltr">{task.branch}</code>
         </div>
         <div className="kv stack">
           <span className="lbl">{tr("side.branch.worktree")}</span>
-          {task.worktree ? <code className="path">{task.worktree}</code> : <span className="meta">{tr("side.branch.notRecorded")}</span>}
+          {task.worktree ? <code className="path ltr">{task.worktree}</code> : <span className="meta">{tr("side.branch.notRecorded")}</span>}
         </div>
       </div>
     );
@@ -48,7 +48,7 @@ export function BranchPane({ task }: { task: Task }) {
       <div className="branch-pane" data-part="merged">
         <div className="kv">
           <span className="lbl">{tr("side.branch.merged")}</span>
-          {task.commit ? <code>{task.commit.slice(0, 7)}</code> : <span className="meta">{tr("side.branch.noCommit")}</span>}
+          {task.commit ? <code className="ltr">{task.commit.slice(0, 7)}</code> : <span className="meta">{tr("side.branch.noCommit")}</span>}
         </div>
         <p className="meta small merge-report">{task.mergeReport}</p>
       </div>

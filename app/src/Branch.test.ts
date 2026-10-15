@@ -35,7 +35,8 @@ describe("a started task (0023) on the card and in the pane", () => {
     expect(branchLine(task({ branch: "task/0031-x" }))).toBe("task/0031-x");
     expect(cardLines({ ...STARTED, stage: "testing", heldBy: "qa" })).toEqual([
       ["card-who", "qa"],
-      ["card-branch", "task/0031-board-flickers · 0031-board-flickers"],
+      // Left to right in any language, as a branch and a path are (mu-149).
+      ["card-branch ltr", "task/0031-board-flickers · 0031-board-flickers"],
       // In Testing, its review of record (0027) hasn't run yet.
       ["card-review", "not reviewed yet"],
     ]);
@@ -45,22 +46,22 @@ describe("a started task (0023) on the card and in the pane", () => {
 
   it("a task that wasn't started in a worktree, or is merged, has no branch line", () => {
     expect(branchLine(task({}))).toBe("");
-    expect(cardLines({}).map(([c]) => c)).not.toContain("card-branch");
-    expect(cardLines({ stage: "your-check", mergeReport: REPORT, commit: "3f2a9c1d" }).map(([c]) => c)).not.toContain("card-branch");
+    expect(cardLines({}).map(([c]) => c)).not.toContain("card-branch ltr");
+    expect(cardLines({ stage: "your-check", mergeReport: REPORT, commit: "3f2a9c1d" }).map(([c]) => c)).not.toContain("card-branch ltr");
   });
 
   it("the pane shows the branch and the whole worktree path while it's started", () => {
     const html = pane(STARTED);
     expect(html).toContain('data-part="worktree"');
-    expect(html).toContain("<code>task/0031-board-flickers</code>");
-    expect(html).toContain(`<code class="path">${STARTED.worktree}</code>`);
+    expect(html).toContain('<code class="ltr">task/0031-board-flickers</code>');
+    expect(html).toContain(`<code class="path ltr">${STARTED.worktree}</code>`);
     expect(html).not.toContain("Merged");
   });
 
   it("after the merge the pane shows the merge commit and the report", () => {
     const html = pane({ stage: "your-check", commit: "3f2a9c1d0e", mergeReport: REPORT });
     expect(html).toContain('data-part="merged"');
-    expect(html).toContain("<code>3f2a9c1</code>");
+    expect(html).toContain('<code class="ltr">3f2a9c1</code>');
     expect(html).toContain(REPORT);
     expect(pane({ stage: "your-check", mergeReport: REPORT })).toContain("no commit recorded");
   });

@@ -67,7 +67,7 @@
       "where": "Anywhere in the window"
     },
     "resize-pane": {
-      "what": "Move the edge of the pane or the projects sidebar 40 pixels: → to the right, ← to the left (the width is remembered)",
+      "what": "Move the edge of the pane or the projects sidebar 40 pixels: → to the right, ← to the left, in either reading direction (the width is remembered)",
       "where": "The edge of the pane or the projects sidebar, once Tab has put the focus on it"
     },
     "resize-pane-big": {
@@ -133,7 +133,7 @@
       "where": "Accept all's confirm, in Your check's Just accept group (the board and Waiting for you)"
     },
     "grid-move": {
-      "what": "Move to the next cell of the Feature grid: across the stages, or down the features (← and → swap in right-to-left); ← from Backlog goes to the feature's name, which ↩ opens. Inside a cell, ↑ and ↓ step through its cards and +N more",
+      "what": "Move to the next cell of the Feature grid: across the stages, or down the features (← and → swap right to left, where the arrows follow the reading direction); ← from Backlog goes to the feature's name, which ↩ opens. Inside a cell, ↑ and ↓ step through its cards and +N more",
       "where": "The Feature grid, once Tab has put the focus on it (the grid is one stop for Tab)"
     },
     "grid-ends": {
@@ -171,11 +171,11 @@
       "where": "A category heading in the sidebar, once Tab has put the focus on it"
     },
     "heading-fold": {
-      "what": "Fold the heading to its name and counts (its chevron does too); the selected project and the ones that need you still show on it",
+      "what": "Fold the heading to its name and counts (its chevron does too); the selected project and the ones that need you still show on it (→ right to left, where the arrows follow the reading direction)",
       "where": "A category heading in the sidebar, once Tab has put the focus on it"
     },
     "heading-unfold": {
-      "what": "Unfold the heading",
+      "what": "Unfold the heading (← right to left)",
       "where": "A category heading in the sidebar, once Tab has put the focus on it"
     },
     "colour-close": {

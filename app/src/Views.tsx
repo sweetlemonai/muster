@@ -197,9 +197,9 @@ export function TimelineControls({ scale, offset, label, onScale, onStep, onToda
         </Pill>
       ))}
       <span className="tl-nav">
-        <Pill onClick={() => onStep(-1)} title={previous} aria-label={previous}>◀</Pill>
+        <Pill onClick={() => onStep(-1)} title={previous} aria-label={previous}><span className="dir-glyph">◀</span></Pill>
         <Pill onClick={onToday} disabled={offset === 0}>{tn("board", `views.current.${scale}`)}</Pill>
-        <Pill onClick={() => onStep(1)} title={next} aria-label={next}>▶</Pill>
+        <Pill onClick={() => onStep(1)} title={next} aria-label={next}><span className="dir-glyph">▶</span></Pill>
         <span className="tl-window">{label}</span>
       </span>
     </div>
@@ -212,7 +212,7 @@ function barText(t: Task): string {
   return [stage, isBlocked(t) ? tn("board", "views.blocked") : "", t.priority === "high" ? tn("board", "views.high") : ""].filter(Boolean).join(" · ");
 }
 
-/** The axis, one row per placed bar (label left, bar with its segments), and the now line. */
+/** The axis, one row per placed bar (label at the reading start, bar with its segments), and the now line. */
 export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen, words = [] }: {
   scale: Scale; rows: Placed[]; ticks: Tick[]; now: number | null; multi: boolean; openKey: string | null; onOpen: (t: Task) => void;
   /** The search's words, marked in each row's id and title (task 0032). */
@@ -227,7 +227,7 @@ export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen,
         <span className="tl-label meta">{tn("board", "views.tasks", { count: rows.length })}</span>
         <span className="tl-track">
           {ticks.map((k) => (
-            <span key={k.at} className={k.current ? "tl-tick now" : "tl-tick"} style={{ left: pct(k.left), width: pct(k.width) }}>{k.label}</span>
+            <span key={k.at} className={k.current ? "tl-tick now" : "tl-tick"} style={{ insetInlineStart: pct(k.left), width: pct(k.width) }}>{k.label}</span>
           ))}
         </span>
       </div>
@@ -242,22 +242,22 @@ export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen,
             <span className="tl-track">
               <span
                 className={`tl-bar s-${stageOf(t)}${p.span.open ? " open" : ""}${blockedRed(t) ? " blocked" : ""}${t.waitingForOwner ? " needs-you" : ""}${p.clipStart ? " clip-start" : ""}${p.clipEnd ? " clip-end" : ""}`}
-                style={{ left: pct(p.left), width: pct(p.width) }}
+                style={{ insetInlineStart: pct(p.left), width: pct(p.width) }}
                 title={barTitle(t, p.span.timed)}
               >
                 {p.segments.map((g) => (
                   <span
                     key={g.seg.from}
                     className={`tl-seg ${g.seg.stage === "waiting" ? "waiting" : `s-${g.seg.stage}`}${g.seg.fuzzy ? " fuzzy" : ""}`}
-                    style={{ left: pct(g.left), width: pct(g.width) }}
+                    style={{ insetInlineStart: pct(g.left), width: pct(g.width) }}
                     title={segmentTitle(g.seg)}
                   />
                 ))}
                 {p.blocks.map((b) => (
-                  <span key={`b${b.left}`} className="tl-block" style={{ left: pct(b.left), width: pct(b.width) }} title={blockLead(b.kind)} />
+                  <span key={`b${b.left}`} className="tl-block" style={{ insetInlineStart: pct(b.left), width: pct(b.width) }} title={blockLead(b.kind)} />
                 ))}
                 {p.pauses.map((g) => (
-                  <span key={`p${g.left}`} className="tl-pause" style={{ left: pct(g.left), width: pct(g.width) }} />
+                  <span key={`p${g.left}`} className="tl-pause" style={{ insetInlineStart: pct(g.left), width: pct(g.width) }} />
                 ))}
                 <span className="tl-bar-text">{barText(t)}</span>
               </span>
@@ -267,7 +267,7 @@ export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen,
       })}
       {now !== null && (
         <span className="tl-now-layer" aria-hidden="true">
-          <span className="tl-now" style={{ left: pct(now) }} />
+          <span className="tl-now" style={{ insetInlineStart: pct(now) }} />
         </span>
       )}
     </div>

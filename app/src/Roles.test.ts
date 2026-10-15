@@ -171,7 +171,7 @@ describe("Settings › Agents › Roles", () => {
     expect(html).toContain('aria-expanded="true" aria-controls="role-coder"');
     expect(html).toContain('<div class="role-fields" id="role-coder" role="group" aria-label="Kaveh&#x27;s profile">');
     expect(text(html)).toContain("Coder · Building · worktree · Ready → Building, Building → Testing");
-    expect(html).toContain('<p class="meta">Claim with <code dir="ltr">--role coder</code></p>');
+    expect(html).toContain('<p class="meta">Claim with <code class="ltr">--role coder</code></p>');
     for (const f of ROLE_FIELDS) expect(text(html)).toContain(f.label);
     expect(html).toContain('value="sonnet, opus"');
     expect(html).toContain('<label><b>Name</b> <input size="14" maxLength="400" dir="auto" value="Kaveh"/></label>');
@@ -242,7 +242,7 @@ describe("a role's title in the language shown (mu-195)", () => {
     expect(html).toContain(`<span class="meta"><bdi>${PERSIAN.coder}</bdi> · ۳ جایگاه</span>`);
     expect(html).not.toMatch(/--role [a-z]/);
     const open = list(builtIns, "researcher");
-    expect(open).toContain(`<code dir="ltr">--role researcher</code>`);
+    expect(open).toContain(`<code class="ltr">--role researcher</code>`);
     expect(open.match(/--role [a-z]+/g)).toEqual(["--role researcher"]);
     expect(text(open)).toContain("برداشتن با --role researcher");
   });

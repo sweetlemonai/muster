@@ -295,7 +295,7 @@ function Rollup({ task, childTasks }: { task: Task; childTasks?: Task[] }) {
             const c = byId.get(id);
             return (
               <li key={id}>
-                {c ? <><span className="id">{siblingKey(task, id)}</span> {c.title} <StatusPill status={shownStageClass(c)}>{shownStageLabel(c)}</StatusPill></> : siblingKey(task, id)}
+                {c ? <><span className="id ltr">{siblingKey(task, id)}</span> {c.title} <StatusPill status={shownStageClass(c)}>{shownStageLabel(c)}</StatusPill></> : siblingKey(task, id)}
               </li>
             );
           })}

@@ -2,6 +2,7 @@ import { type DragEvent, type ReactNode, useRef, useState } from "react";
 import { tl, tn } from "./i18n";
 import { CATEGORY_MAX, OTHER } from "./labels";
 import { ColourDot, Swatches } from "./ProjectSwatches";
+import { isRtl, readingArrow } from "./rtl";
 import { pressed } from "./shortcuts";
 import { Pill } from "./ui";
 import { cx } from "./ui/cx";
@@ -26,10 +27,12 @@ type Keys = { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean }
 export const stepOf = (e: Keys): -1 | 1 | null => (pressed(e, "move-up") ? -1 : pressed(e, "move-down") ? 1 : null);
 
 /** What ← and → do to a heading that's `folded` or not (0070): the fold to set, or null when the
- *  key isn't one of them, ⌥ is held (⌥↑ ⌥↓ move it), or it's already that way. */
-export function foldKey(e: Keys, folded: boolean): boolean | null {
+ *  key isn't one of them, ⌥ is held (⌥↑ ⌥↓ move it), or it's already that way. They follow the
+ *  reading direction: right to left (`rtl`, mu-149) → folds and ← unfolds. */
+export function foldKey(e: Keys, folded: boolean, rtl: boolean): boolean | null {
   if (e.altKey) return null;
-  const want = pressed(e, "heading-fold") ? true : pressed(e, "heading-unfold") ? false : null;
+  const read = { ...e, key: readingArrow(e.key, rtl) };
+  const want = pressed(read, "heading-fold") ? true : pressed(read, "heading-unfold") ? false : null;
   return want === null || want === folded ? null : want;
 }
 
@@ -175,7 +178,7 @@ export function HeadingFrame({ name, count, summary, fresh = false, folded = fal
           onRename();
           return;
         }
-        const want = onFold ? foldKey(e, folded) : null;
+        const want = onFold ? foldKey(e, folded, isRtl()) : null;
         if (onFold && want !== null) {
           e.preventDefault();
           onFold(want);
