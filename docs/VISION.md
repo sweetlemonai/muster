@@ -10,7 +10,8 @@ or changes itself. Decisions: `docs/decisions/`. Screens: `docs/DESIGN.md`. Rule
 The owner's task system for AI agents: the owner says what they want in a line, agents shape it,
 build it in parallel, review and test it, and the owner only checks results and answers what only
 they can answer. It's a Tauri app plus the `muster` command (one binary, one set of rules), and
-it moves into Drover later (Drover runs agents, Muster decides who does what, 0009 / Drover 0018).
+it moves into Drover later (Drover runs agents, Muster's own runner until then, decision 0015;
+Muster decides who does what, 0009 / Drover 0018).
 One ecosystem the owner owns (decision 0007): **idea and task** in Muster, **code** in Drover,
 **review** in the review engine, **gate and deploy** to build; `docs/PIPELINE.md`.
 

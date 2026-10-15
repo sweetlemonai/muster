@@ -2,7 +2,8 @@
 
 > **The review of record (Muster 0027, 2026-10-13).** A task started on its own branch (0023)
 > is reviewed in Testing by the owner's review engine, and that's the review that counts: builders
-> run the gate, not a second full review. Muster runs no agent. **The tester** (a session that
+> run the gate, not a second full review. Muster runs no agent for the review or the vision check;
+> the dispatcher's runs are decision 0015's. **The tester** (a session that
 > didn't build it, as 0047 says; or the owner) runs `muster review <id>`: the brief names the
 > worktree, the range (merge base..tip the first time, then only the commits since the last round
 > while the branch still has them), the task quoted as data, the builder's answers to re-check, the
@@ -498,7 +499,8 @@ its own agent id is another holder, 0090) and logged `(tested under
 >
 > **Vision check (Muster 0029, 2026-10-12).** Before a shaped task goes to Ready, an agent checks
 > it against the project's one picture (`docs/VISION.md`, `docs/decisions/`, `docs/DESIGN.md`) and
-> the tasks it touches. Muster runs no agent: `muster vision <id> [--json]` prints the brief (the
+> the tasks it touches. Muster runs no agent for the review or the vision check; the dispatcher's
+> runs are decision 0015's: `muster vision <id> [--json]` prints the brief (the
 > task quoted as data, the picture files, the open tasks it touches by title words, ids named in
 > its text, its `parent:` and `depends:`, what to look for, and the JSON to return) and writes
 > nothing. `muster vision <id> --record - --as <you>` takes that JSON on stdin: unknown fields and

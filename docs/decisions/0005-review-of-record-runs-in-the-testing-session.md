@@ -6,7 +6,9 @@ no PR per task for now, posting only as sweetlemonai; the rest is the builder's 
 
 ## Decision
 
-- **Muster runs no agent for the review**, as with the vision check (0029). `muster review <id>`
+- **Muster runs no agent for the review**, as with the vision check (0029). *Amended by
+  [0015](0015-muster-runs-agents-behind-a-runner-interface.md) (2026-10-14):* Muster runs no
+  agent for the review or the vision check; the dispatcher's runs are 0015's. `muster review <id>`
   prints a brief; the Testing session (never the builder, 0047) runs the owner's engine on the
   branch (`/deep-review <range>`: its lenses, verifiers and tier router) and hands the result back
   as JSON (`muster review <id> --record -`). Muster checks it (strict shape, `head` is the

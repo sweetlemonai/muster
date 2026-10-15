@@ -25,6 +25,30 @@ screenshots in attachments; owner's settings byte-identical after every QA run.
 evidence); backlog notes from review nits (mu-88 R1, mu-90 R6-R8, mu-95 R3, migrate flake, band
 titles, mu-93 item 5).
 
+## 2026-10-14 — Decision 0015: Muster runs agents behind a runner interface, Drover's runner later (mu-108)
+**Did (gholi_12, builder):** `docs/decisions/0015-muster-runs-agents-behind-a-runner-interface.md`:
+the six runner methods, the five MCP Tasks run states, the boundary (0002's scrub, the owner's own
+login, no token, 0013 rule 1), Codex analytics off, three options, what would reopen it. 0007 and
+0005 say they're amended by it; PROTOCOL's review-of-record and vision-check notes, AS_BUILT's
+`muster review` paragraph and VISION's Drover sentence name it; AS_BUILT's decisions table lists it
+(and drops "There is no 0012 yet"). mu-9's AC1 has a comment pointing to it.
+**Decided:** numbered 0015, not the brief's 0013 (mu-99 took 0012, mu-107 0013, mu-129 0014 for
+the gates); the docs say "decision 0015" where a bare 0015 would read as task 0015. Decided by the coordinator for the
+owner, overrule any time.
+**Open:** AC3 is the owner's read of the record. AS_BUILT's decisions table will need the 0012
+row from mu-99 when it merges.
+**Fixed (gholi_14, round 1):** R1: 0007's amendment line sat inside its ownership table and cut
+it after Code; it's below the table now. R2: the record's point 2 says a rate limit cools the account down
+until `resets_at` and the work waits, never another account (0013 rule 2); point 5 cites 0013 rule
+6; the header cites rules 1, 2 and 6. R4: AS_BUILT's `muster review` sentence no longer says "runs
+no agent" twice. R3 (merge after mu-99 and mu-107) is the lead's. Renumbered 0014 → 0015 on
+rebase, since main's 0014 is the gates record (mu-129); AS_BUILT's decisions table lists the gates
+0014 row before it.
+**Rebased (gholi_19):** on main after mu-107's 0013 merged; the table runs 0011, 0013, 0014, 0015,
+and its line says only 0012 (mu-99) isn't merged yet.
+**Fixed (gholi_19, round 2):** R5: 0015 cited the brief at `tasks/proposals/`, where it isn't; it
+cites the main checkout's `.muster/proposal/` now. R3 is settled by the rebase (0013 is on main).
+
 ## 2026-10-14 — mu-87 round 3: a project's name never vanishes, at any sidebar width
 **Fixed:** in Focus at the default 210px drover's row (stalled, running, 2, ⏸︎ 1) drew its name
 0px wide up to about 229px (QA_8, headless WebKit) → the 4em-and-wrap rule only held under

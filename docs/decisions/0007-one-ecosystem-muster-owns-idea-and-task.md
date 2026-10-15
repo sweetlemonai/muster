@@ -17,6 +17,8 @@ engine and gates and deploy we build afterward. all in one ecosystem".
 | Gate | to build | the shared gate kit (0006 choice 3) |
 | Deploy | to build | release: build, sign, publish, per app |
 
+*Amended by [0015](0015-muster-runs-agents-behind-a-runner-interface.md) (2026-10-14):* Muster runs agents until Drover's runner exists.
+
 - **One ecosystem, our own:** every step is a tool the owner owns; they talk through commands and
   files (0006), share one record of outcomes (mu-54), and use Muster's stage names (0006).
 - **GenIdea** (`~/playground/germ`, built, 9 phases) becomes the source the idea step is ported

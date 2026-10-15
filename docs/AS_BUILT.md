@@ -346,7 +346,7 @@ is in section 6.
 
 ## 5. Decisions
 
-In `docs/decisions/`, newest last.
+In `docs/decisions/`, newest last. 0012 (mu-99) isn't merged yet.
 
 | # | Decision |
 |---|---|
@@ -362,6 +362,8 @@ In `docs/decisions/`, newest last.
 | [0010](decisions/0010-the-queue-lives-in-local-files-not-github-issues.md) | The queue lives in local files, not GitHub Issues |
 | [0011](decisions/0011-sessions-hand-off-by-themselves.md) | Sessions hand off by themselves at \~60% context or the token cap, at a gap, to an automatic successor that reads the old mailbox; amends 0004 point 3 |
 | [0013](decisions/0013-orchestration-terms-and-accounts.md) | Orchestration's terms: Muster runs each user's own `claude` and `codex` and never touches a login token, never balances across accounts (a limit means cooldown until `resets_at`), pins each account to projects by hand, reads usage instead of learning it from limit hits, caps and paces every run, keeps telemetry off; replaces the brief's load balancing |
+| [0014](decisions/0014-gates-replace-your-check.md) | Gates replace your check: a task that passes every gate it needs is accepted without the owner |
+| [0015](decisions/0015-muster-runs-agents-behind-a-runner-interface.md) | Muster runs agents behind one runner interface (`start`, `status`, `stop`, `usage`, `limit`, `capabilities`; states `working`, `input_required`, `completed`, `failed`, `cancelled`): its own `claude -p` runner now, with 0002's scrub and no token, Drover's later; the Codex adapter turns analytics off; amends 0007 and 0005 |
 
 ## 6. The queue at a glance
 
@@ -1577,9 +1579,10 @@ the caller's `$HOME`; no other command runs it, a write never does.
 **The review of record** (task 0027, `review.rs`): `muster review <id>` prints the brief for the
 next round of a started task (the range: merge base..tip the first time, then the last reviewed
 commit..tip while the branch still has it; the task quoted as data, the builder's answers to
-re-check, the owner's lessons, the JSON shape) and runs no agent: a session that didn't build it
-runs `/deep-review` on the range and records the result with `--record -` (strict JSON:
-`deny_unknown_fields`, every text one line and capped, `head` must be the branch's tip, every
+re-check, the owner's lessons, the JSON shape) and runs no agent (only the dispatcher's runs go
+through a runner, decision 0015): a session that didn't build it runs `/deep-review` on the
+range and records the result with `--record -` (strict JSON: `deny_unknown_fields`, every text
+one line and capped, `head` must be the branch's tip, every
 answered finding needs an answer, findings under confidence 75 refused). The truth is
 `reviews/<id>.json` in the queue; the task gets a `## Review` section rendered from it (above
 Comments and Log; `muster edit` leaves it out and refuses a new `## Review` line), `review: round
