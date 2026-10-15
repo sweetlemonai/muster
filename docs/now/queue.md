@@ -20,3 +20,4 @@ covers: app/src-tauri/src/queue.rs, app/src-tauri/src/index.rs, app/src-tauri/sr
 - While a session holds a task in Building, the owner adds a note, not an edit. (mu-20)
 - Questions go through `muster ask`; the answer reaches the asking session's mailbox. (PROTOCOL.md "Questions and answers")
 - An answer to a question with a `--no-answer` default reaches whoever holds the task: the claim, `held-by` in Testing and Your check; the asker only when nobody does. (mu-103)
+- A `## Questions` or `## ` line inside a code fence is never the Questions section or its end, for edit, ask, answer and the list. (mu-164)

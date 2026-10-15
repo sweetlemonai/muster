@@ -1194,7 +1194,9 @@ pub fn parse_task(
         .unwrap_or("")
         .trim()
         .to_string();
-    let questions: Vec<Question> = section(body, "Questions")
+    // The section ask and answer write (`questions_span`): never a fenced example's (0164).
+    let questions: Vec<Question> = questions_span(body)
+        .map(|(a, b)| &body[a..b])
         .map(|s| {
             question_items(s)
                 .into_iter()
@@ -2606,12 +2608,87 @@ pub fn is_mailbox(s: &str) -> bool {
     }
 }
 
-/// The first `## Questions` section's content: (start, end) byte offsets, from the line after
-/// the heading to the next `## ` line or the end.
+/// Which lines of the task text `text` (its `split_inclusive('\n')` lines) are fenced code
+/// (0164), read as `testing::headings` reads the tool's sections: fences are the write-up's
+/// alone, so from the tool's Comments on (else its Log) no line is code (`fenced_above`).
+pub(crate) fn fenced_lines(text: &str) -> Vec<bool> {
+    let tail = comments_span(text)
+        .map(|(at, _, _)| at)
+        .or_else(|| log_heading(text))
+        .unwrap_or(text.len());
+    fenced_above(text, tail)
+}
+
+/// `fenced_lines` for a write-up on its own (`ops::editable_body`'s): it has no Comments or Log
+/// of the tool's, so a `## Log` it quotes in a fence is code like any other line.
+pub(crate) fn write_up_fenced_lines(w: &str) -> Vec<bool> {
+    fenced_above(w, w.len())
+}
+
+/// Which lines of `text` above byte `tail` are fenced code (`merge_log::Fences`); none from
+/// `tail` on. A question's lines under its `- [ ] **Q` line (blank or indented two spaces, as the
+/// tool writes them, up to the next line indented less) neither open nor close a fence, so an
+/// asker's or answerer's unclosed fence can't hide what follows. A fence still open at `tail`
+/// hides nothing, so a write-up's stray fence can't hide the tool's sections below it.
+fn fenced_above(text: &str, tail: usize) -> Vec<bool> {
+    let mut fences = crate::merge_log::Fences::default();
+    // The line that opened the fence still open, and whether the last item line was a question's.
+    let mut opened = None;
+    let mut item = false;
+    let mut out = Vec::new();
+    let mut pos = 0;
+    for line in text.split_inclusive('\n') {
+        let at = pos;
+        pos += line.len();
+        if at >= tail {
+            out.push(false);
+            continue;
+        }
+        let indent = line.bytes().take_while(|&b| b == b' ').count();
+        if line.starts_with("- [ ] **Q") || line.starts_with("- [x] **Q") {
+            item = true;
+        } else if item && (indent >= 2 || line.trim().is_empty()) {
+            out.push(fences.open());
+            continue;
+        } else {
+            item = false;
+        }
+        let was_open = fences.open();
+        out.push(fences.fenced(line.as_bytes()));
+        opened = match (was_open, fences.open()) {
+            (false, true) => Some(out.len() - 1),
+            (_, false) => None,
+            (true, true) => opened,
+        };
+    }
+    if let Some(i) = opened {
+        out[i..].iter_mut().for_each(|code| *code = false);
+    }
+    out
+}
+
+/// The first `## Questions` section's content in the task text `body`: (start, end) byte offsets,
+/// from the line after the heading to the next `## ` line or the end. A line in fenced code
+/// (`fenced_lines`) is neither (0164): a write-up may show the format in a fence, or quote a
+/// heading in one.
 pub(crate) fn questions_span(body: &str) -> Option<(usize, usize)> {
+    span_of_questions(body, fenced_lines(body))
+}
+
+/// `questions_span` for a write-up on its own (`write_up_fenced_lines`).
+pub(crate) fn write_up_questions_span(w: &str) -> Option<(usize, usize)> {
+    span_of_questions(w, write_up_fenced_lines(w))
+}
+
+/// `questions_span` with `code` saying which of `body`'s lines are fenced code.
+fn span_of_questions(body: &str, code: Vec<bool>) -> Option<(usize, usize)> {
     let mut start = None;
     let mut pos = 0;
-    for line in body.split_inclusive('\n') {
+    for (line, code) in body.split_inclusive('\n').zip(code) {
+        if code {
+            pos += line.len();
+            continue;
+        }
         match start {
             Some(s) if line.starts_with("## ") => return Some((s, pos)),
             None if line.ends_with('\n')
@@ -3737,6 +3814,169 @@ mod tests {
             Some("bbbb2222")
         );
         assert!(d.path().join("mail/bbbb2222/0042-Q1.md").is_file());
+    }
+
+    #[test]
+    fn the_questions_section_is_never_in_fenced_code() {
+        let real = "## Questions\n- [ ] **Q1 (wt-a, 2026-10-11 10:00):** کدام؟\n\n";
+        fn span(body: &str) -> Option<&str> {
+            questions_span(body).map(|(a, b)| &body[a..b])
+        }
+        let section = &real["## Questions\n".len()..];
+        for fence in [
+            "```md\n## Questions\n- [ ] **Q9:** نمونه\n```\n",
+            "~~~\n## Questions\n~~~\n",
+            "````\n```\n## Questions\n```\n````\n",
+            "   ```\n## Questions\n```\n",
+            "```\n## Questions\n``` \n",
+        ] {
+            let body = format!("# T\n\nمتن\n\n{fence}\n{real}## Log\n");
+            assert_eq!(span(&body), Some(section), "{fence}");
+        }
+        // Not fences: four spaces in, two backticks, a backtick fence with a backtick after it.
+        for not in ["    ```\n", "``\n", "``` a`b\n"] {
+            let body = format!("{not}{real}## Log\n");
+            assert_eq!(span(&body), Some(section), "{not}");
+        }
+        // A fence closes only on its own character and at least as many; one the write-up never
+        // closes hides nothing (as `testing::headings`), so a stray fence can't hide the section.
+        for open in ["```\n", "~~~\n", "````\n```\n", "```\n~~~\n", "```\n```x\n"] {
+            let body = format!("{open}{real}## Log\n");
+            assert_eq!(span(&body), Some(section), "{open}");
+            let closed = format!("{open}{real}```\n~~~\n````\n\n## Log\n");
+            assert_eq!(span(&closed), None, "{open}");
+        }
+        // From the Comments on (else the Log) nothing is code: they don't close a stray fence.
+        let body = format!("```\n{real}## Comments\n- **a, 2026-10-14 10:00:** x\n  ```\n## Log\n");
+        assert_eq!(span(&body), Some(section));
+        // A `## ` line in a fence inside the section doesn't end it; the Log after it does.
+        for (open, close) in [("```", "```"), ("~~~", "~~~"), ("~~~~", "~~~~~")] {
+            let inside = format!(
+                "- [ ] **Q1 (wt-a, 2026-10-11 10:00):** کدام؟\n\n{open}\n## Other\n{close}\n\n"
+            );
+            let body = format!("# T\n\n## Questions\n{inside}## Log\n");
+            assert_eq!(span(&body), Some(inside.as_str()), "{open}");
+        }
+        // A fence a question's own lines open (indented two, inside its list item) ends with the
+        // item, so one never closed can't run the section past the next question or the Log.
+        let item = "- [ ] **Q1 (wt-a, 2026-10-11 10:00):** See:\n  ```\n  ## Other\n\n";
+        let body = format!("## Questions\n{item}## Log\n- x\n");
+        assert_eq!(span(&body), Some(item));
+        let two = format!("{item}- [ ] **Q2 (wt-a, 2026-10-11 10:01):** Next\n\n");
+        let body = format!("## Questions\n{two}## Log\n- x\n");
+        assert_eq!(span(&body), Some(two.as_str()));
+        // Nor does a fence the write-up closes later take the headings between them.
+        let body = format!("# T\n\n## Questions\n{item}## Notes\nx\n```sh\ncode\n```\n\n## Log\n");
+        assert_eq!(span(&body), Some(item));
+        // And an answer's fence doesn't close the write-up's stray one above the section.
+        let answered = "- [x] **Q1 (wt-a, 2026-10-11 10:00):** q\n  **A (owner, 2026-10-11 11:00):** this\n  ```\n";
+        let body = format!("# T\n```\n## Review\nr\n## Questions\n{answered}## Log\n- x\n");
+        assert_eq!(span(&body), Some(answered));
+        // Multi-byte text before the fence and in it: offsets land on character boundaries.
+        let body = format!("# کار\n\n~~~\nسلام ## Questions\n## Questions\n~~~\n\n{real}");
+        assert_eq!(span(&body), Some(section));
+        assert_eq!(span("```\n## Questions\n```\n"), None);
+    }
+
+    /// TASK with a fenced example of the Questions section in its details, Q2 in it.
+    fn with_fenced_example(task: &str, fence: &str) -> String {
+        let example = format!("{fence}md\n## Questions\n- [ ] **Q2 (wt-x, 2026-10-11 09:00):** نمونه؟\n\n## Log\n{fence}\n\n");
+        task.replacen("## Questions\n", &format!("{example}## Questions\n"), 1)
+    }
+
+    #[test]
+    fn answer_and_ask_write_into_the_real_section_not_a_fenced_example() {
+        for fence in ["```", "~~~", "````"] {
+            let d = queue();
+            let p = d.path().join("doing/0042-something.md");
+            let task = with_fenced_example(TASK, fence);
+            fs::write(&p, &task).unwrap();
+            let example = &task[task.find(fence).unwrap()..task.rfind(fence).unwrap()];
+            // The task's questions as the app lists them are the real section's alone.
+            let t = read_task(d.path(), "0042").unwrap();
+            let asked: Vec<_> = t.questions.iter().map(|q| q.asker.as_str()).collect();
+            assert_eq!(
+                asked,
+                [
+                    "wt-a, session aaaa1111, 2026-10-11 10:00",
+                    "wt-a, session aaaa1111, 2026-10-11 10:05"
+                ]
+            );
+            answer(d.path(), "0042", 2, "پاسخ", "owner", "2026-10-12 09:30").unwrap();
+            let body = fs::read_to_string(&p).unwrap();
+            assert!(body.contains(example), "the example kept as is: {body}");
+            assert!(body.contains("- [x] **Q2 (wt-a, session aaaa1111, 2026-10-11 10:05):** Product call?\n  **Escalated to owner (capture, 2026-10-11 10:06).**\n  **A (owner, 2026-10-12 09:30):** پاسخ\n"), "{body}");
+            let asked = ask(
+                d.path(),
+                "0042",
+                "Which colour?",
+                "wt-a",
+                "aaaa1111",
+                "2026-10-12 09:40",
+            )
+            .unwrap();
+            assert_eq!(asked.n, 3);
+            let body = fs::read_to_string(&p).unwrap();
+            assert!(body.contains(example), "{body}");
+            assert!(body.contains("**A (owner, 2026-10-12 09:30):** پاسخ\n- [ ] **Q3 (wt-a, session aaaa1111, 2026-10-12 09:40):** Which colour?\n\n## Log\n"), "{body}");
+        }
+        // With only the fenced example, ask starts the real section before the Log.
+        let d = queue();
+        let p = d.path().join("doing/0042-something.md");
+        let start = TASK.find("## Questions\n").unwrap();
+        let end = TASK.find("## Log\n").unwrap();
+        let task = with_fenced_example(
+            &format!("{}## Questions\n{}", &TASK[..start], &TASK[end..]),
+            "~~~",
+        )
+        .replacen("## Questions\n## Log\n", "## Log\n", 1);
+        fs::write(&p, &task).unwrap();
+        assert_eq!(questions_span(&task), None);
+        let asked = ask(
+            d.path(),
+            "0042",
+            "Which colour?",
+            "wt-a",
+            "aaaa1111",
+            "2026-10-12 09:40",
+        )
+        .unwrap();
+        assert_eq!(asked.n, 1);
+        let body = fs::read_to_string(&p).unwrap();
+        assert_eq!(body.matches("\n## Questions\n").count(), 2, "{body}");
+        assert!(body.contains("~~~\n\n## Questions\n- [ ] **Q1 (wt-a, session aaaa1111, 2026-10-12 09:40):** Which colour?\n\n## Log\n"), "{body}");
+    }
+
+    #[test]
+    fn a_questions_unclosed_fence_keeps_the_next_question_before_the_log() {
+        let d = queue();
+        let p = d.path().join("doing/0042-something.md");
+        ask(
+            d.path(),
+            "0042",
+            "See:\n```\n## Other",
+            "wt-a",
+            "aaaa1111",
+            "2026-10-12 09:40",
+        )
+        .unwrap();
+        ask(
+            d.path(),
+            "0042",
+            "And this?",
+            "wt-a",
+            "aaaa1111",
+            "2026-10-12 09:41",
+        )
+        .unwrap();
+        answer(d.path(), "0042", 4, "Yes.", "owner", "2026-10-12 09:42").unwrap();
+        let body = fs::read_to_string(&p).unwrap();
+        assert!(body.contains("- [ ] **Q3 (wt-a, session aaaa1111, 2026-10-12 09:40):** See:\n  ```\n  ## Other\n- [x] **Q4 (wt-a, session aaaa1111, 2026-10-12 09:41):** And this?\n  **A (owner, 2026-10-12 09:42):** Yes.\n\n## Log\n"), "{body}");
+        assert!(
+            body.trim_end()
+                .ends_with("- 2026-10-12 09:42 owner: answered Q4"),
+            "{body}"
+        );
     }
 
     #[test]

@@ -980,7 +980,7 @@ fn ids_in(text: &str) -> BTreeSet<String> {
 /// section once checked: ids there are other people's words about it) without its Questions.
 fn write_up_proper(text: &str) -> String {
     let mut w = ops::editable_body(text).unwrap_or_default();
-    if let Some((a, b)) = queue::questions_span(&w) {
+    if let Some((a, b)) = queue::write_up_questions_span(&w) {
         w.replace_range(a..b, "");
     }
     w

@@ -4496,7 +4496,7 @@ type Questions<'a> = (&'a str, Option<(&'a str, usize)>);
 fn cut_questions(w: &str) -> (String, Option<Questions<'_>>) {
     let trim = |s: &'_ str| s.trim_matches(['\n', '\r']).to_string();
     // `questions_span` starts after the heading's line, which ends with a newline.
-    let Some((at, end)) = queue::questions_span(w) else {
+    let Some((at, end)) = queue::write_up_questions_span(w) else {
         return (trim(w), None);
     };
     let head = w[..at - 1].rfind('\n').map_or(0, |i| i + 1);
@@ -4543,10 +4543,50 @@ fn put_back_questions(body: &str, (section, next): Questions<'_>) -> String {
     }
 }
 
-/// How many lines of `text` are a `## Questions` heading.
+/// Refuses a write-up `body` with its Questions `section` put back (`put_back_questions`) where
+/// `queue::write_up_questions_span` no longer finds that section (0164): a fence the edit left
+/// open above it, closed by a later fence, would hide it in code, so answer would lose its
+/// questions and ask would start a second section. The error names the fence's line. `body` is
+/// read as the file holds it, with the newline after its last line, so an empty heading the
+/// section ends the write-up with is still a heading.
+fn questions_still_found(body: &str, section: &str) -> Result<(), String> {
+    let body = format!("{body}\n");
+    if cut_questions(&body).1.map(|(s, _)| s) == Some(section) {
+        return Ok(());
+    }
+    let opener = body.find(section).and_then(|at| {
+        let lines: Vec<&str> = body[..at].split_inclusive('\n').collect();
+        let code = queue::write_up_fenced_lines(&body);
+        if !code.get(lines.len()).copied().unwrap_or(false) {
+            return None;
+        }
+        // The line that opened the fence still open at the heading, not an adjacent closed one.
+        let mut fences = crate::merge_log::Fences::default();
+        let mut opened = None;
+        for (i, line) in lines.iter().enumerate() {
+            let was_open = fences.open();
+            fences.fenced(line.as_bytes());
+            if !was_open && fences.open() {
+                opened = Some(i);
+            }
+        }
+        let i = opened.filter(|_| fences.open())?;
+        Some((i + 1, lines[i].trim_end()))
+    });
+    Err(match opener {
+        Some((n, line)) => format!(
+            "the code fence opened on line {n} of the write-up ({line:?}) isn't closed before the Questions section goes back below it, so it would hide the task's questions: close the fence above it"
+        ),
+        None => "the edit would move the task's Questions section out of the tool's reach, so nothing was saved: keep the headings around where it was".into(),
+    })
+}
+
+/// How many lines of `text` are a `## Questions` heading. One in fenced code isn't (0164): it's
+/// never the section `queue::write_up_questions_span` finds (`queue::write_up_fenced_lines`).
 fn questions_headings(text: &str) -> usize {
-    text.lines()
-        .filter(|l| l.trim_end() == "## Questions")
+    text.split_inclusive('\n')
+        .zip(queue::write_up_fenced_lines(text))
+        .filter(|(l, code)| !code && l.trim_end() == "## Questions")
         .count()
 }
 
@@ -4662,7 +4702,11 @@ pub fn edit_body(
         // Owner-only criteria are the owner's to add (mu-132); the ones it has stay.
         crate::verify::refuse_new_owner_criteria(current, &new_body, &who)?;
         let new_body = match questions {
-            Some(q) => put_back_questions(&new_body, q),
+            Some(q) => {
+                let back = put_back_questions(&new_body, q);
+                questions_still_found(&back, q.0)?;
+                back
+            }
             None => new_body,
         };
         let head = &text[..start];
@@ -10576,6 +10620,195 @@ mod edit_tests {
             // Naming the section in prose is fine.
             edit_body(d.path(), "0001", &format!("{WRITE_UP}\n\nSee ## Questions."), &opened, "owner", T)
                 .unwrap();
+        }
+    }
+
+    /// The Questions format shown in a fence: backticks, tildes, and a longer fence holding a
+    /// shorter one, with Persian text in it.
+    fn fenced_examples() -> Vec<String> {
+        let inner = "## Questions\n- [ ] **Q1 (wt-a, session aaaa1111, 2026-10-12 10:00):** نمونه؟\n\n## Other";
+        vec![
+            format!("```md\n{inner}\n```"),
+            format!("~~~\n{inner}\n~~~"),
+            format!("````md\n```\n{inner}\n```\n````"),
+        ]
+    }
+
+    #[test]
+    fn edit_shows_a_fenced_questions_example_and_cuts_only_the_real_section() {
+        for fence in fenced_examples() {
+            let d = queue();
+            let q = format!("## Questions\n- [x] **Q1 (wt-a, session aaaa1111, 2026-10-12 10:00):** {PERSIAN}\n  **Answer (owner, 2026-10-12 11:00):** آبی");
+            let shown = format!("# Edit me\n\nبنویسید: the format is\n\n{fence}\n\nپایان.\n\n## Acceptance criteria\n- [ ] AC1: one");
+            let p = put(d.path(), "todo", READY, &format!("{shown}\n\n{q}"), "");
+            let opened = open_body(d.path(), "0001", "owner").unwrap();
+            assert_eq!(opened, shown, "the fenced example shown whole");
+            let new = shown.replace("پایان.", "پایان، ویرایش شد.");
+            edit_body(d.path(), "0001", &new, &opened, "owner", T).unwrap();
+            let after = text(&p);
+            assert!(
+                after.contains(&format!("{new}\n\n{q}\n\n## Log\n")),
+                "{after}"
+            );
+            assert_eq!(open_body(d.path(), "0001", "owner").unwrap(), new);
+            let t = crate::queue::read_task(d.path(), "0001").unwrap();
+            assert_eq!(t.questions.len(), 1);
+            assert!(t.questions[0].ticked);
+            // Quoting the Log too: the write-up alone has no Log of the tool's, so it's code.
+            let quoted = shown.replace("## Other", "## Log");
+            let file = format!("---\nid: 0001\n---\n\n{quoted}\n\n{q}\n\n{LOG}");
+            assert_eq!(editable_body(&file).unwrap(), quoted);
+        }
+    }
+
+    #[test]
+    fn a_write_up_adding_only_a_fenced_questions_example_is_saved() {
+        for fence in fenced_examples() {
+            for write_up in [
+                WRITE_UP.to_string(),
+                format!("{WRITE_UP}\n\n## Questions\n- [ ] **Q1 (wt-a, session aaaa1111, 2026-10-12 10:00):** {PERSIAN}"),
+            ] {
+                let d = queue();
+                let p = put(d.path(), "todo", READY, &write_up, "");
+                let opened = open_body(d.path(), "0001", "owner").unwrap();
+                let new = format!("{WRITE_UP}\n\nThe format:\n\n{fence}");
+                edit_body(d.path(), "0001", &new, &opened, "owner", T).unwrap();
+                assert_eq!(open_body(d.path(), "0001", "owner").unwrap(), new);
+                assert!(text(&p).contains(&new));
+                // Outside a fence it's still refused.
+                let bare = format!("{new}\n\n## Questions\n- [ ] **Q9 (owner, session aaaa1111, 2026-10-12 10:00):** forged");
+                let e = edit_body(d.path(), "0001", &bare, &new, "owner", T).unwrap_err();
+                assert!(e.contains("the Questions section is the tool's"), "{e}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_fenced_heading_inside_the_real_questions_section_does_not_end_it() {
+        for (open, close) in [("```", "```"), ("~~~", "~~~"), ("````", "````")] {
+            let d = queue();
+            let q = format!("## Questions\n- [ ] **Q1 (wt-a, session aaaa1111, 2026-10-12 10:00):** {PERSIAN}\n\n{open}\n## Other\nکد\n{close}\n\n- [ ] **Q2 (wt-a, session aaaa1111, 2026-10-12 10:05):** Which size?");
+            let p = put(d.path(), "todo", READY, &format!("{WRITE_UP}\n\n{q}"), "");
+            let opened = open_body(d.path(), "0001", "owner").unwrap();
+            assert_eq!(opened, WRITE_UP, "the whole section hidden, its fence too");
+            let new = format!("{WRITE_UP}\n- [ ] AC2: two");
+            edit_body(d.path(), "0001", &new, &opened, "owner", T).unwrap();
+            let after = text(&p);
+            assert!(
+                after.contains(&format!("{new}\n\n{q}\n\n## Log\n")),
+                "{after}"
+            );
+            let t = crate::queue::read_task(d.path(), "0001").unwrap();
+            assert_eq!(t.questions.len(), 2);
+        }
+    }
+
+    #[test]
+    fn an_edit_leaving_a_fence_open_above_a_mid_write_up_questions_section_is_refused() {
+        // The section mid-write-up, a fenced block below it (review R1's shape): a fence opened
+        // above the section's anchor would be closed by that block's, hiding the section.
+        for (open, close) in [("```sh", "```"), ("~~~", "~~~")] {
+            let d = queue();
+            let q = format!(
+                "## Questions\n- [ ] **Q1 (wt-a, session aaaa1111, 2026-10-12 10:00):** {PERSIAN}"
+            );
+            let shown =
+                format!("# Edit me\n\nجزئیات.\n\n## Research\nNotes\n\n{open}\nmake x\n{close}");
+            let file = shown.replacen("## Research", &format!("{q}\n\n## Research"), 1);
+            let p = put(d.path(), "todo", READY, &file, "");
+            let before = text(&p);
+            let opened = open_body(d.path(), "0001", "owner").unwrap();
+            assert_eq!(opened, shown);
+            let unclosed = shown.replacen(
+                "## Research",
+                &format!("{open}\nmuster run\n\n## Research"),
+                1,
+            );
+            let e = edit_body(d.path(), "0001", &unclosed, &opened, "owner", T).unwrap_err();
+            assert!(
+                e.contains(&format!(
+                    "the code fence opened on line 5 of the write-up ({open:?}) isn't closed"
+                )),
+                "{e}"
+            );
+            assert_eq!(text(&p), before, "nothing changes");
+            // Right after a closed block (review R3): the refusal names the open fence's line.
+            let after_closed = shown.replacen(
+                "## Research",
+                &format!("{open}\na\n{close}\n{open}\nmuster run\n\n## Research"),
+                1,
+            );
+            let e = edit_body(d.path(), "0001", &after_closed, &opened, "owner", T).unwrap_err();
+            assert!(
+                e.contains(&format!(
+                    "the code fence opened on line 8 of the write-up ({open:?}) isn't closed"
+                )),
+                "{e}"
+            );
+            assert_eq!(text(&p), before, "nothing changes");
+            // Closed, it's saved, and the section is still the one answer and ask use.
+            let closed = shown.replacen(
+                "## Research",
+                &format!("{open}\nmuster run\n{close}\n\n## Research"),
+                1,
+            );
+            edit_body(d.path(), "0001", &closed, &opened, "owner", T).unwrap();
+            let after = text(&p);
+            assert!(
+                after.contains(&format!("{close}\n\n{q}\n\n## Research\n")),
+                "{after}"
+            );
+            assert_eq!(open_body(d.path(), "0001", "owner").unwrap(), closed);
+            crate::queue::answer(d.path(), "0001", 1, "آبی", "owner", T).unwrap();
+            crate::queue::ask(d.path(), "0001", "Another?", "wt-a", "aaaa1111", T).unwrap();
+            let after = text(&p);
+            assert_eq!(after.matches("## Questions").count(), 1, "{after}");
+            let t = crate::queue::read_task(d.path(), "0001").unwrap();
+            assert_eq!(t.questions.len(), 2);
+            assert!(t.questions[0].ticked);
+        }
+    }
+
+    #[test]
+    fn an_edit_of_a_write_up_ending_with_an_empty_questions_heading_is_saved() {
+        // Review R2: the empty heading is the write-up's last line, right above the Log or at the
+        // end of a file without one; the check after the put-back still finds it.
+        let shown = format!("{WRITE_UP}\n\nجزئیات.");
+        let new = format!("{WRITE_UP}\n- [ ] AC2: two\n\nجزئیات.");
+        for log in [true, false] {
+            let d = queue();
+            let p = put(
+                d.path(),
+                "todo",
+                READY,
+                &format!("{shown}\n\n## Questions"),
+                "",
+            );
+            if !log {
+                let t = text(&p);
+                fs::write(&p, &t[..t.rfind("\n\n## Log").unwrap() + 1]).unwrap();
+            }
+            let opened = open_body(d.path(), "0001", "owner").unwrap();
+            assert_eq!(opened, shown, "the heading hidden");
+            edit_body(d.path(), "0001", &new, &opened, "owner", T).unwrap();
+            let after = text(&p);
+            let tail = if log { "\n\n## Log\n" } else { "\n" };
+            assert!(
+                after.contains(&format!("{new}\n\n## Questions{tail}")),
+                "{after}"
+            );
+            assert_eq!(after.matches("## Questions").count(), 1, "{after}");
+            assert_eq!(open_body(d.path(), "0001", "owner").unwrap(), new);
+            crate::queue::ask(d.path(), "0001", "Which size?", "wt-a", "aaaa1111", T).unwrap();
+            let after = text(&p);
+            assert_eq!(after.matches("## Questions").count(), 1, "{after}");
+            assert_eq!(
+                crate::queue::read_task(d.path(), "0001")
+                    .unwrap()
+                    .questions
+                    .len(),
+                1
+            );
         }
     }
 

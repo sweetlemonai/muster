@@ -3,6 +3,42 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-164: a `## Questions` inside a code fence is never the tool's Questions section
+**Did (Gholi_53, builder):** `queue::questions_span` skips fenced code for the heading and for the
+section's end, through the new `queue::fenced_lines` (`merge_log::Fences`, plus a read-only
+`Fences::open`). Edit's cut and its refusal of a new heading (`ops::cut_questions`,
+`questions_headings`) and vision's write-up read the write-up alone (`write_up_questions_span`).
+`parse_task`'s question list now reads `questions_span` too, so the app never lists a fenced
+example's questions that answer would refuse. PROTOCOL.md, AS_BUILT and `docs/now/queue.md` say so.
+**Decided:** fences follow `testing::headings`' model, not plain CommonMark. A fence the write-up
+never closes hides nothing (the brief said "runs to the end"; that broke the stray-fence tests in
+testing.rs and gates.rs, and would let a stray fence make ask refuse). A question's own indented
+lines neither open nor close a fence, so an asker's unclosed ``` can't push the next ask past the
+Log.
+**Verified:** 6 new tests (ops edit_tests 3, queue tests 3: backtick, tilde, nested, unclosed,
+Persian text, edit/ask/answer). Mutants: questions_span without fences, questions_headings without
+fences, no question-item rule, an unclosed fence hiding everything: each fails a test.
+`bin/gate` on the rebased branch: gate: green (pnpm check, test_task, test_commands, test_ac_verifier, cargo test (Kiritimati)); its first run lost one unrelated test (`history::…git_gc_auto…`, a file gone under load), which passed alone and in the rerun.
+**Fixed (Gholi_54, review round 1, R1):** an edit leaving a fence open above a mid-write-up
+Questions section's anchor, closed by a later fence, put the section back inside code, so answer
+said "no Q1" and ask started a second section → `put_back_questions` never checked the section was
+still findable → `ops::questions_still_found` re-finds it after the put-back and refuses the edit,
+naming the open fence's line. Test
+`an_edit_leaving_a_fence_open_above_a_mid_write_up_questions_section_is_refused` (backtick and
+tilde, Persian text; the closed edit saves and answer/ask keep one section); the mutant without the
+check fails it. `bin/gate` after the fix, squashed on main 98668d8: gate: green (pnpm check, test_task, test_commands, test_ac_verifier, cargo test (Kiritimati)).
+**Fixed (Gholi_56, review round 2):** R2, the R1 check refused every edit of a write-up ending
+with an empty `## Questions` heading (drover 0016) → the put-back write-up has no newline after its
+last line, and the reader needs one under a heading → `questions_still_found` reads the write-up
+with the newline the file adds. R3, after a closed block with no blank line between, the refusal
+named the closed block's opener → it now walks `merge_log::Fences` and names the opener of the
+fence still open at the heading. Tests: `an_edit_of_a_write_up_ending_with_an_empty_questions_heading_is_saved`
+(above the Log, and at the end of a file without one; ask then keeps one section) and an
+adjacent-fence case in the R1 test (line 8, not 5). Mutants: no added newline, first opener kept:
+each fails its test. `bin/gate` squashed on main ffb1aca: gate: green (pnpm check, test_task, test_commands, test_ac_verifier, cargo test (Kiritimati)).
+**Open:** edit's `## Log` refusal (`clean_write_up`) and `comments_span`/`log_heading` still read
+fenced lines plainly.
+
 ## 2026-10-15 — mu-151: Persian digits and Jalali dates where people read them, search that folds Persian
 **Did (Gholi_48, builder):** Settings › Language has Digits (۱۲۳ · 123) and Calendar (Jalali ·
 Gregorian) under the language chips, each following the language until picked (`settings.rs`
@@ -178,6 +214,7 @@ and fa, light and dark, every mode and view, 900px and the edge cue: `attachment
 language. The real menu bar, a notification banner and a live switch weren't seen on screen
 (headless only). mu-148: VisionPanel and ReviewPanel pass English nouns to `copyNow`.
 
+
 ## 2026-10-15 — mu-209's merge-log repros pass; mu-215 to mu-217 shaped, one note folded into mu-149
 **Verified:** with mu-209 in the 07:26 release binary, `muster merge-log` on mu-131's three work logs (O e530e74,
 A fa2ed9d, B 8fb0ffe) and mu-173's (O d8ac722, A ed2474c, B cf5f59e) exits 0 with no conflict markers;
@@ -203,6 +240,7 @@ its branch and origin's copy. `fast_forwards_to_the_checked_commit` now asserts 
 **Verified:** `hand_merge_rechecks_under_the_lock` and `hand_merge_rechecks_the_review_under_the_lock`
 failed before the change (the red record's pass went through and deleted the branch; the unclean
 review passed to Your check) and pass now; the `if true` mutant fails the notes assert. Gate below.
+
 ## 2026-10-15 — mu-213: the sidebar and queue now pages split in two, each under 3 KB
 **Did:** `docs/now/sidebar.md` (4,095 bytes) became `sidebar.md`, the projects sidebar (1,789),
 and the new `settings.md`, Settings (2,422). `docs/now/queue.md` (4,056) became `queue.md`, the

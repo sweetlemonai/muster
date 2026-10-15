@@ -2262,7 +2262,15 @@ capture listener on the window while it's open); its group carries `data-own-esc
 in it alone, and holds the focus (`tabIndex -1`) while the release runs. A release that goes
 through moves the focus to the Next step group (`tabIndex -1`), since Release goes with the claim.
 **Questions:** `muster ask`, `escalate`, `inbox` and `answer` follow the file contract. `bin/task`
-is a stand-in that runs them. The answer hook still reads the mailbox itself, for speed. With mail
+is a stand-in that runs them. The section is `queue::questions_span`'s: the first `## Questions`
+outside fenced code, to the next `## ` line outside it (mu-164). `queue::fenced_lines` reads
+fences as `testing::headings` does (only above the Comments or Log; one never closed hides
+nothing), and a question's own indented lines neither open nor close one. The task's question
+list reads the same span, and Edit's cut and its refusal of a new heading read the write-up alone
+(`write_up_questions_span`, `write_up_fenced_lines`), where a quoted `## Log` is just code. After
+the put-back, `ops::questions_still_found` re-finds the section in the write-up as the file holds
+it (with its last newline, so an empty last-line heading counts) and refuses the edit, naming the
+line of the fence still open at the heading, when a fence the edit left open hides it. The answer hook still reads the mailbox itself, for speed. With mail
 waiting it takes the queue's lock shared without waiting (mu-156: `flock(LOCK_SH | LOCK_NB)` on
 `mail/.lock`, opened with `O_NOFOLLOW`), decides whether each check-in, pause or resume request
 still stands, and only then moves it to `delivered/`. Every muster write locks it exclusive, so a

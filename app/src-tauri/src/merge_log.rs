@@ -57,6 +57,11 @@ pub(crate) struct Fences {
 }
 
 impl Fences {
+    /// Is a fence open after the lines read so far?
+    pub(crate) fn open(&self) -> bool {
+        self.open.is_some()
+    }
+
     /// Is `line`, the next line, code: a fence line itself, or inside an open fence?
     pub(crate) fn fenced(&mut self, line: &[u8]) -> bool {
         match (self.open, fence(line)) {

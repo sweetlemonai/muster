@@ -1288,4 +1288,9 @@ By hand, if the command isn't available:
   holder's branch until they pass it on (task 0020, decision 0003).
 - `## Questions` is the tool's, like Vision, wherever it sits (task 0094): `muster edit` and the
   app's Edit leave it out of the write-up and put it back unchanged where it was, and refuse a
-  write-up that adds a `## Questions` line. Ask with `muster ask`.
+  write-up that adds a `## Questions` line. Ask with `muster ask`. A `## Questions` (or any
+  `## ` line) inside a fenced code block (``` or ~~~) is never the section or its end (task
+  0164): show the format in a fence and the editor keeps it, and ask and answer write below the
+  real heading. A fence the write-up never closes hides nothing. An edit that leaves a fence
+  open above where the hidden section goes back, closed by a later fence, is refused: it would
+  hide the section.
