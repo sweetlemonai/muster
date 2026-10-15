@@ -21,14 +21,14 @@ Sources: the owner's brief (`tasks/proposals/Muster orchestration design brief.m
 | Run states | **MCP Tasks vocabulary**: `working`, `input_required`, `completed`, `failed`, `cancelled` | [R§7] |
 | Roles | **Kept, plus Pouya (Researcher)** | Owner, via the lead, 2026-10-14 |
 
-## Terms rules the build must keep (decision record in item 0.1)
+## Terms rules the build must keep (decision 0013, item 0.1)
 
 1. Muster starts the owner's own, unmodified `claude` and `codex`, signed in by the owner. It never
    reads, stores or passes on login tokens, and never calls a provider's API with a subscription
    token (0002 already does this) [R§1].
 2. No automatic choice among several accounts of one provider to get past limits. A limit hit means
    cooldown on that account until `resets_at`, not a switch [R§1].
-3. The company account is never used (mu-99), and Muster never reads it.
+3. The company account is never used (mu-99, decision 0012), and Muster never reads it.
 4. Every run is capped (turns and budget) and paced (owner's reserve, weekly pacing), so use stays
    close to one person's.
 5. Sellable shape: each user brings their own login or API key; Muster has no pooling feature to
@@ -70,12 +70,12 @@ item ends usable on its own and ships its part of the app.
 ### Phase 0: decide and fix the ground (before anything launches)
 
 **0.1 Decision: orchestration's terms and account policy**
-- What: a decision record (0012) with the six rules above, quoting the clauses and their dates from
-  the research.
+- What: a decision record (0013; 0012 went to mu-99's account allowlist) with the six rules above,
+  quoting the clauses and their dates from the research.
 - Why: the owner's rule is sellable and no terms risk; the brief's load balancing breaks it.
 - Acceptance: the record exists with the owner's yes; the brief's "Load balancing" section is marked
   replaced; PROTOCOL.md links the rules.
-- Touches: `docs/decisions/0012-*.md`, `docs/PROTOCOL.md`, `docs/VISION.md`.
+- Touches: `docs/decisions/0013-*.md`, `docs/PROTOCOL.md`, `docs/VISION.md`.
 - Estimate: 1h · 150k. Depends: none.
 
 **0.2 Decision: who launches runs**
@@ -83,7 +83,7 @@ item ends usable on its own and ships its part of the app.
   `claude -p` runner now; Drover's runner implements the same interface later and replaces it.
 - Why: the brief's step 5 launches from Muster, but 0007 says Drover runs agents.
 - Acceptance: the record has the owner's yes; mu-9's AC1 note points to it.
-- Touches: `docs/decisions/0013-*.md`, mu-9.
+- Touches: `docs/decisions/0015-*.md`, mu-9.
 - Estimate: 30m · 100k. Depends: none.
 
 **0.3 Back up local queues** (brief, AS_BUILT issue 1)
@@ -236,7 +236,7 @@ item ends usable on its own and ships its part of the app.
 - What: the owner may pin projects to a second account they hold. The dispatcher uses each account
   only for its pinned projects. A limit on one never moves work to another.
 - Acceptance: a test with two accounts at their limits shows no move; Settings says why there is no
-  automatic balancing and links decision 0012.
+  automatic balancing and links decision 0013.
 - Touches: `accounts.rs`, Settings › Accounts. Estimate: 3h · 500k. Depends: 0.1, 3.1.
 
 **3.3 Leila for escalations** (brief step 9)

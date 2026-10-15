@@ -16,7 +16,8 @@ One ecosystem the owner owns (decision 0007): **idea and task** in Muster, **cod
 
 Principles: no babysitting (ask the owner only what's theirs, in batches); everything visible but
 out of the way (ADHD, `DESIGN.md`); local first, nothing sent anywhere but the model; tokens are
-budgeted; only `muster` writes state, agents never edit status, claims or times by hand.
+budgeted; no terms risk: one person's use per account, pinned by hand
+([0013](decisions/0013-orchestration-terms-and-accounts.md)); only `muster` writes state, agents never edit status, claims or times by hand.
 
 **Lenses needed:** accessibility, i18n/RTL, themes, architecture, security, privacy, performance
 

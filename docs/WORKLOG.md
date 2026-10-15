@@ -25,6 +25,30 @@ screenshots in attachments; owner's settings byte-identical after every QA run.
 evidence); backlog notes from review nits (mu-88 R1, mu-90 R6-R8, mu-95 R3, migrate flake, band
 titles, mu-93 item 5).
 
+## 2026-10-14 — Decision 0013: orchestration's terms and accounts (task 0107)
+**Did:** `docs/decisions/0013-orchestration-terms-and-accounts.md` holds the plan's six terms rules
+(own client and no tokens, no balancing across accounts, no company account, capped and paced runs,
+each user's own login, telemetry off), each with its clause and date from the research, the three
+options and the choice; capacity is read, then learned per run. PROTOCOL.md's Sessions, VISION.md's
+principles and AS_BUILT.md's decisions table link it; the brief's "Load balancing" now opens with
+"Replaced by decision 0013".
+**Decided:** numbered 0013, not 0012, because mu-99 already writes 0012 (the account allowlist); the
+plan doc's 0.1 and 3.2 say 0013 and 0.2 (mu-108) says 0015, since mu-129's gates record took 0014
+(the lead's call). Decided by the coordinator for the owner; the owner can overrule it.
+**Fixed (review round 1):** the renumbering hadn't reached the dependent tasks → mu-113, mu-116,
+mu-117, mu-121, mu-122, mu-126 and mu-127 now say 0013 for the terms and 0014 for the runner (through
+`muster edit`); mu-9's numbers sit in a comment, so a new comment corrects them. The record says Gas
+Town rotates accounts at a limit, and that `rate_limit_event`'s fields sit in `rate_limit_info`, in
+camelCase on the wire (mu-111).
+**Fixed (review round 2):** mu-129 merged its gates record as 0014, so the runner record is 0015 →
+the plan doc's 0.2, mu-117, mu-126 and mu-127 say 0015 (`muster edit`), mu-118 and mu-123 say 0013 for
+the terms, and a comment on mu-9 corrects the earlier numbers. mu-108's own write-up is gholi_14's while
+they hold it, so a comment there lists its renumbering.
+**Verified:** six `### Rule` headings and `resets_at` in the record; `grep 0013` hits all four files.
+**Open:** AS_BUILT.md's decisions table will conflict with mu-99's 0012 row at merge (keep both rows,
+0012 first). The brief lives in the retired, untracked `muster/tasks/proposals/`, so its line isn't
+in git.
+
 ## 2026-10-14 — Spike: how Claude Code reports 5-hour and weekly use on this Mac (mu-111)
 **Did:** short `claude -p` stream-json runs and interactive sessions with a throwaway status line,
 on Claude Code 2.1.296; findings posted on mu-9 (three comments). Fixtures for mu-113 and mu-117 in

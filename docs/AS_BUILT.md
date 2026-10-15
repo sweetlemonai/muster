@@ -343,7 +343,7 @@ is in section 6.
 
 ## 5. Decisions
 
-In `docs/decisions/`, newest last. There is no 0012 yet.
+In `docs/decisions/`, newest last.
 
 | # | Decision |
 |---|---|
@@ -358,6 +358,7 @@ In `docs/decisions/`, newest last. There is no 0012 yet.
 | [0009](decisions/0009-work-log-merges-through-a-muster-merge-driver.md) | The work log merges through `muster merge-log`, so new entries on top never stop a merge |
 | [0010](decisions/0010-the-queue-lives-in-local-files-not-github-issues.md) | The queue lives in local files, not GitHub Issues |
 | [0011](decisions/0011-sessions-hand-off-by-themselves.md) | Sessions hand off by themselves at \~60% context or the token cap, at a gap, to an automatic successor that reads the old mailbox; amends 0004 point 3 |
+| [0013](decisions/0013-orchestration-terms-and-accounts.md) | Orchestration's terms: Muster runs each user's own `claude` and `codex` and never touches a login token, never balances across accounts (a limit means cooldown until `resets_at`), pins each account to projects by hand, reads usage instead of learning it from limit hits, caps and paces every run, keeps telemetry off; replaces the brief's load balancing |
 
 ## 6. The queue at a glance
 

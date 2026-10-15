@@ -690,6 +690,12 @@ and `tasks.json`, which scripts read, keep ids.
     or attached to a task.
   - `PERSONAL_HANDOFF_AUTO=0` keeps the trigger but starts no successor (run `/clear`, and the new
     session resumes); `PERSONAL_HANDOFF=0` turns the hook off.
+- **Orchestration keeps the terms rules (decision 0013).** Agents and the dispatcher run only the
+  owner's own `claude` and `codex`, never read or pass on a login token, never switch accounts
+  when one hits its limit (it cools down until `resets_at`), never use or read the company account,
+  cap and pace every run, and keep telemetry off. Each account works only the projects pinned to it
+  by hand. The six rules and the clauses behind them are in
+  [0013](decisions/0013-orchestration-terms-and-accounts.md).
 - **Name sessions by role:** the lead is `Muster_Team_Lead` and its successors `Muster_Team_Lead_2`,
   `_3` and on (`cc-mg-new -n Muster_Team_Lead`), the name the 600k cap matches; a builder is
   `/rename muster-build-0042`.
