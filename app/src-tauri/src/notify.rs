@@ -55,7 +55,8 @@ pub struct Item {
     pub line: String,
     /// Its session waits for input: Claude Code's word (0048), known only once it was read.
     pub input: bool,
-    /// The Claude account of that session, from its holder's stamp (0069); empty for the rest.
+    /// The Claude account of that session: the one it was found waiting on (0182), else its
+    /// holder's stamp's (0069); empty for the rest.
     pub account: String,
 }
 
@@ -120,7 +121,13 @@ fn task_items(t: &Task, label: &str) -> Vec<Item> {
         }
     }
     let key = crate::key::key(&t.prefix, &t.id);
-    let account = crate::agents::account_of(t).unwrap_or_default();
+    // The account its session was found waiting on (0182: it may not be the stamp's), so its
+    // first read there is the baseline.
+    let account = if t.session_account.is_empty() {
+        crate::agents::account_of(t).unwrap_or_default()
+    } else {
+        t.session_account.clone()
+    };
     why.into_iter()
         .map(|(k, words)| Item {
             input: k == "input",
@@ -1315,6 +1322,44 @@ mod tests {
         assert_eq!(
             new.iter().map(|i| i.key.as_str()).collect::<Vec<_>>(),
             ["muster/0007/input"]
+        );
+    }
+
+    /// 0182: a session stamped cc-mg and found waiting on cc-hg is hg's news: its item names hg,
+    /// so it's held back only until hg's first read, never by mg failing for good.
+    #[test]
+    fn a_session_found_waiting_on_another_account_than_its_stamps_is_that_accounts_news() {
+        let d = queue();
+        let dir = tempfile::tempdir().unwrap();
+        let n = Notifier::new(dir.path().join(FILE));
+        let fake = Fake::default();
+        let mut s = read(&d);
+        // At launch 0009's session isn't waiting yet.
+        let t = s.tasks.iter_mut().find(|t| t.id == "0009").unwrap();
+        t.session_state = SessionState::Unknown;
+        t.waiting_for_owner = false;
+        let both = |mg: Result<usize, String>| Snapshot {
+            accounts: vec![("mg".to_string(), mg), ("hg".to_string(), Ok(1))],
+            wanted: vec!["mg".to_string(), "hg".to_string()],
+            ..Snapshot::default()
+        };
+        // mg's folder is gone for good; hg reads from the first round.
+        let gone = || Err("there's no ~/.claude-mg folder".to_string());
+        assert!(after_read(&n, &s, &both(gone()), &fake).is_empty());
+        let t = s.tasks.iter_mut().find(|t| t.id == "0009").unwrap();
+        t.claimed_by = "wt-b (session bbbb2222 · cc-mg)".into();
+        t.session_state = SessionState::NeedsInput;
+        t.session_account = "hg".into();
+        t.waiting_for_owner = true;
+        let item = waiting(&s.tasks, &s.queues)
+            .into_iter()
+            .find(|i| i.input)
+            .unwrap();
+        assert_eq!(item.account, "hg");
+        let new = after_read(&n, &s, &both(gone()), &fake);
+        assert_eq!(
+            new.iter().map(|i| i.key.as_str()).collect::<Vec<_>>(),
+            ["muster/0009/input"]
         );
     }
 

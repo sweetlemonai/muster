@@ -113,7 +113,8 @@ stay open) the owner chose **A**.
     the one place the holder shows; ADHD, Standard and Focus all show it (`modes.ts`).
   - An identity, not a state: the panel fill, the line border and the text colour, the YOU
     ribbon's size and weight, never a stage colour or the gold. A working session's dot sits in
-    it beside the name; a lease run out turns its words the attention colour with "quiet", as the
+    it beside the name (its state is Claude Code's, matched by session id in every account Muster
+    reads, so a builder resumed on another account than its stamp's still shows working, 0182); a lease run out turns its words the attention colour with "quiet", as the
     card's flag says it.
   - In place, no hover-only words: the ribbon has the strip above the top row to itself, so it
     may run nearly the card's width (half of it when the stage band shares the strip). Where

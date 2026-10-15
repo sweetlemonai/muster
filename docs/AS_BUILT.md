@@ -838,9 +838,10 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   inline notice listing them with **Make them pauses** and **Not now**
   (`old_pauses`, `fix_old_pauses`, `set_old_pauses_offered`; the setting `old-pauses-offered`).
 - **Claude Code's session states** (0048, `agents.rs`, `sessionState.ts`): the core runs
-  `claude agents --json --all` (argument array, `CLAUDE_CONFIG_DIR` per account the stamps in
-  Building and Testing name, only accounts on the allowlist (0012): a stamp with no account or an
-  unlisted one reads nothing, so its card is unknown and the heartbeats judge, usage reporting off, in a process group of its own that a 10 s timeout stops whole, 1 MB cap) on a thread of its own,
+  `claude agents --json --all` (argument array, `CLAUDE_CONFIG_DIR` set for each account on the
+  allowlist (0012), every one of them, each once per read, as soon as a stamp in Building or Testing
+  names one of them (0182); a stamp with no account or an unlisted one causes no run and reads
+  nothing, so its card is unknown and the heartbeats judge, usage reporting off, in a process group of its own that a 10 s timeout stops whole, 1 MB cap) on a thread of its own,
   started by the window's state poll (or the Dock badge's own read while the window is hidden,
   0006) at most every 15 s and never while nothing has a stamped
   holder; the poll uses the latest result and never waits for a run. Parsed with serde into the
@@ -848,8 +849,14 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   stands in for its missing `state`, working with an idle `status` is unknown, and a repeated id
   is its latest entry. `agents::holds` counts each session's claims and Testing holds across every
   queue (the app's poll, and `muster list --json` through `projects::active`), and
-  `agents::apply_with` gives a task its holder's state when the id and account match and the
-  session holds nothing else (in Testing: no claim, one Testing hold); a paused task (0045) gets none and isn't counted as a hold. The card's who lines add
+  `agents::apply_with` gives a task its holder's state when the session id matches in any allowed
+  account, not only the one the stamp names (0182: cc-mg's builders resumed on cc-hg with the same
+  ids and claims still say `· cc-mg`), and the session holds nothing else. Listed on two accounts,
+  working or waiting beats unknown, which beats ended (`Snapshot::find`), then the stamp's account;
+  the account it was found on is kept on the task (`session_account`, not sent to the window) and
+  names it for the notifications. The live dot, the Work rows and the transcript already look the
+  id up in every allowed account's folders (`transcripts::Reader`), so they follow it too. Holding
+  nothing else means, in Testing, no claim and one Testing hold; a paused task (0045) gets none and isn't counted as a hold. The card's who lines add
   "working" (accent, with the Building dot), "waiting for input in Claude Code" (orange pill, and
   the task counts as needs you: the core sets `waitingForOwner`) or "session ended, task still in
   Building" (Building only), with "no check-in for N min" kept under it in muted text; the pane's status
@@ -1595,8 +1602,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   changes; while the window is hidden and doesn't poll, a thread reads the queues every 15 s for
   the badge alone (7 ms each on the real queues), and applies Claude Code's session states as the
   poll does (0048), so a session waiting for input stays on the badge. That starts at most one
-  `claude agents` run per 15 s, on its own thread and never waited on, and only while some task
-  in Building or Testing has a stamped holder. `needs_you` mirrors `human.ts`'s `needsYou`
+  `claude agents` run per allowed account per 15 s, on its own thread and never waited on, and only
+  while some task in Building or Testing has a holder stamped with an allowed account. `needs_you` mirrors `human.ts`'s `needsYou`
   (the owner's own paused task left out, 0045);
   `app/src/needs-cases.json` holds both to the same answers. It adds 16 KB to the binary.
 - **Menu bar icon** (task 0085): `tray.rs`, through Tauri's tray (Cargo feature `tray-icon`; its
@@ -1628,7 +1635,9 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   counted; each line at most 200 characters). Taken as seen without a notification: everything
   on the first read after start, after Off, and in a project the last read didn't have (no
   flood); a session waiting for input on an account Muster couldn't know yet (task 0069:
-  `agents::known` says which accounts a read wanted and which it read; `Seen::unread` holds those
+  `agents::known` says which accounts a read wanted (every allowed one it asks, 0182, and every one
+  a stamp names) and which it read; a waiting session's item names the account it was found
+  waiting on, which may not be its stamp's; `Seen::unread` holds those
   wanted on the first read, or the first after Off, until a read knows them or no longer wants
   them), so one waiting at launch isn't posted when its account's first good `claude agents` read
   lands, even when another account read fine earlier, while an account first wanted later posts

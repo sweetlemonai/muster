@@ -714,6 +714,10 @@ pub struct Task {
     /// What Claude Code says its holder's session is doing (0048, `agents::apply`): working,
     /// needs-input, ended, or unknown wherever nothing read it (the heartbeat lines decide then).
     pub session_state: crate::agents::SessionState,
+    /// The account Claude Code listed that session on (0182, `agents::apply`): `mg`, or `hg` for
+    /// one stamped `cc-mg` and resumed on cc-hg; "" with no state. Not sent to the window.
+    #[serde(skip)]
+    pub session_account: String,
     /// The folders and globs it works in (`touches:`, 0023), which `ready --parallel` keeps apart.
     pub touches: Vec<String>,
     /// Where `muster start` put it (0023): its git worktree and branch, until the merge or a
@@ -1466,6 +1470,7 @@ pub fn parse_task(
         session_ids: Vec::new(),
         live: false,
         session_state: Default::default(),
+        session_account: String::new(),
         touches: parse_touches(&get("touches")),
         worktree: get("worktree"),
         branch: get("branch"),

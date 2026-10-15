@@ -2288,8 +2288,16 @@ mod tests {
             s
         };
         let count = |state: &'static str| {
+            // Every allowed account is asked (0182); only hg lists the sessions.
             let s = read(Arc::new(move |account: &accounts::Account| {
-                assert_eq!(account.label(), "hg");
+                assert!(
+                    matches!(account.label(), "mg" | "hg"),
+                    "{}",
+                    account.label()
+                );
+                if account.label() == "mg" {
+                    return Ok(b"[]".to_vec());
+                }
                 Ok(format!(
                     r#"[{{"sessionId": "7b5e8856", "state": "{state}"}}, {{"sessionId": "11111111", "state": "{state}"}}, {{"sessionId": "22222222", "state": "{state}"}}]"#
                 )

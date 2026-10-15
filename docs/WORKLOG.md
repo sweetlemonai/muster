@@ -4,6 +4,21 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Session states matched by id across accounts, so moved builders show running (mu-182)
+**Fixed (Akbar_24, builder):** the owner saw no session running while seven worked. Cause: `agents.rs`
+ran `claude agents` only for the accounts the stamps named and matched on (account, id); builders
+resumed on cc-hg still carry `· cc-mg`, and cc-mg's list no longer has them. Now `agents::wanted`
+asks every allowed account (mg, hg; never `~/.claude`) once a stamp names one, and
+`Snapshot::find` matches by id in any allowed account (working/waiting > unknown > ended, then the
+stamp's account). The task keeps the account it was found on (`session_account`, not sent to the
+window), and a waiting session's notification is that account's news, so a dead cc-mg folder can't
+hold hg's news back. Live dot, Work rows and transcripts already looked ids up across allowed
+accounts; a test now proves it. AS_BUILT, DESIGN, docs/now/claims.md.
+**Decided:** a session listed by no account stays unknown (heartbeats decide), not ended as the
+brief's Tests line said: unmatched has meant unknown since 0048, and an ended reading would mark
+every session `claude agents` doesn't list (older or not run through it) as dead.
+**Verified:** see the gate line in mu-182's pass.
+
 ## 2026-10-14 — Migrate's probe clears a dead run's scratch folder first (mu-183)
 **Fixed (Gholi_27, builder):** a migrate killed mid-probe left `$TMPDIR/muster-migrate-probe-<pid>-0`;
 a later process reusing the pid refused with a false "another file and … would both be" → since

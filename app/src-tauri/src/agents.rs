@@ -1,7 +1,9 @@
 //! Claude Code's own word on its sessions (task 0048): `claude agents --json --all`, run once per
-//! account the open work's stamps name (0030) among the accounts Muster reads (0099,
-//! `accounts::allowed`: never `~/.claude`, the company account), off the main thread, cached, at
-//! most every `EVERY_SECS`. It tells a session that's working from one waiting for input (a permission
+//! account Muster reads (0099, `accounts::allowed`: never `~/.claude`, the company account)
+//! whenever the open work has a holder stamped with one of them (0030), off the main thread,
+//! cached, at most every `EVERY_SECS`. A state is matched to its holder by session id in every
+//! account read, not only the one its stamp names (0182): a session resumed on another account
+//! (cc-mg out of its limit, picked up on cc-hg with the same id and claim) still reads as itself. It tells a session that's working from one waiting for input (a permission
 //! prompt) and one that has ended, which heartbeats alone can't.
 //!
 //! The format is a research preview, so it's read defensively: anything that isn't a JSON array
@@ -319,6 +321,44 @@ pub struct Snapshot {
     pub states: HashMap<(String, String), SessionState>,
     /// Each account read, in order: how many sessions it listed, or why it couldn't be read.
     pub accounts: Vec<(String, Result<usize, String>)>,
+    /// The accounts this round is of, by label, in the allowlist's order: each one asked, whether
+    /// its read has landed yet or not (`known`).
+    pub wanted: Vec<String>,
+}
+
+/// How much a state says the session runs on that account now: a session runs on one account at
+/// a time, so where it's working or waiting is where it is; where it ended is where it was.
+fn liveness(s: SessionState) -> u8 {
+    match s {
+        SessionState::Working | SessionState::NeedsInput => 2,
+        SessionState::Unknown => 1,
+        SessionState::Ended => 0,
+    }
+}
+
+impl Snapshot {
+    /// Session `id`'s state and the account it was found on, matched by id in every account of
+    /// the snapshot that `allowed` still has (0182), whichever one its stamp names
+    /// (`stamped_on`). Listed on more than one, the liveliest state wins (`liveness`: resumed on
+    /// cc-hg after cc-mg's limit, it works on hg whatever mg's list still says), then the stamp's
+    /// account, then the first label in order. None when no allowed account lists it.
+    pub fn find(
+        &self,
+        id: &str,
+        stamped_on: &str,
+        allowed: &[Account],
+    ) -> Option<(SessionState, String)> {
+        self.states
+            .iter()
+            .filter(|((label, i), _)| i == id && crate::accounts::is_allowed(label, allowed))
+            .max_by(|((a, _), sa), ((b, _), sb)| {
+                liveness(**sa)
+                    .cmp(&liveness(**sb))
+                    .then((a == stamped_on).cmp(&(b == stamped_on)))
+                    .then(b.cmp(a))
+            })
+            .map(|((label, _), s)| (*s, label.clone()))
+    }
 }
 
 /// The stamp of the holder a session state can apply to: someone other than the owner holding
@@ -345,19 +385,28 @@ fn stamped(tasks: &[Task]) -> Vec<String> {
     out
 }
 
-/// The accounts to read: each of `allowed` that a stamp `stamp_of` takes names, once, by label.
-/// Empty when no task in Building or Testing has a holder stamped with an allowed account: then
-/// nothing runs. A stamp with no account, or one not on the list, never causes a run (0099).
+/// The accounts to read: every one of `allowed`, in its order, once some task in Building or
+/// Testing has a holder (`stamp_of`) stamped with one of them; empty otherwise, and then nothing
+/// runs. Every allowed account, not only the stamp's (0182): a session keeps its id and claim
+/// when it's resumed on another account, so its state may be on any of them. A stamp with no
+/// account, or one not on the list, never causes a run (0099).
 pub fn wanted(tasks: &[Task], allowed: &[Account]) -> Vec<Account> {
-    stamped(tasks)
+    if stamped(tasks)
         .iter()
-        .filter_map(|l| crate::accounts::find(l, allowed).cloned())
-        .collect()
+        .any(|l| crate::accounts::is_allowed(l, allowed))
+    {
+        allowed.to_vec()
+    } else {
+        Vec::new()
+    }
 }
 
-/// Read every account in `accounts` through `fetch`.
+/// Read every account in `accounts` through `fetch`, each once.
 pub fn read_all(fetch: &Fetch, accounts: &[Account]) -> Snapshot {
-    let mut snap = Snapshot::default();
+    let mut snap = Snapshot {
+        wanted: accounts.iter().map(|a| a.label().to_string()).collect(),
+        ..Snapshot::default()
+    };
     for account in accounts {
         let label = account.label().to_string();
         let read = fetch(account).and_then(|out| parse(&out));
@@ -377,7 +426,8 @@ pub fn read_all(fetch: &Fetch, accounts: &[Account]) -> Snapshot {
 /// knows.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Known {
-    /// The accounts the open work's stamps name, read or not (one Muster doesn't read never is).
+    /// The accounts the open work's stamps name and every one the round asks (0182: each allowed
+    /// one), read or not (one Muster doesn't read never is).
     pub wanted: HashSet<String>,
     /// The accounts read.
     pub accounts: HashSet<String>,
@@ -390,12 +440,16 @@ impl Known {
     }
 }
 
-/// What `snap` says of the accounts `tasks` want: each one wanted, and each one it read. None is
-/// read before the first read lands, nor one that couldn't be read, so a session waiting for
-/// input there isn't known to wait yet.
+/// What `snap` says of the accounts `tasks` want: each one their stamps name and each one the
+/// round asks (`Snapshot::wanted`: every allowed one, 0182), and each one it read. None is read
+/// before the first read lands, nor one that couldn't be read, so a session waiting for input
+/// there isn't known to wait yet.
 pub fn known(tasks: &[Task], snap: &Snapshot) -> Known {
     Known {
-        wanted: stamped(tasks).into_iter().collect(),
+        wanted: stamped(tasks)
+            .into_iter()
+            .chain(snap.wanted.iter().cloned())
+            .collect(),
         accounts: snap
             .accounts
             .iter()
@@ -445,20 +499,22 @@ pub fn apply(tasks: &mut [Task], snap: &Snapshot, allowed: &[Account]) {
 }
 
 /// Give each task its session's state. One applies when the holder's stamp (`stamp_of`) names
-/// the session and its account, and the session holds nothing else (`holds`): in Building, no
+/// the session, and the session holds nothing else (`holds`): in Building, no
 /// other claim; in Testing, no claim and no other Testing hold. A coordinator's subagents share
 /// its id, and a builder that passed a task to Testing and claimed the next is working on that
 /// one, so its state says nothing about the others. Ended shows only in Building: in Testing the
 /// holder is the builder that passed it, whose session ending is the normal course. Every other
 /// task is unknown, so its card reads as before. A session waiting for input waits on the owner,
 /// so the task counts in the needs-you count. Only a stamp whose account is one of `allowed`
-/// (0099) gets a state, whatever `snap` holds: one read before the account left the list says
-/// nothing now.
+/// (0099) gets a state, and only from an account of `allowed`, whatever `snap` holds: one read
+/// before the account left the list says nothing now. The state is matched by session id in
+/// every allowed account (`Snapshot::find`, 0182), and the account it was found on is kept as
+/// the task's `session_account`.
 pub fn apply_with(tasks: &mut [Task], holds: &Holds, snap: &Snapshot, allowed: &[Account]) {
     let n = |m: &HashMap<String, usize>, id: &str| m.get(id).copied().unwrap_or(0);
     for t in tasks.iter_mut() {
         let building = t.stage == "building";
-        t.session_state = match stamp_of(t) {
+        let found = match stamp_of(t) {
             Some(s)
                 if crate::accounts::is_allowed(&s.account, allowed)
                     && ((building && n(&holds.claims, &s.id) == 1)
@@ -466,12 +522,14 @@ pub fn apply_with(tasks: &mut [Task], holds: &Holds, snap: &Snapshot, allowed: &
                             && n(&holds.claims, &s.id) == 0
                             && n(&holds.testing, &s.id) == 1)) =>
             {
-                match snap.states.get(&(s.account, s.id)).copied() {
-                    Some(SessionState::Ended) if !building => SessionState::Unknown,
-                    state => state.unwrap_or_default(),
-                }
+                snap.find(&s.id, &s.account, allowed)
             }
-            _ => SessionState::Unknown,
+            _ => None,
+        };
+        (t.session_state, t.session_account) = match found {
+            Some((SessionState::Ended, _)) if !building => (SessionState::Unknown, String::new()),
+            Some((state, account)) => (state, account),
+            None => (SessionState::Unknown, String::new()),
         };
         if t.session_state == SessionState::NeedsInput {
             t.waiting_for_owner = true;
@@ -500,7 +558,10 @@ impl Inner {
     fn fresh(&self, now: u64, wanted: &[String]) -> Snapshot {
         let age = now.checked_sub(self.snapshot_at);
         if !age.is_some_and(|a| a <= MAX_AGE_SECS) {
-            return Snapshot::default();
+            return Snapshot {
+                wanted: wanted.to_vec(),
+                ..Snapshot::default()
+            };
         }
         let keep = |label: &String| wanted.contains(label);
         Snapshot {
@@ -518,6 +579,7 @@ impl Inner {
                 .filter(|(label, _)| keep(label))
                 .cloned()
                 .collect(),
+            wanted: wanted.to_vec(),
         }
     }
 }
@@ -561,8 +623,8 @@ impl Monitor {
     /// Called with every state read at `now` (seconds): when some task has a holder in Building
     /// or Testing stamped with one of the `allowed` accounts, no read is running and the last
     /// started `EVERY_SECS` or more ago (or the clock went back), a read of the accounts they name
-    /// starts through `spawn`. Returns the latest snapshot, of the accounts wanted now only; an
-    /// empty one when nothing is wanted.
+    /// starts through `spawn`: of every allowed account (`wanted`). Returns the latest snapshot, of
+    /// the accounts wanted now only; an empty one when nothing is wanted.
     pub fn poll(self: &Arc<Self>, tasks: &[Task], allowed: &[Account], now: u64) -> Snapshot {
         let wanted = wanted(tasks, allowed);
         let labels: Vec<String> = wanted.iter().map(|a| a.label().to_string()).collect();
@@ -1112,12 +1174,12 @@ printf '%s' '[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d51
             runs(),
             format!(
                 "[{}]\n[{}]\n[{}]\n[{}]\n",
-                hg.display(),
                 mg.display(),
                 hg.display(),
-                mg.display()
+                mg.display(),
+                hg.display()
             ),
-            "only hg and mg, each set"
+            "only mg and hg, each set, each once per read"
         );
         apply(&mut tasks, &snap, &allowed);
         use SessionState::*;
@@ -1159,7 +1221,7 @@ printf '%s' '[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d51
                 .iter()
                 .map(|(a, id, s)| ((a.to_string(), id.to_string()), *s))
                 .collect(),
-            accounts: Vec::new(),
+            ..Snapshot::default()
         }
     }
 
@@ -1168,18 +1230,20 @@ printf '%s' '[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d51
     }
 
     #[test]
-    fn a_state_applies_only_to_the_one_open_task_its_session_holds_in_its_account() {
+    fn a_state_applies_only_to_the_one_open_task_its_session_holds() {
         use SessionState::*;
         let allowed = allowed();
         let s = snap(&[("hg", "7b5e8856", Working), ("hg", "4d517d9d", NeedsInput)]);
         let mut tasks = vec![task("0001", "building", A)];
         apply(&mut tasks, &s, &allowed);
         assert_eq!(states(&tasks), [Working]);
+        assert_eq!(tasks[0].session_account, "hg");
         assert!(!tasks[0].waiting_for_owner);
-        // The same id in another account's list isn't this session.
+        // The same id in another allowed account's list is this session, resumed there (0182).
         let mut other = vec![task("0001", "building", "wt-a (session 7b5e8856 · cc-mg)")];
         apply(&mut other, &s, &allowed);
-        assert_eq!(states(&other), [Unknown]);
+        assert_eq!(states(&other), [Working]);
+        assert_eq!(other[0].session_account, "hg");
         // A coordinator's subagents share its id: neither task gets its state.
         let mut shared = vec![
             task("0001", "building", A),
@@ -1222,6 +1286,147 @@ printf '%s' '[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d51
         // Nothing read: unknown, and a state set by an earlier read is cleared.
         apply(&mut tasks, &Snapshot::default(), &allowed);
         assert_eq!(states(&tasks), [Unknown]);
+        assert_eq!(tasks[0].session_account, "");
+    }
+
+    /// AC1 (0182): cc-mg hit its weekly limit and its builders were resumed on cc-hg with the same
+    /// session ids and claims, so every claim still says `· cc-mg`. With a stand-in `claude` for
+    /// each account (mg lists nothing, hg lists the resumed session working), the app's monitor
+    /// and `muster list --json`'s read (both through `wanted`, `read_all` and `claude_fetch`) ask
+    /// every allowed account once per read, and the claim reads as working, found on hg. One
+    /// listed by neither account reads unknown (the heartbeat lines decide, as before).
+    #[test]
+    fn a_session_stamped_on_one_account_and_listed_only_on_another_reads_as_working() {
+        let home = crate::accounts::tests::fake_home();
+        let h = home.path();
+        let bin = h.join(".local/bin");
+        fs::create_dir_all(&bin).unwrap();
+        fake(
+            &bin,
+            r#"printf '[%s]\n' "${CLAUDE_CONFIG_DIR-unset}" >> "$0.runs"
+case "$CLAUDE_CONFIG_DIR" in
+  *-hg) printf '%s' '[{"sessionId": "3c09f6c7-1111", "state": "working"}, {"sessionId": "9d9d9d9d", "state": "blocked"}]' ;;
+  *) printf '%s' '[]' ;;
+esac"#,
+        );
+        let allowed = crate::accounts::resolve(&["mg".into(), "hg".into()], h);
+        let mut tasks = vec![
+            task(
+                "0001",
+                "building",
+                "asghar_20 (main · session 3c09f6c7 · cc-mg)",
+            ),
+            task(
+                "0002",
+                "building",
+                "gholi_3 (main · session 5e5e5e5e · cc-mg)",
+            ),
+            task("0003", "testing", "qa (main · session 9d9d9d9d · cc-mg)"),
+        ];
+        let runs = || fs::read_to_string(bin.join("claude.runs")).unwrap_or_default();
+        let m = Monitor::new(claude_fetch(h.to_path_buf()), inline);
+        let snap = m.poll(&tasks, &allowed, 1000);
+        let (mg, hg) = (h.join(".claude-mg"), h.join(".claude-hg"));
+        let once = format!("[{}]\n[{}]\n", mg.display(), hg.display());
+        assert_eq!(runs(), once, "each allowed account, once");
+        assert_eq!(snap.wanted, ["mg", "hg"]);
+        let cli = read_all(&claude_fetch(h.to_path_buf()), &wanted(&tasks, &allowed));
+        assert_eq!(snap, cli);
+        assert_eq!(runs(), once.repeat(2));
+        apply(&mut tasks, &snap, &allowed);
+        use SessionState::*;
+        assert_eq!(states(&tasks), [Working, Unknown, NeedsInput]);
+        assert_eq!(tasks[0].session_account, "hg");
+        assert_eq!(tasks[1].session_account, "");
+        // Waiting for input on hg waits on the owner, and the item names hg, where it was read.
+        assert!(!tasks[0].waiting_for_owner && tasks[2].waiting_for_owner);
+        assert_eq!(tasks[2].session_account, "hg");
+        let json = serde_json::to_value(&tasks[0]).unwrap();
+        assert_eq!(json["sessionState"], "working");
+        assert!(
+            json.get("sessionAccount").is_none(),
+            "not sent to the window"
+        );
+        // With hg off the list, nothing reads it, and the claim reads unknown again.
+        fs::remove_file(bin.join("claude.runs")).unwrap();
+        let mg_only = crate::accounts::resolve(&["mg".into()], h);
+        let m = Monitor::new(claude_fetch(h.to_path_buf()), inline);
+        let snap = m.poll(&tasks, &mg_only, 1000);
+        assert_eq!(runs(), format!("[{}]\n", mg.display()));
+        apply(&mut tasks, &snap, &mg_only);
+        assert_eq!(states(&tasks), [Unknown, Unknown, Unknown]);
+    }
+
+    /// A session listed on more than one account: where it's working or waiting is where it runs
+    /// now, ahead of an account whose list says it ended or doesn't know its state; on a tie, the
+    /// stamp's account, then the first by name. Only allowed accounts count.
+    #[test]
+    fn a_session_listed_on_two_accounts_takes_the_liveliest_state() {
+        use SessionState::*;
+        let allowed = allowed();
+        let mg_only: Vec<Account> = allowed
+            .iter()
+            .filter(|a| a.label() == "mg")
+            .cloned()
+            .collect();
+        let id = "3c09f6c7";
+        let find = |pairs: &[(&str, SessionState)], stamped: &str, allowed: &[Account]| {
+            let pairs: Vec<(&str, &str, SessionState)> =
+                pairs.iter().map(|(a, s)| (*a, id, *s)).collect();
+            snap(&pairs).find(id, stamped, allowed)
+        };
+        let at = |s: SessionState, a: &str| Some((s, a.to_string()));
+        assert_eq!(
+            find(&[("mg", Ended), ("hg", Working)], "mg", &allowed),
+            at(Working, "hg")
+        );
+        assert_eq!(
+            find(&[("mg", Unknown), ("hg", NeedsInput)], "mg", &allowed),
+            at(NeedsInput, "hg")
+        );
+        assert_eq!(
+            find(&[("mg", NeedsInput), ("hg", Ended)], "hg", &allowed),
+            at(NeedsInput, "mg")
+        );
+        assert_eq!(
+            find(&[("mg", Ended), ("hg", Unknown)], "mg", &allowed),
+            at(Unknown, "hg")
+        );
+        // A tie: the stamp's account, else the first by name.
+        assert_eq!(
+            find(&[("mg", Working), ("hg", Working)], "hg", &allowed),
+            at(Working, "hg")
+        );
+        assert_eq!(
+            find(&[("mg", Ended), ("hg", Ended)], "mg", &allowed),
+            at(Ended, "mg")
+        );
+        assert_eq!(
+            find(&[("mg", Unknown), ("hg", Unknown)], "", &allowed),
+            at(Unknown, "hg")
+        );
+        // Only one listing: that one, whatever the stamp says.
+        assert_eq!(find(&[("hg", Ended)], "mg", &allowed), at(Ended, "hg"));
+        // An account off the list never lends its state, nor one never allowed (ih, the company's "").
+        assert_eq!(
+            find(&[("mg", Ended), ("hg", Working)], "mg", &mg_only),
+            at(Ended, "mg")
+        );
+        assert_eq!(
+            find(&[("ih", Working), ("", Working)], "mg", &allowed),
+            None
+        );
+        assert_eq!(find(&[], "mg", &allowed), None);
+        // Another id's state is never this one's.
+        assert_eq!(
+            snap(&[("hg", "4d517d9d", Working)]).find(id, "hg", &allowed),
+            None
+        );
+        // In Testing an ended session reads unknown, wherever it was found.
+        let mut testing = vec![task("0003", "testing", "qa (session 3c09f6c7 · cc-mg)")];
+        apply(&mut testing, &snap(&[("hg", id, Ended)]), &allowed);
+        assert_eq!(states(&testing), [Unknown]);
+        assert_eq!(testing[0].session_account, "");
     }
 
     #[test]
@@ -1369,7 +1574,7 @@ printf '%s' '[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d51
     }
 
     #[test]
-    fn only_the_accounts_of_stamped_holders_in_building_or_testing_are_read() {
+    fn every_allowed_account_is_read_once_a_holder_in_building_or_testing_is_stamped_with_one() {
         let tasks = vec![
             task("0001", "building", A),
             task("0002", "testing", "qa (session 4d517d9d · cc-mg)"),
@@ -1380,10 +1585,14 @@ printf '%s' '[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d51
             task("0007", "building", "wt-unstamped"),
         ];
         let allowed = allowed();
-        assert_eq!(labels(&wanted(&tasks, &allowed)), ["hg", "mg"]);
+        // Every allowed account, in the allowlist's order (0182), once some stamp names one.
+        assert_eq!(labels(&wanted(&tasks, &allowed)), ["mg", "hg"]);
+        assert_eq!(labels(&wanted(&tasks[1..2], &allowed)), ["mg", "hg"]);
         assert!(wanted(&tasks[4..], &allowed).is_empty());
         // Only the listed ones, by an exact match.
         assert_eq!(labels(&wanted(&tasks, &allowed[1..])), ["hg"]);
+        // A stamp of an account off the list causes no run, even with another account on it.
+        assert!(wanted(&tasks[1..2], &allowed[1..]).is_empty());
         // The stamps say which accounts they name, all of them, for `known`.
         assert_eq!(stamped(&tasks), ["", "hg", "mg"]);
     }
@@ -1392,8 +1601,8 @@ printf '%s' '[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d51
     fn a_read_says_which_accounts_it_wanted_and_which_it_read() {
         let tasks = vec![task("0001", "building", A)];
         let read = |r: Result<usize, &str>| Snapshot {
-            states: HashMap::new(),
             accounts: vec![("hg".to_string(), r.map_err(String::from))],
+            ..Snapshot::default()
         };
         let hg_wanted: HashSet<String> = ["hg".to_string()].into();
         // Before the first read lands: wanted, none read.
@@ -1411,14 +1620,23 @@ printf '%s' '[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d51
         assert!(!failed.knows("hg") && failed.wanted == hg_wanted);
         // Each account on its own: one read Ok doesn't make another known.
         let two = Snapshot {
-            states: HashMap::new(),
             accounts: vec![
                 ("hg".to_string(), Ok(1)),
                 ("mg".to_string(), Err("timed out".to_string())),
             ],
+            wanted: vec!["mg".to_string(), "hg".to_string()],
+            ..Snapshot::default()
         };
         let k = known(&tasks, &two);
         assert!(k.knows("hg") && !k.knows("mg"));
+        // Every account the round asks is wanted (0182), before its read lands too.
+        assert_eq!(k.wanted, ["hg".to_string(), "mg".to_string()].into());
+        let asked = Snapshot {
+            wanted: vec!["mg".to_string(), "hg".to_string()],
+            ..Snapshot::default()
+        };
+        let k = known(&tasks, &asked);
+        assert!(k.wanted.contains("mg") && !k.knows("mg") && !k.knows("hg"));
         // Nothing to read: nothing wanted, none read.
         let unstamped = vec![task("0002", "building", "wt-unstamped")];
         assert_eq!(known(&unstamped, &Snapshot::default()), Known::default());
@@ -1466,8 +1684,9 @@ printf '%s' '[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d51
         assert!(m.summary().starts_with("not read now"), "{}", m.summary());
         // With one: read at once, then not again until 15 s have passed on the clock.
         let tasks = vec![task("0001", "building", A)];
+        // Each round reads every allowed account once: mg and hg.
         let s = m.poll(&tasks, &allowed, 2000);
-        assert_eq!(reads.load(Ordering::SeqCst), 1);
+        assert_eq!(reads.load(Ordering::SeqCst), 2);
         assert_eq!(
             s.states.get(&("hg".to_string(), "7b5e8856".to_string())),
             Some(&SessionState::Working)
@@ -1475,13 +1694,13 @@ printf '%s' '[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d51
         for now in [2001, 2010, 2014] {
             assert_eq!(m.poll(&tasks, &allowed, now), s, "cached at {now}");
         }
-        assert_eq!(reads.load(Ordering::SeqCst), 1);
-        m.poll(&tasks, &allowed, 2015);
         assert_eq!(reads.load(Ordering::SeqCst), 2);
+        m.poll(&tasks, &allowed, 2015);
+        assert_eq!(reads.load(Ordering::SeqCst), 4);
         // A clock that went back starts a read rather than waiting forever.
         m.poll(&tasks, &allowed, 100);
-        assert_eq!(reads.load(Ordering::SeqCst), 3);
-        assert_eq!(m.summary(), "on (1 account)");
+        assert_eq!(reads.load(Ordering::SeqCst), 6);
+        assert_eq!(m.summary(), "on (2 accounts)");
     }
 
     #[test]
@@ -1512,10 +1731,16 @@ printf '%s' '[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d51
         // The read is held until the test lets it go, below: a poll that waited for it would sit
         // here until the read gave up (`unreleased`), not return.
         let first = m.poll(&tasks, &allowed, 1000);
-        assert_eq!(first, Snapshot::default(), "nothing read yet");
+        assert!(
+            first.states.is_empty() && first.accounts.is_empty(),
+            "nothing read yet"
+        );
+        assert_eq!(first.wanted, ["mg", "hg"], "both asked");
         assert_eq!(m.summary(), "reading…");
         // Due again by the clock, but the first read is still running: no second one.
         m.poll(&tasks, &allowed, 1100);
+        // One release for each account's run.
+        release.send(()).unwrap();
         release.send(()).unwrap();
         // Then, polled again before the next read is due, the first read's result shows.
         let deadline = Instant::now() + Duration::from_secs(60);
@@ -1530,7 +1755,7 @@ printf '%s' '[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d51
             s.states.get(&("hg".to_string(), "7b5e8856".to_string())),
             Some(&SessionState::NeedsInput)
         );
-        assert_eq!(reads.load(Ordering::SeqCst), 1);
+        assert_eq!(reads.load(Ordering::SeqCst), 2, "one round: mg and hg");
         // Back after a long while (the window was hidden): a new read starts and, while it runs,
         // the old one is too old to show.
         assert_eq!(
@@ -1538,7 +1763,9 @@ printf '%s' '[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d51
             s,
             "still fresh enough"
         );
-        assert_eq!(m.poll(&tasks, &allowed, 5000), Snapshot::default());
+        let stale = m.poll(&tasks, &allowed, 5000);
+        assert!(stale.states.is_empty() && stale.accounts.is_empty());
+        release.send(()).unwrap();
         release.send(()).unwrap();
         assert_eq!(
             unreleased.load(Ordering::SeqCst),
@@ -1550,11 +1777,11 @@ printf '%s' '[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d51
     #[test]
     fn settings_says_on_with_the_accounts_or_not_available_with_why() {
         let snap = |accounts: Vec<(&str, Result<usize, &str>)>| Snapshot {
-            states: HashMap::new(),
             accounts: accounts
                 .into_iter()
                 .map(|(a, r)| (a.to_string(), r.map_err(String::from)))
                 .collect(),
+            ..Snapshot::default()
         };
         assert_eq!(summary_of(&snap(vec![("hg", Ok(2))])), "on (1 account)");
         assert_eq!(
@@ -1590,7 +1817,7 @@ printf '%s' '[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d51
         m.poll(&[task("0001", "building", A)], &allowed(), 1000);
         assert_eq!(
             m.summary(),
-            "not available: claude agents exited with code 1"
+            "not available: cc-mg: claude agents exited with code 1; cc-hg: claude agents exited with code 1"
         );
     }
 }

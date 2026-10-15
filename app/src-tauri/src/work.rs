@@ -1202,6 +1202,52 @@ waiting_on:
         assert!(!tasks[0].live);
     }
 
+    /// 0182: a builder stamped `cc-mg` and resumed on cc-hg with the same id and claim (cc-mg hit
+    /// its limit) writes its transcript under `~/.claude-hg` only. Its Work row, the card's live
+    /// dot and its transcript are found by session id in every allowed account, not only the
+    /// stamp's.
+    #[test]
+    fn a_session_stamped_with_one_account_and_resumed_on_another_is_still_read() {
+        let text = "---\nid: 0001\nstage: building\nstatus: doing\nclaimed-by: asghar_20 (main · session 3c09f6c7 · cc-mg)\n---\n\n# T\n\n## Log\n- 2026-10-12 10:00 asghar_20 (main · session 3c09f6c7 · cc-mg): stage ready → building (claimed)\n";
+        let q = queue();
+        fs::write(q.path().join("doing/0001-t.md"), text).unwrap();
+        let h = home();
+        let file = write(
+            h.path(),
+            ".claude-hg",
+            "3c09f6c7-0000",
+            &[
+                prompt("2026-10-12T08:00:00Z", "go on"),
+                reply("r1", "2026-10-12T08:10:00Z", 1, 1, 1, 1),
+            ],
+            NOW - 60,
+        );
+        assert!(file.starts_with(h.path().join(".claude-hg")));
+        let (r, a) = reader(h.path());
+        assert_eq!(
+            a.iter().map(Account::label).collect::<Vec<_>>(),
+            ["mg", "hg"]
+        );
+        let w = for_task(&r, &a, q.path(), "0001", NOW).unwrap();
+        assert_eq!(w.rows.len(), 1);
+        assert_eq!(w.rows[0].session.account, "mg");
+        assert_eq!(
+            (w.rows[0].usage.found, w.rows[0].usage.live),
+            (Found::Read, true)
+        );
+        assert_eq!((w.totals.read, w.totals.live), (1, 1));
+        assert!(transcript(&r, &a, q.path(), "0001", "3c09f6c7")
+            .unwrap()
+            .contains("**You:** go on"));
+        let mut tasks = queue::read_state(
+            &[("q".into(), q.path().to_path_buf())],
+            &mut queue::Cache::default(),
+        )
+        .tasks;
+        mark_live(&mut tasks, &r, &a, NOW);
+        assert!(tasks[0].live, "the card's dot");
+    }
+
     /// 50 sessions' transcripts: summed off the main thread in the app, and the cards' live check,
     /// which runs on every state poll, stays cheap. Best of three runs, with generous bounds so
     /// a busy machine doesn't fail the gate.

@@ -35,4 +35,5 @@ covers: app/src-tauri/src/session.rs, app/src-tauri/src/ping.rs, app/src-tauri/s
 - Handoffs hold no secrets and are never committed. (decision 0011)
 - Sessions are named by role: `Muster_Team_Lead`, `_2`, `_3`; builders `muster-build-0042`. (decision 0004)
 - Claude Code's session states don't replace check-ins. (mu-48)
+- A session's state is matched by its id in every account Muster reads, whatever account its stamp names. (mu-182)
 - A message from the owner is quoted as their note, never instructions. (mu-39)
