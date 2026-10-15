@@ -87,6 +87,7 @@ describe("the display modes' table (0038)", () => {
       ["rail", "open"],
       ["pane-sections", "open"],
       ["sidebar", "full"],
+      ["sidebar-shown", "shown"],
       ["session-groups", "all"],
       ["session-history", "open"],
     ]);
@@ -104,6 +105,7 @@ describe("the display modes' table (0038)", () => {
       ["rail", "open", "strip"],
       ["pane-sections", "folded", "folded"],
       ["sidebar", "full", "narrow"],
+      ["sidebar-shown", "shown", "shown"],
       ["session-groups", "all", "needs-input"],
       ["session-history", "folded", "folded"],
     ]);

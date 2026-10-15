@@ -360,7 +360,7 @@ export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClic
 /** A project row's aria-label (0087): its name in full, then every count in words, what's 0 left
  *  out but its tasks; then running, and in Focus the working words ("8 working", on All "29 working
  *  in 9 projects", mu-197) behind the dot and the "stalled" its line shows. */
-function rowWords({ name, needs, doing, paused, total, running, working, stalled }: { name: string; needs: number; doing: number; paused: number; total: number; running: boolean; working: string; stalled: string }) {
+export function rowWords({ name, needs, doing, paused, total, running, working, stalled }: { name: string; needs: number; doing: number; paused: number; total: number; running: boolean; working: string; stalled: string }) {
   const sep = tl("listSep");
   const counts = [
     needs > 0 ? needsWords(needs) : "",

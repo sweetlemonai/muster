@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import css from "./styles.css?raw";
-import { BOARD_MIN, clampPane, clampSidebar, layoutWidth, PANE_FLOOR, PANE_MIN, RAIL_MIN, railBeside, SIDEBAR, SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_NARROW } from "./paneSize";
+import { BOARD_MIN, clampPane, clampSidebar, layoutWidth, PANE_FLOOR, PANE_MIN, RAIL_MIN, railBeside, SIDEBAR, SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_NARROW, SIDEBAR_RAIL, sidebarRoom } from "./paneSize";
 
 /** The board's width on the board view in a `win` px window with a pane of `pane` px (0 for
  *  none): what's left past the sidebar and the pane, less the rail's narrowest when it's beside. */
@@ -178,5 +178,24 @@ describe("the sidebar's width (0058): the owner's, within what keeps names reada
     expect(railBeside(1440, 560, SIDEBAR)).toBe(true);
     expect(railBeside(1440, 560, 320)).toBe(true);
     expect(railBeside(1000, 560, 320)).toBe(false);
+  });
+});
+
+describe("the sidebar folded to its rail (mu-167)", () => {
+  it("is SIDEBAR_RAIL wide while hidden, and the kept width when shown", () => {
+    expect(SIDEBAR_RAIL).toBe(56);
+    expect(sidebarRoom(false, 280)).toBe(SIDEBAR_RAIL);
+    expect(sidebarRoom(true, 280)).toBe(280);
+    expect(sidebarRoom(true, SIDEBAR_NARROW)).toBe(SIDEBAR_NARROW);
+    expect(rule('.sidebar[data-sidebar="rail"]')).toContain(`width: ${SIDEBAR_RAIL}px;`);
+  });
+  it("gives the board and the pane what the sidebar gave up", () => {
+    // The pane may take the difference: 1440 - 56 - 210 against 1440 - 210 - 210.
+    expect(clampPane(10_000, 1440, SIDEBAR_RAIL) - clampPane(10_000, 1440, SIDEBAR)).toBe(SIDEBAR - SIDEBAR_RAIL);
+    // Recently finished fits beside the board again where the full sidebar left it no room.
+    expect(railBeside(1000, 400, SIDEBAR)).toBe(false);
+    expect(railBeside(1000, 400, SIDEBAR_RAIL)).toBe(true);
+    // And from Focus's narrow sidebar too.
+    expect(clampPane(10_000, 1440, SIDEBAR_RAIL) - clampPane(10_000, 1440, SIDEBAR_NARROW)).toBe(SIDEBAR_NARROW - SIDEBAR_RAIL);
   });
 });

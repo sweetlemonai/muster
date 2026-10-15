@@ -32,6 +32,8 @@ const TABLE = [
   { id: "close-pane", keys: "Esc", codes: ["Escape"], mod: false, area: "anywhere", files: ["keys.ts"] },
   { id: "search", keys: "⌘F", codes: ["f"], mod: "cmd", area: "anywhere", files: ["keys.ts"] },
   { id: "focus-mode", keys: "⌘.", codes: ["."], mod: true, area: "anywhere", files: ["keys.ts"] },
+  // The View menu's accelerator takes ⌃⌘S (app_menu.rs, mu-167), its one path: no handler here.
+  { id: "toggle-sidebar", keys: "⌃⌘S", codes: [], mod: "cmd", area: "anywhere", files: [] },
   { id: "zoom-in", keys: "⌘+", codes: ["=", "+"], mod: "cmd", area: "anywhere", files: ["zoom.ts"] },
   { id: "zoom-out", keys: "⌘−", codes: ["-", "_"], mod: "cmd", area: "anywhere", files: ["zoom.ts"] },
   { id: "zoom-reset", keys: "⌘0", codes: ["0"], mod: "cmd", area: "anywhere", files: ["zoom.ts"] },

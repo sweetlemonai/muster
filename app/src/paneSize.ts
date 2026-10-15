@@ -16,6 +16,9 @@ export const SIDEBAR = 210;
 export const SIDEBAR_NARROW = 150;
 export const SIDEBAR_MIN = 150;
 export const SIDEBAR_MAX = 320;
+/** The sidebar hidden (mu-167): the rail in its place (styles.css `.sidebar[data-sidebar="rail"]`),
+ *  wide enough for a 3-digit needs-you badge whole. */
+export const SIDEBAR_RAIL = 56;
 /** The content's narrowest beside the pane: the board's, on the board view. */
 export const BOARD_MIN = 210;
 /** Recently finished's narrowest beside the board (styles.css `.recent`). */
@@ -28,6 +31,13 @@ export const RAIL_MIN = 200;
 export function clampSidebar(w: number, windowWidth: number): number {
   const widest = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR, windowWidth - BOARD_MIN - PANE_FLOOR));
   return Math.min(Math.round(Math.max(w, SIDEBAR_MIN)), Math.floor(widest));
+}
+
+/** What the sidebar takes of the window: its `kept` width (`clampSidebar`'s) while shown, the
+ *  rail's while hidden; the kept width stays for Show. The pane and Recently finished are
+ *  fitted beside this. */
+export function sidebarRoom(shown: boolean, kept: number): number {
+  return shown ? kept : SIDEBAR_RAIL;
 }
 
 /** The pane's width for `w` asked, beside a sidebar of `sidebar` px: at least PANE_MIN, and at

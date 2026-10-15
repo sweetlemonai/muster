@@ -153,7 +153,7 @@ here):
 | `jalali.rs` | Jalali (Solar Hijri) dates for the command line in Persian (mu-152): a port of mu-151's `jalali.ts` (from @dastafzar/calendar, MIT), conversions only, and a stamp as `22 مهر 1405 23:40` |
 | `badge.rs` | The Dock badge's count, set from Rust |
 | `tray.rs` | The menu bar icon: idle or waiting with the count beside it, its tooltip and menu, from the badge's count, in the language in effect |
-| `app_menu.rs` | The app's menus in the Mac's menu bar (Tauri's default: the app menu, File, Edit, View, Window, Help), titled in the language in effect and set again when it changes (mu-147) |
+| `app_menu.rs` | The app's menus in the Mac's menu bar (Tauri's default: the app menu, File, Edit, View, Window, Help), titled in the language in effect and set again when it changes (mu-147); View's Hide Sidebar ⌃⌘S, Hide Recently Finished ⌃⌘R and Hide Filters ⌥⌘F, the `view-toggle` event and `set_view_menu` (mu-167) |
 | `notify.rs` | Mac notifications of what newly waits for the owner, in the language in effect, and `notified.json` |
 | `run.rs` | Run from the app: a project's run command in its main checkout, its output in a bounded ring, Stop and quitting end its process group |
 | `helper.rs` | The AI helper: the owner's own `claude` on an allowed account, restricted to `muster` and reading |
@@ -181,6 +181,19 @@ answers. The task pane, the backlog note pane and the helper load on first open.
 `tray-icon` feature on, `core:default` would include `core:tray:default`; a test in `tray.rs`
 holds it): no file system, shell, dialog, notification, tray or network permission. Folders are picked by the core's own dialog, and the window names a queue by
 its project name, never by a path.
+
+**Showing and hiding the sidebar** (mu-167). `toggles.ts` is the shared toggle for the sidebar,
+Recently finished and the filter bar: each mode's default from the modes' table (`sidebar-shown`,
+`rail`, `filters`), the owner's pick per mode in `muster.toggles`, kept only where it differs, a
+broken or unknown value read as no pick. Hidden, the sidebar is `ProjectRail.tsx` (56px,
+`SIDEBAR_RAIL` in `paneSize.ts`, which `clampPane` and `railBeside` get instead of the sidebar's
+width). The View menu's toggles are `MenuItem`s with ids `view-sidebar`, `view-recent` and
+`view-filters`; a click or the accelerator sends the main window `view-toggle` with the region,
+the key's only path (no keydown handler, so a press can't toggle twice). The window answers with
+`set_view_menu`, three booleans read as an object with exactly those names, and the menus are set
+again so the items say Show… while hidden. Only the sidebar is wired: the other two items are
+disabled until mu-169 wires them. `app/e2e/rail.mjs` checks it headless (WebKit, mocked IPC, a
+synthetic 12-project state): ADHD and Focus, light and dark, and right to left.
 
 **Speed tests** (mu-220). Four UI tests hold a time budget: `Sessions.test.tsx` (60 sessions in
 50 ms), `viewData.test.ts` (the timeline's 500 tasks in 16 ms), `filters.test.ts` (1,000 tasks in

@@ -7,7 +7,7 @@
 // so a check can never write to a queue.
 
 /** Commands the window makes on its own that only read or set the window up: answered with null. */
-const QUIET = new Set(["show_project_title", "plugin:event|listen", "plugin:event|unlisten", "set_old_pauses_offered"]);
+const QUIET = new Set(["show_project_title", "plugin:event|listen", "plugin:event|unlisten", "set_old_pauses_offered", "set_view_menu"]);
 
 /**
  * The core's `state` from a `muster list --json` snapshot.
@@ -48,6 +48,14 @@ export function mockScript(state, storage = {}, page = {}) {
   ${page.dir === "rtl" ? 'document.addEventListener("readystatechange", () => document.documentElement.setAttribute("dir", "rtl"), { once: true });' : ""}
   const calls = [];
   window.__MOCK_CALLS__ = calls;
+  // Each call's arguments, and the core's events (mu-167): __MOCK_EMIT__("view-toggle", "sidebar")
+  // reaches the window's listeners as the View menu's click would.
+  const seen = [];
+  window.__MOCK_ARGS__ = seen;
+  const listeners = [];
+  window.__MOCK_EMIT__ = (event, payload) => {
+    for (const l of listeners) if (l.event === event) window["_" + l.handler]?.({ event, id: l.id, payload });
+  };
   let next = 1;
   window.__TAURI_INTERNALS__ = {
     metadata: { currentWindow: { label: "main" }, currentWebview: { windowLabel: "main", label: "main" } },
@@ -60,6 +68,17 @@ export function mockScript(state, storage = {}, page = {}) {
     convertFileSrc: (p) => p,
     async invoke(cmd, args) {
       calls.push(cmd);
+      seen.push({ cmd, args: structuredClone(args ?? null) });
+      if (cmd === "plugin:event|listen") {
+        const id = next++;
+        listeners.push({ event: args.event, handler: args.handler, id });
+        return id;
+      }
+      if (cmd === "plugin:event|unlisten") {
+        const at = listeners.findIndex((l) => l.id === args.eventId);
+        if (at >= 0) listeners.splice(at, 1);
+        return null;
+      }
       if (cmd === "state") return structuredClone(STATE);
       if (cmd === "search_index") return {};
       if (cmd === "task_body") {

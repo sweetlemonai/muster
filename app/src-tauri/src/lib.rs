@@ -1853,6 +1853,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        // View › Hide Sidebar and its key (mu-167): the window's `view-toggle`.
+        .on_menu_event(|app, e| app_menu::on_event(app, e.id().as_ref()))
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             let reader = Arc::new(transcripts::Reader::new(accounts::playground_key(&home())));
@@ -1954,6 +1956,7 @@ pub fn run() {
             open_link,
             attach_data,
             attach_pick,
+            app_menu::set_view_menu,
             helper_cmds::helper_info,
             helper_cmds::helper_set_account,
             helper_cmds::helper_set_model,

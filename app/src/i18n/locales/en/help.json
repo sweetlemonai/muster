@@ -54,6 +54,10 @@
       "what": "Turn Focus on, or back off to the mode you were in (the display modes are in Settings, Display)",
       "where": "Anywhere in the window"
     },
+    "toggle-sidebar": {
+      "what": "Hide the sidebar to a rail that keeps each project's needs-you count, or show it again (also View › Hide Sidebar, and Hide or Show at its top)",
+      "where": "Anywhere in the window, even typing in a field"
+    },
     "zoom-in": {
       "what": "Make everything larger: the board, the panes and the manual (the size is remembered; also in Settings, Appearance, Text size)",
       "where": "Anywhere in the window"

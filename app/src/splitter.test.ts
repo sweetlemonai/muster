@@ -294,7 +294,9 @@ describe("both panes use the one splitter (0058)", () => {
   it("sits the sidebar's handle right after the sidebar, before the content", () => {
     const side = appSource.indexOf('<aside className="sidebar"');
     const end = appSource.indexOf("</aside>", side);
-    expect(appSource.slice(end, end + 200)).toMatch(/^<\/aside>\s*<Splitter /);
+    // Not while the sidebar is its rail (mu-167): nothing to drag.
+    expect(side).toBeGreaterThan(-1);
+    expect(appSource.slice(end, end + 200)).toMatch(/^<\/aside>\s*\{sidebarShown && <Splitter /);
   });
   it("draws them again when the window resizes or the Text size changes, not only at the next poll", () => {
     expect(appSource).toContain('addEventListener("resize", update)');

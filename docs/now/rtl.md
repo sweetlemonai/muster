@@ -3,7 +3,7 @@ covers: app/src/styles.css, app/src/rtl*, app/src/logicalCss*, app/src/ltrIsland
 ---
 # Right to left in فارسی
 
-- The layout mirrors: sidebar right, docked pane left, Backlog column at the right, Timeline from right to left, Graph arrows pointing left. (mu-149)
+- The layout mirrors: sidebar right (its rail too, mu-167), docked pane left, Backlog column at the right, Timeline from right to left, Graph arrows pointing left. (mu-149)
 - Styles use logical sides only. A physical left or right in CSS or a TSX inline style fails `logicalCss.test.ts`. The exceptions carry a `physical:` comment: two inset accent shadows with `:dir(rtl)` twins, and hatch textures. (mu-149)
 - Directional glyphs mirror from one block at the end of `styles.css`. A `→` or `◀` in markup is a `.dir-glyph` span. Key names don't mirror. (mu-149)
 - Keys, commands, paths, branches, code and estimate inputs carry `.ltr` and read left to right inside Persian. (mu-149)

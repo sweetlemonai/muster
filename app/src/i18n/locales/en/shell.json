@@ -74,6 +74,27 @@
   "toolbar": {
     "modeChip": "Display mode: change it in Settings, Display. ⌘. turns Focus on and off"
   },
+  "toggles": {
+    "sidebar": {
+      "hide": "Hide",
+      "show": "Show",
+      "hideTitle": "Hide the sidebar (⌃⌘S)",
+      "showTitle": "Show the sidebar (⌃⌘S)",
+      "hidden": "Sidebar hidden",
+      "shown": "Sidebar shown"
+    },
+    "recent": {
+      "hidden": "Recently finished hidden",
+      "shown": "Recently finished shown"
+    },
+    "filters": {
+      "hidden": "Filters hidden",
+      "shown": "Filters shown"
+    }
+  },
+  "rail": {
+    "label": "Projects, folded to a rail"
+  },
   "sidebar": {
     "all": "All",
     "projects": "Projects",
@@ -760,6 +781,10 @@
         "full": "Projects under their category headings (each with its tasks, needs you and working), their counts, the order chips, each one's colour dot and activity line, and + Category; each heading one line of labelled counts, what needs you first, the same folded",
         "focus": "Category headings with the same one line of labelled counts, what needs you first, open or folded, project names with their colour dot, the working dot, stalled and the needs-you and paused counts, and a project over its Your check limit says so; a stalled project keeps its Ask for a check-in",
         "focusReach": "Leave Focus: ⌘. or the mode chip in the header"
+      },
+      "sidebarShown": {
+        "label": "Sidebar shown or hidden",
+        "shown": "Shown until you hide it: Hide at its top, ⌃⌘S or View › Hide Sidebar folds it to a rail that keeps each project's colour dot and needs-you count; Show, ⌃⌘S or View › Show Sidebar brings it back at its width. Each mode remembers its own"
       },
       "sessionGroups": {
         "label": "Sessions",

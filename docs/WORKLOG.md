@@ -3,6 +3,25 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-167: hide the sidebar to a rail that keeps each project's needs-you count (Hide, View › Hide Sidebar, ⌃⌘S), per mode
+**Did:** `toggles.ts`, the shared toggle for the sidebar, Recently finished and the filters: each
+mode's default from the modes' table (new row `sidebar-shown`), the owner's pick per mode in
+`muster.toggles`, kept only where it differs. `ProjectRail.tsx`: Show, All, then every project in
+the sidebar's order as its colour dot, working dot and needs-you badge, a heading a divider, 56px
+(`SIDEBAR_RAIL`, which the pane and Recently finished are fitted beside). Hide at the brand line,
+Show at the rail's top, a polite live region ("Sidebar hidden"/"Sidebar shown"), and the focus
+moved to the button that brings it back when it was inside what went, from a toggle or a ⌘. mode
+switch. The View menu (`app_menu.rs`, mu-147's) gains Hide Sidebar ⌃⌘S, Hide Recently Finished ⌃⌘R
+and Hide Filters ⌥⌘F (the last two disabled until mu-169), sends `view-toggle`, and takes
+`set_view_menu` (an object of exactly three booleans) so it says Show… while hidden. Shortcuts
+table and page, Display's table, DESIGN, AS_BUILT, the manual. `app/e2e/rail.mjs`: 64 headless
+WebKit checks (ADHD and Focus, light and dark, fa/RTL, reload, focus, the menu event).
+**Decided:** the View items went into the existing `app_menu.rs` rather than a new `menu.rs`, since
+mu-147 already builds the menus there. No width transition: only the width changes, at once.
+**Fixed (review):** the write-up editor took ⌃⌘S as ⌘S and saved instead of leaving it to the menu
+(`writeUp.ts` now wants ⌘ or Ctrl, not both); a ⌘. that hid or showed the sidebar dropped the focus
+to the body; the Shortcuts page called ⌃⌘S "⌘ only"; fa menu paths used › instead of ←; App's
+toggle logic moved into a tested `flip()`.
 ## 2026-10-15 — mu-192: a migrate --dry-run whose output fails no longer says its change is saved
 **Fixed:** `migrate --dry-run` writes nothing, but `reads_only` (`cli.rs`) had no arm for migrate,
 so a lost output said "its change is saved: don't run it again" → `"migrate" => a.dry_run`. The

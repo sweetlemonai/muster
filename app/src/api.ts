@@ -187,6 +187,9 @@ export const api = {
   // an `accounts-changed` event says when to ask again. Add, remove and save are refused with
   // why (the company ~/.claude, a Claude label off the allowlist, a bound passed), as is.
   accountsInfo: () => invoke<AccountsInfo>("accounts_info"),
+  // What the window shows (mu-167), so the View menu's items say what a click will do: Hide
+  // Sidebar while it shows, Show Sidebar while it's hidden. Three booleans, nothing else.
+  setViewMenu: (shown: { sidebar: boolean; recent: boolean; filters: boolean }) => invoke<void>("set_view_menu", { shown }),
   accountAdd: (label: string, provider: Provider) => invoke<void>("account_add", { label, provider }),
   accountRemove: (label: string) => invoke<void>("account_remove", { label }),
   accountSave: (profile: ProfileSave) => invoke<void>("account_save", { profile }),

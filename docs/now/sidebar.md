@@ -1,5 +1,5 @@
 ---
-covers: app/src/Sidebar.tsx, app/src/SidebarProjects.tsx, app/src/ProjectList, app/src/projectOrder, app/src-tauri/src/arrange.rs, app/src-tauri/src/labels.rs, app/src-tauri/src/projects.rs
+covers: app/src/Sidebar.tsx, app/src/SidebarProjects.tsx, app/src/ProjectList, app/src/ProjectRail, app/src/toggles, app/src/projectOrder, app/src-tauri/src/arrange.rs, app/src-tauri/src/labels.rs, app/src-tauri/src/projects.rs
 ---
 # The projects sidebar
 
@@ -21,5 +21,7 @@ covers: app/src/Sidebar.tsx, app/src/SidebarProjects.tsx, app/src/ProjectList, a
 - Short of room, they take a full-width second line, then words wrap. (mu-212)
 - In Focus the sidebar narrows to headings, names, the working dot, stalled and counts. (DESIGN.md "Focus mode")
 - A stalled project keeps Ask all quiet sessions for a check-in. (mu-39)
+- Hide, View › Hide Sidebar or ⌃⌘S fold it to a 56px rail: Show, All, every project's colour dot, working dot and needs-you badge, whole; Show brings back its kept width. (mu-167)
+- Each mode keeps its own show or hide, in `muster.toggles`, only where it differs from the mode's default. (mu-167)
 - One builder makes the sidebar's state, in the core. (mu-73)
 - Labels, categories, Hide and Remove never touch the queue's files. (AS_BUILT "Projects")

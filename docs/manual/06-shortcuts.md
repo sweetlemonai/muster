@@ -10,6 +10,7 @@ Every keyboard shortcut in the app, and the slash commands for Claude Code. This
 | Esc | Close the pane: a task, a note or New task | Anywhere while the pane is open, except in the search box or a view's name, which take Esc for themselves |
 | ⌘F | Put the caret in the search box, with its words selected so typing replaces them. Ctrl+F is left to text fields, where it moves the caret | Anywhere in the window. From a tab without a search box, it opens the board first |
 | ⌘. | Turn Focus on, or back off to the mode you were in (the display modes are in Settings, Display) | Anywhere in the window |
+| ⌃⌘S | Hide the sidebar to a rail that keeps each project's needs-you count, or show it again (also View › Hide Sidebar, and Hide or Show at its top) | Anywhere in the window, even typing in a field |
 | ⌘+ | Make everything larger: the board, the panes and the manual (the size is remembered; also in Settings, Appearance, Text size) | Anywhere in the window |
 | ⌘− | Make everything smaller | Anywhere in the window |
 | ⌘0 | Back to 100% | Anywhere in the window |

@@ -23,6 +23,17 @@ have their own short sets below. Every other section here applies in all three.
   one line (two at the narrowest sidebar), and its own needs-you count carries what's under it
   (owner, 2026-10-14, task 0082): it comes first after the name, in the needs chip a project's row
   has with its words, and is never the part cut where the sidebar is narrow. Nothing of its projects shows under it.
+- **The sidebar hides to a rail, never away** (owner, 2026-10-14, task 0167). Hide at its top,
+  View › Hide Sidebar or ⌃⌘S fold it to a 56px rail in the same place: Show, All, then every
+  project in the sidebar's order as its colour dot, its working dot and its needs-you badge (the
+  same orange badge, whole, a 3-digit count too), a heading a thin divider, each project whatever
+  its heading's fold. A project's button is named, and titled, with its counts in the sidebar's
+  words. The board and Recently finished take the width; the splitter isn't drawn beside the rail,
+  and the kept width comes back on Show. Each mode remembers its own pick (`muster.toggles`, kept
+  only where it differs from the mode's default), so switching modes resets nothing. Every
+  toggle says "Sidebar hidden" or "Sidebar shown" in a polite live region, and when the focus
+  was inside what went it moves to the button that brings it back (Show, then Hide). Only the
+  width changes, at once: no slide.
 - **One wording for the needs-you count:** "1 needs you", "2 need you", everywhere it's said (the
   sidebar's rows and headings, the column chips and their cue, a folded strip's, band's and Paused
   lane's badge), from one helper, `needsWords` in `app/src/human.ts` (task 0159). A folded strip or

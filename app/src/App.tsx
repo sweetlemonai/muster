@@ -1,4 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { api } from "./api";
 import { followNumbering, Trans, useT, withText } from "./i18n";
 import { Button, Pill, Splitter } from "./ui";
@@ -25,7 +26,9 @@ import { focusSearchBox, searchView, windowKey } from "./keys";
 import WaitingList from "./WaitingList";
 import { lessonsWaiting } from "./Lessons";
 import Recent from "./Recent";
-import { clampPane, clampSidebar, layoutWidth, PANE_DEFAULT, paneRange, railBeside, SIDEBAR, SIDEBAR_NARROW, sidebarRange } from "./paneSize";
+import { clampPane, clampSidebar, layoutWidth, PANE_DEFAULT, paneRange, railBeside, SIDEBAR, SIDEBAR_NARROW, sidebarRange, sidebarRoom } from "./paneSize";
+import ProjectRail, { SIDEBAR_ID } from "./ProjectRail";
+import { flip, focusInside, isShown, loadToggles, moveFocus, storeToggles, type TogglePicks, viewMenu } from "./toggles";
 import { PANE_KEY, PANE_LEGACY_KEY, SIDEBAR_KEY, useSplitWidth } from "./splitter";
 import { ZOOM_EVENT } from "./zoom";
 import EffortGroups, { useAcceptResults } from "./EffortGroups";
@@ -228,6 +231,14 @@ function useColumnPicks(): [ColumnPicks, (f: (p: ColumnPicks) => ColumnPicks) =>
   return [p, setP];
 }
 
+/** The sidebar, Recently finished and the filters shown or hidden, per display mode, remembered on
+ *  this Mac (mu-167, toggles.ts). */
+function useToggles(): [TogglePicks, (p: TogglePicks) => void] {
+  const [toggles, setToggles] = useState<TogglePicks>(() => loadToggles(localStorage));
+  useEffect(() => storeToggles(localStorage, toggles), [toggles]);
+  return [toggles, setToggles];
+}
+
 const NO_PICKS: ModePicks = {};
 
 export default function App() {
@@ -259,7 +270,11 @@ export default function App() {
   const sideSplit = useSplitWidth(SIDEBAR_KEY);
   const paneSplit = useSplitWidth(PANE_KEY, PANE_LEGACY_KEY);
   const sidebarLook = look("sidebar", modes.mode);
-  const sidebarWidth = clampSidebar(sideSplit.width ?? (sidebarLook === "narrow" ? SIDEBAR_NARROW : SIDEBAR), win);
+  // Hidden (mu-167), the sidebar is its rail, and the board and the pane get the difference; its
+  // kept width comes back on Show.
+  const [toggles, setToggles] = useToggles();
+  const sidebarShown = isShown(toggles, modes.mode, "sidebar");
+  const sidebarWidth = sidebarRoom(sidebarShown, clampSidebar(sideSplit.width ?? (sidebarLook === "narrow" ? SIDEBAR_NARROW : SIDEBAR), win));
   const paneWidth = clampPane(paneSplit.width ?? PANE_DEFAULT, win, sidebarWidth);
   const railSide = railBeside(win, pane ? paneWidth : 0, sidebarWidth);
   // The filter bar ⌘F brought out in Focus, until the mode changes.
@@ -444,6 +459,54 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [go, summonSearch, changeMode]);
 
+  // Show and hide the sidebar (mu-167): its Hide, the rail's Show, and View › Hide Sidebar or ⌃⌘S,
+  // which the menu sends as a `view-toggle` event (its accelerator is the key's one path, so a
+  // press toggles once). Each says what changed in the live region; the focus, when it was in
+  // what went, moves to the button that brings it back.
+  const sidebarRef = useRef<HTMLElement>(null);
+  const hideRef = useRef<HTMLButtonElement>(null);
+  const showRef = useRef<HTMLButtonElement>(null);
+  const refocus = useRef<boolean | null>(null);
+  const [toggleSaid, setToggleSaid] = useState("");
+  const shownNow = useRef({ toggles, mode: modes.mode });
+  shownNow.current = { toggles, mode: modes.mode };
+  const flipView = useCallback(
+    (payload: unknown) => {
+      const { toggles: was, mode } = shownNow.current;
+      const done = flip(was, mode, payload, focusInside(document.activeElement, sidebarRef.current));
+      if (!done) return;
+      refocus.current = done.refocus;
+      shownNow.current = { toggles: done.picks, mode };
+      setToggles(done.picks);
+      setToggleSaid(done.said);
+    },
+    [setToggles],
+  );
+  useEffect(() => {
+    const off = listen<unknown>("view-toggle", (e) => flipView(e.payload));
+    return () => {
+      void off.then(
+        (f) => f(),
+        () => {},
+      );
+    };
+  }, [flipView]);
+  // A mode switch (⌘.) can hide or show it too, each mode keeping its own pick: the focus that was
+  // in what went (nothing moves it out but a blur) lands on the same button, not the body. A flip
+  // asks for the state it lands in, so two quick ones that end where they began move nothing.
+  const inSidebar = useRef(false);
+  useLayoutEffect(() => {
+    const lost = inSidebar.current && (document.activeElement === null || document.activeElement === document.body);
+    const moved = refocus.current === sidebarShown || lost;
+    refocus.current = null;
+    moveFocus(moved, sidebarShown ? hideRef.current : showRef.current);
+  }, [sidebarShown]);
+  // The View menu's words follow what shows, in this mode (Show Sidebar while it's hidden).
+  const menu = viewMenu(toggles, modes.mode);
+  useEffect(() => {
+    api.setViewMenu({ sidebar: menu.sidebar, recent: menu.recent, filters: menu.filters }).catch((e: unknown) => console.warn("Can't set the View menu:", e));
+  }, [menu.sidebar, menu.recent, menu.filters]);
+
   // After the view that holds the search box has rendered.
   useEffect(() => {
     if (focusSearch) focusSearchBox(searchRef.current);
@@ -457,12 +520,23 @@ export default function App() {
     <Labels.Provider value={labels}>
     <ProjectColours.Provider value={colours}>
     <div className="app shell">
-      <aside className="sidebar" aria-label={t("app.sidebar")} data-sidebar={sidebarLook} style={{ width: sidebarWidth }}>
-        <div className="brand"><img className="logo-dark" src={logoDark} alt="" width={22} height={22} /><img className="logo-light" src={logoLight} alt="" width={22} height={22} /> Muster</div>
-        <ProjectList queues={state?.queues ?? []} tasks={state?.tasks ?? []} notes={allNotes} activity={state?.activity ?? []} now={now} current={queue} onPick={setQueue} onLabel={(k, label) => api.setProjectLabel(k, label).then(refresh)} edit={projectEdits(refresh)} />
-        <button className="side-add" onClick={() => openSettings("projects")} title={t("app.addProjectTitle")}>{t("app.addProject")}</button>
+      <aside className="sidebar" ref={sidebarRef} id={SIDEBAR_ID} aria-label={t("app.sidebar")} data-sidebar={sidebarShown ? sidebarLook : "rail"} style={{ width: sidebarWidth }} onFocus={() => (inSidebar.current = true)} onBlur={(e) => (inSidebar.current = focusInside(e.relatedTarget, sidebarRef.current))}>
+        {sidebarShown ? (
+          <>
+            <div className="brand">
+              <img className="logo-dark" src={logoDark} alt="" width={22} height={22} /><img className="logo-light" src={logoLight} alt="" width={22} height={22} /> Muster
+              <Pill ref={hideRef} aria-expanded={true} aria-controls={SIDEBAR_ID} title={t("toggles.sidebar.hideTitle")} type="button" className="side-toggle" onClick={() => flipView("sidebar")}>{t("toggles.sidebar.hide")}</Pill>
+            </div>
+            <ProjectList queues={state?.queues ?? []} tasks={state?.tasks ?? []} notes={allNotes} activity={state?.activity ?? []} now={now} current={queue} onPick={setQueue} onLabel={(k, label) => api.setProjectLabel(k, label).then(refresh)} edit={projectEdits(refresh)} />
+            <button className="side-add" onClick={() => openSettings("projects")} title={t("app.addProjectTitle")}>{t("app.addProject")}</button>
+          </>
+        ) : (
+          <ProjectRail queues={state?.queues ?? []} tasks={state?.tasks ?? []} notes={allNotes} activity={state?.activity ?? []} now={now} current={queue} onPick={setQueue} onShow={() => flipView("sidebar")} showRef={showRef} />
+        )}
       </aside>
-      <Splitter {...sidebarRange(win)} width={sidebarWidth} side="left" label={t("app.sidebarWidth")} onWidth={(w) => sideSplit.set(clampSidebar(w, pageWidth()))} onDrag={(w) => sideSplit.drag(clampSidebar(w, pageWidth()))} onDragEnd={sideSplit.settle} onReset={sideSplit.reset} />
+      {sidebarShown && <Splitter {...sidebarRange(win)} width={sidebarWidth} side="left" label={t("app.sidebarWidth")} onWidth={(w) => sideSplit.set(clampSidebar(w, pageWidth()))} onDrag={(w) => sideSplit.drag(clampSidebar(w, pageWidth()))} onDragEnd={sideSplit.settle} onReset={sideSplit.reset} />}
+      {/* What a show or hide of the sidebar changed (mu-167), for a screen reader. */}
+      <p className="sr-only" role="status" aria-live="polite">{toggleSaid}</p>
       <div className="main-col">
       <header className="top">
         {/* Line one: New task and the views, one unit that never splits. Where the views don't fit

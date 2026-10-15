@@ -46,6 +46,8 @@ The projects sidebar on the left and the pane on the right resize the same way, 
 
 Under a stalled project is **Ask all quiet sessions for a check-in**, with how many it can reach: it asks each quiet card's session, as the card's own button does. It's shown off, with why, when none of its quiet claims has a session to reach, and it says how many it can't reach and how many wait for input in Claude Code. A project counts as working while Claude Code says one of its sessions is working, and not while its only active session waits for input or has ended.
 
+**Hiding the sidebar.** **Hide** at the sidebar's top, **View › Hide Sidebar** or **⌃⌘S** (even while you type in a field) folds it to a narrow rail in the same place, and the board takes the width. The rail keeps **Show** at its top, then **All** and every project in the sidebar's order as its colour dot, with the dot for one being worked on and its orange needs-you count, so what needs you is still in sight; a thin line marks where a heading starts. Click one to pick it; point at it for its name and counts. **Show**, ⌃⌘S or **View › Show Sidebar** brings the sidebar back at the width you gave it. Each display mode remembers its own choice on this Mac, so hiding it in Focus leaves ADHD as it was.
+
 ## The board
 
 The board has two layouts, picked with **Layout** in the filter bar and kept per project on this Mac: **Columns**, described first, and the [Feature grid](#the-feature-grid). Columns is where every project starts.

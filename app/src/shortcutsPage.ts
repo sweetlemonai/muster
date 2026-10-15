@@ -65,7 +65,8 @@ function list(xs: string[]): string {
 /** The manual's Shortcuts page (docs/manual/06-shortcuts.md), made from the tables above. */
 export function shortcutsPage(): string {
   const t = (key: TKey<"help">, params?: Record<string, string>) => tn("help", key, params);
-  const cmdOnly = SHORTCUTS.filter((s) => s.mod === "cmd").map((s) => ltr(s.keys));
+  // A chord that already shows ⌃ (⌃⌘S, mu-167) says Ctrl itself: it isn't one of the "⌘ only" ones.
+  const cmdOnly = SHORTCUTS.filter((s) => s.mod === "cmd" && !s.keys.includes("⌃")).map((s) => ltr(s.keys));
   const ctrl = cmdOnly.length ? t(cmdOnly.length === 1 ? "page.ctrlExceptOne" : "page.ctrlExceptMany", { list: list(cmdOnly) }) : t("page.ctrl");
   const option = SHORTCUTS.some((s) => s.mod === "alt") ? t("page.option") : "";
   const out = [`# ${tn("help", "pages.06-shortcuts")}`, "", t("page.intro", { ctrl, option }), ""];

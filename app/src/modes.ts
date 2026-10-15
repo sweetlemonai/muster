@@ -122,6 +122,16 @@ const TABLE = {
     standard: does("full", "display.elements.sidebar.full"),
     focus: does("narrow", "display.elements.sidebar.focus", "display.elements.sidebar.focusReach"),
   },
+  // Shown in every mode until the owner hides it (mu-167, toggles.ts): then a rail that keeps each
+  // project's needs-you count.
+  "sidebar-shown": {
+    get label() {
+      return tn("shell", "display.elements.sidebarShown.label");
+    },
+    adhd: does("shown", "display.elements.sidebarShown.shown"),
+    standard: does("shown", "display.elements.sidebarShown.shown"),
+    focus: does("shown", "display.elements.sidebarShown.shown"),
+  },
   "session-groups": {
     get label() {
       return tn("shell", "display.elements.sessionGroups.label");

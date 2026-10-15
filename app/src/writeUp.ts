@@ -12,7 +12,8 @@ type Key = { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; i
  *  method's composition belong to it. */
 export function editKey(e: Key, dirty: boolean, armed: boolean): EditAction {
   if (e.isComposing) return null;
-  if (e.key.toLowerCase() === "s" && (e.metaKey || e.ctrlKey) && !e.altKey) return "save";
+  // Not ⌃⌘S: that is View › Hide Sidebar (mu-167), which the menu only gets if the page leaves it.
+  if (e.key.toLowerCase() === "s" && e.metaKey !== e.ctrlKey && !e.altKey) return "save";
   if (e.key === "Escape") return !dirty || armed ? "cancel" : "arm";
   return null;
 }

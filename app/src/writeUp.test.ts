@@ -25,6 +25,8 @@ describe("the write-up editor's keys", () => {
     expect(editKey(key("s", { ctrlKey: true }), true, false)).toBe("save");
     expect(editKey(key("s"), true, false)).toBeNull();
     expect(editKey(key("s", { metaKey: true, altKey: true }), true, false)).toBeNull();
+    // ⌃⌘S is the View menu's Hide Sidebar (mu-167): left to the menu, not taken as a save.
+    expect(editKey(key("s", { metaKey: true, ctrlKey: true }), true, false)).toBeNull();
   });
   it("Esc cancels at once when nothing was typed", () => {
     expect(editKey(key("Escape"), false, false)).toBe("cancel");

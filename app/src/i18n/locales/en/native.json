@@ -61,6 +61,12 @@
       "copy": "Copy",
       "paste": "Paste",
       "selectAll": "Select All",
+      "hideSidebar": "Hide Sidebar",
+      "showSidebar": "Show Sidebar",
+      "hideRecent": "Hide Recently Finished",
+      "showRecent": "Show Recently Finished",
+      "hideFilters": "Hide Filters",
+      "showFilters": "Show Filters",
       "fullscreen": "Toggle Full Screen",
       "minimize": "Minimize",
       "zoom": "Zoom"
