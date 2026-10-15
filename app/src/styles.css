@@ -563,7 +563,28 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 /* Only the day is known: fade the start in. */
 .tl-seg.fuzzy { -webkit-mask-image: linear-gradient(to right, rgb(0 0 0 / 0.25), #000 70%); mask-image: linear-gradient(to right, rgb(0 0 0 / 0.25), #000 70%); }
 .tl-bar-text { position: relative; font-size: 10px; padding: 0 8px; line-height: 16px; color: var(--text); white-space: nowrap; text-shadow: 0 0 3px var(--panel), 0 0 2px var(--panel); }
-.tl-legend { margin-top: 10px; max-width: 760px; }
+.tl-note { margin-block-start: 10px; max-inline-size: 760px; }
+.tl-strip { flex: none; }
+/* The legend (mu-173): a line of swatches that wraps onto a second line when the window is too
+   narrow for it, so no item is ever out of sight (R3). A hidden copy of every item the view can
+   draw sits in the same grid cell, so the row is as tall as the full set wraps to at this width,
+   whichever marks the window shows: stepping windows never moves the chart (R4). Swatches reuse the
+   views' own classes, so only their size and place are set here. */
+.legend { display: grid; align-items: start; min-block-size: 20px; font-size: 12px; color: var(--muted); padding-inline: 14px; }
+.legend > .legend-list { grid-area: 1 / 1; }
+.legend-reserve { visibility: hidden; pointer-events: none; }
+.legend-list { display: flex; flex-wrap: wrap; align-items: center; min-block-size: 20px; row-gap: 4px; column-gap: 12px; margin: 0; padding: 0; list-style: none; }
+.legend-item { display: inline-flex; align-items: center; gap: 5px; flex: none; white-space: nowrap; min-block-size: 20px; }
+.legend-swatch { position: relative; display: inline-block; min-inline-size: 24px; block-size: 12px; flex: none; }
+.legend-swatch > .tl-bar { inset: 0; block-size: auto; }
+.legend-swatch .tl-seg, .legend-swatch .tl-block, .legend-swatch .tl-pause { inset-inline: 0; }
+.legend-swatch > .tl-now { inset-inline-start: 50%; }
+.legend-swatch > .g-node { inset: 0; padding: 0; }
+.legend-swatch > .you-ribbon { display: block; font-size: 8px; line-height: 10px; padding-inline: 4px; }
+.lg-neutral { --status: var(--muted); }
+.lg-edge { display: block; inline-size: 24px; block-size: 12px; overflow: visible; }
+/* 4px here and 6px atop .graph-scroll: the same 10px gap, with room for the top node's outline. */
+.graph-strip > .legend { padding-inline: 0; margin-block-end: 4px; }
 
 /* Header: one line, always. Project chips scroll sideways rather than wrap. */
 .top { flex-wrap: nowrap; gap: 10px; overflow: hidden; }
@@ -871,9 +892,13 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .tl-nav .ui-pill:nth-child(2) { min-width: 7.5em; }
 
 /* Graph view (0019): what waits on what. Nodes are buttons over an SVG of arrows. */
-.graph-view { flex: 1; overflow: auto; padding: 8px 14px 16px; min-height: 0; }
+/* The bar and legend are a strip that never scrolls; only .graph-scroll does (mu-173 R2). */
+.graph-view { flex: 1; display: flex; flex-direction: column; min-block-size: 0; }
+.graph-strip { flex: none; padding: 8px 14px 0; }
+/* The top padding keeps a selected or focused top node's outline (2px out, 2px offset) inside the
+   scroller, so it isn't clipped (R5). */
+.graph-scroll { flex: 1; min-block-size: 0; overflow: auto; padding: 6px 14px 16px; }
 .graph-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
-.g-legend.ready { border: 1.5px solid var(--ok); border-radius: 4px; padding: 0 4px; }
 .graph-queue { margin-bottom: 18px; }
 .graph-queue h2 { font-size: 13px; margin: 0 0 8px; color: var(--accent-text); }
 .graph-canvas { position: relative; }

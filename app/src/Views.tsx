@@ -7,7 +7,7 @@ import { PAUSE_GLYPH } from "./Pause";
 import type { Task } from "./types";
 import { Badge, Pill, StatusPill } from "./ui";
 import {
-  axis, barTitle, layout, nowAt, parseScale, SCALES, segmentTitle, parseTableSort, sortTasks, TABLE_SORT_KEY, spans, timeWindow, wallMinutes, windowLabel,
+  axis, barTitle, layout, legendMarks, nowAt, parseScale, SCALES, segmentTitle, parseTableSort, sortTasks, TABLE_SORT_KEY, spans, timeWindow, wallMinutes, windowLabel,
   type Placed, type Scale, type SortKey, type Tick,
 } from "./viewData";
 import { BandHead } from "./Groups";
@@ -17,6 +17,7 @@ import { isHuman } from "./human";
 import YouRibbon from "./YouRibbon";
 import ProjectName, { TaskKey } from "./ProjectName";
 import { RoleNamesContext } from "./settingsData";
+import { Legend, TIMELINE_RESERVE, timelineLegend } from "./Legend";
 
 const COLS: { key: SortKey; label: string }[] = [
   { key: "queue", label: "Project" },
@@ -157,6 +158,8 @@ export function TimelineView({ tasks, now, multi, openKey, onOpen, words }: { ta
   const win = useMemo(() => timeWindow(scale, at, offset), [scale, at, offset]);
   const rows = useMemo(() => layout(list, win, scale), [list, win, scale]);
   const ticks = useMemo(() => axis(scale, win, at), [scale, win, at]);
+  const nowLine = nowAt(win, at);
+  const marks = useMemo(() => timelineLegend(legendMarks(rows, nowLine)), [rows, nowLine]);
   const pick = (s: Scale) => {
     setScale(s);
     setOffset(0);
@@ -164,19 +167,21 @@ export function TimelineView({ tasks, now, multi, openKey, onOpen, words }: { ta
   };
   return (
     <main className="timeline">
-      <TimelineControls scale={scale} offset={offset} label={windowLabel(scale, win)} onScale={pick} onStep={(d) => setOffset((o) => o + d)} onToday={() => setOffset(0)} />
+      {/* The legend is the strip's second line: it never scrolls away, and it isn't a control. */}
+      <div className="tl-strip">
+        <TimelineControls scale={scale} offset={offset} label={windowLabel(scale, win)} onScale={pick} onStep={(d) => setOffset((o) => o + d)} onToday={() => setOffset(0)} />
+        <Legend items={marks} reserve={TIMELINE_RESERVE} />
+      </div>
       <div className="tl-scroll">
-        <TimelineChart scale={scale} rows={rows} ticks={ticks} now={nowAt(win, at)} multi={multi} openKey={openKey} onOpen={onOpen} words={words} />
+        <TimelineChart scale={scale} rows={rows} ticks={ticks} now={nowLine} multi={multi} openKey={openKey} onOpen={onOpen} words={words} />
         {rows.length === 0 && <p className="empty">{tasks.length ? `No work ${scale === "day" ? "in these 24 hours" : `in this ${scale}`}.` : "No tasks match."}</p>}
         {(list.notStarted ?? 0) > 0 && (
           <p className="meta tl-not-started">{list.notStarted} {list.notStarted === 1 ? "task hasn't" : "tasks haven't"} started yet (or the log has no times for them), so they aren't drawn.</p>
         )}
-        <p className="meta tl-legend">
-          Each bar is a task's work: it starts when the task was claimed and ends when the work finished (it reached Your check or
-          Done), one segment per stage in that stage's colour, from the times muster logged. The thin dotted tail after it is the
-          time it has waited for your check. Tasks still being worked run to the now line. Red hatching is time blocked, grey
-          hatching time paused (not counted as work). Day is the
-          last 24 hours; Week shows quarter days, Month days.
+        <p className="meta tl-note">
+          A bar runs from when the task was claimed to when it reached Your check or Done, from the times muster logged. Tasks
+          still being worked run to the now line. Paused time isn't counted as work. Day is the last 24 hours; Week shows quarter
+          days, Month days.
         </p>
       </div>
     </main>

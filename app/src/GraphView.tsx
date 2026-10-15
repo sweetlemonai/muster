@@ -1,7 +1,8 @@
 import { useContext, useId, useMemo, useState } from "react";
 import BlockWhy from "./BlockWhy";
 import { blockedRed, blockSentence, isBlocked } from "./blockWords";
-import { downstream, edgeLit, type Graph, hiddenDeps, layoutGraph, readyToStart, upstream } from "./graph";
+import { downstream, edgeLit, type Graph, graphMarks, hiddenDeps, isLoopEdge, layoutGraph, readyToStart, upstream } from "./graph";
+import { GRAPH_RESERVE, graphLegend, Legend } from "./Legend";
 import { isHuman } from "./human";
 import { holder, key, stageLabel, stageOf } from "./lib";
 import { PAUSE_GLYPH } from "./Pause";
@@ -32,32 +33,41 @@ export function GraphView({ tasks, all, multi, openKey, onOpen }: { tasks: Task[
     return { shown, every };
   }, [tasks, all, hideDone]);
   const queues = useMemo(() => [...new Set(tasks.map((t) => t.queue))].sort(), [tasks]);
+  // Each queue's layout, here so the legend names what every queue draws.
+  const graphs = useMemo(() => new Map([...groups.shown].map(([q, ts]) => [q, layoutGraph(ts)])), [groups.shown]);
+  const legend = useMemo(() => graphLegend(graphMarks([...graphs.values()])), [graphs]);
   return (
     <main className="graph-view">
-      <div className="graph-bar">
-        <Pill type="button" on={hideDone} aria-pressed={hideDone} onClick={() => setHideDone(!hideDone)}>
-          Hide done
-        </Pill>
-        <span className="meta">
-          Arrows point from a task to what waits on it. <span className="g-legend ready">Ready to start</span> has nothing left to wait on.
-        </span>
+      {/* The bar and the legend stay in view: only the graphs below them scroll (mu-173 R2). */}
+      <div className="graph-strip">
+        <div className="graph-bar">
+          <Pill type="button" on={hideDone} aria-pressed={hideDone} onClick={() => setHideDone(!hideDone)}>
+            Hide done
+          </Pill>
+          <span className="meta">Arrows point from a task to what waits on it.</span>
+        </div>
+        <Legend items={legend} reserve={GRAPH_RESERVE} />
       </div>
-      {queues.map((q) => (
-        <QueueGraph
-          key={q}
-          name={multi ? q : ""}
-          tasks={groups.shown.get(q) ?? NONE}
-          all={groups.every.get(q) ?? NONE}
-          openKey={openKey}
-          onOpen={onOpen}
-        />
-      ))}
-      {queues.length === 0 && <p className="empty">No tasks to show.</p>}
+      <div className="graph-scroll">
+        {queues.map((q) => (
+          <QueueGraph
+            key={q}
+            name={multi ? q : ""}
+            g={graphs.get(q) ?? EMPTY}
+            tasks={groups.shown.get(q) ?? NONE}
+            all={groups.every.get(q) ?? NONE}
+            openKey={openKey}
+            onOpen={onOpen}
+          />
+        ))}
+        {queues.length === 0 && <p className="empty">No tasks to show.</p>}
+      </div>
     </main>
   );
 }
 
 const NONE: Task[] = [];
+const EMPTY: Graph = layoutGraph(NONE);
 
 /** The state line every task shows, as a node or a chip: stage, ready, paused, blocked, who holds
  *  it. A space between the parts, so a chip reads "Done high", not "Donehigh". */
@@ -75,9 +85,8 @@ function Status({ t, ready }: { t: Task; ready: boolean }) {
   return <>{parts.flatMap((p, i) => (i === 0 ? [p] : [" ", p]))}</>;
 }
 
-function QueueGraph({ name, tasks, all, openKey, onOpen }: { name: string; tasks: Task[]; all: Task[]; openKey: string | null; onOpen: (t: Task) => void }) {
+function QueueGraph({ name, g, tasks, all, openKey, onOpen }: { name: string; g: Graph; tasks: Task[]; all: Task[]; openKey: string | null; onOpen: (t: Task) => void }) {
   const labels = useContext(Labels);
-  const g: Graph = useMemo(() => layoutGraph(tasks), [tasks]);
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const selected = g.nodes.find((n) => key(n.task) === openKey)?.id ?? null;
   const up = useMemo(() => (selected ? upstream(g, selected) : new Set<string>()), [g, selected]);
@@ -115,7 +124,7 @@ function QueueGraph({ name, tasks, all, openKey, onOpen }: { name: string; tasks
             {g.edges.map((e) => {
               const a = at.get(e.from)!, b = at.get(e.to)!;
               const x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x - 2, y2 = b.y + H / 2;
-              const back = x2 <= x1; // closes a loop: route it below
+              const back = isLoopEdge(g, e); // closes a loop: route it below
               const d = back
                 ? `M${x1},${y1} C${x1 + 40},${y1 + H} ${x2 - 40},${y2 + H} ${x2},${y2}`
                 : `M${x1},${y1} C${(x1 + x2) / 2},${y1} ${(x1 + x2) / 2},${y2} ${x2},${y2}`;

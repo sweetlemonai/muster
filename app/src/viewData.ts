@@ -1,4 +1,4 @@
-import { blockSentence, isBlocked } from "./blockWords";
+import { blockedRed, blockSentence, isBlocked } from "./blockWords";
 import { holder, stageLabel, stageOf, stageRank, stampMinutes, type RoleNames, type StageId } from "./lib";
 import type { Task } from "./types";
 import { isWork, shownStageRank } from "./levels";
@@ -141,10 +141,9 @@ export function taskSpan(t: Task, now: number): Span | null {
     end = open ? Math.max(now, since) : since;
     if (open) push(cur, since, end, false);
   } else if (!open && exactCapture !== null && doneAt !== null && doneAt >= exactCapture) {
-    // Done before stages were logged: captured and done, both to the minute.
-    [start, end] = [exactCapture, doneAt];
-    push("done", start, Math.max(end, start + 1), false);
-    end = Math.max(end, start + 1);
+    // Done before stages were logged: captured and done, both to the minute. No segment: no stage
+    // was logged, so the bar is the done outline every done task's bar ends in (mu-173 R1).
+    [start, end] = [exactCapture, Math.max(doneAt, exactCapture + 1)];
   } else {
     return null;
   }
@@ -327,4 +326,28 @@ export function layout(list: Span[], w: TimeWindow, scale: Scale): Placed[] {
     out.push({ span: s, left, width, clipStart: d0 < w.from, clipEnd: d2 > w.to, segments, blocks, pauses });
   }
   return out;
+}
+
+/** What the timeline's legend can name (mu-173), in the order it names them. */
+export type TimelineMark = StageId | "waiting" | "fuzzy" | "blocked" | "paused" | "now";
+export const TIMELINE_MARKS: readonly TimelineMark[] = ["backlog", "shaping", "ready", "building", "testing", "your-check", "done", "waiting", "fuzzy", "blocked", "paused", "now"];
+
+/** The marks the placed bars show in this window, and the now line when `now` (nowAt's) is in it:
+ *  only what's drawn, each once, in the legend's fixed order. A done task's bar has the done edge
+ *  even when no done segment shows; a bar is drawn blocked (blockedRed) with no stretch in view. */
+export function legendMarks(rows: Placed[], now: number | null): TimelineMark[] {
+  const seen = new Set<TimelineMark>();
+  for (const p of rows) {
+    const t = p.span.task;
+    if (stageOf(t) === "done") seen.add("done");
+    if (blockedRed(t) || p.blocks.some((b) => b.width > 0)) seen.add("blocked");
+    if (p.pauses.some((g) => g.width > 0)) seen.add("paused");
+    for (const g of p.segments) {
+      if (g.width <= 0) continue;
+      seen.add(g.seg.stage);
+      if (g.seg.fuzzy) seen.add("fuzzy");
+    }
+  }
+  if (now !== null) seen.add("now");
+  return TIMELINE_MARKS.filter((m) => seen.has(m));
 }

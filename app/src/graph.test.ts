@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { downstream, edgeLit, layoutGraph, readyToStart, upstream } from "./graph";
+import { downstream, edgeLit, graphMarks, isLoopEdge, layoutGraph, readyToStart, upstream } from "./graph";
 import { GraphView } from "./GraphView";
 import css from "./styles.css?raw";
 import type { Task } from "./types";
@@ -21,6 +21,8 @@ const MUSTER = [
 ];
 /** One CSS rule's body. */
 const rule = (sel: string) => new RegExp(`(?:^|\\n)${sel.replace(/[.*+?^${}()|[\]\\>]/g, "\\$&")} \\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+/** The view without its legend row, whose swatches wear the nodes' and arrows' classes (mu-173). */
+const drawn = (html: string) => html.replace(/<div class="legend"[^]*?<\/ul><\/div>/, "");
 const rankOf = (g: ReturnType<typeof layoutGraph>) => Object.fromEntries(g.nodes.map((n) => [n.id, n.rank]));
 
 describe("layoutGraph", () => {
@@ -97,8 +99,8 @@ describe("GraphView", () => {
     renderToStaticMarkup(createElement(GraphView, { tasks, all: tasks, multi: false, openKey, onOpen: () => {} }));
   it("draws a node per linked task, an arrow per link, and the rest in the not-linked strip", () => {
     const html = view(null);
-    expect(html.match(/class="g-node /g)).toHaveLength(8);
-    expect(html.match(/class="g-edge/g)).toHaveLength(8);
+    expect(drawn(html).match(/class="g-node /g)).toHaveLength(8);
+    expect(drawn(html).match(/class="g-edge/g)).toHaveLength(8);
     expect(html).toContain("Not linked to any task (2)");
     expect(html).toContain('aria-pressed="false" class="ui-pill">Hide done</button>');
   });
@@ -180,7 +182,7 @@ describe("GraphView", () => {
     const html = view(null, tasks);
     expect(html).toMatch(/class="g-node s-ready human ready"[^>]*><span class="g-top"><span class="id">0001<\/span><span class="you-ribbon"[^>]*>You<\/span>/);
     expect(html).toMatch(/class="ui-pill g-loose s-ready human"[^>]*><span class="id">0003<\/span><span class="you-ribbon"/);
-    expect(html.match(/class="you-ribbon"/g)).toHaveLength(2);
+    expect(drawn(html).match(/class="you-ribbon"/g)).toHaveLength(2);
   });
   it("says how to start when nothing is linked, with a task key as the example", () => {
     expect(view(null, [task("0001"), task("0002")])).toContain("No task here depends on another yet.");
@@ -199,5 +201,92 @@ describe("GraphView", () => {
     expect(rule(".g-top")).toContain("flex-wrap: wrap;");
     expect(rule(".g-top")).not.toContain("overflow: hidden");
     expect(rule(".g-top > *")).toMatch(/flex: none;\s*white-space: nowrap;/);
+  });
+});
+
+describe("the graph's legend lists what the graph draws (mu-173)", () => {
+  const marks = (...queues: Task[][]) => graphMarks(queues.map(layoutGraph));
+  const LOOP = [task("0001", ["0002"]), task("0002", ["0001"])];
+  it("names the stages of nodes and of unlinked tasks, and ready to start, in a fixed order", () => {
+    // Nodes in Your check, Building and Ready (six of them ready to start); Done only on an unlinked chip.
+    expect(marks(MUSTER)).toEqual(["ready", "building", "your-check", "done", "ready-to-start"]);
+    expect(marks([task("0001", [], { stage: "backlog" }), task("0002", ["0001"], { stage: "shaping" }), task("0003", [], { stage: "testing" })])).toEqual(["backlog", "shaping", "testing"]);
+  });
+  it("names ready to start only for a node: an unlinked chip has no outline", () => {
+    expect(marks([task("0021"), task("0022")])).toEqual(["ready"]);
+  });
+  it("names blocked for a node drawn blocked, not for a chip or a wait on other tasks", () => {
+    expect(marks([task("0001", [], { stage: "building", blocked: true }), task("0002", ["0001"], { stage: "building" })])).toEqual(["building", "blocked"]);
+    expect(marks([task("0009", [], { stage: "building", blocked: true })])).toEqual(["building"]);
+    const byTasks = { blockedKind: "tasks", blockedBy: [{ id: "0001", stage: "building", holder: "" }] };
+    expect(marks([task("0001", [], { stage: "building" }), task("0002", ["0001"], byTasks)])).toEqual(["ready", "building"]);
+  });
+  it("names the owner's own task as a node and as a chip", () => {
+    expect(marks([task("0001", [], { stage: "building", forWho: "human" }), task("0002", ["0001"], { stage: "building" })])).toEqual(["building", "human"]);
+    expect(marks([task("0009", [], { stage: "building", forWho: "human" })])).toEqual(["building", "human"]);
+  });
+  it("names a loop when two tasks wait on each other", () => {
+    expect(marks(LOOP)).toEqual(["ready", "ready-to-start", "loop"]);
+  });
+  it("lists each mark once across queues, and nothing for no graphs", () => {
+    expect(marks([task("0001", [], { stage: "done" })], [task("0002", [], { stage: "done" })], [task("0003", [], { stage: "building" })])).toEqual(["building", "done"]);
+    expect(graphMarks([])).toEqual([]);
+    expect(marks([])).toEqual([]);
+  });
+  it("one rule says which arrow closes a loop, and the drawing uses it", () => {
+    const g = layoutGraph(LOOP);
+    expect(g.edges.filter((e) => isLoopEdge(g, e))).toHaveLength(1);
+    const m = layoutGraph(MUSTER);
+    expect(m.edges.some((e) => isLoopEdge(m, e))).toBe(false);
+    // A three-task loop closes once too.
+    const three = layoutGraph([task("0001", ["0003"]), task("0002", ["0001"]), task("0003", ["0002"])]);
+    expect(three.edges.filter((e) => isLoopEdge(three, e))).toHaveLength(1);
+    const html = drawn(renderToStaticMarkup(createElement(GraphView, { tasks: LOOP, all: LOOP, multi: false, openKey: null, onOpen: () => {} })));
+    expect(html.match(/class="g-edge[^"]*"/g)).toHaveLength(2);
+    expect(html.match(/class="g-edge loop"/g)).toHaveLength(1);
+  });
+});
+
+describe("the Graph view's legend (mu-173)", () => {
+  const view = (tasks: Task[]) => renderToStaticMarkup(createElement(GraphView, { tasks, all: tasks, multi: false, openKey: null, onOpen: () => {} }));
+  it("sits under the bar, after Hide done and one short line, and names what every queue draws", () => {
+    const other = [task("0001", [], { queue: "other", stage: "testing", forWho: "human" })];
+    const html = view([...MUSTER, ...other]);
+    expect(html).toMatch(/<div class="graph-bar"><button[^>]*>Hide done<\/button><span class="meta">Arrows point from a task to what waits on it\.<\/span><\/div><div class="legend" role="group" aria-label="What the colours mean">/);
+    const names = [...(/<ul class="legend-list">[^]*?<\/ul>/.exec(html)?.[0] ?? "").matchAll(/<\/span>([^<]+)<\/li>/g)].map((m) => m[1]);
+    expect(names).toEqual(["Ready", "Building", "Testing", "Waiting for your check", "Done", "Ready to start", "Your own task"]);
+    expect(html).not.toContain("g-legend");
+  });
+  it("stays in view: the bar and the legend sit in a strip outside the scrolling graphs (R2)", () => {
+    const html = view(MUSTER);
+    expect(html).toMatch(/^<main class="graph-view"><div class="graph-strip"><div class="graph-bar">.*?<\/div><div class="legend" role="group"[^>]*><ul class="legend-list">.*?<\/ul><ul class="legend-list legend-reserve" aria-hidden="true">.*?<\/ul><\/div><\/div><div class="graph-scroll">/);
+    const scroll = html.slice(html.indexOf('<div class="graph-scroll">'));
+    expect(html.slice(0, html.indexOf('<div class="graph-scroll">'))).not.toContain("graph-queue");
+    expect(scroll).toContain("graph-queue");
+    expect(scroll).not.toContain('class="legend');
+    expect(view([])).toMatch(/<div class="graph-scroll"><p class="empty">No tasks to show\.<\/p><\/div><\/main>$/);
+  });
+  it("scrolls only the graphs: the view is a column, the strip keeps its size, the scroller takes the rest", () => {
+    const rule = (sel: string) => new RegExp(`(?:^|\\n)\\${sel} \\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+    expect(rule(".graph-view")).toMatch(/flex: 1;[^]*display: flex;[^]*flex-direction: column;[^]*min-block-size: 0;/);
+    expect(rule(".graph-view")).not.toContain("overflow");
+    expect(rule(".graph-strip")).toContain("flex: none");
+    expect(rule(".graph-scroll")).toMatch(/flex: 1;[^]*min-block-size: 0;[^]*overflow: auto;/);
+  });
+  it("leaves room above the top node for its selection outline and focus ring, keeping the 10px gap (R5)", () => {
+    const rule = (sel: string) => new RegExp(`(?:^|\\n)${sel.replace(/[.>]/g, "\\$&")} \\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+    // .g-node.sel reaches 4px out (2px outline at 2px offset), the focus ring 3px: 6px holds both.
+    expect(rule(".g-node.sel")).toMatch(/outline: 2px solid var\(--accent\);[^]*outline-offset: 2px;/);
+    expect(rule(".graph-scroll")).toContain("padding: 6px 14px 16px;");
+    expect(rule(".graph-strip > .legend")).toContain("margin-block-end: 4px;");
+  });
+  it("keeps the row, its list empty and every item reserved, when there's nothing to draw (R4)", () => {
+    const html = view([]);
+    expect(html).toContain('<div class="legend" role="group" aria-label="What the colours mean"><ul class="legend-list"></ul><ul class="legend-list legend-reserve" aria-hidden="true">');
+    const reserved = /<ul class="legend-list legend-reserve"[^]*?<\/ul>/.exec(html)?.[0] ?? "";
+    expect(reserved.match(/<li /g)).toHaveLength(11);
+  });
+  it("has no rule left for the old inline legend", () => {
+    expect(css).not.toContain(".g-legend");
   });
 });

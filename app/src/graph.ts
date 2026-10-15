@@ -1,8 +1,9 @@
 // The dependency graph (task 0019): a layered layout, left to right, in our own code (no library).
 // Ranks are the longest chain of dependencies before a task, so what can start now sits on the
 // left; within a rank, a few barycentre sweeps keep linked tasks near each other.
-import { isBlocked } from "./blockWords";
-import { stageOf } from "./lib";
+import { blockedRed, isBlocked } from "./blockWords";
+import { isHuman } from "./human";
+import { stageOf, type StageId } from "./lib";
 import type { Task } from "./types";
 
 export type GraphNode = { task: Task; id: string; rank: number; order: number };
@@ -141,4 +142,41 @@ export function edgeLit(e: GraphEdge, selected: string | null, up: Set<string>, 
  *  exactly what `muster claim` takes. A paused one (0045) isn't. */
 export function readyToStart(t: Task): boolean {
   return stageOf(t) === "ready" && !t.claimedBy && !isBlocked(t) && !t.paused;
+}
+
+const RANKS = new WeakMap<GraphNode[], Map<string, number>>();
+/** Does this arrow close a loop: does it point back to a rank no later than its own? It's then
+ *  routed below the nodes (GraphView) and named in the legend, by this one rule. */
+export function isLoopEdge(g: Pick<Graph, "nodes">, e: GraphEdge): boolean {
+  let rank = RANKS.get(g.nodes);
+  if (!rank) {
+    rank = new Map(g.nodes.map((n) => [n.id, n.rank]));
+    RANKS.set(g.nodes, rank);
+  }
+  return (rank.get(e.to) ?? 0) <= (rank.get(e.from) ?? 0);
+}
+
+/** What the graph's legend can name (mu-173), in the order it names them. */
+export type GraphMark = StageId | "ready-to-start" | "blocked" | "human" | "loop";
+export const GRAPH_MARKS: readonly GraphMark[] = ["backlog", "shaping", "ready", "building", "testing", "your-check", "done", "ready-to-start", "blocked", "human", "loop"];
+
+/** The marks these graphs draw, each once, in the legend's fixed order: the stage of every node
+ *  and unlinked chip, the outline and the blocked edge only nodes get, the You ribbon both wear,
+ *  and a loop's arrow. */
+export function graphMarks(graphs: Graph[]): GraphMark[] {
+  const seen = new Set<GraphMark>();
+  for (const g of graphs) {
+    for (const { task: t } of g.nodes) {
+      seen.add(stageOf(t));
+      if (readyToStart(t)) seen.add("ready-to-start");
+      if (blockedRed(t)) seen.add("blocked");
+      if (isHuman(t)) seen.add("human");
+    }
+    for (const t of g.loose) {
+      seen.add(stageOf(t));
+      if (isHuman(t)) seen.add("human");
+    }
+    if (g.edges.some((e) => isLoopEdge(g, e))) seen.add("loop");
+  }
+  return GRAPH_MARKS.filter((m) => seen.has(m));
 }

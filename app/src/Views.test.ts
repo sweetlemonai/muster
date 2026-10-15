@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { stampMinutes } from "./lib";
 import type { Task } from "./types";
 import { axis, layout, nowAt, spans, timeWindow, type Scale } from "./viewData";
-import { TableView, TimelineChart, TimelineControls } from "./Views";
+import { TableView, TimelineChart, TimelineControls, TimelineView } from "./Views";
 
 const t = (over: Partial<Task>): Task => ({
   queue: "q", id: "0001", title: "T", kind: "task", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [], folder: "todo", path: "", claimedBy: "", heldBy: "", stageSince: "", checkins: [],
@@ -169,5 +169,59 @@ describe("a task waiting only on other tasks isn't red on the timeline (0060)", 
     };
     expect(bar({ blockedKind: "tasks", blockedBy: [{ id: "0014", stage: "ready", holder: "" }] }).split(" ")).not.toContain("blocked");
     expect(bar({ blocked: true, blockedKind: "you", blockDetail: "x" }).split(" ")).toContain("blocked");
+  });
+});
+
+describe("the timeline's legend (mu-173)", () => {
+  // TimelineView takes now in seconds; this is 2026-10-14 17:20 on the local clock, NOW in wall minutes.
+  const SECONDS = new Date(2026, 9, 14, 17, 20).getTime() / 1000;
+  const view = (tasks: Task[]) => {
+    // The timeline remembers its scale in local storage, which tests run without: Day here.
+    vi.stubGlobal("localStorage", { getItem: () => "day", setItem: () => {} });
+    try {
+      return renderToStaticMarkup(createElement(TimelineView, { tasks, now: SECONDS, multi: false, openKey: null, onOpen: () => {}, words: [] }));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  };
+  const evil = t({ id: "0050", title: "s-done legend-item Blocked", stage: "building", blocked: true, stageHistory: [step("2026-10-14 13:00", "ready", "building")] });
+  it("sits under the scale controls, outside the toolbar and the scrolling chart", () => {
+    const html = view([evil]);
+    expect(html).toMatch(/^<main class="timeline"><div class="tl-strip"><div class="tl-controls" role="toolbar" aria-label="Timeline scale">.*?<\/div><div class="legend" role="group" aria-label="What the colours mean"><ul class="legend-list">.*?<\/ul><ul class="legend-list legend-reserve" aria-hidden="true">.*?<\/ul><\/div><\/div><div class="tl-scroll">/);
+    const toolbar = /<div class="tl-controls"[^]*?<\/div>/.exec(html)?.[0] ?? "";
+    expect(toolbar).not.toContain("legend");
+    const scroll = html.slice(html.indexOf('<div class="tl-scroll">'));
+    expect(scroll).not.toContain('class="legend');
+  });
+  it("names what this window draws, and nothing from the tasks themselves", () => {
+    // The visible list only: the hidden copy after it names every mark the timeline can draw (R4).
+    const legend = /<ul class="legend-list">[^]*?<\/ul>/.exec(view([evil]))?.[0] ?? "";
+    expect([...legend.matchAll(/<\/span>([^<]+)<\/li>/g)].map((m) => m[1])).toEqual(["Building", "Blocked", "Now"]);
+    expect(legend).not.toContain("0050");
+    expect(legend).not.toContain("s-done");
+    expect(legend).not.toContain("legend-item Blocked");
+  });
+  it("draws every done bar as its legend swatch does: the done outline, no done segment, logged stages or not (R1)", () => {
+    const old = t({ id: "0011", stage: "done", captured: "2026-10-14", capturedAt: "2026-10-14 04:47", doneOn: "2026-10-14", doneAt: "2026-10-14 04:55" });
+    const logged = t({ id: "0031", stage: "done", doneOn: "2026-10-14", stageHistory: [step("2026-10-14 13:00", "ready", "building"), step("2026-10-14 16:00", "building", "done")] });
+    const html = view([old, logged]);
+    const scroll = html.slice(html.indexOf('<div class="tl-scroll">'));
+    const bars = [...scroll.matchAll(/<span class="tl-bar s-done[^"]*"[^>]*>([\s\S]*?)<span class="tl-bar-text">/g)].map((m) => m[1]);
+    expect(bars).toHaveLength(2);
+    expect(bars[0]).toBe("");
+    expect(bars[1]).toMatch(/^<span class="tl-seg s-building"[^>]*><\/span>$/);
+    const legend = /<div class="legend"[^]*?<\/ul><\/div>/.exec(html)?.[0] ?? "";
+    expect(legend).toContain('<span class="tl-bar s-done"></span></span>Done</li>');
+    expect(html).not.toContain("tl-seg s-done");
+  });
+  it("keeps only what a swatch can't say in the note under the chart, with no colour words", () => {
+    const html = view([evil]);
+    const note = /<p class="meta tl-note">([^<]*)<\/p>/.exec(html)?.[1] ?? "";
+    expect(note).toContain("Your check or Done");
+    expect(note).toContain("now line");
+    expect(note).toContain("Paused time isn&#x27;t counted as work");
+    expect(note).toContain("Day is the last 24 hours");
+    expect(note).not.toMatch(/\b(colou?rs?|red|gr[ae]y|green|hatch\w*|dotted|tail)\b/i);
+    expect(html).not.toContain("tl-legend");
   });
 });

@@ -1,1 +1,20 @@
-{}
+{
+  "legend": {
+    "label": "What the colours mean",
+    "backlog": "Backlog",
+    "shaping": "Shaping",
+    "ready": "Ready",
+    "building": "Building",
+    "testing": "Testing",
+    "your-check": "Waiting for your check",
+    "done": "Done",
+    "waiting": "Waiting",
+    "fuzzy": "Start not certain",
+    "blocked": "Blocked",
+    "paused": "Paused",
+    "now": "Now",
+    "ready-to-start": "Ready to start",
+    "human": "Your own task",
+    "loop": "A loop"
+  }
+}

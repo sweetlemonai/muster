@@ -4,6 +4,32 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — mu-173 review round 2: the legend keeps its height, the Graph's top outline whole
+**Fixed (Gholi_34, builder):** R4: the wrapping legend was as tall as the window's marks, so
+stepping from an 11-mark week to a 4-mark one moved the chart up 24px → its height followed the
+items present → a hidden copy of every mark the view can draw now shares the list's grid cell
+(`.legend-reserve`, aria-hidden, nothing focusable), so the height follows the width only. R5: a
+selected top node's outline was cut at the Graph scroller's edge → `.graph-scroll` had no top
+padding → 6px of top padding, taken off the legend's bottom margin.
+**Did:** the legend's text moves into the i18n layer from mu-146 (`board:legend.*`, English and
+Persian from the glossary), so `Legend.tsx` stays off the guard's list.
+**Verified:** Legend, graph, Views and i18n tests (127 passed). Headless WebKit at 1000×640
+(sidebar 210), Week, Month and Day, 4 windows each, 0–11 items, LTR and RTL: legend h 44, head y
+164, first row y 192 in every window. Graph, one project, top node selected: outline top 152, inside
+the scroller's 150. Shots in `attachments/0173/r2-*.png`.
+
+## 2026-10-15 — mu-173 review round 1: one Done look, the Graph's legend stays in view, the legend wraps
+**Fixed (Gholi_32, builder):** R1: a task done before stage history drew a solid green bar while
+the Done swatch is an outline. `taskSpan` no longer gives it a done segment: no stage of it was
+logged, so the green fill claimed time "in Done" the data doesn't hold. Every done bar is now the
+outline. R2: the Graph's bar and legend move to `.graph-strip`, outside a new `.graph-scroll`. R3:
+the legend wraps onto a second line instead of scrolling sideways with a hidden scrollbar.
+**Decided:** R1 one look, not two swatches, because it's truer to the data. R3 wrap was the lead's
+call, from the owner's "out of sight is out of mind" rule.
+**Verified:** tests first (7 red, then green), full app suite 1912 passed. Headless WebKit at
+1000×640 (sidebar 210): Timeline Week with 11 legend items wraps to 2 rows, 0 items outside, LTR
+and RTL; Graph with 4 queues scrolled 2412px, legend top 45px before and after. Shots in
+`attachments/0173/r1-*.png`.
 ## 2026-10-15 — Backlog shaped: mu-189 to mu-195, two notes folded into mu-147; mu-131 stalls on a gate check
 **Did (shapour):** 0034 → mu-189 (hand merge re-checks review and gate records under the lock, after 0131).
 0038 → mu-190 (high: merge-log keeps both sides' entries inserted at one point below the top; amends
@@ -62,6 +88,21 @@ row's aria-label under All names the project. R6 agents.rs header per decision 0
 R9 Focus chips show no count while reading. R10 the recap uses the app's warm queue cache.
 **Verified:** a mutant per fix, each killed except `isdst: 0` in `local_epoch`, which is
 equivalent on macOS (its mktime gives the same answer). The gate line is in the pass.
+## 2026-10-14 — Timeline and Graph legends: a swatch row naming each colour and mark on screen (mu-173)
+**Did (gholi_28, builder):** new `Legend.tsx` (one `LEGEND_LABELS` table, swatches built from the
+views' own classes by a closed switch). The Timeline's legend is the scale strip's second line
+(`.tl-strip`, outside the toolbar and `.tl-scroll`); round 1 made it wrap (above). `legendMarks` (`viewData.ts`) and `graphMarks` + `isLoopEdge` (`graph.ts`)
+list only what's drawn, in a fixed order. The Graph lifts `layoutGraph` into `GraphView`, and its
+loop arrows and legend share `isLoopEdge`. The paragraph under the chart lost its colour words.
+Manual 03 and 04, AS_BUILT and a new `docs/now/views.md` describe it.
+**Decided:** the Graph's "Your own task" swatch is the You ribbon, since graph nodes have no gold
+hatching.
+**Verified:** gate green. Unit and render tests cover AC1 and AC2. Headless WebKit shots on
+synthetic data (40 tasks, Week): the strip, legend and first row keep their y across scrolling and
+across a week with blocked and paused bars and one without. Seven themes, names at 6.3:1 or more.
+`dir=rtl` starts the row at the right. The Graph with and without Hide done.
+**Open:** فارسی labels wait for mu-146/mu-147. The latent `.waiting` CSS clash is a backlog note.
+
 ## 2026-10-14 — A takeover's mail always reaches the successor (mu-156)
 **Fixed (asghar_27, builder):** mu-90 review R6 and R7. A takeover whose mail move hit one bad file
 stopped there, left asks.json pointing at the old mailbox, and couldn't be retried ("you already

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { stampMinutes } from "./lib";
 import {
-  axis, barTitle, DAY, layout, nowAt, parseScale, segmentTitle, sortTasks, spans, taskSpan, timeWindow, wallMinutes, windowLabel,
+  axis, barTitle, DAY, layout, legendMarks, nowAt, parseScale, segmentTitle, sortTasks, spans, taskSpan, timeWindow, wallMinutes, windowLabel,
   type Placed, type Scale, type Span,
   parseTableSort,
 } from "./viewData";
@@ -133,9 +133,16 @@ describe("a task's work: from when it started to when it finished (owner, 2026-1
     expect(s.segments.map((g) => g.stage)).toEqual(["building", "testing"]);
     expect(taskSpan(t({ stage: "building", stageHistory: [step("2026-10-14 25:00", "ready", "building")] }), NOW)).toBeNull();
   });
-  it("draws a task done before stages were logged from its logged capture to its logged done time", () => {
+  it("draws a task done before stages were logged from its logged capture to its logged done time, with no segment", () => {
+    // No stage was logged, so no stretch of it is drawn in a stage's colour: it's the done bar's
+    // outline, as every done task's bar ends (mu-173 R1).
     const s = span(t({ stage: "done", captured: "2026-10-12", capturedAt: "2026-10-12 04:47", doneAt: "2026-10-12 04:55" }));
-    expect(segs(s)).toEqual([["done", M("2026-10-12 04:47"), M("2026-10-12 04:55"), false]]);
+    expect([s.start, s.end]).toEqual([M("2026-10-12 04:47"), M("2026-10-12 04:55")]);
+    expect(segs(s)).toEqual([]);
+  });
+  it("gives a done-before-stages task captured and done in the same minute a bar a minute long", () => {
+    const s = span(t({ stage: "done", captured: "2026-10-12", capturedAt: "2026-10-12 04:47", doneAt: "2026-10-12 04:47" }));
+    expect([s.start, s.end, s.segments.length]).toEqual([M("2026-10-12 04:47"), M("2026-10-12 04:48"), 0]);
   });
   it("leaves out work not started, and tasks the log has no times for", () => {
     expect(taskSpan(t({ captured: "2026-10-12", stage: "ready" }), NOW)).toBeNull();
@@ -379,5 +386,71 @@ describe("the Table remembers its sort (owner, 2026-10-13)", () => {
     expect(parseTableSort(JSON.stringify({ by: "captured" }))).toEqual({ by: "captured", desc: false });
     for (const bad of [null, "", "not json", JSON.stringify({ by: "colour", desc: true }), JSON.stringify([1, 2]), "null"])
       expect(parseTableSort(bad), String(bad)).toEqual({ by: "stage", desc: false });
+  });
+});
+
+describe("the timeline's legend lists what the window shows (mu-173)", () => {
+  const day = timeWindow("day", NOW, 0);
+  const marks = (list: Task[], w = day, scale: Scale = "day", now: number | null = null) => legendMarks(layout(spans(list, NOW), w, scale), now);
+  const building = (over: Partial<Task>) => t({ stage: "building", stageHistory: [step("2026-10-14 09:00", "ready", "building")], ...over });
+  it("names each stage a bar draws, the wait for your check, a done bar and now, in a fixed order", () => {
+    expect(marks([built], day, "day", nowAt(day, NOW))).toEqual(["building", "testing", "your-check", "done", "now"]);
+    // Sent back to Ready and claimed again: Ready comes before Building however the bar runs.
+    const returned = t({ stage: "building", stageHistory: [step("2026-10-14 10:00", "ready", "building"), step("2026-10-14 11:00", "building", "ready"), step("2026-10-14 12:00", "ready", "building")] });
+    expect(marks([returned])).toEqual(["ready", "building"]);
+  });
+  it("lists each mark once, however many bars show it", () => {
+    expect(marks([built, { ...built, id: "b4" }, { ...built, id: "b5" }])).toEqual(["building", "testing", "your-check", "done"]);
+  });
+  it("names done for a done task from before stage history, whose bar is the done outline with no segment (R1)", () => {
+    const old = t({ captured: "2026-10-14", capturedAt: "2026-10-14 04:47", doneAt: "2026-10-14 04:55", stage: "done" });
+    const placed = layout(spans([old], NOW), day, "day");
+    expect(placed.map((p) => p.segments.length)).toEqual([0]);
+    expect(marks([old])).toEqual(["done"]);
+  });
+  it("names a start known only to the day", () => {
+    // Claimed by hand on the 14th; the log starts mid-work, at its move to Testing.
+    const handClaimed = t({ claimedOn: "2026-10-14", stage: "testing", stageHistory: [step("2026-10-14 13:00", "building", "testing")] });
+    expect(marks([handClaimed])).toEqual(["building", "testing", "fuzzy"]);
+    expect(marks([building({})])).toEqual(["building"]);
+  });
+  it("names blocked for a stretch blocked in the window, or a bar drawn blocked", () => {
+    expect(marks([building({ blockHistory: [{ from: "2026-10-14 10:00", to: "2026-10-14 12:00" }] })])).toEqual(["building", "blocked"]);
+    expect(marks([building({ blocked: true })])).toEqual(["building", "blocked"]);
+    // Waiting only on other tasks isn't drawn blocked (0060), so it isn't named.
+    expect(marks([building({ blockedKind: "tasks", blockedBy: [{ id: "0014", stage: "ready", holder: "" }] })])).toEqual(["building"]);
+  });
+  it("names paused for a paused stretch", () => {
+    expect(marks([building({ pauseHistory: [{ from: "2026-10-14 10:00", to: "2026-10-14 12:00" }] })])).toEqual(["building", "paused"]);
+  });
+  it("names waiting for a waiting stretch", () => {
+    const at = M("2026-10-14 08:00"), work = M("2026-10-14 10:00"), end = M("2026-10-14 12:00");
+    const span: Span = {
+      task: t({ id: "w", stage: "done" }), start: at, work, end, open: false, timed: true, blocks: [], pauses: [], finish: end,
+      segments: [{ stage: "waiting", from: at, to: work, fuzzy: false }, { stage: "building", from: work, to: end, fuzzy: false }],
+    };
+    expect(legendMarks(layout([span], day, "day"), null)).toEqual(["building", "done", "waiting"]);
+  });
+  it("leaves out what only shows outside the window", () => {
+    // Building since the 1st, blocked on the 2nd and paused on the 3rd: this week shows neither.
+    const long = building({
+      stageHistory: [step("2026-10-01 09:00", "ready", "building")],
+      blockHistory: [{ from: "2026-10-02 10:00", to: "2026-10-02 12:00" }],
+      pauseHistory: [{ from: "2026-10-03 10:00", to: "2026-10-03 12:00" }],
+    });
+    const old = t({ id: "old", stage: "done", stageHistory: [step("2026-10-08 10:00", "ready", "building"), step("2026-10-09 10:00", "building", "done")] });
+    const week = timeWindow("week", NOW, 0), month = timeWindow("month", NOW, 0);
+    expect(marks([long, old], week, "week")).toEqual(["building"]);
+    expect(marks([long, old], month, "month")).toEqual(["building", "done", "blocked", "paused"]);
+  });
+  it("skips a stretch with no width", () => {
+    const [p] = layout(spans([built], NOW), day, "day");
+    const flat: Placed = { ...p, segments: p.segments.map((g) => ({ ...g, width: g.seg.stage === "testing" ? 0 : g.width })), blocks: [{ left: 0.5, width: 0, kind: "" }], pauses: [{ left: 0.5, width: 0 }] };
+    expect(legendMarks([flat], null)).toEqual(["building", "your-check", "done"]);
+  });
+  it("names only now when no bar shows, and nothing when now is outside the window too", () => {
+    expect(legendMarks([], null)).toEqual([]);
+    expect(legendMarks([], 0.5)).toEqual(["now"]);
+    expect(legendMarks([], 0)).toEqual(["now"]);
   });
 });

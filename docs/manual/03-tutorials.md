@@ -187,7 +187,7 @@ The **Graph** tab shows what waits on what (see [Depends and the graph](02-conce
 
 1. Each box is a task, in its stage's colour. An arrow goes from a task to each task that waits on it, so work flows left to right.
 2. Click a box. What it waits on is marked "needed first", what waits on it "waits for it", and everything else dims. The task opens in the pane.
-3. A task with nothing left to wait on is marked "ready" (the legend above the graph says "Ready to start").
+3. A task with nothing left to wait on is marked "ready". The legend above the graph, which stays in view while you scroll, names each colour and mark it shows: the stages, Ready to start, Blocked, Your own task and A loop.
 4. **Hide done** drops finished tasks. Tasks with no links are listed below the graph.
 
 The **Timeline** tab shows when the work happened:
@@ -196,7 +196,8 @@ The **Timeline** tab shows when the work happened:
 2. Each bar is one task's work. It starts when the work started (the task's first move into Building or a later stage) and ends when the work finished (it reached Your check or Done). Each stage it went through is a stretch in that stage's colour.
 3. A thin dotted tail after a bar is the time the task has been waiting for your check.
 4. The vertical line is now, and tasks still being worked run up to it. Hatching marks time spent blocked. A faded start means only the day the work started is known, as for older tasks.
-5. Tasks whose work hasn't started, or whose log has no times, aren't drawn. A line under the chart says how many there are.
+5. Not sure what a colour means? Read the legend under the scale chips: a small piece of bar and its name for each colour and mark in the period you're looking at. It stays there while you scroll.
+6. Tasks whose work hasn't started, or whose log has no times, aren't drawn. A line under the chart says how many there are.
 
 ## Find tasks and keep a view
 

@@ -1179,6 +1179,29 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   faded start. A now line runs across the chart and open tasks run to it. Bars are worked out in
   `viewData.ts` in wall-clock minutes, so a clock change doesn't bend them). All three, and the
   Graph (0019), share the search and filters and open tasks in the docked pane.
+- **Legend on the Timeline and the Graph** (mu-173): one `Legend` component (`app/src/Legend.tsx`,
+  a `role="group"` "What the colours mean" with a list of swatch + name). The Timeline's sits in
+  `.tl-strip` as the second line under the scale toolbar (not inside it), outside `.tl-scroll`, so
+  it never scrolls away. It wraps onto a second line when the window is too narrow for it (at
+  least one 20px line, items never split), so no item is ever out of sight; nothing in it scrolls.
+  A hidden copy of every item the view can draw (`TIMELINE_MARKS`, `GRAPH_MARKS`) shares the
+  list's grid cell (`.legend-reserve`: `visibility: hidden`, `aria-hidden`, nothing focusable), so
+  the row is as tall as the full set wraps to at this width and stepping between windows never
+  moves the chart below it.
+  `legendMarks(rows, now)` (`viewData.ts`) lists only what
+  the placed bars show, in a fixed order: Backlog, Shaping, Ready, Building, Testing, Waiting for
+  your check (the dotted tail), Done (the edge), Waiting, Start not certain (fuzzy), Blocked, Paused,
+  Now. Every done bar is the Done outline with no done segment: a task done before stage history
+  was logged draws its captured-to-done span with no segment, since no stage of it is known. The
+  Graph's sits with the Hide done bar in `.graph-strip`, outside `.graph-scroll`, so it stays in
+  view too (6px of the scroller's top padding keeps a selected or focused top node's outline whole), and follows Hide done: `graphMarks(graphs)` (`graph.ts`) names the stages of nodes
+  and unlinked chips, Ready to start, Blocked, Your own task (the You ribbon) and A loop, which
+  uses the same `isLoopEdge` (an arrow to a rank no later than its own) the drawing routes below
+  the nodes. Each swatch is built from the view's own classes (`tl-bar`/`tl-seg s-<stage>`,
+  `tl-block`, `tl-pause`, `tl-now`, `g-node`, `g-edge loop`) by a closed switch over mark ids, with
+  legend-scoped CSS only for size and place, so a colour change can't drift from its legend. The
+  names are the board namespace's `legend.*` keys in the i18n layer, English and Persian. The paragraph under the chart keeps
+  only what a swatch can't say.
 - **Help** (tab, task 0035): the manual in `docs/manual/`, eight pages (Start here, Concepts,
   Tutorials, In the app, Commands, Shortcuts, For agents, FAQ), bundled at build time and rendered
   with the same sanitised Markdown as task text. A docked sidebar lists every page and its
