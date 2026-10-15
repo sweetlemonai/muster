@@ -4,6 +4,26 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Gates: the design that takes the owner out of Your check (mu-129 to mu-141)
+**Did:** `docs/GATES.md` lays out four gates checked at the branch's tip: build, code review,
+criteria (`ac-verifier`) and visual QA. Visual QA follows the owner's proposal
+(`.muster/proposal/Proposal Visual QA and Walkthrough QA in Muster.md`): reference QA against
+approved baselines and mockups, and walkthrough QA where a screen has neither. A task that passes
+is accepted without the owner. Filed as feature mu-129: mu-130 (research, already with Pouya;
+scope added as a note), mu-131 gate records, mu-132 criteria, then the proposal's six stages:
+mu-133 web walkthrough, mu-134 Auto/Mixed and video, mu-135 baselines and screen map, mu-136
+reference QA, mu-140 learning, mu-141 iOS and Mac. Then mu-137 accepted by gates, mu-138 the
+sweep of Your check, and mu-139 Kia running it all in dispatched Testing. PIPELINE.md's Gate row
+points at GATES.md.
+**Decided:** decision 0014, with defaults for the proposal's open questions (baselines in the
+repo, 2 passes, walkthrough until baselined, an injected overlay). A first draft that had no
+walkthroughs, used main's capture as the baseline and added a separate role was replaced the same
+hour, once the owner's proposal arrived.
+**Verified:** `bin/gate` green before the rework (docs only since). `muster check` reports nothing
+on the new tasks.
+**Open:** Lovable at work is the owner's call (WAITING-FOR-OWNER.md). Mac capture needs a one-time
+Screen Recording grant (mu-141).
+
 ## 2026-10-14 — icon.icns holds every size; the menu bar shows the count beside the head (mu-89)
 **Did (Akbar_7, builder):** `tray.rs` sets the status item's title to the waiting count ("3",
 empty at 0) with the look, tooltip and menu (`shows(n)`, one `Bar::set` per count change);
