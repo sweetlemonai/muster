@@ -3,10 +3,16 @@
 //! the `muster` command (to read and write tasks) and read-only tools on the project folder.
 //! Its stream is turned into short events for the window: replies, the commands it ran, the
 //! result. Router and token variables are stripped, so it never goes through a third party.
+//!
+//! Its account is one of the allowlist's (`accounts::allowed`, task 0099), and every `claude` it
+//! runs has `CLAUDE_CONFIG_DIR` set to that account's folder: a bare `claude` is the company
+//! account (`~/.claude`), which Muster never reads or uses.
 
+use crate::accounts::Account;
 use serde::Serialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -17,6 +23,7 @@ pub struct Event {
 }
 
 /// Where the owner's `claude` is. A GUI app has a minimal PATH, so look in the usual places.
+/// `~/.claude/local` is where Claude Code installs itself, not an account: nothing is read there.
 pub fn find_claude(home: &Path) -> Option<PathBuf> {
     let candidates = [
         home.join(".local/bin/claude"),
@@ -27,36 +34,75 @@ pub fn find_claude(home: &Path) -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.is_file())
 }
 
-/// Claude Code config folders: `~/.claude` and `~/.claude-*` (each is one account).
-pub fn accounts(home: &Path) -> Vec<String> {
-    let mut out: Vec<String> = std::fs::read_dir(home)
-        .map(|rd| {
-            rd.flatten()
-                .filter(|e| e.path().is_dir())
-                .map(|e| e.file_name().to_string_lossy().to_string())
-                .filter(|n| n == ".claude" || n.starts_with(".claude-"))
-                .collect()
-        })
-        .unwrap_or_default();
-    out.sort();
-    out
+/// The accounts the helper may use, by folder name (`.claude-mg`), in the allowlist's order:
+/// never `.claude`, never a `.claude-*` folder that isn't on the list.
+pub fn accounts(allowed: &[Account]) -> Vec<String> {
+    allowed.iter().map(Account::folder_name).collect()
 }
 
-/// Is this account logged in? From `claude auth status` (JSON, no model call). `None` when it
-/// can't tell. `.claude` is the default folder, so CLAUDE_CONFIG_DIR stays unset for it.
-pub fn login_status(claude: &Path, home: &Path, account: &str) -> Option<(bool, String)> {
-    let mut cmd = std::process::Command::new(claude);
-    cmd.args(["auth", "status"])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null());
+/// The allowed account whose folder name is `name` (`.claude-mg`), exactly. `.claude`, and any
+/// folder not on the allowlist, is `None`.
+pub fn account<'a>(name: &str, allowed: &'a [Account]) -> Option<&'a Account> {
+    allowed.iter().find(|a| a.folder_name() == name)
+}
+
+/// `claude` run as `account`: router and token variables removed, and `CLAUDE_CONFIG_DIR` set to
+/// the account's folder, always (without it, `claude` is the company account).
+pub fn command(claude: &Path, account: &Account) -> Command {
+    let mut cmd = Command::new(claude);
+    cmd.stdin(Stdio::null());
     for k in STRIP_ENV {
         cmd.env_remove(k);
     }
-    if account != ".claude" {
-        cmd.envs([("CLAUDE_CONFIG_DIR", home.join(account))]);
-    }
-    let mut child = cmd.spawn().ok()?;
+    cmd.env("CLAUDE_CONFIG_DIR", account.dir());
+    cmd
+}
+
+/// `claude auth status` as `account` (`command`).
+pub fn status_command(claude: &Path, account: &Account) -> Command {
+    let mut cmd = command(claude, account);
+    cmd.args(["auth", "status"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    cmd
+}
+
+/// One helper turn as `account` (`command`), with `args`, in `project_dir`: `PATH` is `path`, and
+/// `muster` is pointed at the queue `root`.
+pub fn run_command(
+    claude: &Path,
+    account: &Account,
+    args: &[String],
+    project_dir: &Path,
+    path: &str,
+    root: &Path,
+) -> Command {
+    let mut cmd = command(claude, account);
+    cmd.args(args)
+        .current_dir(project_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env("PATH", path)
+        .env("MUSTER_ROOT", root)
+        .env("MUSTER_AS", "helper");
+    cmd
+}
+
+/// The Terminal script that logs `account` in with `claude auth login`: routers and tokens unset,
+/// `CLAUDE_CONFIG_DIR` exported to the account's folder, always.
+pub fn login_script(claude: &Path, account: &Account) -> String {
+    format!(
+        "#!/bin/sh\n# Muster: log in the Claude account ~/{name} for the helper.\nunset ANTHROPIC_BASE_URL ANTHROPIC_CUSTOM_HEADERS ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN\nexport CLAUDE_CONFIG_DIR='{dir}'\n'{claude}' auth login\necho\necho 'Done. You can close this window and go back to Muster.'\n",
+        name = account.folder_name(),
+        dir = account.dir().display(),
+        claude = claude.display()
+    )
+}
+
+/// Is this account logged in? From `claude auth status` (JSON, no model call), run as the account
+/// (`status_command`). `None` when it can't tell.
+pub fn login_status(claude: &Path, account: &Account) -> Option<(bool, String)> {
+    let mut child = status_command(claude, account).spawn().ok()?;
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
         match child.try_wait() {
@@ -404,13 +450,131 @@ mod tests {
         assert!(!is_login_error("Filed 0012."));
     }
 
+    use crate::accounts::{resolve, tests::fake_home};
+    use std::ffi::OsStr;
+
+    fn allowed(home: &Path, labels: &[&str]) -> Vec<Account> {
+        let labels: Vec<String> = labels.iter().map(|s| s.to_string()).collect();
+        resolve(&labels, home)
+    }
+
+    /// The value `cmd` sets `key` to: `Some(None)` when it removes it, `None` when it leaves it.
+    fn env_of<'a>(cmd: &'a Command, key: &str) -> Option<Option<&'a OsStr>> {
+        cmd.get_envs()
+            .find(|(k, _)| *k == OsStr::new(key))
+            .map(|(_, v)| v)
+    }
+
     #[test]
-    fn finds_accounts() {
-        let h = tempfile::tempdir().unwrap();
-        for d in [".claude", ".claude-mg", ".config", ".clauder"] {
-            std::fs::create_dir(h.path().join(d)).unwrap();
+    fn offers_only_the_allowlists_accounts_never_the_company_one() {
+        // The home has .claude (company), .claude-ih, .claude-mg and .claude-hg.
+        let d = fake_home();
+        let a = allowed(d.path(), &["mg", "hg"]);
+        assert_eq!(accounts(&a), [".claude-mg", ".claude-hg"]);
+        assert_eq!(
+            accounts(&allowed(d.path(), &["hg"])),
+            [".claude-hg"],
+            "a .claude-* folder that isn't listed isn't offered"
+        );
+        assert!(accounts(&[]).is_empty(), "an empty list offers nothing");
+        assert_eq!(account(".claude-mg", &a), Some(&a[0]));
+        for no in [
+            ".claude",
+            ".claude-ih",
+            "",
+            "mg",
+            ".claude-m",
+            "../.claude-mg",
+        ] {
+            assert_eq!(account(no, &a), None, "{no:?}");
         }
-        std::fs::write(h.path().join(".claude-file"), "").unwrap();
-        assert_eq!(accounts(h.path()), vec![".claude", ".claude-mg"]);
+    }
+
+    #[test]
+    fn every_claude_it_runs_has_the_accounts_config_dir() {
+        let d = fake_home();
+        let a = allowed(d.path(), &["hg"]);
+        let dir = d.path().join(".claude-hg");
+        let claude = Path::new("/bin/claude");
+
+        let status = status_command(claude, &a[0]);
+        assert_eq!(
+            env_of(&status, "CLAUDE_CONFIG_DIR"),
+            Some(Some(dir.as_os_str()))
+        );
+        assert_eq!(
+            status.get_args().collect::<Vec<_>>(),
+            [OsStr::new("auth"), OsStr::new("status")]
+        );
+
+        let run = run_command(
+            claude,
+            &a[0],
+            &args("hi", "b", None, "sonnet"),
+            Path::new("/p"),
+            "/bin",
+            Path::new("/p/tasks"),
+        );
+        assert_eq!(
+            env_of(&run, "CLAUDE_CONFIG_DIR"),
+            Some(Some(dir.as_os_str()))
+        );
+        assert_eq!(env_of(&run, "MUSTER_AS"), Some(Some(OsStr::new("helper"))));
+        assert_eq!(
+            env_of(&run, "MUSTER_ROOT"),
+            Some(Some(OsStr::new("/p/tasks")))
+        );
+        assert_eq!(env_of(&run, "PATH"), Some(Some(OsStr::new("/bin"))));
+        assert_eq!(run.get_current_dir(), Some(Path::new("/p")));
+        assert_eq!(run.get_args().next(), Some(OsStr::new("-p")));
+
+        // Routers and tokens are removed from both.
+        for cmd in [&status, &run] {
+            for k in STRIP_ENV.iter().filter(|k| **k != "CLAUDE_CONFIG_DIR") {
+                assert_eq!(env_of(cmd, k), Some(None), "{k}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_login_status_is_read_as_the_account() {
+        // A stand-in `claude` that answers `auth status` with the folder it was given.
+        let d = fake_home();
+        let a = allowed(d.path(), &["mg"]);
+        let claude = d.path().join("claude");
+        std::fs::write(
+            &claude,
+            "#!/bin/sh\n[ \"$1 $2\" = 'auth status' ] || exit 1\nprintf '{\"loggedIn\": true, \"subscriptionType\": \"%s\"}' \"${CLAUDE_CONFIG_DIR:-unset}\"\n",
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(
+            login_status(&claude, &a[0]),
+            Some((true, d.path().join(".claude-mg").display().to_string()))
+        );
+    }
+
+    #[test]
+    fn the_login_script_always_exports_the_accounts_folder() {
+        let d = fake_home();
+        let a = allowed(d.path(), &["mg"]);
+        let s = login_script(Path::new("/x/claude"), &a[0]);
+        let dir = d.path().join(".claude-mg");
+        assert!(
+            s.contains(&format!("\nexport CLAUDE_CONFIG_DIR='{}'\n", dir.display())),
+            "{s}"
+        );
+        assert!(s.contains("~/.claude-mg for the helper"), "{s}");
+        assert!(s.contains("\n'/x/claude' auth login\n"), "{s}");
+        // The folder is never unset (that would log in the company account).
+        assert!(
+            s.lines()
+                .filter(|l| l.trim_start().starts_with("unset"))
+                .all(|l| !l.contains("CLAUDE_CONFIG_DIR")),
+            "{s}"
+        );
+        // The export comes before the login.
+        assert!(s.find("export CLAUDE_CONFIG_DIR") < s.find("auth login"));
     }
 }

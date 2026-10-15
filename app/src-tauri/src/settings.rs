@@ -1,11 +1,12 @@
 //! Per-machine settings that both the app and `muster` read (task 0036): the claim lease, the
-//! LIVE window, whether Mac notifications are on (0052) and whether the menu bar icon is (0085); and one only the app reads, whether
+//! LIVE window, whether Mac notifications are on (0052), whether the menu bar icon is (0085) and the
+//! Claude accounts Muster reads (0099, `accounts`); and one only the app reads, whether
 //! it has offered to turn the old pauses into pauses (0059), so it offers once. Saved as
 //! `settings.json` beside `projects.json` in the app's config folder
 //! (`~/Library/Application Support/ai.sweetlemon.muster/`). A missing or broken file, or a value
 //! out of bounds, reads as the default, field by field: a bad setting never stops the tools.
 
-use crate::{ops, queue, transcripts};
+use crate::{accounts, ops, queue, transcripts};
 use serde::Serialize;
 use std::fs;
 use std::path::Path;
@@ -24,7 +25,7 @@ pub const LIVE_MAX: u64 = 60;
 /// The default LIVE window, in minutes.
 pub const LIVE_MINUTES: u64 = transcripts::LIVE_SECS / 60;
 
-#[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     /// A claim quiet for longer than this can be released to Ready (`muster reclaim`, Release).
@@ -38,6 +39,9 @@ pub struct Settings {
     /// The app has offered, on load, to turn the old paused blocks into pauses (0059,
     /// `old_pause`); it offers once.
     pub old_pauses_offered: bool,
+    /// The Claude accounts Muster reads (0099): labels, `mg` for `~/.claude-mg`, each valid
+    /// (`accounts::is_label`), once. Never `~/.claude`. Empty: no account is read.
+    pub claude_accounts: Vec<String>,
 }
 
 impl Default for Settings {
@@ -48,6 +52,7 @@ impl Default for Settings {
             notify: true,
             menu_bar: true,
             old_pauses_offered: false,
+            claude_accounts: accounts::default_labels(),
         }
     }
 }
@@ -89,7 +94,52 @@ pub fn load(file: &Path) -> Settings {
             .get("oldPausesOffered")
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(d.old_pauses_offered),
+        claude_accounts: account_labels(v.get("claudeAccounts")).unwrap_or(d.claude_accounts),
     }
+}
+
+/// The allowlist as stored: a list whose valid labels are kept, once and in order, and the rest
+/// dropped (counted on stderr, never echoed: a hand-edited file could hold anything). None when
+/// it isn't a list, so the default applies.
+fn account_labels(v: Option<&serde_json::Value>) -> Option<Vec<String>> {
+    let items = v?.as_array()?;
+    let mut out: Vec<String> = Vec::new();
+    let mut dropped = 0;
+    for item in items {
+        match item.as_str() {
+            Some(l) if accounts::is_label(l) => {
+                if !out.iter().any(|o| o == l) {
+                    out.push(l.to_string());
+                }
+            }
+            _ => dropped += 1,
+        }
+    }
+    if dropped > 0 {
+        eprintln!("muster: settings.json: {dropped} Claude account entries aren't valid labels and were dropped");
+    }
+    Some(out)
+}
+
+/// The allowlist as typed: labels separated by commas or spaces (`mg, hg`), each one valid, once.
+/// Empty is an empty list: no account is read.
+fn parse_accounts(value: &str) -> Result<Vec<String>, String> {
+    let mut out: Vec<String> = Vec::new();
+    for l in value.split(|c: char| c == ',' || c.is_whitespace()) {
+        if l.is_empty() {
+            continue;
+        }
+        if !accounts::is_label(l) {
+            let l: String = l.chars().take(24).collect();
+            return Err(format!(
+                "{l:?} is not a valid account label: 1 to 12 lowercase letters and digits, like mg"
+            ));
+        }
+        if !out.iter().any(|o| o == l) {
+            out.push(l.to_string());
+        }
+    }
+    Ok(out)
 }
 
 fn save(file: &Path, s: &Settings) -> Result<(), String> {
@@ -147,8 +197,16 @@ fn minutes(input: &str, what: &str) -> Result<u64, String> {
 /// Change one setting, `lease` or `live`, to a span like `12h` or `5m` (empty is the default),
 /// checked against its bounds, `notify` or `menu-bar` to `on` or `off` (empty is on), or
 /// `old-pauses-offered`
-/// to `yes` or `no` (empty is no), and save. Returns the settings now in force.
+/// to `yes` or `no` (empty is no), or `claude-accounts` to a list of labels (`mg, hg`; empty
+/// reads no account), and save. Returns the settings now in force.
 pub fn set(file: &Path, name: &str, value: &str) -> Result<Settings, String> {
+    if name == "claude-accounts" {
+        let labels = parse_accounts(value)?;
+        let mut s = load(file);
+        s.claude_accounts = labels;
+        save(file, &s)?;
+        return Ok(s);
+    }
     if name == "old-pauses-offered" {
         let offered = match value.trim() {
             "yes" => true,
@@ -429,7 +487,8 @@ mod tests {
                 live_minutes: 5,
                 notify: true,
                 menu_bar: true,
-                old_pauses_offered: false
+                old_pauses_offered: false,
+                claude_accounts: vec!["mg".into(), "hg".into()],
             }
         );
         set(&f, "old-pauses-offered", "yes").unwrap();
@@ -451,7 +510,7 @@ mod tests {
         assert!(!load(&f).old_pauses_offered);
         assert_eq!(
             serde_json::to_string(&Settings::default()).unwrap(),
-            r#"{"leaseMinutes":720,"liveMinutes":5,"notify":true,"menuBar":true,"oldPausesOffered":false}"#
+            r#"{"leaseMinutes":720,"liveMinutes":5,"notify":true,"menuBar":true,"oldPausesOffered":false,"claudeAccounts":["mg","hg"]}"#
         );
     }
 
@@ -498,6 +557,65 @@ mod tests {
                 ..Settings::default()
             }
         );
+    }
+
+    #[test]
+    fn the_claude_accounts_are_mg_and_hg_unless_set_and_bad_entries_are_dropped() {
+        let d = tempfile::tempdir().unwrap();
+        let f = file(&d);
+        assert_eq!(
+            load(&f).claude_accounts,
+            ["mg", "hg"],
+            "no file: the default"
+        );
+        assert_eq!(
+            set(&f, "claude-accounts", "hg").unwrap().claude_accounts,
+            ["hg"]
+        );
+        assert_eq!(load(&f).claude_accounts, ["hg"], "remembered");
+        // Other settings keep it, and it keeps them.
+        set(&f, "lease", "2h").unwrap();
+        assert_eq!(load(&f).claude_accounts, ["hg"]);
+        assert_eq!(
+            set(&f, "claude-accounts", " mg, hg  mg ,")
+                .unwrap()
+                .claude_accounts,
+            ["mg", "hg"],
+            "commas or spaces, once each"
+        );
+        assert_eq!(load(&f).lease_minutes, 120);
+        // Empty is an empty list, kept as one: no account is read.
+        assert!(set(&f, "claude-accounts", "")
+            .unwrap()
+            .claude_accounts
+            .is_empty());
+        assert!(load(&f).claude_accounts.is_empty());
+        set(&f, "claude-accounts", "mg").unwrap();
+        // Refused, and nothing written.
+        let before = fs::read_to_string(&f).unwrap();
+        for bad in [".claude", "../x", "MG", "abcdefghijklm", "cc-mg", "mg hg/x"] {
+            let e = set(&f, "claude-accounts", bad).unwrap_err();
+            assert!(e.contains("is not a valid account label"), "{bad}: {e}");
+        }
+        assert_eq!(
+            set(&f, "claude-accounts", ".claude").unwrap_err(),
+            "\".claude\" is not a valid account label: 1 to 12 lowercase letters and digits, like mg"
+        );
+        assert_eq!(fs::read_to_string(&f).unwrap(), before);
+        // A hand-edited file: the bad entries dropped, the good kept; not a list is the default.
+        for (text, want) in [
+            (
+                r#"{"claudeAccounts": ["", ".claude", "mg", "ih", "MG", 7, null, "mg", "../x"]}"#,
+                vec!["mg", "ih"],
+            ),
+            (r#"{"claudeAccounts": []}"#, vec![]),
+            (r#"{"claudeAccounts": "mg"}"#, vec!["mg", "hg"]),
+            (r#"{"claudeAccounts": null}"#, vec!["mg", "hg"]),
+            (r#"{"claudeAccounts": {"a": "mg"}}"#, vec!["mg", "hg"]),
+        ] {
+            fs::write(&f, text).unwrap();
+            assert_eq!(load(&f).claude_accounts, want, "{text}");
+        }
     }
 
     #[test]

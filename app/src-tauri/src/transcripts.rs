@@ -1,7 +1,14 @@
 //! Claude Code session transcripts on this Mac (task 0025): find a session's transcript by its
-//! short id across the account folders, `<home>/.claude*/projects/<folder key>/<session id>.jsonl`,
+//! short id across the allowed account folders, `<account>/projects/<folder key>/<session id>.jsonl`,
 //! and sum what it used. This is the one transcript reader: the task pane's Work section and
 //! 0017's actuals (`actuals`) both read through it.
+//!
+//! Only the accounts in Settings' allowlist are read (0099): every read is given them, as loaded
+//! for that read, so two reads never share a list one of them didn't load. Never `~/.claude`, and
+//! in them only the project folders under `~/playground` (`accounts::is_under`): their `projects`
+//! may be links to the company account's, so a work project's transcripts are never listed,
+//! opened or counted. Links inside a `projects` folder (a project folder, a transcript, a
+//! subagents folder or file) aren't followed.
 //!
 //! Privacy: transcripts are read here, locally, and nothing in them is sent anywhere. Callers get
 //! counts, ids and times; only `transcript_markdown`, for the owner's own pane, carries text.
@@ -10,6 +17,7 @@
 //! skipped without being held in memory, at most `MAX_SUBAGENTS` subagent files count per session,
 //! and summaries are cached by (path, size, modified time) in a cache of `CACHE_CAP` files.
 
+use crate::accounts::{is_under, Account};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
@@ -70,6 +78,8 @@ pub enum Found {
     Missing,
     /// Over `MAX_TRANSCRIPT_BYTES`, not read.
     TooBig,
+    /// Its stamp names no Claude account Muster reads (0099), so it isn't looked for.
+    NotRead,
 }
 
 /// What one session's transcript says.
@@ -93,7 +103,7 @@ pub struct Usage {
 }
 
 impl Usage {
-    fn missing() -> Usage {
+    pub(crate) fn missing() -> Usage {
         Usage {
             found: Found::Missing,
             tokens: Tokens::default(),
@@ -105,6 +115,14 @@ impl Usage {
             skipped_files: 0,
         }
     }
+
+    /// A session whose stamp names no account Muster reads (0099): nothing read.
+    pub(crate) fn not_read() -> Usage {
+        Usage {
+            found: Found::NotRead,
+            ..Usage::missing()
+        }
+    }
 }
 
 /// 0017's actuals for a task: tokens and wall-clock minutes summed over the sessions that worked
@@ -114,7 +132,8 @@ impl Usage {
 pub struct Actuals {
     pub tokens: Tokens,
     pub minutes: u64,
-    /// Sessions whose transcript was read (the rest aren't on this Mac, or are too big).
+    /// Sessions whose transcript was read (the rest aren't on this Mac, are too big, or aren't
+    /// stamped with an account Muster reads).
     pub read: usize,
 }
 
@@ -162,10 +181,13 @@ struct Index {
     files: HashMap<String, Vec<PathBuf>>,
 }
 
-/// Reads transcripts under `home`. Shared by the app's commands; every method is safe to call
-/// from several threads, and none holds a lock while it reads a file.
+/// Reads the transcripts of the allowed accounts' playground projects. Shared by the app's
+/// commands; every method is safe to call from several threads, and none holds a lock while it
+/// reads a file.
 pub struct Reader {
-    home: PathBuf,
+    /// The key of `~/playground` (`accounts::playground_key`): only project folders under it are
+    /// read.
+    root: String,
     /// The LIVE window in seconds: `LIVE_SECS` unless the settings say otherwise (0036).
     live_secs: AtomicU64,
     index: Mutex<Index>,
@@ -189,11 +211,11 @@ pub fn is_short_id(id: &str) -> bool {
 }
 
 impl Reader {
-    /// A reader of the transcripts under `home` (the user's home folder in the app; a temporary
-    /// folder in tests, never the real home).
-    pub fn new(home: impl Into<PathBuf>) -> Reader {
+    /// A reader of the transcripts in project folders under the one keyed `playground_key`
+    /// (`accounts::playground_key`), in the accounts each read is given.
+    pub fn new(playground_key: String) -> Reader {
         Reader {
-            home: home.into(),
+            root: playground_key,
             index: Mutex::new(Index::default()),
             live_secs: AtomicU64::new(LIVE_SECS),
             cache: Mutex::new(Cache::default()),
@@ -206,36 +228,32 @@ impl Reader {
         self.live_secs.store(secs, Ordering::Relaxed);
     }
 
-    /// The folders the transcripts are read from, for Settings' About (0036).
-    pub fn folders(&self) -> Vec<PathBuf> {
-        self.projects_dirs()
-    }
-
-    /// The account folders' `projects` folders, each once: `.claude-hg/projects` is often a link
-    /// to `.claude/projects`, and its transcripts must not count twice.
-    fn projects_dirs(&self) -> Vec<PathBuf> {
-        let mut out: Vec<PathBuf> = fs::read_dir(&self.home)
-            .map(|rd| {
-                rd.flatten()
-                    .filter(|e| e.file_name().to_string_lossy().starts_with(".claude"))
-                    .filter_map(|e| fs::canonicalize(e.path().join("projects")).ok())
-                    .filter(|p| p.is_dir())
-                    .collect()
-            })
-            .unwrap_or_default();
+    /// `accounts`' `projects` folders, canonical and each once: `.claude-hg/projects` is often a
+    /// link to the same folder as `.claude-mg/projects`, and its transcripts must not count twice.
+    fn projects_dirs(accounts: &[Account]) -> Vec<PathBuf> {
+        let mut out: Vec<PathBuf> = accounts
+            .iter()
+            .filter_map(|a| fs::canonicalize(a.real().join("projects")).ok())
+            .filter(|p| p.is_dir())
+            .collect();
         out.sort();
         out.dedup();
         out
     }
 
-    /// The project folders and when each last changed.
-    fn signature(&self) -> Vec<(PathBuf, Option<SystemTime>)> {
+    /// The project folders under `~/playground` and when each last changed. A project folder
+    /// that's a link isn't one (`DirEntry::metadata` doesn't follow it).
+    fn signature(&self, dirs: &[PathBuf]) -> Vec<(PathBuf, Option<SystemTime>)> {
         let mut out = Vec::new();
-        for projects in self.projects_dirs() {
-            let Ok(rd) = fs::read_dir(&projects) else {
+        for projects in dirs {
+            let Ok(rd) = fs::read_dir(projects) else {
                 continue;
             };
             for e in rd.flatten() {
+                let name = e.file_name();
+                if !name.to_str().is_some_and(|n| is_under(n, &self.root)) {
+                    continue;
+                }
                 let Ok(meta) = e.metadata() else { continue };
                 if meta.is_dir() {
                     out.push((e.path(), meta.modified().ok()));
@@ -247,9 +265,12 @@ impl Reader {
     }
 
     /// Bring the index up to date: rebuilt only when a project folder was added, removed or
-    /// changed. Each public call refreshes once, however many sessions it looks up.
-    fn refresh(&self) {
-        let signature = self.signature();
+    /// changed. Each public call refreshes once, however many sessions it looks up, and gets
+    /// back `accounts`' `projects` folders: the only ones its lookups (`candidates`) may answer
+    /// from, since a read given other accounts may rebuild the shared index in between.
+    fn refresh(&self, accounts: &[Account]) -> Vec<PathBuf> {
+        let dirs = Self::projects_dirs(accounts);
+        let signature = self.signature(&dirs);
         let mut index = lock(&self.index);
         if index.signature != signature {
             let mut files: HashMap<String, Vec<PathBuf>> = HashMap::new();
@@ -268,37 +289,51 @@ impl Reader {
             }
             *index = Index { signature, files };
         }
+        dirs
     }
 
-    /// The transcript files whose name starts with `short` in the index as it is, newest first.
-    fn candidates(&self, short: &str) -> Vec<PathBuf> {
+    /// The transcript files whose name starts with `short` in the index as it is, inside one of
+    /// `dirs` (what `refresh` gave this call), newest first.
+    fn candidates(&self, short: &str, dirs: &[PathBuf]) -> Vec<PathBuf> {
         if !is_short_id(short) {
             return Vec::new();
         }
-        let mut found = lock(&self.index)
+        let mut found: Vec<PathBuf> = lock(&self.index)
             .files
             .get(short)
+            .into_iter()
+            .flatten()
+            .filter(|p| dirs.iter().any(|d| p.starts_with(d)))
             .cloned()
-            .unwrap_or_default();
+            .collect();
         found.sort_by_key(|p| std::cmp::Reverse(fs::metadata(p).and_then(|m| m.modified()).ok()));
         found
     }
 
-    /// The session's transcript: the most recently changed file with that short id.
-    pub fn locate(&self, short: &str) -> Option<PathBuf> {
-        self.refresh();
-        self.candidates(short).into_iter().next()
+    /// The session's transcript in `accounts`: the most recently changed file with that short id.
+    pub fn locate(&self, accounts: &[Account], short: &str) -> Option<PathBuf> {
+        let dirs = self.refresh(accounts);
+        self.candidates(short, &dirs).into_iter().next()
     }
 
     /// The session's subagent transcripts (`<session>/subagents/*.jsonl`), at most
-    /// `MAX_SUBAGENTS`, and how many more there were.
+    /// `MAX_SUBAGENTS`, and how many more there were. The session folder, its `subagents` and
+    /// the files in it count only as themselves, not as links.
     fn subagents(main: &Path) -> (Vec<PathBuf>, u64) {
-        let dir = main.with_extension("").join("subagents");
+        let session = main.with_extension("");
+        let dir = session.join("subagents");
+        let real_dir = |p: &Path| fs::symlink_metadata(p).is_ok_and(|m| m.is_dir());
+        if !real_dir(&session) || !real_dir(&dir) {
+            return (Vec::new(), 0);
+        }
         let mut files: Vec<PathBuf> = fs::read_dir(&dir)
             .map(|rd| {
                 rd.flatten()
                     .map(|e| e.path())
-                    .filter(|p| p.extension().is_some_and(|x| x == "jsonl") && p.is_file())
+                    .filter(|p| {
+                        p.extension().is_some_and(|x| x == "jsonl")
+                            && fs::symlink_metadata(p).is_ok_and(|m| m.is_file())
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -355,20 +390,24 @@ impl Reader {
         lock(&self.cache).files.len()
     }
 
-    /// What session `short` used, at `now` (seconds since 1970) for whether it's live.
-    pub fn usage(&self, short: &str, now: u64) -> Usage {
-        self.refresh();
-        self.usage_indexed(short, now)
+    /// What session `short` used in `accounts`, at `now` (seconds since 1970) for whether it's
+    /// live.
+    pub fn usage(&self, accounts: &[Account], short: &str, now: u64) -> Usage {
+        let dirs = self.refresh(accounts);
+        self.usage_indexed(short, &dirs, now)
     }
 
     /// `usage` for each of `shorts`, in order, with one index refresh for all of them.
-    pub fn usages(&self, shorts: &[String], now: u64) -> Vec<Usage> {
-        self.refresh();
-        shorts.iter().map(|s| self.usage_indexed(s, now)).collect()
+    pub fn usages(&self, accounts: &[Account], shorts: &[String], now: u64) -> Vec<Usage> {
+        let dirs = self.refresh(accounts);
+        shorts
+            .iter()
+            .map(|s| self.usage_indexed(s, &dirs, now))
+            .collect()
     }
 
-    fn usage_indexed(&self, short: &str, now: u64) -> Usage {
-        let Some(main) = self.candidates(short).into_iter().next() else {
+    fn usage_indexed(&self, short: &str, dirs: &[PathBuf], now: u64) -> Usage {
+        let Some(main) = self.candidates(short, dirs).into_iter().next() else {
             return Usage::missing();
         };
         let Ok(meta) = fs::metadata(&main) else {
@@ -419,15 +458,18 @@ impl Reader {
         fresh(main) || Self::subagents(main).0.iter().any(|p| fresh(p))
     }
 
-    /// Whether session `short` is live at `now`. Cheap: a lookup and a few file times, no reading.
-    pub fn live(&self, short: &str, now: u64) -> bool {
-        self.locate(short).is_some_and(|p| self.live_at(&p, now))
+    /// Whether session `short` is live in `accounts` at `now`. Cheap: a lookup and a few file
+    /// times, no reading.
+    pub fn live(&self, accounts: &[Account], short: &str, now: u64) -> bool {
+        self.locate(accounts, short)
+            .is_some_and(|p| self.live_at(&p, now))
     }
 
-    /// Which of `shorts` are live at `now`, with one index refresh for all of them: what the
-    /// window's state read uses for the cards, every poll.
+    /// Which of `shorts` are live in `accounts` at `now`, with one index refresh for all of them:
+    /// what the window's state read uses for the cards, every poll.
     pub fn live_set<'a>(
         &self,
+        accounts: &[Account],
         shorts: impl IntoIterator<Item = &'a str>,
         now: u64,
     ) -> HashSet<String> {
@@ -436,10 +478,10 @@ impl Reader {
             // Nothing to look up: don't list the account folders at all.
             return HashSet::new();
         }
-        self.refresh();
+        let dirs = self.refresh(accounts);
         shorts
             .filter(|s| {
-                self.candidates(s)
+                self.candidates(s, &dirs)
                     .first()
                     .is_some_and(|p| self.live_at(p, now))
             })
@@ -447,12 +489,12 @@ impl Reader {
             .collect()
     }
 
-    /// Session `short`'s transcript as Markdown for the owner's pane: one line per prompt, reply
-    /// and tool call, folded and capped, with the text escaped so it shows as written (no links,
-    /// images or HTML from it). Tool output and thinking are left out. The latest
-    /// `VIEW_ENTRIES` entries are kept.
-    pub fn transcript_markdown(&self, short: &str) -> Result<String, String> {
-        let path = self.locate(short).ok_or("not on this Mac")?;
+    /// Session `short`'s transcript in `accounts` as Markdown for the owner's pane: one line per
+    /// prompt, reply and tool call, folded and capped, with the text escaped so it shows as
+    /// written (no links, images or HTML from it). Tool output and thinking are left out. The
+    /// latest `VIEW_ENTRIES` entries are kept.
+    pub fn transcript_markdown(&self, accounts: &[Account], short: &str) -> Result<String, String> {
+        let path = self.locate(accounts, short).ok_or("not on this Mac")?;
         let meta = fs::metadata(&path).map_err(|_| "not on this Mac")?;
         if meta.len() > MAX_TRANSCRIPT_BYTES {
             return Err(format!(
@@ -748,14 +790,18 @@ pub(crate) mod tests {
     use std::fs::File;
     use std::time::Duration;
 
+    /// The key of the fixture's `~/playground`, and a project folder under it.
+    pub(crate) const ROOT: &str = "-Users-someone-playground";
     pub(crate) const PROJECT: &str = "-Users-someone-playground-demo";
 
-    /// A home folder with three account folders: `.claude` and `.claude-mg` with their own
-    /// projects, and `.claude-hg/projects` a link to `.claude/projects`, as on the owner's Mac.
+    /// A home folder with four account folders: `.claude` and `.claude-mg` with their own
+    /// projects, `.claude-hg/projects` a link to `.claude/projects`, as on the owner's Mac, and
+    /// `.claude-ih`, which isn't allowed.
     pub(crate) fn home() -> tempfile::TempDir {
         let d = tempfile::tempdir().unwrap();
         fs::create_dir_all(d.path().join(".claude/projects").join(PROJECT)).unwrap();
         fs::create_dir_all(d.path().join(".claude-mg/projects").join(PROJECT)).unwrap();
+        fs::create_dir_all(d.path().join(".claude-ih/projects").join(PROJECT)).unwrap();
         fs::create_dir(d.path().join(".claude-hg")).unwrap();
         std::os::unix::fs::symlink(
             d.path().join(".claude/projects"),
@@ -765,6 +811,15 @@ pub(crate) mod tests {
         // Not an account folder.
         fs::create_dir_all(d.path().join("other/projects").join(PROJECT)).unwrap();
         d
+    }
+
+    /// A reader of `home`'s playground projects (`ROOT`), and the default allowlist, mg and hg,
+    /// to read them in: `.claude` is read only through `.claude-hg`'s link.
+    pub(crate) fn reader(home: &Path) -> (Reader, Vec<Account>) {
+        (
+            Reader::new(ROOT.to_string()),
+            crate::accounts::resolve(&crate::accounts::default_labels(), home),
+        )
     }
 
     pub(crate) fn reply(id: &str, at: &str, i: u64, o: u64, r: u64, w: u64) -> String {
@@ -826,8 +881,8 @@ pub(crate) mod tests {
             ],
             NOW - 3600,
         );
-        let r = Reader::new(h.path());
-        let u = r.usage("7b5e8856", NOW);
+        let (r, a) = reader(h.path());
+        let u = r.usage(&a, "7b5e8856", NOW);
         assert_eq!(u.found, Found::Read);
         assert_eq!(
             u.tokens,
@@ -894,23 +949,23 @@ pub(crate) mod tests {
             reply("m", "2026-10-12T10:00:00Z", 1, 0, 0, 0),
         )
         .unwrap();
-        let r = Reader::new(h.path());
-        assert_eq!(r.usage("4d517d9d", NOW).tokens.total(), 10);
-        assert_eq!(r.usage("7b5e8856", NOW).tokens.input, 10);
-        r.refresh();
-        assert_eq!(r.candidates("7b5e8856").len(), 1);
-        assert_eq!(r.usage("aaaaaaaa", NOW).found, Found::Missing);
+        let (r, a) = reader(h.path());
+        assert_eq!(r.usage(&a, "4d517d9d", NOW).tokens.total(), 10);
+        assert_eq!(r.usage(&a, "7b5e8856", NOW).tokens.input, 10);
+        let dirs = r.refresh(&a);
+        assert_eq!(r.candidates("7b5e8856", &dirs).len(), 1);
+        assert_eq!(r.usage(&a, "aaaaaaaa", NOW).found, Found::Missing);
         // Only exact short ids are looked up.
         for bad in ["7B5E8856", "7b5e885", "7b5e8856-", "../../x", ""] {
-            assert_eq!(r.locate(bad), None, "{bad:?}");
+            assert_eq!(r.locate(&a, bad), None, "{bad:?}");
         }
     }
 
     #[test]
     fn a_transcript_added_later_is_found() {
         let h = home();
-        let r = Reader::new(h.path());
-        assert_eq!(r.usage("7b5e8856", NOW).found, Found::Missing);
+        let (r, a) = reader(h.path());
+        assert_eq!(r.usage(&a, "7b5e8856", NOW).found, Found::Missing);
         // Adding the file changes its project folder's time, so the index is rebuilt.
         write(
             h.path(),
@@ -919,25 +974,23 @@ pub(crate) mod tests {
             &[reply("m", "2026-10-12T10:00:00Z", 5, 0, 0, 0)],
             NOW,
         );
-        assert_eq!(r.usage("7b5e8856", NOW).tokens.input, 5);
+        assert_eq!(r.usage(&a, "7b5e8856", NOW).tokens.input, 5);
     }
 
     #[test]
     fn a_missing_transcript_reads_not_on_this_mac() {
         let h = home();
-        let r = Reader::new(h.path());
-        assert_eq!(r.usage("deadbeef", NOW), Usage::missing());
-        assert!(!r.live("deadbeef", NOW));
+        let (r, a) = reader(h.path());
+        assert_eq!(r.usage(&a, "deadbeef", NOW), Usage::missing());
+        assert!(!r.live(&a, "deadbeef", NOW));
         assert_eq!(
-            r.transcript_markdown("deadbeef").unwrap_err(),
+            r.transcript_markdown(&a, "deadbeef").unwrap_err(),
             "not on this Mac"
         );
         // No account folders at all.
         let empty = tempfile::tempdir().unwrap();
-        assert_eq!(
-            Reader::new(empty.path()).usage("deadbeef", NOW).found,
-            Found::Missing
-        );
+        let (r, a) = reader(empty.path());
+        assert_eq!(r.usage(&a, "deadbeef", NOW).found, Found::Missing);
     }
 
     #[test]
@@ -958,15 +1011,15 @@ pub(crate) mod tests {
             .set_len(MAX_TRANSCRIPT_BYTES + 1)
             .unwrap();
         touch(&p, NOW - 10);
-        let r = Reader::new(h.path());
-        let u = r.usage("7b5e8856", NOW);
+        let (r, a) = reader(h.path());
+        let u = r.usage(&a, "7b5e8856", NOW);
         assert_eq!(
             (u.found, u.tokens.total(), u.live),
             (Found::TooBig, 0, true)
         );
         assert_eq!(r.cached(), 0);
         assert!(r
-            .transcript_markdown("7b5e8856")
+            .transcript_markdown(&a, "7b5e8856")
             .unwrap_err()
             .contains("over 128 MB"));
     }
@@ -994,7 +1047,8 @@ pub(crate) mod tests {
             ],
             NOW - 9999,
         );
-        let u = Reader::new(h.path()).usage("7b5e8856", NOW);
+        let (r, a) = reader(h.path());
+        let u = r.usage(&a, "7b5e8856", NOW);
         assert_eq!(u.found, Found::Read);
         assert_eq!((u.tokens.input, u.tokens.output), (5, 6));
         assert_eq!(u.skipped_lines, 5);
@@ -1015,7 +1069,8 @@ pub(crate) mod tests {
             &[huge, reply("m1", "2026-10-12T10:00:00Z", 7, 0, 0, 0)],
             NOW - 9999,
         );
-        let u = Reader::new(h.path()).usage("7b5e8856", NOW);
+        let (r, a) = reader(h.path());
+        let u = r.usage(&a, "7b5e8856", NOW);
         assert_eq!((u.tokens.input, u.skipped_lines), (7, 1));
     }
 
@@ -1068,8 +1123,8 @@ pub(crate) mod tests {
         big.set_len(MAX_TRANSCRIPT_BYTES + 1).unwrap();
         big.set_modified(UNIX_EPOCH + Duration::from_secs(NOW - 9999))
             .unwrap();
-        let r = Reader::new(h.path());
-        let u = r.usage("7b5e8856", NOW);
+        let (r, a) = reader(h.path());
+        let u = r.usage(&a, "7b5e8856", NOW);
         assert_eq!(u.tokens.input, 1101);
         assert_eq!(u.skipped_files, 1);
         assert_eq!(r.cached(), 3);
@@ -1078,8 +1133,8 @@ pub(crate) mod tests {
         assert!(!u.live);
         // A subagent working now makes the session live.
         touch(&subs.join("agent-a2.jsonl"), NOW - 60);
-        assert!(r.live("7b5e8856", NOW));
-        assert!(r.usage("7b5e8856", NOW).live);
+        assert!(r.live(&a, "7b5e8856", NOW));
+        assert!(r.usage(&a, "7b5e8856", NOW).live);
     }
 
     #[test]
@@ -1092,15 +1147,15 @@ pub(crate) mod tests {
             &[reply("m", "2026-10-12T10:00:00Z", 1, 0, 0, 0)],
             NOW - LIVE_SECS,
         );
-        let r = Reader::new(h.path());
-        assert!(r.live("7b5e8856", NOW));
-        assert!(r.usage("7b5e8856", NOW).live);
-        assert!(!r.live("7b5e8856", NOW + 1));
-        assert!(!r.usage("7b5e8856", NOW + 1).live);
+        let (r, a) = reader(h.path());
+        assert!(r.live(&a, "7b5e8856", NOW));
+        assert!(r.usage(&a, "7b5e8856", NOW).live);
+        assert!(!r.live(&a, "7b5e8856", NOW + 1));
+        assert!(!r.usage(&a, "7b5e8856", NOW + 1).live);
         touch(&p, NOW + 1);
-        assert!(r.live("7b5e8856", NOW + 1));
+        assert!(r.live(&a, "7b5e8856", NOW + 1));
         // A file time ahead of the clock still reads as live, not as an error.
-        assert!(r.live("7b5e8856", NOW - 100));
+        assert!(r.live(&a, "7b5e8856", NOW - 100));
     }
 
     #[test]
@@ -1113,17 +1168,17 @@ pub(crate) mod tests {
             &[reply("m", "2026-10-12T10:00:00Z", 1, 0, 0, 0)],
             NOW,
         );
-        let r = Reader::new(h.path());
+        let (r, a) = reader(h.path());
         // Settings' LIVE window (0036): 10 minutes.
         r.set_live_secs(600);
-        assert!(r.live("7b5e8856", NOW + 600));
-        assert!(r.usage("7b5e8856", NOW + 600).live);
-        assert!(r.live_set(["7b5e8856"], NOW + 600).contains("7b5e8856"));
-        assert!(!r.live("7b5e8856", NOW + 601));
+        assert!(r.live(&a, "7b5e8856", NOW + 600));
+        assert!(r.usage(&a, "7b5e8856", NOW + 600).live);
+        assert!(r.live_set(&a, ["7b5e8856"], NOW + 600).contains("7b5e8856"));
+        assert!(!r.live(&a, "7b5e8856", NOW + 601));
         // 1 minute.
         r.set_live_secs(60);
-        assert!(!r.live("7b5e8856", NOW + 61));
-        assert!(r.live_set(["7b5e8856"], NOW + 61).is_empty());
+        assert!(!r.live(&a, "7b5e8856", NOW + 61));
+        assert!(r.live_set(&a, ["7b5e8856"], NOW + 61).is_empty());
     }
 
     #[test]
@@ -1136,25 +1191,25 @@ pub(crate) mod tests {
             &[reply("m", "2026-10-12T10:00:00Z", 1, 0, 0, 0)],
             NOW - 9999,
         );
-        let r = Reader::new(h.path());
-        assert_eq!(r.usage("7b5e8856", NOW).tokens.input, 1);
+        let (r, a) = reader(h.path());
+        assert_eq!(r.usage(&a, "7b5e8856", NOW).tokens.input, 1);
         // Same size and time, different content: the cached sums are used.
         let same = fs::read_to_string(&p)
             .unwrap()
             .replace("\"input_tokens\":1,", "\"input_tokens\":9,");
         fs::write(&p, same).unwrap();
         touch(&p, NOW - 9999);
-        assert_eq!(r.usage("7b5e8856", NOW).tokens.input, 1);
+        assert_eq!(r.usage(&a, "7b5e8856", NOW).tokens.input, 1);
         // A new time: read again.
         touch(&p, NOW - 9998);
-        assert_eq!(r.usage("7b5e8856", NOW).tokens.input, 9);
+        assert_eq!(r.usage(&a, "7b5e8856", NOW).tokens.input, 9);
         assert_eq!(r.cached(), 1);
     }
 
     #[test]
     fn the_cache_is_capped() {
         let h = home();
-        let r = Reader::new(h.path());
+        let (r, _) = reader(h.path());
         let dir = h.path().join("loose");
         fs::create_dir(&dir).unwrap();
         for n in 0..CACHE_CAP + 20 {
@@ -1220,9 +1275,8 @@ pub(crate) mod tests {
             "garbage".into(),
         ];
         write(h.path(), ".claude", A, &lines, NOW);
-        let md = Reader::new(h.path())
-            .transcript_markdown("7b5e8856")
-            .unwrap();
+        let (r, a) = reader(h.path());
+        let md = r.transcript_markdown(&a, "7b5e8856").unwrap();
         let entries: Vec<&str> = md.lines().filter(|l| l.starts_with("- ")).collect();
         assert_eq!(
             entries,
@@ -1247,9 +1301,8 @@ pub(crate) mod tests {
             .collect();
         lines.push(prompt("2026-10-12T10:00:00Z", &long));
         write(h.path(), ".claude", A, &lines, NOW);
-        let md = Reader::new(h.path())
-            .transcript_markdown("7b5e8856")
-            .unwrap();
+        let (r, a) = reader(h.path());
+        let md = r.transcript_markdown(&a, "7b5e8856").unwrap();
         let entries: Vec<&str> = md.lines().filter(|l| l.starts_with("- ")).collect();
         assert_eq!(entries.len(), VIEW_ENTRIES);
         assert_eq!(entries[0], "- **You:** p4");
@@ -1258,19 +1311,198 @@ pub(crate) mod tests {
             *entries.last().unwrap(),
             format!("- **You:** {}…", "é".repeat(VIEW_LINE_CHARS))
         );
-        let empty = tempfile::tempdir().unwrap();
-        fs::create_dir_all(empty.path().join(".claude/projects/p")).unwrap();
+        let empty = home();
         fs::write(
             empty
                 .path()
-                .join(".claude/projects/p")
+                .join(".claude-mg/projects")
+                .join(PROJECT)
                 .join(format!("{B}.jsonl")),
             "",
         )
         .unwrap();
-        let md = Reader::new(empty.path())
-            .transcript_markdown("4d517d9d")
-            .unwrap();
+        let (r, a) = reader(empty.path());
+        let md = r.transcript_markdown(&a, "4d517d9d").unwrap();
         assert!(md.contains("No prompts, replies or tool calls in it yet."));
+    }
+
+    /// Write `<projects>/<project>/<session>.jsonl` with one reply of `input` tokens.
+    fn put(projects: &Path, project: &str, session: &str, input: u64) -> PathBuf {
+        let dir = projects.join(project);
+        fs::create_dir_all(&dir).unwrap();
+        let p = dir.join(format!("{session}.jsonl"));
+        fs::write(
+            &p,
+            reply("m", "2026-10-12T10:00:00Z", input, 0, 0, 0) + "\n",
+        )
+        .unwrap();
+        p
+    }
+
+    #[test]
+    fn only_the_allowed_accounts_playground_projects_are_read() {
+        let h = home();
+        let company = h.path().join(".claude/projects");
+        let mg = h.path().join(".claude-mg/projects");
+        // The playground folder itself, and a project under it: read.
+        put(&mg, ROOT, "00000001-x", 1);
+        put(&company, PROJECT, "00000002-x", 2);
+        // A work project, seen through `.claude-hg`'s link to the company folder: never.
+        put(&company, "-Users-someone-code-app", "00000003-x", 3);
+        // A look-alike of the playground's key, and a key that only contains it.
+        put(&mg, "-Users-someone-playground2-x", "00000004-x", 4);
+        put(
+            &mg,
+            "-Users-someone-code-Users-someone-playground",
+            "00000005-x",
+            5,
+        );
+        // An account that isn't allowed.
+        put(
+            &h.path().join(".claude-ih/projects"),
+            PROJECT,
+            "00000006-x",
+            6,
+        );
+        let (r, a) = reader(h.path());
+        assert_eq!(r.usage(&a, "00000001", NOW).tokens.input, 1);
+        assert_eq!(r.usage(&a, "00000002", NOW).tokens.input, 2);
+        for refused in ["00000003", "00000004", "00000005", "00000006"] {
+            assert_eq!(r.usage(&a, refused, NOW), Usage::missing(), "{refused}");
+            assert!(!r.live(&a, refused, NOW), "{refused}");
+            assert!(r.transcript_markdown(&a, refused).is_err(), "{refused}");
+        }
+        // Nothing outside the playground is even listed.
+        let listed = r.signature(&Reader::projects_dirs(&a));
+        assert_eq!(listed.len(), 3, "{listed:?}");
+        for (dir, _) in &listed {
+            let name = dir.file_name().unwrap().to_str().unwrap();
+            assert!(is_under(name, ROOT), "{name}");
+        }
+        // An empty allowlist: nothing at all.
+        assert_eq!(r.usage(&[], "00000001", NOW).found, Found::Missing);
+        assert!(r.signature(&Reader::projects_dirs(&[])).is_empty());
+        // Only mg: the company folder's transcripts, reached only through hg, go too.
+        let mg_only = crate::accounts::resolve(&["mg".into()], h.path());
+        assert_eq!(r.usage(&mg_only, "00000001", NOW).tokens.input, 1);
+        assert_eq!(r.usage(&mg_only, "00000002", NOW).found, Found::Missing);
+    }
+
+    /// R6 (0099): each read is given its own accounts, and the index the reads share answers a
+    /// read only from that read's folders. A read loading the list from before hg was removed
+    /// can rebuild the index between another read's refresh and its lookups; that read still
+    /// finds nothing of hg's.
+    #[test]
+    fn an_index_built_for_other_accounts_never_answers_a_read() {
+        let h = home();
+        let company = h.path().join(".claude/projects");
+        put(
+            &h.path().join(".claude-mg/projects"),
+            PROJECT,
+            "00000001-x",
+            1,
+        );
+        // Reached only through hg's link.
+        put(&company, PROJECT, "00000002-x", 2);
+        let (r, both) = reader(h.path());
+        let mg_only = crate::accounts::resolve(&["mg".into()], h.path());
+        // This read refreshes for mg alone…
+        let dirs = r.refresh(&mg_only);
+        // …then a read with mg and hg rebuilds the shared index before it looks anything up.
+        assert_eq!(r.usage(&both, "00000002", NOW).tokens.input, 2);
+        assert!(r.candidates("00000002", &dirs).is_empty(), "hg's file");
+        assert_eq!(r.candidates("00000001", &dirs).len(), 1);
+        // Through every read, one after the other, the same.
+        assert_eq!(r.usage(&mg_only, "00000002", NOW).found, Found::Missing);
+        assert!(r.live_set(&mg_only, ["00000002"], NOW).is_empty());
+        assert!(r.transcript_markdown(&mg_only, "00000002").is_err());
+        assert_eq!(r.usage(&both, "00000002", NOW).tokens.input, 2);
+    }
+
+    #[test]
+    fn links_inside_the_projects_folders_are_not_followed() {
+        use std::os::unix::fs::symlink;
+        let h = home();
+        let mg = h.path().join(".claude-mg/projects");
+        let work = put(&h.path().join("other"), "work", "00000001-x", 1);
+        // A project folder that's a link to a work folder.
+        symlink(work.parent().unwrap(), mg.join(format!("{ROOT}-linked"))).unwrap();
+        // A transcript that's a link to a work transcript.
+        symlink(&work, mg.join(PROJECT).join("00000002-x.jsonl")).unwrap();
+        let (r, a) = reader(h.path());
+        assert_eq!(r.usage(&a, "00000001", NOW).found, Found::Missing);
+        assert_eq!(r.usage(&a, "00000002", NOW).found, Found::Missing);
+        // A session whose subagents are links, or whose subagents folder is one.
+        let main = put(&mg, PROJECT, "00000003-x", 3);
+        let subs = main.with_extension("").join("subagents");
+        fs::create_dir_all(&subs).unwrap();
+        symlink(&work, subs.join("agent-a1.jsonl")).unwrap();
+        fs::write(
+            subs.join("agent-a2.jsonl"),
+            reply("s", "2026-10-12T10:00:00Z", 10, 0, 0, 0),
+        )
+        .unwrap();
+        let u = r.usage(&a, "00000003", NOW);
+        assert_eq!((u.tokens.input, u.skipped_files), (13, 0));
+        let other = put(&mg, PROJECT, "00000004-x", 4);
+        fs::create_dir(other.with_extension("")).unwrap();
+        symlink(&subs, other.with_extension("").join("subagents")).unwrap();
+        assert_eq!(r.usage(&a, "00000004", NOW).tokens.input, 4);
+        let linked = put(&mg, PROJECT, "00000005-x", 5);
+        symlink(main.with_extension(""), linked.with_extension("")).unwrap();
+        assert_eq!(r.usage(&a, "00000005", NOW).tokens.input, 5);
+    }
+
+    /// The owner's Mac (`accounts::tests::fake_home`): mg's and hg's `projects` are links to the
+    /// company account's. A playground transcript is read through them; a work one never is, and
+    /// the company account's settings and login are never opened: here they're FIFOs, which
+    /// block whoever opens one to read, so a full read on a thread that opened either would
+    /// never finish.
+    #[test]
+    fn the_company_account_is_never_opened_and_its_work_transcripts_never_found() {
+        let d = crate::accounts::tests::fake_home();
+        let h = d.path().to_path_buf();
+        for f in [".claude/settings.json", ".claude.json"] {
+            fs::remove_file(h.join(f)).unwrap();
+            let made = std::process::Command::new("mkfifo")
+                .arg(h.join(f))
+                .status()
+                .unwrap();
+            assert!(made.success(), "mkfifo {f}");
+        }
+        let projects = h.join(".claude/projects");
+        put(&projects, "-Users-x-code-app", "aaaaaaaa-0000", 7);
+        put(
+            &projects,
+            "-Users-x-playground-muster-main",
+            "bbbbbbbb-0000",
+            9,
+        );
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let r = Reader::new("-Users-x-playground".to_string());
+            let a = crate::accounts::resolve(&crate::accounts::default_labels(), &h);
+            let ids = ["aaaaaaaa".to_string(), "bbbbbbbb".to_string()];
+            let usages = r.usages(&a, &ids, NOW);
+            // Both were just written, so both would be live if found.
+            let live = r.live_set(&a, ["aaaaaaaa", "bbbbbbbb"], secs(SystemTime::now()));
+            let work = (
+                r.locate(&a, "aaaaaaaa"),
+                r.transcript_markdown(&a, "aaaaaaaa").is_ok(),
+            );
+            let mine = r.transcript_markdown(&a, "bbbbbbbb").is_ok();
+            let dirs = r.signature(&Reader::projects_dirs(&a)).len();
+            tx.send((usages, live, work, mine, dirs)).unwrap();
+        });
+        let (usages, live, work, mine, dirs) = rx
+            .recv_timeout(Duration::from_secs(20))
+            .expect("the read finished: nothing opened the company account's FIFOs");
+        assert_eq!(usages[0], Usage::missing());
+        assert_eq!((usages[1].found, usages[1].tokens.input), (Found::Read, 9));
+        assert!(live.contains("bbbbbbbb") && !live.contains("aaaaaaaa"));
+        assert_eq!(work, (None, false));
+        assert!(mine);
+        // mg's and hg's links are one folder, listed once, with only its playground project.
+        assert_eq!(dirs, 1);
     }
 }

@@ -65,6 +65,14 @@ describe("the Work section", () => {
     expect(v.text).toContain("2 of 3 sessions not read on this Mac");
   });
 
+  it("a session not stamped with an account Muster reads keeps its row, says why, and can't be viewed (0099)", () => {
+    const unread = row({ id: "11111111", who: "wt-c", found: "not-read", tokens: tokens(0, 0, 0, 0), start: null, end: null, minutes: 0 });
+    const v = view({ work: { ...two, rows: [two.rows[0], unread], totals: { ...two.totals, read: 1 } } });
+    expect(v.rows[1]).toEqual(["11111111 wt-c", "Building", "not read: not stamped with a Claude account Muster reads", "View"]);
+    expect(v.text).not.toContain("not on this Mac");
+    expect(v.buttons).toEqual(["View", "View (disabled)"]);
+  });
+
   it("with no sessions yet, says so and still guesses from the stage", () => {
     const v = view({ work: { rows: [], totals: { sessions: 0, read: 0, live: 0, shared: 0, tokens: tokens(0, 0, 0, 0), totalTokens: 0, minutes: 0 }, estimate: two.estimate, guess: { pct: 0, basis: "not started (Ready)" } } });
     expect(v.text).toBe("Work No session has worked on it yet: none has claimed it or written to its log with a session id. About 0% done (a guess from not started (Ready))");

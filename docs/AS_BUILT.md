@@ -80,7 +80,8 @@ tool and the change logged in the task.
    bin/answer-hook.py  (run by the layer's hooks/muster-answer)
           → the asking session's context, after its next tool call
 
-   read only: ~/.claude*/projects/… transcripts, `claude agents --json`, `claude auth status`
+   read only, allowed accounts only (0012): ~/.claude-<label>/projects/… transcripts of
+   projects under ~/playground, `claude agents --json`, `claude auth status`; never ~/.claude
 ```
 
 The same picture as a table, part by part:
@@ -127,19 +128,20 @@ here):
 | `parallel.rs` | Parallel sessions: which Ready tasks are safe together, `muster start`'s worktree, the merge, `release`, what's left behind |
 | `merge_log.rs` | Git's merge driver for `docs/WORKLOG.md` (`muster merge-log`), and setting it in a repo's config |
 | `session.rs` | The holder stamp (`label (checkout · session 7b5e8856 · cc-hg)`, a teammate's with `· agent a1b2c3d4` after the session), its mailbox, and when two holders are the same (label, session and agent) |
-| `work.rs` | Who worked on a task and what it cost, from the sessions its claim and log name |
-| `transcripts.rs` | The one reader of Claude Code transcripts on this Mac (`~/.claude*/projects/…`), sums only |
-| `agents.rs` | Claude Code's own session states (`claude agents --json`), off the main thread, at most every 15 s |
+| `work.rs` | Who worked on a task and what it cost, from the sessions its claim and log name; only sessions stamped with an allowed account are read (0012) |
+| `transcripts.rs` | The one reader of Claude Code transcripts on this Mac, sums only: the allowed accounts' `projects` folders, and in them only project folders under `~/playground` (0012) |
+| `accounts.rs` | The Claude accounts Muster reads (0012): the `claude_accounts` allowlist resolved to `~/.claude-<label>` folders (`allowed`), never `~/.claude` or inside it; the playground key that filters transcript folders (`playground_key`, `is_under`) |
+| `agents.rs` | Claude Code's own session states (`claude agents --json`), allowed accounts only, off the main thread, at most every 15 s |
 | `projects.rs` | Which queues the app shows (discovery under `~/playground`, added, hidden), `projects.json` under its lock, new queues, the sidebar's state builder |
 | `labels.rs` | A project's label and category |
 | `arrange.rs` | The sidebar's order, headings, colours and folds |
 | `check_limit.rs` | The limit on Your check per project |
-| `settings.rs` | This Mac's settings: lease, LIVE window, notifications, the menu bar icon, the old-pauses offer |
+| `settings.rs` | This Mac's settings: lease, LIVE window, notifications, the menu bar icon, the old-pauses offer, the Claude accounts Muster reads (`claude_accounts`) |
 | `badge.rs` | The Dock badge's count, set from Rust |
 | `tray.rs` | The menu bar icon: idle or waiting with the count beside it, its tooltip and menu, from the badge's count |
 | `notify.rs` | Mac notifications of what newly waits for the owner, and `notified.json` |
 | `run.rs` | Run from the app: a project's run command in its main checkout, its output in a bounded ring, Stop and quitting end its process group |
-| `helper.rs` | The AI helper: the owner's own `claude`, restricted to `muster` and reading |
+| `helper.rs` | The AI helper: the owner's own `claude` on an allowed account, restricted to `muster` and reading |
 | `helper_cmds.rs` | The app's commands for the helper |
 | `pause_cmds.rs` | The app's commands for pause, resume and old pauses |
 | `ping_cmds.rs` | The app's commands for check-ins and messages |
@@ -274,8 +276,8 @@ Elsewhere:
 |---|---|---|
 | The merge lock | `<repo>/.git/muster/merge.lock` | `muster pass --from testing` (one merge at a time per repo) |
 | A started task's worktree and branch | `<project>/worktrees/<repo>/<key>-<slug>` (or `--at`), branch `task/<key>-<slug>` | `muster start`; removed by the merge or `muster release --clean` |
-| Transcripts | `~/.claude*/projects/<folder key>/<session>.jsonl` | read only, by `transcripts.rs`; never sent anywhere, and the window gets counts, never paths |
-| Session states | `claude agents --json --all`, per account | run by `agents.rs`, read only |
+| Transcripts | `~/.claude-<label>/projects/<folder key>/<session>.jsonl`, allowed accounts, keys under `~/playground` and sessions stamped with an allowed account only (0012) | read only, by `transcripts.rs`; never sent anywhere, and the window gets counts, never paths |
+| Session states | `claude agents --json --all`, per allowed account | run by `agents.rs`, read only |
 | The project's picture | `<repo>/docs/VISION.md`, `docs/decisions/`, `docs/DESIGN.md` | read only: `vision.rs` (the brief) and `lenses.rs` (VISION's `**Lenses needed:**` line) |
 
 ## 3. How a task flows
@@ -346,7 +348,7 @@ is in section 6.
 
 ## 5. Decisions
 
-In `docs/decisions/`, newest last. 0012 (mu-99) isn't merged yet.
+In `docs/decisions/`, newest last.
 
 | # | Decision |
 |---|---|
@@ -361,6 +363,7 @@ In `docs/decisions/`, newest last. 0012 (mu-99) isn't merged yet.
 | [0009](decisions/0009-work-log-merges-through-a-muster-merge-driver.md) | The work log merges through `muster merge-log`, so new entries on top never stop a merge |
 | [0010](decisions/0010-the-queue-lives-in-local-files-not-github-issues.md) | The queue lives in local files, not GitHub Issues |
 | [0011](decisions/0011-sessions-hand-off-by-themselves.md) | Sessions hand off by themselves at \~60% context or the token cap, at a gap, to an automatic successor that reads the old mailbox; amends 0004 point 3 |
+| [0012](decisions/0012-muster-reads-only-the-personal-claude-accounts.md) | Muster reads only the personal Claude accounts in one allowlist (default cc-mg, cc-hg), never `~/.claude`, and only transcripts of projects under `~/playground` |
 | [0013](decisions/0013-orchestration-terms-and-accounts.md) | Orchestration's terms: Muster runs each user's own `claude` and `codex` and never touches a login token, never balances across accounts (a limit means cooldown until `resets_at`), pins each account to projects by hand, reads usage instead of learning it from limit hits, caps and paces every run, keeps telemetry off; replaces the brief's load balancing |
 | [0014](decisions/0014-gates-replace-your-check.md) | Gates replace your check: a task that passes every gate it needs is accepted without the owner |
 | [0015](decisions/0015-muster-runs-agents-behind-a-runner-interface.md) | Muster runs agents behind one runner interface (`start`, `status`, `stop`, `usage`, `limit`, `capabilities`; states `working`, `input_required`, `completed`, `failed`, `cancelled`): its own `claude -p` runner now, with 0002's scrub and no token, Drover's later; the Codex adapter turns analytics off; amends 0007 and 0005 |
@@ -544,7 +547,7 @@ As of 2026-10-14 06:30 (the newest change in a task's log). 83 tasks: 9 Ready, 1
 - **Who may pause or resume isn't limited to the owner**, as with block and unblock.
 - **Claude Code's session states are a research preview** (0048): the format may change, a
   coordinator's subagents share its session id, `failed`, `stopped` and an idle interactive session
-  read as unknown, and only `~/.claude-<label>` accounts are read. `agents::Fetch` is the one place
+  read as unknown, and only the allowed `~/.claude-<label>` accounts are read (0012). `agents::Fetch` is the one place
   the source would change when Drover supplies states.
 - **A teammate of the builder's lead isn't a separate tester yet** (decision 0008): QA runs in a
   session of its own until stamps carry the agent id.
@@ -756,7 +759,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   (`old_pauses`, `fix_old_pauses`, `set_old_pauses_offered`; the setting `old-pauses-offered`).
 - **Claude Code's session states** (0048, `agents.rs`, `sessionState.ts`): the core runs
   `claude agents --json --all` (argument array, `CLAUDE_CONFIG_DIR` per account the stamps in
-  Building and Testing name, usage reporting off, in a process group of its own that a 10 s timeout stops whole, 1 MB cap) on a thread of its own,
+  Building and Testing name, only accounts on the allowlist (0012): a stamp with no account or an
+  unlisted one reads nothing, so its card is unknown and the heartbeats judge, usage reporting off, in a process group of its own that a 10 s timeout stops whole, 1 MB cap) on a thread of its own,
   started by the window's state poll (or the Dock badge's own read while the window is hidden,
   0006) at most every 15 s and never while nothing has a stamped
   holder; the poll uses the latest result and never waits for a run. Parsed with serde into the
@@ -806,7 +810,10 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   folder (About, the Agents settings file, Projects' folders) show as `~/…` (`homePath` in
   `lib.ts`, `HomePath.tsx`; the core sends `home` in `settings_info`), the real path in the
   tooltip and on the clipboard when copied. **Agents** has the
-  helper's account and model, the **claim lease** (default 12 h, 1 h to 7 d) and the **LIVE
+  Claude accounts Muster reads (0012: "Claude accounts Muster reads: cc-mg · cc-hg" as chips with
+  a remove ✕ and an inline add field, `set_setting` `claude-accounts`, a label refused with why;
+  "Never ~/.claude, the default account." under it; an empty list says "none: Muster reads no
+  Claude sessions"), the helper's account and model, the **claim lease** (default 12 h, 1 h to 7 d) and the **LIVE
   window** (default 5 min, 1 min to 1 h), typed as `30m`, `2h`, `1d` and checked by the core.
   Both are saved per machine in `settings.json` beside `projects.json`; `muster reclaim` (with
   no `--after`) and `muster check` read the same file, the app reads it on every poll (Release,
@@ -827,7 +834,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   hand it to launchd, where Stop can't reach it. Your check's view buttons
   (0043) open Settings for Appearance, Projects and Settings. **About** shows the version, the
   settings folder and its files, and every folder the app reads: the queues found on their own,
-  then the ones added by you (or that there are none), with paths under the home folder as `~/`.
+  then the ones added by you (or that there are none), the allowed Claude account folders and
+  that only projects under `~/playground` are read (0012), with paths under the home folder as `~/`.
 - **Display modes** (task 0038, `modes.ts`, `ModeViews.tsx`, `Display.tsx`): **ADHD** (the default:
   today's screens), **Standard** and **Focus**, picked in Settings › Display (three chips and a
   table of every element by mode, the current column lit), shown as a chip at the end of the
@@ -1388,12 +1396,16 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   output and thinking left out, the latest 1,500 entries, every punctuation mark escaped so nothing
   in it renders as a link, image or HTML. Only a session the task names can be viewed.
   - **Where the numbers come from** (`transcripts.rs`, the one reader 0017's actuals will use too:
-    `transcripts::actuals`): `~/.claude*/projects/<folder key>/<session id>.jsonl`, every account
-    folder once (`.claude-hg/projects` linking to `.claude/projects` isn't counted twice), plus the
+    `transcripts::actuals`): `~/.claude-<label>/projects/<folder key>/<session id>.jsonl`, each allowed
+    account (0012) once (`.claude-hg/projects` linking to `.claude/projects` isn't counted twice;
+    `~/.claude` itself is never read), and only a folder key under `~/playground`
+    (`-Users-<name>-playground` or that plus `-…`; linked project folders skipped), so company
+    transcripts in the shared linked folder stay out. Plus the
     session's `subagents/*.jsonl` for tokens. Usage counts once per reply (Claude Code repeats it
     on each content block); minutes are first to last time stamp. Read on this Mac and sent nowhere;
     the window gets counts, ids and times, never a path. A session not found reads "not on this
-    Mac". Transcripts over 128 MB and lines over 8 MB are skipped, and summaries are cached by
+    Mac"; one whose stamp names no allowed account isn't looked for and reads "not read: not
+    stamped with a Claude account Muster reads" (`Found::NotRead`, 0099). Transcripts over 128 MB and lines over 8 MB are skipped, and summaries are cached by
     size and modified time (512 files).
   - **Live:** a transcript (or one of its subagents') changed in the last 5 minutes. The card shows
     a small dot by its id while any of the task's sessions is live, worked out in the state read
@@ -1501,8 +1513,9 @@ folded "steps" line, never file edits.
   only `muster` and read-only tools, file reading inside the project folder, and anything else
   refused. Router and token variables are stripped. Model: Sonnet, or Haiku or Opus picked in
   Settings (0036; saved in `helper/helper.json`, and anything else there reads as Sonnet).
-- **Accounts:** the picker shows each `~/.claude*` folder's login (from `claude auth status`, no model
-  call), with **Change account** any time. An account that only works through a shell command
+- **Accounts:** the picker shows each allowed account's login (0012; from `claude auth status`, no
+  model call), with **Change account** any time. A saved account that is `.claude` or no longer on
+  the list is cleared, and the login script always exports `CLAUDE_CONFIG_DIR`. An account that only works through a shell command
   with a token (like `cc-hg`) isn't logged in on its own: the helper says so in plain words and
   offers another account or **Log in…** (Terminal on that account's own `claude auth login`).
 - Conversations resume per project. **New conversation** starts fresh, and **Stop** ends a turn.

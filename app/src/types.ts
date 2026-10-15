@@ -196,7 +196,7 @@ export type SessionRow = {
   stages: string[];
   /** It holds the task now. */
   holds: boolean;
-  found: "read" | "missing" | "too-big";
+  found: "read" | "missing" | "too-big" | "not-read";
   tokens: Tokens;
   start: number | null;
   end: number | null;
@@ -308,8 +308,9 @@ export type State = {
   now: number;
   /** This machine's settings the core judged by (0036), in minutes; read with settingsData's
    *  machineOf, which falls back to the defaults. oldPausesOffered: the board offered to convert
-   *  old pauses once (mu-59); undefined from a core that doesn't say. */
-  settings?: { leaseMinutes: number; liveMinutes: number; oldPausesOffered?: boolean };
+   *  old pauses once (mu-59); undefined from a core that doesn't say. claudeAccounts: the labels
+   *  of the Claude accounts Muster reads (0099), `mg` for `~/.claude-mg`. */
+  settings?: { leaseMinutes: number; liveMinutes: number; oldPausesOffered?: boolean; claudeAccounts: string[] };
 };
 
 export type Project = {

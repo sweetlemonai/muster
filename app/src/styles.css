@@ -1112,6 +1112,17 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .setting-value { font-weight: 600; }
 .setting-edit { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
 .setting-edit input { font: inherit; width: 8ch; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--text); }
+/* Agents' Claude accounts row (0099): a chip per account with its ✕, then the add field in place.
+   The refusal's line is always there, so a message moves nothing. */
+.accounts-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.account-chip { display: inline-flex; align-items: center; gap: 2px; padding-block: 1px; padding-inline: 8px 2px; border: 1px solid var(--line); border-radius: 999px; color: var(--text); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.account-x { background: none; border: none; border-radius: 999px; color: var(--muted); font-size: 10px; line-height: 1; padding-block: 3px; padding-inline: 5px; cursor: pointer; }
+.account-x:hover, .account-x:focus-visible { color: var(--text); background: var(--hover); }
+.accounts-none { color: var(--warn); font-weight: 600; }
+.account-form { display: contents; }
+.account-add { display: inline-flex; align-items: center; gap: 6px; }
+.account-add input { font: inherit; inline-size: 10ch; padding-block: 3px; padding-inline: 6px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--text); }
+.account-error { margin-block: 4px 2px; min-block-size: 1.4em; }
 .about-list { margin: 6px 0; padding-left: 18px; }
 .about-list li { margin-bottom: 4px; }
 .settings .path { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); overflow-wrap: anywhere; }

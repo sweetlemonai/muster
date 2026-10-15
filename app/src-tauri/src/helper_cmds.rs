@@ -1,20 +1,47 @@
 //! The app's commands for the AI helper (see `helper`): its account, transcript, and turns.
 
-use crate::{blocking, check_stamp, helper, home, ops, queue, queue_root, tools, AppState};
+use crate::accounts::{self, Account};
+use crate::{
+    blocking, check_stamp, helper, home, ops, queue, queue_root, settings, tools, AppState,
+};
 use std::collections::HashMap;
 use std::io::BufRead;
 use std::path::PathBuf;
 use tauri::{Emitter, Manager};
 
+/// Refused: an account that isn't on the allowlist (`accounts::allowed`, 0099).
+const NOT_ALLOWED: &str =
+    "that Claude account isn't on Muster's list of accounts it may use (Settings, Agents)";
+
 #[derive(serde::Serialize, serde::Deserialize, Default, Clone)]
 #[serde(rename_all = "camelCase", default)]
 struct HelperConfig {
-    /// Claude Code config folder name under $HOME (".claude", ".claude-mg"…), chosen once.
+    /// Claude Code config folder name under $HOME (".claude-mg"…), chosen once, one of the
+    /// allowlist's (0099).
     account: String,
     /// Conversation to resume, by queue name.
     sessions: HashMap<String, String>,
     /// The model it runs (0036), one of `helper::MODELS`; empty or unknown is the default.
     model: String,
+}
+
+impl HelperConfig {
+    /// Forget a saved account that isn't on the allowlist (`.claude`, the company account, or
+    /// one taken off the list), and its conversations, so the picker asks again. True when it
+    /// changed.
+    fn forget_unallowed(&mut self, allowed: &[Account]) -> bool {
+        if self.account.is_empty() || helper::account(&self.account, allowed).is_some() {
+            return false;
+        }
+        self.account.clear();
+        self.sessions.clear(); // a conversation belongs to one account
+        true
+    }
+}
+
+/// The accounts the helper may use, read from the settings now, so a change applies at once.
+fn allowed(app: &AppState) -> Vec<Account> {
+    accounts::allowed(&settings::load(&app.settings_file), &home())
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -140,18 +167,22 @@ pub async fn helper_info(handle: tauri::AppHandle, queue: String) -> Result<Help
             .lock()
             .map_err(|e| e.to_string())?
             .contains_key(&queue);
-        let config = load_helper(&app);
+        let allowed = allowed(&app);
+        let mut config = load_helper(&app);
+        if config.forget_unallowed(&allowed) {
+            save_helper(&app, &config)?;
+        }
         let claude = helper::find_claude(&home());
-        let accounts = helper::accounts(&home())
-            .into_iter()
-            .map(|name| {
+        let accounts = allowed
+            .iter()
+            .map(|account| {
                 let status = claude
                     .as_ref()
-                    .and_then(|c| helper::login_status(c, &home(), &name));
+                    .and_then(|c| helper::login_status(c, account));
                 AccountInfo {
                     logged_in: status.as_ref().map(|s| s.0),
                     plan: status.map(|s| s.1).unwrap_or_default(),
-                    name,
+                    name: account.folder_name(),
                 }
             })
             .collect();
@@ -173,28 +204,20 @@ pub async fn helper_info(handle: tauri::AppHandle, queue: String) -> Result<Help
 #[tauri::command]
 pub async fn helper_login(handle: tauri::AppHandle, account: String) -> Result<(), String> {
     blocking(move || {
-        if !helper::accounts(&home()).contains(&account) {
-            return Err("no such account folder".into());
-        }
-        let claude = helper::find_claude(&home()).ok_or("couldn't find the claude command")?;
         let app = handle.state::<AppState>();
+        let allowed = allowed(&app);
+        let account = helper::account(&account, &allowed).ok_or(NOT_ALLOWED)?;
+        let claude = helper::find_claude(&home()).ok_or("couldn't find the claude command")?;
         let dir = helper_dir(&app);
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let script = dir.join("login.command");
-        let folder = if account == ".claude" {
-            "unset CLAUDE_CONFIG_DIR".to_string()
-        } else {
-            format!("export CLAUDE_CONFIG_DIR='{}'", home().join(&account).display())
-        };
-        let body = format!(
-            "#!/bin/sh\n# Muster: log in the Claude account ~/{account} for the helper.\nunset ANTHROPIC_BASE_URL ANTHROPIC_CUSTOM_HEADERS ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN\n{folder}\n'{}' auth login\necho\necho 'Done. You can close this window and go back to Muster.'\n",
-            claude.display()
-        );
-        std::fs::write(&script, body).map_err(|e| e.to_string())?;
+        std::fs::write(&script, helper::login_script(&claude, account))
+            .map_err(|e| e.to_string())?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700))
+                .map_err(|e| e.to_string())?;
         }
         let ok = std::process::Command::new("open")
             .args(["-a", "Terminal"])
@@ -214,10 +237,10 @@ pub async fn helper_login(handle: tauri::AppHandle, account: String) -> Result<(
 #[tauri::command]
 pub async fn helper_set_account(handle: tauri::AppHandle, account: String) -> Result<(), String> {
     blocking(move || {
-        if !helper::accounts(&home()).contains(&account) {
-            return Err("no such account folder".into());
-        }
         let app = handle.state::<AppState>();
+        if helper::account(&account, &allowed(&app)).is_none() {
+            return Err(NOT_ALLOWED.into());
+        }
         let mut c = load_helper(&app);
         c.account = account;
         c.sessions.clear(); // a conversation belongs to one account
@@ -300,6 +323,8 @@ pub async fn helper_send(
         if cfg.account.is_empty() {
             return Err("choose which Claude account the helper uses first".into());
         }
+        let allowed = allowed(&app);
+        let account = helper::account(&cfg.account, &allowed).ok_or(NOT_ALLOWED)?;
         let mut text = message.clone();
         if !files.is_empty() {
             let dir = crate::backlog::backlog_dir(&root).join("helper");
@@ -321,21 +346,14 @@ pub async fn helper_send(
             tools().display(),
             home().join(".local/bin").display()
         );
-        let mut cmd = std::process::Command::new(&claude);
-        cmd.args(helper::args(&text, &brief, resume.as_deref(), &cfg.model))
-            .current_dir(&project_dir)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        for k in helper::STRIP_ENV {
-            cmd.env_remove(k);
-        }
-        let mut vars: Vec<(&str, std::ffi::OsString)> =
-            vec![("PATH", path.into()), ("MUSTER_ROOT", root.clone().into()), ("MUSTER_AS", "helper".into())];
-        if cfg.account != ".claude" {
-            vars.push(("CLAUDE_CONFIG_DIR", home().join(&cfg.account).into()));
-        }
-        cmd.envs(vars);
+        let mut cmd = helper::run_command(
+            &claude,
+            account,
+            &helper::args(&text, &brief, resume.as_deref(), &cfg.model),
+            &project_dir,
+            &path,
+            &root,
+        );
         let mut child = cmd.spawn().map_err(|e| format!("couldn't start claude: {e}"))?;
         let stdout = child.stdout.take().ok_or("no output from claude")?;
         let stderr = child.stderr.take();
@@ -388,4 +406,47 @@ pub async fn helper_send(
         Ok(())
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::accounts::{resolve, tests::fake_home};
+
+    fn saved(account: &str) -> HelperConfig {
+        HelperConfig {
+            account: account.into(),
+            sessions: HashMap::from([("muster".to_string(), "s1".to_string())]),
+            model: "haiku".into(),
+        }
+    }
+
+    #[test]
+    fn a_saved_account_off_the_allowlist_is_forgotten_so_the_picker_asks_again() {
+        // The home has .claude (company), .claude-ih, .claude-mg and .claude-hg.
+        let d = fake_home();
+        let allowed = resolve(&["mg".into(), "hg".into()], d.path());
+        for gone in [".claude", ".claude-ih", ".claude-gone", "../.claude-mg"] {
+            let mut c = saved(gone);
+            assert!(c.forget_unallowed(&allowed), "{gone:?}");
+            assert_eq!(c.account, "", "{gone:?}");
+            assert!(c.sessions.is_empty(), "its conversations go with it");
+            assert_eq!(c.model, "haiku", "the model stays");
+            // What's saved is the cleared setting.
+            let back: HelperConfig =
+                serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
+            assert_eq!(back.account, "");
+        }
+        // An account taken off the list.
+        let mut c = saved(".claude-hg");
+        assert!(c.forget_unallowed(&resolve(&["mg".into()], d.path())));
+        assert_eq!(c.account, "");
+        // An allowed account, or none chosen yet, stays as it is.
+        for keep in [".claude-mg", ".claude-hg", ""] {
+            let mut c = saved(keep);
+            assert!(!c.forget_unallowed(&allowed), "{keep:?}");
+            assert_eq!(c.account, keep);
+            assert_eq!(c.sessions.len(), 1);
+        }
+    }
 }

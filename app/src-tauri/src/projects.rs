@@ -1876,6 +1876,7 @@ mod tests {
             notify: false,
             menu_bar: false,
             old_pauses_offered: true,
+            claude_accounts: vec!["mg".into()],
         };
         assert_ne!(given, crate::settings::Settings::default());
         let s = read_state(

@@ -1,6 +1,7 @@
 //! Claude Code's own word on its sessions (task 0048): `claude agents --json --all`, run once per
-//! account the open work's stamps name (0030), off the main thread, cached, at most every
-//! `EVERY_SECS`. It tells a session that's working from one waiting for input (a permission
+//! account the open work's stamps name (0030) among the accounts Muster reads (0099,
+//! `accounts::allowed`: never `~/.claude`, the company account), off the main thread, cached, at
+//! most every `EVERY_SECS`. It tells a session that's working from one waiting for input (a permission
 //! prompt) and one that has ended, which heartbeats alone can't.
 //!
 //! The format is a research preview, so it's read defensively: anything that isn't a JSON array
@@ -12,6 +13,7 @@
 //! The source is `Fetch`, one function: when Drover supplies session states (Drover 0018), it
 //! swaps here, and the matching (`apply`) and the window stay.
 
+use crate::accounts::Account;
 use crate::queue::Task;
 use crate::session;
 use serde::{Deserialize, Serialize};
@@ -158,11 +160,12 @@ pub const QUIET_ENV: [(&str, &str); 3] = [
 ];
 
 /// Run `claude agents --json --all` as an argument array (never a shell), for the account whose
-/// config folder is `config_dir` (None: the default `~/.claude`), with the router and token
-/// variables taken out (`helper::STRIP_ENV`) and its usage reporting off (`QUIET_ENV`). Its
-/// output, at most `MAX_OUTPUT` + 1 bytes, or why not: not installed, a non-zero exit, or still
-/// running after `timeout` (then it's stopped).
-pub fn run(claude: &Path, config_dir: Option<&Path>, timeout: Duration) -> Result<Vec<u8>, String> {
+/// config folder is `config_dir`, always set as `CLAUDE_CONFIG_DIR` (unset, it would read
+/// `~/.claude`, the company account: 0099), with the router and token variables taken out
+/// (`helper::STRIP_ENV`) and its usage reporting off (`QUIET_ENV`). Its output, at most
+/// `MAX_OUTPUT` + 1 bytes, or why not: not installed, a non-zero exit, or still running after
+/// `timeout` (then it's stopped).
+pub fn run(claude: &Path, config_dir: &Path, timeout: Duration) -> Result<Vec<u8>, String> {
     run_with(claude, config_dir, timeout, &RealClock(Instant::now()))
 }
 
@@ -213,7 +216,7 @@ fn wait<T>(
 
 fn run_with(
     claude: &Path,
-    config_dir: Option<&Path>,
+    config_dir: &Path,
     timeout: Duration,
     clock: &impl Clock,
 ) -> Result<Vec<u8>, String> {
@@ -228,9 +231,7 @@ fn run_with(
         cmd.env_remove(k);
     }
     cmd.envs(QUIET_ENV);
-    if let Some(dir) = config_dir {
-        cmd.env("CLAUDE_CONFIG_DIR", dir);
-    }
+    cmd.env("CLAUDE_CONFIG_DIR", config_dir);
     let mut child = cmd.spawn().map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => "claude isn't installed".to_string(),
         _ => format!("couldn't run claude ({})", e.kind()),
@@ -287,9 +288,9 @@ fn stop(child: &mut std::process::Child) {
     let _ = child.wait();
 }
 
-/// Where the states come from: one account's raw output (by its label, "" for the default
-/// account), or why there's none.
-pub type Fetch = Arc<dyn Fn(&str) -> Result<Vec<u8>, String> + Send + Sync>;
+/// Where the states come from: one allowed account's raw output, or why there's none. It's given
+/// an `Account`, which only `accounts::allowed` makes, so it can't be asked for another.
+pub type Fetch = Arc<dyn Fn(&Account) -> Result<Vec<u8>, String> + Send + Sync>;
 
 /// How a refresh is run: on a thread of its own in the app (`on_thread`), in place in tests.
 pub type Spawn = fn(Box<dyn FnOnce() + Send>);
@@ -299,21 +300,15 @@ pub fn on_thread(job: Box<dyn FnOnce() + Send>) {
     std::thread::spawn(job);
 }
 
-/// The real source: the owner's `claude` (found where the helper finds it), once per account,
-/// `CLAUDE_CONFIG_DIR=~/.claude-<label>` as `session.rs` reads it back.
+/// The real source: the owner's `claude` (found where the helper finds it), once per allowed
+/// account, `CLAUDE_CONFIG_DIR=~/.claude-<label>` as `session.rs` reads it back.
 pub fn claude_fetch(home: PathBuf) -> Fetch {
-    Arc::new(move |account: &str| {
+    Arc::new(move |account: &Account| {
         let claude = crate::helper::find_claude(&home).ok_or("claude isn't installed")?;
-        let dir = if account.is_empty() {
-            None
-        } else {
-            let dir = home.join(format!(".claude-{account}"));
-            if !dir.is_dir() {
-                return Err(format!("there's no ~/.claude-{account} folder"));
-            }
-            Some(dir)
-        };
-        run(&claude, dir.as_deref(), TIMEOUT)
+        if !account.dir().is_dir() {
+            return Err(format!("there's no ~/{} folder", account.folder_name()));
+        }
+        run(&claude, account.dir(), TIMEOUT)
     })
 }
 
@@ -337,9 +332,9 @@ fn stamp_of(t: &Task) -> Option<session::Stamp> {
     session::split(t.holder()).1
 }
 
-/// The accounts to read: each one named in a stamp that `stamp_of` takes, once, sorted. Empty
-/// when no task in Building or Testing has a stamped holder: then nothing runs.
-pub fn wanted(tasks: &[Task]) -> Vec<String> {
+/// The account labels named in a stamp that `stamp_of` takes, once, sorted: "" for a session
+/// that ran without `CLAUDE_CONFIG_DIR` (bare `claude`, the company account).
+fn stamped(tasks: &[Task]) -> Vec<String> {
     let mut out: Vec<String> = tasks
         .iter()
         .filter_map(stamp_of)
@@ -350,19 +345,30 @@ pub fn wanted(tasks: &[Task]) -> Vec<String> {
     out
 }
 
+/// The accounts to read: each of `allowed` that a stamp `stamp_of` takes names, once, by label.
+/// Empty when no task in Building or Testing has a holder stamped with an allowed account: then
+/// nothing runs. A stamp with no account, or one not on the list, never causes a run (0099).
+pub fn wanted(tasks: &[Task], allowed: &[Account]) -> Vec<Account> {
+    stamped(tasks)
+        .iter()
+        .filter_map(|l| crate::accounts::find(l, allowed).cloned())
+        .collect()
+}
+
 /// Read every account in `accounts` through `fetch`.
-pub fn read_all(fetch: &Fetch, accounts: &[String]) -> Snapshot {
+pub fn read_all(fetch: &Fetch, accounts: &[Account]) -> Snapshot {
     let mut snap = Snapshot::default();
     for account in accounts {
+        let label = account.label().to_string();
         let read = fetch(account).and_then(|out| parse(&out));
         let result = read.map(|entries| {
             let n = entries.len();
             for e in entries {
-                snap.states.insert((account.clone(), e.id), e.state);
+                snap.states.insert((label.clone(), e.id), e.state);
             }
             n
         });
-        snap.accounts.push((account.clone(), result));
+        snap.accounts.push((label, result));
     }
     snap
 }
@@ -371,7 +377,7 @@ pub fn read_all(fetch: &Fetch, accounts: &[String]) -> Snapshot {
 /// knows.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Known {
-    /// The accounts the open work's stamps name (`wanted`), read or not.
+    /// The accounts the open work's stamps name, read or not (one Muster doesn't read never is).
     pub wanted: HashSet<String>,
     /// The accounts read.
     pub accounts: HashSet<String>,
@@ -389,7 +395,7 @@ impl Known {
 /// input there isn't known to wait yet.
 pub fn known(tasks: &[Task], snap: &Snapshot) -> Known {
     Known {
-        wanted: wanted(tasks).into_iter().collect(),
+        wanted: stamped(tasks).into_iter().collect(),
         accounts: snap
             .accounts
             .iter()
@@ -433,9 +439,9 @@ pub fn holds<'a>(tasks: impl IntoIterator<Item = &'a Task>) -> Holds {
 }
 
 /// Give each task its session's state, counting holds among the tasks themselves.
-pub fn apply(tasks: &mut [Task], snap: &Snapshot) {
+pub fn apply(tasks: &mut [Task], snap: &Snapshot, allowed: &[Account]) {
     let h = holds(tasks.iter());
-    apply_with(tasks, &h, snap);
+    apply_with(tasks, &h, snap, allowed);
 }
 
 /// Give each task its session's state. One applies when the holder's stamp (`stamp_of`) names
@@ -445,17 +451,20 @@ pub fn apply(tasks: &mut [Task], snap: &Snapshot) {
 /// one, so its state says nothing about the others. Ended shows only in Building: in Testing the
 /// holder is the builder that passed it, whose session ending is the normal course. Every other
 /// task is unknown, so its card reads as before. A session waiting for input waits on the owner,
-/// so the task counts in the needs-you count.
-pub fn apply_with(tasks: &mut [Task], holds: &Holds, snap: &Snapshot) {
+/// so the task counts in the needs-you count. Only a stamp whose account is one of `allowed`
+/// (0099) gets a state, whatever `snap` holds: one read before the account left the list says
+/// nothing now.
+pub fn apply_with(tasks: &mut [Task], holds: &Holds, snap: &Snapshot, allowed: &[Account]) {
     let n = |m: &HashMap<String, usize>, id: &str| m.get(id).copied().unwrap_or(0);
     for t in tasks.iter_mut() {
         let building = t.stage == "building";
         t.session_state = match stamp_of(t) {
             Some(s)
-                if (building && n(&holds.claims, &s.id) == 1)
-                    || (!building
-                        && n(&holds.claims, &s.id) == 0
-                        && n(&holds.testing, &s.id) == 1) =>
+                if crate::accounts::is_allowed(&s.account, allowed)
+                    && ((building && n(&holds.claims, &s.id) == 1)
+                        || (!building
+                            && n(&holds.claims, &s.id) == 0
+                            && n(&holds.testing, &s.id) == 1)) =>
             {
                 match snap.states.get(&(s.account, s.id)).copied() {
                     Some(SessionState::Ended) if !building => SessionState::Unknown,
@@ -478,18 +487,37 @@ struct Inner {
     /// When the last read started (the poll's clock), if one has.
     last: Option<u64>,
     running: bool,
-    /// The accounts the latest poll wanted.
+    /// The accounts the latest poll wanted, by label.
     wanted: Vec<String>,
+    /// Whether the latest poll saw a stamped holder at all, of an account Muster reads or not.
+    stamped: bool,
 }
 
 impl Inner {
-    /// The snapshot, unless it's older than `MAX_AGE_SECS` at `now` (or from a clock ahead of it).
-    fn fresh(&self, now: u64) -> Snapshot {
+    /// The snapshot, unless it's older than `MAX_AGE_SECS` at `now` (or from a clock ahead of it),
+    /// with only the accounts labelled in `wanted`: a read made before an account left the list,
+    /// or one still running for it, never hands its states on.
+    fn fresh(&self, now: u64, wanted: &[String]) -> Snapshot {
         let age = now.checked_sub(self.snapshot_at);
-        if age.is_some_and(|a| a <= MAX_AGE_SECS) {
-            self.snapshot.clone()
-        } else {
-            Snapshot::default()
+        if !age.is_some_and(|a| a <= MAX_AGE_SECS) {
+            return Snapshot::default();
+        }
+        let keep = |label: &String| wanted.contains(label);
+        Snapshot {
+            states: self
+                .snapshot
+                .states
+                .iter()
+                .filter(|((label, _), _)| keep(label))
+                .map(|(k, v)| (k.clone(), *v))
+                .collect(),
+            accounts: self
+                .snapshot
+                .accounts
+                .iter()
+                .filter(|(label, _)| keep(label))
+                .cloned()
+                .collect(),
         }
     }
 }
@@ -530,15 +558,18 @@ impl Monitor {
         Monitor::new(claude_fetch(home), on_thread)
     }
 
-    /// Called with every state read at `now` (seconds): when some task has a stamped holder in
-    /// Building or Testing, no read is running and the last started `EVERY_SECS` or more ago
-    /// (or the clock went back), a read of the accounts they name starts through `spawn`. Returns
-    /// the latest snapshot; an empty one when nothing is wanted.
-    pub fn poll(self: &Arc<Self>, tasks: &[Task], now: u64) -> Snapshot {
-        let wanted = wanted(tasks);
+    /// Called with every state read at `now` (seconds): when some task has a holder in Building
+    /// or Testing stamped with one of the `allowed` accounts, no read is running and the last
+    /// started `EVERY_SECS` or more ago (or the clock went back), a read of the accounts they name
+    /// starts through `spawn`. Returns the latest snapshot, of the accounts wanted now only; an
+    /// empty one when nothing is wanted.
+    pub fn poll(self: &Arc<Self>, tasks: &[Task], allowed: &[Account], now: u64) -> Snapshot {
+        let wanted = wanted(tasks, allowed);
+        let labels: Vec<String> = wanted.iter().map(|a| a.label().to_string()).collect();
         {
             let mut g = lock(&self.inner);
-            g.wanted = wanted.clone();
+            g.wanted = labels.clone();
+            g.stamped = !stamped(tasks).is_empty();
             if wanted.is_empty() {
                 return Snapshot::default();
             }
@@ -546,7 +577,7 @@ impl Monitor {
                 .last
                 .is_none_or(|last| now >= last.saturating_add(EVERY_SECS) || now < last);
             if !due || g.running {
-                return g.fresh(now);
+                return g.fresh(now, &labels);
             }
             g.running = true;
             g.last = Some(now);
@@ -559,13 +590,16 @@ impl Monitor {
             g.snapshot = snapshot;
             g.snapshot_at = now;
         }));
-        lock(&self.inner).fresh(now)
+        lock(&self.inner).fresh(now, &labels)
     }
 
     /// Settings' line (0036's Agents): "on (2 accounts)", or "not available: <why>", so the
     /// fallback to heartbeats is never silent.
     pub fn summary(&self) -> String {
         let g = lock(&self.inner);
+        if g.wanted.is_empty() && g.stamped {
+            return "not read now: no task in Building or Testing has a session of an account Muster reads".into();
+        }
         if g.wanted.is_empty() {
             return "not read now: no task in Building or Testing has a session stamp".into();
         }
@@ -576,13 +610,9 @@ impl Monitor {
     }
 }
 
-/// An account as the window names it: `cc-hg`, or "the default account".
+/// An account as the window names it: `cc-hg`.
 fn account_name(label: &str) -> String {
-    if label.is_empty() {
-        "the default account".into()
-    } else {
-        format!("cc-{label}")
-    }
+    format!("cc-{label}")
 }
 
 /// "on (1 account)", "on (2 accounts); cc-mg not available: <why>", or "not available: <why>".
@@ -804,7 +834,7 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
         let claude = fake(d.path(), RECORD);
         let read = |p: &str| fs::read_to_string(d.path().join(p)).unwrap();
         let dir = d.path().join(".claude-hg");
-        let out = run(&claude, Some(&dir), GENEROUS).unwrap();
+        let out = run(&claude, &dir, GENEROUS).unwrap();
         assert_eq!(
             parse(&out).unwrap(),
             [entry("7b5e8856", SessionState::Working)]
@@ -812,9 +842,6 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
         assert_eq!(read("claude.args"), "agents\n--json\n--all\n");
         assert_eq!(read("claude.env"), dir.to_string_lossy());
         assert_eq!(read("claude.quiet"), "1 1 1 ", "its usage reporting is off");
-        // The default account: no CLAUDE_CONFIG_DIR at all, whatever this process has.
-        run(&claude, None, GENEROUS).unwrap();
-        assert_eq!(read("claude.env"), "unset");
     }
 
     /// For runs that are expected to finish: far past any machine's slowness, and never waited out
@@ -947,18 +974,18 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
     fn the_runner_falls_back_with_the_reason_on_a_missing_binary_or_an_exit() {
         let d = tempfile::tempdir().unwrap();
         assert_eq!(
-            run(&d.path().join("no-claude"), None, GENEROUS).unwrap_err(),
+            run(&d.path().join("no-claude"), d.path(), GENEROUS).unwrap_err(),
             "claude isn't installed"
         );
         let failing = fake(d.path(), "echo '[]'; exit 3");
         assert_eq!(
-            run(&failing, None, GENEROUS).unwrap_err(),
+            run(&failing, d.path(), GENEROUS).unwrap_err(),
             "claude agents exited with code 3"
         );
         // Output past the cap: stopped reading, not available.
         let loud = fake(d.path(), "head -c 2000000 /dev/zero | tr '\\0' ' '");
         assert_eq!(
-            run(&loud, None, GENEROUS).unwrap_err(),
+            run(&loud, d.path(), GENEROUS).unwrap_err(),
             "its output is over 1 MB"
         );
         assert_eq!(TIMEOUT, Duration::from_secs(10));
@@ -977,7 +1004,7 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
         let slow = fake(d.path(), "touch \"$0.up\"\nexec sleep 30");
         let started = Instant::now();
         assert_eq!(
-            run_with(&slow, None, timeout, &clock(d.path().join("claude.up"))).unwrap_err(),
+            run_with(&slow, d.path(), timeout, &clock(d.path().join("claude.up"))).unwrap_err(),
             "claude agents didn't finish within 300ms"
         );
         assert!(
@@ -991,7 +1018,7 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
         );
         assert!(run_with(
             &parent,
-            None,
+            d.path(),
             timeout,
             &clock(d.path().join("claude.child"))
         )
@@ -1015,24 +1042,100 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
 
     #[test]
     fn the_claude_source_needs_the_accounts_folder_and_finds_claude_where_the_helper_does() {
-        let home = tempfile::tempdir().unwrap();
+        let home = crate::accounts::tests::fake_home();
         let bin = home.path().join(".local/bin");
         fs::create_dir_all(&bin).unwrap();
         fake(&bin, RECORD);
-        fs::create_dir(home.path().join(".claude-hg")).unwrap();
+        let allowed = crate::accounts::resolve(&["mg".into(), "hg".into()], home.path());
         let fetch = claude_fetch(home.path().to_path_buf());
-        assert_eq!(
-            fetch("mg").unwrap_err(),
-            "there's no ~/.claude-mg folder",
-            "no path with the user's name in it"
-        );
-        assert!(parse(&fetch("hg").unwrap()).is_ok());
+        assert!(parse(&fetch(&allowed[1]).unwrap()).is_ok());
         assert_eq!(
             fs::read_to_string(bin.join("claude.env")).unwrap(),
             home.path().join(".claude-hg").to_string_lossy()
         );
-        fetch("").unwrap();
-        assert_eq!(fs::read_to_string(bin.join("claude.env")).unwrap(), "unset");
+        // The folder went after it was resolved: no run, and no path with the user's name.
+        fs::remove_file(home.path().join(".claude-mg/projects")).unwrap();
+        fs::remove_dir(home.path().join(".claude-mg")).unwrap();
+        fs::remove_file(bin.join("claude.env")).unwrap();
+        assert_eq!(
+            fetch(&allowed[0]).unwrap_err(),
+            "there's no ~/.claude-mg folder"
+        );
+        assert!(!bin.join("claude.env").exists(), "nothing ran");
+    }
+
+    /// The allowlist on a fake home (`accounts::tests::fake_home`): mg and hg.
+    fn allowed() -> Vec<Account> {
+        let home = crate::accounts::tests::fake_home();
+        let a = crate::accounts::resolve(&["mg".into(), "hg".into()], home.path());
+        assert_eq!(a.len(), 2);
+        a
+    }
+
+    fn labels(accounts: &[Account]) -> Vec<&str> {
+        accounts.iter().map(Account::label).collect()
+    }
+
+    /// AC1 (0099): with a fake home holding the company account (`~/.claude`), `~/.claude-ih`,
+    /// `~/.claude-mg` and `~/.claude-hg`, every `claude agents` run, the app's monitor's and
+    /// `muster list --json`'s alike (both read through `wanted`, `read_all` and `claude_fetch`),
+    /// has `CLAUDE_CONFIG_DIR` set to mg's or hg's folder: never unset, never ih's or `~/.claude`.
+    /// A task stamped with no account or with ih reads "unknown" and causes no run.
+    #[test]
+    fn every_run_is_for_an_allowed_account_and_other_stamps_read_unknown_without_a_run() {
+        let home = crate::accounts::tests::fake_home();
+        let h = home.path();
+        let bin = h.join(".local/bin");
+        fs::create_dir_all(&bin).unwrap();
+        // Each run appends the CLAUDE_CONFIG_DIR it got, so none is missed.
+        fake(
+            &bin,
+            r#"printf '[%s]\n' "${CLAUDE_CONFIG_DIR-unset}" >> "$0.runs"
+printf '%s' '[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d517d9d", "state": "blocked"}, {"sessionId": "11111111", "state": "blocked"}, {"sessionId": "22222222", "state": "blocked"}]'"#,
+        );
+        let allowed = crate::accounts::resolve(&["mg".into(), "hg".into()], h);
+        let mut tasks = vec![
+            task("0001", "building", A),
+            task("0002", "building", "qa (session 4d517d9d · cc-mg)"),
+            task("0003", "building", "wt-c (session 11111111)"),
+            task("0004", "building", "wt-d (session 22222222 · cc-ih)"),
+        ];
+        let runs = || fs::read_to_string(bin.join("claude.runs")).unwrap_or_default();
+        // The app's monitor.
+        let m = Monitor::new(claude_fetch(h.to_path_buf()), inline);
+        let snap = m.poll(&tasks, &allowed, 1000);
+        // `muster list --json`'s read.
+        let snap2 = read_all(&claude_fetch(h.to_path_buf()), &wanted(&tasks, &allowed));
+        assert_eq!(snap, snap2);
+        let (mg, hg) = (h.join(".claude-mg"), h.join(".claude-hg"));
+        assert_eq!(
+            runs(),
+            format!(
+                "[{}]\n[{}]\n[{}]\n[{}]\n",
+                hg.display(),
+                mg.display(),
+                hg.display(),
+                mg.display()
+            ),
+            "only hg and mg, each set"
+        );
+        apply(&mut tasks, &snap, &allowed);
+        use SessionState::*;
+        assert_eq!(states(&tasks), [NeedsInput, NeedsInput, Unknown, Unknown]);
+        assert!(!tasks[2].waiting_for_owner && !tasks[3].waiting_for_owner);
+        // Only unlabelled and ih stamps: nothing runs at all.
+        fs::remove_file(bin.join("claude.runs")).unwrap();
+        let others = vec![tasks[2].clone(), tasks[3].clone()];
+        assert!(wanted(&others, &allowed).is_empty());
+        let m = Monitor::new(claude_fetch(h.to_path_buf()), inline);
+        assert_eq!(m.poll(&others, &allowed, 1000), Snapshot::default());
+        assert_eq!(runs(), "", "no run");
+        assert_eq!(
+            m.summary(),
+            "not read now: no task in Building or Testing has a session of an account Muster reads"
+        );
+        // An empty allowlist reads nothing.
+        assert!(wanted(&tasks, &[]).is_empty());
     }
 
     /// A task as the queue reads it, in `stage`, held by `who` (the claim in Building, `held-by`
@@ -1067,14 +1170,15 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
     #[test]
     fn a_state_applies_only_to_the_one_open_task_its_session_holds_in_its_account() {
         use SessionState::*;
+        let allowed = allowed();
         let s = snap(&[("hg", "7b5e8856", Working), ("hg", "4d517d9d", NeedsInput)]);
         let mut tasks = vec![task("0001", "building", A)];
-        apply(&mut tasks, &s);
+        apply(&mut tasks, &s, &allowed);
         assert_eq!(states(&tasks), [Working]);
         assert!(!tasks[0].waiting_for_owner);
         // The same id in another account's list isn't this session.
         let mut other = vec![task("0001", "building", "wt-a (session 7b5e8856 · cc-mg)")];
-        apply(&mut other, &s);
+        apply(&mut other, &s, &allowed);
         assert_eq!(states(&other), [Unknown]);
         // A coordinator's subagents share its id: neither task gets its state.
         let mut shared = vec![
@@ -1085,26 +1189,26 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
                 "wt-b (wt-0049 · session 7b5e8856 · cc-hg)",
             ),
         ];
-        apply(&mut shared, &s);
+        apply(&mut shared, &s, &allowed);
         assert_eq!(states(&shared), [Unknown, Unknown]);
         // A builder that passed a task to Testing (it's `held-by` there) and claimed the next one:
         // its state is the new claim's, and says nothing about the task in Testing.
         let mut testing = vec![task("0001", "building", A), task("0003", "testing", A)];
-        apply(&mut testing, &s);
+        apply(&mut testing, &s, &allowed);
         assert_eq!(states(&testing), [Working, Unknown]);
         // In Testing with nothing claimed, one task: its state; two: neither.
         let mut alone = vec![task("0003", "testing", A)];
-        apply(&mut alone, &s);
+        apply(&mut alone, &s, &allowed);
         assert_eq!(states(&alone), [Working]);
         let mut two = vec![task("0003", "testing", A), task("0009", "testing", A)];
-        apply(&mut two, &s);
+        apply(&mut two, &s, &allowed);
         assert_eq!(states(&two), [Unknown, Unknown]);
         // Your check's holder isn't working on it: it doesn't count either way.
         let mut checked = vec![task("0001", "building", A), task("0010", "your-check", A)];
-        apply(&mut checked, &s);
+        apply(&mut checked, &s, &allowed);
         assert_eq!(states(&checked), [Working, Unknown]);
         let mut done = vec![task("0001", "building", A), task("0004", "done", A)];
-        apply(&mut done, &s);
+        apply(&mut done, &s, &allowed);
         assert_eq!(states(&done), [Working, Unknown]);
         // No stamp, the owner, or a stage nobody works in: today's lines.
         let mut rest = vec![
@@ -1113,40 +1217,93 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
             task("0007", "your-check", "qa (session 4d517d9d · cc-hg)"),
             task("0008", "building", "wt-z (session 99999999 · cc-hg)"),
         ];
-        apply(&mut rest, &s);
+        apply(&mut rest, &s, &allowed);
         assert_eq!(states(&rest), [Unknown, Unknown, Unknown, Unknown]);
         // Nothing read: unknown, and a state set by an earlier read is cleared.
-        apply(&mut tasks, &Snapshot::default());
+        apply(&mut tasks, &Snapshot::default(), &allowed);
         assert_eq!(states(&tasks), [Unknown]);
     }
 
     #[test]
     fn waiting_for_input_waits_on_the_owner_and_ended_shows_only_in_building() {
         use SessionState::*;
+        let allowed = allowed();
         let b = "wt-b (session 4d517d9d · cc-hg)";
         let s = snap(&[("hg", "7b5e8856", NeedsInput), ("hg", "4d517d9d", Ended)]);
         let mut tasks = vec![task("0001", "building", A), task("0002", "testing", b)];
         assert!(!tasks[0].waiting_for_owner);
-        apply(&mut tasks, &s);
+        apply(&mut tasks, &s, &allowed);
         // In Testing, `held-by` is the builder that passed it, whose session has usually ended:
         // that isn't news, so Testing reads as before.
         assert_eq!(states(&tasks), [NeedsInput, Unknown]);
         let mut building = vec![task("0002", "building", b)];
-        apply(&mut building, &s);
+        apply(&mut building, &s, &allowed);
         assert_eq!(states(&building), [Ended]);
         assert!(tasks[0].waiting_for_owner, "counts in the needs-you count");
         assert!(!tasks[1].waiting_for_owner);
         let json = serde_json::to_value(&tasks[0]).unwrap();
         assert_eq!(json["sessionState"], "needs-input");
-        // The default account's sessions have no cc- part, and match the default account's list.
+        // A session with no cc- part ran on the company account (0099): never given a state, even
+        // by a snapshot that has one for it.
         let mut plain = vec![task("0003", "building", "wt-c (session 11111111)")];
-        apply(&mut plain, &snap(&[("", "11111111", Working)]));
-        assert_eq!(states(&plain), [Working]);
+        apply(&mut plain, &snap(&[("", "11111111", Working)]), &allowed);
+        assert_eq!(states(&plain), [Unknown]);
+    }
+
+    /// R5 (0099): an account taken off the list stops counting at once. The monitor's cached
+    /// snapshot, not due for a new read yet, hands on only the accounts wanted now, and `apply`
+    /// gives no state to a stamp whose account isn't allowed, whatever the snapshot holds.
+    #[test]
+    fn an_account_taken_off_the_list_loses_its_states_before_the_next_read() {
+        use SessionState::*;
+        let (fetch, reads) = counting(
+            r#"[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d517d9d", "state": "working"}]"#,
+        );
+        let m = Monitor::new(fetch, inline);
+        let both = allowed();
+        let mg_only: Vec<Account> = both.iter().filter(|a| a.label() == "mg").cloned().collect();
+        let tasks = vec![
+            task("0001", "building", A),
+            task("0002", "building", "qa (session 4d517d9d · cc-mg)"),
+        ];
+        let s = m.poll(&tasks, &both, 1000);
+        assert_eq!(reads.load(Ordering::SeqCst), 2, "one read per account");
+        assert!(s
+            .states
+            .contains_key(&("hg".to_string(), "7b5e8856".to_string())));
+        // hg removed; the next poll comes before a read is due and gets the cache.
+        let s = m.poll(&tasks, &mg_only, 1001);
+        assert_eq!(reads.load(Ordering::SeqCst), 2, "no new read");
+        let labels: HashSet<&str> = s.states.keys().map(|(a, _)| a.as_str()).collect();
+        assert_eq!(labels, HashSet::from(["mg"]));
+        assert_eq!(
+            s.accounts
+                .iter()
+                .map(|(a, _)| a.as_str())
+                .collect::<Vec<_>>(),
+            ["mg"]
+        );
+        let mut now = tasks.clone();
+        apply(&mut now, &s, &mg_only);
+        assert_eq!(states(&now), [Unknown, Working]);
+        assert!(
+            !now[0].waiting_for_owner,
+            "hg's prompt isn't the owner's any more"
+        );
+        // Given a snapshot that still has hg's state, apply doesn't use it either.
+        let old = snap(&[("hg", "7b5e8856", NeedsInput), ("mg", "4d517d9d", Working)]);
+        let mut now = tasks.clone();
+        apply(&mut now, &old, &mg_only);
+        assert_eq!(states(&now), [Unknown, Working]);
+        assert!(!now[0].waiting_for_owner);
+        apply(&mut now, &old, &both);
+        assert_eq!(states(&now), [NeedsInput, Working]);
     }
 
     #[test]
     fn a_paused_task_gets_no_session_state_and_isnt_read_for() {
         use SessionState::*;
+        let allowed = allowed();
         // Its session was told to stop (0045): whatever Claude Code says, the task is paused, not
         // working, and a prompt in that session isn't the paused task waiting on the owner.
         let paused = |mut t: Task| {
@@ -1155,13 +1312,17 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
         };
         for state in [Working, NeedsInput, Ended] {
             let mut tasks = vec![paused(task("0001", "building", A))];
-            apply(&mut tasks, &snap(&[("hg", "7b5e8856", state)]));
+            apply(&mut tasks, &snap(&[("hg", "7b5e8856", state)]), &allowed);
             assert_eq!(states(&tasks), [Unknown], "{state:?}");
             assert!(!tasks[0].waiting_for_owner, "{state:?}");
         }
-        assert!(wanted(&[paused(task("0001", "building", A))]).is_empty());
+        assert!(wanted(&[paused(task("0001", "building", A))], &allowed).is_empty());
         let mut resumed = vec![task("0001", "building", A)];
-        apply(&mut resumed, &snap(&[("hg", "7b5e8856", NeedsInput)]));
+        apply(
+            &mut resumed,
+            &snap(&[("hg", "7b5e8856", NeedsInput)]),
+            &allowed,
+        );
         assert_eq!(states(&resumed), [NeedsInput]);
         // Paused, its session was told to stop: the task isn't what the session is doing, so it
         // doesn't count as its hold, and the session's next claim gets the state.
@@ -1169,32 +1330,41 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
             paused(task("0001", "building", A)),
             task("0002", "building", A),
         ];
-        apply(&mut next, &snap(&[("hg", "7b5e8856", NeedsInput)]));
+        apply(
+            &mut next,
+            &snap(&[("hg", "7b5e8856", NeedsInput)]),
+            &allowed,
+        );
         assert_eq!(states(&next), [Unknown, NeedsInput]);
         assert!(!next[0].waiting_for_owner && next[1].waiting_for_owner);
         let mut testing = vec![
             paused(task("0003", "testing", A)),
             task("0004", "testing", A),
         ];
-        apply(&mut testing, &snap(&[("hg", "7b5e8856", Working)]));
+        apply(
+            &mut testing,
+            &snap(&[("hg", "7b5e8856", Working)]),
+            &allowed,
+        );
         assert_eq!(states(&testing), [Unknown, Working]);
     }
 
     #[test]
     fn holds_count_across_every_queue_given() {
         use SessionState::*;
+        let allowed = allowed();
         let s = snap(&[("hg", "7b5e8856", NeedsInput)]);
         let mut here = vec![task("0001", "building", A)];
         // The same session holds a task in another queue: its state is about neither.
         let elsewhere = vec![task("0101", "building", A)];
         let h = holds(here.iter().chain(&elsewhere));
-        apply_with(&mut here, &h, &s);
+        apply_with(&mut here, &h, &s, &allowed);
         assert_eq!(states(&here), [Unknown]);
         assert!(!here[0].waiting_for_owner);
         // Another queue's tasks under other sessions change nothing.
         let unrelated = vec![task("0102", "building", "wt-z (session 99999999 · cc-hg)")];
         let h = holds(here.iter().chain(&unrelated));
-        apply_with(&mut here, &h, &s);
+        apply_with(&mut here, &h, &s, &allowed);
         assert_eq!(states(&here), [NeedsInput]);
     }
 
@@ -1209,8 +1379,13 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
             task("0006", "building", "owner (session 44444444 · cc-zz)"),
             task("0007", "building", "wt-unstamped"),
         ];
-        assert_eq!(wanted(&tasks), ["", "hg", "mg"]);
-        assert!(wanted(&tasks[4..]).is_empty());
+        let allowed = allowed();
+        assert_eq!(labels(&wanted(&tasks, &allowed)), ["hg", "mg"]);
+        assert!(wanted(&tasks[4..], &allowed).is_empty());
+        // Only the listed ones, by an exact match.
+        assert_eq!(labels(&wanted(&tasks, &allowed[1..])), ["hg"]);
+        // The stamps say which accounts they name, all of them, for `known`.
+        assert_eq!(stamped(&tasks), ["", "hg", "mg"]);
     }
 
     #[test]
@@ -1266,7 +1441,7 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
     fn counting(out: &'static str) -> (Fetch, Arc<AtomicUsize>) {
         let n = Arc::new(AtomicUsize::new(0));
         let seen = Arc::clone(&n);
-        let fetch: Fetch = Arc::new(move |_account: &str| {
+        let fetch: Fetch = Arc::new(move |_account: &Account| {
             seen.fetch_add(1, Ordering::SeqCst);
             Ok(out.as_bytes().to_vec())
         });
@@ -1281,29 +1456,30 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
     fn the_monitor_reads_at_most_every_15_seconds_and_not_at_all_without_a_stamped_holder() {
         let (fetch, reads) = counting(r#"[{"sessionId": "7b5e8856", "state": "working"}]"#);
         let m = Monitor::new(fetch, inline);
+        let allowed = allowed();
         // Nothing in Building or Testing with a stamp: nothing runs, however often it's polled.
         let idle = vec![task("0001", "building", "wt-a"), task("0002", "ready", "")];
         for now in [1000, 1015, 1030, 5000] {
-            assert_eq!(m.poll(&idle, now), Snapshot::default());
+            assert_eq!(m.poll(&idle, &allowed, now), Snapshot::default());
         }
         assert_eq!(reads.load(Ordering::SeqCst), 0);
         assert!(m.summary().starts_with("not read now"), "{}", m.summary());
         // With one: read at once, then not again until 15 s have passed on the clock.
         let tasks = vec![task("0001", "building", A)];
-        let s = m.poll(&tasks, 2000);
+        let s = m.poll(&tasks, &allowed, 2000);
         assert_eq!(reads.load(Ordering::SeqCst), 1);
         assert_eq!(
             s.states.get(&("hg".to_string(), "7b5e8856".to_string())),
             Some(&SessionState::Working)
         );
         for now in [2001, 2010, 2014] {
-            assert_eq!(m.poll(&tasks, now), s, "cached at {now}");
+            assert_eq!(m.poll(&tasks, &allowed, now), s, "cached at {now}");
         }
         assert_eq!(reads.load(Ordering::SeqCst), 1);
-        m.poll(&tasks, 2015);
+        m.poll(&tasks, &allowed, 2015);
         assert_eq!(reads.load(Ordering::SeqCst), 2);
         // A clock that went back starts a read rather than waiting forever.
-        m.poll(&tasks, 100);
+        m.poll(&tasks, &allowed, 100);
         assert_eq!(reads.load(Ordering::SeqCst), 3);
         assert_eq!(m.summary(), "on (1 account)");
     }
@@ -1316,7 +1492,7 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
         let seen = Arc::clone(&reads);
         let unreleased = Arc::new(AtomicUsize::new(0));
         let gave_up = Arc::clone(&unreleased);
-        let fetch: Fetch = Arc::new(move |_account: &str| {
+        let fetch: Fetch = Arc::new(move |_account: &Account| {
             seen.fetch_add(1, Ordering::SeqCst);
             // Hold the read until the test lets it go, like a slow `claude`. The bound is far
             // past any machine's slowness; a read that reaches it was never let go.
@@ -1331,19 +1507,20 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
             Ok(br#"[{"sessionId": "7b5e8856", "state": "blocked"}]"#.to_vec())
         });
         let m = Monitor::new(fetch, on_thread);
+        let allowed = allowed();
         let tasks = vec![task("0001", "building", A)];
         // The read is held until the test lets it go, below: a poll that waited for it would sit
         // here until the read gave up (`unreleased`), not return.
-        let first = m.poll(&tasks, 1000);
+        let first = m.poll(&tasks, &allowed, 1000);
         assert_eq!(first, Snapshot::default(), "nothing read yet");
         assert_eq!(m.summary(), "reading…");
         // Due again by the clock, but the first read is still running: no second one.
-        m.poll(&tasks, 1100);
+        m.poll(&tasks, &allowed, 1100);
         release.send(()).unwrap();
         // Then, polled again before the next read is due, the first read's result shows.
         let deadline = Instant::now() + Duration::from_secs(60);
         let s = loop {
-            let s = m.poll(&tasks, 1001);
+            let s = m.poll(&tasks, &allowed, 1001);
             if !s.states.is_empty() || Instant::now() > deadline {
                 break s;
             }
@@ -1356,8 +1533,12 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
         assert_eq!(reads.load(Ordering::SeqCst), 1);
         // Back after a long while (the window was hidden): a new read starts and, while it runs,
         // the old one is too old to show.
-        assert_eq!(m.poll(&tasks, 1000 + MAX_AGE_SECS), s, "still fresh enough");
-        assert_eq!(m.poll(&tasks, 5000), Snapshot::default());
+        assert_eq!(
+            m.poll(&tasks, &allowed, 1000 + MAX_AGE_SECS),
+            s,
+            "still fresh enough"
+        );
+        assert_eq!(m.poll(&tasks, &allowed, 5000), Snapshot::default());
         release.send(()).unwrap();
         assert_eq!(
             unreleased.load(Ordering::SeqCst),
@@ -1393,19 +1574,20 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
         );
         assert_eq!(
             summary_of(&snap(vec![
-                ("", Err("claude isn't installed")),
+                ("mg", Err("claude isn't installed")),
                 ("hg", Err("claude isn't installed"))
             ])),
-            "not available: the default account: claude isn't installed; cc-hg: claude isn't installed"
+            "not available: cc-mg: claude isn't installed; cc-hg: claude isn't installed"
         );
         // Through the monitor: a source that fails says so.
-        let fetch: Fetch = Arc::new(|_: &str| Err("claude agents exited with code 1".to_string()));
+        let fetch: Fetch =
+            Arc::new(|_: &Account| Err("claude agents exited with code 1".to_string()));
         let m = Monitor::new(fetch, inline);
         assert_eq!(
             m.summary(),
             "not read now: no task in Building or Testing has a session stamp"
         );
-        m.poll(&[task("0001", "building", A)], 1000);
+        m.poll(&[task("0001", "building", A)], &allowed(), 1000);
         assert_eq!(
             m.summary(),
             "not available: claude agents exited with code 1"

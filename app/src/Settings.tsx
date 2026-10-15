@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type Ref, useEffect, useRef, useState } from "react";
 import { api, type HelperInfo } from "./api";
 import Appearance from "./Appearance";
 import { DisplayModes } from "./Display";
@@ -10,7 +10,7 @@ import Projects from "./Projects";
 import { sessionStatesLine } from "./sessionState";
 import { homePath } from "./lib";
 import type { DisplayMode } from "./modes";
-import { DEFAULT_MACHINE, SETTINGS_GROUPS, type SettingsGroup, type SettingsInfo, spanInput, spanText } from "./settingsData";
+import { ACCOUNTS_WORDS, accountsEdit, DEFAULT_MACHINE, SETTINGS_GROUPS, type SettingsGroup, type SettingsInfo, spanInput, spanText } from "./settingsData";
 import type { Project, QueueInfo } from "./types";
 import { Button, Pill } from "./ui";
 
@@ -93,17 +93,31 @@ function Agents({ info, queues, onInfo, onChanged }: { info: SettingsInfo | null
       onHelper={() => setAsked((n) => n + 1)}
       // Lit as soon as the core saved it; the accounts aren't checked again for a model.
       onModel={(m) => void api.helperSetModel(m).then(() => setHelper((h) => withModel(h, m)), (e: unknown) => setError(String(e)))}
-      onSet={async (name, value) => {
-        try {
-          onInfo(await api.setSetting(name, value));
-          onChanged();
-          return null;
-        } catch (e) {
-          return String(e);
-        }
-      }}
+      onSet={(name, value) => saveAgentsSetting(name, value, { set: api.setSetting, onInfo, onChanged, onHelper: () => setAsked((n) => n + 1) })}
     />
   );
+}
+
+/** The settings Agents changes. */
+type AgentsSettingName = "lease" | "live" | "claude-accounts";
+
+/** Saves one of Agents' settings: Settings takes the core's answer and the board reads the
+ *  queues again. A change to the accounts list asks for the helper's accounts again too, so its
+ *  picker on the same page follows the list. Null when saved, else the core's refusal. */
+export async function saveAgentsSetting(name: AgentsSettingName, value: string, to: {
+  set: (name: AgentsSettingName, value: string) => Promise<SettingsInfo>;
+  onInfo: (i: SettingsInfo) => void;
+  onChanged: () => void;
+  onHelper: () => void;
+}): Promise<string | null> {
+  try {
+    to.onInfo(await to.set(name, value));
+    to.onChanged();
+    if (name === "claude-accounts") to.onHelper();
+    return null;
+  } catch (e) {
+    return String(e);
+  }
 }
 
 /** The helper's info with `model` in use, once the core has saved it. */
@@ -122,7 +136,7 @@ export function AgentsView({ info, helper, helperError = "", onHelper, onModel, 
   onHelper: () => void;
   onModel: (model: string) => void;
   /** Resolves to null when saved, else the core's refusal to show. */
-  onSet: (name: "lease" | "live", value: string) => Promise<string | null>;
+  onSet: (name: AgentsSettingName, value: string) => Promise<string | null>;
 }) {
   const s = info.settings;
   return (
@@ -148,6 +162,7 @@ export function AgentsView({ info, helper, helperError = "", onHelper, onModel, 
           onSet={(v) => onSet("live", v)}
         />
         {info.sessionStates && <p className="meta">{sessionStatesLine(info.sessionStates)}</p>}
+        <AccountsSetting labels={s.claudeAccounts} onSet={(v) => onSet("claude-accounts", v)} />
         <p className="meta">Saved on this Mac, in <HomePath path={`${info.configDir}/settings.json`} home={info.home} />; the muster command reads the same file.</p>
       </section>
       <section>
@@ -155,7 +170,7 @@ export function AgentsView({ info, helper, helperError = "", onHelper, onModel, 
         {helperError && <p className="err" role="alert">{helperError}</p>}
         {helper === null && !helperError && <p className="none">Checking the accounts…</p>}
         {helper && !helper.claude && <p className="err">Couldn't find the <code>claude</code> command. The helper runs your own Claude Code: install it, then come back here.</p>}
-        {helper?.claude && <AccountPicker info={helper} onPicked={onHelper} onRefresh={onHelper} />}
+        {helper?.claude && <AccountPicker info={helper} listed={s.claudeAccounts.length} onPicked={onHelper} onRefresh={onHelper} />}
         {helper && (
           <>
             <div className="look-colour" role="group" aria-label="Helper model">
@@ -221,6 +236,86 @@ export function SpanSetting({ label, minutes, def, bounds, what, onSet }: {
   );
 }
 
+/** The Claude accounts Muster reads (0099), with what's typed in the add field and the last
+ *  refusal: the client's (accountsEdit) or the core's. One change saves at a time. */
+function AccountsSetting({ labels, onSet }: { labels: string[]; onSet: (value: string) => Promise<string | null> }) {
+  const [typed, setTyped] = useState("");
+  const [error, setError] = useState("");
+  const busy = useRef(false);
+  const field = useRef<HTMLInputElement>(null);
+  const change = async (edit: { add: string } | { remove: string }) => {
+    if (busy.current) return;
+    busy.current = true;
+    const refused = await saveAccounts(labels, edit, onSet);
+    busy.current = false;
+    setError(refused ?? "");
+    if (refused === null && "add" in edit) setTyped("");
+  };
+  return (
+    <AccountsRow
+      labels={labels}
+      typed={typed}
+      error={error}
+      field={field}
+      onTyped={setTyped}
+      onAdd={() => void change({ add: typed })}
+      onRemove={(l) => {
+        // The ✕ goes with its chip: the keyboard carries on from the field.
+        field.current?.focus();
+        void change({ remove: l });
+      }}
+    />
+  );
+}
+
+/** One change to the accounts list, saved: null when the core saved it, else the refusal to
+ *  show, the client's (accountsEdit, never sent) or the core's. */
+export async function saveAccounts(labels: string[], edit: { add: string } | { remove: string }, onSet: (value: string) => Promise<string | null>): Promise<string | null> {
+  const next = accountsEdit(labels, edit);
+  if ("error" in next) return next.error;
+  return onSet(next.value);
+}
+
+/** The accounts row as drawn: a chip per label (`cc-mg`) with its ✕, or the warning that none is
+ *  read, then the add field in place (↩ adds), the refusal where a screen reader hears it, and
+ *  that ~/.claude is never read. */
+export function AccountsRow({ labels, typed, error, field, onTyped, onAdd, onRemove }: {
+  labels: string[];
+  typed: string;
+  error: string;
+  field?: Ref<HTMLInputElement>;
+  onTyped: (typed: string) => void;
+  onAdd: () => void;
+  onRemove: (label: string) => void;
+}) {
+  const w = ACCOUNTS_WORDS;
+  return (
+    <div className="setting" role="group" aria-label={w.group}>
+      <div className="accounts-row">
+        <b>{w.label}</b>
+        {labels.length === 0 && <span className="accounts-none">{w.none}</span>}
+        {labels.map((l) => (
+          <span key={l} className="account-chip">
+            {w.chip(l)}
+            <button type="button" className="account-x" aria-label={w.remove(l)} title={w.remove(l)} onClick={() => onRemove(l)}>✕</button>
+          </span>
+        ))}
+        <form
+          className="account-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onAdd();
+          }}
+        >
+          <label className="account-add"><span className="meta">{w.add}</span> <input ref={field} value={typed} onChange={(e) => onTyped(e.target.value)} placeholder="mg" size={10} maxLength={20} autoCapitalize="off" autoCorrect="off" spellCheck={false} /></label>
+        </form>
+      </div>
+      <p className="err account-error" aria-live="polite">{error}</p>
+      <p className="meta account-never">{w.never}</p>
+    </div>
+  );
+}
+
 /** About with the projects as the core lists them, asked again each time About opens. */
 function About({ info }: { info: SettingsInfo }) {
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -266,7 +361,7 @@ export function AboutView({ info, projects, error = "" }: { info: SettingsInfo; 
         <p><HomePath className="path" path={info.configDir} home={info.home} /></p>
         <ul className="about-list">
           <li><code>projects.json</code>: the projects you added or hid, their labels, categories, colours, gates and Your check limits, and the sidebar's order</li>
-          <li><code>settings.json</code>: the claim lease, the LIVE window, whether notifications are on and whether the menu bar icon shows; the muster command reads it too</li>
+          <li><code>settings.json</code>: the Claude accounts Muster reads, the claim lease, the LIVE window, whether notifications are on and whether the menu bar icon shows; the muster command reads it too</li>
           <li><code>notified.json</code>: what Muster won't notify you of again: what it notified, and what you'd already seen (waiting at start or when notifications were turned on, or shown in the window in front)</li>
           <li><code>helper/</code>: the helper's account, model and conversations</li>
         </ul>
@@ -293,9 +388,11 @@ export function AboutView({ info, projects, error = "" }: { info: SettingsInfo; 
           </>
         )}
         <ul className="about-list">
+          {info.transcripts.length === 0 && <li>{ACCOUNTS_WORDS.transcriptsNone(info.settings.claudeAccounts.length)}</li>}
           {info.transcripts.map((f) => (
-            <li key={f}>Session transcripts: <HomePath className="path" path={f} home={info.home} /></li>
+            <li key={f}>{ACCOUNTS_WORDS.transcripts} <HomePath className="path" path={f} home={info.home} /></li>
           ))}
+          {info.transcripts.length > 0 && <li>{ACCOUNTS_WORDS.transcriptsUnder} <HomePath className="path" path={info.transcriptsUnder} home={info.home} /></li>}
         </ul>
         <p className="meta">All of it is read on this Mac and nothing is sent anywhere. Only what you write to the helper goes out, to Anthropic, through your own Claude Code.</p>
       </section>

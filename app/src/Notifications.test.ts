@@ -8,7 +8,7 @@ import { SETTINGS_GROUPS, type SettingsInfo } from "./settingsData";
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/\s+/g, " ").trim();
 
 const INFO: SettingsInfo = {
-  settings: { leaseMinutes: 720, liveMinutes: 5, notify: true },
+  settings: { leaseMinutes: 720, liveMinutes: 5, notify: true, claudeAccounts: ["mg", "hg"] },
   leaseBounds: [60, 10080],
   liveBounds: [1, 60],
   version: "0.1.0",
@@ -16,6 +16,7 @@ const INFO: SettingsInfo = {
   configDir: "/Users/someone/Library/Application Support/ai.sweetlemon.muster",
   base: "/Users/someone/playground",
   transcripts: [],
+  transcriptsUnder: "/Users/someone/playground",
 };
 
 const view = (over: Partial<Parameters<typeof NotificationsView>[0]> = {}) =>
@@ -45,7 +46,7 @@ describe("Notifications (0052)", () => {
     const off = view({ info: { ...INFO, settings: { ...INFO.settings, notify: false } } });
     expect(chips(off)).toMatch(/aria-pressed="true" class="ui-pill ui-pill--on">Off</);
     // A core from before notifications sends none: on, its default.
-    const older = view({ info: { ...INFO, settings: { leaseMinutes: 720, liveMinutes: 5 } } });
+    const older = view({ info: { ...INFO, settings: { leaseMinutes: 720, liveMinutes: 5, claudeAccounts: ["mg", "hg"] } } });
     expect(chips(older)).toMatch(/aria-pressed="true" class="ui-pill ui-pill--on">On</);
   });
 
@@ -86,7 +87,7 @@ describe("Notifications (0052)", () => {
     const notifyOff = view({ info: { ...INFO, settings: { ...INFO.settings, notify: false } } });
     expect(chips(notifyOff)).toMatch(/aria-pressed="true" class="ui-pill ui-pill--on">On</);
     // A core from before the icon sends no menuBar: on, its default.
-    const older = view({ info: { ...INFO, settings: { leaseMinutes: 720, liveMinutes: 5, notify: true } } });
+    const older = view({ info: { ...INFO, settings: { leaseMinutes: 720, liveMinutes: 5, notify: true, claudeAccounts: ["mg", "hg"] } } });
     expect(chips(older)).toMatch(/aria-pressed="true" class="ui-pill ui-pill--on">On</);
   });
 

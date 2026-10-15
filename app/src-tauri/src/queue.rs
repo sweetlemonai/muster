@@ -663,10 +663,10 @@ pub struct Task {
     /// `muster list --json` leave it out, and the window fetches it on its own (`search_index`).
     #[serde(skip)]
     pub search: String,
-    /// The sessions its holder (`holder()`) and log name, as short ids (0025), for the card's
-    /// live check.
+    /// The sessions its holder (`holder()`) and log name, as short ids with the account their
+    /// stamps name (0025, 0099), for the card's live check.
     #[serde(skip)]
-    pub session_ids: Vec<String>,
+    pub session_ids: Vec<crate::work::SessionId>,
     /// One of those sessions' transcripts changed in the last 5 minutes (0025). Set by the app's
     /// state read (`work::mark_live`); false wherever nothing set it.
     pub live: bool,
@@ -1610,7 +1610,7 @@ fn read_state_from(
 ) -> State {
     let mut state = State {
         now: now_secs(),
-        settings: *settings,
+        settings: settings.clone(),
         ..Default::default()
     };
     let mut seen = HashSet::new();
@@ -3820,7 +3820,7 @@ mod tests {
         );
         assert_eq!(s.settings, short);
         assert!(serde_json::to_string(&s).unwrap().contains(
-            r#""settings":{"leaseMinutes":120,"liveMinutes":10,"notify":true,"menuBar":true,"oldPausesOffered":false}"#
+            r#""settings":{"leaseMinutes":120,"liveMinutes":10,"notify":true,"menuBar":true,"oldPausesOffered":false,"claudeAccounts":["mg","hg"]}"#
         ));
         assert_eq!(
             quiet("2026-10-12 03:01"),

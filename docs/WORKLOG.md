@@ -25,6 +25,31 @@ screenshots in attachments; owner's settings byte-identical after every QA run.
 evidence); backlog notes from review nits (mu-88 R1, mu-90 R6-R8, mu-95 R3, migrate flake, band
 titles, mu-93 item 5).
 
+## 2026-10-14 — mu-99: Muster reads only the allowed personal Claude accounts, never ~/.claude
+**Did:** one allowlist of account labels in Settings (`claudeAccounts`, default mg and hg) and
+`accounts.rs` resolving it. `claude agents` runs only for allowed accounts with
+`CLAUDE_CONFIG_DIR` set (app and `muster list --json`). The transcript reader takes only the
+allowed accounts' `projects` and only `~/playground`-keyed project folders. The helper offers only
+allowed accounts, and its login script always exports `CLAUDE_CONFIG_DIR`. Settings › Agents has
+a row to add and remove labels, and About shows the allowed folders.
+**Decided:** the label allowlist plus the playground-key filter, because the accounts share one
+linked `projects` folder on this Mac
+([0012](decisions/0012-muster-reads-only-the-personal-claude-accounts.md)).
+**Fixed:** review: a `~/.claude-<label>` linked to home (or any folder holding `~/.claude`) was
+allowed, so claude would read `~/.claude.json` through it → `accounts::resolve` refuses it too.
+Review round 1: R1 (owner's call) a session is read only when its stamp carries an allowed
+account, so a bare-claude or pre-0030 stamp gives no tokens, live dot or transcript ("not read"
+in Work); R2 the helper picker refreshes when the list is saved; R3 entry-point tests read the
+list from settings.json; R4 the row's save path is tested; R5 the cached session states drop a
+removed account at once; R6 every transcript read takes its accounts (no shared setter);
+R7–R8 the "none" wording and strings table.
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`; AC2
+tests fail with the filter disabled, including FIFO `settings.json` and `.claude.json` that a read
+would block on; a correctness, security and privacy review.
+**Open:** A sibling such as `~/playground-x` passes the key filter (the key is lossy; recorded in
+0012). An unread session's Work row still shows a disabled View (backlog note). mu-98 was edited
+to read through `Reader`'s filter (AC6). AC5 passed by QA_9; rebased on ba6b048 (mu-87, decision 0015).
+
 ## 2026-10-14 — Decision 0015: Muster runs agents behind a runner interface, Drover's runner later (mu-108)
 **Did (gholi_12, builder):** `docs/decisions/0015-muster-runs-agents-behind-a-runner-interface.md`:
 the six runner methods, the five MCP Tasks run states, the boundary (0002's scrub, the owner's own

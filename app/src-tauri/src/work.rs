@@ -1,10 +1,17 @@
 //! Who worked on a task and what it cost (task 0025): the sessions its claim and log name, what
 //! each one's transcript says (`transcripts`), totals against the estimates, and a progress guess.
 //! Only counts, ids and times leave this module; transcript text goes only to the owner's pane.
+//!
+//! Only a session whose stamp names an account Muster reads (0099, `accounts::allowed`) is handed
+//! to the reader: one stamped with no account (bare `claude`, the company account, or a stamp
+//! from before 0030) or with an account not on the list gets no tokens, no live dot and no
+//! transcript, wherever its transcript is filed.
 
+use crate::accounts::{self, Account};
 use crate::queue::{self, Task};
 use crate::transcripts::{self, Reader, Tokens, Usage};
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::Path;
 
 /// A session that worked on a task, from the task file.
@@ -19,6 +26,24 @@ pub struct SessionRef {
     pub stages: Vec<String>,
     /// It holds the task now: its claim, or `held-by` in Testing and Your check (`Task::holder`).
     pub holds: bool,
+    /// The Claude account its stamps name (`hg`), "" when none does or two name different ones:
+    /// then it's never read. Not sent to the window.
+    #[serde(skip)]
+    pub account: String,
+}
+
+/// A session a task names, with the account its stamps name (`SessionRef::account`).
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct SessionId {
+    pub id: String,
+    pub account: String,
+}
+
+impl SessionId {
+    /// May its transcript be read: does its stamp name one of `allowed`?
+    pub fn readable(&self, allowed: &[Account]) -> bool {
+        accounts::is_allowed(&self.account, allowed)
+    }
 }
 
 /// Session ids mentioned as "session <8 hex>" in `text`, in order, each once. Both claim stamps
@@ -66,12 +91,53 @@ fn label(who: &str) -> String {
         .to_string()
 }
 
+/// The account `who`'s stamp (`session::split`) names for session `id`: "" when `who` has no
+/// stamp, its stamp has no account, or it's another session's.
+fn stamp_account(who: &str, id: &str) -> String {
+    match crate::session::split(who.trim()).1 {
+        Some(s) if s.id == id => s.account,
+        _ => String::new(),
+    }
+}
+
+/// Add what one stamp says of `s`'s account: the first account named sticks, and a different one
+/// later makes it "" for good (`clashed`), so a session isn't read on a disputed account.
+fn note_account(s: &mut SessionRef, account: String, clashed: &mut HashSet<String>) {
+    if account.is_empty() || clashed.contains(&s.id) {
+        return;
+    }
+    if s.account.is_empty() {
+        s.account = account;
+    } else if s.account != account {
+        s.account.clear();
+        clashed.insert(s.id.clone());
+    }
+}
+
+/// Where session `id` is in `out`, added there with `who`'s label when it isn't yet.
+fn entry(out: &mut Vec<SessionRef>, id: String, who: &str) -> usize {
+    if let Some(i) = out.iter().position(|s| s.id == id) {
+        return i;
+    }
+    out.push(SessionRef {
+        id,
+        who: label(who),
+        stages: Vec::new(),
+        holds: false,
+        account: String::new(),
+    });
+    out.len() - 1
+}
+
 /// Every session that worked on a task: named in its claim or `held-by` (`named`), or in the who
-/// of a log line.
-pub fn session_ids(named: &[&str], body: &str) -> Vec<String> {
+/// of a log line, with the account its stamps name.
+pub fn session_ids(named: &[&str], body: &str) -> Vec<SessionId> {
     sessions(named, "", body)
         .into_iter()
-        .map(|s| s.id)
+        .map(|s| SessionId {
+            id: s.id,
+            account: s.account,
+        })
         .collect()
 }
 
@@ -83,6 +149,7 @@ pub fn session_ids(named: &[&str], body: &str) -> Vec<String> {
 /// writes (`queue::log_section`).
 pub fn sessions(named: &[&str], holder: &str, body: &str) -> Vec<SessionRef> {
     let mut out: Vec<SessionRef> = Vec::new();
+    let mut clashed: HashSet<String> = HashSet::new();
     for line in queue::log_section(body).unwrap_or("").lines() {
         let Some(who) = log_who(line) else { continue };
         // The stage it held: the one it claimed, else the one it passed on, sent back or set.
@@ -94,18 +161,9 @@ pub fn sessions(named: &[&str], holder: &str, body: &str) -> Vec<SessionRef> {
             }
         });
         for id in mentions(who) {
-            let i = match out.iter().position(|s| s.id == id) {
-                Some(i) => i,
-                None => {
-                    out.push(SessionRef {
-                        id,
-                        who: label(who),
-                        stages: Vec::new(),
-                        holds: false,
-                    });
-                    out.len() - 1
-                }
-            };
+            let account = stamp_account(who, &id);
+            let i = entry(&mut out, id, who);
+            note_account(&mut out[i], account, &mut clashed);
             if let Some(stage) = &held {
                 if !out[i].stages.contains(stage) {
                     out[i].stages.push(stage.clone());
@@ -115,14 +173,9 @@ pub fn sessions(named: &[&str], holder: &str, body: &str) -> Vec<SessionRef> {
     }
     for who in named.iter().copied().chain([holder]) {
         for id in mentions(who) {
-            if !out.iter().any(|s| s.id == id) {
-                out.push(SessionRef {
-                    id,
-                    who: label(who),
-                    stages: Vec::new(),
-                    holds: false,
-                });
-            }
+            let account = stamp_account(who, &id);
+            let i = entry(&mut out, id, who);
+            note_account(&mut out[i], account, &mut clashed);
         }
     }
     let holding = mentions(holder);
@@ -236,16 +289,18 @@ pub fn shared_counts(tasks: &[Task], id: &str) -> std::collections::HashMap<Stri
     let mut out = std::collections::HashMap::new();
     for t in tasks.iter().filter(|t| t.id != id) {
         for s in &t.session_ids {
-            *out.entry(s.clone()).or_insert(0) += 1;
+            *out.entry(s.id.clone()).or_insert(0) += 1;
         }
     }
     out
 }
 
 /// `to_epoch` turns the log's local stamps into seconds since 1970, as the transcripts' times are
-/// (`queue::stamp_epoch`).
+/// (`queue::stamp_epoch`). Only the sessions stamped with one of `allowed` are read, in `allowed`;
+/// the others keep their rows, with nothing read.
 pub fn work(
     reader: &Reader,
+    allowed: &[Account],
     task: &Task,
     body: &str,
     now: u64,
@@ -253,8 +308,23 @@ pub fn work(
     to_epoch: &dyn Fn(&str) -> Option<i64>,
 ) -> Work {
     let refs = sessions(&[&task.claimed_by, &task.held_by], task.holder(), body);
-    let ids: Vec<String> = refs.iter().map(|s| s.id.clone()).collect();
-    let mut usages = reader.usages(&ids, now);
+    let readable = |s: &SessionRef| accounts::is_allowed(&s.account, allowed);
+    let ids: Vec<String> = refs
+        .iter()
+        .filter(|s| readable(s))
+        .map(|s| s.id.clone())
+        .collect();
+    let mut read = reader.usages(allowed, &ids, now).into_iter();
+    let mut usages: Vec<Usage> = refs
+        .iter()
+        .map(|s| {
+            if readable(s) {
+                read.next().unwrap_or_else(Usage::missing)
+            } else {
+                Usage::not_read()
+            }
+        })
+        .collect();
     // Each paused stretch in seconds, each stamp by its own day's offset; one still open runs to now.
     let now_i = i64::try_from(now).unwrap_or(i64::MAX);
     let pauses: Vec<(i64, i64)> = task
@@ -323,8 +393,15 @@ fn read(root: &Path, id: &str) -> Result<(Task, String), String> {
     Ok((task, body))
 }
 
-/// The Work section of task `id` in the queue at `root`, read from disk now.
-pub fn for_task(reader: &Reader, root: &Path, id: &str, now: u64) -> Result<Work, String> {
+/// The Work section of task `id` in the queue at `root`, read from disk now, its sessions read in
+/// `allowed` (`work`).
+pub fn for_task(
+    reader: &Reader,
+    allowed: &[Account],
+    root: &Path,
+    id: &str,
+    now: u64,
+) -> Result<Work, String> {
     let (task, body) = read(root, id)?;
     // Every task of the queue, to say which sessions this task shares with others.
     let all = queue::read_state(
@@ -334,6 +411,7 @@ pub fn for_task(reader: &Reader, root: &Path, id: &str, now: u64) -> Result<Work
     .tasks;
     Ok(work(
         reader,
+        allowed,
         &task,
         &body,
         now,
@@ -362,37 +440,53 @@ fn skip_paused(u: &mut Usage, pauses: &[(i64, i64)]) {
         .saturating_sub(u64::try_from((paused + 30) / 60).unwrap_or(0));
 }
 
-/// Session `session`'s transcript as Markdown, only for a session that worked on task `id`: the
-/// window can't read any other transcript through this.
-pub fn transcript(reader: &Reader, root: &Path, id: &str, session: &str) -> Result<String, String> {
+/// Session `session`'s transcript as Markdown, only for a session that worked on task `id` and
+/// whose stamps name one of `allowed`: the window can't read any other transcript through this.
+pub fn transcript(
+    reader: &Reader,
+    allowed: &[Account],
+    root: &Path,
+    id: &str,
+    session: &str,
+) -> Result<String, String> {
     if !transcripts::is_short_id(session) {
         return Err("bad session id".into());
     }
     let (task, _) = read(root, id)?;
-    if !task.session_ids.iter().any(|s| s == session) {
+    let Some(named) = task.session_ids.iter().find(|s| s.id == session) else {
         return Err(format!("session {session} didn't work on task {id}"));
+    };
+    if !named.readable(allowed) {
+        return Err(format!(
+            "session {session} isn't stamped with a Claude account Muster reads"
+        ));
     }
-    reader.transcript_markdown(session)
+    reader.transcript_markdown(allowed, session)
 }
 
-/// Mark the tasks that have a live session, for the card's dot. Done tasks are skipped, so the
-/// cost follows the open work, not the queue's history. One index refresh, then a few file
-/// times per session; no transcript is read.
-pub fn mark_live(tasks: &mut [Task], reader: &Reader, now: u64) {
+/// Mark the tasks that have a live session stamped with one of `allowed`, for the card's dot.
+/// Done tasks are skipped, so the cost follows the open work, not the queue's history. One index
+/// refresh, then a few file times per session; no transcript is read.
+pub fn mark_live(tasks: &mut [Task], reader: &Reader, allowed: &[Account], now: u64) {
     let open = || tasks.iter().filter(|t| t.stage != "done");
-    let ids: std::collections::HashSet<&str> = open()
-        .flat_map(|t| t.session_ids.iter().map(String::as_str))
+    let ids: HashSet<&str> = open()
+        .flat_map(|t| t.session_ids.iter())
+        .filter(|s| s.readable(allowed))
+        .map(|s| s.id.as_str())
         .collect();
-    let live = reader.live_set(ids, now);
+    let live = reader.live_set(allowed, ids, now);
     for t in tasks.iter_mut() {
-        t.live = t.stage != "done" && t.session_ids.iter().any(|s| live.contains(s));
+        t.live = t.stage != "done"
+            && t.session_ids
+                .iter()
+                .any(|s| s.readable(allowed) && live.contains(&s.id));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transcripts::tests::{home, prompt, reply, write, NOW};
+    use crate::transcripts::tests::{home, prompt, reader, reply, write, NOW};
     use crate::transcripts::{iso_secs, Found};
     use std::fs;
     use std::time::Instant;
@@ -500,13 +594,16 @@ waiting_on:
                     id: "7b5e8856".into(),
                     who: "muster/wt-0025".into(),
                     stages: vec!["building".into()],
-                    holds: false
+                    holds: false,
+                    // Its first stamps have no account; a later one names it.
+                    account: "hg".into(),
                 },
                 SessionRef {
                     id: "4d517d9d".into(),
                     who: "qa".into(),
                     stages: vec!["testing".into()],
-                    holds: false
+                    holds: false,
+                    account: "mg".into(),
                 },
             ]
         );
@@ -520,9 +617,37 @@ waiting_on:
                 id: "0123abcd".into(),
                 who: "wt-b".into(),
                 stages: vec![],
-                holds: true
+                holds: true,
+                account: "hg".into(),
             }
         );
+        // The account comes only from a stamp of that session: a hand-typed group, a stamp
+        // without one, or another session's stamp names none; two different ones clash for good.
+        let named_accounts = |named: &[&str], log: &str| -> Vec<(String, String)> {
+            let body = format!("# T\n\n## Log\n{log}");
+            session_ids(named, &body)
+                .into_iter()
+                .map(|s| (s.id, s.account))
+                .collect()
+        };
+        let pair = |id: &str, a: &str| (id.to_string(), a.to_string());
+        assert_eq!(
+            named_accounts(&["capture (drover/main, session 349bc9c3)"], ""),
+            [pair("349bc9c3", "")]
+        );
+        assert_eq!(
+            named_accounts(&["wt (main · session 11111111)"], ""),
+            [pair("11111111", "")]
+        );
+        assert_eq!(
+            named_accounts(
+                &["x (session 22222222), session 33333333 (main · session 33333333 · cc-mg)"],
+                ""
+            ),
+            [pair("22222222", ""), pair("33333333", "mg")]
+        );
+        let clash = "- 2026-10-12 10:00 a (session 44444444 · cc-mg): noted\n- 2026-10-12 11:00 a (session 44444444 · cc-ih): noted\n- 2026-10-12 12:00 a (session 44444444 · cc-mg): noted\n";
+        assert_eq!(named_accounts(&[], clash), [pair("44444444", "")]);
         let qa = "qa (session 4d517d9d)";
         assert!(sessions(&[qa], qa, body(TASK))[1].holds);
         // Named by the claim but not holding it (the holder is someone else): listed, not holding.
@@ -534,11 +659,14 @@ waiting_on:
                 .collect::<Vec<_>>(),
             [("7b5e8856", false), ("4d517d9d", true), ("0123abcd", false)]
         );
-        assert_eq!(session_ids(&[], body(TASK)), ["7b5e8856", "4d517d9d"]);
-        assert_eq!(
-            session_ids(&[claim, "owner"], body(TASK)),
-            ["7b5e8856", "4d517d9d", "0123abcd"]
-        );
+        let ids = |named: &[&str]| -> Vec<String> {
+            session_ids(named, body(TASK))
+                .into_iter()
+                .map(|s| s.id)
+                .collect()
+        };
+        assert_eq!(ids(&[]), ["7b5e8856", "4d517d9d"]);
+        assert_eq!(ids(&[claim, "owner"]), ["7b5e8856", "4d517d9d", "0123abcd"]);
         // A log line quoted in the description isn't the log.
         let quoted = "# T\n\n```\n- 2026-10-12 10:00 x (session 11111111): stage ready → building (claimed)\n```\n\n## Log\n- 2026-10-12 09:00 capture: created\n";
         assert!(session_ids(&[], quoted).is_empty());
@@ -587,7 +715,8 @@ waiting_on:
         fs::write(q.path().join("doing/0025-sessions.md"), TASK).unwrap();
         let h = home();
         transcripts(h.path());
-        let first = for_task(&Reader::new(h.path()), q.path(), "0025", NOW).unwrap();
+        let (r, a) = reader(h.path());
+        let first = for_task(&r, &a, q.path(), "0025", NOW).unwrap();
         let id = first.rows[0].session.id.clone();
         assert!(first.rows.iter().all(|r| r.shared_with == 0));
         assert_eq!(first.totals.shared, 0);
@@ -596,7 +725,7 @@ waiting_on:
             let text = format!("---\nid: {other}\nstatus: done\nstage: done\nclaimed-by: capture (session {id})\n---\n\n# Other\n\n## Log\n");
             fs::write(q.path().join(format!("done/{other}-other.md")), text).unwrap();
         }
-        let w = for_task(&Reader::new(h.path()), q.path(), "0025", NOW).unwrap();
+        let w = for_task(&r, &a, q.path(), "0025", NOW).unwrap();
         let row = w.rows.iter().find(|r| r.session.id == id).unwrap();
         assert_eq!(row.shared_with, 2);
         assert_eq!(w.totals.shared, 1);
@@ -609,7 +738,8 @@ waiting_on:
         fs::write(q.path().join("doing/0025-sessions.md"), TASK).unwrap();
         let h = home();
         transcripts(h.path());
-        let w = for_task(&Reader::new(h.path()), q.path(), "0025", NOW).unwrap();
+        let (r, a) = reader(h.path());
+        let w = for_task(&r, &a, q.path(), "0025", NOW).unwrap();
         assert_eq!(w.rows.len(), 2);
         let (a, b) = (&w.rows[0], &w.rows[1]);
         assert_eq!(
@@ -691,18 +821,18 @@ waiting_on:
         .unwrap();
         let h = home();
         transcripts(h.path());
-        let reader = Reader::new(h.path());
+        let (reader, a) = reader(h.path());
         let shared = std::collections::HashMap::new();
         // Etc/GMT-2 is UTC+2 all year (POSIX names the sign the other way round).
         let plus2 = |s: &str| queue::stamp_epoch(s, Some("Etc/GMT-2"));
-        let w = work(&reader, &task, body(&text), NOW, &shared, &plus2);
+        let w = work(&reader, &a, &task, body(&text), NOW, &shared, &plus2);
         assert_eq!((w.rows[0].usage.minutes, w.rows[1].usage.minutes), (20, 10));
         assert_eq!(w.totals.minutes, 30);
         // Tokens aren't time: they stay what the transcript says.
         assert_eq!(w.totals.total_tokens, 69516);
         // In UTC the same stamps miss A's stretch entirely.
         let utc = |s: &str| queue::stamp_epoch(s, Some("UTC"));
-        let w = work(&reader, &task, body(&text), NOW, &shared, &utc);
+        let w = work(&reader, &a, &task, body(&text), NOW, &shared, &utc);
         assert_eq!(w.totals.minutes, 40);
         // Still paused: it runs to now, so A's whole tail after 08:10 is left out.
         let open = TASK.replace(
@@ -718,7 +848,7 @@ waiting_on:
             0,
         )
         .unwrap();
-        let w = work(&reader, &task, body(&open), NOW, &shared, &plus2);
+        let w = work(&reader, &a, &task, body(&open), NOW, &shared, &plus2);
         assert_eq!((w.rows[0].usage.minutes, w.rows[1].usage.minutes), (10, 0));
     }
 
@@ -764,8 +894,10 @@ waiting_on:
             NOW - 3600,
         );
         let la = |s: &str| queue::stamp_epoch(s, Some("America/Los_Angeles"));
+        let (r, a) = reader(h.path());
         let w = work(
-            &Reader::new(h.path()),
+            &r,
+            &a,
             &task,
             body(&text),
             NOW,
@@ -788,7 +920,8 @@ waiting_on:
             &[reply("a1", "2026-10-12T08:01:00Z", 1, 1, 1, 1)],
             NOW - 3600,
         );
-        let w = for_task(&Reader::new(h.path()), q.path(), "0025", NOW).unwrap();
+        let (r, a) = reader(h.path());
+        let w = for_task(&r, &a, q.path(), "0025", NOW).unwrap();
         assert_eq!(w.rows[1].usage.found, Found::Missing);
         assert_eq!(
             (w.totals.sessions, w.totals.read, w.totals.total_tokens),
@@ -804,7 +937,7 @@ waiting_on:
             "---\nid: 0026\nstage: ready\nstatus: todo\n---\n\n# New\n\n## Log\n- 2026-10-12 09:00 capture: created\n",
         )
         .unwrap();
-        let w = for_task(&Reader::new(h.path()), q.path(), "0026", NOW).unwrap();
+        let w = for_task(&r, &a, q.path(), "0026", NOW).unwrap();
         assert!(w.rows.is_empty());
         assert_eq!(w.totals, Totals::default());
         assert_eq!(w.guess.pct, 0);
@@ -823,23 +956,23 @@ waiting_on:
             &[prompt("2026-10-12T08:00:00Z", "other")],
             NOW,
         );
-        let r = Reader::new(h.path());
-        assert!(transcript(&r, q.path(), "0025", "7b5e8856")
+        let (r, a) = reader(h.path());
+        assert!(transcript(&r, &a, q.path(), "0025", "7b5e8856")
             .unwrap()
             .contains("**You:** build 0025"));
         assert_eq!(
-            transcript(&r, q.path(), "0025", "eeeeeeee").unwrap_err(),
+            transcript(&r, &a, q.path(), "0025", "eeeeeeee").unwrap_err(),
             "session eeeeeeee didn't work on task 0025"
         );
         for bad in ["7B5E8856", "../../etc", "7b5e8856-c9c8", ""] {
             assert_eq!(
-                transcript(&r, q.path(), "0025", bad).unwrap_err(),
+                transcript(&r, &a, q.path(), "0025", bad).unwrap_err(),
                 "bad session id",
                 "{bad:?}"
             );
         }
-        assert!(transcript(&r, q.path(), "25", "7b5e8856").is_err());
-        assert!(for_task(&r, q.path(), "../0025", NOW).is_err());
+        assert!(transcript(&r, &a, q.path(), "25", "7b5e8856").is_err());
+        assert!(for_task(&r, &a, q.path(), "../0025", NOW).is_err());
     }
 
     fn parsed(id: &str, stage: &str, log_who: &str) -> Task {
@@ -862,19 +995,30 @@ waiting_on:
     fn a_card_is_live_while_one_of_its_sessions_is() {
         let h = home();
         transcripts(h.path());
-        let r = Reader::new(h.path());
+        let (r, a) = reader(h.path());
         let mut tasks = vec![
-            parsed("0001", "testing", "qa (session 4d517d9d)"),
-            parsed("0002", "building", "wt (session 7b5e8856)"),
-            parsed("0003", "done", "qa (session 4d517d9d)"),
-            parsed("0004", "building", "wt (session 0000aaaa)"),
+            parsed("0001", "testing", "qa (session 4d517d9d · cc-mg)"),
+            parsed("0002", "building", "wt (session 7b5e8856 · cc-hg)"),
+            parsed("0003", "done", "qa (session 4d517d9d · cc-mg)"),
+            parsed("0004", "building", "wt (session 0000aaaa · cc-mg)"),
+            // The live session, stamped before 0030 (no account), with none, or with ih: the
+            // company account or one not on the list, so not read (0099).
+            parsed("0005", "testing", "qa (session 4d517d9d)"),
+            parsed("0006", "testing", "qa (main · session 4d517d9d)"),
+            parsed("0007", "testing", "qa (main · session 4d517d9d · cc-ih)"),
         ];
-        assert_eq!(tasks[0].session_ids, ["4d517d9d"]);
-        mark_live(&mut tasks, &r, NOW);
+        assert_eq!(
+            tasks[0].session_ids,
+            [SessionId {
+                id: "4d517d9d".into(),
+                account: "mg".into()
+            }]
+        );
+        mark_live(&mut tasks, &r, &a, NOW);
         let live: Vec<bool> = tasks.iter().map(|t| t.live).collect();
-        assert_eq!(live, [true, false, false, false]);
+        assert_eq!(live, [true, false, false, false, false, false, false]);
         // Five minutes and a second later, nothing is.
-        mark_live(&mut tasks, &r, NOW - 60 + transcripts::LIVE_SECS + 1);
+        mark_live(&mut tasks, &r, &a, NOW - 60 + transcripts::LIVE_SECS + 1);
         assert!(tasks.iter().all(|t| !t.live));
         // The window gets the flag.
         assert!(serde_json::to_string(&tasks[0])
@@ -891,8 +1035,8 @@ waiting_on:
         fs::write(q.path().join("doing/0001-t.md"), text).unwrap();
         let h = home();
         transcripts(h.path());
-        let r = Reader::new(h.path());
-        let w = for_task(&r, q.path(), "0001", NOW).unwrap();
+        let (r, a) = reader(h.path());
+        let w = for_task(&r, &a, q.path(), "0001", NOW).unwrap();
         let held: Vec<(&str, &str, bool)> = w
             .rows
             .iter()
@@ -905,15 +1049,104 @@ waiting_on:
             })
             .collect();
         assert_eq!(held, [("7b5e8856", "wt", false), ("4d517d9d", "qa", true)]);
+        // The builder's stamp is from before 0030, with no account: its row stays, unread (0099).
+        assert_eq!(w.rows[0].usage, Usage::not_read());
+        assert_eq!(w.rows[1].usage.found, Found::Read);
         let mut tasks = queue::read_state(
             &[("q".into(), q.path().to_path_buf())],
             &mut queue::Cache::default(),
         )
         .tasks;
-        assert_eq!(tasks[0].session_ids, ["7b5e8856", "4d517d9d"]);
-        mark_live(&mut tasks, &r, NOW);
+        let ids: Vec<(&str, &str)> = tasks[0]
+            .session_ids
+            .iter()
+            .map(|s| (s.id.as_str(), s.account.as_str()))
+            .collect();
+        assert_eq!(ids, [("7b5e8856", ""), ("4d517d9d", "mg")]);
+        mark_live(&mut tasks, &r, &a, NOW);
         assert!(tasks[0].live);
-        assert!(transcript(&r, q.path(), "0001", "4d517d9d").is_ok());
+        assert!(transcript(&r, &a, q.path(), "0001", "4d517d9d").is_ok());
+        assert!(transcript(&r, &a, q.path(), "0001", "7b5e8856").is_err());
+    }
+
+    /// R1 (0099): a session stamped with no account (bare `claude`: the company account) or with
+    /// one not on the list is never read, even when its transcript is filed under a playground
+    /// project an allowed account reaches: no tokens, no live dot, no transcript. Its row stays,
+    /// since the task file names it. A session stamped with mg still reads.
+    #[test]
+    fn only_sessions_stamped_with_an_allowed_account_are_read() {
+        let text = "---\nid: 0001\nstage: building\nstatus: doing\nclaimed-by: wt-m (main · session 33333333 · cc-mg)\n---\n\n# T\n\n## Log\n- 2026-10-12 09:00 wt-c (main · session 11111111): stage ready → building (claimed)\n- 2026-10-12 09:30 wt-i (main · session 22222222 · cc-ih): stage building → ready\n- 2026-10-12 10:00 wt-m (main · session 33333333 · cc-mg): stage ready → building (claimed)\n";
+        let other = "---\nid: 0002\nstage: building\nstatus: doing\nclaimed-by: wt-c (main · session 11111111)\n---\n\n# U\n\n## Log\n- 2026-10-12 09:00 wt-i (main · session 22222222 · cc-ih): stage ready → building (claimed)\n";
+        let q = queue();
+        fs::write(q.path().join("doing/0001-t.md"), text).unwrap();
+        fs::write(q.path().join("doing/0002-u.md"), other).unwrap();
+        let h = home();
+        // All three in mg's own playground project, each changed a minute ago.
+        for id in ["11111111", "22222222", "33333333"] {
+            write(
+                h.path(),
+                ".claude-mg",
+                &format!("{id}-0000"),
+                &[
+                    prompt("2026-10-12T08:00:00Z", "go"),
+                    reply(id, "2026-10-12T08:10:00Z", 1, 1, 1, 1),
+                ],
+                NOW - 60,
+            );
+        }
+        let (r, a) = reader(h.path());
+        let w = for_task(&r, &a, q.path(), "0001", NOW).unwrap();
+        let rows: Vec<(&str, Found, bool, u64)> = w
+            .rows
+            .iter()
+            .map(|row| {
+                (
+                    row.session.id.as_str(),
+                    row.usage.found,
+                    row.usage.live,
+                    row.usage.tokens.total(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                ("11111111", Found::NotRead, false, 0),
+                ("22222222", Found::NotRead, false, 0),
+                ("33333333", Found::Read, true, 4),
+            ]
+        );
+        // The window is told why, not "not on this Mac".
+        let json = serde_json::to_string(&w.rows[0].usage).unwrap();
+        assert!(json.contains("\"found\":\"not-read\""), "{json}");
+        assert_eq!((w.totals.sessions, w.totals.read, w.totals.live), (3, 1, 1));
+        assert_eq!((w.totals.total_tokens, w.totals.minutes), (4, 10));
+        // The transcript view refuses them, by the stamp, not by where the file is.
+        for id in ["11111111", "22222222"] {
+            assert_eq!(
+                transcript(&r, &a, q.path(), "0001", id).unwrap_err(),
+                format!("session {id} isn't stamped with a Claude account Muster reads")
+            );
+        }
+        assert!(transcript(&r, &a, q.path(), "0001", "33333333")
+            .unwrap()
+            .contains("**You:** go"));
+        // The card's dot: 0002 has only the bare and the ih session, both live on disk.
+        let mut tasks = queue::read_state(
+            &[("q".into(), q.path().to_path_buf())],
+            &mut queue::Cache::default(),
+        )
+        .tasks;
+        tasks.sort_by(|x, y| x.id.cmp(&y.id));
+        mark_live(&mut tasks, &r, &a, NOW);
+        assert_eq!((tasks[0].live, tasks[1].live), (true, false));
+        // With mg off the list too, nothing of this task is read at all.
+        let hg_only = crate::accounts::resolve(&["hg".into()], h.path());
+        let w = for_task(&r, &hg_only, q.path(), "0001", NOW).unwrap();
+        assert_eq!((w.totals.read, w.totals.live), (0, 0));
+        assert!(transcript(&r, &hg_only, q.path(), "0001", "33333333").is_err());
+        mark_live(&mut tasks, &r, &hg_only, NOW);
+        assert!(!tasks[0].live);
     }
 
     /// 50 sessions' transcripts: summed off the main thread in the app, and the cards' live check,
@@ -937,7 +1170,7 @@ waiting_on:
                 NOW - 3600,
             );
             log.push_str(&format!(
-                "- 2026-10-12 10:00 wt (session {id}): stage ready → building (claimed)\n"
+                "- 2026-10-12 10:00 wt (session {id} · cc-mg): stage ready → building (claimed)\n"
             ));
             ids.push(id);
         }
@@ -952,16 +1185,16 @@ waiting_on:
                 .unwrap()
         };
         let cold = best(&|| {
-            let r = Reader::new(h.path());
-            let u = r.usages(&ids, NOW);
+            let (r, a) = reader(h.path());
+            let u = r.usages(&a, &ids, NOW);
             assert!(u
                 .iter()
                 .all(|u| u.found == Found::Read && u.tokens.total() == 10_000));
         });
-        let r = Reader::new(h.path());
-        r.usages(&ids, NOW);
+        let (r, a) = reader(h.path());
+        r.usages(&a, &ids, NOW);
         let warm = best(&|| {
-            r.usages(&ids, NOW);
+            r.usages(&a, &ids, NOW);
         });
         let text =
             format!("---\nid: 0001\nstage: building\nstatus: doing\n---\n\n# T\n\n## Log\n{log}");
@@ -978,9 +1211,9 @@ waiting_on:
         let mut tasks = vec![task; 20];
         let poll = best(&|| {
             let mut t = tasks.clone();
-            mark_live(&mut t, &r, NOW);
+            mark_live(&mut t, &r, &a, NOW);
         });
-        mark_live(&mut tasks, &r, NOW);
+        mark_live(&mut tasks, &r, &a, NOW);
         eprintln!("50 transcripts (1000 lines each): cold {cold:?}, warm {warm:?}; live check for 20 cards × 50 sessions {poll:?}");
         assert!(
             cold.as_secs_f64() < 5.0,

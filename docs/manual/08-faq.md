@@ -44,7 +44,7 @@ The answer is always written into the task, under the question, so it's never lo
 
 Open the task and look at its **Work** section: every session that worked on it has a row, and **View** opens that session's transcript in the pane, one line per prompt, reply and tool call. The latest 1,500 entries are shown, with tool output and thinking left out.
 
-Muster finds the sessions by the `session 7b5e8856` that `muster` writes on the claim, on who holds the task, and in the log. Claude Code keeps each session's transcript in its account's folder under `projects/`, in a file named by the session's full id, which starts with those 8 characters. Muster reads it there, on this Mac, and sends it nowhere. If a row says "not on this Mac", the session ran somewhere else, or its transcript has been deleted. A transcript over 128 MB isn't read. **View** opens only sessions the task names.
+Muster finds the sessions by the `session 7b5e8856` that `muster` writes on the claim, on who holds the task, and in the log. Claude Code keeps each session's transcript in its account's folder under `projects/`, in a file named by the session's full id, which starts with those 8 characters. Muster reads it there, on this Mac, and sends it nowhere. If a row says "not on this Mac", the session ran somewhere else, or its transcript has been deleted. If it says "not read: not stamped with a Claude account Muster reads", the session's stamp names no account on your list in Settings › Agents, so Muster doesn't look for it. A transcript over 128 MB isn't read. **View** opens only sessions the task names.
 
 The Helper's own conversations are kept by the app, one file per project, in `~/Library/Application Support/ai.sweetlemon.muster/helper/`. **New conversation** starts a fresh one.
 

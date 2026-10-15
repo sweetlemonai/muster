@@ -1,6 +1,6 @@
 // Settings (0036): its groups in the order they show, this machine's settings as the core sends
 // them (the claim lease and the LIVE window, saved in the app's settings.json, which `muster`
-// reads too, whether Mac notifications are on, 0052, and the menu bar icon, 0085), and the words for them. No React views here; Settings.tsx has those.
+// reads too, whether Mac notifications are on, 0052, the menu bar icon, 0085, and the Claude accounts Muster reads, 0099), and the words for them. No React views here; Settings.tsx has those.
 import { createContext } from "react";
 import type { HelpTopic } from "./helpTopics";
 import { LEASE_SECS } from "./lib";
@@ -57,11 +57,59 @@ export function spanInput(minutes: number): string {
   return `${minutes}m`;
 }
 
+/** The words of Agents' Claude accounts row (0099). A label is an account's folder after
+ *  `~/.claude-` (`mg` is `~/.claude-mg`), shown as its `cc-mg` command. */
+export const ACCOUNTS_WORDS = {
+  group: "Claude accounts Muster reads",
+  label: "Claude accounts Muster reads:",
+  none: "none: Muster reads no Claude sessions",
+  never: "Never ~/.claude, the default account.",
+  add: "Add an account",
+  chip: (l: string) => `cc-${l}`,
+  remove: (l: string) => `Remove cc-${l} from the accounts Muster reads`,
+  empty: "Type an account's label, like mg for cc-mg.",
+  defaultAccount: "Never ~/.claude: it's the default account, which Muster doesn't read.",
+  // As the core says it (settings.rs parse_accounts), the typed text cut at 24 characters.
+  invalid: (typed: string) => `${JSON.stringify([...typed].slice(0, 24).join(""))} is not a valid account label: 1 to 12 lowercase letters and digits, like mg`,
+  twice: (l: string) => `cc-${l} is already read.`,
+  // About's folders read. With none, why: an empty list, or `listed` labels none of which has its
+  // ~/.claude-<label> folder (accounts.rs resolve leaves those out).
+  transcripts: "Session transcripts:",
+  transcriptsNone: (listed: number) =>
+    listed === 0 ? "Session transcripts: none, no Claude account is on the list in Agents" : "Session transcripts: none, no account on the list in Agents has a ~/.claude-<label> folder",
+  transcriptsUnder: "In them, only projects under",
+  // The helper's picker with no account, the same two ways; `listed` is null when the list
+  // couldn't be read.
+  helperNone: (listed: number | null) =>
+    listed === null
+      ? "No Claude account Muster may use was found. Check its list in Settings, Agents."
+      : listed === 0
+        ? "No Claude account is on Muster's list of accounts it may use. Add one in Settings, Agents."
+        : "No account on Muster's list of accounts it may use has a ~/.claude-<label> folder. Check the list in Settings, Agents.",
+};
+
+/** A label as the core takes it (accounts.rs is_label): 1 to 12 lowercase letters and digits. */
+const ACCOUNT_LABEL = /^[a-z0-9]{1,12}$/;
+
+/** A change to the accounts list: add what was typed, or remove a label. The value to save
+ *  (`set_setting("claude-accounts", value)`, the labels by spaces, empty for none), or why not. */
+export function accountsEdit(labels: string[], edit: { add: string } | { remove: string }): { value: string } | { error: string } {
+  if ("remove" in edit) return { value: labels.filter((l) => l !== edit.remove).join(" ") };
+  const trimmed = edit.add.trim();
+  const label = trimmed.startsWith("cc-") ? trimmed.slice(3).trim() : trimmed;
+  if (label === "") return { error: ACCOUNTS_WORDS.empty };
+  if (/^(?:~\/)?\.claude\/?$/.test(label)) return { error: ACCOUNTS_WORDS.defaultAccount };
+  if (!ACCOUNT_LABEL.test(label)) return { error: ACCOUNTS_WORDS.invalid(label) };
+  if (labels.includes(label)) return { error: ACCOUNTS_WORDS.twice(label) };
+  return { value: [...labels, label].join(" ") };
+}
+
 /** The core's answer for Settings: the settings with their bounds, and what About shows. */
 export type SettingsInfo = {
   /** `notify`: Mac notifications on (0052); `menuBar`: the menu bar icon on (0085). A core from
-   *  before them sends none, which reads as on. */
-  settings: MachineSettings & { notify?: boolean; menuBar?: boolean };
+   *  before them sends none, which reads as on. `claudeAccounts`: the labels of the Claude
+   *  accounts Muster reads (0099), `["mg", "hg"]` unless changed; never `.claude`. */
+  settings: MachineSettings & { notify?: boolean; menuBar?: boolean; claudeAccounts: string[] };
   leaseBounds: [number, number];
   liveBounds: [number, number];
   version: string;
@@ -69,7 +117,11 @@ export type SettingsInfo = {
   home: string;
   configDir: string;
   base: string;
+  /** The Claude account folders the session transcripts are read from: the allowed ones (0099),
+   *  never `~/.claude`. */
   transcripts: string[];
+  /** In those, only the projects under this folder are read (0099): `~/playground`. */
+  transcriptsUnder: string;
   /** Whether Claude Code's session states are read (0048): "on (2 accounts)", or "not
    *  available: <why>" (sessionState.ts `sessionStatesLine`). */
   sessionStates?: string;

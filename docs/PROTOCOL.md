@@ -415,8 +415,10 @@ its own agent id is another holder, 0090) and logged `(tested under
 >
 > **Claude Code's session states (Muster 0048, 2026-10-13).** The app also asks Claude Code what
 > each holder's session is doing: `claude agents --json --all` (a research preview), once per
-> account the stamps in Building and Testing name (`cc-hg` → `CLAUDE_CONFIG_DIR=~/.claude-hg`; no
-> account part → the default `~/.claude`), run as an argument array with its usage reporting off,
+> account the stamps in Building and Testing name (`cc-hg` → `CLAUDE_CONFIG_DIR=~/.claude-hg`).
+> Only the allowed accounts are read (Settings › Agents, default cc-mg and cc-hg; decision 0012):
+> a stamp with no account, or an account not on the list, reads nothing, and `~/.claude` never is.
+> Each run is an argument array with its usage reporting off,
 > off the window's thread, at most every 15 s while the window shows, and not at all while no task
 > in Building or Testing has a stamped holder (the owner's own claims and paused tasks aside: a paused task, 0045, gets no state, never working and never waiting on the owner through its session, and doesn't count as its session's hold, so that session's next claim gets the state). A run stops at 10 s
 > and reads at most 1 MB; only each session's short id and state are kept. A state applies to a

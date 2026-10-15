@@ -5,6 +5,7 @@ import { readFiles, stamp } from "./lib";
 import Markdown from "./Markdown";
 import { HelpButton } from "./HelpButton";
 import { labelOf, Labels } from "./labels";
+import { ACCOUNTS_WORDS } from "./settingsData";
 import { Button } from "./ui";
 
 type Group = { owner?: HelperLine; replies: HelperLine[]; tools: { cmd: string; result?: string }[]; end?: HelperLine; notes: HelperLine[] };
@@ -46,6 +47,22 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
   const [picking, setPicking] = useState(false);
 
   const reload = () => api.helperInfo(queue).then(setInfo, (e) => setError(String(e)));
+
+  // With no account to pick, the picker says why (0099): it needs how long Settings' list is,
+  // asked again with each answer, as Check again may follow a change to the list.
+  const [listed, setListed] = useState<number | null>(null);
+  useEffect(() => {
+    if (info?.accounts.length !== 0) return;
+    let live = true;
+    api.settingsInfo().then(
+      (s) => live && setListed(s.settings.claudeAccounts.length),
+      // Unread, the picker says only that none was found, which is still true.
+      () => live && setListed(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [info]);
 
   useEffect(() => {
     let live = true;
@@ -111,6 +128,7 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
       <main className="list helper">
         <AccountPicker
           info={info}
+          listed={listed}
           onPicked={(a) => {
             setInfo({ ...info, account: a });
             setPicking(false);
@@ -234,8 +252,11 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
 }
 
 /** The helper's accounts, each with whether it's logged in: in the Helper tab and in Settings' Agents (0036). */
-export function AccountPicker({ info, onPicked, onRefresh, onCancel }: {
+export function AccountPicker({ info, listed, onPicked, onRefresh, onCancel }: {
   info: HelperInfo;
+  /** How many labels are on Muster's list of accounts (0099), so having none can say why; null
+   *  while unknown. */
+  listed: number | null;
   onPicked: (a: string) => void;
   onRefresh: () => void;
   onCancel?: () => void;
@@ -243,7 +264,7 @@ export function AccountPicker({ info, onPicked, onRefresh, onCancel }: {
   const [error, setError] = useState("");
   const pick = (a: AccountInfo) =>
     void api.helperSetAccount(a.name).then(() => onPicked(a.name), (e) => setError(String(e)));
-  const label = (a: AccountInfo) => (a.name === ".claude" ? "~/.claude (default)" : `~/${a.name}`);
+  const label = (a: AccountInfo) => `~/${a.name}`;
   return (
     <>
       <h2>Which Claude account should the helper use?</h2>
@@ -251,6 +272,7 @@ export function AccountPicker({ info, onPicked, onRefresh, onCancel }: {
         The helper runs your own Claude Code with that account's own login, like any session you start, and never reads tokens.
         What you write here goes to Anthropic, the same as any Claude Code session. You can change it any time.
       </p>
+      {info.accounts.length === 0 && <p className="err">{ACCOUNTS_WORDS.helperNone(listed)}</p>}
       <table className="projects-table">
         <tbody>
           {info.accounts.map((a) => (

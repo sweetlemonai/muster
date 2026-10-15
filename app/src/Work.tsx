@@ -16,6 +16,13 @@ const total = (t: Tokens) => t.input + t.output + t.cacheRead + t.cacheWrite;
 const minutes = (m: number) => fmtMinutes(m) || "0 min";
 const when = (secs: number | null) => (secs === null ? "—" : stamp(new Date(secs * 1000)));
 
+/** Why a session's row has no numbers, by its `found`. */
+const NOT_READ: Record<Exclude<SessionRow["found"], "read">, string> = {
+  missing: "not on this Mac",
+  "too-big": "transcript over 128 MB, not read",
+  "not-read": "not read: not stamped with a Claude account Muster reads",
+};
+
 /** The task pane's Work section (0025): who worked on the task, what it cost against the
  *  estimates, a progress guess, and each session's transcript on request. Reads through the core,
  *  which reads the transcripts on this Mac and sends nothing anywhere. */
@@ -163,7 +170,7 @@ function SessionLine({ r, on, onView }: { r: SessionRow; on: boolean; onView: (s
         </>
       ) : (
         <td colSpan={4} className="meta">
-          {r.found === "missing" ? "not on this Mac" : "transcript over 128 MB, not read"}
+          {NOT_READ[r.found]}
           {r.live && " · live"}
         </td>
       )}

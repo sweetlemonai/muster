@@ -2,6 +2,7 @@
 //! in `spawn_blocking`. The window names a queue by its project name, and a project by the key
 //! the core gave it, never by a path it made up. Folders are picked by the core's own dialog.
 
+pub mod accounts;
 pub mod agents;
 pub mod arrange;
 pub mod backlog;
@@ -142,12 +143,14 @@ async fn state(
         // The queues with their keys, limits, labels, headings and places (0073: one builder,
         // which the DashAfzar fixture's test calls too).
         let mut s = projects::read_state(&config, &list, &settings, &mut cache);
+        // The accounts Muster reads (0099), from the settings like the LIVE window.
+        let allowed = accounts::allowed(&settings, &home());
         // The cards' live dot: file times only, about a millisecond for 50 sessions.
         reader.set_live_secs(settings.live_secs());
-        work::mark_live(&mut s.tasks, &reader, s.now);
+        work::mark_live(&mut s.tasks, &reader, &allowed, s.now);
         // Claude Code's word on each holder's session (0048): the latest read, never waited on.
-        let sessions = monitor.poll(&s.tasks, s.now);
-        agents::apply(&mut s.tasks, &sessions);
+        let sessions = monitor.poll(&s.tasks, &allowed, s.now);
+        agents::apply(&mut s.tasks, &sessions, &allowed);
         notify_new(&h, &s, &sessions);
         // The sidebar's "running" chip (0079).
         let running = h.state::<AppState>().runs.running();
@@ -190,6 +193,7 @@ fn notify_new(handle: &tauri::AppHandle, s: &queue::State, sessions: &agents::Sn
 fn waiting_now(app: &AppState) -> Result<(queue::State, agents::Snapshot), String> {
     waiting_in(
         &base(),
+        &home(),
         &app.config_file,
         &app.settings_file,
         &app.cache,
@@ -197,9 +201,10 @@ fn waiting_now(app: &AppState) -> Result<(queue::State, agents::Snapshot), Strin
     )
 }
 
-/// `waiting_now` for the projects under `base`.
+/// `waiting_now` for the projects under `base`, reading the Claude accounts under `home`.
 fn waiting_in(
     base: &std::path::Path,
+    home: &std::path::Path,
     config_file: &std::path::Path,
     settings_file: &std::path::Path,
     cache: &Mutex<queue::Cache>,
@@ -219,8 +224,9 @@ fn waiting_in(
     labels::apply(&list, &mut s.queues);
     // As the poll does (0048): a session waiting for input waits on the owner. The monitor reads
     // `claude agents` at most every 15 s, on its own thread, and never holds this up.
-    let sessions = monitor.poll(&s.tasks, s.now);
-    agents::apply(&mut s.tasks, &sessions);
+    let allowed = accounts::allowed(&settings, home);
+    let sessions = monitor.poll(&s.tasks, &allowed, s.now);
+    agents::apply(&mut s.tasks, &sessions, &allowed);
     Ok((s, sessions))
 }
 
@@ -761,15 +767,17 @@ async fn task_sessions(
     let reader = app.transcripts.clone();
     blocking(move || {
         in_queue(&file, &queue, |root| {
-            reader.set_live_secs(settings::load(&settings_file).live_secs());
-            work::for_task(&reader, root, &id, queue::now_secs())
+            let settings = settings::load(&settings_file);
+            reader.set_live_secs(settings.live_secs());
+            let allowed = accounts::allowed(&settings, &home());
+            work::for_task(&reader, &allowed, root, &id, queue::now_secs())
         })
     })
     .await
 }
 
 /// One of a task's sessions' transcripts, folded to Markdown for the task pane (0025). Only a
-/// session the task names.
+/// session the task names, stamped with an account Muster reads (0099, `work::transcript`).
 #[tauri::command]
 async fn session_transcript(
     app: tauri::State<'_, AppState>,
@@ -779,10 +787,12 @@ async fn session_transcript(
 ) -> Result<String, String> {
     check_id(&id)?;
     let file = app.config_file.clone();
+    let settings_file = app.settings_file.clone();
     let reader = app.transcripts.clone();
     blocking(move || {
         in_queue(&file, &queue, |root| {
-            work::transcript(&reader, root, &id, &session)
+            let allowed = accounts::allowed(&settings::load(&settings_file), &home());
+            work::transcript(&reader, &allowed, root, &id, &session)
         })
     })
     .await
@@ -1115,29 +1125,39 @@ pub(crate) struct SettingsInfo {
     config_dir: String,
     /// Where queues are found on their own (`<base>/*/tasks` and `<base>/*/*/tasks`).
     base: String,
-    /// The session transcripts' folders (0025).
+    /// The Claude account folders the session transcripts are read from (0025): the allowed ones
+    /// (0099), never `~/.claude`.
     transcripts: Vec<String>,
+    /// Only the projects under this folder have their transcripts read (0099): `~/playground`.
+    transcripts_under: String,
     /// Whether Claude Code's session states are read (0048): "on (2 accounts)", or "not
     /// available: <why>" (`agents::Monitor::summary`).
     session_states: String,
 }
 
+/// About for the settings in `settings_file`, with the Claude accounts under `home`.
 fn info_for(
     settings_file: &std::path::Path,
     version: &str,
-    reader: &transcripts::Reader,
+    home: &std::path::Path,
     session_states: String,
 ) -> SettingsInfo {
     let shown = |p: &std::path::Path| p.to_string_lossy().to_string();
+    let settings = settings::load(settings_file);
+    let transcripts = accounts::allowed(&settings, home)
+        .iter()
+        .map(|a| shown(a.dir()))
+        .collect();
     SettingsInfo {
-        settings: settings::load(settings_file),
+        settings,
         lease_bounds: [settings::LEASE_MIN, settings::LEASE_MAX],
         live_bounds: [settings::LIVE_MIN, settings::LIVE_MAX],
         version: version.to_string(),
-        home: shown(&home()),
+        home: shown(home),
         config_dir: settings_file.parent().map(shown).unwrap_or_default(),
         base: shown(&base()),
-        transcripts: reader.folders().iter().map(|p| shown(p)).collect(),
+        transcripts,
+        transcripts_under: shown(&home.join("playground")),
         session_states,
     }
 }
@@ -1150,7 +1170,7 @@ async fn settings_info(handle: tauri::AppHandle) -> Result<SettingsInfo, String>
         Ok(info_for(
             &app.settings_file,
             &version,
-            &app.transcripts,
+            &home(),
             app.agents.summary(),
         ))
     })
@@ -1180,7 +1200,7 @@ async fn set_setting(
         Ok(info_for(
             &app.settings_file,
             &version,
-            &app.transcripts,
+            &home(),
             app.agents.summary(),
         ))
     })
@@ -1501,7 +1521,7 @@ pub fn run() {
                 cache: Mutex::new(queue::Cache::default()),
                 helpers: Mutex::new(HashMap::new()),
                 config: Mutex::new(()),
-                transcripts: Arc::new(transcripts::Reader::new(home())),
+                transcripts: Arc::new(transcripts::Reader::new(accounts::playground_key(&home()))),
                 agents: agents::Monitor::app(home()),
                 config_file: dir.join("projects.json"),
                 settings_file: dir.join(settings::FILE),
@@ -1512,8 +1532,10 @@ pub fn run() {
             });
             // Up at launch, before the first read has a count, unless Settings turned it off.
             let state = app.state::<AppState>();
-            let on = settings::load(&state.settings_file).menu_bar;
-            state.menu_bar.sync(on, None, &tray::Tray(app.handle()));
+            let settings = settings::load(&state.settings_file);
+            state
+                .menu_bar
+                .sync(settings.menu_bar, None, &tray::Tray(app.handle()));
             watch_badge(app.handle().clone());
             Ok(())
         })
@@ -1913,14 +1935,12 @@ mod tests {
 
     #[test]
     fn settings_info_shows_the_settings_their_bounds_and_where_things_are() {
-        let home = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(home.path().join(".claude/projects")).unwrap();
-        let dir = home
-            .path()
-            .join("Library/Application Support/ai.sweetlemon.muster");
+        // The owner's Mac: the company account, ih, and mg and hg (the allowlist's default).
+        let home = accounts::tests::fake_home();
+        let h = home.path();
+        let dir = h.join("Library/Application Support/ai.sweetlemon.muster");
         let file = dir.join(settings::FILE);
-        let reader = transcripts::Reader::new(home.path());
-        let info = info_for(&file, "0.1.0", &reader, "on (1 account)".into());
+        let info = info_for(&file, "0.1.0", h, "on (1 account)".into());
         // Nothing saved yet: the defaults.
         assert_eq!(info.settings, settings::Settings::default());
         assert_eq!(
@@ -1929,19 +1949,17 @@ mod tests {
         );
         assert_eq!(info.version, "0.1.0");
         assert_eq!(info.config_dir, dir.to_string_lossy());
-        assert_eq!(info.transcripts.len(), 1);
-        assert!(
-            info.transcripts[0].ends_with(".claude/projects"),
-            "{:?}",
-            info.transcripts
-        );
+        // The transcripts are read from the allowed accounts' folders, as `~/…` paths, never
+        // `~/.claude`; and only the projects under `~/playground`.
+        let shown = |p: &str| h.join(p).to_string_lossy().to_string();
+        assert_eq!(info.transcripts, [shown(".claude-mg"), shown(".claude-hg")]);
+        assert_eq!(info.transcripts_under, shown("playground"));
         settings::set(&file, "live", "15m").unwrap();
         let json =
-            serde_json::to_string(&info_for(&file, "0.1.0", &reader, "on (1 account)".into()))
-                .unwrap();
+            serde_json::to_string(&info_for(&file, "0.1.0", h, "on (1 account)".into())).unwrap();
         assert!(
             json.contains(
-                r#""settings":{"leaseMinutes":720,"liveMinutes":15,"notify":true,"menuBar":true,"oldPausesOffered":false}"#
+                r#""settings":{"leaseMinutes":720,"liveMinutes":15,"notify":true,"menuBar":true,"oldPausesOffered":false,"claudeAccounts":["mg","hg"]}"#
             ),
             "{json}"
         );
@@ -1949,8 +1967,22 @@ mod tests {
             json.contains(r#""leaseBounds":[60,10080],"liveBounds":[1,60]"#),
             "{json}"
         );
+        assert!(
+            json.contains(&format!(
+                r#""transcripts":[{:?},{:?}],"transcriptsUnder":{:?}"#,
+                shown(".claude-mg"),
+                shown(".claude-hg"),
+                shown("playground")
+            )),
+            "{json}"
+        );
+        // An empty allowlist: no account is read, and About lists none.
+        std::fs::write(&file, r#"{"claudeAccounts":[]}"#).unwrap();
+        assert!(info_for(&file, "0.1.0", h, String::new())
+            .transcripts
+            .is_empty());
         // The home folder, so the window can show paths under it as `~/…`.
-        assert_eq!(info.home, super::home().to_string_lossy());
+        assert_eq!(info.home, h.to_string_lossy());
         assert!(json.contains(r#""home":"#), "{json}");
         // Whether Claude Code's session states are read (0048), as the monitor says.
         assert!(
@@ -2017,12 +2049,20 @@ mod tests {
         let settings_file = config.path().join(settings::FILE);
         let cache = Mutex::new(queue::Cache::default());
         // No task has a session stamp, so Claude Code is never asked.
-        let fetch: agents::Fetch = Arc::new(|_: &str| Err("not asked".to_string()));
+        let fetch: agents::Fetch = Arc::new(|_: &accounts::Account| Err("not asked".to_string()));
         let monitor = agents::Monitor::new(fetch, in_place);
+        let home = accounts::tests::fake_home();
         let read = || {
-            waiting_in(base.path(), &config_file, &settings_file, &cache, &monitor)
-                .unwrap()
-                .0
+            waiting_in(
+                base.path(),
+                home.path(),
+                &config_file,
+                &settings_file,
+                &cache,
+                &monitor,
+            )
+            .unwrap()
+            .0
         };
         let count = || {
             let s = read();
@@ -2070,24 +2110,59 @@ mod tests {
             "id: 0001\nstage: building\nclaimed-by: wt-a (wt-0048 · session 7b5e8856 · cc-hg)";
         let text = format!("---\n{front}\n---\n\n# Build\n\n## Log\n- 2026-10-13 captured\n");
         std::fs::write(q.join("0001-build.md"), text).unwrap();
+        // Bare `claude` (the company account) and an account not on the list (0099): their
+        // sessions wait too, but they're never asked about nor counted.
+        for (id, who) in [
+            ("0002", "wt-b (main · session 11111111)"),
+            ("0003", "wt-c (main · session 22222222 · cc-ih)"),
+        ] {
+            let text = format!("---\nid: {id}\nstage: building\nclaimed-by: {who}\n---\n\n# Build\n\n## Log\n- 2026-10-13 captured\n");
+            std::fs::write(q.join(format!("{id}-build.md")), text).unwrap();
+        }
         let config = tempfile::tempdir().unwrap();
         let config_file = config.path().join("projects.json");
         let settings_file = config.path().join(settings::FILE);
-        // Claude Code says the holder's session is `state`, as the window's poll would apply it.
-        let count = |state: &'static str| {
-            let fetch: agents::Fetch = Arc::new(move |account: &str| {
-                assert_eq!(account, "hg");
-                Ok(format!(r#"[{{"sessionId": "7b5e8856", "state": "{state}"}}]"#).into_bytes())
-            });
+        // Claude Code says every session is `state`, as the window's poll would apply it.
+        let home = accounts::tests::fake_home();
+        let read = |fetch: agents::Fetch| {
             let monitor = agents::Monitor::new(fetch, in_place);
             let cache = Mutex::new(queue::Cache::default());
-            let (s, _) =
-                waiting_in(base.path(), &config_file, &settings_file, &cache, &monitor).unwrap();
+            let (s, _) = waiting_in(
+                base.path(),
+                home.path(),
+                &config_file,
+                &settings_file,
+                &cache,
+                &monitor,
+            )
+            .unwrap();
+            s
+        };
+        let count = |state: &'static str| {
+            let s = read(Arc::new(move |account: &accounts::Account| {
+                assert_eq!(account.label(), "hg");
+                Ok(format!(
+                    r#"[{{"sessionId": "7b5e8856", "state": "{state}"}}, {{"sessionId": "11111111", "state": "{state}"}}, {{"sessionId": "22222222", "state": "{state}"}}]"#
+                )
+                .into_bytes())
+            }));
             badge::dock_count(&s.tasks, &s.queues)
         };
         // Waiting for input (a permission prompt) waits on the owner, hidden window or not.
         assert_eq!(count("blocked"), 1);
         assert_eq!(count("working"), 0);
+        // The allowlist comes from the settings file: emptied, nothing is asked and nothing waits.
+        std::fs::write(&settings_file, r#"{"claudeAccounts":[]}"#).unwrap();
+        let s = read(Arc::new(
+            |_: &accounts::Account| -> Result<Vec<u8>, String> {
+                panic!("no account is on the list, so Claude Code isn't asked")
+            },
+        ));
+        assert_eq!(badge::dock_count(&s.tasks, &s.queues), 0);
+        assert!(s
+            .tasks
+            .iter()
+            .all(|t| t.session_state == agents::SessionState::Unknown));
     }
 
     /// The paused lane's offer lists and converts old pauses in the queues the app knows (0059):

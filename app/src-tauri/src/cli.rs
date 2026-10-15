@@ -4,8 +4,8 @@
 
 use crate::session::{self, Session};
 use crate::{
-    agents, backlog, check_limit, fields, index, lessons, old_pause, ops, pause, ping, projects,
-    queue, review, search, settings, vision,
+    accounts, agents, backlog, check_limit, fields, index, lessons, old_pause, ops, pause, ping,
+    projects, queue, review, search, settings, vision,
 };
 use std::path::{Path, PathBuf};
 
@@ -805,14 +805,15 @@ fn session_states(tasks: &mut [queue::Task], env: Env, others: &dyn Fn() -> Vec<
     let Some(home) = env("HOME").filter(|h| !h.is_empty()) else {
         return;
     };
-    let wanted = agents::wanted(tasks);
+    let allowed = accounts::allowed(&machine_settings(env), Path::new(&home));
+    let wanted = agents::wanted(tasks, &allowed);
     if wanted.is_empty() {
         return;
     }
     let snap = agents::read_all(&agents::claude_fetch(PathBuf::from(home)), &wanted);
     let others = others();
     let holds = agents::holds(tasks.iter().chain(&others));
-    agents::apply_with(tasks, &holds, &snap);
+    agents::apply_with(tasks, &holds, &snap, &allowed);
 }
 
 /// The tasks of every queue Muster knows other than `root` (the app's list: found and added).
@@ -5753,15 +5754,21 @@ mod tests {
         };
         write("0001", "wt-a (session 7b5e8856 · cc-hg)");
         write("0002", "wt-b");
-        // A fake `claude` where the CLI looks first, and the account's folder.
+        // Bare `claude` (the company account) and an account not on the list (0099).
+        write("0003", "wt-c (main · session 11111111)");
+        write("0004", "wt-d (main · session 22222222 · cc-ih)");
+        // A fake `claude` where the CLI looks first, and the accounts' folders. Each run notes
+        // the account folder it was given; every session is waiting on a prompt.
         let home = tempfile::tempdir().unwrap();
         let bin = home.path().join(".local/bin");
         std::fs::create_dir_all(&bin).unwrap();
-        std::fs::create_dir(home.path().join(".claude-hg")).unwrap();
+        for a in [".claude", ".claude-hg", ".claude-mg", ".claude-ih"] {
+            std::fs::create_dir(home.path().join(a)).unwrap();
+        }
         let claude = bin.join("claude");
         std::fs::write(
             &claude,
-            "#!/bin/sh\necho ran >> \"$0.runs\"\nprintf '%s' '[{\"sessionId\": \"7b5e8856-c9c8\", \"cwd\": \"/Users/someone\", \"state\": \"blocked\"}]'\n",
+            "#!/bin/sh\necho \"${CLAUDE_CONFIG_DIR##*/}\" >> \"$0.runs\"\nprintf '%s' '[{\"sessionId\": \"7b5e8856-c9c8\", \"cwd\": \"/Users/someone\", \"state\": \"blocked\"}, {\"sessionId\": \"11111111\", \"state\": \"blocked\"}, {\"sessionId\": \"22222222\", \"state\": \"blocked\"}]'\n",
         )
         .unwrap();
         let mut perms = std::fs::metadata(&claude).unwrap().permissions();
@@ -5782,12 +5789,37 @@ mod tests {
         let env = move |k: &str| (k == "HOME").then(|| h.clone());
         let mut s = tasks_of(d.path());
         session_states(&mut s.tasks, &env, &Vec::new);
-        assert_eq!(runs(), "ran\n", "once, for the one account");
+        assert_eq!(
+            runs(),
+            ".claude-hg\n",
+            "once, for hg: never ih or ~/.claude"
+        );
         let json = list_json(&[], &s.tasks.iter().collect::<Vec<_>>());
         assert_eq!(json["tasks"][0]["sessionState"], "needs-input");
         assert_eq!(json["tasks"][0]["waitingForOwner"], true);
-        assert_eq!(json["tasks"][1]["sessionState"], "unknown");
+        for t in 1..4 {
+            assert_eq!(json["tasks"][t]["sessionState"], "unknown", "task {t}");
+            assert_eq!(json["tasks"][t]["waitingForOwner"], false, "task {t}");
+        }
         assert!(!json.to_string().contains("someone"), "cwd isn't kept");
+
+        // The allowlist is read from this Mac's settings under that home: with only mg on it,
+        // the hg task reads unknown and nothing runs.
+        let app_dir = home
+            .path()
+            .join("Library/Application Support/ai.sweetlemon.muster");
+        std::fs::create_dir_all(&app_dir).unwrap();
+        std::fs::write(app_dir.join(settings::FILE), r#"{"claudeAccounts":["mg"]}"#).unwrap();
+        std::fs::remove_file(bin.join("claude.runs")).unwrap();
+        let mut s = tasks_of(d.path());
+        session_states(&mut s.tasks, &env, &|| {
+            panic!("nothing to count with no account to read")
+        });
+        assert_eq!(runs(), "", "no run");
+        let json = list_json(&[], &s.tasks.iter().collect::<Vec<_>>());
+        assert_eq!(json["tasks"][0]["sessionState"], "unknown");
+        assert_eq!(json["tasks"][0]["waitingForOwner"], false);
+        std::fs::remove_file(app_dir.join(settings::FILE)).unwrap();
 
         // The same session holds a task in another queue too: unknown, as the app says.
         let other = v2_queue();
