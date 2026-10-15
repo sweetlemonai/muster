@@ -12,6 +12,7 @@ covers: app/src-tauri/src/sessions.rs, app/src-tauri/src/transcripts.rs, app/src
 - Names and messages are plain text with `dir="auto"`, never Markdown. (decision 0017)
 - `cwd` is matched to a project in the core; only the name reaches the window. (decision 0017)
 - Nothing about sessions is written to queue files, logs or disk. (decision 0017)
+- The view writes nothing; only the run ledger keeps a finished run's session id and counts, never text, in the app's folder. (mu-114)
 - The list is read off the main thread, at most every 15 s, and only while the view polls. (mu-98)
 - A click opens the recap in the pane's dock, never the transcript first. (mu-98)
 - The recap's sections keep one order: chain, Who, Tasks, History, Time, Tokens, Progress. (mu-98)

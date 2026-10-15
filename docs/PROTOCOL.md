@@ -709,6 +709,28 @@ its own agent id is another holder, 0090) and logged `(tested under
 > paused, and the reading's age and source. The header's meter and Settings › Accounts show the
 > same. There is no automatic balancing across accounts.
 
+> **The run ledger (Muster mu-114, 2026-10-15).** One record per agent run, one JSON line in
+> `ledger/YYYY-MM.jsonl` in the app's settings folder (the month the run ended, UTC), kept on this
+> Mac and never exported. A record uses OpenTelemetry's GenAI names at the version its `schema`
+> field pins (`ledger::SCHEMA`): `gen_ai.operation.name` (`invoke_agent`), `gen_ai.provider.name`,
+> `gen_ai.agent.name` (the slot, `Kaveh-2`), `gen_ai.agent.id` (the role), `gen_ai.conversation.id`
+> (the session's short id), `gen_ai.request.model` and `gen_ai.usage.*` (input, output,
+> cache_read and cache_write input tokens). Muster adds `muster.task` (key), `project`, `account`,
+> `stage`, `started_at`/`ended_at`, `wall_secs` (paused stretches out), `turns`, `context_peak`,
+> `window_before`/`after` (the account's 5-hour and weekly use from its readings, when there are
+> any), `estimate`, `outcome` (`completed`, `failed`, `cancelled`, `input_required`, `limit`,
+> `handed_off`), `source` (`run` or `backfill`), `shared_with` and `counted_tokens`. Tokens and time
+> come from the task pane's Work rows (`work::work`, through `transcripts.rs` and its allowlist), so
+> the two agree; counted is input, output and cache writes, as mu-172 counts. A record holds no
+> title, prompt, transcript line, path or token: the writer refuses a field that
+> isn't a short plain label (a path, a line break, a run of spaces, over 64 characters), and a model,
+> account or role that isn't one.
+> A run is written once, under the ledger's lock; a second record of it is a no-op. Months older
+> than 13 go on the next write. `muster ledger backfill [--dry-run]` records each read session of
+> every Done task (a session another task names gets one per task, `shared_with` set); run again,
+> it adds none. A session still running waits for a later backfill, since a record never changes;
+> one older than 13 months isn't written. Lines read back pass the writer's check or are skipped. `muster ledger [--json] [--task|--account|--since]` lists them.
+
 > **Pausing a task (Muster 0045, 2026-10-13).** "Not now, keep it as it is": `muster pause <id>
 > ["<why>"]` (the app's **Pause**, under a card and beside the stage in the task pane) and `muster
 > resume <id>` (**Resume**). A task (not a goal or feature), from Backlog through Testing. A paused task keeps its stage, write-up,

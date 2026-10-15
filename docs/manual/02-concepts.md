@@ -256,6 +256,16 @@ A card someone holds in Shaping, Building or Testing wears a **token ribbon** in
 
 See [The task pane](04-in-the-app.md#the-task-pane) (task 0025).
 
+## The run ledger
+
+Muster keeps one record per agent run on this Mac, in `ledger/` in its settings folder, one file a month; nothing is sent anywhere, and months older than 13 go. A record's tokens and time are the task pane's Work numbers for that session, read the same way, so the two always agree. It holds ids, labels, counts and times, never a task's title, a prompt, a transcript line, a path or a token. `muster ledger backfill` writes the records of every Done task's sessions from their transcripts (a second run adds none), and `muster ledger` lists them (see [Commands](05-commands.md#muster-ledger)).
+
+The field names follow OpenTelemetry's GenAI semantic conventions as of 2026-10-14 (each record's `schema` says `otel-genai-semconv@2026-10-14`):
+
+- `gen_ai.operation.name` (`invoke_agent`), `gen_ai.provider.name` (`anthropic`), `gen_ai.agent.name` (the slot, Kaveh-2, or the session's label), `gen_ai.agent.id` (the role), `gen_ai.conversation.id` (the session), `gen_ai.request.model`;
+- `gen_ai.usage.input_tokens`, `output_tokens`, `cache_read.input_tokens`, `cache_write.input_tokens`;
+- Muster's own: `muster.run`, `task`, `project`, `account`, `stage`, `started_at` and `ended_at` (UTC), `wall_secs` (paused time left out), `turns`, `context_peak`, `window_before` and `window_after` (the account's 5-hour and weekly use, when it was read), `estimate`, `outcome` (completed, failed, cancelled, input_required, limit or handed_off), `source` (run or backfill), `shared_with` (other tasks naming the session; leave those out of a sum, as the Work section does) and `counted_tokens` (input, output and cache writes).
+
 ## The vision check
 
 `docs/VISION.md` is the project's one picture: what it is, how a task moves, and which task builds what. Together with `docs/decisions/` and `docs/DESIGN.md`, it's what every task has to fit.

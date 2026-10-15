@@ -3,6 +3,37 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-114: the run ledger, one local record per agent run, backfilled from transcripts
+**Did:** new `ledger.rs`: one JSON line per run in `ledger/YYYY-MM.jsonl` in the app's folder,
+OpenTelemetry GenAI names pinned in `SCHEMA` (`otel-genai-semconv@2026-10-14`) plus `muster.*`.
+A session's record is made from its Work row (`work::work`), so tokens, counted tokens and time
+match the task pane. `transcripts.rs` adds `RunFacts` (wall seconds, turns, context peak, model)
+to `Usage`, never sent to the window. `work::skip_paused` now takes paused seconds off those
+seconds, and minutes follow from them. `muster ledger [--json] [--task|--account|--since]` and
+`muster ledger backfill [--dry-run] [--queue]`, help, manual (commands, a field list in
+concepts), PROTOCOL, AS_BUILT, `docs/now/accounts.md`.
+**Decided:** a run's id is `<task key>:<session>`, so a session two tasks name gets a record per
+task, with `shared_with` set. Backfill leaves out a session that's still running, since a record
+never changes, and one that ended more than 13 months ago, which would be pruned at once and
+written again. Backfill's outcome is `handed_off` when the session checked in with `--handoff`,
+else `completed`. Its estimate is the task's estimate when backfilled. A runner (mu-117) fills
+`Record` from its `result` message.
+**Fixed (review):** lines read back are checked like written ones, and a line over 8 KB is
+skipped without being held. Records outside the 13 months are refused. Live sessions wait.
+**Fixed (review round 1):** a write after a crash cut a line short joined it, and both records
+were lost → `record_all` appended blindly → it ends the file with a line end first (`end_line`).
+Backfill judged "still running" by the 5-minute default → it now uses the owner's LIVE setting.
+A window reading from before its window reset was recorded as that window's use → a reset window
+says nothing (`Window::stale`). Readings are read once per account per backfill (`Readings`).
+`check` holds the model, account and role to their own shapes, and the docs say what it refuses.
+`--task` goes through `key::parse` (mu-0114, 114). Tests check the filters by what they list and
+the model by a fixture that names one.
+**Decided:** rebased on mu-210: turns, context peak and model are counted in `add_line`, once per
+message id across incremental reads (`Progress::seen`), and the model is parsed in `line_use`.
+**Verified:** ledger, transcripts, work and cli tests (AC1 to AC4), and a mutant for each review
+fix and the rebase, all killed. On Muster's own queue, `muster ledger backfill --dry-run` would
+write 427 records for 458 sessions of 120 Done tasks: 6 not read, 25 still running. Nothing was
+written.
 
 ## 2026-10-15 — mu-218 and mu-219 shaped; mu-147's bidi note folded into mu-152
 **Did (Shapour, shaper):** mu-218 (low): `muster merge-log` checks that every entry identical in base, ours and

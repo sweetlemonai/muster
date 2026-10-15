@@ -4,8 +4,8 @@
 
 use crate::session::{self, Session};
 use crate::{
-    accounts, agents, backlog, check_limit, fields, gates, index, lessons, old_pause, ops, pause,
-    ping, profiles, projects, queue, review, search, settings, usage, vision,
+    accounts, agents, backlog, check_limit, fields, gates, index, ledger, lessons, old_pause, ops,
+    pause, ping, profiles, projects, queue, review, search, settings, transcripts, usage, vision,
 };
 use std::path::{Path, PathBuf};
 
@@ -100,6 +100,7 @@ fn reads_only(a: &Args) -> bool {
         "help" | "-h" | "--help" | "team" | "instructions" | "list" | "show" | "ready" => true,
         "projects" => sub != Some("set"),
         "history" | "lessons" | "accounts" => sub.is_none(),
+        "ledger" => sub.is_none() || a.dry_run,
         "inbox" => a.keep,
         "index" => a.check,
         "check" => !a.fix_pauses || a.dry_run,
@@ -233,7 +234,8 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             | "--due" | "--pct" | "--remove" | "--record" | "--resolve" | "--search"
             | "--holder" | "--sort" | "--at" | "--touches" | "--prefix" | "--pick"
             | "--no-answer" | "--fixed" | "--dispute" | "--settle" | "--summary" | "--as-built"
-            | "--agent" | "--now-unchanged" | "--role" | "--account" | "--provider" => {
+            | "--agent" | "--now-unchanged" | "--role" | "--account" | "--provider" | "--task"
+            | "--since" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -268,6 +270,124 @@ fn machine_settings(env: Env) -> settings::Settings {
 /// The app's config folder under `home`: settings.json, accounts.json and usage/ (0113).
 fn app_dir(home: &Path) -> PathBuf {
     home.join("Library/Application Support/ai.sweetlemon.muster")
+}
+
+/// Every queue Muster knows by its name, or the one --queue names (`check --fix-pauses`,
+/// `ledger backfill`).
+fn named_queues(a: &Args, cwd: Option<&Path>) -> Result<Vec<(String, PathBuf)>, String> {
+    let known = || projects::active(&base(), &projects::load(&config_file()));
+    Ok(match a.flags.get("queue") {
+        Some(q) => {
+            let (root, _) = resolve_queue(Some(q), None, cwd, &known)?;
+            let name = known()
+                .into_iter()
+                .find(|(_, p)| same_folder(p, &root))
+                .map(|(n, _)| n)
+                .unwrap_or_else(|| projects::default_name(&root));
+            vec![(name, root)]
+        }
+        None => known(),
+    })
+}
+
+/// A day, `YYYY-MM-DD`, as the seconds since 1970 its UTC midnight is (`ledger --since`).
+fn utc_day(day: &str) -> Result<u64, String> {
+    crate::ops::stamp_minutes(&format!("{day} 00:00"))
+        .and_then(|m| u64::try_from(m).ok())
+        .map(|m| m * 60)
+        .ok_or_else(|| format!("--since takes a day, YYYY-MM-DD, not {day:?}"))
+}
+
+/// What `muster ledger --task --account --since` keeps.
+fn ledger_filter(a: &Args) -> Result<ledger::Filter, String> {
+    Ok(ledger::Filter {
+        task: a
+            .flags
+            .get("task")
+            .map(|t| crate::key::typed(t))
+            .transpose()?,
+        // `cc-hg` is the launcher's name for the account `hg`.
+        account: a
+            .flags
+            .get("account")
+            .map(|l| l.strip_prefix("cc-").unwrap_or(l).to_string()),
+        since: a.flags.get("since").map(|d| utc_day(d)).transpose()?,
+    })
+}
+
+/// The `muster ledger` command line (mu-114): the run ledger's records, each run once, and the
+/// backfill from the transcripts of Done tasks, in the app's config folder under `$HOME`.
+fn ledger_cmd(a: &Args, env: Env) -> Result<i32, String> {
+    let Some(home) = env("HOME").filter(|h| !h.is_empty()).map(PathBuf::from) else {
+        return Err("muster ledger needs $HOME: the ledger is under it".into());
+    };
+    let dir = app_dir(&home);
+    match a.pos.get(1).map(String::as_str) {
+        None => {
+            let records = ledger::read(&dir, &ledger_filter(a)?);
+            if a.json {
+                print_json(&records)?;
+            } else {
+                out!("{}", ledger::text(&records));
+            }
+            Ok(0)
+        }
+        Some("backfill") => {
+            let cwd = std::env::current_dir().ok();
+            let queues = named_queues(a, cwd.as_deref())?;
+            let settings = machine_settings(env);
+            let allowed = accounts::allowed(&settings, &home);
+            let reader = transcripts::Reader::new(accounts::playground_key(&home));
+            // A session is still running by the owner's LIVE window, as the app shows it.
+            reader.set_live_secs(settings.live_secs());
+            let roles = crate::roles::load(&roles_file())?;
+            let b = ledger::backfill(
+                &dir,
+                &reader,
+                &allowed,
+                &roles,
+                &queues,
+                queue::now_secs(),
+                a.dry_run,
+            )?;
+            if a.json {
+                print_json(&b)?;
+            } else {
+                outln!("{}", backfill_line(&b));
+            }
+            Ok(0)
+        }
+        Some(other) => Err(format!(
+            "ledger takes nothing or backfill, not {other:?} (see `muster help ledger`)"
+        )),
+    }
+}
+
+/// What `muster ledger backfill` did, in one line.
+fn backfill_line(b: &ledger::Backfill) -> String {
+    format!(
+        "{} {} record{} for {} session{} of {} Done task{}; {} already in the ledger, {} not read (no transcript on this Mac, or not stamped with an account Muster reads), {} still running (next time), {} older than the ledger keeps",
+        if b.dry_run { "would write" } else { "wrote" },
+        b.written,
+        plural(b.written),
+        b.sessions,
+        plural(b.sessions),
+        b.tasks,
+        plural(b.tasks),
+        b.existing,
+        b.unread,
+        b.live,
+        b.too_old
+    )
+}
+
+/// "s" unless `n` is 1.
+fn plural(n: usize) -> &'static str {
+    if n == 1 {
+        ""
+    } else {
+        "s"
+    }
 }
 
 /// The `muster accounts` command line (0113): the accounts with their use, a profile's
@@ -2204,6 +2324,7 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
             Ok(0)
         }
         "accounts" => accounts_cmd(&a, env),
+        "ledger" => ledger_cmd(&a, env),
         "projects" => {
             if a.pos.get(1).map(String::as_str) == Some("set") {
                 let file = config_file();
@@ -2264,19 +2385,7 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
         // Every queue Muster knows (0059), or the one --queue names.
         "check" if a.fix_pauses => {
             let cwd = std::env::current_dir().ok();
-            let known = || projects::active(&base(), &projects::load(&config_file()));
-            let queues = match a.flags.get("queue") {
-                Some(q) => {
-                    let (root, _) = resolve_queue(Some(q), None, cwd.as_deref(), &known)?;
-                    let name = known()
-                        .into_iter()
-                        .find(|(_, p)| same_folder(p, &root))
-                        .map(|(n, _)| n)
-                        .unwrap_or_else(|| projects::default_name(&root));
-                    vec![(name, root)]
-                }
-                None => known(),
-            };
+            let queues = named_queues(&a, cwd.as_deref())?;
             let who =
                 |root: &Path| stamped_who(&label(&a, env, root), env, cwd.as_deref(), Some(root));
             let (lines, code) = fix_pauses(&queues, a.dry_run, &who, &stamp);
@@ -3782,6 +3891,164 @@ mod tests {
             machine_settings(&|_: &str| Some(String::new())),
             settings::Settings::default()
         );
+    }
+
+    /// mu-114: `muster ledger backfill` writes a Done task's read sessions into the ledger in the
+    /// caller's home once, `--dry-run` writes nothing, and `muster ledger` lists them.
+    #[test]
+    fn muster_ledger_backfills_once_and_lists_in_the_callers_home() {
+        let home = crate::transcripts::tests::home();
+        let h = home.path().to_string_lossy().to_string();
+        let env = move |k: &str| (k == "HOME").then(|| h.clone());
+        let ledger_cmd = |argv: &[&str]| run_with(&sv(argv), &env);
+        // A transcript in a project under this home's ~/playground, as the CLI's reader reads.
+        let project = format!("{}-demo", accounts::playground_key(home.path()));
+        let folder = home.path().join(".claude-mg/projects").join(project);
+        // Two days ago, so the ledger keeps it whenever this runs.
+        let ended = ledger::iso(queue::now_secs() - 2 * 86400);
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join("4d517d9d-1173-481b-80cc-27e72f903f3c.jsonl"),
+            crate::transcripts::tests::reply("b1", &ended, 1, 500, 10000, 1000) + "\n",
+        )
+        .unwrap();
+        // Ended a day ago: not still running.
+        crate::transcripts::tests::touch(
+            &folder.join("4d517d9d-1173-481b-80cc-27e72f903f3c.jsonl"),
+            queue::now_secs() - 86400,
+        );
+        let q = crate::testkit::tempdir().unwrap();
+        for f in queue::STATUS_FOLDERS {
+            std::fs::create_dir(q.path().join(f)).unwrap();
+        }
+        std::fs::write(q.path().join("README.md"), "---\nprefix: mu\n---\n").unwrap();
+        std::fs::write(
+            q.path().join("done/0001-x.md"),
+            "---\nid: 0001\nstage: done\nstatus: done\n---\n\n# X\n\n## Log\n- 2026-10-12 11:00 qa (main · session 4d517d9d · cc-mg): stage testing → your-check\n- 2026-10-12 11:05 someone (main · session c0ffee00): check-in · looked\n",
+        )
+        .unwrap();
+        let dir = app_dir(home.path());
+        let qs = q.path().to_string_lossy().to_string();
+        let backfill = |more: &[&str]| {
+            let mut argv = vec!["ledger", "backfill", "--queue", qs.as_str()];
+            argv.extend_from_slice(more);
+            ledger_cmd(&argv)
+        };
+        assert_eq!(backfill(&["--dry-run"]), Ok(0));
+        assert!(!ledger::folder(&dir).exists(), "a dry run writes nothing");
+        assert_eq!(backfill(&[]), Ok(0));
+        assert_eq!(backfill(&["--json"]), Ok(0));
+        let all = ledger::read(&dir, &ledger::Filter::default());
+        assert_eq!(all.len(), 1);
+        assert_eq!(
+            (
+                all[0].run.as_str(),
+                all[0].account.as_str(),
+                all[0].output_tokens
+            ),
+            ("mu-1:4d517d9d", "mg", 500)
+        );
+        assert_eq!(ledger_cmd(&["ledger"]), Ok(0));
+        assert_eq!(ledger_cmd(&["ledger", "--json"]), Ok(0));
+        // What each flag keeps, by the records it lists.
+        let listed = |more: &[&str]| -> Result<Vec<String>, String> {
+            let mut argv = vec!["ledger"];
+            argv.extend_from_slice(more);
+            let filter = ledger_filter(&parse(&sv(&argv))?)?;
+            Ok(ledger::read(&dir, &filter)
+                .into_iter()
+                .map(|r| r.run)
+                .collect())
+        };
+        let one = Ok(vec!["mu-1:4d517d9d".to_string()]);
+        let none = Ok(Vec::new());
+        let all_flags = [
+            "--task",
+            "mu-1",
+            "--account",
+            "cc-mg",
+            "--since",
+            "2026-10-01",
+        ];
+        assert_eq!(listed(&all_flags), one);
+        assert_eq!(listed(&["--task", "MU-0001"]), one);
+        assert_eq!(listed(&["--task", "1"]), one);
+        assert_eq!(listed(&["--task", "mu-2"]), none);
+        assert_eq!(listed(&["--task", "br-1"]), none);
+        assert_eq!(listed(&["--account", "mg"]), one);
+        assert_eq!(listed(&["--account", "cc-hg"]), none);
+        assert_eq!(listed(&["--since", &ended[..10]]), one);
+        assert_eq!(listed(&["--since", "2999-01-01"]), none);
+        assert_eq!(
+            ledger_cmd(&["ledger", "--task", "the parser"]).unwrap_err(),
+            "a task is named like mu-12, 12 or 0012, got \"the parser\""
+        );
+        assert_eq!(
+            ledger_cmd(&["ledger", "--since", "Oct 1"]).unwrap_err(),
+            "--since takes a day, YYYY-MM-DD, not \"Oct 1\""
+        );
+        assert_eq!(
+            Some(utc_day("2026-10-12").unwrap()),
+            crate::transcripts::iso_secs("2026-10-12T00:00:00Z")
+        );
+        assert!(ledger_cmd(&["ledger", "frob"])
+            .unwrap_err()
+            .starts_with("ledger takes nothing or backfill, not \"frob\""));
+        assert!(run(&sv(&["ledger"])).unwrap_err().contains("needs $HOME"));
+        assert_eq!(ledger::read(&dir, &ledger::Filter::default()).len(), 1);
+        // A session last written 10 minutes ago, with the owner's LIVE window at 30: still
+        // running, so it waits; at 5 it's over and written.
+        let a = folder.join("7b5e8856-c9c8-45ec-aa03-c0ddbf1d4394.jsonl");
+        std::fs::write(
+            &a,
+            crate::transcripts::tests::reply("a1", &ended, 1, 7, 0, 0) + "\n",
+        )
+        .unwrap();
+        crate::transcripts::tests::touch(&a, queue::now_secs() - 600);
+        std::fs::write(
+            q.path().join("done/0002-y.md"),
+            "---\nid: 0002\nstage: done\nstatus: done\n---\n\n# Y\n\n## Log\n- 2026-10-12 11:00 qa (main · session 7b5e8856 · cc-mg): stage testing → your-check\n",
+        )
+        .unwrap();
+        let live = |minutes: u64| {
+            std::fs::write(
+                dir.join(settings::FILE),
+                format!("{{\"liveMinutes\": {minutes}}}"),
+            )
+            .unwrap();
+            assert_eq!(backfill(&[]), Ok(0));
+            ledger::read(&dir, &ledger::Filter::default()).len()
+        };
+        assert_eq!(live(30), 1);
+        assert_eq!(live(5), 2);
+    }
+
+    #[test]
+    fn the_backfill_line_says_what_it_wrote_or_would() {
+        let b = ledger::Backfill {
+            tasks: 1,
+            sessions: 3,
+            written: 1,
+            existing: 0,
+            unread: 2,
+            live: 0,
+            too_old: 0,
+            dry_run: true,
+        };
+        assert_eq!(
+            backfill_line(&b),
+            "would write 1 record for 3 sessions of 1 Done task; 0 already in the ledger, 2 not read (no transcript on this Mac, or not stamped with an account Muster reads), 0 still running (next time), 0 older than the ledger keeps"
+        );
+        let b = ledger::Backfill {
+            tasks: 2,
+            written: 0,
+            existing: 4,
+            sessions: 1,
+            dry_run: false,
+            ..b
+        };
+        assert!(backfill_line(&b)
+            .starts_with("wrote 0 records for 1 session of 2 Done tasks; 4 already"));
     }
 
     /// 0113: `muster accounts` reads and changes the profiles in the caller's home, refusing the
@@ -7181,6 +7448,9 @@ mod tests {
         };
         let p = |args: &[&str]| parse(&sv(args)).unwrap();
         assert!(reads_only(&p(&["verify", "0001"])));
+        assert!(reads_only(&p(&["ledger", "--json"])));
+        assert!(reads_only(&p(&["ledger", "backfill", "--dry-run"])));
+        assert!(!reads_only(&p(&["ledger", "backfill"])));
         assert!(!reads_only(&p(&["verify", "0001", "--record", "-"])));
         assert!(!targeted("verify", &p(&["verify", "0001"])));
         assert!(targeted("verify", &p(&["verify", "0001", "--record", "-"])));

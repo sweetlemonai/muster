@@ -1544,7 +1544,7 @@ muster help new
 
 ## Accounts
 
-The accounts Muster runs work on, how much of each one's 5-hour and weekly window is used, read from Claude Code and never guessed, and the reserve you keep on each. Only the personal accounts on the allowlist (Settings), never the company `~/.claude`; no balancing across accounts (decision 0013).
+The accounts Muster runs work on, how much of each one's 5-hour and weekly window is used, read from Claude Code and never guessed, and the reserve you keep on each. Only the personal accounts on the allowlist (Settings), never the company `~/.claude`; no balancing across accounts (decision 0013). The run ledger keeps what each run used, on this Mac only.
 
 ### muster accounts
 
@@ -1589,6 +1589,45 @@ muster accounts remove hg
 
 ```
 claude -p "hi" --output-format stream-json --verbose | muster accounts record --from stream --account mg
+```
+
+### muster ledger
+
+The run ledger (mu-114): one record per agent run, kept on this Mac in ledger/YYYY-MM.jsonl in the app's config folder and never sent anywhere. A record has the session's tokens by kind (input, output, cache reads, cache writes, and counted: input, output and cache writes, as the task pane's Work section counts them), its wall time in seconds less the task's paused stretches, turns, context peak, model, task key, project, account, slot and role, the stages it held, its account's 5-hour and weekly use before and after (from the readings muster accounts keeps, when there are any), the task's estimate, and how it ended (completed, failed, cancelled, input\_required, limit or handed\_off), under OpenTelemetry's GenAI names (gen\_ai.usage.input\_tokens…) at the version its schema field names. No title, prompt, transcript line, path or token is kept. Each run is written once: a second record of the same run is left out. Months older than 13 go. With no word it lists the records, oldest first, in columns with a header line (--json for tools), times in UTC. backfill writes a record for each session stamped on a Done task whose transcript Muster reads (an account on the allowlist, on this Mac), from the same reader as the Work section, marked source backfill, in every queue Muster knows or the one --queue names; a session the ledger has already is left as it is, so a second run adds none. A session still running (its transcript changed in the LIVE window) waits for a later backfill, and one that ended more than 13 months ago isn't kept. A line someone edited by hand is listed only when it passes the same check as a written one. --dry-run counts and writes nothing.
+
+```
+muster ledger [--json] [--task <key>] [--account <label>] [--since YYYY-MM-DD] | muster ledger backfill [--dry-run] [--queue <name|folder>] [--json]
+```
+
+| Option | What it does |
+| --- | --- |
+| `--json` | the records as JSON, each with its fields as written; with backfill, the counts (tasks, sessions, written, existing, unread, live, tooOld, dryRun) |
+| `--task` | only this task's records, by its key (mu-114) |
+| `--account` | only this account's, by its label (hg, or cc-hg) |
+| `--since` | only runs that ended on or after this day, UTC |
+| `--dry-run` | with backfill: count what it would write, write nothing |
+| `--queue` | with backfill: only this queue's Done tasks |
+
+Examples:
+
+```
+muster ledger
+```
+
+```
+muster ledger --task mu-114
+```
+
+```
+muster ledger --account hg --since 2026-10-01 --json
+```
+
+```
+muster ledger backfill --dry-run
+```
+
+```
+muster ledger backfill
 ```
 
 ## On every command

@@ -128,6 +128,40 @@ pub struct Usage {
     /// the Work section's stages (mu-172). Never sent to the window.
     #[serde(skip)]
     pub buckets: Buckets,
+    /// What the run ledger (mu-114) keeps of the session beyond tokens and minutes. Never sent to
+    /// the window.
+    #[serde(skip)]
+    pub run: RunFacts,
+}
+
+/// A session's wall time in seconds, turns, context peak and model, for the run ledger (mu-114).
+/// Turns, peak and model are the session's own calls, not its subagents' (each has a context of
+/// its own).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RunFacts {
+    /// Seconds from `start` to `end`, less the task's paused stretches once `work` has them out:
+    /// `minutes` is this, rounded (`minutes_of`).
+    pub secs: u64,
+    /// Model calls: replies with usage, each message id once.
+    pub turns: u64,
+    /// The largest context of one call: its input, cache reads and cache writes together.
+    pub context_peak: u64,
+    /// The model of the latest reply, when it reads as a model id (`model_id`); else None.
+    pub model: Option<String>,
+}
+
+/// Seconds as whole minutes, to the nearest: how `Usage::minutes` follows `RunFacts::secs`.
+pub fn minutes_of(secs: u64) -> u64 {
+    secs.saturating_add(30) / 60
+}
+
+/// `s` when it reads as a model id (`claude-opus-5-5`, `us.anthropic.claude-…:0`): 1 to 64 ASCII
+/// letters, digits, `.`, `_`, `-`, `:` or `@`, so no path, prompt or free text gets through.
+pub fn model_id(s: &str) -> Option<String> {
+    let ok = (1..=64).contains(&s.len())
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b':' | b'@'));
+    ok.then(|| s.to_string())
 }
 
 /// Tokens by minute (mu-172): (the minute's start in seconds since 1970, what the replies stamped
@@ -161,6 +195,7 @@ impl Usage {
             skipped_lines: 0,
             skipped_files: 0,
             buckets: Buckets::default(),
+            run: RunFacts::default(),
         }
     }
 
@@ -207,6 +242,10 @@ struct FileSummary {
     last: Option<u64>,
     skipped_lines: u64,
     buckets: Buckets,
+    /// Model calls counted (each message id once), for `RunFacts::turns`.
+    turns: u64,
+    context_peak: u64,
+    model: Option<String>,
 }
 
 /// How far a read of a transcript got (mu-210), so one that only grew is read on from there.
@@ -527,10 +566,16 @@ impl Reader {
         u.tokens = s.tokens;
         u.start = s.first;
         u.end = s.last;
-        u.minutes = match (s.first, s.last) {
-            (Some(a), Some(b)) => (b.saturating_sub(a) + 30) / 60,
-            _ => 0,
+        u.run = RunFacts {
+            secs: match (s.first, s.last) {
+                (Some(a), Some(b)) => b.saturating_sub(a),
+                _ => 0,
+            },
+            turns: s.turns,
+            context_peak: s.context_peak,
+            model: s.model,
         };
+        u.minutes = minutes_of(u.run.secs);
         u.skipped_lines = s.skipped_lines;
         u.buckets = s.buckets;
         let (subs, over) = Self::subagents(&main);
@@ -800,6 +845,8 @@ struct UsageMessage {
     #[serde(default)]
     id: Option<String>,
     #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
     usage: Option<UsageCounts>,
 }
 
@@ -832,10 +879,13 @@ fn head_key(head: &[u8]) -> u64 {
     hash_of(head)
 }
 
-/// What one line of a transcript adds: its time, and a reply's id and usage.
+/// What one line of a transcript adds: its time, and a reply's id, usage and model.
 struct LineUse {
     at: Option<u64>,
     reply: Option<(Option<u64>, Tokens)>,
+    /// The reply's model when it reads as a model id (`model_id`): a reply Claude Code makes up
+    /// itself (an error, a cut-off) names "<synthetic>" and leaves this None.
+    model: Option<String>,
 }
 
 /// One whole line's use; None for one that isn't JSON of the expected shape. A blank line adds
@@ -844,6 +894,7 @@ fn line_use(buf: &[u8]) -> Option<LineUse> {
     let mut out = LineUse {
         at: None,
         reply: None,
+        model: None,
     };
     if buf.iter().all(u8::is_ascii_whitespace) {
         return Some(out);
@@ -851,7 +902,12 @@ fn line_use(buf: &[u8]) -> Option<LineUse> {
     let line = serde_json::from_slice::<UsageLine>(buf).ok()?;
     out.at = line.timestamp.as_deref().and_then(iso_secs);
     if line.kind.as_deref() == Some("assistant") {
-        if let Some(UsageMessage { id, usage: Some(u) }) = line.message {
+        if let Some(UsageMessage {
+            id,
+            model,
+            usage: Some(u),
+        }) = line.message
+        {
             let used = Tokens {
                 input: u.input_tokens.unwrap_or(0),
                 output: u.output_tokens.unwrap_or(0),
@@ -859,13 +915,14 @@ fn line_use(buf: &[u8]) -> Option<LineUse> {
                 cache_write: u.cache_creation_input_tokens.unwrap_or(0),
             };
             out.reply = Some((id.as_deref().map(id_key), used));
+            out.model = model.as_deref().and_then(model_id);
         }
     }
     Some(out)
 }
 
-/// Add `u` to `s`, its minute to `buckets`. A reply whose id is in `seen` was counted already;
-/// with `keep`, its id goes into `seen`.
+/// Add `u` to `s` (its tokens, a turn, the context peak and the model), its minute to `buckets`. A
+/// reply whose id is in `seen` was counted already; with `keep`, its id goes into `seen`.
 fn add_line(
     s: &mut FileSummary,
     buckets: &mut Vec<(u64, Tokens)>,
@@ -889,6 +946,15 @@ fn add_line(
         }
     }
     s.tokens.add(&used);
+    s.turns += 1;
+    s.context_peak = s.context_peak.max(
+        used.input
+            .saturating_add(used.cache_read)
+            .saturating_add(used.cache_write),
+    );
+    if u.model.is_some() {
+        s.model = u.model;
+    }
     if let Some(t) = u.at {
         // Replies come in order of time, so most merge into the last minute here.
         let minute = t - t % 60;
@@ -1566,6 +1632,64 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn turns_peak_and_model_read_on_count_each_reply_once() {
+        // mu-114 on mu-210: a reply's blocks split over three reads are one turn; the model is the
+        // latest reply's, and a "<synthetic>" one doesn't replace it.
+        let d = crate::testkit::tempdir().unwrap();
+        let p = d.path().join("t.jsonl");
+        let text = [
+            reply_by(
+                "claude-opus-5-5",
+                "m1",
+                "2026-10-12T10:00:00Z",
+                5,
+                1,
+                100,
+                0,
+            ),
+            reply_by(
+                "claude-opus-5-5",
+                "m1",
+                "2026-10-12T10:00:01Z",
+                5,
+                1,
+                100,
+                0,
+            ),
+            reply_by(
+                "claude-sonnet-5-5",
+                "m2",
+                "2026-10-12T10:00:02Z",
+                7,
+                1,
+                300,
+                2,
+            ),
+            reply_by(
+                "claude-opus-5-5",
+                "m1",
+                "2026-10-12T10:00:03Z",
+                5,
+                1,
+                100,
+                0,
+            ),
+            reply_by("<synthetic>", "m3", "2026-10-12T10:00:04Z", 0, 0, 0, 0),
+        ]
+        .join("\n")
+            + "\n";
+        let first_end = text.find('\n').unwrap() + 1;
+        let (r, _) = reader(d.path());
+        read_in_steps(&r, &p, &text, &[first_end, first_end + 30, text.len() - 20]);
+        let s = r.summary(&p).unwrap();
+        assert_eq!(
+            (s.turns, s.context_peak, s.model.as_deref()),
+            (3, 309, Some("claude-sonnet-5-5"))
+        );
+        assert_eq!(s, summarize(&p).unwrap());
+    }
+
+    #[test]
     fn random_splits_add_up_to_one_full_read() {
         // mu-210 AC1: 200 random splits from fixed seeds, 1 to 8 cuts each.
         let d = crate::testkit::tempdir().unwrap();
@@ -2037,6 +2161,123 @@ pub(crate) mod tests {
         touch(&subs.join("agent-a2.jsonl"), NOW - 60);
         assert!(r.live(&a, "7b5e8856", NOW));
         assert!(r.usage(&a, "7b5e8856", NOW).live);
+    }
+
+    /// A reply with its model named, as Claude Code writes it.
+    pub(crate) fn reply_by(
+        model: &str,
+        id: &str,
+        at: &str,
+        i: u64,
+        o: u64,
+        r: u64,
+        w: u64,
+    ) -> String {
+        let mut v: serde_json::Value = serde_json::from_str(&reply(id, at, i, o, r, w)).unwrap();
+        v["message"]["model"] = model.into();
+        v.to_string()
+    }
+
+    /// mu-114: the run ledger's wall seconds, turns, context peak and model, from the session's
+    /// own calls; its subagents add tokens only.
+    #[test]
+    fn a_sessions_run_facts_are_its_own_calls_seconds_turns_peak_and_latest_model() {
+        let h = home();
+        let main = write(
+            h.path(),
+            ".claude",
+            A,
+            &[
+                prompt("2026-10-12T10:00:00Z", "go"),
+                reply_by(
+                    "claude-opus-5-5",
+                    "m1",
+                    "2026-10-12T10:00:10Z",
+                    5,
+                    50,
+                    1000,
+                    200,
+                ),
+                // The same reply's second block: one turn, not two.
+                reply_by(
+                    "claude-opus-5-5",
+                    "m1",
+                    "2026-10-12T10:00:11Z",
+                    5,
+                    50,
+                    1000,
+                    200,
+                ),
+                reply_by(
+                    "claude-sonnet-5-5",
+                    "m2",
+                    "2026-10-12T10:01:00Z",
+                    3,
+                    20,
+                    4000,
+                    10,
+                ),
+                // Made up by Claude Code itself: counted as a call, its model not kept.
+                reply_by("<synthetic>", "m3", "2026-10-12T10:01:40Z", 0, 0, 0, 0),
+            ],
+            NOW - 9999,
+        );
+        let subs = main.with_extension("").join("subagents");
+        fs::create_dir_all(&subs).unwrap();
+        fs::write(
+            subs.join("agent-a1.jsonl"),
+            reply_by(
+                "claude-haiku-5-5",
+                "s1",
+                "2026-10-12T10:00:30Z",
+                1,
+                1,
+                90000,
+                9000,
+            ),
+        )
+        .unwrap();
+        let (r, a) = reader(h.path());
+        let u = r.usage(&a, "7b5e8856", NOW);
+        assert_eq!(
+            u.run,
+            RunFacts {
+                secs: 100,
+                turns: 3,
+                context_peak: 4013,
+                model: Some("claude-sonnet-5-5".into()),
+            }
+        );
+        assert_eq!(u.minutes, minutes_of(u.run.secs));
+        assert_eq!(u.tokens.cache_read, 1000 + 4000 + 90000);
+        // Not sent to the window.
+        assert!(serde_json::to_value(&u).unwrap().get("run").is_none());
+        assert_eq!(Usage::missing().run, RunFacts::default());
+    }
+
+    #[test]
+    fn a_model_id_is_a_short_plain_token_never_a_path_or_text() {
+        for ok in [
+            "claude-opus-5-5",
+            "us.anthropic.claude-sonnet-5-5:0",
+            "gpt_5@2026",
+        ] {
+            assert_eq!(model_id(ok).as_deref(), Some(ok));
+        }
+        let long = "a".repeat(65);
+        for bad in [
+            "",
+            "<synthetic>",
+            "/Users/someone/x",
+            "a b",
+            "a\\b",
+            "é",
+            long.as_str(),
+        ] {
+            assert_eq!(model_id(bad), None, "{bad:?}");
+        }
+        assert_eq!((minutes_of(29), minutes_of(30), minutes_of(89)), (0, 1, 1));
+        assert_eq!(minutes_of(u64::MAX), u64::MAX / 60);
     }
 
     /// mu-172: each session's tokens by the minute they were used, so the Work section can say

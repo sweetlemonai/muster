@@ -761,7 +761,7 @@ pub fn work(
 }
 
 /// Task `id` in the queue at `root`, parsed, with its text after the front matter.
-fn read(root: &Path, id: &str) -> Result<(Task, String), String> {
+pub(crate) fn read(root: &Path, id: &str) -> Result<(Task, String), String> {
     let text = queue::read_body(root, id)?;
     let path = queue::find_task(root, id)?;
     let task = queue::parse_task("", root, &queue::folder_of(root, &path), &path, &text, 0)
@@ -799,9 +799,10 @@ pub fn for_task(
     ))
 }
 
-/// A session's minutes without the task's paused stretches (0045, in seconds since 1970): what of
-/// them falls between its first and last stamp, to the nearest minute. Its tokens stay as they
-/// are: a paused session spends none.
+/// A session's time without the task's paused stretches (0045, in seconds since 1970): what of
+/// them falls between its first and last stamp comes off its seconds (`RunFacts::secs`, what the
+/// run ledger keeps), and its minutes are those seconds to the nearest minute. Its tokens stay as
+/// they are: a paused session spends none.
 fn skip_paused(u: &mut Usage, pauses: &[(i64, i64)]) {
     let (Some(start), Some(end)) = (u.start, u.end) else {
         return;
@@ -814,9 +815,11 @@ fn skip_paused(u: &mut Usage, pauses: &[(i64, i64)]) {
         .iter()
         .map(|(a, z)| ((*z).min(end) - (*a).max(start)).max(0))
         .sum();
-    u.minutes = u
-        .minutes
-        .saturating_sub(u64::try_from((paused + 30) / 60).unwrap_or(0));
+    u.run.secs = u
+        .run
+        .secs
+        .saturating_sub(u64::try_from(paused).unwrap_or(0));
+    u.minutes = transcripts::minutes_of(u.run.secs);
 }
 
 /// Session `session`'s transcript as Markdown, only for a session that worked on task `id` and

@@ -668,6 +668,26 @@ pub const COMMANDS: &[Command] = &[
         ],
     },
     Command {
+        name: "ledger",
+        usage: "muster ledger [--json] [--task <key>] [--account <label>] [--since YYYY-MM-DD] | muster ledger backfill [--dry-run] [--queue <name|folder>] [--json]",
+        what: "The run ledger (mu-114): one record per agent run, kept on this Mac in ledger/YYYY-MM.jsonl in the app's config folder and never sent anywhere. A record has the session's tokens by kind (input, output, cache reads, cache writes, and counted: input, output and cache writes, as the task pane's Work section counts them), its wall time in seconds less the task's paused stretches, turns, context peak, model, task key, project, account, slot and role, the stages it held, its account's 5-hour and weekly use before and after (from the readings muster accounts keeps, when there are any), the task's estimate, and how it ended (completed, failed, cancelled, input_required, limit or handed_off), under OpenTelemetry's GenAI names (gen_ai.usage.input_tokens…) at the version its schema field names. No title, prompt, transcript line, path or token is kept. Each run is written once: a second record of the same run is left out. Months older than 13 go. With no word it lists the records, oldest first, in columns with a header line (--json for tools), times in UTC. backfill writes a record for each session stamped on a Done task whose transcript Muster reads (an account on the allowlist, on this Mac), from the same reader as the Work section, marked source backfill, in every queue Muster knows or the one --queue names; a session the ledger has already is left as it is, so a second run adds none. A session still running (its transcript changed in the LIVE window) waits for a later backfill, and one that ended more than 13 months ago isn't kept. A line someone edited by hand is listed only when it passes the same check as a written one. --dry-run counts and writes nothing.",
+        options: &[
+            ("--json", "the records as JSON, each with its fields as written; with backfill, the counts (tasks, sessions, written, existing, unread, live, tooOld, dryRun)"),
+            ("--task", "only this task's records, by its key (mu-114)"),
+            ("--account", "only this account's, by its label (hg, or cc-hg)"),
+            ("--since", "only runs that ended on or after this day, UTC"),
+            ("--dry-run", "with backfill: count what it would write, write nothing"),
+            ("--queue", "with backfill: only this queue's Done tasks"),
+        ],
+        examples: &[
+            "muster ledger",
+            "muster ledger --task mu-114",
+            "muster ledger --account hg --since 2026-10-01 --json",
+            "muster ledger backfill --dry-run",
+            "muster ledger backfill",
+        ],
+    },
+    Command {
         name: "init",
         usage: "muster init [<folder>] [--local|--committed] [--prefix <p>]",
         what: "In a git repo (its main checkout or any worktree of it; the current folder when none is named): create the repo's queue, .muster/ in the main checkout, with config.toml (its prefix in it), .gitignore, a README with the rules, tasks/, backlog/, attachments/ and INDEX.md. Task files live in tasks/ and never move. Local by default: it stays on this Mac. Sessions in the repo and its worktrees need no setup of their own: muster finds it from any folder of the repo, and Muster's rule (rules/muster-queue.md) and answer hook (bin/answer-hook.py) reach them through the personal layer. Refuses if .muster/ is there already, and in a repo without a main checkout (a bare repo's worktree, a submodule). Outside a repo it creates <folder>/tasks, the old layout: status folders, README with the rules and its prefix, the tool stand-ins and its own git, never over an existing tasks/; only for a folder named on purpose: with none, it writes nothing and says to run it in the repo. Either way it refuses a prefix that isn't 2 to 4 lowercase letters or that another project has. In a repo it also sets git's merge driver for the work log (merge.muster-log, muster merge-log), as start does.",
@@ -971,8 +991,8 @@ pub const GROUPS: &[Group] = &[
     },
     Group {
         title: "Accounts",
-        intro: "The accounts Muster runs work on, how much of each one's 5-hour and weekly window is used, read from Claude Code and never guessed, and the reserve you keep on each. Only the personal accounts on the allowlist (Settings), never the company `~/.claude`; no balancing across accounts (decision 0013).",
-        commands: &["accounts"],
+        intro: "The accounts Muster runs work on, how much of each one's 5-hour and weekly window is used, read from Claude Code and never guessed, and the reserve you keep on each. Only the personal accounts on the allowlist (Settings), never the company `~/.claude`; no balancing across accounts (decision 0013). The run ledger keeps what each run used, on this Mac only.",
+        commands: &["accounts", "ledger"],
         examples: &[],
     },
 ];
@@ -1208,6 +1228,7 @@ mod tests {
             "init",
             "migrate",
             "accounts",
+            "ledger",
             "help",
         ] {
             let c = COMMANDS
@@ -1226,7 +1247,7 @@ mod tests {
                 "{name}'s examples use it"
             );
         }
-        assert_eq!(COMMANDS.len(), 55);
+        assert_eq!(COMMANDS.len(), 56);
     }
 
     #[test]
