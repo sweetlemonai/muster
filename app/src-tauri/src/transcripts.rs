@@ -15,13 +15,16 @@
 //!
 //! Bounds: a transcript over `MAX_TRANSCRIPT_BYTES` isn't read, a line over `MAX_LINE_BYTES` is
 //! skipped without being held in memory, at most `MAX_SUBAGENTS` subagent files count per session,
-//! and summaries are cached by (path, size, modified time) in a cache of `CACHE_CAP` files.
+//! and summaries are cached by (path, size, modified time) in a cache of `CACHE_CAP` files. A
+//! cached transcript that only grew is read on from its last whole line (mu-210).
 
 use crate::accounts::{is_under, Account};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
-use std::io::{self, BufRead, BufReader};
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -35,6 +38,8 @@ const MAX_LINE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_SUBAGENTS: usize = 256;
 /// Transcript summaries kept in memory.
 const CACHE_CAP: usize = 512;
+/// The start of a transcript that must be unchanged for a grown one to be read on (mu-210).
+const HEAD_CHECK: usize = 4096;
 /// A session is live when its transcript changed this recently.
 pub const LIVE_SECS: u64 = 5 * 60;
 /// The transcript view keeps the latest this many entries.
@@ -204,9 +209,26 @@ struct FileSummary {
     buckets: Buckets,
 }
 
+/// How far a read of a transcript got (mu-210), so one that only grew is read on from there.
+#[derive(Clone, Debug, Default)]
+struct Progress {
+    /// The sums of the lines before `offset`.
+    summary: FileSummary,
+    /// The message ids counted so far, as `id_key`s: a reply's later blocks count once.
+    seen: HashSet<u64>,
+    /// Just past the last line end read.
+    offset: u64,
+}
+
 struct Cached {
     size: u64,
     modified: SystemTime,
+    /// The file read: (device, inode).
+    file: (u64, u64),
+    /// `head_key` of its first `HEAD_CHECK` bytes (all of them in a smaller file).
+    head: u64,
+    progress: Progress,
+    /// `progress` plus a last line that's whole JSON without its line end yet.
     summary: FileSummary,
     used: u64,
 }
@@ -393,22 +415,48 @@ impl Reader {
         (files, over)
     }
 
-    /// One file's sums, from the cache while its size and modified time match.
+    /// One file's sums, from the cache while its size and modified time match. A file that only
+    /// grew since (mu-210: the same device and inode, larger, the same first `HEAD_CHECK` bytes)
+    /// is read on from where the last read stopped; anything else is read in full. Over
+    /// `MAX_TRANSCRIPT_BYTES`, it isn't read.
     fn summary(&self, path: &Path) -> io::Result<FileSummary> {
         let meta = fs::metadata(path)?;
         let modified = meta.modified()?;
-        {
+        let prior = {
             let mut cache = lock(&self.cache);
             cache.tick += 1;
             let tick = cache.tick;
-            if let Some(c) = cache.files.get_mut(path) {
-                if c.size == meta.len() && c.modified == modified {
+            match cache.files.get_mut(path) {
+                Some(c) if c.size == meta.len() && c.modified == modified => {
                     c.used = tick;
                     return Ok(c.summary.clone());
                 }
+                // Taken out while it's read on, so no copy of its ids is made; a read of the same
+                // file in parallel reads it in full.
+                Some(c) if meta.len() > c.size => cache.files.remove(path),
+                _ => None,
             }
+        };
+        // What's read is the file opened, whatever is at the path by now.
+        let file = fs::File::open(path)?;
+        let meta = file.metadata()?;
+        let (size, modified) = (meta.len(), meta.modified()?);
+        if size > MAX_TRANSCRIPT_BYTES {
+            return Err(io::Error::other("over the transcript size cap"));
         }
-        let summary = summarize(path)?;
+        let id = (meta.dev(), meta.ino());
+        let mut head = Vec::with_capacity(HEAD_CHECK);
+        (&file).take(HEAD_CHECK as u64).read_to_end(&mut head)?;
+        let start = prior
+            .filter(|c| {
+                c.file == id
+                    && size > c.size
+                    && head.len() as u64 >= c.size.min(HEAD_CHECK as u64)
+                    && head_key(&head[..c.size.min(HEAD_CHECK as u64) as usize]) == c.head
+            })
+            .map(|c| c.progress)
+            .unwrap_or_default();
+        let (progress, summary) = read_on(&file, start, size)?;
         let mut cache = lock(&self.cache);
         cache.tick += 1;
         let tick = cache.tick;
@@ -425,8 +473,11 @@ impl Reader {
         cache.files.insert(
             path.to_path_buf(),
             Cached {
-                size: meta.len(),
+                size,
                 modified,
+                file: id,
+                head: head_key(&head),
+                progress,
                 summary: summary.clone(),
                 used: tick,
             },
@@ -678,15 +729,37 @@ fn read_line_capped(
     buf: &mut Vec<u8>,
     cap: usize,
 ) -> io::Result<Option<bool>> {
+    Ok(read_line_measured(r, buf, cap)?.map(|l| l.whole))
+}
+
+/// A line `read_line_measured` read.
+struct Line {
+    /// Within the cap (held in the buffer).
+    whole: bool,
+    /// Ended by a line end (the last line of a file may not be).
+    ended: bool,
+    /// Bytes read, its line end included.
+    len: u64,
+}
+
+/// `read_line_capped`, also saying whether the line ended and how many bytes it took.
+fn read_line_measured(
+    r: &mut impl BufRead,
+    buf: &mut Vec<u8>,
+    cap: usize,
+) -> io::Result<Option<Line>> {
     buf.clear();
-    let mut any = false;
+    let mut len: u64 = 0;
     let mut over = false;
     loop {
         let chunk = r.fill_buf()?;
         if chunk.is_empty() {
-            return Ok(any.then_some(!over));
+            return Ok((len > 0).then_some(Line {
+                whole: !over,
+                ended: false,
+                len,
+            }));
         }
-        any = true;
         let (part, done) = match chunk.iter().position(|&b| b == b'\n') {
             Some(i) => (&chunk[..i], Some(i + 1)),
             None => (chunk, None),
@@ -701,8 +774,13 @@ fn read_line_capped(
         }
         let used = done.unwrap_or(chunk.len());
         r.consume(used);
+        len += used as u64;
         if done.is_some() {
-            return Ok(Some(!over));
+            return Ok(Some(Line {
+                whole: !over,
+                ended: true,
+                len,
+            }));
         }
     }
 }
@@ -737,60 +815,138 @@ struct UsageCounts {
     cache_creation_input_tokens: Option<u64>,
 }
 
-/// A transcript's sums, streamed line by line. Claude Code writes one line per content block of
-/// a reply, each repeating the reply's usage, so usage counts once per message id.
-fn summarize(path: &Path) -> io::Result<FileSummary> {
-    let file = fs::File::open(path)?;
-    let mut reader = BufReader::with_capacity(64 * 1024, file);
-    let mut buf = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut s = FileSummary::default();
-    let mut buckets: Vec<(u64, Tokens)> = Vec::new();
-    while let Some(whole) = read_line_capped(&mut reader, &mut buf, MAX_LINE_BYTES)? {
-        if !whole {
-            s.skipped_lines += 1;
-            continue;
-        }
-        if buf.iter().all(u8::is_ascii_whitespace) {
-            continue;
-        }
-        let Ok(line) = serde_json::from_slice::<UsageLine>(&buf) else {
-            s.skipped_lines += 1;
-            continue;
-        };
-        let at = line.timestamp.as_deref().and_then(iso_secs);
-        if let Some(t) = at {
-            s.first = Some(s.first.map_or(t, |f| f.min(t)));
-            s.last = Some(s.last.map_or(t, |l| l.max(t)));
-        }
-        if line.kind.as_deref() != Some("assistant") {
-            continue;
-        }
-        let Some(m) = line.message else { continue };
-        let Some(u) = m.usage else { continue };
-        if let Some(id) = m.id {
-            if !seen.insert(id) {
-                continue;
-            }
-        }
-        let used = Tokens {
-            input: u.input_tokens.unwrap_or(0),
-            output: u.output_tokens.unwrap_or(0),
-            cache_read: u.cache_read_input_tokens.unwrap_or(0),
-            cache_write: u.cache_creation_input_tokens.unwrap_or(0),
-        };
-        s.tokens.add(&used);
-        if let Some(t) = at {
-            // Replies come in order of time, so most merge into the last minute here.
-            let minute = t - t % 60;
-            match buckets.last_mut() {
-                Some((m, sum)) if *m == minute => sum.add(&used),
-                _ => buckets.push((minute, used)),
-            }
+fn hash_of(value: impl Hash) -> u64 {
+    let mut h = DefaultHasher::new();
+    value.hash(&mut h);
+    h.finish()
+}
+
+/// A message id as kept in `Progress::seen`: 8 bytes instead of the id, for up to `CACHE_CAP`
+/// transcripts' worth of ids. A full read keys them the same way, so the two always agree.
+fn id_key(id: &str) -> u64 {
+    hash_of(id)
+}
+
+/// The key of a transcript's first bytes, for `Cached::head`.
+fn head_key(head: &[u8]) -> u64 {
+    hash_of(head)
+}
+
+/// What one line of a transcript adds: its time, and a reply's id and usage.
+struct LineUse {
+    at: Option<u64>,
+    reply: Option<(Option<u64>, Tokens)>,
+}
+
+/// One whole line's use; None for one that isn't JSON of the expected shape. A blank line adds
+/// nothing.
+fn line_use(buf: &[u8]) -> Option<LineUse> {
+    let mut out = LineUse {
+        at: None,
+        reply: None,
+    };
+    if buf.iter().all(u8::is_ascii_whitespace) {
+        return Some(out);
+    }
+    let line = serde_json::from_slice::<UsageLine>(buf).ok()?;
+    out.at = line.timestamp.as_deref().and_then(iso_secs);
+    if line.kind.as_deref() == Some("assistant") {
+        if let Some(UsageMessage { id, usage: Some(u) }) = line.message {
+            let used = Tokens {
+                input: u.input_tokens.unwrap_or(0),
+                output: u.output_tokens.unwrap_or(0),
+                cache_read: u.cache_read_input_tokens.unwrap_or(0),
+                cache_write: u.cache_creation_input_tokens.unwrap_or(0),
+            };
+            out.reply = Some((id.as_deref().map(id_key), used));
         }
     }
-    s.buckets = settle(buckets).into();
-    Ok(s)
+    Some(out)
+}
+
+/// Add `u` to `s`, its minute to `buckets`. A reply whose id is in `seen` was counted already;
+/// with `keep`, its id goes into `seen`.
+fn add_line(
+    s: &mut FileSummary,
+    buckets: &mut Vec<(u64, Tokens)>,
+    seen: &mut HashSet<u64>,
+    u: LineUse,
+    keep: bool,
+) {
+    if let Some(t) = u.at {
+        s.first = Some(s.first.map_or(t, |f| f.min(t)));
+        s.last = Some(s.last.map_or(t, |l| l.max(t)));
+    }
+    let Some((id, used)) = u.reply else { return };
+    if let Some(id) = id {
+        let new = if keep {
+            seen.insert(id)
+        } else {
+            !seen.contains(&id)
+        };
+        if !new {
+            return;
+        }
+    }
+    s.tokens.add(&used);
+    if let Some(t) = u.at {
+        // Replies come in order of time, so most merge into the last minute here.
+        let minute = t - t % 60;
+        match buckets.last_mut() {
+            Some((m, sum)) if *m == minute => sum.add(&used),
+            _ => buckets.push((minute, used)),
+        }
+    }
+}
+
+/// `s`'s buckets with `more` merged in.
+fn with_buckets(s: &mut FileSummary, more: Vec<(u64, Tokens)>) {
+    if !more.is_empty() {
+        let mut all = s.buckets.to_vec();
+        all.extend(more);
+        s.buckets = settle(all).into();
+    }
+}
+
+/// Read `file` on from `p.offset` up to `size`, streamed line by line. Claude Code writes one line
+/// per content block of a reply, each repeating the reply's usage, so usage counts once per
+/// message id. Whole lines go into the returned progress; a last line without its line end is
+/// left for the next read (mu-210), and counts in the returned sums only when it's whole JSON
+/// already, so an unfinished one is neither counted nor skipped.
+fn read_on(file: &fs::File, mut p: Progress, size: u64) -> io::Result<(Progress, FileSummary)> {
+    let mut f = file;
+    f.seek(SeekFrom::Start(p.offset))?;
+    let mut reader = BufReader::with_capacity(64 * 1024, f.take(size.saturating_sub(p.offset)));
+    let mut buf = Vec::new();
+    let mut buckets: Vec<(u64, Tokens)> = Vec::new();
+    let mut tail = false;
+    while let Some(l) = read_line_measured(&mut reader, &mut buf, MAX_LINE_BYTES)? {
+        if !l.ended {
+            tail = l.whole;
+            break;
+        }
+        p.offset += l.len;
+        match l.whole.then(|| line_use(&buf)).flatten() {
+            Some(u) => add_line(&mut p.summary, &mut buckets, &mut p.seen, u, true),
+            None => p.summary.skipped_lines += 1,
+        }
+    }
+    with_buckets(&mut p.summary, buckets);
+    let mut out = p.summary.clone();
+    if let Some(u) = tail.then(|| line_use(&buf)).flatten() {
+        let mut more = Vec::new();
+        add_line(&mut out, &mut more, &mut p.seen, u, false);
+        with_buckets(&mut out, more);
+    }
+    Ok((p, out))
+}
+
+/// A transcript's sums, read in full.
+#[cfg(test)]
+fn summarize(path: &Path) -> io::Result<FileSummary> {
+    let file = fs::File::open(path)?;
+    let size = file.metadata()?.len();
+    Ok(read_on(&file, Progress::default(), size)?.1)
 }
 
 /// A transcript time stamp, `2026-10-12T21:47:12.795Z` (UTC), as seconds since 1970.
@@ -1324,6 +1480,328 @@ pub(crate) mod tests {
         eprintln!("30 MB transcript ({i} replies): summarized cold in {cold:?}, warm {warm:?}");
         assert!(cold.as_secs_f64() < 30.0, "cold summary took {cold:?}");
         assert!(warm.as_millis() < 250, "warm usage took {warm:?}");
+    }
+
+    /// Append `text` to the file at `p`, as Claude Code does to a live transcript.
+    fn append(p: &Path, text: &str) {
+        use std::io::Write;
+        File::options()
+            .append(true)
+            .open(p)
+            .unwrap()
+            .write_all(text.as_bytes())
+            .unwrap();
+    }
+
+    /// A transcript with every shape `summarize` handles: prompts, replies split over content
+    /// blocks (one repeated long after), replies without an id or a time, malformed and blank
+    /// lines, over several minutes.
+    fn mixed_transcript() -> String {
+        let mut lines: Vec<String> = Vec::new();
+        for n in 0..60u64 {
+            let at = format!("2026-10-12T10:{:02}:{:02}.000Z", n / 6, n % 6 * 10);
+            match n % 10 {
+                0 => lines.push(prompt(&at, "go on")),
+                3 => lines.push("not json".into()),
+                4 => lines.push(String::new()),
+                // The first reply again, long after: counted once.
+                7 => lines.push(reply("msg_0001", &at, 50, 50, 50, 50)),
+                8 => lines
+                    .push(r#"{"type":"assistant","message":{"usage":{"input_tokens":3}}}"#.into()),
+                _ => {
+                    let id = format!("msg_{:04}", n / 2);
+                    lines.push(reply(&id, &at, n, 2 * n, 3 * n, 4 * n));
+                }
+            }
+        }
+        lines.join("\n") + "\n"
+    }
+
+    /// Write `text` to `p` in steps cut at `cuts` (byte offsets, any order), reading through `r`
+    /// after each step: every read gives what one full read of the file as it is gives.
+    fn read_in_steps(r: &Reader, p: &Path, text: &str, cuts: &[usize]) {
+        let mut cuts = cuts.to_vec();
+        cuts.push(text.len());
+        cuts.sort_unstable();
+        fs::write(p, "").unwrap();
+        let mut done = 0;
+        for cut in cuts {
+            append(p, &text[done..cut]);
+            done = cut;
+            assert_eq!(
+                r.summary(p).unwrap(),
+                summarize(p).unwrap(),
+                "after {cut} bytes"
+            );
+        }
+        assert_eq!(fs::read_to_string(p).unwrap(), text);
+    }
+
+    /// A tiny fixed-seed generator for the random splits (xorshift64*).
+    fn next(seed: &mut u64) -> u64 {
+        *seed ^= *seed >> 12;
+        *seed ^= *seed << 25;
+        *seed ^= *seed >> 27;
+        seed.wrapping_mul(0x2545_f491_4f6c_dd1d)
+    }
+
+    #[test]
+    fn steps_read_on_add_up_to_one_full_read() {
+        // mu-210 AC1: a cut mid-line, and one right after msg_0001's first block, before its
+        // second block and its repeat.
+        let d = crate::testkit::tempdir().unwrap();
+        let p = d.path().join("t.jsonl");
+        let text = mixed_transcript();
+        let whole = {
+            fs::write(&p, &text).unwrap();
+            summarize(&p).unwrap()
+        };
+        assert!(whole.skipped_lines > 0 && whole.buckets.len() > 5);
+        let first = text.find("msg_0001").unwrap();
+        let after_first = first + text[first..].find('\n').unwrap() + 1;
+        let (r, _) = reader(d.path());
+        read_in_steps(&r, &p, &text, &[first + 10, after_first, text.len() / 2]);
+        // msg_0001 counted once, though its blocks and repeat came in three reads.
+        assert_eq!(r.summary(&p).unwrap(), whole);
+    }
+
+    #[test]
+    fn random_splits_add_up_to_one_full_read() {
+        // mu-210 AC1: 200 random splits from fixed seeds, 1 to 8 cuts each.
+        let d = crate::testkit::tempdir().unwrap();
+        let p = d.path().join("t.jsonl");
+        let text = mixed_transcript();
+        fs::write(&p, &text).unwrap();
+        let whole = summarize(&p).unwrap();
+        for s in 0..200u64 {
+            let mut seed = 0x9e37_79b9_7f4a_7c15 ^ (s + 1);
+            let n = 1 + next(&mut seed) % 8;
+            let cuts: Vec<usize> = (0..n)
+                .map(|_| (next(&mut seed) % text.len() as u64) as usize)
+                .collect();
+            let (r, _) = reader(d.path());
+            read_in_steps(&r, &p, &text, &cuts);
+            assert_eq!(r.summary(&p).unwrap(), whole, "seed {s}, cuts {cuts:?}");
+        }
+    }
+
+    #[test]
+    fn a_grown_file_is_read_on_from_where_the_last_read_stopped() {
+        let d = crate::testkit::tempdir().unwrap();
+        let p = d.path().join("t.jsonl");
+        // Past the first 4 KB, so the head check doesn't see the edit below.
+        let filler = prompt("2026-10-12T10:00:00Z", &"x".repeat(5000));
+        let old = reply("m1", "2026-10-12T10:00:01Z", 1, 0, 0, 0);
+        fs::write(&p, format!("{filler}\n{old}\n")).unwrap();
+        let (r, _) = reader(d.path());
+        assert_eq!(r.summary(&p).unwrap().tokens.input, 1);
+        // An edit to a line already read, of the same length, then an append: only the
+        // appended reply is read, so the edit isn't seen.
+        let edited = fs::read_to_string(&p)
+            .unwrap()
+            .replace("\"input_tokens\":1,", "\"input_tokens\":9,");
+        fs::write(&p, edited).unwrap();
+        append(
+            &p,
+            &(reply("m2", "2026-10-12T10:00:02Z", 5, 0, 0, 0) + "\n"),
+        );
+        assert_eq!(r.summary(&p).unwrap().tokens.input, 6);
+        assert_eq!(summarize(&p).unwrap().tokens.input, 14);
+    }
+
+    #[test]
+    fn an_unfinished_last_line_counts_once_its_line_end_arrives() {
+        // mu-210 AC2.
+        let d = crate::testkit::tempdir().unwrap();
+        let p = d.path().join("t.jsonl");
+        let line = reply("m2", "2026-10-12T10:05:00Z", 5, 0, 0, 0);
+        fs::write(
+            &p,
+            reply("m1", "2026-10-12T10:00:00Z", 1, 0, 0, 0) + "\n" + &line[..40],
+        )
+        .unwrap();
+        let (r, _) = reader(d.path());
+        let s = r.summary(&p).unwrap();
+        assert_eq!((s.tokens.input, s.skipped_lines), (1, 0));
+        assert_eq!(s.last, iso_secs("2026-10-12T10:00:00Z"));
+        assert_eq!(s, summarize(&p).unwrap());
+        append(&p, &line[40..]);
+        // Whole JSON without its line end yet: it counts, but stays unread for the next read.
+        assert_eq!(r.summary(&p).unwrap().tokens.input, 6);
+        append(&p, "\n");
+        let s = r.summary(&p).unwrap();
+        assert_eq!((s.tokens.input, s.skipped_lines), (6, 0));
+        assert_eq!(s.last, iso_secs("2026-10-12T10:05:00Z"));
+        // A finished line that isn't JSON is skipped, once.
+        append(&p, "{\"type\":\"assi");
+        assert_eq!(r.summary(&p).unwrap().skipped_lines, 0);
+        append(&p, "stant\",oops\n");
+        assert_eq!(r.summary(&p).unwrap().skipped_lines, 1);
+        append(
+            &p,
+            &(reply("m3", "2026-10-12T10:06:00Z", 1, 0, 0, 0) + "\n"),
+        );
+        let s = r.summary(&p).unwrap();
+        assert_eq!((s.tokens.input, s.skipped_lines), (7, 1));
+        assert_eq!(s, summarize(&p).unwrap());
+    }
+
+    #[test]
+    fn a_file_that_shrank_or_was_replaced_is_read_in_full() {
+        // mu-210 AC2: each change below would give wrong counts if it were read on.
+        let d = crate::testkit::tempdir().unwrap();
+        let p = d.path().join("t.jsonl");
+        let filler = prompt("2026-10-12T10:00:00Z", &"x".repeat(5000));
+        let start = format!(
+            "{filler}\n{}\n",
+            reply("m1", "2026-10-12T10:00:01Z", 1, 0, 0, 0)
+        );
+        let (r, _) = reader(d.path());
+        let reread = |text: &str| {
+            assert_eq!(r.summary(&p).unwrap(), summarize(&p).unwrap(), "{text}");
+        };
+        fs::write(&p, &start).unwrap();
+        reread("first read");
+        // Shrank.
+        fs::write(&p, reply("m9", "2026-10-12T11:00:00Z", 2, 0, 0, 0) + "\n").unwrap();
+        assert_eq!(r.summary(&p).unwrap().tokens.input, 2);
+        reread("shrank");
+        // Rewritten in place (same inode), larger, with another head.
+        fs::write(&p, &start).unwrap();
+        reread("back");
+        let other_head = start
+            .replacen("xxxx", "yyyy", 1)
+            .replace("\"input_tokens\":1,", "\"input_tokens\":3,")
+            + &reply("m2", "2026-10-12T10:00:02Z", 5, 0, 0, 0)
+            + "\n";
+        fs::write(&p, &other_head).unwrap();
+        assert_eq!(r.summary(&p).unwrap().tokens.input, 8);
+        reread("other head");
+        // A new file at the path (a new inode), larger, with the same head: read in full.
+        let renamed = d.path().join("new.jsonl");
+        fs::write(
+            &renamed,
+            other_head.replace("\"input_tokens\":3,", "\"input_tokens\":4,")
+                + &reply("m3", "2026-10-12T10:00:03Z", 10, 0, 0, 0)
+                + "\n",
+        )
+        .unwrap();
+        fs::rename(&renamed, &p).unwrap();
+        assert_eq!(r.summary(&p).unwrap().tokens.input, 19);
+        reread("new inode");
+        // A time stamp that moved without growth.
+        let same_size = fs::read_to_string(&p)
+            .unwrap()
+            .replace("\"input_tokens\":4,", "\"input_tokens\":7,");
+        fs::write(&p, same_size).unwrap();
+        touch(&p, NOW);
+        assert_eq!(r.summary(&p).unwrap().tokens.input, 22);
+        reread("touched");
+    }
+
+    #[test]
+    fn a_line_over_the_cap_across_reads_is_skipped_once() {
+        // mu-210 AC3.
+        let d = crate::testkit::tempdir().unwrap();
+        let p = d.path().join("t.jsonl");
+        let huge = format!(
+            r#"{{"type":"user","message":{{"content":"{}"}}}}"#,
+            "x".repeat(MAX_LINE_BYTES + 10)
+        );
+        let half = huge.len() / 2;
+        fs::write(
+            &p,
+            reply("m1", "2026-10-12T10:00:00Z", 1, 0, 0, 0) + "\n" + &huge[..half],
+        )
+        .unwrap();
+        let (r, _) = reader(d.path());
+        assert_eq!(r.summary(&p).unwrap().skipped_lines, 0);
+        append(&p, &huge[half..]);
+        // Over the cap and unfinished: neither counted nor held.
+        assert_eq!(r.summary(&p).unwrap().skipped_lines, 0);
+        append(&p, "\n");
+        assert_eq!(r.summary(&p).unwrap().skipped_lines, 1);
+        append(
+            &p,
+            &(reply("m2", "2026-10-12T10:01:00Z", 2, 0, 0, 0) + "\n"),
+        );
+        let s = r.summary(&p).unwrap();
+        assert_eq!((s.tokens.input, s.skipped_lines), (3, 1));
+        assert_eq!(s, summarize(&p).unwrap());
+    }
+
+    #[test]
+    fn a_file_grown_over_the_size_cap_is_not_read_on() {
+        // mu-210 AC3: the 128 MB cap holds on the read-on path too.
+        let d = crate::testkit::tempdir().unwrap();
+        let p = d.path().join("t.jsonl");
+        fs::write(&p, reply("m1", "2026-10-12T10:00:00Z", 1, 0, 0, 0) + "\n").unwrap();
+        let (r, _) = reader(d.path());
+        assert_eq!(r.summary(&p).unwrap().tokens.input, 1);
+        // Sparse: over the cap without writing 128 MB.
+        File::options()
+            .write(true)
+            .open(&p)
+            .unwrap()
+            .set_len(MAX_TRANSCRIPT_BYTES + 1)
+            .unwrap();
+        assert!(r.summary(&p).is_err());
+        assert_eq!(r.cached(), 0);
+    }
+
+    /// mu-210 AC4: a live 30 MB transcript refreshed after each 50 KB appended, against one full
+    /// read of it (what every refresh cost before). The bound is for a busy debug build;
+    /// `cargo test --release refreshing_a_live -- --nocapture` gives the numbers that matter.
+    #[test]
+    fn refreshing_a_live_30_mb_transcript_reads_only_what_was_appended() {
+        let d = crate::testkit::tempdir().unwrap();
+        let p = d.path().join("t.jsonl");
+        let line = |i: u64| {
+            let s = i % 86_400;
+            let at = format!(
+                "2026-10-12T{:02}:{:02}:{:02}.000Z",
+                s / 3600,
+                s / 60 % 60,
+                s % 60
+            );
+            reply(&format!("msg_{i:0>48}"), &at, 1, 2, 3, 4) + "\n"
+        };
+        let mut text = String::new();
+        let mut i: u64 = 0;
+        while text.len() < 30 * 1024 * 1024 {
+            text.push_str(&line(i));
+            i += 1;
+        }
+        fs::write(&p, &text).unwrap();
+        let t = std::time::Instant::now();
+        let full = summarize(&p).unwrap();
+        let before = t.elapsed();
+        assert_eq!(full.tokens.total(), i * 10);
+        let (r, _) = reader(d.path());
+        r.summary(&p).unwrap();
+        let mut times = Vec::new();
+        for _ in 0..40 {
+            let mut more = String::new();
+            while more.len() < 50 * 1024 {
+                more.push_str(&line(i));
+                i += 1;
+            }
+            append(&p, &more);
+            let t = std::time::Instant::now();
+            let s = r.summary(&p).unwrap();
+            times.push(t.elapsed());
+            assert_eq!(s.tokens.total(), i * 10);
+        }
+        assert_eq!(r.summary(&p).unwrap(), summarize(&p).unwrap());
+        times.sort();
+        let p95 = times[times.len() * 95 / 100 - 1];
+        eprintln!(
+            "30 MB transcript: full read {before:?}; refresh after 50 KB appended: \
+             median {:?}, p95 {p95:?}",
+            times[times.len() / 2]
+        );
+        assert!(p95 < before, "refresh p95 {p95:?} vs full read {before:?}");
+        assert!(p95.as_millis() < 100, "refresh p95 took {p95:?}");
     }
 
     #[test]

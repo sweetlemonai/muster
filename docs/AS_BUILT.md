@@ -1860,13 +1860,24 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     Mac"; one whose stamp names no allowed account isn't looked for and reads "not read: not
     stamped with a Claude account Muster reads" (`Found::NotRead`, 0099). Transcripts over 128 MB and lines over 8 MB are skipped, and summaries are cached by
     size and modified time (512 files).
+  - **Append-only read** (mu-210): a cached transcript that only grew is read on from just past its
+    last line end, not from byte 0. "Only grew" means the same device and inode, a larger size,
+    and the same first 4 KB as at the last read (a hash; the whole file if it was smaller). The
+    cache keeps, per file, the sums so far, that offset and the message ids counted so far as
+    8-byte hash keys, so a reply split across two reads counts once. Anything else is read in full:
+    a smaller file, another head, a new file at the path, or a new time without growth. A last line
+    without its line end is left for the next read; it counts now only if it's already whole JSON,
+    and an unfinished one is neither counted nor skipped. The 128 MB cap is checked again on the
+    opened file, and a file is read only up to the size it had when opened.
   - **Live:** a transcript (or one of its subagents') changed in the last 5 minutes. The card shows
     a small dot while any of the task's sessions is live (in its token ribbon on a card that has
     one, mu-172; by its id on the others), worked out in the state read
     from file times only (20 cards × 50 sessions: about 0.5 ms). Done tasks aren't checked.
   - **Speed:** 50 transcripts of 1,000 lines each read in about 0.3 s cold in a debug build and
     0.5 ms warm. On the owner's Mac, five real sessions (up to 60 MB) read in 0.15 s cold in a
-    release build, with no line skipped.
+    release build, with no line skipped. A 30 MB synthetic live transcript refreshes after 50 KB
+    is appended in 0.1–0.5 ms at p95 in a release build, against 79–81 ms for the full read every
+    refresh made before mu-210.
 - **New task** (`+ New task`, ⌘N, in the docked pane): project, type, priority, tags, a one-line title, a Markdown
   description, and files by paste, drop or picking. The id comes from the core under the queue's
   lock. The task lands in To do and opens.

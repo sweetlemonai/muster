@@ -3,6 +3,27 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-210: the transcript reader reads only what a live transcript appended
+**Did:** `transcripts::Reader::summary` reads a cached transcript that only grew on from just past
+its last line end (`read_on`, `Progress` in `Cached`), instead of re-reading it from byte 0 on every
+30 s token refresh. "Only grew" is the same device and inode, a larger size and the same first 4 KB
+(a hash). Anything else is read in full: smaller, another head, a new file at the path, a new time
+without growth. A full read is the same code from offset 0, so the two can't drift.
+**Decided:** the counted message ids are kept as 8-byte hash keys (`id_key`), in the full read too,
+so 512 cached files' ids stay small (the 71,171-reply synthetic file: about 1.5 MB) and both reads
+agree. A last line without its line end counts only if it's whole JSON already; an unfinished one
+is neither counted nor skipped (before, a full read counted it as skipped mid-write). The 128 MB cap
+is checked on the opened file too, and a read stops at the size the file had when opened. A file
+read on in parallel by two callers is read in full by the second (the entry is taken out while read
+on, so its ids are never copied).
+**Verified:** release build, 30 MB synthetic transcript, 40 refreshes each after 50 KB appended:
+p95 0.11–0.54 ms (median 0.10–0.37 ms), three runs. Before, on main's code: a full read every
+refresh, 79–81 ms (same machine, three runs; mu-172 logged 63–115 ms). Seven new tests (AC1–AC4):
+steps and 200 seeded random splits equal one full read at every step, unfinished last lines,
+shrank / other head / new inode / touched, an 8 MB line across reads skipped once, the size cap on
+the read-on path. `cargo test transcripts::` 36 passed; correctness review: no findings.
+**Open:** a rewrite in place that keeps the inode, the first 4 KB and grows would keep stale counts
+for the rewritten middle; Claude Code only appends, as shaping decided. `TOKEN_MEMO_SECS` stays 30 s.
 ## 2026-10-15 — mu-147: the board, views, backlog, sessions, notifications and menus in Persian
 **Fixed in round 1 (Akbar_49, builder; reviewer_110's nits):** R1: Settings and following macOS
 switch the language through one `switch_lang` (`lib.rs`), pinned by `switches_go_through_one_place`,

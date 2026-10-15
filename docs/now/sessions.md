@@ -19,3 +19,4 @@ covers: app/src-tauri/src/sessions.rs, app/src-tauri/src/transcripts.rs, app/src
 - The recap holds counted tokens (input, output, cache writes) against `est-tokens`; cache reads are shown apart, never counted. (mu-172)
 - A handoff is read only as a regular file directly in `.claude/work/handoffs/` under `~/playground`, at most 256 KB, front matter only. (decision 0017)
 - Transcripts are read only under `~/playground` project keys of the allowed accounts. (decision 0012)
+- A transcript that only grew (same inode, same first 4 KB) is read on from its last line end; anything else is read in full. (mu-210)
