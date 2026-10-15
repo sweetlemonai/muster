@@ -279,7 +279,15 @@ pub fn builder_chain(body: &str) -> Vec<String> {
                 chain = vec![s.who];
             }
         } else if let Some((_, new, old)) = takeover_line(line) {
-            if chain.is_empty() {
+            // A re-stamp (0184, mu-185) is a holder's own stamp changing: it extends the chain
+            // only when that holder is in it. A tester re-stamping its Testing hold stays out.
+            let restamp = line
+                .strip_suffix(')')
+                .and_then(|l| l.strip_suffix(STAMPED))
+                .is_some_and(|l| l.ends_with(" ("));
+            if chain.is_empty()
+                || (restamp && !chain.iter().any(|c| crate::session::same_holder(c, &old)))
+            {
                 continue;
             }
             for h in [old, new] {
@@ -5326,6 +5334,48 @@ mod tests {
         let json = serde_json::to_value(task("your-check")).unwrap();
         assert_eq!(json["criteria"][0]["proof"], "ok");
         assert_eq!(json["criteria"].as_array().map(Vec::len), Some(2));
+    }
+
+    #[test]
+    fn a_restamp_extends_the_builder_chain_only_from_a_holder_in_it() {
+        // mu-185 R1: the builder's own re-stamp joins its new stamp to the chain; a tester's
+        // re-stamp of its Testing hold, or a stamped line naming nobody in the chain, doesn't.
+        let mg = "asghar (main · session d6419719 · cc-mg)";
+        let hg = "asghar (main · session d6419719 · cc-hg)";
+        let qa_mg = "qa (main · session 0badf00d · cc-mg)";
+        let qa_hg = "qa (main · session 0badf00d · cc-hg)";
+        let text = format!(
+            "## Log\n\
+             - 2026-10-14 10:00 {mg}: stage ready → building (claimed)\n\
+             - 2026-10-14 10:30 {hg}{TOOK_OVER}{mg} ({STAMPED})\n\
+             - 2026-10-14 11:00 {qa_mg}: stage building → testing\n\
+             - 2026-10-14 11:30 {qa_hg}{TOOK_OVER}{qa_mg} ({STAMPED})\n"
+        );
+        assert_eq!(builder_chain(&text), vec![mg, hg]);
+        // Any other reason still counts both sides, as a takeover always did (0090).
+        let text = format!(
+            "## Log\n\
+             - 2026-10-14 10:00 {mg}: stage ready → building (claimed)\n\
+             - 2026-10-14 11:30 {qa_hg}{TOOK_OVER}{qa_mg} (handed off)\n"
+        );
+        assert_eq!(builder_chain(&text), vec![mg, qa_mg, qa_hg]);
+        // Review R2: the old holder is matched as a holder, not by its text. A bare claim (one
+        // returned before 0184) stamped by a successor of its stamped claimer, and a legacy bare
+        // claim stamped by its own session, both carry on the chain.
+        let other = "asghar (main · session 11111111 · cc-hg)";
+        let text = format!(
+            "## Log\n\
+             - 2026-10-14 10:00 {mg}: stage ready → building (claimed)\n\
+             - 2026-10-14 10:30 {other}{TOOK_OVER}asghar ({STAMPED})\n\
+             - 2026-10-14 11:30 {qa_hg}{TOOK_OVER}qa ({STAMPED})\n"
+        );
+        assert_eq!(builder_chain(&text), vec![mg, "asghar", other]);
+        let text = format!(
+            "## Log\n\
+             - 2026-10-14 10:00 asghar: stage ready → building (claimed)\n\
+             - 2026-10-14 10:30 {hg}{TOOK_OVER}asghar ({STAMPED})\n"
+        );
+        assert_eq!(builder_chain(&text), vec!["asghar", hg]);
     }
 
     #[test]

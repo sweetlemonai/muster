@@ -69,6 +69,27 @@ WebKit on the real styles.css (chips 107px → 8px at a 210px row). `.muster/bac
 **Open:** mu-189 and mu-200 weren't re-run through the vision check after the fold (no change of direction).
 
 
+## 2026-10-15 — A claim or Testing hold follows its session to another account (mu-185)
+**Did (Akbar_43, builder):** on top of mu-184's re-stamp, a Testing task's `held-by:` naming the
+acting session under another account is re-stamped by its note, block or unblock, logged once as
+the `(stamped)` takeover (`ops.rs`: `change_locked`, `add_note`, `restamped_text` takes the field).
+Tests for checkin, heartbeat, note, pass, `claim --takeover` and the refusals; PROTOCOL says Muster
+never picks or switches an account (0013 rule 2); AS_BUILT and docs/now/claims.md.
+**Verified:** `cargo test restamp_account` (6) and `takeover_on_another_account` (3), hermetic, red
+first on the Testing hold, then green.
+**Fixed (Akbar_44, review R1):** a lead that moved the task into Testing and re-stamped its hold
+after an account move became one of its builders, so 0047 refused its review, gate and pass →
+`queue::builder_chain` counted every takeover line, the `(stamped)` re-stamp too → a re-stamp now
+extends the chain only when its old holder is in it. Tests: `restamp_account_of_a_testers_hold_…`
+(red before), `restamp_account_never_fires_on_an_act_that_leaves_testing` (kills review mutant
+M1), `a_restamp_extends_the_builder_chain_only_from_a_holder_in_it`. Rebased on main
+(c494bff): `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`.
+**Fixed (Akbar_46, review R2):** a successor that stamped a bare claim whose claimer was a stamped
+session of its label dropped out of the builder chain, so it could test its own task →
+`builder_chain` matched the re-stamp's old holder by exact text → it matches with `same_holder`,
+as 0047 does everywhere else. Tests: `a_successor_stamping_a_bare_claim_stays_a_builder` (the
+reviewer's case and a legacy bare claim) and two chain cases, red before.
+
 ## 2026-10-15 — The merge fast-forwards main to the commit the gate checked (mu-187)
 **Fixed:** a commit made in the worktree after the gate's last run moved the branch, and
 `git merge --ff-only <branch>` took main to it; the check after caught it only once main had moved →

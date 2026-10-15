@@ -1274,11 +1274,18 @@ fn restamp(claim: &str, who: &str, stamp: &str) -> Option<(String, String)> {
     reads_as_takeover(&line).then_some((new, line))
 }
 
-/// `text` (a task file) with its claim `claim` re-stamped for `who` and logged (`restamp`), or as
-/// is. For a holder's act that writes the file itself: a heartbeat, a check-in, a note.
-fn restamped_text(text: &str, claim: &str, who: &str, stamp: &str) -> Result<String, String> {
+/// `text` (a task file) with its claim `claim` in `field` (`claimed-by`, or a Testing task's
+/// `held-by`, mu-185) re-stamped for `who` and logged (`restamp`), or as is. For a holder's act
+/// that writes the file itself: a heartbeat, a check-in, a note.
+fn restamped_text(
+    text: &str,
+    field: &str,
+    claim: &str,
+    who: &str,
+    stamp: &str,
+) -> Result<String, String> {
     match restamp(claim, who, stamp) {
-        Some((new, line)) => Ok(append_log(&set_front(text, "claimed-by", &new)?, &line)),
+        Some((new, line)) => Ok(append_log(&set_front(text, field, &new)?, &line)),
         None => Ok(text.to_string()),
     }
 }
@@ -1459,6 +1466,15 @@ fn change_locked(
                 c.log.insert(0, line);
             }
         }
+        // Its holder in Testing (`held-by:`) acting with a session is stamped the same way
+        // (mu-185), when the act keeps it there: a pass or a return hands the hold on anyway.
+        let mut hold = None;
+        if now.stage == "testing" && c.stage == "testing" {
+            if let Some((new, line)) = restamp(&now.held_by, who, stamp) {
+                hold = Some(new);
+                c.log.insert(0, line);
+            }
+        }
         // The owner's own task in Building is the owner's, however it got there (an override, a
         // return): never "Building with no claim", and never an agent's claim (review C4).
         if now.human && c.stage == "building" && !is_owner(&c.claimed_by) {
@@ -1570,7 +1586,7 @@ fn change_locked(
         // may pass is unchanged. Testing goes to whoever passes it there from Building; back in
         // Testing any other way, to whoever did that last. Your check is the owner's.
         let held_by = match c.stage.as_str() {
-            s if s == now.stage => now.held_by.clone(),
+            s if s == now.stage => hold.unwrap_or_else(|| now.held_by.clone()),
             // The claim's role slot stays with its holder (0112), whatever name it acts as.
             // Unless the slot went to another session while it came back without it.
             "testing" if now.stage == "building" => {
@@ -2858,7 +2874,7 @@ pub fn heartbeat_task(root: &Path, id: &str, who: &str, stamp: &str) -> Result<S
     let who = actor(who)?;
     edit(root, id, |path, text| {
         let claim = held_in_building(root, id, path, &text, &who)?;
-        let new = restamped_text(&text, &claim, &who, stamp)?;
+        let new = restamped_text(&text, "claimed-by", &claim, &who, stamp)?;
         Ok((set_front(&new, "heartbeat", stamp)?, None))
     })
 }
@@ -2980,7 +2996,7 @@ pub fn checkin_task_with(
     }
     edit(root, id, |path, file| {
         let claim = held_in_building(root, id, path, &file, &who)?;
-        let new = restamped_text(&file, &claim, &who, stamp)?;
+        let new = restamped_text(&file, "claimed-by", &claim, &who, stamp)?;
         let new = set_front(&new, "heartbeat", stamp)?;
         Ok((append_log(&new, &line), None))
     })
@@ -4224,17 +4240,22 @@ pub fn add_note(
     let line = free_text_line(format!("{stamp} {who}: {note}"), "a note")?;
     edit(root, id, |path, text| {
         // The holder's note keeps its claim alive, and stamps a claim that names no session
-        // (mu-184) before the note is logged.
-        let held = queue::parse_task("", root, &queue::folder_of(root, path), path, &text, 0)
-            .filter(|t| {
-                queue::has_lease(&t.stage)
-                    && !t.claimed_by.is_empty()
-                    && same_holder(&t.claimed_by, &who)
-            });
+        // (mu-184) or its session under another account (mu-185) before the note is logged.
+        let t = queue::parse_task("", root, &queue::folder_of(root, path), path, &text, 0);
+        // A Testing task's holder (`held-by:`) is stamped the same way; it has no lease to renew.
+        if let Some(t) = t.as_ref().filter(|t| t.stage == "testing") {
+            let new = restamped_text(&text, "held-by", &t.held_by, &who, stamp)?;
+            return Ok((append_log(&new, &line), None));
+        }
+        let held = t.filter(|t| {
+            queue::has_lease(&t.stage)
+                && !t.claimed_by.is_empty()
+                && same_holder(&t.claimed_by, &who)
+        });
         let Some(t) = held else {
             return Ok((append_log(&text, &line), None));
         };
-        let new = restamped_text(&text, &t.claimed_by, &who, stamp)?;
+        let new = restamped_text(&text, "claimed-by", &t.claimed_by, &who, stamp)?;
         let new = append_log(&new, &line);
         Ok((set_front(&new, "heartbeat", stamp)?, None))
     })
@@ -11430,6 +11451,332 @@ mod unreached_tests {
             T
         )
         .is_err());
+    }
+
+    // mu-185: a session that moved to another account (cc-mg → cc-hg, same session id) re-stamps
+    // its claim, or its Testing hold, on its next act.
+    const MG: &str = "asghar (main · session d6419719 · cc-mg)";
+
+    /// 0001 in Testing, held by `holder`, its claim gone with the pass.
+    fn testing(d: &Path, holder: &str) {
+        put(
+            d,
+            "doing",
+            "0001",
+            &format!("stage: testing\nstatus: doing\nclaimed-by:\nheld-by: {holder}\nwaiting_on:"),
+        );
+    }
+
+    #[test]
+    fn restamp_account_on_checkin_heartbeat_note_or_pass_logs_once() {
+        for act in ["checkin", "heartbeat", "note", "pass"] {
+            let d = queue();
+            building(d.path(), MG);
+            match act {
+                "checkin" => checkin_task(d.path(), "0001", "moved", "40", NEW, T),
+                "heartbeat" => heartbeat_task(d.path(), "0001", NEW, T),
+                "note" => add_note(d.path(), "0001", "on cc-hg now", NEW, T),
+                _ => pass_task(d.path(), "0001", NEW, T, &gate()),
+            }
+            .unwrap();
+            let t = task(d.path(), "0001");
+            let holder = if act == "pass" {
+                &t.held_by
+            } else {
+                &t.claimed_by
+            };
+            assert_eq!(holder, NEW, "{act}");
+            let text = file(d.path(), "0001");
+            let lines = takeovers(&text);
+            assert_eq!(
+                lines,
+                vec![format!(
+                    "- {T} {NEW}: took over the claim from {MG} (stamped)"
+                )],
+                "{act}"
+            );
+            assert_eq!(
+                queue::takeover_line(&lines[0]),
+                Some((T.into(), NEW.into(), MG.into())),
+                "{act}"
+            );
+            // A second act on the same account writes no further takeover line.
+            if act == "pass" {
+                add_note(d.path(), "0001", "again", NEW, "2026-10-14 11:10").unwrap();
+            } else {
+                checkin_task(d.path(), "0001", "again", "", NEW, "2026-10-14 11:10").unwrap();
+                heartbeat_task(d.path(), "0001", NEW, "2026-10-14 11:20").unwrap();
+                add_note(d.path(), "0001", "again", NEW, "2026-10-14 11:25").unwrap();
+            }
+            assert_eq!(takeovers(&file(d.path(), "0001")).len(), 1, "{act}");
+        }
+    }
+
+    #[test]
+    fn restamp_account_same_account_writes_nothing() {
+        let d = queue();
+        building(d.path(), NEW);
+        checkin_task(d.path(), "0001", "same account", "", NEW, T).unwrap();
+        heartbeat_task(d.path(), "0001", NEW, T).unwrap();
+        add_note(d.path(), "0001", "a note", NEW, T).unwrap();
+        assert_eq!(task(d.path(), "0001").claimed_by, NEW);
+        assert!(takeovers(&file(d.path(), "0001")).is_empty());
+    }
+
+    #[test]
+    fn restamp_account_never_moves_a_claim_to_another_session_or_agent() {
+        for other in [
+            "asghar (main · session 11111111 · cc-hg)",
+            "asghar (main · session d6419719 · agent a1b2c3d4 · cc-hg)",
+        ] {
+            let d = queue();
+            building(d.path(), MG);
+            let e = checkin_task(d.path(), "0001", "mine?", "", other, T).unwrap_err();
+            assert_eq!(e, format!("0001 is held by {MG}, not {other}"));
+            assert!(heartbeat_task(d.path(), "0001", other, T).is_err());
+            add_note(d.path(), "0001", "a note", other, T).unwrap();
+            assert_eq!(task(d.path(), "0001").claimed_by, MG, "{other}");
+            assert!(takeovers(&file(d.path(), "0001")).is_empty(), "{other}");
+        }
+    }
+
+    #[test]
+    fn restamp_account_of_a_testing_hold_on_note_or_block() {
+        for act in ["note", "block"] {
+            let d = queue();
+            testing(d.path(), MG);
+            match act {
+                "note" => add_note(d.path(), "0001", "on cc-hg now", NEW, T),
+                _ => block_task(d.path(), "0001", "outside: Apple review", NEW, T),
+            }
+            .unwrap();
+            let t = task(d.path(), "0001");
+            assert_eq!(
+                (t.stage.as_str(), t.claimed_by.as_str(), t.held_by.as_str()),
+                ("testing", "", NEW),
+                "{act}"
+            );
+            let lines = takeovers(&file(d.path(), "0001"));
+            assert_eq!(
+                lines,
+                vec![format!(
+                    "- {T} {NEW}: took over the claim from {MG} (stamped)"
+                )],
+                "{act}"
+            );
+            assert_eq!(
+                queue::takeover_line(&lines[0]),
+                Some((T.into(), NEW.into(), MG.into()))
+            );
+            // Once: further acts on the new account add nothing.
+            add_note(d.path(), "0001", "again", NEW, "2026-10-14 11:10").unwrap();
+            if act == "block" {
+                unblock_task(d.path(), "0001", NEW, "2026-10-14 11:20").unwrap();
+            }
+            assert_eq!(takeovers(&file(d.path(), "0001")).len(), 1, "{act}");
+            assert_eq!(task(d.path(), "0001").held_by, NEW, "{act}");
+        }
+    }
+
+    #[test]
+    fn restamp_account_leaves_a_testing_hold_of_another_session_or_the_owner() {
+        for other in [
+            "asghar (main · session 11111111 · cc-hg)",
+            "owner (main · session d6419719 · cc-hg)",
+            "owner",
+        ] {
+            let d = queue();
+            testing(d.path(), MG);
+            add_note(d.path(), "0001", "a note", other, T).unwrap();
+            assert_eq!(task(d.path(), "0001").held_by, MG, "{other}");
+            assert!(takeovers(&file(d.path(), "0001")).is_empty(), "{other}");
+        }
+    }
+
+    #[test]
+    fn restamp_account_unlabelled_never_replaces_a_labelled_one() {
+        // The same session from ~/.claude: its stamp names no account.
+        let plain = "asghar (main · session d6419719)";
+        let d = queue();
+        building(d.path(), MG);
+        checkin_task(d.path(), "0001", "from ~/.claude", "", plain, T).unwrap();
+        add_note(d.path(), "0001", "a note", plain, T).unwrap();
+        assert_eq!(task(d.path(), "0001").claimed_by, MG);
+        let e = takeover_task(d.path(), "0001", plain, T, 0).unwrap_err();
+        assert_eq!(e, "you already hold 0001; there's nothing to take over");
+        assert!(takeovers(&file(d.path(), "0001")).is_empty());
+
+        let d = queue();
+        testing(d.path(), MG);
+        add_note(d.path(), "0001", "a note", plain, T).unwrap();
+        block_task(d.path(), "0001", "outside: Apple review", plain, T).unwrap();
+        assert_eq!(task(d.path(), "0001").held_by, MG);
+        assert!(takeovers(&file(d.path(), "0001")).is_empty());
+    }
+
+    #[test]
+    fn takeover_on_another_account_restamps_instead_of_refusing() {
+        let d = queue();
+        building(d.path(), MG);
+        let t = takeover_task(d.path(), "0001", NEW, T, 0).unwrap();
+        assert_eq!(
+            t,
+            TakenOver {
+                path: "doing/0001-t.md".into(),
+                from: MG.into(),
+                why: "stamped".into(),
+                moved: None,
+            }
+        );
+        let held = task(d.path(), "0001");
+        assert_eq!(
+            (held.claimed_by.as_str(), held.heartbeat.as_str()),
+            (NEW, T)
+        );
+        assert_eq!(
+            takeovers(&file(d.path(), "0001")),
+            vec![format!(
+                "- {T} {NEW}: took over the claim from {MG} (stamped)"
+            )]
+        );
+    }
+
+    #[test]
+    fn takeover_on_another_account_refuses_on_the_same_account() {
+        let d = queue();
+        building(d.path(), NEW);
+        let e = takeover_task(d.path(), "0001", NEW, T, 0).unwrap_err();
+        assert_eq!(e, "you already hold 0001; there's nothing to take over");
+        assert_eq!(task(d.path(), "0001").claimed_by, NEW);
+        assert!(takeovers(&file(d.path(), "0001")).is_empty());
+    }
+
+    #[test]
+    fn takeover_on_another_account_by_another_session_or_agent_isnt_a_restamp() {
+        for other in [
+            "asghar (main · session 11111111 · cc-hg)",
+            "asghar (main · session d6419719 · agent a1b2c3d4 · cc-hg)",
+        ] {
+            let d = queue();
+            building(d.path(), MG);
+            // Heard from 5 minutes ago: not quiet, not handed off, so an ordinary takeover is
+            // refused, and the account move doesn't make it a re-stamp.
+            let e = takeover_task(d.path(), "0001", other, T, 0).unwrap_err();
+            assert!(!e.contains("you already hold"), "{other}: {e}");
+            assert_eq!(task(d.path(), "0001").claimed_by, MG, "{other}");
+            assert!(takeovers(&file(d.path(), "0001")).is_empty(), "{other}");
+        }
+    }
+
+    // Review R1: a lead that moved a task into Testing holds it; when its session moves account
+    // and re-stamps the hold, it stays the tester, never one of the builders (0047).
+    const QA_MG: &str = "qa (main · session 0badf00d · cc-mg)";
+    const QA_HG: &str = "qa (main · session 0badf00d · cc-hg)";
+
+    /// 0001 built by asghar, moved into Testing by the lead on cc-mg with `muster stage`; on its
+    /// own branch when `branched` (the review's records need one; a pass from Testing then merges).
+    fn moved_to_testing_by_the_lead(d: &Path, branched: bool) {
+        if branched {
+            building(d, BARE);
+        } else {
+            put(
+                d,
+                "doing",
+                "0001",
+                &format!("stage: building\nstatus: doing\nclaimed-by: {BARE}\nheartbeat: 2026-10-14 10:55\nwaiting_on:"),
+            );
+        }
+        set_stage(d, "0001", "testing", None, QA_MG, "2026-10-14 10:58").unwrap();
+        assert_eq!(task(d, "0001").held_by, QA_MG);
+    }
+
+    #[test]
+    fn restamp_account_of_a_testers_hold_keeps_it_out_of_the_builder_chain() {
+        // The review and gate records (check_tester): allowed before the move and after it.
+        let d = queue();
+        moved_to_testing_by_the_lead(d.path(), true);
+        crate::testing::check_tester("0001", &task(d.path(), "0001"), QA_MG, "the review").unwrap();
+        add_note(d.path(), "0001", "on cc-hg now", QA_HG, T).unwrap();
+        let t = task(d.path(), "0001");
+        assert_eq!(t.held_by, QA_HG);
+        assert_eq!(
+            takeovers(&file(d.path(), "0001")),
+            vec![format!(
+                "- {T} {QA_HG}: took over the claim from {QA_MG} (stamped)"
+            )]
+        );
+        assert_eq!(t.builders, vec![BARE.to_string()]);
+        crate::testing::check_tester("0001", &t, QA_HG, "the review").unwrap();
+        crate::testing::check_tester("0001", &t, QA_HG, "a gate").unwrap();
+
+        // The pass out of Testing (tester_rule): the re-stamped lead may pass it on.
+        let d = queue();
+        moved_to_testing_by_the_lead(d.path(), false);
+        add_note(d.path(), "0001", "on cc-hg now", QA_HG, T).unwrap();
+        assert_eq!(task(d.path(), "0001").held_by, QA_HG);
+        pass_task(
+            d.path(),
+            "0001",
+            QA_HG,
+            "2026-10-14 11:10",
+            &PassOpts::default(),
+        )
+        .unwrap();
+        let t = task(d.path(), "0001");
+        assert_eq!(t.stage, "your-check");
+        assert_eq!(t.builders, vec![BARE.to_string()]);
+    }
+
+    #[test]
+    fn restamp_account_never_fires_on_an_act_that_leaves_testing() {
+        for act in ["pass", "return"] {
+            let d = queue();
+            moved_to_testing_by_the_lead(d.path(), false);
+            match act {
+                "pass" => pass_task(d.path(), "0001", QA_HG, T, &PassOpts::default()),
+                _ => return_task(d.path(), "0001", "AC1 fails", None, QA_HG, T),
+            }
+            .unwrap();
+            let t = task(d.path(), "0001");
+            assert_ne!(t.stage, "testing", "{act}");
+            assert!(takeovers(&file(d.path(), "0001")).is_empty(), "{act}");
+            assert_eq!(t.builders, vec![BARE.to_string()], "{act}");
+        }
+    }
+
+    // Review R2: a bare claim (one returned before 0184) whose claimer was a stamped session, or
+    // a legacy claim made bare, is stamped by the next session of its label. That session built
+    // it, so it stays in the builder chain and can't test it (0047).
+    #[test]
+    fn a_successor_stamping_a_bare_claim_stays_a_builder() {
+        let other = "asghar (main · session 11111111 · cc-hg)";
+        for (claimer, by) in [(MG, other), (BARE, NEW)] {
+            let d = queue();
+            building(d.path(), BARE);
+            let p = find_task(d.path(), "0001").unwrap();
+            let text = fs::read_to_string(&p).unwrap().replace(
+                &format!("{BARE}: stage ready"),
+                &format!("{claimer}: stage ready"),
+            );
+            fs::write(&p, text).unwrap();
+            add_note(d.path(), "0001", "picking it up", by, T).unwrap();
+            let t = task(d.path(), "0001");
+            assert_eq!(t.claimed_by, by, "{claimer}");
+            assert_eq!(
+                takeovers(&file(d.path(), "0001")),
+                vec![format!(
+                    "- {T} {by}: took over the claim from {BARE} (stamped)"
+                )],
+                "{claimer}"
+            );
+            assert_eq!(t.builders.last().map(String::as_str), Some(by), "{claimer}");
+            set_stage(d.path(), "0001", "testing", None, QA_MG, "2026-10-14 11:10").unwrap();
+            let t = task(d.path(), "0001");
+            assert_eq!(t.built_by, by, "{claimer}");
+            let e = crate::testing::check_tester("0001", &t, by, "the review").unwrap_err();
+            assert!(e.contains("built"), "{claimer}: {e}");
+            crate::testing::check_tester("0001", &t, QA_MG, "the review").unwrap();
+        }
     }
 
     #[test]

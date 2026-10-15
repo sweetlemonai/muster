@@ -381,6 +381,7 @@ is in section 6.
 | Pick-one questions | Built, tested | mu-49 |
 | Ping a session (check-in, message) | Built, tested; the auto-nudge isn't built | mu-39 |
 | Release a claim no session can be reached on; a holder's act stamps it; send-backs keep the session | Built, tested | mu-184 |
+| A claim or Testing hold follows its session to another account on the holder's next act | Built, tested | mu-185 |
 | Claim takeover after a handoff or 30 quiet minutes, mail following the claim; a teammate is its own holder (agent id) with its own mailbox | Built, tested; on its branch, not on main. No hook passes the agent id: `--agent` or `MUSTER_AGENT` | mu-90 |
 | Claude Code's session states | Built, tested (a research-preview format) | mu-48 |
 | Who worked on a task and what it cost | Built, tested; a session counts in full on every task it names | mu-25 |
@@ -1335,7 +1336,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   `check_merge_pass` before any rebase or gate, and `pass_merged`), `set_stage` and `move_task`
   (past Testing) refuse the builder of an agent's task, matched by `session::same_holder` against
   whoever last claimed it (`ready → building (claimed)`), every holder a takeover moved the claim
-  from or to since (0090, `queue::builder_chain`; `builtBy` is the last), and whoever last passed
+  from or to since (0090, `queue::builder_chain`; `builtBy` is the last; a `(stamped)` re-stamp
+  only when its old holder is the same holder as one in the chain, by `same_holder`, mu-185), and whoever last passed
   it into Testing with a gate line. The reviewer check (`review.rs`) refuses the same chain. The refusal names the builder and suggests a QA label (`muster/qa-0042`). The
   owner is always let through, logged `(owner's override: no separate tester)`; another label in
   a builder's session and agent is let through, logged `(tested under another label in the builder's
@@ -2111,6 +2113,13 @@ passes it to Testing (pass, block), and
 run again after that, it is mu-156's rerun, which finds no other mailbox to move from.
 The owner's and an unstamped holder's acts never re-stamp, and in `change_locked` only a change
 that keeps the claim or passes it to Testing does (not a reclaim or a freed task's release).
+A Testing task's `held-by:` is re-stamped the same way (task 0185): `add_note` (`restamped_text`
+with the field `held-by`) and every `change_locked` act that keeps it in Testing (block,
+unblock), logged with the same `(stamped)` takeover line; `queue::builder_chain` adds a
+`(stamped)` line's holders only when its old holder is in the chain already, so a tester's
+re-stamp keeps it out and 0047 still lets it record and pass. A pass or return out of Testing
+doesn't re-stamp the hold. Only the same session id and agent under
+another account re-stamp; a stamp with no account (`~/.claude`) never replaces a labelled one.
 `return_change` gives Building back to the builder's exact stamp (`unless_taken`), no longer its
 bare label; while that session holds no other unblocked Building task (`holding`) and hasn't
 acted on it (`untouched_send_back`: not paused, heartbeat still the stage's own minute, and

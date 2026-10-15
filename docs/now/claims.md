@@ -21,4 +21,5 @@ covers: app/src-tauri/src/session.rs, app/src-tauri/src/pause.rs
 - Nobody takes over a paused claim. (mu-90)
 - A takeover brings that task's mail and repoints its questions. (mu-90)
 - A bare claim is stamped by its holder's first act from a session, logged once "(stamped)". (mu-184)
+- After its session moves account (same id), its next act or `--takeover` re-stamps the claim, or a Testing `held-by:` (a tester stays out of the builder chain); Muster never switches accounts. (mu-185)
 - The pane's Release lets the owner free a claim or Testing hold with no session to reach; Building keeps its worktree. (mu-184)

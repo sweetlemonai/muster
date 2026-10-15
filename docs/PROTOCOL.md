@@ -620,6 +620,8 @@ its own agent id is another holder, 0090) and logged `(tested under
 > with `muster claim <id> --takeover` (see "Sessions" below).
 > Testing and Your check have a holder too, `held-by:`, set by `pass` (whoever passes it into
 > Testing; the owner in Your check); it's shown, not a claim, so who may pass doesn't change.
+> A claim and a Testing hold follow their session's account: when the session moved (cc-mg to
+> cc-hg, same session id), its next act re-stamps them (Muster 0185, see "Sessions").
 > **Check in at each milestone and at least every 30 minutes** while you hold a task in Building:
 > `muster checkin <id> "<what's done, what's next>" [--pct 60] --as <you>`. It logs
 > `<who>: check-in 60% · <text>`, renews your claim like `muster heartbeat`, and the card shows it
@@ -1084,7 +1086,15 @@ and `tasks.json`, which scripts read, keep ids.
     `claim --takeover`, which no longer says "you already hold it" for such a claim), `claimed-by:`
     becomes that session's stamp, under the lock, logged once as `<who>: took over the claim from
     <label> (stamped)`; Ping reaches it from then on. A claim stamped with your own session under
-    another account (the session moved from cc-mg to cc-hg) takes your account the same way.
+    another account (the session moved from cc-mg to cc-hg) takes your account the same way, and
+    `claim --takeover` re-stamps it instead of refusing (Muster 0185); on the same account it
+    still says "you already hold it". A Testing task's `held-by:` naming your session under
+    another account is re-stamped the same way when you note, block or unblock it; a tester's
+    re-stamp never makes it one of the task's builders, so it may still record the review and pass
+    it on (0047), while a session that stamps a builder's bare claim is one of them. Only the same
+    session id and agent re-stamp, and a session with no account (`~/.claude`) never replaces
+    one. This records a move the owner's tool made: Muster never picks or switches an account
+    (decision 0013, rule 2).
     The owner's and an unstamped holder's acts never re-stamp, nor does a sweep that lets the
     claim go (`muster reclaim`, a freed task's release) whoever runs it.
   - **A send-back keeps the builder's session (Muster 0184).** A return to Building (from Testing

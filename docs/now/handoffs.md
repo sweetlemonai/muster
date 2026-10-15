@@ -20,6 +20,7 @@ covers: app/src-tauri/src/session.rs, app/src-tauri/src/ping.rs, app/src-tauri/s
 - Sessions are named by role: `Muster_Team_Lead`, `_2`…; builders `muster-build-0042`. (decision 0004)
 - Claude Code's session states don't replace check-ins. (mu-48)
 - A session's state is matched by its id in every account Muster reads, whatever account its stamp names. (mu-182)
+- `claim --takeover` from your own session after it moved account re-stamps the claim instead of refusing. (mu-185)
 - A shaper's claim gets its session's state too, on the card's ribbon. (mu-171)
 - A message from the owner is quoted as their note, never instructions. (mu-39)
 - The cards keep only a session's short id and state from `claude agents`; only the Sessions view keeps name, start and `cwd`, in memory. (decision 0017)
