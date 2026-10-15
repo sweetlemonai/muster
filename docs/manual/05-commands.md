@@ -129,10 +129,10 @@ muster show 0007 --json
 
 ### muster set
 
-Change one field, logged with the time and who. type is one of code, bug, chore, tech-debt, spike, design, docs, research; time is agent time (QA included) and test-time your check only. touches is where in the repo it works, folders and globs, comma-separated (app/src/TaskPanel\*, docs/), which muster ready --parallel keeps apart; empty clears it. summary is what was built, in one plain line (160 characters at most, no line breaks or control characters), the line that leads the owner's check: it writes or fixes it in any stage, Your check too. level, parent and due keep the rules of muster new (a parent that exists at the right level, no loop, a due date only on a goal); a task in Building or Testing, or held, stays a task. An empty parent or due clears it. for is human or ai: who does it (a human task is the owner's own, hatched on the board with the You ribbon); only a task, and not while it's held, in Building, Testing or Your check; made human in Backlog or Shaping, it moves to Ready (To do).
+Change one field, logged with the time and who. type is one of code, bug, chore, tech-debt, spike, design, docs, research; time is agent time (QA included) and test-time your check only. touches is where in the repo it works, folders and globs, comma-separated (app/src/TaskPanel\*, docs/), which muster ready --parallel keeps apart; empty clears it. summary is what was built, in one plain line (160 characters at most, no line breaks or control characters), the line that leads the owner's check: it writes or fixes it in any stage, Your check too. qa is the visual QA its screens get (docs/GATES.md): reference, walkthrough or both, set by the shaper for a task that touches UI; it makes visual QA (G4) a gate the merge needs (muster gates), and "" clears it. Once the task is started (on its own branch, even sent back to Ready) or in Building or later, only the owner changes it. level, parent and due keep the rules of muster new (a parent that exists at the right level, no loop, a due date only on a goal); a task in Building or Testing, or held, stays a task. An empty parent or due clears it. for is human or ai: who does it (a human task is the owner's own, hatched on the board with the You ribbon); only a task, and not while it's held, in Building, Testing or Your check; made human in Backlog or Shaping, it moves to Ready (To do).
 
 ```
-muster set <id> <priority|type|title|tags|time|test-time|tokens|touches|summary|level|parent|due|depends|for> <value>
+muster set <id> <priority|type|title|tags|time|test-time|tokens|touches|summary|qa|level|parent|due|depends|for> <value>
 ```
 
 Examples:
@@ -203,6 +203,14 @@ muster set 0031 touches "app/src/TaskPanel*, docs/"
 
 ```
 muster set 0007 summary "A board you can group by project; the order is kept"
+```
+
+```
+muster set 0007 qa walkthrough
+```
+
+```
+muster set 0007 qa ""
 ```
 
 ### muster edit
@@ -327,7 +335,7 @@ Move a task on to the next stage, send it back, mark it blocked, or pause it. On
 
 ### muster pass
 
-Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria, no open vision conflict (muster vision), no \[NEEDS CLARIFICATION: …\] marker left in the write-up, and no open question without a --no-answer default (muster clarify). Building → Testing needs the gate's result line, a summary of what was built (one plain line, 160 characters at most, no line breaks; the task's own summary: from muster set or an earlier pass does too; a goal, a feature or the owner's own task needs none), and every review finding open for the builder answered (muster review), and releases your claim. When the project has now pages (docs/now/\<area\>.md: the rules in force per area, each with covers: \<globs\>), a task whose touches: a page's covers: overlap must change that page on its branch (committed, since it left main), or say why it still holds with --now-unchanged "\<why\>" (one line, 500 characters); either way its log names the pages. Refused otherwise, naming the page. A task without touches:, one no page covers, and a project without docs/now/ pass as before. The summary leads the owner's check: Your check's card and its What you're accepting. Testing → Your check needs every criterion ticked except the owner's ("— verify: owner"), and a session that didn't build it: the builder (who claimed it, or passed it into Testing; the same --as label, in the same session or with none) is refused, naming who built it, so a fresh QA session with its own --as passes it, or the owner (logged as the owner's override: no separate tester). A tester under another label in the builder's session is let through, and the log says so. Your check → Done needs those ticked too (muster tick). A human task (the owner's own) goes To do (Ready) → Doing (Building) → Done, and only the owner passes it: no gate line, no Testing, no Your check. Refused while it's blocked, when someone else holds it, and into Building (Ready → Building, or the owner's Start) while a task it depends on isn't merged yet, as claim is. A task made with muster start merges when it passes from Testing, once its review of record is clean at its branch's tip (muster review; the owner may merge without one, and the report says so; a commit made while it waits for another merge or while its gate runs stops it, unmerged), in order, stopping at the first failure: one merge at a time per repo; rebase its branch on the local main (a conflict sends it back to Building naming the files); run the project's gate in its worktree (muster projects set \<name\> gate; red sends it back with the gate line), and again if main moved while it ran (twice at most, then it stops: main keeps moving); fast-forward the local main to it (never a merge commit, so main only gets a tree the gate saw), only if the main checkout is clean and on main; push main to origin (never forced: if origin moved, it fetches and stops); remove the worktree (never a runner's, made with start --here) and delete the branch, and origin's copy only when it's the same commit; record the merge (the commit and a report: gate line, the review, time in Building and Testing, check-ins) and pass it to Your check: the record is written even if the task was blocked or moved meanwhile, and then it says so (use muster stage); then it names the next task to start. Nothing is deleted on any failure before main has the merge. Only the command line does this: the app's Pass is refused for such a task.
+Hand a task to the next stage: Backlog → Shaping → Ready → Building → Testing → Your check → Done. Ready → Building claims it for you (--as). Shaping → Ready needs acceptance criteria, no open vision conflict (muster vision), no \[NEEDS CLARIFICATION: …\] marker left in the write-up, and no open question without a --no-answer default (muster clarify). Building → Testing needs the gate's result line, a summary of what was built (one plain line, 160 characters at most, no line breaks; the task's own summary: from muster set or an earlier pass does too; a goal, a feature or the owner's own task needs none), and every review finding open for the builder answered (muster review), and releases your claim. When the project has now pages (docs/now/\<area\>.md: the rules in force per area, each with covers: \<globs\>), a task whose touches: a page's covers: overlap must change that page on its branch (committed, since it left main), or say why it still holds with --now-unchanged "\<why\>" (one line, 500 characters); either way its log names the pages. Refused otherwise, naming the page. A task without touches:, one no page covers, and a project without docs/now/ pass as before. The summary leads the owner's check: Your check's card and its What you're accepting. Testing → Your check needs every criterion ticked except the owner's ("— verify: owner"), and a session that didn't build it: the builder (who claimed it, or passed it into Testing; the same --as label, in the same session or with none) is refused, naming who built it, so a fresh QA session with its own --as passes it, or the owner (logged as the owner's override: no separate tester). A tester under another label in the builder's session is let through, and the log says so. Your check → Done needs those ticked too (muster tick). A human task (the owner's own) goes To do (Ready) → Doing (Building) → Done, and only the owner passes it: no gate line, no Testing, no Your check. Refused while it's blocked, when someone else holds it, and into Building (Ready → Building, or the owner's Start) while a task it depends on isn't merged yet, as claim is. A task made with muster start merges when it passes from Testing, once its review of record is clean at its branch's tip (muster review) and every gate record it needs is green there (muster gates: criteria for a task started since gate records, visual QA when qa: is set; needs-walkthrough doesn't hold it) (the owner may merge without them, and the report says so; a commit made while it waits for another merge or while its gate runs stops it, unmerged), in order, stopping at the first failure: one merge at a time per repo; rebase its branch on the local main (a conflict sends it back to Building naming the files; the review and the gate records carry over to the replayed commits); run the project's gate in its worktree (muster projects set \<name\> gate; red sends it back with the gate line), and again if main moved while it ran (twice at most, then it stops: main keeps moving); fast-forward the local main to it (never a merge commit, so main only gets a tree the gate saw), only if the main checkout is clean and on main; push main to origin (never forced: if origin moved, it fetches and stops); remove the worktree (never a runner's, made with start --here) and delete the branch, and origin's copy only when it's the same commit; record the merge (the commit and a report: gate line, the review, the gate records, time in Building and Testing, check-ins) and pass it to Your check: the record is written even if the task was blocked or moved meanwhile, and then it says so (use muster stage); then it names the next task to start. Nothing is deleted on any failure before main has the merge. Only the command line does this: the app's Pass is refused for such a task.
 
 ```
 muster pass <id> [--from <stage>] [--gate "<gate result line>"] [--summary "<what was built>"] [--now-unchanged "<why>"] [--commit <sha>]
@@ -749,7 +757,7 @@ muster ready --parallel 2 --json
 
 ### muster start
 
-Claim a Ready task (claim's rules) in its own git worktree, to work beside other sessions: a branch task/\<id\>-\<slug\> from the local main's commit (however dirty the main checkout is) and a worktree for it, at \<project\>/worktrees/\<repo\>/\<id\>-\<slug\> unless --at says where. Run it in the project's repo or a worktree of it. The task records worktree: and branch:, and start prints both with the brief: the task file, what it touches, its criteria. Work there; pass from Building as always. Passing it from Testing merges it (muster pass). A task started before (sent back to Ready, reclaimed) is picked up in its worktree again. A task back in Building with your claim and no branch (sent back from Your check after its merge, mu-101) gets a fresh branch and worktree from main the same way, its claim kept, and the brief names the owner findings to settle first: this branch's review round re-checks them. Refused claims leave nothing behind. It also sets git's merge driver for the work log in the repo's own config (merge.muster-log.name and .driver, muster merge-log), when git has none yet, touching nothing else, so a rebase in any worktree keeps both sides' new entries whole. Warns on stderr, as next does, when Your check is over the project's limit, and still starts.
+Claim a Ready task (claim's rules) in its own git worktree, to work beside other sessions: a branch task/\<id\>-\<slug\> from the local main's commit (however dirty the main checkout is) and a worktree for it, at \<project\>/worktrees/\<repo\>/\<id\>-\<slug\> unless --at says where. Run it in the project's repo or a worktree of it. The task records worktree: and branch: (and gates: on: its merge needs the criteria gate, muster gates), and start prints both with the brief: the task file, what it touches, its criteria. Work there; pass from Building as always. Passing it from Testing merges it (muster pass). A task started before (sent back to Ready, reclaimed) is picked up in its worktree again. A task back in Building with your claim and no branch (sent back from Your check after its merge, mu-101) gets a fresh branch and worktree from main the same way, its claim kept, and the brief names the owner findings to settle first: this branch's review round re-checks them. Refused claims leave nothing behind. It also sets git's merge driver for the work log in the repo's own config (merge.muster-log.name and .driver, muster merge-log), when git has none yet, touching nothing else, so a rebase in any worktree keeps both sides' new entries whole. Warns on stderr, as next does, when Your check is over the project's limit, and still starts.
 
 ```
 muster start <id> [--at <path>|--here] [--as <who>|--role <role>]
@@ -823,7 +831,7 @@ muster merge-log %O %A %B
 
 ## Review
 
-The review of record for a task started on its own branch: the owner's review engine reviews it in Testing, its builder fixes or disputes what it finds, up to 3 rounds, and the merge waits for a clean review. Findings that keep coming back become lessons for the next agents, once the owner accepts them. See [The review of record](02-concepts.md#the-review-of-record).
+The review of record for a task started on its own branch: the owner's review engine reviews it in Testing, its builder fixes or disputes what it finds, up to 3 rounds, and the merge waits for a clean review. Gate records prove the rest at the branch's tip (criteria, and visual QA for a task with qa: set), and the merge waits for those too (`muster gates`). Findings that keep coming back become lessons for the next agents, once the owner accepts them. See [The review of record](02-concepts.md#the-review-of-record) and [Gate records](02-concepts.md#gate-records).
 
 ### muster review
 
@@ -861,6 +869,55 @@ muster review mu-27 --dispute R2 "the timeout is set two lines up" --as muster/w
 
 ```
 muster review mu-27 --settle R2 false-positive "the pipe is bounded" --as owner
+```
+
+### muster gate
+
+A gate record for a task started on its own branch (mu-131, docs/GATES.md): in Testing, a session that didn't build it (or the owner) checks the branch's tip and records the result, one record per gate. criteria (G3) gives each acceptance criterion met, partial, unmet or unproven; visual (G4) gives each touched screen state pass, fail or needs-walkthrough, with expected false for a difference nobody asked for (which can't pass). Without --record it prints what to check (the criteria with their ids, the tip) and the JSON to return. Writes nothing. --record - reads that JSON from stdin (or takes it as its value): {"head", "verdict", "items": \[{"id", "verdict", "expected", "text", "evidence", "note"}\], "not\_checked": \[...\]}, checked strictly: an unknown field, over 1 MB, over 200 items or 20 evidence paths an item is refused. not\_checked (criteria only, optional) lists what the tester didn't verify, at most 20 lines of 200 characters: shown under the record as Not checked: …, never part of the verdict. head must be the branch's tip. Criterion ids are matched however they're typed (AC1, ac1 and 1 are the same). Muster works the verdict out (criteria: green when every criterion but the owner's own is met; visual: red with any fail, needs-walkthrough with any walkthrough, else green) and refuses a stated one that differs; needs-walkthrough is only for visual. Evidence paths must be files that exist inside the task's attachments/\<id\>/ (muster attach): ../, an absolute path, a symlink out and an attachments folder that is itself a symlink are refused. The record is kept in the queue's gates/\<id\>/\<gate\>.json, replacing the last one; the task gets a ## Gates section under its write-up (above its Comments and Log), gate-records: criteria green · visual needs-walkthrough in its front matter, and a log line. Merging it (muster pass \<id\> --from testing) needs every gate it needs green at the tip (muster gates).
+
+```
+muster gate <id> criteria|visual [--record -] [--json]
+```
+
+| Option | What it does |
+| --- | --- |
+| `--record -` | the tester's result, as JSON on stdin; malformed JSON, a head that isn't the tip, the builder's session or evidence outside attachments/\<id\>/ is refused, and nothing changes |
+| `--json` | the record's result as JSON |
+
+Examples:
+
+```
+muster gate mu-131 criteria
+```
+
+```
+pbpaste | muster gate mu-131 criteria --record - --as muster/qa-0131
+```
+
+```
+muster gate mu-131 visual --record - --as muster/qa-0131 < visual.json
+```
+
+### muster gates
+
+Which gates a started task needs and where each stands at its branch's tip: G1 build (the builder's gate line; the merge runs the gate again after its rebase), G2 code review (the review of record, clean at the tip), G3 criteria and G4 visual QA (their records, muster gate). G1, G2 and G3 are listed always, G4 when qa: is set (muster set \<id\> qa reference\|walkthrough\|both) or it has a visual record (needed only with qa:). G3 is needed for tasks started since gate records (muster start writes gates: on); older tasks aren't held back by it. Each is green, red, needs-walkthrough, missing or stale (taken at a commit that isn't the tip). The merge (muster pass \<id\> --from testing) refuses while a needed gate is red, missing or stale, naming each; needs-walkthrough doesn't hold it, the task waits in Your check for the owner's walkthrough. The owner may merge anyway, and the merge report says so. The records carry over the merge's rebase, as the review does, and are checked again before main moves: one turned red while the merge ran stops it. Writes nothing.
+
+```
+muster gates <id> [--json]
+```
+
+| Option | What it does |
+| --- | --- |
+| `--json` | the gates as JSON, for the app and scripts |
+
+Examples:
+
+```
+muster gates mu-131
+```
+
+```
+muster gates mu-131 --json
 ```
 
 ### muster lessons

@@ -666,6 +666,16 @@ pub struct Task {
     pub review_answered: usize,
     /// A `review:` value that isn't one the tool writes (`check` reports it), else "".
     pub bad_review: String,
+    /// Visual QA (G4, mu-131): `qa:` is reference, walkthrough or both, set by the shaper; "" when
+    /// the task needs none (or its value isn't one of those: `bad_qa`).
+    pub qa: String,
+    #[serde(skip)]
+    pub bad_qa: String,
+    /// Started with gate records (`gates: on`, which muster start writes since mu-131): it needs
+    /// the criteria gate (G3). Older tasks don't have it, and are never held back by it.
+    pub gates_on: bool,
+    #[serde(skip)]
+    pub bad_gates: String,
     /// An agent's task waits on the owner (`needs_owner`): a needs-you card on the app's board.
     pub waiting_for_owner: bool,
     /// One of FOR_WHO: `for:` from the file, "ai" when it has none (or one that isn't either).
@@ -1309,6 +1319,18 @@ pub fn parse_task(
             Some(None) => ((None, 0, 0), String::new()),
             None => ((None, 0, 0), get("review").chars().take(60).collect()),
         };
+    let raw_qa = get("qa").to_lowercase();
+    let (qa, bad_qa) = if raw_qa.is_empty() || crate::gates::QA.contains(&raw_qa.as_str()) {
+        (raw_qa, String::new())
+    } else {
+        (String::new(), raw_qa.chars().take(40).collect())
+    };
+    let raw_gates = get("gates").to_lowercase();
+    let (gates_on, bad_gates) = match raw_gates.as_str() {
+        "on" => (true, String::new()),
+        "" => (false, String::new()),
+        _ => (false, raw_gates.chars().take(40).collect()),
+    };
     let waiting_for_owner = needs_owner(&questions, &stage, &blocked_kind);
     let raw_for = get("for").to_lowercase();
     let (for_who, bad_for) = match FOR_WHO.iter().find(|f| **f == raw_for) {
@@ -1463,6 +1485,10 @@ pub fn parse_task(
         review_open,
         review_answered,
         bad_review,
+        qa,
+        bad_qa,
+        gates_on,
+        bad_gates,
         waiting_for_owner,
         for_who,
         bad_for,
@@ -2015,6 +2041,18 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str, lease: u64) 
             out.push(format!(
                 "{queue}: {} has review '{}', which isn't the tool's summary (`review: round 2 · 1 open · 0 answered`); muster review writes it",
                 t.path, t.bad_review
+            ));
+        }
+        if !t.bad_qa.is_empty() {
+            out.push(format!(
+                "{queue}: {} has qa '{}', which isn't reference, walkthrough or both (read as none); muster set <id> qa fixes it",
+                t.path, t.bad_qa
+            ));
+        }
+        if !t.bad_gates.is_empty() {
+            out.push(format!(
+                "{queue}: {} has gates '{}', which isn't on (read as off); only muster start writes it",
+                t.path, t.bad_gates
             ));
         }
         if let Some(n) = t.vision_open.filter(|n| *n != t.vision_ids.len()) {

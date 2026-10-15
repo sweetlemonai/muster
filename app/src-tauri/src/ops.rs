@@ -943,7 +943,20 @@ fn clean_depends(root: &Path, id: &str, value: &str) -> Result<String, String> {
     Ok(format!("[{}]", ids.join(", ")))
 }
 
-/// Set priority, type, title, tags, estimates, touches, the summary or depends.
+/// `qa:` as set (mu-131): reference, walkthrough or both, in any case; "" clears it.
+fn clean_qa(value: &str) -> Result<String, String> {
+    let v = value.trim().to_lowercase();
+    if v.is_empty() || crate::gates::QA.contains(&v.as_str()) {
+        Ok(v)
+    } else {
+        Err(format!(
+            "qa is reference, walkthrough or both (or \"\" for none), got {:?}",
+            value.chars().take(40).collect::<String>()
+        ))
+    }
+}
+
+/// Set priority, type, title, tags, estimates, touches, the summary, qa or depends.
 pub fn set_field(
     root: &Path,
     id: &str,
@@ -972,6 +985,7 @@ pub fn set_field(
         "tokens" | "est-tokens" => ("est-tokens", clean_tokens(value)?),
         "touches" => ("touches", clean_touches(value)?),
         "summary" => ("summary", clean_summary(value)?),
+        "qa" => ("qa", clean_qa(value)?),
         // Checked against the other tasks and written under one lock, so two sets at once can't
         // close a loop between them.
         "depends" => {
@@ -1010,14 +1024,14 @@ pub fn set_field(
         }
         _ => {
             return Err(format!(
-                "can't set {field:?}: use priority, type, title, tags, time, test-time, tokens, touches, summary, level, parent, due, depends or for"
+                "can't set {field:?}: use priority, type, title, tags, time, test-time, tokens, touches, summary, qa, level, parent, due, depends or for"
             ))
         }
     };
     if val.is_empty()
         && !matches!(
             key,
-            "tags" | "est-time" | "est-test-time" | "est-tokens" | "touches"
+            "tags" | "est-time" | "est-test-time" | "est-tokens" | "touches" | "qa"
         )
     {
         return Err(format!("{field} is empty"));
@@ -1027,6 +1041,29 @@ pub fn set_field(
         &format!("the {key}"),
     )?;
     edit(root, id, |_, text| {
+        // qa: decides whether the merge needs visual QA (G4): once the task is under way, only
+        // the owner changes it, so a builder or tester can't drop the gate it would be held by.
+        // Under way is started on its branch (a return to Ready keeps it) or in a later stage,
+        // the stage read as parse_task reads it.
+        if key == "qa" && !is_owner(&who) {
+            let fm = front_matter(&text).map(|(fm, _)| fm).unwrap_or_default();
+            let field = |k: &str| fm.get(k).map_or(String::new(), |v| v.trim().to_lowercase());
+            let stage = field("stage");
+            if matches!(
+                stage.as_str(),
+                "building" | "testing" | "your-check" | "done"
+            ) {
+                return Err(format!(
+                    "{id} is in {}: once it's under way only the owner changes qa (the visual QA its merge needs)",
+                    stage_label(&stage)
+                ));
+            }
+            if !field("branch").is_empty() {
+                return Err(format!(
+                    "{id} was started on its own branch: once it's under way only the owner changes qa (the visual QA its merge needs)"
+                ));
+            }
+        }
         let new = if key == "title" {
             let (_, body) = front_matter(&text).ok_or("the task has no front matter")?;
             let head_at = text.len() - body.len();
@@ -2031,6 +2068,8 @@ pub fn start_task(
         edit_locked(root, id, |_, text| {
             let mut new = set_front(&text, "worktree", worktree)?;
             new = set_front(&new, "branch", branch)?;
+            // Started with gate records (mu-131): the merge needs its criteria gate (G3).
+            new = set_front(&new, "gates", "on")?;
             new = if runner {
                 set_front(&new, "worktree-runner", "yes")?
             } else {
@@ -2072,6 +2111,8 @@ pub fn restart_task(
             restart_rules(id, &t, &who)?;
             let mut new = set_front(&text, "worktree", worktree)?;
             new = set_front(&new, "branch", branch)?;
+            // A fresh branch with gate records, as start_task's (mu-131): the merge needs G3.
+            new = set_front(&new, "gates", "on")?;
             new = if runner {
                 set_front(&new, "worktree-runner", "yes")?
             } else {
@@ -4375,10 +4416,14 @@ fn body_span(text: &str) -> Result<(usize, usize), String> {
     let review = crate::review::reviewed(text)
         .then(|| crate::review::section_span(body).map(|(at, _)| at))
         .flatten();
+    // And the gate records' (mu-131), once it has one.
+    let gates = crate::gates::recorded(text)
+        .then(|| crate::gates::section_span(body).map(|(at, _)| at))
+        .flatten();
     let tail = queue::comments_span(body)
         .map(|(at, _, _)| at)
         .or_else(|| queue::log_heading(body));
-    let end = [vision, review, tail].into_iter().flatten().min();
+    let end = [vision, review, gates, tail].into_iter().flatten().min();
     Ok((start, end.map_or(text.len(), |at| start + at)))
 }
 
@@ -4566,13 +4611,16 @@ pub fn edit_body(
         if crate::vision::checked(&text) && vision_headings(&new_body) > vision_headings(current) {
             return Err("the write-up has a new \"## Vision\" line, and the Vision section is the tool's once the task is checked: record a new check with muster vision".into());
         }
-        let reviews = |t: &str| {
-            t.lines()
-                .filter(|l| l.trim_end() == crate::review::HEAD)
-                .count()
-        };
-        if crate::review::reviewed(&text) && reviews(&new_body) > reviews(current) {
+        let count = crate::testing::heading_count;
+        if crate::review::reviewed(&text)
+            && count(&new_body, crate::review::HEAD) > count(current, crate::review::HEAD)
+        {
             return Err("the write-up has a new \"## Review\" line, and the Review section is the tool's once the task has a review round: muster review writes it".into());
+        }
+        if crate::gates::recorded(&text)
+            && count(&new_body, crate::gates::HEAD) > count(current, crate::gates::HEAD)
+        {
+            return Err("the write-up has a new \"## Gates\" line, and the Gates section is the tool's once the task has a gate record: muster gate writes it".into());
         }
         // The Questions section is the tool's wherever it sits (0094): it isn't in the editor, it
         // goes back where it was, and a write-up can't start one.

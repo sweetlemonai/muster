@@ -312,6 +312,25 @@ muster lessons accept --all --as owner
 
 See [muster review](05-commands.md#muster-review) and [muster lessons](05-commands.md#muster-lessons) (task 0027).
 
+## Gate records
+
+The review is one of four **gates** a started task passes before it merges, each checked at the branch's tip (docs/GATES.md): **G1 build** (the gate line, and the merge runs the gate again), **G2 code review** (the review of record, above), **G3 criteria** (every acceptance criterion met, with evidence) and **G4 visual QA** (every touched screen state checked against its reference or baseline, or walked through by you). G3 and G4 are records a session that didn't build the task writes in Testing; you may too.
+
+`muster gate <id> criteria` prints what to check and the JSON to hand back; `muster gate <id> criteria --record -` records it. Each criterion is **met**, **partial**, **unmet** or **unproven**, by its id however it's typed (`AC1`, `ac1` or `1`). Visual QA gives each screen state **pass**, **fail** or **needs-walkthrough**, and a difference nobody asked for can't pass. Muster works out the verdict (green, red, or needs-walkthrough for visual) and refuses a record that says otherwise, a head that isn't the tip, the builder's own session, and evidence that isn't a file in the task's attachments. The task gets a **Gates** section with each item, what was checked and its evidence. A criteria record may also list what the tester didn't verify (`not_checked`); it shows as **Not checked: …** under the criteria and doesn't change the verdict.
+
+Which gates a task needs: G1 and G2 always, G3 for tasks started since gate records (older ones aren't held back), and G4 when the task has `qa:` set (reference, walkthrough or both; the shaper sets it for a task that touches screens, and `muster set <id> qa walkthrough` changes it; once the task is in Building only you can). A visual record is listed even after `qa:` is cleared, as not needed. `muster gates <id>` lists them with where each stands at the tip: green, red, needs-walkthrough, missing, or stale (taken before the latest commit).
+
+**The merge waits for them.** `muster pass <id> --from testing` refuses while a gate it needs is red, missing or stale, and says which. A screen that needs your walkthrough doesn't hold it: the task goes on to Your check for you to walk through. The merge's rebase carries the records along, as it does the review, and the merge checks them once more before main moves: a record turned red while it ran stops it. You can merge without them; the merge report says so.
+
+```
+muster gates mu-131
+muster gate mu-131 criteria
+pbpaste | muster gate mu-131 criteria --record - --as muster/qa-0131
+muster set mu-131 qa walkthrough
+```
+
+See [muster gate](05-commands.md#muster-gate) and [muster gates](05-commands.md#muster-gates) (mu-131).
+
 ## What needs you
 
 One list, everywhere, of what's waiting on you:

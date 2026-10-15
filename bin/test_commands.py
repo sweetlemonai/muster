@@ -425,11 +425,9 @@ class RoutesRunOnARealQueue(unittest.TestCase):
                 self.assertIn('unknown command "add"', ROUTER.read_text(encoding="utf-8"))
 
 
-class WorkLogMergeDriver(unittest.TestCase):
-    """0067: after `muster start`, a hand `git rebase main` in the new worktree merges two work
-    log entries added on top with no other setup, through the `muster` on the PATH; and start
-    leaves a merge.muster-log config that's already there, and every other key, as they were.
-    Everything in a temp folder with a space in its path, and a home of its own."""
+class Hermetic(unittest.TestCase):
+    """A git repo with one work log commit on main, in a temp folder with a space in its path,
+    and a home of its own: the `muster` the tests run never sees the real queues."""
 
     PRE = "# Work log\n\nNewest first.\n\n"
     OLD = "## 2026-10-12 — Old\n**Did:** old\n**Verified:** `gate: green (pnpm check)`\n\n"
@@ -492,6 +490,13 @@ class WorkLogMergeDriver(unittest.TestCase):
         self.assertIsNotNone(m, out)
         return Path(m.group(1))
 
+
+
+class WorkLogMergeDriver(Hermetic):
+    """0067: after `muster start`, a hand `git rebase main` in the new worktree merges two work
+    log entries added on top with no other setup, through the `muster` on the PATH; and start
+    leaves a merge.muster-log config that's already there, and every other key, as they were."""
+
     def test_a_hand_rebase_in_a_started_worktree_merges_the_work_log(self):
         self.muster("init")
         driver = ("merge.muster-log.driver=muster merge-log %O %A %B; s=$?; [ $s -le 1 ] && exit $s; "
@@ -539,6 +544,10 @@ class WorkLogMergeDriver(unittest.TestCase):
         tip = self.git(wt, "rev-parse", "HEAD")
         self.muster("review", key, "--record", "-", "--as", "qa",
                     input=json.dumps({"head": tip, "tier": "light"}))
+        # Started since gate records (mu-131): the merge needs its criteria gate green at the tip.
+        self.muster("gate", key, "criteria", "--record", "-", "--as", "qa",
+                    input=json.dumps({"head": tip, "verdict": "green",
+                                      "items": [{"id": "AC1", "verdict": "met"}]}))
         self.log(self.repo, self.entry("Landed before") + self.OLD, "another task's entry")
         out = self.muster("pass", key, "--from", "testing", "--as", "qa").stdout
         self.assertIn("(fast-forward, not pushed: no origin)", out)
@@ -615,6 +624,58 @@ class WorkLogMergeDriver(unittest.TestCase):
         self.git(self.repo, "config", "merge.muster-log.driver", "true")
         self.assertNotIn("merge driver", check().stdout, "both set, whatever they say")
 
+
+
+class StrayFenceSections(Hermetic):
+    """mu-131 R2: a fence the write-up leaves open hides neither the tool's ## Review nor its
+    ## Gates, whatever fence lines the tool's own text below it holds (a comment's code block, an
+    answer's), so recording again replaces each section instead of adding a copy, and the
+    write-up an editor opens leaves both out."""
+
+    def test_records_after_fenced_comments_and_answers_replace_their_sections(self):
+        self.muster("init")
+        body = ("## Acceptance criteria\\n- [x] AC1: synthetic, ticked\\n\\n"
+                "```md\\n```rust\\nx\\n```\\n```\\nleft open\\n")
+        key = self.muster("new", "Synthetic fenced task", "--touches", "src/",
+                          "--body", body).stdout.split()[0]
+        wt = Path(re.search(r"^worktree: (.+)$", self.muster("start", key).stdout, re.M).group(1))
+        self.log(wt, self.entry("The task") + self.OLD, "the task's entry")
+        self.muster("pass", key, "--from", "building", "--gate", "gate: green (synthetic)",
+                    "--summary", "A synthetic fenced task")
+        tip = self.git(wt, "rev-parse", "HEAD")
+
+        def record() -> None:
+            self.muster("review", key, "--record", "-", "--as", "qa",
+                        input=json.dumps({"head": tip, "tier": "light"}))
+            self.muster("gate", key, "criteria", "--record", "-", "--as", "qa",
+                        input=json.dumps({"head": tip, "verdict": "green",
+                                          "items": [{"id": "AC1", "verdict": "met"}]}))
+
+        record()
+        self.muster("comment", key, "--body", "see:\\n```\\nlet x = 1;\\n```", "--as", "qa")
+        self.muster("ask", key, "Which one?", "--as", "qa", "--session", "aaaa1111")
+        self.muster("answer", key, "Q1", "this:\n```\nend", "--as", "owner")
+        record()
+        record()
+        [task] = (self.repo / ".muster" / "tasks").glob("*-synthetic-fenced-task.md")
+        text = task.read_text(encoding="utf-8")
+        self.assertIn("\n  ```\n  let x = 1;\n  ```\n", text)
+        lines = text.splitlines()
+        self.assertEqual(lines.count("## Review"), 1, text)
+        self.assertEqual(lines.count("## Gates"), 1, text)
+        self.assertLess(text.index("## Gates"), text.index("## Questions"), text)
+        # The editor gets the write-up: it says what it was given and changes nothing.
+        seen = Path(self.tmp.name) / "seen.md"
+        editor = Path(self.tmp.name) / "editor"
+        editor.write_text(f"#!/bin/sh\ncat \"$1\" > {shlex.quote(str(seen))}\n", encoding="utf-8")
+        editor.chmod(0o755)
+        self.env["EDITOR"] = str(editor)
+        self.env.pop("VISUAL", None)
+        self.assertIn("no change", self.muster("edit", key, "--as", "owner").stdout)
+        wu = seen.read_text(encoding="utf-8")
+        self.assertIn("left open", wu)
+        self.assertNotIn("## Review", wu)
+        self.assertNotIn("## Gates", wu)
 
 class RunScript(unittest.TestCase):
     """0077, 0079: bin/run, Muster's run command, builds the release app, then becomes that

@@ -18,6 +18,7 @@
 
 use crate::queue::{self, actor, append_log, find_task, front_matter, with_lock, write_atomic};
 use crate::session::{is_owner, same_holder};
+use crate::testing::short;
 use crate::{backlog, lessons, ops, projects};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -251,6 +252,11 @@ impl Review {
     pub fn clean(&self) -> bool {
         !self.rounds.is_empty() && self.open_ids().is_empty() && self.answered_ids().is_empty()
     }
+    /// Does it stand for the branch at `tip`: clean, and of that very commit? The one test the
+    /// merge (`merge_check`) and `muster gates` (G2) both use.
+    pub fn stands_at(&self, tip: &str) -> bool {
+        self.clean() && self.head == tip
+    }
     fn next_id(&self) -> u32 {
         self.findings
             .iter()
@@ -418,23 +424,10 @@ pub(crate) fn reviewed(text: &str) -> bool {
 // ---- The task's section ----
 
 /// The task's Review section in `text`, as (start of its `## Review` line, end) byte offsets; it
-/// ends at the next `## ` heading. The last `## Review` above the last `## Log`.
+/// ends at the next `## ` heading. The last `## Review` above the last `## Log`, fenced code
+/// skipped (`testing::section_span`).
 pub(crate) fn section_span(text: &str) -> Option<(usize, usize)> {
-    let mut heads: Vec<(usize, &str)> = Vec::new();
-    let mut pos = 0;
-    for line in text.split_inclusive('\n') {
-        if line.starts_with("## ") {
-            heads.push((pos, line.trim_end()));
-        }
-        pos += line.len();
-    }
-    let upto = heads
-        .iter()
-        .rposition(|(_, h)| *h == "## Log")
-        .unwrap_or(heads.len());
-    let i = heads[..upto].iter().rposition(|(_, h)| *h == HEAD)?;
-    let end = heads.get(i + 1).map_or(text.len(), |(p, _)| *p);
-    Some((heads[i].0, end))
+    crate::testing::section_span(text, HEAD)
 }
 
 /// A stored text on one line again, whatever the file says now.
@@ -442,10 +435,6 @@ fn one(s: &str) -> String {
     s.chars()
         .map(|c| if c.is_control() { ' ' } else { c })
         .collect()
-}
-
-fn short(sha: &str) -> String {
-    sha.chars().take(7).collect()
 }
 
 /// `120k`, `1.2M`.
@@ -627,27 +616,6 @@ fn section(key: &str, r: &Review) -> String {
     s
 }
 
-/// `text` with the Review section `sect`: in place of the task's last one when `replace`, else
-/// right above the tool's Comments (0017), else above the Log, or at the end without either.
-fn put_section(text: &str, sect: &str, replace: bool) -> String {
-    let below = queue::comments_span(text)
-        .map(|(at, _, _)| at)
-        .or_else(|| queue::log_heading(text));
-    let (head, tail) = match section_span(text).filter(|_| replace) {
-        Some((a, b)) => (&text[..a], &text[b..]),
-        None => match below {
-            Some(at) => (&text[..at], &text[at..]),
-            None => (text, ""),
-        },
-    };
-    let head = head.trim_end_matches('\n');
-    if tail.is_empty() {
-        format!("{head}\n\n{sect}")
-    } else {
-        format!("{head}\n\n{sect}\n{tail}")
-    }
-}
-
 /// The task's text after review `r` changed: its section, its `review:` summary, `log` added,
 /// and the holder's heartbeat when `who` holds it in Building. Refused over 1 MB, or when a line
 /// of the section would read as tool-written stage history.
@@ -671,7 +639,7 @@ fn task_text(
             "the review has a line that would read as a stage change or check-in in the log; only muster writes those: {line:?}"
         ));
     }
-    let mut new = put_section(text, &sect, reviewed(text));
+    let mut new = crate::testing::put_section(text, HEAD, &sect, reviewed(text));
     new = ops::set_front(&new, "review", &summary_value(r))?;
     for l in log {
         new = append_log(&new, l);
@@ -904,13 +872,7 @@ fn finding(i: usize, f: &RawFinding) -> Result<Finding, String> {
 fn parse(json: &str) -> Result<Record, String> {
     let raw: RawRecord = serde_json::from_str(json)
         .map_err(|e| format!("the review isn't the JSON the brief shows: {e}"))?;
-    let head = raw.head.trim().to_lowercase();
-    if !(7..=64).contains(&head.len()) || !head.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err(format!(
-            "head must be the commit you reviewed (7 to 64 hex characters), got {:?}",
-            raw.head.chars().take(70).collect::<String>()
-        ));
-    }
+    let head = crate::testing::clean_head(&raw.head, "you reviewed")?;
     let tier = raw.tier.trim().to_lowercase();
     if !tier.is_empty() && !TIERS.contains(&tier.as_str()) {
         return Err(format!(
@@ -1012,7 +974,7 @@ pub fn span_in(root: &Path, id: &str, cwd: Option<&Path>) -> Result<Span, String
 }
 
 fn not_started(id: &str) -> String {
-    format!("{id} wasn't started on its own branch (muster start), so there's no branch to review")
+    crate::testing::not_started(id, "review")
 }
 
 /// What `record` did.
@@ -1088,42 +1050,6 @@ fn propose_after(
     (ids, failed)
 }
 
-/// Refused unless `who` may record a round on task `t`: it's in Testing, started, not paused or
-/// blocked, and `who` didn't build it (0047: the review is the tester's; the owner may always).
-fn check_recorder(id: &str, t: &queue::Task, who: &str) -> Result<(), String> {
-    if t.branch.is_empty() {
-        return Err(not_started(id));
-    }
-    if t.stage != "testing" {
-        return Err(format!(
-            "{id} is in {}; the review of record runs in Testing",
-            queue::stage_label(&t.stage)
-        ));
-    }
-    if !t.paused.is_empty() {
-        return Err(crate::pause::refusal(id, &t.paused));
-    }
-    if t.blocked {
-        return Err(format!(
-            "{id} is blocked on {}; unblock it first",
-            t.waiting_on
-        ));
-    }
-    if !is_owner(who) {
-        if let Some(b) = t
-            .builders
-            .iter()
-            .chain([&t.built_by, &t.gated_by])
-            .find(|b| !b.is_empty() && same_holder(b, who))
-        {
-            return Err(format!(
-                "{id} was built by {b}; its review is a different session's (the tester's, as Testing is), or the owner's"
-            ));
-        }
-    }
-    Ok(())
-}
-
 /// Record a review round of task `id` (`json`, in the shape of `SHAPE`) at `span`: the reviewer's
 /// answers applied to every finding the builder answered (each must be answered: an accepted fix
 /// is confirmed, an accepted dispute a false positive, the rest open again), the new findings
@@ -1154,7 +1080,7 @@ pub fn record(
         let text = queue::read_body(root, id)?;
         let t = queue::parse_task("", root, &queue::folder_of(root, &path), &path, &text, 0)
             .ok_or("the task has no front matter")?;
-        check_recorder(id, &t, &who)?;
+        crate::testing::check_tester(id, &t, &who, "the review of record")?;
         let mut r = load(root, id)?.unwrap_or_else(|| Review {
             task: id.to_string(),
             ..Default::default()
@@ -1653,7 +1579,7 @@ pub fn merge_check(root: &Path, id: &str, head: &str, who: &str) -> Result<Merge
                 ids_text(&ids)
             ))
         }
-        Some(r) if r.head != head => Some(format!(
+        Some(r) if !r.stands_at(head) => Some(format!(
             "{key}'s review is of {} but its branch is at {}: review the new commits (muster review {key}), then merge",
             short(&r.head),
             short(head)
@@ -1692,7 +1618,8 @@ pub fn still_stands(root: &Path, id: &str, head: &str) -> Result<(), String> {
 
 /// The merge rebased task `id`'s branch from `old` to `new` without a conflict: the review that
 /// stood for `old` now stands for `new`, the same commits replayed on the local main. Refused when
-/// no review stands for `old` (a commit it didn't see), so nothing unreviewed is carried.
+/// no clean review stands for `old` (a commit it didn't see, or a round with findings recorded
+/// during the rebase), so nothing unreviewed is carried.
 pub fn carry(root: &Path, id: &str, old: &str, new: &str) -> Result<(), String> {
     with_lock(root, || {
         let mut r = load(root, id)?.ok_or_else(|| format!("{id} has no review to carry"))?;
@@ -1700,6 +1627,12 @@ pub fn carry(root: &Path, id: &str, old: &str, new: &str) -> Result<(), String> 
             return Err(format!(
                 "{id}'s review is of {}, not {}: review the new commits (muster review {id}), then merge",
                 short(&r.head),
+                short(old)
+            ));
+        }
+        if !r.clean() {
+            return Err(format!(
+                "{id}'s review at {} isn't clean now (a round recorded during the merge): nothing was merged",
                 short(old)
             ));
         }
@@ -2477,7 +2410,7 @@ mod tests {
         .unwrap_err();
         assert_eq!(
             e,
-            format!("{id} was built by {old}; its review is a different session's (the tester's, as Testing is), or the owner's")
+            format!("{id} was built by {old}; the review of record is a different session's (the tester's, as Testing is), or the owner's")
         );
         assert_eq!(text(d.path(), &id), before, "nothing written");
         // A session that built none of it records it.

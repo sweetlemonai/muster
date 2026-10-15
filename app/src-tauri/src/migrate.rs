@@ -4,8 +4,9 @@
 //! Copied, never moved: the old queue is left exactly as it was (its lock aside), for the owner
 //! to retire once they've checked the new one. Every task file goes to `.muster/tasks/` with
 //! `stage:` set from its old stage or status and `status:` dropped; the backlog folder's notes,
-//! dropped notes and anything else in it to `backlog/`; `attachments/`, `mail/`, and the review
-//! of record's `reviews/` and `lessons.md` (0027) as they are;
+//! dropped notes and anything else in it to `backlog/`; `attachments/`, `mail/`, the review
+//! of record's `reviews/` and `lessons.md` (0027) and the gate records' `gates/` (mu-131) as they
+//! are;
 //! `WAITING-FOR-OWNER.md`; the old README's front matter at the top of the new README. Anything
 //! else is listed as not copied. Refused while an agent holds a task in Building or Testing, when
 //! the repo already has a `.muster`, when the repo and the old queue overlap, on a folder it can't
@@ -67,6 +68,8 @@ struct Plan {
     mail: usize,
     /// The review of record's files and its lessons (0027): `reviews/` and `lessons.md`.
     reviews: usize,
+    /// The gate records (mu-131): `gates/<id>/<gate>.json`.
+    gates: usize,
     waiting: bool,
     front: String,
     /// The old queue's prefix (0033), stored or the default its keys have now: the new queue's,
@@ -243,6 +246,10 @@ fn plan(old: &Path, known: &[crate::projects::Project]) -> Result<Plan, String> 
             }
             f if f == layout::REVIEWS || (f == layout::LESSONS && top) => {
                 p.reviews += 1;
+                add(&mut p, rel_path.clone(), path, None, &rel)?;
+            }
+            f if f == layout::GATES && !top => {
+                p.gates += 1;
                 add(&mut p, rel_path.clone(), path, None, &rel)?;
             }
             "mail" if file == ".lock" => {}
@@ -649,6 +656,13 @@ fn summary(p: &Plan, old: &Path, q: &Path, opts: &Options, dry: bool) -> Vec<Str
         out.push(format!(
             "reviews: {} files (the review of record and its lessons) into reviews/ and lessons.md",
             p.reviews
+        ));
+    }
+    if p.gates > 0 {
+        out.push(format!(
+            "gates: {} file{} (the gate records) into gates/",
+            p.gates,
+            if p.gates == 1 { "" } else { "s" }
         ));
     }
     let mut kept = vec![
@@ -1074,7 +1088,8 @@ mod tests {
     }
 
     #[test]
-    fn the_review_of_record_and_its_lessons_are_copied_and_left_in_the_old_queue() {
+    fn the_review_of_record_its_lessons_and_the_gate_records_are_copied_and_left_in_the_old_queue()
+    {
         let base = crate::testkit::tempdir().unwrap();
         let old = base.path().join("rev/tasks");
         put(&old, "README.md", "# rev\n");
@@ -1085,6 +1100,8 @@ mod tests {
         put(&old, "reviews/0001.json", review);
         put(&old, "reviews/lessons.json", book);
         put(&old, "lessons.md", "# Lessons from reviews\n");
+        let gate = r#"{"task":"0001","gate":"criteria","head":"abc1234","verdict":"green","by":"qa","at":"2026-10-14 10:00","items":[]}"#;
+        put(&old, "gates/0001/criteria.json", gate);
         let before = snapshot(&old);
         let main = repo(base.path(), "rev");
         let r = migrate(
@@ -1111,6 +1128,18 @@ mod tests {
             fs::read_to_string(crate::layout::lessons_file(&q)).unwrap(),
             "# Lessons from reviews\n"
         );
+        assert_eq!(
+            fs::read_to_string(crate::layout::gates_dir(&q).join("0001/criteria.json")).unwrap(),
+            gate
+        );
+        assert_eq!(
+            crate::gates::load(&q, "0001", crate::gates::Gate::Criteria)
+                .unwrap()
+                .unwrap()
+                .verdict,
+            "green",
+            "the copied record reads in the new queue"
+        );
         assert!(q.ends_with(".muster/") || q.ends_with(".muster"));
         assert_eq!(
             crate::lessons::waiting(&q),
@@ -1119,6 +1148,13 @@ mod tests {
         );
         assert!(
             r.lines.iter().any(|l| l == "reviews: 3 files (the review of record and its lessons) into reviews/ and lessons.md"),
+            "{:?}",
+            r.lines
+        );
+        assert!(
+            r.lines
+                .iter()
+                .any(|l| l == "gates: 1 file (the gate records) into gates/"),
             "{:?}",
             r.lines
         );

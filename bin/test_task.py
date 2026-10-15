@@ -610,6 +610,21 @@ class TaskTests(unittest.TestCase):
         paused = {t["id"]: t["paused"] for t in json.loads(self.text("tasks.json"))["tasks"]}
         self.assertEqual(paused["0042"], "2026-01-01 11:00")
 
+    def test_manifest_checks_qa_and_gates_like_muster(self):
+        # mu-131: qa: is reference, walkthrough or both (or none); gates: is on (or none).
+        for qa in ["reference", "Walkthrough", "both", ""]:
+            (self.root / "doing" / "0042-something.md").write_text(
+                TASK_FILE.replace("commit:", f"commit:\nqa: {qa}\ngates: on"))
+            r = self.manifest("--check")
+            self.assertNotIn("has qa", r.stdout)
+            self.assertNotIn("has gates", r.stdout)
+        (self.root / "doing" / "0042-something.md").write_text(
+            TASK_FILE.replace("commit:", "commit:\nqa: pixels\ngates: maybe"))
+        r = self.manifest("--check")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("0042-something.md: has qa 'pixels', which isn't reference, walkthrough or both (read as none)", r.stdout)
+        self.assertIn("0042-something.md: has gates 'maybe', which isn't on (read as off)", r.stdout)
+
     def test_manifest_reads_types_and_test_time_like_muster(self):
         # An old `type: task` is code (any case), idea and the rest stay; test time is read.
         (self.root / "todo" / "0044-old-task.md").write_text(

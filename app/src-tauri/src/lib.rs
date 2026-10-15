@@ -13,6 +13,7 @@ pub mod choices;
 pub mod clarify;
 pub mod cli;
 pub mod fields;
+pub mod gates;
 pub mod help;
 pub mod helper;
 mod helper_cmds;
@@ -46,6 +47,7 @@ pub mod search;
 pub mod session;
 pub mod sessions;
 pub mod settings;
+pub mod testing;
 #[cfg(test)]
 mod testkit;
 pub mod transcripts;

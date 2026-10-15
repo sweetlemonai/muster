@@ -79,8 +79,8 @@ route run as `! muster …` in a session: new, move, stage, set, attach, escalat
 checkin (task 0030), ping (task 0039), projects, init, tick, untick (the owner's criteria, task 0028), edit (task
 0020), the backlog's shape, file and drop (task 0015), link and comment (task 0017: a task's
 external links, and a comment thread anyone may add to), index (task 0018), vision (a task
-checked against the project's picture, task 0029), and ready, start and release (parallel
-sessions, task 0023).
+checked against the project's picture, task 0029), review and lessons (task 0027), gate and gates
+(gate records, mu-131), and ready, start and release (parallel sessions, task 0023).
 
 Parallel sessions (task 0023): `ready [--parallel [<n>]] [--json]` lists the tasks a session could
 start now, or up to n (default 3) safe side by side: none depends on another, and their `touches:`
@@ -98,6 +98,27 @@ any failure before main has the merge, and nothing is ever force-pushed. `ready 
 clear of the tasks already in Building or Testing too.
 `release <id> --clean [--force]` gives one up, listing what would be lost first. `/mu pass` runs
 `muster pass` as typed, so it merges too.
+
+Gate records (mu-131, docs/GATES.md): in Testing, a session that didn't build a started task (or
+the owner) checks its branch's tip and records the result, one record per gate. `gate <id>
+criteria|visual` prints what to check and the JSON to return; `gate <id> criteria|visual --record
+-` reads `{"head", "verdict", "items": [{"id", "verdict", "expected", "text", "evidence",
+"note"}], "not_checked": [...]}` from stdin, checked strictly (unknown fields refused, 1 MB, 200
+items, 20 evidence paths an item). `not_checked` (criteria only, optional, 20 lines of 200
+characters) is what the tester didn't verify: shown as `Not checked: …`, never in the verdict. `head` must be the tip. Criteria (G3) items are `met`, `partial`, `unmet` or
+`unproven`, matched to the task's criteria however their ids are typed (`AC1`, `ac1`, `1`); visual
+(G4) items are `pass`, `fail` or `needs-walkthrough` per screen state, and `expected: false` can't
+pass. Muster works the verdict out and refuses a stated one that differs. Evidence must be files
+inside the task's `attachments/<id>/`. The record goes to the queue's `gates/<id>/<gate>.json`, the
+task gets a `## Gates` section and `gate-records:` in its front matter. `gates <id> [--json]` lists
+G1 to G3, and G4 when `qa:` is set (`set <id> qa reference|walkthrough|both|""`, the owner's
+alone once the task is started or in Building) or it has a visual record, each with its
+state at the tip: green, red, needs-walkthrough, missing or stale. The merge refuses while a
+needed one is red, missing or stale, naming each (G3 is needed for tasks started since gate
+records, which `start` marks `gates: on`; G4 when `qa:` is set); `needs-walkthrough` doesn't
+hold it. The owner may merge anyway, and the report says so. The records carry over the merge's
+rebase and are checked again before main moves; one turned red meanwhile stops the merge. Both
+refusals, the review's and the gates', are named together.
 
 Who's on it (task 0030): `checkin <id> "<what's done, what's next>" [--pct <0-100>]` is the holder
 saying how far along it is, which renews the claim too. `ping <id> ["<message>"]` (task 0039) asks

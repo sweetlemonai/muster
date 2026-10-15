@@ -29,6 +29,8 @@ LEGACY_STAGE = {"inbox": "backlog", "todo": "ready", "doing": "building", "block
 LEVELS = ["goal", "feature", "task"]
 # Who does it (0022): `for:` is ai (an agent; also a file without one) or human (the owner's own).
 FOR_WHO = ["ai", "human"]
+# Visual QA (mu-131, gates.rs QA): `qa:` is one of these, or empty for none. `gates:` is on or empty.
+QA = ["reference", "walkthrough", "both"]
 # A heartbeat older than this is stale: the default claim lease, 12 h. The lease set in the app's
 # Settings (0036, settings.json) is not read here; `muster check` and `muster reclaim` follow it.
 STALE_HOURS = 12
@@ -550,6 +552,12 @@ def main():
             raw_for = fields.get("for", "").lower()
             if raw_for and raw_for not in FOR_WHO:
                 problems.append(f"{rel}: for '{raw_for[:40]}' isn't ai or human (read as ai)")
+            raw_qa = fields.get("qa", "").lower()
+            if raw_qa and raw_qa not in QA:
+                problems.append(f"{rel}: has qa '{raw_qa[:40]}', which isn't reference, walkthrough or both (read as none)")
+            raw_gates = fields.get("gates", "").lower()
+            if raw_gates and raw_gates != "on":
+                problems.append(f"{rel}: has gates '{raw_gates[:40]}', which isn't on (read as off)")
             tasks.append(t)
             if not MUSTER and t["status"] != folder:
                 problems.append(f"{rel}: status '{t['status']}' but it's in {folder}/")

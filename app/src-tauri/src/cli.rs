@@ -4,8 +4,8 @@
 
 use crate::session::{self, Session};
 use crate::{
-    accounts, agents, backlog, check_limit, fields, index, lessons, old_pause, ops, pause, ping,
-    projects, queue, review, search, settings, vision,
+    accounts, agents, backlog, check_limit, fields, gates, index, lessons, old_pause, ops, pause,
+    ping, projects, queue, review, search, settings, vision,
 };
 use std::path::{Path, PathBuf};
 
@@ -424,14 +424,16 @@ const TARGETED: [&str; 17] = [
 ];
 
 /// Is this command checked like a claim (`check_target`)? The TARGETED ones, `vision` when it
-/// writes (`--record`, `--resolve`; its brief only reads), `review` when it writes (0027),
-/// `lessons accept|reject`, and `shape` unless `--peek` (0097: it claims the note).
+/// writes (`--record`, `--resolve`; its brief only reads), `review` when it writes (0027), `gate
+/// --record` (mu-131), `lessons accept|reject`, and `shape` unless `--peek` (0097: it claims the
+/// note).
 fn targeted(cmd: &str, a: &Args) -> bool {
     let writes = |keys: &[&str]| keys.iter().any(|k| a.flags.contains_key(*k));
     TARGETED.contains(&cmd)
         || (cmd == "shape" && !a.peek)
         || (cmd == "vision" && writes(&["record", "resolve"]))
         || (cmd == "review" && writes(&["record", "fixed", "dispute", "settle"]))
+        || (cmd == "gate" && writes(&["record"]))
         || (cmd == "lessons" && a.pos.len() > 1)
 }
 
@@ -493,8 +495,10 @@ fn check_target(
 }
 
 /// Commands whose first word after the command is a task (0033: `mu-12`, `MU-12`, `12` or `0012`).
-const TAKES_A_TASK: [&str; 28] = [
+const TAKES_A_TASK: [&str; 30] = [
     "review",
+    "gate",
+    "gates",
     "show",
     "move",
     "pass",
@@ -2887,6 +2891,21 @@ fn run_on(
         "history" => run_history(a, root, &me),
         "vision" => run_vision(a, root, prefix, &me, stamp),
         "review" => run_review(a, root, prefix, &me, stamp, cwd),
+        "gate" => run_gate_record(a, root, prefix, &me, stamp, cwd),
+        "gates" => {
+            let id = need(a, 1, "a task id")?;
+            if a.pos.len() > 2 {
+                return Err("gates takes one task id (see `muster help`)".into());
+            }
+            let tip = gates::tip(root, id, cwd)?;
+            let l = gates::list(root, id, &tip)?;
+            if a.json {
+                print_json(&l)?;
+            } else {
+                out!("{}", gates::listing_text(&l));
+            }
+            Ok(0)
+        }
         "lessons" => run_lessons(a, root, &me, stamp),
         "check" => {
             if a.dry_run {
@@ -3036,6 +3055,43 @@ fn run_on(
         }
         other => Err(format!("unknown command {other:?} (see `muster help`)")),
     }
+}
+
+/// `muster gate <id> criteria|visual` (mu-131): what to check and the JSON to return, or
+/// `--record` a tester's result (`-` reads it from stdin) at the branch's tip.
+fn run_gate_record(
+    a: &Args,
+    root: &Path,
+    prefix: &str,
+    me: &dyn Fn() -> String,
+    stamp: &str,
+    cwd: Option<&Path>,
+) -> Result<i32, String> {
+    let id = need(a, 1, "a task id")?;
+    let gate = need(a, 2, "the gate: criteria or visual")?;
+    if a.pos.len() > 3 {
+        return Err(
+            "gate takes a task id and a gate; the record goes in --record (see `muster help`)"
+                .into(),
+        );
+    }
+    let k = crate::key::key(prefix, id);
+    let tip = gates::tip(root, id, cwd)?;
+    let Some(record) = a.flags.get("record") else {
+        out!("{}", gates::brief_text(root, id, gate, &tip)?);
+        return Ok(0);
+    };
+    let json = match record.as_str() {
+        "-" => read_capped(std::io::stdin(), "stdin")?,
+        j => j.to_string(),
+    };
+    let r = gates::record(root, id, gate, &json, &me(), stamp, &tip)?;
+    if a.json {
+        print_json(&r)?;
+    } else {
+        out!("{}", gates::recorded_text(&k, &r));
+    }
+    Ok(0)
 }
 
 /// `muster review` (0027): the brief for the next round of a started task, `--record` the
@@ -4040,6 +4096,21 @@ mod tests {
         assert_eq!(queue::read_task(&f.root, &id).unwrap().stage, "testing");
         crate::parallel::tests::review_clean(&f, &id);
         g(&f.repo, &["worktree", "remove", &worktree]);
+        // muster gates and gate read the tip in the project's repo once the worktree is gone
+        // (mu-131 R16), as review does; with no folder they say where to run them.
+        for words in [
+            vec!["gates", id.as_str()],
+            vec!["gate", id.as_str(), "criteria"],
+        ] {
+            let words: Vec<String> = words.into_iter().map(String::from).collect();
+            let a = parse(&words).unwrap();
+            assert_eq!(
+                run_on(&a, &words[0], &f.root, "pj", &now, &no_env, Some(&f.repo)),
+                Ok(0)
+            );
+            let e = run_on(&a, &words[0], &f.root, "pj", &now, &no_env, None).unwrap_err();
+            assert!(e.contains("run it from the project's repo"), "{e}");
+        }
         let second = lines();
         assert!(
             second[0].ends_with(&format!(": {}", cmds[1])),
@@ -6712,6 +6783,86 @@ mod tests {
     }
 
     #[test]
+    fn gate_and_gates_usage_refusals_and_exit_codes() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let code = |args: &[&str]| {
+            let mut v = sv(&args[..1]);
+            v.extend(sv(&["--queue", &q, "--as", "qa"]));
+            v.extend(sv(&args[1..]));
+            main(&v)
+        };
+        std::fs::write(
+            d.path().join("doing/0001-plain.md"),
+            "---\nid: 0001\ntype: task\npriority: normal\nstage: testing\nstatus: doing\nclaimed-by:\nheartbeat:\nwaiting_on:\n---\n\n# Plain\n\n## Acceptance criteria\n- [x] AC1: works — verify: command\n\n## Log\n- 2026-10-12 09:00 capture: created\n",
+        )
+        .unwrap();
+        // Usage (2): no id, no gate, words after the gate.
+        assert_eq!(code(&["gate"]), 2);
+        assert_eq!(code(&["gate", "0001"]), 2);
+        assert_eq!(code(&["gate", "0001", "criteria", "extra"]), 2);
+        assert_eq!(code(&["gates"]), 2);
+        assert_eq!(code(&["gates", "0001", "extra"]), 2);
+        // Refused (1): a task not started on its own branch has no tip to check.
+        assert_eq!(code(&["gate", "0001", "criteria"]), 1);
+        assert_eq!(code(&["gate", "0001", "criteria", "--record", "{}"]), 1);
+        assert_eq!(code(&["gates", "0001"]), 1);
+        assert_eq!(code(&["gates", "0009"]), 1, "no such task");
+        assert!(!d.path().join("gates").exists(), "nothing written");
+    }
+
+    #[test]
+    fn gate_records_a_started_tasks_criteria_and_gates_lists_them() {
+        use crate::parallel::tests::{commit, fx, task};
+        let f = fx();
+        let run_in = |args: &[&str]| {
+            let a = parse(&sv(args)).unwrap();
+            run_on(
+                &a,
+                args[0],
+                &f.root,
+                "pj",
+                "2026-10-14 10:00",
+                &no_env,
+                Some(&f.repo),
+            )
+        };
+        let id = task(&f.root, "Gated", "g/");
+        assert_eq!(run_in(&["start", &id, "--as", "wt-a"]), Ok(0));
+        let wt = PathBuf::from(queue::read_task(&f.root, &id).unwrap().worktree);
+        commit(&wt, "g/x.txt", "x\n", "build");
+        let opts = ops::PassOpts {
+            gate: "gate: green (built)".into(),
+            summary: "A synthetic summary".into(),
+            from: Some("building".into()),
+            ..Default::default()
+        };
+        ops::pass_task(&f.root, &id, "wt-a", "2026-10-14 11:00", &opts).unwrap();
+        assert_eq!(run_in(&["gate", &id, "criteria"]), Ok(0), "the brief reads");
+        assert_eq!(run_in(&["gates", &id]), Ok(0));
+        let tip = gates::tip(&f.root, &id, None).unwrap();
+        let json = format!(
+            r#"{{"head":"{tip}","verdict":"green","items":[{{"id":"1","verdict":"met"}}]}}"#
+        );
+        // The builder can't; another session can.
+        assert!(
+            run_in(&["gate", &id, "criteria", "--record", &json, "--as", "wt-a"])
+                .unwrap_err()
+                .contains("was built by wt-a")
+        );
+        assert_eq!(
+            run_in(&["gate", &id, "criteria", "--record", &json, "--as", "qa", "--json"]),
+            Ok(0)
+        );
+        let l = gates::list(&f.root, &id, &tip).unwrap();
+        assert_eq!(l.gates[2].state, gates::State::Green);
+        assert_eq!(run_in(&["gates", &id, "--json"]), Ok(0));
+        assert_eq!(run_in(&["set", &id, "qa", "both", "--as", "owner"]), Ok(0));
+        assert_eq!(queue::read_task(&f.root, &id).unwrap().qa, "both");
+        assert!(run_in(&["set", &id, "qa", "pixels", "--as", "owner"]).is_err());
+    }
+
+    #[test]
     fn review_and_lessons_are_checked_like_a_claim_only_when_they_write() {
         let a = |args: &[&str]| parse(&sv(args)).unwrap();
         assert!(!targeted("review", &a(&["review", "0001"])));
@@ -6723,6 +6874,12 @@ mod tests {
         ] {
             assert!(targeted("review", &a(w)), "{w:?}");
         }
+        assert!(!targeted("gate", &a(&["gate", "0001", "criteria"])));
+        assert!(targeted(
+            "gate",
+            &a(&["gate", "0001", "criteria", "--record", "-"])
+        ));
+        assert!(!targeted("gates", &a(&["gates", "0001"])));
         assert!(!targeted("lessons", &a(&["lessons"])));
         assert!(targeted("lessons", &a(&["lessons", "accept", "--all"])));
     }

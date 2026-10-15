@@ -946,9 +946,13 @@ const REGATES: usize = 2;
 /// cleared, `commit:` the merge, the report logged) and pass it to Your check: once main has the
 /// merge this is written whatever, and a pass refused meanwhile (blocked, moved) is an error that
 /// says so; (8) name the next task to start. Before step 1 it needs the review of record clean at
-/// the branch's tip (0027, `review::merge_check`), the owner aside; before each rebase it checks
-/// again (a commit that landed while it waited for the lock wasn't reviewed), each rebase carries
-/// that review to the replayed commits, and a commit made while the gate ran stops it. The report and the commit are checked before step 4.
+/// the branch's tip (0027, `review::merge_check`) and every gate record it needs green there
+/// (mu-131, `gates::merge_check`), the owner aside; before each rebase it checks both again (a
+/// commit that landed while it waited for the lock wasn't reviewed), each rebase carries the
+/// review and the records to the replayed commits (refused if one turned red meanwhile), a
+/// commit made while the gate ran stops it, and after the last gate run both are checked again at
+/// what lands (a red record or a round written while the gate ran stops it), the report's words
+/// worked out there. The report and the commit are checked before step 4.
 /// A refusal before step 4 or a stop at 4 or 5 leaves the worktree, the branch and the task as
 /// they were. A branch already merged into main by hand whose worktree is gone is recorded
 /// instead, found from `cwd`'s repo (`record_hand_merge`, 0110). `now` gives the local time for
@@ -1022,10 +1026,19 @@ pub fn merge(
             wt.display()
         ));
     }
-    // The review of record (0027): clean at the branch's tip, or the owner's override.
+    // The review of record (0027) and the gate records it needs (mu-131): clean and green at the
+    // branch's tip, or the owner's override. Both are checked, so a refusal names everything.
     let tip = git(&wt, &["rev-parse", "HEAD"])?;
-    let review = crate::review::merge_check(root, id, &tip, who)?;
-    let reviewed = review.words.clone();
+    let (review, gates) = match (
+        crate::review::merge_check(root, id, &tip, who),
+        crate::gates::merge_check(root, id, &tip, who),
+    ) {
+        (Ok(r), Ok(g)) => (r, g),
+        (r, g) => {
+            let why: Vec<String> = [r.err(), g.err()].into_iter().flatten().collect();
+            return Err(why.join("; "));
+        }
+    };
     // Checked now so a gate isn't run for nothing; checked again under the lock, before the merge.
     main_ready(&repo)?;
     // The work log's merge driver (0067), run by this binary, whatever the repo's config says.
@@ -1047,6 +1060,7 @@ pub fn merge(
         if review.stands {
             crate::review::still_stands(root, id, &before)?;
         }
+        crate::gates::still_stands(root, id, &before, &gates.standing)?;
         if let Err(e) = git(&wt, &rebase) {
             let files = conflicted(&wt);
             let aborted = git(&wt, &["rebase", "--abort"]);
@@ -1068,6 +1082,7 @@ pub fn merge(
         if review.stands {
             crate::review::carry(root, id, &before, &after)?;
         }
+        crate::gates::carry(root, id, &before, &after, &gates.standing)?;
         let onto = git(&repo.main, &["rev-parse", &trunk])?;
         say(format!(
             "rebased {branch} on {trunk} ({})",
@@ -1104,40 +1119,58 @@ pub fn merge(
 
     // The facts the task will record, checked before anything lands. Only a fast-forward lands,
     // so the merge commit is the branch's tip.
-    let commit = git(&wt, &["rev-parse", "HEAD"])?;
-    let short: String = commit.chars().take(7).collect();
-    let has_origin = git(&repo.main, &["remote", "get-url", "origin"]).is_ok();
-    let task = queue::read_task(root, id)?;
-    let at = now();
-    let report = format!(
-        "merged {branch} into {trunk} as {short} (fast-forward{}) · {} · {reviewed} · Building {} · Testing {} · {} check-in{}",
-        if has_origin { ", pushed to origin" } else { ", not pushed: no origin" },
-        run.line,
-        // Paused stretches (0045) aren't time spent on it.
-        duration_text(crate::pause::working_minutes(&task.stage_history, &task.pause_history, "building", &at)),
-        duration_text(crate::pause::working_minutes(&task.stage_history, &task.pause_history, "testing", &at)),
-        task.checkins.len(),
-        if task.checkins.len() == 1 { "" } else { "s" },
-    );
-    ops::check_merge_facts(who, &at, &commit, &report)?;
+    // Under the queue's lock from the last check to the fast-forward (records and rounds take
+    // it too), so nothing recorded in between is missed: what's checked is what lands.
+    let (commit, short, has_origin, report) = queue::with_lock(root, || {
+        let commit = git(&wt, &["rev-parse", "HEAD"])?;
+        // A round or a gate record written while the merge rebased or ran the gate: what stood
+        // when it started must still stand for what lands. The review's words name the commit it
+        // saw; the gates' say where each stands now.
+        if review.stands {
+            crate::review::still_stands(root, id, &commit)?;
+        }
+        crate::gates::still_stands(root, id, &commit, &gates.standing)?;
+        let gates = crate::gates::merge_check(root, id, &commit, who)?;
+        let reviewed = if gates.words.is_empty() {
+            review.words.clone()
+        } else {
+            format!("{} · {}", review.words, gates.words)
+        };
+        let short: String = commit.chars().take(7).collect();
+        let has_origin = git(&repo.main, &["remote", "get-url", "origin"]).is_ok();
+        let task = queue::read_task(root, id)?;
+        let at = now();
+        let report = format!(
+            "merged {branch} into {trunk} as {short} (fast-forward{}) · {} · {reviewed} · Building {} · Testing {} · {} check-in{}",
+            if has_origin { ", pushed to origin" } else { ", not pushed: no origin" },
+            run.line,
+            // Paused stretches (0045) aren't time spent on it.
+            duration_text(crate::pause::working_minutes(&task.stage_history, &task.pause_history, "building", &at)),
+            duration_text(crate::pause::working_minutes(&task.stage_history, &task.pause_history, "testing", &at)),
+            task.checkins.len(),
+            if task.checkins.len() == 1 { "" } else { "s" },
+        );
+        ops::check_merge_facts(who, &at, &commit, &report)?;
 
-    // 4. Fast-forward the local main: never a merge commit, never a tree the gate didn't see.
-    main_ready(&repo)?;
-    if let Err(e) = git(&repo.main, &["merge", "--ff-only", "--no-edit", &branch]) {
-        let _ = git(&repo.main, &["merge", "--abort"]);
-        return Err(format!(
-            "the fast-forward of {trunk} to {branch} failed: {e}. Nothing was merged or deleted: fix what it says and pass again"
+        // 4. Fast-forward the local main: never a merge commit, never a tree the gate didn't see.
+        main_ready(&repo)?;
+        if let Err(e) = git(&repo.main, &["merge", "--ff-only", "--no-edit", &branch]) {
+            let _ = git(&repo.main, &["merge", "--abort"]);
+            return Err(format!(
+                "the fast-forward of {trunk} to {branch} failed: {e}. Nothing was merged or deleted: fix what it says and pass again"
+            ));
+        }
+        if git(&repo.main, &["rev-parse", "HEAD"])? != commit {
+            return Err(format!(
+                "{trunk} isn't at {short} after the fast-forward; look at {} before passing again. Nothing was deleted",
+                repo.main.display()
+            ));
+        }
+        say(format!(
+            "merged {branch} into {trunk} as {short} (fast-forward)"
         ));
-    }
-    if git(&repo.main, &["rev-parse", "HEAD"])? != commit {
-        return Err(format!(
-            "{trunk} isn't at {short} after the fast-forward; look at {} before passing again. Nothing was deleted",
-            repo.main.display()
-        ));
-    }
-    say(format!(
-        "merged {branch} into {trunk} as {short} (fast-forward)"
-    ));
+        Ok((commit, short, has_origin, report))
+    })?;
 
     // 5. Push main, plainly. Never forced.
     if has_origin {
@@ -1256,7 +1289,8 @@ fn merged(
 
 /// `merge` for a branch merged into main by hand whose worktree is gone (0110, `hand_merged`):
 /// nothing is rebased, gated, fast-forwarded or pushed, since main has it already. The review of
-/// record still has to be clean at the branch's tip (the owner aside). The stale worktree entry is
+/// record still has to be clean, and the gate records it needs green (mu-131), at the branch's tip
+/// (the owner aside). The stale worktree entry is
 /// pruned, the branch deleted (origin's copy only when it's the same commit), and the task records
 /// the branch's tip as its commit and passes to Your check, as a merge does.
 fn record_hand_merge(
@@ -1271,7 +1305,23 @@ fn record_hand_merge(
     let task = queue::read_task(root, id)?;
     let branch = task.branch.clone();
     let trunk = &repo.trunk;
-    let review = crate::review::merge_check(root, id, tip, who)?;
+    // The review and the gate records it needs (mu-131), as the merge checks them: both, so a
+    // refusal names everything.
+    let (review, gates) = match (
+        crate::review::merge_check(root, id, tip, who),
+        crate::gates::merge_check(root, id, tip, who),
+    ) {
+        (Ok(r), Ok(g)) => (r, g),
+        (r, g) => {
+            let why: Vec<String> = [r.err(), g.err()].into_iter().flatten().collect();
+            return Err(why.join("; "));
+        }
+    };
+    let reviewed = if gates.words.is_empty() {
+        review.words
+    } else {
+        format!("{} · {}", review.words, gates.words)
+    };
     let short: String = tip.chars().take(7).collect();
     let at = now();
     // Nothing here pushes main, so origin's copy of the branch goes only once origin's main has
@@ -1298,9 +1348,8 @@ fn record_hand_merge(
         )),
     };
     let report = format!(
-        "recorded {branch}, merged into {trunk} by hand as {short} (its worktree was gone: nothing rebased, gated or pushed{}) · {} · Building {} · Testing {} · {} check-in{}",
+        "recorded {branch}, merged into {trunk} by hand as {short} (its worktree was gone: nothing rebased, gated or pushed{}) · {reviewed} · Building {} · Testing {} · {} check-in{}",
         kept.as_ref().map(|k| format!("; {k}")).unwrap_or_default(),
-        review.words,
         duration_text(crate::pause::working_minutes(&task.stage_history, &task.pause_history, "building", &at)),
         duration_text(crate::pause::working_minutes(&task.stage_history, &task.pause_history, "testing", &at)),
         task.checkins.len(),
@@ -1781,11 +1830,31 @@ pub(crate) mod tests {
         }
     }
 
-    /// A clean review round of `id` at its branch's tip, recorded by qa.
+    /// A clean review round of `id` at its branch's tip, and a green criteria record there (its
+    /// one criterion met, mu-131), recorded by qa.
     pub(crate) fn review_clean(f: &Fx, id: &str) {
         let span = crate::review::span(&f.root, id).unwrap();
         let json = format!(r#"{{"head":"{}","tier":"light"}}"#, span.head);
         crate::review::record(&f.root, id, &json, "qa", "2026-10-13 11:30", &span).unwrap();
+        criteria_green(f, id);
+    }
+
+    /// A green criteria record (G3) of `id` at its branch's tip, by qa: AC1 met.
+    pub(crate) fn criteria_green(f: &Fx, id: &str) {
+        let tip = crate::gates::tip(&f.root, id, None).unwrap();
+        let json = format!(
+            r#"{{"head":"{tip}","verdict":"green","items":[{{"id":"AC1","verdict":"met","text":"ran it"}}]}}"#
+        );
+        crate::gates::record(
+            &f.root,
+            id,
+            "criteria",
+            &json,
+            "qa",
+            "2026-10-13 11:31",
+            &tip,
+        )
+        .unwrap();
     }
 
     /// Start `id` as wt-a, commit a change in its worktree, and pass it Building → Testing.
@@ -2291,7 +2360,7 @@ pub(crate) mod tests {
         assert_eq!(
             report,
             format!(
-                "merged {} into main as {} (fast-forward, pushed to origin) · gate: green (fake, 2 steps) · review clean at {} (round 1) · Building 1h 0m · Testing 1h 30m · 1 check-in",
+                "merged {} into main as {} (fast-forward, pushed to origin) · gate: green (fake, 2 steps) · review clean at {} (round 1) · gates: criteria green · Building 1h 0m · Testing 1h 30m · 1 check-in",
                 s.branch,
                 &merged[..7],
                 &merged[..7]
@@ -3057,6 +3126,11 @@ pub(crate) mod tests {
             (rec.confirmed.clone(), rec.then.as_str()),
             (vec!["R1".to_string()], "clean")
         );
+        // The first branch's criteria record is of a commit that isn't the tip (mu-131): the
+        // tester checks the new branch again.
+        let e = run_merge(&f, &id, &gate).0.unwrap_err();
+        assert!(e.contains("criteria (G3) is of"), "{e}");
+        criteria_green(&f, &id);
         let Merge::Merged { .. } = run_merge(&f, &id, &gate).0.unwrap() else {
             panic!("not merged again")
         };
@@ -3111,6 +3185,7 @@ pub(crate) mod tests {
         let tip2 = g(&s.worktree, &["rev-parse", "HEAD"]);
         let clean = format!(r#"{{"head":"{tip2}","tier":"light"}}"#);
         crate::review::record(&f.root, &id, &clean, "qa", "2026-10-13 12:10", &span).unwrap();
+        criteria_green(&f, &id);
         // Main moves on, so the merge rebases: the review carries to the replayed commits.
         commit(&f.repo, "other.txt", "other\n", "main moves");
         let (r, _) = run_merge(&f, &id, &gate);
@@ -3623,7 +3698,7 @@ pub(crate) mod tests {
         );
         assert!(
             report.starts_with(&format!(
-                "recorded {}, merged into main by hand as {short} (its worktree was gone: nothing rebased, gated or pushed; {kept}) · review clean at {short} (round 1) · Building ",
+                "recorded {}, merged into main by hand as {short} (its worktree was gone: nothing rebased, gated or pushed; {kept}) · review clean at {short} (round 1) · gates: criteria green · Building ",
                 s.branch
             )),
             "{report}"
@@ -3729,21 +3804,46 @@ pub(crate) mod tests {
         assert_eq!(span.head, tip);
         let json = format!(r#"{{"head":"{}","tier":"light"}}"#, span.head);
         crate::review::record(&f.root, &id, &json, "qa", "2026-10-13 11:30", &span).unwrap();
-        let r = merge(
+        let hand = |f: &Fx| {
+            merge(
+                &f.root,
+                &id,
+                "qa",
+                &noon,
+                &green(f),
+                Some(&f.repo),
+                &mut |_| {},
+            )
+        };
+        // A hand merge needs the gate records too (mu-131 R14): no criteria record, no merge.
+        let e = hand(&f).unwrap_err();
+        assert!(e.contains("criteria (G3) has no record"), "{e}");
+        assert_eq!(read(&f.root, &id).stage, "testing");
+        // Recorded with the worktree gone, the tip read in the project's repo.
+        let at = crate::gates::tip(&f.root, &id, Some(&f.repo)).unwrap();
+        assert_eq!(at, tip);
+        let json = format!(
+            r#"{{"head":"{tip}","verdict":"green","items":[{{"id":"AC1","verdict":"met","text":"ran it"}}]}}"#
+        );
+        crate::gates::record(
             &f.root,
             &id,
+            "criteria",
+            &json,
             "qa",
-            &noon,
-            &green(&f),
-            Some(&f.repo),
-            &mut |_| {},
-        );
+            "2026-10-13 11:31",
+            &at,
+        )
+        .unwrap();
+        let r = hand(&f);
         let Ok(Merge::Merged { report, .. }) = r else {
             panic!("{r:?}");
         };
         let short: String = tip.chars().take(7).collect();
         assert!(
-            report.contains(&format!("review clean at {short} (round 1)")),
+            report.contains(&format!(
+                "review clean at {short} (round 1) · gates: criteria green"
+            )),
             "{report}"
         );
         assert_eq!(read(&f.root, &id).stage, "your-check");

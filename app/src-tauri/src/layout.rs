@@ -82,6 +82,14 @@ pub fn reviews_dir(root: &Path) -> PathBuf {
     root.join(REVIEWS)
 }
 
+/// The gate records' folder (mu-131): `<id>/criteria.json` and `<id>/visual.json` per task, in the
+/// queue's folder beside `reviews/` (`.muster/gates/` in the new one).
+pub const GATES: &str = "gates";
+
+pub fn gates_dir(root: &Path) -> PathBuf {
+    root.join(GATES)
+}
+
 pub fn lessons_file(root: &Path) -> PathBuf {
     root.join(LESSONS)
 }

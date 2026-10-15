@@ -88,6 +88,14 @@ muster review 0007 --record - --as qa < review.json
 
 Muster returns the task to Building while anything is open (rounds 1 and 2), blocks it on the owner after round 3, and when it's clean, carries on here. The merge refuses a started task without a clean review at its branch's tip.
 
+**Then the gate records.** `muster gates 0007` lists the gates the task needs and where each stands at the tip. For criteria (G3), `muster gate 0007 criteria` prints the criteria with their ids: check each, attach what proves it (`muster attach`), and record a verdict per criterion (met, partial, unmet or unproven) with `text` saying what you checked. With `qa:` set, record visual QA (G4) the same way, per screen state. State the verdict the items make (green when every criterion but the owner's is met); muster refuses one that doesn't match:
+
+```
+muster gate 0007 criteria --record - --as qa < criteria.json
+```
+
+The merge refuses while a gate the task needs is red, missing or taken before the latest commit.
+
 It takes a task in Testing, checks each acceptance criterion the way its `verify:` part says, and ticks each one with its proof. Then it passes the task to Your check: `muster pass 0007 --from testing --as qa`. It's never the session that built the task: that pass is refused for the builder, whatever folder it runs from. A coordinator starts a fresh QA subagent with its own `--as` (`muster/qa-0007`) once the builder has passed Building → Testing. Criteria marked `— verify: owner` are left for the owner; that pass doesn't wait for them. If something fails, it sends the task back with what's wrong:
 
 ```

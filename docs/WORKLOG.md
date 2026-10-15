@@ -4,6 +4,22 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — mu-131 rebased on main (mu-191 testkit, mu-208)
+**Did:** conflicts in `lib.rs` (kept both the `testing` and `testkit` modules) and `migrate.rs` (kept the
+renamed gate-records test, now on `crate::testkit::tempdir()`). Nothing else changed.
+
+## 2026-10-15 — mu-131 round 4: restart writes gates: on, a hand merge needs the gate records, every commit builds
+**Fixed:** R13 a task claimed, then started, got its branch through main's `restart_task`, which
+never wrote `gates: on`, so its merge skipped G3 → `restart_task` writes it as `start_task` does.
+R14 recording a hand merge (`record_hand_merge`, mu-110) checked only the review → it runs
+`gates::merge_check` too, joins both refusals and puts the gate words in the report. R15 the
+squashed task commit called main's `branch_span`/`merge` with the old arguments, so it didn't
+build alone → the rebase fixes folded into it. R16 the CLI test runs `muster gates` and `gate`
+with the worktree gone, in the repo and with no folder.
+R17 (after mu-170) `gates`/`gate` printed with a bare `print!`, which `cli_rs_has_no_bare_print`
+catches → they write through `out!`.
+**Verified:** each fix's test failed first; `git rebase --exec` builds every commit; bin/gate below.
+
 ## 2026-10-15 — Work section by stage, tokens without cache reads, a token ribbon on held cards (mu-172)
 **Did (asghar_33, builder):** a task's tokens are input + output + cache writes
 (`Tokens::counted`); cache reads are shown beside them, never counted. The task pane's Work
@@ -637,6 +653,92 @@ in it), but the en JSON chunk is preloaded, so the startup set is about the same
 **Open:** the owner's native-speaker check of the proposed words (چیپ, تسک برداشته‌شده, لاگ,
 سرصفحه, بورد, نقش). Board text is mu-147's. Digits are mixed until mu-151, and RTL mirroring is
 mu-149's.
+
+## 2026-10-14 — mu-131 rebased on main (mu-109, 0112, mu-101/110, mu-157/158/160/161/163)
+**Did:** the task's three commits squashed onto their merge-base and rebased once. Conflicts, each
+kept from both sides: `cli.rs` (the `accounts` import, `targeted`'s doc, `review` now takes `cwd`
+beside `gate`/`gates`), `help.rs` (main's `start`/`pass` text with the gate wording merged in;
+`team`, `instructions`, `gate`, `gates` all listed, 53 commands), `ops.rs` (the `## Gates` guard
+before main's `## Questions` one), `commands/mu.md`/`muster.md` (`clarify`, `restore`, `history`,
+`gate`, `gates` not routed), `AS_BUILT.md` (main's `now.rs` and review rows plus `gates.rs`,
+`testing.rs`, `gates/<id>/`), `manual/05-commands.md` (as help.rs). WORKLOG by the merge driver.
+**Fixed:** build broke on main's mu-110 `branch_span(root, worktree, branch, cwd)` and mu-101's
+`merge(.., cwd, ..)` → `gates::tip` takes `cwd` like `review::span_in`, so `muster gate`/`gates`
+read the tip in the current folder's repo once the worktree is gone (test first). mu-101's
+re-merge test now records criteria again at the new tip: the first branch's record is stale there.
+**Did:** main's now pages (mu-102) cover this task's files: `docs/now/parallel.md` gets the merge's gate
+rules, `docs/now/queue.md` `muster gate`, `gates: on`/`qa:` and the tool's `## Gates` section.
+**Verified:** gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati)).
+
+## 2026-10-14 — mu-131 round 2: fences stay in the write-up, the review re-check tested, the merge's last check under the lock
+**Fixed:** a write-up's stray fence was closed by a fence line in a later comment or answer (the
+tool indents those two spaces), so `## Review` and `## Gates` were hidden again and each record
+added a copy → `testing::headings` read fences in the tool's own text → fences are read only above
+the Comments/Log (found plainly) and never in the `## Questions` content; a `## Questions` quoted
+in a closed fence is read as the write-up's (R2).
+**Fixed:** `muster set <id> qa ""` by a non-owner after `return --to ready`, or with `stage:
+Testing` in another case, dropped G4 → the guard read the raw stage → it reads the stage
+lowercased and refuses once the task has a branch (R12).
+**Fixed:** a record or round written between the merge's last check and the fast-forward was
+missed → the check, the report and the local fast-forward now run under the queue's lock, which
+`muster gate --record` and `muster review --record` take too (R11; the push stays outside it).
+**Did:** tests: a gate run that leaves the review unclean stops the merge with main unmoved (R9;
+the refusal is `merge_check`'s "isn't clean", since `still_stands` runs it as the merge, never the
+owner); the ```x` case now has a real closing fence later, so it fails without the rule (R10); a
+hermetic `bin/test_commands.py` case runs the R2 scenario through the binary (stray fence, a
+fenced comment, a fenced answer, three rounds of records: one `## Review`, one `## Gates`, the
+editor's write-up has neither).
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`;
+each new guard deleted in turn fails a test (tool-text exemption, Log
+boundary, quoted-Questions rescan, backtick rule, the post-gate review check); the binary test
+fails against the round-1 `testing.rs`.
+**Open:** R11's window has no direct test: there's no seam between the check and the
+fast-forward to inject a record.
+
+## 2026-10-14 — mu-131 round 1: not_checked on criteria records, stray fences, records checked again before main moves
+**Did:** a criteria record takes `not_checked` (optional, 20 lines of 200 characters), stored and
+shown in `## Gates` as `Not checked: …`, never in the verdict; refused on a visual record (R1).
+`muster gate <id> criteria` names the criteria with `criteria_of`, the rule the record uses (R4).
+Docs say `muster gates` lists G4 with a visual record too (R6). A refused merge names the review's
+and the gates' problems together (R7). Once a task is in Building, only the owner changes `qa:` (R8).
+**Fixed:** a write-up ending in an open fence hid `## Review` and `## Gates`, so each round or
+record added a copy and Edit showed the old ones → `testing::headings` treated any open fence as
+running to the end → a fence hides headings only once it closes, and a backtick opener with a
+backtick in its info string isn't a fence (R2).
+**Fixed:** a red record or a round with findings written while the merge rebased or ran the gate
+still landed → `carry` moved a record without checking it passes, and nothing re-read the records
+after the gate → `gates::carry` refuses a standing record that's red at the old tip,
+`review::carry` a review that isn't clean, and the merge runs both `still_stands` again at the
+commit that lands, before the fast-forward, working out the gates' report words there (R3).
+**Verified:** gate below; new tests for not_checked (21 lines, 201 characters, an empty line,
+visual refused, stored, rendered, verdict unchanged, old files load), a stray fence recorded twice
+(one section each, Edit leaves both out), the brief's ids and the confirmation's words, `muster
+gates` with G1 red, G2 red and a visual record without `qa:`, a gate run that records criteria red
+(the merge errs, main doesn't move), carry refusing a red record and an unclean review, the joined
+refusal, and the `qa:` guard.
+
+## 2026-10-14 — mu-131: gate records, one checked record per gate at the branch's tip; qa: on tasks; the merge refuses without them
+**Did:** `muster gate <id> criteria|visual [--record -]` records G3 and G4 (`gates.rs`): strict JSON
+(unknown fields refused, 1 MB, 200 items, 20 evidence paths), `head` the tip, criteria ids
+normalised on both sides (`AC1`, `ac1`, `1`), the verdict worked out by muster and a differing one
+refused, evidence only as files inside `attachments/<id>/` (no `../`, absolute path or symlink out,
+nor a symlinked folder). Stored in `gates/<id>/<gate>.json`, rendered as the task's `## Gates`
+section with `gate-records:` in its front matter (Edit leaves it out, refuses a new heading).
+`muster start` writes `gates: on` (G3 needed); `muster set <id> qa reference|walkthrough|both|""`
+(G4 needed); `muster check` and `manifest.py` flag a bad `qa:` or `gates:`. `muster gates <id>`
+lists G1 to G3, and G4 with `qa:`, each with its state at the tip. The merge calls
+`gates::merge_check` beside the review's, checks again before each rebase and carries the records
+over it; the owner may merge anyway and the report says so. `migrate` copies `gates/`.
+**Did:** shared with the review in `testing.rs` (factored out of `review.rs`): the section helpers,
+which now skip fenced code (L10), `clean_head`, and `check_tester`; `Review::stands_at` is the one
+review-at-the-tip test, `gates::passes` the one gate test.
+**Decided:** evidence is optional on an item (a criterion's proof is often a test, not a file); a
+green G3 doesn't tick the task's criteria yet (left for mu-132, noted on the task).
+**Verified:** gate below; 19 gate tests (shape refusals, wrong head, the builder refused, path
+escapes, `qa:` values, the merge refusing each missing, red and stale gate, needs-walkthrough going
+on to Your check, records carried over the rebase, the owner's override, old tasks not held back),
+CLI tests, manifest test; the parser read the real muster, drover and braindump queues
+(`muster list --json`, `muster check` across every project), read-only.
 
 ## 2026-10-14 — One needs-you wording app-wide: folded strips and bands say "1 needs you" (mu-159)
 **Did (asghar_28, builder):** `needsWords(n)` ("1 needs you", "2 need you") and `needsVerb(n)` in

@@ -1,5 +1,59 @@
 # Muster — task queue protocol (v2, with stages)
 
+> **Gate records (Muster mu-131, 2026-10-14, decision 0014, `docs/GATES.md`).** A started task
+> leaves Testing only when every gate it needs is green **at the branch's tip**. G1 (build) is the
+> gate line and the merge's own gate run; G2 (code review) is the review of record below. G3
+> (`criteria`) and G4 (`visual`) are records the **tester** writes (a session that didn't build
+> it, as 0047 says; or the owner), in Testing, the task not paused or blocked: `muster gate <id>
+> criteria|visual` prints what to check and the JSON, and `muster gate <id> criteria|visual
+> --record - --as <you>` takes it on stdin:
+>
+> ```json
+> {"head": "<the tip>", "verdict": "green|red|needs-walkthrough",
+>  "items": [{"id": "AC1", "verdict": "met", "text": "what was checked, plain words",
+>             "evidence": ["attachments/<id>/run.txt"], "note": "optional"}],
+>  "not_checked": ["optional, criteria only: what you didn't verify"]}
+> ```
+>
+> Checked strictly: an unknown field is refused, and so is a record over 1 MB, over 200 items, or
+> with over 20 evidence paths on an item. `not_checked` (criteria only, optional; at most 20
+> lines of 200 characters, each one plain line) says what the tester didn't verify: it's stored,
+> shown in `## Gates` as `Not checked: …` under the criteria, and never changes the verdict; on a
+> visual record it's refused. `head` must be the branch's tip (7 to 64 hex
+> characters, a prefix of it). **Criteria** items are `met`, `partial`, `unmet` or `unproven`, one
+> per criterion, matched to the task's criteria with their ids normalised on both sides (`AC1`,
+> `ac1` and `1` are the same; a criterion without an `AC` label is `AC<position>`; two criteria
+> with one id are refused). `expected` isn't for criteria. **Visual** items are `pass`, `fail` or
+> `needs-walkthrough` per screen state (`board/empty`: lowercase letters, digits and `-_./:@`),
+> with `expected` saying whether the difference found was asked for: `expected: false` with
+> `pass` is refused. **Muster works the verdict out:** criteria are green when every criterion but
+> the owner's own (`— verify: owner`) is covered and met, else red; visual is red with any fail,
+> needs-walkthrough with any walkthrough, else green. A stated verdict that differs is refused, and
+> `needs-walkthrough` is only for visual. **Evidence** paths are files that exist inside the
+> task's `attachments/<id>/` (`muster attach`), given as `attachments/<id>/<path>` or relative to
+> it; `../`, `.`, an absolute path, a backslash, a symlink that leads out, and an
+> `attachments/<id>` folder that is itself a symlink are refused. Records hold paths and
+> verdicts, never content. Muster keeps each record in the queue's `gates/<id>/<gate>.json`
+> (`task`, `gate`, `head` as the full tip, `verdict`, `by`, `at`, `items`; **never edit it**), a
+> new one replacing the last; writes the task's `## Gates` section (tool-written once the task has
+> `gate-records: criteria green · visual needs-walkthrough` in its front matter: Edit leaves it
+> out and refuses a new `## Gates` heading) and logs it. **Which gates a task needs:** G1 and G2
+> always; G3 when the task was started with gate records (`muster start` writes `gates: on`; older
+> tasks are never held back); G4 when the shaper set `qa: reference|walkthrough|both` (`muster set
+> <id> qa …`, `""` clears it; once the task is started on its own branch or in Building or later only the owner changes it;
+> `muster check` flags a bad `qa:` or `gates:`). `muster gates <id>`
+> lists G1 to G3, and G4 when `qa:` is set or it has a visual record, each with its state at the tip: green, red,
+> needs-walkthrough, missing or stale. **The merge** refuses, before its lock, rebase or gate,
+> while a needed G3 or G4 is red, missing or stale, naming each (`criteria (G3) has no record
+> (muster gate mu-131 criteria --record -)`, named together with the review's refusal), checks
+> again before each rebase, carries the records at the old tip to the replayed commits, as it
+> does the review (refused if a needed one turned red there), and checks the review and the
+> records once more after its last gate run, before main moves: a round or a red record written
+> while the merge ran stops it. `needs-walkthrough`
+> doesn't hold the merge: the task goes on to Your check for the owner's walkthrough (mu-137
+> takes it from there). The owner may merge anyway; the report says so (`gates: criteria green,
+> visual needs-walkthrough`, or `… (the owner's override)`).
+
 > **The review of record (Muster 0027, 2026-10-13).** A task started on its own branch (0023)
 > is reviewed in Testing by the owner's review engine, and that's the review that counts: builders
 > run the gate, not a second full review. Muster runs no agent for the review or the vision check;
@@ -256,7 +310,9 @@ its own agent id is another holder, 0090) and logged `(tested under
 > 4. **Review and fix.** Testing reviews it and ticks each criterion with its proof, in a session
 >    that isn't the builder (0047): `- [x] AC2: … — verify: … — proof: <what showed it>`, naming
 >    any screenshot as `attachments/<id>/<file>` so Your check shows it under that criterion. A finding the builder must fix is `muster return <id> "<why>"`:
->    back to Building, in the same worktree.
+>    back to Building, in the same worktree. The tester also records the gates the task needs at
+>    the tip (mu-131, above): `muster gates <id>` says which; `muster gate <id> criteria --record -`
+>    and, with `qa:` set, `muster gate <id> visual --record -`.
 > 5. **Merge: `muster pass <id> --from testing`.** For a started task this pass is the merge, in
 >    order, stopping at the first failure: it takes the repo's merge lock (a flock on
 >    `<git common dir>/muster/merge.lock`, so one merge runs at a time); rebases the branch on the
@@ -275,7 +331,8 @@ its own agent id is another holder, 0090) and logged `(tested under
 >    the worktree (never a runner's, made with `--here`: that one is left, detached) and deletes
 >    the branch, and origin's copy only when it's the same commit; records the merge in the task
 >    (`commit:` the merge, the report logged: `merged task/… into main as <sha> · <gate line> ·
->    Building 2h 10m · Testing 35m · 4 check-ins`) and passes it to Your check. Once main has the
+>    review clean at <sha> (round 1) · gates: criteria green · Building 2h 10m · Testing 35m · 4
+>    check-ins`) and passes it to Your check. Once main has the
 >    merge the record is written whatever: if the task was blocked or moved meanwhile, it keeps its
 >    stage and the command says "merged into main as <sha>; the task is <stage>: use muster
 >    stage". Last, it names the next task to start that doesn't clash with the tasks still in

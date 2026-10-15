@@ -73,7 +73,7 @@ tool and the change logged in the task.
    .muster/ or          projects.json           worktrees, rebase, bin/gate,
    <project>/tasks      settings.json           fast-forward main, push
      tasks/ backlog/    notified.json, helper/
-     mail/ reviews/
+     mail/ reviews/ gates/
      INDEX.md
           │ mail/<session8>/… (a teammate's: mail/<session8>/<agent8>/…)
           ▼
@@ -125,6 +125,8 @@ here):
 | `vision.rs` | The vision check: the brief, the agent's result recorded, conflicts resolved |
 | `now.rs` | What's true now (mu-102): the `docs/now/` pages read and matched to a task's `touches:`, the building pass's page check, `check`'s warnings |
 | `review.rs` | The review of record: the brief, the result recorded, rounds, the merge check; owner findings from a send-back out of Your check (lens `owner`) |
+| `gates.rs` | Gate records (G3 criteria, G4 visual QA): the record checked and stored at the branch's tip, which gates a task needs (`qa:`, `gates: on`), `muster gates`, the merge check and carry |
+| `testing.rs` | What the review and the gate records share: the tool's sections (fenced code skipped), the head a record names, who may record in Testing |
 | `lessons.rs` | Lessons from reviews: proposed from repeated findings, accepted or rejected by the owner |
 | `pause.rs` | Pause and Resume: a task keeps its stage and claim, nobody works it |
 | `old_pause.rs` | Turning pre-0045 "paused" blocks into pauses (`muster check --fix-pauses`) |
@@ -281,7 +283,7 @@ status folders and `inbox/` for the backlog):
 | `config.toml` | `local = true`, the key prefix (`prefix = "mu"`) and the lenses the project skips (`[shaping]` `skip = […]`, `[shaping.reasons]`); the only file a local queue commits | `muster init`, `migrate`, `muster projects set <name> prefix`; `[shaping]` by hand | the core (`layout.rs`, `key.rs`, `lenses.rs`) |
 | `.gitignore` | A local queue ignores everything but itself and `config.toml` | `init`, `migrate` | git |
 | `README.md` | The queue's short rules for agents; an old queue's front matter also holds its prefix and the lenses it skips (`shaping-skip:`, `shaping-reason-<lens>:`) | `init`, `migrate`; the skips by hand | agents; an old queue's front matter: `key.rs`, `lenses.rs` |
-| `tasks/NNNN-slug.md` | One task: front matter, write-up, criteria, Questions, Vision, Review, Comments, Log | only `muster` and the app, under the lock; Drover writes answers (file contract v1) | the core, `manifest.py`, Drover, agents |
+| `tasks/NNNN-slug.md` | One task: front matter, write-up, criteria, Questions, Vision, Review, Gates, Comments, Log | only `muster` and the app, under the lock; Drover writes answers (file contract v1) | the core, `manifest.py`, Drover, agents |
 | `backlog/*.md`, `backlog/dropped/` | Backlog notes, and dropped ones with the reason | `muster add`, the app's quick add, anyone dropping a file in | the core |
 | `shaping.json` | Who is shaping which backlog note: `{ "<note>": { "by", "at", "heartbeat" } }` (task 0097); live state, ignored by a committed queue's `.gitignore`; a missing file means nothing is held | `muster shape`, `file`, `drop`, `release`, `reclaim`, under the lock, atomically | the core (`backlog.rs`), `muster check` |
 | `attachments/NNNN/` | A task's files (screenshots, mockups), and the note a task was filed from | `muster attach`, the app, `muster file` | the app, agents |
@@ -289,6 +291,7 @@ status folders and `inbox/` for the backlog):
 | `mail/asks.json` | Which mailbox asked which question: `<session8>`, or `<session8>/<agent8>` for a teammate | `muster ask`; a takeover repoints the task's entries | `muster answer` |
 | `mail/<session8>/` | A session's mailbox: answers, check-in, pause and resume requests, messages; `delivered/` once handed over. A teammate's is `<agent8>/` inside it, which the lead never takes | `muster answer`, `ping`, `pause`, `resume`, the app; a takeover moves the task's mail to the successor's | `bin/answer-hook.py` (a teammate's by the hook input's `agent_id`), `muster inbox` |
 | `reviews/<id>.json` | The review of record's rounds and findings (the truth); an owner finding has lens `owner` | `muster review --record`, `--fixed`, `--dispute`, `--settle`; a return from Your check to Building adds the owner finding (a new store at round 0 when there's none) | the core, the task's `## Review` section |
+| `gates/<id>/criteria.json`, `gates/<id>/visual.json` | A task's gate records (the truth): head, verdict, by, at, items | `muster gate --record`; the merge's carry | the core, `muster gates`, the merge, the task's `## Gates` section |
 | `reviews/lessons.json`, `lessons.md` | Lessons from reviews (truth, and rendered) | the core, under the lock; `muster lessons` | `muster start`'s brief, the review brief, the app |
 | `INDEX.md` | The master list, generated | the core after every write; `muster index` | the owner, `muster check`, `manifest.py --check` |
 | `tasks.json` | The manifest, generated | `manifest.py` only | scripts |
@@ -580,9 +583,10 @@ As of 2026-10-14 06:30 (the newest change in a task's log). 83 tasks: 9 Ready, 1
   holding a commit it made itself (`parallel::own_commits`, from its reflog; a fast-forward or
   rebase onto main with nothing built doesn't count), with the pass that catches it up
   (`parallel::lagging`, a warning). With its worktree gone, that pass from Testing records the
-  merge main already has (`parallel::record_hand_merge`: no rebase, gate or push; origin's branch
-  is kept until origin's main has the tip), and `muster review` reads the branch from the
-  project's repo (`parallel::branch_span`). `muster check`
+  merge main already has (`parallel::record_hand_merge`: no rebase, gate or push, but the review and the gate records
+  it needs must stand at the tip, as a merge's (mu-131); origin's branch is kept until origin's
+  main has the tip), and `muster review`, `muster gate` and `muster gates` read the branch from
+  the project's repo (`parallel::branch_span`). `muster check`
   only, not the app's Problems list, which never shows the left-behind lines.
   Not covered: a squash merge (the branch tip never lands in main), a branch deleted after the
   merge, and a branch whose reflog is gone (nothing says where it started, so nothing is said).
@@ -2114,6 +2118,50 @@ a merged task (no branch) records it too, tied to `commit:`; its pass waits for 
 fresh branch, whose round settles it (`owner_to_recheck`, `holds_unbranched`).
 `parallel::merge` calls `review::merge_check` before its lock, rebase and gate (clean at the
 tip, or the owner's override, said in the report) and `review::carry` after each rebase.
+`review::Review::stands_at` (clean, and of the tip) is the one test the merge and `muster gates`
+use for the review. The section helpers, `clean_head` and the tester check (`check_tester`:
+Testing, not paused or blocked, not the builder chain, the owner always) live in `testing.rs`,
+shared with the gate records. `testing::headings` skips `## ` lines inside a fenced block only
+when the fence closes in the write-up: fences are read only above the tool's Comments (or its Log,
+`queue::comments_span`/`log_heading`, found plainly) and never in the `## Questions` content
+(`queue::questions_span`), whose answers, like comments, hold the tool's indented lines. A fence
+still open there hides nothing, so a stray fence in a write-up can't hide the tool's sections and
+get them copied on each record, whatever fence lines a comment or an answer adds below. A
+`## Questions` that turns out quoted in a closed fence is the write-up's, and it's read again with
+its lines as fences. A backtick opener whose info string holds a backtick isn't a fence
+(CommonMark).
+**Gate records** (mu-131, decision 0014, `gates.rs`): `muster gate <id> criteria|visual` prints
+what to check; `--record -` takes `{head, verdict, items: [{id, verdict, expected?, text?,
+evidence[], note?}], not_checked?: []}` (`deny_unknown_fields`, 1 MB, 200 items, 20 evidence paths
+an item, texts one line and capped; `not_checked` criteria only, 20 lines of 200 characters, stored
+as `notChecked` and rendered as `Not checked: a; b` under the criteria, never in the verdict). `head` must prefix the branch's tip (`gates::tip`, from `parallel::branch_span`);
+the recorder passes `testing::check_tester`. Criteria ids are normalised on both sides
+(`criterion_id`: `AC1`, `ac1`, `1` → `AC1`; a criterion without a label is `AC<n>`); items are
+`met|partial|unmet|unproven`. Visual items are `pass|fail|needs-walkthrough` against a screen-state
+id (`[a-z0-9-_./:@]`, 120 at most), and `expected: false` can't pass. The verdict is worked out
+(criteria green when every non-owner criterion is met; visual red on any fail, needs-walkthrough on
+any walkthrough) and a stated one that differs is refused. Evidence paths are checked by
+`evidence_path`: no absolute path, backslash, `.`, `..` or empty part; `attachments/` and
+`attachments/<id>/` must be real folders (not symlinks); the canonical file must be a file inside
+the canonical folder. The record (full tip as `head`) goes to `gates/<id>/<gate>.json` atomically,
+replacing the last; the task gets a `## Gates` section rendered from every record (items as
+`- [x] **AC1** met` with untrusted text on indented lines), `gate-records:` in its front matter
+(`gates::recorded`: from then on `ops::body_span` leaves the section out and `edit_body` refuses a
+new `## Gates` line outside fences) and a log line, all under the queue's lock. `gates::needed`:
+G1 and G2 always, G3 when `gates: on` (`ops::start_task` writes it; `Task::gates_on`), G4 when
+`qa:` is set (`Task::qa`, `muster set <id> qa`, the owner's alone once started on its branch or from Building on; a bad `qa:` or
+`gates:` is a `check` problem and a `manifest.py` one). `gates::passes(gate, state)` is the one test: green passes, needs-walkthrough
+passes for visual only. `gates::list` (`muster gates`) shows G1 (the builder's gate line), G2
+(`stands_at`), G3, and G4 when `qa:` is set or a visual record exists (green, red,
+needs-walkthrough, missing, stale). `brief_text` names the criteria with `criteria_of`, the same
+rule the record checks against. `parallel::merge` calls
+`gates::merge_check` beside the review's (both run, their refusals joined, each failing gate
+named, the owner's override said in the report), `gates::still_stands` before each rebase and
+`gates::carry` after it, which moves every record at the old tip to the new one and refuses a
+standing one that no longer passes there (`review::carry` likewise refuses a review that isn't
+clean). After the last gate run, under the queue's lock (which records and rounds take too) held through
+the local fast-forward, `review::still_stands` and `gates::still_stands` run again at the commit
+that lands, and the gates' report words are worked out there. `muster migrate` copies `gates/`.
 **The work log's merge driver** (task 0067, decision 0009, `merge_log.rs`): `muster merge-log
 %O %A %B` is git's merge driver for `docs/WORKLOG.md` (`.gitattributes`:
 `docs/WORKLOG.md merge=muster-log`). It runs `git merge-file -p` and keeps a clean result. On a
