@@ -40,6 +40,7 @@ Every keyboard shortcut in the app, and the slash commands for Claude Code. This
 | Esc | Fold the choices back without changing the value | Priority and Type, while their choices are laid out |
 | ↩ | Save the estimate (leaving the field saves it too) | The Est fields: agent time, test time, tokens |
 | ↩ or , | Add the tag you typed | The tag field, in a task or in New task |
+| Esc | Don't release it: nothing changes, and the focus goes back to Release | Release's confirm, in the task pane's Next step, on a claim no session can be reached on |
 
 ## The board
 

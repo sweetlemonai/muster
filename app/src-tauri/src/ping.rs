@@ -16,8 +16,20 @@ use std::path::Path;
 /// The longest message, in characters.
 pub const MAX_MESSAGE: usize = 500;
 
-/// Why a holder can't be reached: its claim names no session.
-pub const NO_SESSION: &str = "this claim has no session to reach; ask its session to re-claim";
+/// Why a holder can't be reached: its claim names no session, and what the owner can do about it
+/// (mu-184): the pane's Release, or a session under its label takes it over (and so stamps it).
+/// `{label}` stands for the holder's label (`no_session`). The window's `reach.ts` says the same.
+pub const NO_SESSION: &str =
+    "no session to reach: Release it, or let a new session under {label} take it over";
+
+/// `NO_SESSION` for a hold in Testing (`held-by:`): only Release, since nobody takes a hold over
+/// there (`ops::takeover_task` takes claims in Building and Shaping). `reach.ts` says the same.
+pub const NO_SESSION_HELD: &str = "no session to reach: Release it";
+
+/// `NO_SESSION` for `holder`, its label filled in.
+pub fn no_session(holder: &str) -> String {
+    NO_SESSION.replace("{label}", session::split(holder).0.trim())
+}
 
 /// The log's words for a check-in request, before the session: `<who>: asked for a check-in
 /// (session 7b5e8856)`.
@@ -57,7 +69,8 @@ pub fn reach_mailbox(t: &queue::Task) -> Result<(String, String), String> {
     }
     match session::split(holder).1 {
         Some(stamp) => Ok((stamp.id.clone(), stamp.mailbox())),
-        None => Err(NO_SESSION.to_string()),
+        None if t.stage == "testing" => Err(NO_SESSION_HELD.to_string()),
+        None => Err(no_session(holder)),
     }
 }
 
@@ -264,13 +277,13 @@ pub fn sent_back(
 }
 
 /// The session and mailbox a send-back reaches: the holder's (`reach_mailbox`, so a successor
-/// that took the claim over (0090) gets it), or, when the claim names no session because the
-/// return gave it back to the builder by label (`ops::return_back`), the session that built it
+/// that took the claim over (0090) gets it), or, when the claim names no session (a bare claim
+/// from before mu-184, or a builder whose own claim had no stamp), the session that built it
 /// (`built_by`'s stamp), when that's the same label. The one place the send-back picks who it
 /// tells.
 fn builder_mailbox(t: &queue::Task) -> Result<(String, String), String> {
     match reach_mailbox(t) {
-        Err(e) if e == NO_SESSION => {
+        Err(e) if e == no_session(t.holder()) => {
             let label = session::split(t.holder()).0;
             match session::split(&t.built_by) {
                 (l, Some(stamp)) if l == label => Ok((stamp.id.clone(), stamp.mailbox())),
@@ -484,22 +497,42 @@ mod tests {
             "capture (drover/main, session 349bc9c3)",
             "",
         );
-        for id in ["0022", "0024"] {
+        for (id, label) in [
+            ("0022", "wt-a"),
+            ("0024", "capture (drover/main, session 349bc9c3)"),
+        ] {
             let before = read_body(d.path(), id).unwrap();
-            assert_eq!(
-                ask_checkin(d.path(), id, "owner", T).unwrap_err(),
-                NO_SESSION
+            let why = format!(
+                "no session to reach: Release it, or let a new session under {label} take it over"
             );
-            assert_eq!(
-                message(d.path(), id, "hello", "owner", T).unwrap_err(),
-                NO_SESSION
-            );
+            assert_eq!(ask_checkin(d.path(), id, "owner", T).unwrap_err(), why);
+            assert_eq!(message(d.path(), id, "hello", "owner", T).unwrap_err(), why);
             assert_eq!(read_body(d.path(), id).unwrap(), before);
         }
         assert!(!d.path().join("mail/349bc9c3").exists());
+        assert_eq!(no_session("wt-a"), NO_SESSION.replace("{label}", "wt-a"));
+        // A hold in Testing can't be taken over (review R7): only Release is offered.
+        put(d.path(), "0025", "testing", "", "wt-a");
         assert_eq!(
-            NO_SESSION,
-            "this claim has no session to reach; ask its session to re-claim"
+            message(d.path(), "0025", "hello", "owner", T).unwrap_err(),
+            "no session to reach: Release it"
+        );
+    }
+
+    /// The window says what the core says (mu-184): `reach.ts`'s NO_SESSION is this one, word for
+    /// word, `{label}` and all.
+    #[test]
+    fn no_session_reads_the_same_in_the_window() {
+        let ts = include_str!("../../src/reach.ts");
+        assert!(
+            ts.contains(&format!("export const NO_SESSION = \"{NO_SESSION}\";")),
+            "reach.ts's NO_SESSION differs from ping::NO_SESSION"
+        );
+        assert!(
+            ts.contains(&format!(
+                "export const NO_SESSION_HELD = \"{NO_SESSION_HELD}\";"
+            )),
+            "reach.ts's NO_SESSION_HELD differs from ping::NO_SESSION_HELD"
         );
     }
 

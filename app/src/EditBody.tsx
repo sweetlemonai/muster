@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { stamp } from "./lib";
+import { escOwned } from "./ownEscape";
 import type { Task } from "./types";
 import { Button } from "./ui";
 import { editKey, isDirty, savedText, UNSAVED } from "./writeUp";
@@ -39,11 +40,12 @@ export default function EditBody({ task, opened, onClose, onSaved, onDirty = () 
   }, [nudge, refusedToLeave]);
 
   // With unsaved changes, Esc anywhere in the window is the editor's: the first arms, the second
-  // throws the changes away. Caught before the window's own Esc, which would close the pane.
+  // throws the changes away. Caught before the window's own Esc, which would close the pane. Not
+  // one pressed in Release's confirm (mu-184), which is the confirm's own.
   useEffect(() => {
     if (!dirty) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || escOwned(e.target)) return;
       e.stopPropagation();
       const act = editKey({ key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, isComposing: e.isComposing }, true, armed);
       if (act === null) return;

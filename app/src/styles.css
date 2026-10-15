@@ -996,6 +996,9 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .tp-side button:not(:disabled):hover, .tp-side button:focus-visible { color: var(--text); border-color: var(--muted); }
 .next-step { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; align-items: start; }
 .next-step > .lbl, .next-step > .ui-button--primary, .next-step > .release, .next-step > p { grid-column: 1 / -1; }
+/* Release's confirm on a claim no session can be reached on (mu-184), in place of the button. */
+.next-step > .release-confirm { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; text-align: start; }
+.release-confirm > .release-ask { flex-basis: 100%; font-size: 11.5px; line-height: 1.35; }
 .next-step > p { margin: 0; font-size: 11.5px; line-height: 1.35; }
 .tp-side .next-step .ui-button--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 650; padding: 4px 8px; }
 .tp-side .next-step .ui-button--primary:not(:disabled):hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--accent-ink); }

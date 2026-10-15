@@ -694,6 +694,28 @@ pub(crate) fn release(
     ops::reclaim_task(root, id, lease, "owner", stamp, now_secs)
 }
 
+/// The owner's Release of a claim no session can be reached on (mu-184), whatever its lease:
+/// Building back to Ready with its worktree and branch kept, Testing's hold let go of. `from` is
+/// the stage the window showed: refused if the task moved on, or its holder has a session now.
+#[tauri::command]
+async fn release_unreached(
+    app: tauri::State<'_, AppState>,
+    queue: String,
+    id: String,
+    from: Option<String>,
+    stamp: String,
+) -> Result<String, String> {
+    check_id(&id)?;
+    check_stamp(&stamp)?;
+    let file = app.config_file.clone();
+    blocking(move || {
+        in_queue(&file, &queue, |root| {
+            ops::release_unreached(root, &id, "owner", &stamp, from.as_deref())
+        })
+    })
+    .await
+}
+
 /// The owner's override: put a task in any stage. `from`, when given, is the stage the window
 /// showed: refused if the task has moved on since.
 #[tauri::command]
@@ -1865,6 +1887,7 @@ pub fn run() {
             block_task,
             unblock_task,
             reclaim_task,
+            release_unreached,
             set_stage,
             set_field,
             add_note,

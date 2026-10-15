@@ -742,7 +742,7 @@ mod tests {
         let p = pause(d.path(), "0002", "", "owner", T).unwrap();
         assert_eq!(
             (p.session.as_str(), p.unreached.as_str()),
-            ("", ping::NO_SESSION)
+            ("", ping::no_session("wt-old").as_str())
         );
         let p = pause(d.path(), "0003", "", "owner", T).unwrap();
         assert_eq!(p.unreached, "you hold 0003 yourself");

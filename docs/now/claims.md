@@ -35,6 +35,8 @@ covers: app/src-tauri/src/session.rs, app/src-tauri/src/ping.rs, app/src-tauri/s
 - The answer hook leaves mail alone while a muster write holds the queue's lock; it takes it shared, so the app's reads never hold mail up. (mu-156)
 - The old session's hook leaves a taken-over task's mail for the takeover's rerun. (mu-156)
 - One mail file the hook can't move or read never holds up the rest. (mu-156)
+- A bare claim is stamped by its holder's first act from a session, logged once "(stamped)". (mu-184)
+- The pane's Release lets the owner free a claim or Testing hold with no session to reach; Building keeps its worktree. (mu-184)
 - Every holder in the chain counts as the builder. (decision 0011)
 - Handoffs hold no secrets and are never committed. (decision 0011)
 - Sessions are named by role: `Muster_Team_Lead`, `_2`, `_3`; builders `muster-build-0042`. (decision 0004)

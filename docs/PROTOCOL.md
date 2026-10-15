@@ -555,8 +555,10 @@ its own agent id is another holder, 0090) and logged `(tested under
 > before it's delivered replaces it) and `mail/<session8>/<id>-note-<nnnn>.md` (numbered from 0001,
 > so name order is sending order). A check-in request is
 > Building's only (`muster checkin` works there). A holder without a stamp (a claim from before
-> stamps, or made outside Claude Code) can't be reached: refused with "this claim has no session to
-> reach; ask its session to re-claim", and the app shows the button disabled with that reason. Each
+> stamps, or made outside Claude Code) can't be reached: refused with "no session to reach: Release
+> it, or let a new session under <label> take it over" (0184; a hold in Testing, which nobody
+> takes over, says only "no session to reach: Release it"), and the app shows the button
+> disabled with that reason and **Release** in the Next step ("Sessions" below). Each
 > is logged on the task: `<who>: asked for a check-in (session 7b5e8856)`, and `<who>: messaged
 > session 7b5e8856: <the message on one line>`. The card shows "asked 2 min ago" in the check-in's
 > place until a check-in of that Building stage comes. A message is at most 500 characters, with
@@ -766,7 +768,7 @@ command that reads it says so. Settings › Agents › Roles edits the same file
 - **A slot is one session's.** A claim or `next` as a slot (`--as Kaveh-1`, `--as coder-1`) that
   another session holds in Building or Testing, in any queue, is refused; a takeover carries the
   slot on from the claim it succeeds. A send-back from Testing returns the task to its builder's
-  exact stamp when that carries a slot, so the slot stays held; a successor session takes it over
+  exact stamp (as every send-back does, 0184), slot and all, so the slot stays held; a successor session takes it over
   with `--takeover` as for any claim. A task coming back to a holder (a return to Building or
   Testing, a pass into Testing) after its slot went to another session comes back to that holder
   by its exact session, without the slot: the stamp keeps its label but holds no slot. A successor
@@ -917,7 +919,7 @@ and `tasks.json`, which scripts read, keep ids.
     (a note has no handoff check-in, so its shaper hands off with `muster release <note-file>`),
     or by the owner at any time; `shaping.json` then names the new holder.
     Every takeover is refused for another label and for the holder itself (except a successor
-    running its own takeover again, below, which only moves mail); while
+    running its own takeover again, below, which only moves mail, and the re-stamp below); while
     the old session is still working, the refusal names it, since when, and the two ways out:
     `0042 is held by <old> since 10:00 and was last heard from 5 min ago: ask that session to run
     muster checkin 0042 "<what's done, what's next>" --handoff, or take it over after 10:35, once
@@ -935,6 +937,35 @@ and `tasks.json`, which scripts read, keep ids.
     successor; the app's reads, shared too, never hold it up. Until the rerun, the old session's
     hook leaves that task's mail in its mailbox, so a leftover never reaches the old session. A
     mail file the hook can't move or read is skipped, never the mail beside it.
+  - **A claim with no session to reach is stamped (Muster 0184).** A claim that names no session
+    (a bare label: made outside Claude Code, or given back by label before 0184) matches any
+    session under that label, so its successor is its holder already. The first time a session
+    acts on it as its holder (`checkin`, `heartbeat`, `note`, `pass`, `block`, or
+    `claim --takeover`, which no longer says "you already hold it" for such a claim), `claimed-by:`
+    becomes that session's stamp, under the lock, logged once as `<who>: took over the claim from
+    <label> (stamped)`; Ping reaches it from then on. A claim stamped with your own session under
+    another account (the session moved from cc-mg to cc-hg) takes your account the same way.
+    The owner's and an unstamped holder's acts never re-stamp, nor does a sweep that lets the
+    claim go (`muster reclaim`, a freed task's release) whoever runs it.
+  - **A send-back keeps the builder's session (Muster 0184).** A return to Building (from Testing
+    or Your check) gives the task to its builder's exact stamp, never the bare label, so Ping
+    reaches it. That session may have ended: while it holds no other unblocked task in Building
+    and hasn't acted on the send-back (no check-in, note, block or takeover in the log after the
+    send-back's stage line, and no heartbeat in a later minute), `muster next` tells another
+    session under its label `fix mu-1 first (…): it went back to <builder>, which hasn't picked it
+    up; take it over: muster claim 0001 --takeover`, and that takeover is allowed at once, logged
+    `(sent back, not picked up)`; not while the task is paused. Once the builder has acted on it,
+    or while it's busy on another unblocked task, a successor waits as for any claim (a handoff,
+    or 30 quiet minutes). A builder with no session gets its label back. A builder's
+    role slot comes back with it (0112) unless another session holds that now.
+  - **The owner's Release (Muster 0184).** A claim in Building, or `held-by:` in Testing, that
+    names no session has **Release** in the task pane's Next step, whatever its lease. Building
+    goes back to Ready with the claim cleared and its worktree and branch kept (`muster start`
+    picks it up there again), logged `owner: stage building → ready (released: no session to
+    reach)`; in Testing the hold is cleared and it stays there for the next tester, logged
+    `owner: let go of <holder>'s hold; still in Testing (released: no session to reach)`. Only the
+    owner, and refused for a holder with a session ("<holder> has a session now: Ping it, or wait
+    for the lease"), a paused task, an unheld one, or one that moved on since the window looked.
   - Every holder in the chain counts as its builder, so neither the successor nor the old session
     may test it.
   - A handoff holds no secrets or tokens (name where a credential lives, never its value). Handoffs

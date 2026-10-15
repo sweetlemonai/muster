@@ -4,6 +4,56 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — Release a claim no session can be reached on; holders' acts stamp bare claims (mu-184)
+**Did (Asghar_30, builder; round 1 fixes Asghar_34):** the owner's "this claim has no session to
+reach … we need a button". The pane's Next step shows **Release** on a Building claim or Testing
+hold that names no session, whatever the lease, with its confirm in place (role=group "Confirm
+Release", focus on its Release so ↩ confirms, Esc/Cancel back to Release; `Sidebar.tsx`, words in
+`paneData.ts`). Core `ops::release_unreached` (owner only, re-read under the lock): Building →
+Ready, worktree and branch kept, `(released: no session to reach)`; Testing clears `held-by:`. A
+session-stamped holder's checkin, heartbeat, note, pass, block or `claim --takeover` on a bare
+claim (or its own session under another account, the owner's 23:26 comment) re-stamps it, logged
+once `took over the claim from <old> (stamped)` (`session::restamped`, `ops::restamp`). Send-backs
+give Building to the builder's exact stamp; while that session holds no other unblocked Building
+task and hasn't acted on it, `next` points a session under its label there and `--takeover` is
+allowed at once `(sent back, not picked up)`, so an ended builder doesn't strand it. NO_SESSION
+reads "no session to reach: Release it, or let a new session under <label> take it over" (a
+Testing hold: "no session to reach: Release it"), the same in `ping.rs` and `reach.ts`. PROTOCOL
+"Sessions", DESIGN, manual 04/05/06, AS_BUILT, now pages claims, queue, board.
+**Fixed (review round 1, Reviewer_58):** R1 a send-back to a builder live on another unblocked
+task could be taken over at once → `untouched_send_back` ignored what else the holder held → it
+now needs `holding(..)` to be none, else 0090 applies. R2 a check-in or takeover in the
+send-back's own minute still read as "not picked up" → minute stamps compared → the log decides
+(`acted_since_send_back`: a takeover or any line of the holder's after the send-back's stage
+line). R3 `next` pointed siblings at a paused send-back whose takeover is refused → not paused is
+part of the rule. R4 one Esc on the confirm also armed an unsaved write-up's or comment's discard
+→ every window capture listener runs → the group carries `data-own-esc` and `EditBody`/`Comments`
+leave an Esc inside it alone (`ownEscape.ts`); the group holds the focus while the release runs.
+R5 the Esc and focus wiring wasn't pinned → `watchReleaseEscape` is driven by real events on an
+`EventTarget` in the test, and the component's use of it and of the focus moves is pinned by a
+`?raw` check. R6 focus fell to `<body>` after a release → it moves to the Next step group. R7
+Testing's NO_SESSION offered an impossible takeover → `NO_SESSION_HELD`. R8 PROTOCOL/AS_BUILT
+listed `return` as re-stamping → dropped. R9 stale comments in `return_change`, `builder_mailbox`
+and `help claim` → reworded. R10 the confirm's question was built from parts → one string per
+sentence with `{{who}}`.
+**Decided:** With mu-156 merged, `claim --takeover` run again on a claim the session re-stamped is
+mu-156's rerun ("you hold it already; its old holder had no mailbox, so there's nothing to move"),
+not "you already hold it"; the same session under another account has one mailbox, so its rerun
+moves nothing (pinned by a test). Release sits in the Next step (the pane's action row, `.release` style, as the brief's
+Architecture line says), not in the Session strip; the Ping strip's reason names it. Testing's
+release writes no stage line (it doesn't change stage): `let go of <holder>'s hold; still in
+Testing (released: no session to reach)`. When the lease also ran out, only this Release shows.
+R5's test isn't a rendered-DOM test: the app has no DOM library (jsdom/happy-dom, or Playwright
+as a dependency) and adding one needs the owner's yes; real events on Node's `EventTarget` plus a
+source pin is what the suite can run. A heartbeat in the send-back's own minute writes no log line,
+so it alone doesn't count as picked up (one in a later minute does).
+**Verified:** `bin/gate`: green (pnpm check, test_task, test_commands, cargo test (Kiritimati)), rebased on mu-98, mu-156 and mu-190. Mutants, each killed: R1 (no `holding` check), R2 (no log check), R3 (no
+paused check), R4 (EditBody without `escOwned`; `escOwned` always false; group without the mark),
+R5 (no listener; no focus back), R6 (no focus on the Next step), R7 (Rust and TS without the
+Testing words). Round 1: headless WebKit shots of the pane before/after Release, light and dark.
+**Open:** فارسی shot: mu-146 has merged, but the pane's strings are still English until mu-148
+moves them. mu-185 keeps the Testing `held-by:` re-stamp.
+
 ## 2026-10-15 — mu-173 review round 2: the legend keeps its height, the Graph's top outline whole
 **Fixed (Gholi_34, builder):** R4: the wrapping legend was as tall as the window's marks, so
 stepping from an 11-mark week to a 4-mark one moved the chart up 24px → its height followed the

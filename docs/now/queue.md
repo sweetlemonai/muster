@@ -17,6 +17,8 @@ covers: app/src-tauri/src/queue.rs, app/src-tauri/src/ops.rs, app/src-tauri/src/
 - Building to Testing is refused while a now page the task covers is unchanged on its branch, unless `--now-unchanged "<why>"`; the log names the pages. (mu-102)
 - Testing to Your check needs every criterion ticked except the owner's. (PROTOCOL.md "Stages")
 - `muster return <id> "<why>"` sends a task back; Building goes to its last builder. (AS_BUILT "Stages")
+- A send-back gives Building to its builder's exact session; a builder with no session gets its label. (mu-184)
+- Until that session acts on it, and while it holds no other unblocked Building task, `next` sends a session under its label there and `claim --takeover` takes it at once; not while paused. (mu-184)
 - A builder that acted as a role slot gets its task back with its exact stamp, slot and all. (mu-112)
 - A block has a kind: tasks, you, permission, question or outside. (mu-24)
 - Tasks is never a flag: the ids go into `depends:`, which clears once they're merged. (mu-24)

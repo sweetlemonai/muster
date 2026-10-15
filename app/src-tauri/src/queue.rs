@@ -204,6 +204,14 @@ pub fn checkin_line(line: &str) -> Option<Checkin> {
 /// holder> (handed off)`, or `(quiet 42 min)`, or `(owner's override)`.
 pub const TOOK_OVER: &str = ": took over the claim from ";
 
+/// The takeover reason a holder's own act writes when it re-stamps a claim that named no session,
+/// or its session under another account (mu-184, `session::restamped`): `(stamped)`.
+pub const STAMPED: &str = "stamped";
+
+/// The takeover reason of a send-back its builder's session hasn't picked up (mu-184): a session
+/// under the same label takes it over at once, as the bare label let it before.
+pub const SENT_BACK: &str = "sent back, not picked up";
+
 /// A tool-written takeover line from the log (0090): (at, new holder, old holder). A stage line
 /// or a check-in never is one, and neither is a line whose who has `: ` in it (free text that
 /// quotes one: a message, a note).
@@ -216,7 +224,11 @@ pub fn takeover_line(line: &str) -> Option<(String, String, String)> {
     let (who, tail) = rest.get(16..)?.strip_prefix(' ')?.split_once(TOOK_OVER)?;
     let open = tail.rfind(" (")?;
     let why = tail[open + 2..].strip_suffix(')')?;
-    let known = why == "handed off" || why == "owner's override" || why.starts_with("quiet ");
+    let known = why == "handed off"
+        || why == "owner's override"
+        || why == STAMPED
+        || why == SENT_BACK
+        || why.starts_with("quiet ");
     let from = &tail[..open];
     if !known || who.trim().is_empty() || who.contains(": ") || from.trim().is_empty() {
         return None;

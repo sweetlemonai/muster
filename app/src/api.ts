@@ -80,6 +80,10 @@ export const api = {
   unblockTask: (queue: string, id: string, stamp: string) => invoke<string>("unblock_task", { queue, id, stamp }),
   // A claim in Building whose lease ran out goes back to Ready; refused if it's live again.
   reclaimTask: (queue: string, id: string, stamp: string) => invoke<string>("reclaim_task", { queue, id, stamp }),
+  // A claim in Building, or a hold in Testing, that names no session (mu-184), whatever its lease:
+  // Building goes back to Ready with its worktree and branch kept, Testing stays, unheld. `from`
+  // is the stage the window shows: refused if it moved on, or the holder has a session now.
+  releaseUnreached: (queue: string, id: string, from: string, stamp: string) => invoke<string>("release_unreached", { queue, id, from, stamp }),
   // The owner's override: any stage. `from` is the stage the window shows (refused if the task
   // moved on since); null for the plain override.
   setStage: (queue: string, id: string, stage: string, from: string | null, stamp: string) =>

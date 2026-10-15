@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useId, useRef, useState } from "react";
 import { blockSentence } from "./blockWords";
 import { BranchPane } from "./Branch";
 import { KINDS } from "./fields";
@@ -8,7 +8,8 @@ import { isHuman } from "./human";
 import { isWork } from "./levels";
 import Links from "./Links";
 import { ownerOpen } from "./OwnerChecklist";
-import { IMAGE, releaseWords } from "./paneData";
+import { IMAGE, releaseWords, unreachedHolder, unreachedWords } from "./paneData";
+import { pressed } from "./shortcuts";
 import { ImageThumb, toggled } from "./StageContent";
 import { toBuilder } from "./StageForms";
 import TagEditor from "./Tags";
@@ -85,11 +86,14 @@ export function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a:
   // A claim nobody has heard from past the lease (this machine's, Settings 0036): the owner may give
   // it back to Ready, or in Shaping let go of it there (0097).
   const lease = useContext(Machine).leaseMinutes;
-  const stale = !shapedOnly && leaseRunOut(task, nowSecs, lease);
+  // A claim (or Testing's hold) no session can be reached on (mu-184): its own Release, whatever
+  // the lease, so the lease's Release isn't shown beside it.
+  const unreached = isWork(task) ? unreachedHolder(task) : "";
+  const stale = !shapedOnly && !unreached && leaseRunOut(task, nowSecs, lease);
   const showPass = pass !== null && !holder && (!shapedOnly || task.stage === "backlog" || task.stage === "shaping");
   const yoursOpen = !human && task.stage === "your-check" && ownerOpen(task) > 0;
   return (
-    <div className="next-step" role="group" aria-label="Next step" data-part="next-step">
+    <div className="next-step" role="group" aria-label="Next step" data-part="next-step" tabIndex={-1}>
       <span className="lbl">Next step</span>
       {showPass && (
         <Button
@@ -114,6 +118,7 @@ export function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a:
           Release
         </Button>
       )}
+      {unreached && <ReleaseUnreached task={task} who={unreached} a={a} />}
       {back.length > 0 && <Button type="button" disabled={a.busy} onClick={() => a.open("back")}>{toBuilder(task.stage, human) ? "Send back to builder" : "Send back"}</Button>}
       {task.blocked ? (
         <Button type="button" disabled={a.busy} onClick={a.unblock}>Unblock</Button>
@@ -130,10 +135,139 @@ export function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a:
           {nameOf(task.claimedBy, names)} hasn't been heard from for {spanText(lease)}. {releaseWords(task.stage).does}
         </p>
       )}
+      {unreached && (
+        <p className="meta small">
+          {unreachedWords(task.stage).note}
+          {task.paused ? ` ${unreachedWords(task.stage).paused}` : ""}
+        </p>
+      )}
       {showPass && task.blocked && <p className="meta small">{blockSentence(task) || "Blocked on something it doesn't name"}. Unblock it to pass it on.</p>}
       {showPass && task.paused && <p className="meta small">Paused: resume it (beside its stage, above) to pass it on.</p>}
       {!showPass && !stale && !holder && <p className="meta small">{nothingNext(task)}</p>}
     </div>
+  );
+}
+
+/** Esc while Release's confirm is open, from a capture listener on the window. One pressed in
+ *  the confirm (`mine`: the focus is in its group, or nowhere, as while its buttons are off) is
+ *  the confirm's, so it never reaches the window's own Esc (which closes the pane); it cancels,
+ *  except while the release runs. Any other Esc (a rename, a field's choices) goes on as usual. */
+export function releaseEscape(e: { key: string; metaKey: boolean; ctrlKey: boolean; stopPropagation: () => void; preventDefault: () => void }, mine: boolean, busy: boolean, cancel: () => void): void {
+  if (!mine || !pressed(e, "release-cancel")) return;
+  e.stopPropagation();
+  e.preventDefault();
+  if (!busy) cancel();
+}
+
+/** Release's confirm on the window while it's open: a capture listener runs `releaseEscape` for
+ *  each key, `inGroup` telling whether the key was pressed in the confirm. Returns what takes it
+ *  off again. Apart from the component so real key events can drive it in a test (review R5). */
+export function watchReleaseEscape(win: Pick<EventTarget, "addEventListener" | "removeEventListener">, inGroup: (target: EventTarget | null) => boolean, busy: () => boolean, cancel: () => void): () => void {
+  const onKey = (e: Event) => releaseEscape(e as KeyboardEvent, inGroup(e.target), busy(), cancel);
+  win.addEventListener("keydown", onKey, { capture: true });
+  return () => win.removeEventListener("keydown", onKey, { capture: true });
+}
+
+/** One of `unreachedWords`' sentences with the holder's name for `{{who}}`, as given. */
+export const whoIn = (sentence: string, who: string) => sentence.replace("{{who}}", () => who);
+
+/** The pane's Next step group around `el`, which takes the focus once a release went through. */
+const nextStepOf = (el: Element | null) => el?.closest<HTMLElement>('[data-part="next-step"]') ?? null;
+
+/** Release on a claim no session can be reached on (mu-184), with its confirm in place (no
+ *  dialog, docs/DESIGN.md): the first click asks, with the focus on the confirm's Release, so
+ *  Enter confirms; Cancel or Esc puts the focus back on Release. Once the release goes through,
+ *  Release goes with the claim, so the focus moves to the Next step group (review R6); a refusal
+ *  puts it back on Release. While it runs, its buttons are off and the group holds the focus, so
+ *  an Esc still lands in it. The confirm belongs to the holder and stage it asked about: once
+ *  either changes, it's gone. The core refuses for anyone but the owner and for a holder that has
+ *  a session by then, and its answer shows in the pane's status. */
+function ReleaseUnreached({ task, who, a }: { task: Task; who: string; a: TaskActions }) {
+  const names = useContext(RoleNamesContext);
+  const key = `${task.stage}|${who}`;
+  const [asked, setAsked] = useState<string | null>(null);
+  const open = asked === key;
+  const button = useRef<HTMLButtonElement>(null);
+  const group = useRef<HTMLSpanElement>(null);
+  const askId = useId();
+  const backTo = useRef<"button" | null>(null);
+  useEffect(() => {
+    if (open) return;
+    const back = backTo.current;
+    backTo.current = null;
+    if (back === "button") button.current?.focus();
+  }, [open]);
+  const close = () => {
+    backTo.current = "button";
+    setAsked(null);
+  };
+  const busy = useRef(a.busy);
+  busy.current = a.busy;
+  useEffect(() => {
+    if (open && a.busy) group.current?.focus();
+  }, [open, a.busy]);
+  useEffect(() => {
+    if (!open) return;
+    return watchReleaseEscape(window, (t) => !t || t === document.body || (t instanceof Node && Boolean(group.current?.contains(t))), () => busy.current, close);
+  }, [open]);
+  const confirm = async () => {
+    const ok = await a.releaseUnreached();
+    if (ok) nextStepOf(group.current)?.focus();
+    else close();
+  };
+  return (
+    <ReleaseUnreachedView
+      stage={task.stage}
+      who={nameOf(who, names)}
+      asked={open}
+      busy={a.busy}
+      paused={Boolean(task.paused)}
+      onAsk={() => setAsked(key)}
+      onConfirm={() => void confirm()}
+      onCancel={close}
+      buttonRef={button}
+      groupRef={group}
+      askId={askId}
+    />
+  );
+}
+
+/** Release as drawn (mu-184): the button, named for whose claim it releases; once asked, the
+ *  question with the holder's name isolated (<bdi>, so a Persian label reads right) and Release
+ *  and Cancel in the same place. */
+export function ReleaseUnreachedView({ stage, who, asked, busy, paused, onAsk, onConfirm, onCancel, buttonRef, groupRef, askId = "release-ask" }: {
+  stage: string;
+  /** The holder's name as the pane shows it. */
+  who: string;
+  asked: boolean;
+  busy: boolean;
+  paused: boolean;
+  onAsk: () => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+  buttonRef?: React.Ref<HTMLButtonElement>;
+  groupRef?: React.Ref<HTMLSpanElement>;
+  /** The question's id, for the confirm's aria-describedby (one per pane: useId). */
+  askId?: string;
+}) {
+  const w = unreachedWords(stage);
+  const label = whoIn(w.label, who);
+  const [before, after] = w.ask.split("{{who}}");
+  if (!asked) {
+    return (
+      <Button type="button" className="release" aria-label={label} title={paused ? w.paused : undefined} disabled={busy || paused} onClick={onAsk} ref={buttonRef}>
+        {w.button}
+      </Button>
+    );
+  }
+  return (
+    <span className="release-confirm" role="group" aria-label={w.group} data-own-esc="" tabIndex={-1} ref={groupRef}>
+      <span className="release-ask" id={askId}>{before}<bdi>{who}</bdi>{after}</span>
+      <Button type="button" variant="primary" aria-label={label} aria-describedby={askId} disabled={busy} onClick={onConfirm} autoFocus>
+        {busy ? w.busy : w.button}
+      </Button>
+      <Button type="button" disabled={busy} onClick={onCancel}>{w.cancel}</Button>
+    </span>
   );
 }
 

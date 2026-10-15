@@ -99,6 +99,13 @@ stay open) the owner chose **A**.
   form) show all their options.
 - **No overlays.** Details, New task and editing open in a docked pane beside the content, which
   shrinks and stays live. Modals only for confirming something destructive.
+- **A dead end gets its way out beside it.** A button the core would refuse shows disabled with
+  why, and when the owner can act on that why, the action is right there: a claim with no session
+  to reach (its Ping off, "no session to reach: Release it, or let a new session under Asghar_7
+  take it over") has **Release** in the task pane's Next step (0184), quiet until then. Its
+  confirm is in place, a labelled group where the button was ("Release Asghar_7's claim? It goes
+  back to Ready; its worktree and branch stay." · Release · Cancel), the holder's name in its own
+  `<bdi>`, the confirm's Release focused so ↩ confirms, Esc or Cancel back to Release; no modal.
 - **Side by side over tabs** when two things are used together (a task and its board). Tabs only
   for things you don't need at the same time.
 - **One board for your work and the agents'** (owner, 2026-10-13: a second board took space from

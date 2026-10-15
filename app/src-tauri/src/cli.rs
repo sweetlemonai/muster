@@ -7925,12 +7925,14 @@ mod tests {
     }
 
     #[test]
-    fn a_send_back_without_a_slot_still_goes_to_the_label() {
+    fn a_send_back_without_a_slot_goes_to_the_builders_session() {
         let (d, q) = queue_of(1);
         assert_eq!(
             code_in(&q, &SESSION_S, &["claim", "0001", "--as", "akbar"]),
             0
         );
+        let built = queue::read_task(d.path(), "0001").unwrap().claimed_by;
+        assert!(built.starts_with("akbar ("), "{built}");
         assert_eq!(pass_as(&q, &SESSION_S, "0001", "akbar"), 0);
         assert_eq!(
             code_in(
@@ -7940,9 +7942,10 @@ mod tests {
             ),
             0
         );
+        // Its exact session (mu-184), so Ping reaches it; never the bare label.
         assert_eq!(
             queue::read_task(d.path(), "0001").unwrap().claimed_by,
-            "akbar"
+            built
         );
     }
 

@@ -385,6 +385,32 @@ pub fn without_slot(who: &str) -> String {
     }
 }
 
+/// The claim `claim` as it reads once `who`, its holder, acts on it (mu-184), or None when it
+/// reads right already. A claim that names no session (a bare label: made outside Claude Code, or
+/// given back by label before mu-184) takes `who`'s stamp, without a slot, as a takeover of it
+/// would. A claim of `who`'s own session and agent stamped under another account (the session
+/// moved from cc-mg to cc-hg, say) takes `who`'s account. Only for a stamped `who` that isn't the
+/// owner and holds the claim (`same_holder`).
+pub fn restamped(claim: &str, who: &str) -> Option<String> {
+    if claim.trim().is_empty() || is_owner(who) || !same_holder(claim, who) {
+        return None;
+    }
+    let mine = split(who).1?;
+    match split(claim) {
+        (_, None) => Some(without_slot(who)),
+        (label, Some(mut old))
+            if old.id == mine.id
+                && old.agent == mine.agent
+                && !mine.account.is_empty()
+                && old.account != mine.account =>
+        {
+            old.account = mine.account;
+            Some(written(label, &old))
+        }
+        _ => None,
+    }
+}
+
 /// A label and a stamp as `stamped` writes them.
 fn written(label: &str, s: &Stamp) -> String {
     let mut parts = s.parts.clone();
@@ -1020,6 +1046,59 @@ mod tests {
         assert!(
             !same_holder(kaveh, "coder-2"),
             "another label without a stamp"
+        );
+    }
+
+    #[test]
+    fn a_holder_acting_with_a_stamp_restamps_a_bare_or_moved_claim() {
+        use super::restamped;
+        let me = "asghar (main · session 7b5e8856 · cc-hg)";
+        // A bare label takes the acting session's stamp; without a slot, as a takeover gives it.
+        assert_eq!(restamped("asghar", me).as_deref(), Some(me));
+        assert_eq!(
+            restamped(
+                "Kaveh-2",
+                "Kaveh-2 (main · session 7b5e8856 · slot coder-2 · cc-hg)"
+            )
+            .as_deref(),
+            Some("Kaveh-2 (main · session 7b5e8856 · cc-hg)")
+        );
+        // The same session under another account takes the new account, nothing else.
+        assert_eq!(
+            restamped("asghar (wt-0184 · session 7b5e8856 · cc-mg)", me).as_deref(),
+            Some("asghar (wt-0184 · session 7b5e8856 · cc-hg)")
+        );
+        // Already right, or not this holder's, or nothing to stamp with: None.
+        assert_eq!(restamped(me, me), None);
+        assert_eq!(
+            restamped("asghar (wt-0184 · session 7b5e8856 · cc-hg)", me),
+            None
+        );
+        assert_eq!(
+            restamped(
+                "asghar (main · session 7b5e8856 · cc-hg)",
+                "asghar (main · session 7b5e8856)"
+            ),
+            None
+        );
+        assert_eq!(restamped("asghar", "asghar"), None);
+        assert_eq!(restamped("gholi", me), None);
+        assert_eq!(
+            restamped("asghar (main · session 0f0f0f0f · cc-mg)", me),
+            None
+        );
+        assert_eq!(restamped("", me), None);
+        assert_eq!(
+            restamped("owner", "owner (main · session 7b5e8856 · cc-hg)"),
+            None
+        );
+        // A teammate's claim is its own agent's: the lead's stamp never restamps it.
+        assert_eq!(
+            restamped(
+                "asghar (main · session 7b5e8856 · agent a1b2c3d4 · cc-mg)",
+                me
+            ),
+            None
         );
     }
 }

@@ -1600,7 +1600,7 @@ class TaskTests(unittest.TestCase):
             TASK_FILE.replace("claimed-by: wt-a (session aaaa1111)", "claimed-by: wt-a"))
         r = self.ping("0042", "--as", "owner", ok=False)
         self.assertEqual(r.returncode, 1)
-        self.assertIn("this claim has no session to reach; ask its session to re-claim", r.stderr)
+        self.assertIn("no session to reach: Release it, or let a new session under wt-a take it over", r.stderr)
         self.assertFalse((self.root / "mail" / "aaaa1111").exists())
 
     def test_who_stays_on_one_line_and_cannot_forge_stage_history(self):

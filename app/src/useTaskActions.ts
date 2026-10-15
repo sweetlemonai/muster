@@ -2,7 +2,7 @@ import { useContext, useState } from "react";
 import { api, type Paused, type Returned } from "./api";
 import { isStage, nextStage, oneAtATime, readFiles, stageLabel, stamp } from "./lib";
 import { isHuman } from "./human";
-import { releaseWords, trackMove } from "./paneData";
+import { releaseWords, trackMove, unreachedWords } from "./paneData";
 import { RoleNamesContext } from "./settingsData";
 import type { Task } from "./types";
 
@@ -86,6 +86,8 @@ export function useTaskActions(task: Task, onChanged: () => void) {
       submit(() => api.blockTask(task.queue, task.id, kind, detail, now()), kind === "tasks" ? "Blocked by those tasks: added to its depends." : "Blocked. It keeps its stage."),
     unblock: () => void stageRun(() => api.unblockTask(task.queue, task.id, now()), "Unblocked."),
     release: () => void stageRun(() => api.reclaimTask(task.queue, task.id, now()), releaseWords(task.stage).done),
+    /** Release a claim no session can be reached on (mu-184): true once the core took it. */
+    releaseUnreached: () => stageRun(() => api.releaseUnreached(task.queue, task.id, task.stage, now()), unreachedWords(task.stage).done),
     /** Pause (0045), with an optional why: true once the core took it. */
     pause: (why: string) => stageRun(() => api.pauseTask(task.queue, task.id, why, now()), (p) => pausedMsg(p, true)),
     resume: () => void stageRun(() => api.resumeTask(task.queue, task.id, now()), (p) => pausedMsg(p, false)),

@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import CardStatus from "./CardStatus";
 import { CardPing, MessageCount, QuietPing, SessionPing } from "./Ping";
-import { askedText, cantAsk, MAX_MESSAGE, messageLength, NO_SESSION, quietToAsk, unreachable } from "./reach";
+import { askedText, cantAsk, MAX_MESSAGE, messageLength, noSession, quietToAsk, unreachable } from "./reach";
 import type { Task } from "./types";
 
 const task = (over: Partial<Task>): Task => ({
@@ -30,9 +30,9 @@ describe("who a ping can reach (the core's ping::reach)", () => {
     expect(unreachable(task({ claimedBy: A }))).toBe("");
     expect(unreachable(task({ stage: "testing", heldBy: A }))).toBe("");
     // Before stamps, or a session typed by hand: no session to reach.
-    expect(unreachable(task({ claimedBy: "wt-a" }))).toBe(NO_SESSION);
-    expect(unreachable(task({ claimedBy: "capture (drover/main, session 349bc9c3)" }))).toBe(NO_SESSION);
-    expect(NO_SESSION).toBe("this claim has no session to reach; ask its session to re-claim");
+    expect(unreachable(task({ claimedBy: "wt-a" }))).toBe(noSession("wt-a"));
+    expect(unreachable(task({ claimedBy: "capture (drover/main, session 349bc9c3)" }))).toBe(noSession("capture (drover/main, session 349bc9c3)"));
+    expect(noSession("wt-a")).toBe("no session to reach: Release it, or let a new session under wt-a take it over");
     expect(unreachable(task({ claimedBy: "" }))).toBe("nobody holds it");
     expect(unreachable(task({ claimedBy: "owner (session 7b5e8856)" }))).toBe("you hold it yourself");
     expect(unreachable(task({ stage: "ready", claimedBy: A }))).toBe("Ready has no session working on it");
@@ -42,7 +42,7 @@ describe("who a ping can reach (the core's ping::reach)", () => {
   it("a check-in only in Building; in Testing, a message", () => {
     expect(cantAsk(task({ claimedBy: A }))).toBe("");
     expect(cantAsk(task({ stage: "testing", heldBy: A }))).toBe("check-ins are for Building; send a message instead");
-    expect(cantAsk(task({ claimedBy: "wt-a" }))).toBe(NO_SESSION);
+    expect(cantAsk(task({ claimedBy: "wt-a" }))).toBe(noSession("wt-a"));
   });
 });
 
@@ -81,7 +81,7 @@ describe("the card's Ask for a check-in", () => {
   it("without a session stamp it's shown disabled, with the reason, never hidden", () => {
     const html = card({ ...quiet, claimedBy: "wt-a" });
     expect(buttons(html)).toEqual(["Ask for a check-in (disabled)"]);
-    expect(text(html)).toContain(NO_SESSION);
+    expect(text(html)).toContain(noSession("wt-a"));
   });
   it("isn't on a card that isn't quiet", () => {
     expect(card({ ...quiet, heartbeat: "2026-10-13 10:30" })).toBe("");
@@ -106,7 +106,7 @@ describe("the task pane's session strip", () => {
     const html = strip({ ...quiet, claimedBy: "wt-a" });
     expect(buttons(html)).toEqual(["Ask for a check-in (disabled)", "Send (disabled)"]);
     expect(html).toMatch(/<input[^>]*disabled/);
-    expect(text(html)).toContain(NO_SESSION);
+    expect(text(html)).toContain(noSession("wt-a"));
   });
   it("in Testing: a message reaches the holder; a check-in says why it can't", () => {
     const html = strip({ stage: "testing", heldBy: A });

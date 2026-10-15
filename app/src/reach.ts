@@ -14,8 +14,15 @@ export function messageLength(text: string): number {
   return [...out.trim()].length;
 }
 
-/** Why a holder can't be reached: its claim names no session (ping::NO_SESSION). */
-export const NO_SESSION = "this claim has no session to reach; ask its session to re-claim";
+/** Why a holder can't be reached: its claim names no session, and what the owner can do about it
+ *  (mu-184): Release it, or a session under its label takes it over. `{label}` stands for the
+ *  holder's label (noSession). Word for word ping::NO_SESSION; a test in ping.rs reads this line. */
+export const NO_SESSION = "no session to reach: Release it, or let a new session under {label} take it over";
+/** NO_SESSION for a hold in Testing: only Release, as nobody takes a hold over there. Word for word
+ *  ping::NO_SESSION_HELD; a test in ping.rs reads this line. */
+export const NO_SESSION_HELD = "no session to reach: Release it";
+/** NO_SESSION for a holder's label (ping::no_session). */
+export const noSession = (label: string) => NO_SESSION.replace("{label}", () => label.trim());
 /** Why Testing has no check-in to ask for: `muster checkin` is Building's. */
 export const CHECKIN_IN_TESTING = "check-ins are for Building; send a message instead";
 /** The longest message (ping::MAX_MESSAGE). */
@@ -29,7 +36,8 @@ export function unreachable(t: Pick<Task, "stage" | "claimedBy" | "heldBy">): st
   if (!who) return "nobody holds it";
   const { label, id } = splitHolder(who);
   if (label === "owner") return "you hold it yourself";
-  return id ? "" : NO_SESSION;
+  if (id) return "";
+  return t.stage === "testing" ? NO_SESSION_HELD : noSession(label);
 }
 
 /** Why a check-in can't be asked for, or "" when it can: reachable, in Building, and not waiting

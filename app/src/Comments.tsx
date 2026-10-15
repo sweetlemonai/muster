@@ -2,6 +2,7 @@ import { useContext, useEffect, useId, useRef, useState } from "react";
 import { api, type Commented } from "./api";
 import { shownHolder, stamp } from "./lib";
 import Markdown from "./Markdown";
+import { escOwned } from "./ownEscape";
 import { RoleNamesContext } from "./settingsData";
 import type { Task } from "./types";
 import { Button } from "./ui";
@@ -57,11 +58,12 @@ export default function Comments({ task, onChanged, onDirty = () => {}, nudge = 
   }, [nudge, refused, dirty]);
 
   // With typed text, Esc anywhere in the window is the box's: the first arms, the second throws
-  // the text away. Caught before the window's own Esc, which would close the pane.
+  // the text away. Caught before the window's own Esc, which would close the pane. Not one
+  // pressed in Release's confirm (mu-184), which is the confirm's own.
   useEffect(() => {
     if (!dirty) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || escOwned(e.target)) return;
       const act = editKey({ key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, isComposing: e.isComposing }, true, armed);
       if (act === null) return;
       e.stopPropagation();

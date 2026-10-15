@@ -1219,6 +1219,29 @@ fn reads_as_takeover(line: &str) -> bool {
     queue::takeover_line(&format!("- {line}")).is_some()
 }
 
+/// The claim `claim` re-stamped for `who`, its holder acting with a session (mu-184,
+/// `session::restamped`), with the takeover line that logs it once, `<who>: took over the claim
+/// from <claim> (stamped)`; None when the claim reads right already, or the line wouldn't read back
+/// as a takeover.
+fn restamp(claim: &str, who: &str, stamp: &str) -> Option<(String, String)> {
+    let new = crate::session::restamped(claim, who)?;
+    let line = format!(
+        "{stamp} {new}{}{claim} ({})",
+        queue::TOOK_OVER,
+        queue::STAMPED
+    );
+    reads_as_takeover(&line).then_some((new, line))
+}
+
+/// `text` (a task file) with its claim `claim` re-stamped for `who` and logged (`restamp`), or as
+/// is. For a holder's act that writes the file itself: a heartbeat, a check-in, a note.
+fn restamped_text(text: &str, claim: &str, who: &str, stamp: &str) -> Result<String, String> {
+    match restamp(claim, who, stamp) {
+        Some((new, line)) => Ok(append_log(&set_front(text, "claimed-by", &new)?, &line)),
+        None => Ok(text.to_string()),
+    }
+}
+
 /// Would this log line read as a holder's check-in (`queue::checkin_line`)?
 fn reads_as_checkin(line: &str) -> bool {
     queue::checkin_line(&format!("- {line}")).is_some()
@@ -1377,6 +1400,23 @@ fn change_locked(
         let now = current(root, path, &text)?;
         let (fields, _) = front_matter(&text).ok_or("the task has no front matter")?;
         let mut c = f(&now)?;
+        // The holder acting with a session on a claim that names none is stamped now (mu-184),
+        // logged once as a takeover before what it did: a claim the change keeps carries the
+        // stamp on, and one it lets go of still records who built it.
+        // A sweep that lets the claim go (a reclaim, a freed task's release) isn't the holder
+        // acting, whoever runs it: only a change that keeps the claim or passes it on stamps it.
+        let keeps = c.claimed_by == now.claimed_by;
+        if queue::has_lease(&now.stage)
+            && same_holder(&now.claimed_by, who)
+            && (keeps || c.stage == "testing")
+        {
+            if let Some((new, line)) = restamp(&now.claimed_by, who, stamp) {
+                if keeps {
+                    c.claimed_by = new;
+                }
+                c.log.insert(0, line);
+            }
+        }
         // The owner's own task in Building is the owner's, however it got there (an override, a
         // return): never "Building with no claim", and never an agent's claim (review C4).
         if now.human && c.stage == "building" && !is_owner(&c.claimed_by) {
@@ -2722,6 +2762,24 @@ pub fn next_task(root: &Path, who: &str, stamp: &str) -> Result<Option<Claimed>,
         if let Some(held) = holding(&tasks, &who, "").filter(|_| !is_owner(&who)) {
             return Err(sent_back_first(root, &tasks, &who).unwrap_or_else(|| already_holds(&held)));
         }
+        // A send-back to another session under this label that hasn't picked it up (mu-184):
+        // this session carries it on, as when it went back by the bare label.
+        if let Some(t) = tasks.iter().find(|t| {
+            !is_owner(&who)
+                && t.sent_back
+                && !same_holder(&t.claimed_by, &who)
+                && crate::session::split(&t.claimed_by).0 == crate::session::split(&who).0
+                && queue::read_body(root, &t.id)
+                    .is_ok_and(|body| untouched_send_back(t, &body, &tasks))
+        }) {
+            let key = keys_of(root, std::slice::from_ref(&t.id));
+            return Err(format!(
+                "fix {key} first ({}): it went back to {}, which hasn't picked it up; take it over: muster claim {} --takeover",
+                sent_back_words(t),
+                t.claimed_by,
+                t.id
+            ));
+        }
         let Some(top) = tasks
             .iter()
             .filter(|t| t.stage == "ready" && !t.blocked && t.paused.is_empty() && is_id(&t.id))
@@ -2742,24 +2800,26 @@ pub fn next_task(root: &Path, who: &str, stamp: &str) -> Result<Option<Claimed>,
     })
 }
 
-/// Keep a claim alive: stamp `heartbeat:` on a task `who` holds in Building. No log line.
+/// Keep a claim alive: stamp `heartbeat:` on a task `who` holds in Building. No log line, but
+/// the takeover line of a claim it re-stamps (mu-184, `restamp`).
 pub fn heartbeat_task(root: &Path, id: &str, who: &str, stamp: &str) -> Result<String, String> {
     let who = actor(who)?;
     edit(root, id, |path, text| {
-        held_in_building(root, id, path, &text, &who)?;
-        Ok((set_front(&text, "heartbeat", stamp)?, None))
+        let claim = held_in_building(root, id, path, &text, &who)?;
+        let new = restamped_text(&text, &claim, &who, stamp)?;
+        Ok((set_front(&new, "heartbeat", stamp)?, None))
     })
 }
 
 /// Refused unless the task is in Building or Shaping (a filed note's shaper, 0097) and `who`
-/// holds it: whose lease a heartbeat or a check-in may renew.
+/// holds it: whose lease a heartbeat or a check-in may renew. The claim, as the file has it.
 fn held_in_building(
     root: &Path,
     id: &str,
     path: &Path,
     text: &str,
     who: &str,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let t = queue::parse_task("", root, &queue::folder_of(root, path), path, text, 0)
         .ok_or("the task has no front matter")?;
     if !queue::has_lease(&t.stage) {
@@ -2774,7 +2834,7 @@ fn held_in_building(
     if !holds(&t.claimed_by, who, t.is_human()) {
         return Err(format!("{id} is held by {}, not {who}", t.claimed_by));
     }
-    Ok(())
+    Ok(t.claimed_by)
 }
 
 /// A check-in's percentage (`--pct`): a whole number from 0 to 100, `%` allowed. Empty is none.
@@ -2867,8 +2927,9 @@ pub fn checkin_task_with(
         return Err("the check-in wouldn't read back as written; say it another way".into());
     }
     edit(root, id, |path, file| {
-        held_in_building(root, id, path, &file, &who)?;
-        let new = set_front(&file, "heartbeat", stamp)?;
+        let claim = held_in_building(root, id, path, &file, &who)?;
+        let new = restamped_text(&file, &claim, &who, stamp)?;
+        let new = set_front(&new, "heartbeat", stamp)?;
         Ok((append_log(&new, &line), None))
     })
 }
@@ -3157,6 +3218,95 @@ pub fn reclaim_task(
     })
 }
 
+/// The detail of the owner's release of a claim no session can be reached on (mu-184).
+pub const UNREACHED: &str = "released: no session to reach";
+
+/// The owner's Release of a claim no session can be reached on (mu-184, the pane's Release beside
+/// the disabled Ping): a Building task whose claim, or a Testing task whose `held-by:`, names no
+/// session (a bare label), whatever its lease. Building goes back to Ready with the claim cleared,
+/// logged as the stage line `(released: no session to reach)`; its worktree and branch stay, so
+/// `muster start` picks it up there again. In Testing the hold is cleared and it stays there for
+/// the next tester, logged with the same words. Refused for anyone but the owner, for a holder
+/// with a session (Ping reaches it), for the owner's own hold, for a paused or unheld task, and
+/// when the task left the stage the window showed (`from`). Read again under the queue's lock, so
+/// a session that stamped its claim since the click (`restamp`) makes it refuse.
+pub fn release_unreached(
+    root: &Path,
+    id: &str,
+    who: &str,
+    stamp: &str,
+    from: Option<&str>,
+) -> Result<String, String> {
+    let who = actor(who)?;
+    if !is_owner(&who) {
+        return Err(format!(
+            "only the owner releases a claim no session can be reached on; a session under its label takes it over instead (muster claim {id} --takeover)"
+        ));
+    }
+    let expected = seen_stage(from)?;
+    with_lock(root, || {
+        let path = find_task(root, id)?;
+        let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        let t = current(root, &path, &text)?;
+        check_seen(id, &t, expected)?;
+        not_paused(id, &t)?;
+        let holder = match t.stage.as_str() {
+            "building" => t.claimed_by.trim(),
+            "testing" => t.held_by.trim(),
+            _ => {
+                return Err(format!(
+                "{id} is in {}; only a claim in Building or a hold in Testing is released this way",
+                stage_label(&t.stage)
+            ))
+            }
+        };
+        if holder.is_empty() {
+            return Err(format!("nobody holds {id}; there's nothing to release"));
+        }
+        if is_owner(holder) {
+            return Err(format!("you hold {id} yourself"));
+        }
+        if crate::session::split(holder).1.is_some() {
+            return Err(format!(
+                "{holder} has a session now: Ping it, or wait for the lease"
+            ));
+        }
+        if t.stage == "building" {
+            return change_locked(root, id, &who, stamp, |t| {
+                Ok(Change {
+                    stage: "ready".into(),
+                    blocked: t.blocked,
+                    waiting_on: t.waiting_on.clone(),
+                    blocked_kind: t.blocked_kind.clone(),
+                    depends: None,
+                    claimed_by: String::new(),
+                    commit: None,
+                    summary: None,
+                    log: vec![stage_line(
+                        stamp,
+                        &who,
+                        "building",
+                        "ready",
+                        &format!(" ({UNREACHED})"),
+                    )],
+                })
+            });
+        }
+        // No stage line: it stays in Testing. The holder comes from the file, so the line is
+        // checked like any free text, and says less when it would read as something else.
+        let line = free_text_line(
+            format!("{stamp} {who}: let go of {holder}'s hold; still in Testing ({UNREACHED})"),
+            "the holder",
+        )
+        .unwrap_or_else(|_| {
+            format!("{stamp} {who}: let go of the hold; still in Testing ({UNREACHED})")
+        });
+        edit_locked(root, id, |_, text| {
+            Ok((append_log(&set_front(&text, "held-by", "")?, &line), None))
+        })
+    })
+}
+
 /// How long a claim must be quiet (no heartbeat, no check-in) before a session under the same
 /// label may take it over without a handoff (0090), in minutes. The 12 h lease and `reclaim` are
 /// apart from it.
@@ -3210,6 +3360,40 @@ fn taken_over_from(body: &str, claimed_by: &str) -> Option<String> {
         }
     }
     from
+}
+
+/// A task sent back to Building (from Testing or Your check) that its builder's session hasn't
+/// picked up (mu-184), where the bare label would have taken it before: that session holds no
+/// other unblocked task in Building (`holding`), so it may well have ended. A session under the
+/// same label takes it over at once, and `next` points it there. Picked up is read from the log
+/// (`acted_since_send_back`), not from the minute stamps alone: a check-in or a takeover in the
+/// send-back's own minute counts. A paused one is nobody's to take, so it isn't pointed at.
+/// `body` is the task file's text, `tasks` the queue's.
+fn untouched_send_back(t: &queue::Task, body: &str, tasks: &[queue::Task]) -> bool {
+    t.stage == "building"
+        && t.sent_back
+        && t.paused.is_empty()
+        && !t.stage_since.is_empty()
+        && t.heartbeat == t.stage_since
+        && holding(tasks, &t.claimed_by, &t.id).is_none()
+        && !acted_since_send_back(body, &t.claimed_by)
+}
+
+/// Has anyone held the claim acted on it since the last stage line (the send-back's): a
+/// takeover, or any line `holder` wrote (a check-in, a note, a block). A heartbeat writes no line,
+/// so one in a later minute is seen by `untouched_send_back`'s stamp check instead.
+fn acted_since_send_back(body: &str, holder: &str) -> bool {
+    let lines: Vec<&str> = queue::log_section(body).unwrap_or("").lines().collect();
+    let after = lines
+        .iter()
+        .rposition(|l| queue::stage_line(l).is_some())
+        .map_or(0, |i| i + 1);
+    lines[after..].iter().any(|l| {
+        queue::takeover_line(l).is_some()
+            || queue::log_stamp(l)
+                .and_then(|(_, rest)| rest.trim_start().split_once(": "))
+                .is_some_and(|(who, _)| same_holder(who, holder))
+    })
 }
 
 /// When the claim in `body` was made or last taken over: the last stage line into Building or
@@ -3305,9 +3489,17 @@ pub fn takeover_task(
                 ));
             }
             if same_holder(&old, &who) {
-                return Err(format!(
-                    "you already hold {id}; there's nothing to take over"
-                ));
+                // A claim that names no session, or this session under another account, is
+                // stamped for it (mu-184): Ping reaches it from then on.
+                let Some((new, line)) = restamp(&old, &who, stamp) else {
+                    return Err(format!(
+                        "you already hold {id}; there's nothing to take over"
+                    ));
+                };
+                let text = set_front(&text, "claimed-by", &new)?;
+                let text = set_front(&text, "heartbeat", stamp)?;
+                out = Some((old, queue::STAMPED.to_string(), false));
+                return Ok((append_log(&text, &line), None));
             }
             let label = crate::session::split(&who).0;
             if !owner && crate::session::split(&old).0 != label {
@@ -3323,6 +3515,8 @@ pub fn takeover_task(
             let quiet = quiet_minutes(&t.heartbeat, modified, stamp, now_secs);
             let why = if handed {
                 "handed off".to_string()
+            } else if untouched_send_back(&t, &text, &tasks) {
+                queue::SENT_BACK.to_string()
             } else if t.blocked && !owner {
                 // A blocked task goes quiet by design, waiting: it isn't left (as for reclaim).
                 return Err(format!(
@@ -3384,6 +3578,7 @@ pub fn takeover_task(
         let (from, why, rerun) = out.ok_or("the takeover wasn't written")?;
         // The mail follows the claim, under the same lock. The claim is moved either way, so a
         // failure here says so rather than undoing it, and running the takeover again finishes it.
+        // A re-stamp keeps its session's mailbox, so nothing moves.
         let mailbox = |h: &str| crate::session::split(h).1.map(|s| s.mailbox());
         let mut moved = 0;
         if let (Some(old_box), Some(new_box)) = (mailbox(&from), mailbox(&who)) {
@@ -3541,27 +3736,18 @@ fn return_change(
         waiting_on: t.waiting_on.clone(),
         blocked_kind: t.blocked_kind.clone(),
         depends: None,
-        // Back to the builder. By label only when no other session under that label holds a
-        // task in Building, so whichever session works under it next (the first may have
-        // ended) carries on; otherwise to the exact session that built it, which keeps one
-        // claim per holder. The stage lines still say which session built it.
+        // Back to the exact session that built it (mu-184), never its bare label, so Ping
+        // reaches it. Until that session acts on it, and while it holds no other unblocked task
+        // in Building, a successor under its label takes it over at once, logged `(sent back,
+        // not picked up)` (`untouched_send_back`); otherwise as any claim (0090: a handoff or 30
+        // quiet minutes). A session acting on a bare claim (from before mu-184, or made outside
+        // Claude Code) stamps it (`restamp`).
         // A builder acting as a role slot (0112) gets it back as it was, slot and all, so the slot
         // stays held and its session can't take another; a successor takes it over as for any
         // claim. A builder whose slot went to another session meanwhile gets it back as itself,
-        // without the slot, and by its exact session, since the slot's name is its label.
+        // without the slot.
         claimed_by: if target == "building" {
-            let built = t.builder.clone().unwrap_or_default();
-            let builder = unless_taken(root, id, &built);
-            let label = crate::session::split(&builder).0.to_string();
-            if builder == built
-                && !label.is_empty()
-                && crate::session::slot_of(&builder).is_empty()
-                && holding(&tasks_now(root), &label, id).is_none()
-            {
-                label
-            } else {
-                builder
-            }
+            unless_taken(root, id, t.builder.as_deref().unwrap_or_default())
         } else {
             String::new()
         },
@@ -3985,17 +4171,20 @@ pub fn add_note(
     let note = one_line(note, 2000, "the note")?;
     let line = free_text_line(format!("{stamp} {who}: {note}"), "a note")?;
     edit(root, id, |path, text| {
-        let mut new = append_log(&text, &line);
-        // The holder's note keeps its claim alive.
-        let t = queue::parse_task("", root, &queue::folder_of(root, path), path, &text, 0);
-        if t.is_some_and(|t| {
-            queue::has_lease(&t.stage)
-                && !t.claimed_by.is_empty()
-                && same_holder(&t.claimed_by, &who)
-        }) {
-            new = set_front(&new, "heartbeat", stamp)?;
-        }
-        Ok((new, None))
+        // The holder's note keeps its claim alive, and stamps a claim that names no session
+        // (mu-184) before the note is logged.
+        let held = queue::parse_task("", root, &queue::folder_of(root, path), path, &text, 0)
+            .filter(|t| {
+                queue::has_lease(&t.stage)
+                    && !t.claimed_by.is_empty()
+                    && same_holder(&t.claimed_by, &who)
+            });
+        let Some(t) = held else {
+            return Ok((append_log(&text, &line), None));
+        };
+        let new = restamped_text(&text, &t.claimed_by, &who, stamp)?;
+        let new = append_log(&new, &line);
+        Ok((set_front(&new, "heartbeat", stamp)?, None))
     })
 }
 
@@ -7771,12 +7960,12 @@ mod tests {
         let d = in_your_check_while_building_another("wt-a");
         let r = return_back(d.path(), "0001", "AC2 fails", Some("building"), "owner", T).unwrap();
         assert_eq!((r.finding.as_str(), r.told.as_str()), ("R1", ""));
-        assert_eq!(r.not_told, crate::ping::NO_SESSION);
+        assert_eq!(r.not_told, crate::ping::no_session("wt-a"));
         let t = task_of(d.path(), "0001");
         assert_eq!((t.stage.as_str(), t.sent_back), ("building", true));
         assert!(file_of(d.path(), "0001").ends_with(&format!(
             "{T} owner: couldn't tell the builder's session it was sent back ({}); muster next shows it first\n",
-            crate::ping::NO_SESSION
+            crate::ping::no_session("wt-a")
         )));
         assert!(!d.path().join("mail/7b5e8856").exists());
         assert!(next_task(d.path(), "wt-a", T)
@@ -7788,9 +7977,9 @@ mod tests {
     fn a_builder_holding_nothing_else_is_reached_at_the_session_that_built_it() {
         let d = in_your_check_while_building_another(STAMPED);
         block_task(d.path(), "0002", "outside: Apple review", STAMPED, T).unwrap();
-        // 0002 is blocked, so the claim goes back by label, with no session in it.
+        // 0002 is blocked, so it holds nothing else: the claim goes back to its session (mu-184).
         let r = return_back(d.path(), "0001", "AC2 fails", Some("building"), "owner", T).unwrap();
-        assert_eq!(task_of(d.path(), "0001").claimed_by, "wt-a");
+        assert_eq!(task_of(d.path(), "0001").claimed_by, STAMPED);
         assert_eq!(r.told, "7b5e8856");
     }
 
@@ -8244,19 +8433,19 @@ mod tests {
         // A holder's note keeps the claim alive from any folder of its session.
         add_note(d.path(), "0001", "phase 1", elsewhere, "2026-10-12 14:30").unwrap();
         assert_eq!(task_of(d.path(), "0001").heartbeat, "2026-10-12 14:30");
-        // Its pass out of Building, and a return to it, go back to the builder: here the exact
-        // session, since another wt-a session (`other`) holds 0002 in Building.
+        // Its pass out of Building, and a return to it, go back to the builder's exact session,
+        // while another wt-a session (`other`) holds 0002 in Building.
         pass_task(d.path(), "0001", elsewhere, T, &gate()).unwrap();
         return_task(d.path(), "0001", "AC1 fails", None, "qa", T).unwrap();
         assert_eq!(task_of(d.path(), "0001").claimed_by, A);
-        // With no other wt-a session holding work, a return goes to the label, so a new session
-        // under it carries on even when the first has ended.
+        // And with no other wt-a session holding work too (mu-184): never the bare label. A new
+        // session under it carries on once the first went quiet, by a takeover (0090).
         pass_task(d.path(), "0002", other, T, &gate()).unwrap();
         pass_task(d.path(), "0001", elsewhere, T, &gate()).unwrap();
         return_task(d.path(), "0001", "AC1 fails again", None, "qa", T).unwrap();
-        assert_eq!(task_of(d.path(), "0001").claimed_by, "wt-a");
+        assert_eq!(task_of(d.path(), "0001").claimed_by, A);
         let next_session = "wt-a (session 33333333)";
-        heartbeat_task(d.path(), "0001", next_session, "2026-10-12 15:00").unwrap();
+        takeover_task(d.path(), "0001", next_session, "2026-10-12 15:00", 0).unwrap();
         pass_task(d.path(), "0001", next_session, T, &gate()).unwrap();
         assert!(state(d.path()).problems.is_empty());
     }
@@ -8329,10 +8518,10 @@ mod tests {
         // Sent back to Testing, it goes to whoever passed it there last, not the sender.
         return_task(d.path(), "0001", "AC2 fails on the Mac", None, "owner", T).unwrap();
         assert_eq!(held(d.path()), s("testing", "", A, A));
-        // Back to Building: the claim again (to the builder's label, as no other wt-a session
-        // holds work), and no Testing holder left behind.
+        // Back to Building: the claim again (to the builder's own session, mu-184), and no
+        // Testing holder left behind.
         return_task(d.path(), "0001", "rework", None, "qa", T).unwrap();
-        assert_eq!(held(d.path()), s("building", "wt-a", "", "wt-a"));
+        assert_eq!(held(d.path()), s("building", A, "", A));
         pass_task(d.path(), "0001", A, T, &gate()).unwrap();
         pass_task(d.path(), "0001", "qa", T, &no_gate()).unwrap();
         pass_task(d.path(), "0001", "owner", T, &no_gate()).unwrap();
@@ -8578,8 +8767,9 @@ mod tests {
             e.starts_with("0001 was built by wt-a (session 7b5e8856);"),
             "{e}"
         );
-        // Sent back again, a new session under the label carries on: it built this round, so it
-        // can't test it either, and nor can the session that claimed it.
+        // Sent back again (to A's own session, mu-184), a new session under the label takes it
+        // over once A went quiet and carries on: it built this round, so it can't test it either,
+        // and nor can the session that claimed it.
         return_task(
             d.path(),
             "0001",
@@ -8590,6 +8780,7 @@ mod tests {
         )
         .unwrap();
         let next = "wt-a (session 33333333)";
+        takeover_task(d.path(), "0001", next, "2026-10-12 14:30", 0).unwrap();
         pass_task(d.path(), "0001", next, "2026-10-12 15:00", &gate()).unwrap();
         let before = testing_file(d.path());
         let e = pass_task(d.path(), "0001", next, T, &from_testing()).unwrap_err();
@@ -8870,11 +9061,11 @@ mod tests {
             "2026-10-14 11:30",
         )
         .unwrap();
-        // Back to its builder's label (no other session under it holds a task), as any return.
+        // Back to its builder's own session (mu-184), as any return.
         let back = only(d.path());
         assert_eq!(
             (back.stage.as_str(), back.claimed_by.as_str()),
-            ("building", "asghar")
+            ("building", NEW)
         );
         assert_eq!(back.built_by, NEW);
         // And returns it to Ready, as any holder can.
@@ -10772,5 +10963,592 @@ mod human_tests {
         );
         assert_eq!(blocked(d.path()), "");
         assert_eq!(next_task(d.path(), "wt-a", T).unwrap().unwrap().id, "0002");
+    }
+}
+
+/// mu-184: the owner's Release of a claim no session can be reached on, a holder's acts stamping
+/// a bare claim, and a send-back that keeps its builder's session.
+#[cfg(test)]
+mod unreached_tests {
+    use super::*;
+
+    const T: &str = "2026-10-14 11:00";
+    /// A bare label: the claim names no session.
+    const BARE: &str = "asghar";
+    const NEW: &str = "asghar (main · session d6419719 · cc-hg)";
+    const STAMPED: &str = "wt-a (wt-0101 · session 7b5e8856 · cc-mg)";
+
+    fn queue() -> tempfile::TempDir {
+        let d = tempfile::tempdir().unwrap();
+        for f in STATUS_FOLDERS {
+            fs::create_dir(d.path().join(f)).unwrap();
+        }
+        // Its prefix stored, so nothing here hangs on the projects this Mac knows.
+        fs::write(d.path().join("README.md"), "---\nprefix: un\n---\nq").unwrap();
+        d
+    }
+
+    /// Task `id` in `folder` with the front-matter lines `fm` (after id, type and priority), its
+    /// criteria ticked, and a log up to its claim.
+    fn put(d: &Path, folder: &str, id: &str, fm: &str) {
+        let text = format!(
+            "---\nid: {id}\ntype: task\npriority: normal\n{fm}\n---\n\n# T{id}\n\n## Acceptance criteria\n- [x] AC1: one\n\n## Log\n- 2026-10-14 09:00 capture: created\n- 2026-10-14 09:30 {BARE}: stage ready → building (claimed)\n"
+        );
+        fs::write(d.join(folder).join(format!("{id}-t.md")), text).unwrap();
+    }
+    /// 0001 in Building, claimed by `holder`, started on its own branch, heard from at 10:55.
+    fn building(d: &Path, holder: &str) {
+        put(
+            d,
+            "doing",
+            "0001",
+            &format!("stage: building\nstatus: doing\nclaimed-by: {holder}\nheartbeat: 2026-10-14 10:55\nwaiting_on:\nworktree: /nowhere/wt\nbranch: task/un-1"),
+        );
+    }
+    fn file(d: &Path, id: &str) -> String {
+        fs::read_to_string(find_task(d, id).unwrap()).unwrap()
+    }
+    fn task(d: &Path, id: &str) -> queue::Task {
+        queue::read_task(d, id).unwrap()
+    }
+    fn takeovers(text: &str) -> Vec<String> {
+        text.lines()
+            .filter(|l| queue::takeover_line(l).is_some())
+            .map(str::to_string)
+            .collect()
+    }
+    fn gate() -> PassOpts {
+        PassOpts {
+            gate: "green".into(),
+            summary: "A synthetic summary".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn release_unreached_in_building_goes_to_ready_and_keeps_the_worktree() {
+        let d = queue();
+        building(d.path(), BARE);
+        // Its lease has not run out: this Release doesn't wait for it.
+        let path = release_unreached(d.path(), "0001", "owner", T, Some("building")).unwrap();
+        assert_eq!(path, "todo/0001-t.md");
+        let t = task(d.path(), "0001");
+        assert_eq!(
+            (
+                t.stage.as_str(),
+                t.claimed_by.as_str(),
+                t.worktree.as_str(),
+                t.branch.as_str()
+            ),
+            ("ready", "", "/nowhere/wt", "task/un-1")
+        );
+        let text = file(d.path(), "0001");
+        assert!(
+            text.ends_with(&format!(
+                "- {T} owner: stage building → ready (released: no session to reach)\n"
+            )),
+            "{text}"
+        );
+        // It reads as tool-written stage history.
+        let last = text.lines().last().unwrap();
+        assert_eq!(
+            queue::stage_line(last).map(|(s, detail)| (s.to, detail.to_string())),
+            Some(("ready".to_string(), UNREACHED.to_string()))
+        );
+    }
+
+    #[test]
+    fn release_unreached_in_testing_lets_go_of_the_hold_and_stays_in_testing() {
+        let d = queue();
+        put(
+            d.path(),
+            "doing",
+            "0001",
+            "stage: testing\nstatus: doing\nclaimed-by:\nheld-by: qa-0001\nwaiting_on:",
+        );
+        release_unreached(d.path(), "0001", "owner", T, Some("testing")).unwrap();
+        let t = task(d.path(), "0001");
+        assert_eq!((t.stage.as_str(), t.held_by.as_str()), ("testing", ""));
+        let text = file(d.path(), "0001");
+        assert!(text.contains("\nheld-by:\n"), "{text}");
+        assert!(
+            text.ends_with(&format!(
+                "- {T} owner: let go of qa-0001's hold; still in Testing (released: no session to reach)\n"
+            )),
+            "{text}"
+        );
+        // No stage line: it never left Testing.
+        assert!(queue::stage_line(text.lines().last().unwrap()).is_none());
+        // Nobody holds it now, so a second Release has nothing to do.
+        assert_eq!(
+            release_unreached(d.path(), "0001", "owner", T, None).unwrap_err(),
+            "nobody holds 0001; there's nothing to release"
+        );
+    }
+
+    #[test]
+    fn release_unreached_is_refused_and_writes_nothing() {
+        let d = queue();
+        building(d.path(), BARE);
+        put(
+            d.path(),
+            "doing",
+            "0002",
+            &format!("stage: building\nstatus: doing\nclaimed-by: {STAMPED}\nheartbeat: 2026-10-14 10:55\nwaiting_on:"),
+        );
+        put(
+            d.path(),
+            "doing",
+            "0003",
+            "stage: building\nstatus: doing\nclaimed-by: wt-c\nheartbeat: 2026-10-14 10:55\npaused: 2026-10-14 10:56\nwaiting_on:",
+        );
+        put(
+            d.path(),
+            "doing",
+            "0004",
+            "stage: building\nstatus: doing\nclaimed-by:\nwaiting_on:",
+        );
+        put(
+            d.path(),
+            "todo",
+            "0005",
+            "stage: ready\nstatus: todo\nclaimed-by:\nwaiting_on:",
+        );
+        put(
+            d.path(),
+            "doing",
+            "0006",
+            &format!("stage: testing\nstatus: doing\nclaimed-by:\nheld-by: {STAMPED}\nwaiting_on:"),
+        );
+        put(
+            d.path(),
+            "doing",
+            "0007",
+            "stage: building\nstatus: doing\nclaimed-by: owner\nwaiting_on:",
+        );
+        let all = || -> Vec<String> {
+            (1..=7)
+                .map(|i| file(d.path(), &format!("000{i}")))
+                .collect()
+        };
+        let before = all();
+        let refused = |id: &str, who: &str, from: Option<&str>| {
+            release_unreached(d.path(), id, who, T, from).unwrap_err()
+        };
+        // Only the owner, whatever the label says.
+        assert!(refused("0001", BARE, None).starts_with("only the owner releases"));
+        assert!(
+            refused("0001", "qa (main · session 0f0f0f0f · cc-hg)", None)
+                .starts_with("only the owner releases")
+        );
+        // A claim with a session is Ping's, in Building or Testing.
+        for id in ["0002", "0006"] {
+            assert_eq!(
+                refused(id, "owner", None),
+                format!("{STAMPED} has a session now: Ping it, or wait for the lease")
+            );
+        }
+        assert!(refused("0003", "owner", None).contains("paused"));
+        assert_eq!(
+            refused("0004", "owner", None),
+            "nobody holds 0004; there's nothing to release"
+        );
+        assert_eq!(
+            refused("0005", "owner", None),
+            "0005 is in Ready; only a claim in Building or a hold in Testing is released this way"
+        );
+        assert_eq!(refused("0007", "owner", None), "you hold 0007 yourself");
+        // The window showed another stage: it moved on since.
+        assert!(refused("0001", "owner", Some("testing")).contains("it moved on since you looked"));
+        assert_eq!(before, all());
+    }
+
+    #[test]
+    fn release_unreached_refuses_a_claim_its_session_stamped_since_the_click() {
+        let d = queue();
+        building(d.path(), BARE);
+        // The successor checks in between the click and the write: the claim names it now.
+        checkin_task(d.path(), "0001", "on it", "", NEW, "2026-10-14 10:58").unwrap();
+        assert_eq!(
+            release_unreached(d.path(), "0001", "owner", T, Some("building")).unwrap_err(),
+            format!("{NEW} has a session now: Ping it, or wait for the lease")
+        );
+        assert_eq!(task(d.path(), "0001").stage, "building");
+    }
+
+    #[test]
+    fn a_successors_checkin_on_a_bare_claim_is_stamped_and_logged_once() {
+        let d = queue();
+        building(d.path(), BARE);
+        checkin_task(d.path(), "0001", "parser done", "40", NEW, T).unwrap();
+        let t = task(d.path(), "0001");
+        assert_eq!((t.claimed_by.as_str(), t.heartbeat.as_str()), (NEW, T));
+        let text = file(d.path(), "0001");
+        assert!(
+            text.ends_with(&format!(
+                "- {T} {NEW}: took over the claim from {BARE} (stamped)\n- {T} {NEW}: check-in 40% · parser done\n"
+            )),
+            "{text}"
+        );
+        // The takeover reads back as one, from the bare label to the session.
+        assert_eq!(
+            queue::takeover_line(&takeovers(&text)[0]),
+            Some((T.into(), NEW.into(), BARE.into()))
+        );
+        assert_eq!(t.builders, vec![BARE.to_string(), NEW.to_string()]);
+        // Once: the claim names the session now, so the next acts add nothing.
+        checkin_task(d.path(), "0001", "CLI next", "60", NEW, "2026-10-14 11:10").unwrap();
+        heartbeat_task(d.path(), "0001", NEW, "2026-10-14 11:20").unwrap();
+        add_note(d.path(), "0001", "a note", NEW, "2026-10-14 11:25").unwrap();
+        assert_eq!(takeovers(&file(d.path(), "0001")).len(), 1);
+        // And Ping reaches it.
+        assert_eq!(
+            crate::ping::reach(&task(d.path(), "0001")).unwrap(),
+            "d6419719"
+        );
+    }
+
+    #[test]
+    fn a_successors_note_heartbeat_or_block_on_a_bare_claim_is_stamped() {
+        for act in ["note", "heartbeat", "block"] {
+            let d = queue();
+            building(d.path(), BARE);
+            match act {
+                "note" => add_note(d.path(), "0001", "looking", NEW, T),
+                "heartbeat" => heartbeat_task(d.path(), "0001", NEW, T),
+                _ => block_task(d.path(), "0001", "outside: Apple review", NEW, T),
+            }
+            .unwrap();
+            assert_eq!(task(d.path(), "0001").claimed_by, NEW, "{act}");
+            assert_eq!(
+                takeovers(&file(d.path(), "0001")),
+                vec![format!(
+                    "- {T} {NEW}: took over the claim from {BARE} (stamped)"
+                )],
+                "{act}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_successors_pass_on_a_bare_claim_is_stamped_and_it_cant_test_it() {
+        let d = queue();
+        put(
+            d.path(),
+            "doing",
+            "0001",
+            &format!("stage: building\nstatus: doing\nclaimed-by: {BARE}\nheartbeat: 2026-10-14 10:55\nwaiting_on:"),
+        );
+        pass_task(d.path(), "0001", NEW, T, &gate()).unwrap();
+        let t = task(d.path(), "0001");
+        assert_eq!(
+            (t.stage.as_str(), t.claimed_by.as_str(), t.held_by.as_str()),
+            ("testing", "", NEW)
+        );
+        let text = file(d.path(), "0001");
+        let tail: Vec<&str> = text.lines().rev().take(3).collect();
+        assert!(
+            tail[0].ends_with(&format!("{NEW}: stage building → testing (gate: green)")),
+            "{text}"
+        );
+        assert!(
+            tail.contains(
+                &format!("- {T} {NEW}: took over the claim from {BARE} (stamped)").as_str()
+            ),
+            "{text}"
+        );
+        assert_eq!(takeovers(&text).len(), 1);
+        // The successor built it: it doesn't test it.
+        let e = pass_task(d.path(), "0001", NEW, T, &PassOpts::default()).unwrap_err();
+        assert!(e.starts_with("0001 was built by asghar"), "{e}");
+    }
+
+    #[test]
+    fn claim_takeover_of_ones_own_bare_claim_stamps_it() {
+        let d = queue();
+        building(d.path(), BARE);
+        let t = takeover_task(d.path(), "0001", NEW, T, 0).unwrap();
+        assert_eq!(
+            t,
+            TakenOver {
+                path: "doing/0001-t.md".into(),
+                from: BARE.into(),
+                why: "stamped".into(),
+                moved: None,
+            }
+        );
+        let held = task(d.path(), "0001");
+        assert_eq!(
+            (held.claimed_by.as_str(), held.heartbeat.as_str()),
+            (NEW, T)
+        );
+        // Stamped now, a second takeover is mu-156's rerun: the bare label had no mailbox, so
+        // there's nothing to move, and nothing more is logged.
+        let again = takeover_task(d.path(), "0001", NEW, T, 0).unwrap();
+        assert_eq!(
+            again.rerun_line("mu-1").as_deref(),
+            Some("mu-1: you hold it already; its old holder had no mailbox, so there's nothing to move")
+        );
+        assert_eq!(takeovers(&file(d.path(), "0001")).len(), 1);
+    }
+
+    #[test]
+    fn a_rerun_after_an_account_restamp_moves_nothing_within_one_mailbox() {
+        // The same session under another account has the same mailbox: the rerun after its
+        // re-stamp moves nothing, and doesn't fail moving mail onto itself.
+        let d = queue();
+        let mg = "asghar (main · session d6419719 · cc-mg)";
+        building(d.path(), mg);
+        assert_eq!(
+            takeover_task(d.path(), "0001", NEW, T, 0).unwrap().why,
+            "stamped"
+        );
+        fs::create_dir_all(d.path().join("mail/d6419719")).unwrap();
+        fs::write(d.path().join("mail/d6419719/0001-1.md"), "a note").unwrap();
+        let again = takeover_task(d.path(), "0001", NEW, T, 0).unwrap();
+        assert_eq!(again.moved, Some(0));
+        assert!(d.path().join("mail/d6419719/0001-1.md").exists());
+    }
+
+    #[test]
+    fn a_session_that_moved_account_is_stamped_with_its_new_account() {
+        let d = queue();
+        let mg = "asghar (main · session d6419719 · cc-mg)";
+        building(d.path(), mg);
+        checkin_task(d.path(), "0001", "moved", "", NEW, T).unwrap();
+        assert_eq!(task(d.path(), "0001").claimed_by, NEW);
+        assert_eq!(
+            takeovers(&file(d.path(), "0001")),
+            vec![format!(
+                "- {T} {NEW}: took over the claim from {mg} (stamped)"
+            )]
+        );
+        // The same account again: nothing more.
+        checkin_task(d.path(), "0001", "again", "", NEW, T).unwrap();
+        assert_eq!(takeovers(&file(d.path(), "0001")).len(), 1);
+    }
+
+    #[test]
+    fn the_owner_and_an_unstamped_holder_never_restamp() {
+        let d = queue();
+        building(d.path(), BARE);
+        checkin_task(d.path(), "0001", "from a terminal", "", BARE, T).unwrap();
+        add_note(
+            d.path(),
+            "0001",
+            "owner's note",
+            "owner (main · session 7b5e8856 · cc-hg)",
+            T,
+        )
+        .unwrap();
+        assert_eq!(task(d.path(), "0001").claimed_by, BARE);
+        assert!(takeovers(&file(d.path(), "0001")).is_empty());
+    }
+
+    #[test]
+    fn a_stamped_takeover_line_is_the_tools_alone() {
+        let line = format!("- {T} {NEW}: took over the claim from {BARE} (stamped)");
+        assert!(queue::takeover_line(&line).is_some());
+        let e = free_text_line(
+            format!("{T} gholi{}{BARE} (stamped)", queue::TOOK_OVER),
+            "a note",
+        )
+        .unwrap_err();
+        assert!(e.contains("would read as a takeover"), "{e}");
+        // A note can't plant one either.
+        let d = queue();
+        building(d.path(), BARE);
+        assert!(add_note(
+            d.path(),
+            "0001",
+            &format!(
+                "{}{BARE} (stamped)",
+                queue::TOOK_OVER.trim_start_matches(": ")
+            ),
+            "owner",
+            T
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn a_send_back_keeps_the_builders_session() {
+        let d = queue();
+        for id in ["0001", "0002"] {
+            put(
+                d.path(),
+                "todo",
+                id,
+                "stage: ready\nstatus: todo\nclaimed-by:\nwaiting_on:",
+            );
+        }
+        claim_task(d.path(), "0001", STAMPED, T).unwrap();
+        pass_task(d.path(), "0001", STAMPED, T, &gate()).unwrap();
+        // Holding nothing else, it gets it back by its exact session, not its label.
+        return_task(d.path(), "0001", "AC1 fails", None, "qa", T).unwrap();
+        let t = task(d.path(), "0001");
+        assert_eq!(
+            (t.stage.as_str(), t.claimed_by.as_str()),
+            ("building", STAMPED)
+        );
+        assert_eq!(crate::ping::reach(&t).unwrap(), "7b5e8856");
+        // Holding another task meanwhile, it still gets it back, first in line.
+        pass_task(d.path(), "0001", STAMPED, T, &gate()).unwrap();
+        claim_task(d.path(), "0002", STAMPED, T).unwrap();
+        return_task(d.path(), "0001", "AC1 still fails", None, "qa", T).unwrap();
+        let t = task(d.path(), "0001");
+        assert_eq!((t.claimed_by.as_str(), t.sent_back), (STAMPED, true));
+        // The builder's session may have ended: until it acts on the send-back, a successor
+        // under its label is pointed there by next and takes it over at once.
+        block_task(d.path(), "0002", "outside: later", STAMPED, T).unwrap();
+        let next = "wt-a (wt-0101 · session d6419719 · cc-hg)";
+        let e = next_task(d.path(), next, T).unwrap_err();
+        assert_eq!(
+            e,
+            format!("fix un-1 first (sent back by the review): it went back to {STAMPED}, which hasn't picked it up; take it over: muster claim 0001 --takeover")
+        );
+        let took = takeover_task(d.path(), "0001", next, T, 0).unwrap();
+        assert_eq!(took.why, "sent back, not picked up");
+        assert!(queue::takeover_line(&takeovers(&file(d.path(), "0001")).pop().unwrap()).is_some());
+    }
+
+    #[test]
+    fn a_send_back_its_builder_picked_up_waits_for_a_quiet_takeover() {
+        let d = queue();
+        put(
+            d.path(),
+            "todo",
+            "0001",
+            "stage: ready\nstatus: todo\nclaimed-by:\nwaiting_on:",
+        );
+        claim_task(d.path(), "0001", STAMPED, T).unwrap();
+        pass_task(d.path(), "0001", STAMPED, T, &gate()).unwrap();
+        return_task(d.path(), "0001", "AC1 fails", None, "qa", T).unwrap();
+        // The builder checks in on it: it's alive, so a successor waits as for any claim.
+        checkin_task(
+            d.path(),
+            "0001",
+            "fixing AC1",
+            "",
+            STAMPED,
+            "2026-10-14 11:05",
+        )
+        .unwrap();
+        let next = "wt-a (wt-0101 · session d6419719 · cc-hg)";
+        assert!(next_task(d.path(), next, "2026-10-14 11:06")
+            .unwrap()
+            .is_none());
+        let e = takeover_task(d.path(), "0001", next, "2026-10-14 11:06", 0).unwrap_err();
+        assert!(e.contains("last heard from 1 min ago"), "{e}");
+        let took = takeover_task(d.path(), "0001", next, "2026-10-14 11:35", 0).unwrap();
+        assert_eq!(took.why, "quiet 30 min");
+    }
+
+    /// A Ready 0003 beside 0001 sent back to `STAMPED` (review R1-R3): what `next` gives a
+    /// sibling under its label when the send-back isn't one to take over at once.
+    fn sent_back_to_stamped(d: &Path, ids: &[&str]) {
+        for id in ids {
+            put(
+                d,
+                "todo",
+                id,
+                "stage: ready\nstatus: todo\nclaimed-by:\nwaiting_on:",
+            );
+        }
+        claim_task(d, "0001", STAMPED, T).unwrap();
+        pass_task(d, "0001", STAMPED, T, &gate()).unwrap();
+    }
+
+    const SIBLING: &str = "wt-a (wt-0101 · session d6419719 · cc-hg)";
+
+    #[test]
+    fn a_send_back_to_a_builder_busy_on_another_task_waits_for_a_quiet_takeover() {
+        // Review R1: the builder is live on 0002 (unblocked) when 0001 comes back to it. That
+        // send-back isn't a stranded one: a sibling waits for a handoff or 30 quiet minutes.
+        let d = queue();
+        sent_back_to_stamped(d.path(), &["0001", "0002", "0003"]);
+        claim_task(d.path(), "0002", STAMPED, T).unwrap();
+        return_task(d.path(), "0001", "AC1 fails", None, "qa", T).unwrap();
+        assert_eq!(task(d.path(), "0001").claimed_by, STAMPED);
+        let got = next_task(d.path(), SIBLING, T).unwrap().unwrap();
+        assert_eq!(got.id, "0003");
+        let e = takeover_task(
+            d.path(),
+            "0001",
+            "wt-a (wt-0101 · session 0f0f0f0f · cc-hg)",
+            T,
+            0,
+        )
+        .unwrap_err();
+        assert!(e.contains("last heard from"), "{e}");
+        assert!(takeovers(&file(d.path(), "0001")).is_empty());
+    }
+
+    #[test]
+    fn a_send_back_picked_up_in_its_own_minute_waits_for_a_quiet_takeover() {
+        // Review R2: the builder checks in within the send-back's minute, so heartbeat still
+        // equals the stage line's stamp; the log says it picked it up.
+        let d = queue();
+        sent_back_to_stamped(d.path(), &["0001", "0003"]);
+        return_task(d.path(), "0001", "AC1 fails", None, "qa", T).unwrap();
+        checkin_task(d.path(), "0001", "on it", "", STAMPED, T).unwrap();
+        assert_eq!(next_task(d.path(), SIBLING, T).unwrap().unwrap().id, "0003");
+        let other = "wt-a (wt-0101 · session 0f0f0f0f · cc-hg)";
+        let e = takeover_task(d.path(), "0001", other, T, 0).unwrap_err();
+        assert!(e.contains("last heard from"), "{e}");
+    }
+
+    #[test]
+    fn a_send_back_taken_over_in_its_own_minute_is_not_taken_again_at_once() {
+        // Review R2: a takeover in the send-back's minute is the new holder picking it up.
+        let d = queue();
+        sent_back_to_stamped(d.path(), &["0001"]);
+        return_task(d.path(), "0001", "AC1 fails", None, "qa", T).unwrap();
+        let took = takeover_task(d.path(), "0001", SIBLING, T, 0).unwrap();
+        assert_eq!(took.why, queue::SENT_BACK);
+        let third = "wt-a (wt-0101 · session 0f0f0f0f · cc-hg)";
+        let e = takeover_task(d.path(), "0001", third, T, 0).unwrap_err();
+        assert!(e.contains("last heard from"), "{e}");
+    }
+
+    #[test]
+    fn a_paused_send_back_is_not_pointed_at() {
+        // Review R3: its takeover is refused while paused, so next gives the Ready task instead.
+        let d = queue();
+        sent_back_to_stamped(d.path(), &["0001", "0003"]);
+        return_task(d.path(), "0001", "AC1 fails", None, "qa", T).unwrap();
+        crate::pause::pause(d.path(), "0001", "hold on", "owner", T).unwrap();
+        assert_eq!(next_task(d.path(), SIBLING, T).unwrap().unwrap().id, "0003");
+    }
+
+    #[test]
+    fn a_reclaim_by_a_session_under_the_label_logs_no_stamped_takeover() {
+        let d = queue();
+        put(
+            d.path(),
+            "doing",
+            "0001",
+            &format!("stage: building\nstatus: doing\nclaimed-by: {BARE}\nheartbeat: 2026-10-13 09:00\nwaiting_on:"),
+        );
+        let r = reclaim(d.path(), 60, NEW, T, 0).unwrap();
+        assert_eq!(r.released.len(), 1);
+        let text = file(d.path(), "0001");
+        assert!(takeovers(&text).is_empty(), "{text}");
+        assert_eq!(task(d.path(), "0001").stage, "ready");
+    }
+
+    #[test]
+    fn a_send_back_to_a_builder_with_no_session_stays_its_label() {
+        let d = queue();
+        put(
+            d.path(),
+            "todo",
+            "0001",
+            "stage: ready\nstatus: todo\nclaimed-by:\nwaiting_on:",
+        );
+        claim_task(d.path(), "0001", "wt-b", T).unwrap();
+        pass_task(d.path(), "0001", "wt-b", T, &gate()).unwrap();
+        return_task(d.path(), "0001", "AC1 fails", None, "qa", T).unwrap();
+        assert_eq!(task(d.path(), "0001").claimed_by, "wt-b");
     }
 }

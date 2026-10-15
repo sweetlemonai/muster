@@ -28,6 +28,7 @@ covers: app/src/App.tsx, app/src/ColumnRow.tsx, app/src/ColumnCards.tsx, app/src
 - Only one action runs at a time. (AS_BUILT "Board")
 - The app never claims a task; its changes are logged as "owner". (AS_BUILT "What the app writes")
 - Edit is refused while someone else holds the task in Building. (mu-20)
+- A claim with no session to reach has Release in the Next step, with its confirm in place, no modal. (mu-184)
 - Files open at the pane's full width, no lightbox. (mu-91)
 - Recently finished is docked at the board's right, or under it when narrow, never hidden. (mu-51)
 - Your check cards say Your turn and the next step, grouped by effort. (mu-43)

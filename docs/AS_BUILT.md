@@ -192,12 +192,12 @@ is in its range) but draws pixel for pixel the same. `fonts.test.ts` holds the f
 the README, the licence records in its name table and the bundled licence. How to cut it again,
 byte for byte: `app/src/assets/fonts/README.md`. No other fonts are bundled.
 
-The 76 commands it can call (`generate_handler!` in `lib.rs`), by what they do:
+The 80 commands it can call (`generate_handler!` in `lib.rs`), by what they do:
 
 | Group | Commands |
 |---|---|
 | Reading | `state` (the 2 s poll), `search_index`, `help`, `task_body`, `image`, `projects`, `settings_info`, `locale_info`, `task_sessions`, `session_transcript`, `editable_body`, `shape_note`, `vision_brief` |
-| Changing a task | `create_task`, `pass_task`, `accept_all`, `return_task`, `block_task`, `unblock_task`, `reclaim_task`, `set_stage`, `set_field`, `add_note`, `tick_criterion`, `edit_body`, `add_comment`, `attach_data`, `attach_pick`, `answer`, `answer_pick`, `resolve_vision`, `move_task` (registered; the window no longer calls it) |
+| Changing a task | `create_task`, `pass_task`, `accept_all`, `return_task`, `block_task`, `unblock_task`, `reclaim_task`, `release_unreached`, `set_stage`, `set_field`, `add_note`, `tick_criterion`, `edit_body`, `add_comment`, `attach_data`, `attach_pick`, `answer`, `answer_pick`, `resolve_vision`, `move_task` (registered; the window no longer calls it) |
 | Backlog | `add_backlog_note`, `file_note`, `drop_note` |
 | Projects and settings | `add_project`, `create_project`, `set_project_label`, `set_project_category`, `set_project_colour`, `arrange_projects`, `rename_category`, `fold_category`, `show_project_title`, `set_project_prefix`, `hide_project`, `remove_project`, `set_setting`, `set_your_check_limit` |
 | Sessions | `ask_checkin`, `message_session`, `pause_task`, `resume_task`, `old_pauses`, `fix_old_pauses`, `set_old_pauses_offered` |
@@ -359,6 +359,7 @@ is in section 6.
 | Work log merge driver | Built, tested | mu-67, mu-71 |
 | Pick-one questions | Built, tested | mu-49 |
 | Ping a session (check-in, message) | Built, tested; the auto-nudge isn't built | mu-39 |
+| Release a claim no session can be reached on; a holder's act stamps it; send-backs keep the session | Built, tested | mu-184 |
 | Claim takeover after a handoff or 30 quiet minutes, mail following the claim; a teammate is its own holder (agent id) with its own mailbox | Built, tested; on its branch, not on main. No hook passes the agent id: `--agent` or `MUSTER_AGENT` | mu-90 |
 | Claude Code's session states | Built, tested (a research-preview format) | mu-48 |
 | Who worked on a task and what it cost | Built, tested; a session counts in full on every task it names | mu-25 |
@@ -1905,6 +1906,38 @@ it, names it as the one who took over: `ops::taken_over_from`) gets the rest mov
 holder that line names, never one given as an argument, and the heartbeat renewed, with no log
 line: `mu-42: you hold it already; moved 2 messages from mail/1c6af0d9`, or `nothing left to
 move`. Any other holder running it gets "you already hold".
+**A claim with no session to reach** (task 0184): `session::restamped` gives a bare-label claim
+(or the acting session's own stamp under another account) the acting holder's stamp, and
+`ops::restamp` writes it with the takeover line `<who>: took over the claim from <old> (stamped)`
+(`queue::STAMPED`, a known reason of `takeover_line`, so `free_text_line` refuses it as free
+text). It runs under the lock in the holder's own writes: `heartbeat_task`, `checkin_task_with`,
+`add_note` (`restamped_text`), every `change_locked` act of the holder that keeps the claim or
+passes it to Testing (pass, block), and
+`takeover_task`, which re-stamps instead of refusing "you already hold it" and moves no mail;
+run again after that, it is mu-156's rerun, which finds no other mailbox to move from.
+The owner's and an unstamped holder's acts never re-stamp, and in `change_locked` only a change
+that keeps the claim or passes it to Testing does (not a reclaim or a freed task's release).
+`return_change` gives Building back to the builder's exact stamp (`unless_taken`), no longer its
+bare label; while that session holds no other unblocked Building task (`holding`) and hasn't
+acted on it (`untouched_send_back`: not paused, heartbeat still the stage's own minute, and
+`acted_since_send_back` finds no takeover and no line of the holder's after the send-back's stage
+line) `next_task` points a session under the same label at it and `takeover_task` allows the
+takeover at once, `(sent back, not picked up)` (`queue::SENT_BACK`). The owner's **Release**
+(`ops::release_unreached`, Tauri `release_unreached`, `api.releaseUnreached`, the pane's
+`ReleaseUnreached` in `Sidebar.tsx`, words in `paneData.ts` `unreachedWords`): owner only, re-read
+under the lock; Building → Ready with the claim cleared, worktree and branch kept, logged
+`(released: no session to reach)` (`ops::UNREACHED`); Testing keeps its stage with `held-by:`
+cleared and the same words in a line that isn't a stage line. Refused for a holder with a
+session, the owner's own hold, a paused or unheld task, another stage, or one that moved on from
+the stage the window showed. `ping::NO_SESSION` is a template with `{label}` (`no_session`),
+word for word `reach.ts` `NO_SESSION` (a source check on each side); a hold in Testing, which no
+takeover reaches, gets `NO_SESSION_HELD` ("no session to reach: Release it") in both. The
+confirm's words are whole sentences with `{{who}}` (`whoIn` fills the label; the question is cut
+at `{{who}}` only to put the name in its `<bdi>`). Its Esc runs through `watchReleaseEscape` (a
+capture listener on the window while it's open); its group carries `data-own-esc` (`ownEscape.ts`
+`escOwned`), so the unsaved write-up's and comment box's window Esc listeners leave an Esc pressed
+in it alone, and holds the focus (`tabIndex -1`) while the release runs. A release that goes
+through moves the focus to the Next step group (`tabIndex -1`), since Release goes with the claim.
 **Questions:** `muster ask`, `escalate`, `inbox` and `answer` follow the file contract. `bin/task`
 is a stand-in that runs them. The answer hook still reads the mailbox itself, for speed. With mail
 waiting it takes the queue's lock shared without waiting (mu-156: `flock(LOCK_SH | LOCK_NB)` on

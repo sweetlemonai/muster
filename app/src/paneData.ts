@@ -1,7 +1,7 @@
 // The task pane's facts (0021), the parts without React: what's live, what waits on the owner,
 // time spent from the stage history, the criteria from the write-up. Tested in paneData.test.ts.
 import { BLOCK_LOOKS } from "./blockWords";
-import { boardColumn, heldByOther, isStage, nameOf, splitHolder, stageLabel, stageRank, STAGES, stampMinutes, type RoleNames } from "./lib";
+import { boardColumn, heldByOther, holderOf, isStage, nameOf, splitHolder, stageLabel, stageRank, STAGES, stampMinutes, type RoleNames } from "./lib";
 import { ownerOpen } from "./OwnerChecklist";
 import type { StageStep, Task } from "./types";
 import type { Msg, Undo } from "./useTaskActions";
@@ -93,6 +93,43 @@ export function releaseWords(stage: string): { title: string; does: string; done
   return stage === "shaping"
     ? { title: "Unheld, still in Shaping, with the claim released and logged as reclaimed", does: "Release lets go of it, still in Shaping, logged as reclaimed.", done: "Released: still in Shaping, nobody holds it." }
     : { title: "Back to Ready, with the claim released and logged as reclaimed", does: "Release puts it back in Ready, logged as reclaimed.", done: "Released: back in Ready." };
+}
+
+/** The holder a Release can let go of because no session can be reached on it (mu-184): the
+ *  claim in Building or the hold in Testing when it names no session (reach.ts says NO_SESSION),
+ *  not the owner's; "" otherwise. The core (ops::release_unreached) decides; this only shows it. */
+export function unreachedHolder(t: Pick<Task, "stage" | "claimedBy" | "heldBy">): string {
+  if (t.stage !== "building" && t.stage !== "testing") return "";
+  const who = holderOf(t);
+  if (!who) return "";
+  const { label, id } = splitHolder(who);
+  return id || label === "owner" ? "" : who;
+}
+
+type UnreachedWords = { button: string; group: string; busy: string; cancel: string; paused: string; label: string; ask: string; note: string; done: string };
+
+/** The words of Release on a claim no session can be reached on (mu-184), in one place for the
+ *  translations to come (mu-148), each a whole sentence: the button's label and the confirm's
+ *  question with the holder's name as `{{who}}` (filled in at render, the name in its own <bdi>),
+ *  the line under it and what it says once done. Building goes back to Ready with its worktree and
+ *  branch kept; Testing stays, unheld. */
+export function unreachedWords(stage: string): UnreachedWords {
+  const common = { button: "Release", group: "Confirm Release", busy: "Releasing…", cancel: "Cancel", paused: "Paused: resume it to release it." };
+  return stage === "testing"
+    ? {
+        ...common,
+        label: "Release {{who}}'s hold",
+        ask: "Release {{who}}'s hold? It stays in Testing for the next tester.",
+        note: "No session to reach on this hold: Release lets go of it, and it stays in Testing for the next tester.",
+        done: "Released: still in Testing, nobody holds it.",
+      }
+    : {
+        ...common,
+        label: "Release {{who}}'s claim",
+        ask: "Release {{who}}'s claim? It goes back to Ready; its worktree and branch stay.",
+        note: "No session to reach on this claim: Release puts it back in Ready, its worktree and branch kept.",
+        done: "Released: back in Ready, its worktree and branch kept.",
+      };
 }
 
 /** What a move on the track says once it's done, and its Undo: none when it released someone
