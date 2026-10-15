@@ -3,6 +3,27 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — Lead (QA_10): 13 merges since 09:00, and the calls behind them
+**Did:** merged mu-215, mu-216, mu-217, mu-162, mu-148, mu-220, mu-201, mu-149, mu-152, mu-204
+and mu-218, each with G1, G2 and G3 green (mu-149 under the owner's override, below). Rebuilt the
+release binary after mu-218 (12:36) so the merge driver has the guard. Filed mu-220 (speed tests
+under load) and mu-221 (terminal control sequences in CLI output, high priority, security).
+**Fixed:** mu-216 had no `branch:` (the lead's brief said `claim`, not `start`): moved through
+Ready, `start --here`, fast-forwarded to the built head. mu-149 hit one `styles.css` conflict with
+mu-201 on `.recent-kind-when`; main's line was kept (already logical), so the merged diff is the
+reviewed one less that line, noted on the task. Builder briefs now say `muster start`; reviewers
+start in the task's worktree, where `ac-verifier` is linked (the main checkout lacks the link).
+**Decided:** mu-216: the meter reserves its widest real words (572/729 px), accepted because the
+reserve is measured, not padded. mu-218: per-copy counting; seeds 3585 and 4786 stay refused on
+purpose (nothing is lost, all three inputs stay whole), AC4 reworded; R4 fixed rather than
+leaving 0009's claim false. mu-220: option A, budgets stay product budgets; tighter regression
+bounds are a backlog note. mu-115: the estimate at start is read at the build's claim, never a
+shaper's run. mu-174: the card never sits on the pointer at any zoom. mu-152: AC9 allows the
+window's balanced, self-closed isolate pair. mu-214: fa at a 220 px row box accepted as a limit.
+**Open:** mu-115 fails the gate after the rebase onto mu-152 (`help::command_text` takes a
+language, `forecast` needs Persian help); Gholi_65 is on it. The history pack test flakes
+(backlog 2026-10-15-1050). The owner's call on mu-204's two-line Day controls is in the backlog.
+
 ## 2026-10-15 — mu-218: muster merge-log refuses a result that would lose a line of an untouched entry
 **Did:** `merge_log::keeps_untouched` checks a merged result: every entry byte-identical in base,
 ours and theirs is in it whole, as often as it's untouched, and a preamble the same in all three
