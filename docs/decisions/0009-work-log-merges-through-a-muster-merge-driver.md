@@ -46,6 +46,29 @@ round, for two log entries that never really clashed.
   config at all (a hand merge in a repo muster never started in), git does its own text merge,
   markers and all, as before this change.
 
+## Amendment 2026-10-15: entries inserted at one point (task mu-190)
+
+The newest-first order above makes "on top" too narrow. When a later-dated entry lands on main (a
+coordinator's log commit) after two tasks started, each task rebases with its own entries under
+that entry, not on top. The next merge or rebase of the two then clashes below the top, and the
+driver gave up: nearly every task merge on 2026-10-14/15 stopped on `docs/WORKLOG.md` and was
+resolved by hand. The why of this decision covers that case, so the rule widens from "on top" to
+"at one point":
+
+- A side is accepted when it is the base's preamble and entries, unchanged and in order, with one
+  run of new dated whole entries inserted at a single point among them (point 0 is on top, as
+  before).
+- When both sides insert at the same point, the result is the base with both runs merged there as
+  above: newest date first, theirs above ours on the same date, each side's order kept, an entry
+  both added kept once. The base's entries never move or change.
+- Everything else keeps git's conflict markers, as before: two runs on one side, an undated new
+  entry, a changed preamble or older entry. Inserts at different points on each side are left to
+  `git merge-file`, which runs first and merges them itself when they don't touch.
+- The driver's give-up message now reads "both sides changed more than new entries at one point".
+
+The shaper made this call for mu-190 (the owner can overrule it); only the same-point case was
+added, as the backlog note asked.
+
 ## Options considered
 
 - *`merge=union`* (git's built-in "keep both sides' lines"). It corrupts entries. We checked with

@@ -1952,10 +1952,16 @@ tip, or the owner's override, said in the report) and `review::carry` after each
 conflict it splits the three versions at their `## ` lines outside fenced code blocks (``` and
 ~~~, CommonMark's opening and closing rules, an unclosed one running to the end) into the
 preamble, then whole entries (bytes as they are: CRLF, a missing last line end and non-UTF-8 text are kept). When each side is
-the base's preamble and entries with dated entries (`## YYYY-MM-DD…`) added on top, it writes the
-base with both sides' new entries merged by date, newest first, theirs (`%B`) first on a tie,
-each side's own order kept, an entry both added kept once. Anything else gets merge-file's
-conflict markers (labels `ours`, `base`, `theirs`) and exit 1. The result replaces `%A` whole or
+the base's preamble and entries with one run of dated entries (`## YYYY-MM-DD…`) inserted at one
+point, the same point on both sides (on top, or under the same base entry: task 0190,
+`inserted`, `both_inserted`), it writes the base with both sides' new entries merged there by
+date, newest first, theirs (`%B`) first on a tie, each side's own order kept, an entry both added
+kept once. `inserted` finds the points a run can be at from how many entries match from the top
+and from the bottom (one pass each; a run that repeats its neighbours fits several points, all
+giving the side's file), and the sides must share one. Anything else (two runs on one side,
+runs at different points, which merge-file already merged when they don't touch) gets
+merge-file's conflict markers (labels `ours`, `base`, `theirs`) and exit 1, with "both sides
+changed more than new entries at one point" on stderr. The result replaces `%A` whole or
 not at all (`replace`, task 0071): written to a new `.<name>.muster-merge-<pid>` beside it with
 `%A`'s mode, then renamed over it, with no fsync (git reads it straight back, and a full sync
 can fail on network and external volumes). On a failure the new file is removed and `%A` is
@@ -1975,7 +1981,7 @@ repo's `.muster/`) sets `merge.muster-log.name` and `merge.muster-log.driver`
 find, and prints a line when it wrote one. A failure is a warning on stderr and stops nothing.
 `parallel::merge` puts `merge_log::config_args(this_muster())` before its `rebase` (`-c` for both
 keys, the same command with the binary's path, `%` doubled and shell-quoted), so the merge's rebase uses this binary whatever the config
-says. A clash of only new entries on top no longer sends a task back to Building. Its unit tests
+says. A clash of only new entries at one point no longer sends a task back to Building. Its unit tests
 build the muster binary they run as the driver once per test run (`cargo build --bin muster`
 into the harness's own target and profile), so `cargo test --lib` works in a fresh target too.
 **Lessons** (`lessons.rs`): `reviews/lessons.json` (truth) and `lessons.md` (rendered) in the

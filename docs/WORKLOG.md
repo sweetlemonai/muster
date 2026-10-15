@@ -4,6 +4,24 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — merge-log keeps both sides' entries inserted at one point, not only on top (mu-190)
+**Fixed:** a merge or rebase stopped on `docs/WORKLOG.md` whenever both branches put entries under
+main's newest (later-dated) entry → `added_on_top` accepted only entries before all of the base's →
+`inserted` finds the one point a side's run of dated entries sits at, and `both_inserted` merges both
+runs there (newest first, theirs above ours on a date). `merge_log.rs`, help text and manual 05.
+**Decided:** decision 0009 amended (dated, links mu-190): same point only; different points stay
+merge-file's, which merges them itself when they don't touch.
+**Fixed (own review):** a run that repeats its neighbour fits several points as a different turn at
+each; it was taken at the first and put at the shared one, reordering that side → sliced at the
+point chosen, with a test.
+**Verified:** `cargo test merge_log` 24 passed (hermetic HOME), incl. real repos merged and rebased in
+both orders; the real repro (f4a792a^ / 2de282d / f4a792a) exits 0 with mu-131's four entries above
+mu-146's, where the installed muster exits 1. `gate: green (pnpm check, test_task, test_commands,
+cargo test (Kiritimati))`.
+**Open:** with the shared sandbox TMPDIR (/tmp/claude-501), 17 `review::tests` fail: `now::places`
+reads repos beside the test's temp queue, i.e. other sessions' muster checkouts with `docs/now/`.
+The gate is green with a private TMPDIR; backlog note filed.
+
 ## 2026-10-15 — mu-98 review round 2: the transcript view's list check and `listed`'s allowlist filter get tests that can fail
 **Fixed:** R11 nothing failed with `transcript_for`'s list check or `Lister::listed`'s allowlist
 filter removed (the refused id had no transcript at all) → the refusal test now writes an unlisted

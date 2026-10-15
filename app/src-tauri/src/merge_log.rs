@@ -1,7 +1,8 @@
 //! The work log's merge driver (task 0067, decision 0009): `muster merge-log %O %A %B`, which git
 //! runs for `docs/WORKLOG.md` (`.gitattributes`: `docs/WORKLOG.md merge=muster-log`). Every task
-//! puts its entry at the top of the log, so two branches always clash there; this keeps both
-//! entries whole, newest on top, so a merge or a rebase doesn't stop for them. Anything else is a
+//! puts its entry at the top of the log, or under a later-dated one that landed on main meanwhile,
+//! so two branches always clash at one point; this keeps both entries whole, newest first, so a
+//! merge or a rebase doesn't stop for them (0190: at one point, not only on top). Anything else is a
 //! plain three-way merge, conflict markers and all. Git finds the driver in config: `muster start`
 //! and `muster init` write it to the repo's own config when it's missing (`configure`), and
 //! Muster's merge passes it with `git -c` (`config_args`), so it never depends on that.
@@ -103,25 +104,57 @@ fn date(entry: &[u8]) -> Option<&[u8]> {
     (dated && ends).then_some(d)
 }
 
-/// The entries a side put on top of the base's, when that's all it changed (the same preamble,
-/// the base's entries untouched below them), each with a date.
-fn added_on_top<'a>(base: &Log, side: &Log<'a>) -> Option<Vec<&'a [u8]>> {
-    if side.preamble != base.preamble || !side.entries.ends_with(&base.entries) {
+/// One run of new entries a side put in among the base's, when that's all it changed (the same
+/// preamble, the base's entries untouched and in order around them), each with a date (0190):
+/// the points in the base's entries it can be at (0 is on top; more than one when the run
+/// repeats the entries beside it) and how many entries it has. At each point k the run is the
+/// side's entries k..k + len: a different turn of the same entries, so it's sliced at the point
+/// chosen, never moved there from another.
+fn inserted(base: &Log, side: &Log) -> Option<(std::ops::RangeInclusive<usize>, usize)> {
+    let (b, s) = (&base.entries, &side.entries);
+    if side.preamble != base.preamble || s.len() < b.len() {
         return None;
     }
-    let new = &side.entries[..side.entries.len() - base.entries.len()];
-    new.iter().all(|e| date(e).is_some()).then(|| new.to_vec())
+    let same_above = b.iter().zip(s.iter()).take_while(|(x, y)| x == y).count();
+    let same_below = b
+        .iter()
+        .rev()
+        .zip(s.iter().rev())
+        .take_while(|(x, y)| x == y)
+        .count();
+    // At point k the side is b[..k], the run, b[k..]: k no further down than the entries the
+    // same from the top, and no higher than the entries the same from the bottom allow.
+    let (from, to) = (b.len() - same_below, same_above);
+    if from > to {
+        return None;
+    }
+    // Every point's run has the same entries, so one point's dates stand for all.
+    let len = s.len() - b.len();
+    s[from..from + len]
+        .iter()
+        .all(|e| date(e).is_some())
+        .then_some((from..=to, len))
 }
 
-/// Both sides only added whole entries on top of the base: the base with all of them on top,
+/// Both sides only added one run of whole entries, at the same point among the base's (on top,
+/// or under a later-dated entry that landed on both): the base with both runs at that point,
 /// newest date first and, on the same date, theirs (the incoming side: the commit a rebase
 /// replays, the branch a merge brings in) above ours. Each side's entries keep their own order;
-/// one both sides added is kept once. None when the sides changed anything else.
-fn both_on_top(base: &[u8], ours: &[u8], theirs: &[u8]) -> Option<Vec<u8>> {
+/// one both sides added is kept once. None when the sides changed anything else, or put their
+/// runs at different points (git's merge-file's case).
+fn both_inserted(base: &[u8], ours: &[u8], theirs: &[u8]) -> Option<Vec<u8>> {
     let b = split(base);
-    let o = added_on_top(&b, &split(ours))?;
-    let t: Vec<&[u8]> = added_on_top(&b, &split(theirs))?
-        .into_iter()
+    let (o_log, t_log) = (split(ours), split(theirs));
+    let (o_at, o_len) = inserted(&b, &o_log)?;
+    let (t_at, t_len) = inserted(&b, &t_log)?;
+    let at = *o_at.start().max(t_at.start());
+    if at > *o_at.end().min(t_at.end()) {
+        return None;
+    }
+    let o = &o_log.entries[at..at + o_len];
+    let t: Vec<&[u8]> = t_log.entries[at..at + t_len]
+        .iter()
+        .copied()
         .filter(|e| !o.contains(e))
         .collect();
     let eol: &[u8] = if ours.windows(2).any(|w| w == b"\r\n") {
@@ -137,6 +170,9 @@ fn both_on_top(base: &[u8], ours: &[u8], theirs: &[u8]) -> Option<Vec<u8>> {
         }
         out.extend_from_slice(part);
     };
+    for e in &b.entries[..at] {
+        push(e);
+    }
     let (mut i, mut j) = (0, 0);
     while i < o.len() || j < t.len() {
         let theirs_next = match (o.get(i), t.get(j)) {
@@ -152,7 +188,7 @@ fn both_on_top(base: &[u8], ours: &[u8], theirs: &[u8]) -> Option<Vec<u8>> {
             i += 1;
         }
     }
-    for e in &b.entries {
+    for e in &b.entries[at..] {
         push(e);
     }
     Some(out)
@@ -179,8 +215,8 @@ fn read(path: &Path, max: u64) -> Result<Vec<u8>, String> {
 }
 
 /// Merge the three versions of the log at `base`, `ours` and `theirs`: a plain three-way merge
-/// (`git merge-file`) when it's clean, else both sides' new top entries (`both_on_top`) when
-/// that's all they added, else the three-way merge's conflict markers.
+/// (`git merge-file`) when it's clean, else both sides' new entries (`both_inserted`) when that's
+/// all they added, at one point, else the three-way merge's conflict markers.
 pub fn merge(base: &Path, ours: &Path, theirs: &Path) -> Result<Merged, String> {
     merge_capped(base, ours, theirs, MAX_BYTES)
 }
@@ -206,7 +242,7 @@ fn merge_capped(base: &Path, ours: &Path, theirs: &Path, max: u64) -> Result<Mer
     match out.status.code() {
         Some(0) => Ok(Merged::Clean(out.stdout)),
         // The number of conflicts; a negative one (an error) comes out as 128 and up.
-        Some(1..=127) => Ok(match both_on_top(&b, &o, &t) {
+        Some(1..=127) => Ok(match both_inserted(&b, &o, &t) {
             Some(text) => Merged::Clean(text),
             None => Merged::Conflict(out.stdout),
         }),
@@ -295,7 +331,7 @@ fn run_capped(args: &[String], max: u64) -> Result<i32, String> {
     let e = match merged {
         Ok(0) => return Ok(0),
         Ok(code) => {
-            eprintln!("muster merge-log: both sides changed more than new entries on top; left the conflict markers");
+            eprintln!("muster merge-log: both sides changed more than new entries at one point; left the conflict markers");
             return Ok(code);
         }
         Err(e) => e,
@@ -596,6 +632,168 @@ mod tests {
     }
 
     #[test]
+    fn merge_log_both_insert_at_the_same_point() {
+        // The repro's shape (0190): a later-dated entry on top of both, ours one entry under it,
+        // theirs four, all on one date. Theirs above ours, each side's order kept.
+        let top = entry("2026-10-15", "Coordinator's log");
+        let base = format!("{PRE}{top}{OLD}{OLDER}");
+        let o = entry("2026-10-14", "Ours");
+        let t: String = (1..=4)
+            .map(|n| entry("2026-10-14", &format!("Theirs {n}")))
+            .collect();
+        let got = clean(merged(
+            &base,
+            &format!("{PRE}{top}{o}{OLD}{OLDER}"),
+            &format!("{PRE}{top}{t}{OLD}{OLDER}"),
+        ));
+        assert_eq!(got, format!("{PRE}{top}{t}{o}{OLD}{OLDER}"));
+        // The other way round: the incoming side's run still goes first on the same date.
+        let got = clean(merged(
+            &base,
+            &format!("{PRE}{top}{t}{OLD}{OLDER}"),
+            &format!("{PRE}{top}{o}{OLD}{OLDER}"),
+        ));
+        assert_eq!(got, format!("{PRE}{top}{o}{t}{OLD}{OLDER}"));
+    }
+
+    #[test]
+    fn merge_log_inserts_at_a_deeper_point_interleave_newest_first() {
+        let (top, mid) = (entry("2026-10-16", "Top"), entry("2026-10-15", "Middle"));
+        let base = format!("{PRE}{top}{mid}{OLD}{OLDER}");
+        let (o1, o2) = (
+            entry("2026-10-14", "Ours late"),
+            entry("2026-10-12", "Ours early"),
+        );
+        let (t1, t2) = (
+            entry("2026-10-13", "Theirs"),
+            entry("2026-10-12", "Theirs early"),
+        );
+        let got = clean(merged(
+            &base,
+            &format!("{PRE}{top}{mid}{o1}{o2}{OLD}{OLDER}"),
+            &format!("{PRE}{top}{mid}{t1}{t2}{OLD}{OLDER}"),
+        ));
+        assert_eq!(got, format!("{PRE}{top}{mid}{o1}{t1}{t2}{o2}{OLD}{OLDER}"));
+        // At the very bottom, after the last entry, and an entry both added kept once.
+        let both = entry("2026-10-10", "On both");
+        let (o, t) = (entry("2026-10-10", "Ours"), entry("2026-10-10", "Theirs"));
+        let got = clean(merged(
+            &base,
+            &format!("{base}{o}{both}"),
+            &format!("{base}{t}{both}"),
+        ));
+        assert_eq!(got, format!("{base}{t}{o}{both}"));
+        // A run that repeats the entry above it fits two points, as a different turn at each:
+        // ours [S, N, S, Old] is [N, S] under S, or [S, N] on top. Theirs is under S, so ours is
+        // taken there too, and the result is still ours with theirs' entry added.
+        let (s, n, t) = (
+            entry("2026-10-15", "Sync"),
+            entry("2026-10-15", "N"),
+            entry("2026-10-15", "T"),
+        );
+        let got = both_inserted(
+            format!("{PRE}{s}{OLD}").as_bytes(),
+            format!("{PRE}{s}{n}{s}{OLD}").as_bytes(),
+            format!("{PRE}{s}{t}{OLD}").as_bytes(),
+        )
+        .unwrap();
+        assert_eq!(
+            String::from_utf8(got).unwrap(),
+            format!("{PRE}{s}{t}{n}{s}{OLD}")
+        );
+    }
+
+    #[test]
+    fn merge_log_inserts_still_give_markers_for_anything_else() {
+        let top = entry("2026-10-15", "Top");
+        let base = format!("{PRE}{top}{OLD}{OLDER}");
+        let (a, b) = (entry("2026-10-14", "A"), entry("2026-10-14", "B"));
+        let (c, d) = (entry("2026-10-12", "C"), entry("2026-10-12", "D"));
+        // Two runs on one side, the other inserting at one of them.
+        conflict(merged(
+            &base,
+            &format!("{PRE}{top}{a}{OLD}{c}{OLDER}"),
+            &format!("{PRE}{top}{b}{OLD}{OLDER}"),
+        ));
+        // An undated inserted entry.
+        conflict(merged(
+            &base,
+            &format!("{PRE}{top}{a}{OLD}{OLDER}"),
+            &format!("{PRE}{top}## Unreleased\n- b\n\n{OLD}{OLDER}"),
+        ));
+        // A changed older entry beside the insert.
+        conflict(merged(
+            &base,
+            &format!("{PRE}{top}{a}{OLD}{}", OLDER.replace("first", "changed")),
+            &format!("{PRE}{top}{b}{OLD}{OLDER}"),
+        ));
+        // A changed entry above the insert point isn't an insert (merge-file, which runs first,
+        // merges these itself when the lines it matches let it).
+        for changed in [
+            top.replace("Top,", "Top, changed,"),
+            top.replace("(pnpm check)", "(changed)"),
+        ] {
+            let o = format!("{PRE}{changed}{a}{OLD}{OLDER}");
+            let t = format!("{PRE}{top}{b}{OLD}{OLDER}");
+            assert!(both_inserted(base.as_bytes(), o.as_bytes(), t.as_bytes()).is_none());
+        }
+        // A changed preamble.
+        conflict(merged(
+            &base,
+            &format!("# Renamed\n\n{top}{a}{OLD}{OLDER}"),
+            &format!("{PRE}{top}{b}{OLD}{OLDER}"),
+        ));
+        // Inserts at two different points are no case of ours: whatever merge-file makes of
+        // them. It merges them itself, even with only a one-line entry between them.
+        let o = format!("{PRE}{a}{top}{OLD}{OLDER}");
+        let t = format!("{PRE}{top}{OLD}{c}{OLDER}");
+        assert!(both_inserted(base.as_bytes(), o.as_bytes(), t.as_bytes()).is_none());
+        assert_eq!(
+            clean(merged(&base, &o, &t)),
+            format!("{PRE}{a}{top}{OLD}{c}{OLDER}")
+        );
+        let o = format!("{PRE}{top}{a}{OLD}{OLDER}");
+        let t = format!("{PRE}{top}{OLD}{d}{OLDER}");
+        let one_line = "## 2026-10-12 — One line\n";
+        let base1 = format!("{PRE}{top}{one_line}{OLDER}");
+        let o1 = format!("{PRE}{top}{a}{one_line}{OLDER}");
+        let t1 = format!("{PRE}{top}{one_line}{d}{OLDER}");
+        assert!(both_inserted(base.as_bytes(), o.as_bytes(), t.as_bytes()).is_none());
+        assert!(both_inserted(base1.as_bytes(), o1.as_bytes(), t1.as_bytes()).is_none());
+        assert_eq!(
+            clean(merged(&base1, &o1, &t1)),
+            format!("{PRE}{top}{a}{one_line}{d}{OLDER}")
+        );
+    }
+
+    #[test]
+    fn merge_log_inserts_keep_crlf_and_fenced_headings() {
+        let crlf = |s: &str| s.replace('\n', "\r\n");
+        let top = crlf(&entry("2026-10-15", "Top"));
+        let (pre, old) = (crlf(PRE), crlf(OLD));
+        let (a, b) = (
+            crlf(&entry("2026-10-14", "A")),
+            crlf(&entry("2026-10-13", "B")),
+        );
+        let got = clean(merged(
+            &format!("{pre}{top}{old}"),
+            &format!("{pre}{top}{b}{old}"),
+            &format!("{pre}{top}{a}{old}"),
+        ));
+        assert_eq!(got, format!("{pre}{top}{a}{b}{old}"));
+        // A dated heading quoted in a fence stays inside its entry under the top one.
+        let top = entry("2026-10-15", "Top");
+        let x = "## 2026-10-14 — X\n```md\n## 2026-10-12 — example\n```\n\n";
+        let y = entry("2026-10-14", "Y");
+        let got = clean(merged(
+            &format!("{PRE}{top}{OLD}"),
+            &format!("{PRE}{top}{x}{OLD}"),
+            &format!("{PRE}{top}{y}{OLD}"),
+        ));
+        assert_eq!(got, format!("{PRE}{top}{y}{x}{OLD}"));
+    }
+
+    #[test]
     fn merge_log_merges_edits_to_older_entries_three_way() {
         let base = format!("{PRE}{OLD}{OLDER}");
         let fixed = OLDER.replace("first", "first, fixed");
@@ -857,6 +1055,59 @@ mod tests {
             "the replayed commit's entry on top"
         );
         assert_eq!(g(&wt, &["status", "--porcelain"]), "");
+    }
+
+    #[test]
+    fn merge_log_merges_and_rebases_branches_that_insert_under_the_same_entry() {
+        // Main's log got a later-dated entry after both tasks started from it (0190's repro): each
+        // task puts its entries under it. Merge and rebase, each in both orders, with the driver
+        // in the repo's config.
+        let top = entry("2026-10-15", "Coordinator's log");
+        let one = entry("2026-10-14", "Task one");
+        let four: String = (1..=4)
+            .map(|n| entry("2026-10-14", &format!("Task four, part {n}")))
+            .collect();
+        for (how, first, second) in [
+            ("merge", "one", "four"),
+            ("merge", "four", "one"),
+            ("rebase", "one", "four"),
+            ("rebase", "four", "one"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let repo = log_repo(dir.path());
+            let bin = this_muster().unwrap();
+            g(&repo, &["config", &format!("merge.{DRIVER}.name"), NAME]);
+            let driver = driver_command(&sh_quote(&bin.to_str().unwrap().replace('%', "%%")));
+            g(
+                &repo,
+                &["config", &format!("merge.{DRIVER}.driver"), &driver],
+            );
+            fs::write(repo.join("docs/WORKLOG.md"), format!("{PRE}{top}{OLD}")).unwrap();
+            g(&repo, &["commit", "-qam", "main's later entry"]);
+            for (branch, run) in [("one", &one), ("four", &four)] {
+                g(&repo, &["checkout", "-q", "-b", branch, "main"]);
+                fs::write(
+                    repo.join("docs/WORKLOG.md"),
+                    format!("{PRE}{top}{run}{OLD}"),
+                )
+                .unwrap();
+                g(&repo, &["commit", "-qam", branch]);
+            }
+            let run = |b: &str| if b == "one" { &one } else { &four };
+            // The incoming side (the branch merged in, the commit replayed) goes above.
+            let want = format!("{PRE}{top}{}{}{OLD}", run(second), run(first));
+            g(&repo, &["checkout", "-q", "main"]);
+            g(&repo, &["merge", "-q", "--ff-only", first]);
+            if how == "merge" {
+                g(&repo, &["merge", "-q", "--no-edit", second]);
+            } else {
+                g(&repo, &["checkout", "-q", second]);
+                g(&repo, &["rebase", "-q", "main"]);
+            }
+            let got = fs::read_to_string(repo.join("docs/WORKLOG.md")).unwrap();
+            assert_eq!(got, want, "{how} {second} onto {first}");
+            assert_eq!(g(&repo, &["status", "--porcelain"]), "", "{how}");
+        }
     }
 
     #[test]
