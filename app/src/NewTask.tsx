@@ -6,7 +6,7 @@ import { readFiles, stamp } from "./lib";
 import TagEditor from "./Tags";
 import { LEVELS } from "./levels";
 import { HelpButton } from "./HelpButton";
-import { tn, useT } from "./i18n";
+import { latinDigits, tn, useT } from "./i18n";
 import { pressed } from "./shortcuts";
 import { parseKey } from "./taskKey";
 import { labelOf, Labels } from "./labels";
@@ -29,7 +29,8 @@ export function parentRequest(typed: string, prefix: string | undefined): { ok: 
   if (!t) return { ok: true, id: "" };
   // The key and the number as they're typed: Latin, whatever the language.
   const example = prefix ? tn("board", "newTask.example", { key: `${prefix}-30`, number: "30" }) : "30";
-  const k = parseKey(t);
+  // Typed in Persian or Arabic-Indic digits (the fa keyboard's), it's the same key (mu-217).
+  const k = parseKey(latinDigits(t));
   if (!k) return { ok: false, why: tn("board", "newTask.parentNotTask", { example }) };
   if (k.prefix !== null && prefix && k.prefix !== prefix) {
     return { ok: false, why: tn("board", "newTask.parentElsewhere", { typed: t, example }) };

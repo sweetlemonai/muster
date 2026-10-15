@@ -1,3 +1,4 @@
+import { latinDigits } from "./i18n/numbering";
 import { holder, key, type RoleNames } from "./lib";
 import { parseKey } from "./taskKey";
 import type { Task } from "./types";
@@ -20,7 +21,7 @@ import type { Task } from "./types";
 //   number (19, 0019 and 00019 all find 0019). It never matches text, so dates don't swamp ids.
 // - A key (0033: a word between spaces that taskKey.ts `parseKey` reads with a prefix, mu-12,
 //   MU-0012) is kept whole, as `mu-0012`: it matches the task with that prefix and number, and
-//   never text. Only spaces, tabs and line breaks separate a key from the words beside it.
+//   never text. Its digits may be typed Persian or Arabic-Indic (`sq-۱۹`, mu-217). Only spaces, tabs and line breaks separate a key from the words beside it.
 // - Any other word matches when it's part of the folded holder (lib.ts `holder`) or of the task's
 //   `search` text (the core's: title, tags and body, each folded word once, digit-only words left
 //   out), so "flick" finds "flickers".
@@ -82,10 +83,11 @@ export function fold(s: string): string {
 const split = (folded: string) => folded.split(" ").filter(Boolean);
 
 /** The words of a query, folded, a key kept whole (`mu-0012`). None for an empty query: it finds
- *  everything. */
+ *  everything. A key typed in Persian or Arabic-Indic digits (`sq-۱۹`) is read as its Latin form
+ *  (mu-217); `parseKey` itself stays ASCII, for commands. */
 export function queryWords(q: string): string[] {
   return q.split(/[ \t\n\r\f]/).flatMap((raw) => {
-    const k = parseKey(raw);
+    const k = parseKey(latinDigits(raw));
     return k?.prefix ? [`${k.prefix}-${k.id}`] : split(fold(raw));
   });
 }

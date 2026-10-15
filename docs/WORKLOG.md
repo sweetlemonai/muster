@@ -3,6 +3,13 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-217: a key typed in Persian digits finds its task in search and names New task's Parent
+**Did (Gholi_58, builder):** search's `queryWords` (`search.ts`) and `query_words` (`search.rs`,
+new `latin_digit`) read Persian and Arabic-Indic digits as Latin before the key check, so `sq-۱۹`,
+`SQ-۰۰۱۹` and `sq-١٩` find sq-19; `parentRequest` (`NewTask.tsx`) does the same, so `۳۰` saves
+`parent: 0030`. `parseKey`, `key::parse` and `key-cases.json` are unchanged: commands take Latin keys only.
+**Verified:** 8 new shared cases in `search-cases.json` and a `parentRequest` test, red before and
+green after on both sides; `cargo test --test search_cases --test keys` hermetic.
 ## 2026-10-15 — mu-216: the account meter keeps its width as readings change
 **Did (Akbar_54, builder):** each meter row's status (`.meter-when`) is a one-cell grid with the
 shown words and, stacked hidden and `aria-hidden`, `rowStatusWidest`'s forms (`accountsData.ts`):

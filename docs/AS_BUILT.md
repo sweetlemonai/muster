@@ -1268,7 +1268,10 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   - **Search** (always there, ⌘F, Esc clears): words in any order, case and accents aside, in the
     id, title, tags, text and holder; the matches are marked on cards, backlog notes and rows. A
     word of digits only (0–9) is an id (19 finds 0019) and never matches text, so dates in logs
-    don't swamp it; a key (mu-19, MU-19) finds that project's task (0033). The core builds each task's search text when it reads the file (title, tags,
+    don't swamp it; a key (mu-19, MU-19) finds that project's task (0033), and so does one
+    typed in Persian digits or Arabic-Indic ones (mu-۱۹, mu-١٩: read as Latin before the key check,
+    in search on both sides and in New task's Parent field; commands still take Latin keys only,
+    mu-217). The core builds each task's search text when it reads the file (title, tags,
     body without front matter, folded, each word once, digit-only words out, 4 KB at most),
     cached with the task, so the window filters in memory (1,000 tasks well under a frame,
     measured in a test). The text isn't in the 2 s `state` poll or `--json`: the window asks for

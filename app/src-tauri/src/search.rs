@@ -158,12 +158,25 @@ pub fn search_text(title: &str, tags: &[String], body: &str) -> String {
     words_of(&[title, &tags, body], MAX_SEARCH_BYTES)
 }
 
+/// A Persian (۰–۹) or Arabic-Indic (٠–٩) digit as 0–9, any other character as it is: the digits
+/// `persian` folds, as the app's `latinDigits` reads them (mu-217).
+fn latin_digit(c: char) -> char {
+    let zero = match c {
+        '\u{6f0}'..='\u{6f9}' => 0x6f0,
+        '\u{660}'..='\u{669}' => 0x660,
+        _ => return c,
+    };
+    char::from_digit(u32::from(c) - zero, 10).unwrap_or(c)
+}
+
 /// A query's folded words, a key kept whole (`mu-0012`); none for an empty query, which finds
-/// everything.
+/// everything. A key typed in Persian or Arabic-Indic digits (`sq-۱۹`) is read as its Latin form
+/// (mu-217); `key::parse` itself stays ASCII, for commands.
 pub fn query_words(q: &str) -> Vec<String> {
     let mut out = Vec::new();
     for raw in q.split(|c: char| c.is_ascii_whitespace()) {
-        match crate::key::parse(raw) {
+        let latin: String = raw.chars().map(latin_digit).collect();
+        match crate::key::parse(&latin) {
             Some(crate::key::Typed {
                 prefix: Some(p),
                 id,

@@ -14,4 +14,5 @@ covers: app/src/i18n/format*, app/src/i18n/numbering*, app/src/jalali*, app/src/
 - Jalali ↔ Gregorian is a port of `@dastafzar/calendar` (MIT), checked against Intl for every day 1990–2040. (mu-151)
 - Search folds Persian on both sides alike: ي ى ئ → ی, ك → ک, ۀ ة → ه, آ أ إ ٱ → ا, ؤ → و; ZWNJ, tatweel, harakat and ء dropped; Persian and Arabic-Indic digits are 0–9. (mu-151)
 - So «میشود» finds «می‌شود», «کتاب» finds «كتاب», and ۱۲ finds mu-12. (mu-151)
+- A key typed in Persian digits (sq-۱۹, ۳۰) reads as its Latin form in search and New task's Parent; commands keep Latin keys. (mu-217)
 - The menu bar's counts follow the Digits setting too. (mu-151)

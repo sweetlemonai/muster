@@ -22,6 +22,12 @@ describe("New task's Parent (0033)", () => {
     expect(parentRequest("", "mu")).toEqual({ ok: true, id: "" });
     expect(parentRequest("  ", "mu")).toEqual({ ok: true, id: "" });
   });
+  it("reads a key or number typed in Persian or Arabic-Indic digits as its Latin form (mu-217)", () => {
+    for (const typed of ["mu-۳۰", "MU-۰۰۳۰", "۳۰", "٣٠", "mu-3۰", " ۰۰۳۰ "]) expect(parentRequest(typed, "mu"), typed).toEqual({ ok: true, id: "0030" });
+    expect(parentRequest("br-۳۰", "mu")).toEqual({ ok: false, why: "br-۳۰ is another project's task: a parent is in this one (mu-30 or 30)" });
+    expect(parentRequest("br-٣٠", "mu")).toEqual({ ok: false, why: "br-٣٠ is another project's task: a parent is in this one (mu-30 or 30)" });
+    for (const typed of ["mu-۳۰۰۰۰", "mu-۳٫۰", "مو-۳۰"]) expect(parentRequest(typed, "mu"), typed).toEqual({ ok: false, why: "A parent is a feature or goal of this project: mu-30 or 30" });
+  });
   it("says why when it's another project's task or not a task at all", () => {
     expect(parentRequest("br-30", "mu")).toEqual({ ok: false, why: "br-30 is another project's task: a parent is in this one (mu-30 or 30)" });
     expect(parentRequest("soon", "mu")).toEqual({ ok: false, why: "A parent is a feature or goal of this project: mu-30 or 30" });
