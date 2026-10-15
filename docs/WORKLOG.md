@@ -4,6 +4,23 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — Work-log merges: two more shapes the driver refused (mu-196, mu-209); mu-197 to mu-208 shaped
+**Fixed:** mu-173's rebase stopped on docs/WORKLOG.md with mu-190 in the binary → its branch inserted
+entries at two points (round entries on top, its first entry under main's newer ones), and mu-190 took one
+point only → filed as mu-196 (merged, 8fb3380). mu-131's merge rebase still stopped after that → main's side
+had also deleted two stray `||||||| base` lines inside old entries (ad8dacb), and mu-196 sent any edit of an
+existing entry to merge-file → filed as mu-209 (entry-wise three-way merge, plus a gate test for conflict
+markers in docs). The stray lines first appear in 8c8537f, mu-106's squashed commit.
+**Did (shapour):** mu-106's 11 UX notes → mu-197 to mu-207 (R3, R4, R5, R2 high). mu-208 splits
+docs/now/claims.md into claims.md and handoffs.md, each under 3 KB.
+**Decided:** mu-208 adds no new cap test: tests/now_pages.rs already enforces 4 KB in bin/gate (the lead's
+correction; shaping had searched src/ only, so shaping briefs now name tests/ too). It only pins "handoffs"
+there. Shaper's calls, open to the owner's overrule: mu-203 drops "Recently finished stacks under the
+board" when the pane is open; mu-200 uses a key line where a row's words don't fit.
+**Verified:** each refusal reproduced with `bin/muster merge-log` on the real O/A/B (mu-173: d8ac722 /
+ed2474c / cf5f59e, exit 1; mu-131: e530e74 / fa2ed9d / 8fb0ffe, exit 1, and exit 0 with ad8dacb as ours).
+The mu-190 repro exits 0. `muster check` says nothing about mu-196 to mu-209.
+
 ## 2026-10-15 — mu-131 rebased on main (mu-191 testkit, mu-208)
 **Did:** conflicts in `lib.rs` (kept both the `testing` and `testkit` modules) and `migrate.rs` (kept the
 renamed gate-records test, now on `crate::testkit::tempdir()`). Nothing else changed.
