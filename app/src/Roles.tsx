@@ -1,10 +1,11 @@
 // Settings › Agents › Roles (0112): each role's profile from roles.toml, a row per role with its
-// name and slot count; the open one's fields inline below it (no overlay). Saved to roles.toml by
+// name, title (in the language shown, mu-195) and slot count; the open one's fields inline below
+// it (no overlay), with the `--role <id>` it's claimed with. Saved to roles.toml by
 // the core, which refuses a bad value with why.
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { Trans, useT } from "./i18n";
-import { ROLE_FIELDS, roleLine, slotWords } from "./rolesData";
+import { ROLE_FIELDS, roleLine, roleTitle, slotWords } from "./rolesData";
 import type { Role, RoleField } from "./types";
 import { Button } from "./ui";
 
@@ -68,11 +69,14 @@ export function RolesView({ roles, error = "", open, onOpen, onSave }: {
           {roles.map((r) => (
             <li key={r.id}>
               <button type="button" className="role-row" aria-expanded={open === r.id} aria-controls={open === r.id ? `role-${r.id}` : undefined} onClick={() => onOpen(r.id)}>
-                <b dir="auto">{r.name}</b> <span className="meta">{r.id} · {slotWords(r.slots)}</span>
+                <b dir="auto">{r.name}</b> <span className="meta"><bdi>{roleTitle(r)}</bdi> · {slotWords(r.slots)}</span>
               </button>
               {open === r.id && (
                 <div className="role-fields" id={`role-${r.id}`} role="group" aria-label={t("roles.profile", { name: r.name })}>
                   <p className="meta" dir="auto">{roleLine(r)}</p>
+                  <p className="meta">
+                    <Trans ns="shell" k="roles.claimWith" params={{ id: r.id }} components={{ code: <code dir="ltr" /> }} />
+                  </p>
                   {ROLE_FIELDS.map((f) => (
                     <RoleFieldEdit key={`${f.field}-${f.value(r)}`} label={f.label} what={f.what} value={f.value(r)} size={f.size} rtl={f.field === "name"} onSave={(v) => onSave(r.id, f.field, v)} />
                   ))}

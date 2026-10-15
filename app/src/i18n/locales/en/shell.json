@@ -373,6 +373,29 @@
     "slots_other": "{{count}} slots",
     "anyStage": "any stage",
     "noMoves": "no stage moves",
+    "move": "{{from}} → {{to}}",
+    "claimWith": "Claim with <code>--role {{id}}</code>",
+    "permission": {
+      "read-only": "read-only",
+      "shaping": "shaping",
+      "research": "research",
+      "worktree": "worktree",
+      "release": "release",
+      "lead": "lead"
+    },
+    "title": {
+      "shaper": "Shaper",
+      "architect": "Architect",
+      "designer": "Designer",
+      "coder": "Coder",
+      "tester": "QA tester",
+      "security": "Security reviewer",
+      "performance": "Performance reviewer",
+      "accessibility": "Accessibility reviewer",
+      "release": "Release and merge",
+      "lead": "Lead",
+      "researcher": "Researcher"
+    },
     "field": {
       "name": {
         "label": "Name",

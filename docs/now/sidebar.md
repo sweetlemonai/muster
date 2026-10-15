@@ -39,3 +39,4 @@ covers: app/src/Sidebar.tsx, app/src/SidebarProjects.tsx, app/src/ProjectList, a
 - Display modes: ADHD (the default), Standard, Focus; ⌘. toggles Focus. (mu-38)
 - 7 themes and 6 accents, no blue or orange, contrast tested. (AS_BUILT "Themes and accents")
 - Settings › Agents › Roles edits `roles.toml` beside projects.json; a refused file says its line and key. (mu-112)
+- A Roles row shows the role's title in the language shown, not its id; the open profile shows `--role <id>`. (mu-195)

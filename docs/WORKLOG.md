@@ -4,6 +4,28 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — mu-195 Settings › Agents › Roles shows each role's title in the language shown, not its id
+**Did (Akbar_37, builder):** a Roles row reads "Kaveh  برنامه‌نویس · ۳ جایگاه" in fa, "Kaveh  Coder ·
+3 slots" in en (`roleTitle` in `rolesData.ts`, shell.json `roles.title.<id>` for the eleven built-in
+roles); the opened profile gains "Claim with `--role coder`" in `<code dir="ltr">`, and its line
+starts with the same title. Glossary rows for architect, designer, coder, researcher and the three
+reviewers and release role, (proposed) where no source had them.
+**Fixed:** the first build compared a role's title with the English file at run time; the window
+loads only the language shown, so in fa every title stayed English. The headless shot caught it;
+the Vitest didn't (tests load every language).
+**Decided:** a built-in role is translated only while its title is still the core's default
+(`BUILT_IN_TITLES`, `i18n-ignore`d as compared data); a title changed by hand in roles.toml shows as
+written. A Vitest parses `roles.rs` so the table can't drift from the core or the English file.
+**Verified:** Roles, shellFa and i18n tests (98 passed). Headless WebKit, mocked IPC, fa and en,
+light and dark, rows and the researcher's profile open: every fa row Persian, `--role researcher`
+left to right. Shots in `attachments/0195/`.
+**Round 2 (Akbar_38, review R1 and the lead's scope add):** a Vitest loads a fresh i18n layer with
+only the fa files (as the fa window does) and expects the Persian titles; the reviewer's mutant
+(roleTitle comparing with `translate("en", …)`) now fails it, where all 31 tests passed before.
+The opened profile's line says stage and moves as the board does (`stageLabel`), the permission as
+shell.json `roles.permission.<id>` (new glossary rows), a move as `roles.move` (← in fa); unknown
+values as written. Headless shots of the coder's profile open, fa and en, light and dark:
+`attachments/0195/mu195-r2-*`.
 ## 2026-10-15 — Spike: the owner's six flows through the app, walked headless (mu-106)
 **Did (pouya_4, researcher):** `docs/research/ux-flows.md`: F1–F6 (what's waiting, answer, check
 and accept, what's running, start/pause/ping/file, find), each a step table with what's visible and

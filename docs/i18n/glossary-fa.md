@@ -212,6 +212,34 @@ column header, the stage track and the task's detail.
 | role | نقش | pl. نقش‌ها; a role profile in roles.toml (0112) | common usage |
 | slot | جایگاه | pl. جایگاه‌ها; a role's numbered place (Kaveh-2) that a session claims | (proposed) |
 
+The role titles in Settings › Agents › Roles (mu-195): the words for the core's eleven roles,
+shell.json `roles.title.<id>`. Shaper, tester (QA tester) and lead use the words above. The role's
+id (`coder`) stays Latin: it's what `--role` takes.
+
+| Term | Persian | Notes | Source |
+|---|---|---|---|
+| architect | معمار | the role that reviews a shaped task's architecture | common usage |
+| designer | طراح | the role that reviews a shaped task's UI; built from طراحی (design) | common usage |
+| coder | برنامه‌نویس | the role that builds; سازنده stays the word for the session building a task | common usage |
+| researcher | پژوهشگر | built from پژوهش (research) | common usage |
+| security reviewer | بازبین امنیت | بازبین (reviewer) + امنیت | (proposed) |
+| performance reviewer | بازبین کارایی | کارایی for performance, as in Persian software writing | (proposed) |
+| accessibility reviewer | بازبین دسترس‌پذیری | دسترس‌پذیری for accessibility, as in Persian web writing | (proposed) |
+| release and merge (the role) | انتشار و ادغام | the role that rebases, gates and merges; not «رها کردن», which is releasing a claim | (proposed) |
+
+The permission profiles in a role's opened profile (mu-195), shell.json `roles.permission.<id>`.
+Its stage and stage moves use the stage words above; a move reads `آماده ← در حال ساخت`, the arrow
+pointing the way a right-to-left line is read.
+
+| Term | Persian | Notes | Source |
+|---|---|---|---|
+| read-only | فقط‌خواندنی | reads and reports | common Persian software usage |
+| shaping | شکل‌دهی | writes the queue; the Shaping stage's word | (proposed) |
+| research | پژوهش | writes only its own folders | common usage |
+| worktree | worktree (Latin) | edits the task's worktree; Latin, as worktree above | Drover, Pro Git fa |
+| release | انتشار | rebases, gates and merges; as the release role, not «رها کردن» | (proposed) |
+| lead | سرپرستی | answers and escalates; built from سرپرست | (proposed) |
+
 ### Names
 
 Role and slot names are names: they are never translated, only written in Persian script in fa.

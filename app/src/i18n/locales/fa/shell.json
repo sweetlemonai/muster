@@ -458,6 +458,29 @@
     "slots_other": "{{count}} جایگاه",
     "anyStage": "هر مرحله",
     "noMoves": "بی جابه‌جایی مرحله",
+    "move": "{{from}} ← {{to}}",
+    "claimWith": "برداشتن با <code>--role {{id}}</code>",
+    "permission": {
+      "read-only": "فقط‌خواندنی",
+      "shaping": "شکل‌دهی",
+      "research": "پژوهش",
+      "worktree": "worktree",
+      "release": "انتشار",
+      "lead": "سرپرستی"
+    },
+    "title": {
+      "shaper": "شکل‌دهنده",
+      "architect": "معمار",
+      "designer": "طراح",
+      "coder": "برنامه‌نویس",
+      "tester": "تستر",
+      "security": "بازبین امنیت",
+      "performance": "بازبین کارایی",
+      "accessibility": "بازبین دسترس‌پذیری",
+      "release": "انتشار و ادغام",
+      "lead": "سرپرست",
+      "researcher": "پژوهشگر"
+    },
     "field": {
       "name": {
         "label": "نام",

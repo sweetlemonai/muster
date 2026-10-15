@@ -1,8 +1,9 @@
 // Role slots (0112): a stamp's `slot coder-2` shows as the role's name now on cards and in the
 // pane, renaming a role in Settings › Agents › Roles renames it there, and old stamps read as before.
+import rolesRs from "../src-tauri/src/roles.rs?raw";
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import CardStatus from "./CardStatus";
 import { GraphView } from "./GraphView";
 import { applyQuery, dayContext, EMPTY_QUERY, GROUPS } from "./filters";
@@ -23,7 +24,9 @@ import { NextStep } from "./Sidebar";
 import StageContent from "./StageContent";
 import type { TaskActions } from "./useTaskActions";
 import { TableView } from "./Views";
-import { ROLE_FIELDS, roleLine, slotWords } from "./rolesData";
+import { BUILT_IN_TITLES, PERMISSIONS, permissionWord, ROLE_FIELDS, roleLine, roleTitle, slotWords } from "./rolesData";
+import { setLocale } from "./i18n/runtime";
+import { tn, unmarked } from "./i18n";
 import { RoleNamesContext } from "./settingsData";
 import type { Question, Role, SessionRow, Task, Work as WorkData } from "./types";
 
@@ -156,7 +159,9 @@ describe("Settings › Agents › Roles", () => {
     renderToStaticMarkup(createElement(RolesView, { roles: rs, error, open, onOpen: () => {}, onSave: async () => null }));
   it("lists each role with its name and slot count, nothing open", () => {
     const html = view("");
-    expect(text(html)).toContain("Kaveh coder · 3 slots Kia tester · 1 slot");
+    expect(text(html)).toContain("Kaveh Coder · 3 slots Kia QA tester · 1 slot");
+    expect(html).toContain('<span class="meta"><bdi>Coder</bdi> · 3 slots</span>');
+    expect(html).not.toContain("--role coder");
     expect(html).toContain('<button type="button" class="role-row" aria-expanded="false"><b dir="auto">Kaveh</b>');
     expect(html).toContain('<b dir="auto">Kaveh</b>');
     expect(html).not.toContain("role-fields");
@@ -165,7 +170,8 @@ describe("Settings › Agents › Roles", () => {
     const html = view("coder");
     expect(html).toContain('aria-expanded="true" aria-controls="role-coder"');
     expect(html).toContain('<div class="role-fields" id="role-coder" role="group" aria-label="Kaveh&#x27;s profile">');
-    expect(text(html)).toContain("Coder · building · worktree · ready → building, building → testing");
+    expect(text(html)).toContain("Coder · Building · worktree · Ready → Building, Building → Testing");
+    expect(html).toContain('<p class="meta">Claim with <code dir="ltr">--role coder</code></p>');
     for (const f of ROLE_FIELDS) expect(text(html)).toContain(f.label);
     expect(html).toContain('value="sonnet, opus"');
     expect(html).toContain('<label><b>Name</b> <input size="14" maxLength="400" dir="auto" value="Kaveh"/></label>');
@@ -183,7 +189,105 @@ describe("Settings › Agents › Roles", () => {
     expect(slotWords(1)).toBe("1 slot");
     expect(slotWords(3)).toBe("3 slots");
     expect(roleLine(role({ stage: "any", moves: [], permission: "lead", title: "Lead" }))).toBe("Lead · any stage · lead · no stage moves");
-    expect(roleLine(role({ stage: "your-check" }))).toContain("your check");
+    expect(roleLine(role({ stage: "your-check" }))).toContain(" · Your check · ");
+    // A stage or permission this window doesn't know shows as written, not as Backlog.
+    expect(roleLine(role({ stage: "triage", permission: "admin", moves: ["triage>done"] }))).toBe("Coder · triage · admin · triage → Done");
+  });
+});
+
+describe("a role's title in the language shown (mu-195)", () => {
+  afterEach(async () => {
+    await setLocale("en");
+  });
+  /** The glossary's words (docs/i18n/glossary-fa.md, Roles). */
+  const PERSIAN: Record<string, string> = {
+    shaper: "شکل‌دهنده", architect: "معمار", designer: "طراح", coder: "برنامه‌نویس", tester: "تستر",
+    security: "بازبین امنیت", performance: "بازبین کارایی", accessibility: "بازبین دسترس‌پذیری",
+    release: "انتشار و ادغام", lead: "سرپرست", researcher: "پژوهشگر",
+  };
+  /** The core's defaults, id → title, as roles.rs writes them: `role("coder", "Kaveh", "Coder", …)`. */
+  const DEFAULTS: Record<string, string> = Object.fromEntries([...rolesRs.matchAll(/role\(\s*"([a-z]+)",\s*"[^"]*",\s*"([^"]*)",/g)].map((m) => [m[1], m[2]]));
+  const builtIns = Object.entries(DEFAULTS).map(([id, title]) => role({ id, title }));
+  const list = (roles: Role[], open = "") => renderToStaticMarkup(createElement(RolesView, { roles, open, onOpen: () => {}, onSave: async () => null }));
+
+  it("knows the core's eleven roles by their default titles, as roles.rs and the English file say them", () => {
+    expect(Object.keys(DEFAULTS)).toHaveLength(11);
+    expect(BUILT_IN_TITLES).toEqual(DEFAULTS);
+    expect(Object.keys(PERSIAN).sort()).toEqual(Object.keys(DEFAULTS).sort());
+    for (const [id, title] of Object.entries(DEFAULTS)) expect(tn("shell", `roles.title.${id as keyof typeof BUILT_IN_TITLES}`), id).toBe(title);
+  });
+  it("says a built-in role's title in English, and in Persian from the glossary", async () => {
+    for (const r of builtIns) expect(roleTitle(r)).toBe(r.title);
+    await setLocale("fa");
+    for (const r of builtIns) expect(roleTitle(r), r.id).toBe(PERSIAN[r.id]);
+  });
+  it("shows a title the owner wrote in roles.toml, or an unknown role's, as written in every language", async () => {
+    await setLocale("fa");
+    expect(roleTitle(role({ title: "Rust coder" }))).toBe("Rust coder");
+    expect(roleTitle(role({ title: "کدنویس" }))).toBe("کدنویس");
+    expect(roleTitle(role({ id: "cook", title: "Cook" }))).toBe("Cook");
+    // Looked up among the roles only, never on the object's prototype.
+    expect(roleTitle(role({ id: "constructor", title: "Builder" }))).toBe("Builder");
+    expect(roleTitle(role({ id: "toString", title: "Shaper" }))).toBe("Shaper");
+    // Another built-in's default title under this id is the owner's own words too.
+    expect(roleTitle(role({ id: "coder", title: "Shaper" }))).toBe("Shaper");
+  });
+  it("reads every Roles row in Persian: no role id, the id only in the opened profile's --role hint, left to right", async () => {
+    await setLocale("fa");
+    const html = list(builtIns);
+    const rows = text(html.slice(html.indexOf("<ul")));
+    for (const r of builtIns) expect(rows).toContain(PERSIAN[r.id]);
+    // The fixture names every role Kaveh; nothing else in a row is Latin.
+    expect(rows.replace(/\bKaveh\b/g, "")).not.toMatch(/[A-Za-z]/);
+    expect(html).toContain(`<span class="meta"><bdi>${PERSIAN.coder}</bdi> · ۳ جایگاه</span>`);
+    expect(html).not.toMatch(/--role [a-z]/);
+    const open = list(builtIns, "researcher");
+    expect(open).toContain(`<code dir="ltr">--role researcher</code>`);
+    expect(open.match(/--role [a-z]+/g)).toEqual(["--role researcher"]);
+    expect(text(open)).toContain("برداشتن با --role researcher");
+  });
+  it("names the row's button by name, title and slots in the language shown", async () => {
+    await setLocale("fa");
+    const html = list([role()]);
+    expect(text(html.slice(html.indexOf("<button"), html.indexOf("</button>")))).toBe("Kaveh برنامه‌نویس · ۳ جایگاه");
+  });
+  it("says the opened profile's line in the language shown: title, stage, permission and moves", async () => {
+    await setLocale("fa");
+    expect(unmarked(roleLine(role()))).toBe("برنامه‌نویس · در حال ساخت · worktree · آماده ← در حال ساخت، در حال ساخت ← در حال تست");
+    expect(roleLine(role({ stage: "any", moves: [], permission: "lead", title: "Lead", id: "lead" }))).toBe("سرپرست · هر مرحله · سرپرستی · بی جابه‌جایی مرحله");
+    expect(roleLine(role({ stage: "testing", permission: "read-only", moves: [] }))).toContain(" · در حال تست · فقط‌خواندنی · ");
+    // The profile as drawn, opened: the line, then the --role hint.
+    const open = text(list([role()], "coder"));
+    expect(unmarked(open)).toContain("برنامه‌نویس · در حال ساخت · worktree · آماده ← در حال ساخت");
+  });
+  it("has a word in English and Persian for each of the core's permission profiles", async () => {
+    const core = /pub const PERMISSIONS: &\[&str\] = &\[([^\]]*)\]/.exec(rolesRs)?.[1] ?? "";
+    expect([...core.matchAll(/"([a-z-]+)"/g)].map((m) => m[1])).toEqual([...PERMISSIONS]);
+    const fa: Record<string, string> = { "read-only": "فقط‌خواندنی", shaping: "شکل‌دهی", research: "پژوهش", worktree: "worktree", release: "انتشار", lead: "سرپرستی" };
+    for (const p of PERMISSIONS) expect(permissionWord(p)).toBe(p);
+    await setLocale("fa");
+    for (const p of PERMISSIONS) expect(permissionWord(p), p).toBe(fa[p]);
+    expect(permissionWord("admin")).toBe("admin");
+    expect(permissionWord("constructor")).toBe("constructor");
+  });
+  it("says the Persian words with only the Persian files loaded, as the fa window does (R1)", async () => {
+    // A fresh copy of the layer with nothing loaded: testSetup.ts preloads every English file, the
+    // window shown in Persian never loads one (fa is READY), so a lookup that leans on the English
+    // file at run time passes above and fails here.
+    vi.resetModules();
+    const runtime = await import("./i18n/runtime");
+    const { readFromDisk } = await import("./i18n/testReader");
+    const asked: string[] = [];
+    runtime.setReader((l, ns) => {
+      asked.push(`${l}/${ns}`);
+      return l === "fa" ? readFromDisk(l, ns) : Promise.reject(new Error(`the fa window never reads ${l}/${ns}`));
+    });
+    await runtime.setLocale("fa");
+    await runtime.load("fa", "shell");
+    const fresh = await import("./rolesData");
+    for (const r of builtIns) expect(fresh.roleTitle(r), r.id).toBe(PERSIAN[r.id]);
+    expect(unmarked(fresh.roleLine(role()))).toBe("برنامه‌نویس · در حال ساخت · worktree · آماده ← در حال ساخت، در حال ساخت ← در حال تست");
+    expect(asked).toEqual(["fa/common", "fa/shell"]);
   });
 });
 

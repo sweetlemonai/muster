@@ -986,8 +986,15 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   no `--after`) and `muster check` read the same file, the app reads it on every poll (Release,
   the card's "quiet" and dot, the pane's LIVE), and a missing, broken or out-of-bounds value is
   the default, field by field. **Roles** (0112, `Roles.tsx`, `rolesData.ts`) lists each role
-  of `roles.toml` with its name and slot count; the open one shows its name, models, providers,
-  slots and turn, budget and context caps as fields, each saved by `set_role` (`roles::edit`,
+  of `roles.toml` with its name, title and slot count. The title is in the language shown
+  (`roleTitle`, mu-195): a built-in role whose title is still the core's default reads as shell.json
+  `roles.title.<id>`, and a title changed by hand, or an unknown role's, shows as written. The id
+  isn't in the row; the open one has it as its claim hint (`--role coder`, left to right). Its
+  line (`roleLine`) says the title, stage, permission and stage moves in the language shown too:
+  the stages as the board names them (`stageLabel`), the permission as shell.json
+  `roles.permission.<id>` (`PERMISSIONS`, pinned to roles.rs by a Vitest), a move as
+  `roles.move` (→ in en, ← in fa); a stage or permission the window doesn't know shows as written.
+  The open one shows its name, models, providers, slots and turn, budget and context caps as fields, each saved by `set_role` (`roles::edit`,
   which checks the whole team and leaves the file as it was on a refusal) and the queues read
   again so a rename shows at once. The poll sends `roleNames` (id → name) with the state, read
   from `roles.toml` only when its modified time or size changes, and cards (`whoLine`), the
