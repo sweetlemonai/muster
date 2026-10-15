@@ -2561,16 +2561,16 @@ files have one copy per branch, are the next step of 0005. See
 ### What's true now: `docs/now/` (task 0102)
 
 The rules in force per area live in short pages, one per area, in `docs/now/`; this document keeps
-how things were built. The rules of the queue are in [queue](now/queue.md), claims, the lease and
-the takeover in [claims](now/claims.md), sessions, handoffs, check-ins and mail in
-[handoffs](now/handoffs.md), worktrees and the merge in [parallel](now/parallel.md), Testing and the
-review in [testing](now/testing.md), shaping and the vision check in [shaping](now/shaping.md),
-the board and the task pane in [board](now/board.md), the row of folded columns above the board
-and its edge cue in [column row](now/column-row.md), the sidebar and Settings in
-[sidebar](now/sidebar.md), the Sessions view and its recap in [sessions](now/sessions.md), the
+how things were built. The queue and its files are in [queue](now/queue.md), the stages, passes,
+returns and blocks in [stages](now/stages.md), claims, the lease and the takeover in
+[claims](now/claims.md), sessions, handoffs, check-ins and mail in [handoffs](now/handoffs.md),
+worktrees and the merge in [parallel](now/parallel.md), Testing and the review in
+[testing](now/testing.md), shaping and the vision check in [shaping](now/shaping.md), the board and
+the task pane in [board](now/board.md), the row of folded columns above the board and its edge cue
+in [column row](now/column-row.md), the projects sidebar in [sidebar](now/sidebar.md), Settings in
+[settings](now/settings.md), the Sessions view and its recap in [sessions](now/sessions.md), the
 Table, Timeline and Graph views in [views](now/views.md), the account meter in
-[accounts](now/accounts.md), and the header's toolbar and how it wraps in
-[toolbar](now/toolbar.md). The format and the pass rule are in PROTOCOL.md ("What's true now").
+[accounts](now/accounts.md), and the header's toolbar and how it wraps in [toolbar](now/toolbar.md). The format and the pass rule are in PROTOCOL.md ("What's true now").
 
 - **Reading** (`now.rs`): only plain `*.md` files directly in `docs/now/` (100 at most), each read
   up to 16 KB, control characters out. A symlinked page is passed over, and so is a `docs/now/`

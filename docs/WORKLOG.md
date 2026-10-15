@@ -3,6 +3,17 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-213: the sidebar and queue now pages split in two, each under 3 KB
+**Did:** `docs/now/sidebar.md` (4,095 bytes) became `sidebar.md`, the projects sidebar (1,789),
+and the new `settings.md`, Settings (2,422). `docs/now/queue.md` (4,056) became `queue.md`, the
+queue and its files (1,865), and the new `stages.md`, stages, passes and blocks (2,288). Every
+rule moved word for word with its citation. The text mu-212 trimmed for mu-82 (two heading lines)
+and mu-194 (the Type row) is back as on e631091. `projects.rs` is on both sidebar pages,
+`ops.rs` and `queue.rs` on both queue pages, and each pair's covers union is the old page's.
+`tests/now_pages.rs` pins ten areas; AS_BUILT's "What's true now" links settings and stages.
+**Verified:** sorted bullets before = after for queue; for sidebar only the three restored lines
+differ (plus one mu-82 citation). `bin/gate`: gate: green (pnpm install, pnpm check, test_task, test_commands, test_ac_verifier, cargo test (Kiritimati)).
+
 ## 2026-10-15 — mu-202: the toolbar wraps at its trailing group and never clips
 **Did (Asghar_46, builder):** the header is two units. `.top-start` (New task and the views) is
 never wider than the header and never splits, so the views wrap pill by pill beside New task.

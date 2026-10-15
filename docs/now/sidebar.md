@@ -1,7 +1,7 @@
 ---
-covers: app/src/Sidebar.tsx, app/src/SidebarProjects.tsx, app/src/ProjectList, app/src/projectOrder, app/src/Settings, app/src/settingsData.ts, app/src-tauri/src/arrange.rs, app/src-tauri/src/labels.rs, app/src-tauri/src/projects.rs, app/src-tauri/src/settings.rs
+covers: app/src/Sidebar.tsx, app/src/SidebarProjects.tsx, app/src/ProjectList, app/src/projectOrder, app/src-tauri/src/arrange.rs, app/src-tauri/src/labels.rs, app/src-tauri/src/projects.rs
 ---
-# The sidebar and Settings
+# The projects sidebar
 
 - The sidebar lists All, the queues found under `~/playground` and ones added by hand. (AS_BUILT "Projects sidebar")
 - Discovery looks two levels deep, and at `.muster/` only in main checkouts. (AS_BUILT "Projects")
@@ -14,30 +14,10 @@ covers: app/src/Sidebar.tsx, app/src/SidebarProjects.tsx, app/src/ProjectList, a
 - A project's colour is one of five, kept apart from every state colour. (mu-57)
 - A heading folds to one line; nothing of its projects shows under it. (mu-70)
 - A project put under a folded heading unfolds it. (mu-70)
-- A heading's counts are words, "7 need you · 3 projects · 2 working", open or folded; "N need you" is first, never cut. (mu-82)
+- A heading's counts are words, "77 need you · 17 projects · 18 working", open or folded. (mu-82)
+- "N need you" comes first after the name and is never cut. (mu-82)
 - Short of room, they take a full-width second line, then words wrap. (mu-212)
 - In Focus the sidebar narrows to headings, names, the working dot, stalled and counts. (DESIGN.md "Focus mode")
 - A stalled project keeps Ask all quiet sessions for a check-in. (mu-39)
 - One builder makes the sidebar's state, in the core. (mu-73)
-- Settings is a view in the header's row, never a window. (mu-36)
-- Its groups: Appearance, Display, Projects, Agents, Accounts, Notifications, About. (mu-113)
-- Language (English · فارسی) sits above the groups, whatever group is open; unset, it follows macOS's language for Muster. (mu-146)
-- A pick switches the window and the menu bar at once and is saved as `lang` in `settings.json`; agents and task files stay English. (mu-146)
-- The shell's text (sidebar, toolbar, filter bar, Settings) comes from the translation files; the guard fails on new English outside them. (mu-146)
-- The filter bar's Type row says each type in the language shown (old task, feature, idea too); only the core's are offered, an unknown one as written. (mu-194)
-- Accounts edits each account's reserve, concurrency, roles, models, plan and paused; the company `~/.claude` can't be added; no automatic balancing across accounts. (decision 0013)
-- Settings are per Mac, in `settings.json`, `projects.json` and `accounts.json`, with readings in `usage/`. (AS_BUILT "Settings")
-- Paths under the home folder show as `~/…`. (mu-36)
-- Agents sets the claim lease (12 h; 1 h to 7 d) and the LIVE window (5 min; 1 min to 1 h). (mu-36)
-- A missing or bad setting reads as its default, field by field. (mu-36)
-- Projects shows each gate and run command read-only; `muster projects set` sets them. (mu-77)
-- Projects shows each local queue's history under its gate, with Restore, Keep deleted or Commit when something's off. (mu-109)
-- A prefix is set in Projects and refused when bad or another project's. (mu-33)
-- The Your check limit is set per project in Projects: 5, 1 to 50, or Off. (mu-50)
 - Labels, categories, Hide and Remove never touch the queue's files. (AS_BUILT "Projects")
-- New queue makes a local `.muster/` in the repo's main checkout. (mu-4)
-- The window never hands the core a path; folders come from the core's dialog. (AS_BUILT "Projects")
-- Display modes: ADHD (the default), Standard, Focus; ⌘. toggles Focus. (mu-38)
-- 7 themes and 6 accents, no blue or orange, contrast tested. (AS_BUILT "Themes and accents")
-- Settings › Agents › Roles edits `roles.toml` beside projects.json; a refused file says its line and key. (mu-112)
-- A Roles row shows the role's title in the language shown, not its id; the open profile shows `--role <id>`. (mu-195)
