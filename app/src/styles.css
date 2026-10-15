@@ -652,7 +652,6 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .tl-bar.needs-you { box-shadow: none; }
 .tl-bar.blocked { border-style: dashed; border-color: var(--st-blocked); }
 .tl-seg { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--status) 75%, var(--panel)); }
-.tl-seg.waiting { background: color-mix(in srgb, var(--muted) 14%, var(--panel)); }
 /* Only the day is known: fade the start in. */
 .tl-seg.fuzzy { -webkit-mask-image: linear-gradient(var(--to-end), rgb(0 0 0 / 0.25), #000 70%); mask-image: linear-gradient(var(--to-end), rgb(0 0 0 / 0.25), #000 70%); }
 .tl-bar-text { position: relative; font-size: 10px; padding: 0 8px; line-height: 16px; color: var(--text); white-space: nowrap; text-shadow: 0 0 3px var(--panel), 0 0 2px var(--panel); }

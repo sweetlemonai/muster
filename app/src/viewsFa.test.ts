@@ -201,8 +201,8 @@ describe("the views and the backlog in Persian (mu-147)", () => {
       ticks: axis("week", timeWindow("week", NOW, 0), NOW).slice(0, 2).map((k) => k.label),
       midnight: axis("day", timeWindow("day", NOW, 0), NOW)[3].label,
       segment: segmentTitle({ stage: "building", from: M("2026-10-14 13:00"), to: M("2026-10-14 15:00"), fuzzy: false }),
-      waiting: segmentTitle({ stage: "waiting", from: M("2026-10-11 00:00"), to: M("2026-10-14 13:00"), fuzzy: true }),
-      waitingDays: segmentTitle({ stage: "waiting", from: M("2026-10-11 00:00"), to: M("2026-10-14 00:00"), fuzzy: true }),
+      fuzzy: segmentTitle({ stage: "done", from: M("2026-10-11 00:00"), to: M("2026-10-14 13:00"), fuzzy: true }),
+      fuzzyDays: segmentTitle({ stage: "done", from: M("2026-10-11 00:00"), to: M("2026-10-14 00:00"), fuzzy: true }),
       bar: barTitle(TASKS[1], false),
     });
     expect(dates()).toEqual({
@@ -216,8 +216,8 @@ describe("the views and the backlog in Persian (mu-147)", () => {
       ticks: ["Mon 12", "Tue 13"],
       midnight: "Wed",
       segment: "Building 14 Oct 13:00 – 15:00",
-      waiting: "Waiting 11 Oct – 14 Oct 13:00",
-      waitingDays: "Waiting 11 Oct – 13 Oct",
+      fuzzy: "Done 11 Oct – 14 Oct 13:00",
+      fuzzyDays: "Done 11 Oct – 13 Oct",
       bar: "Building · paused: later · captured 2026-10-14 · dates only",
     });
     await setLocale("fa");
@@ -237,8 +237,8 @@ describe("the views and the backlog in Persian (mu-147)", () => {
       ticks: ["دوشنبه ۱۲", "سه‌شنبه ۱۳"],
       midnight: "چهارشنبه",
       segment: "در حال ساخت ۱۴ اکتبر ۱۳:۰۰ تا ۱۵:۰۰",
-      waiting: "در انتظار ۱۱ اکتبر تا ۱۴ اکتبر ۱۳:۰۰",
-      waitingDays: "در انتظار ۱۱ اکتبر تا ۱۳ اکتبر",
+      fuzzy: "انجام شد ۱۱ اکتبر تا ۱۴ اکتبر ۱۳:۰۰",
+      fuzzyDays: "انجام شد ۱۱ اکتبر تا ۱۳ اکتبر",
       bar: "در حال ساخت · متوقف شده: later · ثبت در ۱۴ اکتبر ۲۰۲۶ · فقط تاریخ‌ها",
     });
     // فارسی's own calendar, Jalali (review R10): a week's two ends name one month when they're in
@@ -255,8 +255,8 @@ describe("the views and the backlog in Persian (mu-147)", () => {
       ticks: ["دوشنبه ۲۰", "سه‌شنبه ۲۱"],
       midnight: "چهارشنبه",
       segment: "در حال ساخت ۲۲ مهر ۱۳:۰۰ تا ۱۵:۰۰",
-      waiting: "در انتظار ۱۹ مهر تا ۲۲ مهر ۱۳:۰۰",
-      waitingDays: "در انتظار ۱۹ مهر تا ۲۱ مهر",
+      fuzzy: "انجام شد ۱۹ مهر تا ۲۲ مهر ۱۳:۰۰",
+      fuzzyDays: "انجام شد ۱۹ مهر تا ۲۱ مهر",
       bar: "در حال ساخت · متوقف شده: later · ثبت در ۲۲ مهر ۱۴۰۵ · فقط تاریخ‌ها",
     });
   });

@@ -54,12 +54,6 @@ function timelineSwatch(m: TimelineMark): ReactNode {
       return stageBar(m);
     case "done":
       return <span className="tl-bar s-done" />;
-    case "waiting":
-      return (
-        <span className="tl-bar lg-neutral">
-          <span className="tl-seg waiting" />
-        </span>
-      );
     case "fuzzy":
       return (
         <span className="tl-bar lg-neutral">

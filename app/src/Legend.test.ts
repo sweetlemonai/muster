@@ -5,8 +5,11 @@ import { GRAPH_MARKS } from "./graph";
 import en from "./i18n/locales/en/board.json";
 import fa from "./i18n/locales/fa/board.json";
 import { GRAPH_RESERVE, graphLegend, Legend, type LegendItem, TIMELINE_RESERVE, timelineLegend } from "./Legend";
+import legendSource from "./Legend.tsx?raw";
 import css from "./styles.css?raw";
 import { TIMELINE_MARKS } from "./viewData";
+import viewDataSource from "./viewData.ts?raw";
+import viewsSource from "./Views.tsx?raw";
 
 const LEGEND_LABELS = en.legend;
 const render = (items: readonly LegendItem[], reserve: readonly LegendItem[] = []) => renderToStaticMarkup(createElement(Legend, { items, reserve }));
@@ -21,7 +24,7 @@ describe("the legend's names (mu-173)", () => {
     expect(LEGEND_LABELS).toEqual({
       label: "What the colours mean",
       backlog: "Backlog", shaping: "Shaping", ready: "Ready", building: "Building", testing: "Testing", "your-check": "Waiting for your check", done: "Done",
-      waiting: "Waiting", fuzzy: "Start not certain", blocked: "Blocked", paused: "Paused", now: "Now",
+      fuzzy: "Start not certain", blocked: "Blocked", paused: "Paused", now: "Now",
       "ready-to-start": "Ready to start", human: "Your own task", loop: "A loop",
     });
   });
@@ -62,18 +65,26 @@ describe("the legend row (mu-173)", () => {
     expect(rule(".legend-reserve")).toMatch(/visibility: hidden;[^]*pointer-events: none;/);
   });
   it("draws each timeline swatch with the chart's own classes", () => {
-    const all = ["backlog", "shaping", "ready", "building", "testing", "your-check", "done", "waiting", "fuzzy", "blocked", "paused", "now"] as const;
+    const all = ["backlog", "shaping", "ready", "building", "testing", "your-check", "done", "fuzzy", "blocked", "paused", "now"] as const;
     const bar = (s: string) => `<span class="tl-bar s-${s}"><span class="tl-seg s-${s}"></span></span>`;
     expect(items(render(timelineLegend([...all])))).toEqual([
       ...["backlog", "shaping", "ready", "building", "testing"].map((s) => [bar(s), LEGEND_LABELS[s as (typeof all)[number]]]),
       [bar("your-check"), "Waiting for your check"],
       ['<span class="tl-bar s-done"></span>', "Done"],
-      ['<span class="tl-bar lg-neutral"><span class="tl-seg waiting"></span></span>', "Waiting"],
       ['<span class="tl-bar lg-neutral"><span class="tl-seg lg-neutral fuzzy"></span></span>', "Start not certain"],
       ['<span class="tl-bar lg-neutral blocked"><span class="tl-block"></span></span>', "Blocked"],
       ['<span class="tl-bar lg-neutral"><span class="tl-pause"></span></span>', "Paused"],
       ['<span class="tl-now"></span>', "Now"],
     ]);
+  });
+  it("has no waiting part of a bar to draw or name (mu-188)", () => {
+    // `.waiting` is the Waiting for you card; a `tl-seg waiting` would take its box and padding.
+    for (const [name, src] of [["Views.tsx", viewsSource], ["Legend.tsx", legendSource], ["viewData.ts", viewDataSource]]) {
+      expect(src, name).not.toMatch(/tl-seg waiting|"waiting"/);
+    }
+    expect(css).not.toMatch(/\.tl-seg\.waiting/);
+    expect(Object.keys(en.legend)).not.toContain("waiting");
+    expect(Object.keys(fa.legend)).not.toContain("waiting");
   });
   it("draws each graph swatch with the graph's own classes, and the You ribbon for the owner's task", () => {
     const all = ["backlog", "shaping", "ready", "building", "testing", "your-check", "done", "ready-to-start", "blocked", "human", "loop"] as const;

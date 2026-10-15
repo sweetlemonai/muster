@@ -159,7 +159,7 @@ function keep(key: string, value: string) {
 const SLOT_PX: Record<Scale, number> = { day: 40, week: 32, month: 30 };
 const pct = (x: number) => `${(x * 100).toFixed(3)}%`;
 
-/** Each task as a bar in a day, week or month: waiting, then each stage it held, with a now line. */
+/** Each task as a bar in a day, week or month, from when its work started: each stage it held, with a now line. */
 export function TimelineView({ tasks, now, multi, openKey, onOpen, words }: { tasks: Task[]; now: number; multi: boolean; openKey: string | null; onOpen: (t: Task) => void; words: string[] }) {
   const [scale, setScale] = useState<Scale>(() => parseScale(stored(SCALE_KEY)));
   // What's running first by default (mu-204), or earliest start; remembered like the scale.
@@ -280,7 +280,7 @@ export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen,
                 {p.segments.map((g) => (
                   <span
                     key={g.seg.from}
-                    className={`tl-seg ${g.seg.stage === "waiting" ? "waiting" : `s-${g.seg.stage}`}${g.seg.fuzzy ? " fuzzy" : ""}`}
+                    className={`tl-seg s-${g.seg.stage}${g.seg.fuzzy ? " fuzzy" : ""}`}
                     style={{ insetInlineStart: pct(g.left), width: pct(g.width) }}
                     title={segmentTitle(g.seg)}
                   />

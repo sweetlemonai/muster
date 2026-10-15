@@ -4,7 +4,7 @@ import { unmarked } from "./i18n";
 import { setLocale, setNumbering } from "./i18n/runtime";
 import { stampMinutes } from "./lib";
 import {
-  axis, barTitle, DAY, layout, legendMarks, nowAt, parseScale, parseTimelineOrder, segmentTitle, sortTasks, spans, taskSpan, timelineOrder, timeWindow, wallMinutes, windowLabel,
+  axis, barTitle, DAY, layout, legendMarks, nowAt, parseScale, parseTimelineOrder, segmentTitle, sortTasks, spans, taskSpan, TIMELINE_MARKS, timelineOrder, timeWindow, wallMinutes, windowLabel,
   type Placed, type Scale, type Span,
   parseTableSort,
 } from "./viewData";
@@ -295,7 +295,7 @@ describe("timeline windows and axis", () => {
     try {
       const old = M("0205-10-12 10:00");
       expect(unmarked(segmentTitle({ stage: "building", from: old, to: NOW, fuzzy: false }))).toBe("در حال ساخت ۲۰ مهر ۱۰:۰۰ تا ۲۲ مهر ۱۷:۲۰");
-      expect(unmarked(segmentTitle({ stage: "waiting", from: old, to: M("0205-10-14 00:00"), fuzzy: true }))).toBe("در انتظار ۲۰ مهر تا ۲۱ مهر");
+      expect(unmarked(segmentTitle({ stage: "done", from: old, to: M("0205-10-14 00:00"), fuzzy: true }))).toBe("انجام شد ۲۰ مهر تا ۲۱ مهر");
       const week = timeWindow("week", old, 0);
       expect(unmarked(windowLabel("week", week))).toMatch(/^۱۵ تا ۲۱ مهر \S*۴۱۶$/);
       expect(axis("week", week, NOW).map((k) => unmarked(k.label))[5]).toBe("شنبه ۲۰");
@@ -319,7 +319,7 @@ describe("timeline windows and axis", () => {
   it("titles a segment with its stage and times, and dates only when that's all there is", () => {
     expect(segmentTitle({ stage: "building", from: M("2026-10-14 13:00"), to: M("2026-10-14 15:00"), fuzzy: false })).toBe("Building 14 Oct 13:00 – 15:00");
     expect(segmentTitle({ stage: "your-check", from: M("2026-10-13 22:00"), to: M("2026-10-14 01:30"), fuzzy: false })).toBe("Your check 13 Oct 22:00 – 14 Oct 01:30");
-    expect(segmentTitle({ stage: "waiting", from: D(11), to: M("2026-10-14 13:00"), fuzzy: true })).toBe("Waiting 11 Oct – 14 Oct 13:00");
+    expect(segmentTitle({ stage: "building", from: D(11), to: M("2026-10-14 13:00"), fuzzy: true })).toBe("Building 11 Oct – 14 Oct 13:00");
     expect(segmentTitle({ stage: "done", from: D(12), to: D(14), fuzzy: true })).toBe("Done 12 Oct – 13 Oct");
   });
 });
@@ -329,9 +329,9 @@ describe("timeline layout", () => {
   const CAL_DAY = { from: D(14), to: D(15) };
   const win = (scale: Scale) => (scale === "day" ? CAL_DAY : timeWindow(scale, NOW, 0));
   const place = (scale: Scale, list: Task[] = [built]) => layout(spans(list, NOW), win(scale), scale);
-  /** Where a bar's working part starts and how wide it is, as fractions of the window. */
+  /** Where a bar's segments start and how wide they are, as fractions of the window. */
   const worked = (p: Placed) => {
-    const w = p.segments.filter((g) => g.seg.stage !== "waiting");
+    const w = p.segments;
     const a = w[0].left, b = w[w.length - 1].left + w[w.length - 1].width;
     return [p.left + a * p.width, (b - a) * p.width];
   };
@@ -385,10 +385,49 @@ describe("timeline layout", () => {
     const tail = t({ id: "tail", captured: "2026-10-13", stage: "done", stageHistory: [step("2026-10-13 22:00", "ready", "building"), step("2026-10-14 00:05", "building", "done")] });
     const [p] = place("day", [tail]);
     expect([p.left, p.width, p.clipStart]).toEqual([0, 15 / DAY, true]);
-    const late: Span = { task: t({ id: "late" }), start: D(14) + 1435, work: D(14) + 1435, end: D(14) + 1438, open: true, timed: true, segments: [{ stage: "building", from: D(14) + 1435, to: D(14) + 1438, fuzzy: false }], blocks: [], pauses: [], finish: D(14) + 1438 };
+    const late: Span = { task: t({ id: "late" }), start: D(14) + 1435, end: D(14) + 1438, open: true, timed: true, segments: [{ stage: "building", from: D(14) + 1435, to: D(14) + 1438, fuzzy: false }], blocks: [], pauses: [], finish: D(14) + 1438 };
     const [q] = layout([late], CAL_DAY, "day");
     expect(q.left + q.width).toBeCloseTo(1);
     expect(q.width).toBeCloseTo(15 / DAY);
+  });
+  it("places every bar from its start to its end, as before the waiting part went (mu-188)", () => {
+    const list = [
+      built,
+      t({ id: "x", captured: "2026-10-14", stage: "building", stageHistory: [step("2026-10-14 08:00", "ready", "building")] }),
+      t({
+        id: "bp", captured: "2026-10-10", capturedAt: "2026-10-10 08:00", stage: "testing",
+        stageHistory: [step("2026-10-12 09:10", "ready", "building"), step("2026-10-14 11:40", "building", "testing")],
+        blockHistory: [{ from: "2026-10-11 10:00", to: "2026-10-12 12:00", kind: "permission" }, { from: "2026-10-13 10:00", to: "2026-10-13 14:00", kind: "" }],
+        pauseHistory: [{ from: "2026-10-14 09:00", to: "2026-10-14 10:30" }],
+      }),
+      t({ id: "tail", captured: "2026-10-13", stage: "done", stageHistory: [step("2026-10-13 22:00", "ready", "building"), step("2026-10-14 00:05", "building", "done")] }),
+    ];
+    const r = (x: number) => Math.round(x * 1e6) / 1e6;
+    const where = (s: Scale) =>
+      place(s, list).map((p) => [
+        p.span.task.id, r(p.left), r(p.width), p.clipStart, p.clipEnd,
+        p.segments.map((g) => [g.seg.stage, r(g.left), r(g.width)]), p.blocks.map((b) => [r(b.left), r(b.width)]), p.pauses.map((g) => [r(g.left), r(g.width)]),
+      ]);
+    // Taken from the two-part layout before mu-188: a block from before the start, a pause, a bar
+    // across midnight and the snapped Week and Month slots all land where they did.
+    expect(where("day")).toEqual([
+      ["bp", 0, 0.722222, true, false, [["building", 0, 0.673077], ["testing", 0.673077, 0.326923]], [], [[0.519231, 0.086538]]],
+      ["tail", 0, 0.010417, true, false, [["building", 0, 1]], [], []],
+      ["x", 0.333333, 0.388889, false, false, [["building", 0, 1]], [], []],
+      ["b3", 0.541667, 0.125, false, false, [["building", 0, 0.666667], ["testing", 0.666667, 0.166667], ["your-check", 0.833333, 0.166667]], [], []],
+    ]);
+    expect(where("week")).toEqual([
+      ["bp", 0.035714, 0.357143, false, false, [["building", 0, 0.89911], ["testing", 0.89911, 0.10089]], [[0, 0.050445], [0.442136, 0.071217]], [[0.851632, 0.026706]]],
+      ["tail", 0.25, 0.071429, false, false, [["building", 0, 1]], [], []],
+      ["x", 0.321429, 0.071429, false, false, [["building", 0, 1]], [], []],
+      ["b3", 0.357143, 0.035714, false, false, [["building", 0, 0.666667], ["testing", 0.666667, 0.166667], ["your-check", 0.833333, 0.166667]], [], []],
+    ]);
+    expect(where("month")).toEqual([
+      ["bp", 0.354839, 0.096774, false, false, [["building", 0, 0.89911], ["testing", 0.89911, 0.10089]], [[0, 0.050445], [0.442136, 0.071217]], [[0.851632, 0.026706]]],
+      ["tail", 0.387097, 0.064516, false, false, [["building", 0, 1]], [], []],
+      ["x", 0.419355, 0.032258, false, false, [["building", 0, 1]], [], []],
+      ["b3", 0.419355, 0.032258, false, false, [["building", 0, 0.666667], ["testing", 0.666667, 0.166667], ["your-check", 0.833333, 0.166667]], [], []],
+    ]);
   });
   it("builds and lays out 500 tasks well within a frame (the fastest run, so a busy machine can't fail the gate)", () => {
     const many = Array.from({ length: 500 }, (_, i) =>
@@ -544,13 +583,13 @@ describe("the timeline's legend lists what the window shows (mu-173)", () => {
   it("names paused for a paused stretch", () => {
     expect(marks([building({ pauseHistory: [{ from: "2026-10-14 10:00", to: "2026-10-14 12:00" }] })])).toEqual(["building", "paused"]);
   });
-  it("names waiting for a waiting stretch", () => {
-    const at = M("2026-10-14 08:00"), work = M("2026-10-14 10:00"), end = M("2026-10-14 12:00");
-    const span: Span = {
-      task: t({ id: "w", stage: "done" }), start: at, work, end, open: false, timed: true, blocks: [], pauses: [], finish: end,
-      segments: [{ stage: "waiting", from: at, to: work, fuzzy: false }, { stage: "building", from: work, to: end, fuzzy: false }],
-    };
-    expect(legendMarks(layout([span], day, "day"), null)).toEqual(["building", "done", "waiting"]);
+  it("has no waiting mark: no bar draws the time before work started (mu-188)", () => {
+    expect(TIMELINE_MARKS).not.toContain("waiting");
+    // Captured two days before the claim: the bar starts at the claim and has no part before it.
+    const late = t({ captured: "2026-10-12", capturedAt: "2026-10-12 08:00", stage: "building", stageHistory: [step("2026-10-14 09:00", "ready", "building")] });
+    const s = taskSpan(late, NOW)!;
+    expect([s.start, s.segments[0].from, "work" in s]).toEqual([M("2026-10-14 09:00"), M("2026-10-14 09:00"), false]);
+    expect(marks([late])).toEqual(["building"]);
   });
   it("leaves out what only shows outside the window", () => {
     // Building since the 1st, blocked on the 2nd and paused on the 3rd: this week shows neither.

@@ -1529,9 +1529,9 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   project, id, title, type, priority, status, who's on it or what it waits on, captured, changed,
   tags; click a header to sort) and **Timeline** (0031: scale chips Day · Week · Month, Week by
   default and remembered, with ◀ ▶ and a way back to the current period. Day is one day in hours,
-  Week seven days in quarter days, Month the calendar month in days. Each task's bar is waiting
-  (captured → first claim) in a quiet tint, then one segment per stage it held, in the stage
-  colour, from the stage history's stamps; tasks with dates only fall back to whole days with a
+  Week seven days in quarter days, Month the calendar month in days. Each task's bar runs from
+  when its work started (mu-188: nothing before it is drawn), one segment per stage it held, in the
+  stage colour, from the stage history's stamps; tasks with dates only fall back to whole days with a
   faded start. A now line runs across the chart and open tasks run to it. Bars are worked out in
   `viewData.ts` in wall-clock minutes, so a clock change doesn't bend them). All three, and the
   Graph (0019), share the search and filters and open tasks in the docked pane.
@@ -1553,8 +1553,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   moves the chart below it.
   `legendMarks(rows, now)` (`viewData.ts`) lists only what
   the placed bars show, in a fixed order: Backlog, Shaping, Ready, Building, Testing, Waiting for
-  your check (the dotted tail), Done (the edge), Waiting, Start not certain (fuzzy), Blocked, Paused,
-  Now. Every done bar is the Done outline with no done segment: a task done before stage history
+  your check (the dotted tail), Done (the edge), Start not certain (fuzzy), Blocked, Paused, Now. Every done bar is the Done outline with no done segment: a task done before stage history
   was logged draws its captured-to-done span with no segment, since no stage of it is known. The
   Graph's sits with the Hide done bar in `.graph-strip`, outside `.graph-scroll`, so it stays in
   view too (6px of the scroller's top padding keeps a selected or focused top node's outline whole), and follows Hide done: `graphMarks(graphs)` (`graph.ts`) names the stages of nodes

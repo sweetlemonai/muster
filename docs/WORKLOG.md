@@ -3,6 +3,16 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-188: the Timeline's unused waiting segment is gone
+**Did:** removed the path no bar used since the owner's 2026-10-13 rule (a bar starts when work
+started): `"waiting"` from `Segment` and `TimelineMark`, `Span.work`, `segmentTitle`'s Waiting
+branch, `tl-seg waiting` in `Views.tsx` and `Legend.tsx`, the `.tl-seg.waiting` rule and
+`board:legend.waiting` (en, fa). `layout` maps a bar with one interpolation from start to end.
+AS_BUILT's Timeline and legend paragraphs updated. No visible change.
+**Verified:** a golden of every bar's place, segments, blocks and pauses at Day, Week and Month,
+taken from the old two-part layout, still matches; a source check finds no waiting class, rule,
+mark or key; `bin/gate` (result line in the task's pass).
+
 ## 2026-10-15 — mu-167: hide the sidebar to a rail that keeps each project's needs-you count (Hide, View › Hide Sidebar, ⌃⌘S), per mode
 **Did:** `toggles.ts`, the shared toggle for the sidebar, Recently finished and the filters: each
 mode's default from the modes' table (new row `sidebar-shown`), the owner's pick per mode in

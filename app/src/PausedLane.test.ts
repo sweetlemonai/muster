@@ -161,7 +161,7 @@ describe("the other views treat the lane the same way", () => {
   });
   it("the timeline doesn't call a paused bar its stage's: it says Paused and where it was", () => {
     const t = task({ ...paused, stageHistory: [{ at: "2026-10-13 08:00", who: A, from: "ready", to: "building" }], pauseHistory: [{ from: "2026-10-13 10:00", to: "" }] });
-    const span = { task: t, start: stampMinutes("2026-10-13 08:00")!, work: 0, end: 0, open: true, timed: true, segments: [], blocks: [], pauses: [], finish: 0 };
+    const span = { task: t, start: stampMinutes("2026-10-13 08:00")!, end: 0, open: true, timed: true, segments: [], blocks: [], pauses: [], finish: 0 };
     const html = renderToStaticMarkup(
       createElement(TimelineChart, { scale: "day", rows: [{ span, left: 0, width: 0.5, clipStart: false, clipEnd: false, segments: [], blocks: [], pauses: [] }], ticks: [], now: null, multi: false, openKey: null, onOpen: () => {} }),
     );

@@ -77,13 +77,12 @@ export function wallMinutes(d: Date): number {
   return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()) / 60000;
 }
 
-/** A stretch of a task's bar: waiting (captured → first claim, in a quiet tint) or a stage it
- *  was in. `fuzzy` when its start is only known to the day. */
-export type Segment = { stage: StageId | "waiting"; from: number; to: number; fuzzy: boolean };
-/** A task on the timeline: from `start` to `end`, the working part from `work` (= `end` when it
- *  never left waiting). `timed` when it comes from the stage history, else from dates only. */
+/** A stretch of a task's bar: a stage it was in. `fuzzy` when its start is only known to the day. */
+export type Segment = { stage: StageId; from: number; to: number; fuzzy: boolean };
+/** A task on the timeline: from `start`, when work started, to `end`. `timed` when it comes from
+ *  the stage history, else from dates only. */
 export type Span = {
-  task: Task; start: number; work: number; end: number; open: boolean; timed: boolean; segments: Segment[]; blocks: { from: number; to: number; kind: string }[];
+  task: Task; start: number; end: number; open: boolean; timed: boolean; segments: Segment[]; blocks: { from: number; to: number; kind: string }[];
   /** Paused stretches (0045), drawn hatched grey: time paused isn't time worked. */
   pauses: { from: number; to: number }[];
   /** When the work finished (into Your check or Done); `end` when it's still going. */
@@ -165,7 +164,7 @@ export function taskSpan(t: Task, now: number): Span | null {
     const a = Math.max(from, start), z = Math.min(to, end);
     return z > a ? [{ from: a, to: z }] : [];
   });
-  return { task: t, start, work: start, end, open, timed: steps.length > 0, segments, blocks, pauses, finish };
+  return { task: t, start, end, open, timed: steps.length > 0, segments, blocks, pauses, finish };
 }
 
 /** A timeline bar's tooltip: the stage, that it's paused and why (0045), why it's blocked (0024),
@@ -361,8 +360,7 @@ export function nowAt(w: TimeWindow, now: number): number | null {
 
 /** "Building 14 Oct 13:00 – 15:00"; dates only where that's all that's known. */
 export function segmentTitle(g: Segment): string {
-  // The waiting stretch has the legend's name for it.
-  const name = g.stage === "waiting" ? tn("board", "legend.waiting") : stageLabel(g.stage);
+  const name = stageLabel(g.stage);
   const from = g.fuzzy ? shortDate(g.from) : dateAt(g.from);
   let to: string;
   if (g.fuzzy && g.to % DAY === 0) to = shortDate(g.to - DAY);
@@ -379,8 +377,7 @@ export type Placed = { span: Span; left: number; width: number; clipStart: boole
 const lerp = (a: number, b: number, da: number, db: number, m: number) => (m >= b ? db : da + ((m - a) * (db - da)) / (b - a));
 
 /** The spans that show in window `w` at `scale`, in order. At Day a bar is exact (at least a
- *  quarter hour wide); at Week and Month its waiting part and its working part each snap out to
- *  whole slots, so a 3-hour task fills one quarter-day at Week and one day at Month, and the
+ *  quarter hour wide); at Week and Month it snaps out to whole slots, so a 3-hour task fills one quarter-day at Week and one day at Month, and the
  *  stages inside keep their proportions. */
 export function layout(list: Span[], w: TimeWindow, scale: Scale): Placed[] {
   const slot = slotOf(scale);
@@ -393,10 +390,10 @@ export function layout(list: Span[], w: TimeWindow, scale: Scale): Placed[] {
   for (const s of list) {
     const d0 = down(s.start);
     const d2 = Math.max(d0, up(s.end));
-    const d1 = s.work < s.end ? Math.max(d0, down(s.work)) : d2;
     const shows = d2 > d0 ? d2 > w.from && d0 < w.to : d0 >= w.from && d0 < w.to;
     if (!shows) continue;
-    const map = (m: number) => (m >= s.work ? lerp(s.work, s.end, d1, d2, m) : lerp(s.start, s.work, d0, d1, m));
+    // A block from before the start lands on the start.
+    const map = (m: number) => Math.max(d0, lerp(s.start, s.end, d0, d2, m));
     const c0 = Math.max(d0, w.from), c2 = Math.min(d2, w.to);
     const segments: Placed["segments"] = [];
     if (c2 > c0) {
@@ -430,8 +427,8 @@ export function layout(list: Span[], w: TimeWindow, scale: Scale): Placed[] {
 }
 
 /** What the timeline's legend can name (mu-173), in the order it names them. */
-export type TimelineMark = StageId | "waiting" | "fuzzy" | "blocked" | "paused" | "now";
-export const TIMELINE_MARKS: readonly TimelineMark[] = ["backlog", "shaping", "ready", "building", "testing", "your-check", "done", "waiting", "fuzzy", "blocked", "paused", "now"];
+export type TimelineMark = StageId | "fuzzy" | "blocked" | "paused" | "now";
+export const TIMELINE_MARKS: readonly TimelineMark[] = ["backlog", "shaping", "ready", "building", "testing", "your-check", "done", "fuzzy", "blocked", "paused", "now"];
 
 /** The marks the placed bars show in this window, and the now line when `now` (nowAt's) is in it:
  *  only what's drawn, each once, in the legend's fixed order. A done task's bar has the done edge
