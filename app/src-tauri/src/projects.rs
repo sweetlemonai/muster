@@ -1844,6 +1844,7 @@ mod tests {
     fn folding_and_unfolding_a_heading_leaves_projects_json_byte_identical() {
         // mu-88: every map in the file is saved in key order, so a save that changes nothing
         // else (a fold, then its unfold) writes the same bytes, and the file never churns.
+        // mu-160: a new map in Config gets filled here too, or it could turn back into a HashMap.
         let base = tempfile::tempdir().unwrap();
         let d = tempfile::tempdir().unwrap();
         let file = d.path().join("cfg/projects.json");
@@ -1853,6 +1854,12 @@ mod tests {
             make_queue(&q);
             keys.push(q.to_string_lossy().to_string());
         }
+        // As many group folders as queues, inserted out of order: with only a few keys, a map
+        // saved in a random order would come out sorted, or the same twice, too often (R1).
+        let groups: Vec<String> = (0..24)
+            .rev()
+            .map(|i| format!("g{:02}", (i * 7) % 24))
+            .collect();
         let heads = ["Tools", "Apps", "کارها", "Games"];
         let colours = crate::arrange::COLOURS;
         edit(&file, |c| {
@@ -1863,10 +1870,18 @@ mod tests {
                 c.colours
                     .insert(k.clone(), colours[i % colours.len()].into());
                 c.gate.insert(k.clone(), "bin/gate".into());
+                c.run.insert(k.clone(), "bin/run".into());
+                let limit = if i % 3 == 0 {
+                    crate::check_limit::Limit::Off
+                } else {
+                    crate::check_limit::Limit::At(i)
+                };
+                c.your_check.insert(k.clone(), limit);
                 c.names.insert(k.clone(), format!("n{i:02}"));
             }
-            c.group_names.insert("g1".into(), "One".into());
-            c.group_names.insert("g0".into(), "Zero".into());
+            for g in &groups {
+                c.group_names.insert(g.clone(), format!("Group {g}"));
+            }
             Ok(())
         })
         .unwrap();
@@ -1879,11 +1894,35 @@ mod tests {
             .unwrap();
         }
         assert_eq!(fs::read_to_string(&file).unwrap(), before);
-        // The keys are in order in the file itself: the first save sorts them, once.
-        let at = |k: &str| before.find(&format!("\"{k}\": \"Label")).unwrap();
+        // The keys are in order in the file itself, in every map: the first save sorts them, once.
         let mut sorted = keys.clone();
         sorted.sort();
-        assert!(sorted.windows(2).all(|w| at(&w[0]) < at(&w[1])));
+        let mut sorted_groups = groups.clone();
+        sorted_groups.sort();
+        let maps = [
+            ("names", &sorted),
+            ("labels", &sorted),
+            ("categories", &sorted),
+            ("gate", &sorted),
+            ("run", &sorted),
+            ("yourCheck", &sorted),
+            ("colours", &sorted),
+            ("groupNames", &sorted_groups),
+        ];
+        for (map, sorted) in maps {
+            let start = before
+                .find(&format!("\n  \"{map}\": {{\n"))
+                .unwrap_or_else(|| panic!("{map} isn't in the file"));
+            let body = &before[start..start + before[start..].find("\n  }").unwrap()];
+            let at = |k: &str| {
+                body.find(&format!("\n    \"{k}\": "))
+                    .unwrap_or_else(|| panic!("{k} isn't in {map}"))
+            };
+            assert!(
+                sorted.windows(2).all(|w| at(&w[0]) < at(&w[1])),
+                "{map}'s keys aren't in order"
+            );
+        }
     }
 
     #[test]

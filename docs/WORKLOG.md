@@ -4,6 +4,19 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — projects.json byte-identical test fills every map, run and your_check too (mu-160)
+**Did (Akbar_21, builder):** `folding_and_unfolding_a_heading_leaves_projects_json_byte_identical`
+also fills `run` (`bin/run`) and `your_check` (a mix of `Off` and `At(n)`) for its 24 queues, and
+checks that the keys are in order in the file for each of Config's eight maps, not only labels.
+A comment says a new map in Config gets filled there too. Test only.
+**Verified:** the test passes; by hand, `run` as a HashMap and, separately, `your_check` as a
+HashMap (check_limit's maps too) each fail it at the byte-identical assert; gate green.
+**Fixed (Akbar_22, round 1, R1):** `group_names` had two keys, so the reviewer's mutant (it saved
+through a fresh HashMap) passed 5 of 12 runs → a random order of two keys is often sorted, or the
+same twice → it gets 24 group folders inserted out of order, checked against their sorted keys.
+**Verified (R1):** that mutant fails 12 of 12 hermetic runs at the byte-identical assert; a mutant
+writing `group_names` in reverse order fails the key-order check 2 of 2; unmutated passes.
+
 ## 2026-10-14 — Owner's answers on decision 0016: accepted; runs start through cc-hg-new, not bare claude -p
 **Decided:** mu-127 V1 resolved (Muster starts its own runs, Drover hosts them and also starts the
 owner's ad-hoc sessions); Drover 0018 closed as superseded by dr-33 to dr-35; runs and probes start
