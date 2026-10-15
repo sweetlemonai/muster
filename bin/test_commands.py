@@ -557,6 +557,64 @@ class WorkLogMergeDriver(unittest.TestCase):
         self.assertIn("merge.muster-log.driver=true", before)
         self.assertIn("some.other=kept", before)
 
+    NOT_SET = "Couldn't set the work log's merge driver in .git/config: File exists."
+
+    def driver_block(self, out: str) -> list[str]:
+        """The block that ends `out`: from the line saying the driver isn't set to the end."""
+        lines = out.rstrip("\n").splitlines()
+        at = next(i for i, l in enumerate(lines) if "merge driver" in l)
+        return lines[at:]
+
+    def test_start_and_init_say_plainly_when_the_driver_cant_be_set(self):
+        # A config git can't lock, as in a sandboxed session (a read-only .git/config isn't
+        # enough: git replaces the file through its lock). init and start still succeed.
+        lock = self.repo / ".git" / "config.lock"
+        lock.touch()
+        for out in (self.muster("init").stdout, self.muster("start", self.muster(
+                "new", "Synthetic task", "--touches", "src/").stdout.split()[0]).stdout):
+            block = self.driver_block(out)
+            self.assertEqual(block[0], self.NOT_SET, out)
+            self.assertIn("a clash in docs/WORKLOG.md is a conflict instead of merging by itself", block[1])
+            self.assertEqual([l.split()[:4] for l in block[3:]],
+                             [["git", "config", "--local", "merge.muster-log.name"],
+                              ["git", "config", "--local", "merge.muster-log.driver"]], out)
+            self.assertNotIn(self.tmp.name, "\n".join(block))
+        self.assertFalse(any(k.startswith("merge.muster-log.") for k in self.local_config()))
+        # check says so too, with the same two lines; the lines, run as printed, set it.
+        r = subprocess.run([self.exe, "check"], cwd=self.repo, capture_output=True, text=True, env=self.env)
+        block = self.driver_block(r.stdout)
+        self.assertIn("isn't in the repo's git config", block[0], r.stdout)
+        lock.unlink()
+        for line in block[3:]:
+            subprocess.run(["sh", "-c", line], cwd=self.repo, check=True, env=self.env)
+        self.assertIn(("merge.muster-log.driver=muster merge-log %O %A %B; s=$?; [ $s -le 1 ] && exit $s; "
+                       "git merge-file -L ours -L base -L theirs %A %O %B"), self.local_config())
+        self.assertNotIn("merge driver", subprocess.run(
+            [self.exe, "check"], cwd=self.repo, capture_output=True, text=True, env=self.env).stdout)
+
+    def test_check_warns_until_both_keys_are_set_and_only_where_gitattributes_uses_the_driver(self):
+        self.muster("init")
+
+        def check() -> subprocess.CompletedProcess:
+            return subprocess.run([self.exe, "check"], cwd=self.repo, capture_output=True,
+                                  text=True, env=self.env)
+
+        self.assertNotIn("merge driver", check().stdout, "init set both")
+        before = check().returncode
+        self.git(self.repo, "config", "--local", "--unset", "merge.muster-log.name")
+        r = check()
+        self.assertIn("the work log's merge driver isn't in the repo's git config", r.stdout)
+        self.assertEqual(r.returncode, before, "a warning: the exit code ignores it")
+        self.git(self.repo, "config", "--local", "--remove-section", "merge.muster-log")
+        self.assertIn("the work log's merge driver isn't in the repo's git config", check().stdout)
+        # A repo whose .gitattributes doesn't use it isn't told to set it.
+        (self.repo / ".gitattributes").write_text("# docs/WORKLOG.md merge=muster-log\n", encoding="utf-8")
+        self.assertNotIn("merge driver", check().stdout)
+        (self.repo / ".gitattributes").write_text("docs/WORKLOG.md merge=muster-log\n", encoding="utf-8")
+        self.git(self.repo, "config", "merge.muster-log.name", "the owner's own")
+        self.git(self.repo, "config", "merge.muster-log.driver", "true")
+        self.assertNotIn("merge driver", check().stdout, "both set, whatever they say")
+
 
 class RunScript(unittest.TestCase):
     """0077, 0079: bin/run, Muster's run command, builds the release app, then becomes that

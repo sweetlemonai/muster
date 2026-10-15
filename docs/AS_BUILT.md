@@ -207,7 +207,10 @@ Every script in `bin/` (the same test fails when one is missing here):
 
 `.gitattributes` names the work log's merge driver (`docs/WORKLOG.md merge=muster-log`, decision
 0009); `muster start` and `muster init` write the driver into the repo's git config when it's
-missing, and the merge passes it to its rebase itself.
+missing, and the merge passes it to its rebase itself. When they can't write it (a sandboxed
+session can't lock `.git/config`), they end their output with git's reason, what it means and the
+two `git config --local` lines that set it, and `muster check` warns with the same lines while a
+repo whose `.gitattributes` uses `merge=muster-log` doesn't have both keys (task 0094).
 
 ### The personal layer's part
 
@@ -326,7 +329,7 @@ is in section 6.
 | Settings, display modes, themes and accents, Drover's token names and atoms; one CSS class per component | Built, tested | mu-36, mu-38, mu-12, mu-53, mu-81 |
 | Your check: next step, effort groups, Accept all, the limit per project | Built, tested | mu-43, mu-50 |
 | Dock badge | Built, tested | mu-6 |
-| Mac notifications | Built, tested, merged 2026-10-13 (`5e1baa2`) | mu-52 |
+| Mac notifications | Built, tested, merged 2026-10-13 (`5d1329b`) | mu-52 |
 | The owner's icons: app icon light and dark, the sidebar's logo, the menu bar icon | Built, tested; on its branch, not on main | mu-85 |
 | The AI helper | Built; checked end to end once, by hand | mu-8 |
 | The manual and the Help tab | Built, tested; no screenshots | mu-35 |

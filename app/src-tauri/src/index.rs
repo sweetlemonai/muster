@@ -573,6 +573,37 @@ const GLANCE_STAGES: [&str; 8] = [
     "done",
 ];
 
+/// `s` with `home` (no trailing `/`; "" swaps nothing) as `~` where it's a whole path or a path's
+/// start (0094): followed by `/` or by a character a name doesn't go on with, and not preceded by
+/// one, so with `/Users/im` neither `/Users/imassih` nor `/x/Users/im` is touched.
+fn home_as_tilde(s: &str, home: &str) -> String {
+    if home.is_empty() {
+        return s.to_string();
+    }
+    let name = |c: char| c.is_alphanumeric() || matches!(c, '-' | '_' | '.');
+    let mut out = String::with_capacity(s.len());
+    let mut from = 0;
+    for (at, _) in s.match_indices(home) {
+        if at < from {
+            continue;
+        }
+        let mut next = s[at + home.len()..].chars();
+        let ends = match next.next() {
+            None | Some('/') => true,
+            // A sentence's full stop ends the path; `.bak` goes on with the name.
+            Some('.') => next.next().is_none_or(char::is_whitespace),
+            Some(c) => !name(c),
+        };
+        if ends && !s[..at].chars().next_back().is_some_and(name) {
+            out.push_str(&s[from..at]);
+            out.push('~');
+            from = at + home.len();
+        }
+    }
+    out.push_str(&s[from..]);
+    out
+}
+
 /// The queue at a glance (task 0080), for an as-built document, from the same tasks and notes as
 /// `index_md` (pure): when the list is as of and the counts, then every task of `queue` by the
 /// stage it shows, in id order, as its key (a goal or feature with its level), its title and
@@ -585,13 +616,7 @@ pub fn glance_md(state: &State, queue: &str, home: &str) -> String {
     let mut notes: Vec<&Note> = state.backlog.iter().filter(|n| n.queue == queue).collect();
     notes.sort_by(|a, b| a.file.cmp(&b.file));
     let home = home.trim_end_matches('/');
-    let text = |s: &str, max: usize| {
-        if home.is_empty() {
-            md_text(s, max)
-        } else {
-            md_text(&s.replace(home, "~"), max)
-        }
-    };
+    let text = |s: &str, max: usize| md_text(&home_as_tilde(s, home), max);
     if tasks.is_empty() && notes.is_empty() {
         return "\nNo tasks and no backlog notes yet.\n\n".into();
     }
@@ -1806,6 +1831,44 @@ As of 2026-10-13 08:00 (the newest change in a task's log). 7 tasks: 1 Backlog, 
         }
         // No home given: nothing is replaced.
         assert!(glance_md(&read(p), "", "").contains("/home/me/notes"));
+    }
+
+    #[test]
+    fn the_glance_swaps_home_only_at_a_path_boundary() {
+        let d = queue();
+        let p = d.path();
+        let log = "- 2026-10-12 09:00 capture: created\n";
+        task(
+            p,
+            "todo/0001-a.md",
+            "0001",
+            "stage: ready",
+            "See /Users/imassih/x, /Users/im/x and /Users/im",
+            log,
+        );
+        for home in ["/Users/im", "/Users/im/"] {
+            let g = glance_md(&read(p), "", home);
+            assert!(
+                g.contains("| See /Users/imassih/x, \\~/x and \\~ |"),
+                "{home}: {g}"
+            );
+        }
+        // The swap itself: the whole path, a path under it, and the near misses.
+        for (s, want) in [
+            ("/Users/im", "~"),
+            ("/Users/im/x", "~/x"),
+            ("(/Users/im) and /Users/im.", "(~) and ~."),
+            ("/Users/imassih/x", "/Users/imassih/x"),
+            ("/Users/im.bak/x", "/Users/im.bak/x"),
+            ("/Users/im-old", "/Users/im-old"),
+            ("/x/Users/im", "/x/Users/im"),
+            ("/Users/im/Users/im", "~/Users/im"),
+            ("/Users/imassih and /Users/im/a", "/Users/imassih and ~/a"),
+            ("کار در /Users/im/پوشه", "کار در ~/پوشه"),
+        ] {
+            assert_eq!(home_as_tilde(s, "/Users/im"), want, "{s}");
+        }
+        assert_eq!(home_as_tilde("/Users/im/x", ""), "/Users/im/x");
     }
 
     #[test]

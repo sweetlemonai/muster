@@ -25,6 +25,27 @@ screenshots in attachments; owner's settings byte-identical after every QA run.
 evidence); backlog notes from review nits (mu-88 R1, mu-90 R6-R8, mu-95 R3, migrate flake, band
 titles, mu-93 item 5).
 
+## 2026-10-14 — edit keeps a task's Questions; start and init say when the merge driver isn't set; glance swaps $HOME only at a path boundary (mu-94)
+**Did (gholi_13, builder):** `ops.rs` `cut_questions`/`put_back_questions`: `muster edit` and the
+app's Edit leave the tool's `## Questions` out of the write-up wherever it sits and put it back
+byte for byte before the `## ` line that followed it; a new `## Questions` line is refused.
+`merge_log.rs` `missing`, `wanted`, `not_set`, `fix_lines`: a failed `configure` ends `start` and
+`init` on stdout with git's reason, what it means and the two `git config --local` lines;
+`muster check` warns while `.gitattributes` uses `merge=muster-log` and a key is missing.
+`index.rs` `home_as_tilde`. PROTOCOL.md, AS_BUILT.md (mu-52 cites `5d1329b`), help, manual.
+**Fixed:** a Questions section asked before the vision check sat inside the write-up
+(`body_span` ends at Vision), so saving an edit without it deleted it → cut it out of the
+editable text and put it back. `glance_md` did `s.replace(home, "~")` → `/Users/imassih` became
+`~assih` with `$HOME=/Users/im` → swap only at a path boundary.
+**Decided:** the CLI tests block the config with a held `.git/config.lock`, not a read-only
+`.git/config`: git replaces the file through its lock, so read-only doesn't fail; the lock gives
+the sandbox's "could not lock config file". The reason shown is the words after git's last `: `,
+so no path is printed.
+**Verified:** `edit_keeps_questions` 4 tests (before and after a checked Vision, mid write-up,
+a new heading refused, Persian kept), glance 3, merge_log 19 (the printed lines run through `sh`
+set what `configure` writes), `WorkLogMergeDriver` 5 in test_commands.py; `gate: green (pnpm
+check, test_task, test_commands, cargo test (Kiritimati))`.
+
 ## 2026-10-14 — Decision 0013: orchestration's terms and accounts (task 0107)
 **Did:** `docs/decisions/0013-orchestration-terms-and-accounts.md` holds the plan's six terms rules
 (own client and no tokens, no balancing across accounts, no company account, capped and paced runs,

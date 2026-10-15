@@ -3615,10 +3615,76 @@ fn no_comments_heading(text: &str, what: &str) -> Result<(), String> {
 }
 
 /// The write-up as an editor opens it: the text between the front matter and the Log, without
-/// the blank lines around it.
+/// the blank lines around it and without the tool's Questions section (`cut_questions`).
 pub fn editable_body(text: &str) -> Result<String, String> {
     let (start, end) = body_span(text)?;
-    Ok(text[start..end].trim_matches(['\n', '\r']).to_string())
+    Ok(cut_questions(&text[start..end]).0)
+}
+
+/// The tool's Questions section cut out of a write-up, to put back on save: the section's text,
+/// and the `## ` line that followed it with how many lines like it come before it (None when the
+/// section ended the write-up).
+type Questions<'a> = (&'a str, Option<(&'a str, usize)>);
+
+/// The write-up `w` (`body_span`'s) without the tool's Questions section, trimmed as the editor
+/// opens it, and the section to put back on save (`put_back_questions`). The section is the
+/// tool's wherever it sits (0094): before a vision check it's inside the write-up, and a write-up
+/// saved without it would delete the task's questions and their answers.
+fn cut_questions(w: &str) -> (String, Option<Questions<'_>>) {
+    let trim = |s: &'_ str| s.trim_matches(['\n', '\r']).to_string();
+    // `questions_span` starts after the heading's line, which ends with a newline.
+    let Some((at, end)) = queue::questions_span(w) else {
+        return (trim(w), None);
+    };
+    let head = w[..at - 1].rfind('\n').map_or(0, |i| i + 1);
+    let before = w[..head].trim_matches(['\n', '\r']);
+    let after = w[end..].trim_matches(['\n', '\r']);
+    let next = after.lines().next().map(|line| {
+        let line = line.trim_end_matches('\r');
+        let n = before
+            .lines()
+            .filter(|l| l.trim_end_matches('\r') == line)
+            .count();
+        (line, n)
+    });
+    let shown = match (before.is_empty(), after.is_empty()) {
+        (false, false) => format!("{before}\n\n{after}"),
+        (true, _) => after.to_string(),
+        (false, true) => before.to_string(),
+    };
+    (
+        shown,
+        Some((w[head..end].trim_end_matches(['\n', '\r']), next)),
+    )
+}
+
+/// `body` with the Questions section `cut_questions` took out put back where it was: before the
+/// line that followed it (the same one, counting the lines like it), else at the end.
+fn put_back_questions(body: &str, (section, next): Questions<'_>) -> String {
+    let at = next.and_then(|(line, n)| {
+        let mut pos = 0;
+        body.split_inclusive('\n')
+            .filter_map(|l| {
+                let at = pos;
+                pos += l.len();
+                (l.trim_end_matches(['\n', '\r']) == line).then_some(at)
+            })
+            .nth(n)
+    });
+    let Some(at) = at else {
+        return format!("{}\n\n{section}", body.trim_end_matches(['\n', '\r']));
+    };
+    match body[..at].trim_end_matches(['\n', '\r']) {
+        "" => format!("{section}\n\n{}", &body[at..]),
+        before => format!("{before}\n\n{section}\n\n{}", &body[at..]),
+    }
+}
+
+/// How many lines of `text` are a `## Questions` heading.
+fn questions_headings(text: &str) -> usize {
+    text.lines()
+        .filter(|l| l.trim_end() == "## Questions")
+        .count()
 }
 
 /// Who holds `t` in Building, when that's someone other than `who`. While they do, its write-up
@@ -3699,7 +3765,8 @@ pub fn edit_body(
             return Err(held_by(&holder));
         }
         let (start, end) = body_span(&text)?;
-        let current = text[start..end].trim_matches(['\n', '\r']);
+        let (current, questions) = cut_questions(&text[start..end]);
+        let current = current.as_str();
         if current != expected {
             return Err(format!(
                 "{id} changed since you opened it, so nothing was saved; open it again to edit what's there now"
@@ -3721,6 +3788,15 @@ pub fn edit_body(
         if crate::review::reviewed(&text) && reviews(&new_body) > reviews(current) {
             return Err("the write-up has a new \"## Review\" line, and the Review section is the tool's once the task has a review round: muster review writes it".into());
         }
+        // The Questions section is the tool's wherever it sits (0094): it isn't in the editor, it
+        // goes back where it was, and a write-up can't start one.
+        if questions_headings(&new_body) > questions_headings(current) {
+            return Err("the write-up has a new \"## Questions\" line, and the Questions section is the tool's: ask with muster ask".into());
+        }
+        let new_body = match questions {
+            Some(q) => put_back_questions(&new_body, q),
+            None => new_body,
+        };
         let head = &text[..start];
         let mut new = if end == text.len() {
             format!("{head}\n{new_body}\n")
@@ -8043,7 +8119,7 @@ mod edit_tests {
         let before = text(&p);
         let opened = open_body(d.path(), "0001", "owner").unwrap();
         assert_eq!(opened, WRITE_UP);
-        let new = "# Edit me\n\nThe new description, with a list:\n- one\n\t- indented\n\n## Questions\n- [ ] **Q1 (owner, session aaaa1111, 2026-10-12 10:00):** Which colour?\n\n## Acceptance criteria\n- [x] AC1: one\n- [ ] AC2: two";
+        let new = "# Edit me\n\nThe new description, with a list:\n- one\n\t- indented\n\n## Acceptance criteria\n- [x] AC1: one\n- [ ] AC2: two";
         let path = edit_body(d.path(), "0001", new, &opened, "owner", T).unwrap();
         assert_eq!(path.as_deref(), Some("todo/0001-t.md"));
         let after = text(&p);
@@ -8061,7 +8137,6 @@ mod edit_tests {
         let t = crate::queue::read_task(d.path(), "0001").unwrap();
         assert_eq!(t.stage_history.len(), 1);
         assert_eq!(crate::queue::criteria(&after), (2, 1));
-        assert_eq!(t.questions.len(), 1);
         assert_eq!((t.stage.as_str(), t.title.as_str()), ("ready", "Edit me"));
     }
 
@@ -8484,6 +8559,126 @@ mod edit_tests {
             crate::vision::resolve(d.path(), "0001", "V1", "kept", "owner", T).unwrap(),
             1
         );
+    }
+
+    /// The task's `## Questions` section, heading to its last non-blank line.
+    fn questions_of(text: &str) -> &str {
+        let at = text.find("\n## Questions\n").unwrap() + 1;
+        let end = text[at..].find("\n\n## ").map_or(text.len(), |e| at + e);
+        &text[at..end]
+    }
+    const PERSIAN: &str = "کدام رنگ برای دکمه؟";
+
+    #[test]
+    fn edit_keeps_questions_before_a_checked_vision() {
+        let d = queue();
+        let p = put(d.path(), "todo", READY, WRITE_UP, "");
+        crate::queue::ask(d.path(), "0001", PERSIAN, "wt-a", "aaaa1111", T).unwrap();
+        let one = r#"{"conflicts": [{"title": "A", "this": {"quote": "a", "at": "0001"}, "other": {"quote": "b", "at": "docs/VISION.md:3"}, "fix": "f"}]}"#;
+        crate::vision::record(d.path(), "0001", one, "wt-shape", T).unwrap();
+        let before = text(&p);
+        let q = questions_of(&before).to_string();
+        assert!(q.contains(PERSIAN), "{before}");
+        assert!(
+            before.find("\n## Questions\n") < before.rfind("\n## Vision\n"),
+            "asked before its vision check: {before}"
+        );
+        let opened = open_body(d.path(), "0001", "owner").unwrap();
+        assert_eq!(
+            opened, WRITE_UP,
+            "the tool's Questions aren't in the editor"
+        );
+        let new = "# Edit me\n\nThe new description.\n\n## Acceptance criteria\n- [ ] AC1: one";
+        edit_body(d.path(), "0001", new, &opened, "owner", T).unwrap();
+        let after = text(&p);
+        assert!(
+            after.contains(&format!("{new}\n\n{q}\n\n## Vision\n")),
+            "the section kept byte for byte, still before the Vision: {after}"
+        );
+        assert_eq!(open_body(d.path(), "0001", "owner").unwrap(), new);
+        // `muster ask` after the edit still finds the one section.
+        crate::queue::ask(d.path(), "0001", "And the size?", "wt-a", "aaaa1111", T).unwrap();
+        let t = crate::queue::read_task(d.path(), "0001").unwrap();
+        assert_eq!(t.questions.len(), 2);
+        assert_eq!(text(&p).matches("\n## Questions\n").count(), 1);
+    }
+
+    #[test]
+    fn edit_keeps_questions_after_a_checked_vision() {
+        let d = queue();
+        let p = put(d.path(), "todo", READY, WRITE_UP, "");
+        let one = r#"{"conflicts": [{"title": "A", "this": {"quote": "a", "at": "0001"}, "other": {"quote": "b", "at": "docs/VISION.md:3"}, "fix": "f"}]}"#;
+        crate::vision::record(d.path(), "0001", one, "wt-shape", T).unwrap();
+        crate::queue::ask(d.path(), "0001", PERSIAN, "wt-a", "aaaa1111", T).unwrap();
+        let before = text(&p);
+        let q = questions_of(&before).to_string();
+        assert!(before.rfind("\n## Vision\n") < before.find("\n## Questions\n"));
+        let opened = open_body(d.path(), "0001", "owner").unwrap();
+        assert_eq!(opened, WRITE_UP);
+        let new = "# Edit me\n\nThe new description.";
+        edit_body(d.path(), "0001", new, &opened, "owner", T).unwrap();
+        let after = text(&p);
+        assert_eq!(questions_of(&after), q);
+        assert!(after.rfind("\n## Vision\n") < after.find("\n## Questions\n"));
+        assert_eq!(open_body(d.path(), "0001", "owner").unwrap(), new);
+    }
+
+    #[test]
+    fn edit_keeps_questions_mid_write_up_in_their_place() {
+        let d = queue();
+        let q = format!("## Questions\n- [x] **Q1 (wt-a, session aaaa1111, 2026-10-12 10:00):** {PERSIAN}\n  **Answer (owner, 2026-10-12 11:00):** آبی\n- [ ] **Q2 (wt-a, session aaaa1111, 2026-10-12 10:05):** Which size?");
+        // A `## Notes` before and after the section: it goes back before the second one.
+        let write_up =
+            format!("# Edit me\n\n## Notes\nFirst.\n\n{q}\n\n## Notes\nSecond.\n\n## Acceptance criteria\n- [ ] AC1: one");
+        let p = put(d.path(), "todo", READY, &write_up, "");
+        let opened = open_body(d.path(), "0001", "owner").unwrap();
+        let shown = "# Edit me\n\n## Notes\nFirst.\n\n## Notes\nSecond.\n\n## Acceptance criteria\n- [ ] AC1: one";
+        assert_eq!(opened, shown);
+        let new = "# Edit me\n\n## Notes\nFirst, edited.\n\n## Notes\nSecond, edited.\n\n## Acceptance criteria\n- [ ] AC1: one\n- [ ] AC2: two";
+        edit_body(d.path(), "0001", new, &opened, "owner", T).unwrap();
+        let after = text(&p);
+        assert!(
+            after.contains(&format!(
+                "First, edited.\n\n{q}\n\n## Notes\nSecond, edited."
+            )),
+            "{after}"
+        );
+        assert_eq!(open_body(d.path(), "0001", "owner").unwrap(), new);
+        let t = crate::queue::read_task(d.path(), "0001").unwrap();
+        assert_eq!(t.questions.len(), 2);
+        // The heading that followed it gone: the section goes to the end of the write-up.
+        let last = "# Edit me\n\n## Notes\nOnly one.";
+        edit_body(d.path(), "0001", last, new, "owner", T).unwrap();
+        let after = text(&p);
+        assert!(
+            after.contains(&format!("{last}\n\n{q}\n\n## Log\n")),
+            "{after}"
+        );
+    }
+
+    #[test]
+    fn edit_keeps_questions_and_refuses_a_new_questions_heading() {
+        for write_up in [
+            WRITE_UP.to_string(),
+            format!("{WRITE_UP}\n\n## Questions\n- [ ] **Q1 (wt-a, session aaaa1111, 2026-10-12 10:00):** {PERSIAN}"),
+        ] {
+            let d = queue();
+            let p = put(d.path(), "todo", READY, &write_up, "");
+            let before = text(&p);
+            let opened = open_body(d.path(), "0001", "owner").unwrap();
+            assert_eq!(opened, WRITE_UP);
+            for bad in [
+                format!("{WRITE_UP}\n\n## Questions\n- [ ] **Q9 (owner, session aaaa1111, 2026-10-12 10:00):** forged"),
+                format!("## Questions  \n\n{WRITE_UP}"),
+            ] {
+                let e = edit_body(d.path(), "0001", &bad, &opened, "owner", T).unwrap_err();
+                assert!(e.contains("the Questions section is the tool's: ask with muster ask"), "{e}");
+                assert_eq!(text(&p), before, "nothing changes");
+            }
+            // Naming the section in prose is fine.
+            edit_body(d.path(), "0001", &format!("{WRITE_UP}\n\nSee ## Questions."), &opened, "owner", T)
+                .unwrap();
+        }
     }
 
     #[test]

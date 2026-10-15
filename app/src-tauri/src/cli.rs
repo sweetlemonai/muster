@@ -1371,8 +1371,9 @@ fn started_text(root: &Path, prefix: &str, id: &str, s: &crate::parallel::Starte
 }
 
 /// `start` and `init` in a repo (0067): the work log's merge driver in the repo's own git config,
-/// for the keys git doesn't have yet, said when it writes any. A failure is said on stderr and
-/// stops nothing: without the driver a work log clash is a conflict, as before.
+/// for the keys git doesn't have yet, said when it writes any. A failure (a sandboxed session
+/// can't write `.git/config`) stops nothing: it's said last on stdout, where a session reads,
+/// with the two lines that set it (0094); `muster check` keeps saying so until they're run.
 fn set_merge_driver(dir: &Path) {
     match crate::merge_log::configure(dir) {
         Ok(keys) if keys.is_empty() => {}
@@ -1380,8 +1381,23 @@ fn set_merge_driver(dir: &Path) {
             "set {} in the repo's git config, so work log entries merge whole (muster merge-log)",
             keys.join(" and ")
         ),
-        Err(e) => eprintln!("muster: couldn't set the work log's merge driver: {e}"),
+        Err(e) => print!("\n{}", crate::merge_log::not_set(&e)),
     }
+}
+
+/// `muster check`'s warning (0094) when the queue's repo has git merge with the work log's driver
+/// (`.gitattributes`) and git's config doesn't have it yet, with the two lines that set it.
+fn merge_driver_warning(root: &Path) -> Option<String> {
+    let repo = root
+        .parent()
+        .filter(|_| root.file_name().is_some_and(|n| n == crate::layout::DIR))?;
+    if !crate::merge_log::wanted(repo) || crate::merge_log::missing(repo).ok()?.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "the work log's merge driver isn't in the repo's git config, though .gitattributes uses merge=muster-log.\n{}",
+        crate::merge_log::fix_lines()
+    ))
 }
 
 /// One line per task for `muster ready`: key, priority, title, and what it touches.
@@ -2323,6 +2339,9 @@ fn run_on(
             // migrate), and where its keys go: a warning, the exit code ignores it.
             if let Some(l) = crate::key::shared_prefix(&crate::key::known(), root, prefix) {
                 println!("{l}");
+            }
+            if let Some(w) = merge_driver_warning(root) {
+                print!("{w}");
             }
             // Warnings (a goal past its due date, a list due a refresh) are shown but don't fail
             // the check.

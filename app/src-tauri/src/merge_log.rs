@@ -332,6 +332,17 @@ fn run_capped(args: &[String], max: u64) -> Result<i32, String> {
 /// a custom one, and every other key, are left as they are. Returns the keys it wrote.
 pub fn configure(dir: &Path) -> Result<Vec<String>, String> {
     let mut wrote = Vec::new();
+    for (key, value) in missing(dir)? {
+        git(dir, &["config", "--local", &key, &value])?;
+        wrote.push(key);
+    }
+    Ok(wrote)
+}
+
+/// The driver's keys git doesn't have yet in `dir`'s repo, from any config, with the values
+/// `configure` writes: none once both are set, whatever they say.
+pub fn missing(dir: &Path) -> Result<Vec<(String, String)>, String> {
+    let mut missing = Vec::new();
     for (key, value) in [
         ("name", NAME.to_string()),
         ("driver", driver_command("muster")),
@@ -340,10 +351,7 @@ pub fn configure(dir: &Path) -> Result<Vec<String>, String> {
         let out = git_output(dir, &["config", "--get", &key])?;
         match out.status.code() {
             Some(0) => {}
-            Some(1) => {
-                git(dir, &["config", "--local", &key, &value])?;
-                wrote.push(key);
-            }
+            Some(1) => missing.push((key, value)),
             _ => {
                 return Err(format!(
                     "git config --get {key}: {}",
@@ -352,7 +360,49 @@ pub fn configure(dir: &Path) -> Result<Vec<String>, String> {
             }
         }
     }
-    Ok(wrote)
+    Ok(missing)
+}
+
+/// Does the repo at `dir` have git merge `docs/WORKLOG.md` (or anything) with the driver: a
+/// `merge=muster-log` in its `.gitattributes`, outside a comment?
+pub fn wanted(dir: &Path) -> bool {
+    let want = format!("merge={DRIVER}");
+    fs::read_to_string(dir.join(".gitattributes")).is_ok_and(|t| {
+        t.lines()
+            .filter(|l| !l.trim_start().starts_with('#'))
+            .any(|l| l.split_whitespace().skip(1).any(|w| w == want))
+    })
+}
+
+/// What `start` and `init` say when `configure` failed with `e` (0094): git's reason, what it
+/// means, and the two lines that set the driver. The reason is the words after the last `: ` of
+/// git's last line (`… could not lock config file .git/config: Operation not permitted`), so
+/// neither the command's values nor a path is in it.
+pub fn not_set(e: &str) -> String {
+    let line = e.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or(e);
+    let reason = line.rsplit(": ").next().unwrap_or(line).trim();
+    format!(
+        "Couldn't set the work log's merge driver in .git/config: {reason}.\n{}",
+        fix_lines()
+    )
+}
+
+/// What a missing driver means and the two `git config --local` lines that set it, for a person
+/// or a session with the sandbox off to run (`start`, `init`, `check`); muster never runs them.
+pub fn fix_lines() -> String {
+    let mut out = String::from(
+        "Without it, a clash in docs/WORKLOG.md is a conflict instead of merging by itself.\nTo set it, run these two lines in the repo, from outside the sandbox:\n",
+    );
+    for (key, value) in [
+        ("name", NAME.to_string()),
+        ("driver", driver_command("muster")),
+    ] {
+        out.push_str(&format!(
+            "  git config --local merge.{DRIVER}.{key} {}\n",
+            sh_quote(&value)
+        ));
+    }
+    out
 }
 
 /// `-c` options that define the driver for one git command, run by the muster binary at
@@ -866,6 +916,74 @@ mod tests {
         );
         // Not a repo: an error, nothing written.
         assert!(configure(dir.path()).is_err());
+    }
+
+    #[test]
+    fn merge_log_a_driver_not_set_says_why_and_the_two_lines_that_set_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = log_repo(dir.path());
+        assert!(wanted(&repo));
+        assert_eq!(missing(&repo).unwrap().len(), 2);
+        // A config git can't lock, as a sandboxed session's: configure fails and writes nothing.
+        let lock = repo.join(".git/config.lock");
+        fs::write(&lock, "").unwrap();
+        let e = configure(&repo).unwrap_err();
+        let said = not_set(&e);
+        let mut lines = said.lines();
+        assert_eq!(
+            lines.next(),
+            Some("Couldn't set the work log's merge driver in .git/config: File exists."),
+            "{e}"
+        );
+        assert!(
+            !said.contains(dir.path().to_str().unwrap()),
+            "no path: {said}"
+        );
+        assert!(said.contains("a clash in docs/WORKLOG.md is a conflict instead of merging"));
+        let run: Vec<&str> = lines.filter_map(|l| l.strip_prefix("  ")).collect();
+        assert_eq!(run.len(), 2, "{said}");
+        assert_eq!(missing(&repo).unwrap().len(), 2);
+        // Run as printed, through a shell, the two lines set what configure would have. (`sh -c`
+        // on purpose: the lines are this test's own output, and their quoting is what's tested.)
+        fs::remove_file(&lock).unwrap();
+        for line in run {
+            assert!(
+                line.starts_with("git config --local merge.muster-log."),
+                "{line}"
+            );
+            let out = Command::new("sh")
+                .args(["-c", line])
+                .current_dir(&repo)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "{line}: {out:?}");
+        }
+        assert_eq!(missing(&repo).unwrap(), Vec::new());
+        assert_eq!(
+            g(&repo, &["config", "--local", "merge.muster-log.driver"]),
+            driver_command("muster")
+        );
+        assert_eq!(
+            g(&repo, &["config", "--local", "merge.muster-log.name"]),
+            NAME
+        );
+        // `wanted`: only a merge=muster-log attribute outside a comment.
+        for (attrs, want) in [
+            ("docs/WORKLOG.md merge=muster-log\n", true),
+            (
+                "*.md text\n  docs/WORKLOG.md   merge=muster-log  -diff\n",
+                true,
+            ),
+            ("# docs/WORKLOG.md merge=muster-log\n", false),
+            ("docs/WORKLOG.md merge=muster-logs\n", false),
+            ("merge=muster-log\n", false),
+            ("", false),
+        ] {
+            fs::write(repo.join(".gitattributes"), attrs).unwrap();
+            assert_eq!(wanted(&repo), want, "{attrs:?}");
+        }
+        fs::remove_file(repo.join(".gitattributes")).unwrap();
+        assert!(!wanted(&repo));
     }
 
     #[test]

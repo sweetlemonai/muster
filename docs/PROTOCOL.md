@@ -826,3 +826,6 @@ By hand, if the command isn't available:
 - While another session holds a task in Building, the owner human edits through a note, not
   the write-up: `muster edit` and the app's Edit refuse it, since the write-up belongs to the
   holder's branch until they pass it on (task 0020, decision 0003).
+- `## Questions` is the tool's, like Vision, wherever it sits (task 0094): `muster edit` and the
+  app's Edit leave it out of the write-up and put it back unchanged where it was, and refuse a
+  write-up that adds a `## Questions` line. Ask with `muster ask`.
