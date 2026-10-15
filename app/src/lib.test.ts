@@ -481,6 +481,48 @@ describe("the tester isn't the builder (0047)", () => {
     expect(needsTester(task({ stage: "your-check", heldBy: A, builtBy: A }))).toBe(false);
     expect(needsTester(task({ stage: "testing", heldBy: "owner", builtBy: "owner", forWho: "human" }))).toBe(false);
   });
+  it("counts the takeover chain as builders, as the core's tester_rule does (0090)", () => {
+    // ops.rs tester_rule_refuses_a_successor_and_its_predecessor: OLD claimed it, NEW took the
+    // claim over and gated it in; both are refused, a QA session in another session isn't.
+    const OLD = "asghar (main · session 1c6af0d9 · cc-mg)";
+    const NEW = "asghar (main · session d6419719 · cc-mg)";
+    const QA = "qa-0001 (session 99999999)";
+    const chain = { stage: "testing", builders: [OLD, NEW], builtBy: NEW, gatedBy: NEW };
+    expect(needsTester(task({ ...chain, heldBy: NEW }))).toBe(true);
+    expect(needsTester(task({ ...chain, heldBy: OLD }))).toBe(true);
+    expect(needsTester(task({ ...chain, heldBy: QA }))).toBe(false);
+    // The predecessor under another stamp of its session (same_holder) is still it.
+    expect(needsTester(task({ ...chain, heldBy: "asghar (wt-0001 · session 1c6af0d9)" }))).toBe(true);
+    // Gated in by someone outside the chain: the chain and the gate passer all built it.
+    const gatedOut = { stage: "testing", builders: [OLD, NEW], builtBy: NEW, gatedBy: "wt-c" };
+    expect(needsTester(task({ ...gatedOut, heldBy: OLD }))).toBe(true);
+    expect(needsTester(task({ ...gatedOut, heldBy: "wt-c" }))).toBe(true);
+    expect(needsTester(task({ ...gatedOut, heldBy: QA }))).toBe(false);
+    // Each builder is checked, as the core does: a bare label in the chain matches any session
+    // under it, even when a stamped one before it matches the bare label too.
+    const bare = { stage: "testing", builders: [OLD, "asghar"], builtBy: "asghar" };
+    expect(needsTester(task({ ...bare, heldBy: "asghar (session 22222222)" }))).toBe(true);
+    expect(needsTester(task({ stage: "testing", builders: [OLD], builtBy: OLD, gatedBy: "asghar", heldBy: "asghar (session 22222222)" }))).toBe(true);
+    // The owner's own task, or past Testing: never.
+    expect(needsTester(task({ ...chain, heldBy: OLD, forWho: "human" }))).toBe(false);
+    expect(needsTester(task({ ...chain, stage: "your-check", heldBy: OLD }))).toBe(false);
+    // No builders (an older payload) or an empty chain reads as before: only builtBy and gatedBy.
+    expect(needsTester(task({ stage: "testing", heldBy: OLD, builtBy: NEW, gatedBy: NEW }))).toBe(false);
+    expect(needsTester(task({ stage: "testing", heldBy: OLD, builders: [], builtBy: NEW, gatedBy: NEW }))).toBe(false);
+    expect(needsTester(task({ stage: "testing", heldBy: NEW, builders: [], builtBy: NEW }))).toBe(true);
+  });
+  it("names each holder of the takeover chain once, oldest first", () => {
+    const OLD = "wt-a (main · session 1c6af0d9 · cc-mg)";
+    const NEW = "wt-b (main · session d6419719 · cc-mg)";
+    const short = (w: string) => shortWho(w, {});
+    expect(builtTested(task({ stage: "testing", heldBy: OLD, builders: [OLD, NEW], builtBy: NEW, gatedBy: NEW }), short)).toBe("built by wt-a and wt-b · needs a tester");
+    expect(builtTested(task({ stage: "your-check", builders: [OLD, NEW], builtBy: NEW, gatedBy: NEW, testedBy: "qa" }), short)).toBe("built by wt-a and wt-b · tested by qa");
+    // A gate passer outside the chain comes after it; one in it (another stamp) isn't named twice.
+    expect(builtTested(task({ stage: "your-check", builders: [OLD, NEW], builtBy: NEW, gatedBy: "wt-c", testedBy: "qa" }), short)).toBe("built by wt-a, wt-b and wt-c · tested by qa");
+    expect(builtTested(task({ stage: "your-check", builders: [OLD, NEW], builtBy: NEW, gatedBy: "wt-a (session 1c6af0d9)", testedBy: "qa" }), short)).toBe("built by wt-a and wt-b · tested by qa");
+    // The pane names each in full.
+    expect(builtTested(task({ stage: "your-check", builders: [OLD, NEW], builtBy: NEW, testedBy: "qa" }), (w) => `[${w}]`)).toBe(`built by [${OLD}] and [${NEW}] · tested by [qa]`);
+  });
   it("says who built it and who tested it, short, or that it needs a tester", () => {
     expect(builtTested(task({ stage: "your-check", builtBy: A, testedBy: "qa-0030 (session 99999999)" }), (w) => shortWho(w, {}))).toBe("built by wt-a · tested by qa-0030");
     expect(builtTested(task({ stage: "done", builtBy: A, testedBy: "owner (session 22222222)" }), (w) => shortWho(w, {}))).toBe("built by wt-a · tested by you");

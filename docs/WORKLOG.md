@@ -4,6 +4,22 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — The card's "needs a tester" and "built by" count the takeover chain (mu-186)
+**Did (gholi_37, builder):** `queue::Task.builders` goes to the window (`builders`, no longer
+`serde(skip)`), `Task.builders?` in `types.ts`, and `lib.ts` `builders()` returns the chain, then
+`builtBy` and `gatedBy`. The card and pane read "built by wt-a and wt-b" after a takeover, "wt-a,
+wt-b and wt-c" for three.
+**Fixed:** a Testing task held by a takeover's predecessor showed no "needs a tester", though the
+core refuses that holder's pass → the app knew only `builtBy` (the chain's last) and `gatedBy` →
+it now checks every chain member with `sameHolder`. `needsTester` checks each builder without
+folding look-alikes first, since a bare label matches any stamp and the match isn't transitive;
+only the "built by" line names each holder once (`builderNames`).
+**Verified:** Vitest `lib.test.ts` 55 passed, with cases from `ops.rs`
+`tester_rule_refuses_a_successor_and_its_predecessor`; a mutant that drops the chain fails 2 of
+them. `cargo test --lib builders` (hermetic HOME) 4 passed, with the new
+`builders_go_to_the_window_as_the_chain_reads_them`. `bin/gate`: green (pnpm check, test_task,
+test_commands, cargo test (Kiritimati)).
+
 ## 2026-10-15 — Release a claim no session can be reached on; holders' acts stamp bare claims (mu-184)
 **Did (Asghar_30, builder; round 1 fixes Asghar_34):** the owner's "this claim has no session to
 reach … we need a button". The pane's Next step shows **Release** on a Building claim or Testing

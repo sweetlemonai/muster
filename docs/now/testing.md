@@ -7,6 +7,7 @@ covers: app/src-tauri/src/review.rs, app/src-tauri/src/review_cmds.rs, app/src-t
 - The builder is whoever claimed it, every holder a takeover chained, and who passed it into Testing. (mu-47)
 - The owner's pass out of Testing is always accepted, logged as an override. (mu-47)
 - A Testing card says "needs a tester" while a builder holds it. (mu-47)
+- The card counts a takeover's predecessor as a builder, as the core does. (mu-186)
 - The tester ticks each criterion with its proof: `- [x] AC2: … — verify: … — proof: …`. (PROTOCOL.md "Parallel sessions")
 - A screenshot named `attachments/<id>/<file>` in a proof shows under it in Your check. (mu-78)
 - A criterion whose verify starts with `owner` is the owner's: agents don't tick it. (PROTOCOL.md "Task file")

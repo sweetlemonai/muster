@@ -63,6 +63,10 @@ export type Task = {
   /** Who built it (0047): the last claim's who (Ready → Building), or "". Optional, like the other
    *  later fields, so a task without it reads as built by nobody on record. */
   builtBy?: string;
+  /** Every holder that built it since its claim (0090, `queue::builder_chain`): the claimer, then
+   *  each takeover's old and new holder, oldest first and each once; the last is `builtBy`.
+   *  Optional, like the other later fields: an older payload reads as `builtBy` alone. */
+  builders?: string[];
   /** Who last passed it Building → Testing with the gate's line (0047), a builder too, or "". */
   gatedBy?: string;
   /** Sent back to its builder (mu-66): in Building, and its latest stage change is Testing →

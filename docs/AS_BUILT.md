@@ -1239,10 +1239,13 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   it into Testing with a gate line. The reviewer check (`review.rs`) refuses the same chain. The refusal names the builder and suggests a QA label (`muster/qa-0042`). The
   owner is always let through, logged `(owner's override: no separate tester)`; another label in
   a builder's session and agent is let through, logged `(tested under another label in the builder's
-  session)`. The task carries `builtBy`, `gatedBy` and `testedBy` (the last pass into Your check),
-  and the app counts builders as the core does. A Testing card says "needs a tester" on a line of
-  its own while a builder holds it; the Your-check card says "built by … · tested by …", wrapped,
-  never cut; the task pane's status line says the same from Testing on.
+  session)`. The task carries `builders` (the takeover chain), `builtBy`, `gatedBy` and `testedBy`
+  (the last pass into Your check), and the app counts builders as the core does: `lib.ts`
+  `builders()` checks each of the chain, `builtBy` and `gatedBy` (mu-186), so a Testing card held
+  by a predecessor of a takeover says "needs a tester" too. A Testing card says "needs a tester" on
+  a line of its own while a builder holds it; the Your-check card says "built by … · tested by …"
+  (each builder once, "built by wt-a and wt-b" after a takeover), wrapped, never cut; the task
+  pane's status line says the same from Testing on.
 - **Depends, met once merged** (tasks 0019, 0024, 0042): a task's `depends:` hold it back until
   each is merged, which for an agent's task is Your check or Done (work merges into main after
   Testing passes) and for a human task only Done. One rule in `block.rs` (`met_at`, `holds`)

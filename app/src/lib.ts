@@ -216,18 +216,25 @@ const sentBackSender = (t: Pick<Task, "sentBackBy" | "sentBackWhy">): string => 
 
 /** An agent's task in Testing still held by one of its builders (0047, `builders`): a session
  *  that didn't build it has to test it and pass it on (or the owner). */
-export function needsTester(t: Pick<Task, "stage" | "heldBy" | "builtBy" | "gatedBy" | "forWho">): boolean {
+export function needsTester(t: Pick<Task, "stage" | "heldBy" | "builders" | "builtBy" | "gatedBy" | "forWho">): boolean {
   const held = t.heldBy.trim();
   return t.stage === "testing" && t.forWho !== "human" && held !== "" && builders(t).some((b) => sameHolder(held, b));
 }
 
-/** Who built it, as the core's ops::tester_rule counts them: whoever claimed it last and whoever
- *  last passed it into Testing with the gate's line, the second left out when it's the same
- *  holder. */
-function builders(t: Pick<Task, "builtBy" | "gatedBy">): string[] {
-  const built = (t.builtBy ?? "").trim();
-  const gated = (t.gatedBy ?? "").trim();
-  return [built, gated && !(built && sameHolder(built, gated)) ? gated : ""].filter(Boolean);
+/** Who built it, as the core's ops::tester_rule counts them: the takeover chain since the claim
+ *  (0090: a successor isn't a new tester), whoever claimed it last, and whoever last passed it
+ *  into Testing with the gate's line, oldest first. Every one is kept, as the core checks each:
+ *  a bare label matches any stamp, so two holders that match each other can match different
+ *  holders. */
+function builders(t: Pick<Task, "builders" | "builtBy" | "gatedBy">): string[] {
+  return [...(t.builders ?? []), t.builtBy ?? "", t.gatedBy ?? ""].map((b) => b.trim()).filter(Boolean);
+}
+
+/** `builders`, each holder named once (`sameHolder`), the first of them kept. */
+function builderNames(t: Pick<Task, "builders" | "builtBy" | "gatedBy">): string[] {
+  const out: string[] = [];
+  for (const b of builders(t)) if (!out.some((o) => sameHolder(o, b))) out.push(b);
+  return out;
 }
 
 /** A holder in a few words: "you" for the owner, else the name before any brackets (a role slot
@@ -237,14 +244,17 @@ export const shortWho = (who: string, names: RoleNames) =>
 
 /** Who built an agent's task and who tested it (0047), from Testing on: "built by wt-a · tested
  *  by qa-0042" (Your check and Done), "built by wt-a · needs a tester" (Testing, still the
- *  builder's); "built by wt-a and wt-b" when one claimed it and another gated it in. "" before Testing, for the owner's own task, or with no builder on record. `name`
- *  shows each holder (short by default; the pane names them in full). */
-export function builtTested(t: Pick<Task, "stage" | "heldBy" | "builtBy" | "gatedBy" | "testedBy" | "forWho">, name: (who: string) => string): string {
-  const built = [...new Set(builders(t).map(name))];
+ *  builder's); "built by wt-a and wt-b" when one claimed it and another took the claim over or
+ *  gated it in, "built by wt-a, wt-b and wt-c" for three. "" before Testing, for the owner's own
+ *  task, or with no builder on record. `name` shows each holder (short by default; the pane names
+ *  them in full). */
+export function builtTested(t: Pick<Task, "stage" | "heldBy" | "builders" | "builtBy" | "gatedBy" | "testedBy" | "forWho">, name: (who: string) => string): string {
+  const built = [...new Set(builderNames(t).map(name))];
   if (built.length === 0 || t.forWho === "human" || stageRank(t.stage) < stageRank("testing")) return "";
   const tested = (t.testedBy ?? "").trim();
   const second = t.stage === "testing" ? (needsTester(t) ? "needs a tester" : "") : tested ? `tested by ${name(tested)}` : "";
-  return [`built by ${built.join(" and ")}`, second].filter(Boolean).join(" · ");
+  const names = built.length > 1 ? `${built.slice(0, -1).join(", ")} and ${built[built.length - 1]}` : built[0];
+  return [`built by ${names}`, second].filter(Boolean).join(" · ");
 }
 
 /** The card's who line (0030): who's on it, short: "wt-a · main-29 · wt-0030 · 7b5e8856", the

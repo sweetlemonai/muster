@@ -574,8 +574,8 @@ pub struct Task {
     /// that took the claim over after it (0090, `takeover_line`), or "".
     pub built_by: String,
     /// Every holder that built it since that claim (0090): the claimer, and each session that
-    /// took the claim over and the one it took it from. A successor isn't a new tester.
-    #[serde(skip)]
+    /// took the claim over and the one it took it from. A successor isn't a new tester. The window
+    /// counts them as `ops::tester_rule` does (mu-186: the card's "needs a tester").
     pub builders: Vec<String>,
     /// Who passed it Building → Testing with the gate's line most recently (0047): a builder too,
     /// unlike an override into Testing. "" when nobody has.
@@ -5280,6 +5280,33 @@ mod tests {
         let json = serde_json::to_value(task("your-check")).unwrap();
         assert_eq!(json["criteria"][0]["proof"], "ok");
         assert_eq!(json["criteria"].as_array().map(Vec::len), Some(2));
+    }
+
+    #[test]
+    fn builders_go_to_the_window_as_the_chain_reads_them() {
+        // mu-186: the card counts the takeover chain (0090) as the core's tester_rule does.
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("doing/0001-t.md");
+        let old = "asghar (main · session 1c6af0d9 · cc-mg)";
+        let new = "asghar (main · session d6419719 · cc-mg)";
+        let text = format!(
+            "---\nid: 0001\nstage: testing\nheld-by: {old}\n---\n\n# T\n\n## Log\n\
+             - 2026-10-14 10:00 {old}: stage ready → building (claimed)\n\
+             - 2026-10-14 10:06 {new}{TOOK_OVER}{old} (handed off)\n\
+             - 2026-10-14 11:00 {new}: stage building → testing (gate: ok)\n"
+        );
+        let t = parse_task("q", d.path(), "doing", &path, &text, 0).unwrap();
+        assert_eq!(t.builders, builder_chain(&text));
+        let json = serde_json::to_value(&t).unwrap();
+        assert_eq!(json["builders"], serde_json::json!([old, new]), "{json}");
+        assert_eq!(json["builtBy"], new);
+        assert_eq!(json["gatedBy"], new);
+        // Nobody claimed it: an empty chain, still sent.
+        let text = "---\nid: 0001\nstage: testing\n---\n\n# T\n\n## Log\n";
+        let json =
+            serde_json::to_value(parse_task("q", d.path(), "doing", &path, text, 0).unwrap())
+                .unwrap();
+        assert_eq!(json["builders"], serde_json::json!([]), "{json}");
     }
 
     #[test]
