@@ -4,6 +4,17 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — mu-218 and mu-219 shaped; mu-147's bidi note folded into mu-152
+**Did (Shapour, shaper):** mu-218 (low): `muster merge-log` checks that every entry identical in base, ours and
+theirs comes out whole, on git merge-file's clean result and on the entry-wise one; a loss gives markers and
+exit 1 (insurance after the mu-151 false alarm). mu-219 (low): `switches_go_through_one_place` strips comments
+before its `contains` checks, so a commented-out call turns it red (mu-147 R6). mu-147 R4 (`i18n::isolate_in`
+wraps a title's own U+2066-2069 unfiltered, i18n.rs:304-310, runtime.ts:212) folded into mu-152 as AC9: core and
+window drop all 12 controls of `index::is_bidi_control` before wrapping.
+**Decided (overrulable):** mu-218 checks whole entries, not lines (repeated lines would hide a loss); it
+changes docs/now/parallel.md's "only an entry changed differently on each side gets markers" on purpose.
+R4 ships with mu-152, as it's the same function and lens. mu-219 hand-writes the comment stripper (no `syn`).
+
 ## 2026-10-15 — A reported merge-log loss in mu-151's rebase doesn't reproduce: its base predated mu-210
 **Verified:** mu-151's rebase began at 08:07:38 on 1327284; mu-210 (98668d8) reached main at 08:07:41, so the
 base never had mu-210's 21-line entry, and the result rightly lacked it. Re-run on the 07:26 binary: O 5f098aa,
