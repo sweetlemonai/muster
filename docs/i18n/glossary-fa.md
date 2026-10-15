@@ -356,6 +356,45 @@ Latin script stays in commands, task fields (`claimed-by:`) and anything an agen
 | Your turn | نوبت شما | the Your check card (mu-147) | common usage |
 | timeline scale | مقیاس | Day / Week / Month: روز / هفته / ماه (mu-147) | common usage |
 
+### The task pane, its talk and Help (mu-148)
+
+| Term | Persian | Notes | Source |
+|---|---|---|---|
+| comment | دیدگاه | pl. دیدگاه‌ها; the button «ثبت دیدگاه»; نظر reads as "opinion" and is kept out, so the pane, the shortcut page and the Unsent line use one word | Persian WordPress |
+| finding (a review's) | یافته | a clean review is «بدون یافته» | (proposed) |
+| round (of review) | دور | «دور ۱ از ۳» | common usage |
+| re-check | بررسی دوباره | | common usage |
+| dispute (a finding) | اعتراض | | (proposed) |
+| conflict (vision) | تعارض | as Pro Git's تعارض ادغام | Pro Git fa |
+| Next step | گام بعدی | the pane's right column head; گام, as the Helper's steps. Near it, an agent's next tool call is «فراخوانی ابزار بعدی», not «گام بعدی» | (proposed) |
+| step (the Helper's tool steps) | گام | | common usage |
+| conversation (the Helper's) | گفت‌وگو | | common usage |
+| write-up | متن تسک | شرح کار is Drover's brief | (proposed) |
+| Rendered / Raw | قالب‌بندی‌شده / خام | the body's two pills | (proposed) |
+| put in (a stage, the track's override) | گذاشتن در | kept apart from pass (فرستادن); a stage after در or به is quoted, «گذاشتن در «{{stage}}»», since some stage names are phrases | (proposed) |
+| reclaimed (logged) | بازپس‌گرفته | quoted as the log word: «در لاگ با عنوان «بازپس‌گرفته» ثبت می‌شود» | (proposed) |
+| attach | پیوست | button «+ پیوست» | Mozilla |
+| links (a task's) | پیوندها | | Mozilla |
+| roll-up | جمع‌بندی | a goal's or feature's summary of its tasks | (proposed) |
+| stage track | نوار مراحل | | (proposed) |
+| the asker's pick (pick-one) | پیشنهادی | the chip's small tag | (proposed) |
+| shortcut | میان‌بر | pl. میان‌برها; the Shortcuts page is «میان‌برها» | common Persian software usage |
+| manual | راهنما | the Help tab's own word | Mozilla |
+| route / router (/mu) | مسیر / مسیریاب | | (proposed) |
+| tab | زبانه | | Mozilla |
+| cell (the Feature grid's) | خانه | | common usage |
+| comment thread | رشته‌ی دیدگاه‌ها | | common usage |
+| review / vision brief | شرح کار بازبینی / شرح کار چشم‌انداز | built from شرح کار | Drover (شرح کار) |
+| Release (naming the button) | «رها کردن» | quoted when it names the button, as «پذیرفتن» for Accept | glossary |
+| no session to reach | نشستی برای دسترسی نیست | as common:reach.noSession; not «نشستی برای رسیدن» | glossary |
+| unheld | بی‌دارنده | built from دارنده | (proposed) |
+| checklist (yours) | فهرست بررسی | | common usage |
+| caret / focus (keyboard) | مکان‌نما / فوکوس | فوکوس stays apart from the Focus display mode (تمرکز) | Microsoft (مکان‌نما) |
+| load | بارگذاری | everywhere; not «بار کردن» | Mozilla |
+| screenshot | اسکرین‌شات | pl. اسکرین‌شات‌ها; not «تصویر صفحه» | common Persian software usage |
+| box (answer, comment, search) | جعبه | not کادر | common usage |
+| the core (Muster's) | هسته‌ی برنامه | | common usage |
+
 ## Sources
 
 - Drover's glossary: `docs/i18n/glossary-fa.md` at Drover `a990fc8`, and its sources: Pro Git
@@ -372,5 +411,5 @@ The "(proposed)" words (شکل‌دهی، در حال ساخت، برداشتن�
 سازنده، شکل‌دهنده، تسک برداشته‌شده, and the shell's: بورد (or برد)، دستیار، نما، چیپ، نام نمایشی، سرصفحه، سرفصل، ترتیب دلخواه،
 راکد، ساکت، رها کردن، زنده، چشم‌انداز، رونوشت, and mu-172's: روبان توکن، بیش، خواندن از کش، نوشتن
 در کش، نشست مشترک، زمان ایجنت، انتظار شما, and mu-113's: خوانش، رزرو، جا تا رزرو، کهنه، سنجه، توازن, and mu-147's:
-فرستادن، لین «متوقف شده»، در دست گرفتن، انسان / ایجنت، نگهداری، درس، اثبات‌شده / تیک‌خورده) have no source and wait on a native-speaking review.
+فرستادن، لین «متوقف شده»، در دست گرفتن، انسان / ایجنت، نگهداری، درس، اثبات‌شده / تیک‌خورده, and mu-148's: یافته، اعتراض، گام بعدی، متن تسک، قالب‌بندی‌شده / خام، گذاشتن در، بازپس‌گرفته، جمع‌بندی، نوار مراحل، پیشنهادی، مسیر / مسیریاب، بی‌دارنده) have no source and wait on a native-speaking review.
 The token ribbon writes its figures in Persian digits, with the k and M as they are (۲۱۰k). Every number people read follows the Digits rule above (mu-151).

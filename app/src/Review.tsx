@@ -1,3 +1,4 @@
+import { tn } from "./i18n";
 import type { Task } from "./types";
 
 // The review of record (0027): a started task's branch reviewed in Testing by the owner's engine,
@@ -60,20 +61,20 @@ const reviewed = (t: Pick<Task, "reviewRound">) => (t.reviewRound ?? null) !== n
  *  Null elsewhere (after the merge it's history, in the pane). */
 export function reviewBadge(t: Reviewed): string | null {
   if (t.stage !== "building" && t.stage !== "testing") return null;
-  const unreviewed = t.stage === "testing" && t.branch ? "not reviewed yet" : null;
+  const unreviewed = t.stage === "testing" && t.branch ? tn("board", "badge.unreviewed") : null;
   if (!reviewed(t)) return unreviewed;
   const open = t.reviewOpen ?? 0;
   const answered = t.reviewAnswered ?? 0;
   // Round 0 (mu-101): only an owner send-back's finding, before any review round.
   if (t.reviewRound === 0) {
-    if (open > 0) return `${open} to fix · not reviewed yet`;
-    if (answered > 0) return `${answered} to re-check · not reviewed yet`;
+    if (open > 0) return tn("board", "badge.fixFirst", { count: open });
+    if (answered > 0) return tn("board", "badge.recheckFirst", { count: answered });
     return unreviewed;
   }
-  const round = `review ${t.reviewRound}/${MAX_ROUNDS}`;
-  if (open > 0) return `${round} · ${open} to fix`;
-  if (answered > 0) return `${round} · ${answered} to re-check`;
-  return `review clean · round ${t.reviewRound}`;
+  const round = { round: t.reviewRound ?? 0, max: MAX_ROUNDS };
+  if (open > 0) return tn("board", "badge.fix", { ...round, count: open });
+  if (answered > 0) return tn("board", "badge.recheck", { ...round, count: answered });
+  return tn("board", "badge.clean", round);
 }
 
 /** The badge as one of the card's status lines (CardStatus): quiet, since it's the agents' work;
@@ -83,8 +84,8 @@ export function ReviewBadge({ t }: { t: Reviewed }) {
   if (!text) return null;
   const open = (t.reviewOpen ?? 0) > 0;
   const title = open
-    ? "Findings for the builder to fix or dispute (muster review --fixed / --dispute); the merge waits for a clean review"
-    : "The review of record (muster review): the merge waits for it to be clean at the branch's tip";
+    ? tn("board", "badge.reviewTitleOpen", { cmd: "muster review --fixed / --dispute" })
+    : tn("board", "badge.reviewTitle", { cmd: "muster review" });
   return (
     <span className={open ? "card-review open" : "card-review"} title={title}>
       {text}
@@ -94,10 +95,10 @@ export function ReviewBadge({ t }: { t: Reviewed }) {
 
 /** Where the review stands, in a few words, for the pane's header. */
 export function reviewStatus(t: Reviewed): string {
-  if (!reviewed(t)) return t.branch ? "not reviewed yet" : "not started on its own branch";
+  if (!reviewed(t)) return tn("pane", t.branch ? "review.notReviewed" : "review.notStarted");
   const open = t.reviewOpen ?? 0;
   const answered = t.reviewAnswered ?? 0;
-  if (t.reviewRound === 0) return open === 0 && answered === 0 ? "not reviewed yet" : `not reviewed yet: ${open} open, ${answered} answered`;
-  if (open === 0 && answered === 0) return `clean after round ${t.reviewRound}`;
-  return `round ${t.reviewRound} of ${MAX_ROUNDS}: ${open} open, ${answered} answered`;
+  if (t.reviewRound === 0) return open === 0 && answered === 0 ? tn("pane", "review.notReviewed") : tn("pane", "review.notReviewedCounts", { open, answered });
+  if (open === 0 && answered === 0) return tn("pane", "review.clean", { round: t.reviewRound ?? 0 });
+  return tn("pane", "review.round", { round: t.reviewRound ?? 0, max: MAX_ROUNDS, open, answered });
 }

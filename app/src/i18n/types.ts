@@ -18,9 +18,9 @@ export interface Resources {
   shell: typeof shell;
   /** The board, its views, the backlog and sessions (mu-147). */
   board: typeof board;
-  /** The task pane, comments and review (mu-148). */
+  /** The task pane and everything opened from it: forms, comments, review, vision, and the Helper (mu-148). */
   pane: typeof pane;
-  /** The manual and the help topics (mu-148). */
+  /** The Help pane's chrome, the manual's page titles and the generated Shortcuts page (mu-148; the manual's pages are mu-154's). */
   help: typeof help;
   /** The core's text: the menu bar, notifications (i18n.rs). */
   native: typeof native;

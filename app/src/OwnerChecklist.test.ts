@@ -38,8 +38,8 @@ describe("the owner's checklist in Your check", () => {
   it("lists each with its label, words and state, and counts what's left", () => {
     const html = list(task({ ownerCriteria: [crit(1, true), crit(2, false, "AC2: looks right in dark — verify: owner (screenshots)")] }));
     expect(html).toContain("Yours to verify: 1 left, then Accept.");
-    expect(html).toMatch(/<li class="criterion ticked">.*<b>AC1<\/b> tried it<\/span>/);
-    expect(html).toMatch(/<li class="criterion">.*<b>AC2<\/b> looks right in dark<\/span>/);
+    expect(html).toMatch(/<li class="criterion ticked">.*<b>AC1<\/b> <span dir="auto">tried it<\/span><\/span>/);
+    expect(html).toMatch(/<li class="criterion">.*<b>AC2<\/b> <span dir="auto">looks right in dark<\/span><\/span>/);
     for (const row of html.match(/<li[\s\S]*?<\/li>/g) ?? []) expect(row).not.toContain("verify");
   });
   it("lists the open ones first (0043), each with Tick and its effort; the ticked ones after, with Untick", () => {

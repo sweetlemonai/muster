@@ -3,12 +3,14 @@ import { api } from "./api";
 import type { ManualAt } from "./helpTopics";
 import { manualPages, neighbours, type Page, type PageInfo, resolve, search } from "./manual";
 import Markdown from "./Markdown";
+import { useT } from "./i18n";
 import { Pill } from "./ui";
 
 /** The Help tab: the manual (docs/manual), with the Commands page from the core's help (help.rs),
  *  the same list `muster help` prints. Where it's open lives in the window (`at`, `onGo`), so a
  *  "?" elsewhere can open a section and switching tabs keeps the place. */
 export default function Help({ at, onGo }: { at: ManualAt; onGo: (file: string, slug: string) => void }) {
+  const t = useT("help");
   const [commands, setCommands] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
@@ -18,15 +20,17 @@ export default function Help({ at, onGo }: { at: ManualAt; onGo: (file: string, 
       (h) => {
         if (!live) return;
         if (typeof h.commandsPage === "string") setCommands(h.commandsPage);
-        else setError("the core sent no Commands page");
+        else setError(t("manual.noCommandsPage"));
       },
       (e) => live && setError(String(e)),
     );
     return () => {
       live = false;
     };
+    // The error's words are read when it happens; the effect runs once.
   }, []);
-  const pages = useMemo(() => manualPages(commands), [commands]);
+  // `t` changes with the language: the pages' titles are read again (manual.ts).
+  const pages = useMemo(() => manualPages(commands), [commands, t]);
   return <ManualView pages={pages} at={at} query={query} onQuery={setQuery} onGo={onGo} error={error} />;
 }
 
@@ -41,6 +45,7 @@ export function ManualView({ pages, at, query, onQuery, onGo, error = "" }: {
   onGo: (file: string, slug: string) => void;
   error?: string;
 }) {
+  const t = useT("help");
   const page = pages.find((p) => p.file === at.file) ?? pages[0];
   const hits = useMemo(() => (query.trim() ? search(pages, query) : null), [pages, query]);
   const [note, setNote] = useState("");
@@ -63,44 +68,46 @@ export function ManualView({ pages, at, query, onQuery, onGo, error = "" }: {
     onGo(file, slug);
   };
   const follow = (href: string) => {
-    const t = resolve(page.file, href);
-    if (t.kind === "page") go(t.file, t.slug);
-    else if (t.kind === "repo") setNote(`That's ${t.path} in the Muster repo, which the app doesn't open: read it on GitHub or in your editor.`);
-    else if (t.kind === "web") setNote(`Web links don't open from the manual: ${t.url}`);
-    else setNote("That link doesn't lead anywhere.");
+    const to = resolve(page.file, href);
+    if (to.kind === "page") go(to.file, to.slug);
+    else if (to.kind === "repo") setNote(t("manual.repo", { path: to.path }));
+    else if (to.kind === "web") setNote(t("manual.web", { url: to.url }));
+    else setNote(t("manual.bad"));
   };
   const copy = (e: React.MouseEvent) => {
     const pre = (e.target as HTMLElement).closest("pre");
     if (!pre) return;
     const text = pre.textContent ?? "";
     navigator.clipboard?.writeText(text).then(
-      () => setNote(`Copied: ${text}`),
-      () => setNote("The clipboard isn't available here."),
+      () => setNote(t("manual.copied", { text })),
+      () => setNote(t("manual.noClipboard")),
     );
   };
   const { prev, next } = neighbours(page.file);
 
   return (
     <main className="manual">
-      <nav className="manual-side" aria-label="Manual">
+      <nav className="manual-side" aria-label={t("manual.nav")}>
         <input
           type="search"
           className="manual-search"
           value={query}
           onChange={(e) => onQuery(e.target.value)}
-          placeholder="Search the manual"
-          aria-label="Search the manual"
+          placeholder={t("manual.search")}
+          aria-label={t("manual.search")}
         />
         {hits !== null && (
-          <div className="manual-hits" role="region" aria-label="Search results">
+          <div className="manual-hits" role="region" aria-label={t("manual.results")}>
             {hits.length === 0 ? (
-              <p className="none">Nothing found for “{query.trim()}”.</p>
+              <p className="none">{t("manual.nothing", { query: query.trim() })}</p>
             ) : (
               <ul>
+                {/* manual.hit keeps › in every language: it's Bidi_Mirrored, so right to left it
+                    already draws as ‹, unlike ◀ ▶ in PageSteps, which a locale turns round itself. */}
                 {hits.map((h) => (
                   <li key={`${h.file}#${h.slug}`}>
                     <button type="button" className="hit" onClick={() => go(h.file, h.slug)}>
-                      <span className="meta">{`${h.title} ›`}</span> {h.section}
+                      <span className="meta">{t("manual.hit", { title: h.title })}</span> {h.section}
                       <span className="snippet">{h.snippet}</span>
                     </button>
                   </li>
@@ -142,9 +149,9 @@ export function ManualView({ pages, at, query, onQuery, onGo, error = "" }: {
         {page.text !== null ? (
           <Markdown text={page.text} anchors onLink={follow} />
         ) : error ? (
-          <p className="err">Couldn't load the commands: {error}</p>
+          <p className="err">{t("manual.commandsError", { error })}</p>
         ) : (
-          <p className="none">Loading the commands…</p>
+          <p className="none">{t("manual.loadingCommands")}</p>
         )}
         <PageSteps prev={prev} next={next} onGo={go} />
       </article>
@@ -154,10 +161,12 @@ export function ManualView({ pages, at, query, onQuery, onGo, error = "" }: {
 
 /** ◀ the page before · the page after ▶, at the top and the bottom of a page. */
 function PageSteps({ prev, next, onGo }: { prev: PageInfo | null; next: PageInfo | null; onGo: (file: string, slug: string) => void }) {
+  const t = useT("help");
+  // Right to left the arrows turn round: back points right, where the page starts.
   return (
-    <div className="manual-steps">
-      <Pill type="button" disabled={!prev} onClick={() => prev && onGo(prev.file, "")}>{prev ? `◀ ${prev.title}` : "◀"}</Pill>
-      <Pill type="button" disabled={!next} onClick={() => next && onGo(next.file, "")}>{next ? `${next.title} ▶` : "▶"}</Pill>
+    <div className="manual-steps" role="group" aria-label={t("manual.steps")}>
+      <Pill type="button" disabled={!prev} onClick={() => prev && onGo(prev.file, "")}>{prev ? t("manual.prev", { title: prev.title }) : t("manual.prevNone")}</Pill>
+      <Pill type="button" disabled={!next} onClick={() => next && onGo(next.file, "")}>{next ? t("manual.next", { title: next.title }) : t("manual.nextNone")}</Pill>
     </div>
   );
 }

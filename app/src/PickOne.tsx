@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "./api";
+import { tn, useT } from "./i18n";
 import { stamp } from "./lib";
 import type { Choices, Question, Task } from "./types";
 import { Pill } from "./ui";
@@ -18,9 +19,7 @@ export function pickArgs(task: Task, q: Question, i: number, extra: string) {
 
 /** The line under an answer once it's written. */
 export function answeredText(asker: string | null): string {
-  return asker
-    ? "Answered. The asking agent gets it after its next step."
-    : "Answered, and written in the task. No asking session on record, so it waits there.";
+  return asker ? tn("common", "answer.answered") : tn("common", "answer.answeredNoSession");
 }
 
 type Result = { ok: boolean; text: string } | null;
@@ -30,7 +29,7 @@ type Send = (queue: string, id: string, n: number, pick: string, extra: string, 
  *  of `at`, and says what came of it. The core's refusal (a pick already answered) is the text. */
 export async function sendPick(send: Send, task: Task, q: Question, i: number, extra: string, at: Date): Promise<{ ok: boolean; text: string }> {
   const [queue, id, n, pick, words] = pickArgs(task, q, i, extra);
-  if (n === null) return { ok: false, text: "This question has no number, so it can't be answered here." };
+  if (n === null) return { ok: false, text: tn("common", "answer.noNumber") };
   try {
     return { ok: true, text: answeredText(await send(queue, id, n, pick, words, stamp(at))) };
   } catch (e) {
@@ -56,6 +55,7 @@ export default function PickOne({ task, q, choices, extra = "", onAnswered, onCh
   onAnswered?: () => void;
   onChanged: () => void;
 }) {
+  const t = useT("common");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result>(null);
   const off = chipsOff({ busy, result }, q.n);
@@ -72,21 +72,21 @@ export default function PickOne({ task, q, choices, extra = "", onAnswered, onCh
     }
   };
   return (
-    <div className="pick-one" data-part="pick-one" role="group" aria-label={`Options for Q${q.n}`}>
+    <div className="pick-one" data-part="pick-one" role="group" aria-label={t("answer.options", { q: `Q${q.n}` })}>
       {choices.options.map((o, i) => (
         <Pill
           key={i}
           type="button"
           className={`pick-chip${choices.pick === i ? " mine" : ""}`}
           disabled={off}
-          title={`Answer Q${q.n} with (${letter(i)})${extra.trim() ? ", followed by the words in the box" : ""}`}
+          title={t(extra.trim() ? "answer.pickTitleWords" : "answer.pickTitle", { q: `Q${q.n}`, letter: letter(i) })}
           onClick={() => void send(i)}
         >
           <b>({letter(i)})</b> {o}
-          {choices.pick === i && <small className="pick-tag">pick</small>}
+          {choices.pick === i && <small className="pick-tag">{t("answer.pick")}</small>}
         </Pill>
       ))}
-      {choices.noAnswer !== null && <span className="pick-fallback">going with ({letter(choices.noAnswer)}) unless you answer</span>}
+      {choices.noAnswer !== null && <span className="pick-fallback">{t("answer.fallback", { letter: letter(choices.noAnswer) })}</span>}
       {result && <span className={result.ok ? "ok" : "err"} role="status">{result.text}</span>}
     </div>
   );

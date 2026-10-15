@@ -17,3 +17,4 @@ covers: app/src/i18n/locales/en/board.json, app/src/i18n/locales/fa/board.json, 
 - A notification's task title stays plain text, cut as before. (mu-147)
 - Fixed English, on purpose: the core's own words (mu-153) and time stamps' Latin digits (mu-151). (mu-147)
 - Every Persian word follows `docs/i18n/glossary-fa.md`; each area’s words get an independent review. (mu-146)
+- A card's review and vision badges and its worktree title read `board.json` `badge.*` and `branch.*` (they show on the board before the pane's words load). (mu-148)

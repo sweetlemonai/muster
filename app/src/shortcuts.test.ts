@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import muRouter from "../../commands/mu.md?raw";
+import { tn } from "./i18n";
 import { AREAS, pressed, SHORTCUTS } from "./shortcuts";
 import { SLASH, shortcutsPage } from "./shortcutsPage";
 
@@ -125,7 +126,7 @@ describe("the Shortcuts page", () => {
     expect(page).toContain("Ctrl works too wherever ⌘ is shown, except ⌘F, ⌘+, ⌘− and ⌘0, which take ⌘ only. ⌥ is the Option key.");
   });
   it("has a section per area and the slash commands", () => {
-    for (const a of AREAS) expect(page).toContain(`\n## ${a}\n`);
+    for (const a of AREAS) expect(page).toContain(`\n## ${tn("help", `areas.${a}`)}\n`);
     expect(page).toContain("\n## Slash commands in Claude Code\n");
     for (const r of SLASH) expect(page).toContain(`| \`${r.route}\` |`);
   });

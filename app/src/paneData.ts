@@ -1,6 +1,7 @@
 // The task pane's facts (0021), the parts without React: what's live, what waits on the owner,
 // time spent from the stage history, the criteria from the write-up. Tested in paneData.test.ts.
 import { BLOCK_LOOKS } from "./blockWords";
+import { tl, tn } from "./i18n";
 import { boardColumn, heldByOther, holderOf, isStage, nameOf, splitHolder, stageLabel, stageRank, STAGES, stampMinutes, type RoleNames } from "./lib";
 import { ownerOpen } from "./OwnerChecklist";
 import type { StageStep, Task } from "./types";
@@ -23,15 +24,15 @@ export function waitingOnYou(t: Pick<Task, "stage" | "ownerCriteria" | "question
   const out: string[] = [];
   if (t.stage === "your-check") {
     const open = ownerOpen(t);
-    out.push(open > 0 ? `${open} of ${t.ownerCriteria.length} criteria to check` : "accept or send back");
+    out.push(open > 0 ? tn("pane", "pane.waiting.criteria", { open, total: t.ownerCriteria.length }) : tn("pane", "pane.waiting.acceptOrBack"));
   }
   const asked = t.questions.filter((q) => !q.ticked && q.escalated).length;
-  if (asked > 0) out.push(`${asked} question${asked === 1 ? "" : "s"} for you`);
+  if (asked > 0) out.push(tn("pane", "pane.waiting.questions", { count: asked }));
   // In the block's own words (0060).
   if (t.blockedKind === "you") out.push(BLOCK_LOOKS.action.lead.toLowerCase());
   if (t.blockedKind === "permission") out.push(BLOCK_LOOKS.permission.lead.toLowerCase());
   // Its session waits on a prompt in Claude Code (0048): the core counts it as needing the owner.
-  if (t.sessionState === "needs-input") out.push("input in Claude Code");
+  if (t.sessionState === "needs-input") out.push(tn("pane", "pane.waiting.input"));
   return out;
 }
 
@@ -67,14 +68,15 @@ function pausedWithin(pauses: { from: string; to: string }[], from: number, to: 
 }
 
 /** Wall-clock minutes as people read them: "45 min", "16 h", "1 d 1.5 h" (24-hour days, unlike
- *  lib's fmtMinutes, which counts estimates in 8-hour agent days). */
+ *  lib's fmtMinutes, which counts estimates in 8-hour agent days), in the language and digits
+ *  shown (common.json's time words). */
 export function fmtWall(m: number): string {
-  if (m < 1) return "under a minute";
-  if (m < 60) return `${Math.round(m)} min`;
+  if (m < 1) return tn("pane", "pane.underMinute");
+  if (m < 60) return tl("time.min", { count: Math.round(m) });
   const tenths = Math.round(m / 6);
-  if (tenths < 240) return `${tenths / 10} h`;
+  if (tenths < 240) return tl("time.h", { count: tenths / 10 });
   const d = Math.floor(tenths / 240), rest = (tenths % 240) / 10;
-  return rest ? `${d} d ${rest} h` : `${d} d`;
+  return rest ? tl("time.join", { a: tl("time.d", { count: d }), b: tl("time.h", { count: rest }) }) : tl("time.d", { count: d });
 }
 
 /** Whose claim a move on the track to `to` releases: someone else's (not the owner's) when it
@@ -90,9 +92,8 @@ export function releasedBy(t: Pick<Task, "stage" | "claimedBy">, to: string, nam
  *  back to Ready, Shaping stays where it is, unheld (0097). The button's tooltip, the pane's note
  *  after who and how long, and what it says once done. */
 export function releaseWords(stage: string): { title: string; does: string; done: string } {
-  return stage === "shaping"
-    ? { title: "Unheld, still in Shaping, with the claim released and logged as reclaimed", does: "Release lets go of it, still in Shaping, logged as reclaimed.", done: "Released: still in Shaping, nobody holds it." }
-    : { title: "Back to Ready, with the claim released and logged as reclaimed", does: "Release puts it back in Ready, logged as reclaimed.", done: "Released: back in Ready." };
+  const at = stage === "shaping" ? "shaping" : "ready";
+  return { title: tn("pane", `pane.release.${at}.title`), does: tn("pane", `pane.release.${at}.does`), done: tn("pane", `pane.release.${at}.done`) };
 }
 
 /** The holder a Release can let go of because no session can be reached on it (mu-184): the
@@ -108,28 +109,24 @@ export function unreachedHolder(t: Pick<Task, "stage" | "claimedBy" | "heldBy">)
 
 type UnreachedWords = { button: string; group: string; busy: string; cancel: string; paused: string; label: string; ask: string; note: string; done: string };
 
-/** The words of Release on a claim no session can be reached on (mu-184), in one place for the
- *  translations to come (mu-148), each a whole sentence: the button's label and the confirm's
- *  question with the holder's name as `{{who}}` (filled in at render, the name in its own <bdi>),
- *  the line under it and what it says once done. Building goes back to Ready with its worktree and
- *  branch kept; Testing stays, unheld. */
+/** The words of Release on a claim no session can be reached on (mu-184), each a whole sentence
+ *  in the language shown (pane.json, mu-148): the button's label and the confirm's question with
+ *  the holder's name left as `{{who}}` (filled in at render, the name in its own <bdi>), the line
+ *  under it and what it says once done. Building goes back to Ready with its worktree and branch
+ *  kept; Testing stays, unheld. */
 export function unreachedWords(stage: string): UnreachedWords {
-  const common = { button: "Release", group: "Confirm Release", busy: "Releasing…", cancel: "Cancel", paused: "Paused: resume it to release it." };
-  return stage === "testing"
-    ? {
-        ...common,
-        label: "Release {{who}}'s hold",
-        ask: "Release {{who}}'s hold? It stays in Testing for the next tester.",
-        note: "No session to reach on this hold: Release lets go of it, and it stays in Testing for the next tester.",
-        done: "Released: still in Testing, nobody holds it.",
-      }
-    : {
-        ...common,
-        label: "Release {{who}}'s claim",
-        ask: "Release {{who}}'s claim? It goes back to Ready; its worktree and branch stay.",
-        note: "No session to reach on this claim: Release puts it back in Ready, its worktree and branch kept.",
-        done: "Released: back in Ready, its worktree and branch kept.",
-      };
+  const at = stage === "testing" ? "testing" : "building";
+  return {
+    button: tn("pane", "pane.unreached.button"),
+    group: tn("pane", "pane.unreached.group"),
+    busy: tn("pane", "pane.unreached.busy"),
+    cancel: tn("pane", "pane.unreached.cancel"),
+    paused: tn("pane", "pane.unreached.paused"),
+    label: tn("pane", `pane.unreached.${at}.label`),
+    ask: tn("pane", `pane.unreached.${at}.ask`),
+    note: tn("pane", `pane.unreached.${at}.note`),
+    done: tn("pane", `pane.unreached.${at}.done`),
+  };
 }
 
 /** What a move on the track says once it's done, and its Undo: none when it released someone
@@ -137,7 +134,7 @@ export function unreachedWords(stage: string): UnreachedWords {
 export function trackMove(t: Pick<Task, "stage" | "claimedBy">, to: string, names: RoleNames): { done: string; undo: Undo | undefined } {
   const released = releasedBy(t, to, names);
   return {
-    done: `Put in ${stageLabel(to)}.${released ? ` ${released}'s claim on ${stageLabel(t.stage)} was released.` : ""}`,
+    done: released ? tn("pane", "pane.movedReleased", { stage: stageLabel(to), who: released, from: stageLabel(t.stage) }) : tn("pane", "pane.moved", { stage: stageLabel(to) }),
     undo: !released && isStage(t.stage) ? { back: t.stage, to } : undefined,
   };
 }
@@ -171,11 +168,12 @@ export function trackPlace(stage: string, current: string): "past" | "cur" | "ne
   return a < b ? "past" : a === b ? "cur" : "next";
 }
 
-/** The owner's own task's steps (0022), each the stage a click puts it in. */
+/** The owner's own task's steps (0022), each the stage a click puts it in, named in the language
+ *  shown each time it's asked. */
 const HUMAN_STEPS = [
-  { id: "ready", label: "To do" },
-  { id: "building", label: "Doing" },
-  { id: "done", label: "Done" },
+  { id: "ready", get label() { return tn("pane", "pane.track.todo"); } },
+  { id: "building", get label() { return tn("pane", "pane.track.doing"); } },
+  { id: "done", get label() { return tn("pane", "pane.track.done"); } },
 ] as const;
 
 /** The stage track's steps: the seven stages, or for the owner's own task only To do · Doing ·
@@ -191,7 +189,6 @@ export function trackSteps(stage: string, human: boolean): { id: string; label: 
  *  "- " item) and the check-ins, "3 log lines · 2 check-ins"; undefined when there's neither. */
 export function logSummary(log: string, checkins: number): string | undefined {
   const lines = log.split("\n").filter((l) => /^\s*- /.test(l)).length;
-  const n = (k: number, word: string) => `${k} ${word}${k === 1 ? "" : "s"}`;
-  const parts = [lines ? n(lines, "log line") : "", checkins ? n(checkins, "check-in") : ""].filter(Boolean);
+  const parts = [lines ? tn("pane", "pane.logSummary.lines", { count: lines }) : "", checkins ? tn("pane", "pane.logSummary.checkins", { count: checkins }) : ""].filter(Boolean);
   return parts.length ? parts.join(" · ") : undefined;
 }

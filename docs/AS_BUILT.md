@@ -2003,14 +2003,15 @@ Rust core reads the same JSON.
   `common`), and its tests render with react-dom's server renderer, as Muster has no jsdom.
 - **Namespaces** (`app/src/i18n/locales/{en,fa}/<ns>.json`), each area's task editing only its
   own: `common` (shared words), `shell` (sidebar, toolbar, filter bar, Settings: mu-146), `board`
-  (board, views, backlog, sessions: mu-147), `pane` and `help` (task pane, comments, review, the
-  manual: mu-148), `native` (menu bar, notifications; Rust reads it), `cli` (mu-152), `core`
+  (board, views, backlog, sessions: mu-147), `pane` (task pane, its forms, comments, review,
+  vision, the Helper: mu-148) and `help` (Help's chrome, page titles, the Shortcuts page: mu-148), `native` (menu bar, notifications; Rust reads it), `cli` (mu-152), `core`
   (mu-153).
 - **Lazy:** the files aren't in the JavaScript. `tools/vite-locales.mjs` (Drover's plugin) serves
   them at `/locales/<language>/<ns>.json` in development and copies them, minified and checked,
   into the build; the window fetches only the language it shows. Before the first render
   (`main.tsx`) it loads `common`, `shell` and `board` (the first screen's; the waiting list and the
-  task pane read board words too, mu-147) in the language saved in `localStorage`
+  task pane read board words too, mu-147) in the language saved in `localStorage`; `pane` loads
+  with the task pane's and the Helper's code and `help` with Help's (`withText`, mu-148)
   (`muster.locale`, a copy of the core's), sets `<html lang dir>`, then asks the core
   (`locale_info`) and follows it, and its `locale-changed` event after.
 - **The setting:** `lang` in `settings.json` (`settings.rs`), written only once picked, so a file
@@ -2032,10 +2033,9 @@ Rust core reads the same JSON.
   Dictation, Emoji & Symbols, window tiling) stay in macOS's language (mu-147).
 - **The guard** (`literals.test.ts`): reads every source file with the TypeScript parser and
   fails on text written straight into a screen (JSX text, text props, text fields, sentences).
-  Until every area has moved, the files still holding text are listed with the task that moves
-  them (mu-148); a file off the list fails, and so does a listed one with nothing left.
-  The shell's files are off it, and so are the board's (mu-147), each checked by name. `Sidebar.tsx` is the task pane's right column, not the window's
-  sidebar, so it's mu-148's. mu-155 removes the list.
+  The list of files still holding text is empty since mu-148: the shell's (mu-146), the board's
+  (mu-147) and the task pane's, Help's and the Helper's (mu-148) have moved, each checked by name,
+  so any English written into a screen fails the gate. mu-155 removes the empty list.
 - **The shell in the layer** (mu-146): the sidebar, the header, the filter bar, every Settings
   group, Waiting for you and Recently finished read their words from `shell.json`, and the words
   more than one area uses (stage names, priorities, types, time units, "Loading…", Save, Cancel)
@@ -2068,6 +2068,25 @@ Rust core reads the same JSON.
   (time and dependencies run left to right); their words are Persian. Left in English on purpose:
   the core's own words (refusals, a session's state in the recap, history texts: mu-153), and
   time stamps' Latin digits (mu-151).
+- **The task pane in the layer** (mu-148): the pane in every stage (header and status line, the
+  stage track, Next step, priority, type, For, estimate, tags, files, links, branch and worktree,
+  what each stage needs, Your check's checklist and What you're accepting, a goal's or feature's
+  roll-up), its forms (gate line, Send back, Block, the write-up editor, rename, the note bar),
+  its messages and Undo, check-ins, comments, review, vision and the Helper read their words from
+  `pane.json`; the answer box and pick-one chips from `common.json` (Waiting for you shows them),
+  the card's review and vision badges and worktree title from `board.json`, the Problems list's
+  vision line from `shell.json`. Help's chrome (search, results, notes, ◀ ▶, which turn around
+  right to left), the page titles (`manual.ts` getters) and the Shortcuts page read
+  `help.json`: `shortcuts.ts` keeps ids, keys and codes, and each shortcut's what and where and
+  the areas' headings are read from `help.json` when the page is made (`shortcutsPage.ts`), so
+  the startup chunk carries no shortcut text; the English page stays `docs/manual/06-shortcuts.md`
+  byte for byte. Task content shows as written: Markdown (`Markdown.tsx`, `blockDir.ts`, on the
+  task renderer and the manual's) gives every paragraph, heading, list item, quote and table cell
+  `dir="auto"` and code `dir="ltr"` from the renderer, never from the content, so mixed Persian
+  and English bodies read right, and an English manual page reads left to right in the fa window
+  (mu-154 translates the manual). A Next step button or value chip truncates a long label, its
+  words in its `title`. The Persian was reviewed against the glossary
+  (`docs/i18n/reviews/mu-148-fa-review.md`).
 - **A type as the screen says it** (mu-194): `fields.ts` `kindLabel` says the core's types
   (`KINDS`) and the older ones the queues still hold (`LEGACY_KINDS`: task, feature, idea) through
   `common.json` `kind.*`, and any other value as written. The filter bar's Type row uses it.

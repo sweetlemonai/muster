@@ -1,1 +1,368 @@
-{}
+{
+  "pane": {
+    "aria": "Task {{key}}",
+    "renamed": "Renamed.",
+    "commitLine": "commit {{commit}} · {{path}}",
+    "noCommitLine": "commit none · {{path}}",
+    "openQuestions": "Open questions",
+    "rendered": "Rendered",
+    "raw": "Raw",
+    "edit": "Edit",
+    "editTitle": "Edit the description, To do and criteria here (⌘S saves, Esc cancels)",
+    "fold": {
+      "vision": "Vision",
+      "review": "Review",
+      "work": "Work",
+      "workSummary": "who worked on it, time and tokens",
+      "log": "Log and check-ins"
+    },
+    "logSummary": {
+      "lines_one": "{{count}} log line",
+      "lines_other": "{{count}} log lines",
+      "checkins_one": "{{count}} check-in",
+      "checkins_other": "{{count}} check-ins"
+    },
+    "note": {
+      "placeholder": "Add a note to the log… (or paste / drop files here)",
+      "label": "Note to the log",
+      "add": "Add to log"
+    },
+    "checkins": {
+      "title": "Check-ins",
+      "meta": "The percentages are each session's own estimate."
+    },
+    "header": {
+      "changedNow": "changed just now",
+      "changed": "changed {{ago}} ago",
+      "close": "Close",
+      "renameTitle": "Click to rename",
+      "titleLabel": "Title"
+    },
+    "status": {
+      "unknownStage": "{{stage}} (unknown)",
+      "noStage": "no stage (unknown)",
+      "yourOwn": "your own task",
+      "quiet": "quiet {{ago}} ·",
+      "live": "LIVE",
+      "yourTurn": "Your turn",
+      "onIt": "on it: <who>{{name}}</who>",
+      "youAnd": "you, {{who}}",
+      "waiting": "Waiting on you: {{what}}",
+      "nothingWaiting": "nothing waiting on you"
+    },
+    "waiting": {
+      "criteria": "{{open}} of {{total}} criteria to check",
+      "acceptOrBack": "accept or send back",
+      "questions_one": "{{count}} question for you",
+      "questions_other": "{{count}} questions for you",
+      "input": "input in Claude Code"
+    },
+    "track": {
+      "label": "Stage",
+      "paused": "paused: resume it to move it",
+      "hint": "click any stage to move it there",
+      "cur": "It's in {{stage}}",
+      "put": "Put it in {{stage}}",
+      "putReleases": "Put it in {{stage}} (releases {{who}}'s claim)",
+      "todo": "To do",
+      "doing": "Doing",
+      "done": "Done"
+    },
+    "undo": "Undo: back to {{stage}}",
+    "underMinute": "under a minute",
+    "release": {
+      "shaping": {
+        "title": "Unheld, still in Shaping, with the claim released and logged as reclaimed",
+        "does": "Release lets go of it, still in Shaping, logged as reclaimed.",
+        "done": "Released: still in Shaping, nobody holds it."
+      },
+      "ready": {
+        "title": "Back to Ready, with the claim released and logged as reclaimed",
+        "does": "Release puts it back in Ready, logged as reclaimed.",
+        "done": "Released: back in Ready."
+      }
+    },
+    "unreached": {
+      "button": "Release",
+      "group": "Confirm Release",
+      "busy": "Releasing…",
+      "cancel": "Cancel",
+      "paused": "Paused: resume it to release it.",
+      "testing": {
+        "label": "Release {{who}}'s hold",
+        "ask": "Release {{who}}'s hold? It stays in Testing for the next tester.",
+        "note": "No session to reach on this hold: Release lets go of it, and it stays in Testing for the next tester.",
+        "done": "Released: still in Testing, nobody holds it."
+      },
+      "building": {
+        "label": "Release {{who}}'s claim",
+        "ask": "Release {{who}}'s claim? It goes back to Ready; its worktree and branch stay.",
+        "note": "No session to reach on this claim: Release puts it back in Ready, its worktree and branch kept.",
+        "done": "Released: back in Ready, its worktree and branch kept."
+      }
+    },
+    "moved": "Put in {{stage}}.",
+    "movedReleased": "Put in {{stage}}. {{who}}'s claim on {{from}} was released.",
+    "did": {
+      "started": "Started: it's in Doing.",
+      "done": "Done.",
+      "accepted": "Accepted: it's done.",
+      "passed": "Passed to {{stage}}.",
+      "passedNext": "Passed to the next stage.",
+      "blockedTasks": "Blocked by those tasks: added to its depends.",
+      "blocked": "Blocked. It keeps its stage.",
+      "unblocked": "Unblocked.",
+      "putBack": "Put back in {{stage}}.",
+      "ticked": "Ticked {{which}}.",
+      "unticked": "Unticked {{which}}.",
+      "noted": "Note added to the log.",
+      "attached": "Files attached.",
+      "attachedN_one": "Attached {{count}} file.",
+      "attachedN_other": "Attached {{count}} files."
+    },
+    "sentBack": {
+      "finding": "Sent back to its builder: first in line, with what's wrong as owner finding {{finding}} to fix or dispute.",
+      "to": "Sent back to {{stage}}.",
+      "notTold": "Its session can't be told ({{why}}); muster next shows it first.",
+      "told": "Session {{session}} was told."
+    },
+    "paused": {
+      "head": "Paused: it's in the Paused lane with its stage and claim, and nobody works it until you resume it.",
+      "resumed": "Resumed: it's back in its column and carries on as it was.",
+      "askedStop": "Session {{session}} is asked to stop at a safe point after its next tool call.",
+      "askedOn": "Session {{session}} is asked to carry on after its next tool call.",
+      "unreached": "Its session can't be told: {{why}}."
+    },
+    "gate": {
+      "placeholder": "The gate's result line (gate full: green …)",
+      "label": "The gate's result line",
+      "summaryPlaceholder": "What was built, in one plain line for the owner's check",
+      "summaryLabel": "What was built, in one line"
+    },
+    "back": {
+      "to": "Back to",
+      "wrongPlaceholder": "What's wrong (the builder gets this)",
+      "wrongLabel": "What's wrong",
+      "whyPlaceholder": "Why: what's wrong or missing",
+      "whyLabel": "Why it goes back",
+      "send": "Send back",
+      "toBuilder": "Send back to builder"
+    },
+    "block": {
+      "by": "Blocked by",
+      "pick": "Pick why it's blocked, then say what it waits on.",
+      "questionAria": "The open question it waits on",
+      "noQuestion": "No open question in this task: ask one first, then block on it.",
+      "block": "Block",
+      "depends": "They're added to its depends: it shows blocked by them until they're all merged (in Your check or Done; the owner's own, Done), then clears by itself."
+    },
+    "editor": {
+      "unsaved": "Unsaved changes: Save, or press Esc twice to discard",
+      "unsent": "Unsent comment: send it (⌘↩), or press Esc twice to throw it away",
+      "saved": "Saved. The edit is in the log.",
+      "noChange": "No change: the text is the same as the file's.",
+      "hint": "Editing the write-up · ⌘S saves · Esc cancels",
+      "label": "The write-up, in Markdown",
+      "saving": "Saving…",
+      "again": "Esc or Cancel again to throw your changes away"
+    }
+  },
+  "side": {
+    "aria": "Actions and settings",
+    "priority": "Priority",
+    "type": "Type",
+    "noType": "no type",
+    "for": "For",
+    "est": "Est",
+    "tags": "Tags",
+    "forValue": {
+      "human": "human",
+      "ai": "ai"
+    },
+    "saved": {
+      "priority": "Priority set.",
+      "type": "Type set.",
+      "forHuman": "It's yours to do now: hatched on the board, with the You ribbon.",
+      "forAi": "It's the agents' now.",
+      "tags": "Tags saved.",
+      "time": "Time estimate saved.",
+      "testTime": "Test time estimate saved.",
+      "tokens": "Token estimate saved."
+    },
+    "estimate": {
+      "agentTime": "Agent time",
+      "testTime": "Test time",
+      "tokens": "Tokens",
+      "tokensTitle": "Tokens (150k, 1.2M)"
+    },
+    "next": {
+      "aria": "Next step",
+      "label": "Next step",
+      "pausedTitle": "Paused: resume it first",
+      "tickFirst": "Tick yours in the checklist first",
+      "release": "Release",
+      "sendBack": "Send back",
+      "sendBackBuilder": "Send back to builder",
+      "block": "Block",
+      "unblock": "Unblock",
+      "holder": "{{holder}} holds it in {{stage}}, so only they can pass it on. To move it yourself, click a stage on the track.",
+      "stale": "{{who}} hasn't been heard from for {{span}}.",
+      "blocked": "{{why}}. Unblock it to pass it on.",
+      "blockedUnnamed": "Blocked on something it doesn't name. Unblock it to pass it on.",
+      "paused": "Paused: resume it (beside its stage, above) to pass it on.",
+      "unknownStage": "A stage this window doesn't know: click one on the track.",
+      "done": "Done. Send it back to reopen it.",
+      "children": "Its tasks move it on."
+    },
+    "files": {
+      "label": "Files",
+      "attach": "+ Attach",
+      "open": "Open files",
+      "shut": "Shut {{name}}"
+    },
+    "links": {
+      "label": "Links",
+      "notHttps": "{{url}} (not https, so it won't open)",
+      "notHttpsTitled": "{{title}} {{url}} (not https, so it won't open)"
+    },
+    "branch": {
+      "branch": "Branch",
+      "worktree": "Worktree",
+      "notRecorded": "not recorded",
+      "merged": "Merged",
+      "noCommit": "no commit recorded"
+    }
+  },
+  "stage": {
+    "checklist": "Your checklist",
+    "noOwner": "None of the criteria are yours to verify. Accept it, or send it back.",
+    "accepting": "What you're accepting",
+    "built": "Built",
+    "noSummary": "(no summary was written; <code>{{cmd}}</code> adds one)",
+    "accept": "Accept",
+    "try": "Try",
+    "proof": "Proof",
+    "noCriteria": "No acceptance criteria are written.",
+    "criterion": "criterion {{n}}",
+    "standing": {
+      "checkedByYou": "✓ checked by you",
+      "proven": "✓ proven:",
+      "tickedNoProof": "✓ ticked, no proof written",
+      "yours": "yours to check, in Your checklist",
+      "notProven": "not proven yet"
+    },
+    "work": {
+      "title": "Work so far",
+      "time": "Time",
+      "spent": "{{time}} in Building and Testing",
+      "notTimed": "not timed: no move into Building in the log",
+      "agentPart": "{{time}} of agent time",
+      "testPart": "{{time}} of test time",
+      "both": "{{a}} and {{b}}",
+      "withEstimate": "{{spent}} · estimate {{est}}",
+      "noEstimate": "{{spent}} · no time estimate",
+      "tokens": "Tokens",
+      "tokensLine": "{{tokens}} estimated · used: in Work below",
+      "sessions": "Sessions, tokens used and transcripts: in Work below."
+    },
+    "history": {
+      "title": "History",
+      "sub": "from the log, newest first",
+      "none": "No stage moves in the log yet.",
+      "move": "{{from}} → {{to}}"
+    },
+    "criteria": "Criteria",
+    "noCriteriaYet": "No acceptance criteria written yet. Edit adds them.",
+    "estimate": "Estimate",
+    "approx": "≈ {{parts}}",
+    "notEstimated": "Not estimated yet: Est, on the right.",
+    "rollup": "Roll-up",
+    "noTasks": "no tasks yet"
+  },
+  "check": {
+    "aria": "Yours to verify",
+    "allTicked": "All yours are ticked. Accept to finish.",
+    "left_one": "Yours to verify: {{count}} left, then Accept.",
+    "left_other": "Yours to verify: {{count}} left, then Accept.",
+    "tick": "Tick",
+    "untick": "Untick",
+    "tickTitle": "Tick {{which}}: you've checked it",
+    "untickTitle": "Untick {{which}}",
+    "openView": "Open {{view}}"
+  },
+  "comments": {
+    "heading": "Comments",
+    "none": "No comments yet.",
+    "placeholder": "Add a comment (⌘↩ to send)",
+    "label": "Your comment",
+    "send": "Comment",
+    "sending": "Sending…",
+    "hint": "Start with {{accept}}, {{sendback}} <{{why}}>, {{block}} <{{why}}> or {{ask}} <{{question}}> to act.",
+    "why": "why",
+    "question": "question",
+    "done": "Comment added.",
+    "doneDid": "Comment added: {{did}}.",
+    "doneUnsaved": "Done: {{did}}. The comment couldn't be saved ({{why}}), so it isn't in the thread; don't send it again."
+  },
+  "review": {
+    "notStarted": "not started on its own branch",
+    "notReviewed": "not reviewed yet",
+    "notReviewedCounts": "not reviewed yet: {{open}} open, {{answered}} answered",
+    "clean": "clean after round {{round}}",
+    "round": "round {{round}} of {{max}}: {{open}} open, {{answered}} answered",
+    "aria": "Review of record",
+    "heading": "Review",
+    "copy": "Copy review brief",
+    "loadingBrief": "Loading the brief…",
+    "brief": "The review brief",
+    "copied": "Copied the review brief. Paste it into a session that didn't build the task to run the next round.",
+    "cantLoad": "Couldn't load the review brief: {{error}}",
+    "notReviewedNote": "Not reviewed yet. In Testing a session that didn't build it runs the owner's review engine on the branch ({{cmd}}); the merge waits for a clean review.",
+    "notStartedNote": "Reviewed only when it's started on its own branch ({{cmd}}).",
+    "gone": "Its Review section is gone from the text. Record a new round."
+  },
+  "vision": {
+    "notChecked": "not checked",
+    "none": "no open conflicts",
+    "open_one": "{{count}} open conflict",
+    "open_other": "{{count}} open conflicts",
+    "aria": "Vision check",
+    "heading": "Vision",
+    "resolve": "Resolve {{id}}",
+    "copy": "Copy vision brief",
+    "loadingBrief": "Loading the brief…",
+    "brief": "The vision brief",
+    "copied": "Copied the vision brief. Paste it into a session to check the task against the picture.",
+    "cantLoad": "Couldn't load the vision brief: {{error}}",
+    "howPlaceholder": "How {{id}} was settled, in one line",
+    "howLabel": "How {{id}} was settled",
+    "resolvedNone": "Resolved {{id}}. No conflict is open, so it can pass to Ready.",
+    "resolvedLeft_one": "Resolved {{id}}. {{count}} still open.",
+    "resolvedLeft_other": "Resolved {{id}}. {{count}} still open.",
+    "notCheckedNote": "Not checked against the project's picture yet. Copy the brief for a session to check it; until it's checked, nothing holds it back.",
+    "gone": "Its Vision section is gone from the text. Record a new check."
+  },
+  "helper": {
+    "noClaude": "Couldn't find the <code>claude</code> command. The helper runs your own Claude Code. Install it, then reopen this tab.",
+    "project": "Project",
+    "intro": "Tell it ideas, bugs and tasks. It files them in {{project}}'s queue, checks for duplicates, and asks when something's unclear.",
+    "accountModel": "Account: {{account}}. Model: {{model}}.",
+    "changeAccount": "Change account",
+    "stop": "Stop",
+    "newConversation": "New conversation",
+    "empty": "Nothing yet. Try: “The board flickers when I resize the window, and I'd like a dark mode toggle.”",
+    "steps_one": "{{count}} step",
+    "steps_other": "{{count}} steps",
+    "stepsFiled_one": "{{count}} step · filed tasks",
+    "stepsFiled_other": "{{count}} steps · filed tasks",
+    "loginTitle": "The account {{account}} isn't logged in on its own.",
+    "loginBody": "The helper uses an account's own login and never reads tokens, so an account that only works through a shell command with a token won't work here. Pick an account that's logged in, or log this one in (it opens Terminal on Claude's own login).",
+    "chooseOther": "Choose another account",
+    "logIn": "Log in {{account}}…",
+    "working": "working…",
+    "remove": "Remove {{name}}",
+    "placeholderRunning": "It's working on your last message…",
+    "placeholder": "Ideas, bugs, tasks… paste screenshots here (⌘↩ to send)",
+    "send": "Send"
+  }
+}

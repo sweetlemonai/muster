@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { useT } from "./i18n";
 import { stamp } from "./lib";
 import Markdown from "./Markdown";
 import { copyNow } from "./NotePanel";
@@ -13,6 +14,7 @@ import { Button } from "./ui";
  *  false-positive, wont-fix), the builder's and the reviewer's words on it, and each round. Always
  *  shown, so a task that wasn't reviewed says so. `body` is the task's text, null while it loads. */
 export default function ReviewPanel({ task, body }: { task: Task; body: string | null }) {
+  const t = useT("pane");
   const reviewed = (task.reviewRound ?? null) !== null;
   const section = reviewed && body !== null ? reviewSection(body) : null;
   const started = Boolean(task.branch);
@@ -33,31 +35,29 @@ export default function ReviewPanel({ task, body }: { task: Task; body: string |
     };
   }, [task.queue, task.id, task.modified, started]);
   const copy = () =>
-    copyNow(brief.text, navigator.clipboard, "The review brief").then(
-      () => setMsg({ ok: true, text: "Copied the review brief. Paste it into a session that didn't build the task to run the next round." }),
+    copyNow(brief.text, navigator.clipboard, t("review.brief")).then(
+      () => setMsg({ ok: true, text: t("review.copied") }),
       (e) => setMsg({ ok: false, text: String(e) }),
     );
   const open = (task.reviewOpen ?? 0) > 0;
   return (
-    <section className={`review${open ? " has-open" : ""}`} aria-label="Review of record" data-part="review">
-      <h2>Review <small>{reviewStatus(task)}</small></h2>
+    <section className={`review${open ? " has-open" : ""}`} aria-label={t("review.aria")} data-part="review">
+      <h2>{t("review.heading")} <small>{reviewStatus(task)}</small></h2>
       {started && (
         <div className="control-row">
-          <Button type="button" disabled={brief.text === null} title={brief.text === null && !brief.error ? "Loading the brief…" : undefined} onClick={() => void copy()}>
-            Copy review brief
+          <Button type="button" disabled={brief.text === null} title={brief.text === null && !brief.error ? t("review.loadingBrief") : undefined} onClick={() => void copy()}>
+            {t("review.copy")}
           </Button>
         </div>
       )}
-      {brief.error && <p className="err small">Couldn't load the review brief: {brief.error}</p>}
+      {brief.error && <p className="err small">{t("review.cantLoad", { error: brief.error })}</p>}
       {msg && <p className={msg.ok ? "ok small" : "err small"}>{msg.text}</p>}
       {!reviewed && (
         <p className="meta small">
-          {started
-            ? "Not reviewed yet. In Testing a session that didn't build it runs the owner's review engine on the branch (muster review); the merge waits for a clean review."
-            : "Reviewed only when it's started on its own branch (muster start)."}
+          {started ? t("review.notReviewedNote", { cmd: "muster review" }) : t("review.notStartedNote", { cmd: "muster start" })}
         </p>
       )}
-      {reviewed && body !== null && section === null && <p className="err small">Its Review section is gone from the text. Record a new round.</p>}
+      {reviewed && body !== null && section === null && <p className="err small">{t("review.gone")}</p>}
       {section !== null && <Markdown text={section} />}
     </section>
   );

@@ -1,3 +1,4 @@
+import { tn, useT } from "./i18n";
 import type { Task } from "./types";
 
 /** The last folder of a worktree's path: what the card names it by. */
@@ -18,7 +19,7 @@ export function BranchCardLine({ t }: { t: Task }) {
   const line = branchLine(t);
   if (!line) return null;
   return (
-    <span className="card-branch" title={t.worktree ? `Worktree: ${t.worktree}` : undefined}>
+    <span className="card-branch" title={t.worktree ? tn("board", "branch.worktree", { path: t.worktree }) : undefined}>
       {line}
     </span>
   );
@@ -27,16 +28,17 @@ export function BranchCardLine({ t }: { t: Task }) {
 /** The pane's part for a started task: its branch and worktree path; after the merge, the merge
  *  commit and the report. Nothing for a task that was never started in a worktree. */
 export function BranchPane({ task }: { task: Task }) {
+  const tr = useT("pane");
   if (task.branch) {
     return (
       <div className="branch-pane" data-part="worktree">
         <div className="kv">
-          <span className="lbl">Branch</span>
+          <span className="lbl">{tr("side.branch.branch")}</span>
           <code>{task.branch}</code>
         </div>
         <div className="kv stack">
-          <span className="lbl">Worktree</span>
-          <code className="path">{task.worktree ? task.worktree : "not recorded"}</code>
+          <span className="lbl">{tr("side.branch.worktree")}</span>
+          {task.worktree ? <code className="path">{task.worktree}</code> : <span className="meta">{tr("side.branch.notRecorded")}</span>}
         </div>
       </div>
     );
@@ -45,8 +47,8 @@ export function BranchPane({ task }: { task: Task }) {
     return (
       <div className="branch-pane" data-part="merged">
         <div className="kv">
-          <span className="lbl">Merged</span>
-          <code>{task.commit ? task.commit.slice(0, 7) : "no commit recorded"}</code>
+          <span className="lbl">{tr("side.branch.merged")}</span>
+          {task.commit ? <code>{task.commit.slice(0, 7)}</code> : <span className="meta">{tr("side.branch.noCommit")}</span>}
         </div>
         <p className="meta small merge-report">{task.mergeReport}</p>
       </div>

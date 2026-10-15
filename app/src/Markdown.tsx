@@ -1,13 +1,15 @@
 import { memo, useContext, useMemo } from "react";
 import MarkdownIt from "markdown-it";
 import { manualMd } from "./anchors";
+import { blockDir } from "./blockDir";
 import { taskKeyLinks } from "./keyLinks";
 import { Labels } from "./labels";
 
 // Task text is untrusted: raw HTML stays text (html: false) and markdown-it refuses unsafe
 // link schemes. Links never navigate the window; their address shows as a tooltip. A task's key
-// in the text links to the task (0033) when `keys` is given.
-const md = new MarkdownIt({ html: false, linkify: true, breaks: false }).use(taskKeyLinks);
+// in the text links to the task (0033) when `keys` is given. Each block reads in its own direction
+// (blockDir, mu-148): task text mixes Persian and English.
+const md = new MarkdownIt({ html: false, linkify: true, breaks: false }).use(taskKeyLinks).use(blockDir);
 
 /** `anchors` renders the manual's way (anchors.ts): headings carry their slug. `onLink` gets the
  *  address of a clicked link, which still never navigates the window. `keys` (each project's

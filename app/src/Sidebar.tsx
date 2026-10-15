@@ -1,8 +1,8 @@
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import { blockSentence } from "./blockWords";
-import { calendarIn, fmt, latinDigits, tn, useLocale, useT, type Calendar } from "./i18n";
+import { calendarIn, fmt, latinDigits, sentences, tl, tn, useLocale, useT, type Calendar } from "./i18n";
 import { BranchPane } from "./Branch";
-import { dueCommit, dueStored, dueTyped, KINDS } from "./fields";
+import { dueCommit, dueStored, dueTyped, kindLabel, KINDS } from "./fields";
 import { earlierStages, heldByOther, isStage, leaseRunOut, nameOf, passLabel, stageLabel } from "./lib";
 import { Machine, RoleNamesContext, spanText } from "./settingsData";
 import { isHuman } from "./human";
@@ -30,29 +30,32 @@ export default function Sidebar({ task, nowSecs, a, images, files }: {
   /** Which of Files' images are open, flipping one, and the row under the columns that shows them. */
   files: { open: ReadonlySet<string>; onToggle: (name: string) => void; openId: string };
 }) {
+  const t = useT("pane");
   return (
-    <aside className="tp-side" aria-label="Actions and settings">
+    <aside className="tp-side" aria-label={t("side.aria")}>
       <NextStep task={task} nowSecs={nowSecs} a={a} />
       <div className="side-settings" data-part="settings">
         <div className="kv">
-          <span className="lbl">Priority</span>
-          <ValueChip label="Priority" value={task.priority || "normal"} options={["high", "normal", "low"]} onPick={(v) => a.setField("priority", v, "Priority set.")} />
+          <span className="lbl">{t("side.priority")}</span>
+          <ValueChip label={t("side.priority")} value={task.priority || "normal"} options={["high", "normal", "low"]} shown={priorityShown} onPick={(v) => a.setField("priority", v, t("side.saved.priority"))} />
         </div>
         <div className="kv">
-          <span className="lbl">Type</span>
-          {/* The core's types (0017); an old file's idea still shows, as the one pressed. */}
-          <ValueChip label="Type" value={task.kind || "no type"} options={KINDS} onPick={(v) => a.setField("type", v, "Type set.")} />
+          <span className="lbl">{t("side.type")}</span>
+          {/* The core's types (0017); an old file's idea still shows, as the one pressed. No type is
+              the empty value, shown in words. */}
+          <ValueChip label={t("side.type")} value={task.kind} options={KINDS} shown={typeShown} onPick={(v) => a.setField("type", v, t("side.saved.type"))} />
         </div>
         {/* Who does it (0022): a task is the owner's own (human) or an agent's (ai). Goals and
             features are their tasks' sum, nobody's to do. */}
         {isWork(task) && (
           <div className="kv">
-            <span className="lbl">For</span>
+            <span className="lbl">{t("side.for")}</span>
             <ValueChip
-              label="For"
+              label={t("side.for")}
               value={isHuman(task) ? "human" : "ai"}
               options={["human", "ai"]}
-              onPick={(v) => a.setField("for", v, v === "human" ? "It's yours to do now: hatched on the board, with the You ribbon." : "It's the agents' now.")}
+              shown={forShown}
+              onPick={(v) => a.setField("for", v, v === "human" ? t("side.saved.forHuman") : t("side.saved.forAi"))}
             />
           </div>
         )}
@@ -60,7 +63,7 @@ export default function Sidebar({ task, nowSecs, a, images, files }: {
         <BranchPane task={task} />
         {/* Three fields (agent time, test time, tokens) need the column's width: label above. */}
         <div className="kv stack">
-          <span className="lbl">Est</span>
+          <span className="lbl">{t("side.est")}</span>
           <Estimate task={task} onSave={a.setField} />
         </div>
         {task.level === "goal" && (
@@ -70,8 +73,8 @@ export default function Sidebar({ task, nowSecs, a, images, files }: {
           </div>
         )}
         <div className="kv stack">
-          <span className="lbl">Tags</span>
-          <TagEditor tags={task.tags} onChange={(t) => a.setField("tags", t.join(","), "Tags saved.")} />
+          <span className="lbl">{t("side.tags")}</span>
+          <TagEditor tags={task.tags} onChange={(tags) => a.setField("tags", tags.join(","), t("side.saved.tags"))} />
         </div>
         <FilesView task={task} images={images} open={files.open} onToggle={files.onToggle} onAttach={a.attachPick} openId={files.openId} />
         <Links task={task} />
@@ -99,15 +102,18 @@ export function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a:
   const stale = !shapedOnly && !unreached && leaseRunOut(task, nowSecs, lease);
   const showPass = pass !== null && !holder && (!shapedOnly || task.stage === "backlog" || task.stage === "shaping");
   const yoursOpen = !human && task.stage === "your-check" && ownerOpen(task) > 0;
+  const t = useT("pane");
+  // The words also go in a title: a long translation truncates in its half of the column, never wraps.
+  const backWords = toBuilder(task.stage, human) ? t("side.next.sendBackBuilder") : t("side.next.sendBack");
   return (
-    <div className="next-step" role="group" aria-label="Next step" data-part="next-step" tabIndex={-1}>
-      <span className="lbl">Next step</span>
+    <div className="next-step" role="group" aria-label={t("side.next.aria")} data-part="next-step" tabIndex={-1}>
+      <span className="lbl">{t("side.next.label")}</span>
       {showPass && (
         <Button
           type="button"
           variant="primary"
           disabled={task.blocked || Boolean(task.paused) || a.busy || yoursOpen}
-          title={task.paused ? "Paused: resume it first" : yoursOpen ? "Tick yours in the checklist first" : undefined}
+          title={task.paused ? t("side.next.pausedTitle") : yoursOpen ? t("side.next.tickFirst") : undefined}
           onClick={a.pass}
         >
           {pass}
@@ -122,34 +128,26 @@ export function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a:
           title={releaseWords(task.stage).title}
           onClick={a.release}
         >
-          Release
+          {t("side.next.release")}
         </Button>
       )}
       {unreached && <ReleaseUnreached task={task} who={unreached} a={a} />}
-      {back.length > 0 && <Button type="button" disabled={a.busy} onClick={() => a.open("back")}>{toBuilder(task.stage, human) ? "Send back to builder" : "Send back"}</Button>}
+      {back.length > 0 && <Button type="button" disabled={a.busy} title={backWords} onClick={() => a.open("back")}>{backWords}</Button>}
       {task.blocked ? (
-        <Button type="button" disabled={a.busy} onClick={a.unblock}>Unblock</Button>
+        <Button type="button" disabled={a.busy} title={t("side.next.unblock")} onClick={a.unblock}>{t("side.next.unblock")}</Button>
       ) : (
-        <Button type="button" disabled={a.busy} onClick={() => a.open("block")}>Block</Button>
+        <Button type="button" disabled={a.busy} title={t("side.next.block")} onClick={() => a.open("block")}>{t("side.next.block")}</Button>
       )}
-      {holder && (
-        <p className="meta small">
-          {holder} holds it in {stageLabel(task.stage)}, so only they can pass it on. To move it yourself, click a stage on the track.
-        </p>
-      )}
-      {stale && (
-        <p className="meta small">
-          {nameOf(task.claimedBy, names)} hasn't been heard from for {spanText(lease)}. {releaseWords(task.stage).does}
-        </p>
-      )}
+      {holder && <p className="meta small">{t("side.next.holder", { holder, stage: stageLabel(task.stage) })}</p>}
+      {stale && <p className="meta small">{sentences([t("side.next.stale", { who: nameOf(task.claimedBy, names), span: spanText(lease) }), releaseWords(task.stage).does])}</p>}
       {unreached && (
         <p className="meta small">
           {unreachedWords(task.stage).note}
           {task.paused ? ` ${unreachedWords(task.stage).paused}` : ""}
         </p>
       )}
-      {showPass && task.blocked && <p className="meta small">{blockSentence(task) || "Blocked on something it doesn't name"}. Unblock it to pass it on.</p>}
-      {showPass && task.paused && <p className="meta small">Paused: resume it (beside its stage, above) to pass it on.</p>}
+      {showPass && task.blocked && <p className="meta small">{blockSentence(task) ? t("side.next.blocked", { why: blockSentence(task) }) : t("side.next.blockedUnnamed")}</p>}
+      {showPass && task.paused && <p className="meta small">{t("side.next.paused")}</p>}
       {!showPass && !stale && !holder && <p className="meta small">{nothingNext(task)}</p>}
     </div>
   );
@@ -280,29 +278,37 @@ export function ReleaseUnreachedView({ stage, who, asked, busy, paused, onAsk, o
 
 /** Why there's no next step to click. */
 function nothingNext(t: Task): string {
-  if (!isStage(t.stage)) return "A stage this window doesn't know: click one on the track.";
-  if (t.stage === "done") return "Done. Send it back to reopen it.";
-  return "Its tasks move it on.";
+  if (!isStage(t.stage)) return tn("pane", "side.next.unknownStage");
+  if (t.stage === "done") return tn("pane", "side.next.done");
+  return tn("pane", "side.next.children");
 }
 
 /** A field's current value as one chip. Clicking it lays the options out in its place (no
  *  popover); picking one, Esc, or tabbing away closes them. Picking the current value changes nothing. */
-export function ValueChip({ label, value, options, onPick }: { label: string; value: string; options: readonly string[]; onPick: (v: string) => void }) {
+export function ValueChip({ label, value, options, shown, onPick }: { label: string; value: string; options: readonly string[]; shown?: (v: string) => string; onPick: (v: string) => void }) {
   const [open, setOpen] = useState(false);
   const pick = (v: string) => {
     setOpen(false);
     if (v !== value) onPick(v);
   };
-  return <ValueChipView label={label} value={value} options={options} open={open} onOpen={() => setOpen(true)} onClose={() => setOpen(false)} onPick={pick} />;
+  return <ValueChipView label={label} value={value} options={options} shown={shown} open={open} onOpen={() => setOpen(true)} onClose={() => setOpen(false)} onPick={pick} />;
 }
 
-export function ValueChipView({ label, value, options, open, onOpen, onClose, onPick }: {
-  label: string; value: string; options: readonly string[]; open: boolean; onOpen: () => void; onClose: () => void; onPick: (v: string) => void;
+/** Priority's values in words (common.json); one the window doesn't know (P1) as written. */
+export const priorityShown = (v: string) => (v === "high" || v === "normal" || v === "low" ? tl(`priority.${v}`) : v);
+/** Type's values in words (common.json, as the card says them); none is "no type". */
+export const typeShown = (v: string) => (v ? kindLabel(v) : tn("pane", "side.noType"));
+/** For's two values in words: the owner's own task (human) or the agents' (ai). */
+export const forShown = (v: string) => (v === "human" || v === "ai" ? tn("pane", `side.forValue.${v}`) : v);
+
+/** The chip as drawn: each value in words through `shown` (what's saved stays the value). */
+export function ValueChipView({ label, value, options, shown: say = (v) => v, open, onOpen, onClose, onPick }: {
+  label: string; value: string; options: readonly string[]; shown?: (v: string) => string; open: boolean; onOpen: () => void; onClose: () => void; onPick: (v: string) => void;
 }) {
   if (!open) {
-    return <button type="button" className="vchip" aria-label={`${label}: ${value}, click to change`} onClick={onOpen}>{value}</button>;
+    return <button type="button" className="vchip" title={say(value)} aria-label={tl("choice.current", { label, value: say(value) })} onClick={onOpen}>{say(value)}</button>;
   }
-  // A value the options don't name (P1 from an older tool) still shows, as the one pressed.
+  // A value the options don't name (P1 from an older tool, or no type) still shows, as the one pressed.
   const shown = options.includes(value) ? options : [value, ...options];
   return (
     <Segmented
@@ -320,7 +326,7 @@ export function ValueChipView({ label, value, options, open, onOpen, onClose, on
       }}
     >
       {shown.map((o) => (
-        <Segment key={o} type="button" active={o === value} autoFocus={o === value} onClick={() => onPick(o)}>{o}</Segment>
+        <Segment key={o} type="button" active={o === value} autoFocus={o === value} onClick={() => onPick(o)}>{say(o)}</Segment>
       ))}
     </Segmented>
   );
@@ -356,29 +362,33 @@ export function DueFieldView({ typed, error, calendar, onType, onCommit }: {
   );
 }
 
+/** Est's placeholders: examples of what each field stores, written as it's typed (Latin, in every
+ *  language). */
+const EST_EXAMPLE = { time: "2h", testTime: "30m", tokens: "500k" };
+
 /** Estimated agent time (review and QA included), test time (the owner's check only) and tokens,
  *  saved when a field loses focus or on Enter. */
 function Estimate({ task, onSave }: { task: Task; onSave: (field: string, value: string, done: string) => void }) {
-  const t = useT("common");
+  const t = useT("pane");
   const [time, setTime] = useState(task.estTime);
   const [testTime, setTestTime] = useState(task.estTestTime);
   const [tokens, setTokens] = useState(task.estTokens);
   useEffect(() => setTime(task.estTime), [task.estTime]);
   useEffect(() => setTestTime(task.estTestTime), [task.estTestTime]);
   useEffect(() => setTokens(task.estTokens), [task.estTokens]);
-  const saved = { time: "Time estimate saved.", "test-time": "Test time estimate saved.", tokens: "Token estimate saved." };
+  const saved = { time: "side.saved.time", "test-time": "side.saved.testTime", tokens: "side.saved.tokens" } as const;
   const save = (field: "time" | "test-time" | "tokens", value: string, was: string) => {
     if (value.trim() === was) return;
-    onSave(field, value, saved[field]);
+    onSave(field, value, t(saved[field]));
   };
   const keys = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") (e.target as HTMLInputElement).blur();
   };
   return (
     <span className="est-pair">
-      <input value={time} onChange={(e) => setTime(e.target.value)} onBlur={() => save("time", time, task.estTime)} onKeyDown={keys} placeholder="2h" size={4} maxLength={10} aria-label="Agent time" title={t("estimateField.agentTime")} />
-      <input value={testTime} onChange={(e) => setTestTime(e.target.value)} onBlur={() => save("test-time", testTime, task.estTestTime)} onKeyDown={keys} placeholder="30m" size={4} maxLength={10} aria-label="Test time" title={t("estimateField.testTime")} />
-      <input value={tokens} onChange={(e) => setTokens(e.target.value)} onBlur={() => save("tokens", tokens, task.estTokens)} onKeyDown={keys} placeholder="500k" size={4} maxLength={10} aria-label="Tokens" title="Tokens (150k, 1.2M)" />
+      <input value={time} onChange={(e) => setTime(e.target.value)} onBlur={() => save("time", time, task.estTime)} onKeyDown={keys} placeholder={EST_EXAMPLE.time} size={4} maxLength={10} dir="ltr" aria-label={t("side.estimate.agentTime")} title={t("common:estimateField.agentTime")} />
+      <input value={testTime} onChange={(e) => setTestTime(e.target.value)} onBlur={() => save("test-time", testTime, task.estTestTime)} onKeyDown={keys} placeholder={EST_EXAMPLE.testTime} size={4} maxLength={10} dir="ltr" aria-label={t("side.estimate.testTime")} title={t("common:estimateField.testTime")} />
+      <input value={tokens} onChange={(e) => setTokens(e.target.value)} onBlur={() => save("tokens", tokens, task.estTokens)} onKeyDown={keys} placeholder={EST_EXAMPLE.tokens} size={4} maxLength={10} dir="ltr" aria-label={t("side.estimate.tokens")} title={t("side.estimate.tokensTitle")} />
     </span>
   );
 }
@@ -399,13 +409,15 @@ export function FilesView({ task, images, open, onToggle, onAttach, openId }: {
 }) {
   const names = task.attachments.filter((n) => IMAGE.test(n));
   const others = task.attachments.filter((n) => !IMAGE.test(n));
+  // tn, not useT: tests call it as a plain function; the pane re-renders it on a switch.
+  const t = (k: Parameters<typeof tn<"pane">>[1], p?: Parameters<typeof tn<"pane">>[2]) => tn("pane", k, p);
   return (
-    <div className="kv stack files" aria-label="Files">
-      <span className="lbl">Files <small>{fmt.num(task.attachments.length)}</small></span>
+    <div className="kv stack files" aria-label={t("side.files.label")}>
+      <span className="lbl">{t("side.files.label")} <small>{fmt.num(task.attachments.length)}</small></span>
       <span className="file-list">
         {names.map((n, i) => <ImageThumb key={n} id={thumbId(openId, i)} name={n} url={images[n]} open={open.has(n)} onToggle={() => onToggle(n)} controls={openId} />)}
         {others.map((n) => <span key={n} className="other-file" title={n}>{n}</span>)}
-        <Button type="button" className="attach" onClick={onAttach}>+ Attach</Button>
+        <Button type="button" className="attach" onClick={onAttach}>{t("side.files.attach")}</Button>
       </span>
     </div>
   );
@@ -464,6 +476,8 @@ export function FilesOpen({ task, images, open, onToggle, id, focus = focusById 
   /** Puts the focus on the element with this id (a test passes its own). */
   focus?: (id: string) => void;
 }) {
+  // tn, not useT: tests call it as a plain function; the pane re-renders it on a switch.
+  const t = (k: Parameters<typeof tn<"pane">>[1], p?: Parameters<typeof tn<"pane">>[2]) => tn("pane", k, p);
   const names = task.attachments.filter((n) => IMAGE.test(n));
   if (names.length === 0) return null;
   const shown = names.filter((n) => open.has(n));
@@ -472,10 +486,10 @@ export function FilesOpen({ task, images, open, onToggle, id, focus = focusById 
     focus(thumbId(id, names.indexOf(n)));
   };
   return (
-    <div className="files-open" id={id} data-part="files-open" aria-label="Open files" hidden={shown.length === 0}>
+    <div className="files-open" id={id} data-part="files-open" aria-label={t("side.files.open")} hidden={shown.length === 0}>
       {shown.map((n) => (
         <figure key={n} id={bigId(id, names.indexOf(n))} className="file-big">
-          <button type="button" className="file-big-btn" aria-label={`Shut ${n}`} title={`Shut ${n}`} onClick={() => shut(n)}>
+          <button type="button" className="file-big-btn" aria-label={t("side.files.shut", { name: n })} title={t("side.files.shut", { name: n })} onClick={() => shut(n)}>
             {images[n] ? <img src={images[n]} alt={n} /> : <span className="mini-img" />}
           </button>
           <figcaption dir="auto">{n}</figcaption>

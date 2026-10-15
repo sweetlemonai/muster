@@ -275,7 +275,7 @@ describe("priority and type: the current value as one chip, the options laid out
   const chip = (open: boolean, value = "high") =>
     renderToStaticMarkup(createElement(ValueChipView, { label: "Priority", value, options: ["high", "normal", "low"], open, onOpen: () => {}, onClose: () => {}, onPick: () => {} }));
   it("shows only the current value until clicked", () => {
-    expect(chip(false)).toBe('<button type="button" class="vchip" aria-label="Priority: high, click to change">high</button>');
+    expect(chip(false)).toBe('<button type="button" class="vchip" title="high" aria-label="Priority: high, click to change">high</button>');
   });
   it("clicked: every option in the same spot, the current one pressed", () => {
     const html = chip(true);

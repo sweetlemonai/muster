@@ -8,23 +8,24 @@ import inTheApp from "../../docs/manual/04-in-the-app.md?raw";
 import forAgents from "../../docs/manual/07-for-agents.md?raw";
 import faq from "../../docs/manual/08-faq.md?raw";
 import { type Heading, headings, linksIn, slugify } from "./anchors";
+import { tn, type TKey } from "./i18n";
 import { shortcutsPage } from "./shortcutsPage";
 
 export { headings, linksIn, slugify };
 
 export type PageInfo = { file: string; title: string };
 
+/** A page whose title is help.json's `pages.<file>` (mu-148), read in the language shown each time
+ *  it's asked, so the Help tab's list follows a switch. The page's own text stays as written. */
+const titled = (file: string): PageInfo => ({
+  file,
+  get title() {
+    return tn("help", `pages.${file.replace(/\.md$/, "")}` as TKey<"help">);
+  },
+});
+
 /** The pages, in reading order. */
-export const PAGES: PageInfo[] = [
-  { file: "01-start-here.md", title: "Start here" },
-  { file: "02-concepts.md", title: "Concepts" },
-  { file: "03-tutorials.md", title: "Tutorials" },
-  { file: "04-in-the-app.md", title: "In the app" },
-  { file: "05-commands.md", title: "Commands" },
-  { file: "06-shortcuts.md", title: "Shortcuts" },
-  { file: "07-for-agents.md", title: "For agents" },
-  { file: "08-faq.md", title: "FAQ and troubleshooting" },
-];
+export const PAGES: PageInfo[] = ["01-start-here.md", "02-concepts.md", "03-tutorials.md", "04-in-the-app.md", "05-commands.md", "06-shortcuts.md", "07-for-agents.md", "08-faq.md"].map(titled);
 
 const WRITTEN: Record<string, string> = {
   "01-start-here.md": startHere,

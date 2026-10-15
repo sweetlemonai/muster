@@ -1,4 +1,5 @@
 // The task pane's write-up editor, the parts without React: dirty state, keys, messages.
+import { tn } from "./i18n";
 
 /** Unsaved changes: the text differs from what Edit opened. */
 export const isDirty = (opened: string, text: string) => text !== opened;
@@ -16,16 +17,16 @@ export function editKey(e: Key, dirty: boolean, armed: boolean): EditAction {
   return null;
 }
 
-/** What the editor says when the window refused to leave it. */
-export const UNSAVED = "Unsaved changes: Save, or press Esc twice to discard";
+/** What the editor says when the window refused to leave it (in the language shown now, mu-148). */
+export const unsavedText = () => tn("pane", "pane.editor.unsaved");
 
 /** What the comment box says, with typed text, after a first Esc or a refused switch. */
-export const UNSENT = "Unsent comment: send it (⌘↩), or press Esc twice to throw it away";
+export const unsentText = () => tn("pane", "pane.editor.unsent");
 
 /** The comment box's notice: only while it holds text, once Esc armed the discard or the window
  *  refused to leave it. */
 export const commentNotice = (dirty: boolean, armed: boolean, refused: boolean): string | null =>
-  dirty && (armed || refused) ? UNSENT : null;
+  dirty && (armed || refused) ? unsentText() : null;
 
 /** The task pane's unsaved parts (the write-up editor, the comment box), with one part's state
  *  set. The same object when nothing changed, so setting it again doesn't re-render. */
@@ -46,4 +47,4 @@ export function mayLeave(unsaved: boolean, from: PaneLike, to: PaneLike): boolea
 
 /** The pane's line after a save: the new path, or null when the text was the file's already. */
 export const savedText = (path: string | null) =>
-  path === null ? "No change: the text is the same as the file's." : "Saved. The edit is in the log.";
+  tn("pane", path === null ? "pane.editor.noChange" : "pane.editor.saved");

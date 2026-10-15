@@ -1,1 +1,230 @@
-{}
+{
+  "manual": {
+    "nav": "Manual",
+    "search": "Search the manual",
+    "results": "Search results",
+    "nothing": "Nothing found for “{{query}}”.",
+    "hit": "{{title}} ›",
+    "repo": "That's {{path}} in the Muster repo, which the app doesn't open: read it on GitHub or in your editor.",
+    "web": "Web links don't open from the manual: {{url}}",
+    "bad": "That link doesn't lead anywhere.",
+    "copied": "Copied: {{text}}",
+    "noClipboard": "The clipboard isn't available here.",
+    "noCommandsPage": "the core sent no Commands page",
+    "commandsError": "Couldn't load the commands: {{error}}",
+    "loadingCommands": "Loading the commands…",
+    "steps": "Pages before and after",
+    "prev": "◀ {{title}}",
+    "next": "{{title}} ▶",
+    "prevNone": "◀",
+    "nextNone": "▶"
+  },
+  "pages": {
+    "01-start-here": "Start here",
+    "02-concepts": "Concepts",
+    "03-tutorials": "Tutorials",
+    "04-in-the-app": "In the app",
+    "05-commands": "Commands",
+    "06-shortcuts": "Shortcuts",
+    "07-for-agents": "For agents",
+    "08-faq": "FAQ and troubleshooting"
+  },
+  "areas": {
+    "anywhere": "Anywhere",
+    "search": "Search and views",
+    "writing": "Writing and sending",
+    "pane": "The task pane",
+    "board": "The board",
+    "projects": "Projects"
+  },
+  "shortcuts": {
+    "new-task": {
+      "what": "Open New task in the pane beside the board",
+      "where": "Anywhere in the window"
+    },
+    "close-pane": {
+      "what": "Close the pane: a task, a note or New task",
+      "where": "Anywhere while the pane is open, except in the search box or a view's name, which take Esc for themselves"
+    },
+    "search": {
+      "what": "Put the caret in the search box, with its words selected so typing replaces them. Ctrl+F is left to text fields, where it moves the caret",
+      "where": "Anywhere in the window. From a tab without a search box, it opens the board first"
+    },
+    "focus-mode": {
+      "what": "Turn Focus on, or back off to the mode you were in (the display modes are in Settings, Display)",
+      "where": "Anywhere in the window"
+    },
+    "zoom-in": {
+      "what": "Make everything larger: the board, the panes and the manual (the size is remembered; also in Settings, Appearance, Text size)",
+      "where": "Anywhere in the window"
+    },
+    "zoom-out": {
+      "what": "Make everything smaller",
+      "where": "Anywhere in the window"
+    },
+    "zoom-reset": {
+      "what": "Back to 100%",
+      "where": "Anywhere in the window"
+    },
+    "resize-pane": {
+      "what": "Move the edge of the pane or the projects sidebar 40 pixels: → to the right, ← to the left (the width is remembered)",
+      "where": "The edge of the pane or the projects sidebar, once Tab has put the focus on it"
+    },
+    "resize-pane-big": {
+      "what": "The same in steps of 120 pixels",
+      "where": "The edge of the pane or the projects sidebar, once Tab has put the focus on it"
+    },
+    "send": {
+      "what": "Create the task, send the answer or the comment, file the note, send to the helper, or send a task back",
+      "where": "New task's description, an answer box, the comment box, a note's File as task form, the Helper, and the task pane's Send back form"
+    },
+    "save-write-up": {
+      "what": "Save the write-up",
+      "where": "A task's write-up, after Edit"
+    },
+    "discard-text": {
+      "what": "Leave the editor or empty the comment box. With typed text, the first Esc only warns and the second throws the text away",
+      "where": "A task's write-up after Edit, and the comment box",
+      "keys": "Esc, twice"
+    },
+    "rename-cancel": {
+      "what": "Stop renaming and keep the old title (↩ saves the new one)",
+      "where": "A task's title, after clicking it"
+    },
+    "choice-close": {
+      "what": "Fold the choices back without changing the value",
+      "where": "Priority and Type, while their choices are laid out"
+    },
+    "estimate-save": {
+      "what": "Save the estimate (leaving the field saves it too)",
+      "where": "The Est fields: agent time, test time, tokens"
+    },
+    "tag-add": {
+      "what": "Add the tag you typed",
+      "where": "The tag field, in a task or in New task",
+      "keys": "↩ or ,"
+    },
+    "release-cancel": {
+      "what": "Don't release it: nothing changes, and the focus goes back to Release",
+      "where": "Release's confirm, in the task pane's Next step, on a claim no session can be reached on"
+    },
+    "search-clear": {
+      "what": "Clear the search, or leave the box when it's already empty. It never closes the pane",
+      "where": "The search box above Board, Table, Timeline and Graph"
+    },
+    "view-save": {
+      "what": "Save the search, filters and sort as a view under the name you typed",
+      "where": "A view's name, after + Save view"
+    },
+    "view-cancel": {
+      "what": "Stop naming the view; nothing is saved",
+      "where": "A view's name, after + Save view"
+    },
+    "quick-add": {
+      "what": "Add the line to the backlog as a note",
+      "where": "Add to the backlog…, at the top of the Backlog column, or of the Backlog band under Group by"
+    },
+    "quick-add-clear": {
+      "what": "Empty the field",
+      "where": "Add to the backlog…, at the top of the Backlog column, or of the Backlog band under Group by"
+    },
+    "accept-all-cancel": {
+      "what": "Don't accept them: nothing changes",
+      "where": "Accept all's confirm, in Your check's Just accept group (the board and Waiting for you)"
+    },
+    "grid-move": {
+      "what": "Move to the next cell of the Feature grid: across the stages, or down the features (← and → swap in right-to-left); ← from Backlog goes to the feature's name, which ↩ opens. Inside a cell, ↑ and ↓ step through its cards and +N more",
+      "where": "The Feature grid, once Tab has put the focus on it (the grid is one stop for Tab)"
+    },
+    "grid-ends": {
+      "what": "Go to the row's first cell (Backlog) or its last (Done today)",
+      "where": "A cell of the Feature grid, once Tab has put the focus on it",
+      "keys": "Home, End"
+    },
+    "grid-enter": {
+      "what": "Go into the cell, to its first card (or its +N more); ↩ on a card opens it in the pane beside the board",
+      "where": "A cell of the Feature grid, once Tab has put the focus on it",
+      "keys": "↩ or Space"
+    },
+    "grid-leave": {
+      "what": "Back from a card to its cell; the pane stays open",
+      "where": "A card or +N more in the Feature grid"
+    },
+    "label-save": {
+      "what": "Save the label or the category (leaving the field saves it too; in Settings it's saved as you type)",
+      "where": "A project's label or category in Settings, Projects; in the sidebar, a project's name after a double click, a heading's name after a double click or ↩, and + Category's field"
+    },
+    "label-revert": {
+      "what": "Keep the label or the category as it was before you started typing",
+      "where": "A project's label or category in Settings, Projects; in the sidebar, a project's name after a double click, a heading's name after a double click or ↩, and + Category's field"
+    },
+    "move-up": {
+      "what": "Move the project or the heading up one place, its projects with it. A project at the top of its heading goes to the end of the one above. The first move picks the Mine order",
+      "where": "A project or a category heading in the sidebar, once Tab has put the focus on it"
+    },
+    "move-down": {
+      "what": "Move the project or the heading down one place. A project at the bottom of its heading goes to the top of the one below",
+      "where": "A project or a category heading in the sidebar, once Tab has put the focus on it"
+    },
+    "heading-rename": {
+      "what": "Rename the heading in place (a double click does too). A name another heading has puts the two together",
+      "where": "A category heading in the sidebar, once Tab has put the focus on it"
+    },
+    "heading-fold": {
+      "what": "Fold the heading to its name and counts (its chevron does too); the selected project and the ones that need you still show on it",
+      "where": "A category heading in the sidebar, once Tab has put the focus on it"
+    },
+    "heading-unfold": {
+      "what": "Unfold the heading",
+      "where": "A category heading in the sidebar, once Tab has put the focus on it"
+    },
+    "colour-close": {
+      "what": "Fold the colours back without changing the project's colour",
+      "where": "A project's colours in the sidebar, after a click on its dot"
+    }
+  },
+  "page": {
+    "intro": "Every keyboard shortcut in the app, and the slash commands for Claude Code. This page is made from the app's own table of shortcuts, and a test checks every key the app reacts to against that table, so a shortcut can't exist without being listed here. ⌘ is the Command key. {{ctrl}}{{option}} ↩ is Return.",
+    "ctrl": "Ctrl works too wherever ⌘ is shown.",
+    "ctrlExceptOne": "Ctrl works too wherever ⌘ is shown, except {{list}}, which takes ⌘ only.",
+    "ctrlExceptMany": "Ctrl works too wherever ⌘ is shown, except {{list}}, which take ⌘ only.",
+    "option": " ⌥ is the Option key.",
+    "listMore": "{{a}}, {{b}}",
+    "listLast": "{{a}} and {{b}}",
+    "keys": "Keys",
+    "what": "What it does",
+    "where": "Where",
+    "slashTitle": "Slash commands in Claude Code",
+    "slashIntro": "`/mu` (or the long form, `/muster`) runs one `muster` command from inside a Claude Code session. The first word picks what it does, and anything that isn't a route is captured as a backlog one-liner, never guessed. Routes for the owner answer in plain words; routes for agents and the system print what `muster` printed.",
+    "slashRouter": "The router is built (task 0003) but not installed yet: it goes into the personal layer once the owner says yes. Until then, type `! muster …` in a session, as [For agents](07-for-agents.md#in-a-claude-code-session) shows.",
+    "route": "Route",
+    "for": "For"
+  },
+  "slash": {
+    "what": {
+      "status": "What's waiting for you, then the queue in one line",
+      "show": "One task in plain words",
+      "waiting": "Only what's waiting for you",
+      "add": "Put a one-liner in the backlog",
+      "answer": "Answer a question; it reaches the agent that asked",
+      "capture": "Captured as a backlog one-liner, never run as a command",
+      "ask": "Ask without stopping; the answer is pushed back",
+      "claim": "Claim a Ready task",
+      "next": "Claim the top Ready task you may take",
+      "heartbeat": "Keep a claim alive",
+      "note": "A line in the task's log",
+      "pass": "Hand the task on to the next stage",
+      "return": "Send it back a stage, with the reason",
+      "block": "Mark it blocked, and why: tasks, you, a permission, a question or outside",
+      "unblock": "Clear the blocked flag",
+      "list": "Tasks by stage",
+      "check": "Problems in the queue",
+      "help": "The routes, then muster's own help"
+    },
+    "who": {
+      "owner": "owner",
+      "agent": "agent",
+      "system": "system"
+    }
+  }
+}

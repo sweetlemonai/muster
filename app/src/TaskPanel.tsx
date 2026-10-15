@@ -1,5 +1,5 @@
 import { Stamp } from "./Dates";
-import { fmt } from "./i18n";
+import { fmt, useT } from "./i18n";
 import { useCallback, useContext, useEffect, useId, useState } from "react";
 import AnswerBox from "./AnswerBox";
 import { answerId } from "./answerFocus";
@@ -56,6 +56,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
   keys?: Map<string, string>;
   onOpenAt?: (queue: string, id: string) => void;
 }) {
+  const t = useT("pane");
   const [dirtyParts, setDirtyParts] = useState<Record<string, boolean>>({});
   const editDirty = useCallback((d: boolean) => setDirtyParts((p) => withPart(p, "edit", d)), []);
   const commentDirty = useCallback((d: boolean) => setDirtyParts((p) => withPart(p, "comment", d)), []);
@@ -123,7 +124,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
   return (
     <div
       className={`panel task-pane${over ? " drop" : ""}`}
-      aria-label={`Task ${taskKey(task)}`}
+      aria-label={t("pane.aria", { key: taskKey(task) })}
       // Only file drags are the pane's: text dragged into the editor or an answer box drops there.
       onDragOver={(e) => {
         if (!isFileDrag(e.dataTransfer.types)) return;
@@ -143,7 +144,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
           task={task}
           now={now}
           onClose={onClose}
-          onRename={(t) => a.setField("title", t, "Renamed.")}
+          onRename={(title) => a.setField("title", title, t("pane.renamed"))}
           onOpenTask={onOpenTask}
           pause={{ busy: a.busy, onPause: a.pause, onResume: a.resume }}
         />
@@ -159,13 +160,13 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
         <SessionPing task={task} now={now} onChanged={onChanged} />
         {a.msg && <PaneMsg msg={a.msg} undo={undo} busy={a.busy} onUndo={a.undo} />}
         <div className="pathline" data-part="path" title={task.path}>
-          {task.commit ? `commit ${task.commit}` : "commit none"} · {task.path}
+          {task.commit ? t("pane.commitLine", { commit: task.commit, path: task.path }) : t("pane.noCommitLine", { path: task.path })}
         </div>
       </header>
 
       {open.length > 0 && (
         <section className="answers" data-part="questions">
-          <h2>Open questions</h2>
+          <h2>{t("pane.openQuestions")}</h2>
           {open.map((q) => (
             <AnswerBox key={q.n} task={task} q={q} onChanged={onChanged} keys={keys} onLink={openLink} boxId={q.n === null ? undefined : answerId(task, q.n)} />
           ))}
@@ -190,32 +191,32 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
         ) : (
           <>
             <div className="body-bar">
-              <Pill on={!raw} onClick={() => setRaw(false)}>Rendered</Pill>
-              <Pill on={raw} onClick={() => setRaw(true)}>Raw</Pill>
-              <Pill className="edit" onClick={startEdit} title="Edit the description, To do and criteria here (⌘S saves, Esc cancels)">Edit</Pill>
+              <Pill on={!raw} onClick={() => setRaw(false)}>{t("pane.rendered")}</Pill>
+              <Pill on={raw} onClick={() => setRaw(true)}>{t("pane.raw")}</Pill>
+              <Pill className="edit" onClick={startEdit} title={t("pane.editTitle")}>{t("pane.edit")}</Pill>
             </div>
             {editMsg && <p className={editMsg.ok ? "ok small" : "err small"}>{editMsg.text}</p>}
             {error && <p className="err">{error}</p>}
-            {body === null && !error && <p className="none">Loading…</p>}
+            {body === null && !error && <p className="none">{t("common:loading")}</p>}
             {body !== null && (raw ? <pre className="raw">{body}</pre> : <Markdown text={shown} keys={keys} onLink={openLink} />)}
           </>
         )}
       </section>
 
       {/* Standard and Focus fold these to a header each (0038); ADHD shows them as they are. */}
-      <Fold label="Vision" summary={visionStatus(task)}>
+      <Fold label={t("pane.fold.vision")} summary={visionStatus(task)}>
         <VisionPanel task={task} body={body} onChanged={onChanged} />
       </Fold>
-      <Fold label="Review" summary={reviewStatus(task)}>
+      <Fold label={t("pane.fold.review")} summary={reviewStatus(task)}>
         <ReviewPanel task={task} body={body} />
       </Fold>
-      <Fold label="Work" summary="who worked on it, time and tokens">
+      <Fold label={t("pane.fold.work")} summary={t("pane.fold.workSummary")}>
         <Work task={task} />
       </Fold>
 
       <Comments task={task} onChanged={onChanged} onDirty={commentDirty} nudge={nudge} keys={keys} onLink={openLink} />
       {((log && !raw && editing === null) || task.checkins.length > 0) && (
-        <Fold label="Log and check-ins" summary={logSummary(log && !raw && editing === null ? log : "", task.checkins.length)}>
+        <Fold label={t("pane.fold.log")} summary={logSummary(log && !raw && editing === null ? log : "", task.checkins.length)}>
           {log && !raw && editing === null && (
             <section className="log">
               <Markdown text={log} keys={keys} onLink={openLink} />
@@ -233,6 +234,7 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
 
 /** A note to the log, in a bar fixed at the bottom of the pane. */
 function NoteBar({ onNote, onPaste }: { onNote: (text: string) => void; onPaste: (e: React.ClipboardEvent) => void }) {
+  const t = useT("pane");
   const [note, setNote] = useState("");
   return (
     <form
@@ -246,19 +248,20 @@ function NoteBar({ onNote, onPaste }: { onNote: (text: string) => void; onPaste:
         onNote(n);
       }}
     >
-      <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note to the log… (or paste / drop files here)" aria-label="Note to the log" maxLength={2000} />
-      <Button type="submit" disabled={!note.trim()}>Add to log</Button>
+      <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("pane.note.placeholder")} aria-label={t("pane.note.label")} maxLength={2000} />
+      <Button type="submit" disabled={!note.trim()}>{t("pane.note.add")}</Button>
     </form>
   );
 }
 
 /** Every check-in, in order: when, how far (the session's own estimate), what, who (0030). */
 export function Checkins({ task }: { task: Task }) {
+  const t = useT("pane");
   const names = useContext(RoleNamesContext);
   return (
     <section className="checkins">
-      <h2>Check-ins <small>{fmt.num(task.checkins.length)}</small></h2>
-      <p className="meta small">The percentages are each session's own estimate.</p>
+      <h2>{t("pane.checkins.title")} <small>{fmt.num(task.checkins.length)}</small></h2>
+      <p className="meta small">{t("pane.checkins.meta")}</p>
       <ol>
         {task.checkins.map((c, i) => (
           <li key={i}>

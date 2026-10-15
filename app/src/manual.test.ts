@@ -1,9 +1,10 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import helpRs from "../src-tauri/src/help.rs?raw";
 import commandsFile from "../../docs/manual/05-commands.md?raw";
 import { ManualView } from "./Help";
+import { setLocale } from "./i18n/runtime";
 import { HELP_TOPICS } from "./helpTopics";
 import { headings, linksIn, manualPages, neighbours, PAGES, resolve, search, slugify } from "./manual";
 import Markdown from "./Markdown";
@@ -29,6 +30,10 @@ const view = (over: Partial<Parameters<typeof ManualView>[0]> = {}) =>
     createElement(ManualView, { pages, at: { file: "02-concepts.md", slug: "", n: 0 }, query: "", onQuery: () => {}, onGo: () => {}, ...over }),
   );
 
+afterEach(async () => {
+  await setLocale("en");
+});
+
 describe("the manual's pages", () => {
   it("are the eight pages, in order, each starting with its title", () => {
     expect(PAGES.map((p) => p.title)).toEqual(["Start here", "Concepts", "Tutorials", "In the app", "Commands", "Shortcuts", "For agents", "FAQ and troubleshooting"]);
@@ -45,7 +50,11 @@ describe("the manual's pages", () => {
     expect(loading.filter((p) => p.text !== null)).toHaveLength(7);
   });
 
-  it("have no link to a page, a section or a file that doesn't exist", () => {
+  it.each(["en", "fa"] as const)("have no link to a page, a section or a file that doesn't exist, in %s", async (locale) => {
+    // In Persian the Shortcuts page is generated in Persian; its sections keep their English anchors.
+    await setLocale(locale);
+    const pages = manualPages(commandsFile);
+    const page = (file: string) => pages.find((p) => p.file === file);
     const broken: string[] = [];
     for (const p of pages) {
       for (const href of linksIn(p.text!)) {
@@ -192,7 +201,7 @@ describe("Markdown for the manual", () => {
     const plain = renderToStaticMarkup(createElement(Markdown, { text: md }));
     const anchored = renderToStaticMarkup(createElement(Markdown, { text: md, anchors: true }));
     expect(plain).not.toContain("data-anchor");
-    expect(anchored).toContain('<h2 data-anchor="two-words">Two words</h2>');
+    expect(anchored).toContain('<h2 data-anchor="two-words" dir="auto">Two words</h2>');
     expect(anchored).not.toContain("<script>");
   });
   it("doesn't turn a file name into a web link", () => {

@@ -90,7 +90,7 @@ describe("the task pane's Review section", () => {
     const html = panel(task({ branch: "task/x", reviewRound: 1, reviewOpen: 1, reviewAnswered: 0 }), BODY);
     expect(html).toContain('class="review has-open"');
     expect(html).toContain("<strong>R1</strong> open · should · correctness · round 1");
-    expect(html).toContain("<h3>Rounds</h3>");
+    expect(html).toContain("<h3 dir=\"auto\">Rounds</h3>");
     expect(html).not.toContain("<img");
     expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
   });

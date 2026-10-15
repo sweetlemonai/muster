@@ -1,5 +1,6 @@
 import { useContext, useState } from "react";
 import { api } from "./api";
+import { useT } from "./i18n";
 import { askerShown, stamp } from "./lib";
 import Markdown from "./Markdown";
 import PickOne, { answeredText } from "./PickOne";
@@ -13,6 +14,7 @@ import { Badge, Button } from "./ui";
  *  Waiting for you doesn't pull the lazy task pane into the startup chunk. `boxId` is the pane's
  *  only (`answerId`, what a block's Answer focuses), so two open boxes never share an id. */
 export default function AnswerBox({ task, q, onChanged, keys, onLink, boxId }: { task: Task; q: Question; onChanged: () => void; keys?: Map<string, string>; onLink?: (href: string) => void; boxId?: string }) {
+  const t = useT("common");
   const names = useContext(RoleNamesContext);
   const [text, setText] = useState("");
   const [state, setState] = useState<"idle" | "saving" | "done" | "error">("idle");
@@ -34,8 +36,9 @@ export default function AnswerBox({ task, q, onChanged, keys, onLink, boxId }: {
   return (
     <div className={`answer${q.escalated ? " needs-you" : ""}`}>
       <p>
-        <b>Q{q.n}</b> <span className="asker" dir="auto">{askerShown(q, names)}</span>
-        {q.escalated && <Badge variant="warn">for you</Badge>}
+        {/* i18n-ignore: the question's id (Q2), as muster answer takes it */}
+        <b>{`Q${q.n}`}</b> <span className="asker" dir="auto">{askerShown(q, names)}</span>
+        {q.escalated && <Badge variant="warn">{t("answer.forYou")}</Badge>}
       </p>
       <Markdown text={q.choices ? q.choices.question : q.text} keys={keys} onLink={onLink} />
       {q.choices && <PickOne task={task} q={q} choices={q.choices} extra={text} onAnswered={() => setText("")} onChanged={onChanged} />}
@@ -43,7 +46,7 @@ export default function AnswerBox({ task, q, onChanged, keys, onLink, boxId }: {
         id={boxId}
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder={q.choices ? "Something else, or words to add to a pick (⌘↩ sends them as your answer)" : "Your answer (⌘↩ to send)"}
+        placeholder={q.choices ? t("answer.placeholderPick") : t("answer.placeholder")}
         rows={3}
         maxLength={4000}
         onKeyDown={(e) => {
@@ -52,7 +55,7 @@ export default function AnswerBox({ task, q, onChanged, keys, onLink, boxId }: {
       />
       <div className="answer-bar">
         <Button disabled={!text.trim() || state === "saving"} onClick={() => void send()}>
-          {state === "saving" ? "Sending…" : "Answer"}
+          {state === "saving" ? t("answer.sending") : t("answer.send")}
         </Button>
         {msg && <span className={state === "error" ? "err" : "ok"}>{msg}</span>}
       </div>

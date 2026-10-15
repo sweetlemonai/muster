@@ -1,7 +1,7 @@
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { api, type AccountInfo, type HelperInfo, type HelperLine } from "./api";
-import { tl, tn } from "./i18n";
+import { tl, tn, Trans, useT } from "./i18n";
 import { readFiles, stamp } from "./lib";
 import Markdown from "./Markdown";
 import { HelpButton } from "./HelpButton";
@@ -19,7 +19,7 @@ function groups(lines: HelperLine[]): Group[] {
     if (g.owner || g.replies.length || g.tools.length || g.end || g.notes.length) out.push(g);
   };
   for (const l of lines) {
-    if (l.role === "helper" && l.kind === "reply" && /^not logged in/i.test(l.text)) continue;
+    if (l.role === "helper" && l.kind === "reply" && /^not logged in/i.test(l.text)) continue; // i18n-ignore: what Claude Code prints, matched
     if (l.role === "owner") {
       flush();
       g = { owner: l, replies: [], tools: [], notes: [] };
@@ -35,7 +35,25 @@ function groups(lines: HelperLine[]): Group[] {
   return out;
 }
 
+/** What the Helper says with no conversation yet. */
+export const helperEmpty = () => tn("pane", "helper.empty");
+
+/** A turn's folded steps: how many commands it ran, and whether one filed tasks. */
+export const helperSteps = (count: number, filed: boolean) => tn("pane", filed ? "helper.stepsFiled" : "helper.steps", { count });
+
+/** No `claude` command on this Mac: the Helper can't run. */
+export function NoClaude() {
+  return (
+    <main className="list helper">
+      <p className="err">
+        <Trans ns="pane" k="helper.noClaude" components={{ code: <code /> }} />
+      </p>
+    </main>
+  );
+}
+
 export default function Helper({ queues, initial, onChanged }: { queues: string[]; initial: string; onChanged: () => void }) {
+  const t = useT("pane");
   const [queue, setQueue] = useState(initial);
   const labels = useContext(Labels);
   const [info, setInfo] = useState<HelperInfo | null>(null);
@@ -117,13 +135,7 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
   };
   const blocks = useMemo(() => groups(lines), [lines]);
 
-  if (info && !info.claude) {
-    return (
-      <main className="list helper">
-        <p className="err">Couldn't find the <code>claude</code> command. The helper runs your own Claude Code. Install it, then reopen this tab.</p>
-      </main>
-    );
-  }
+  if (info && !info.claude) return <NoClaude />;
   if (info && (!info.account || picking)) {
     return (
       <main className="list helper">
@@ -145,32 +157,33 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
     <main className="helper">
       <header className="helper-bar">
         <label>
-          Project
+          {t("helper.project")}
           <select value={queue} onChange={(e) => setQueue(e.target.value)}>
             {queues.map((q) => <option key={q} value={q}>{labelOf(labels, q)}</option>)}
           </select>
         </label>
         <span className="meta">
-          Tell it ideas, bugs and tasks. It files them in {labelOf(labels, queue)}'s queue, checks for duplicates, and asks when something's unclear.
-          {info && <> Account: ~/{info.account}. Model: {info.model}.</>}
+          {t("helper.intro", { project: labelOf(labels, queue) })}
+          {info && <> {t("helper.accountModel", { account: `~/${info.account}`, model: info.model })}</>}
         </span>
         <span className="spacer" />
-        <Button onClick={() => { setPicking(true); void reload(); }} disabled={running}>Change account</Button>
-        {running && <Button onClick={() => void api.helperStop(queue)}>Stop</Button>}
+        <Button onClick={() => { setPicking(true); void reload(); }} disabled={running}>{t("helper.changeAccount")}</Button>
+        {running && <Button onClick={() => void api.helperStop(queue)}>{t("helper.stop")}</Button>}
         <Button onClick={() => void api.helperReset(queue).then(() => api.helperInfo(queue)).then((i) => setLines(i.lines))} disabled={running}>
-          New conversation
+          {t("helper.newConversation")}
         </Button>
         <HelpButton topic="helper" />
       </header>
       <div className="chat">
-        {blocks.length === 0 && <p className="empty">Nothing yet. Try: “The board flickers when I resize the window, and I'd like a dark mode toggle.”</p>}
+        {blocks.length === 0 && <p className="empty">{helperEmpty()}</p>}
         {blocks.map((b, i) => (
           <div key={i} className="turn">
             {b.owner && <div className="bubble owner">{b.owner.text}</div>}
             {b.notes.map((n, j) => <p key={j} className="note">{n.text}</p>)}
             {b.tools.length > 0 && (
               <details className="tools">
-                <summary>{b.tools.length} step{b.tools.length === 1 ? "" : "s"}{b.tools.some((t) => t.cmd.includes("muster new")) ? " · filed tasks" : ""}</summary>
+                {/* i18n-ignore: the command the helper runs to file a task */}
+                <summary>{helperSteps(b.tools.length, b.tools.some((x) => x.cmd.includes("muster new")))}</summary>
                 <ul>
                   {b.tools.map((t, j) => (
                     <li key={j}>
@@ -188,20 +201,18 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
             {b.end?.kind === "login" && info && (
               <div className="login-card">
                 <p>
-                  <b>The account ~/{info.account} isn't logged in on its own.</b> The helper uses an account's own login and never
-                  reads tokens, so an account that only works through a shell command with a token won't work here. Pick an account
-                  that's logged in, or log this one in (it opens Terminal on Claude's own login).
+                  <b>{t("helper.loginTitle", { account: `~/${info.account}` })}</b> {t("helper.loginBody")}
                 </p>
                 <div className="accounts">
-                  <Button onClick={() => { setPicking(true); void reload(); }}>Choose another account</Button>
-                  <Button onClick={() => void api.helperLogin(info.account).catch((e) => setError(String(e)))}>Log in ~/{info.account}…</Button>
+                  <Button onClick={() => { setPicking(true); void reload(); }}>{t("helper.chooseOther")}</Button>
+                  <Button onClick={() => void api.helperLogin(info.account).catch((e) => setError(String(e)))}>{t("helper.logIn", { account: `~/${info.account}` })}</Button>
                 </div>
               </div>
             )}
             {b.end?.kind === "done" && b.end.text && <p className="meta cost">{b.end.text}</p>}
           </div>
         ))}
-        {running && <p className="meta working"><i className="dot" /> working…</p>}
+        {running && <p className="meta working"><i className="dot" /> {t("helper.working")}</p>}
         <div ref={end} />
       </div>
       <form
@@ -228,7 +239,7 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
               <span key={name + i} className="pending-file">
                 {url.startsWith("data:image/") ? <img src={url} alt="" /> : null}
                 {name}
-                <button type="button" className="remove" onClick={() => setFiles((f) => f.filter((_, j) => j !== i))} aria-label={`Remove ${name}`}>×</button>
+                <button type="button" className="remove" onClick={() => setFiles((f) => f.filter((_, j) => j !== i))} aria-label={t("helper.remove", { name })}>×</button>
               </span>
             ))}
           </div>
@@ -236,7 +247,7 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={running ? "It's working on your last message…" : "Ideas, bugs, tasks… paste screenshots here (⌘↩ to send)"}
+          placeholder={running ? t("helper.placeholderRunning") : t("helper.placeholder")}
           rows={3}
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void send();
@@ -245,7 +256,7 @@ export default function Helper({ queues, initial, onChanged }: { queues: string[
         <div className="modal-bar">
           {error && <span className="err">{error}</span>}
           <span className="spacer" />
-          <Button type="submit" variant="primary" disabled={running || (!text.trim() && !files.length)}>Send</Button>
+          <Button type="submit" variant="primary" disabled={running || (!text.trim() && !files.length)}>{t("helper.send")}</Button>
         </div>
       </form>
     </main>

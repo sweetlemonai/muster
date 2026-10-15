@@ -1,4 +1,7 @@
 {
+  "branch": {
+    "worktree": "Worktree: {{path}}"
+  },
   "legend": {
     "label": "What the colours mean",
     "backlog": "Backlog",
@@ -685,5 +688,22 @@
       "title_other": "{{count}} tasks wait in Your check, over your limit of {{limit}}: check these before more start.",
       "titleAll": "Over your limit in {{list}}: check these before more start."
     }
+  },
+  "badge": {
+    "unreviewed": "not reviewed yet",
+    "fixFirst_one": "{{count}} to fix · not reviewed yet",
+    "fixFirst_other": "{{count}} to fix · not reviewed yet",
+    "recheckFirst_one": "{{count}} to re-check · not reviewed yet",
+    "recheckFirst_other": "{{count}} to re-check · not reviewed yet",
+    "fix_one": "review {{round}}/{{max}} · {{count}} to fix",
+    "fix_other": "review {{round}}/{{max}} · {{count}} to fix",
+    "recheck_one": "review {{round}}/{{max}} · {{count}} to re-check",
+    "recheck_other": "review {{round}}/{{max}} · {{count}} to re-check",
+    "clean": "review clean · round {{round}}",
+    "reviewTitleOpen": "Findings for the builder to fix or dispute ({{cmd}}); the merge waits for a clean review",
+    "reviewTitle": "The review of record ({{cmd}}): the merge waits for it to be clean at the branch's tip",
+    "vision_one": "⚠ {{count}} vision",
+    "vision_other": "⚠ {{count}} vision",
+    "visionTitle": "Open vision conflicts: it can't pass from Shaping to Ready until they're resolved"
   }
 }

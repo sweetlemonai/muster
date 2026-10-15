@@ -73,7 +73,9 @@
     "add": "+ tag",
     "addLabel": "Add a tag",
     "full_one": "{{count}} tag max",
-    "full_other": "{{count}} tags max"
+    "full_other": "{{count}} tags max",
+    "removeTitle": "Remove #{{tag}}",
+    "removeLabel": "Remove tag {{tag}}"
   },
   "block": {
     "kind": {
@@ -229,5 +231,20 @@
       "about": "About"
     }
   },
-  "splitter": "Drag to resize · double-click for the default · ← → with the focus here (Shift: bigger steps)"
+  "splitter": "Drag to resize · double-click for the default · ← → with the focus here (Shift: bigger steps)",
+  "answer": {
+    "forYou": "for you",
+    "placeholder": "Your answer (⌘↩ to send)",
+    "placeholderPick": "Something else, or words to add to a pick (⌘↩ sends them as your answer)",
+    "send": "Answer",
+    "sending": "Sending…",
+    "answered": "Answered. The asking agent gets it after its next step.",
+    "answeredNoSession": "Answered, and written in the task. No asking session on record, so it waits there.",
+    "noNumber": "This question has no number, so it can't be answered here.",
+    "options": "Options for {{q}}",
+    "pickTitle": "Answer {{q}} with ({{letter}})",
+    "pickTitleWords": "Answer {{q}} with ({{letter}}), followed by the words in the box",
+    "pick": "pick",
+    "fallback": "going with ({{letter}}) unless you answer"
+  }
 }

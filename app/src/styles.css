@@ -408,6 +408,9 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 .markdown h1 { font-size: 16px; }
 .markdown h2 { font-size: 14px; text-transform: none; letter-spacing: 0; color: var(--text); margin: 16px 0 6px; }
 .markdown p, .markdown li { margin: 4px 0; }
+/* Each block reads in its own direction (dir="auto", mu-148): WebKit's list items match their
+   list's alignment by default, so an English item in a Persian list would sit at the far side. */
+.markdown li[dir] { text-align: start; }
 .markdown code { background: var(--hover); padding: 0 4px; border-radius: 3px; }
 .markdown pre { background: var(--hover); padding: 10px; border-radius: 6px; overflow-x: auto; }
 .markdown pre code { background: none; padding: 0; }
@@ -1250,6 +1253,11 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .next-step > .release-confirm { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; text-align: start; }
 .release-confirm > .release-ask { flex-basis: 100%; font-size: 11.5px; line-height: 1.35; }
 .next-step > p { margin: 0; font-size: 11.5px; line-height: 1.35; }
+/* A longer translation (fa) never wraps a Next step button or a value chip: it truncates, the
+   words in its title (mu-148; DESIGN.md "No layout jumps"). */
+.next-step > .ui-button, .tp-side .vchip { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Persian's verbs run longer («مسدود کردن»): a little less side padding keeps them whole in a half column. */
+.next-step > .ui-button:lang(fa) { padding-inline: 6px; }
 .tp-side .next-step .ui-button--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 650; padding: 4px 8px; }
 .tp-side .next-step .ui-button--primary:not(:disabled):hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--accent-ink); }
 .side-settings { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); }

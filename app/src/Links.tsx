@@ -1,4 +1,4 @@
-import { fmt } from "./i18n";
+import { fmt, useT } from "./i18n";
 import { useState } from "react";
 import { api } from "./api";
 import type { Link, Task } from "./types";
@@ -11,6 +11,7 @@ export const linkLabel = (l: Link) => l.title || l.url.replace(/^https:\/\//i, "
  *  and only https, so a hand-written link that isn't https shows without a way to open it.
  *  Nothing when there are none. */
 export default function Links({ task }: { task: Task }) {
+  const t = useT("pane");
   const [error, setError] = useState("");
   if (task.links.length === 0) return null;
   const open = (url: string) => {
@@ -18,8 +19,8 @@ export default function Links({ task }: { task: Task }) {
     api.openLink(task.queue, task.id, url).catch((e) => setError(String(e)));
   };
   return (
-    <div className="kv stack links" aria-label="Links">
-      <span className="lbl">Links <small>{fmt.num(task.links.length)}</small></span>
+    <div className="kv stack links" aria-label={t("side.links.label")}>
+      <span className="lbl">{t("side.links.label")} <small>{fmt.num(task.links.length)}</small></span>
       <ul className="link-list">
         {task.links.map((l, i) => (
           <li key={`${i}-${l.url}`}>
@@ -28,10 +29,7 @@ export default function Links({ task }: { task: Task }) {
                 {linkLabel(l)}
               </button>
             ) : (
-              <span className="meta">
-                {l.title ? `${l.title} ` : ""}
-                {l.url} (not https, so it won&apos;t open)
-              </span>
+              <span className="meta">{l.title ? t("side.links.notHttpsTitled", { title: l.title, url: l.url }) : t("side.links.notHttps", { url: l.url })}</span>
             )}
           </li>
         ))}

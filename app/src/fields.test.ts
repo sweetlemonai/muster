@@ -10,7 +10,7 @@ import NewTask from "./NewTask";
 import TaskPanel from "./TaskPanel";
 import type { Task } from "./types";
 import { ValueChip, ValueChipView } from "./Sidebar";
-import { anyDirty, commentNotice, editKey, mayLeave, UNSENT, withPart } from "./writeUp";
+import { anyDirty, commentNotice, editKey, mayLeave, unsentText, withPart } from "./writeUp";
 
 const task = (over: Partial<Task>): Task => ({
   queue: "demo", id: "0017", title: "T", kind: "code", priority: "normal", status: "todo", stage: "ready", blocked: false, stageHistory: [],
@@ -152,7 +152,7 @@ describe("comments", () => {
     }));
     expect(html.indexOf("First.")).toBeLessThan(html.indexOf("Second"));
     expect(text(html)).toContain("owner · 2026-10-12 10:00");
-    expect(html).toContain("<li>a list</li>");
+    expect(html).toContain("<li dir=\"auto\">a list</li>");
     expect(html).toContain('placeholder="Add a comment (⌘↩ to send)"');
     expect(html).toContain('maxLength="4000"');
     expect(html.indexOf("Second")).toBeLessThan(html.indexOf("<textarea"));
@@ -186,11 +186,11 @@ describe("comments", () => {
     const esc = { key: "Escape", metaKey: false, ctrlKey: false, altKey: false, isComposing: false };
     expect(editKey(esc, true, false)).toBe("arm");
     expect(editKey(esc, true, true)).toBe("cancel");
-    expect(commentNotice(true, true, false)).toBe(UNSENT);
-    expect(commentNotice(true, false, true)).toBe(UNSENT);
+    expect(commentNotice(true, true, false)).toBe(unsentText());
+    expect(commentNotice(true, false, true)).toBe(unsentText());
     expect(commentNotice(true, false, false)).toBeNull();
     expect(commentNotice(false, true, true)).toBeNull();
-    expect(UNSENT).toBe("Unsent comment: send it (⌘↩), or press Esc twice to throw it away");
+    expect(unsentText()).toBe("Unsent comment: send it (⌘↩), or press Esc twice to throw it away");
   });
   it("say nothing unsent while the box is empty, even after a refused switch", () => {
     const html = renderToStaticMarkup(createElement(Comments, { task: task({}), onChanged: () => {}, nudge: 3 }));

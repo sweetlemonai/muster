@@ -2,6 +2,7 @@ import { useContext, useState } from "react";
 import { api, type Paused, type Returned } from "./api";
 import { isStage, nextStage, oneAtATime, readFiles, stageLabel, stamp } from "./lib";
 import { isHuman } from "./human";
+import { sentences, tn } from "./i18n";
 import { releaseWords, trackMove, unreachedWords } from "./paneData";
 import { RoleNamesContext } from "./settingsData";
 import type { Task } from "./types";
@@ -75,16 +76,16 @@ export function useTaskActions(task: Task, onChanged: () => void) {
       }
       const next = nextStage(task.stage, human);
       const done = human && next?.id === "building"
-        ? "Started: it's in Doing."
+        ? tn("pane", "pane.did.started")
         : human && next?.id === "done"
-          ? "Done."
-          : task.stage === "your-check" ? "Accepted: it's done." : `Passed to ${next?.label ?? "the next stage"}.`;
+          ? tn("pane", "pane.did.done")
+          : task.stage === "your-check" ? tn("pane", "pane.did.accepted") : next ? tn("pane", "pane.did.passed", { stage: next.label }) : tn("pane", "pane.did.passedNext");
       passFrom("", done);
     },
     sendBack: (why: string, to: string) => submit(() => api.returnTask(task.queue, task.id, why, to, now()), sentBackMsg),
     block: (kind: string, detail: string) =>
-      submit(() => api.blockTask(task.queue, task.id, kind, detail, now()), kind === "tasks" ? "Blocked by those tasks: added to its depends." : "Blocked. It keeps its stage."),
-    unblock: () => void stageRun(() => api.unblockTask(task.queue, task.id, now()), "Unblocked."),
+      submit(() => api.blockTask(task.queue, task.id, kind, detail, now()), tn("pane", kind === "tasks" ? "pane.did.blockedTasks" : "pane.did.blocked")),
+    unblock: () => void stageRun(() => api.unblockTask(task.queue, task.id, now()), tn("pane", "pane.did.unblocked")),
     release: () => void stageRun(() => api.reclaimTask(task.queue, task.id, now()), releaseWords(task.stage).done),
     /** Release a claim no session can be reached on (mu-184): true once the core took it. */
     releaseUnreached: () => stageRun(() => api.releaseUnreached(task.queue, task.id, task.stage, now()), unreachedWords(task.stage).done),
@@ -98,17 +99,17 @@ export function useTaskActions(task: Task, onChanged: () => void) {
       void stageRun(() => api.setStage(task.queue, task.id, to, isStage(task.stage) ? task.stage : null, now()), done, undo);
     },
     /** Undo a move: back where it was, refused if it has moved on from where the move put it. */
-    undo: (u: Undo) => void stageRun(() => api.setStage(task.queue, task.id, u.back, u.to, now()), `Put back in ${stageLabel(u.back)}.`),
-    tick: (which: string, undo: boolean) => void stageRun(() => api.tickCriterion(task.queue, task.id, which, undo, now()), `${undo ? "Unticked" : "Ticked"} ${which}.`),
+    undo: (u: Undo) => void stageRun(() => api.setStage(task.queue, task.id, u.back, u.to, now()), tn("pane", "pane.did.putBack", { stage: stageLabel(u.back) })),
+    tick: (which: string, undo: boolean) => void stageRun(() => api.tickCriterion(task.queue, task.id, which, undo, now()), tn("pane", undo ? "pane.did.unticked" : "pane.did.ticked", { which })),
     setField: (field: string, value: string, done: string) => void run(() => api.setField(task.queue, task.id, field, value, now()), done),
-    note: (text: string) => void run(() => api.addNote(task.queue, task.id, text, now()), "Note added to the log."),
-    attachPick: () => void run(() => api.attachPick(task.queue, task.id, now()), "Files attached."),
+    note: (text: string) => void run(() => api.addNote(task.queue, task.id, text, now()), tn("pane", "pane.did.noted")),
+    attachPick: () => void run(() => api.attachPick(task.queue, task.id, now()), tn("pane", "pane.did.attached")),
     /** Files pasted or dropped; reading one that fails shows like a refusal. */
     attachFiles: (list: FileList | File[]) => {
       if (!list.length) return;
       void run(
         async () => api.attachData(task.queue, task.id, await readFiles(list, now()), now()),
-        `Attached ${list.length} file${list.length === 1 ? "" : "s"}.`,
+        tn("pane", "pane.did.attachedN", { count: list.length }),
       );
     },
   };
@@ -120,16 +121,14 @@ export type TaskActions = ReturnType<typeof useTaskActions>;
  *  (mu-101) recorded the reason as an owner finding, first in line; any other return didn't. And
  *  whether the builder's session was told, when it was meant to be. */
 export function sentBackMsg(r: Returned): string {
-  const head = r.finding
-    ? `Sent back to its builder: first in line, with what's wrong as owner finding ${r.finding} to fix or dispute.`
-    : `Sent back to ${stageLabel(r.to)}.`;
-  if (r.notTold) return `${head} Its session can't be told (${r.notTold}); muster next shows it first.`;
-  return r.told ? `${head} Session ${r.told} was told.` : head;
+  const head = r.finding ? tn("pane", "pane.sentBack.finding", { finding: r.finding }) : tn("pane", "pane.sentBack.to", { stage: stageLabel(r.to) });
+  if (r.notTold) return sentences([head, tn("pane", "pane.sentBack.notTold", { why: r.notTold })]);
+  return r.told ? sentences([head, tn("pane", "pane.sentBack.told", { session: r.told })]) : head;
 }
 
 /** What the pane says after a pause or resume: what it means, and whether its session was told. */
 export function pausedMsg(p: Paused, paused: boolean): string {
-  const head = paused ? "Paused: it's in the Paused lane with its stage and claim, and nobody works it until you resume it." : "Resumed: it's back in its column and carries on as it was.";
-  if (p.session) return `${head} Session ${p.session} is asked to ${paused ? "stop at a safe point" : "carry on"} after its next tool call.`;
-  return p.unreached ? `${head} Its session can't be told: ${p.unreached}.` : head;
+  const head = tn("pane", paused ? "pane.paused.head" : "pane.paused.resumed");
+  if (p.session) return sentences([head, tn("pane", paused ? "pane.paused.askedStop" : "pane.paused.askedOn", { session: p.session })]);
+  return p.unreached ? sentences([head, tn("pane", "pane.paused.unreached", { why: p.unreached })]) : head;
 }

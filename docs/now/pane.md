@@ -17,3 +17,4 @@ covers: app/src/App.tsx, app/src/TaskPanel, app/src/StageTrack.tsx
 - A claim with no session to reach has Release in the Next step, with its confirm in place, no modal. (mu-184)
 - Files open at the pane's full width, no lightbox. (mu-91)
 - Sessions is a project view beside Graph; its recap opens in the pane's dock, the list still live. (mu-98)
+- The pane's words in every language, and task text in its own direction: [pane-words](pane-words.md). (mu-148)

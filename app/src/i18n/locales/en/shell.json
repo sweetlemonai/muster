@@ -67,6 +67,7 @@
     },
     "noProblems": "No problems found in the queues.",
     "vision": "Vision",
+    "visionUnchecked": "{{queue}}: {{key}} {{title}} is in Shaping with no vision check yet ({{cmd}})",
     "taskGone": "That task is gone.",
     "noteGone": "That note is gone: filed as a task, or dropped."
   },

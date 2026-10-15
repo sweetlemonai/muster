@@ -364,7 +364,7 @@ describe("the recap (AC3, AC4)", () => {
   it("opens the transcript after the recap, never in its place", () => {
     const html = recapView(recap(), { showing: true, transcript: { md: "# Hello" } });
     expect(html.indexOf("recap-progress")).toBeLessThan(html.indexOf('class="transcript"'));
-    expect(html).toContain("<h1>Hello</h1>");
+    expect(html).toContain("<h1 dir=\"auto\">Hello</h1>");
     expect(html).toMatch(/aria-pressed="true"[^>]*>Transcript/);
     expect(text(recapView(recap(), { showing: true }))).toContain(WORDS.readingTranscript);
     expect(text(recapView(recap(), { showing: true, transcript: { error: "gone" } }))).toContain("gone");

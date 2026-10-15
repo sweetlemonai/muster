@@ -239,8 +239,8 @@ describe("the transcript view", () => {
     const v = view({ work: two, viewing: "7b5e8856", transcript: { id: "7b5e8856", md } });
     const pane = /<div class="transcript"[\s\S]*$/.exec(v.html)?.[0] ?? "";
     expect(pane).toContain('<div class="markdown">');
-    expect(pane).toContain("<li><strong>You:</strong> &lt;b&gt;hi&lt;/b&gt; ![x](https://e.example/i.png)</li>");
-    expect(pane).toContain("<li><strong>Tool:</strong> Bash · List files</li>");
+    expect(pane).toContain("<li dir=\"auto\"><strong>You:</strong> &lt;b&gt;hi&lt;/b&gt; ![x](https://e.example/i.png)</li>");
+    expect(pane).toContain("<li dir=\"auto\"><strong>Tool:</strong> Bash · List files</li>");
     expect(pane).not.toMatch(/<(img|a|script|b)[\s>]/);
   });
 

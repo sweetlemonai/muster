@@ -1,5 +1,5 @@
 import { Stamp } from "./Dates";
-import { fmt } from "./i18n";
+import { fmt, tn, useT } from "./i18n";
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import { api, type Commented } from "./api";
 import { shownHolder, stamp } from "./lib";
@@ -29,6 +29,7 @@ export default function Comments({ task, onChanged, onDirty = () => {}, nudge = 
   keys?: Map<string, string>;
   onLink?: (href: string) => void;
 }) {
+  const t = useT("pane");
   const names = useContext(RoleNamesContext);
   const [text, setText] = useState("");
   const [state, setState] = useState<"idle" | "saving" | "done" | "error">("idle");
@@ -98,9 +99,9 @@ export default function Comments({ task, onChanged, onDirty = () => {}, nudge = 
     }
   };
   return (
-    <section className="comments" aria-label="Comments">
-      <h2>Comments <small>{fmt.num(task.comments.length)}</small></h2>
-      {task.comments.length === 0 && <p className="none">No comments yet.</p>}
+    <section className="comments" aria-label={t("comments.heading")}>
+      <h2>{t("comments.heading")} <small>{fmt.num(task.comments.length)}</small></h2>
+      {task.comments.length === 0 && <p className="none">{t("comments.none")}</p>}
       {task.comments.map((c, i) => (
         <div key={`${i}-${c.at}-${c.who}`} className="comment">
           <p className="meta" dir="auto">
@@ -117,8 +118,8 @@ export default function Comments({ task, onChanged, onDirty = () => {}, nudge = 
             setText(e.target.value);
             setArmed(false);
           }}
-          placeholder="Add a comment (⌘↩ to send)"
-          aria-label="Your comment"
+          placeholder={t("comments.placeholder")}
+          aria-label={t("comments.label")}
           aria-describedby={hintId}
           dir="auto"
           rows={3}
@@ -132,12 +133,15 @@ export default function Comments({ task, onChanged, onDirty = () => {}, nudge = 
         />
         <div className="answer-bar">
           <Button type="button" disabled={!text.trim() || state === "saving"} onClick={() => void send()}>
-            {state === "saving" ? "Sending…" : "Comment"}
+            {state === "saving" ? t("comments.sending") : t("comments.send")}
           </Button>
           {notice && <span className="err">{notice}</span>}
           {!notice && msg && <span className={state === "error" ? "err" : "ok"} role="status">{msg}</span>}
         </div>
-        <p id={hintId} className="meta small comment-hint">Start with @accept, @sendback &lt;why&gt;, @block &lt;why&gt; or @ask &lt;question&gt; to act.</p>
+        <p id={hintId} className="meta small comment-hint">
+          {/* The @ commands are what the core reads: they stay as they are in every language. */}
+          {t("comments.hint", { accept: "@accept", sendback: "@sendback", block: "@block", ask: "@ask", why: t("comments.why"), question: t("comments.question") })}
+        </p>
       </div>
     </section>
   );
@@ -146,6 +150,6 @@ export default function Comments({ task, onChanged, onDirty = () => {}, nudge = 
 /** What the box says once the core took a comment: added, and what its @action did; or what the
  *  action did and why its comment couldn't be saved. */
 export function commentDone(r: Commented): string {
-  if (r.unsaved) return `Done: ${r.did}. The comment couldn't be saved (${r.unsaved}), so it isn't in the thread; don't send it again.`;
-  return r.did ? `Comment added: ${r.did}.` : "Comment added.";
+  if (r.unsaved) return tn("pane", "comments.doneUnsaved", { did: r.did, why: r.unsaved });
+  return r.did ? tn("pane", "comments.doneDid", { did: r.did }) : tn("pane", "comments.done");
 }

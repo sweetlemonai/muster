@@ -22,45 +22,15 @@ const sources = import.meta.glob(["../**/*.{ts,tsx}", "!../**/*.test.{ts,tsx}", 
   eager: true,
 }) as Record<string, string>;
 
-/** The task that moves a file's text into the layer. The shell's (mu-146) and the board's
- *  (mu-147) have moved. */
-type Owner = "mu-148";
+/** The task that moves a file's text into the layer. The shell's (mu-146), the board's (mu-147)
+ *  and the task pane's, comments', review's and Help's (mu-148) have all moved, so none is left;
+ *  the list stays as the way a later area could hand over, until mu-155 removes it. */
+type Owner = never;
 
 /** The files that still have text outside the layer, by the task that moves it. Files the shell
  *  shows a part of (the filter bar's Who and Group by, Settings' card previews and helper account,
  *  the sidebar's check-in button) have that part in the layer already; the rest is their owner's. */
-const ALLOWED: Record<string, Owner> = {
-  // ── task pane, comments, review, help — mu-148 ──
-  "src/TaskPanel.tsx": "mu-148",
-  // The task pane's right column (next step, priority, type, estimate, files), not the window's
-  // sidebar, whatever its name: mu-146's list named it, but it's the pane's text.
-  "src/Sidebar.tsx": "mu-148",
-  "src/PaneHeader.tsx": "mu-148",
-  "src/PaneMsg.tsx": "mu-148",
-  "src/paneData.ts": "mu-148",
-  "src/AnswerBox.tsx": "mu-148",
-  "src/PickOne.tsx": "mu-148",
-  "src/Branch.tsx": "mu-148",
-  "src/Links.tsx": "mu-148",
-  "src/OwnerChecklist.tsx": "mu-148",
-  "src/StageContent.tsx": "mu-148",
-  "src/StageForms.tsx": "mu-148",
-  "src/StageTrack.tsx": "mu-148",
-  "src/Tags.tsx": "mu-148",
-  "src/EditBody.tsx": "mu-148",
-  "src/writeUp.ts": "mu-148",
-  "src/useTaskActions.ts": "mu-148",
-  "src/Vision.tsx": "mu-148",
-  "src/VisionPanel.tsx": "mu-148",
-  "src/Comments.tsx": "mu-148",
-  "src/Review.tsx": "mu-148",
-  "src/ReviewPanel.tsx": "mu-148",
-  "src/Helper.tsx": "mu-148", // the Helper view; mu-148 lists it under talking and checking
-  "src/Help.tsx": "mu-148",
-  "src/manual.ts": "mu-148",
-  "src/shortcuts.ts": "mu-148",
-  "src/shortcutsPage.ts": "mu-148",
-};
+const ALLOWED: Record<string, Owner> = {};
 
 const TEXT_ATTRS = new Set(["title", "aria", "label", "placeholder", "aria-label", "aria-description", "aria-roledescription", "aria-valuetext", "alt", "hint", "heading", "description", "tooltip", "message", "empty", "confirm", "intro", "note", "caption", "summary"]);
 const TEXT_KEYS = new Set(["label", "name", "title", "hint", "text", "description", "placeholder", "message", "heading", "tooltip", "empty", "help", "summary", "caption", "confirm", "intro", "note", "verb", "blurb", "detail", "lead"]);
@@ -213,7 +183,7 @@ describe("UI text goes through the translation layer", () => {
     // The repo's check below, given that file: it isn't on the list, so it fails.
     expect(unlisted([["src/Untranslated.tsx", hits]], ALLOWED)).toEqual(["src/Untranslated.tsx:\n  4: aria-label=Waiting tasks\n  5: Nothing waits for you\n  6: tasks"]);
     // And passes once its text has an owner, as the listed files have.
-    expect(unlisted([["src/Untranslated.tsx", hits]], { ...ALLOWED, "src/Untranslated.tsx": "mu-148" })).toEqual([]);
+    expect(unlisted([["src/Untranslated.tsx", hits]], { ...ALLOWED, "src/Untranslated.tsx": "mu-148" } as Record<string, string>)).toEqual([]);
   });
 
   it("finds no UI text outside the layer but in the files listed, each with its owner", () => {
@@ -225,9 +195,14 @@ describe("UI text goes through the translation layer", () => {
     expect(Object.keys(ALLOWED).filter((f) => !left.has(f))).toEqual([]);
   });
 
-  it("names the task that moves each listed file: mu-148 (the shell's, mu-146, and the board's, mu-147, have moved)", () => {
-    expect(Object.entries(ALLOWED).filter(([, owner]) => owner !== "mu-148")).toEqual([]);
-    expect(Object.keys(ALLOWED).length).toBeGreaterThan(0);
+  it("lists no file: every area's text is in the layer (mu-146, mu-147, mu-148)", () => {
+    expect(ALLOWED).toEqual({});
+  });
+
+  it("finds no text in the task pane's, comments', review's, the Helper's or Help's files (mu-148)", () => {
+    const pane = ["TaskPanel.tsx", "Sidebar.tsx", "PaneHeader.tsx", "PaneMsg.tsx", "paneData.ts", "StageTrack.tsx", "StageContent.tsx", "StageForms.tsx", "fieldSteps.ts", "fields.ts", "InlineField.tsx", "EditBody.tsx", "Tags.tsx", "Links.tsx", "keyLinks.ts", "Branch.tsx", "HomePath.tsx", "writeUp.ts", "useTaskActions.ts", "Comments.tsx", "AnswerBox.tsx", "PickOne.tsx", "OwnerChecklist.tsx", "yourCheck.ts", "yourCheckLimit.ts", "Review.tsx", "ReviewPanel.tsx", "Vision.tsx", "VisionPanel.tsx", "Helper.tsx", "Help.tsx", "HelpButton.tsx", "helpTopics.ts", "manual.ts", "shortcuts.ts", "shortcutsPage.ts", "Markdown.tsx"];
+    expect(pane.every((f) => `../${f}` in sources), "each of them is still a source file").toBe(true);
+    expect(found.filter(([f]) => pane.includes(f.replace(/^src\//, ""))).map(([f]) => f)).toEqual([]);
   });
 
   it("lists none of the board's files: the board, views, backlog and sessions are all in the layer (mu-147)", () => {

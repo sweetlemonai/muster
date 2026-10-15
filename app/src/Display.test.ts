@@ -83,7 +83,7 @@ describe("Settings › Display (0038, AC1)", () => {
   });
 
   it("⌘. toggles Focus from anywhere in the window (Ctrl+. too, as ⌘N)", () => {
-    expect(SHORTCUTS.find((s) => s.id === "focus-mode")).toMatchObject({ keys: "⌘.", area: "Anywhere", files: ["keys.ts"] });
+    expect(SHORTCUTS.find((s) => s.id === "focus-mode")).toMatchObject({ keys: "⌘.", area: "anywhere", files: ["keys.ts"] });
     expect(pressed({ key: ".", metaKey: true, ctrlKey: false }, "focus-mode")).toBe(true);
     expect(pressed({ key: ".", metaKey: false, ctrlKey: true }, "focus-mode")).toBe(true);
     expect(pressed({ key: ".", metaKey: false, ctrlKey: false }, "focus-mode")).toBe(false);
@@ -359,7 +359,7 @@ describe("the task pane's secondary sections in each mode", () => {
     expect(logSummary("- 2026-10-13 03:58 claimed\n- 2026-10-13 04:00 note\n\n- 2026-10-13 05:00 passed\n", t.checkins.length)).toBe("3 log lines · 2 check-ins");
     expect(logSummary("- one\n", 0)).toBe("1 log line");
     expect(logSummary("", 1)).toBe("1 check-in");
-    expect(paneSource).toContain('<Fold label="Log and check-ins" summary={logSummary(log && !raw && editing === null ? log : "", task.checkins.length)}>');
+    expect(paneSource).toContain('<Fold label={t("pane.fold.log")} summary={logSummary(log && !raw && editing === null ? log : "", task.checkins.length)}>');
   });
 
   it("folds Vision, Review, Work, and the Log and check-ins in the pane, and leaves the write-up and comments open", () => {

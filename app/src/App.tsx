@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
-import { followNumbering, Trans, useT } from "./i18n";
+import { followNumbering, Trans, useT, withText } from "./i18n";
 import { Button, Pill, Splitter } from "./ui";
 import { mayLeave } from "./writeUp";
 import { ago, columns, estimateTotal, feed, key, STAGES } from "./lib";
@@ -52,10 +52,12 @@ import logoDark from "./logo-dark.svg";
 import logoLight from "./logo-light.svg";
 
 // The task panel and its Markdown renderer load on first open, in their own chunk.
-const TaskPanel = lazy(() => import("./TaskPanel"));
+// Each brings its words with it (withText, mu-148): pane.json for the task pane and the Helper,
+// help.json for Help, so a first open shows no blank or English frame.
+const TaskPanel = lazy(withText(["pane"], () => import("./TaskPanel")));
 const NotePanel = lazy(() => import("./NotePanel"));
-const Helper = lazy(() => import("./Helper"));
-const HelpView = lazy(() => import("./Help"));
+const Helper = lazy(withText(["pane"], () => import("./Helper")));
+const HelpView = lazy(withText(["help"], () => import("./Help")));
 const SettingsView = lazy(() => import("./Settings"));
 // The Sessions view and its recap (0098) load on first open too.
 const SessionsView = lazy(() => import("./Sessions"));

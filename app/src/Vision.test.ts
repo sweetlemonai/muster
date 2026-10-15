@@ -101,7 +101,7 @@ describe("the task pane's Vision section", () => {
     expect(html).toContain("Vision <small>2 open conflicts</small>");
     expect(buttons(html)).toEqual(["Resolve V1", "Resolve V3", "Copy vision brief (disabled)"]);
     expect(html).toContain('title="Two records of task-on-task waits"');
-    expect(html).toContain("<h3>Conflicts</h3>");
+    expect(html).toContain("<h3 dir=\"auto\">Conflicts</h3>");
     expect(html).toContain("<strong>V1: Two records of task-on-task waits</strong>");
     expect(html).not.toContain("<img");
     expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");

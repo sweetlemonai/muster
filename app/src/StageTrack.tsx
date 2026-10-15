@@ -1,3 +1,4 @@
+import { useT } from "./i18n";
 import { trackSteps } from "./paneData";
 
 /** The seven stages as one track, the task's own lit; the owner's own task (`human`, 0022) has
@@ -14,13 +15,14 @@ export default function StageTrack({ stage, busy, onPick, releases = () => "", h
   human?: boolean;
   paused?: string;
 }) {
+  const t = useT("pane");
   return (
     <div className="track-wrap" data-part="track">
       <div className="track-label">
-        <span className="lbl">Stage</span>
-        <span className="meta small">{paused ? "paused: resume it to move it" : "click any stage to move it there"}</span>
+        <span className="lbl">{t("pane.track.label")}</span>
+        <span className="meta small">{paused ? t("pane.track.paused") : t("pane.track.hint")}</span>
       </div>
-      <div className="stage-track" role="group" aria-label="Stage">
+      <div className="stage-track" role="group" aria-label={t("pane.track.label")}>
         {trackSteps(stage, human).map((s) => {
           const who = s.place === "cur" ? "" : releases(s.id);
           return (
@@ -30,7 +32,7 @@ export default function StageTrack({ stage, busy, onPick, releases = () => "", h
               className={`${s.place} s-${s.id}`}
               aria-pressed={s.place === "cur"}
               disabled={busy || paused !== ""}
-              title={s.place === "cur" ? `It's in ${s.label}` : `Put it in ${s.label}${who ? ` (releases ${who}'s claim)` : ""}`}
+              title={s.place === "cur" ? t("pane.track.cur", { stage: s.label }) : who ? t("pane.track.putReleases", { stage: s.label, who }) : t("pane.track.put", { stage: s.label })}
               onClick={() => {
                 if (s.place !== "cur") onPick(s.id);
               }}

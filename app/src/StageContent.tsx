@@ -2,6 +2,8 @@ import { useContext, useEffect, useState, type ReactNode } from "react";
 import { fmtMinutes, fmtTokens, nameOf, stageLabel, stamp, stampMinutes } from "./lib";
 import { estimateLeft, isWork, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
 import { DueDate, Stamp } from "./Dates";
+import { tn, unmarked, useT, type TKey } from "./i18n";
+import { renderTags } from "./i18n/react";
 import Markdown from "./Markdown";
 import { siblingKey, taskKey } from "./taskKey";
 import OwnerChecklist from "./OwnerChecklist";
@@ -28,6 +30,7 @@ export default function StageContent({ task, nowSecs, body, childTasks, busy, on
   /** The task's images as data URLs, by file name, loaded once by the pane (TaskPanel). */
   images?: Record<string, string>;
 }) {
+  const t = useT("pane");
   if (!isWork(task)) return <Rollup task={task} childTasks={childTasks} />;
   switch (task.stage) {
     case "building":
@@ -38,11 +41,11 @@ export default function StageContent({ task, nowSecs, body, childTasks, busy, on
         <>
           <WhatYoureAccepting task={task} images={images} nowSecs={nowSecs} />
           <div className="stage-block" data-part="checklist">
-            <span className="lbl">Your checklist</span>
+            <span className="lbl">{t("stage.checklist")}</span>
             {task.ownerCriteria.length > 0 ? (
               <OwnerChecklist task={task} busy={busy} onTick={onTick} onView={onView} />
             ) : (
-              <p className="meta small">None of the criteria are yours to verify. Accept it, or send it back.</p>
+              <p className="meta small">{t("stage.noOwner")}</p>
             )}
           </div>
           <History task={task} />
@@ -113,36 +116,43 @@ export function AcceptingBlock({ task, urls, open, onToggle, runLine }: {
   onToggle: (key: string) => void;
   runLine?: ReactNode;
 }) {
+  // tn, not useT, and renderTags, not <Trans>: drawn without hooks (its test walks it as plain
+  // calls); StageContent's useT renders it again on a language switch.
+  const t = (k: TKey<"pane">) => tn("pane", k);
   const criteria = task.criteria ?? [];
   const accept = acceptWords(task);
   return (
-    <div className="stage-block accepting" data-part="accepting" role="group" aria-label="What you're accepting">
-      <span className="lbl">What you're accepting</span>
+    <div className="stage-block accepting" data-part="accepting" role="group" aria-label={t("stage.accepting")}>
+      <span className="lbl">{t("stage.accepting")}</span>
       <p className="wline">
-        <span className="lbl">Built</span>
+        <span className="lbl">{t("stage.built")}</span>
         <span className="small">
           {task.summary ? (
             <span dir="auto">{task.summary}</span>
           ) : (
             <>
-              <span dir="auto">{task.title}</span> <span className="meta">(no summary was written; <code>muster set {taskKey(task)} summary</code> adds one)</span>
+              <span dir="auto">{task.title}</span>{" "}
+              <span className="meta">
+                {/* i18n-ignore: the command is what is typed, Latin, in its own <code>, without isolation marks. */}
+                {renderTags(tn("pane", "stage.noSummary", { cmd: `muster set ${taskKey(task)} summary` }), { code: <code /> }, (s, inTag) => (inTag ? unmarked(s) : s))}
+              </span>
             </>
           )}
         </span>
       </p>
       <p className="wline">
-        <span className="lbl">Accept</span>
+        <span className="lbl">{t("stage.accept")}</span>
         <span className={`small accept-${accept.kind}`}>{accept.text}</span>
       </p>
       {runLine && (
         <p className="wline">
-          <span className="lbl">Try</span>
+          <span className="lbl">{t("stage.try")}</span>
           {runLine}
         </p>
       )}
       <p className="wline">
-        <span className="lbl">Proof</span>
-        {criteria.length === 0 && <span className="small meta">No acceptance criteria are written.</span>}
+        <span className="lbl">{t("stage.proof")}</span>
+        {criteria.length === 0 && <span className="small meta">{t("stage.noCriteria")}</span>}
       </p>
       {criteria.length > 0 && (
         <ul className="proof-list">
@@ -159,8 +169,8 @@ export function AcceptingBlock({ task, urls, open, onToggle, runLine }: {
 /** How a criterion stands, in words: proven (with its proof), checked by the owner, ticked with
  *  no proof, the owner's still to check, or not proven. */
 function standing(c: Criterion): string {
-  if (c.ticked) return c.owner ? "✓ checked by you" : c.proof ? "✓ proven:" : "✓ ticked, no proof written";
-  return c.owner ? "yours to check, in Your checklist" : "not proven yet";
+  if (c.ticked) return tn("pane", c.owner ? "stage.standing.checkedByYou" : c.proof ? "stage.standing.proven" : "stage.standing.tickedNoProof");
+  return tn("pane", c.owner ? "stage.standing.yours" : "stage.standing.notProven");
 }
 
 function ProofLine({ c, urls, open, onToggle }: { c: Criterion; urls: Record<string, string>; open: ReadonlySet<string>; onToggle: (key: string) => void }) {
@@ -168,7 +178,7 @@ function ProofLine({ c, urls, open, onToggle }: { c: Criterion; urls: Record<str
   const words = criterionWords(c.text.replace(/^AC\d+:\s*/, ""));
   return (
     <li className={c.ticked ? "proof-line ticked" : "proof-line"}>
-      <b className="proof-label">{c.label || `criterion ${c.n}`}</b> · <span dir="auto">{words}</span> · <span className="proof-state">{standing(c)}</span>
+      <b className="proof-label">{c.label || tn("pane", "stage.criterion", { n: String(c.n) })}</b> · <span dir="auto">{words}</span> · <span className="proof-state">{standing(c)}</span>
       {c.ticked && !c.owner && c.proof && <> <span className="proof-text" dir="auto">{c.proof}</span></>}
       {files.length > 0 && (
         <span className="file-list proof-files">
@@ -189,27 +199,27 @@ function WorkSoFar({ task, nowSecs }: { task: Task; nowSecs: number }) {
   const spent = timeInWork(task.stageHistory, task.stage, stampMinutes(stamp(new Date(nowSecs * 1000))), task.pauseHistory);
   // Time spent is wall-clock (24-hour days); the estimates are agent time and test time (8-hour
   // days). Each is named for what it is, and nothing pretends to compare them.
-  const est = [
-    task.estMinutes > 0 && `${fmtMinutes(task.estMinutes)} of agent time`,
-    task.estTestMinutes > 0 && `${fmtMinutes(task.estTestMinutes)} of test time`,
-  ].filter(Boolean).join(" and ");
+  const t = useT("pane");
+  const parts = [
+    task.estMinutes > 0 ? t("stage.work.agentPart", { time: fmtMinutes(task.estMinutes) }) : "",
+    task.estTestMinutes > 0 ? t("stage.work.testPart", { time: fmtMinutes(task.estTestMinutes) }) : "",
+  ].filter(Boolean);
+  const est = parts.length === 2 ? t("stage.work.both", { a: parts[0], b: parts[1] }) : (parts[0] ?? "");
+  const spentText = spent === null ? t("stage.work.notTimed") : t("stage.work.spent", { time: fmtWall(spent) });
   return (
     <div className="stage-block" data-part="work">
-      <span className="lbl">Work so far</span>
+      <span className="lbl">{t("stage.work.title")}</span>
       <p className="wline">
-        <span className="lbl">Time</span>
-        <span className="small">
-          {spent === null ? "not timed: no move into Building in the log" : `${fmtWall(spent)} in Building and Testing`}
-          {est ? ` · estimate ${est}` : " · no time estimate"}
-        </span>
+        <span className="lbl">{t("stage.work.time")}</span>
+        <span className="small">{est ? t("stage.work.withEstimate", { spent: spentText, est }) : t("stage.work.noEstimate", { spent: spentText })}</span>
       </p>
       {task.estTokenCount > 0 && (
         <p className="wline">
-          <span className="lbl">Tokens</span>
-          <span className="small">{fmtTokens(task.estTokenCount)} estimated · used: in Work below</span>
+          <span className="lbl">{t("stage.work.tokens")}</span>
+          <span className="small">{t("stage.work.tokensLine", { tokens: fmtTokens(task.estTokenCount) })}</span>
         </p>
       )}
-      <p className="meta small">Sessions, tokens used and transcripts: in Work below.</p>
+      <p className="meta small">{t("stage.work.sessions")}</p>
       <HistoryList task={task} />
     </div>
   );
@@ -217,24 +227,26 @@ function WorkSoFar({ task, nowSecs }: { task: Task; nowSecs: number }) {
 
 /** The stage moves from the log, newest first: when, from → to, who. */
 function History({ task }: { task: Task }) {
+  const t = useT("pane");
   return (
     <div className="stage-block" data-part="history">
-      <span className="lbl">History <span className="meta">from the log, newest first</span></span>
+      <span className="lbl">{t("stage.history.title")} <span className="meta">{t("stage.history.sub")}</span></span>
       <HistoryList task={task} />
     </div>
   );
 }
 
 function HistoryList({ task }: { task: Task }) {
+  const t = useT("pane");
   const names = useContext(RoleNamesContext);
-  if (task.stageHistory.length === 0) return <p className="meta small">No stage moves in the log yet.</p>;
+  if (task.stageHistory.length === 0) return <p className="meta small">{t("stage.history.none")}</p>;
   return (
     <ol className="history">
       {[...task.stageHistory].reverse().map((s, i) => (
         <li key={`${s.at}-${i}`}>
           <Stamp className="h-when" at={s.at} />
           <span>
-            <b>{stageLabel(s.from)} → {stageLabel(s.to)}</b> <span className="meta" dir="auto">· {nameOf(s.who, names)}</span>
+            <b>{t("stage.history.move", { from: stageLabel(s.from), to: stageLabel(s.to) })}</b> <span className="meta" dir="auto">· {nameOf(s.who, names)}</span>
           </span>
         </li>
       ))}
@@ -244,22 +256,24 @@ function HistoryList({ task }: { task: Task }) {
 
 /** Backlog, Shaping and Ready: the acceptance criteria from the write-up. */
 function Criteria({ body }: { body: string | null }) {
+  const t = useT("pane");
   const section = body === null ? null : criteriaSection(body);
   return (
     <div className="stage-block" data-part="criteria">
-      <span className="lbl">Criteria</span>
-      {body === null ? <p className="meta small">Loading…</p> : section ? <Markdown text={section} /> : <p className="meta small">No acceptance criteria written yet. Edit adds them.</p>}
+      <span className="lbl">{t("stage.criteria")}</span>
+      {body === null ? <p className="meta small">{t("common:loading")}</p> : section ? <Markdown text={section} /> : <p className="meta small">{t("stage.noCriteriaYet")}</p>}
     </div>
   );
 }
 
 /** The estimate: agent time plus test time (as the board's totals count it), and tokens. */
 function Estimates({ task }: { task: Task }) {
+  const t = useT("pane");
   const parts = [fmtMinutes(task.estMinutes + task.estTestMinutes), fmtTokens(task.estTokenCount)].filter(Boolean).join(" · ");
   return (
     <div className="stage-block" data-part="estimates">
-      <span className="lbl">Estimate</span>
-      <p className="small">{parts ? `≈ ${parts}` : <span className="meta">Not estimated yet: Est, on the right.</span>}</p>
+      <span className="lbl">{t("stage.estimate")}</span>
+      <p className="small">{parts ? t("stage.approx", { parts }) : <span className="meta">{t("stage.notEstimated")}</span>}</p>
     </div>
   );
 }
@@ -268,10 +282,11 @@ function Estimates({ task }: { task: Task }) {
  *  its children with the stage each shows. */
 function Rollup({ task, childTasks }: { task: Task; childTasks?: Task[] }) {
   const byId = new Map((childTasks ?? []).map((c) => [c.id, c]));
+  const t = useT("pane");
   const left = estimateLeft(task.progress);
   return (
-    <section className="rollup-panel" aria-label="Roll-up" data-part="rollup">
-      <h2>{levelLabel(task.level)} · {progressText(task.progress) || "no tasks yet"}</h2>
+    <section className="rollup-panel" aria-label={t("stage.rollup")} data-part="rollup">
+      <h2>{levelLabel(task.level)} · {progressText(task.progress) || t("stage.noTasks")}</h2>
       {left && <p className="meta">{left}</p>}
       {task.due && <p className="meta"><DueDate iso={task.due} /></p>}
       {task.children.length > 0 && (

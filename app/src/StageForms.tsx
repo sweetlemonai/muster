@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { BLOCK_KINDS, type BlockKind, blockRequest } from "./blockWords";
 import { isHuman } from "./human";
-import { earlierStages } from "./lib";
+import { tn, useT } from "./i18n";
+import { earlierStages, passLabel, stageLabel } from "./lib";
 import { isWork } from "./levels";
 import type { Question, Task } from "./types";
 import { Button, Pill } from "./ui";
@@ -32,7 +33,7 @@ function GateForm({ task, a }: { task: Task; a: TaskActions }) {
       onGate={setGate}
       onSummary={setSummary}
       onSubmit={() => {
-        if (gate.trim() && (summary.trim() || !needsSummary)) a.passFrom(gate, "Passed to Testing.", summary.trim());
+        if (gate.trim() && (summary.trim() || !needsSummary)) a.passFrom(gate, tn("pane", "pane.did.passed", { stage: stageLabel("testing") }), summary.trim());
       }}
       onCancel={a.close}
     />
@@ -50,6 +51,7 @@ export function GateFormView({ gate, summary, needsSummary, busy, onGate, onSumm
   onSubmit: () => void;
   onCancel: () => void;
 }) {
+  const t = useT("pane");
   const ready = gate.trim() !== "" && (summary.trim() !== "" || !needsSummary);
   return (
     <form
@@ -60,10 +62,10 @@ export function GateFormView({ gate, summary, needsSummary, busy, onGate, onSumm
         onSubmit();
       }}
     >
-      <input autoFocus value={gate} onChange={(e) => onGate(e.target.value)} placeholder="The gate's result line (gate full: green …)" aria-label="The gate's result line" maxLength={500} />
-      <input value={summary} onChange={(e) => onSummary(e.target.value)} placeholder="What was built, in one plain line for the owner's check" aria-label="What was built, in one line" maxLength={160} dir="auto" />
-      <Button type="submit" disabled={busy || !ready}>Pass to Testing</Button>
-      <Button type="button" onClick={onCancel}>Cancel</Button>
+      <input autoFocus value={gate} onChange={(e) => onGate(e.target.value)} placeholder={t("pane.gate.placeholder")} aria-label={t("pane.gate.label")} maxLength={500} />
+      <input value={summary} onChange={(e) => onSummary(e.target.value)} placeholder={t("pane.gate.summaryPlaceholder")} aria-label={t("pane.gate.summaryLabel")} maxLength={160} dir="auto" />
+      <Button type="submit" disabled={busy || !ready}>{passLabel("building")}</Button>
+      <Button type="button" onClick={onCancel}>{t("common:cancel")}</Button>
     </form>
   );
 }
@@ -120,6 +122,7 @@ export function BackFormView({ stage, human, choice, why, busy, onChoice, onWhy,
   onSubmit: () => void;
   onCancel: () => void;
 }) {
+  const t = useT("pane");
   const target = backTarget(stage, human, choice);
   const verdict = toBuilder(stage, human) && target === "building";
   return (
@@ -132,7 +135,7 @@ export function BackFormView({ stage, human, choice, why, busy, onChoice, onWhy,
       }}
     >
       <label>
-        Back to
+        {t("pane.back.to")}
         <select value={target} onChange={(e) => onChoice(e.target.value)}>
           {earlierStages(stage).map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
@@ -146,13 +149,13 @@ export function BackFormView({ stage, human, choice, why, busy, onChoice, onWhy,
           e.preventDefault();
           if (!busy) onSubmit();
         }}
-        placeholder={verdict ? "What's wrong (the builder gets this)" : "Why: what's wrong or missing"}
-        aria-label={verdict ? "What's wrong" : "Why it goes back"}
+        placeholder={verdict ? t("pane.back.wrongPlaceholder") : t("pane.back.whyPlaceholder")}
+        aria-label={verdict ? t("pane.back.wrongLabel") : t("pane.back.whyLabel")}
         maxLength={500}
         dir="auto"
       />
-      <Button type="submit" disabled={busy || !why.trim()}>{verdict ? "Send back to builder" : "Send back"}</Button>
-      <Button type="button" onClick={onCancel}>Cancel</Button>
+      <Button type="submit" disabled={busy || !why.trim()}>{verdict ? t("pane.back.toBuilder") : t("pane.back.send")}</Button>
+      <Button type="button" onClick={onCancel}>{t("common:cancel")}</Button>
     </form>
   );
 }
@@ -198,6 +201,7 @@ export function BlockFormView({ kind, detail, questions, prefix, busy, onKind, o
   onSubmit: () => void;
   onCancel: () => void;
 }) {
+  const t = useT("pane");
   const ready = kind !== null && blockRequest(kind, detail, prefix).ok;
   const need = BLOCK_KINDS.find((k) => k.id === kind)?.need ?? "";
   const open = questions.filter((q) => !q.ticked && q.n !== null);
@@ -210,8 +214,8 @@ export function BlockFormView({ kind, detail, questions, prefix, busy, onKind, o
         if (ready) onSubmit();
       }}
     >
-      <div className="chip-row" role="group" aria-label="Blocked by">
-        <span className="lbl">Blocked by</span>
+      <div className="chip-row" role="group" aria-label={t("pane.block.by")}>
+        <span className="lbl">{t("pane.block.by")}</span>
         {BLOCK_KINDS.map((k) => (
           <Pill key={k.id} type="button" on={k.id === kind} aria-pressed={k.id === kind} onClick={() => onKind(k.id)}>
             {k.label}
@@ -219,9 +223,9 @@ export function BlockFormView({ kind, detail, questions, prefix, busy, onKind, o
         ))}
       </div>
       <div className="control-row">
-        {kind === null && <span className="meta small">Pick why it's blocked, then say what it waits on.</span>}
+        {kind === null && <span className="meta small">{t("pane.block.pick")}</span>}
         {kind === "question" && (open.length > 0 ? (
-          <div className="chip-row" role="group" aria-label="The open question it waits on">
+          <div className="chip-row" role="group" aria-label={t("pane.block.questionAria")}>
             {open.map((q) => {
               const id = `Q${q.n}`;
               return (
@@ -232,7 +236,7 @@ export function BlockFormView({ kind, detail, questions, prefix, busy, onKind, o
             })}
           </div>
         ) : (
-          <span className="meta small">No open question in this task: ask one first, then block on it.</span>
+          <span className="meta small">{t("pane.block.noQuestion")}</span>
         ))}
         {kind !== null && kind !== "question" && (
           <input
@@ -245,10 +249,10 @@ export function BlockFormView({ kind, detail, questions, prefix, busy, onKind, o
             maxLength={200}
           />
         )}
-        <Button type="submit" disabled={busy || !ready}>Block</Button>
-        <Button type="button" onClick={onCancel}>Cancel</Button>
+        <Button type="submit" disabled={busy || !ready}>{t("pane.block.block")}</Button>
+        <Button type="button" onClick={onCancel}>{t("common:cancel")}</Button>
       </div>
-      {kind === "tasks" && <p className="meta small">They're added to its depends: it shows blocked by them until they're all merged (in Your check or Done; the owner's own, Done), then clears by itself.</p>}
+      {kind === "tasks" && <p className="meta small">{t("pane.block.depends")}</p>}
     </form>
   );
 }

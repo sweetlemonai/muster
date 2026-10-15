@@ -39,7 +39,7 @@ export default function TagEditor({ tags, onChange }: { tags: string[]; onChange
   return (
     <div className="tag-editor">
       {tags.map((t) => (
-        <Pill type="button" key={t} on onClick={() => remove(t)} title={`Remove #${t}`} aria-label={`Remove tag ${t}`}>
+        <Pill type="button" key={t} on onClick={() => remove(t)} title={tr("tagEditor.removeTitle", { tag: t })} aria-label={tr("tagEditor.removeLabel", { tag: t })}>
           #{t} ×
         </Pill>
       ))}

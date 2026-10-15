@@ -3,6 +3,53 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-148: the task pane, its forms, comments, review, the Helper and Help in Persian
+**Did (Gholi_57, builder, with four area agents):** every word of the task pane in every stage
+(header, status line, stage track, Next step, priority, type, For, estimate, tags, files, links,
+branch, what each stage needs, Your check's checklist and What you're accepting, a goal's or
+feature's roll-up), its forms (gate, Send back, Block, the write-up editor, rename, note bar), its
+messages and Undo, check-ins, comments, review, vision and the Helper moved into `pane.json`; Help's
+chrome, page titles and the generated Shortcuts page into `help.json`, both with Persian. Words a
+startup screen shares went where it loads them: the answer box and pick-one chips in `common.json`,
+the card's review and vision badges and worktree title in `board.json`, the Problems list's vision
+line in `shell.json`. `pane` loads with the pane's and the Helper's code, `help` with Help's
+(`withText`). `shortcuts.ts` keeps ids, keys and codes; its what, where and areas are read from
+`help.json` when the page is made, and the English page is `06-shortcuts.md` byte for byte.
+Markdown (`blockDir.ts`, on the task and the manual renderers) gives every block `dir="auto"` and
+code `dir="ltr"`, set by the renderer only. `literals.test.ts`'s list is empty: every file it named
+for mu-148 is off it, checked by name, Sidebar.tsx's Type chip included. A Next step button or value
+chip truncates a long label with its words in `title`. AS_BUILT, `docs/now/pane-words.md` (new),
+`board-words.md` and the glossary say it.
+**Fixed:** in the shots, an English list item in a Persian list sat at the far side → WebKit's list
+items match their list's alignment → `.markdown li[dir] { text-align: start }`; «مسدود کردن» wrapped,
+then truncated, in its half column → 6px side padding on Next step buttons in fa only. mu-147's
+note: VisionPanel and ReviewPanel now pass a translated brief name to `copyNow`.
+**Decided:** comment is دیدگاه (نظر reads as opinion), Next step گام بعدی; 23 rows added to the
+glossary as proposed. One agent per area wrote its own pane.json section, so no key moved between areas.
+**Verified:** the independent fa review (`docs/i18n/reviews/mu-148-fa-review.md`): 0 blocking, 12
+should, 13 nits, all 25 fixed (R20 differently: «{{ago}} ساکت», the proposal broke under a minute).
+Vitest 2660 passed, tsc clean; new tests `paneCoreFa`, `paneSideFa`, `talkFa`, `helpFa`,
+`Markdown` (AC3), each failing before. Main chunk 541 → 514 kB, Help 184 → 183 kB. Headless WebKit
+shots on a synthetic project (every stage, a goal, a feature, a human task, a note, the forms,
+Help and Shortcuts), en and fa, light and dark, ADHD, Standard and Focus, before and after:
+`attachments/0148/`; the only Latin left in the fa pane is task data, names, paths and commands.
+**Fixed (review round 1, Gholi_61):** in fa the Shortcuts page's headings slugged in Persian, so
+07-for-agents.md's `#slash-commands-in-claude-code` opened the page at its top → a generated
+heading can carry its own anchor (`## … {#id}`, anchors.ts, stripped before rendering), and the
+page gives each section its English slug (`SECTION_IDS`), written only where the shown heading's
+slug differs, so the English page is unchanged; manual.test's link check runs in en and fa. A
+Persian Your check criterion took its Latin AC label's direction → `dir="auto"` on the words only.
+Worded key cells («⁦Esc⁩، دو بار») were isolated twice and read left to right → help.json's
+isolates only. fa answer.answered says «پس از گام بعدی‌اش», as en says "after its next step".
+Tests that couldn't fail now can: the fa no-summary command checked in raw HTML (no marks in its
+`<code>`), the holder's `<bdi>` pinned, the whole-pane test sweeps every Latin word in ADHD and
+Standard (folds shown), the area-heading check compares English headings, not ids. Each proven
+with its mutant (fa raw, edit, fold work and log, note placeholder back in English; `<bdi>`→`<span>`;
+no `unmarked`; no anchor; double isolate; dir on the label's span: all red).
+**Open:** the manual's pages stay English until mu-154. heading-fold/unfold's fa words describe
+today's ← → mapping; mu-149 updates `help.json` if it flips them right to left. Physical CSS in
+the pane (`.stage-block .markdown ul { padding-left }`, `.body-bar .edit`) is mu-149's.
+
 ## 2026-10-15 — mu-162: a Work row for a session Muster doesn't read shows no View button
 **Did (Asghar_56, builder):** `Work.tsx` `ViewCell` takes the row's `found`: a `not-read` row gets
 an empty `<td />`, `missing` and `too-big` keep their disabled View. `openable` drops a `viewing`

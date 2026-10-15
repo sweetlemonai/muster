@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import EditBody from "./EditBody";
-import { editKey, isDirty, mayLeave, savedText, UNSAVED } from "./writeUp";
+import { editKey, isDirty, mayLeave, savedText, unsavedText } from "./writeUp";
 import type { Task } from "./types";
 
 const key = (k: string, mods: Partial<{ metaKey: boolean; ctrlKey: boolean; altKey: boolean; isComposing: boolean }> = {}) => ({
@@ -55,7 +55,7 @@ describe("leaving a pane with unsaved changes", () => {
     expect(mayLeave(false, null, { kind: "new" })).toBe(true);
   });
   it("says what to do in the editor", () => {
-    expect(UNSAVED).toBe("Unsaved changes: Save, or press Esc twice to discard");
+    expect(unsavedText()).toBe("Unsaved changes: Save, or press Esc twice to discard");
   });
 });
 

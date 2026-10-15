@@ -1,3 +1,4 @@
+import { tn } from "./i18n";
 import { taskKey } from "./taskKey";
 import type { Task } from "./types";
 
@@ -76,21 +77,21 @@ export function conflictTitles(text: string): Record<string, string> {
 /** The card's badge: "⚠ 2 vision" while conflicts are open; null otherwise (quiet). */
 export function visionBadge(t: Pick<Task, "visionOpen">): string | null {
   const n = t.visionOpen ?? 0;
-  return n > 0 ? `⚠ ${n} vision` : null;
+  return n > 0 ? tn("board", "badge.vision", { count: n }) : null;
 }
 
 /** The badge as one of the card's status lines (CardStatus), sized like the others. */
 export function VisionBadge({ t }: { t: Pick<Task, "visionOpen"> }) {
   const text = visionBadge(t);
-  return text ? <span className="card-vision" title="Open vision conflicts: it can't pass from Shaping to Ready until they're resolved">{text}</span> : null;
+  return text ? <span className="card-vision" title={tn("board", "badge.visionTitle")}>{text}</span> : null;
 }
 
 /** Where the check stands, in a few words. */
 export function visionStatus(t: Pick<Task, "visionOpen">): string {
   const n = t.visionOpen;
-  if (n === null || n === undefined) return "not checked";
-  if (n === 0) return "no open conflicts";
-  return `${n} open conflict${n === 1 ? "" : "s"}`;
+  if (n === null || n === undefined) return tn("pane", "vision.notChecked");
+  if (n === 0) return tn("pane", "vision.none");
+  return tn("pane", "vision.open", { count: n });
 }
 
 /** Problems' "Vision" lines: Shaping tasks with no check yet (warnings, as `muster check` lists
@@ -100,5 +101,6 @@ export function visionWarnings(tasks: Task[]): string[] {
   return tasks
     .filter((t) => t.stage === "shaping" && (t.visionOpen ?? null) === null && !t.badVision)
     .sort((a, b) => a.queue.localeCompare(b.queue) || a.id.localeCompare(b.id))
-    .map((t) => `${t.queue}: ${taskKey(t)} ${t.title} is in Shaping with no vision check yet (muster vision ${taskKey(t)})`);
+    // i18n-ignore: the command that checks it, as typed
+    .map((t) => tn("shell", "app.visionUnchecked", { queue: t.queue, key: taskKey(t), title: t.title, cmd: `muster vision ${taskKey(t)}` }));
 }

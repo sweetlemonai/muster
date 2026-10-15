@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import { useT } from "./i18n";
 import { stamp } from "./lib";
 import { escOwned } from "./ownEscape";
 import type { Task } from "./types";
 import { Button } from "./ui";
-import { editKey, isDirty, savedText, UNSAVED } from "./writeUp";
+import { editKey, isDirty, savedText, unsavedText } from "./writeUp";
 
 /** The task's write-up as text, in place of its rendering: ⌘S saves, Esc cancels. `opened` is the
  *  write-up Edit opened; the save sends it, so the core refuses it if the file changed since. A
@@ -19,6 +20,7 @@ export default function EditBody({ task, opened, onClose, onSaved, onDirty = () 
   onDirty?: (dirty: boolean) => void;
   nudge?: number;
 }) {
+  const t = useT("pane");
   const [text, setText] = useState(opened);
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -73,13 +75,13 @@ export default function EditBody({ task, opened, onClose, onSaved, onDirty = () 
 
   return (
     <div className="write-up-edit">
-      <p className="meta small">Editing the write-up · ⌘S saves · Esc cancels</p>
-      {refusedToLeave && dirty && <p className="err small">{UNSAVED}</p>}
+      <p className="meta small">{t("pane.editor.hint")}</p>
+      {refusedToLeave && dirty && <p className="err small">{unsavedText()}</p>}
       <textarea
         ref={area}
         autoFocus
         value={text}
-        aria-label="The write-up, in Markdown"
+        aria-label={t("pane.editor.label")}
         onChange={(e) => {
           setText(e.target.value);
           setArmed(false);
@@ -97,9 +99,9 @@ export default function EditBody({ task, opened, onClose, onSaved, onDirty = () 
         }}
       />
       <div className="edit-bar">
-        <Button type="button" variant="primary" disabled={busy} onClick={() => void save()}>{busy ? "Saving…" : "Save"}</Button>
-        <Button type="button" disabled={busy} onClick={() => (dirty && !armed ? setArmed(true) : onClose())}>Cancel</Button>
-        {armed && <span className="meta">Esc or Cancel again to throw your changes away</span>}
+        <Button type="button" variant="primary" disabled={busy} onClick={() => void save()}>{busy ? t("pane.editor.saving") : t("common:save")}</Button>
+        <Button type="button" disabled={busy} onClick={() => (dirty && !armed ? setArmed(true) : onClose())}>{t("common:cancel")}</Button>
+        {armed && <span className="meta">{t("pane.editor.again")}</span>}
         {error && <span className="err">{error}</span>}
       </div>
     </div>

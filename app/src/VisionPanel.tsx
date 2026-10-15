@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { useT } from "./i18n";
 import { oneAtATime, stamp } from "./lib";
 import Markdown from "./Markdown";
 import { copyNow } from "./NotePanel";
@@ -12,6 +13,7 @@ import { conflictTitles, visionSection, visionStatus } from "./Vision";
  *  as sanitized Markdown. Always shown, so a task that was never checked says so. `body` is the
  *  task's text, null while it loads; the Resolve buttons come from the task, so they don't wait. */
 export default function VisionPanel({ task, body, onChanged }: { task: Task; body: string | null; onChanged: () => void }) {
+  const t = useT("pane");
   const checked = (task.visionOpen ?? null) !== null;
   const open = task.visionIds ?? [];
   const titles = body === null ? {} : conflictTitles(body);
@@ -46,7 +48,7 @@ export default function VisionPanel({ task, body, onChanged }: { task: Task; bod
       setMsg(null);
       try {
         const left = await api.resolveVision(task.queue, task.id, conflict, text, stamp(new Date()));
-        setMsg({ ok: true, text: `Resolved ${conflict}. ${left === 0 ? "No conflict is open, so it can pass to Ready." : `${left} still open.`}` });
+        setMsg({ ok: true, text: left === 0 ? t("vision.resolvedNone", { id: conflict }) : t("vision.resolvedLeft", { id: conflict, count: left }) });
         setWhich(null);
         setHow("");
         onChanged();
@@ -61,14 +63,14 @@ export default function VisionPanel({ task, body, onChanged }: { task: Task; bod
   };
   // Not through `once`: its awaits would come before the clipboard write.
   const copy = () =>
-    copyNow(brief.text, navigator.clipboard, "The vision brief").then(
-      () => setMsg({ ok: true, text: "Copied the vision brief. Paste it into a session to check the task against the picture." }),
+    copyNow(brief.text, navigator.clipboard, t("vision.brief")).then(
+      () => setMsg({ ok: true, text: t("vision.copied") }),
       (e) => setMsg({ ok: false, text: String(e) }),
     );
 
   return (
-    <section className={`vision${open.length ? " has-open" : ""}`} aria-label="Vision check" data-part="vision">
-      <h2>Vision <small>{visionStatus(task)}</small></h2>
+    <section className={`vision${open.length ? " has-open" : ""}`} aria-label={t("vision.aria")} data-part="vision">
+      <h2>{t("vision.heading")} <small>{visionStatus(task)}</small></h2>
       <div className="control-row">
         {open.map((id) => (
           <Button
@@ -83,14 +85,14 @@ export default function VisionPanel({ task, body, onChanged }: { task: Task; bod
               setMsg(null);
             }}
           >
-            {`Resolve ${id}`}
+            {t("vision.resolve", { id })}
           </Button>
         ))}
-        <Button type="button" disabled={brief.text === null} title={brief.text === null && !brief.error ? "Loading the brief…" : undefined} onClick={() => void copy()}>
-          Copy vision brief
+        <Button type="button" disabled={brief.text === null} title={brief.text === null && !brief.error ? t("vision.loadingBrief") : undefined} onClick={() => void copy()}>
+          {t("vision.copy")}
         </Button>
       </div>
-      {brief.error && <p className="err small">Couldn't load the vision brief: {brief.error}</p>}
+      {brief.error && <p className="err small">{t("vision.cantLoad", { error: brief.error })}</p>}
       {resolving && (
         <form
           className="control-row"
@@ -99,14 +101,14 @@ export default function VisionPanel({ task, body, onChanged }: { task: Task; bod
             resolve();
           }}
         >
-          <input autoFocus value={how} onChange={(e) => setHow(e.target.value)} placeholder={`How ${resolving} was settled, in one line`} aria-label={`How ${resolving} was settled`} maxLength={500} />
-          <Button type="submit" disabled={busy || !how.trim()}>{`Resolve ${resolving}`}</Button>
-          <Button type="button" onClick={() => setWhich(null)}>Cancel</Button>
+          <input autoFocus value={how} onChange={(e) => setHow(e.target.value)} placeholder={t("vision.howPlaceholder", { id: resolving })} aria-label={t("vision.howLabel", { id: resolving })} maxLength={500} />
+          <Button type="submit" disabled={busy || !how.trim()}>{t("vision.resolve", { id: resolving })}</Button>
+          <Button type="button" onClick={() => setWhich(null)}>{t("common:cancel")}</Button>
         </form>
       )}
       {msg && <p className={msg.ok ? "ok small" : "err small"}>{msg.text}</p>}
-      {!checked && <p className="meta small">Not checked against the project's picture yet. Copy the brief for a session to check it; until it's checked, nothing holds it back.</p>}
-      {checked && body !== null && section === null && <p className="err small">Its Vision section is gone from the text. Record a new check.</p>}
+      {!checked && <p className="meta small">{t("vision.notCheckedNote")}</p>}
+      {checked && body !== null && section === null && <p className="err small">{t("vision.gone")}</p>}
       {section !== null && <Markdown text={section} />}
     </section>
   );
