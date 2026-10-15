@@ -3,6 +3,31 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-204: the Timeline leads with what's running (Sort: Active now first · Earliest start)
+**Did (Gholi_62, builder):** a **Sort** group after Scale on the Timeline's control line (a
+`role="group"` "Timeline order", two Pills with `aria-pressed`): **Active now first**, the default,
+and **Earliest start**, today's order. `viewData.ts` `timelineOrder(spans, order)` ranks Building
+and Testing, then Your check, then the rest, each by the newest stage-history stamp (not the last
+line), then project and id; `parseTimelineOrder` reads `muster.timelineSort` (anything but `start`
+is the default). The scale and order are read and kept through `stored`/`keep` in `Views.tsx`, so
+storage that's off gives the defaults instead of throwing. Words in `board.json` (en, fa) beside
+the scale's; `.tl-order` in `styles.css` with logical margins. Manual 03 and 04, AS_BUILT and
+`docs/now/views.md` name the two orders; manual 03's "The Timeline is always in date order" is gone.
+**Decided:** the words live in `board.json` with the Timeline's other strings, not `shell.json` as
+the brief said: mu-147 moved the Timeline's words there.
+**Verified:** vitest 2823, 12 of them new (timelineOrder tiers, latest stamp, ties, stability, the input left
+as it was, parse; chips, pressed state, onOrder, rows in DOM order, unknown and unreadable storage;
+Persian chips). Headless WebKit, mocked IPC, a synthetic 944-task queue with 7 Building tasks
+started today and 7 in Testing (`.muster/attachments/0204/qa204.mjs`, shots beside it): Day, Week and
+Month at 1100×760 and 1440×900, sidebar 320, the pane at 718 open and closed, ADHD, Standard and
+Focus, the seven themes, and فارسی RTL: 47 runs, 427 checks green. The first 14 rows are the running
+tasks, newest change first; switching orders and back keeps the control line's and legend's pixel
+rows; the pick survives a reload. `bin/gate`: green (pnpm check, test_task, test_commands, test_ac_verifier, cargo test (Kiritimati)).
+**Open:** with the chips, the control line takes one more line where it already wrapped on main
+(the pane open: 210 px wide at 1100, 402 at 1440), and Day at 1100×760 with the pane closed now
+wraps its stepper onto a second line (about 120 px short; Week and Month stay on one). Found on
+main, not this task: the legend stays too short after the pane opens until a full relayout
+(44 px against 188 at 1100), backlog note 2026-10-15-1148; QA compares pixel rows after that relayout.
 ## 2026-10-15 — mu-152: the muster CLI in Persian (--lang, MUSTER_LANG), bidi-safe lines, and no bidi control escapes an isolate
 **Did:** `--lang en|fa` on any command, else `MUSTER_LANG`, else en (`cli.rs` `resolve_lang`). `LANG`
 is never read. Inside an agent session `MUSTER_LANG` is ignored, and `helper::STRIP_ENV` drops

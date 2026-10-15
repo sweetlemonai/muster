@@ -52,7 +52,7 @@ function views(): string {
     createElement(TableView, { tasks: [], now: SECONDS, multi: false, openKey: null, onOpen: () => {}, words: [] }),
     createElement(TimelineView, { tasks: TASKS, now: SECONDS, multi: true, openKey: null, onOpen: () => {}, words: [] }),
     createElement(TimelineView, { tasks: [], now: SECONDS, multi: false, openKey: null, onOpen: () => {}, words: [] }),
-    ...(["day", "week", "month"] as Scale[]).map((scale) => createElement(TimelineControls, { key: scale, scale, offset: -1, label: "x", onScale: () => {}, onStep: () => {}, onToday: () => {} })),
+    ...(["day", "week", "month"] as Scale[]).map((scale) => createElement(TimelineControls, { key: scale, scale, offset: -1, order: "active", label: "x", onScale: () => {}, onOrder: () => {}, onStep: () => {}, onToday: () => {} })),
     createElement(TimelineChart, { scale: "week", rows: layout(spans(TASKS, NOW), win, "week"), ticks: axis("week", win, NOW), now: nowAt(win, NOW), multi: false, openKey: null, onOpen: () => {} }),
     createElement(GraphView, { tasks: [...TASKS, ...OTHERS], all: [...TASKS, ...OTHERS, t({ queue: "gamma", id: "0021", title: "Gone" })], multi: true, openKey: "alpha/0002", onOpen: () => {} }),
     createElement(GraphView, { tasks: [], all: [], multi: false, openKey: null, onOpen: () => {} }),
@@ -132,9 +132,10 @@ describe("the views and the backlog in Persian (mu-147)", () => {
     const table = renderToStaticMarkup(createElement(TableView, { tasks: TASKS, now: SECONDS, multi: true, openKey: null, onOpen: () => {}, words: [] }));
     const heads = [...table.matchAll(/<th [^>]*>(?:<button class="sort">)?([^<]*)/g)].map((m) => unmarked(m[1]).replace(/ [↑↓]$/, ""));
     expect(heads).toEqual(["پروژه", "شناسه", "عنوان", "نوع", "اولویت", "مرحله", "در دست / در انتظار", "تخمین", "تاریخ ثبت", "آخرین تغییر", "تگ‌ها"]);
-    const controls = renderToStaticMarkup(createElement(TimelineControls, { scale: "week", offset: 0, label: "x", onScale: () => {}, onStep: () => {}, onToday: () => {} }));
-    expect([...controls.matchAll(/<button[^>]*>(.*?)<\/button>/g)].map((m) => m[1].replace(/<[^>]+>/g, ""))).toEqual(["روز", "هفته", "ماه", "◀", "این هفته", "▶"]);
+    const controls = renderToStaticMarkup(createElement(TimelineControls, { scale: "week", offset: 0, order: "active", label: "x", onScale: () => {}, onOrder: () => {}, onStep: () => {}, onToday: () => {} }));
+    expect([...controls.matchAll(/<button[^>]*>(.*?)<\/button>/g)].map((m) => m[1].replace(/<[^>]+>/g, ""))).toEqual(["روز", "هفته", "ماه", "اول کارهای جاری", "زودترین شروع", "◀", "این هفته", "▶"]);
     expect(controls).toContain('aria-label="هفته‌ی قبل"');
+    expect(controls).toContain('<span class="tl-order" role="group" aria-label="ترتیب خط زمانی"><span class="meta">ترتیب</span>');
     expect(SCALES.map((s) => s.label)).toEqual(["روز", "هفته", "ماه"]);
     expect(FOR_CHOICES.map((f) => f.label)).toEqual(["انسان", "ایجنت"]);
   });

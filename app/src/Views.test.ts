@@ -4,7 +4,7 @@ import { createElement as h, type ReactElement, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { stampMinutes } from "./lib";
 import type { Task } from "./types";
-import { axis, layout, nowAt, spans, timeWindow, type Scale } from "./viewData";
+import { axis, layout, nowAt, spans, timeWindow, type Scale, type TimelineOrder } from "./viewData";
 import { TableView, TimelineChart, TimelineControls, TimelineView } from "./Views";
 
 const t = (over: Partial<Task>): Task => ({
@@ -15,8 +15,8 @@ const t = (over: Partial<Task>): Task => ({
 const step = (at: string, from: string, to: string) => ({ at, who: "agent", from, to });
 const NOW = stampMinutes("2026-10-14 17:20")!;
 
-const controls = (scale: Scale, offset = 0) =>
-  renderToStaticMarkup(createElement(TimelineControls, { scale, offset, label: "12 – 18 Oct 2026", onScale: () => {}, onStep: () => {}, onToday: () => {} }));
+const controls = (scale: Scale, offset = 0, order: TimelineOrder = "active") =>
+  renderToStaticMarkup(createElement(TimelineControls, { scale, offset, order, label: "12 – 18 Oct 2026", onScale: () => {}, onOrder: () => {}, onStep: () => {}, onToday: () => {} }));
 
 describe("the timeline's scale chips", () => {
   it("shows Day, Week and Month as a row of chips, the current one pressed, not a dropdown", () => {
@@ -25,7 +25,7 @@ describe("the timeline's scale chips", () => {
     expect(controls("week")).not.toContain("<select");
   });
   it("steps back and forward, goes back to the current period, and names the window", () => {
-    const words = (html: string) => [...html.matchAll(/<button[^>]*>(.*?)<\/button>/g)].map((m) => m[1].replace(/<[^>]+>/g, "")).slice(3);
+    const words = (html: string) => [...html.matchAll(/<button[^>]*>(.*?)<\/button>/g)].map((m) => m[1].replace(/<[^>]+>/g, "")).slice(5);
     expect(words(controls("day"))).toEqual(["◀", "Now", "▶"]);
     expect(words(controls("week"))).toEqual(["◀", "This week", "▶"]);
     expect(words(controls("month"))).toEqual(["◀", "This month", "▶"]);
@@ -35,6 +35,24 @@ describe("the timeline's scale chips", () => {
     // The steps point the reading way: right to left ◀ is flipped to point right, back in time (mu-149).
     expect(controls("week")).toMatch(/aria-label="Previous week"[^>]*><span class="dir-glyph">◀<\/span><\/button>/);
     expect(controls("week")).toMatch(/aria-label="Next week"[^>]*><span class="dir-glyph">▶<\/span><\/button>/);
+  });
+});
+
+describe("the timeline's order chips (mu-204)", () => {
+  const chips = (html: string) => [...html.matchAll(/<button aria-pressed="(true|false)" class="ui-pill( ui-pill--on)?">(Active now first|Earliest start)<\/button>/g)].map((m) => `${m[3]}:${m[1]}:${m[2] ? "on" : ""}`);
+  it("shows Sort with both orders as chips after Scale, in a group named Timeline order, the picked one pressed", () => {
+    const html = controls("week");
+    expect(html).toMatch(/>Month<\/button><span class="tl-order" role="group" aria-label="Timeline order"><span class="meta">Sort<\/span><button[^>]*>Active now first<\/button><button[^>]*>Earliest start<\/button><\/span><span class="tl-nav">/);
+    expect(chips(html)).toEqual(["Active now first:true:on", "Earliest start:false:"]);
+    expect(chips(controls("week", 0, "start"))).toEqual(["Active now first:false:", "Earliest start:true:on"]);
+    expect(html).not.toContain("<select");
+  });
+  it("picks the order a chip names", () => {
+    const onOrder = vi.fn();
+    const b = buttons(TimelineControls({ scale: "week", offset: 0, order: "active", label: "x", onScale: () => {}, onOrder, onStep: () => {}, onToday: () => {} }));
+    b.find((x) => x.words === "Earliest start")!.click();
+    b.find((x) => x.words === "Active now first")!.click();
+    expect(onOrder.mock.calls).toEqual([["start"], ["active"]]);
   });
 });
 
@@ -126,7 +144,7 @@ function buttons(node: ReactNode): { words: string; click: () => void }[] {
 describe("the timeline's controls do what they say", () => {
   it("◀ steps back, ▶ forward, the middle one goes to the current period, a chip picks the scale", () => {
     const onScale = vi.fn(), onStep = vi.fn(), onToday = vi.fn();
-    const b = buttons(TimelineControls({ scale: "week", offset: -2, label: "x", onScale, onStep, onToday }));
+    const b = buttons(TimelineControls({ scale: "week", offset: -2, order: "active", label: "x", onScale, onOrder: () => {}, onStep, onToday }));
     const press = (w: string) => b.find((x) => x.words === w)!.click();
     press("◀");
     press("▶");
@@ -190,9 +208,9 @@ describe("a task waiting only on other tasks isn't red on the timeline (0060)", 
 describe("the timeline's legend (mu-173)", () => {
   // TimelineView takes now in seconds; this is 2026-10-14 17:20 on the local clock, NOW in wall minutes.
   const SECONDS = new Date(2026, 9, 14, 17, 20).getTime() / 1000;
-  const view = (tasks: Task[]) => {
-    // The timeline remembers its scale in local storage, which tests run without: Day here.
-    vi.stubGlobal("localStorage", { getItem: () => "day", setItem: () => {} });
+  const view = (tasks: Task[], order: string | null = null) => {
+    // The timeline remembers its scale and order in local storage, which tests run without: Day here.
+    vi.stubGlobal("localStorage", { getItem: (k: string) => (k === "muster.timelineScale" ? "day" : k === "muster.timelineSort" ? order : null), setItem: () => {} });
     try {
       return renderToStaticMarkup(createElement(TimelineView, { tasks, now: SECONDS, multi: false, openKey: null, onOpen: () => {}, words: [] }));
     } finally {
@@ -219,7 +237,7 @@ describe("the timeline's legend (mu-173)", () => {
   it("draws every done bar as its legend swatch does: the done outline, no done segment, logged stages or not (R1)", () => {
     const old = t({ id: "0011", stage: "done", captured: "2026-10-14", capturedAt: "2026-10-14 04:47", doneOn: "2026-10-14", doneAt: "2026-10-14 04:55" });
     const logged = t({ id: "0031", stage: "done", doneOn: "2026-10-14", stageHistory: [step("2026-10-14 13:00", "ready", "building"), step("2026-10-14 16:00", "building", "done")] });
-    const html = view([old, logged]);
+    const html = view([old, logged], "start");
     const scroll = html.slice(html.indexOf('<div class="tl-scroll">'));
     const bars = [...scroll.matchAll(/<span class="tl-bar s-done[^"]*"[^>]*>([\s\S]*?)<span class="tl-bar-text">/g)].map((m) => m[1]);
     expect(bars).toHaveLength(2);
@@ -238,5 +256,43 @@ describe("the timeline's legend (mu-173)", () => {
     expect(note).toContain("Day is the last 24 hours");
     expect(note).not.toMatch(/\b(colou?rs?|red|gr[ae]y|green|hatch\w*|dotted|tail)\b/i);
     expect(html).not.toContain("tl-legend");
+  });
+});
+
+describe("the timeline's rows in the order picked, remembered (mu-204)", () => {
+  const SECONDS = new Date(2026, 9, 14, 17, 20).getTime() / 1000;
+  const tasks = [
+    t({ id: "0061", title: "Done long ago", stage: "done", stageHistory: [step("2026-10-14 01:00", "ready", "building"), step("2026-10-14 02:00", "building", "done")] }),
+    t({ id: "0062", title: "Waits for you", stage: "your-check", stageHistory: [step("2026-10-14 03:00", "ready", "building"), step("2026-10-14 16:00", "building", "your-check")] }),
+    t({ id: "0063", title: "Testing now", stage: "testing", stageHistory: [step("2026-10-14 05:00", "ready", "building"), step("2026-10-14 15:00", "building", "testing")] }),
+    t({ id: "0064", title: "Building now", stage: "building", stageHistory: [step("2026-10-14 16:30", "ready", "building")] }),
+  ];
+  const render = (storage: Partial<Storage>) => {
+    vi.stubGlobal("localStorage", storage);
+    try {
+      return renderToStaticMarkup(createElement(TimelineView, { tasks, now: SECONDS, multi: false, openKey: null, onOpen: () => {}, words: [] }));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  };
+  const saved = (sort: string | null) => render({ getItem: (k: string) => (k === "muster.timelineSort" ? sort : k === "muster.timelineScale" ? "day" : null), setItem: () => {} });
+  const rows = (html: string) => [...html.matchAll(/<button class="tl-row[^"]*"[^>]*>[^]*?title="q · (\d+)"/g)].map((m) => m[1]);
+  const pressed = (html: string) => /<button aria-pressed="true" class="ui-pill ui-pill--on">(Active now first|Earliest start)<\/button>/.exec(html)?.[1];
+  it("leads with Building and Testing, newest change first, then Your check, then the rest, by default", () => {
+    for (const sort of [null, "", "key", "{\"by\":\"start\"}"]) {
+      const html = saved(sort);
+      expect(rows(html), String(sort)).toEqual(["0064", "0063", "0062", "0061"]);
+      expect(pressed(html), String(sort)).toBe("Active now first");
+    }
+  });
+  it("gives the earliest-start order when that was picked last", () => {
+    const html = saved("start");
+    expect(rows(html)).toEqual(["0061", "0062", "0063", "0064"]);
+    expect(pressed(html)).toBe("Earliest start");
+  });
+  it("opens with Active now first when storage can't be read", () => {
+    const html = render({ getItem: () => { throw new Error("storage off"); }, setItem: () => { throw new Error("storage off"); } });
+    expect(rows(html)).toEqual(["0064", "0063", "0062", "0061"]);
+    expect(pressed(html)).toBe("Active now first");
   });
 });

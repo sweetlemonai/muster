@@ -4,7 +4,7 @@ import { unmarked } from "./i18n";
 import { setLocale, setNumbering } from "./i18n/runtime";
 import { stampMinutes } from "./lib";
 import {
-  axis, barTitle, DAY, layout, legendMarks, nowAt, parseScale, segmentTitle, sortTasks, spans, taskSpan, timeWindow, wallMinutes, windowLabel,
+  axis, barTitle, DAY, layout, legendMarks, nowAt, parseScale, parseTimelineOrder, segmentTitle, sortTasks, spans, taskSpan, timelineOrder, timeWindow, wallMinutes, windowLabel,
   type Placed, type Scale, type Span,
   parseTableSort,
 } from "./viewData";
@@ -158,6 +158,60 @@ describe("a task's work: from when it started to when it finished (owner, 2026-1
     expect(list.map((s) => s.task.id)).toEqual(["c", "a", "b"]);
     expect(list.notStarted).toBe(1);
     expect(spans([], NOW)).toHaveLength(0);
+  });
+});
+
+describe("the timeline's order (mu-204)", () => {
+  // A task whose stages moved at the given times, ending in `stage`.
+  const moved = (id: string, stage: string, times: string[], queue = "q") =>
+    t({ id, queue, stage, stageHistory: times.map((h, i) => step(`2026-10-${h}`, i ? "building" : "ready", i === times.length - 1 ? stage : "building")) });
+  const ids = (list: Span[]) => list.map((s) => `${s.task.queue}/${s.task.id}`);
+  const tasks = [
+    moved("0001", "done", ["10 09:00", "11 09:00"]),
+    moved("0002", "ready", ["10 10:00", "12 10:00"]),
+    moved("0003", "your-check", ["11 08:00", "13 08:00"]),
+    moved("0004", "building", ["14 09:00"]),
+    moved("0005", "testing", ["12 08:00", "14 12:00"]),
+    moved("0006", "your-check", ["12 07:00", "14 16:00"]),
+    moved("0007", "building", ["13 11:00"]),
+    moved("0008", "done", ["09 08:00", "14 17:00"]),
+  ];
+  it("puts Building and Testing first, then Your check, then the rest, each newest stage change first", () => {
+    const list = spans(tasks, NOW);
+    expect(ids(timelineOrder(list, "active"))).toEqual(["q/0005", "q/0004", "q/0007", "q/0006", "q/0003", "q/0008", "q/0002", "q/0001"]);
+  });
+  it("reads the latest stamp, not the last line of the log, and ignores stamps that aren't the tools'", () => {
+    // 0010's last line is older than its first; its latest change is 14 Oct 15:00, after 0011's.
+    const late = t({ id: "0010", stage: "building", stageHistory: [step("2026-10-14 15:00", "ready", "building"), step("2026-10-13 09:00", "building", "building"), step("yesterday", "building", "building")] });
+    const early = t({ id: "0011", stage: "building", stageHistory: [step("2026-10-14 14:00", "ready", "building")] });
+    expect(ids(timelineOrder(spans([early, late], NOW), "active"))).toEqual(["q/0010", "q/0011"]);
+  });
+  it("breaks ties by project, then id, the same whatever order the tasks came in", () => {
+    const same = [moved("0002", "testing", ["14 09:00"], "b"), moved("0001", "building", ["14 09:00"], "b"), moved("0009", "testing", ["14 09:00"], "a")];
+    const want = ["a/0009", "b/0001", "b/0002"];
+    expect(ids(timelineOrder(spans(same, NOW), "active"))).toEqual(want);
+    expect(ids(timelineOrder(spans([...same].reverse(), NOW), "active"))).toEqual(want);
+  });
+  it("puts a done task with no stage log (captured and done times only) in the last tier, after the logged ones", () => {
+    const old = t({ id: "0020", stage: "done", captured: "2026-10-12", capturedAt: "2026-10-12 04:47", doneAt: "2026-10-12 04:55" });
+    const list = spans([old, moved("0021", "done", ["10 09:00"]), moved("0022", "building", ["14 09:00"])], NOW);
+    expect(ids(timelineOrder(list, "active"))).toEqual(["q/0022", "q/0021", "q/0020"]);
+  });
+  it("gives today's earliest-start order for Earliest start, and keeps the not-started count either way", () => {
+    const list = spans([...tasks, t({ id: "0099", stage: "ready" })], NOW);
+    expect(ids(timelineOrder(list, "start"))).toEqual(ids(list));
+    expect(timelineOrder(list, "start").notStarted).toBe(1);
+    expect(timelineOrder(list, "active").notStarted).toBe(1);
+    expect(timelineOrder(spans([], NOW), "active")).toHaveLength(0);
+  });
+  it("leaves the list it was given as it was", () => {
+    const list = spans(tasks, NOW);
+    const before = ids(list);
+    timelineOrder(list, "active");
+    expect(ids(list)).toEqual(before);
+  });
+  it("reads a saved order, Active now first for anything else", () => {
+    expect((["active", "start", "Start", "key", "", null] as (string | null)[]).map(parseTimelineOrder)).toEqual(["active", "start", "active", "active", "active", "active"]);
   });
 });
 

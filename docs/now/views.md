@@ -5,6 +5,7 @@ covers: app/src/Views.tsx, app/src/viewData.ts, app/src/GraphView.tsx, app/src/g
 
 - Board, Table, Timeline and Graph share one filter bar and open a task in the docked pane. (mu-32)
 - The Timeline's scale strip stays put above the scrolling chart. (mu-31)
+- The Timeline's rows lead with Building and Testing, newest stage change first, by default; Earliest start is the other order, and the pick is remembered. (mu-204)
 - A bar runs from the claim to Your check or Done, from the times muster logged, one stretch per stage. (mu-31)
 - The Timeline's legend is the strip's second line, always in view; too long for one line, it wraps to a second, never scrolls. (mu-173)
 - A legend always keeps the height of every item it can name at this width, so stepping windows never moves the chart. (mu-173)

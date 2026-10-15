@@ -1318,6 +1318,13 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   faded start. A now line runs across the chart and open tasks run to it. Bars are worked out in
   `viewData.ts` in wall-clock minutes, so a clock change doesn't bend them). All three, and the
   Graph (0019), share the search and filters and open tasks in the docked pane.
+- **The Timeline's order** (mu-204): **Sort** chips after Scale on the control line (a
+  `role="group"` "Timeline order", Pills with `aria-pressed`): **Active now first**, the default,
+  and **Earliest start**. `viewData.ts` `timelineOrder(spans, order)`: Active now first ranks
+  Building and Testing, then Your check, then the rest, each tier by its latest stage-history stamp
+  newest first (a task with no stamp last), then project and id; Earliest start is `spans`'s own
+  order (start, project, id). The pick is kept in `muster.timelineSort`, read through
+  `parseTimelineOrder` (anything but `start` is Active now first; storage off, the default).
 - **Legend on the Timeline and the Graph** (mu-173): one `Legend` component (`app/src/Legend.tsx`,
   a `role="group"` "What the colours mean" with a list of swatch + name). The Timeline's sits in
   `.tl-strip` as the second line under the scale toolbar (not inside it), outside `.tl-scroll`, so

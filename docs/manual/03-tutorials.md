@@ -194,7 +194,7 @@ The **Graph** tab shows what waits on what (see [Depends and the graph](02-conce
 
 The **Timeline** tab shows when the work happened:
 
-1. Pick a scale: **Day** is the last 24 hours, hour by hour; **Week** is Monday to Sunday in quarter days; **Month** is the calendar month in days. ◀ and ▶ step back and forward, and the button between them (**Now**, **This week** or **This month**) jumps back.
+1. Pick a scale: **Day** is the last 24 hours, hour by hour; **Week** is Monday to Sunday in quarter days; **Month** is the calendar month in days. ◀ and ▶ step back and forward, and the button between them (**Now**, **This week** or **This month**) jumps back. **Sort** puts what's running at the top (**Active now first**) or lists the tasks by when their work started (**Earliest start**).
 2. Each bar is one task's work. It starts when the work started (the task's first move into Building or a later stage) and ends when the work finished (it reached Your check or Done). Each stage it went through is a stretch in that stage's colour.
 3. A thin dotted tail after a bar is the time the task has been waiting for your check.
 4. The vertical line is now, and tasks still being worked run up to it. Hatching marks time spent blocked. A faded start means only the day the work started is known, as for older tasks.
@@ -216,7 +216,7 @@ Board, Table, Timeline and Graph share one bar above them, with a search box, fi
 
 **Filter.** Under the search box are the filter groups: **Stage**, **Type**, **Priority**, **Tags**, **Held by**, **Flags** (blocked, needs you, open questions), and **Captured**, **Changed** and **Done** (today, this week, this month). A group shows only the values that the project's tasks have. Click a chip to keep only those tasks. Two chips in one group mean either; chips in different groups must all match. The line below says what's active, with a ✕ on each, how many tasks it hides ("12 hidden by filters"), and **Clear all**.
 
-**Sort.** On the board, the **Sort** chips order each column: **priority** (the default: what needs you first, then high to low, and Done newest finished first), **newest**, **oldest**, **changed**, **estimate** or **id**. In the **Table**, click a column's header to sort by it, and again to reverse it; the Table remembers its sort between launches. The Timeline is always in date order.
+**Sort.** On the board, the **Sort** chips order each column: **priority** (the default: what needs you first, then high to low, and Done newest finished first), **newest**, **oldest**, **changed**, **estimate** or **id**. In the **Table**, click a column's header to sort by it, and again to reverse it; the Table remembers its sort between launches. On the **Timeline**, **Sort** picks **Active now first** (what's being built and tested now at the top, the default) or **Earliest start**; it's remembered too.
 
 **Keep a view:**
 

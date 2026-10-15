@@ -201,6 +201,45 @@ export function spans(tasks: Task[], now: number): Span[] & { notStarted?: numbe
   return out;
 }
 
+/** The Timeline's two orders (mu-204): what's running first, the default, or today's earliest
+ *  start first, which reads the Timeline as a history. */
+export type TimelineOrder = "active" | "start";
+export const TIMELINE_ORDERS: TimelineOrder[] = ["active", "start"];
+export const TIMELINE_ORDER_KEY = "muster.timelineSort";
+/** A saved order, or Active now first for anything else. */
+export const parseTimelineOrder = (v: string | null): TimelineOrder => (v === "start" ? "start" : "active");
+
+/** Building and Testing, then Your check, then the rest. */
+const ACTIVE_TIER: Partial<Record<StageId, number>> = { building: 0, testing: 0, "your-check": 1 };
+/** A task's latest stage change in wall minutes (its newest readable stamp, whatever line holds it),
+ *  or -Infinity when its log has none. */
+function lastChange(t: Task): number {
+  let last = -Infinity;
+  for (const s of t.stageHistory) {
+    const at = stampMinutes(s.at);
+    if (at !== null && at > last) last = at;
+  }
+  return last;
+}
+
+/** `list` (from `spans`) in the order picked. Active now first: the tier, then the latest stage
+ *  change newest first, then project and id, so every machine shows the same order. Earliest start
+ *  is `spans`'s list as it is; Active now first is a new list, the not-started count kept. */
+export function timelineOrder(list: Span[] & { notStarted?: number }, order: TimelineOrder): Span[] & { notStarted?: number } {
+  if (order === "start") return list;
+  const keyed = list.map((s) => ({ s, tier: ACTIVE_TIER[stageOf(s.task)] ?? 2, last: lastChange(s.task) }));
+  keyed.sort(
+    (a, b) =>
+      a.tier - b.tier ||
+      (a.last === b.last ? 0 : b.last > a.last ? 1 : -1) ||
+      a.s.task.queue.localeCompare(b.s.task.queue) ||
+      a.s.task.id.localeCompare(b.s.task.id),
+  );
+  const out: Span[] & { notStarted?: number } = keyed.map((k) => k.s);
+  out.notStarted = list.notStarted;
+  return out;
+}
+
 export type TimeWindow = { from: number; to: number };
 
 /** The window `offset` days, weeks (Monday to Sunday) or months away from the one holding `now`.

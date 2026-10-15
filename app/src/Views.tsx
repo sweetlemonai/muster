@@ -8,8 +8,8 @@ import { PAUSE_GLYPH } from "./Pause";
 import type { Task } from "./types";
 import { Badge, Pill, StatusPill } from "./ui";
 import {
-  axis, barTitle, layout, legendMarks, nowAt, parseScale, SCALES, segmentTitle, parseTableSort, sortTasks, TABLE_SORT_KEY, spans, timeWindow, wallMinutes, windowLabel,
-  type Placed, type Scale, type SortKey, type Tick,
+  axis, barTitle, layout, legendMarks, nowAt, parseScale, parseTimelineOrder, SCALES, segmentTitle, parseTableSort, sortTasks, TABLE_SORT_KEY, spans, TIMELINE_ORDER_KEY, TIMELINE_ORDERS, timelineOrder, timeWindow, wallMinutes, windowLabel,
+  type Placed, type Scale, type SortKey, type Tick, type TimelineOrder,
 } from "./viewData";
 import { BandHead } from "./Groups";
 import { estimateLeft, type Group, type GroupBy, isWork, levelLabel, progressText, shownStageClass, shownStageLabel } from "./levels";
@@ -139,17 +139,36 @@ function Row({ t, now, multi, active, onOpen, words, tr }: { t: Task; now: numbe
 }
 
 const SCALE_KEY = "muster.timelineScale";
+/** A saved pick, or null when storage is off (a test run, or turned off): the caller's default. */
+function stored(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+/** Keeps a pick on this Mac; storage full or off, the pick still applies for now. */
+function keep(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* not kept */
+  }
+}
 /** Pixels per slot: an hour at Day, a quarter day at Week, a day at Month. */
 const SLOT_PX: Record<Scale, number> = { day: 40, week: 32, month: 30 };
 const pct = (x: number) => `${(x * 100).toFixed(3)}%`;
 
 /** Each task as a bar in a day, week or month: waiting, then each stage it held, with a now line. */
 export function TimelineView({ tasks, now, multi, openKey, onOpen, words }: { tasks: Task[]; now: number; multi: boolean; openKey: string | null; onOpen: (t: Task) => void; words: string[] }) {
-  const [scale, setScale] = useState<Scale>(() => parseScale(localStorage.getItem(SCALE_KEY)));
+  const [scale, setScale] = useState<Scale>(() => parseScale(stored(SCALE_KEY)));
+  // What's running first by default (mu-204), or earliest start; remembered like the scale.
+  const [order, setOrder] = useState<TimelineOrder>(() => parseTimelineOrder(stored(TIMELINE_ORDER_KEY)));
   const [offset, setOffset] = useState(0);
   // Wall-clock minutes (viewData's unit); changes once a minute, not on every poll.
   const at = wallMinutes(new Date(now * 1000));
-  const list = useMemo(() => spans(tasks, at), [tasks, at]);
+  const started = useMemo(() => spans(tasks, at), [tasks, at]);
+  const list = useMemo(() => timelineOrder(started, order), [started, order]);
   // The calendar and digits picked (mu-151): the month is the calendar's, and the labels follow both.
   const numbering = useNumbering();
   const win = useMemo(() => timeWindow(scale, at, offset, numbering.calendar), [scale, at, offset, numbering.calendar]);
@@ -163,13 +182,17 @@ export function TimelineView({ tasks, now, multi, openKey, onOpen, words }: { ta
   const pick = (s: Scale) => {
     setScale(s);
     setOffset(0);
-    localStorage.setItem(SCALE_KEY, s);
+    keep(SCALE_KEY, s);
+  };
+  const sortBy = (o: TimelineOrder) => {
+    setOrder(o);
+    keep(TIMELINE_ORDER_KEY, o);
   };
   return (
     <main className="timeline">
       {/* The legend is the strip's second line: it never scrolls away, and it isn't a control. */}
       <div className="tl-strip">
-        <TimelineControls scale={scale} offset={offset} label={windowLabel(scale, win)} onScale={pick} onStep={(d) => setOffset((o) => o + d)} onToday={() => setOffset(0)} />
+        <TimelineControls scale={scale} offset={offset} order={order} label={windowLabel(scale, win)} onScale={pick} onOrder={sortBy} onStep={(d) => setOffset((o) => o + d)} onToday={() => setOffset(0)} />
         <Legend items={marks} reserve={TIMELINE_RESERVE} />
       </div>
       <div className="tl-scroll">
@@ -182,9 +205,10 @@ export function TimelineView({ tasks, now, multi, openKey, onOpen, words }: { ta
   );
 }
 
-/** The scale chips (all three always visible) and the ◀ current ▶ stepper, with the window's name. */
-export function TimelineControls({ scale, offset, label, onScale, onStep, onToday }: {
-  scale: Scale; offset: number; label: string; onScale: (s: Scale) => void; onStep: (by: number) => void; onToday: () => void;
+/** The scale chips (all three always visible), the order chips (both always visible, mu-204) and
+ *  the ◀ current ▶ stepper, with the window's name. */
+export function TimelineControls({ scale, offset, order, label, onScale, onOrder, onStep, onToday }: {
+  scale: Scale; offset: number; order: TimelineOrder; label: string; onScale: (s: Scale) => void; onOrder: (o: TimelineOrder) => void; onStep: (by: number) => void; onToday: () => void;
 }) {
   const previous = tn("board", `views.previous.${scale}`);
   const next = tn("board", `views.next.${scale}`);
@@ -196,6 +220,14 @@ export function TimelineControls({ scale, offset, label, onScale, onStep, onToda
           {s.label}
         </Pill>
       ))}
+      <span className="tl-order" role="group" aria-label={tn("board", "views.orderAria")}>
+        <span className="meta">{tn("board", "views.orderLabel")}</span>
+        {TIMELINE_ORDERS.map((o) => (
+          <Pill key={o} on={o === order} aria-pressed={o === order} onClick={() => onOrder(o)}>
+            {tn("board", `views.order.${o}`)}
+          </Pill>
+        ))}
+      </span>
       <span className="tl-nav">
         <Pill onClick={() => onStep(-1)} title={previous} aria-label={previous}><span className="dir-glyph">◀</span></Pill>
         <Pill onClick={onToday} disabled={offset === 0}>{tn("board", `views.current.${scale}`)}</Pill>

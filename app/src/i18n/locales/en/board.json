@@ -331,6 +331,12 @@
       "week": "Week",
       "month": "Month"
     },
+    "orderAria": "Timeline order",
+    "orderLabel": "Sort",
+    "order": {
+      "active": "Active now first",
+      "start": "Earliest start"
+    },
     "current": {
       "day": "Now",
       "week": "This week",
