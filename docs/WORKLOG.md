@@ -4,6 +4,18 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — mu-194: the filter bar's Type row says task, feature and idea in Persian too
+**Fixed (Asghar_37, builder):** in فارسی the Type row showed "idea" and "feature" in English →
+`kindChip` translated only the core's `KINDS` → `fields.ts` has `LEGACY_KINDS` (task, feature,
+idea) and one `kindLabel` that says both lists through `common.json` `kind.*` and anything else as
+written; the Type group uses it. en and fa get `kind.task/feature/idea`; the glossary gets idea →
+ایده. New task and the pane still offer only `KINDS`.
+**Verified:** fields and filters tests (kindLabel in en and fa, unknown types as written, the
+rendered Type row in fa). Headless WebKit, fa, night and day, filter bar open: the row reads
+باگ … قابلیت ایده … تسک, no wrapped chip, no page errors (`attachments/0194/`).
+**Open:** the core already reads `type: task` as code (`ops::read_kind`), so the window only meets idea (34 tasks)
+and feature (2) today; `kind.task` is there for any path that passes it through.
+
 ## 2026-10-15 — Working is a ribbon, not a tag: the holder ribbon says the session's state (mu-171)
 **Did (Gholi_31, builder):** the owner: "working needs a ribbon not a tag". A held card's ribbon
 now reads "Asghar_7 · working" (accent), "Asghar_7 · session ended" (Building only) or the name

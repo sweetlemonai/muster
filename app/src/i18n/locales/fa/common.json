@@ -51,7 +51,10 @@
     "spike": "اسپایک",
     "design": "طراحی",
     "docs": "مستندات",
-    "research": "پژوهش"
+    "research": "پژوهش",
+    "task": "تسک",
+    "feature": "قابلیت",
+    "idea": "ایده"
   },
   "flag": {
     "blocked": "مسدود",

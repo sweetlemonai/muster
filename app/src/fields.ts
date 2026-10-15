@@ -1,8 +1,20 @@
+import { tl } from "./i18n";
 import type { Task } from "./types";
 
-/** A task's type, the core's list (ops::KINDS, task 0017) in its order. Old files may still say
- *  idea (the core reads task as code); those show as they are. */
+/** A task's type, the core's list (ops::KINDS, task 0017) in its order: the only ones offered.
+ *  Old files may still say an older type (`LEGACY_KINDS`; the core reads task as code). */
 export const KINDS = ["code", "bug", "chore", "tech-debt", "spike", "design", "docs", "research"] as const;
+
+/** The older types the queues still hold (mu-194): said in the language shown, never offered
+ *  when creating or editing a task. */
+export const LEGACY_KINDS = ["task", "feature", "idea"] as const;
+
+type KnownKind = (typeof KINDS)[number] | (typeof LEGACY_KINDS)[number];
+const KNOWN: readonly string[] = [...KINDS, ...LEGACY_KINDS];
+const isKnownKind = (v: string): v is KnownKind => KNOWN.includes(v);
+
+/** A type as the screen says it: a core or older type in the language shown, any other as written. */
+export const kindLabel = (v: string): string => (isKnownKind(v) ? tl(`kind.${v}`) : v);
 
 /** The estimates in one line, as the card shows them: "agent 2h · test 30m · 400k", only the parts
  *  set (the same as the core's ops::estimate_text). */

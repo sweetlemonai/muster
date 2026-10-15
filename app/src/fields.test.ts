@@ -1,8 +1,9 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import Comments from "./Comments";
-import { estimateText, KINDS, splitLog, withoutComments } from "./fields";
+import { estimateText, kindLabel, KINDS, LEGACY_KINDS, splitLog, withoutComments } from "./fields";
+import { setLocale } from "./i18n/runtime";
 import { estimateTotal } from "./lib";
 import Links from "./Links";
 import NewTask from "./NewTask";
@@ -19,6 +20,30 @@ const task = (over: Partial<Task>): Task => ({
 });
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ").trim();
+
+describe("kindLabel (mu-194)", () => {
+  afterEach(async () => {
+    await setLocale("en");
+  });
+  const EN = ["code", "bug", "chore", "tech-debt", "spike", "design", "docs", "research", "task", "feature", "idea"];
+  const FA = ["کد", "باگ", "کار جانبی", "بدهی فنی", "اسپایک", "طراحی", "مستندات", "پژوهش", "تسک", "قابلیت", "ایده"];
+  it("names the older types the queues still hold, apart from the core's", () => {
+    expect(LEGACY_KINDS).toEqual(["task", "feature", "idea"]);
+    for (const k of LEGACY_KINDS) expect(KINDS as readonly string[]).not.toContain(k);
+  });
+  it("says every core and older type in English", () => {
+    expect([...KINDS, ...LEGACY_KINDS].map(kindLabel)).toEqual(EN);
+  });
+  it("says every core and older type in Persian", async () => {
+    await setLocale("fa");
+    expect([...KINDS, ...LEGACY_KINDS].map(kindLabel)).toEqual(FA);
+  });
+  it("shows an unknown type as written, in either language, as text", async () => {
+    for (const v of ["epic", "Task", "", "<b>x</b>", "kind.bug", "constructor", "__proto__"]) expect(kindLabel(v)).toBe(v);
+    await setLocale("fa");
+    for (const v of ["epic", "Task", "", "<b>x</b>", "constructor"]) expect(kindLabel(v)).toBe(v);
+  });
+});
 
 describe("types", () => {
   it("are the core's list (ops::KINDS), in its order", () => {

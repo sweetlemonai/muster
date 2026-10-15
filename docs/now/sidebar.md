@@ -24,6 +24,7 @@ covers: app/src/Sidebar.tsx, app/src/SidebarProjects.tsx, app/src/ProjectList, a
 - Language (English · فارسی) sits above the groups, whatever group is open; unset, it follows macOS's language for Muster. (mu-146)
 - A pick switches the window and the menu bar at once and is saved as `lang` in `settings.json`; agents and task files stay English. (mu-146)
 - The shell's text (sidebar, toolbar, filter bar, Settings) comes from the translation files; the guard fails on new English outside them. (mu-146)
+- The filter bar's Type row says every type in the language shown, the older task, feature and idea too; only the core's types are offered, and an unknown one shows as written. (mu-194)
 - Paths under the home folder show as `~/…`. (mu-36)
 - Agents sets the claim lease (12 h; 1 h to 7 d) and the LIVE window (5 min; 1 min to 1 h). (mu-36)
 - A missing or bad setting reads as its default, field by field. (mu-36)

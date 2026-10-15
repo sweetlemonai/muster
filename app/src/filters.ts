@@ -1,7 +1,7 @@
 import { boardColumn, holder, isBoardSort, priorityName, stageLabel, STAGES, stamp, type BoardSort, type RoleNames } from "./lib";
 import { queryWords, searchWords, taskMatches, textMatches } from "./search";
 import { isBlocked } from "./blockWords";
-import { KINDS } from "./fields";
+import { kindLabel } from "./fields";
 import { tl, tn } from "./i18n";
 import { needsYou } from "./human";
 import type { Note, Task } from "./types";
@@ -103,9 +103,6 @@ function dateGroup(id: "captured" | "changed" | "done", day: (t: Task) => string
   );
 }
 
-/** A type as its chip says it: the core's types in the language shown, an older one as it is. */
-const kindChip = (v: string) => (isKind(v) ? tl(`kind.${v}`) : v);
-const isKind = (v: string): v is (typeof KINDS)[number] => (KINDS as readonly string[]).includes(v);
 /** A holder as its chip says it: the owner (lib.ts `holder`'s "owner") in the language shown, a
  *  session by its name. */
 const holderChip = (v: string) => (v === "owner" ? tn("shell", "filter.owner") : v);
@@ -116,7 +113,8 @@ export const GROUPS: Group[] = [
   // By the column the board shows it in: the owner's own task (0022) sits in Ready, Building or
   // Done whatever its stage. `muster list --stage` keeps the real stage.
   fixedGroup("stage", STAGES.map((s) => s.id), (t, v) => boardColumn(t) === v, stageLabel),
-  listGroup("type", (t) => [t.kind], kindChip),
+  // A type as fields.ts `kindLabel` says it: the core's and the older ones translated (mu-194).
+  listGroup("type", (t) => [t.kind], kindLabel),
   fixedGroup("priority", PRIORITIES, (t, v) => priorityName(t.priority) === v, priorityChip),
   listGroup("tag", (t) => t.tags, (v) => `#${v}`),
   listGroup("holder", (t, ctx) => [holder(t, ctx.names)], holderChip, (v) => tn("shell", "filter.heldBy", { who: holderChip(v) })),

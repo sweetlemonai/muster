@@ -1,9 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterEach, describe, expect, it } from "vitest";
+import FilterBar from "./FilterBar";
 import {
   activeItems, applyQuery, dayContext, deleteView, EMPTY_QUERY, GROUPS, groupValues, hiddenLine, isActive, loadViews, MAX_VIEWS, removeFilter, sameQuery, saveView, storeViews,
   notesFor, toggleFilter, viewsKey, type Query, type SavedView,
 } from "./filters";
 import { needsYouCount } from "./human";
+import { setLocale } from "./i18n/runtime";
 import type { Note, Task } from "./types";
 
 const t = (over: Partial<Task>): Task => ({
@@ -56,6 +60,28 @@ describe("filter groups", () => {
   });
   it("keep a selected value that no longer exists, so it can be cleared", () => {
     expect(values("tag", tasks, ["gone"])).toEqual(["design", "docs", "ui", "gone"]);
+  });
+});
+
+describe("the Type row in Persian (mu-194)", () => {
+  afterEach(async () => {
+    await setLocale("en");
+  });
+  const type = GROUPS.find((g) => g.id === "type")!;
+  const kinds = ["task", "feature", "idea", "bug", "epic"].map((kind, i) => t({ id: `00${10 + i}`, kind }));
+  /** The Type row's pills as the open filter bar draws them. */
+  const row = () => {
+    const html = renderToStaticMarkup(createElement(FilterBar, { tasks: kinds, query: EMPTY_QUERY, onQuery: () => {}, ctx, sortable: false, views: [], onViews: () => {}, shown: 5, total: 5, hidden: 0, estimate: "" }));
+    const group = html.split(`aria-label="${type.label}">`)[1]?.split("</span><span")[0] ?? "";
+    return [...group.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
+  };
+  it("says the older types in English in English, an unknown one as written", () => {
+    expect(row()).toEqual(["bug", "epic", "feature", "idea", "task"]);
+  });
+  it("says task, feature and idea in Persian, as the core's types are, and an unknown one as written", async () => {
+    await setLocale("fa");
+    expect(type.chip("task")).toBe("تسک");
+    expect(row()).toEqual(["باگ", "epic", "قابلیت", "ایده", "تسک"]);
   });
 });
 

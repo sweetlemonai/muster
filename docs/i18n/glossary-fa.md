@@ -179,6 +179,7 @@ column header, the stage track and the task's detail.
 | task | تسک | pl. تسک‌ها; Drover already uses it (سازنده‌ی تسک); وظیفه is a duty, not a ticket | Drover, common Persian software usage |
 | goal | هدف | pl. اهداف in prose, هدف‌ها in labels | common usage |
 | feature | قابلیت | pl. قابلیت‌ها; ویژگی is kept for "property/attribute" | common Persian software usage |
+| idea | ایده | pl. ایده‌ها; an older task type (mu-194), said like task and feature but never offered; فکر is a thought, not a proposal | common Persian usage |
 | claim | برداشتن | a session takes a task: «برداشتن تسک»; state «برداشته شده توسط اصغر». Not واگذاری (Drover's handoff). Not for "remove" either: that's حذف | (proposed) |
 | claim (noun) | تسک برداشته‌شده | pl. تسک‌های برداشته‌شده; «برداشتن» in compounds («مهلت برداشتن»). Never bare برداشت, which reads as a withdrawal or an interpretation, and not برداشتنی | (proposed) |
 | lease | مهلت | how long a claim holds without a heartbeat; «مهلت تمام شد». اجاره is the literal, financial sense | (proposed) |

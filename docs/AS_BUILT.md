@@ -1862,6 +1862,11 @@ Rust core reads the same JSON.
   Recently finished say the weekday and month in the language's own words. `shellFa.test.ts`
   draws all of it in Persian and fails on any Latin word that isn't a product name, a key or the
   data shown.
+- **A type as the screen says it** (mu-194): `fields.ts` `kindLabel` says the core's types
+  (`KINDS`) and the older ones the queues still hold (`LEGACY_KINDS`: task, feature, idea) through
+  `common.json` `kind.*`, and any other value as written. The filter bar's Type row uses it.
+  Older types are for display only: New task and the pane's type chip offer only `KINDS`, and the
+  task files keep their `type:` as written.
 - **How to add a string:** put it in `app/src/i18n/locales/en/<ns>.json` (nested keys; a count's
   forms as `key_one`/`key_other` with `{{count}}` in `_other`), and its Persian in
   `locales/fa/<ns>.json` with the same placeholders and every Persian plural form

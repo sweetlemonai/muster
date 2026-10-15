@@ -51,7 +51,10 @@
     "spike": "spike",
     "design": "design",
     "docs": "docs",
-    "research": "research"
+    "research": "research",
+    "task": "task",
+    "feature": "feature",
+    "idea": "idea"
   },
   "flag": {
     "blocked": "Blocked",
