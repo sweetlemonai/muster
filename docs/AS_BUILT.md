@@ -1261,10 +1261,14 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
     on a thread `Runs::new` starts (a run that comes first waits for it, outside the lock Stop
     takes): `$SHELL -ilc` with a `printf` of `$PATH` between marks, as an argument array, no
     stdin, in a session of its own (`setsid` before exec: no controlling terminal, so an
-    interactive zsh never stops on SIGTTOU when Muster was started from a terminal), read up to
-    its end mark (a number of the call's own in it), not to the end of output, which something
-    its startup files leave going may hold, at most 64 KB (`run::login_path`). If it fails, prints no
-    PATH or takes over 5 s (then its group is killed), the fixed folders stand in. It runs as the owner would start it, on their real data (Q2). One run per project,
+    interactive zsh never stops on SIGTTOU when Muster was started from a terminal). The PATH is
+    taken at its end mark (a number of the call's own in it; `run::has_mark` finds one split
+    across reads), not at the end of output, which something its startup files leave going may
+    hold; after the mark the output is still read and dropped, to its end, 64 KB in all or the
+    5 s, so a logout file or EXIT trap that prints runs to its end instead of dying of SIGPIPE,
+    and a PATH between the call's marks is kept whatever the shell's exit status
+    (`run::login_path`). If it prints no PATH or takes over 5 s (then its group is killed), the
+    fixed folders stand in. It runs as the owner would start it, on their real data (Q2). One run per project,
     kept by its queue folder, so a rename or another project's name can't take it; removing a
     project stops its run. Run while one goes restarts it. Runs live in `AppState.runs`, in memory
     only.

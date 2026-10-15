@@ -2759,6 +2759,10 @@ pub(crate) mod tests {
 
     #[test]
     fn a_commit_landing_while_the_merge_waits_for_its_lock_is_refused_not_merged() {
+        // Before its lock the merge finds the muster binary, which a unit test builds once per
+        // run (`cargo build --bin muster`: after a change to the lib, under load, longer than any
+        // fixed wait). Built here, the wait below is for the merge alone.
+        crate::merge_log::this_muster().unwrap();
         for who in ["qa", "owner"] {
             let f = fx();
             let id = task(&f.root, "Waits", "w/");
@@ -2781,8 +2785,18 @@ pub(crate) mod tests {
                     let _ = tx.send(l);
                 })
             });
-            let said = rx.recv_timeout(std::time::Duration::from_secs(20)).unwrap();
-            assert!(said.starts_with("waiting for another merge"), "{said}");
+            // The merge says it's waiting, or ends without waiting; 60 s is only a backstop.
+            let said = match rx.recv_timeout(std::time::Duration::from_secs(60)) {
+                Ok(said) => said,
+                Err(e) => {
+                    held.unlock().unwrap();
+                    panic!("{who}: no word from the merge ({e}): {:?}", merging.join());
+                }
+            };
+            assert!(
+                said.starts_with("waiting for another merge"),
+                "{who}: {said}"
+            );
             // Reviewed at T; a commit C lands on the branch while it waits, and the other merge
             // moves main, so a rebase would rewrite the branch.
             commit(

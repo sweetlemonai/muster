@@ -4,6 +4,36 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — mu-95 round 1: the logout stand-ins' delays run, and the cap after the mark is pinned
+**Fixed:** R1, the two-write and logout stand-ins called `sleep` after setting a PATH without
+`/bin`, so on macOS it exited 127 at once and the drain and split-read mutants came down to a race
+→ `/bin/sleep`, and each test asserts the delay took place (≥ 0.3 s, ≥ 0.2 s).
+**Did:** R2, a `/usr/bin/yes` logout stand-in pins the 64 KB cap after the mark: the PATH comes
+back well within the wait.
+**Verified:** each test now fails on its mutant (no drain, the cap counting `buf` instead of
+every byte (Timeout at 20 s), a current-read-only `has_mark`); `cargo test --lib run::tests::` 25
+passed; gate below.
+
+## 2026-10-14 — mu-95: Run's login PATH survives a logout file; the lock test and the PATH guards fail only when they should
+**Fixed:** the merge lock test timed out under load → in a unit test the merge's
+`merge_log::this_muster()` builds the muster binary once per run (`cargo build --bin muster`),
+before the lock, so after a lib change under load the test's 20 s wait for "waiting for another
+merge…" timed a cargo build (no race in `parallel.rs`) → the test builds it before the wait, waits
+on the word with a 60 s backstop, and says what the merge did if it never comes. Repro: lib
+touched, 36 `yes` on 18 cores, `cargo test --lib`: Timeout after 24.9 s; with the fix it passes.
+**Fixed:** a logout file printing after the PATH killed the login shell by SIGPIPE and its PATH
+was thrown away (mu-79 R5) → `run::login_path` drains the output after the end mark (to its end,
+64 KB or `LOGIN_WAIT`, by `poll`) and keeps a marked PATH whatever the exit status.
+**Did:** `run::has_mark` (the end mark split across reads, R6); stand-ins for a two-write end mark
+and for the shell leading its own session without a terminal (`getsid`, R7). AS_BUILT's Run
+section says so.
+**Verified:** lock test 20/20 at load 49-147 with the lib stale before each run; each new guard
+fails on its mutant (no drain, the exit-status check, a current-read-only scan,
+`process_group(0)` in the sandbox); `gate: green (pnpm check, test_task, test_commands, cargo
+test (Kiritimati))`.
+**Open:** a separate flake, `migrate::probe`'s scratch folder named by pid and µs, filed as a
+backlog note.
+
 ## 2026-10-14 — Gates: the design that takes the owner out of Your check (mu-129 to mu-141)
 **Did:** `docs/GATES.md` lays out four gates checked at the branch's tip: build, code review,
 criteria (`ac-verifier`) and visual QA. Visual QA follows the owner's proposal

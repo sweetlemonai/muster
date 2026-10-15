@@ -715,14 +715,65 @@ impl Marks {
     }
 }
 
+/// Whether `end` is in `buf` where the last read, its `n` bytes at the end, could have completed
+/// it: in those bytes, or across them and the bytes before (a mark split across reads). A mark
+/// wholly in earlier reads isn't looked at again.
+fn has_mark(buf: &[u8], n: usize, end: &[u8]) -> bool {
+    if end.is_empty() || n == 0 {
+        return false;
+    }
+    let from = buf.len().saturating_sub(n + end.len() - 1);
+    buf[from..].windows(end.len()).any(|w| w == end)
+}
+
+/// Whether `out` has something to read, or has ended, before `until`; false once it's past.
+fn readable(out: &impl std::os::fd::AsRawFd, until: Instant) -> bool {
+    #[repr(C)]
+    struct PollFd {
+        fd: std::os::raw::c_int,
+        events: std::os::raw::c_short,
+        revents: std::os::raw::c_short,
+    }
+    #[cfg(target_os = "linux")]
+    type Nfds = std::os::raw::c_ulong;
+    #[cfg(not(target_os = "linux"))]
+    type Nfds = std::os::raw::c_uint;
+    extern "C" {
+        fn poll(fds: *mut PollFd, nfds: Nfds, timeout: std::os::raw::c_int) -> std::os::raw::c_int;
+    }
+    const POLLIN: std::os::raw::c_short = 1;
+    loop {
+        let left = until.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return false;
+        }
+        let ms = i32::try_from(left.as_millis()).unwrap_or(i32::MAX).max(1);
+        let mut fd = PollFd {
+            fd: out.as_raw_fd(),
+            events: POLLIN,
+            revents: 0,
+        };
+        // SAFETY: one pollfd that lives for the call, on a descriptor `out` keeps open meanwhile.
+        match unsafe { poll(&mut fd, 1, ms) } {
+            0 => {}
+            n if n > 0 => return true,
+            _ if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted => {}
+            // Let the read report it.
+            _ => return true,
+        }
+    }
+}
+
 /// The PATH the owner's login shell `shell` sets, as a terminal has it: `shell -ilc` with a
 /// `printf` of `$PATH` between marks, as an argument array, no stdin, in a session of its own (so
 /// with no controlling terminal: an interactive zsh in a background group of Muster's terminal
-/// would stop on SIGTTOU). Read up to the end mark, not to the end of output, since something its
-/// startup files leave going may hold the pipe. None when it can't start, fails, prints no PATH,
-/// or hasn't finished within `wait` (then it and whatever its startup files started are killed).
-/// Run it off the main thread: it takes as long as the owner's startup files (nvm's take most of
-/// a second).
+/// would stop on SIGTTOU). The PATH is taken at the end mark, not at the end of output, since
+/// something its startup files leave going may hold the pipe; after the mark the output is still
+/// drained (to the end, `LOGIN_OUTPUT` or `wait`), so a logout file or an EXIT trap that prints
+/// runs to its end instead of dying of SIGPIPE, and a PATH between this call's marks is kept
+/// whatever the shell's exit status. None when it can't start, prints no PATH, or hasn't finished
+/// within `wait` (then it and whatever its startup files started are killed). Run it off the main
+/// thread: it takes as long as the owner's startup files (nvm's take most of a second).
 pub fn login_path(shell: &Path, wait: Duration) -> Option<OsString> {
     let marks = Marks::new();
     let script = format!("printf '\\n{}%s{}\\n' \"$PATH\"", marks.start, marks.end);
@@ -733,36 +784,43 @@ pub fn login_path(shell: &Path, wait: Duration) -> Option<OsString> {
         .stderr(Stdio::null());
     new_session(&mut cmd);
     let mut child = cmd.spawn().ok()?;
+    let until = Instant::now() + wait;
     let out = child.stdout.take();
     let (tx, rx) = std::sync::mpsc::channel();
-    // Read on a thread of its own, so a full pipe never stalls the wait below; it stops at the end
-    // mark, at the end of the output, or at `LOGIN_OUTPUT`.
+    // Read on a thread of its own, so a full pipe never stalls the wait below. What came up to the
+    // end mark is sent at the mark (else at the end of output, `LOGIN_OUTPUT` or `until`); the
+    // rest is read and dropped until one of those.
     let end = marks.end.clone();
     let read = out.map(|mut out| {
         thread("run-path-read", move || {
             let (mut buf, mut chunk) = (Vec::new(), [0u8; 4096]);
-            while buf.len() < LOGIN_OUTPUT {
+            let (mut tx, mut total) = (Some(tx), 0);
+            while total < LOGIN_OUTPUT && readable(&out, until) {
                 let n = match out.read(&mut chunk) {
                     Ok(0) => break,
                     Ok(n) => n,
                     Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
                     Err(_) => break,
                 };
-                buf.extend_from_slice(&chunk[..n]);
-                // Only where the mark could be new: this read, and a mark split across two reads.
-                let from = buf.len().saturating_sub(n + end.len());
-                if buf[from..].windows(end.len()).any(|w| w == end.as_bytes()) {
-                    break;
+                total += n;
+                if tx.is_some() {
+                    buf.extend_from_slice(&chunk[..n]);
+                    if has_mark(&buf, n, end.as_bytes()) {
+                        if let Some(tx) = tx.take() {
+                            let _ = tx.send(std::mem::take(&mut buf));
+                        }
+                    }
                 }
             }
-            let _ = tx.send(buf);
+            if let Some(tx) = tx {
+                let _ = tx.send(buf);
+            }
         })
     });
     let reading = matches!(read, Some(Ok(())));
-    let until = Instant::now() + wait;
-    let status = loop {
+    loop {
         match child.try_wait() {
-            Ok(Some(status)) if reading => break status,
+            Ok(Some(_)) if reading => break,
             Ok(None) if reading && Instant::now() < until => {
                 std::thread::sleep(Duration::from_millis(20))
             }
@@ -780,9 +838,6 @@ pub fn login_path(shell: &Path, wait: Duration) -> Option<OsString> {
                 return None;
             }
         }
-    };
-    if !status.success() {
-        return None;
     }
     // The end mark came before the shell exited; without one, the end of output or `wait`.
     let left = until.saturating_duration_since(Instant::now());
@@ -1512,6 +1567,167 @@ mod tests {
             login_path(&shell, SLOW_WAIT),
             Some(OsString::from("/no/tty"))
         );
+    }
+
+    /// Without a terminal (agents' sandbox, the merge's gate) the test above can't tell `setsid`
+    /// from `process_group(0)`: this one can, since only `setsid` makes the shell lead a session.
+    #[test]
+    fn the_login_shell_leads_a_session_of_its_own_without_a_terminal_too() {
+        extern "C" {
+            fn getsid(pid: i32) -> i32;
+        }
+        let d = tempfile::tempdir().unwrap();
+        let (pid, go) = (d.path().join("pid"), d.path().join("go"));
+        // It says who it is, then waits (at most 30 s) to be looked at before it prints.
+        let shell = script(
+            d.path(),
+            "shell",
+            &format!(
+                "echo $$ > '{0}.new'\nmv '{0}.new' '{0}'\ni=0\nwhile [ ! -e '{1}' ] && [ $i -lt 600 ]; do sleep 0.05; i=$((i+1)); done\nPATH=/leads\neval \"$2\"\n",
+                pid.display(),
+                go.display()
+            ),
+        );
+        let reading = std::thread::spawn(move || login_path(&shell, SLOW_WAIT));
+        let t = Instant::now();
+        let pid = loop {
+            if let Ok(p) = fs::read_to_string(&pid) {
+                break p.trim().parse::<i32>().unwrap();
+            }
+            assert!(t.elapsed() < SLOW_WAIT, "the stand-in never started");
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        // SAFETY: getsid only reads the kernel's record of a process; the stand-in is alive,
+        // waiting for `go`.
+        let sid = unsafe { getsid(pid) };
+        fs::write(&go, "").unwrap();
+        assert_eq!(reading.join().unwrap(), Some(OsString::from("/leads")));
+        assert_eq!(sid, pid, "the login shell leads its own session");
+    }
+
+    /// The end mark is found when a read completes it, wherever the reads split it.
+    #[test]
+    fn has_mark_finds_the_end_mark_split_at_every_byte_across_two_reads() {
+        let end = b"</muster-path 123-456>";
+        for k in 0..=end.len() {
+            let mut buf = b"<muster-path 123-456>/a:/b".to_vec();
+            buf.extend_from_slice(&end[..k]);
+            let first = buf.len();
+            assert_eq!(
+                has_mark(&buf, first, end),
+                k == end.len(),
+                "first read, {k}"
+            );
+            buf.extend_from_slice(&end[k..]);
+            buf.extend_from_slice(b"\nbye\n");
+            let n = end.len() - k + 5;
+            // Whole in the first read, it was found there and isn't new in the second.
+            assert_eq!(
+                has_mark(&buf, n, end),
+                k < end.len(),
+                "split after byte {k}"
+            );
+        }
+        assert!(!has_mark(b"", 0, end));
+        assert!(has_mark(end, 99, end), "a read longer than the buffer");
+        // A mark wholly in earlier reads isn't new: it was found then.
+        let mut old = end.to_vec();
+        old.extend_from_slice(b"\nlogout output\n");
+        assert!(!has_mark(&old, 15, end));
+    }
+
+    #[test]
+    fn the_path_is_found_when_its_end_mark_comes_in_two_writes() {
+        let d = tempfile::tempdir().unwrap();
+        let pid = d.path().join("pid");
+        // A child keeps the output open; the last 4 bytes of the end mark come 0.3 s later.
+        let shell = script(
+            d.path(),
+            "shell",
+            &format!(
+                "sleep 30 &\necho $! > '{}'\nPATH=/nvm/bin:/usr/bin\nout=$(eval \"$2\")\nprintf '%s' \"${{out%????}}\"\n/bin/sleep 0.3\nprintf '%s\\n' \"${{out#\"${{out%????}}\"}}\"\n",
+                pid.display()
+            ),
+        );
+        // Missed, it would wait for the end of output (the sleeper's) or the wait.
+        let wait = Duration::from_secs(20);
+        let t = Instant::now();
+        let got = login_path(&shell, wait);
+        let took = t.elapsed();
+        if let Ok(sleeper) = fs::read_to_string(&pid) {
+            let _ = Command::new("/bin/kill")
+                .args(["-KILL", sleeper.trim()])
+                .status();
+        }
+        assert_eq!(
+            got,
+            Some(OsString::from("/nvm/bin:/usr/bin")),
+            "after {took:?}"
+        );
+        // The delay ran (on macOS sleep is only at /bin, off the stand-in's PATH).
+        assert!(took >= Duration::from_millis(300), "{took:?}");
+        assert!(took < wait / 2, "{took:?}");
+    }
+
+    /// A logout file (or an EXIT trap) that prints after the PATH: the output is drained so it
+    /// runs to its end instead of dying of SIGPIPE, and the PATH is kept whatever the exit.
+    #[test]
+    fn output_after_the_path_neither_kills_the_shell_nor_costs_the_path() {
+        let d = tempfile::tempdir().unwrap();
+        let done = d.path().join("done");
+        let shell = script(
+            d.path(),
+            "shell",
+            &format!(
+                "PATH='/نوشته/bin:/usr/bin'\neval \"$2\"\n/bin/sleep 0.2\necho bye\ntouch '{}'\n",
+                done.display()
+            ),
+        );
+        let t = Instant::now();
+        assert_eq!(
+            login_path(&shell, SLOW_WAIT),
+            Some(OsString::from("/نوشته/bin:/usr/bin"))
+        );
+        // The delay ran, so `bye` came well after the PATH was read: without the drain nobody
+        // reads the pipe by then.
+        assert!(
+            t.elapsed() >= Duration::from_millis(200),
+            "{:?}",
+            t.elapsed()
+        );
+        assert!(done.exists(), "the logout output ran to its end");
+        // Marked, then failed: the PATH between this call's marks still counts.
+        let fails = script(
+            d.path(),
+            "fails",
+            "PATH=/nvm/bin:/usr/bin\neval \"$2\"\nexit 3\n",
+        );
+        assert_eq!(
+            login_path(&fails, SLOW_WAIT),
+            Some(OsString::from("/nvm/bin:/usr/bin"))
+        );
+    }
+
+    /// A logout file that prints without end: the drain stops at `LOGIN_OUTPUT` after the mark too,
+    /// so the shell dies of SIGPIPE and the PATH comes back long before the wait.
+    #[test]
+    fn output_without_end_after_the_path_is_capped() {
+        let d = tempfile::tempdir().unwrap();
+        let shell = script(
+            d.path(),
+            "shell",
+            "PATH=/nvm/bin:/usr/bin\neval \"$2\"\n/usr/bin/yes\n",
+        );
+        let wait = Duration::from_secs(20);
+        let t = Instant::now();
+        let got = login_path(&shell, wait);
+        let took = t.elapsed();
+        assert_eq!(
+            got,
+            Some(OsString::from("/nvm/bin:/usr/bin")),
+            "after {took:?}"
+        );
+        assert!(took < wait / 2, "{took:?}");
     }
 
     /// Under a terminal of its own (`script`), a real interactive zsh with no startup files of the
