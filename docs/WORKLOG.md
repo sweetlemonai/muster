@@ -4,6 +4,22 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — Backlog shaped: mu-189 to mu-195, two notes folded into mu-147; mu-131 stalls on a gate check
+**Did (shapour):** 0034 → mu-189 (hand merge re-checks review and gate records under the lock, after 0131).
+0038 → mu-190 (high: merge-log keeps both sides' entries inserted at one point below the top; amends
+decision 0009). Three tmpdir notes → mu-191 (high: test queues get a private parent, so a stray checkout
+in the shared TMPDIR can't turn 17 review tests red). 0050 → mu-192 (migrate --dry-run reads only).
+0054 → mu-193 (high: briefs forbid reset --hard; the lead, and only the lead, restarts a session waiting
+over 10 minutes), mu-194 and mu-195 (fa labels). 0037 and 0148 folded into mu-147 as AC8 and AC9.
+**Fixed:** mu-131's rebase stopped on docs/WORKLOG.md → muster merge-log only merges entries added on the
+very top, and a coordinator log entry on main had put both sides' entries below it → filed as mu-190; until
+it lands, this session commits its log on vqa and fast-forwards main less often.
+**Decided:** mu-131's round 5 approved it; its re-gate after the rebase is red on broken_pipe's
+cli_rs_has_no_bare_print (three print! in the gate commands, cli.rs 2901/3077/3088). No builder alive and
+kia-131 on a permission prompt: reported to the lead QA_10, who owns sessions (owner's rule 2026-10-15),
+rather than resuming one.
+**Open:** mu-131 needs the three-line fix, a re-gate and the merge; mu-187 and mu-189 wait on it.
+
 ## 2026-10-15 — merge-log keeps both sides' entries inserted at one point, not only on top (mu-190)
 **Fixed:** a merge or rebase stopped on `docs/WORKLOG.md` whenever both branches put entries under
 main's newest (later-dated) entry → `added_on_top` accepted only entries before all of the base's →
