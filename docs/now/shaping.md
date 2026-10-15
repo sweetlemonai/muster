@@ -1,7 +1,7 @@
 ---
-covers: app/src-tauri/src/backlog.rs, app/src-tauri/src/lenses.rs, app/src-tauri/src/vision.rs, app/src-tauri/src/now.rs, app/src/Backlog, app/src/Vision
+covers: app/src-tauri/src/backlog.rs, app/src-tauri/src/lenses.rs, app/src/Backlog
 ---
-# Shaping and the vision check
+# Shaping
 
 - A backlog note is any `.md` in `.muster/backlog/` that isn't a task file; it has no id. (mu-15)
 - Notes come from `muster add` or the Backlog column's quick add. (mu-15)
@@ -18,24 +18,11 @@ covers: app/src-tauri/src/backlog.rs, app/src-tauri/src/lenses.rs, app/src-tauri
 - A skip with no reason, or of an unknown lens, doesn't count and `muster check` reports it. (mu-76)
 - `muster file` warns about missing lens lines and files the task anyway. (mu-76)
 - Set `touches:` at shaping, so the task can run beside others. (mu-23)
-- Before Ready, an agent checks the task against `docs/VISION.md`, `docs/decisions/` and `docs/DESIGN.md`. (mu-29)
-- `muster vision <id>` prints the brief; `--record -` stores the result. (mu-29)
 - `muster pass <id> --from shaping` needs acceptance criteria. (mu-15)
 - It's refused while a vision conflict is open; overlaps and gaps never hold it. (mu-29)
 - It's refused while a `[NEEDS CLARIFICATION: …]` marker is left or a question without a default is open; `muster file` warns. (mu-103)
 - A shaping run's questions go to the owner once, at its end: `muster clarify --send`. (mu-103)
-- A task never checked isn't held back; `muster check` warns about it. (mu-29)
-- Settle a conflict with `muster vision <id> --resolve V2 "<how>"`. (mu-29)
-- A conflict that changes direction asks the owner one question, with the cost of pivoting. (mu-29)
-- "n/a" for a lens in VISION.md's `**Lenses needed:**` line is recorded as a conflict. (mu-76)
-- Never edit the Vision section or `vision:` by hand. (mu-29)
-- A now page is `docs/now/<area>.md`: `covers: <globs>` in its front matter, one rule per line, each citing its task or decision. (mu-102)
-- A task's now pages are those whose `covers:` overlap its `touches:`, by the `touches:` rule. (mu-102)
-- The vision brief quotes the task's now pages as data; a task without `touches:` gets their names only. (mu-102)
-- Breaking a now page's rule unsaid is a vision conflict quoting the page's line. (mu-102)
-- `muster shape` names the now pages its matched open tasks cover. (mu-102)
 - The brief shows the estimates, measured on this queue: actual ÷ `est-time` at p50/p80 and median hours, overall, by type and by size; under 5 tasks says "too few (n)". (mu-168)
 - `--time` is agent time (first claim to leaving Testing, review and QA included, blocked and paused left out); `--test-time` is the owner's check only; the wait in Your check is neither. (mu-168)
 - `--tokens` counts input, output and cache writes, never cache reads; `--time` is agent hours (1d = 8 h). (mu-172)
-- `muster check` warns about a page over 60 lines or 4 KB, without `covers:`, sharing another's, or a symlink; never fails. (mu-102)
 - `muster new`, `file` and `edit` refuse a new `— verify: owner` criterion unless `--as owner`: make it provable, or `qa: walkthrough`. A hand edit of the task file isn't checked. (mu-132)

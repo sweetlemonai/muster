@@ -3,6 +3,15 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-215: docs/now/board.md split into board and pane, shaping.md into shaping and vision-check
+**Did (Akbar_53, builder):** `docs/now/board.md` (4,094 B, 2 under the cap after mu-147 and mu-151)
+keeps the board's 25 rules; the new `docs/now/pane.md` takes the 14 about the task pane and the
+header. `docs/now/shaping.md` (3,872 B) keeps 23; the new `docs/now/vision-check.md` takes the 13
+mu-29, mu-76 and mu-102 rules. Every rule moved word for word with its citation, in its old order;
+each pair's `covers:` union is the old page's. `tests/now_pages.rs` pins the twelve areas; AS_BUILT's
+"What's true now" links both new pages.
+**Verified:** the rule and citation diffs against a8e1c42 print nothing; pages 2,850 / 1,290 / 2,515 /
+1,415 B; `muster check` says nothing about `docs/now/`; `now_pages` fails before the pages, passes after.
 ## 2026-10-15 — mu-164: a `## Questions` inside a code fence is never the tool's Questions section
 **Did (Gholi_53, builder):** `queue::questions_span` skips fenced code for the heading and for the
 section's end, through the new `queue::fenced_lines` (`merge_log::Fences`, plus a read-only

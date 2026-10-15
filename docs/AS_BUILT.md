@@ -2680,8 +2680,9 @@ how things were built. The queue and its files are in [queue](now/queue.md), the
 returns and blocks in [stages](now/stages.md), claims, the lease and the takeover in
 [claims](now/claims.md), sessions, handoffs, check-ins and mail in [handoffs](now/handoffs.md),
 worktrees and the merge in [parallel](now/parallel.md), Testing and the review in
-[testing](now/testing.md), shaping and the vision check in [shaping](now/shaping.md), the board and
-the task pane in [board](now/board.md), its words in every language in
+[testing](now/testing.md), shaping in [shaping](now/shaping.md), the vision check and now pages in
+[vision check](now/vision-check.md), the board in [board](now/board.md), the task pane and the
+header in [pane](now/pane.md), the board's words in every language in
 [board words](now/board-words.md), the row of folded columns above the board and its edge cue
 in [column row](now/column-row.md), the projects sidebar in [sidebar](now/sidebar.md), Settings in
 [settings](now/settings.md), digits, dates and search folding in [languages](now/languages.md),

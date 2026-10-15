@@ -1,12 +1,8 @@
 ---
-covers: app/src/App.tsx, app/src/FeatureGrid.tsx, app/src/ColumnCards.tsx, app/src/Card, app/src/TaskPanel, app/src/StageTrack.tsx, app/src/Recent, app/src/modes.ts
+covers: app/src/App.tsx, app/src/FeatureGrid.tsx, app/src/ColumnCards.tsx, app/src/Card, app/src/Recent, app/src/modes.ts
 ---
-# The board and the task pane
+# The board
 
-- No overlays: a task, a note and New task open in a pane docked beside the board, which stays live. (DESIGN.md "ADHD mode")
-- Account meter: [accounts](accounts.md). (mu-113)
-- The header's toolbar and how it wraps: [toolbar](toolbar.md). (mu-202)
-- Modals only to confirm something destructive. (DESIGN.md "ADHD mode")
 - One column per stage; a blocked card stays in its stage and says what it waits for. (mu-60)
 - Two layouts, kept per project: Columns, the default, and the Feature grid; Columns is the same either way. (mu-143)
 - The Feature grid: features down the side, stages across, Done as today's count; two cards a cell, then +N more in place. (mu-143)
@@ -26,19 +22,9 @@ covers: app/src/App.tsx, app/src/FeatureGrid.tsx, app/src/ColumnCards.tsx, app/s
 - Switching display modes moves no control. (DESIGN.md "In every mode")
 - Every element that differs by mode is in `app/src/modes.ts`; components read only that. (mu-38)
 - One colour, one meaning: a stage colour only ever says a stage. (DESIGN.md "The colour code")
-- A field shows its value as one chip; a click lays out the options in place. (DESIGN.md "ADHD mode")
 - Screens draw buttons and chips with the `app/src/ui` atoms, never a plain `<button>`. (mu-53)
-- One primary action per place, the next step. (DESIGN.md "Out of the way")
-- The pane leads with title and status, then the stage track, then the stage's work beside the next step. (mu-21)
-- The stage track refuses a move if the task moved since. (mu-21)
-- Only one action runs at a time. (AS_BUILT "Board")
-- The app never claims a task; its changes are logged as "owner". (AS_BUILT "What the app writes")
-- Edit is refused while someone else holds the task in Building. (mu-20)
-- A claim with no session to reach has Release in the Next step, with its confirm in place, no modal. (mu-184)
-- Files open at the pane's full width, no lightbox. (mu-91)
 - Recently finished is docked at the board's right, or under it when narrow, never hidden. (mu-51)
 - Your check cards say Your turn and the next step, grouped by effort. (mu-43)
 - The window polls every 2 s while visible, never while hidden. (AS_BUILT "Live")
 - A holder with a role slot shows as the role's name now (`کاوه-2` after a rename): cards, pane, filters, search and sort. (mu-112)
-- Sessions is a project view beside Graph; its recap opens in the pane's dock, the list still live. (mu-98)
 - Counts on columns, bands and in the pane read in the digits picked (Persian in فارسی). (mu-151)
