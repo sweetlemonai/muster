@@ -4,6 +4,14 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — The lead's handoff cap is 600k (owner)
+**Decided:** the owner raised the `Muster_Team_Lead*` token cap from 300k to 600k
+(`~/playground/.claude/handoff.json`, layer commit fd6d4ff); PROTOCOL.md and decision 0011 say so,
+and PROTOCOL's naming example uses `cc-mg-new -n`, not the company `claude`. Builders stay at 150k.
+**Did (coordinator):** removed 39 finished Muster sessions; stopped stuck Drover and setup
+sessions and, on the owner's word, dastafzar-round5/6 (Muster only for now); shaped the backlog
+into mu-86 to mu-99; builders on mu-99, mu-90, mu-93, mu-86, mu-91.
+
 ## 2026-10-14 — Coordinator (Muster_Team_Lead): mu-75, mu-79, mu-82, mu-85 and mu-84 merged; the lead runs its own sessions
 **Did:** merged mu-75 (aba4fcc), mu-79 (19a336d), mu-82 (07d7922), mu-85 (dfb92dd) and mu-84
 (8a39448), all in Your check; rebuilt the release app and CLI from main and restarted the

@@ -20,8 +20,8 @@ mailbox by session id, so a successor never saw the answers to its predecessor's
 ## Decision
 
 1. **The trigger.** A session hands off when its context reaches **60%** of its window or its
-   **token cap**, whichever comes first. The cap is 150k for every session and 300k for
-   `Muster_Team_Lead*` (`caps` in `~/playground/.claude/handoff.json`; other session-name patterns
+   **token cap**, whichever comes first. The cap is 150k for every session and 600k for
+   `Muster_Team_Lead*` (300k until the owner raised it, 2026-10-14) (`caps` in `~/playground/.claude/handoff.json`; other session-name patterns
    can get their own; the lead is named `Muster_Team_Lead`, then `_2`, `_3`…, per 0004 point 4).
    From 50%, or from 5/6 of the cap (125k for 150k) if that comes first, the hook reminds the
    session to finish its step.
@@ -63,7 +63,7 @@ mailbox by session id, so a successor never saw the answers to its predecessor's
 
 0004's numbers stand: a turn costs about the context's size (a coordinator at ~450k paid ~450k for
 a one-line "merged, pushed"). With the cap, a builder's turn costs at most about 150k, a third of
-that, and the lead's at most about 300k, two thirds of it.
+that, and the lead's at most about 600k (the owner raised it from 300k on 2026-10-14, trading cost per turn for fewer lead handoffs).
 
 ## Still open
 

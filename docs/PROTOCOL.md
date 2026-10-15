@@ -644,7 +644,7 @@ and `tasks.json`, which scripts read, keep ids.
 - **Coordinators stay thin:** they read `muster list --json` and builders' short reports, merge,
   and talk to other coordinators; subagents read the code.
 - **Hand off by yourself at ~60% context or the token cap (decision 0011)**, coordinator or
-  builder, whichever comes first. The cap is 150k, or 300k for `Muster_Team_Lead*`
+  builder, whichever comes first. The cap is 150k, or 600k for `Muster_Team_Lead*`
   (`~/playground/.claude/handoff.json`). Don't wait until the context is full; every turn re-reads
   all of it. The layer's `context-watch` hook reminds you from 50%, or from 5/6 of the cap (125k
   for 150k) if that comes first, and asks for the handoff at a Stop with nothing of yours running. At its prompt:
@@ -665,7 +665,7 @@ and `tasks.json`, which scripts read, keep ids.
   - `PERSONAL_HANDOFF_AUTO=0` keeps the trigger but starts no successor (run `/clear`, and the new
     session resumes); `PERSONAL_HANDOFF=0` turns the hook off.
 - **Name sessions by role:** the lead is `Muster_Team_Lead` and its successors `Muster_Team_Lead_2`,
-  `_3` and on (`claude -n Muster_Team_Lead`), the name the 300k cap matches; a builder is
+  `_3` and on (`cc-mg-new -n Muster_Team_Lead`), the name the 600k cap matches; a builder is
   `/rename muster-build-0042`.
 
 ## Working a task (coder)
