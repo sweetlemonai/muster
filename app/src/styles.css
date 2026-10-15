@@ -96,7 +96,7 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .ui-pill:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .ui-pill small { color: var(--muted); margin-left: 2px; }
 .count { display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 5px; border-radius: 999px; background: var(--hover); color: var(--text); font-size: 11px; }
-.count.warn { background: var(--st-needs); color: var(--accent-ink); }
+.count.warn { background: var(--st-needs); color: var(--on-status); }
 .live { color: var(--muted); font-size: 12px; min-width: 70px; text-align: right; }
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--st-building); margin-right: 4px; }
 .err { color: var(--bad); }
@@ -584,9 +584,19 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .side-item { display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left; border: 1px solid transparent; background: none; border-radius: 6px; padding: 5px 8px; }
 .side-item:hover { background: var(--hover); }
 .side-item.on { background: var(--selected); border-color: var(--accent); }
-.side-line { display: flex; align-items: center; gap: 8px; width: 100%; }
-.side-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
-.side-badges { display: inline-flex; gap: 5px; align-items: center; }
+/* A row's line (0087): the name gives way first, ending in "…", the badges each whole. The name
+   never goes under about 4em, or its own width if that's less ("All"): where that and the badges
+   don't fit beside each other, at any sidebar width, the badges take the line under it, at its
+   end. A row that fits is one line, as before 0087. Only if the badges are wider than the whole
+   row do they wrap among themselves. Focus's "stalled" is the group's first piece, by the badges
+   as before. The name starts by its dot whatever its script (left: the UI is left to right). */
+.side-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; width: 100%; }
+.side-name { flex: 1000 1 auto; width: 4em; max-width: max-content; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: plaintext; text-align: left; font-weight: 550; }
+.side-badges { display: inline-flex; flex: none; flex-wrap: wrap; justify-content: flex-end; max-width: 100%; margin-inline-start: auto; gap: 5px; row-gap: 2px; align-items: center; }
+.side-badges > * { flex: none; white-space: nowrap; }
+.side-badges > .side-stalled { margin-inline-end: 3px; }
+.side-more { display: flex; flex-direction: column; gap: 1px; width: 100%; }
+.side-more:empty { display: none; }
 .side-badges small { color: var(--muted); font-variant-numeric: tabular-nums; }
 .side-badges .count { margin-left: 0; }
 /* No dot of its own: in the sidebar the Building-colour dot means "being worked on now" (0037). */
@@ -777,7 +787,7 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .side-cat-text { flex: 1 1 0; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
 .side-cat-counts { display: flex; align-items: center; flex: 1 1 0; line-height: 16px; font-size: 11px; font-weight: 400; color: var(--muted); white-space: nowrap; }
 .side-cat-needs { flex: none; display: flex; align-items: center; column-gap: 0.3em; color: var(--warn); }
-.side-cat-needs .count.warn { flex: none; margin: 0; color: var(--on-status); }
+.side-cat-needs .count.warn { flex: none; margin: 0; }
 .side-cat-rest { flex: 1 1 0; min-width: 0; contain: inline-size; display: flex; flex-wrap: wrap; align-content: flex-start; height: 16px; overflow: hidden; }
 /* An empty first piece the line's height: a flex line always takes its first item, so without it
    a piece too wide for the room would show cut instead of wrapping onto the hidden second line. */
@@ -1070,6 +1080,8 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .session-ping .ping-count { align-self: center; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .session-ping .ping-count.err { color: var(--bad); font-weight: 600; }
 .side-ping { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; margin: 0 8px 4px; font-size: 11px; }
+/* The sidebar's is never wider than the sidebar (0087): its words wrap inside it. */
+.side-ping button { white-space: normal; max-width: 100%; text-align: start; }
 .count.quiet { background: none; border: 1px solid var(--line); color: var(--muted); }
 .problems.warnings li { color: var(--muted); }
 .problems.warnings b { color: var(--text); font-weight: 600; margin-right: 4px; }

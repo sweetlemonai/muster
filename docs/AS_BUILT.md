@@ -666,9 +666,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   `--text`) that points where the text starts and turns 90° when open (no transition under reduced
   motion), mirrored with `:dir(rtl)`. One line of labelled counts, the same open, folded and in every mode: "77 need you ·
   17 projects · 18 working" (needs from tasks and lessons, as the row badge; 0 left out but the
-  projects), the needs part in the row's `.count.warn` chip with `--on-status` words (4.5:1 in
-  every theme; the row badge's own `--accent-ink` reads at about 2.2:1 in light themes) and never
-  shrinking. The name and counts sit in `.side-cat-text`, a wrapping flex box beside the chevron.
+  projects), the needs part in the row's `.count.warn` chip (its digits in `--on-status` everywhere
+  since 0087) and never shrinking. The name and counts sit in `.side-cat-text`, a wrapping flex box beside the chevron.
   The name (`flex: 1000 1 4em`, `max-width: max-content`, ellipsis, its own `title`) grows to its
   width before the counts get any room and gives way first, down to 4em. "N need you" is one
   `flex: none` piece, so the counts' least width is its width: where the name's 4em and it don't
@@ -679,6 +678,33 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   cut); each brings its own no-break space. The tasks in the tooltip, the counts in the heading's
   `aria-label`. Projects indent 14px with `margin-inline-start` in every mode. Folded is that one
   line alone.
+- **A project's row holds at the narrowest sidebar** (task 0087, `ProjectList.tsx` `ProjectItem`,
+  styles.css): the name (`.side-name`, ellipsis, `unicode-bidi: plaintext`, `text-align: left` so
+  an RTL name starts by the dot, not at its box's right end) takes what the badges leave and gives
+  way first; `.side-badges` is one `flex: none` group at the inline end
+  (`margin-inline-start: auto`), each badge `flex: none` and `nowrap` (the paused "⏸︎ N" never
+  splits); Focus's "stalled" is its first piece (8px from the badges, as it sat before 0087).
+  `.side-line` wraps (`gap: 2px 8px`), at every sidebar width. The name is
+  `flex: 1000 1 auto; width: 4em; max-width: max-content; min-width: 0`: when the line breaks it
+  claims 4em, or its own width if that's less ("All", "ai"), then grows into what the badges
+  leave, up to its own width. Where that and the badges don't fit, the whole group takes the line
+  under the name, and a count growing a digit can move it there. A row that fits is one line,
+  drawn as before 0087 (the name's box now ends at its text, so a double-click renames on the
+  name itself). Round 2 scoped this to a sidebar
+  under 210px (`data-tight`); headless WebKit showed drover's name 0px wide in Focus from 210 to
+  about 229px, so it holds at every width now and only drover's row changes at 210 (Focus up to
+  about 240, ADHD up to about 229). Wider than the whole row (the running chip and every count at
+  150px), the badges wrap among themselves, each whole (`max-width: 100%`). The
+  tooltip leads with a label in full when it isn't the project's name, then the real name and
+  folder. The row's `aria-label` is the name and every count in words ("drover: 17 need you, 2 in
+  progress, 1 paused, 48 tasks; running", "1 needs you" for one, 0 left out but the tasks; in
+  Focus also "being worked on now" and "stalled"). Its `aria-describedby` is the tooltip's real
+  name and folder (a `hidden` span, since a description doesn't fall back to the title), then
+  `.side-more` (hidden when empty), which holds its activity line and Your check limit. The needs-you
+  badge, `.count.warn`, draws its digits in `--on-status` everywhere (≥ 4.5:1 on `--st-needs` in
+  every theme and accent; `--accent-ink` read about 2.2:1 in light themes). The stalled project's
+  "Ask all quiet sessions for a check-in" button wraps its words inside the sidebar
+  (`.side-ping button`: `white-space: normal`, `max-width: 100%`); the board's stay one line.
 - **One builder for the sidebar's state** (task 0073, `projects::read_state`): the shown queues read
   with their tasks' keys (each project's prefix) and this Mac's settings, then each queue's Your
   check limit, label and heading, and colour, places and fold. The poll (`state` in lib.rs) calls

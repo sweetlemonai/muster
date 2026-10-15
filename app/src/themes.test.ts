@@ -37,7 +37,22 @@ describe("every theme and accent pair is readable (WCAG AA)", () => {
       const v = variables(t, ACCENTS[0]);
       for (const s of Object.keys(STAGE_COLOURS)) expect(contrast(v["--on-status"], v[`--st-${s}`]), s).toBeGreaterThanOrEqual(4.5);
     });
+    // The needs-you badge (.count.warn, 0087): its digits on the needs orange, in every accent.
+    it(`${t.name}: the needs-you badge's digits`, () => {
+      for (const a of ACCENTS) expect(contrast(variables(t, a)["--on-status"], variables(t, a)["--st-needs"]), a.id).toBeGreaterThanOrEqual(4.5);
+    });
   }
+});
+
+describe("the needs-you badge's CSS uses what the tests check (0087)", () => {
+  it("draws its digits in --on-status on the needs orange, and nothing sets them another way", () => {
+    expect(css).toContain(".count.warn { background: var(--st-needs); color: var(--on-status); }");
+    // Every rule for the badge, in any place (the rows, the headings, chips, the cue, cards).
+    const colours = [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]*\.count\.warn[^{}]*)\{([^}]*)\}/g)].flatMap((m) =>
+      [...m[2].matchAll(/(?:^|;)\s*color:\s*([^;]+)/g)].map((c) => `${m[1].trim()}: ${c[1].trim()}`),
+    );
+    expect(colours).toEqual([".count.warn: var(--on-status)"]);
+  });
 });
 
 describe("stage colours", () => {
@@ -486,7 +501,7 @@ describe("a sidebar heading reads in every theme (0082)", () => {
     const rule = (sel: string) => [...css.matchAll(new RegExp(`(?:^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`, "g"))].map((m) => m[1]).join(";");
     expect(rule(".side-cat")).toContain("color: var(--text)");
     expect(rule(".side-cat-counts")).toContain("color: var(--muted)");
-    expect(rule(".side-cat-needs .count.warn")).toContain("color: var(--on-status)");
+    expect(rule(".count.warn")).toContain("color: var(--on-status)");
     expect(rule(".count.warn")).toContain("background: var(--st-needs)");
   });
 });

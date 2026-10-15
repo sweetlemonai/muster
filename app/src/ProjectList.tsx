@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { lastLabel, loadOrder, nextOrder, type OrderMemo, type ProjectRow, projectRows, SIDEBAR_ORDERS, storeOrder, sumActivity, type ProjectActivity, type SidebarOrder, type Sums } from "./activity";
 import { projectCount } from "./Backlog";
 import { SideLimit } from "./CheckLimit";
@@ -310,31 +310,58 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
  *  them: over its Your check limit (0050), how many wait and the limit. With `onRename`, a double
  *  click on the name sets its label. `keys` are the keys that move it (0057), for a screen reader.
  *  While a run from the app goes (0079), a "running" chip, in every mode, so a dev server isn't
- *  forgotten; it's part of the row, so a click on it selects the project too. */
+ *  forgotten; it's part of the row, so a click on it selects the project too.
+ *  The name gives way first (0087), down to about 4em at any width; where it and the badges (Focus's
+ *  "stalled" the first of them) don't fit, the badges, each whole, take the line under it. The tooltip
+ *  says the name in full, the row's aria-label the name and every count in words, whatever shows,
+ *  and its description the tooltip's real queue name and folder, then what's under the line. */
 export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClick, onRename, keys, working = false, stalled = "", running = false, alert, children }: { name: string; title?: string; total: number; tasks: Task[]; lessons?: number; on: boolean; onClick: () => void; onRename?: () => void; keys?: string; working?: boolean; stalled?: string; running?: boolean; alert?: ReactNode; children: ReactNode }) {
   const doing = tasks.filter(inProgress).length;
   const needs = needsYouCount(tasks) + lessons;
   const full = useLook("sidebar") === "full";
   const paused = tasks.filter((t) => t.paused).length;
+  const more = useId();
+  const where = useId();
+  // A label isn't the project's own name: the tooltip leads with it, whole.
+  const tip = title && !title.startsWith(`${name} · `) ? `${name}\n${title}` : title;
+  const said = rowWords({ name, needs, doing, paused, total, running, working: !full && working, stalled: full ? "" : stalled });
   return (
-    <button className={on ? "side-item on" : "side-item"} onClick={onClick} title={title} aria-keyshortcuts={keys}>
+    <button className={on ? "side-item on" : "side-item"} onClick={onClick} title={tip} aria-label={said} aria-describedby={title ? `${where} ${more}` : more} aria-keyshortcuts={keys}>
       <span className="side-line">
         {!full && working && <i className="dot side-dot" title={`Being worked on now: ${WORKING_HINT}`} />}
-        <span className="side-name" title={onRename ? (title ? `${title}\n${RENAME_HINT}` : RENAME_HINT) : undefined} onDoubleClick={onRename}>{name}</span>
-        {!full && stalled && <span className="side-stalled" title={`Stalled: ${STALLED_HINT}`}>{stalled}</span>}
+        <span className="side-name" title={onRename ? (tip ? `${tip}\n${RENAME_HINT}` : RENAME_HINT) : undefined} onDoubleClick={onRename}>{name}</span>
         <span className="side-badges">
+          {!full && stalled && <span className="side-stalled" title={`Stalled: ${STALLED_HINT}`}>{stalled}</span>}
           {running && <span className="run-chip" title="A run from Muster is going: its Run block, in a task in Your check, or Settings › Projects stops it">running</span>}
-          {needs > 0 && <span className="count warn" title={`${needs} need you`}>{needs}</span>}
+          {needs > 0 && <span className="count warn" title={needsWords(needs)}>{needs}</span>}
           {full && doing > 0 && <span className="side-doing" title={`${doing} in progress (Building or Testing)`}>{doing}</span>}
           {paused > 0 && <span className="side-paused" title={`${paused} paused`}>{`${PAUSE_GLYPH} ${paused}`}</span>}
           {full && <small>{total}</small>}
         </span>
       </span>
-      {full && children}
-      {alert}
+      {/* Under the line, its activity and its limit: the row's description for a screen reader,
+          since the aria-label names the row. */}
+      <span id={more} className="side-more">
+        {full && children}
+        {alert}
+      </span>
+      {/* The tooltip's real queue name and folder, read out first in the description, since a
+          description doesn't fall back to the title. */}
+      {title && <span id={where} hidden>{title}</span>}
     </button>
   );
 }
+
+/** A project row's aria-label (0087): its name in full, then every count in words, what's 0 left
+ *  out but its tasks; then running, and in Focus the working dot and "stalled" its line shows. */
+function rowWords({ name, needs, doing, paused, total, running, working, stalled }: { name: string; needs: number; doing: number; paused: number; total: number; running: boolean; working: boolean; stalled: string }) {
+  const counts = [needs > 0 ? needsWords(needs) : "", doing > 0 ? `${doing} in progress` : "", paused > 0 ? `${paused} paused` : "", `${total} ${total === 1 ? "task" : "tasks"}`];
+  const states = [running ? "running" : "", working ? "being worked on now" : "", stalled].filter(Boolean).join(", ");
+  return `${name}: ${counts.filter(Boolean).join(", ")}${states ? `; ${states}` : ""}`;
+}
+
+/** "1 needs you", "2 need you": as the headings say it (projectOrder.ts `countsText`). */
+const needsWords = (n: number) => `${n} ${n === 1 ? "needs" : "need"} you`;
 
 /** A category's heading (0044), always shown, above its projects: its name, what needs you in it,
  *  and, but in Focus's narrow sidebar, how many of its tasks are being worked on and its tasks.

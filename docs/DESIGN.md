@@ -158,6 +158,18 @@ stay open) the owner chose **A**.
     under the name, whole and labelled. At the default 210px and wider it's one line, a 3-digit
     count included.
   - The whole line, and the heading's tasks, are in the tooltip and read out on the heading.
+- **A project's row follows the same rule** (task 0087): one line, the name giving way first,
+  ending in "…", its full name in the tooltip. Its badges (running, needs you, in progress, paused
+  "⏸︎ N", tasks) are never cut, dropped or split. A name never vanishes, at any width: it keeps
+  about 4em (a shorter name its own width), and where that and the badges don't fit, the badges
+  take the line under the name, whole, at the row's end. A row that fits stays one line, as
+  before; at the default 210px only a row whose name would otherwise vanish changes (drover's,
+  with stalled, running and its counts). "All" keeps its word. The name
+  starts beside its dot in any script, a Persian one too. The row reads out its full name and
+  every count in words, then the real project and folder. The stalled project's check-in button
+  wraps its words inside the sidebar, never past its edge.
+- **The needs-you badge's digits are dark on the orange** (`--on-status`, 4.5:1 in every theme),
+  wherever the badge is.
 
 ## The colour code
 

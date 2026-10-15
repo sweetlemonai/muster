@@ -25,6 +25,41 @@ screenshots in attachments; owner's settings byte-identical after every QA run.
 evidence); backlog notes from review nits (mu-88 R1, mu-90 R6-R8, mu-95 R3, migrate flake, band
 titles, mu-93 item 5).
 
+## 2026-10-14 — mu-87 round 3: a project's name never vanishes, at any sidebar width
+**Fixed:** in Focus at the default 210px drover's row (stalled, running, 2, ⏸︎ 1) drew its name
+0px wide up to about 229px (QA_8, headless WebKit) → the 4em-and-wrap rule only held under
+`data-tight`, below 210 → it holds at every width: `.side-line` wraps, and the name is
+`flex: 1000 1 auto; width: 4em; max-width: max-content`, so it claims min(4em, its own width) and a
+short name ("All") never wraps for nothing. Focus's "stalled" moved into `.side-badges` as its first
+piece (3px end margin, 8px as before), so it stays by the badges, where it sat. `data-tight` and
+`paneSize.sidebarTight` are gone (nothing else used them).
+**Decided:** the lead's call: rows that fit stay as they were; only a row whose name would vanish
+changes at 210. The name's box now ends at its text (`max-content`), the price of not wrapping
+short names: a double-click to rename lands on the name itself, not the space after it.
+**Verified:** headless WebKit (QA_8's harness, vite build of this tree, real-state snapshot) at
+150, 210, 229, 240, 320, Focus and ADHD, Violet night and day: no name under min(4em, its width),
+nothing past the sidebar's edge; at 240 (ADHD) and 320 pixel-identical to round 2; at 210–240 the
+only changed row is drover's (badges under its name), the rows under it moved down by that line.
+Tests: ProjectList and Display updated.
+
+## 2026-10-14 — mu-87: sidebar rows hold at 150px, needs-you digits 4.5:1 (round 1 fixes)
+**Did:** `.count.warn` digits in `--on-status`; project rows keep every badge whole, the name
+cut first, the check-in button wrapping inside the sidebar (`styles.css`, `ProjectList.tsx`).
+**Fixed (review round 1):** R1 at 210px a running row wrapped → the 4em-and-wrap rule applied at
+every width → it applies only under `.sidebar[data-tight]`, which App.tsx sets below 210px
+(`paneSize.ts` `sidebarTight`). R2 a Persian name sat away from its dot → `text-align: start`
+under `plaintext` → `.side-name { text-align: left }`. R3 a test for Focus's "being worked on
+now". R4 the description now holds the real queue name and folder (hidden span) before the
+activity line. R5 "1 needs you" on the row's label and badge.
+**Decided:** scope the wrap rule to a tight sidebar instead of narrowing the name's basis. A
+basis small enough for drover's running row at 210 (about 1.5em) would cut names to "m…" at
+150px, where the brief wants about 4em. Filed a backlog note: board bands still say "1 need you".
+**Verified:** `bin/gate`: green (pnpm check, test_task, test_commands, cargo test); vitest 1716.
+Re-rendered round 1's static harness (Chrome for Testing, not the release app) with the new CSS:
+at 210 every row matches the pre-0087 render (drover one line, name 1.6em), the Persian name sits
+by its dot; at 150 the badges go under the name, whole, the check-in button inside.
+**Open:** release-app (WKWebView) screenshots for AC2 and AC3 are the tester's.
+
 ## 2026-10-14 — edit keeps a task's Questions; start and init say when the merge driver isn't set; glance swaps $HOME only at a path boundary (mu-94)
 **Did (gholi_13, builder):** `ops.rs` `cut_questions`/`put_back_questions`: `muster edit` and the
 app's Edit leave the tool's `## Questions` out of the write-up wherever it sits and put it back

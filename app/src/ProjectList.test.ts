@@ -7,10 +7,12 @@ import dashafzar from "./dashafzar-queues.json";
 import listSource from "./ProjectList.tsx?raw";
 import projectsSource from "./Projects.tsx?raw";
 import sidebarSource from "./SidebarProjects.tsx?raw";
-import ProjectList, { ActivityLine, labelToSave, OrderChips, type ProjectEdits, SideLabelEdit, SumsLine } from "./ProjectList";
+import ProjectList, { ActivityLine, labelToSave, OrderChips, ProjectItem, type ProjectEdits, SideLabelEdit, SumsLine } from "./ProjectList";
 import { ColourDot, Swatches } from "./ProjectSwatches";
 import { cleanHeading, foldKey, HeadingEdit, HeadingFrame, NewCategory, SideRow, stepOf } from "./SidebarProjects";
 import { type DisplayMode, Mode } from "./modes";
+import { SIDEBAR, SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_NARROW } from "./paneSize";
+import { PAUSE_GLYPH } from "./Pause";
 import type { ProjectActivity, Sums } from "./activity";
 import type { Activity, QueueInfo, Task } from "./types";
 
@@ -134,7 +136,7 @@ describe("the sidebar", () => {
   });
   it("keeps the counts it had: needs you, in progress and the total", () => {
     const html = render();
-    expect(row(html, "alpha")).toContain('<span class="count warn" title="1 need you">1</span>');
+    expect(row(html, "alpha")).toContain('<span class="count warn" title="1 needs you">1</span>');
     expect(row(html, "zeta")).toContain('<span class="side-doing" title="1 in progress (Building or Testing)">1</span>');
     expect(row(html, "zeta")).toContain("<small>2</small>");
   });
@@ -204,9 +206,10 @@ describe("labels and categories in the sidebar (0044)", () => {
   it("names the real project and its folder in the row's tooltip, and offers the label on a double click", () => {
     const html = render();
     const muster = html.split('<button class="side-item').find((r) => r.includes('side-name" title=')  && r.includes(">Muster<")) ?? "";
-    expect(muster).toContain('title="muster · /p/muster/tasks"');
-    // The name keeps the row's tooltip, where the pointer is (review): the real name first.
-    expect(muster).toContain('<span class="side-name" title="muster · /p/muster/tasks\nDouble-click to change the label">Muster</span>');
+    expect(muster).toContain('title="Muster\nmuster · /p/muster/tasks"');
+    // The name keeps the row's tooltip, where the pointer is (review): the label in full (0087), the
+    // real name, then the double click.
+    expect(muster).toContain('<span class="side-name" title="Muster\nmuster · /p/muster/tasks\nDouble-click to change the label">Muster</span>');
   });
   it("keeps the headings and the same counts in Focus's narrow sidebar (0082: the same in every mode)", () => {
     const html = render("focus");
@@ -439,6 +442,177 @@ describe("a heading's line: the name gives way first, what needs you is always w
     expect(html).toContain('<span class="side-cat-name" title="ابزارهای فارسی">ابزارهای فارسی</span>');
     expect(html).toContain('title="120 need you · 1 project · 1 working · 121 tasks"');
     expect(html).toMatch(/aria-label="ابزارهای فارسی, category heading: 120 need you, 1 project, 1 working;/);
+  });
+});
+
+describe("a project's row holds at the narrowest sidebar (0087)", () => {
+  const all = (sel: string) => {
+    const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const out = new Map<string, string>();
+    for (const m of css.matchAll(new RegExp(`(?:^|\\n)\\s*${esc} \\{([^}]*)\\}`, "g")))
+      for (const d of m[1].split(";").map((x) => x.trim()).filter(Boolean)) out.set(d.slice(0, d.indexOf(":")).trim(), d.slice(d.indexOf(":") + 1).trim());
+    return out;
+  };
+  const px = (v: string | undefined) => Number(/^(\d+(?:\.\d+)?)px$/.exec(v ?? "")?.[1] ?? NaN);
+  const body = px(/font: (\d+px)\//.exec(css)?.[1]);
+  // The row's line, from styles.css: sidebar − 1 border − 16 nav padding − 14 group indent − the
+  // colour dot and its margin − the row's padding and border.
+  const dot = all(".side-swatch-dot");
+  const item = all(".side-item");
+  const line = (sidebar: number) =>
+    sidebar - 1 - 16 - px(all(".side-group > .side-row").get("margin-inline-start")) - px(dot.get("width")) - px(dot.get("margin")?.split(" ")[3]) - 2 * px(item.get("padding")?.split(" ")[1]) - 2;
+  const [rowGap, gap] = (all(".side-line").get("gap") ?? "").split(" ").map(px);
+  const nameLeast = 4 * body;
+  // drover's badges in ADHD: "17" needs you, "2" in progress, "‖ 1" paused and "48" tasks, at about
+  // 0.62em a digit of their 11px, 5px apart.
+  const count = all(".count");
+  const chip = (digits: number) => Math.max(px(count.get("min-width")), digits * 0.62 * 11 + 2 * px(count.get("padding")?.split(" ")[1]));
+  const badgeGap = px(all(".side-badges").get("gap"));
+  const drover = chip(2) + badgeGap + 0.62 * 11 + badgeGap + 3 * 0.62 * 11 + badgeGap + 2 * 0.62 * 11;
+
+  it("lets the name give way first, with an ellipsis, its words in their own direction from the dot", () => {
+    const name = all(".side-name");
+    expect([name.get("overflow"), name.get("text-overflow"), name.get("white-space"), name.get("unicode-bidi")]).toEqual(["hidden", "ellipsis", "nowrap", "plaintext"]);
+    // A Persian name starts beside its dot, like every other (the UI is left to right), not at the
+    // name box's right end, where `start` puts an RTL paragraph.
+    expect(name.get("text-align")).toBe("left");
+  });
+  it("never lets a name go under about 4em, or its own width if that's less, at any sidebar width", () => {
+    const name = all(".side-name");
+    // Its share of the line, when the line breaks, is 4em, capped at its own width ("All" doesn't
+    // claim 4em); then it grows into what the badges leave, up to its own width.
+    expect([name.get("flex"), name.get("width"), name.get("max-width"), name.get("min-width")]).toEqual(["1000 1 auto", "4em", "max-content", "0"]);
+    // The same rule at every width: no sidebar-width switch (round 2's `data-tight` below 210 left
+    // drover's name 0px wide in Focus from 210 to about 229px).
+    expect(css).not.toContain("data-tight");
+    expect(appSource).not.toContain("data-tight");
+    expect(css).not.toMatch(/\.sidebar[^{]*\.side-(line|name)[^{]*\{/);
+  });
+  it("keeps every badge whole, the needs-you count and \"‖ N\" included, and moves them only as one group", () => {
+    const badges = all(".side-badges");
+    expect([badges.get("flex"), badges.get("margin-inline-start"), badges.get("max-width")]).toEqual(["none", "auto", "100%"]);
+    const each = all(".side-badges > *");
+    expect([each.get("flex"), each.get("white-space")]).toEqual(["none", "nowrap"]);
+    // The line wraps, the badges after the name, the rows closer than the words beside each other.
+    expect(all(".side-line").get("flex-wrap")).toBe("wrap");
+    expect(rowGap).toBeLessThan(gap);
+    expect(gap).toBe(8);
+    expect(css).not.toMatch(/\.side-(badges|paused|doing)[^{]*\{[^}]*(text-overflow|display: none)/);
+    expect(css).not.toMatch(/\.count\.warn[^{]*\{[^}]*(text-overflow|flex-shrink: [1-9])/);
+  });
+  it("puts Focus's \"stalled\" first in the badges' group, as far from them as the name is", () => {
+    const html = renderToStaticMarkup(createElement(Mode.Provider, { value: "focus" }, createElement(ProjectItem, { name: "zeta", total: 1, tasks: [], on: false, onClick: () => {}, stalled: "stalled", running: true, children: null })));
+    expect(html).toMatch(/<span class="side-name">zeta<\/span><span class="side-badges"><span class="side-stalled" title="Stalled: [^"]+">stalled<\/span><span class="run-chip"/);
+    expect(px(all(".side-badges").get("gap")) + px(all(".side-badges > .side-stalled").get("margin-inline-end"))).toBe(gap);
+  });
+  it("is one line where the name's 4em and the badges fit, as before; drover's take the line under its name at 210 too", () => {
+    // drover with its running chip ("running", about 0.55em a letter of its 10.5px, its padding and border).
+    const chipCss = all(".run-chip");
+    const running = 7 * 0.55 * px(chipCss.get("font-size")) + 2 * px(chipCss.get("padding")?.split(" ")[1]) + 2 + badgeGap;
+    // The widest sidebar: drover's whole row is one line (ADHD's badges).
+    expect(nameLeast + gap + running + drover).toBeLessThanOrEqual(line(SIDEBAR_MAX));
+    // The default 210px: its name and badges don't fit, so the badges go under the name instead of
+    // squeezing it to nothing (Focus's "stalled" in their place keeps that up to about 240px).
+    expect(nameLeast + gap + running + drover).toBeGreaterThan(line(SIDEBAR));
+    expect(running + drover).toBeLessThanOrEqual(line(SIDEBAR));
+    // A row with one 2-digit count is one line at 210 and at 150, its name at least 4em.
+    expect(nameLeast + gap + chip(2)).toBeLessThanOrEqual(line(SIDEBAR_MIN));
+    // 150: drover's badges fit the line under the name, whole.
+    expect(nameLeast + gap + drover).toBeGreaterThan(line(SIDEBAR_NARROW));
+    expect(drover).toBeLessThanOrEqual(line(SIDEBAR_MIN));
+  });
+  it("wraps the check-in button's words inside the sidebar, never past its edge", () => {
+    const button = all(".side-ping button");
+    expect([button.get("white-space"), button.get("max-width"), button.get("text-align")]).toEqual(["normal", "100%", "start"]);
+    // The board's and the session's buttons keep their one line.
+    expect(all(".card-ping button, .session-ping button, .side-ping button").get("white-space")).toBe("nowrap");
+  });
+
+  const queues: QueueInfo[] = [
+    { name: "drover", path: "/p/drover/tasks", counts: { building: 2, ready: 3 }, label: "Drover the long-named app", category: "Apps", running: true },
+    { name: "calm", path: "/p/calm/tasks", counts: { ready: 1 } },
+  ];
+  const tasks = [
+    task({ queue: "drover", id: "0001", waitingForOwner: true }),
+    task({ queue: "drover", id: "0002", waitingForOwner: true }),
+    task({ queue: "drover", id: "0003", stage: "building", claimedBy: "drover/wt-a", heartbeat: at(12, 0) }),
+    task({ queue: "drover", id: "0004", stage: "building", paused: at(11, 0) }),
+    task({ queue: "drover", id: "0005" }),
+    task({ queue: "calm", id: "0001" }),
+  ];
+  const render = (mode: DisplayMode) =>
+    renderToStaticMarkup(createElement(Mode.Provider, { value: mode }, createElement(ProjectList, { queues, tasks, notes: [], activity: [], now: NOW, current: "all", onPick: () => {} })));
+  const button = (html: string, name: string) => /<button class="side-item[^"]*"[^>]*>/.exec(html.slice(html.lastIndexOf("<button", html.indexOf(`>${name}</span>`))))?.[0] ?? "";
+  const badges = (html: string, name: string) => {
+    const from = html.indexOf(`>${name}</span>`);
+    return /<span class="side-badges">([\s\S]*?)<\/span><\/span><span id=/.exec(html.slice(from))?.[1] ?? "";
+  };
+
+  for (const mode of ["adhd", "focus"] as const) {
+    it(`keeps every badge in the markup (${mode})`, () => {
+      const html = render(mode);
+      const b = badges(html, "Drover the long-named app");
+      expect(b).toContain(">running</span>");
+      expect(b).toContain('<span class="count warn" title="2 need you">2</span>');
+      expect(b).toContain(`<span class="side-paused" title="1 paused">${PAUSE_GLYPH} 1</span>`);
+      if (mode === "adhd") {
+        expect(b).toContain('<span class="side-doing" title="1 in progress (Building or Testing)">1</span>');
+        expect(b).toContain("<small>5</small>");
+      }
+    });
+    it(`says the full name and every count in words on the row (${mode})`, () => {
+      const html = render(mode);
+      const said = mode === "focus" ? ", stalled" : "";
+      expect(button(html, "Drover the long-named app")).toContain(`aria-label="Drover the long-named app: 2 need you, 1 in progress, 1 paused, 5 tasks; running${said}"`);
+      expect(button(html, "calm")).toContain('aria-label="calm: 1 task"');
+      expect(button(html, "All")).toContain(`aria-label="All: 2 need you, 1 in progress, 1 paused, 6 tasks${mode === "focus" ? "; 1 stalled" : ""}"`);
+    });
+  }
+  it("puts the label's full name in the row's tooltip, with the real project and its folder", () => {
+    expect(button(render("adhd"), "Drover the long-named app")).toContain('title="Drover the long-named app\ndrover · /p/drover/tasks"');
+    expect(button(render("adhd"), "calm")).toContain('title="calm · /p/calm/tasks"');
+  });
+  /** The text from the element with `id` in `html` to `end`, its tags dropped. */
+  const byId = (html: string, id: string, end: string) => plain(new RegExp(`<span id="${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[^>]*>([\\s\\S]*?)${end}`).exec(html)?.[1] ?? "");
+  /** The row's description: the tooltip's words (a span of text alone), then what's under its line. */
+  const described = (html: string, name: string) => {
+    const [where, more] = (/aria-describedby="([^"]+)"/.exec(button(html, name))?.[1] ?? "").split(" ");
+    return [byId(html, where, "</span>"), byId(html, more, "</button>")];
+  };
+  it("still reads the real queue name and folder, then its activity line and its limit, as the row's description", () => {
+    const html = render("adhd");
+    const [where, more] = described(html, "Drover the long-named app");
+    expect(where).toBe("drover · /p/drover/tasks");
+    expect(more).toContain("stalled");
+    expect(described(html, "calm")[0]).toBe("calm · /p/calm/tasks");
+    // The tooltip's words, read out but not shown: the line under the name is the activity's.
+    expect(html).toContain('hidden="">drover · /p/drover/tasks</span>');
+    expect(all(".side-more:empty").get("display")).toBe("none");
+  });
+  it("has no tooltip description where the row has no tooltip", () => {
+    const html = renderToStaticMarkup(createElement(Mode.Provider, { value: "adhd" }, createElement(ProjectItem, { name: "zeta", total: 1, tasks: [], on: false, onClick: () => {}, children: null })));
+    expect(/aria-describedby="([^"]+)"/.exec(html)?.[1].split(" ")).toHaveLength(1);
+    expect(html).not.toContain("hidden=");
+  });
+
+  const row = (mode: DisplayMode, over: { working?: boolean; tasks?: Task[] }) =>
+    renderToStaticMarkup(createElement(Mode.Provider, { value: mode }, createElement(ProjectItem, { name: "zeta", total: 1, tasks: [], on: false, onClick: () => {}, children: null, ...over })));
+  it("says \"being worked on now\" where the row shows the working dot (Focus), and not where it doesn't", () => {
+    const focus = row("focus", { working: true });
+    expect(focus).toContain('<i class="dot side-dot"');
+    expect(focus).toContain('aria-label="zeta: 1 task; being worked on now"');
+    const adhd = row("adhd", { working: true });
+    expect(adhd).not.toContain("side-dot");
+    expect(adhd).toContain('aria-label="zeta: 1 task"');
+    expect(row("focus", { working: false })).toContain('aria-label="zeta: 1 task"');
+  });
+  it("says \"1 needs you\", as the headings do, and \"2 need you\"", () => {
+    const one = row("adhd", { tasks: [task({ queue: "zeta", id: "0001", waitingForOwner: true })] });
+    expect(one).toContain('aria-label="zeta: 1 needs you, 1 task"');
+    expect(one).toContain('<span class="count warn" title="1 needs you">1</span>');
+    const two = row("adhd", { tasks: [task({ queue: "zeta", id: "0001", waitingForOwner: true }), task({ queue: "zeta", id: "0002", waitingForOwner: true })] });
+    expect(two).toContain('aria-label="zeta: 2 need you, 1 task"');
+    expect(two).toContain('<span class="count warn" title="2 need you">2</span>');
   });
 });
 
