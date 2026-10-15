@@ -4,6 +4,13 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Five builders moved from cc-mg to cc-hg after cc-mg's weekly limit
+**Fixed:** Asghar_20 (mu-113), Gholi_18 (mu-146), Gholi_23 (mu-98), kia-131 and gholi-131-fix2
+(mu-131) were stuck on "You've hit your weekly limit" (cc-mg, resets Oct 18). Both accounts' `projects/`
+link to `~/.claude/projects`, so each was stopped on cc-mg and resumed on cc-hg
+(`cc-hg-new --bg --resume <id> -n <name> --permission-mode bypassPermissions`) with the same id and claim.
+**Verified:** `cc-hg-new agents --json` shows all five busy/working; no background session left on cc-mg but QA_10's finished record. Lead QA_10 told.
+
 ## 2026-10-14 — Role profiles and slot names: roles.toml, Kaveh-2 on cards, muster team (mu-112)
 **Did (Akbar_11, builder):** new `roles.rs`: `roles.toml` beside projects.json, written from the
 defaults (the brief's ten roles and Pouya) on first read and cached by modified time and size;
