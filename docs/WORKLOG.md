@@ -3,6 +3,14 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-162: a Work row for a session Muster doesn't read shows no View button
+**Did (Asghar_56, builder):** `Work.tsx` `ViewCell` takes the row's `found`: a `not-read` row gets
+an empty `<td />`, `missing` and `too-big` keep their disabled View. `openable` drops a `viewing`
+that names a not-read row, so neither the pane nor `sessionTranscript` runs for it. Manual 04 and
+AS_BUILT say so.
+**Verified:** `Work.test.ts`: the 0099 row test now expects no View on the not-read row; a new test
+checks four cells per row, a stale `viewing` on the not-read row (no pane, no Close) and a missing
+row's pane still opening. Both failed before the change.
 ## 2026-10-15 — mu-217: a key typed in Persian digits finds its task in search and names New task's Parent
 **Did (Gholi_58, builder):** search's `queryWords` (`search.ts`) and `query_words` (`search.rs`,
 new `latin_digit`) read Persian and Arabic-Indic digits as Latin before the key check, so `sq-۱۹`,

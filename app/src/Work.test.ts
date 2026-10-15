@@ -177,11 +177,38 @@ describe("sessions with no tokens in any stage", () => {
       ["No tokens by stage", "", "", ""],
       ["0123abcd wt-b · holds it", "not on this Mac", "View"],
       ["aaaabbbb muster/wt-0025 live", "transcript over 128 MB, not read", "View"],
-      ["11111111 wt-c", "not read: not stamped with a Claude account Muster reads", "View"],
+      // Not read by policy (decision 0012): no View at all, its last cell kept empty (mu-162).
+      ["11111111 wt-c", "not read: not stamped with a Claude account Muster reads", ""],
       ["22222222 wt-d", "no tokens read", "View"],
     ]);
-    expect(v.buttons).toEqual(["View", "View", "View (disabled)", "View (disabled)", "View (disabled)", "View"]);
+    expect(v.buttons).toEqual(["View", "View", "View (disabled)", "View (disabled)", "View"]);
     expect(v.text).toContain("3 of 6 sessions not read on this Mac");
+  });
+
+  it("a session Muster won't read has no View, even when it's the one being viewed (mu-162)", () => {
+    const gone = row({ id: "0123abcd", who: "wt-b", stages: [], found: "missing", tokens: NONE, start: null, end: null, minutes: 0 });
+    const unread = row({ id: "11111111", who: "wt-c", stages: [], found: "not-read", tokens: NONE, start: null, end: null, minutes: 0 });
+    const work = { ...two, rows: [...two.rows, gone, unread], totals: { ...two.totals, sessions: 4, read: 2 } };
+    const v = view({ work });
+    // Read rows keep View, the missing one its disabled View, and the not-read one has none.
+    expect(v.buttons).toEqual(["View", "View", "View (disabled)"]);
+    // Its row still ends in the action column's cell, empty, like the missing row's with its
+    // button: the columns line up and nothing moves.
+    const unreadRow = /<tr[^>]*>(?:(?!<\/tr>)[\s\S])*?11111111[\s\S]*?<\/tr>/.exec(v.html)?.[0] ?? "";
+    const goneRow = /<tr[^>]*>(?:(?!<\/tr>)[\s\S])*?0123abcd[\s\S]*?<\/tr>/.exec(v.html)?.[0] ?? "";
+    expect(unreadRow).toMatch(/<td><\/td><\/tr>$/);
+    expect(unreadRow).not.toContain("<button");
+    const cells = (h: string) => [...h.matchAll(/<td(?: colSpan="(\d)")?[^>]*>/gi)].reduce((n, m) => n + Number(m[1] ?? 1), 0);
+    expect(cells(unreadRow)).toBe(4);
+    expect(cells(goneRow)).toBe(4);
+    // A stale `viewing` on it opens nothing: no transcript pane, no Close, no pressed View.
+    const stale = view({ work, viewing: "11111111", transcript: { id: "11111111", error: "not read" } });
+    expect(stale.buttons).toEqual(["View", "View", "View (disabled)"]);
+    expect(stale.html).not.toContain('class="transcript"');
+    // A missing session's pane still opens and says why it can't be read: that difference stays.
+    const missing = view({ work, viewing: "0123abcd", transcript: { id: "0123abcd", error: "not on this Mac" } });
+    expect(missing.buttons).toEqual(["View", "View", "View (disabled) (on)", "Close"]);
+    expect(missing.text).toContain("Close not on this Mac");
   });
 
   it("with no sessions yet, says so and still guesses from the stage", () => {

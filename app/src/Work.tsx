@@ -21,6 +21,11 @@ const MAX_TRANSCRIPT_MB = 128;
 const counted = (t: Tokens) => t.input + t.output + t.cacheWrite;
 const SEP = " · ";
 
+/** The session whose transcript may open: never one Muster won't read (decision 0012), even if a
+ *  stale `viewing` still names it (mu-162). The core refuses its transcript too. */
+const openable = (work: WorkData | null, viewing: string | null) =>
+  viewing && work?.rows.find((r) => r.id === viewing)?.found !== "not-read" ? viewing : null;
+
 /** Why a session's row has no numbers: its transcript wasn't read, or nothing in it fell in a stage. */
 function noNumbers(t: TFn<"board">, found: SessionRow["found"]): string {
   if (found === "missing") return t("work.missing");
@@ -75,6 +80,7 @@ export default function Work({ task }: { task: Task }) {
   const [transcript, setTranscript] = useState<Transcript | null>(null);
   const [tick, setTick] = useState(0);
   const anyLive = (work?.totals.live ?? 0) > 0;
+  const open = openable(work, viewing);
 
   // Read again when the task file changes, when its card's live flag flips, and every minute
   // while a session is live.
@@ -100,16 +106,16 @@ export default function Work({ task }: { task: Task }) {
   }, [anyLive]);
 
   useEffect(() => {
-    if (!viewing) return;
+    if (!open) return;
     let live = true;
-    api.sessionTranscript(task.queue, task.id, viewing).then(
-      (md) => live && setTranscript({ id: viewing, md }),
-      (e) => live && setTranscript({ id: viewing, error: String(e) }),
+    api.sessionTranscript(task.queue, task.id, open).then(
+      (md) => live && setTranscript({ id: open, md }),
+      (e) => live && setTranscript({ id: open, error: String(e) }),
     );
     return () => {
       live = false;
     };
-  }, [task.queue, task.id, viewing]);
+  }, [task.queue, task.id, open]);
 
   return <WorkView work={work} error={error} viewing={viewing} transcript={transcript} onView={setViewing} />;
 }
@@ -137,7 +143,8 @@ export function WorkView({ work, error, viewing, transcript, onView }: {
   const byId = new Map((work?.rows ?? []).map((r) => [r.id, r]));
   const staged = new Set((work?.stages ?? []).flatMap((s) => s.sessions.map((x) => x.id)));
   const unstaged = (work?.rows ?? []).filter((r) => !staged.has(r.id));
-  const view = (id: string) => ({ on: viewing === id, onView });
+  const open = openable(work, viewing);
+  const view = (id: string) => ({ on: open === id, onView });
   return (
     <section className="work" aria-label={tr("work.title")}>
       <h2>
@@ -173,7 +180,7 @@ export function WorkView({ work, error, viewing, transcript, onView }: {
                       <WhoCell id={x.id} r={r} shared={x.shared} />
                       <TokensCell tokens={x.tokens} />
                       <td>{fmtHours(x.minutes)}</td>
-                      <ViewCell id={x.id} readable={(r?.found ?? "read") === "read"} {...view(x.id)} />
+                      <ViewCell id={x.id} found={r?.found ?? "read"} {...view(x.id)} />
                     </tr>
                   );
                 })}
@@ -191,7 +198,7 @@ export function WorkView({ work, error, viewing, transcript, onView }: {
                   <tr key={r.id} className={r.live ? "work-session work-live" : "work-session"}>
                     <WhoCell id={r.id} r={r} shared={r.sharedWith > 0} />
                     <td colSpan={2} className="meta">{noNumbers(tr, r.found)}</td>
-                    <ViewCell id={r.id} readable={r.found === "read"} {...view(r.id)} />
+                    <ViewCell id={r.id} found={r.found} {...view(r.id)} />
                   </tr>
                 ))}
               </tbody>
@@ -233,14 +240,14 @@ export function WorkView({ work, error, viewing, transcript, onView }: {
           {tr("work.guess", { pct: work.guess.pct })} <span className="meta">{tr("work.guessBasis", { basis: work.guess.basis })}</span>
         </p>
       )}
-      {viewing && (
-        <div className="transcript" aria-label={tr("work.transcriptOf", { id: viewing })}>
+      {open && (
+        <div className="transcript" aria-label={tr("work.transcriptOf", { id: open })}>
           <div className="transcript-bar">
-            <span className="transcript-title">{tr("work.session", { id: viewing })}</span>
+            <span className="transcript-title">{tr("work.session", { id: open })}</span>
             <span className="meta">{tr("work.localOnly")}</span>
             <Button type="button" onClick={() => onView(null)}>{tr("work.close")}</Button>
           </div>
-          {transcript?.id !== viewing ? (
+          {transcript?.id !== open ? (
             <p className="none">{tr("work.readingTranscript")}</p>
           ) : transcript.error !== undefined ? (
             <p className="err small">{transcript.error}</p>
@@ -270,11 +277,15 @@ function WhoCell({ id, r, shared }: { id: string; r: SessionRow | undefined; sha
   );
 }
 
-function ViewCell({ id, readable, on, onView }: { id: string; readable: boolean; on: boolean; onView: (session: string | null) => void }) {
+/** A session's View. A transcript that exists but can't be read here (missing, too big) keeps a
+ *  disabled one; a session Muster won't read (decision 0012) gets none, only the empty cell that
+ *  keeps the columns in line (mu-162). */
+function ViewCell({ id, found, on, onView }: { id: string; found: SessionRow["found"]; on: boolean; onView: (session: string | null) => void }) {
   const tr = useT("board");
+  if (found === "not-read") return <td />;
   return (
     <td>
-      <Button type="button" disabled={!readable} aria-pressed={on} onClick={() => onView(on ? null : id)}>{tr("work.view")}</Button>
+      <Button type="button" disabled={found !== "read"} aria-pressed={on} onClick={() => onView(on ? null : id)}>{tr("work.view")}</Button>
     </td>
   );
 }

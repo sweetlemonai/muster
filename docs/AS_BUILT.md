@@ -1818,7 +1818,9 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   against the estimates ("Total: 1.8M of 1.5M tokens (120%) · 2.5 h of 8 h (31%)"), cache reads
   and shared sessions apart after it, the tokens by kind, and a progress guess from ticked
   criteria and the stage, labelled as a guess. **View** opens that session's transcript below the
-  table as
+  table (disabled for a missing or too-big transcript; a not-read session, decision 0012, has no
+  View, only an empty last cell, and a stale `viewing` on one opens and fetches nothing: mu-162)
+  as
   Markdown: one line per prompt, reply and tool call, tool
   output and thinking left out, the latest 1,500 entries, every punctuation mark escaped so nothing
   in it renders as a link, image or HTML. Only a session the task names can be viewed.
