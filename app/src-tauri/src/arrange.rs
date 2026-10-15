@@ -9,7 +9,7 @@ use crate::labels::{self, MAX_CATEGORY, OTHER};
 use crate::projects::{Config, Project};
 use crate::queue::QueueInfo;
 use serde::{Deserialize, Deserializer};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 /// The colours a project can have, by the id projects.json keeps. The window has their shades
 /// (themes.ts `PROJECT_COLOURS`, tested against the stage and priority colours in every theme).
@@ -30,7 +30,7 @@ fn heading(name: &str) -> String {
 
 /// projects.json's `colours`: each entry that's one of `COLOURS`; anything else is left out, and
 /// anything but an object reads as none, so the rest of the file still loads.
-pub fn read_colours<'de, D: Deserializer<'de>>(d: D) -> Result<HashMap<String, String>, D::Error> {
+pub fn read_colours<'de, D: Deserializer<'de>>(d: D) -> Result<BTreeMap<String, String>, D::Error> {
     let v = serde_json::Value::deserialize(d)?;
     Ok(v.as_object()
         .map(|m| {
@@ -359,7 +359,7 @@ mod tests {
         assert_eq!(c.gate.len(), 1, "the rest is kept");
         assert_eq!(
             c.colours,
-            HashMap::from([
+            BTreeMap::from([
                 ("/a".to_string(), "lime".to_string()),
                 ("/f".to_string(), "mint".to_string()),
             ]),
@@ -736,7 +736,7 @@ mod tests {
             name: "q".into(),
             path: "/q".into(),
             prefix: "q".into(),
-            counts: HashMap::new(),
+            counts: std::collections::HashMap::new(),
             your_check: 0,
             your_check_limit: None,
             label: "q".into(),
@@ -963,6 +963,47 @@ mod tests {
     }
 
     #[test]
+    fn a_heading_only_gone_folders_are_under_loses_its_fold_and_a_folder_coming_back_doesnt_revive_it(
+    ) {
+        // mu-88, the twin of the hidden half above: the sidebar draws only projects that are still
+        // a queue (`p.ok`), so a heading only gone folders are under is gone there, fold and all.
+        let (base, mut c) = grouped();
+        let away = tempfile::tempdir().unwrap();
+        let beta = away.path().join("beta/tasks");
+        make_queue(&beta);
+        projects::add(&mut c, base.path(), &beta).unwrap();
+        let (al, be) = (key(base.path(), &c, "alpha"), key(base.path(), &c, "beta"));
+        labels::set(&mut c.categories, &be, "Tools", MAX_CATEGORY);
+        let list = projects::list(base.path(), &c);
+        set_folded(&mut c, &list, "Tools", true).unwrap();
+        // beta's folder goes: it's still listed, but not a queue any more.
+        fs::remove_dir_all(&beta).unwrap();
+        let list = projects::list(base.path(), &c);
+        assert!(list.iter().any(|p| p.key == be && !p.ok && !p.hidden));
+        // alpha, the one Tools project the sidebar draws, moves to Apps: Tools' fold goes.
+        let moved = Moved {
+            key: al,
+            category: "Apps".into(),
+        };
+        arrange(&mut c, &list, &[], &[], Some(&moved)).unwrap();
+        assert!(!c.folded.contains(&"Tools".to_string()), "{:?}", c.folded);
+        // Nor can the heading be folded while only beta's gone folder is under it.
+        let list = projects::list(base.path(), &c);
+        assert_eq!(
+            set_folded(&mut c, &list, "Tools", true).unwrap_err(),
+            "no category named \"Tools\""
+        );
+        // beta's folder comes back: Tools is drawn again, open.
+        make_queue(&beta);
+        let rows = headings_of(base.path(), &c);
+        assert!(
+            rows.iter()
+                .any(|(n, h, f)| n == "beta" && h == "Tools" && !f),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
     fn folds_and_group_names_are_saved_and_read_leniently() {
         let d = tempfile::tempdir().unwrap();
         let f = d.path().join("cfg/projects.json");
@@ -1017,7 +1058,7 @@ mod tests {
         // The group gets the name; its own projects need no category of their own.
         assert_eq!(
             c.group_names,
-            HashMap::from([("persianUtils".to_string(), "DashAfzar".to_string())])
+            BTreeMap::from([("persianUtils".to_string(), "DashAfzar".to_string())])
         );
         assert!(!c.categories.contains_key(&co));
         // The ones set to the old name by hand stay under the heading, as before.

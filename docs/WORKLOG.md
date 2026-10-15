@@ -4,6 +4,24 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — projects.json keeps its bytes when nothing changed; the fold and move paths tested (mu-88)
+**Did (gholi_9, builder):** `projects::Config`'s maps are `BTreeMap`s (`projects.rs`, `labels.rs`,
+`check_limit.rs`, `arrange.rs`), so folding then unfolding a heading leaves projects.json
+byte-identical; the first save after this sorts the keys once, no migration. New Rust tests: the
+byte-identical fold round trip (24 projects, labels, categories incl. Persian, colours),
+`headings_now`'s `ok: false` twin (a heading only gone folders are under loses its fold, and the
+folder coming back doesn't revive it), and `read_state` passing its settings through. The
+sidebar's and Settings' handlers moved into `projectOrder.ts` as `placeSteps`, `foldHeading`,
+`readBack` and `runMove`; `ProjectList.tsx` and `Projects.tsx` call them, and six tests drive them
+with fake setters and resolving or refusing saves. The source pins in `ProjectList.test.ts` now
+name the new calls.
+**Decided:** the lifted functions take the setters and the save as arguments, as `track` does, and
+never reject (the refusal goes to the problem line); Settings keeps its own `settle` effect.
+**Verified:** mutation runs: 11 cuts inside the lifted functions (shownLayout, track, trackFold,
+trackUnfold, settle, readFolds, the said and problem texts, the fresh heading) and 4 cuts of the
+components' calls, all 15 killed; the Rust twin fails without `&& p.ok` and the settings test
+without `settings`. The fold round trip failed before the map change.
+
 ## 2026-10-14 — Citation audit of the orchestration research (mu-9)
 **Did (Pouya, researcher):** a fresh agent checked eight key claims against their sources; five held,
 three were corrected in `docs/research/2026-10-14-orchestration.md`: the 2025-09-15 Usage Policy

@@ -10,7 +10,7 @@ import { inProgress } from "./lib";
 import { useLook } from "./modes";
 import { PAUSE_GLYPH } from "./Pause";
 import { QuietPing } from "./Ping";
-import { accepts, dropMove, type DropTarget, countsText, grouped, headingCounts, headingFolds, layoutOf, readFolds, trackFold, trackUnfold, unfoldFor, type Move, type Pending, type Plan, planMove, settle, sidebarGroups, track, withFresh } from "./projectOrder";
+import { accepts, dropMove, type DropTarget, countsText, grouped, headingCounts, foldHeading, headingFolds, layoutOf, type Move, type Pending, type Plan, planMove, readBack, runMove, sidebarGroups, withFresh } from "./projectOrder";
 import { pressed } from "./shortcuts";
 import { cleanHeading, type DragProps, half, HeadingEdit, HeadingFrame, MOVE_KEYS, NewCategory, SideRow } from "./SidebarProjects";
 import type { Activity, Note, QueueInfo, Task } from "./types";
@@ -98,18 +98,15 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
   // A move shows at once; once it's saved, the queues read back take over (projectOrder.settle).
   const core = useRef(layout);
   core.current = layoutOf(fromCore);
-  useEffect(() => setPending((p) => settle(p, core.current)), [queues]);
   const folds = headingFolds(rows, foldSet);
   const coreFolds = useRef(folds);
   coreFolds.current = headingFolds(rows, {});
-  useEffect(() => setFoldSet((f) => readFolds(f, coreFolds.current)), [queues]);
-  /** Fold or unfold a heading: at once, then kept by the core; a refusal puts it back (trackFold). */
+  // So do the folds set here, once the core says the same (projectOrder.readBack).
+  useEffect(() => readBack(core.current, coreFolds.current, setPending, setFoldSet), [queues]);
+  /** Fold or unfold a heading: at once, then kept by the core; a refusal puts it back (foldHeading). */
   const fold = (name: string, folded: boolean) => {
     if (!edit) return;
-    setSaid(`${name} ${folded ? "folded" : "unfolded"}`);
-    trackFold(name, folded, setFoldSet, () => edit.fold(name, folded)).catch((e: unknown) =>
-      setProblem(`Couldn't ${folded ? "fold" : "unfold"} ${name}: ${String(e)}`),
-    );
+    void foldHeading(name, folded, { setFolds: setFoldSet, say: setSaid, problem: setProblem }, () => edit.fold(name, folded));
   };
   useEffect(() => {
     if (!focus) return;
@@ -125,22 +122,9 @@ export default function ProjectList({ queues, tasks, notes, activity, now, curre
     if (!p || !edit) return;
     pick(p.chip);
     // A project moved under a folded heading opens it, so the row stays in sight (0070): at once
-    // here, and the core opens it with the move (arrange.rs), for every window.
-    const opened = unfoldFor(p, folds);
-    setSaid(opened ? `${p.said}; ${opened} unfolded` : p.said);
-    setProblem("");
+    // here, and the core opens it with the move (arrange.rs), for every window (projectOrder.runMove).
     if (then) setFocus({ ...then });
-    trackUnfold(opened, setFoldSet, track(p, setPending, () => edit.arrange(p.order, p.categories, p.moved))).then(
-      () => {
-        if (p.moved) {
-          const made = p.moved.category;
-          setFresh((f) => f.filter((x) => x !== made));
-        }
-      },
-      (e: unknown) => {
-        setProblem(`Couldn't keep that order: ${String(e)}`);
-      },
-    );
+    void runMove(p, { folds, setPending, setFolds: setFoldSet, setFresh, say: setSaid, problem: setProblem }, () => edit.arrange(p.order, p.categories, p.moved));
   };
   const move = (m: Move, then: Focus | null = null) => run(planMove(layout, m, labelOfKey), then);
   const hover = (o: Over | null) => setOver((was) => (JSON.stringify(was) === JSON.stringify(o) ? was : o));
