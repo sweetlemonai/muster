@@ -3,6 +3,45 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-218: muster merge-log refuses a result that would lose a line of an untouched entry
+**Did:** `merge_log::keeps_untouched` checks a merged result: every entry byte-identical in base,
+ours and theirs is in it whole, as often as it's untouched, and a preamble the same in all three
+is its preamble. `entry_wise` runs it last (a failure gives merge-file's markers, exit 1). A clean
+`git merge-file` result that fails goes to `entry_wise`, then to `whole_file_markers` (all of ours,
+base and theirs between merge-file's marker lines, `Merged::Refused`, exit 1, with its own stderr
+line). A `#[cfg(test)]` hook, `BEFORE_CHECK`, changes a result just before the check. Decision
+0009's fourth amendment, `docs/now/parallel.md` and AS_BUILT say so.
+**Fixed (review rounds 1 and 2):** R1: an entry the base has twice, one side removing copy 2 and
+the other editing copy 1, was refused (main merges it clean as P+E'+X) → the check counted copies
+by content → round 2 counted per base copy from `read_side`'s fates. R3: that let a Removed fate
+lower the count, and
+`matched` reads an entry another was moved around as removed, so real losses merged clean (seeds
+2633, 4034, 5139) → the count is now the content minimum less the base copies either side changed
+(matched to other bytes, via `matched` even where `read_side` can't read), capped per side at the
+copies it no longer holds whole; a removal never lowers it. Both sides removing a different copy
+stays refused. R2: a refused-loss merge says on stderr that it was refused to keep an untouched
+entry and that the markers wrap all three files whole.
+**Fixed (review round 3, the lead's call):** R4: base P+E+X+E, ours editing copy 2, theirs keeping
+both: a result without copy 1 passed, because ours' edit was taken off a count it was already
+missing from → each side's copies are now less only the copies the other side alone changed
+(capped as before); the count is their minimum with the base's. Pinned in
+`untouched_twice_one_side_editing_copy_2_still_needs_copy_1` (red on round 3's rule).
+**Decided (lead QA_10):** the remaining duplicate refusals (seeds 3585, 4786: `matched` pairs the
+editing side's whole copy with the edited one) are refused on purpose; a refusal keeps all three
+files whole. 0009 and AS_BUILT name them instead of claiming every clean merge stays clean. AC4
+now says so: results clean before stay byte-identical except the merges 0009 names as refused on
+purpose, which leave all three inputs whole (the lead accepted it; G3 was red only on its wording).
+**Verified:** eleven `merge_log::tests::untouched_*` tests (R1's, R2's through the binary, R3's three
+seeds as fixed inputs, the per-side cap); both randomised tests assert the check on every result.
+Mutants on a scratch copy: the cap removed turns `untouched_a_copy_the_side_still_holds_whole_…`
+red; removals counted as changes turns `…_both_sides_removing_a_different_copy_is_refused` red, and
+with the cap gone too, `…_a_moved_entry_doesnt_unguard_…`. Round 2's 23 kept seeds through the
+debug binary: the 11 real losses (1888, 2126, 2637, 2805, 3006, 3717, 4755, 5932, 2633, 4034,
+5139) refused, 10 of the 12 duplicate false fires clean and byte-identical to main. Round 2's
+6000-seed differential (`fz/fuzz.py`, release builds of main and this branch): 13 seeds differ,
+all refusals (the 11 real losses, 3585, 4786); the other 5987 give main's exit and bytes. After
+R4, the same differential gives the same 13 seeds and the same counts in every chunk.
+
 ## 2026-10-15 — mu-204: the Timeline leads with what's running (Sort: Active now first · Earliest start)
 **Did (Gholi_62, builder):** a **Sort** group after Scale on the Timeline's control line (a
 `role="group"` "Timeline order", two Pills with `aria-pressed`): **Active now first**, the default,

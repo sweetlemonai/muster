@@ -2545,7 +2545,29 @@ the base entries such a run is over (which new entry was above it can't be told)
 preamble on either side, an undated new entry, and a result whose entries don't split back at the offsets they were put at
 (an entry's unclosed fence would take in the headings after it): merge-file's conflict
 markers (labels `ours`, `base`, `theirs`) and exit 1, with "both sides changed more than new dated
-entries; left the conflict markers" on stderr. The result replaces `%A` whole or
+entries; left the conflict markers" on stderr. Neither clean result is trusted (task 0218,
+`keeps_untouched`): an untouched entry, byte-identical in base, ours and theirs, must be in it
+whole as one of its entries, as many times as it's untouched (a line end added to one that
+ended the file aside), and a preamble the same in all three must be its preamble. How many
+times is the fewest copies in base and in each side, a side's copies less the base copies only
+the other side changed: each base entry is matched to each side by `matched`, whatever the
+preamble or new entries, and one matched to other bytes is changed, capped per side at the copies
+it no longer holds whole. A side's own changed copy is already missing from its count, so it isn't
+taken off again: one side editing copy 2 while the other keeps both still needs copy 1 (review
+round 3's R4). A removal never lowers it, since an entry another was moved around reads as removed (review round
+2's seeds 2633, 4034 and 5139). One side removing copy 2 of a twice-held entry while the other
+edits copy 1 is clean; both removing a different copy is refused. `entry_wise`
+checks its own result last, after the split-back check, and gives up (merge-file's markers) when
+it fails. A clean merge-file result that fails goes to `entry_wise`; when that fails too, the
+result is all of ours, base and theirs, whole, between `<<<<<<< ours`, `||||||| base`, `=======`
+and `>>>>>>> theirs` lines (`whole_file_markers`, `Merged::Refused`), exit 1, with "refused the
+merge, which would lose an entry neither side changed; left ours, base and theirs whole between
+conflict markers" on stderr. An entry one side changed or removed isn't untouched, so those
+merges are as before. Some correct merges of a twice-held entry are refused on purpose: where
+no copy reads as changed it's counted by content, so one side removing a copy while the other
+edits one that `matched` pairs with the whole copy reads as two removals (round 2's seeds 3585
+and 4786). A refusal leaves all three files whole, so nothing is lost. A `#[cfg(test)]` hook (`BEFORE_CHECK`) changes a result
+just before the check, so a test drops a line and sees it refused. The result replaces `%A` whole or
 not at all (`replace`, task 0071): written to a new `.<name>.muster-merge-<pid>` beside it with
 `%A`'s mode, then renamed over it, with no fsync (git reads it straight back, and a full sync
 can fail on network and external volumes). On a failure the new file is removed and `%A` is

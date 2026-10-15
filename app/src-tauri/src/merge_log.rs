@@ -5,7 +5,8 @@
 //! new entry whole, newest first, so a merge or a rebase doesn't stop for them (0190: under an
 //! entry, not only on top; 0196: at any number of points). An older entry changed or removed on
 //! one side merges too, entry by entry (0209). Anything else is a plain three-way merge, conflict
-//! markers and all. Git finds the driver in config: `muster start`
+//! markers and all, and so is a result that would lose an entry neither side touched (0218).
+//! Git finds the driver in config: `muster start`
 //! and `muster init` write it to the repo's own config when it's missing (`configure`), and
 //! Muster's merge passes it with `git -c` (`config_args`), so it never depends on that.
 
@@ -591,11 +592,7 @@ fn entry_wise(base: &[u8], ours: &[u8], theirs: &[u8]) -> Option<Vec<u8>> {
     {
         return None;
     }
-    let eol: &[u8] = if ours.windows(2).any(|w| w == b"\r\n") {
-        b"\r\n"
-    } else {
-        b"\n"
-    };
+    let eol = line_end(ours);
     let mut out = b.preamble.to_vec();
     let mut starts = Vec::new();
     let mut push = |part: &[u8]| {
@@ -654,7 +651,129 @@ fn entry_wise(base: &[u8], ours: &[u8], theirs: &[u8]) -> Option<Vec<u8>> {
             at - e.len()
         })
         .collect();
-    (got == starts).then_some(out)
+    if got != starts {
+        return None;
+    }
+    before_check(&mut out);
+    keeps_untouched(base, ours, theirs, &out).then_some(out)
+}
+
+/// The line end a merge writes where it adds one: CRLF when ours has one, else LF.
+fn line_end(ours: &[u8]) -> &'static [u8] {
+    if ours.windows(2).any(|w| w == b"\r\n") {
+        b"\r\n"
+    } else {
+        b"\n"
+    }
+}
+
+/// Does `result` keep every entry neither side touched (0218)? An untouched entry is one
+/// byte-identical in base, ours and theirs; the result must have it whole, as one of its own
+/// entries, as many times as it's untouched: the fewest copies in base and in each side, where a
+/// side's copies are less the base copies the other side alone changed. A changed copy is the
+/// only evidence that lowers it: each base entry is matched to the side as `matched` matches it
+/// (whatever the preamble or new entries are), and one matched to other bytes is changed. A side
+/// can only have changed as many copies as it no longer holds whole, so a mismatch beside a copy
+/// that's still there lowers nothing. A side's own changed copy is already missing from its
+/// count, so it isn't taken off again. A removed copy never lowers it: an entry another one was
+/// moved around reads as removed, though its bytes are still on that side. So a side removing
+/// copy 2 while the other edits copy 1 needs none, a side editing copy 2 while the other keeps
+/// both still needs copy 1, and both sides removing a different copy still need one. Whole
+/// is byte for byte, but for the line end `entry_wise` adds to an entry that ended the file
+/// without one. A preamble the same in all three must be the result's. It doesn't trust how the
+/// result was made: a change to `matched` or the run placement that drops or cuts such an entry,
+/// or a clean `git merge-file` that lined an entry up with its twin (every entry ends in the same
+/// Verified line), is refused, never committed. An entry a side changed or removed isn't
+/// untouched, so its change or removal merges as before. An entry the log holds more than once
+/// is counted by content where no copy reads as changed, so some correct merges of one are
+/// refused on purpose: a refusal leaves all three files whole, so nothing is lost.
+fn keeps_untouched(base: &[u8], ours: &[u8], theirs: &[u8], result: &[u8]) -> bool {
+    use std::collections::HashMap;
+    let (b, o, t, r) = (split(base), split(ours), split(theirs), split(result));
+    if b.preamble == o.preamble && b.preamble == t.preamble && r.preamble != b.preamble {
+        return false;
+    }
+    fn counts<'a>(log: &Log<'a>) -> HashMap<&'a [u8], usize> {
+        let mut c = HashMap::new();
+        for e in &log.entries {
+            *c.entry(*e).or_default() += 1;
+        }
+        c
+    }
+    let (bc, oc, tc, rc) = (counts(&b), counts(&o), counts(&t), counts(&r));
+    let n = |c: &HashMap<&[u8], usize>, e: &[u8]| c.get(e).copied().unwrap_or(0);
+    // Which base copies a side matched to other bytes.
+    let changed = |s: &Log| -> Vec<bool> {
+        matched(&b.entries, &s.entries)
+            .iter()
+            .zip(&b.entries)
+            .map(|(p, e)| p.is_some_and(|k| s.entries[k] != *e))
+            .collect()
+    };
+    let (o_changed, t_changed) = (changed(&o), changed(&t));
+    // Per entry: the base copies only ours changed, and only theirs.
+    let mut touched: HashMap<&[u8], (usize, usize)> = HashMap::new();
+    for (i, e) in b.entries.iter().enumerate() {
+        let c = touched.entry(*e).or_default();
+        c.0 += usize::from(o_changed[i] && !t_changed[i]);
+        c.1 += usize::from(t_changed[i] && !o_changed[i]);
+    }
+    bc.iter().all(|(&e, &bn)| {
+        let (on, tn) = (n(&oc, e), n(&tc, e));
+        let (only_o, only_t) = touched.get(e).copied().unwrap_or_default();
+        // Each side's whole copies, less those the other side alone changed: a side's own
+        // changed copies are already missing from its count.
+        let o_kept = on.saturating_sub(only_t.min(bn.saturating_sub(tn)));
+        let t_kept = tn.saturating_sub(only_o.min(bn.saturating_sub(on)));
+        let need = bn.min(o_kept).min(t_kept);
+        let mut got = n(&rc, e);
+        if !e.ends_with(b"\n") {
+            got += n(&rc, &[e, b"\n"].concat()) + n(&rc, &[e, b"\r\n"].concat());
+        }
+        got >= need
+    })
+}
+
+/// The last fallback (0218), for a clean `git merge-file` result that loses an untouched entry
+/// when `entry_wise` can't merge either: all of ours, base and theirs, each whole, between
+/// merge-file's marker lines, so nothing is lost and git stops on it.
+fn whole_file_markers(base: &[u8], ours: &[u8], theirs: &[u8]) -> Vec<u8> {
+    let eol = line_end(ours);
+    let mut out = Vec::with_capacity(base.len() + ours.len() + theirs.len() + 64);
+    for (marker, part) in [
+        (&b"<<<<<<< ours"[..], ours),
+        (b"||||||| base", base),
+        (b"=======", theirs),
+        (b">>>>>>> theirs", b""),
+    ] {
+        if !out.is_empty() && !out.ends_with(b"\n") {
+            out.extend_from_slice(eol);
+        }
+        out.extend_from_slice(marker);
+        out.extend_from_slice(eol);
+        out.extend_from_slice(part);
+    }
+    out
+}
+
+#[cfg(test)]
+type ResultHook = Box<dyn Fn(&mut Vec<u8>)>;
+
+#[cfg(test)]
+thread_local! {
+    /// Changes a merged result just before `keeps_untouched` checks it: a test's lost line.
+    static BEFORE_CHECK: std::cell::RefCell<Option<ResultHook>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// A test's change to a merged result before the check (`BEFORE_CHECK`); nothing in a build.
+fn before_check(_text: &mut Vec<u8>) {
+    #[cfg(test)]
+    BEFORE_CHECK.with(|h| {
+        if let Some(h) = h.borrow().as_ref() {
+            h(_text)
+        }
+    });
 }
 
 /// The lines of `text` (counted from 1) that are conflict markers a merge left behind, outside
@@ -680,11 +799,14 @@ pub fn stray_markers(text: &[u8]) -> Vec<usize> {
     found
 }
 
-/// How a merge of the log came out: the text to write, clean or with conflict markers.
+/// How a merge of the log came out: the text to write, clean or with conflict markers. Refused is
+/// a clean merge that would lose an untouched entry (0218): ours, base and theirs, whole, in
+/// markers (`whole_file_markers`).
 #[derive(Debug, PartialEq)]
 pub enum Merged {
     Clean(Vec<u8>),
     Conflict(Vec<u8>),
+    Refused(Vec<u8>),
 }
 
 fn read(path: &Path, max: u64) -> Result<Vec<u8>, String> {
@@ -702,7 +824,9 @@ fn read(path: &Path, max: u64) -> Result<Vec<u8>, String> {
 
 /// Merge the three versions of the log at `base`, `ours` and `theirs`: a plain three-way merge
 /// (`git merge-file`) when it's clean, else the entry-wise merge (`entry_wise`) when it can
-/// tell what each side did to each entry, else the three-way merge's conflict markers.
+/// tell what each side did to each entry, else the three-way merge's conflict markers. Either
+/// clean result must keep every entry neither side touched (`keeps_untouched`, 0218), or it's
+/// refused: merge-file's goes to the entry-wise merge, then to markers around all three.
 pub fn merge(base: &Path, ours: &Path, theirs: &Path) -> Result<Merged, String> {
     merge_capped(base, ours, theirs, MAX_BYTES)
 }
@@ -726,7 +850,19 @@ fn merge_capped(base: &Path, ours: &Path, theirs: &Path, max: u64) -> Result<Mer
         .output()
         .map_err(|e| format!("couldn't run git merge-file: {e}"))?;
     match out.status.code() {
-        Some(0) => Ok(Merged::Clean(out.stdout)),
+        // A clean result that loses an untouched entry (0218) goes to the entry-wise merge, which
+        // is checked the same way; when that can't merge either, all three, whole, in markers.
+        Some(0) => {
+            let mut text = out.stdout;
+            before_check(&mut text);
+            if keeps_untouched(&b, &o, &t, &text) {
+                return Ok(Merged::Clean(text));
+            }
+            Ok(match entry_wise(&b, &o, &t) {
+                Some(text) => Merged::Clean(text),
+                None => Merged::Refused(whole_file_markers(&b, &o, &t)),
+            })
+        }
         // The number of conflicts; a negative one (an error) comes out as 128 and up.
         Some(1..=127) => Ok(match entry_wise(&b, &o, &t) {
             Some(text) => Merged::Clean(text),
@@ -807,18 +943,25 @@ fn run_capped(args: &[String], max: u64) -> Result<i32, String> {
     };
     let (base, ours, theirs) = (Path::new(base), Path::new(ours), Path::new(theirs));
     let merged = merge_capped(base, ours, theirs, max).and_then(|m| {
-        let (text, code) = match m {
-            Merged::Clean(t) => (t, 0),
-            Merged::Conflict(t) => (t, 1),
+        let (text, why) = match m {
+            Merged::Clean(t) => (t, None),
+            Merged::Conflict(t) => (
+                t,
+                Some("both sides changed more than new dated entries; left the conflict markers"),
+            ),
+            Merged::Refused(t) => (
+                t,
+                Some("refused the merge, which would lose an entry neither side changed; left ours, base and theirs whole between conflict markers"),
+            ),
         };
         replace(ours, &text)?;
-        Ok(code)
+        Ok(why)
     });
     let e = match merged {
-        Ok(0) => return Ok(0),
-        Ok(code) => {
-            eprintln!("muster merge-log: both sides changed more than new dated entries; left the conflict markers");
-            return Ok(code);
+        Ok(None) => return Ok(0),
+        Ok(Some(why)) => {
+            eprintln!("muster merge-log: {why}");
+            return Ok(1);
         }
         Err(e) => e,
     };
@@ -1045,7 +1188,9 @@ mod tests {
     fn clean(m: Merged) -> String {
         match m {
             Merged::Clean(t) => String::from_utf8(t).unwrap(),
-            Merged::Conflict(t) => panic!("a conflict:\n{}", String::from_utf8_lossy(&t)),
+            Merged::Conflict(t) | Merged::Refused(t) => {
+                panic!("a conflict:\n{}", String::from_utf8_lossy(&t))
+            }
         }
     }
 
@@ -1053,6 +1198,15 @@ mod tests {
         match m {
             Merged::Conflict(t) => String::from_utf8(t).unwrap(),
             Merged::Clean(t) => panic!("clean:\n{}", String::from_utf8_lossy(&t)),
+            Merged::Refused(t) => panic!("refused:\n{}", String::from_utf8_lossy(&t)),
+        }
+    }
+
+    fn refused(m: Merged) -> String {
+        match m {
+            Merged::Refused(t) => String::from_utf8(t).unwrap(),
+            Merged::Clean(t) => panic!("clean:\n{}", String::from_utf8_lossy(&t)),
+            Merged::Conflict(t) => panic!("a conflict:\n{}", String::from_utf8_lossy(&t)),
         }
     }
 
@@ -1684,6 +1838,11 @@ mod tests {
             );
             let why = format!("seed {seed}:\n{}", String::from_utf8_lossy(&text));
             assert_eq!(r.preamble, PRE.as_bytes(), "{why}");
+            // Every entry neither side touched, whole (0218).
+            assert!(
+                keeps_untouched(base.as_bytes(), ours.as_bytes(), theirs.as_bytes(), &text),
+                "untouched: {why}"
+            );
             assert!(in_order(&b.entries, &r.entries), "the base's order: {why}");
             assert!(in_order(&o.entries, &r.entries), "ours' order: {why}");
             // Theirs' order, but for the entries ours added too (kept at ours' point).
@@ -1850,6 +2009,11 @@ mod tests {
             );
             let why = format!("seed {seed}:\n{}", String::from_utf8_lossy(&text));
             assert_eq!(r.preamble, PRE.as_bytes(), "{why}");
+            // Every entry neither side touched, whole (0218).
+            assert!(
+                keeps_untouched(base.as_bytes(), ours.as_bytes(), theirs.as_bytes(), &text),
+                "untouched: {why}"
+            );
             let count = |log: &[&[u8]], e: &[u8]| log.iter().filter(|x| **x == e).count();
             // Every base entry as the side that touched it has it, in the base's order (one with
             // its heading edited where the old one was); the versions a side changed or removed
@@ -2163,6 +2327,370 @@ mod tests {
         gone[0] = p("missing").to_str().unwrap().into();
         assert_eq!(run(&gone), Ok(2));
         assert_eq!(fs::read(p("our s")).unwrap(), before);
+    }
+
+    /// `keeps_untouched` over text.
+    fn holds(base: &str, ours: &str, theirs: &str, result: &str) -> bool {
+        keeps_untouched(
+            base.as_bytes(),
+            ours.as_bytes(),
+            theirs.as_bytes(),
+            result.as_bytes(),
+        )
+    }
+
+    #[test]
+    fn untouched_check_fails_on_a_lost_line_byte_copy_or_preamble_line() {
+        let (a, b) = (entry("2026-10-14", "A"), entry("2026-10-13", "B"));
+        let base = format!("{PRE}{a}{OLD}{b}");
+        let ours = format!("{PRE}{}{a}{OLD}{b}", entry("2026-10-15", "Ours"));
+        let theirs = base.clone();
+        assert!(holds(&base, &ours, &theirs, &ours));
+        // OLD's middle line, its last (blank) line, one byte of it; the last entry's last line.
+        for lost in [
+            ours.replacen("**Did:** the old thing\n", "", 1),
+            ours.replacen(OLD, OLD.strip_suffix('\n').unwrap(), 1),
+            ours.replacen("the old thing", "the old thinG", 1),
+            ours.strip_suffix('\n').unwrap().to_string(),
+            // The preamble, the same in all three.
+            ours.replacen("Newest first.\n", "", 1),
+            // An entry cut in two, or run into the one above it.
+            ours.replacen(
+                "**Did:** the old thing\n",
+                "**Did:** the old thing\n## 2026-10-12 — cut\n",
+                1,
+            ),
+            ours.replacen(&format!("\n{OLD}"), &format!("\n{}", &OLD[3..]), 1),
+        ] {
+            assert_ne!(lost, ours);
+            assert!(!holds(&base, &ours, &theirs, &lost), "{lost}");
+        }
+        // An entry all three have twice must be there twice; once when a side removed a copy.
+        let twice = format!("{PRE}{a}{OLD}{OLD}{b}");
+        let once = format!("{PRE}{a}{OLD}{b}");
+        assert!(!holds(&twice, &twice, &twice, &once));
+        assert!(holds(&twice, &once, &twice, &once));
+        assert!(holds(&twice, &twice, &twice, &twice));
+    }
+
+    #[test]
+    fn untouched_check_passes_what_each_side_did() {
+        let (a, b) = (entry("2026-10-14", "A"), entry("2026-10-13", "B"));
+        let (n, m) = (entry("2026-10-15", "New"), entry("2026-10-15", "Mine"));
+        let base = format!("{PRE}{a}{OLD}{b}{OLDER}");
+        let edit = |e: &str, who: &str| e.replace("of text.\n", &format!("of text, {who}.\n"));
+        // A one-sided removal, with the untouched entries under it moved up.
+        let gone = format!("{PRE}{OLD}{b}{OLDER}");
+        assert!(holds(&base, &gone, &base, &gone));
+        assert!(holds(&base, &base, &gone, &gone));
+        // A one-sided change; the same change on both sides.
+        let changed = format!("{PRE}{a}{OLD}{}{OLDER}", edit(&b, "theirs"));
+        assert!(holds(&base, &base, &changed, &changed));
+        assert!(holds(&base, &changed, &changed, &changed));
+        // An entry both sides added, kept once; one new entry each, in the order merged.
+        let ours = format!("{PRE}{n}{a}{OLD}{b}{OLDER}");
+        let theirs = format!("{PRE}{m}{n}{a}{OLD}{b}{OLDER}");
+        assert!(holds(&base, &ours, &theirs, &theirs));
+        // A changed preamble on one side isn't checked; the result has one side's.
+        let pre2 = format!("# Log\n\nChanged.\n\n{a}{OLD}{b}{OLDER}");
+        assert!(holds(&base, &pre2, &base, &pre2));
+        // Each, as the merge makes it: the check holds on what `merge` gives.
+        for (o, t) in [
+            (&gone, &base),
+            (&changed, &base),
+            (&ours, &theirs),
+            (
+                &format!("{PRE}{n}{a}{OLD}{OLDER}"),
+                &format!("{PRE}{m}{a}{OLD}{b}{OLDER}"),
+            ),
+        ] {
+            let got = clean(merged(&base, o, t));
+            assert!(holds(&base, o, t, &got), "{got}");
+        }
+        // An entry that ended the file without a line end, given one where an entry follows.
+        let last = OLDER.strip_suffix('\n').unwrap();
+        let (b2, o2) = (format!("{PRE}{OLD}{last}"), format!("{PRE}{n}{OLD}{last}"));
+        assert!(holds(&b2, &o2, &b2, &format!("{PRE}{n}{OLD}{last}\n")));
+        assert!(holds(&b2, &o2, &b2, &format!("{PRE}{n}{OLD}{last}\r\n")));
+        assert!(!holds(
+            &b2,
+            &o2,
+            &b2,
+            &format!("{PRE}{n}{OLD}{}", &last[..last.len() - 1])
+        ));
+    }
+
+    /// Sets `BEFORE_CHECK` for one test and clears it when dropped, a failing assert included.
+    struct Seam;
+    impl Seam {
+        fn set(hook: impl Fn(&mut Vec<u8>) + 'static) -> Seam {
+            BEFORE_CHECK.with(|h| *h.borrow_mut() = Some(Box::new(hook)));
+            Seam
+        }
+    }
+    impl Drop for Seam {
+        fn drop(&mut self) {
+            BEFORE_CHECK.with(|h| *h.borrow_mut() = None);
+        }
+    }
+
+    /// Drops the first `line` from a result: a test's lost line of an untouched entry.
+    fn drop_line(line: &'static str) -> impl Fn(&mut Vec<u8>) {
+        move |text: &mut Vec<u8>| {
+            let s = String::from_utf8(text.clone()).unwrap();
+            *text = s.replacen(line, "", 1).into_bytes();
+        }
+    }
+
+    /// Every line of each input is in `text`, at least as many times as any input has it.
+    fn has_every_line(text: &str, inputs: &[&str]) {
+        let count = |s: &str, l: &str| s.split_inclusive('\n').filter(|x| *x == l).count();
+        for input in inputs {
+            for line in input.split_inclusive('\n') {
+                let most = inputs.iter().map(|i| count(i, line)).max().unwrap();
+                assert!(count(text, line) >= most, "{line:?} lost:\n{text}");
+            }
+        }
+    }
+
+    #[test]
+    fn untouched_loss_in_the_entry_wise_result_gives_markers_and_exit_1() {
+        let base = format!("{PRE}{OLD}{OLDER}");
+        let (a, b) = (entry("2026-10-14", "A"), entry("2026-10-13", "B"));
+        let (ours, theirs) = (
+            format!("{PRE}{a}{OLD}{OLDER}"),
+            format!("{PRE}{b}{OLD}{OLDER}"),
+        );
+        // Both on top: merge-file clashes, the entry-wise merge merges it clean.
+        conflict(merged_file_only(&base, &ours, &theirs));
+        let want = format!("{PRE}{a}{b}{OLD}{OLDER}");
+        assert_eq!(clean(merged(&base, &ours, &theirs)), want);
+        // The same, with a line of OLD (in all three) lost before the check: refused.
+        let _seam = Seam::set(drop_line("**Did:** the old thing\n"));
+        let text = conflict(merged(&base, &ours, &theirs));
+        assert!(text.contains("<<<<<<< ours\n"), "{text}");
+        has_every_line(&text, &[&base, &ours, &theirs]);
+        let dir = crate::testkit::tempdir().unwrap();
+        let p = |n: &str| dir.path().join(n);
+        fs::write(p("o"), &base).unwrap();
+        fs::write(p("a"), &ours).unwrap();
+        fs::write(p("b"), &theirs).unwrap();
+        let args = [p("o"), p("a"), p("b")].map(|x| x.to_str().unwrap().to_string());
+        assert_eq!(run(&args), Ok(1));
+        let left = fs::read_to_string(p("a")).unwrap();
+        assert_eq!(left, text);
+    }
+
+    #[test]
+    fn untouched_merge_file_clean_result_that_loses_one_goes_to_entry_wise_then_markers() {
+        let base = format!("{PRE}{OLD}{OLDER}");
+        let a = entry("2026-10-14", "A");
+        let ours = format!("{PRE}{a}{OLD}{OLDER}");
+        // One side's new entry: merge-file merges it clean.
+        assert_eq!(clean(merged_file_only(&base, &ours, &base)), ours);
+        // Merge-file's result losing a line goes to the entry-wise merge, which keeps it.
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0));
+        let seen = calls.clone();
+        let lose = drop_line("**Did:** the old thing\n");
+        let seam = Seam::set(move |text| {
+            seen.set(seen.get() + 1);
+            if seen.get() == 1 {
+                lose(text)
+            }
+        });
+        assert_eq!(clean(merged(&base, &ours, &base)), ours);
+        assert_eq!(calls.get(), 2, "merge-file's result, then entry_wise's");
+        drop(seam);
+        // Both losing it: all three whole between merge-file's markers, and exit 1.
+        let _seam = Seam::set(drop_line("**Did:** the old thing\n"));
+        let want =
+            format!("<<<<<<< ours\n{ours}||||||| base\n{base}=======\n{base}>>>>>>> theirs\n");
+        assert_eq!(refused(merged(&base, &ours, &base)), want);
+        let dir = crate::testkit::tempdir().unwrap();
+        let p = |n: &str| dir.path().join(n);
+        fs::write(p("o"), &base).unwrap();
+        fs::write(p("a"), &ours).unwrap();
+        fs::write(p("b"), &base).unwrap();
+        let args = [p("o"), p("a"), p("b")].map(|x| x.to_str().unwrap().to_string());
+        assert_eq!(run(&args), Ok(1));
+        assert_eq!(fs::read_to_string(p("a")).unwrap(), want);
+    }
+
+    #[test]
+    fn untouched_merge_file_loss_the_entry_wise_merge_cant_take_gives_markers() {
+        // Theirs changed the preamble, which only merge-file merges: its result losing a line
+        // of OLD is refused, and the entry-wise merge refuses the changed preamble.
+        let base = format!("{PRE}{OLD}{OLDER}");
+        let a = entry("2026-10-14", "A");
+        let ours = format!("{PRE}{a}{OLD}{OLDER}");
+        let theirs = format!("# Log\n\nChanged.\n\n{OLD}{OLDER}");
+        let merged_clean = clean(merged(&base, &ours, &theirs));
+        assert_eq!(
+            merged_clean,
+            format!("# Log\n\nChanged.\n\n{a}{OLD}{OLDER}")
+        );
+        let _seam = Seam::set(drop_line("**Did:** the old thing\n"));
+        let want =
+            format!("<<<<<<< ours\n{ours}||||||| base\n{base}=======\n{theirs}>>>>>>> theirs\n");
+        assert_eq!(refused(merged(&base, &ours, &theirs)), want);
+    }
+
+    const REFUSED: &str = "muster merge-log: refused the merge, which would lose an entry neither side changed; left ours, base and theirs whole between conflict markers";
+
+    #[test]
+    fn untouched_twice_counts_each_copy_by_what_each_side_did_to_it() {
+        let (e, x) = (entry("2026-10-13", "Twice"), entry("2026-10-12", "X"));
+        let e2 = e.replace("of text.\n", "of text, edited.\n");
+        let base = format!("{PRE}{e}{x}{e}");
+        // One side removes copy 2, the other edits copy 1: no copy is untouched, so the edit
+        // with the removal is clean, as merge-file merges it, either way round.
+        let (removed, edited) = (format!("{PRE}{e}{x}"), format!("{PRE}{e2}{x}{e}"));
+        let want = format!("{PRE}{e2}{x}");
+        assert!(holds(&base, &removed, &edited, &want));
+        assert_eq!(clean(merged_file_only(&base, &removed, &edited)), want);
+        for (o, t) in [(&removed, &edited), (&edited, &removed)] {
+            assert_eq!(clean(merged(&base, o, t)), want);
+            let (code, text, err) = through_binary(base.as_bytes(), o.as_bytes(), t.as_bytes());
+            assert_eq!((code, String::from_utf8(text).unwrap()), (0, want.clone()));
+            assert_eq!(err, "");
+        }
+        // A side `read_side` can't read (here its preamble changed) is matched entry by entry
+        // all the same: the edit of copy 1 still counts, so the same result keeps all it needs.
+        let pre2 = format!("# Log\n\nChanged.\n\n{e}{x}");
+        assert!(holds(
+            &base,
+            &pre2,
+            &edited,
+            &format!("# Log\n\nChanged.\n\n{e2}{x}")
+        ));
+    }
+
+    #[test]
+    fn untouched_a_copy_the_side_still_holds_whole_isnt_changed() {
+        let (e, x) = (entry("2026-10-13", "Moved"), entry("2026-10-12", "X"));
+        let e2 = e.replace("of text.\n", "of text, edited.\n");
+        let base = format!("{PRE}{e}{x}");
+        // Ours moved E under X and put an entry with E's heading where it was: matched may read
+        // that as E changed, but ours still holds E whole, so E is untouched and must stay.
+        let ours = format!("{PRE}{e2}{x}{e}");
+        assert!(!holds(&base, &ours, &base, &format!("{PRE}{e2}{x}")));
+        assert!(holds(&base, &ours, &base, &ours));
+    }
+
+    /// Seeds 2633, 4034 and 5139 of review round 2's randomised differential (R3): one side
+    /// moves an entry, which `matched` reads as others removed, and the other side's edit lets
+    /// a clean merge-file result cut an entry neither side changed (a `~~~` fence that opens
+    /// inside it and swallows the next heading, or its last blank line dropped where theirs cut
+    /// the file's last line end). Main merges each clean and loses it; they're refused, all three
+    /// files whole.
+    #[test]
+    fn untouched_a_moved_entry_doesnt_unguard_the_ones_it_moved_past() {
+        let e =
+            |head: &str, body: &str| format!("## {head}\n\n{body}**Verified:** gate: green\n\n");
+        let pre = "# Work log\n\nNewest first.\n\n";
+        let fix2 = e("2026-10-09 — fix 2", "**Decided:** log\n");
+        let queue1 = e(
+            "2026-10-14 — queue 1",
+            "**Did:** test\n**Decided:** merge\n**Decided:** add\n",
+        );
+        let rtl8 = e("2026-10-10 — rtl 8", "");
+        let rtl8_fenced = format!("{rtl8}~~~\n");
+        let board2 = e("2026-10-08 — the board 2", "**Fixed:** add\n**Did:** fix\n");
+        let seed2633 = [
+            format!("{pre}{fix2}{queue1}{rtl8}{board2}"),
+            format!("{pre}{rtl8}{fix2}{board2}"),
+            format!("{pre}{fix2}{queue1}{rtl8_fenced}{board2}"),
+        ];
+        let add0 = e("2026-10-01 — add 0", "");
+        let log0 = e(
+            "2026-10-18 — log 0",
+            "**Decided:** fix\n**Decided:** merge\n**Fixed:** add\n",
+        );
+        let fix3 = e("2026-10-05 — fix 3", "**Did:** merge\n");
+        let fix8 = e("2026-10-14 — fix 8", "**Did:** rtl\n");
+        let log1 = e("2026-10-04 — log 1", "**Fixed:** gate\n");
+        let log1_open = format!(
+            "{}~~~\n",
+            e("2026-10-04 — log 1", "**Fixed:** gate\n**Open:** test\n")
+        );
+        let queue2 = e("2026-10-12 — queue 2", "**Did:** add\n**Did:** گزارش\n");
+        let seed4034 = [
+            format!("{pre}{add0}{fix3}{fix8}{log1}{queue2}"),
+            format!("{pre}{add0}{fix3}{log1}{queue2}{fix8}"),
+            format!("{pre}{add0}{log0}{fix3}{fix8}{log1_open}{queue2}"),
+        ];
+        let test5 = e("2026-10-03 — test 5", "");
+        let queue0 = e("2026-10-11 — queue 0", "");
+        let queue0_cut = queue0.strip_suffix('\n').unwrap();
+        let seed5139 = [
+            format!("{pre}{test5}{queue0}"),
+            format!("{pre}{queue0}{test5}"),
+            format!("{pre}{test5}{queue0_cut}"),
+        ];
+        for [base, ours, theirs] in [seed2633, seed4034, seed5139] {
+            let lossy = clean(merged_file_only(&base, &ours, &theirs));
+            assert!(!holds(&base, &ours, &theirs, &lossy), "{lossy}");
+            let want = whole_file_markers(base.as_bytes(), ours.as_bytes(), theirs.as_bytes());
+            assert_eq!(refused(merged(&base, &ours, &theirs)).as_bytes(), want);
+        }
+    }
+
+    /// Review round 3's R4: ours edits copy 2 and theirs keeps both, so copy 1 is untouched.
+    /// Ours' edit is already missing from ours' count and isn't taken off again.
+    #[test]
+    fn untouched_twice_one_side_editing_copy_2_still_needs_copy_1() {
+        let (e, x) = (entry("2026-10-13", "Twice"), entry("2026-10-12", "X"));
+        let e2 = e.replace("of text.\n", "of text, edited.\n");
+        let x2 = x.replace("of text.\n", "of text, edited.\n");
+        let base = format!("{PRE}{e}{x}{e}");
+        let ours = format!("{PRE}{e}{x}{e2}");
+        // Theirs as base, or editing X: copy 1 gone is a loss either way, round 3's scratch test.
+        for theirs in [base.clone(), format!("{PRE}{e}{x2}{e}")] {
+            assert!(!holds(&base, &ours, &theirs, &format!("{PRE}{x}{e2}")));
+            assert!(!holds(&base, &ours, &theirs, &format!("{PRE}{x2}{e2}")));
+            assert!(holds(&base, &ours, &theirs, &ours));
+        }
+        // Both sides changing copy 1 the same way leave copy 2 untouched: it's needed.
+        let both = format!("{PRE}{e2}{x}{e}");
+        assert!(!holds(&base, &both, &both, &format!("{PRE}{e2}{x}")));
+        assert!(holds(&base, &both, &both, &both));
+        // Each side editing a different copy leaves none untouched.
+        let (o, t) = (format!("{PRE}{e2}{x}{e}"), format!("{PRE}{e}{x}{e2}"));
+        assert!(holds(&base, &o, &t, &format!("{PRE}{e2}{x}{e2}")));
+    }
+
+    #[test]
+    fn untouched_twice_both_sides_removing_a_different_copy_is_refused() {
+        let (e, x) = (entry("2026-10-13", "Twice"), entry("2026-10-12", "X"));
+        let base = format!("{PRE}{e}{x}{e}");
+        let (ours, theirs) = (format!("{PRE}{e}{x}"), format!("{PRE}{x}{e}"));
+        // Each kept one copy: a result with none loses it, which merge-file gives clean.
+        assert_eq!(
+            clean(merged_file_only(&base, &ours, &theirs)),
+            format!("{PRE}{x}")
+        );
+        assert!(!holds(&base, &ours, &theirs, &format!("{PRE}{x}")));
+        assert!(holds(&base, &ours, &theirs, &format!("{PRE}{e}{x}")));
+        let want =
+            format!("<<<<<<< ours\n{ours}||||||| base\n{base}=======\n{theirs}>>>>>>> theirs\n");
+        assert_eq!(refused(merged(&base, &ours, &theirs)), want);
+        // The binary says why, and that the markers wrap all three files whole.
+        let (code, text, err) = through_binary(base.as_bytes(), ours.as_bytes(), theirs.as_bytes());
+        assert_eq!((code, String::from_utf8(text).unwrap()), (1, want));
+        assert_eq!(err.trim_end(), REFUSED);
+    }
+
+    #[test]
+    fn untouched_merge_file_markers_keep_crlf_and_a_missing_last_line_end() {
+        let (base, ours, theirs) = (b"o\r\nx".as_slice(), b"a\r\nx".as_slice(), b"".as_slice());
+        assert_eq!(
+            whole_file_markers(base, ours, theirs),
+            b"<<<<<<< ours\r\na\r\nx\r\n||||||| base\r\no\r\nx\r\n=======\r\n>>>>>>> theirs\r\n"
+        );
+        assert_eq!(
+            whole_file_markers(b"o", b"a", b"t"),
+            b"<<<<<<< ours\na\n||||||| base\no\n=======\nt\n>>>>>>> theirs\n"
+        );
     }
 
     #[test]

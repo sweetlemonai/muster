@@ -1,8 +1,9 @@
 # 0009 — The work log merges through a muster merge driver
 
 Date: 2026-10-14 · Status: accepted (the shaper decided it for task mu-67; the owner can overrule
-it any time). Amended 2026-10-15 three times: entries under an entry, not only on top (mu-190), then
-at any number of points (mu-196), then entries changed or removed on one side (mu-209).
+it any time). Amended 2026-10-15 four times: entries under an entry, not only on top (mu-190), then
+at any number of points (mu-196), then entries changed or removed on one side (mu-209), then a
+result that loses an untouched entry refused (mu-218).
 
 ## Why
 
@@ -137,6 +138,56 @@ two sides never touched the same entry. The merge becomes entry-wise:
   `muster check` warning, since warnings fail nothing.
 
 The shaper made this call for mu-209 (the owner can overrule it).
+
+## Amendment 2026-10-15: a result that loses an untouched entry is refused (task mu-218)
+
+Every merge so far keeps the entries neither side touched by how it's built, and nothing checked
+it. A reported loss in mu-151's rebase turned out to be a false alarm (its base predated mu-210),
+but the lead asked for insurance: a later change to the entry-wise merge, or `git merge-file`
+lining an entry up with its twin (every entry ends in the same Verified line, the union finding
+below), must not drop history unseen.
+
+- An *untouched entry* is one byte-identical in base, ours and theirs. A result must have it
+  whole, as one of its own entries, as many times as it's untouched; the line end the merge adds
+  to an entry that ended the file without one is allowed. A preamble the same in all three must
+  be the result's preamble.
+- How many times is the fewest copies in base and in each side, where a side's copies are less
+  the base copies only the other side changed. Each base entry is matched to each side as the
+  entry-wise reading matches it, whatever the preamble or new entries; one matched to other bytes
+  is changed. Only that lowers the count,
+  and a side can only have changed as many copies as it no longer holds whole. A removal never
+  lowers it: an entry another one was moved around reads as removed though its bytes are still on
+  that side, and round 2 of the review found clean losses through exactly that (seeds 2633, 4034
+  and 5139). So when the base has an entry twice and one side removes copy 2 while the other edits
+  copy 1, the count is 0 and the edit merges clean, as merge-file merges it. When both sides remove
+  a different copy, each kept one, so a result with none is refused. A side's own changed copy is
+  already missing from its count, so it isn't taken off again: when one side edits copy 2 and the
+  other keeps both, copy 1 is untouched and a result without it is refused (review round 3's R4,
+  where round 3's count took the edit off twice and needed none).
+- The check runs on both clean results. The entry-wise merge's result that fails it is refused
+  like any other it can't make: merge-file's markers, exit 1. A clean `git merge-file` result that
+  fails it goes to the entry-wise merge, checked the same way; when that can't merge either, the
+  result is all of ours, base and theirs, whole, between merge-file's `<<<<<<< ours`,
+  `||||||| base`, `=======` and `>>>>>>> theirs` lines, exit 1, so nothing is lost and git stops.
+  stderr says the merge was refused because it would lose an entry neither side changed, and
+  that the markers wrap all three files whole.
+- The unit is the entry, not the line: the Verified and blank lines repeat across entries, so a
+  per-line count could miss a dropped or moved line.
+- An entry a side changed or removed isn't untouched, so a one-sided change or removal, the same
+  change on both sides, an entry both added and an entry moved up by a removal above it merge as
+  before. A clean result that loses an untouched entry is refused, and so, on purpose, are some
+  correct merges of an entry the log holds more than once: where no copy reads as changed, the
+  copies are counted by content. That happens when one side removes a copy and the other edits
+  one, but the matching pairs the editing side's whole copy with the copy it edited, so the edit
+  reads as a removal (seeds 3585 and 4786 of round 2's 6000 randomised merges). A refusal leaves
+  all three files whole, so nothing is lost; telling those apart from a real loss would need the
+  matching to know which copy each side meant, and it can't. Of round 2's flipped seeds, all 11
+  real losses are refused and 10 of the 12 duplicate refusals now merge clean, as main merges
+  them. R4's fix changes none of that: 6000 randomised merges give the same 13 seeds refused (the
+  11 losses, 3585, 4786) and main's exit and bytes for the rest. The driver's contract (0 clean,
+  1 markers, 2 can't merge) is unchanged.
+
+The shaper made this call for mu-218 (the owner can overrule it).
 
 ## Options considered
 
