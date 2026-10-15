@@ -3,7 +3,20 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
-## 2026-10-15 — mu-189: a hand-merged task's pass re-checks its review and gate records under the queue lock
+
+## 2026-10-15 — mu-209's merge-log repros pass; mu-215 to mu-217 shaped, one note folded into mu-149
+**Verified:** with mu-209 in the 07:26 release binary, `muster merge-log` on mu-131's three work logs (O e530e74,
+A fa2ed9d, B 8fb0ffe) and mu-173's (O d8ac722, A ed2474c, B cf5f59e) exits 0 with no conflict markers;
+185 = 178 + 1 + 6 and 163 = 159 + 1 + 3 entries, every one kept once.
+**Did (Shapour, shaper):** mu-215 splits docs/now/board.md into board and pane, and shaping.md into shaping
+and vision-check (After mu-147, mu-151: board.md comes to 4,094 B against the 4,096 B cap). mu-216 keeps the
+account meter's width as its readings change; mu-217 lets search and New task's Parent read keys typed in
+Persian digits (both After mu-151). The فارسی Waiting count's physical `margin-left` folded into mu-149 as AC8.
+**Decided (overrulable):** board.md and shaping.md keep their names; the new page is vision-check.md, not
+vision.md (docs/VISION.md). mu-217 leaves `parseKey`, `key::parse` and key-cases.json ASCII-only (task 0033)
+and makes digits Latin only at the app's search and Parent field; the CLI is mu-152's call. mu-216's default
+fix is CSS only (hidden widest forms in one grid cell), as mu-202 did for the counts.
+
 **Fixed:** a hand merge (`parallel::record_hand_merge`, worktree gone) checked the review and the
 gate records once, then spent seconds asking origin (`ls-remote`, `fetch`) and recorded the merge
 without looking again, so a G3 record turned red meanwhile was missed (mu-131 R17). Now, after the
