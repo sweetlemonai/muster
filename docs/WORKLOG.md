@@ -4,6 +4,19 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — docs/now/claims.md split into claims.md and handoffs.md, each under 3 KB (mu-208)
+**Did (Akbar_40, builder):** `docs/now/claims.md` ("Claims": claim, stamps, slots, lease,
+reclaim, pause, release, takeover; 19 rules, 2,037 bytes) and the new `docs/now/handoffs.md`
+("Sessions, handoffs and mail": decisions 0004 and 0011, check-ins, mail and the answer hook,
+session states and names; 20 rules, 2,121 bytes). Every rule moved word for word with its
+citation. claims.md covers session.rs and pause.rs, handoffs.md session.rs, ping.rs, agents.rs and
+answer-hook.py: the union is the old page's five files. AS_BUILT's "What's true now" links all
+ten pages; `tests/now_pages.rs` pins handoffs among the eight areas.
+**Decided:** shapour's split as written; the takeover's rules (who may take over, the wait, mail
+it brings) stay on claims, the mail mover's own rules go on handoffs.
+**Verified:** sorted bullet lines and cited ids identical before and after; `muster check` says
+nothing about `docs/now/`; the gate's line is in the task's pass.
+
 ## 2026-10-15 — Test queues get a private parent, so a checkout in the shared TMPDIR changes no test (mu-191)
 **Fixed:** 17 review tests went red whenever another session's Muster checkout sat in the shared
 `$TMPDIR` → a test queue was a bare `tempfile::tempdir()`, so `backlog::project_places` took its

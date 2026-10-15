@@ -191,7 +191,7 @@ fn pass_from_building_takes_now_unchanged_on_the_command_line() {
     );
 }
 
-/// Muster's own pages (AC1): the seven areas, each under the cap with covers: that name files
+/// Muster's own pages (AC1): the eight areas, each under the cap with covers: that name files
 /// that exist, no warning, and every rule line citing where it came from.
 #[test]
 fn musters_own_now_pages_are_short_cited_and_cover_real_files() {
@@ -203,7 +203,7 @@ fn musters_own_now_pages_are_short_cited_and_cover_real_files() {
     assert_eq!(muster_lib::now::warnings(&found), Vec::<String>::new());
     let names: Vec<&str> = found.pages.iter().map(|p| p.name.as_str()).collect();
     for want in [
-        "board", "claims", "parallel", "queue", "shaping", "sidebar", "testing",
+        "board", "claims", "handoffs", "parallel", "queue", "shaping", "sidebar", "testing",
     ] {
         assert!(
             names.contains(&format!("docs/now/{want}.md").as_str()),

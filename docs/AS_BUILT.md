@@ -2319,11 +2319,14 @@ files have one copy per branch, are the next step of 0005. See
 ### What's true now: `docs/now/` (task 0102)
 
 The rules in force per area live in short pages, one per area, in `docs/now/`; this document keeps
-how things were built. The rules of the queue are in [queue](now/queue.md), claims and sessions in
-[claims](now/claims.md), worktrees and the merge in [parallel](now/parallel.md), Testing and the
+how things were built. The rules of the queue are in [queue](now/queue.md), claims, the lease and
+the takeover in [claims](now/claims.md), sessions, handoffs, check-ins and mail in
+[handoffs](now/handoffs.md), worktrees and the merge in [parallel](now/parallel.md), Testing and the
 review in [testing](now/testing.md), shaping and the vision check in [shaping](now/shaping.md),
-the board and the task pane in [board](now/board.md), and the sidebar and Settings in
-[sidebar](now/sidebar.md). The format and the pass rule are in PROTOCOL.md ("What's true now").
+the board and the task pane in [board](now/board.md), the sidebar and Settings in
+[sidebar](now/sidebar.md), the Sessions view and its recap in [sessions](now/sessions.md), and the
+Table, Timeline and Graph views in [views](now/views.md). The format and the pass rule are in
+PROTOCOL.md ("What's true now").
 
 - **Reading** (`now.rs`): only plain `*.md` files directly in `docs/now/` (100 at most), each read
   up to 16 KB, control characters out. A symlinked page is passed over, and so is a `docs/now/`
