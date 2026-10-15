@@ -38,3 +38,4 @@ covers: app/src-tauri/src/backlog.rs, app/src-tauri/src/lenses.rs, app/src-tauri
 - `--time` is agent time (first claim to leaving Testing, review and QA included, blocked and paused left out); `--test-time` is the owner's check only; the wait in Your check is neither. (mu-168)
 - `--tokens` counts input, output and cache writes, never cache reads; `--time` is agent hours (1d = 8 h). (mu-172)
 - `muster check` warns about a page over 60 lines or 4 KB, without `covers:`, sharing another's, or a symlink; never fails. (mu-102)
+- `muster new`, `file` and `edit` refuse a new `— verify: owner` criterion unless `--as owner`: make it provable, or `qa: walkthrough`. A hand edit of the task file isn't checked. (mu-132)

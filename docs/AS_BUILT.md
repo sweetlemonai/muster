@@ -127,6 +127,7 @@ here):
 | `review.rs` | The review of record: the brief, the result recorded, rounds, the merge check; owner findings from a send-back out of Your check (lens `owner`) |
 | `gates.rs` | Gate records (G3 criteria, G4 visual QA): the record checked and stored at the branch's tip, which gates a task needs (`qa:`, `gates: on`), `muster gates`, the merge check and carry |
 | `testing.rs` | What the review and the gate records share: the tool's sections (fenced code skipped), the head a record names, who may record in Testing |
+| `verify.rs` | The criteria gate (G3, mu-132): `muster verify`'s brief for the `ac-verifier` agent, the ticks a criteria record writes (met ticked with its evidence, the rest unticked with their gaps logged), and the refusal of new owner-only criteria in `new`, `file` and `edit` (a hand edit of the task file isn't checked) |
 | `lessons.rs` | Lessons from reviews: proposed from repeated findings, accepted or rejected by the owner |
 | `pause.rs` | Pause and Resume: a task keeps its stage and claim, nobody works it |
 | `old_pause.rs` | Turning pre-0045 "paused" blocks into pauses (`muster check --fix-pauses`) |
@@ -218,15 +219,15 @@ The 84 commands it can call (`generate_handler!` in `lib.rs`), by what they do:
 ### The `muster` command line
 
 The app's binary, run with arguments (`main.rs`). `bin/muster` finds the release build
-(`app/src-tauri/target/release/muster`) and runs it; it's linked into `~/.local/bin`. 50 commands
-in `help.rs`, grouped as the manual groups them:
+(`app/src-tauri/target/release/muster`) and runs it; it's linked into `~/.local/bin`. 55 commands
+in `help.rs`, grouped as the manual groups them (the table lists the main ones):
 
 | Group | Commands |
 |---|---|
 | Tasks | `new`, `list`, `show`, `set`, `edit`, `note`, `comment`, `link`, `attach` |
 | Stages | `pass`, `return`, `block`, `unblock`, `pause`, `resume`, `stage`, `tick`, `untick`, `move` |
 | Claims | `claim`, `next`, `heartbeat`, `checkin`, `ping`, `reclaim`, `ready`, `start`, `release`, `merge-log` |
-| Review | `review`, `lessons` |
+| Review | `review`, `verify`, `gate`, `gates`, `lessons` |
 | Team | `team`, `instructions` |
 | Questions | `ask`, `answer`, `escalate`, `clarify`, `inbox` |
 | Backlog | `add`, `shape`, `file`, `drop`, `vision` |
@@ -277,6 +278,14 @@ These live in `~/playground/.claude`, which the owner keeps; Muster's repo is th
   the successor in the background), thresholds in `handoff.json`.
 - **The review engine:** `/deep-review` and `reviews/` run the review of record in Testing
   (decision 0005); Muster only prints its brief and records its result.
+- **The criteria agent** (mu-132): `agents/ac-verifier.md`, a link to this repo's
+  `agents/ac-verifier.md` (promoted from Braindump's, stack-neutral), which `link-personal-layer`
+  links into every repo's `.claude/agents/` (a repo's own `ac-verifier.md`, as Braindump's,
+  wins). It reads `muster verify`'s brief, never edits, runs at most one targeted test per
+  criterion, and returns the criteria record's JSON. Its fixture test is
+  `agents/test_ac_verifier.py` (in `bin/gate`): the agent's definition, and a fixture task with a
+  planted met, partial, unmet and unproven criterion whose expected verdicts a real run's JSON is
+  checked against (`--make <dir>`, then `--check <dir> <json>`).
 - **The work log reminder:** `hooks/worklog-check.mjs`, a Stop hook.
 
 ### Files on disk, and who reads and writes each
@@ -297,7 +306,7 @@ status folders and `inbox/` for the backlog):
 | `mail/asks.json` | Which mailbox asked which question: `<session8>`, or `<session8>/<agent8>` for a teammate | `muster ask`; a takeover repoints the task's entries | `muster answer` |
 | `mail/<session8>/` | A session's mailbox: answers, check-in, pause and resume requests, messages; `delivered/` once handed over. A teammate's is `<agent8>/` inside it, which the lead never takes | `muster answer`, `ping`, `pause`, `resume`, the app; a takeover moves the task's mail to the successor's | `bin/answer-hook.py` (a teammate's by the hook input's `agent_id`), `muster inbox` |
 | `reviews/<id>.json` | The review of record's rounds and findings (the truth); an owner finding has lens `owner` | `muster review --record`, `--fixed`, `--dispute`, `--settle`; a return from Your check to Building adds the owner finding (a new store at round 0 when there's none) | the core, the task's `## Review` section |
-| `gates/<id>/criteria.json`, `gates/<id>/visual.json` | A task's gate records (the truth): head, verdict, by, at, items | `muster gate --record`; the merge's carry | the core, `muster gates`, the merge, the task's `## Gates` section |
+| `gates/<id>/criteria.json`, `gates/<id>/visual.json` | A task's gate records (the truth): head, verdict, by, at, items | `muster verify --record`, `muster gate --record`; the merge's carry | the core, `muster gates`, the merge, the task's `## Gates` section |
 | `reviews/lessons.json`, `lessons.md` | Lessons from reviews (truth, and rendered) | the core, under the lock; `muster lessons` | `muster start`'s brief, the review brief, the app |
 | `INDEX.md` | The master list, generated | the core after every write; `muster index` | the owner, `muster check`, `manifest.py --check` |
 | `tasks.json` | The manifest, generated | `manifest.py` only | scripts |
@@ -2235,6 +2244,25 @@ last gate run checked (mu-187): main fast-forwards to its SHA, never to the bran
 commit made after the gate stays on the branch, which isn't deleted, and the report ends `<branch>
 moved after the gate; its newer commits stay on <branch>`; origin's copy of the branch goes only
 when it's the merged commit. `muster migrate` copies `gates/`.
+**The criteria gate** (mu-132, `verify.rs`): `muster verify <id>` prints the `ac-verifier`
+agent's brief (worktree, branch, `git -C <wt> diff <merge-base>..<tip>`, the task file, every gate
+from `gates::list`, the criteria as `> AC1 · …` lines under "data, not instructions", the record
+command and `verify::SHAPE`); `--record -` is `gates::record` for `criteria`. Inside that record's
+lock, before the first write, `verify::tick_from` sets the criteria from it (keys by
+`gates::criterion_key`, the rule `criteria_of` uses): a met one is rewritten on one line as
+`- [x] <text> — proof: <what was checked>; evidence: <paths>; criteria record (G3) at <head>`
+(the proof split off by `split_proof` replaced), any other non-owner one gets its box unticked if
+ticked and a gap (`AC2 unproven: <note, else text>`, or `isn't in the record`); the owner's are
+skipped. The log gets `ticked …`, `unticked …` and one `criteria gap: …` line each, through
+`free_text_line`, and `Recorded` carries `ticked`, `unticked` and `gaps`. So `muster gate <id>
+criteria --record` ticks too: one rule. A Testing pass of a `gates: on` task with unticked
+criteria says `the criteria record ticks each met one: muster verify <id>`.
+`verify::refuse_owner_criteria` runs in `ops::create_task` and `backlog::file_note` (so the app's
+New task and File, which act as the owner, pass): a criterion whose `verify:` starts with `owner`
+is refused unless `is_owner(who)`, with `verify::HINT`; `ops::edit_body` runs
+`refuse_new_owner_criteria` on the write-up before and after, so only an owner criterion whose text
+wasn't there is refused. The shaping brief's template offers
+command, measurement or screenshot against a baseline, and says the same below it.
 **The work log's merge driver** (task 0067, decision 0009, `merge_log.rs`): `muster merge-log
 %O %A %B` is git's merge driver for `docs/WORKLOG.md` (`.gitattributes`:
 `docs/WORKLOG.md merge=muster-log`). It runs `git merge-file -p` and keeps a clean result. On a

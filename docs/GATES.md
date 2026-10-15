@@ -25,7 +25,7 @@ writes one record. Muster checks the record's shape and its `head`, and stores i
 |---|---|---|---|---|---|
 | G1 | Build | format, lint, types, tests, build are green | the builder, then the merge | always | built: `bin/gate`, tree-stamped |
 | G2 | Code review | no verified defect is left | Kia with lens subagents (`/deep-review`) | always | built: `muster review` (0005); started by hand until the dispatcher (mu-119) |
-| G3 | Criteria | each criterion is **met**, with evidence that would fail if it broke | Kia, through `ac-verifier` | always | not built (mu-132) |
+| G3 | Criteria | each criterion is **met**, with evidence that would fail if it broke | Kia, through `ac-verifier` | always | built: `muster verify` (mu-132); the record ticks the criteria |
 | G4 | Visual QA | every touched screen state matches its reference or its approved baseline; screens with neither have been walked through | Kia (reference QA) and the owner (walkthrough), per the proposal | the task touches UI (`qa:` set by the shaper) | not built (mu-133 to mu-140) |
 
 ## G3, criteria

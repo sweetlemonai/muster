@@ -1,5 +1,5 @@
 ---
-covers: app/src-tauri/src/review.rs, app/src-tauri/src/review_cmds.rs, app/src-tauri/src/lessons.rs, app/src-tauri/src/check_limit.rs, app/src/yourCheck, app/src/Review, app/src/OwnerChecklist, app/src/EffortGroups
+covers: app/src-tauri/src/review.rs, app/src-tauri/src/review_cmds.rs, app/src-tauri/src/verify.rs, app/src-tauri/src/lessons.rs, app/src-tauri/src/check_limit.rs, app/src/yourCheck, app/src/Review, app/src/OwnerChecklist, app/src/EffortGroups
 ---
 # Testing and the review of record
 
@@ -8,7 +8,11 @@ covers: app/src-tauri/src/review.rs, app/src-tauri/src/review_cmds.rs, app/src-t
 - The owner's pass out of Testing is always accepted, logged as an override. (mu-47)
 - A Testing card says "needs a tester" while a builder holds it. (mu-47)
 - The card counts a takeover's predecessor as a builder, as the core does. (mu-186)
-- The tester ticks each criterion with its proof: `- [x] AC2: … — verify: … — proof: …`. (PROTOCOL.md "Parallel sessions")
+- Testing runs the review, then `muster verify`, then visual QA for a task with `qa:`. (mu-132)
+- `muster verify <id>` prints the `ac-verifier` brief; `--record -` takes its JSON as the criteria record. (mu-132)
+- The criteria record ticks each met criterion with its evidence and logs the gap of each other one. (mu-132)
+- Only met passes; the owner's criteria are never ticked by it. (mu-132)
+- Started before gate records: the tester ticks each criterion with its proof: `- [x] AC2: … — proof: …`. (PROTOCOL.md "Parallel sessions")
 - A screenshot named `attachments/<id>/<file>` in a proof shows under it in Your check. (mu-78)
 - A criterion whose verify starts with `owner` is the owner's: agents don't tick it. (PROTOCOL.md "Task file")
 - "command (test) and owner" isn't the owner's alone: tick it with the command's proof. (PROTOCOL.md "Task file")

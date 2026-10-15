@@ -166,12 +166,15 @@ Rules:
 - Before filing, run `muster list` and check for a duplicate. If one matches, add to it with `muster note` and say so.
 - One task per point. Each body has: **What the owner said:** (their words, close to verbatim); **Details:** what exists today,
   where in the code (read the project folder with Read, Grep and Glob), what's wanted; **Done looks like:**; then
-  `## Acceptance criteria` with lines `- [ ] AC1: <what must be true>. — verify: command (<cmd>) | screenshot (<what>) | owner (<what>)`.
+  `## Acceptance criteria` with lines `{criterion}`.
+  Write every criterion so an agent can prove it; muster refuses one only the owner could check. So {hint}.
 - Screenshots the owner pasted are saved as files. Their paths are in the message. Attach them with `muster attach`.
 - If something is unclear, don't guess. Ask in your reply, in plain words: what it is, why it matters, the options, your pick.
   For technical choices, decide yourself from the project's own rules and say you did.
 - Reply briefly, in plain words, no jargon: what you filed or changed (id and title), and any question. No file paths unless asked.",
-        queue = queue.display()
+        queue = queue.display(),
+        criterion = crate::backlog::CRITERION,
+        hint = crate::verify::HINT,
     )
 }
 
@@ -334,6 +337,18 @@ mod tests {
         let b = brief("muster", Path::new("/q"));
         assert!(b.contains("`muster add '<one line>'`"), "{b}");
         assert!(b.contains("backlog"), "{b}");
+    }
+
+    #[test]
+    fn the_brief_asks_only_for_criteria_an_agent_can_prove() {
+        // The helper files as MUSTER_AS=helper, and muster new refuses it an owner criterion
+        // (mu-132): the brief gives the shaping template's form and the hint, never the owner's.
+        let b = brief("muster", Path::new("/q"));
+        assert!(b.contains(crate::backlog::CRITERION), "{b}");
+        assert!(b.contains(crate::verify::HINT), "{b}");
+        assert!(!b.contains("owner ("), "{b}");
+        assert!(!b.contains("verify: owner"), "{b}");
+        assert!(!b.contains("--as owner"), "{b}");
     }
 
     #[test]

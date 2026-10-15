@@ -54,6 +54,26 @@
 > takes it from there). The owner may merge anyway; the report says so (`gates: criteria green,
 > visual needs-walkthrough`, or `… (the owner's override)`).
 
+> **The criteria gate (Muster mu-132, 2026-10-15, decision 0014, `docs/GATES.md` G3).** The
+> criteria record comes from the personal layer's **`ac-verifier`** agent (linked into every
+> repo's `.claude/agents/`; Muster runs no agent). `muster verify <id>` prints its brief: the
+> worktree, the diff against the merge-base, where each gate stands, and the criteria quoted as
+> data. The agent finds each criterion's code and the evidence that would fail if it broke, runs
+> at most one targeted test per criterion (never the full gate), never edits, and answers with the
+> record's JSON: **met**, **partial**, **unmet** or **unproven**, with the gap in `note`. `muster
+> verify <id> --record - --as <you>` records it (the same record, checks and refusals as `muster
+> gate <id> criteria --record -`, which does the same). **The record ticks the criteria:** each met
+> one becomes `- [x] … — proof: <what was checked>; evidence: <paths>; criteria record (G3) at
+> <commit>` (a proof from before is replaced), any other that was ticked is unticked, and each gap
+> is logged (`criteria gap: AC2 unproven: <why>`). The owner's own criteria are never touched. So
+> for a task started with gate records, nobody ticks an agent's criterion by hand: a hand tick
+> doesn't move the record, and the next record resets it. **New tasks can't add owner-only
+> criteria:** `muster new` and `muster file` refuse a `— verify: owner` criterion unless the owner
+> makes the task (`--as owner`), and `muster edit` refuses one the write-up didn't have, word for
+> word: make it provable (a test, a measurement, a screen state with a baseline), or make it a
+> walkthrough check (`qa: walkthrough`). Those three commands are the guard: a task file edited
+> by hand isn't checked. Old tasks keep theirs (0028).
+
 > **The review of record (Muster 0027, 2026-10-13).** A task started on its own branch (0023)
 > is reviewed in Testing by the owner's review engine, and that's the review that counts: builders
 > run the gate, not a second full review. Muster runs no agent for the review or the vision check;
@@ -307,12 +327,16 @@ its own agent id is another holder, 0090) and logged `(tested under
 >    project's gate is green, `muster pass <id> --from building --gate "<its result line>"
 >    --summary "<what was built, one plain line>"`, as always: nothing is pushed and no PR is
 >    opened. The worktree stays for Testing.
-> 4. **Review and fix.** Testing reviews it and ticks each criterion with its proof, in a session
->    that isn't the builder (0047): `- [x] AC2: … — verify: … — proof: <what showed it>`, naming
->    any screenshot as `attachments/<id>/<file>` so Your check shows it under that criterion. A finding the builder must fix is `muster return <id> "<why>"`:
->    back to Building, in the same worktree. The tester also records the gates the task needs at
->    the tip (mu-131, above): `muster gates <id>` says which; `muster gate <id> criteria --record -`
->    and, with `qa:` set, `muster gate <id> visual --record -`.
+> 4. **Review, verify, visual QA, fix.** Testing runs, in a session that isn't the builder
+>    (0047), in this order: **the review** of record (0005, below: `muster review <id>`, then
+>    `/deep-review`); then **`muster verify <id>`**, the criteria gate (mu-132, above): the
+>    `ac-verifier` agent on its brief, its JSON recorded with `muster verify <id> --record -`,
+>    which ticks each met criterion with its evidence and logs the gaps; then, for a task with
+>    `qa:`, **visual QA** (`muster gate <id> visual --record -`). `muster gates <id>` says where
+>    each stands. A task started before gate records is ticked by hand as before: `- [x] AC2: … —
+>    verify: … — proof: <what showed it>`, naming any screenshot as `attachments/<id>/<file>` so
+>    Your check shows it under that criterion. A finding the builder must fix is `muster return
+>    <id> "<why>"`: back to Building, in the same worktree.
 > 5. **Merge: `muster pass <id> --from testing`.** For a started task this pass is the merge, in
 >    order, stopping at the first failure: it takes the repo's merge lock (a flock on
 >    `<git common dir>/muster/merge.lock`, so one merge runs at a time); rebases the branch on the
@@ -931,11 +955,13 @@ commit:                # set when done
 **Details:** what exists today, where in the code, what's wanted.
 
 ## Acceptance criteria
-- [ ] AC1: what must be true. — verify: command (`pnpm check`) | screenshot (what) | owner (what they check)
+- [ ] AC1: what must be true. — verify: command (`pnpm check`) | measurement (what, against what) | screenshot (what, against its baseline)
 
 A criterion whose verify part starts with `owner` is the owner's: agents don't tick it, Testing
 passes to Your check without it, and the owner ticks it there. "command (test) and owner" is
-not the owner's alone: tick it with the command's proof.
+not the owner's alone: tick it with the command's proof. Since mu-132 only the owner adds one
+(`muster new` and `muster file` refuse it otherwise): make it provable, or a walkthrough check
+(`qa: walkthrough`).
 
 ## Questions
 ## Log

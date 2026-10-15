@@ -106,6 +106,7 @@ fn reads_only(a: &Args) -> bool {
         "shape" => a.peek,
         "vision" => !has(&["record", "resolve"]),
         "review" => !has(&["record", "fixed", "dispute", "settle"]),
+        "verify" => !has(&["record"]),
         _ => false,
     }
 }
@@ -554,7 +555,7 @@ const TARGETED: [&str; 17] = [
 
 /// Is this command checked like a claim (`check_target`)? The TARGETED ones, `vision` when it
 /// writes (`--record`, `--resolve`; its brief only reads), `review` when it writes (0027), `gate
-/// --record` (mu-131), `lessons accept|reject`, and `shape` unless `--peek` (0097: it claims the
+/// --record` (mu-131), `verify --record` (mu-132), `lessons accept|reject`, and `shape` unless `--peek` (0097: it claims the
 /// note).
 fn targeted(cmd: &str, a: &Args) -> bool {
     let writes = |keys: &[&str]| keys.iter().any(|k| a.flags.contains_key(*k));
@@ -563,6 +564,7 @@ fn targeted(cmd: &str, a: &Args) -> bool {
         || (cmd == "vision" && writes(&["record", "resolve"]))
         || (cmd == "review" && writes(&["record", "fixed", "dispute", "settle"]))
         || (cmd == "gate" && writes(&["record"]))
+        || (cmd == "verify" && writes(&["record"]))
         || (cmd == "lessons" && a.pos.len() > 1)
 }
 
@@ -624,8 +626,9 @@ fn check_target(
 }
 
 /// Commands whose first word after the command is a task (0033: `mu-12`, `MU-12`, `12` or `0012`).
-const TAKES_A_TASK: [&str; 30] = [
+const TAKES_A_TASK: [&str; 31] = [
     "review",
+    "verify",
     "gate",
     "gates",
     "show",
@@ -3045,6 +3048,7 @@ fn run_on(
         "vision" => run_vision(a, root, prefix, &me, stamp),
         "review" => run_review(a, root, prefix, &me, stamp, cwd),
         "gate" => run_gate_record(a, root, prefix, &me, stamp, cwd),
+        "verify" => run_verify(a, root, prefix, &me, stamp, cwd),
         "gates" => {
             let id = need(a, 1, "a task id")?;
             if a.pos.len() > 2 {
@@ -3243,6 +3247,41 @@ fn run_gate_record(
         print_json(&r)?;
     } else {
         out!("{}", gates::recorded_text(&k, &r));
+    }
+    Ok(0)
+}
+
+/// `muster verify <id>` (mu-132): the criteria gate's brief for the ac-verifier agent, or with
+/// `--record` (`-` reads stdin) its JSON as the task's criteria record, which ticks each met
+/// criterion with its evidence and logs the gaps of the rest.
+fn run_verify(
+    a: &Args,
+    root: &Path,
+    prefix: &str,
+    me: &dyn Fn() -> String,
+    stamp: &str,
+    cwd: Option<&Path>,
+) -> Result<i32, String> {
+    let id = need(a, 1, "a task id")?;
+    if a.pos.len() > 2 {
+        return Err(
+            "verify takes one task id; the record goes in --record (see `muster help`)".into(),
+        );
+    }
+    let Some(record) = a.flags.get("record") else {
+        out!("{}", crate::verify::brief_text(root, id, cwd)?);
+        return Ok(0);
+    };
+    let tip = gates::tip(root, id, cwd)?;
+    let json = match record.as_str() {
+        "-" => read_capped(std::io::stdin(), "stdin")?,
+        j => j.to_string(),
+    };
+    let r = crate::verify::record(root, id, &json, &me(), stamp, &tip)?;
+    if a.json {
+        print_json(&r)?;
+    } else {
+        out!("{}", gates::recorded_text(&crate::key::key(prefix, id), &r));
     }
     Ok(0)
 }
@@ -7122,6 +7161,124 @@ mod tests {
         assert_eq!(run_in(&["set", &id, "qa", "both", "--as", "owner"]), Ok(0));
         assert_eq!(queue::read_task(&f.root, &id).unwrap().qa, "both");
         assert!(run_in(&["set", &id, "qa", "pixels", "--as", "owner"]).is_err());
+    }
+
+    #[test]
+    fn verify_prints_the_brief_and_its_record_ticks_the_criteria() {
+        use crate::parallel::tests::{commit, fx};
+        let f = fx();
+        let run_in = |args: &[&str]| {
+            let a = parse(&sv(args)).unwrap();
+            run_on(
+                &a,
+                args[0],
+                &f.root,
+                "pj",
+                "2026-10-15 10:00",
+                &no_env,
+                Some(&f.repo),
+            )
+        };
+        let p = |args: &[&str]| parse(&sv(args)).unwrap();
+        assert!(reads_only(&p(&["verify", "0001"])));
+        assert!(!reads_only(&p(&["verify", "0001", "--record", "-"])));
+        assert!(!targeted("verify", &p(&["verify", "0001"])));
+        assert!(targeted("verify", &p(&["verify", "0001", "--record", "-"])));
+        let id = ops::create_task(
+            &f.root,
+            &ops::NewTask {
+                title: "Verified".into(),
+                body: "## Acceptance criteria\n- [ ] AC1: works — verify: command\n- [ ] AC2: fast — verify: command\n".into(),
+                touches: "v/".into(),
+                ..Default::default()
+            },
+            "owner",
+            "2026-10-15 09:00",
+        )
+        .unwrap()
+        .id;
+        // Usage (2) and refusals (1).
+        let code = |args: &[&str]| match run_in(args) {
+            Ok(c) => c,
+            Err(e) if e.contains("see `muster help`") => 2,
+            Err(_) => 1,
+        };
+        assert_eq!(code(&["verify"]), 2);
+        assert_eq!(code(&["verify", &id, "extra"]), 2);
+        assert_eq!(code(&["verify", &id]), 1, "not started: no branch");
+        assert_eq!(run_in(&["start", &id, "--as", "wt-a"]), Ok(0));
+        let wt = PathBuf::from(queue::read_task(&f.root, &id).unwrap().worktree);
+        commit(&wt, "v/x.txt", "x\n", "build");
+        let opts = ops::PassOpts {
+            gate: "gate: green (built)".into(),
+            summary: "A synthetic summary".into(),
+            from: Some("building".into()),
+            ..Default::default()
+        };
+        ops::pass_task(&f.root, &id, "wt-a", "2026-10-15 11:00", &opts).unwrap();
+        assert_eq!(run_in(&["verify", &id]), Ok(0), "the brief reads");
+        let tip = gates::tip(&f.root, &id, None).unwrap();
+        let red = format!(
+            r#"{{"head":"{tip}","verdict":"red","items":[{{"id":"AC1","verdict":"met","text":"ran it"}},{{"id":"AC2","verdict":"unmet","note":"no measurement"}}]}}"#
+        );
+        assert!(run_in(&["verify", &id, "--record", &red, "--as", "wt-a"])
+            .unwrap_err()
+            .contains("was built by wt-a"));
+        assert_eq!(
+            run_in(&["verify", &id, "--record", &red, "--as", "qa"]),
+            Ok(0)
+        );
+        let ticked = |id: &str| {
+            queue::criteria_items(&queue::read_body(&f.root, id).unwrap())
+                .iter()
+                .map(|c| c.ticked)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ticked(&id), [true, false]);
+        let text = queue::read_body(&f.root, &id).unwrap();
+        assert!(
+            text.contains("criteria gap: AC2 unmet: no measurement"),
+            "{text}"
+        );
+        let green = format!(
+            r#"{{"head":"{tip}","verdict":"green","items":[{{"id":"1","verdict":"met"}},{{"id":"2","verdict":"met"}}]}}"#
+        );
+        assert_eq!(
+            run_in(&["verify", &id, "--record", &green, "--as", "qa", "--json"]),
+            Ok(0)
+        );
+        assert_eq!(ticked(&id), [true, true]);
+        assert_eq!(
+            gates::list(&f.root, &id, &tip).unwrap().gates[2].state,
+            gates::State::Green
+        );
+    }
+
+    #[test]
+    fn new_and_file_refuse_an_owner_criterion_unless_the_owner_adds_it() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let run_as = |who: &str, args: &[&str], body: &str| {
+            let mut v: Vec<&str> = args.to_vec();
+            v.extend(["--queue", q.as_str(), "--as", who, "--body", body]);
+            run(&sv(&v))
+        };
+        let owners = "## Acceptance criteria\n- [ ] AC1: works — verify: command\n- [ ] AC2: looks right — verify: owner\n";
+        let e = run_as("Shapour", &["new", "Looks"], owners).unwrap_err();
+        assert!(
+            e.contains("AC2 is a criterion only the owner can verify"),
+            "{e}"
+        );
+        assert!(e.contains(crate::verify::HINT), "{e}");
+        assert!(ops::tasks_now(d.path()).is_empty(), "nothing made");
+        assert_eq!(run_as("owner", &["new", "Looks"], owners), Ok(0));
+        std::fs::write(d.path().join("inbox/idea.md"), "an idea\n").unwrap();
+        let e = run_as("Shapour", &["file", "idea.md", "Idea"], owners).unwrap_err();
+        assert!(e.contains("only the owner can verify"), "{e}");
+        assert!(d.path().join("inbox/idea.md").exists(), "the note stays");
+        let fine = "## Acceptance criteria\n- [ ] AC1: works — verify: command (tests)\n";
+        assert_eq!(run_as("Shapour", &["file", "idea.md", "Idea"], fine), Ok(0));
+        assert_eq!(ops::tasks_now(d.path()).len(), 2);
     }
 
     #[test]

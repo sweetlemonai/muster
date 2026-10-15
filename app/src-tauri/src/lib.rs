@@ -55,6 +55,7 @@ mod testkit;
 pub mod transcripts;
 pub mod tray;
 pub mod usage;
+pub mod verify;
 pub mod vision;
 pub mod work;
 

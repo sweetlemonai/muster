@@ -70,8 +70,10 @@ An idea doesn't need to be a task yet. Put it in the backlog, and shape it when 
 
    ## Acceptance criteria
    - [ ] AC1: no flicker when the pane opens. — verify: command (pnpm test)
-   - [ ] AC2: it looks steady on the Mac. — verify: owner (open a task and watch the board)
+   - [ ] AC2: the board holds still while the pane opens. — verify: screenshot (the board with the pane open, against its baseline)
    ```
+
+   Write criteria an agent can prove. `muster new`, `muster file` and `muster edit` refuse a new `— verify: owner` criterion from anyone but you (`--as owner`); a task file edited by hand isn't checked.
 
    Then **Save** (⌘↩). The task is made in Shaping and opens in the pane, with the note kept in its files. The same from a terminal, with that body saved in `body.md`:
 

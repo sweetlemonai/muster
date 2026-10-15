@@ -528,6 +528,7 @@ pub(crate) fn create_locked(
 pub fn create_task(root: &Path, new: &NewTask, who: &str, stamp: &str) -> Result<Created, String> {
     let who = actor(who)?;
     let mut t = clean_new(new)?;
+    crate::verify::refuse_owner_criteria(&t.body, &who)?;
     (t.level, t.parent, t.due) = clean_link(new)?;
     t.for_who = pick(new.for_who.trim(), &queue::FOR_WHO, "ai", "for")?;
     if t.for_who == "human" {
@@ -1200,6 +1201,9 @@ struct Current {
     /// with no branch (merged, or never started): no review round can re-check them until
     /// `muster start` makes a branch, so they hold its pass. Empty otherwise.
     owner_unbranched: Vec<String>,
+    /// Started with gate records (mu-131, `gates: on`): its criteria record ticks its criteria
+    /// (mu-132).
+    gates_on: bool,
 }
 
 /// What a stage change writes.
@@ -1418,6 +1422,7 @@ fn current(root: &Path, path: &Path, text: &str) -> Result<Current, String> {
         summary: t.summary,
         markers: crate::clarify::markers(text),
         waits: crate::clarify::waits(&t.questions),
+        gates_on: t.gates_on,
     })
 }
 
@@ -2430,8 +2435,14 @@ fn pass_change(
         }
         "testing" if ticked + t.owner_open < items => {
             return Err(format!(
-                "{id}: {} of {items} acceptance criteria aren't ticked; tick each with its proof first{}",
+                "{id}: {} of {items} acceptance criteria aren't ticked; {}{}",
                 items - ticked - t.owner_open,
+                // Started with gate records: the criteria record ticks them (mu-132).
+                if t.gates_on {
+                    format!("the criteria record ticks each met one: muster verify {id}")
+                } else {
+                    "tick each with its proof first".to_string()
+                },
                 if t.owner_open > 0 {
                     format!(" ({} more are the owner's, checked in Your check)", t.owner_open)
                 } else {
@@ -4627,6 +4638,8 @@ pub fn edit_body(
         if questions_headings(&new_body) > questions_headings(current) {
             return Err("the write-up has a new \"## Questions\" line, and the Questions section is the tool's: ask with muster ask".into());
         }
+        // Owner-only criteria are the owner's to add (mu-132); the ones it has stay.
+        crate::verify::refuse_new_owner_criteria(current, &new_body, &who)?;
         let new_body = match questions {
             Some(q) => put_back_questions(&new_body, q),
             None => new_body,

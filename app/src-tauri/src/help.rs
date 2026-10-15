@@ -48,7 +48,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "new",
         usage: "muster new \"<title>\" [--type code|bug|chore|tech-debt|spike|design|docs|research] [--priority high|normal|low] [--tags a,b] [--time 2h] [--test-time 30m] [--tokens 400k] [--touches <folders,globs>] [--level goal|feature] [--parent <id>] [--due YYYY-MM-DD] [--human] [--body <text>|-]",
-        what: "Create a task in Ready. Its id is taken in order under the queue's lock, and it's logged as you. With --level it's a goal (an outcome, may have a due date) or a feature (groups tasks); agents build only tasks. With --human it's the owner's own to do (for: human): only the owner makes one, and agents never take it; an agent that finds something only the owner can do proposes it with muster add. An idea that isn't a task yet goes in the backlog instead (muster add).",
+        what: "Create a task in Ready. Its id is taken in order under the queue's lock, and it's logged as you. With --level it's a goal (an outcome, may have a due date) or a feature (groups tasks); agents build only tasks. With --human it's the owner's own to do (for: human): only the owner makes one, and agents never take it; an agent that finds something only the owner can do proposes it with muster add. A criterion only the owner verifies (— verify: owner) is refused unless the owner makes the task (--as owner): make it provable (a test, a measurement, a screen state with a baseline), or make it a walkthrough check (qa: walkthrough). An idea that isn't a task yet goes in the backlog instead (muster add).",
         options: &[
             ("--type", "code (default), bug, chore, tech-debt, spike, design, docs or research; task still means code"),
             ("--priority", "high, normal (default) or low"),
@@ -298,7 +298,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "edit",
         usage: "muster edit <id> [--body -]",
-        what: "Edit a task's write-up: the description, To do and acceptance criteria between the front matter and the Log. Opens $VISUAL or $EDITOR (else vi; quotes work as in a shell, but no shell runs it) on a copy and saves it when the editor exits, logged as an edit. Unchanged text prints \"no change\" and writes nothing. The front matter and the Log stay the tool's: a \"## Log\" line or a stage line is refused. Once a task has a vision check, its ## Vision section is the tool's too: left out of the write-up and kept as it is, and a new \"## Vision\" line is refused. So is its ## Questions section, wherever it sits (muster ask writes it): left out of the write-up, put back where it was, and a new \"## Questions\" line is refused. Refused when the write-up changed since you opened it, or when the editor fails; either way, what you typed is kept in the temp file it names. Refused too while someone else holds it in Building: their branch owns the write-up then, so add a note instead.",
+        what: "Edit a task's write-up: the description, To do and acceptance criteria between the front matter and the Log. Opens $VISUAL or $EDITOR (else vi; quotes work as in a shell, but no shell runs it) on a copy and saves it when the editor exits, logged as an edit. Unchanged text prints \"no change\" and writes nothing. The front matter and the Log stay the tool's: a \"## Log\" line or a stage line is refused. A new criterion only the owner verifies (— verify: owner) is refused unless the owner edits (--as owner); the ones the task has stay (mu-132). Once a task has a vision check, its ## Vision section is the tool's too: left out of the write-up and kept as it is, and a new \"## Vision\" line is refused. So is its ## Questions section, wherever it sits (muster ask writes it): left out of the write-up, put back where it was, and a new \"## Questions\" line is refused. Refused when the write-up changed since you opened it, or when the editor fails; either way, what you typed is kept in the temp file it names. Refused too while someone else holds it in Building: their branch owns the write-up then, so add a note instead.",
         options: &[
             ("--body -", "read the new write-up from stdin instead of opening an editor (for scripts)"),
             ("--as", "who's editing; the holder of a task in Building may edit it"),
@@ -517,7 +517,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "file",
         usage: "muster file <note-file> \"<title>\" [--type code|bug|chore|tech-debt|spike|design|docs|research] [--priority high|normal|low] [--tags a,b] [--time 2h] [--test-time 30m] [--tokens 400k] [--touches <folders,globs>] --body <text>|-",
-        what: "File a shaped backlog note as a task: the next id, in Shaping, with your body after a \"From the backlog\" line quoting the note. The note moves into the task's attachments/<id>/, so nothing is lost; all under the queue's lock, so a note is filed once. Then muster pass <id> --from shaping puts it in Ready (it needs acceptance criteria). It warns, on stderr, naming each lens the project doesn't skip that the body has no **Lenses:** line for (or only the template's <…>), and files it anyway; --json gives them as missingLenses. It warns the same way about each [NEEDS CLARIFICATION: …] marker left in the body (--json: markers): filed anyway, but the pass into Ready waits until each is decided or asked (muster help clarify). A note you're shaping (muster shape) becomes your task: it's claimed by you in Shaping with a fresh heartbeat, and the note's claim ends; passing it to Ready (or back to the backlog) lets go. Someone else's note is refused while their lease runs; the owner may file it anyway, and anyone once the lease ran out, logged as taken over from them.",
+        what: "File a shaped backlog note as a task: the next id, in Shaping, with your body after a \"From the backlog\" line quoting the note. The note moves into the task's attachments/<id>/, so nothing is lost; all under the queue's lock, so a note is filed once. Then muster pass <id> --from shaping puts it in Ready (it needs acceptance criteria). It warns, on stderr, naming each lens the project doesn't skip that the body has no **Lenses:** line for (or only the template's <…>), and files it anyway; --json gives them as missingLenses. It warns the same way about each [NEEDS CLARIFICATION: …] marker left in the body (--json: markers): filed anyway, but the pass into Ready waits until each is decided or asked (muster help clarify). A criterion only the owner verifies (— verify: owner) is refused unless the owner files it (--as owner): make it provable (a test, a measurement, a screen state with a baseline), or make it a walkthrough check (qa: walkthrough). A note you're shaping (muster shape) becomes your task: it's claimed by you in Shaping with a fresh heartbeat, and the note's claim ends; passing it to Ready (or back to the backlog) lets go. Someone else's note is refused while their lease runs; the owner may file it anyway, and anyone once the lease ran out, logged as taken over from them.",
         options: &[
             ("--type", "code (default), bug, chore, tech-debt, spike, design, docs or research"),
             ("--priority", "high, normal (default) or low"),
@@ -592,9 +592,22 @@ pub const COMMANDS: &[Command] = &[
         examples: &["muster instructions coder", "muster instructions Pouya"],
     },
     Command {
+        name: "verify",
+        usage: "muster verify <id> [--record -] [--json]",
+        what: "The criteria gate (G3, mu-132, docs/GATES.md) for a task started on its own branch, in Testing. Without --record it prints the brief for the ac-verifier agent (the personal layer's, linked into each repo's .claude/agents/): the worktree and branch, the diff against the merge-base with main, where each gate stands at the tip (the builder's gate line, the review, the records), and the criteria, quoted as data. The agent finds each criterion's code and the evidence that would fail if it broke, may run one targeted test per criterion (never the full gate), never edits, and gives each criterion met, partial, unmet or unproven, with the gap. Muster runs no agent. Writes nothing. --record - takes the agent's JSON on stdin as the task's criteria record, exactly as muster gate <id> criteria --record does (the same checks, the same refusals; a session that didn't build it, or the owner). The record ticks the criteria: each met one gets [x] and a proof of what was checked, its evidence and the record's commit (a proof from before is replaced; an item over several lines is put on one), each other one is unticked if it was ticked, and its gap (AC2 unproven: <why>, or not in the record) is logged in the task. The owner's own criteria (— verify: owner) are never touched. It's green only when every criterion but the owner's is met, and the merge needs it green at the tip.",
+        options: &[
+            ("--record -", "the agent's result, as JSON on stdin; malformed JSON, a head that isn't the tip, the builder's session or evidence outside attachments/<id>/ is refused, and nothing changes"),
+            ("--json", "the record's result as JSON, with ticked, unticked and gaps"),
+        ],
+        examples: &[
+            "muster verify mu-132",
+            "pbpaste | muster verify mu-132 --record - --as muster/qa-0132",
+        ],
+    },
+    Command {
         name: "gate",
         usage: "muster gate <id> criteria|visual [--record -] [--json]",
-        what: "A gate record for a task started on its own branch (mu-131, docs/GATES.md): in Testing, a session that didn't build it (or the owner) checks the branch's tip and records the result, one record per gate. criteria (G3) gives each acceptance criterion met, partial, unmet or unproven; visual (G4) gives each touched screen state pass, fail or needs-walkthrough, with expected false for a difference nobody asked for (which can't pass). Without --record it prints what to check (the criteria with their ids, the tip) and the JSON to return. Writes nothing. --record - reads that JSON from stdin (or takes it as its value): {\"head\", \"verdict\", \"items\": [{\"id\", \"verdict\", \"expected\", \"text\", \"evidence\", \"note\"}], \"not_checked\": [...]}, checked strictly: an unknown field, over 1 MB, over 200 items or 20 evidence paths an item is refused. not_checked (criteria only, optional) lists what the tester didn't verify, at most 20 lines of 200 characters: shown under the record as Not checked: …, never part of the verdict. head must be the branch's tip. Criterion ids are matched however they're typed (AC1, ac1 and 1 are the same). Muster works the verdict out (criteria: green when every criterion but the owner's own is met; visual: red with any fail, needs-walkthrough with any walkthrough, else green) and refuses a stated one that differs; needs-walkthrough is only for visual. Evidence paths must be files that exist inside the task's attachments/<id>/ (muster attach): ../, an absolute path, a symlink out and an attachments folder that is itself a symlink are refused. The record is kept in the queue's gates/<id>/<gate>.json, replacing the last one; the task gets a ## Gates section under its write-up (above its Comments and Log), gate-records: criteria green · visual needs-walkthrough in its front matter, and a log line. Merging it (muster pass <id> --from testing) needs every gate it needs green at the tip (muster gates).",
+        what: "A gate record for a task started on its own branch (mu-131, docs/GATES.md): in Testing, a session that didn't build it (or the owner) checks the branch's tip and records the result, one record per gate. criteria (G3) gives each acceptance criterion met, partial, unmet or unproven; visual (G4) gives each touched screen state pass, fail or needs-walkthrough, with expected false for a difference nobody asked for (which can't pass). Without --record it prints what to check (the criteria with their ids, the tip) and the JSON to return. Writes nothing. --record - reads that JSON from stdin (or takes it as its value): {\"head\", \"verdict\", \"items\": [{\"id\", \"verdict\", \"expected\", \"text\", \"evidence\", \"note\"}], \"not_checked\": [...]}, checked strictly: an unknown field, over 1 MB, over 200 items or 20 evidence paths an item is refused. not_checked (criteria only, optional) lists what the tester didn't verify, at most 20 lines of 200 characters: shown under the record as Not checked: …, never part of the verdict. head must be the branch's tip. Criterion ids are matched however they're typed (AC1, ac1 and 1 are the same). Muster works the verdict out (criteria: green when every criterion but the owner's own is met; visual: red with any fail, needs-walkthrough with any walkthrough, else green) and refuses a stated one that differs; needs-walkthrough is only for visual. Evidence paths must be files that exist inside the task's attachments/<id>/ (muster attach): ../, an absolute path, a symlink out and an attachments folder that is itself a symlink are refused. The record is kept in the queue's gates/<id>/<gate>.json, replacing the last one; the task gets a ## Gates section under its write-up (above its Comments and Log), gate-records: criteria green · visual needs-walkthrough in its front matter, and a log line. A criteria record also ticks the criteria, as muster verify's does (mu-132): each met one with its evidence, the rest unticked with their gaps logged. Merging it (muster pass <id> --from testing) needs every gate it needs green at the tip (muster gates).",
         options: &[
             ("--record -", "the tester's result, as JSON on stdin; malformed JSON, a head that isn't the tip, the builder's session or evidence outside attachments/<id>/ is refused, and nothing changes"),
             ("--json", "the record's result as JSON"),
@@ -918,7 +931,7 @@ pub const GROUPS: &[Group] = &[
     Group {
         title: "Review",
         intro: "The review of record for a task started on its own branch: the owner's review engine reviews it in Testing, its builder fixes or disputes what it finds, up to 3 rounds, and the merge waits for a clean review. Gate records prove the rest at the branch's tip (criteria, and visual QA for a task with qa: set), and the merge waits for those too (`muster gates`). Findings that keep coming back become lessons for the next agents, once the owner accepts them. See [The review of record](02-concepts.md#the-review-of-record) and [Gate records](02-concepts.md#gate-records).",
-        commands: &["review", "gate", "gates", "lessons"],
+        commands: &["review", "verify", "gate", "gates", "lessons"],
         examples: &[],
     },
     Group {
@@ -1181,6 +1194,7 @@ mod tests {
             "drop",
             "vision",
             "review",
+            "verify",
             "gate",
             "gates",
             "lessons",
@@ -1212,7 +1226,7 @@ mod tests {
                 "{name}'s examples use it"
             );
         }
-        assert_eq!(COMMANDS.len(), 54);
+        assert_eq!(COMMANDS.len(), 55);
     }
 
     #[test]

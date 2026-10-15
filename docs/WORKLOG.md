@@ -21,6 +21,36 @@ WebKit on the real styles.css (chips 107px → 8px at a 210px row). `.muster/bac
 **Open:** mu-189 and mu-200 weren't re-run through the vision check after the fold (no change of direction).
 
 
+## 2026-10-15 — The criteria gate: ac-verifier, muster verify, and no new owner-only criteria (mu-132)
+**Did (Gholi_46, builder):** `muster verify <id>` prints the brief for the `ac-verifier` agent
+(diff against the merge-base, every gate's state, the criteria quoted as data); `--record -` is the
+criteria record (mu-131), which now ticks the criteria: each met one `[x]` with what was checked and
+its evidence as the proof, the rest unticked with a `criteria gap:` log line each, the owner's
+untouched (`verify.rs`, `gates::record`). `muster new` and `muster file` refuse `— verify: owner`
+unless `--as owner`, with the hint, and `muster edit` refuses one the write-up didn't have; the
+shaping brief and template say the same. A Testing pass of a
+gated task with unticked criteria points at `muster verify`. The agent, promoted from Braindump's
+and made stack-neutral, is `agents/ac-verifier.md`, with its fixture test
+`agents/test_ac_verifier.py` (in `bin/gate`). Docs: PROTOCOL.md (Testing: review, then verify, then
+visual QA), COMMANDS.md, AS_BUILT.md, GATES.md, the manual (02, 03, 07, 05 generated), now pages
+testing and shaping.
+**Decided:** the agent's source lives in this repo and the layer links to it
+(`~/playground/.claude/agents/ac-verifier.md` → `main/agents/ac-verifier.md`), as
+`rules/muster-queue.md` and `commands/` do: builders can't commit to the layer's repo. Any criteria
+record ticks, `muster gate <id> criteria` too: one rule, not two. A non-met criterion that was
+ticked is unticked, since the record is the truth.
+**Verified:** a live run of the agent (sonnet) on the fixture gave met, partial, unmet and unproven
+as planted; `--check` passed (attachments/0132/ac-verifier-live-run.md). It also caught the fixture
+brief's `python3 -I` test hint, fixed. `bin/gate` result in the pass.
+**Fixed (review round 1, Gholi_49):** R1: the capture helper's brief (it files as `helper`) still
+asked for `| owner (<what>)` criteria, which `muster new` now refuses, and the refusal said "--as
+owner". The helper's brief now gives the shaping template's criterion line (`backlog::CRITERION`)
+and the hint; the refusal no longer names `--as owner`; a test pins both. R2: the docs say what's
+enforced: `new`, `file` and `edit` refuse a new owner criterion from anyone not labelled owner, and
+a hand edit of the task file isn't checked (the lead's call: no new guard).
+**Open:** the layer's link and its README row are written but not committed in the layer's repo;
+the link resolves once this merges to main.
+
 ## 2026-10-15 — Backlog shaped: mu-210 to mu-214; three notes folded into mu-149, mu-189 and mu-200
 **Did (Shapour, shaper):** filed mu-210 (transcript reader reads only what was appended), mu-211 (migrate
 tests compare canonical paths), mu-212 (sidebar headings at 150px in فارسی), mu-213 (split the sidebar and

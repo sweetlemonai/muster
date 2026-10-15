@@ -54,6 +54,7 @@ fi
 step "pnpm check" pnpm --dir app check
 step "test_task" python3 -I -B bin/test_task.py
 step "test_commands" python3 -I -B bin/test_commands.py
+step "test_ac_verifier" python3 -I -B agents/test_ac_verifier.py
 step "cargo test (Kiritimati)" env TZ=Pacific/Kiritimati cargo test --quiet --manifest-path app/src-tauri/Cargo.toml
 
 if [ -n "$failed" ]; then

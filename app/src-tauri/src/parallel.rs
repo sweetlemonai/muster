@@ -2996,6 +2996,11 @@ pub(crate) mod tests {
         let s = start(&f.root, &id, "wt-a", T0, &f.repo, &Place::Default).unwrap();
         commit(&s.worktree, "u.txt", "u\n", "u");
         to_testing(&f, &id);
+        // Its green criteria record ticked AC1 (mu-132): unticked by hand, the pass refuses.
+        let path = queue::find_task(&f.root, &id).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("- [x] AC1: not yet"), "{text}");
+        fs::write(&path, text.replace("- [x] AC1:", "- [ ] AC1:")).unwrap();
         let main_before = g(&f.repo, &["rev-parse", "main"]);
         let e = run_merge(&f, &id, &green(&f)).0.unwrap_err();
         assert!(e.contains("acceptance criteria aren't ticked"), "{e}");

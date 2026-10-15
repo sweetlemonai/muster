@@ -80,7 +80,7 @@ checkin (task 0030), ping (task 0039), projects, init, tick, untick (the owner's
 0020), the backlog's shape, file and drop (task 0015), link and comment (task 0017: a task's
 external links, and a comment thread anyone may add to), index (task 0018), vision (a task
 checked against the project's picture, task 0029), review and lessons (task 0027), gate and gates
-(gate records, mu-131), and ready, start and release (parallel sessions, task 0023).
+(gate records, mu-131), verify (the criteria gate, mu-132), and ready, start and release (parallel sessions, task 0023).
 
 Parallel sessions (task 0023): `ready [--parallel [<n>]] [--json]` lists the tasks a session could
 start now, or up to n (default 3) safe side by side: none depends on another, and their `touches:`
@@ -119,6 +119,15 @@ records, which `start` marks `gates: on`; G4 when `qa:` is set); `needs-walkthro
 hold it. The owner may merge anyway, and the report says so. The records carry over the merge's
 rebase and are checked again before main moves; one turned red meanwhile stops the merge. Both
 refusals, the review's and the gates', are named together.
+
+The criteria gate (mu-132): `verify <id>` prints the brief for the personal layer's `ac-verifier`
+agent (the worktree, the diff against the merge-base, every gate's state, the criteria quoted as
+data); `verify <id> --record -` records the agent's JSON as the criteria record, as `gate <id>
+criteria --record -` does. The criteria record ticks the criteria: each met one `[x]` with what was
+checked and its evidence as its proof, any other unticked, each gap logged in the task
+(`criteria gap: AC2 unproven: …`); the owner's own are never touched. `new` and `file` refuse a
+`— verify: owner` criterion unless `--as owner`: make it provable (a test, a measurement, a screen
+state with a baseline), or a walkthrough check (`qa: walkthrough`).
 
 Who's on it (task 0030): `checkin <id> "<what's done, what's next>" [--pct <0-100>]` is the holder
 saying how far along it is, which renews the claim too. `ping <id> ["<message>"]` (task 0039) asks

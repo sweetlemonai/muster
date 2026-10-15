@@ -88,11 +88,16 @@ muster review 0007 --record - --as qa < review.json
 
 Muster returns the task to Building while anything is open (rounds 1 and 2), blocks it on the owner after round 3, and when it's clean, carries on here. The merge refuses a started task without a clean review at its branch's tip.
 
-**Then the gate records.** `muster gates 0007` lists the gates the task needs and where each stands at the tip. For criteria (G3), `muster gate 0007 criteria` prints the criteria with their ids: check each, attach what proves it (`muster attach`), and record a verdict per criterion (met, partial, unmet or unproven) with `text` saying what you checked. With `qa:` set, record visual QA (G4) the same way, per screen state. State the verdict the items make (green when every criterion but the owner's is met); muster refuses one that doesn't match:
+**Then the gate records.** `muster gates 0007` lists the gates the task needs and where each stands at the tip. For criteria (G3), run **`muster verify 0007`** and start the `ac-verifier` agent (in `.claude/agents/`, from the personal layer) on the brief it prints. The agent gives each criterion met, partial, unmet or unproven, with `text` saying what it checked and `note` the gap, and ends with the record's JSON. Attach any file that proves a criterion (`muster attach`) and name it in `evidence`. Record its answer; muster refuses a stated verdict that doesn't match the items (green only when every criterion but the owner's is met):
 
 ```
-muster gate 0007 criteria --record - --as qa < criteria.json
+muster verify 0007
+muster verify 0007 --record - --as qa < criteria.json
 ```
+
+The record ticks each met criterion with its evidence and logs the gap of each other one, so don't tick an agent's criterion by hand in a task started with gate records. With `qa:` set, record visual QA (G4) the same way, per screen state (`muster gate 0007 visual --record -`).
+
+When you shape or file a task, write criteria an agent can prove. `muster new`, `muster file` and `muster edit` refuse a new `— verify: owner` criterion unless the owner adds it (a hand edit of the task file isn't checked, and isn't yours to make): make it provable (a test, a measurement, a screen state with a baseline), or make it a walkthrough check (`qa: walkthrough`).
 
 The merge refuses while a gate the task needs is red, missing or taken before the latest commit.
 

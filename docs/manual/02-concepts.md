@@ -190,7 +190,7 @@ Each role on the team has a name, so the board and the log read like a team rath
 
 ## Your criteria and Your check
 
-An acceptance criterion ends with how it's verified. `— verify: command (pnpm test)` means a command proves it; an agent ticks it with the proof. `— verify: owner (open a task and watch the board)` means only you can judge it: it's **your criterion**.
+An acceptance criterion ends with how it's verified. `— verify: command (pnpm test)` means a command proves it; an agent ticks it with the proof. `— verify: owner (open a task and watch the board)` means only you can judge it: it's **your criterion**. Since mu-132 only you add one: `muster new`, `muster file` and `muster edit` refuse a new one from anyone else, who makes the criterion provable or a walkthrough check instead. A task file edited by hand isn't checked.
 
 Testing passes a task to Your check without your criteria ticked: they're yours to tick. In **Your check** the card names the next one to try, and the task pane shows **Your checklist**, the open ones first. Try each thing, click its **Tick**, then click **Accept**, and the task is Done. Accept stays off until all of yours are ticked. A criterion verified by "command (test) and owner" isn't yours alone: the agent ticks it with the command's proof.
 
@@ -330,6 +330,15 @@ muster set mu-131 qa walkthrough
 ```
 
 See [muster gate](05-commands.md#muster-gate) and [muster gates](05-commands.md#muster-gates) (mu-131).
+
+**The criteria gate checks itself (mu-132).** The criteria record comes from the **ac-verifier** agent, which lives in your personal layer and is linked into every repo. `muster verify <id>` prints its brief: where the change is, the diff, where each gate stands, and the criteria. For each criterion the agent finds the code and the evidence that would fail if it broke, and says met, partial, unmet or unproven, with what's missing. It only reads, and runs at most one targeted test per criterion. `muster verify <id> --record -` records its answer, and **the record ticks the criteria**: each met one gets its box ticked, with what was checked and its evidence as the proof. Each one that isn't met stays unticked, and its gap is written in the task's log. Your own criteria are never touched. So nobody ticks an agent's criterion by hand any more.
+
+**New tasks can't add criteria only you can check.** `muster new`, `muster file` and `muster edit` refuse a new `— verify: owner` criterion unless you add it yourself (`--as owner`); a task file edited by hand isn't checked. The hint says how to fix it: make it provable (a test, a measurement, a screen state with a baseline), or make it a walkthrough check (`qa: walkthrough`). Old tasks keep theirs.
+
+```
+muster verify mu-132
+pbpaste | muster verify mu-132 --record - --as muster/qa-0132
+```
 
 ## What needs you
 
