@@ -576,7 +576,12 @@ its own agent id is another holder, 0090) and logged `(tested under
 > Each run is an argument array with its usage reporting off,
 > off the window's thread, at most every 15 s while the window shows, and not at all while no task
 > in Building or Testing has a stamped holder (the owner's own claims and paused tasks aside: a paused task, 0045, gets no state, never working and never waiting on the owner through its session, and doesn't count as its session's hold, so that session's next claim gets the state). A run stops at 10 s
-> and reads at most 1 MB; only each session's short id and state are kept. A state applies to a
+> and reads at most 1 MB; for the cards only each session's short id and state are kept. (The app's
+> Sessions view, 0098 and decision 0017, runs the same command the same way for every allowed
+> account, only while the view is open, and also keeps each session's name, start, `waitingFor`
+> and `cwd`. It keeps them in memory only, for the owner's window: `cwd` becomes a project's name
+> in the core and never reaches the window, and nothing of it is written to queue files, logs or
+> disk.) A state applies to a
 > task when the session id and account match the holder's stamp **and the session holds nothing
 > else**, counted across every queue Muster knows: in Building, no other claim (Ready or Building);
 > in Testing (whose `held-by:` is the builder that passed it), no claim and no other Testing hold.

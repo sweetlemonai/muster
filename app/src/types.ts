@@ -229,6 +229,63 @@ export type Work = {
   guess: { pct: number; basis: string };
 };
 
+/** A session's group in the Sessions view (0098): the agents view's own three. */
+export type SessionGroup = "needs-input" | "working" | "completed";
+
+/** One session in the Sessions view (0098), from `sessions_list`. No folder ever comes: only the
+ *  project's name ("" for none, Other). Times are seconds since 1970. */
+export type SessionItem = {
+  /** The account label, "mg". */
+  account: string;
+  id: string;
+  /** "" when the session has none: the window shows its id. */
+  name: string;
+  group: SessionGroup;
+  /** The word its group comes from: "stopped", "failed", "idle"… */
+  word: string;
+  /** Its last message or what it waits for, one line, plain text. */
+  message: string;
+  project: string;
+  started: number | null;
+  /** Last active: its transcript changed, else when it started. */
+  at: number | null;
+};
+
+/** The Sessions view's list: `reading` until the first read lands; `problems` an account that
+ *  couldn't be read ("cc-mg: claude isn't installed"); `accounts` those read ("cc-mg"). */
+export type SessionsList = { rows: SessionItem[]; reading: boolean; problems: string[]; accounts: string[] };
+
+/** A session's recap (0098), from `session_recap`. */
+export type SessionRecap = {
+  who: { account: string; id: string; name: string; project: string; checkout: string; group: SessionGroup; word: string; at: number | null };
+  /** Every task whose log or holders name the session. */
+  tasks: { queue: string; id: string; key: string; title: string; stage: string; holds: boolean }[];
+  /** Its claims, check-ins, passes, returns, notes and handoffs, in time order. `key` is "" for a
+   *  handoff. */
+  history: { at: number | null; key: string; kind: string; text: string; pct: number | null }[];
+  /** The handoff chain through it, first to last; `current` is this session. */
+  chain: { id: string; name: string; current: boolean }[];
+  cost: {
+    found: SessionRow["found"];
+    start: number | null;
+    end: number | null;
+    minutes: number;
+    tokens: Tokens;
+    totalTokens: number;
+    chainMinutes: number;
+    chainTokens: Tokens;
+    chainTotalTokens: number;
+    chainRead: number;
+    chainSessions: number;
+    /** The task's est-tokens when it worked on one task (0 otherwise), and the shares of it. */
+    estTokens: number;
+    estPct: number | null;
+    chainEstPct: number | null;
+  };
+  /** Per task it worked on: its latest check-in, or 0025's guess (`guess`). */
+  progress: { key: string; pct: number; text: string; guess: boolean }[];
+};
+
 /** A backlog note (0015): a one-liner, or any .md dropped in the queue's backlog folder. */
 export type Note = {
   queue: string;

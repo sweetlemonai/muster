@@ -53,6 +53,8 @@ const ALLOWED: Record<string, Owner> = {
   "src/Run.tsx": "mu-147",
   "src/runData.ts": "mu-147",
   "src/Work.tsx": "mu-147", // sessions
+  "src/SessionRecap.tsx": "mu-147", // the Sessions view's recap pane (mu-98)
+  "src/sessionsData.ts": "mu-147", // the Sessions view's words (mu-98)
   "src/sessionState.ts": "mu-147",
   "src/Ping.tsx": "mu-147",
   "src/Pause.tsx": "mu-147",

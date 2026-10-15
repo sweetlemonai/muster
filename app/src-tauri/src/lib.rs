@@ -43,6 +43,7 @@ pub mod roles;
 pub mod run;
 pub mod search;
 pub mod session;
+pub mod sessions;
 pub mod settings;
 pub mod transcripts;
 pub mod tray;
@@ -70,6 +71,9 @@ pub(crate) struct AppState {
     transcripts: Arc<transcripts::Reader>,
     /// Claude Code's session states (0048), read off the main thread at most every 15 s.
     agents: Arc<agents::Monitor>,
+    /// The Sessions view's list (0098), read off the main thread at most every 15 s while the
+    /// view polls it, and never while it's closed.
+    sessions: Arc<sessions::Lister>,
     /// The Dock badge's count and the window's last poll (0006).
     badge: badge::Badge,
     /// What the Mac notifications have seen, and the project the window shows (0052).
@@ -811,6 +815,86 @@ async fn session_transcript(
             let allowed = accounts::allowed(&settings::load(&settings_file), &home());
             work::transcript(&reader, &allowed, root, &id, &session)
         })
+    })
+    .await
+}
+
+/// The Sessions view's list (0098): every session of the Claude accounts Muster reads (0099),
+/// for one project (`project`: its name) or all (none). The read itself runs on a thread of its
+/// own at most every 15 s; this hands back the latest. No folder crosses: only project names.
+#[tauri::command]
+async fn sessions_list(
+    app: tauri::State<'_, AppState>,
+    project: Option<String>,
+) -> Result<sessions::List, String> {
+    let file = app.config_file.clone();
+    let settings_file = app.settings_file.clone();
+    let lister = app.sessions.clone();
+    blocking(move || {
+        let allowed = accounts::allowed(&settings::load(&settings_file), &home());
+        let folders = sessions::project_folders(&projects::list(&base(), &projects::load(&file)));
+        let list = lister.poll(&allowed, folders, queue::now_secs());
+        Ok(sessions::for_project(list, project.as_deref()))
+    })
+    .await
+}
+
+/// A session's recap (0098): who it is, the tasks it worked on and its history in their logs,
+/// its handoff chain, and its time, tokens and progress. Only for an account Muster reads and a
+/// session the latest list has.
+#[tauri::command]
+async fn session_recap(
+    app: tauri::State<'_, AppState>,
+    account: String,
+    id: String,
+) -> Result<sessions::Recap, String> {
+    let file = app.config_file.clone();
+    let settings_file = app.settings_file.clone();
+    let lister = app.sessions.clone();
+    let reader = app.transcripts.clone();
+    // The app's warm cache, taken and merged back as `state` and `search_index` do.
+    let cache = std::mem::take(&mut *app.cache.lock().map_err(|e| e.to_string())?);
+    let (recap, cache) = blocking(move || {
+        let mut cache = cache;
+        let settings = settings::load(&settings_file);
+        reader.set_live_secs(settings.live_secs());
+        let allowed = accounts::allowed(&settings, &home());
+        let config = projects::load(&file);
+        let list = projects::list(&base(), &config);
+        let state = projects::read_state(&config, &list, &settings, &mut cache);
+        let recap = sessions::recap_for(
+            &lister,
+            &reader,
+            &allowed,
+            &sessions::project_folders(&list),
+            &projects::shown(&list),
+            &state.tasks,
+            &account,
+            &id,
+            queue::now_secs(),
+            &home(),
+        );
+        Ok((recap, cache))
+    })
+    .await?;
+    app.cache.lock().map_err(|e| e.to_string())?.merge(cache);
+    recap
+}
+
+/// A listed session's transcript, folded to Markdown (0025's view), for the recap's Transcript
+/// button (0098). Only in an account Muster reads.
+#[tauri::command]
+async fn session_markdown(
+    app: tauri::State<'_, AppState>,
+    account: String,
+    id: String,
+) -> Result<String, String> {
+    let settings_file = app.settings_file.clone();
+    let lister = app.sessions.clone();
+    let reader = app.transcripts.clone();
+    blocking(move || {
+        let allowed = accounts::allowed(&settings::load(&settings_file), &home());
+        sessions::transcript_for(&lister, &reader, &allowed, &account, &id)
     })
     .await
 }
@@ -1710,12 +1794,14 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
+            let reader = Arc::new(transcripts::Reader::new(accounts::playground_key(&home())));
             app.manage(AppState {
                 cache: Mutex::new(queue::Cache::default()),
                 helpers: Mutex::new(HashMap::new()),
                 config: Mutex::new(()),
-                transcripts: Arc::new(transcripts::Reader::new(accounts::playground_key(&home()))),
+                transcripts: Arc::clone(&reader),
                 agents: agents::Monitor::app(home()),
+                sessions: sessions::Lister::app(home(), reader),
                 config_file: dir.join("projects.json"),
                 settings_file: dir.join(settings::FILE),
                 roles_file: dir.join(roles::FILE),
@@ -1785,6 +1871,9 @@ pub fn run() {
             tick_criterion,
             task_sessions,
             session_transcript,
+            sessions_list,
+            session_recap,
+            session_markdown,
             add_backlog_note,
             file_note,
             drop_note,

@@ -114,6 +114,22 @@ const TABLE = {
     standard: does("full", "display.elements.sidebar.full"),
     focus: does("narrow", "display.elements.sidebar.focus", "display.elements.sidebar.focusReach"),
   },
+  "session-groups": {
+    get label() {
+      return tn("shell", "display.elements.sessionGroups.label");
+    },
+    adhd: does("all", "display.elements.sessionGroups.all"),
+    standard: does("all", "display.elements.sessionGroups.all"),
+    focus: does("needs-input", "display.elements.sessionGroups.focus", "display.elements.sessionGroups.focusReach"),
+  },
+  "session-history": {
+    get label() {
+      return tn("shell", "display.elements.sessionHistory.label");
+    },
+    adhd: does("open", "display.elements.sessionHistory.adhd"),
+    standard: does("folded", "display.elements.sessionHistory.folded", "display.elements.sessionHistory.reach"),
+    focus: does("folded", "display.elements.sessionHistory.folded", "display.elements.sessionHistory.reach"),
+  },
 } as const satisfies Record<string, Entry>;
 
 export type ElementId = keyof typeof TABLE;

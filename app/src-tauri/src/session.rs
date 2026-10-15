@@ -174,7 +174,7 @@ fn is_token(s: &str) -> bool {
 /// Only its name is kept. None outside one, at or above the home folder, in a task queue (its own
 /// git, not a code checkout), or when it's named like the home folder (the login name). `USER`
 /// is never read.
-fn checkout(cwd: &Path, home: Option<&Path>) -> Option<String> {
+pub(crate) fn checkout(cwd: &Path, home: Option<&Path>) -> Option<String> {
     let login = home
         .and_then(Path::file_name)
         .map(|n| token(&n.to_string_lossy(), MAX_CHECKOUT))

@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SearchIndex } from "./search";
 import type { SettingsInfo } from "./settingsData";
-import type { HistoryState, LessonListing, Project, Role, RoleField, RunView, State, Work } from "./types";
+import type { HistoryState, LessonListing, Project, Role, RoleField, RunView, SessionRecap, SessionsList, State, Work } from "./types";
 import type { AcceptResult } from "./yourCheck";
 
 // The only way the window talks to the core. Queues are named, never given as paths.
@@ -93,6 +93,12 @@ export const api = {
   // one of those sessions' transcripts as folded Markdown (only a session the task names).
   taskSessions: (queue: string, id: string) => invoke<Work>("task_sessions", { queue, id }),
   sessionTranscript: (queue: string, id: string, session: string) => invoke<string>("session_transcript", { queue, id, session }),
+  // The Sessions view (0098): the sessions of the Claude accounts Muster reads, for one project by
+  // its name or all (null); a listed session's recap; and its transcript as folded Markdown. The
+  // core reads the list at most every 15 s, off the main thread, and only while the view asks.
+  sessionsList: (project: string | null) => invoke<SessionsList>("sessions_list", { project }),
+  sessionRecap: (account: string, id: string) => invoke<SessionRecap>("session_recap", { account, id }),
+  sessionMarkdown: (account: string, id: string) => invoke<string>("session_markdown", { account, id }),
   // Backlog notes (0015), named by their file name. Add returns the new note's file name; file
   // makes a task in Shaping and moves the note into its attachments; drop sets it aside.
   addBacklogNote: (queue: string, text: string, stamp: string) => invoke<string>("add_backlog_note", { queue, text, stamp }),

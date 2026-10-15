@@ -4,6 +4,49 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — mu-98 review round 2: the transcript view's list check and `listed`'s allowlist filter get tests that can fail
+**Fixed:** R11 nothing failed with `transcript_for`'s list check or `Lister::listed`'s allowlist
+filter removed (the refused id had no transcript at all) → the refusal test now writes an unlisted
+company transcript under `.claude`, read through `.claude-hg/projects`' link, and checks it's
+readable yet refused; a new test covers an account taken off the allowlist after a read (its
+sessions and a chain successor of it are left out) and a session a later read dropped.
+**Did (rebase on main):** mu-146's i18n layer: the Sessions pill, its loading text, its help
+topic and the two Display rows (Sessions, Session history) go through the layer with fa (نشست‌ها,
+the glossary's word); `SessionRecap.tsx` and `sessionsData.ts` go on the guard's allowlist for
+mu-147, which moves the sessions screens.
+**Verified:** both mutants killed: list check off (2 tests red), `listed` filter off (1 red).
+
+## 2026-10-15 — mu-98 review round 1: the chain reads only vouched predecessors, and nine more fixes
+**Fixed:** R1 a recap's handoff chain read a company-account predecessor's transcript through
+`~/.claude-hg/projects` (a link to `~/.claude/projects`) → `chain` and `recap` read a predecessor
+only when its account's list has it or a task stamps it with an allowed account; otherwise it's a
+link by id, "not read". R2 a recap open on another view never polled the Lister → `recap_for` polls
+it. R3 one `date` spawn per log line in each recap → `queue::local_epoch` (`mktime`, in-process).
+R4 a pending Bash prompt showed its description → `pending_gist` puts the command first. R5 the
+row's aria-label under All names the project. R6 agents.rs header per decision 0017. R7
+`plain_line` drops LRM, RLM and ALM. R8 a list older than 40 s reads as "Reading sessions…".
+R9 Focus chips show no count while reading. R10 the recap uses the app's warm queue cache.
+**Verified:** a mutant per fix, each killed except `isdst: 0` in `local_epoch`, which is
+equivalent on macOS (its mktime gives the same answer). The gate line is in the pass.
+## 2026-10-14 — mu-98: Sessions view, cc-mg and cc-hg sessions grouped like Claude Code's agents list, with a recap per session
+**Did:** a Sessions project view (`Sessions.tsx`, `sessionsData.ts`), for All or one project:
+Needs input, Working and Completed with counts, one line per session, Completed older than a day in
+an Older chip, Focus's chips. Clicking a row opens its recap in the pane (`SessionRecap.tsx`): handoff
+chain, who, tasks, history, time, tokens, progress, and Transcript under it. Core: `sessions.rs`
+(list, project match, recap, chain, safe handoff reads), `agents::parse_list`/`read_lists`,
+`transcripts` tail and first-prompt reads, commands `sessions_list`, `session_recap` and
+`session_markdown`. Modes rows `session-groups` and `session-history`.
+**Decided:** `name` and `cwd` are read for the owner's window only, and `cwd` never leaves the core
+([decision 0017](decisions/0017-sessions-view-reads-name-and-cwd-for-the-window-only.md)). The age is
+in `--muted`, not `--faint`, because `--faint` is under 4.5:1. The view's words are in one `WORDS` table, since the app
+has none. The modes test now skips `.test.tsx` sources too.
+**Verified:** `pnpm check` green (1780 vitest, 848 cargo lib); 60 tail reads 1.9 ms (release);
+60-row render under 50 ms (test). Headless WebKit with mocked IPC and synthetic sessions: the list,
+Focus, a recap with a chain (dark, and light in Standard), Older opened, RTL, and the keys (Enter
+opens, Esc closes, focus back on the row), attached to the task.
+**Open:** needs-input sessions with no task still don't count in the needs-you number: that's a
+separate call for the owner.
+
 ## 2026-10-15 — The CLI ends quietly when its reader closes the pipe (mu-170)
 **Did (akbar_26, builder):** one stdout writer in `cli.rs` (`Stdout`, `out!`/`outln!`); all 125
 print sites go through it. A broken pipe ends the output quietly: no panic, nothing on stderr, the

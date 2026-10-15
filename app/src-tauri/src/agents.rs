@@ -9,8 +9,9 @@
 //! The format is a research preview, so it's read defensively: anything that isn't a JSON array
 //! of entries, a missing `claude`, a non-zero exit, a run over `TIMEOUT` or output over
 //! `MAX_OUTPUT` is "not available" with the reason, and the cards read as before (heartbeats and
-//! the live dot). Only each session's short id and its state are kept: `cwd` and `name` can carry
-//! user names and are never read into Muster (the privacy baseline).
+//! the live dot). For the cards (`Entry`) only each session's short id and its state are kept:
+//! `cwd` and `name` can carry user names (the privacy baseline). The Sessions view's `ListEntry`
+//! (0098) keeps name, cwd, start and waitingFor too, in memory only, per decision 0017.
 //!
 //! The source is `Fetch`, one function: when Drover supplies session states (Drover 0018), it
 //! swaps here, and the matching (`apply`) and the window stay.
@@ -150,6 +151,187 @@ pub fn parse(out: &[u8]) -> Result<Vec<Entry>, String> {
         }
     }
     Ok(entries.into_iter().map(|(e, _)| e).collect())
+}
+
+/// The agents view's own groups, for the Sessions view's list (0098) only: the cards keep
+/// `SessionState`, where stopped and failed are unknown and the heartbeats judge.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ListState {
+    /// Waiting on the owner: a permission prompt or a question (`blocked`, `waiting`).
+    NeedsInput,
+    /// `working`, or an interactive session that's `busy`.
+    Working,
+    /// Everything else: `done`, `stopped`, `failed`, an idle interactive session, a background
+    /// session whose state says working while its process sits idle (ready for review), and a
+    /// state Muster doesn't know.
+    Completed,
+}
+
+/// The longest session name the list keeps, in characters.
+pub const MAX_LIST_NAME: usize = 120;
+/// The longest state word or `waitingFor` the list keeps, in characters.
+const MAX_LIST_WORD: usize = 40;
+
+/// One session as the Sessions view (0098) reads it: more than `Entry`, for the owner's window
+/// only. `cwd` stays in the core (`sessions.rs` turns it into a project name); nothing of this is
+/// written anywhere (decision 0017).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListEntry {
+    pub id: String,
+    /// The session's name as Claude Code lists it, control characters taken out, cut to
+    /// `MAX_LIST_NAME` characters; "" when it has none.
+    pub name: String,
+    /// The folder it runs in. Never sent to the window.
+    pub cwd: PathBuf,
+    /// When it started, seconds since 1970, when listed.
+    pub started: Option<u64>,
+    pub state: ListState,
+    /// The word its group comes from, lowercase: `stopped`, `failed`, `idle`, `blocked`…
+    pub word: String,
+    /// What it waits for (`waitingFor`: `permission prompt`), "" when nothing.
+    pub waiting_for: String,
+}
+
+/// An entry as the list reads it: what `Raw` reads, plus the name, the folder and what it waits
+/// for. Anything new in the format is ignored.
+#[derive(Deserialize)]
+struct RawListed {
+    #[serde(rename = "sessionId")]
+    session_id: String,
+    #[serde(default)]
+    state: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default, rename = "startedAt")]
+    started_at: Option<serde_json::Value>,
+    #[serde(default)]
+    name: Option<serde_json::Value>,
+    #[serde(default)]
+    cwd: Option<serde_json::Value>,
+    #[serde(default, rename = "waitingFor")]
+    waiting_for: Option<serde_json::Value>,
+}
+
+/// `raw` as one line of plain text: control characters and bidi overrides dropped (the window
+/// isolates each line with `dir="auto"` instead), whitespace runs as one space, at most `max`
+/// characters and then `…` (counted in characters, so never cut inside one).
+pub fn plain_line(raw: &str, max: usize) -> String {
+    let mut out = String::new();
+    let mut n = 0;
+    let mut gap = false;
+    for c in raw.chars() {
+        if c.is_whitespace() {
+            gap = !out.is_empty();
+            continue;
+        }
+        if c.is_control() || crate::index::is_bidi_control(c) {
+            continue;
+        }
+        for c in [' ', c].into_iter().skip(usize::from(!gap)) {
+            if n == max {
+                out.push('…');
+                return out;
+            }
+            out.push(c);
+            n += 1;
+        }
+        gap = false;
+    }
+    out
+}
+
+/// A text field of an entry, or "" when it's missing or not text.
+fn text_of(v: &Option<serde_json::Value>) -> &str {
+    v.as_ref().and_then(serde_json::Value::as_str).unwrap_or("")
+}
+
+/// The list's group of a `state` (background sessions) and `status` (interactive ones, and the
+/// process of a background one): the agents view's groups.
+pub fn list_state(state: Option<&str>, status: Option<&str>) -> ListState {
+    let state = state.map(normal);
+    let status = status.map(normal);
+    match (state.as_deref(), status.as_deref()) {
+        (Some("working"), Some("idle")) => ListState::Completed,
+        (Some("blocked" | "needs_input"), _) | (None, Some("waiting")) => ListState::NeedsInput,
+        (Some("working"), _) | (None, Some("busy")) => ListState::Working,
+        _ => ListState::Completed,
+    }
+}
+
+/// The sessions in one run's output with their name, folder, start and state (0098), or why it
+/// can't be read. The same rules as `parse`: entries without a session id, or with neither a
+/// `state` nor a `status`, are skipped, and a session listed twice is its latest entry. A missing
+/// or non-text `cwd` reads as no folder (the session is then in no project).
+pub fn parse_list(out: &[u8]) -> Result<Vec<ListEntry>, String> {
+    if out.len() > MAX_OUTPUT {
+        return Err("its output is over 1 MB".into());
+    }
+    let value: serde_json::Value =
+        serde_json::from_slice(out).map_err(|_| "its output isn't JSON".to_string())?;
+    let serde_json::Value::Array(items) = value else {
+        return Err("its output isn't a JSON array".into());
+    };
+    let mut entries: Vec<(ListEntry, f64)> = Vec::new();
+    for item in items {
+        let Ok(raw) = serde_json::from_value::<RawListed>(item) else {
+            continue;
+        };
+        let Some(id) = session::short_id(&raw.session_id) else {
+            continue;
+        };
+        if raw.state.is_none() && raw.status.is_none() {
+            continue;
+        }
+        let state = list_state(raw.state.as_deref(), raw.status.as_deref());
+        let word = raw
+            .state
+            .as_deref()
+            .filter(|s| !(state == ListState::Completed && normal(s) == "working"))
+            .or(raw.status.as_deref())
+            .map(|w| plain_line(&w.to_lowercase(), MAX_LIST_WORD))
+            .unwrap_or_default();
+        let started_ms = raw.started_at.as_ref().and_then(serde_json::Value::as_f64);
+        let started = started_ms
+            .filter(|ms| ms.is_finite() && *ms > 0.0)
+            .map(|ms| (ms / 1000.0) as u64);
+        let entry = ListEntry {
+            id,
+            name: plain_line(text_of(&raw.name), MAX_LIST_NAME),
+            cwd: PathBuf::from(text_of(&raw.cwd)),
+            started,
+            state,
+            word,
+            waiting_for: plain_line(text_of(&raw.waiting_for), MAX_LIST_WORD),
+        };
+        let at = started_ms.unwrap_or(f64::MIN);
+        match entries.iter_mut().find(|(e, _)| e.id == entry.id) {
+            Some((e, prev)) if at >= *prev => {
+                *e = entry;
+                *prev = at;
+            }
+            Some(_) => {}
+            None => entries.push((entry, at)),
+        }
+    }
+    Ok(entries.into_iter().map(|(e, _)| e).collect())
+}
+
+/// One account's list (0098): its label and its sessions, or why it couldn't be read.
+pub type AccountList = (String, Result<Vec<ListEntry>, String>);
+
+/// Read the list of every account in `accounts` through `fetch`: only allowed accounts can be
+/// given (`Account`), so the company account is never run for.
+pub fn read_lists(fetch: &Fetch, accounts: &[Account]) -> Vec<AccountList> {
+    accounts
+        .iter()
+        .map(|a| {
+            (
+                a.label().to_string(),
+                fetch(a).and_then(|out| parse_list(&out)),
+            )
+        })
+        .collect()
 }
 
 /// Set for every run: without them `claude agents --json` reports its use to Anthropic (it tried
@@ -727,6 +909,136 @@ mod tests {
             id: id.into(),
             state,
         }
+    }
+
+    /// What `claude agents --json --all` printed on 2026-10-14 (2.1.296), one entry of each shape
+    /// seen in 105 real ones, names and folders made up: background done, stopped, failed and
+    /// working; working with its process idle; blocked on a permission prompt; interactive busy
+    /// and idle.
+    const OBSERVED_LIST: &str = r#"[
+  {"id": "aaaaaaa1", "cwd": "/Users/someone/playground/muster/main", "kind": "background", "startedAt": 1792000000000,
+   "sessionId": "aaaaaaa1-1111-4222-8333-444455556666", "name": "Asghar_4", "state": "done"},
+  {"id": "aaaaaaa2", "cwd": "/Users/someone/playground/muster/main", "kind": "background", "startedAt": 1792000100000,
+   "sessionId": "aaaaaaa2-1111-4222-8333-444455556666", "name": "Asghar_5", "state": "stopped"},
+  {"id": "aaaaaaa3", "cwd": "/Users/someone/playground/drover/main", "kind": "background", "startedAt": 1792000200000,
+   "sessionId": "aaaaaaa3-1111-4222-8333-444455556666", "name": "QA_2", "state": "failed"},
+  {"id": "aaaaaaa4", "cwd": "/Users/someone/playground/drover/main", "kind": "background", "pid": 11, "startedAt": 1792000300000,
+   "sessionId": "aaaaaaa4-1111-4222-8333-444455556666", "name": "builder", "state": "working", "status": "busy"},
+  {"id": "aaaaaaa5", "cwd": "/Users/someone/playground/x", "kind": "background", "pid": 12, "startedAt": 1792000400000,
+   "sessionId": "aaaaaaa5-1111-4222-8333-444455556666", "name": "review", "state": "working", "status": "idle"},
+  {"id": "aaaaaaa6", "cwd": "/Users/someone/playground/x", "kind": "background", "pid": 13, "startedAt": 1792000500000,
+   "sessionId": "aaaaaaa6-1111-4222-8333-444455556666", "name": "Gholi_3", "state": "blocked", "status": "waiting", "waitingFor": "permission prompt"},
+  {"pid": 14, "cwd": "/Users/someone/playground", "kind": "interactive", "startedAt": 1792000600000,
+   "sessionId": "aaaaaaa7-1111-4222-8333-444455556666", "name": "Muster_Team_Lead_5", "status": "busy"},
+  {"pid": 15, "cwd": "/Users/someone/playground", "kind": "interactive", "startedAt": 1792000700000,
+   "sessionId": "aaaaaaa8-1111-4222-8333-444455556666", "name": "chat", "status": "idle"}
+]"#;
+
+    #[test]
+    fn the_list_reads_name_folder_start_and_the_agents_views_groups() {
+        let got = parse_list(OBSERVED_LIST.as_bytes()).unwrap();
+        let groups: Vec<(&str, ListState, &str)> = got
+            .iter()
+            .map(|e| (e.id.as_str(), e.state, e.word.as_str()))
+            .collect();
+        assert_eq!(
+            groups,
+            [
+                ("aaaaaaa1", ListState::Completed, "done"),
+                ("aaaaaaa2", ListState::Completed, "stopped"),
+                ("aaaaaaa3", ListState::Completed, "failed"),
+                ("aaaaaaa4", ListState::Working, "working"),
+                ("aaaaaaa5", ListState::Completed, "idle"),
+                ("aaaaaaa6", ListState::NeedsInput, "blocked"),
+                ("aaaaaaa7", ListState::Working, "busy"),
+                ("aaaaaaa8", ListState::Completed, "idle"),
+            ]
+        );
+        assert_eq!(got[0].name, "Asghar_4");
+        assert_eq!(
+            got[0].cwd,
+            PathBuf::from("/Users/someone/playground/muster/main")
+        );
+        assert_eq!(got[0].started, Some(1_792_000_000));
+        assert_eq!(got[5].waiting_for, "permission prompt");
+        assert_eq!(got[0].waiting_for, "");
+        // The cards' reader of the same output keeps its own rule: stopped and failed unknown.
+        let cards = parse(OBSERVED_LIST.as_bytes()).unwrap();
+        assert_eq!(cards[1].state, SessionState::Unknown);
+        assert_eq!(cards[2].state, SessionState::Unknown);
+    }
+
+    #[test]
+    fn the_list_keeps_hostile_names_as_one_plain_line_and_skips_what_it_cant_read() {
+        let long = "ب".repeat(300);
+        let out = serde_json::json!([
+            {"sessionId": "bbbbbbb1-0000", "state": "done", "name": "a\nb\u{202e}c\u{0007}  d<script>"},
+            {"sessionId": "bbbbbbb2-0000", "state": "done", "name": long, "cwd": 42, "startedAt": "soon"},
+            {"sessionId": "bbbbbbb3-0000", "state": "done", "name": {"nested": 1}, "waitingFor": ["x"]},
+            {"sessionId": "nope", "state": "done"},
+            {"sessionId": "bbbbbbb4-0000"},
+            {"sessionId": "bbbbbbb5-0000", "state": "something-new", "startedAt": -5},
+            {"sessionId": "bbbbbbb1-0000", "state": "blocked", "startedAt": 1}
+        ])
+        .to_string();
+        let got = parse_list(out.as_bytes()).unwrap();
+        let ids: Vec<&str> = got.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, ["bbbbbbb1", "bbbbbbb2", "bbbbbbb3", "bbbbbbb5"]);
+        // Listed twice: the later start wins (1 over none).
+        assert_eq!(got[0].state, ListState::NeedsInput);
+        assert_eq!(got[0].name, "");
+        assert_eq!(got[1].name.chars().count(), MAX_LIST_NAME + 1);
+        assert!(got[1].name.ends_with('…'));
+        assert_eq!(got[1].cwd, PathBuf::new());
+        assert_eq!(got[1].started, None);
+        assert_eq!(got[2].name, "");
+        assert_eq!(got[2].waiting_for, "");
+        assert_eq!(got[3].state, ListState::Completed);
+        assert_eq!(got[3].word, "something-new");
+        assert_eq!(got[3].started, None);
+        // The text is kept as written, only flattened: the window shows it as plain text.
+        assert_eq!(
+            plain_line("a\nb\u{202e}c\u{0007}  d<script>", 50),
+            "a bc d<script>"
+        );
+        // Every bidi control the other readers drop: RLM, LRM and ALM too.
+        assert_eq!(
+            plain_line("x\u{200f}y\u{200e}z\u{061c}w\u{2067}v", 50),
+            "xyzwv"
+        );
+        assert_eq!(plain_line("  héllo   wörld  ", 7), "héllo w…");
+        assert_eq!(plain_line("", 5), "");
+        assert!(parse_list(b"{}").is_err());
+        assert!(parse_list(&vec![b' '; MAX_OUTPUT + 1]).is_err());
+    }
+
+    #[test]
+    fn the_list_is_read_only_for_the_allowed_accounts() {
+        let home = crate::accounts::tests::fake_home();
+        let asked: Arc<Mutex<Vec<String>>> = Arc::default();
+        let seen = Arc::clone(&asked);
+        let fetch: Fetch = Arc::new(move |a: &Account| {
+            seen.lock().unwrap().push(a.label().to_string());
+            assert!(a.label() != "" && a.label() != "ih", "read {:?}", a.label());
+            assert_ne!(a.dir(), home_dir_claude(a.dir()));
+            Ok(OBSERVED_LIST.as_bytes().to_vec())
+        });
+        // The settings as a careless file might hold them: "" and ".claude" are dropped on load,
+        // so only mg and hg resolve.
+        let labels: Vec<String> = ["", ".claude", "mg", "hg"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let allowed = crate::accounts::resolve(&labels, home.path());
+        let lists = read_lists(&fetch, &allowed);
+        assert_eq!(*asked.lock().unwrap(), ["mg", "hg"]);
+        assert_eq!(lists.len(), 2);
+        assert_eq!(lists[0].1.as_ref().unwrap().len(), 8);
+    }
+
+    /// The company folder next to an account folder, `<home>/.claude`.
+    fn home_dir_claude(dir: &Path) -> PathBuf {
+        dir.parent().unwrap().join(".claude")
     }
 
     #[test]

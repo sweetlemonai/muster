@@ -135,7 +135,8 @@ here):
 | `work.rs` | Who worked on a task and what it cost, from the sessions its claim and log name; only sessions stamped with an allowed account are read (0012) |
 | `transcripts.rs` | The one reader of Claude Code transcripts on this Mac, sums only: the allowed accounts' `projects` folders, and in them only project folders under `~/playground` (0012) |
 | `accounts.rs` | The Claude accounts Muster reads (0012): the `claude_accounts` allowlist resolved to `~/.claude-<label>` folders (`allowed`), never `~/.claude` or inside it; the playground key that filters transcript folders (`playground_key`, `is_under`) |
-| `agents.rs` | Claude Code's own session states (`claude agents --json`), allowed accounts only, off the main thread, at most every 15 s |
+| `agents.rs` | Claude Code's own session states (`claude agents --json`), allowed accounts only, off the main thread, at most every 15 s; and the Sessions view's wider list read (`ListEntry`, 0098) |
+| `sessions.rs` | The Sessions view (0098): every session of the allowed accounts grouped as the agents view groups them, its project matched from `cwd` in the core (only the name goes out), and a session's recap (tasks, history, handoff chain, time, tokens, progress); polled only while the view is open |
 | `projects.rs` | Which queues the app shows (discovery under `~/playground`, added, hidden), `projects.json` under its lock, new queues, the sidebar's state builder |
 | `labels.rs` | A project's label and category |
 | `arrange.rs` | The sidebar's order, headings, colours and folds |
@@ -310,6 +311,7 @@ Elsewhere:
 | A started task's worktree and branch | `<project>/worktrees/<repo>/<key>-<slug>` (or `--at`), branch `task/<key>-<slug>` | `muster start`; removed by the merge or `muster release --clean` |
 | Transcripts | `~/.claude-<label>/projects/<folder key>/<session>.jsonl`, allowed accounts, keys under `~/playground` and sessions stamped with an allowed account only (0012) | read only, by `transcripts.rs`; never sent anywhere, and the window gets counts, never paths |
 | Session states | `claude agents --json --all`, per allowed account | run by `agents.rs`, read only |
+| Handoffs | `~/playground/**/.claude/work/handoffs/*.md`, named by a session's first prompt (`/handoff resume <path>`) | read only, by `sessions.rs`: a regular file directly in that folder, at most 256 KB, front matter only (0098) |
 | The project's picture | `<repo>/docs/VISION.md`, `docs/decisions/`, `docs/DESIGN.md` | read only: `vision.rs` (the brief) and `lenses.rs` (VISION's `**Lenses needed:**` line) |
 | What's true now | `<repo>/docs/now/<area>.md`, committed with the code | written by the builder in the task's branch; read only by `now.rs` (the building pass, `check`), `vision.rs` and `backlog.rs` (the briefs) |
 
@@ -869,6 +871,73 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   accounts)" / "not available: <why>"). One real run (2.1.296, 2026-10-13,
   this Mac, 2 and 6 sessions listed): 0.13–0.18 s, 0.5 and 1.5 KB of output; the task's note had
   seen several seconds on one run, which the 10 s timeout and the background thread cover.
+- **Sessions** (0098, `sessions.rs`, `Sessions.tsx`, `SessionRecap.tsx`, `sessionsData.ts`;
+  decision 0017): a project view beside Board, Table, Timeline and Graph, for one project or All.
+  - **The list.** `agents::read_lists` runs the same `claude agents --json --all` (same `Fetch`,
+    argument array, `QUIET_ENV`, 10 s, 1 MB) for every allowed account, and `agents::parse_list`
+    keeps id, name, cwd, `startedAt` (ms), the state word and `waitingFor` (`ListEntry`; the cards'
+    `Entry` is unchanged). `ListState` groups them as the agents view does: `blocked`/`waiting` →
+    Needs input; `working`, or an interactive `busy` → Working; `done`, `stopped`, `failed`,
+    interactive idle, a background `working` whose process is idle, and unknown words →
+    Completed, with the word kept and shown. `agents::plain_line` makes names and messages one
+    line: control characters and every bidi control (`index::is_bidi_control`) stripped, cut by
+    characters.
+  - **Row message**, from the transcript's last 64 KB (`transcripts::read_tail`, cached by path,
+    size and mtime, dropped when the transcript goes). Needs input: `approve <Tool>: <gist>` from
+    the tail's pending tool call (its command, path, address, pattern or query; the model's
+    description only when it has none of those), else the last text, else `waiting for <waitingFor>`. Other groups:
+    the last text. The state word when there's nothing. 160 characters. The row's time is the
+    transcript's mtime, else its start.
+  - **Project.** `cwd` is matched in the core against each shown project's folders, by whole
+    components, deepest first: a `.muster` queue in main/master uses the project folder (which
+    holds `worktrees/`), a checkout that is its own project uses that checkout and
+    `<checkout>.worktrees`, and an old `<project>/tasks` queue uses the project folder. Only the
+    name goes to the window ("" = Other). One project's list keeps only its rows.
+  - **Polling.** `sessions::Lister` starts a read on its own thread when the view's `sessions_list`
+    poll (every 3 s while the window shows) finds the last read 15 s old, never two at once, and
+    hands back the latest. While the view is closed nothing runs. Rows of accounts no longer
+    allowed are dropped at poll time. A read that landed more than `agents::MAX_AGE_SECS` (40 s)
+    before the poll (the view was closed meanwhile) isn't shown: "Reading sessions…" until the
+    new one lands. The recap's own 15 s refresh polls the Lister too, so a recap left open on
+    another view follows the session's state. 60 tail reads: 1.9 ms on a release build.
+  - **The window.** A header count ("8 need input · 0 working · 37 completed"), then Needs input,
+    Working and Completed, always in that order with their counts; an empty group says "none".
+    Newest first. Completed rows older than 24 h fold into one "Older: N" chip that opens them in
+    place. Each row is one button (`aria-label` "name, state, age, message"; under All "name, project,
+    state, age, message", the project as the row shows it): name, the project's
+    dot and name under All (Other for none), the message, the age at the inline end. Names and
+    messages are plain text with `dir="auto"`. Needs input has the orange edge and `--warn` words.
+    Arrows, Home and End move between rows, Enter opens the recap, Esc closes it and focus goes back
+    to the row. "Reading sessions…" in place until the first read lands. The words are in
+    `sessionsData.ts` `WORDS` (the app has no strings table of its own). Modes (`modes.ts`):
+    `session-groups` (Focus shows Needs input and the other two as chips with counts, no count
+    while the first read runs) and
+    `session-history` (Standard and Focus fold the recap's History to its header).
+  - **The recap** (`session_recap`), in the task pane's dock with the list still live beside it: a
+    strip with the name, Transcript and Close; the chain line ("Asghar_4 → Asghar_5 → Asghar_6",
+    this one bold); then Who (name, id, account, project and checkout folder name, state and age),
+    Tasks it worked on (every task whose `session_ids` include it, with key, title, stage and
+    "holds it", each a link to the task), History (its log lines in those tasks, by `work::log_who`:
+    claim, check-in with %, pass, return, takeover, note, plus handoff-from and handoff-to, in time
+    order), Time and Tokens (`transcripts::Reader::usages`, the session's and the chain's sums, and
+    the share of `est-tokens` when it worked on one task; log stamps read in-process by
+    `queue::local_epoch`, the C library's `mktime`, no `date` per line), and Progress (its latest check-in per
+    task, else 0025's guess, labelled a guess). Transcript (`session_markdown`) shows 0025's folded
+    Markdown under the recap, never in its place.
+  - **The chain.** A session's first prompt (`transcripts::read_first_prompt`, 128 KB head) naming
+    `/handoff resume <path>` (the slash command's `<command-args>`, or typed) links it to the
+    handoff's `session:` (a uuid, a short id, or `34fa2f95 (QA_5)`); a resumed handoff is renamed
+    `.done.md`, so that name is tried too. Forward, a listed session that resumed a handoff whose
+    `session:` is this one; of two, the one the handoff names as `successor:`, else the earliest.
+    At most 32 each way, each session once. The handoff is read only as a regular file (no link),
+    at most 256 KB, canonically directly in a `.claude/work/handoffs/` folder under `~/playground`,
+    and only front matter that closes. A predecessor's transcript (its first prompt, its time and
+    tokens) is read only when an allowed account vouches for it: the latest list of an allowed
+    account has it, or a task stamps it with one (`SessionId::readable`, as the Work section
+    does). Otherwise it's a link by id, counted "not read on this Mac", and the walk back stops
+    there: `~/.claude-hg/projects` links to the company account's folder on the owner's Mac, so
+    a transcript found through an allowed folder proves nothing.
+  - Nothing of it is written anywhere; `cwd` never crosses to the window; no network.
 - **Projects** (in Settings, or **+ Project** under the project list): every project with its folder, task count and where it came from (found
   in `~/playground`, or added). Discovery (`queue::discover`) looks at `<project>/tasks` and one
   level deeper, `<group>/<project>/tasks`, and no further, and at a repo's `<checkout>/.muster`

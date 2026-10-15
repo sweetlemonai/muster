@@ -107,6 +107,32 @@ Tasks whose work hasn't started, or whose log has no times, aren't drawn; a line
 
 What waits on what, per project (set with `muster set <id> depends …`, see [Depends and the graph](02-concepts.md#depends-and-the-graph)). An arrow points from a task to each task that waits on it. Click a task: what it waits on lights up as "needed first", what waits on it as "waits for it", and the rest dims. "ready" marks a task with nothing left to wait on. **Hide done** drops finished tasks, and tasks that aren't linked to any other are listed under the graph.
 
+## Sessions
+
+Every Claude Code session of the accounts Muster reads (Settings › [Agents](#agents), cc-mg and cc-hg by default; never the company account), like Claude Code's own agents list. Under **All** you see every session, each with its project's dot and name (Other for a session outside every project), and under one project only that project's sessions.
+
+The header counts them ("8 need input · 0 working · 37 completed"). Then come three groups, always in this order and always on screen, each with its count:
+
+- **Needs input**, in orange: the session waits on you, for a permission prompt or a question. The row says what it waits for ("approve Bash: git push…").
+- **Working**: it's working now.
+- **Completed**: done, stopped, failed or idle. The word shows in the recap. Sessions last active more than a day ago fold into one **Older: 31** chip at the end of the group. Click it to open them in place, and **Fewer** folds them back.
+
+An empty group says "none". Each row is one line: the session's name (its id when it has none), its last message or what it waits for, and how long ago it was last active. Until the first read lands, the header says "Reading sessions…". The list is read again every 15 seconds while the view is open, and not at all while it's closed.
+
+Click a row, or press Enter on it, for its **recap** in the pane beside the list. The list stays live. ↑ and ↓ move between rows, Home and End go to the first and last, and Esc closes the recap, with the focus back on the row. The recap shows, in this order:
+
+- **The handoff chain**, when it has one: "Asghar_4 → Asghar_5 → Asghar_6", this session in bold. A session started with `/handoff resume <path>` links back to the session that wrote the handoff, and forward to the one that resumed its own.
+- **Who:** name, session id, account, project and checkout folder, and its state with how long ago.
+- **Tasks it worked on:** every task whose log or holder names this session, with its key, title and stage, and "holds it" when it does. Click one to open the task.
+- **History:** its claims, check-ins (with %), passes, returns, takeovers and notes in those tasks' logs, and the handoffs, in time order. Standard and Focus fold it to its header with the count.
+- **Time:** when it started, when it was last active, and how long it ran; for a chain, the whole chain's time beside it.
+- **Tokens:** its total, against the task's estimate when it worked on one task, by kind, and the chain's total.
+- **Progress:** for each task, its latest check-in, or Muster's guess, labelled as one.
+
+**Transcript** in the strip at the top shows the session's transcript under the recap; **Close** closes the pane. In Focus mode the view shows only Needs input with its rows, and Working and Completed as chips with their counts; click one to open it in place.
+
+Everything here is read on this Mac and sent nowhere. Muster keeps nothing of it: no file, log or queue is written, and a session's working folder never leaves the core, only its project's name.
+
 ## Your check
 
 Your check is where the agents' finished work waits for you. Each card there says what to do, so you don't have to open it to find out:

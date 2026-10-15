@@ -41,6 +41,7 @@ import { blockedCount, ChoiceChips, ColumnHead, ModeChip } from "./ModeViews";
 import ColumnCards from "./ColumnCards";
 import ColumnRow, { placeCount, type PlaceCounts, type RowChip, rowChipsOf } from "./ColumnRow";
 import { PausedColumn } from "./PausedLane";
+import { sessionKey } from "./sessionsData";
 import { type KindFilter, loadKind, storeKind, weekCount } from "./recentData";
 import OldPausesOffer from "./OldPauses";
 import logoDark from "./logo-dark.svg";
@@ -52,9 +53,12 @@ const NotePanel = lazy(() => import("./NotePanel"));
 const Helper = lazy(() => import("./Helper"));
 const HelpView = lazy(() => import("./Help"));
 const SettingsView = lazy(() => import("./Settings"));
-type View = "board" | "table" | "timeline" | "graph" | "helper" | "waiting" | "activity" | "problems" | "help" | "settings";
+// The Sessions view and its recap (0098) load on first open too.
+const SessionsView = lazy(() => import("./Sessions"));
+const SessionRecap = lazy(() => import("./SessionRecap"));
+type View = "board" | "table" | "timeline" | "graph" | "sessions" | "helper" | "waiting" | "activity" | "problems" | "help" | "settings";
 // One docked pane beside the content, never over it (the owner wants everything in view).
-type Pane = { kind: "task"; key: string } | { kind: "note"; key: string } | { kind: "new" } | null;
+type Pane = { kind: "task"; key: string } | { kind: "note"; key: string } | { kind: "new" } | { kind: "session"; key: string; account: string; id: string } | null;
 const POLL_MS = 2000;
 
 // Poll the core while the window is visible; stop when it's hidden.
@@ -326,6 +330,8 @@ export default function App() {
   // chips hide.
   const hidden = hiddenCount(view, { all: inQueue.length, shown: shownCount }, { all: queueNotes.length, shown: notes.length });
   const openNoteKey = pane?.kind === "note" ? pane.key : null;
+  // The session whose recap the pane shows (0098), by the Sessions view's row key.
+  const openSession = pane?.kind === "session" ? pane.key : null;
   const openNote = openNoteKey ? allNotes.find((n) => noteKey(n) === openNoteKey) ?? null : null;
   const showTask = (q: string, id: string) => {
     setView("board");
@@ -429,6 +435,7 @@ export default function App() {
             <Pill on={view === "table"} onClick={() => setView("table")}>{t("app.view.table")}</Pill>
             <Pill on={view === "timeline"} onClick={() => setView("timeline")}>{t("app.view.timeline")}</Pill>
             <Pill on={view === "graph"} onClick={() => setView("graph")} title={t("app.view.graphTitle")}>{t("app.view.graph")}</Pill>
+            <Pill on={view === "sessions"} onClick={() => setView("sessions")} title={t("app.view.sessionsTitle")}>{t("app.view.sessions")}</Pill>
           </span>
           <Pill on={view === "helper"} onClick={() => setView("helper")}>{t("app.view.helper")}</Pill>
           <Pill on={view === "waiting"} onClick={() => setView("waiting")} title={t("app.view.waitingTitle")}>
@@ -556,6 +563,12 @@ export default function App() {
             </>
           )}
 
+          {view === "sessions" && (
+            <Suspense fallback={<p className="none">{t("common:loading")}</p>}>
+              <SessionsView project={queue === "all" ? null : queue} now={now} selected={openSession} onOpen={(r) => go({ kind: "session", key: sessionKey(r), account: r.account, id: r.id })} />
+            </Suspense>
+          )}
+
           {view === "waiting" && <WaitingList tasks={waiting} multi={multi} openKey={openKey} onOpen={open} onChanged={() => void refresh()} now={now} queues={state?.queues ?? []} queue={queue} />}
 
           {view === "activity" && (
@@ -622,6 +635,11 @@ export default function App() {
                 </Suspense>
               )}
               {pane.kind === "note" && !openNote && <p className="none">{t("app.noteGone")}</p>}
+              {pane.kind === "session" && (
+                <Suspense fallback={<p className="none">{t("common:loading")}</p>}>
+                  <SessionRecap key={pane.key} account={pane.account} id={pane.id} now={now} onClose={() => go(null)} onOpenTask={(q, id) => go({ kind: "task", key: key({ queue: q, id }) })} />
+                </Suspense>
+              )}
               {pane.kind === "new" && state && state.queues.length > 0 && (
                 <NewTask
                   queues={state.queues.map((q) => q.name)}

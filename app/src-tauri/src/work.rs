@@ -77,7 +77,7 @@ pub fn mentions(text: &str) -> Vec<String> {
 }
 
 /// A log line's who: `- YYYY-MM-DD HH:MM <who>: <what>`.
-fn log_who(line: &str) -> Option<&str> {
+pub(crate) fn log_who(line: &str) -> Option<&str> {
     let rest = line.strip_prefix("- ")?;
     crate::ops::stamp_minutes(rest.get(..16)?)?;
     let (who, _) = rest.get(16..)?.strip_prefix(' ')?.split_once(": ")?;
@@ -86,7 +86,7 @@ fn log_who(line: &str) -> Option<&str> {
 
 /// The label someone acted under, without its session part: the text before the first `(` or
 /// `,` ("capture (drover/main, session 349bc9c3)" → "capture").
-fn label(who: &str) -> String {
+pub(crate) fn label(who: &str) -> String {
     who.split(['(', ','])
         .next()
         .map(str::trim)

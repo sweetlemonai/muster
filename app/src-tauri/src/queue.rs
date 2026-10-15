@@ -1582,6 +1582,51 @@ pub fn stamp_epoch(stamp: &str, tz: Option<&str>) -> Option<i64> {
     String::from_utf8_lossy(&out.stdout).trim().parse().ok()
 }
 
+/// `stamp_epoch(stamp, None)` in-process: this Mac's zone rules through the C library's
+/// `mktime`, as `date -j` uses them, with no process spawned. For readers that turn many log
+/// lines at once (the Sessions recap). None for anything that isn't a stamp.
+pub fn local_epoch(stamp: &str) -> Option<i64> {
+    crate::ops::stamp_minutes(stamp)?;
+    // `struct tm` as macOS and glibc lay it out.
+    #[repr(C)]
+    struct Tm {
+        sec: std::os::raw::c_int,
+        min: std::os::raw::c_int,
+        hour: std::os::raw::c_int,
+        mday: std::os::raw::c_int,
+        mon: std::os::raw::c_int,
+        year: std::os::raw::c_int,
+        wday: std::os::raw::c_int,
+        yday: std::os::raw::c_int,
+        isdst: std::os::raw::c_int,
+        gmtoff: std::os::raw::c_long,
+        zone: *const std::os::raw::c_char,
+    }
+    extern "C" {
+        fn mktime(tm: *mut Tm) -> i64;
+    }
+    let num = |a: usize, z: usize| stamp.get(a..z)?.parse::<std::os::raw::c_int>().ok();
+    let mut tm = Tm {
+        sec: 0,
+        min: num(14, 16)?,
+        hour: num(11, 13)?,
+        mday: num(8, 10)?,
+        mon: num(5, 7)? - 1,
+        year: num(0, 4)? - 1900,
+        wday: 0,
+        yday: 0,
+        // The zone's rules decide whether daylight saving applies, as `date -j` lets them.
+        isdst: -1,
+        gmtoff: 0,
+        zone: std::ptr::null(),
+    };
+    // SAFETY: one `struct tm` that lives for the call; mktime only reads and normalises it, and
+    // the zone name it may point `zone` at is static storage of the C library, never freed here.
+    let t = unsafe { mktime(&mut tm) };
+    // -1 is mktime's error; a whole-minute stamp never lands on 23:59:59.
+    (t != -1).then_some(t)
+}
+
 pub(crate) fn mtime_secs(m: &fs::Metadata) -> u64 {
     m.modified()
         .ok()
@@ -3199,6 +3244,48 @@ pub fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `local_epoch` reads a stamp as `date -j` does in this Mac's zone, across both daylight
+    /// saving changes of the American and European rules, and spawns nothing: 2,000 stamps take
+    /// far less than one `date` run each would.
+    #[test]
+    fn a_stamp_reads_in_process_as_date_reads_it() {
+        for s in [
+            "2026-01-15 09:30",
+            "2026-03-08 01:59",
+            "2026-03-08 03:00",
+            "2026-03-29 00:59",
+            "2026-03-29 03:01",
+            "2026-07-01 12:00",
+            "2026-10-25 00:30",
+            "2026-10-25 03:30",
+            "2026-11-01 00:59",
+            // The hour that happens twice: daylight saving's, as `date -j` picks it.
+            "2026-11-01 01:30",
+            "2026-10-25 02:30",
+            "2026-11-01 03:00",
+            "2026-12-31 23:59",
+            "1999-02-28 00:00",
+        ] {
+            assert_eq!(local_epoch(s), stamp_epoch(s, None), "{s}");
+            assert!(local_epoch(s).is_some(), "{s}");
+        }
+        for bad in [
+            "",
+            "2026-10-14",
+            "2026-10-14 9:30",
+            "2026-13-01 10:00",
+            "x026-10-14 10:00",
+        ] {
+            assert_eq!(local_epoch(bad), None, "{bad}");
+        }
+        let started = std::time::Instant::now();
+        for m in 0..2000 {
+            let s = format!("2026-10-{:02} {:02}:{:02}", 1 + m % 28, m % 24, m % 60);
+            assert!(local_epoch(&s).is_some());
+        }
+        assert!(started.elapsed() < std::time::Duration::from_millis(200));
+    }
 
     const TASK: &str = "---\nid: 0042\ntype: bug\npriority: high\nstatus: doing\ncaptured: 2026-10-11\nclaimed-by: wt-a (session aaaa1111)\nheartbeat:\nwaiting_on:\ncommit:\n---\n\n# Something broke\n\n**Details:** test.\n\n## Questions\n- [ ] **Q1 (wt-a, session aaaa1111, 2026-10-11 10:00):** Which port?\n- [ ] **Q2 (wt-a, session aaaa1111, 2026-10-11 10:05):** Product call?\n  **Escalated to owner (capture, 2026-10-11 10:06).**\n\n## Log\n- 2026-10-11 captured\n- 2026-10-11 wt-a: asked Q1\n";
 

@@ -58,7 +58,9 @@ Your check, escalated questions, blocked on you or by a permission, human tasks,
 ## The app (one place per job)
 
 Board (AI and Human, both on screen, 0022), Table, Timeline, Graph (0019) are views of the same
-tasks. The task panel is docked beside them (0021 header, 0020 edit and comments, 0025 sessions
+tasks. Sessions (0098) lists the Claude sessions of the personal accounts, grouped as Claude
+Code's agents list, and each one's recap: its tasks, history, handoff chain, time, tokens and
+progress. The task panel is docked beside them (0021 header, 0020 edit and comments, 0025 sessions
 and cost, 0024 why blocked). Appearance holds themes, accents and card looks (0026).
 
 ## Open questions (owner's to settle; the spine above shows capture's pick)

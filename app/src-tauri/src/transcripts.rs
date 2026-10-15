@@ -41,6 +41,15 @@ pub const LIVE_SECS: u64 = 5 * 60;
 const VIEW_ENTRIES: usize = 1500;
 /// Characters of one folded entry in the transcript view.
 const VIEW_LINE_CHARS: usize = 240;
+/// The end of a transcript the Sessions view (0098) reads for a session's last message.
+pub const TAIL_BYTES: u64 = 64 * 1024;
+/// The start of a transcript read for its first prompt (0098): in real ones the first prompt
+/// ends within 62 KB of the start (90% within 8 KB).
+pub const HEAD_BYTES: u64 = 128 * 1024;
+/// Characters of a last message or a pending tool call (0098).
+pub const MESSAGE_CHARS: usize = 160;
+/// Characters of a first prompt kept: enough for a `/handoff resume <path>`.
+const PROMPT_CHARS: usize = 4096;
 
 /// Tokens a session used, summed over its model calls.
 #[derive(Serialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -192,6 +201,10 @@ pub struct Reader {
     live_secs: AtomicU64,
     index: Mutex<Index>,
     cache: Mutex<Cache>,
+    /// The Sessions view's last messages (0098), by (path, size, modified time).
+    tails: Mutex<Small<Tail>>,
+    /// First prompts (0098): a found one never changes, so it's kept while its file is.
+    heads: Mutex<Small<Option<String>>>,
 }
 
 /// A poisoned lock only means another reader panicked mid-update; the data is a cache, so use it.
@@ -219,6 +232,8 @@ impl Reader {
             index: Mutex::new(Index::default()),
             live_secs: AtomicU64::new(LIVE_SECS),
             cache: Mutex::new(Cache::default()),
+            tails: Mutex::new(Small::default()),
+            heads: Mutex::new(Small::default()),
         }
     }
 
@@ -489,6 +504,74 @@ impl Reader {
             .collect()
     }
 
+    /// Every transcript path the index holds now, for dropping cached text of a transcript that's
+    /// gone (0098).
+    fn indexed_paths(&self) -> HashSet<PathBuf> {
+        lock(&self.index)
+            .files
+            .values()
+            .flatten()
+            .cloned()
+            .collect()
+    }
+
+    /// The end of each of `shorts`' transcripts in `accounts` (0098, `read_tail`), in order, with
+    /// one index refresh for all of them: None for one that isn't there or can't be read. Cached
+    /// by (path, size, modified time); what's cached of a transcript that's gone is dropped.
+    pub fn tails(&self, accounts: &[Account], shorts: &[String]) -> Vec<Option<Tail>> {
+        let dirs = self.refresh(accounts);
+        let out = shorts
+            .iter()
+            .map(|s| {
+                let path = self.candidates(s, &dirs).into_iter().next()?;
+                let meta = fs::metadata(&path).ok()?;
+                let stamp = (meta.len(), meta.modified().ok()?);
+                if let Some(t) = lock(&self.tails).get(&path, |c| c.stamp == stamp) {
+                    return Some(t);
+                }
+                let tail = read_tail(&path, secs(stamp.1)).ok()?;
+                lock(&self.tails).put(path, stamp, tail.clone());
+                Some(tail)
+            })
+            .collect();
+        let alive = self.indexed_paths();
+        lock(&self.tails).keep(&alive);
+        out
+    }
+
+    /// The first prompt of each of `shorts`' transcripts in `accounts` (0098, `read_first_prompt`),
+    /// in order, with one index refresh: None when there's no transcript or no prompt in its first
+    /// `HEAD_BYTES`. A prompt once found is kept while the file is there; none found is looked for
+    /// again when the file changes.
+    pub fn first_prompts(&self, accounts: &[Account], shorts: &[String]) -> Vec<Option<String>> {
+        let dirs = self.refresh(accounts);
+        let out = shorts
+            .iter()
+            .map(|s| {
+                let path = self.candidates(s, &dirs).into_iter().next()?;
+                let meta = fs::metadata(&path).ok()?;
+                let stamp = (meta.len(), meta.modified().ok()?);
+                let cached =
+                    lock(&self.heads).get(&path, |c| c.value.is_some() || c.stamp == stamp);
+                if let Some(found) = cached {
+                    return found;
+                }
+                let found = read_first_prompt(&path).ok()?;
+                lock(&self.heads).put(path, stamp, found.clone());
+                found
+            })
+            .collect();
+        let alive = self.indexed_paths();
+        lock(&self.heads).keep(&alive);
+        out
+    }
+
+    /// Text cached for the Sessions view now (tails and first prompts).
+    #[cfg(test)]
+    pub(crate) fn texts_cached(&self) -> usize {
+        lock(&self.tails).files.len() + lock(&self.heads).files.len()
+    }
+
     /// Session `short`'s transcript in `accounts` as Markdown for the owner's pane: one line per
     /// prompt, reply and tool call, folded and capped, with the text escaped so it shows as
     /// written (no links, images or HTML from it). Tool output and thinking are left out. The
@@ -711,6 +794,11 @@ struct Block {
     name: Option<String>,
     #[serde(default)]
     input: Option<serde_json::Value>,
+    /// A tool call's id, and the call a tool result answers (0098's pending call).
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    tool_use_id: Option<String>,
 }
 
 /// One line of the view per prompt, reply text and tool call in a transcript line.
@@ -765,6 +853,23 @@ fn tool_gist(input: &serde_json::Value) -> Option<String> {
     .find_map(|k| input.get(k).and_then(|v| v.as_str()).map(str::to_string))
 }
 
+/// What a call waiting for the owner's yes would do, as the owner approves it: its command, path,
+/// address, pattern or query first, and the model's description of it only when it has none.
+fn pending_gist(input: &serde_json::Value) -> Option<String> {
+    [
+        "command",
+        "file_path",
+        "path",
+        "url",
+        "pattern",
+        "query",
+        "description",
+        "prompt",
+    ]
+    .iter()
+    .find_map(|k| input.get(k).and_then(|v| v.as_str()).map(str::to_string))
+}
+
 /// Text on one line: whitespace runs as one space, cut at `VIEW_LINE_CHARS` characters, and every
 /// ASCII punctuation character escaped so Markdown shows it as written.
 fn fold(text: &str) -> String {
@@ -782,6 +887,211 @@ fn fold(text: &str) -> String {
         out.push(c);
     }
     out
+}
+
+/// The end of a session's transcript as the Sessions view shows it (0098). Held in memory only.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Tail {
+    /// The last text Claude wrote, on one line, at most `MESSAGE_CHARS` characters; "" for none.
+    pub text: String,
+    /// The last tool call with no result yet (what a permission prompt asks about), as
+    /// `Bash: git push origin…`, at most `MESSAGE_CHARS` characters; "" for none.
+    pub pending: String,
+    /// When the transcript last changed, seconds since 1970.
+    pub modified: u64,
+}
+
+struct SmallEntry<T> {
+    stamp: (u64, SystemTime),
+    value: T,
+    used: u64,
+}
+
+/// A small cache by path, at most `CACHE_CAP` entries, the least recently used dropped first.
+struct Small<T> {
+    files: HashMap<PathBuf, SmallEntry<T>>,
+    tick: u64,
+}
+
+impl<T> Default for Small<T> {
+    fn default() -> Self {
+        Small {
+            files: HashMap::new(),
+            tick: 0,
+        }
+    }
+}
+
+impl<T: Clone> Small<T> {
+    /// The value for `path`, when `fresh` says the cached one still holds.
+    fn get(&mut self, path: &Path, fresh: impl Fn(&SmallEntry<T>) -> bool) -> Option<T> {
+        self.tick += 1;
+        let tick = self.tick;
+        let e = self.files.get_mut(path).filter(|e| fresh(e))?;
+        e.used = tick;
+        Some(e.value.clone())
+    }
+
+    fn put(&mut self, path: PathBuf, stamp: (u64, SystemTime), value: T) {
+        self.tick += 1;
+        if self.files.len() >= CACHE_CAP && !self.files.contains_key(&path) {
+            let oldest = self
+                .files
+                .iter()
+                .min_by_key(|(_, e)| e.used)
+                .map(|(p, _)| p.clone());
+            if let Some(p) = oldest {
+                self.files.remove(&p);
+            }
+        }
+        let used = self.tick;
+        self.files.insert(path, SmallEntry { stamp, value, used });
+    }
+
+    /// Drop what's cached of every file not in `alive`.
+    fn keep(&mut self, alive: &HashSet<PathBuf>) {
+        self.files.retain(|p, _| alive.contains(p));
+    }
+}
+
+/// A transcript line as the tail and head reads take it.
+#[derive(Deserialize)]
+struct TailLine {
+    #[serde(default, rename = "type")]
+    kind: Option<String>,
+    #[serde(default, rename = "isMeta")]
+    is_meta: Option<bool>,
+    #[serde(default, rename = "isSidechain")]
+    is_sidechain: Option<bool>,
+    #[serde(default)]
+    message: Option<ViewMessage>,
+}
+
+/// The last `TAIL_BYTES` of the transcript at `path` (whose file changed at `modified`): the
+/// last text Claude wrote, and the last tool call no result answers yet. Only whole lines count:
+/// the first, cut by the window, is skipped unless the window starts the file. Subagent lines
+/// (`isSidechain`) don't count.
+pub fn read_tail(path: &Path, modified: u64) -> io::Result<Tail> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = fs::File::open(path)?;
+    let len = f.metadata()?.len();
+    let start = len.saturating_sub(TAIL_BYTES);
+    f.seek(SeekFrom::Start(start))?;
+    let mut buf = Vec::with_capacity(usize::try_from(len - start).unwrap_or(0));
+    f.take(TAIL_BYTES).read_to_end(&mut buf)?;
+    let body: &[u8] = if start == 0 {
+        &buf
+    } else {
+        match buf.iter().position(|&b| b == b'\n') {
+            Some(i) => &buf[i + 1..],
+            None => &[],
+        }
+    };
+    let mut tail = Tail {
+        modified,
+        ..Tail::default()
+    };
+    // Read from the end: a tool result seen there answers the call it names.
+    let mut answered: HashSet<String> = HashSet::new();
+    let mut pending_done = false;
+    for raw in body.split(|&b| b == b'\n').rev() {
+        if !tail.text.is_empty() && pending_done {
+            break;
+        }
+        let Ok(line) = serde_json::from_slice::<TailLine>(raw) else {
+            continue;
+        };
+        if line.is_sidechain == Some(true) {
+            continue;
+        }
+        let Some(Content::Blocks(blocks)) = line.message.and_then(|m| m.content) else {
+            continue;
+        };
+        match line.kind.as_deref() {
+            Some("user") => {
+                for b in &blocks {
+                    if b.kind.as_deref() == Some("tool_result") {
+                        if let Some(id) = &b.tool_use_id {
+                            answered.insert(id.clone());
+                        }
+                    }
+                }
+            }
+            Some("assistant") => {
+                for b in blocks.iter().rev() {
+                    match b.kind.as_deref() {
+                        Some("text") if tail.text.is_empty() => {
+                            let t = crate::agents::plain_line(
+                                b.text.as_deref().unwrap_or(""),
+                                MESSAGE_CHARS,
+                            );
+                            if !t.is_empty() {
+                                tail.text = t;
+                            }
+                        }
+                        Some("tool_use") if !pending_done => {
+                            // Only the latest call can be waiting; once it's seen, it's settled.
+                            pending_done = true;
+                            let open = b.id.as_ref().is_some_and(|id| !answered.contains(id));
+                            if open {
+                                let name = b.name.as_deref().unwrap_or("tool");
+                                let gist =
+                                    b.input.as_ref().and_then(pending_gist).unwrap_or_default();
+                                let both = if gist.is_empty() {
+                                    name.to_string()
+                                } else {
+                                    format!("{name}: {gist}")
+                                };
+                                tail.pending = crate::agents::plain_line(&both, MESSAGE_CHARS);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(tail)
+}
+
+/// The first prompt in the first `HEAD_BYTES` of the transcript at `path`: the first user line
+/// that isn't a meta line, its text (a string, or its text blocks joined), at most `PROMPT_CHARS`
+/// characters. None when there's none in that window.
+pub fn read_first_prompt(path: &Path) -> io::Result<Option<String>> {
+    use std::io::Read;
+    let f = fs::File::open(path)?;
+    let mut reader = BufReader::with_capacity(16 * 1024, f.take(HEAD_BYTES));
+    let mut buf = Vec::new();
+    while let Some(whole) = read_line_capped(&mut reader, &mut buf, HEAD_BYTES as usize)? {
+        if !whole {
+            continue;
+        }
+        let Ok(line) = serde_json::from_slice::<TailLine>(&buf) else {
+            continue;
+        };
+        if line.kind.as_deref() != Some("user")
+            || line.is_meta == Some(true)
+            || line.is_sidechain == Some(true)
+        {
+            continue;
+        }
+        let text = match line.message.and_then(|m| m.content) {
+            Some(Content::Text(t)) => t,
+            Some(Content::Blocks(blocks)) => blocks
+                .iter()
+                .filter(|b| b.kind.as_deref() == Some("text"))
+                .filter_map(|b| b.text.as_deref())
+                .collect::<Vec<_>>()
+                .join("\n"),
+            None => continue,
+        };
+        if text.trim().is_empty() {
+            continue;
+        }
+        return Ok(Some(text.chars().take(PROMPT_CHARS).collect()));
+    }
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -1504,5 +1814,250 @@ pub(crate) mod tests {
         assert!(mine);
         // mg's and hg's links are one folder, listed once, with only its playground project.
         assert_eq!(dirs, 1);
+    }
+
+    pub(crate) fn said(text: &str) -> String {
+        serde_json::json!({"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}})
+            .to_string()
+    }
+
+    pub(crate) fn calls(id: &str, tool: &str, command: &str) -> String {
+        serde_json::json!({"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "text", "text": "Running it."},
+            {"type": "tool_use", "id": id, "name": tool, "input": {"command": command}}
+        ]}})
+        .to_string()
+    }
+
+    pub(crate) fn answers(id: &str) -> String {
+        serde_json::json!({"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": id, "content": "done"}
+        ]}})
+        .to_string()
+    }
+
+    /// `lines` as the transcript of `session` in mg's playground project.
+    fn put_lines(h: &Path, session: &str, lines: &[String]) -> PathBuf {
+        let p = h
+            .join(".claude-mg/projects")
+            .join(PROJECT)
+            .join(format!("{session}.jsonl"));
+        fs::write(&p, lines.join("\n") + "\n").unwrap();
+        p
+    }
+
+    #[test]
+    fn the_tail_says_the_last_text_and_the_call_still_waiting() {
+        let h = home();
+        let p = put_lines(
+            h.path(),
+            "00000001-x",
+            &[
+                prompt("2026-10-12T10:00:00Z", "go"),
+                said("First answer."),
+                calls("t1", "Read", "x"),
+                answers("t1"),
+                said("Now   the\nsecond, ب‌فارسی."),
+                calls("t2", "Bash", "git push origin main && echo ok"),
+            ],
+        );
+        let t = read_tail(&p, 7).unwrap();
+        // The last text is in the line with the waiting call ("Running it."), on one line.
+        assert_eq!(t.text, "Running it.");
+        assert_eq!(t.pending, "Bash: git push origin main && echo ok");
+        assert_eq!(t.modified, 7);
+        // Answered: nothing waits, and the last text stays.
+        let p = put_lines(
+            h.path(),
+            "00000002-x",
+            &[
+                said("Now   the\nsecond, ب‌فارسی."),
+                calls("t2", "Bash", "ls"),
+                answers("t2"),
+            ],
+        );
+        let t = read_tail(&p, 0).unwrap();
+        assert_eq!((t.text.as_str(), t.pending.as_str()), ("Running it.", ""));
+        let p = put_lines(
+            h.path(),
+            "00000003-x",
+            &[said("Now   the\nsecond, ب‌فارسی.")],
+        );
+        assert_eq!(read_tail(&p, 0).unwrap().text, "Now the second, ب‌فارسی.");
+        // Only an older call is open: the latest call settled it, so nothing waits.
+        let p = put_lines(
+            h.path(),
+            "00000004-x",
+            &[
+                calls("old", "Bash", "a"),
+                calls("new", "Read", "b"),
+                answers("new"),
+            ],
+        );
+        assert_eq!(read_tail(&p, 0).unwrap().pending, "");
+        // R4: a call with a description too shows what the owner approves: the command, the
+        // path or the address, the description only when it has none of those.
+        let described = |id: &str, tool: &str, input: serde_json::Value| {
+            serde_json::json!({"type": "assistant", "message": {"role": "assistant", "content": [
+                {"type": "tool_use", "id": id, "name": tool, "input": input}
+            ]}})
+            .to_string()
+        };
+        for (input, want) in [
+            (
+                serde_json::json!({"description": "Push main to origin", "command": "git push origin main"}),
+                "Bash: git push origin main",
+            ),
+            (
+                serde_json::json!({"description": "Edit it", "file_path": "/x/a.rs"}),
+                "Bash: /x/a.rs",
+            ),
+            (
+                serde_json::json!({"description": "Fetch it", "url": "https://example.com/a"}),
+                "Bash: https://example.com/a",
+            ),
+            (
+                serde_json::json!({"description": "Look around", "prompt": "find the bug"}),
+                "Bash: Look around",
+            ),
+        ] {
+            let p = put_lines(h.path(), "00000006-x", &[described("d1", "Bash", input)]);
+            assert_eq!(read_tail(&p, 0).unwrap().pending, want);
+        }
+        // A subagent's line and broken lines don't count; an empty file is empty.
+        let side = serde_json::json!({"type": "assistant", "isSidechain": true, "message": {"content": [{"type": "text", "text": "sub"}]}}).to_string();
+        let p = put_lines(
+            h.path(),
+            "00000005-x",
+            &[said("main"), side, "{broken".into(), "42".into()],
+        );
+        assert_eq!(read_tail(&p, 0).unwrap().text, "main");
+        let p = put_lines(h.path(), "00000006-x", &[]);
+        assert_eq!(read_tail(&p, 0).unwrap(), Tail::default());
+    }
+
+    #[test]
+    fn the_tail_reads_only_whole_lines_of_the_last_64_kb_and_cuts_by_characters() {
+        let h = home();
+        let long = "ش".repeat(400);
+        // A first line bigger than the window: only whole lines after it count.
+        let p = put_lines(
+            h.path(),
+            "00000001-x",
+            &[said(&"x".repeat(TAIL_BYTES as usize)), said(&long)],
+        );
+        let t = read_tail(&p, 0).unwrap();
+        assert_eq!(t.text.chars().count(), MESSAGE_CHARS + 1);
+        assert!(t.text.starts_with('ش') && t.text.ends_with('…'));
+        // A last line bigger than the window: nothing whole in it, so no message.
+        let p = put_lines(
+            h.path(),
+            "00000002-x",
+            &[said("early"), said(&"y".repeat(TAIL_BYTES as usize + 10))],
+        );
+        assert_eq!(read_tail(&p, 0).unwrap().text, "");
+        // Hostile text stays text: no escaping here, the window shows it plain.
+        let p = put_lines(
+            h.path(),
+            "00000003-x",
+            &[said("<img src=x onerror=alert(1)> **b**\u{202e}")],
+        );
+        assert_eq!(
+            read_tail(&p, 0).unwrap().text,
+            "<img src=x onerror=alert(1)> **b**"
+        );
+    }
+
+    #[test]
+    fn the_first_prompt_is_the_first_real_user_text_in_the_head() {
+        let h = home();
+        let meta =
+            serde_json::json!({"type": "user", "isMeta": true, "message": {"content": "meta"}})
+                .to_string();
+        let resume = "<command-message>handoff</command-message>\n<command-name>/handoff</command-name>\n<command-args>resume /Users/someone/playground/x/.claude/work/handoffs/a.md</command-args>";
+        let p = put_lines(
+            h.path(),
+            "00000001-x",
+            &[
+                r#"{"type":"custom-title","customTitle":"x"}"#.into(),
+                meta,
+                answers("t0"),
+                prompt("2026-10-12T10:00:00Z", resume),
+                prompt("2026-10-12T10:01:00Z", "later"),
+            ],
+        );
+        assert_eq!(read_first_prompt(&p).unwrap().as_deref(), Some(resume));
+        // Text blocks are joined.
+        let blocks = serde_json::json!({"type": "user", "message": {"content": [{"type": "text", "text": "a"}, {"type": "image"}, {"type": "text", "text": "b"}]}}).to_string();
+        let p = put_lines(h.path(), "00000002-x", &[blocks]);
+        assert_eq!(read_first_prompt(&p).unwrap().as_deref(), Some("a\nb"));
+        // None in the head: a prompt after 128 KB isn't looked for.
+        let p = put_lines(
+            h.path(),
+            "00000003-x",
+            &[
+                said(&"z".repeat(HEAD_BYTES as usize)),
+                prompt("2026-10-12T10:00:00Z", "late"),
+            ],
+        );
+        assert_eq!(read_first_prompt(&p).unwrap(), None);
+        // Cut to PROMPT_CHARS characters.
+        let p = put_lines(
+            h.path(),
+            "00000004-x",
+            &[prompt("2026-10-12T10:00:00Z", &"گ".repeat(5000))],
+        );
+        assert_eq!(
+            read_first_prompt(&p).unwrap().unwrap().chars().count(),
+            PROMPT_CHARS
+        );
+    }
+
+    #[test]
+    fn tails_and_first_prompts_read_only_allowed_accounts_are_cached_and_dropped_when_gone() {
+        let h = home();
+        let p = put_lines(
+            h.path(),
+            "00000001-x",
+            &[prompt("2026-10-12T10:00:00Z", "hi"), said("one")],
+        );
+        touch(&p, NOW - 10);
+        // In an account that isn't allowed.
+        put(
+            &h.path().join(".claude-ih/projects"),
+            PROJECT,
+            "00000002-x",
+            1,
+        );
+        let (r, a) = reader(h.path());
+        let ids: Vec<String> = ["00000001", "00000002", "nothex!!"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let tails = r.tails(&a, &ids);
+        assert_eq!(tails[0].as_ref().unwrap().text, "one");
+        assert_eq!(tails[0].as_ref().unwrap().modified, NOW - 10);
+        assert_eq!((tails[1].clone(), tails[2].clone()), (None, None));
+        assert_eq!(
+            r.first_prompts(&a, &ids),
+            [Some("hi".to_string()), None, None]
+        );
+        assert_eq!(r.texts_cached(), 2);
+        // Changed: read again. A found first prompt is kept.
+        fs::write(
+            &p,
+            [prompt("2026-10-12T10:00:00Z", "hi"), said("two")].join("\n") + "\n",
+        )
+        .unwrap();
+        touch(&p, NOW - 5);
+        assert_eq!(r.tails(&a, &ids)[0].as_ref().unwrap().text, "two");
+        // Gone: what was cached of it goes at the next read.
+        fs::remove_file(&p).unwrap();
+        assert_eq!(r.tails(&a, &ids)[0], None);
+        assert_eq!(r.first_prompts(&a, &ids)[0], None);
+        assert_eq!(r.texts_cached(), 0);
+        // Only through the accounts given: none, nothing.
+        put_lines(h.path(), "00000003-x", &[said("three")]);
+        assert_eq!(r.tails(&[], &["00000003".to_string()]), [None]);
     }
 }

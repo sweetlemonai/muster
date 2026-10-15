@@ -33,3 +33,4 @@ covers: app/src/App.tsx, app/src/ColumnRow.tsx, app/src/ColumnCards.tsx, app/src
 - Your check cards say Your turn and the next step, grouped by effort. (mu-43)
 - The window polls every 2 s while visible, never while hidden. (AS_BUILT "Live")
 - A holder with a role slot shows as the role's name now (`کاوه-2` after a rename): cards, pane, filters, search and sort. (mu-112)
+- Sessions is a project view beside Graph; its recap opens in the pane's dock, the list still live. (mu-98)

@@ -4,7 +4,7 @@ import { cardLines, columnFold, DEFAULT_MODE, ELEMENTS, loadMode, look, MODE_KEY
 // Every source file of the window, as text: the elements a component reads are found in them.
 const sources = Object.fromEntries(
   Object.entries(import.meta.glob<string>("./*.{ts,tsx}", { query: "?raw", import: "default", eager: true }))
-    .filter(([path]) => !path.endsWith(".test.ts") && path !== "./modes.ts")
+    .filter(([path]) => !/\.test\.tsx?$/.test(path) && path !== "./modes.ts")
     .map(([path, text]) => [path.slice(2), text]),
 );
 
@@ -86,6 +86,8 @@ describe("the display modes' table (0038)", () => {
       ["rail", "open"],
       ["pane-sections", "open"],
       ["sidebar", "full"],
+      ["session-groups", "all"],
+      ["session-history", "open"],
     ]);
   });
 
@@ -100,6 +102,8 @@ describe("the display modes' table (0038)", () => {
       ["rail", "open", "strip"],
       ["pane-sections", "folded", "folded"],
       ["sidebar", "full", "narrow"],
+      ["session-groups", "all", "needs-input"],
+      ["session-history", "folded", "folded"],
     ]);
   });
 });

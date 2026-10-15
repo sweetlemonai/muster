@@ -22,6 +22,8 @@
       "timeline": "Timeline",
       "graph": "Graph",
       "graphTitle": "What waits on what",
+      "sessions": "Sessions",
+      "sessionsTitle": "The Claude sessions of the accounts Muster reads: needs input, working and completed",
       "helper": "Helper",
       "waiting": "Waiting for you",
       "waitingTitle": "Your own tasks to do and doing, and what the agents wait on you for: the needs-you count",
@@ -655,6 +657,18 @@
         "full": "Projects under their category headings (each with its tasks, needs you and working), their counts, the order chips, each one's colour dot and activity line, and + Category; each heading one line of labelled counts, what needs you first, the same folded",
         "focus": "Category headings with the same one line of labelled counts, what needs you first, open or folded, project names with their colour dot, the working dot, stalled and the needs-you and paused counts, and a project over its Your check limit says so; a stalled project keeps its Ask for a check-in",
         "focusReach": "Leave Focus: ⌘. or the mode chip in the header"
+      },
+      "sessionGroups": {
+        "label": "Sessions",
+        "all": "Needs input, Working and Completed, each with its rows; Completed older than a day in one chip",
+        "focus": "Needs input with its rows; Working and Completed as chips with their counts",
+        "focusReach": "Click a chip: its rows open in place"
+      },
+      "sessionHistory": {
+        "label": "Session history",
+        "adhd": "Every claim, check-in, pass, return, note and handoff, in time order",
+        "folded": "Folded to a header with its count",
+        "reach": "Click the header to open it"
       }
     }
   }

@@ -98,7 +98,7 @@ pub fn is_queue(dir: &Path) -> bool {
 pub(crate) const MAIN_NAMES: [&str; 2] = ["main", "master"];
 
 /// Is this `.muster`'s checkout a project's `main` or `master`?
-fn checkout_is_main(root: &Path) -> bool {
+pub(crate) fn checkout_is_main(root: &Path) -> bool {
     root.parent()
         .and_then(Path::file_name)
         .and_then(|n| n.to_str())

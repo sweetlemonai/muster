@@ -18,7 +18,7 @@ const minutes = (m: number) => fmtMinutes(m) || "0 min";
 const when = (secs: number | null) => (secs === null ? "—" : stamp(new Date(secs * 1000)));
 
 /** Why a session's row has no numbers, by its `found`. */
-const NOT_READ: Record<Exclude<SessionRow["found"], "read">, string> = {
+export const NOT_READ: Record<Exclude<SessionRow["found"], "read">, string> = {
   missing: "not on this Mac",
   "too-big": "transcript over 128 MB, not read",
   "not-read": "not read: not stamped with a Claude account Muster reads",

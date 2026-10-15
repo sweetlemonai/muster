@@ -162,6 +162,34 @@ stay open) the owner chose **A**.
   click away.
 - **The task pane folds as in Standard.**
 
+## The Sessions view (task 0098)
+
+Claude Code's agents list, inside Muster: a project view beside Board, Table, Timeline and Graph,
+for one project or All.
+
+- **Three groups, always on screen, in one order:** Needs input, Working, Completed, each heading
+  with its count, and the header's count of all three ("8 need input · 0 working · 37
+  completed"). An empty group says "none" and keeps its place, so nothing jumps when a session
+  moves.
+- **One line per session,** in the board's sizes: the name in `--text` and bold, under All the
+  project's dot and name (Other for none), the message in `--muted`, the age at the inline end.
+  The age is `--muted` too, not `--faint`: `--faint` is under 4.5:1 and the age is information.
+- **Needs input is the needs-you orange** (the `--st-needs` edge at the row's inline start, and
+  `--warn` heading and message): it waits on the owner. Working and Completed stay neutral and
+  their words say which, because violet means Building and green means Done.
+- **Fold in place.** Completed rows older than a day are one "Older: N" chip at the group's end;
+  a click opens them there, and Fewer folds them back. Focus mode shows Needs input's rows and
+  the other two groups as chips with their counts, opened in place.
+- **The recap, never the transcript first.** A click opens the session's recap in the task pane's
+  dock, the list still live beside it (no overlay). A strip at the top holds Transcript and Close.
+  The sections never move: the chain line, then Who, Tasks it worked on, History, Time, Tokens,
+  Progress. Transcript shows under the recap, never in its place. Standard and Focus fold the
+  History to its header with its count.
+- **Plain text, either direction.** Names and messages are the owner's own text, maybe Persian:
+  `dir="auto"`, cut by characters, never drawn as Markdown. The row's layout uses logical
+  properties, so RTL mirrors it.
+- **No spinner.** "Reading sessions…" says it in place until the first read lands.
+
 ## Sidebar categories (task 0082)
 
 - **A heading reads as a heading.** It starts its group with a thin divider, its name is plainly

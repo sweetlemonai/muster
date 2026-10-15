@@ -1292,3 +1292,48 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .limit-cell { display: flex; flex-direction: column; gap: 2px; min-width: 120px; }
 .limit-edit { display: flex; align-items: center; gap: 4px; }
 .limit-edit input { width: 4.5em; }
+/* The Sessions view (0098): Claude Code's agents list, grouped. The three groups always have their
+   heading and count, an empty one "none", so nothing jumps. Rows are one line: name in --text,
+   message in --muted, age at the inline end in --muted (--faint is under 4.5:1). Needs input is
+   the needs-you orange (--warn words, the --st-needs edge); Working and Completed stay neutral,
+   their words say which. Logical properties, so RTL mirrors the row. */
+.sessions-head { display: flex; align-items: baseline; gap: 10px; }
+.sessions-head h1 { margin: 0; font-size: 16px; }
+.sessions-count { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.session-group { margin-block-start: 14px; }
+.session-group h2 { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+.session-group h2 small { font-size: 11px; font-weight: 400; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.sg-needs-input h2 { color: var(--warn); }
+.session-rows { list-style: none; margin: 0; padding: 0; }
+.session-row { display: flex; align-items: baseline; gap: 10px; width: 100%; min-width: 0; padding-block: 5px; padding-inline: 10px 8px; border: none; border-block-end: 1px solid var(--line); border-inline-start: 3px solid transparent; background: none; color: var(--text); font: inherit; font-size: 13px; text-align: start; }
+.session-row:hover, .session-row:focus-visible { background: var(--hover); }
+.session-row.on { background: var(--selected); }
+.session-row.needs-input { border-inline-start-color: var(--st-needs); }
+.session-name { flex: 0 0 auto; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.session-row .q { flex: none; white-space: nowrap; }
+.session-msg { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.session-row.needs-input .session-msg { color: var(--warn); }
+.session-age { flex: none; margin-inline-start: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.session-chip { margin-block-start: 6px; font-size: 12px; }
+.session-fold { margin-inline-start: 6px; padding: 0 7px; font-size: 10.5px; font-weight: 400; text-transform: none; letter-spacing: 0; }
+/* The recap (0098), in the task pane's dock: the strip, then fixed sections. */
+.recap-strip h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recap-err { padding: 8px 18px; }
+.recap-chain { margin: 0; padding: 8px 18px; border-block-end: 1px solid var(--line); font-size: 13px; overflow-wrap: anywhere; }
+.session-recap section h2 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+.session-recap section h2 small { margin-inline-start: 4px; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.session-recap section ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.recap-facts { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; margin: 0; font-size: 13px; }
+.recap-facts dt { color: var(--muted); }
+.recap-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.recap-state.needs-input { color: var(--warn); font-weight: 600; }
+.recap-task { border: none; background: none; padding: 0; color: var(--accent-text); font: inherit; text-align: start; cursor: pointer; }
+.recap-task:hover, .recap-task:focus-visible { text-decoration: underline; }
+.recap-fold { border: none; background: none; padding: 0; color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; }
+.recap-fold::before { content: "▸ "; }
+.recap-fold[aria-expanded="true"]::before { content: "▾ "; }
+.recap-events { list-style: none; margin: 0; padding: 0; font-size: 12px; }
+.recap-event { display: flex; flex-wrap: wrap; gap: 2px 8px; padding-block: 3px; border-block-end: 1px solid var(--line); align-items: baseline; }
+.recap-event .when { width: auto; font-variant-numeric: tabular-nums; }
+.recap-event .kind { color: var(--muted); }
+.recap-event .what { flex: 1 1 12em; min-width: 0; overflow-wrap: anywhere; }
