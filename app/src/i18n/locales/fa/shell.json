@@ -751,6 +751,10 @@
       "merged": "ادغام شد",
       "accepted": "پذیرفته شد"
     },
+    "events": {
+      "mergedThenAccepted": "<merged>ادغام شد</merged> <first>{{first}}</first> · <accepted>پذیرفته شد</accepted> <second>{{second}}</second>",
+      "acceptedThenMerged": "<accepted>پذیرفته شد</accepted> <first>{{first}}</first> · <merged>ادغام شد</merged> <second>{{second}}</second>"
+    },
     "builtBy": "سازنده: {{who}}",
     "you": "شما",
     "costReading": "زمان و توکن…",

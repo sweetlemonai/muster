@@ -1,6 +1,6 @@
 import { isHuman } from "./human";
 import { calendarIn, fmt, getLocale, tl, tn } from "./i18n";
-import { type RoleNames, stageHolders, stamp, stampMinutes, whoLine } from "./lib";
+import { key, type RoleNames, stageHolders, stamp, stampMinutes, whoLine } from "./lib";
 import { isWork } from "./levels";
 import type { Task } from "./types";
 
@@ -12,9 +12,12 @@ import type { Task } from "./types";
 /** Merged: Testing passed and the work landed on main (Testing → Your check). Accepted: moved
  *  into Done (the owner's Accept; for the owner's own task, their Done). */
 export type FinishKind = "merged" | "accepted";
-/** One row: a task, what happened and when (a tool stamp, "YYYY-MM-DD HH:MM"), with the stamp as
- *  wall-clock minutes for ordering and grouping. */
-export type Finish = { task: Task; kind: FinishKind; at: string; minutes: number };
+/** One thing that happened to a task: merged or accepted, at a tool stamp ("YYYY-MM-DD HH:MM"). */
+export type FinishEvent = { kind: FinishKind; at: string };
+/** One row: a task, what happened and when, with the stamp as wall-clock minutes for ordering and
+ *  grouping. `events` is what the row says, oldest first: its own event, or under All each of the
+ *  task's (mu-201), the row then standing at the latest. */
+export type Finish = { task: Task; kind: FinishKind; at: string; minutes: number; events: FinishEvent[] };
 
 /** A task's rows: its latest merge while it's still in Your check or Done, and its move into
  *  Done (`doneAt`, which also reads an older hand move) while it's still there. Goals and features
@@ -24,7 +27,7 @@ function rowsOf(t: Task): Finish[] {
   const out: Finish[] = [];
   const add = (kind: FinishKind, at: string) => {
     const minutes = stampMinutes(at);
-    if (minutes !== null) out.push({ task: t, kind, at, minutes });
+    if (minutes !== null) out.push({ task: t, kind, at, minutes, events: [{ kind, at }] });
   };
   if (t.stage === "done") add("accepted", t.doneAt);
   if (!isHuman(t) && (t.stage === "your-check" || t.stage === "done")) {
@@ -60,7 +63,21 @@ export const KIND_FILTERS: { readonly id: KindFilter; readonly label: string; re
 export const RECENT_KEY = "muster.recentKind";
 const isKind = (v: unknown): v is KindFilter => KIND_FILTERS.some((k) => k.id === v);
 
-export const byKind = (rows: Finish[], f: KindFilter) => (f === "all" ? rows : rows.filter((r) => r.kind === f));
+/** The rows a kind chip shows, in `finishes`' order. Merged and Accepted: the rows of that kind.
+ *  All (mu-201): one row per task, where its latest row stands, saying each of its events oldest
+ *  first, so a task merged and accepted shows once with both stamps. */
+export function byKind(rows: Finish[], f: KindFilter): Finish[] {
+  if (f !== "all") return rows.filter((r) => r.kind === f);
+  const one = new Map<string, Finish>();
+  for (const r of rows) {
+    const k = key(r.task);
+    const seen = one.get(k);
+    // Newest first, so a task's first row is its latest and each later one happened before.
+    if (seen) seen.events = [...r.events, ...seen.events];
+    else one.set(k, { ...r, events: [...r.events] });
+  }
+  return [...one.values()];
+}
 
 /** The remembered chip, read safely: storage that's off, denied or absent (a test run) and
  *  anything unknown give All. */
@@ -177,7 +194,8 @@ function dayGroup(day: number, today: number, first: Finish): DayGroup {
 }
 
 /** How many rows Recently finished's first week shows with its kind filter: its count in the row
- *  of folded columns, and whether it has anything to show (mu-84), the same rows its list draws. */
+ *  of folded columns, and whether it has anything to show (mu-84), the same rows its list draws
+ *  (under All, tasks: mu-201). */
 export function weekCount(tasks: Task[], now: number, kind: KindFilter): number {
   return dayGroups(byKind(finishes(tasks), kind), now, 1).groups.reduce((n, g) => n + g.rows.length, 0);
 }

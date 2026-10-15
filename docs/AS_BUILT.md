@@ -1610,8 +1610,13 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   to 115% zoom, 1000 px at 150%); narrower than that the board gets less (97 px at 820 × 150%),
   and the pane never runs past the window. What landed on main (the latest
   Testing → Your check stage line, **merged**) and what moved into Done (`doneAt`, **accepted**;
-  the owner's own task's Done too), each a row of its own, for the project in view (every project
-  with All, each row with its project), whatever the filter bar says. Only what's still finished:
+  the owner's own task's Done too), for the project in view (every project
+  with All, each row with its project), whatever the filter bar says. Under the **All** chip a
+  task shows once under All with both stamps, oldest first, each kind in its colour ("merged
+  yesterday 18:20 · accepted 4 min ago", one `shell.json` sentence per order, `recent.events`),
+  placed and grouped at its latest (`byKind` merges a task's rows, mu-201); Merged and Accepted
+  list one row per task of that kind, and the chip in the row counts what the list draws
+  (`weekCount`: tasks under All). Only what's still finished:
   a task sent back has no row; goals and features have none. Newest first, grouped by day (Today,
   Yesterday, then "Sun 11 Oct"), each day with its count; when in words ("4 min ago", "2 h ago",
   "yesterday 18:20", then the date), the stamp in the tooltip. Chips All · Merged · Accepted,

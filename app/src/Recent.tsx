@@ -1,10 +1,11 @@
-import { useContext, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import { stampDateTime } from "./Dates";
 import { fmt, tl, tn } from "./i18n";
+import { renderTags } from "./i18n/react";
 import { fmtHours, key, type RoleNames, shortTokens } from "./lib";
 import { taskKey } from "./taskKey";
-import { builtBy, byKind, dayGroups, type DayGroup, type Finish, finishes, KIND_FILTERS, type KindFilter, whenText } from "./recentData";
+import { builtBy, byKind, dayGroups, type DayGroup, type Finish, type FinishEvent, type FinishKind, finishes, KIND_FILTERS, type KindFilter, whenText } from "./recentData";
 import { RoleNamesContext } from "./settingsData";
 import type { Task, Work } from "./types";
 import ProjectName, { TaskKey } from "./ProjectName";
@@ -172,6 +173,32 @@ export function RecentList({ groups, older, kind, onKind, weeks, onOlder, now, m
   );
 }
 
+/** Under All, a task merged and accepted says both, oldest first, as one sentence each way round
+ *  (mu-201): "merged yesterday 18:20 · accepted 4 h ago". */
+const BOTH = { merged: "recent.events.mergedThenAccepted", accepted: "recent.events.acceptedThenMerged" } as const;
+
+/** What happened and when: each kind word in its colour, each time a <time> with its stamp.
+ *  renderTags, not <Trans>: the row is drawn without hooks (its test walks it as plain calls). */
+function events(list: FinishEvent[], now: number): ReactNode {
+  const kind = (k: FinishKind) => <span className={`recent-kind ${k}`} />;
+  const time = (at: string) => <time className="recent-when" title={at} dateTime={stampDateTime(at)} />;
+  const [first, second] = list;
+  if (!second) {
+    return (
+      <>
+        <span className={`recent-kind ${first.kind}`}>{tn("shell", `recent.finish.${first.kind}`)}</span>
+        <time className="recent-when" title={first.at} dateTime={stampDateTime(first.at)}>{whenText(first.at, now)}</time>
+      </>
+    );
+  }
+  return renderTags(tn("shell", BOTH[first.kind], { first: whenText(first.at, now), second: whenText(second.at, now) }), {
+    merged: kind("merged"),
+    accepted: kind("accepted"),
+    first: time(first.at),
+    second: time(second.at),
+  });
+}
+
 /** One row: the project (with All), id and title, what happened and when; under them who built
  *  it and its time and tokens. The whole row opens the task in the pane. */
 function RecentRow({ r, now, multi, active, onOpen, cost, names }: { r: Finish; now: number; multi: boolean; active: boolean; onOpen: (t: Task) => void; cost: Cost | undefined; names: RoleNames }) {
@@ -183,10 +210,7 @@ function RecentRow({ r, now, multi, active, onOpen, cost, names }: { r: Finish; 
         {multi && <ProjectName name={task.queue} />}
         <TaskKey t={task}>{taskKey(task)}</TaskKey>
         <span className="recent-title">{task.title || tn("shell", "recent.noTitle")}</span>
-        <span className="recent-kind-when">
-          <span className={`recent-kind ${r.kind}`}>{tn("shell", `recent.finish.${r.kind}`)}</span>
-          <time className="recent-when" title={r.at} dateTime={stampDateTime(r.at)}>{whenText(r.at, now)}</time>
-        </span>
+        <span className="recent-kind-when">{events(r.events, now)}</span>
       </span>
       <span className="recent-meta">{[by ? tn("shell", "recent.builtBy", { who: by }) : "", costText(cost)].filter(Boolean).join(" · ")}</span>
     </button>

@@ -24,6 +24,7 @@ covers: app/src/App.tsx, app/src/FeatureGrid.tsx, app/src/ColumnCards.tsx, app/s
 - One colour, one meaning: a stage colour only ever says a stage. (DESIGN.md "The colour code")
 - Screens draw buttons and chips with the `app/src/ui` atoms, never a plain `<button>`. (mu-53)
 - Recently finished is docked at the board's right, or under it when narrow, never hidden. (mu-51)
+- Under Recently finished's All chip a task shows once, at its latest stamp, with both stamps oldest first; its chip counts the rows drawn. (mu-201)
 - Your check cards say Your turn and the next step, grouped by effort. (mu-43)
 - The window polls every 2 s while visible, never while hidden. (AS_BUILT "Live")
 - A holder with a role slot shows as the role's name now (`کاوه-2` after a rename): cards, pane, filters, search and sort. (mu-112)

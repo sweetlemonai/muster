@@ -1511,7 +1511,8 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .recent-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; font-size: 12.5px; }
 .recent-top .id { color: var(--muted); font-size: 11px; }
 .recent-title { flex: 1 1 140px; min-width: 0; overflow-wrap: anywhere; }
-.recent-kind-when { display: inline-flex; gap: 6px; align-items: baseline; margin-left: auto; white-space: nowrap; }
+/* Both stamps under All (mu-201) wrap between their parts at the narrow rail, never cut. */
+.recent-kind-when { display: inline-flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; margin-inline-start: auto; max-width: 100%; white-space: nowrap; }
 .recent-kind { font-size: 10.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
 .recent-when { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .recent-meta { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }

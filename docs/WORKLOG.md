@@ -3,6 +3,21 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-201: Recently finished shows a task once under All, with both stamps
+**Did (Gholi_60, builder):** under the All kind chip, `byKind` (`recentData.ts`) gives one row per
+task, at its latest event, with each event oldest first; `RecentRow` draws "merged 59 min ago ·
+accepted 58 min ago" from one `shell.json` sentence per order (`recent.events`, en and fa), each kind
+in its colour and each time a `<time>`. Merged and Accepted are unchanged. `weekCount` follows, so the
+row's chip counts tasks under All. The line wraps between its parts at the narrow rail. Manual 04 and
+AS_BUILT say so.
+**Fixed:** a task merged and accepted showed as two rows under All and counted twice in the chip.
+Cause: `finishes` gives a Done task a row per event (0051) and All showed them all. Fix: All merges
+a task's rows by its key in one pass.
+**Verified:** vitest recentData + Recent + Display 81/81 (9 new; `Display.test.ts` counts 4→2 and
+[5,3,2]→[3,3,2], since All now counts tasks). Headless WebKit, mocked IPC, synthetic queue (a minute
+apart and across midnight): 40/40 shots with each task once and no stamp cut, AC2's 24 (All and one
+project, 1100×760 and 1440×900, pane closed and open at 718, ADHD, Standard and Focus) and AC3's
+seven themes in en and fa; `.muster/attachments/0201/qa/check.txt`. `bin/gate` green.
 ## 2026-10-15 — mu-220: the UI's speed tests hold under machine load
 **Did (Asghar_57, builder):** the four speed tests (`Sessions.test.tsx`, `viewData.test.ts`,
 `filters.test.ts`, `graph.test.ts`) time their work with the new `fastest.ts` (+ `fastest.test.ts`):

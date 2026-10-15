@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setLocale, setNumbering } from "./i18n/runtime";
-import { builtBy, byKind, dayGroups, finishes, finishText, KIND_FILTERS, loadKind, RECENT_KEY, storeKind, whenText } from "./recentData";
+import { builtBy, byKind, dayGroups, finishes, finishText, KIND_FILTERS, loadKind, RECENT_KEY, storeKind, weekCount, whenText } from "./recentData";
 import { columns } from "./lib";
 import type { StageStep, Task } from "./types";
 
@@ -171,7 +171,7 @@ describe("the kind chips", () => {
   it("are All, Merged and Accepted, and pick the rows", () => {
     expect(KIND_FILTERS.map((k) => k.label)).toEqual(["All", "Merged", "Accepted"]);
     const all = finishes(list);
-    expect(byKind(all, "all")).toHaveLength(3);
+    expect(byKind(all, "all")).toHaveLength(2);
     expect(byKind(all, "merged").map((r) => r.task.id)).toEqual(["0001", "0002"]);
     expect(byKind(all, "accepted").map((r) => r.task.id)).toEqual(["0002"]);
   });
@@ -186,6 +186,52 @@ describe("the kind chips", () => {
     expect(storeKind("accepted", (v) => saved.push(v))).toBe(true);
     expect(saved).toEqual(["accepted"]);
     expect(storeKind("merged", () => { throw new Error("QuotaExceeded"); })).toBe(false);
+  });
+});
+
+describe("under All, a task once with both stamps (mu-201)", () => {
+  const ev = (r: { task: Task; at: string; events: { kind: string; at: string }[] }) => `${r.task.id} ${r.at} ${r.events.map((e) => `${e.kind} ${e.at}`).join(" · ")}`;
+  const list = [
+    finished("0001", "2026-10-13 12:59", "2026-10-13 13:00"),
+    finished("0002", "2026-10-12 18:20", "2026-10-13 13:56"),
+    finished("0003", "2026-10-13 11:00"),
+    task("0004", { stage: "done", doneAt: "2026-10-13 10:00" }),
+  ];
+  it("gives a merged and accepted task one row at its later stamp, both events oldest first, also across midnight", () => {
+    expect(byKind(finishes(list), "all").map(ev)).toEqual([
+      "0002 2026-10-13 13:56 merged 2026-10-12 18:20 · accepted 2026-10-13 13:56",
+      "0001 2026-10-13 13:00 merged 2026-10-13 12:59 · accepted 2026-10-13 13:00",
+      "0003 2026-10-13 11:00 merged 2026-10-13 11:00",
+      "0004 2026-10-13 10:00 accepted 2026-10-13 10:00",
+    ]);
+  });
+  it("puts the row under the day of its later stamp", () => {
+    const { groups } = dayGroups(byKind(finishes([finished("0002", "2026-10-12 18:20", "2026-10-13 09:15")]), "all"), NOW, 1);
+    expect(groups.map((g) => `${g.label} ${g.rows.length}`)).toEqual(["Today 1"]);
+  });
+  it("merges a merge and an acceptance in the same minute in the order they happened", () => {
+    expect(byKind(finishes([finished("0005", "2026-10-13 09:00", "2026-10-13 09:00")]), "all").map(ev)).toEqual(["0005 2026-10-13 09:00 merged 2026-10-13 09:00 · accepted 2026-10-13 09:00"]);
+  });
+  it("keeps tasks of other projects with the same id apart", () => {
+    const other = finished("0001", "2026-10-13 12:00", "", { queue: "drover" });
+    expect(byKind(finishes([...list, other]), "all").map((r) => `${r.task.queue}/${r.task.id}`)).toEqual(["muster/0002", "muster/0001", "drover/0001", "muster/0003", "muster/0004"]);
+  });
+  it("leaves Merged and Accepted one row of their kind each, with that one event", () => {
+    expect(byKind(finishes(list), "merged").map(ev)).toEqual([
+      "0001 2026-10-13 12:59 merged 2026-10-13 12:59",
+      "0003 2026-10-13 11:00 merged 2026-10-13 11:00",
+      "0002 2026-10-12 18:20 merged 2026-10-12 18:20",
+    ]);
+    expect(byKind(finishes(list), "accepted").map(ev)).toEqual([
+      "0002 2026-10-13 13:56 accepted 2026-10-13 13:56",
+      "0001 2026-10-13 13:00 accepted 2026-10-13 13:00",
+      "0004 2026-10-13 10:00 accepted 2026-10-13 10:00",
+    ]);
+  });
+  it("counts tasks under All in the week, the rows the list draws", () => {
+    expect([weekCount(list, NOW, "all"), weekCount(list, NOW, "merged"), weekCount(list, NOW, "accepted")]).toEqual([4, 3, 3]);
+    // Merged before the week, accepted in it: one task, counted once.
+    expect(weekCount([finished("0006", "2026-09-01 10:00", "2026-10-13 09:00")], NOW, "all")).toBe(1);
   });
 });
 

@@ -309,7 +309,7 @@ describe("Recently finished and the Done line in each mode", () => {
     }
     expect(autoOpen(looks("focus"), RAIL_ID, 4)).toBe(false);
     expect(ROW_ORDER.at(-1)).toBe(RAIL_ID);
-    expect(weekCount(finished, RNOW, "all")).toBe(4);
+    expect(weekCount(finished, RNOW, "all")).toBe(2);
     expect(appSource).toContain("{plain.isOpen(RAIL_ID) && <Recent key={`${queue}/${modes.mode}`}");
   });
 
@@ -318,7 +318,7 @@ describe("Recently finished and the Done line in each mode", () => {
     // Two tasks merged and accepted, one merged and waiting in Your check.
     const two = [...finished, task("0050", { stage: "your-check", stageHistory: [step("2026-10-13 09:00", "ready", "building", "muster/wt-x"), step("2026-10-13 11:00", "testing", "your-check")] })];
     for (const kind of ["all", "merged", "accepted"] as const) expect(weekCount(two, RNOW, kind), kind).toBe(rows(rail("adhd", two, kind)));
-    expect([weekCount(two, RNOW, "all"), weekCount(two, RNOW, "merged"), weekCount(two, RNOW, "accepted")]).toEqual([5, 3, 2]);
+    expect([weekCount(two, RNOW, "all"), weekCount(two, RNOW, "merged"), weekCount(two, RNOW, "accepted")]).toEqual([3, 3, 2]);
     // App keeps the kind, so the chip, the list and whether the rail opens by itself use the same rows.
     expect(appSource).toContain("const [recentKind, setRecentKind] = useState<KindFilter>(() => loadKind());");
     expect(appSource).toContain("const finishedWeek = useMemo(() => weekCount(inQueue, now, recentKind), [inQueue, now, recentKind]);");

@@ -659,6 +659,10 @@
       "merged": "merged",
       "accepted": "accepted"
     },
+    "events": {
+      "mergedThenAccepted": "<merged>merged</merged> <first>{{first}}</first> · <accepted>accepted</accepted> <second>{{second}}</second>",
+      "acceptedThenMerged": "<accepted>accepted</accepted> <first>{{first}}</first> · <merged>merged</merged> <second>{{second}}</second>"
+    },
     "builtBy": "built by {{who}}",
     "you": "you",
     "costReading": "time and tokens…",

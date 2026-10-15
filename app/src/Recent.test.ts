@@ -2,6 +2,7 @@ import { createElement as h, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import Recent, { costOf, costText, RecentList } from "./Recent";
+import { setLocale } from "./i18n/runtime";
 import { dayGroups, finishes } from "./recentData";
 import type { StageStep, Task } from "./types";
 
@@ -62,22 +63,45 @@ describe("Recently finished on the board (AC1)", () => {
     expect(html).toContain('role="group" aria-label="Show what finished"');
     expect(html.match(/aria-pressed="true"[^>]*class="ui-pill ui-pill--on">([^<]*)</)?.[1]).toBe("All");
   });
-  it("lists merged and accepted rows newest first, grouped by day with counts, each saying when from the log", () => {
+  it("lists each task once under All, newest first at its later stamp, grouped by day with counts, each saying when from the log (mu-201)", () => {
     const html = render();
-    expect(heads(html)).toEqual(["Today 2", "Yesterday 1", "Sun 11 Oct 2"]);
+    expect(heads(html)).toEqual(["Today 2", "Sun 11 Oct 1"]);
     expect(rowsOf(html)).toEqual([
       "0050 Recently finished merged 4 min ago built by muster/wt-0051 · main · 531266d4 · time and tokens…",
-      "0043 Your check says what to do accepted 4 h ago built by muster/wt-0051 · main · 531266d4 · time and tokens…",
-      "0043 Your check says what to do merged yesterday 18:20 built by muster/wt-0051 · main · 531266d4 · time and tokens…",
-      "0031 Timeline accepted Sun 11 Oct 09:05 built by muster/wt-0051 · main · 531266d4 · time and tokens…",
-      "0031 Timeline merged Sun 11 Oct 09:00 built by muster/wt-0051 · main · 531266d4 · time and tokens…",
+      "0043 Your check says what to do merged yesterday 18:20 · accepted 4 h ago built by muster/wt-0051 · main · 531266d4 · time and tokens…",
+      "0031 Timeline merged Sun 11 Oct 09:00 · accepted Sun 11 Oct 09:05 built by muster/wt-0051 · main · 531266d4 · time and tokens…",
     ]);
     expect(html).toContain('<span class="recent-kind merged">merged</span>');
     expect(html).toContain('<span class="recent-kind accepted">accepted</span>');
     expect(html).toContain('<time class="recent-when" title="2026-10-13 13:56" dateTime="2026-10-13T13:56">4 min ago</time>');
   });
+  it("draws both stamps on one line, each kind in its colour and each time a <time>, oldest first (mu-201)", () => {
+    const html = render();
+    expect(html).toContain(
+      '<span class="recent-kind-when"><span class="recent-kind merged">merged</span> <time class="recent-when" title="2026-10-12 18:20" dateTime="2026-10-12T18:20">yesterday 18:20</time> · <span class="recent-kind accepted">accepted</span> <time class="recent-when" title="2026-10-13 09:15" dateTime="2026-10-13T09:15">4 h ago</time></span>',
+    );
+  });
+  it("says the stamps in the order they happened, an older Done before a later merge too (mu-201)", () => {
+    const odd = finished("0070", "2026-10-13 13:00", "2026-10-13 12:00", { title: "Odd" });
+    expect(rowsOf(render({ tasks: [odd] }))[0]).toContain("Odd accepted 2 h ago · merged 1 h ago built by");
+    // One task only merged keeps its one stamp.
+    expect(rowsOf(render({ tasks: [TASKS[0]] }))[0]).toContain("Recently finished merged 4 min ago built by");
+  });
+  it("in فارسی, one sentence with each kind in its colour and the times isolated (mu-201)", async () => {
+    await setLocale("fa");
+    try {
+      const html = render({ tasks: [TASKS[1]] });
+      const row = rowsOf(html)[0].replace(/[⁨⁩]/g, "");
+      expect(row).toContain("ادغام شد دیروز");
+      expect(row).toContain("· پذیرفته شد ۴ ساعت پیش");
+      expect(html).toContain('<span class="recent-kind merged">ادغام شد</span>');
+      expect(html).toContain('<span class="recent-kind accepted">پذیرفته شد</span>');
+    } finally {
+      await setLocale("en");
+    }
+  });
   it("says how many older rows there are, with Show older to add a week", () => {
-    expect(plain(render())).toContain("Show older · 2 more");
+    expect(plain(render())).toContain("Show older · 1 more");
   });
   it("lists the kind App gives it, the remembered chip (App keeps it, so its chip in the row counts the same rows)", () => {
     const html = render({ kind: "accepted" });
