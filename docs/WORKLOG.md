@@ -4,6 +4,27 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — Coordinator (Muster_Team_Lead): mu-86, 88, 89, 90, 91, 93, 95, 111 merged; orchestration plan in the pipeline; headless QA
+**Did:** merged mu-86 (b959c01), mu-88 (b7d15a8), mu-90 (306cc32), mu-89 (feca164), mu-95 (9b53b31),
+mu-91 (cfa3268), mu-111 (5b1fd3e), the orchestration research and plan (2aa1c48, 89fef23; Pouya),
+and mu-93 into the personal layer (0a237a2, owner's uncommitted edits kept). Shaped the whole
+backlog into mu-86 to mu-105, the orchestration plan into mu-107 to mu-127 (Shapour_5), the QA loop
+on the board (mu-128) and Persian (shaping). Ran builders, reviewers and QA as one-task sessions.
+**Decided:** (overrule any time) decision numbers: 0012 accounts allowlist (mu-99), 0013 terms and
+accounts (mu-107), 0014 gates (mu-129, owner's session), 0015 runner (mu-108); no rotating or
+balancing across accounts (terms risk, research); Muster's own runner now, Drover's later; a
+session not stamped with a personal account is never read (mu-99 R1); a quiet takeover of a
+blocked claim needs a handoff or the owner (mu-90); a project's name never vanishes in the
+sidebar (mu-87 round 3). Lessons L11, L12 accepted.
+**Owner rules:** QA runs headless (Playwright WebKit with mocked IPC, harness in $TMPDIR/qah),
+never input on the owner's screen; Muster only for now (dastafzar stopped); the lead starts and
+stops sessions itself and never asks whether to build; lead handoff cap 600k.
+**Verified:** each merge's gate green after the rebase; reviews recorded with mutants; QA
+screenshots in attachments; owner's settings byte-identical after every QA run.
+**Open:** builders often don't tick their own criteria (the lead ticks at merge from review
+evidence); backlog notes from review nits (mu-88 R1, mu-90 R6-R8, mu-95 R3, migrate flake, band
+titles, mu-93 item 5).
+
 ## 2026-10-14 — Spike: how Claude Code reports 5-hour and weekly use on this Mac (mu-111)
 **Did:** short `claude -p` stream-json runs and interactive sessions with a throwaway status line,
 on Claude Code 2.1.296; findings posted on mu-9 (three comments). Fixtures for mu-113 and mu-117 in
