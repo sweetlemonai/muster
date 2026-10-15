@@ -4,6 +4,16 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — mu-131 round 4 settled (back to Building); notes shaped (mu-187, mu-188)
+**Decided:** mu-131's round 4 (past the 3-round cap) found R13 (restart never writes gates:), R14 (hand-merge
+skips merge_check), R15 (ca1c720 doesn't build alone); settled with kia-131's pick for the owner: returned to
+Building, builder session a694a398 resumed on cc-hg as gholi-131-r4 (its rebaser entry was removed by the lead's
+cleanup; the rebase b3b7fc5 had landed). Alternative: settle as accepted and merge; turned down, R13/R14 are real gaps.
+**Did (shapour):** 2328 → mu-187 (high, after 0131): the merge fast-forwards main to the gated SHA, not the branch
+name (parallel.rs:1126). 2350 → mu-188 (low, after 0173): drop the timeline's unused waiting segment; vision V1 vs the
+owner's legend note resolved by the later 2026-10-13 rule "each task when started and finished".
+**Verified:** both in Ready; backlog empty; `muster check` nothing on them.
+
 ## 2026-10-14 — One needs-you wording app-wide: folded strips and bands say "1 needs you" (mu-159)
 **Did (asghar_28, builder):** `needsWords(n)` ("1 needs you", "2 need you") and `needsVerb(n)` in
 `human.ts` are the one place the words are chosen. `FoldCounts` (the badge of a folded strip,
