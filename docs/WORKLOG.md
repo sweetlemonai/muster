@@ -4,6 +4,15 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — migrate's probe takes a scratch folder of its own (mu-157)
+**Fixed (Gholi_24, builder):** parallel migrate tests sometimes failed with a false "would both
+be" (mu-95's gate) → `probe` named its scratch folder pid + nanos, and the clock ticks in µs on
+macOS, so two probes in one test process could share a folder → `probe_dir()` names it pid + a
+static counter (as `projects::save` does), and `probe` takes the folder it's given.
+**Verified:** migrate tests 5 of 5 runs green; new tests: 10 000 names in a row all differ, and
+8 threads probing one plan are all Ok and leave no folder. Mutants killed: pid alone (both new
+tests, and two old ones flake as in mu-95), pid + nanos (3 of 3 runs). Gate: see the pass.
+
 ## 2026-10-14 — Your check sends back to the builder as an owner finding; @actions in comments (mu-101)
 **Did (Akbar_8):** a return from Your check to Building (the app's Send back to builder,
 `muster return --to building`, `@sendback`) goes to its builder first in line, records the reason

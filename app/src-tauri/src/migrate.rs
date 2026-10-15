@@ -272,7 +272,7 @@ fn plan(old: &Path, known: &[crate::projects::Project]) -> Result<Plan, String> 
         }
     }
     p.not_copied.sort();
-    probe(&p)?;
+    probe(&p, &probe_dir())?;
     Ok(p)
 }
 
@@ -383,16 +383,8 @@ fn add(
 
 /// The plan's paths made as empty files in a scratch folder, so the disk itself says which
 /// names it takes for one (accents written two ways, composed and decomposed, on APFS): refused,
-/// naming both. The scratch folder is removed after.
-fn probe(p: &Plan) -> Result<(), String> {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let scratch = std::env::temp_dir().join(format!(
-        "muster-migrate-probe-{}-{nanos}",
-        std::process::id()
-    ));
+/// naming both. `scratch` is a folder of this probe's own (`probe_dir`), removed after.
+fn probe(p: &Plan, scratch: &Path) -> Result<(), String> {
     let result = (|| {
         let mut made: HashMap<(u64, u64), &str> = HashMap::new();
         for (dest, item) in &p.items {
@@ -424,8 +416,16 @@ fn probe(p: &Plan) -> Result<(), String> {
         }
         Ok(())
     })();
-    let _ = fs::remove_dir_all(&scratch);
+    let _ = fs::remove_dir_all(scratch);
     result
+}
+
+/// A scratch folder name for one probe: the process id and a counter, so two probes never
+/// share one, in one process (parallel tests) or in two.
+fn probe_dir() -> PathBuf {
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    std::env::temp_dir().join(format!("muster-migrate-probe-{}-{n}", std::process::id()))
 }
 
 /// A file's identity on disk: its device and inode.
@@ -1396,5 +1396,50 @@ mod tests {
         let e = migrate(&inner, &r, &Options::default(), &tools(), T).unwrap_err();
         assert!(e.contains("overlap"), "{e}");
         assert!(!r.join(layout::DIR).exists());
+    }
+
+    #[test]
+    fn probe_folders_taken_in_a_row_all_differ_and_keep_the_pid() {
+        let (a, b) = (probe_dir(), probe_dir());
+        assert_ne!(a, b);
+        // Many in a row, so a name from the clock (µs on macOS) repeats too.
+        let many: Vec<PathBuf> = (0..10_000).map(|_| probe_dir()).collect();
+        assert_eq!(many.iter().collect::<HashSet<_>>().len(), many.len());
+        let pid = format!("muster-migrate-probe-{}-", std::process::id());
+        for d in [&a, &b].into_iter().chain(&many) {
+            assert_eq!(d.parent(), Some(std::env::temp_dir().as_path()));
+            let name = d.file_name().unwrap().to_string_lossy();
+            assert!(name.starts_with(&pid), "{name}");
+        }
+    }
+
+    #[test]
+    fn eight_probes_of_one_plan_at_once_are_all_ok_and_leave_nothing() {
+        let mut p = Plan::default();
+        for i in 0..40 {
+            let rel = format!("todo/{i:04}-t.md");
+            let item = Item {
+                src: PathBuf::from(&rel),
+                rel,
+                text: None,
+            };
+            p.items
+                .insert(Path::new("tasks").join(format!("{i:04}-t.md")), item);
+        }
+        let p = std::sync::Arc::new(p);
+        let runs: Vec<_> = (0..8)
+            .map(|_| {
+                let p = p.clone();
+                std::thread::spawn(move || {
+                    let dir = probe_dir();
+                    (probe(&p, &dir), dir)
+                })
+            })
+            .collect();
+        for run in runs {
+            let (result, dir) = run.join().unwrap();
+            assert_eq!(result, Ok(()));
+            assert!(!dir.exists(), "{}", dir.display());
+        }
     }
 }
