@@ -342,7 +342,8 @@ its own agent id is another holder, 0090) and logged `(tested under
 >    `<git common dir>/muster/merge.lock`, so one merge runs at a time); rebases the branch on the
 >    local main (**a conflict aborts the rebase and returns the task to Building with the files
 >    named**; new work log entries that both sides added to `docs/WORKLOG.md`, at any number of points (on
->    top, or under any entry), aren't a
+>    top, or under any entry), and an older entry changed or removed on one side only (it
+>    merges as that side has it; only one both sides changed differently stays a conflict), aren't a
 >    conflict: the rebase runs `muster merge-log` as git's merge driver, given with `git -c`, which
 >    keeps both entries whole, newest date first and the task landing now on top on the same date,
 >    decision 0009); runs the project's gate in the worktree (**red returns it with the gate line**;

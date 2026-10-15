@@ -1,8 +1,8 @@
 # 0009 — The work log merges through a muster merge driver
 
 Date: 2026-10-14 · Status: accepted (the shaper decided it for task mu-67; the owner can overrule
-it any time). Amended 2026-10-15 twice: entries under an entry, not only on top (mu-190), then at
-any number of points (mu-196).
+it any time). Amended 2026-10-15 three times: entries under an entry, not only on top (mu-190), then
+at any number of points (mu-196), then entries changed or removed on one side (mu-209).
 
 ## Why
 
@@ -96,6 +96,47 @@ covers it, so the rule widens again, from "at one point" to "at any number of po
   markers", with no point count to go stale.
 
 The shaper made this call for mu-196 (the owner can overrule it).
+
+## Amendment 2026-10-15: entries changed or removed on one side (task mu-209)
+
+The rule above still took a side only when the base's entries were untouched. Main then removed
+two stray `||||||| base` lines from older entries (ad8dacb), and mu-131's rebase onto it stopped
+on `docs/WORKLOG.md` (8fb0ffe onto fa2ed9d) and was resolved by hand (2730c13). So a fix to an old
+entry on main stopped every open branch's next rebase. The why of this decision covers it: the
+two sides never touched the same entry. The merge becomes entry-wise:
+
+- Each side is read against the base. A base entry is kept (the same bytes), changed (a side
+  entry with the same whole `## ` heading line, in its place) or removed. Every other side entry
+  is new: dated, in a run at a point among the base's entries, merged per point as above. A run
+  beside a removed entry is where the first removed entry was. An edited heading reads as the
+  old entry removed and a new entry in its place, and stays there: the run shares that point
+  only with the other side's run when that one starts there or above, whose entries go first on
+  the old entry's date or before. So what the other side put under the old entry stays under the
+  new one, and two headings edited one on each side keep their order (review round 1).
+- Per base entry: kept by both stays; an entry changed or removed on one side only is as that
+  side has it; changed the same way on both, or removed on both, is there once or gone once.
+- Markers and exit 1 stay for the rest: one entry changed differently on each side, or changed on
+  one and removed on the other (an edited heading included); a new entry with the heading of a
+  base entry either side changed or removed (an entry moved, or a copy of the changed one: which
+  is which can't be told); an entry both sides removed with different new entries where it was
+  (an edited heading against a removal or another edit reads so, and so does a removal beside
+  an insert on one side: they can't be told apart, so both stop); a changed preamble on either
+  side, as the lead's brief asked (it's the log's own header); a run of the other side's between
+  two base entries one side removed or renamed while it put new entries there (which of them was
+  above that run can't be told); an undated new entry; and a
+  result whose entries don't split back where they were put (an entry's unclosed code fence
+  would take in the headings after it).
+- Duplicate base entries match deterministically, the same bytes on every run. The shaping said
+  "from the top"; as built, entries that are in the base and the side once each are matched first
+  (the longest run of them in order, as patience diff does), then the rest between them from the
+  bottom, as mu-196 already read a side. A side with only inserts is still read as mu-196 read it,
+  so its bytes don't change. The real log has one entry twice, and removing either copy merges.
+- A gate test (`app/src-tauri/tests/conflict_markers.rs`) fails on a conflict-marker line
+  (`<<<<<<< `, `||||||| `, `>>>>>>> `, or exactly `=======`) outside fenced code in `docs/**/*.md`
+  or a top-level `*.md`, so markers a hand merge leaves can't land unseen. A gate test and not a
+  `muster check` warning, since warnings fail nothing.
+
+The shaper made this call for mu-209 (the owner can overrule it).
 
 ## Options considered
 

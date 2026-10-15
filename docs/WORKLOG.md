@@ -3,6 +3,35 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — muster merge-log merges entry-wise; a gate test catches conflict markers in docs (mu-209)
+**Fixed:** a fix to an old work-log entry on main (ad8dacb's stray `||||||| base` lines) stopped every
+branch's next rebase → mu-196 took a side only when the base's entries were untouched → `merge_log.rs`
+now reads each side entry by entry (`read_side`, `matched`: patience anchors, then the same bytes, then
+the same heading line between them) and merges per entry (`entry_wise`): a one-sided change or removal
+wins, the same one on both is there once, runs merge per point as before. Markers stay for one entry
+changed two ways or changed against a removal, a heading edit against the other side's removal or edit,
+a moved entry, a changed preamble, an undated entry, and a result that doesn't split back in place.
+**Did:** `merge_log::stray_markers` and `tests/conflict_markers.rs`: a `<<<<<<< `, `||||||| `,
+`>>>>>>> ` or `=======` line outside fenced code in `docs/**/*.md` or a top-level `*.md` turns the
+gate red. Decision 0009's third amendment; help.rs, the manual, AS_BUILT, docs/now/parallel.md, PROTOCOL.
+**Decided:** duplicate base entries are matched by unique anchors first, then from the bottom (as mu-196
+read a side), not "from the top" as shaped: the same bytes every run, and insert-only sides keep
+mu-196's bytes. An entry both sides removed, with a new entry where it was on one side only, stops: it
+can't be told from an edited heading against a removal (review finding, fixed in this task).
+**Fixed (review round 1, R1):** an edited heading could swap places with a same-date entry the other side
+put under the old one, and two headings edited one on each side came out reversed → the edited entry's
+run paired at the lowest point it shared with the other side's run → such a run now stays where the old
+entry was, pairs only with a run starting there or above, and yields to it on the old entry's date or
+before; a run of the other side's between two entries one side removed or renamed gives markers. The
+randomised check gained 150 newest-first seeds with an order oracle (each side's order, base entries as
+merged); disabling either half of the fix fails it.
+**Verified:** the real repro (O=e530e74, A=fa2ed9d, B=8fb0ffe) through `muster merge-log` exits 0,
+both stray lines gone, 185 entries, byte-identical to QA_10's hand resolution 2730c13. 41 merge_log
+tests (unit, two randomised through the binary, real-git merge and rebase both ways), the marker tests.
+**Open:** two base entries with one heading and different bodies, in one gap, can be read either way
+(the heading pass takes the lowest), so a change and a removal there may merge clean where a person
+would call it a conflict. The real log has no such pair (its one repeated heading is the same entry twice).
+
 ## 2026-10-15 — mu-212: a sidebar heading's "N need you" stays inside the sidebar at 150px, in Persian too
 **Fixed:** at 150px in فارسی, a heading's "۴۴ مورد به شما نیاز دارد" ran past the sidebar's edge
 (L9 again). The second line the counts took held only what was left under the name (about 108px),

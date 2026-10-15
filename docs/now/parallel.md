@@ -30,7 +30,7 @@ covers: app/src-tauri/src/parallel.rs, app/src-tauri/src/merge_log.rs, .gitattri
 - Main is pushed plainly, never forced; if origin moved, it stops. (mu-23)
 - The app's Pass is refused for a started task in Testing. (mu-23)
 - A started task reaches Your check or Done by a stage change only once its branch is in main. (mu-64)
-- `docs/WORKLOG.md` merges through `muster merge-log`: both sides' new entries, at any number of points (on top, or under any entry), kept whole, newest first where both added at one place. (decision 0009)
+- `docs/WORKLOG.md` merges through `muster merge-log`: both sides' new entries, at any number of points (on top, or under any entry), kept whole, newest first where both added at one place; an older entry changed or removed on one side merges as that side has it, and only one both sides changed differently gets markers. (decision 0009)
 - `muster start` and `muster init` set the driver in git config only where it's missing. (decision 0009)
 - The merge passes the driver itself with `git -c`. (decision 0009)
 - Without it, `muster check` warns `<prefix>: warning: …` with the two git lines under it; exit code unchanged. (mu-166)

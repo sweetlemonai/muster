@@ -162,7 +162,9 @@ here):
 | `testkit.rs` | Tests only (`cfg(test)`): `testkit::tempdir()`, the one temp folder a lib test makes, at `<tmp>/proj/q` so its parent holds nothing else (mu-191) |
 
 Integration tests are in `app/src-tauri/tests/` (`interop.rs`, `deps_cases.rs`, `search_cases.rs`,
-`keys.rs`, `broken_pipe.rs`, `now_pages.rs`); their temp folders come from `tests/common/mod.rs`
+`keys.rs`, `broken_pipe.rs`, `now_pages.rs`, and `conflict_markers.rs`, which fails the gate on a
+conflict-marker line left outside fenced code in `docs/**/*.md` or a top-level `*.md`,
+`merge_log::stray_markers`, mu-209); their temp folders come from `tests/common/mod.rs`
 (`common::tempdir()`, the same `<tmp>/proj/q` as `testkit`, mu-191); `examples/probe.rs` and `examples/dump.rs` time and print reads of the real queues.
 
 ### The app: webview and IPC
@@ -377,7 +379,7 @@ is in section 6.
 | Parallel sessions: `ready --parallel`, `start`, the merge, `release --clean` | Built, tested | mu-23 |
 | The tester isn't the builder; send-back comes first | Built, tested | mu-47, mu-66 |
 | Review of record and lessons | Built, tested; the owner's first real round hasn't happened | mu-27 |
-| Work log merge driver | Built, tested | mu-67, mu-71 |
+| Work log merge driver | Built, tested | mu-67, mu-71, mu-209 |
 | Pick-one questions | Built, tested | mu-49 |
 | Ping a session (check-in, message) | Built, tested; the auto-nudge isn't built | mu-39 |
 | Release a claim no session can be reached on; a holder's act stamps it; send-backs keep the session | Built, tested | mu-184 |
@@ -2285,7 +2287,7 @@ conflict it splits the three versions at their `## ` lines outside fenced code b
 preamble, then whole entries (bytes as they are: CRLF, a missing last line end and non-UTF-8 text are kept). When each side is
 the base's preamble and entries, unchanged and in order, with any number of runs of dated entries
 (`## YYYY-MM-DD…`) inserted among them (on top, or under any base entry: tasks 0190 and 0196,
-`inserted`, `both_inserted`), it writes the base with each side's runs at their points; where
+`inserted`, `entry_wise`), it writes the base with each side's runs at their points; where
 both sides have a run at the same point they're merged there by date, newest first, theirs (`%B`) first
 on a tie, each side's own order kept. An entry both added is kept once, at ours' point when the
 sides put it at different points; that's only on this path: when merge-file merges the sides
@@ -2297,12 +2299,31 @@ same from the top and from the bottom), so a run goes to the point 0190 put it a
 from the bottom, each to the lowest side entry it can be (one pass,
 so every run is as high as it goes), then lets each run down over the base entries below it that
 it repeats, up to the next run: a run that repeats its neighbours fits several points, all giving
-the side's file. `both_inserted` pairs the two sides' runs whose points overlap in one pass (each
+the side's file. `entry_wise` pairs the two sides' runs whose points overlap in one pass (each
 side's runs are at disjoint ranges, in order) and puts a pair at their topmost shared point, any
-other run at its own topmost. Anything else (an edited or removed base entry, a changed preamble,
-an undated new entry) gets merge-file's conflict markers (labels `ours`, `base`, `theirs`) and
-exit 1, with "both sides changed more than new dated entries; left the conflict markers" on
-stderr. The result replaces `%A` whole or
+other run at its own topmost. An older entry changed or removed on one side merges too (task
+0209, `read_side`): a side `inserted` can't read is matched entry by entry (`matched`): first the
+entries that are in the base and the side once each, the longest run of them in the same order
+(patience diff's anchors, so a removed copy of an entry the base has twice pulls nothing out of
+place), then, between matched entries, the same bytes, then the same heading line (an entry's
+identity; an edited heading is a removal plus a new entry), each from the bottom with a hash map,
+so it's linear but for the sort. A matched base entry is kept (same bytes) or changed, an
+unmatched one removed, and every other side entry is new: dated, in a run whose points are every
+point among the base entries removed beside it, let down over kept entries it repeats as
+`inserted` does. Such a run (its first point above its turn) stays at its first point, where the
+old entry was: it pairs only with a run of the other side starting there or above, whose entries
+go first on the old entry's date or before, so an edited heading keeps its place against the
+other side's entries around it. Per base entry, kept by both stays, one side's change or removal wins, the same
+change or removal on both is there once or gone once. Markers stay for both sides changing one
+entry differently or one changing what the other removed, a new entry with the heading of a base
+entry either side changed or removed (a moved entry, or a copy of the changed one), an entry
+both removed with different new entries (copies of base entries aside) in the runs where it was
+(an edited heading against a removal or another edit), a run of the other side's starting among
+the base entries such a run is over (which new entry was above it can't be told), a changed
+preamble on either side, an undated new entry, and a result whose entries don't split back at the offsets they were put at
+(an entry's unclosed fence would take in the headings after it): merge-file's conflict
+markers (labels `ours`, `base`, `theirs`) and exit 1, with "both sides changed more than new dated
+entries; left the conflict markers" on stderr. The result replaces `%A` whole or
 not at all (`replace`, task 0071): written to a new `.<name>.muster-merge-<pid>` beside it with
 `%A`'s mode, then renamed over it, with no fsync (git reads it straight back, and a full sync
 can fail on network and external volumes). On a failure the new file is removed and `%A` is
@@ -2322,7 +2343,7 @@ repo's `.muster/`) sets `merge.muster-log.name` and `merge.muster-log.driver`
 find, and prints a line when it wrote one. A failure is a warning on stderr and stops nothing.
 `parallel::merge` puts `merge_log::config_args(this_muster())` before its `rebase` (`-c` for both
 keys, the same command with the binary's path, `%` doubled and shell-quoted), so the merge's rebase uses this binary whatever the config
-says. A clash of only new dated entries, at any number of points, no longer sends a task back to Building. Its unit tests
+says. A clash of only new dated entries, at any number of points, or of older entries changed or removed on one side, no longer sends a task back to Building. Its unit tests
 build the muster binary they run as the driver once per test run (`cargo build --bin muster`
 into the harness's own target and profile), so `cargo test --lib` works in a fresh target too.
 **Lessons** (`lessons.rs`): `reviews/lessons.json` (truth) and `lessons.md` (rendered) in the

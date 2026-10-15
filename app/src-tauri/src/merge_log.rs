@@ -3,8 +3,9 @@
 //! puts its entry at the top of the log, or under a later-dated one that landed on main meanwhile,
 //! and its review rounds' entries on top of that, so two branches always clash; this keeps every
 //! new entry whole, newest first, so a merge or a rebase doesn't stop for them (0190: under an
-//! entry, not only on top; 0196: at any number of points). Anything else is a plain three-way
-//! merge, conflict markers and all. Git finds the driver in config: `muster start`
+//! entry, not only on top; 0196: at any number of points). An older entry changed or removed on
+//! one side merges too, entry by entry (0209). Anything else is a plain three-way merge, conflict
+//! markers and all. Git finds the driver in config: `muster start`
 //! and `muster init` write it to the repo's own config when it's missing (`configure`), and
 //! Muster's merge passes it with `git -c` (`config_args`), so it never depends on that.
 
@@ -105,13 +106,21 @@ fn date(entry: &[u8]) -> Option<&[u8]> {
     (dated && ends).then_some(d)
 }
 
+/// An entry's identity (0209): its `## ` heading line, without its line end.
+fn heading(entry: &[u8]) -> &[u8] {
+    let line = entry.split(|&b| b == b'\n').next().unwrap_or(entry);
+    line.strip_suffix(b"\r").unwrap_or(line)
+}
+
 /// One run of new entries a side put in among the base's (0190, 0196): the points in the base's
 /// entries it can be at (0 is on top; more than one when the run repeats the base entries below
-/// it), where it starts in the side's entries at the first of them, and how many entries it has.
-/// At point `points.start() + j` the run is the side's entries `at + j..at + j + len`: a different
-/// turn of the same entries, so it's sliced at the point chosen, never moved there from another.
+/// it, or when the side removed the base entries beside it, 0209), where it starts in the side's
+/// entries at the first of them, and how many entries it has. Up to point `turn` the run is the
+/// side's entries `at..at + len`; at `turn + j` it's `at + j..at + j + len`: a different turn of
+/// the same entries, so it's sliced at the point chosen, never moved there from another.
 struct Run {
     points: std::ops::RangeInclusive<usize>,
+    turn: usize,
     at: usize,
     len: usize,
 }
@@ -119,7 +128,7 @@ struct Run {
 impl Run {
     /// The run's entries in `side` when it's at `point`, one of its points.
     fn at<'a, 'l>(&self, side: &'l Log<'a>, point: usize) -> &'l [&'a [u8]] {
-        let k = self.at + point - self.points.start();
+        let k = self.at + point.saturating_sub(self.turn);
         &side.entries[k..k + self.len]
     }
 }
@@ -158,6 +167,7 @@ fn inserted(base: &Log, side: &Log) -> Option<Vec<Run>> {
         return dated(&s[from..from + len]).then(|| {
             vec![Run {
                 points: from..=same_above,
+                turn: from,
                 at: from,
                 len,
             }]
@@ -193,6 +203,7 @@ fn inserted(base: &Log, side: &Log) -> Option<Vec<Run>> {
         }
         runs.push(Run {
             points: g..=p,
+            turn: g,
             at,
             len,
         });
@@ -201,29 +212,315 @@ fn inserted(base: &Log, side: &Log) -> Option<Vec<Run>> {
     Some(runs)
 }
 
-/// Both sides only added runs of whole dated entries among the base's, at any number of points
-/// (on top, or under any base entry): the base with each side's runs at their points. Where both
-/// sides have a run at one point, the two are merged there newest date first and, on the same
-/// date, theirs (the incoming side: the commit a rebase replays, the branch a merge brings in)
-/// above ours; each side's entries keep their own order. An entry both sides added is kept once,
-/// at ours' point (what the target branch already shows). The base's entries never move or
-/// change. None when a side changed anything else: an edited or removed base entry, a changed
-/// preamble, a new entry without a date.
+/// What a side did to one base entry (0209): kept it byte for byte, changed it (a side entry with
+/// its heading, in its place), or removed it.
+#[derive(Clone, Copy, PartialEq)]
+enum Fate<'a> {
+    Kept,
+    Changed(&'a [u8]),
+    Removed,
+}
+
+/// A side read against the base (0209): what it did to each base entry, and its runs of new
+/// entries, top to bottom.
+struct Reading<'a> {
+    fates: Vec<Fate<'a>>,
+    runs: Vec<Run>,
+}
+
+/// Read a side against the base. A side that only added runs is read as `inserted` reads it, so
+/// mu-196's bytes stand for every side it took. Otherwise each base entry is matched to a side
+/// entry in order (`matched`): byte-equal is kept, the same heading is changed, none is removed;
+/// every other side entry is new and must be dated, in a run between the matched entries around
+/// it. Such a run can be at any point among the base entries removed beside it, and is let down
+/// over kept base entries below it that it repeats, as `inserted` does. None when the preamble
+/// changed or a new entry has no date.
+fn read_side<'a>(base: &Log<'a>, side: &Log<'a>) -> Option<Reading<'a>> {
+    let (b, s) = (&base.entries, &side.entries);
+    if let Some(runs) = inserted(base, side) {
+        let fates = vec![Fate::Kept; b.len()];
+        return Some(Reading { fates, runs });
+    }
+    if side.preamble != base.preamble {
+        return None;
+    }
+    let pos = matched(b, s);
+    let fates: Vec<Fate> = pos
+        .iter()
+        .zip(b.iter())
+        .map(|(p, e)| match *p {
+            None => Fate::Removed,
+            Some(k) if s[k] == *e => Fate::Kept,
+            Some(k) => Fate::Changed(s[k]),
+        })
+        .collect();
+    // (base index, side index) of every matched entry, in order on both.
+    let pairs: Vec<(usize, usize)> = pos
+        .iter()
+        .enumerate()
+        .filter_map(|(i, p)| p.map(|k| (i, k)))
+        .collect();
+    let mut is_new = vec![true; s.len()];
+    for &(_, k) in &pairs {
+        is_new[k] = false;
+    }
+    let mut runs = Vec::new();
+    let mut at = 0;
+    while at < s.len() {
+        if !is_new[at] {
+            at += 1;
+            continue;
+        }
+        let len = is_new[at..].iter().take_while(|&&n| n).count();
+        if s[at..at + len].iter().any(|e| date(e).is_none()) {
+            return None;
+        }
+        // The matched base entries above and below it; the ones between are removed.
+        let next = pairs.partition_point(|&(_, k)| k < at);
+        let start = next.checked_sub(1).map_or(0, |p| pairs[p].0 + 1);
+        let turn = pairs.get(next).map_or(b.len(), |&(i, _)| i);
+        // Down one point, past kept base entry p, as `inserted` lets a run down: the run's first
+        // entry at that point is p itself, and nothing new is under p.
+        let mut p = turn;
+        while p < b.len()
+            && fates[p] == Fate::Kept
+            && s[at + p - turn] == b[p]
+            && pos[p] == Some(at + len + p - turn)
+            && if p + 1 < b.len() {
+                pos[p + 1] == Some(at + len + p - turn + 1)
+            } else {
+                at + len + p - turn + 1 == s.len()
+            }
+        {
+            p += 1;
+        }
+        runs.push(Run {
+            points: start..=p,
+            turn,
+            at,
+            len,
+        });
+        at += len;
+    }
+    Some(Reading { fates, runs })
+}
+
+/// Where each base entry is in the side, in order on both, or None (0209). First the entries
+/// that are in each once, the longest run of them in the same order (patience diff's anchors), so
+/// a removed copy of an entry the base has twice doesn't pull the others out of place. Then,
+/// between matched entries, the same bytes, then the same heading, each base entry from the
+/// bottom to the lowest side entry it can be. Every step is one ordered pass with a hash map.
+fn matched(b: &[&[u8]], s: &[&[u8]]) -> Vec<Option<usize>> {
+    use std::collections::HashMap;
+    let mut seen: HashMap<&[u8], (usize, usize, usize, usize)> = HashMap::new();
+    for (i, e) in b.iter().enumerate() {
+        let c = seen.entry(e).or_insert((0, i, 0, 0));
+        c.0 += 1;
+    }
+    for (k, e) in s.iter().enumerate() {
+        if let Some(c) = seen.get_mut(e) {
+            c.2 += 1;
+            c.3 = k;
+        }
+    }
+    let mut once: Vec<(usize, usize)> = seen
+        .values()
+        .filter(|c| c.0 == 1 && c.2 == 1)
+        .map(|c| (c.1, c.3))
+        .collect();
+    once.sort_unstable();
+    // The longest increasing run of side indices (patience sorting, with links back).
+    let mut tails: Vec<usize> = Vec::new();
+    let mut back = vec![usize::MAX; once.len()];
+    for (n, &(_, k)) in once.iter().enumerate() {
+        let t = tails.partition_point(|&m| once[m].1 < k);
+        if t > 0 {
+            back[n] = tails[t - 1];
+        }
+        if t == tails.len() {
+            tails.push(n);
+        } else {
+            tails[t] = n;
+        }
+    }
+    let mut pos = vec![None; b.len()];
+    let mut n = tails.last().copied().unwrap_or(usize::MAX);
+    while n != usize::MAX {
+        pos[once[n].0] = Some(once[n].1);
+        n = back[n];
+    }
+    match_gaps(b, s, &mut pos, |e| e);
+    match_gaps(b, s, &mut pos, heading);
+    pos
+}
+
+/// Between each two matched entries, match the base entries left there to side entries left
+/// there with the same `key`, from the bottom, each to the lowest it can be.
+fn match_gaps(b: &[&[u8]], s: &[&[u8]], pos: &mut [Option<usize>], key: fn(&[u8]) -> &[u8]) {
+    let (mut i, mut j) = (b.len(), s.len());
+    loop {
+        let mut lo = i;
+        while lo > 0 && pos[lo - 1].is_none() {
+            lo -= 1;
+        }
+        let above = lo.checked_sub(1).and_then(|m| pos[m]);
+        let from = above.map_or(0, |k| k + 1);
+        if lo < i && from < j {
+            let mut by_key: std::collections::HashMap<&[u8], Vec<usize>> =
+                std::collections::HashMap::new();
+            for (k, e) in s.iter().enumerate().take(j).skip(from) {
+                by_key.entry(key(e)).or_default().push(k);
+            }
+            let mut bound = j;
+            for m in (lo..i).rev() {
+                if let Some(list) = by_key.get_mut(key(b[m])) {
+                    while list.last().is_some_and(|&k| k >= bound) {
+                        list.pop();
+                    }
+                    if let Some(k) = list.pop() {
+                        pos[m] = Some(k);
+                        bound = k;
+                    }
+                }
+            }
+        }
+        match above {
+            Some(k) => (i, j) = (lo - 1, k),
+            None => break,
+        }
+    }
+}
+
+/// The entry-wise three-way merge (0196, 0209). Each side is read against the base
+/// (`read_side`). Each base entry is kept when both kept it, else the version of the side that
+/// changed or removed it; both changed it the same way, or both removed it, is that once. The
+/// new entries go in at their points: one side's run as it is, or both sides' runs merged there
+/// newest date first and, on the same date, theirs (the incoming side: the commit a rebase
+/// replays, the branch a merge brings in) above ours; each side's entries keep their own order.
+/// An entry both sides added is kept once, at ours' point (what the target branch already
+/// shows). None (the conflict markers) when a side can't be read (a changed preamble, an undated
+/// new entry), when the sides changed one entry differently or one changed what the other
+/// removed, when a new entry has the heading of a base entry either side changed or removed
+/// (an entry moved, or a copy of the one changed: which is which can't be told), when both
+/// removed an entry but put different new entries where it was (an edited heading against a
+/// removal or another edit), when one side's new entries are among base entries it removed and
+/// the other side's run starts between two of those (which new entry was above it can't be
+/// told), or when the result doesn't split back into the entries put in.
 ///
-/// A run that fits several points (it repeats its neighbours) goes where mu-190 put it: at a
-/// point the other side's run can be at too, the topmost such, else its own topmost. The runs on
+/// A run that fits several points goes where mu-190 put it: at a point the other side's run can
+/// be at too, the topmost such, else its own topmost. A run over base entries its side removed
+/// (an edited heading reads so) is at the first of them, where the old entry was: it shares that
+/// point only with a run of the other side that starts there or above, whose entries go first on
+/// the old entry's date or before, so what the other side put under the old entry stays under
+/// the new one and what it put above stays above. The runs on
 /// one side are at disjoint ranges of points, in order, so one pass over both pairs them.
-fn both_inserted(base: &[u8], ours: &[u8], theirs: &[u8]) -> Option<Vec<u8>> {
+fn entry_wise(base: &[u8], ours: &[u8], theirs: &[u8]) -> Option<Vec<u8>> {
     let b = split(base);
     let (o_log, t_log) = (split(ours), split(theirs));
-    let (o_runs, t_runs) = (inserted(&b, &o_log)?, inserted(&b, &t_log)?);
+    let (o_read, t_read) = (read_side(&b, &o_log)?, read_side(&b, &t_log)?);
+    let mut touched = std::collections::HashSet::new();
+    let mut slots: Vec<Option<&[u8]>> = Vec::with_capacity(b.entries.len());
+    for ((e, of), tf) in b.entries.iter().zip(&o_read.fates).zip(&t_read.fates) {
+        let slot = match (*of, *tf) {
+            (Fate::Kept, Fate::Kept) => Some(*e),
+            (Fate::Changed(x), Fate::Kept) | (Fate::Kept, Fate::Changed(x)) => Some(x),
+            (Fate::Changed(x), Fate::Changed(y)) if x == y => Some(x),
+            (Fate::Removed, Fate::Kept | Fate::Removed) | (Fate::Kept, Fate::Removed) => None,
+            _ => return None,
+        };
+        if (*of, *tf) != (Fate::Kept, Fate::Kept) {
+            touched.insert(heading(e));
+        }
+        slots.push(slot);
+    }
+    // An entry both sides removed, with new entries where it was: an edited heading reads so, and
+    // can't be told from a plain removal beside an insert. Only the same new entries there on
+    // both sides (the same edit) merge; else one side's edit would win over the other's removal
+    // or edit unseen. A copy of a base entry there is no edited heading (one of a changed or
+    // removed entry is refused below).
+    // Each run's new entries, sorted, made once; and the run covering k, if any (a side's runs
+    // are at disjoint ranges, in order, so one at most). Each pair of covering runs is compared
+    // once, so this stays linear but for the sorts.
+    let in_base: std::collections::HashSet<&[u8]> = b.entries.iter().copied().collect();
+    let sorted = |read: &Reading, log: &Log<'_>| -> Vec<Vec<Vec<u8>>> {
+        read.runs
+            .iter()
+            .map(|r| {
+                let mut new: Vec<Vec<u8>> = r
+                    .at(log, r.turn)
+                    .iter()
+                    .filter(|e| !in_base.contains(*e))
+                    .map(|e| e.to_vec())
+                    .collect();
+                new.sort_unstable();
+                new
+            })
+            .collect()
+    };
+    let covering = |read: &Reading, k: usize| {
+        let next = read.runs.partition_point(|r| r.turn <= k);
+        read.runs
+            .get(next)
+            .filter(|r| *r.points.start() <= k)
+            .map(|_| next)
+    };
+    let both_removed = |(o, t): (&Fate, &Fate)| (o, t) == (&Fate::Removed, &Fate::Removed);
+    let any = o_read.fates.iter().zip(&t_read.fates).any(both_removed);
+    let (o_new, t_new) = if any {
+        (sorted(&o_read, &o_log), sorted(&t_read, &t_log))
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    let mut last = None;
+    for (k, fates) in o_read.fates.iter().zip(&t_read.fates).enumerate() {
+        if !both_removed(fates) {
+            continue;
+        }
+        let pair = (covering(&o_read, k), covering(&t_read, k));
+        if last == Some(pair) {
+            continue;
+        }
+        last = Some(pair);
+        let none = Vec::new();
+        let o_side = pair.0.map_or(&none, |i| &o_new[i]);
+        let t_side = pair.1.map_or(&none, |i| &t_new[i]);
+        if o_side != t_side {
+            return None;
+        }
+    }
+    let (o_runs, t_runs) = (o_read.runs, t_read.runs);
+    // A run over base entries its side removed, with a run of the other side's starting among
+    // them: which of its entries were above that run (an edited heading's new version, say) can't
+    // be told.
+    let inside = |runs: &[Run], other: &[Run]| {
+        runs.iter().filter(|r| *r.points.start() < r.turn).any(|r| {
+            let next = other.partition_point(|x| x.points.start() <= r.points.start());
+            other.get(next).is_some_and(|x| *x.points.start() < r.turn)
+        })
+    };
+    if inside(&o_runs, &t_runs) || inside(&t_runs, &o_runs) {
+        return None;
+    }
     let (mut o_at, mut t_at) = (vec![0; o_runs.len()], vec![0; t_runs.len()]);
     let (mut i, mut j) = (0, 0);
     while i < o_runs.len() || j < t_runs.len() {
         match (o_runs.get(i), t_runs.get(j)) {
             (Some(o), Some(t)) => {
-                let at = *o.points.start().max(t.points.start());
-                if at <= *o.points.end().min(t.points.end()) {
+                let (os, ts) = (*o.points.start(), *t.points.start());
+                let at = os.max(ts);
+                // A run over entries its side removed (an edited heading among them) stays where
+                // the first of them was, unless the other side's run starts there or above it:
+                // the other side's entries under the old one stay under the new.
+                let apart = (os < o.turn && ts > os) || (ts < t.turn && os > ts);
+                if apart {
+                    if os < ts {
+                        o_at[i] = os;
+                        i += 1;
+                    } else {
+                        t_at[j] = ts;
+                        j += 1;
+                    }
+                } else if at <= *o.points.end().min(t.points.end()) {
                     (o_at[i], t_at[j]) = (at, at);
                     (i, j) = (i + 1, j + 1);
                 } else if o.points.end() < t.points.start() {
@@ -245,17 +542,24 @@ fn both_inserted(base: &[u8], ours: &[u8], theirs: &[u8]) -> Option<Vec<u8>> {
             (None, None) => unreachable!("the loop runs while either side has a run left"),
         }
     }
-    let o: Vec<(usize, Vec<&[u8]>)> = o_runs
+    // Each run's point, its entries there, and, for one over base entries its side removed, the
+    // date of the first of them (the old entry where the run is).
+    let removing = |r: &Run| {
+        let start = *r.points.start();
+        (start < r.turn).then(|| date(b.entries[start])).flatten()
+    };
+    type Placed<'x> = (usize, Vec<&'x [u8]>, Option<&'x [u8]>);
+    let o: Vec<Placed> = o_runs
         .iter()
         .zip(&o_at)
-        .map(|(r, &at)| (at, r.at(&o_log, at).to_vec()))
+        .map(|(r, &at)| (at, r.at(&o_log, at).to_vec(), removing(r)))
         .collect();
     // Theirs' entries ours added too go only where ours has them, each copy once.
     let mut ours_added: std::collections::HashMap<&[u8], usize> = std::collections::HashMap::new();
-    for e in o.iter().flat_map(|(_, run)| run) {
+    for e in o.iter().flat_map(|(_, run, _)| run) {
         *ours_added.entry(e).or_default() += 1;
     }
-    let t: Vec<(usize, Vec<&[u8]>)> = t_runs
+    let t: Vec<Placed> = t_runs
         .iter()
         .zip(&t_at)
         .map(|(r, &at)| {
@@ -271,36 +575,53 @@ fn both_inserted(base: &[u8], ours: &[u8], theirs: &[u8]) -> Option<Vec<u8>> {
                     _ => true,
                 })
                 .collect();
-            (at, kept)
+            (at, kept, removing(r))
         })
         .collect();
+    // Theirs' copies of ours' entries are left out above, and ours' are checked.
+    if o.iter()
+        .chain(&t)
+        .flat_map(|(_, run, _)| run)
+        .any(|e| touched.contains(heading(e)))
+    {
+        return None;
+    }
     let eol: &[u8] = if ours.windows(2).any(|w| w == b"\r\n") {
         b"\r\n"
     } else {
         b"\n"
     };
     let mut out = b.preamble.to_vec();
+    let mut starts = Vec::new();
     let mut push = |part: &[u8]| {
         // An entry that ended the file without a line end doesn't run into the next one.
         if !out.is_empty() && !out.ends_with(b"\n") && !part.is_empty() {
             out.extend_from_slice(eol);
         }
+        starts.push(out.len());
         out.extend_from_slice(part);
     };
     let (mut o, mut t) = (o.into_iter().peekable(), t.into_iter().peekable());
     for g in 0..=b.entries.len() {
-        let o_run = o
-            .next_if(|(at, _)| *at == g)
-            .map(|r| r.1)
+        let (o_run, o_old) = o
+            .next_if(|(at, ..)| *at == g)
+            .map(|r| (r.1, r.2))
             .unwrap_or_default();
-        let t_run = t
-            .next_if(|(at, _)| *at == g)
-            .map(|r| r.1)
+        let (t_run, t_old) = t
+            .next_if(|(at, ..)| *at == g)
+            .map(|r| (r.1, r.2))
             .unwrap_or_default();
+        // On one date theirs go first. But a run over entries its side removed is where the
+        // first of them was, so the other side's run there was above that old entry: on the old
+        // entry's date or before (its edited heading, say) the other side's go first.
+        let yields = |old: Option<&[u8]>, d: Option<&[u8]>| old.is_some() && d <= old;
         let (mut i, mut j) = (0, 0);
         while i < o_run.len() || j < t_run.len() {
             let theirs_next = match (o_run.get(i), t_run.get(j)) {
-                (Some(a), Some(b)) => date(b) >= date(a),
+                (Some(a), Some(b)) if date(a) == date(b) => {
+                    !yields(t_old, date(b)) || yields(o_old, date(a))
+                }
+                (Some(a), Some(b)) => date(b) > date(a),
                 (None, Some(_)) => true,
                 _ => false,
             };
@@ -312,11 +633,46 @@ fn both_inserted(base: &[u8], ours: &[u8], theirs: &[u8]) -> Option<Vec<u8>> {
                 i += 1;
             }
         }
-        if let Some(e) = b.entries.get(g) {
+        if let Some(Some(e)) = slots.get(g) {
             push(e);
         }
     }
-    Some(out)
+    // Every entry still its own, where it was put: a fence an entry leaves open would take in
+    // the headings after it (and one it closes again would let a quoted one out).
+    let log = split(&out);
+    let mut at = log.preamble.len();
+    let got: Vec<usize> = log
+        .entries
+        .iter()
+        .map(|e| {
+            at += e.len();
+            at - e.len()
+        })
+        .collect();
+    (got == starts).then_some(out)
+}
+
+/// The lines of `text` (counted from 1) that are conflict markers a merge left behind, outside
+/// fenced code (`Fences`), where docs may quote them (0209): a line starting with `<<<<<<< `,
+/// `||||||| ` or `>>>>>>> `, or one that is exactly `=======`. The gate's test runs it over the
+/// repo's docs (`tests/conflict_markers.rs`).
+pub fn stray_markers(text: &[u8]) -> Vec<usize> {
+    let mut fences = Fences::default();
+    let mut found = Vec::new();
+    for (n, line) in text.split_inclusive(|&b| b == b'\n').enumerate() {
+        if fences.fenced(line) {
+            continue;
+        }
+        let line = line.strip_suffix(b"\n").unwrap_or(line);
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
+        let marker = [&b"<<<<<<< "[..], b"||||||| ", b">>>>>>> "]
+            .iter()
+            .any(|m| line.starts_with(m));
+        if marker || line == b"=======" {
+            found.push(n + 1);
+        }
+    }
+    found
 }
 
 /// How a merge of the log came out: the text to write, clean or with conflict markers.
@@ -340,8 +696,8 @@ fn read(path: &Path, max: u64) -> Result<Vec<u8>, String> {
 }
 
 /// Merge the three versions of the log at `base`, `ours` and `theirs`: a plain three-way merge
-/// (`git merge-file`) when it's clean, else both sides' new entries (`both_inserted`) when that's
-/// all they added, at any number of points, else the three-way merge's conflict markers.
+/// (`git merge-file`) when it's clean, else the entry-wise merge (`entry_wise`) when it can
+/// tell what each side did to each entry, else the three-way merge's conflict markers.
 pub fn merge(base: &Path, ours: &Path, theirs: &Path) -> Result<Merged, String> {
     merge_capped(base, ours, theirs, MAX_BYTES)
 }
@@ -367,7 +723,7 @@ fn merge_capped(base: &Path, ours: &Path, theirs: &Path, max: u64) -> Result<Mer
     match out.status.code() {
         Some(0) => Ok(Merged::Clean(out.stdout)),
         // The number of conflicts; a negative one (an error) comes out as 128 and up.
-        Some(1..=127) => Ok(match both_inserted(&b, &o, &t) {
+        Some(1..=127) => Ok(match entry_wise(&b, &o, &t) {
             Some(text) => Merged::Clean(text),
             None => Merged::Conflict(out.stdout),
         }),
@@ -816,7 +1172,7 @@ mod tests {
             entry("2026-10-15", "N"),
             entry("2026-10-15", "T"),
         );
-        let got = both_inserted(
+        let got = entry_wise(
             format!("{PRE}{s}{OLD}").as_bytes(),
             format!("{PRE}{s}{n}{s}{OLD}").as_bytes(),
             format!("{PRE}{s}{t}{OLD}").as_bytes(),
@@ -849,21 +1205,27 @@ mod tests {
             &format!("{PRE}{top}{a}{OLD}{OLDER}"),
             &format!("{PRE}{top}## Unreleased\n- b\n\n{OLD}{OLDER}"),
         ));
-        // A changed older entry beside the insert.
-        conflict(merged(
-            &base,
-            &format!("{PRE}{top}{a}{OLD}{}", OLDER.replace("first", "changed")),
-            &format!("{PRE}{top}{b}{OLD}{OLDER}"),
-        ));
-        // A changed entry above the insert point isn't an insert (merge-file, which runs first,
-        // merges these itself when the lines it matches let it).
+        // A changed older entry beside the insert: one side's change, kept (0209).
+        let changed = OLDER.replace("first", "changed");
+        assert_eq!(
+            clean(merged(
+                &base,
+                &format!("{PRE}{top}{a}{OLD}{changed}"),
+                &format!("{PRE}{top}{b}{OLD}{OLDER}"),
+            )),
+            format!("{PRE}{top}{b}{a}{OLD}{changed}")
+        );
+        // A changed entry above the insert point: kept too, the runs under it merged (0209).
         for changed in [
             top.replace("Top,", "Top, changed,"),
             top.replace("(pnpm check)", "(changed)"),
         ] {
             let o = format!("{PRE}{changed}{a}{OLD}{OLDER}");
             let t = format!("{PRE}{top}{b}{OLD}{OLDER}");
-            assert!(both_inserted(base.as_bytes(), o.as_bytes(), t.as_bytes()).is_none());
+            assert_eq!(
+                inserted_text(&base, &o, &t),
+                format!("{PRE}{changed}{b}{a}{OLD}{OLDER}")
+            );
         }
         // A changed preamble.
         conflict(merged(
@@ -872,7 +1234,7 @@ mod tests {
             &format!("{PRE}{top}{b}{OLD}{OLDER}"),
         ));
         // Inserts at two different points: merge-file merges them itself, even with only a
-        // one-line entry between them, and both_inserted gives the same (0196).
+        // one-line entry between them, and entry_wise gives the same (0196).
         let o = format!("{PRE}{a}{top}{OLD}{OLDER}");
         let t = format!("{PRE}{top}{OLD}{c}{OLDER}");
         let want = format!("{PRE}{a}{top}{OLD}{c}{OLDER}");
@@ -893,10 +1255,10 @@ mod tests {
         assert_eq!(clean(merged(&base1, &o1, &t1)), want);
     }
 
-    /// `both_inserted`'s result as text; panics when it gives up.
+    /// `entry_wise`'s result as text; panics when it gives up.
     fn inserted_text(base: &str, ours: &str, theirs: &str) -> String {
-        let got = both_inserted(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())
-            .expect("both_inserted gave up");
+        let got = entry_wise(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())
+            .expect("entry_wise gave up");
         String::from_utf8(got).unwrap()
     }
 
@@ -1098,13 +1460,21 @@ mod tests {
             entry("2026-10-12", "D"),
         );
         let theirs = format!("{PRE}{b}{top}{d}{OLD}{OLDER}");
+        // An edited or removed base entry merges now (0209): ours' change, theirs' runs.
         let edited = OLD.replace("the old thing", "the old thing, edited");
+        assert_eq!(
+            clean(merged(
+                &base,
+                &format!("{PRE}{a}{top}{c}{edited}{OLDER}"),
+                &theirs
+            )),
+            format!("{PRE}{b}{a}{top}{c}{d}{edited}{OLDER}")
+        );
+        assert_eq!(
+            clean(merged(&base, &format!("{PRE}{a}{top}{c}{OLDER}"), &theirs)),
+            format!("{PRE}{b}{a}{top}{c}{d}{OLDER}")
+        );
         for (what, ours) in [
-            (
-                "an edited base entry",
-                format!("{PRE}{a}{top}{c}{edited}{OLDER}"),
-            ),
-            ("a removed base entry", format!("{PRE}{a}{top}{c}{OLDER}")),
             (
                 "a changed preamble",
                 format!("# Renamed\n\n{a}{top}{c}{OLD}{OLDER}"),
@@ -1115,7 +1485,7 @@ mod tests {
             ),
         ] {
             assert!(
-                both_inserted(base.as_bytes(), ours.as_bytes(), theirs.as_bytes()).is_none(),
+                entry_wise(base.as_bytes(), ours.as_bytes(), theirs.as_bytes()).is_none(),
                 "{what}"
             );
             let t = conflict(merged(&base, &ours, &theirs));
@@ -1155,14 +1525,22 @@ mod tests {
             &format!("{pre}{b}{top}{c}{last}"),
         ));
         assert_eq!(got, format!("{pre}{b}{a}{top}{c}{last}"));
-        // An entry added under it gives it a line end: that's an edit of the base's last entry,
-        // so it's merge-file's markers.
+        // An entry added under it gives it a line end: that side changed the base's last entry,
+        // so its version stands, byte for byte, both ways round (0209).
         let tail = "## 2026-10-11 — Tail\r\n**Did:** no line end either";
-        conflict(merged(
-            &format!("{pre}{top}{last}"),
-            &format!("{pre}{a}{top}{last}"),
-            &format!("{pre}{b}{top}{c}{last}\r\n{tail}"),
-        ));
+        let (o, t) = (
+            format!("{pre}{a}{top}{last}"),
+            format!("{pre}{b}{top}{c}{last}\r\n{tail}"),
+        );
+        let base = format!("{pre}{top}{last}");
+        assert_eq!(
+            clean(merged(&base, &o, &t)),
+            format!("{pre}{b}{a}{top}{c}{last}\r\n{tail}")
+        );
+        assert_eq!(
+            clean(merged(&base, &t, &o)),
+            format!("{pre}{a}{b}{top}{c}{last}\r\n{tail}")
+        );
         let got = clean(merged(
             &format!("{pre}{top}{last}"),
             &format!("{pre}{b}{top}{c}{last}"),
@@ -1290,8 +1668,7 @@ mod tests {
             let (code, text, err) =
                 through_binary(base.as_bytes(), ours.as_bytes(), theirs.as_bytes());
             assert_eq!(code, 0, "seed {seed}: {err}\n{ours}\n---\n{theirs}");
-            let by_us = both_inserted(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())
-                .as_deref()
+            let by_us = entry_wise(base.as_bytes(), ours.as_bytes(), theirs.as_bytes()).as_deref()
                 == Some(&text[..]);
             clean_by_us += usize::from(by_us);
             let (b, o, t, r) = (
@@ -1341,6 +1718,224 @@ mod tests {
     }
 
     #[test]
+    fn merge_log_randomised_one_sided_edits_and_removals_keep_every_entry_and_change() {
+        let (mut clean_by_us, mut clean_in_order, mut refused) = (0, 0, 0);
+        for seed in 1..=300u64 {
+            let mut rng = Rng(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
+            // The first half dated at random; the second newest first down each file, as a real
+            // log is, where each side's order is checked with every base entry as the merge
+            // has it (an edited heading where the old one was).
+            let in_order_dates = seed > 150;
+            let at = |d: usize| format!("2026-10-{d:02}");
+            let mut newest = 17;
+            let base_days: Vec<usize> = (0..2 + rng.below(6))
+                .map(|_| {
+                    if in_order_dates {
+                        newest -= rng.below(2);
+                        newest
+                    } else {
+                        10 + rng.below(8)
+                    }
+                })
+                .collect();
+            let base_entries: Vec<String> = base_days
+                .iter()
+                .enumerate()
+                .map(|(i, &d)| entry(&at(d), &format!("Base {i}")))
+                .collect();
+            let n = base_entries.len();
+            let shared_days: Vec<usize> = (0..2).map(|_| 10 + rng.below(8)).collect();
+            let shared: Vec<String> = shared_days
+                .iter()
+                .enumerate()
+                .map(|(i, &d)| entry(&at(d), &format!("Shared {i}")))
+                .collect();
+            // What each base entry gets: 0-2 nothing; 3/4 ours/theirs edits it; 5/6 ours/theirs
+            // removes it; 7/8 ours/theirs edits its heading; 9 both edit it alike; 10 both
+            // remove it.
+            // An entry both removed with new entries where it was is refused (it may be an
+            // edited heading), so 10 is only for one between untouched entries, with no run
+            // beside it.
+            let mut plan: Vec<usize> = (0..n).map(|_| rng.below(11)).collect();
+            for k in 0..n {
+                let calm = |j: Option<usize>| j.is_some_and(|j| j < n && plan[j] <= 2);
+                if plan[k] == 10 && !(calm(k.checked_sub(1)) && calm(Some(k + 1))) {
+                    plan[k] = 0;
+                }
+            }
+            let untouched = |k: usize| plan[k] <= 2;
+            let both_gone = |p: usize| (p < n && plan[p] == 10) || (p > 0 && plan[p - 1] == 10);
+            // A copy near such an entry can make the matching read that side's new entries as a
+            // run beside the removed one, which is refused too, so none there.
+            let near_gone = |p: usize| (p.saturating_sub(2)..(p + 2).min(n)).any(|j| plan[j] == 10);
+            let edit = |e: &str, who: &str| e.replace("of text.\n", &format!("of text, {who}.\n"));
+            let rename = |e: &str, who: &str| e.replacen('\n', &format!(", renamed by {who}\n"), 1);
+            let version = |k: usize, ours: bool| -> Option<String> {
+                let (e, who) = (&base_entries[k], if ours { "ours" } else { "theirs" });
+                match (plan[k], ours) {
+                    (3, true) | (4, false) => Some(edit(e, who)),
+                    (5, true) | (6, false) | (10, _) => None,
+                    (7, true) | (8, false) => Some(rename(e, who)),
+                    (9, _) => Some(edit(e, "both")),
+                    _ => Some(e.clone()),
+                }
+            };
+            // A side as in the insert-only check (runs at random points, one always on top, a
+            // run sometimes repeating its untouched neighbour or holding a shared entry), with
+            // its own versions of the base entries.
+            // Dated in order, a run at point k is between the dates of the entries around it,
+            // newest first. None between two entries the other side removed or renamed: where
+            // it goes among their new versions can't be told, which is refused.
+            let side = |name: &str, ours: bool, rng: &mut Rng| -> String {
+                let other_gone =
+                    |j: usize| matches!((plan[j], ours), (6 | 8, true) | (5 | 7, false));
+                let mut out = PRE.to_string();
+                for k in 0..=n {
+                    let among = k > 0 && k < n && other_gone(k - 1) && other_gone(k);
+                    if (k == 0 || rng.below(3) == 0) && !both_gone(k) && !among {
+                        let above = if k == 0 { 18 } else { base_days[k - 1] };
+                        let below = base_days.get(k).copied().unwrap_or(10);
+                        let mut cur = above;
+                        for i in 0..1 + rng.below(3) {
+                            let pick = rng.below(6);
+                            let shared_one = (pick == 1).then(|| rng.below(2)).filter(|&s| {
+                                !in_order_dates || (below..=cur).contains(&shared_days[s])
+                            });
+                            out += &if pick == 0
+                                && k > 0
+                                && untouched(k - 1)
+                                && !near_gone(k)
+                                && (!in_order_dates || cur == above)
+                            {
+                                base_entries[k - 1].clone()
+                            } else if let Some(s) = shared_one {
+                                cur = cur.min(shared_days[s]);
+                                shared[s].clone()
+                            } else if in_order_dates {
+                                cur -= rng.below(cur - below + 1);
+                                entry(&at(cur), &format!("{name} {k}.{i}"))
+                            } else {
+                                entry(&at(10 + rng.below(8)), &format!("{name} {k}.{i}"))
+                            };
+                        }
+                    }
+                    if let Some(v) = (k < n).then(|| version(k, ours)).flatten() {
+                        out += &v;
+                    }
+                }
+                out
+            };
+            let base = format!("{PRE}{}", base_entries.concat());
+            let (ours, theirs) = (
+                side("Ours", true, &mut rng),
+                side("Theirs", false, &mut rng),
+            );
+            let (code, text, err) =
+                through_binary(base.as_bytes(), ours.as_bytes(), theirs.as_bytes());
+            assert_eq!(code, 0, "seed {seed}: {err}\n{ours}\n---\n{theirs}");
+            let by_us = entry_wise(base.as_bytes(), ours.as_bytes(), theirs.as_bytes()).as_deref()
+                == Some(&text[..]);
+            clean_by_us += usize::from(by_us);
+            clean_in_order += usize::from(by_us && in_order_dates);
+            let (b, o, t, r) = (
+                split(base.as_bytes()),
+                split(ours.as_bytes()),
+                split(theirs.as_bytes()),
+                split(&text),
+            );
+            let why = format!("seed {seed}:\n{}", String::from_utf8_lossy(&text));
+            assert_eq!(r.preamble, PRE.as_bytes(), "{why}");
+            let count = |log: &[&[u8]], e: &[u8]| log.iter().filter(|x| **x == e).count();
+            // Every base entry as the side that touched it has it, in the base's order (one with
+            // its heading edited where the old one was); the versions a side changed or removed
+            // are gone.
+            let finals: Vec<Option<String>> =
+                (0..n).map(|k| version(k, plan[k] % 2 == 1)).collect();
+            let present: Vec<&[u8]> = finals.iter().flatten().map(|e| e.as_bytes()).collect();
+            assert!(in_order(&present, &r.entries), "the base's order: {why}");
+            let gone = |e: &[u8]| (0..n).any(|k| !untouched(k) && base_entries[k].as_bytes() == e);
+            for k in (0..n).filter(|&k| !untouched(k)) {
+                assert_eq!(count(&r.entries, base_entries[k].as_bytes()), 0, "{why}");
+            }
+            let ours_kept: Vec<&[u8]> = o.entries.iter().copied().filter(|e| !gone(e)).collect();
+            assert!(in_order(&ours_kept, &r.entries), "ours' order: {why}");
+            let ours_added = |e: &[u8]| count(&o.entries, e) > count(&b.entries, e);
+            let theirs_kept: Vec<&[u8]> = t
+                .entries
+                .iter()
+                .copied()
+                .filter(|e| !gone(e) && !ours_added(e))
+                .collect();
+            assert!(in_order(&theirs_kept, &r.entries), "theirs' order: {why}");
+            // The order oracle: each side's entries, every base entry in them as the merge has
+            // it (the other side's change or edited heading, none when removed), in that order.
+            if in_order_dates {
+                let as_merged = |log: &Log, skip: &dyn Fn(&[u8]) -> bool| -> Vec<Vec<u8>> {
+                    log.entries
+                        .iter()
+                        .filter(|e| !skip(e))
+                        .filter_map(|e| {
+                            match base_entries.iter().position(|x| x.as_bytes() == *e) {
+                                Some(k) => finals[k].as_ref().map(|f| f.as_bytes().to_vec()),
+                                None => Some(e.to_vec()),
+                            }
+                        })
+                        .collect()
+                };
+                for (what, list) in [
+                    ("ours", as_merged(&o, &|_| false)),
+                    ("theirs", as_merged(&t, &|e| ours_added(e))),
+                ] {
+                    let list: Vec<&[u8]> = list.iter().map(|e| &e[..]).collect();
+                    assert!(
+                        in_order(&list, &r.entries),
+                        "{what}' order as merged: {why}\n{ours}\n---\n{theirs}"
+                    );
+                }
+            }
+            for e in o.entries.iter().chain(&t.entries).filter(|e| !gone(e)) {
+                let (bn, on, tn) = (
+                    count(&b.entries, e),
+                    count(&o.entries, e),
+                    count(&t.entries, e),
+                );
+                let rn = count(&r.entries, e);
+                if by_us {
+                    assert_eq!(rn, on.max(tn), "{why}");
+                } else {
+                    assert!(on.max(tn) <= rn && rn <= on + tn - bn, "{why}");
+                }
+            }
+            for e in &r.entries {
+                assert!(o.entries.contains(e) || t.entries.contains(e), "{why}");
+            }
+            // The same sides with one untouched entry also changed both ways: refused.
+            if let Some(k) = (0..n).find(|&k| untouched(k)) {
+                let e = &base_entries[k];
+                let (o2, t2) = (
+                    ours.replace(e.as_str(), &edit(e, "ours again")),
+                    theirs.replace(e.as_str(), &edit(e, "theirs again")),
+                );
+                let (code, text, err) =
+                    through_binary(base.as_bytes(), o2.as_bytes(), t2.as_bytes());
+                let text = String::from_utf8(text).unwrap();
+                assert_eq!((code, err.trim()), (1, GIVE_UP), "seed {seed}: {text}");
+                assert!(text.contains("<<<<<<< ours\n"), "seed {seed}: {text}");
+                refused += 1;
+            }
+        }
+        assert!(
+            clean_by_us >= 200,
+            "only {clean_by_us} merged by the driver"
+        );
+        assert!(
+            clean_in_order >= 100,
+            "only {clean_in_order} dated in order merged by the driver"
+        );
+        assert!(refused >= 100, "only {refused} both-sides edits tried");
+    }
+
+    #[test]
     fn merge_log_inserts_keep_crlf_and_fenced_headings() {
         let crlf = |s: &str| s.replace('\n', "\r\n");
         let top = crlf(&entry("2026-10-15", "Top"));
@@ -1380,16 +1975,16 @@ mod tests {
         ));
         assert_eq!(got, format!("{PRE}{a}{OLD}{fixed}"));
         // A side that adds on top and edits an older entry, against one that only adds on top:
-        // not just entries on top, so it's the three-way merge's conflict.
+        // merge-file conflicts on top, and the entry-wise merge keeps both (0209).
         let b = entry("2026-10-13", "Task B");
-        let got = conflict(merged(
-            &base,
-            &format!("{PRE}{a}{OLD}{fixed}"),
-            &format!("{PRE}{b}{OLD}{OLDER}"),
-        ));
-        assert!(
-            got.contains("<<<<<<< ours\n") && got.contains(">>>>>>> theirs\n"),
-            "{got}"
+        let (o, t) = (
+            format!("{PRE}{a}{OLD}{fixed}"),
+            format!("{PRE}{b}{OLD}{OLDER}"),
+        );
+        conflict(merged_file_only(&base, &o, &t));
+        assert_eq!(
+            clean(merged(&base, &o, &t)),
+            format!("{PRE}{a}{b}{OLD}{fixed}")
         );
     }
 
@@ -1430,10 +2025,22 @@ mod tests {
             t.contains("**Did:** ours\n") && t.contains("**Did:** theirs\n"),
             "{t}"
         );
-        // A side that removed an entry while the other added one on top.
+        // A side that removed an entry while the other added one on top merges (0209); one that
+        // changed the entry the other removed doesn't.
+        assert_eq!(
+            clean(merged(
+                &base,
+                &format!("{PRE}{a}{OLD}{OLDER}"),
+                &format!("{PRE}{b}{OLDER}"),
+            )),
+            format!("{PRE}{b}{a}{OLDER}")
+        );
         markers(merged(
             &base,
-            &format!("{PRE}{a}{OLD}{OLDER}"),
+            &format!(
+                "{PRE}{a}{}{OLDER}",
+                OLD.replace("old thing", "old thing, fixed")
+            ),
             &format!("{PRE}{b}{OLDER}"),
         ));
         // A new entry without a date to order it by.
@@ -1884,8 +2491,9 @@ mod tests {
         // Four spaces is code, not a fence.
         let text = "## 2026-10-14 — N\n    ```\n## 2026-10-13 — real\n";
         assert_eq!(split(text.as_bytes()).entries.len(), 2);
-        // An unclosed fence runs to the end of the file, the base's entries inside it: not
-        // just entries on top, so it's a conflict.
+        // An unclosed fence runs to the end of the file, the base's entries inside it: read as
+        // the base entry removed, but the fence would take in the other side's entry after it,
+        // so it's a conflict (0209).
         let open = "## 2026-10-14 — U\n```\n## 2026-10-10 — inside\n";
         assert_eq!(
             split(format!("{PRE}{open}{OLD}").as_bytes()).entries.len(),
@@ -2097,5 +2705,494 @@ mod tests {
             "{text}"
         );
         g(&wt, &["rebase", "--abort"]);
+    }
+
+    /// An older entry with a stray line a merge left in it, as mu-131's log had (0209).
+    fn stray(day: &str, what: &str) -> String {
+        format!("## {day} — {what}\n**Did:** {what}\n||||||| base\n**Verified:** `gate: green`\n\n")
+    }
+
+    #[test]
+    fn merge_log_entry_wise_merges_the_mu_131_shape() {
+        // The base: entries, two older ones each holding a stray marker line. Ours (main, which
+        // removed both lines) put a run on top; theirs (the task) one on top and one deeper.
+        let (e1, e2, e3) = (
+            entry("2026-10-14", "E1"),
+            entry("2026-10-13", "E2"),
+            entry("2026-10-11", "E3"),
+        );
+        let (s1, s2) = (stray("2026-10-12", "S1"), stray("2026-10-10", "S2"));
+        let (c1, c2) = (
+            s1.replace("||||||| base\n", ""),
+            s2.replace("||||||| base\n", ""),
+        );
+        let (o1, o2) = (entry("2026-10-16", "Ours 1"), entry("2026-10-15", "Ours 2"));
+        let (t1, td) = (entry("2026-10-15", "Theirs"), entry("2026-10-13", "Deep"));
+        let base = format!("{PRE}{e1}{e2}{s1}{e3}{s2}");
+        let ours = format!("{PRE}{o1}{o2}{e1}{e2}{c1}{e3}{c2}");
+        let theirs = format!("{PRE}{t1}{e1}{e2}{s1}{e3}{td}{s2}");
+        conflict(merged_file_only(&base, &ours, &theirs));
+        let want = format!("{PRE}{o1}{t1}{o2}{e1}{e2}{c1}{e3}{td}{c2}");
+        // Through `run`, as git's driver: exit 0, the result in ours.
+        let dir = crate::testkit::tempdir().unwrap();
+        let p = |n: &str| dir.path().join(n);
+        fs::write(p("o"), &base).unwrap();
+        fs::write(p("a"), &ours).unwrap();
+        fs::write(p("b"), &theirs).unwrap();
+        let args = [p("o"), p("a"), p("b")].map(|x| x.to_str().unwrap().to_string());
+        assert_eq!(run(&args), Ok(0));
+        let got = fs::read_to_string(p("a")).unwrap();
+        assert_eq!(got, want);
+        assert!(!got.contains("||||||| base"));
+        // Each entry byte-identical to its source.
+        let r = split(got.as_bytes());
+        for e in [&o1, &t1, &o2, &e1, &e2, &c1, &e3, &td, &c2] {
+            assert_eq!(r.entries.iter().filter(|x| **x == e.as_bytes()).count(), 1);
+        }
+        // The other way round (a merge of main into the task): main's cleaned two still, and
+        // main's run above the task's on their date, as the incoming side.
+        let want = format!("{PRE}{o1}{o2}{t1}{e1}{e2}{c1}{e3}{td}{c2}");
+        assert_eq!(clean(merged(&base, &theirs, &ours)), want);
+    }
+
+    /// `want` from merging `ours` and `theirs` both ways round (the dates order every point), by
+    /// `merge` and through the binary.
+    fn both_ways(what: &str, base: &str, ours: &str, theirs: &str, want: &str) {
+        for (o, t) in [(ours, theirs), (theirs, ours)] {
+            assert_eq!(clean(merged(base, o, t)), want, "{what}");
+            let (code, text, err) = through_binary(base.as_bytes(), o.as_bytes(), t.as_bytes());
+            assert_eq!(
+                (code, String::from_utf8(text).unwrap().as_str()),
+                (0, want),
+                "{what}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn merge_log_entry_wise_keeps_one_sided_changes_and_removals() {
+        let (e1, e2, e3, e4) = (
+            entry("2026-10-14", "E1"),
+            entry("2026-10-13", "E2"),
+            entry("2026-10-12", "E3"),
+            entry("2026-10-11", "E4"),
+        );
+        let base = format!("{PRE}{e1}{e2}{e3}{e4}");
+        // Runs on both sides: on top and under E3.
+        let (o, t, d) = (
+            entry("2026-10-16", "Ours"),
+            entry("2026-10-15", "Theirs"),
+            entry("2026-10-12", "Deep"),
+        );
+        let fixed = e2.replace("**Did:** E2,", "**Did:** E2, fixed,");
+        // A fenced heading inside the change stays in it.
+        let fenced = e2.replace("of text.\n", "of text.\n```\n## 2026-10-01 — quoted\n```\n");
+        let renamed = e2.replace("— E2\n", "— E2, renamed\n");
+        let theirs = format!("{PRE}{t}{e1}{e2}{e3}{d}{e4}");
+        for (what, ours, want) in [
+            (
+                "changed on one side",
+                format!("{PRE}{o}{e1}{fixed}{e3}{e4}"),
+                format!("{PRE}{o}{t}{e1}{fixed}{e3}{d}{e4}"),
+            ),
+            (
+                "changed with a fenced heading",
+                format!("{PRE}{o}{e1}{fenced}{e3}{e4}"),
+                format!("{PRE}{o}{t}{e1}{fenced}{e3}{d}{e4}"),
+            ),
+            (
+                "removed on one side",
+                format!("{PRE}{o}{e1}{e3}{e4}"),
+                format!("{PRE}{o}{t}{e1}{e3}{d}{e4}"),
+            ),
+            (
+                "the last one removed",
+                format!("{PRE}{o}{e1}{e2}{e3}"),
+                format!("{PRE}{o}{t}{e1}{e2}{e3}{d}"),
+            ),
+            (
+                "an edited heading: removed, and a new entry in its place",
+                format!("{PRE}{o}{e1}{renamed}{e3}{e4}"),
+                format!("{PRE}{o}{t}{e1}{renamed}{e3}{d}{e4}"),
+            ),
+        ] {
+            both_ways(what, &base, &ours, &theirs, &want);
+        }
+        // The same change on both sides, or the same removal: there once, or gone once.
+        both_ways(
+            "changed the same way on both",
+            &base,
+            &format!("{PRE}{o}{e1}{fixed}{e3}{e4}"),
+            &format!("{PRE}{t}{e1}{fixed}{e3}{d}{e4}"),
+            &format!("{PRE}{o}{t}{e1}{fixed}{e3}{d}{e4}"),
+        );
+        both_ways(
+            "a heading edited the same way on both",
+            &base,
+            &format!("{PRE}{o}{e1}{renamed}{e3}{e4}"),
+            &format!("{PRE}{t}{e1}{renamed}{e3}{d}{e4}"),
+            &format!("{PRE}{o}{t}{e1}{renamed}{e3}{d}{e4}"),
+        );
+        both_ways(
+            "removed on both",
+            &base,
+            &format!("{PRE}{o}{e1}{e3}{e4}"),
+            &format!("{PRE}{t}{e1}{e3}{d}{e4}"),
+            &format!("{PRE}{o}{t}{e1}{e3}{d}{e4}"),
+        );
+        // Each side changing a different entry, one removing a third: all of it kept.
+        both_ways(
+            "a change on each side",
+            &base,
+            &format!("{PRE}{o}{e1}{fixed}{e3}"),
+            &format!(
+                "{PRE}{t}{e1}{e2}{}{d}{e4}",
+                e3.replace("of text.", "of text, fixed.")
+            ),
+            &format!(
+                "{PRE}{o}{t}{e1}{fixed}{}{d}",
+                e3.replace("of text.", "of text, fixed.")
+            ),
+        );
+        // A run beside a removed entry is at that entry's point, where the old entry was, and
+        // merges there with the other side's run above it: on one date, that run's first. The
+        // other side's run under it stays under it. Either way round.
+        let (n1, n2) = (entry("2026-10-13", "N1"), entry("2026-10-13", "N2"));
+        let ours = format!("{PRE}{o}{e1}{n1}{e3}{e4}");
+        both_ways(
+            "a run above the removed entry",
+            &base,
+            &ours,
+            &format!("{PRE}{t}{e1}{n2}{e2}{e3}{e4}"),
+            &format!("{PRE}{o}{t}{e1}{n2}{n1}{e3}{e4}"),
+        );
+        both_ways(
+            "a run under the removed entry",
+            &base,
+            &ours,
+            &format!("{PRE}{t}{e1}{e2}{n2}{e3}{e4}"),
+            &format!("{PRE}{o}{t}{e1}{n1}{n2}{e3}{e4}"),
+        );
+    }
+
+    #[test]
+    fn merge_log_entry_wise_keeps_an_edited_heading_in_the_old_ones_place() {
+        let (a, x, y, z) = (
+            entry("2026-10-14", "A"),
+            entry("2026-10-13", "X"),
+            entry("2026-10-13", "Y"),
+            entry("2026-10-12", "Z"),
+        );
+        let (o, t) = (entry("2026-10-16", "Ours"), entry("2026-10-15", "Theirs"));
+        let rename = |e: &str| e.replacen('\n', ", renamed\n", 1);
+        let (x2, y2) = (rename(&x), rename(&y));
+        let base = format!("{PRE}{a}{x}{y}{z}");
+        let ours = format!("{PRE}{o}{a}{x2}{y}{z}");
+        // The other side's new entry under the old heading, on its date: under the new one.
+        let n = entry("2026-10-13", "N");
+        both_ways(
+            "a new entry under the edited one",
+            &base,
+            &ours,
+            &format!("{PRE}{t}{a}{x}{n}{y}{z}"),
+            &format!("{PRE}{o}{t}{a}{x2}{n}{y}{z}"),
+        );
+        // Above it, on its date: above the new one.
+        both_ways(
+            "a new entry above the edited one",
+            &base,
+            &ours,
+            &format!("{PRE}{t}{a}{n}{x}{y}{z}"),
+            &format!("{PRE}{o}{t}{a}{n}{x2}{y}{z}"),
+        );
+        // Each side editing one of two headings next to each other, on one date: each in its
+        // own place.
+        both_ways(
+            "a heading edited on each side",
+            &base,
+            &ours,
+            &format!("{PRE}{t}{a}{x}{y2}{z}"),
+            &format!("{PRE}{o}{t}{a}{x2}{y2}{z}"),
+        );
+        // And the same with a new entry between them on the other side.
+        both_ways(
+            "a heading edited on each side, a new entry between",
+            &base,
+            &ours,
+            &format!("{PRE}{t}{a}{x}{n}{y2}{z}"),
+            &format!("{PRE}{o}{t}{a}{x2}{n}{y2}{z}"),
+        );
+        // Both headings edited on one side, a new entry between the old ones on the other:
+        // whether it goes above or under each new version can't be told, so markers.
+        let both = format!("{PRE}{o}{a}{x2}{y2}{z}");
+        let between = format!("{PRE}{t}{a}{x}{n}{y}{z}");
+        for (ours, theirs) in [(&both, &between), (&between, &both)] {
+            conflict(merged(&base, ours, theirs));
+            let (code, _, err) =
+                through_binary(base.as_bytes(), ours.as_bytes(), theirs.as_bytes());
+            assert_eq!((code, err.trim()), (1, GIVE_UP));
+        }
+    }
+
+    #[test]
+    fn merge_log_entry_wise_still_gives_markers() {
+        let (e1, e2, e3) = (
+            entry("2026-10-14", "E1"),
+            entry("2026-10-13", "E2"),
+            entry("2026-10-12", "E3"),
+        );
+        let base = format!("{PRE}{e1}{e2}{e3}");
+        let (o, t) = (entry("2026-10-16", "Ours"), entry("2026-10-15", "Theirs"));
+        let ours_fix = e2.replace("**Did:** E2,", "**Did:** E2, ours,");
+        let theirs_fix = e2.replace("**Did:** E2,", "**Did:** E2, theirs,");
+        let renamed = e2.replace("— E2\n", "— E2, renamed\n");
+        let copy = entry("2026-10-13", "E2").replace("of text.", "of text, a copy.");
+        for (what, ours, theirs) in [
+            (
+                "one entry changed differently on each side",
+                format!("{PRE}{o}{e1}{ours_fix}{e3}"),
+                format!("{PRE}{t}{e1}{theirs_fix}{e3}"),
+            ),
+            (
+                "one side changed what the other removed",
+                format!("{PRE}{o}{e1}{ours_fix}{e3}"),
+                format!("{PRE}{t}{e1}{e3}"),
+            ),
+            (
+                "a heading edited where the other side changed the entry",
+                format!("{PRE}{o}{e1}{renamed}{e3}"),
+                format!("{PRE}{t}{e1}{theirs_fix}{e3}"),
+            ),
+            (
+                "a heading edited where the other side removed the entry",
+                format!("{PRE}{o}{e1}{renamed}{e3}"),
+                format!("{PRE}{t}{e1}{e3}"),
+            ),
+            (
+                "a heading edited differently on each side",
+                format!("{PRE}{o}{e1}{renamed}{e3}"),
+                format!("{PRE}{t}{e1}{}{e3}", e2.replace("— E2\n", "— E2, theirs\n")),
+            ),
+            (
+                "an entry removed on both, new entries where it was on one",
+                format!("{PRE}{o}{e1}{}{e3}", entry("2026-10-13", "New")),
+                format!("{PRE}{t}{e1}{e3}"),
+            ),
+            (
+                "a fence left open that a new entry closes, letting a quoted heading out",
+                format!(
+                    "{PRE}{o}{e1}{e2}{e3}{}",
+                    "## 2026-10-11 — N\n```\n## 2026-10-01 — quoted\n```\n"
+                ),
+                format!(
+                    "{PRE}{t}{e1}{e2}{}",
+                    e3.replace("of text.\n", "of text.\n```\n")
+                ),
+            ),
+            (
+                "ours' preamble changed",
+                format!("# Log, renamed\n\nNewest first.\n\n{o}{e1}{e2}{e3}"),
+                format!("{PRE}{t}{e1}{e2}{e3}"),
+            ),
+            (
+                "theirs' preamble changed",
+                format!("{PRE}{o}{e1}{ours_fix}{e3}"),
+                format!("# Log, renamed\n\nNewest first.\n\n{t}{e1}{e2}{e3}"),
+            ),
+            (
+                "an undated new entry beside a change",
+                format!("{PRE}{o}{e1}{ours_fix}{e3}"),
+                format!("{PRE}## Unreleased\n- t\n\n{e1}{e2}{e3}"),
+            ),
+            (
+                "an entry moved",
+                format!("{PRE}{o}{e2}{e1}{e3}"),
+                format!("{PRE}{t}{e1}{e2}{e3}"),
+            ),
+            (
+                "a new entry with the heading of one the other side changed",
+                format!("{PRE}{o}{copy}{e1}{e2}{e3}"),
+                format!("{PRE}{t}{e1}{theirs_fix}{e3}"),
+            ),
+        ] {
+            assert!(
+                entry_wise(base.as_bytes(), ours.as_bytes(), theirs.as_bytes()).is_none(),
+                "{what}"
+            );
+            let m = conflict(merged(&base, &ours, &theirs));
+            assert!(
+                m.contains("<<<<<<< ours\n") && m.contains(">>>>>>> theirs\n"),
+                "{what}: {m}"
+            );
+            let (code, text, err) =
+                through_binary(base.as_bytes(), ours.as_bytes(), theirs.as_bytes());
+            assert_eq!(code, 1, "{what}");
+            assert_eq!(String::from_utf8(text).unwrap(), m, "{what}");
+            assert_eq!(err.trim(), GIVE_UP, "{what}");
+        }
+    }
+
+    #[test]
+    fn merge_log_entry_wise_matches_an_entry_the_base_has_twice() {
+        // The real log has one entry twice (a merge-file merge kept both copies, 0196). Ours
+        // removes one copy, theirs adds on top and deeper: the others stay matched in place.
+        let (e1, d, e2, e3) = (
+            entry("2026-10-14", "E1"),
+            entry("2026-10-13", "Twice"),
+            entry("2026-10-12", "E2"),
+            entry("2026-10-11", "E3"),
+        );
+        let base = format!("{PRE}{e1}{d}{e2}{d}{e3}");
+        let (o, t, deep) = (
+            entry("2026-10-16", "Ours"),
+            entry("2026-10-15", "Theirs"),
+            entry("2026-10-12", "Deep"),
+        );
+        let theirs = format!("{PRE}{t}{e1}{d}{e2}{deep}{d}{e3}");
+        for ours in [
+            format!("{PRE}{o}{e1}{d}{e2}{e3}"),
+            format!("{PRE}{o}{e1}{e2}{d}{e3}"),
+        ] {
+            let got = clean(merged(&base, &ours, &theirs));
+            let r = split(got.as_bytes());
+            let n = |e: &str| r.entries.iter().filter(|x| **x == e.as_bytes()).count();
+            assert_eq!((n(&d), n(&deep), n(&o), n(&t)), (1, 1, 1, 1), "{got}");
+            assert!(got.starts_with(&format!("{PRE}{o}{t}{e1}")), "{got}");
+            assert!(got.ends_with(&e3), "{got}");
+            for _ in 0..3 {
+                assert_eq!(
+                    clean(merged(&base, &ours, &theirs)),
+                    got,
+                    "the same every run"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn merge_log_entry_wise_keeps_crlf_and_a_missing_last_line_end() {
+        let crlf = |s: &str| s.replace('\n', "\r\n");
+        let (pre, e1, e2) = (
+            crlf(PRE),
+            crlf(&entry("2026-10-14", "E1")),
+            crlf(&entry("2026-10-13", "E2")),
+        );
+        let (o, t) = (
+            crlf(&entry("2026-10-16", "Ours")),
+            crlf(&entry("2026-10-15", "Theirs")),
+        );
+        let fixed = e1.replace("of text.", "of text, fixed.");
+        // The last line has no line end, and one side changes the entry it ends.
+        let last = "## 2026-10-12 — Last\r\n**Did:** no line end";
+        let last_fixed = "## 2026-10-12 — Last\r\n**Did:** no line end, fixed";
+        let base = format!("{pre}{e1}{e2}{last}");
+        let ours = format!("{pre}{o}{fixed}{e2}{last}");
+        let theirs = format!("{pre}{t}{e1}{e2}{last_fixed}");
+        let want = format!("{pre}{o}{t}{fixed}{e2}{last_fixed}");
+        assert_eq!(clean(merged(&base, &ours, &theirs)), want);
+        assert_eq!(clean(merged(&base, &theirs, &ours)), want);
+        // One side removes the last entry: the one above it ends the file, as that side has it.
+        let ours = format!("{pre}{o}{fixed}{e2}");
+        let want = format!("{pre}{o}{t}{fixed}{e2}");
+        assert_eq!(
+            clean(merged(&base, &ours, &format!("{pre}{t}{e1}{e2}{last}"))),
+            want
+        );
+    }
+
+    #[test]
+    fn merge_log_merges_and_rebases_a_branch_with_runs_at_two_points_onto_a_fixed_entry() {
+        // mu-131's rebase in a real repo: main removed a stray marker line from an older entry
+        // and put an entry on top; the task put round entries on top and its first one deeper.
+        let n1 = entry("2026-10-15", "Landed before");
+        let (t1, t2) = (
+            entry("2026-10-15", "Round two"),
+            entry("2026-10-15", "Round one"),
+        );
+        let deep = entry("2026-10-14", "First entry");
+        let m = entry("2026-10-15", "Main's");
+        let (s, fixed) = (
+            stray("2026-10-12", "Stray"),
+            stray("2026-10-12", "Stray").replace("||||||| base\n", ""),
+        );
+        let base_log = format!("{PRE}{n1}{s}{OLDER}");
+        let task_log = format!("{PRE}{t1}{t2}{n1}{deep}{s}{OLDER}");
+        let main_log = format!("{PRE}{m}{n1}{fixed}{OLDER}");
+        for (how, onto, incoming) in [
+            ("merge", "main", "task"),
+            ("merge", "task", "main"),
+            ("rebase", "main", "task"),
+            ("rebase", "task", "main"),
+        ] {
+            let dir = crate::testkit::tempdir().unwrap();
+            let home = dir.path().join("home");
+            fs::create_dir(&home).unwrap();
+            let g = |d: &Path, args: &[&str]| home_g(&home, d, args);
+            let repo = log_repo_with(dir.path(), &g);
+            let bin = this_muster().unwrap();
+            g(&repo, &["config", &format!("merge.{DRIVER}.name"), NAME]);
+            let driver = driver_command(&sh_quote(&bin.to_str().unwrap().replace('%', "%%")));
+            g(
+                &repo,
+                &["config", &format!("merge.{DRIVER}.driver"), &driver],
+            );
+            fs::write(repo.join("docs/WORKLOG.md"), &base_log).unwrap();
+            g(&repo, &["commit", "-qam", "the base"]);
+            g(&repo, &["checkout", "-q", "-b", "task"]);
+            fs::write(repo.join("docs/WORKLOG.md"), &task_log).unwrap();
+            g(&repo, &["commit", "-qam", "the task"]);
+            g(&repo, &["checkout", "-q", "main"]);
+            fs::write(repo.join("docs/WORKLOG.md"), &main_log).unwrap();
+            g(&repo, &["commit", "-qam", "main's entry and fix"]);
+            g(
+                &repo,
+                &[
+                    "checkout",
+                    "-q",
+                    if how == "merge" { onto } else { incoming },
+                ],
+            );
+            if how == "merge" {
+                g(&repo, &["merge", "-q", "--no-edit", incoming]);
+            } else {
+                g(&repo, &["rebase", "-q", onto]);
+            }
+            let want = if incoming == "task" {
+                format!("{PRE}{t1}{t2}{m}{n1}{deep}{fixed}{OLDER}")
+            } else {
+                format!("{PRE}{m}{t1}{t2}{n1}{deep}{fixed}{OLDER}")
+            };
+            let got = fs::read_to_string(repo.join("docs/WORKLOG.md")).unwrap();
+            assert_eq!(got, want, "{how} {incoming} onto {onto}");
+            assert_eq!(g(&repo, &["status", "--porcelain"]), "", "{how}");
+        }
+    }
+
+    #[test]
+    fn stray_markers_finds_each_marker_line_outside_code() {
+        let text = "# Doc\n<<<<<<< ours\na\n||||||| base\nb\n=======\nc\n>>>>>>> theirs\n";
+        assert_eq!(stray_markers(text.as_bytes()), [2, 4, 6, 8]);
+        // CRLF line ends, and a marker on the last line with none.
+        assert_eq!(stray_markers(b"x\r\n=======\r\n>>>>>>> theirs"), [2, 3]);
+        // Not markers: other runs of '=', a marker without its space, one indented, or mid-line.
+        for not in [
+            "=====\n",
+            "========\n",
+            "======= \n",
+            "<<<<<<<\n",
+            " <<<<<<< ours\n",
+            "a <<<<<<< ours\n",
+            "<<<<<<<< ours\n",
+        ] {
+            assert_eq!(
+                stray_markers(not.as_bytes()),
+                Vec::<usize>::new(),
+                "{not:?}"
+            );
+        }
+        // Quoted in a fence (``` or ~~~): skipped; after the fence closes: caught again.
+        let text = "a\n```\n<<<<<<< ours\n=======\n>>>>>>> theirs\n```\n~~~md\n||||||| base\n~~~\n=======\n";
+        assert_eq!(stray_markers(text.as_bytes()), [10]);
+        assert_eq!(stray_markers(b""), Vec::<usize>::new());
     }
 }
