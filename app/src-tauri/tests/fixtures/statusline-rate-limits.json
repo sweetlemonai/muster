@@ -1,0 +1,14 @@
+{
+  "claude_code_version": "2.1.296",
+  "note": "Real status-line stdin from one cc-mg session (mu-111), trimmed to the top-level keys and rate_limits. The first call comes before any API response and has no rate_limits key.",
+  "before_first_response": {
+    "keys": ["context_window", "cost", "cwd", "effort", "exceeds_200k_tokens", "fast_mode", "model", "output_style", "session_id", "thinking", "transcript_path", "version", "workspace"]
+  },
+  "after_first_response": {
+    "keys": ["context_window", "cost", "cwd", "effort", "exceeds_200k_tokens", "fast_mode", "model", "output_style", "prompt_cache", "prompt_id", "rate_limits", "session_id", "session_name", "thinking", "transcript_path", "version", "workspace"],
+    "rate_limits": {
+      "five_hour": { "used_percentage": 35, "resets_at": 1792035600 },
+      "seven_day": { "used_percentage": 41, "resets_at": 1792346400 }
+    }
+  }
+}

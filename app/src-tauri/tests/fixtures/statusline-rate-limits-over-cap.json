@@ -1,0 +1,8 @@
+{
+  "claude_code_version": "2.1.296",
+  "note": "Synthetic, not seen live (mu-111 round 1): the after_first_response rate_limits of statusline-rate-limits.json with the 5-hour window past its cap. 2.1.296 builds used_percentage as Math.round(utilization*1000)/10, with no clamp, so 1.04 becomes 104 and 0.415 becomes 41.5. Decode as f64 and keep the reading; clamp only for display.",
+  "rate_limits": {
+    "five_hour": { "used_percentage": 104, "resets_at": 1792035600 },
+    "seven_day": { "used_percentage": 41.5, "resets_at": 1792346400 }
+  }
+}

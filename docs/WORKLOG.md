@@ -4,6 +4,23 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Spike: how Claude Code reports 5-hour and weekly use on this Mac (mu-111)
+**Did:** short `claude -p` stream-json runs and interactive sessions with a throwaway status line,
+on Claude Code 2.1.296; findings posted on mu-9 (three comments). Fixtures for mu-113 and mu-117 in
+`app/src-tauri/tests/fixtures/` (`stream/claude-rate-limit-allowed.jsonl`,
+`stream/claude-not-logged-in.jsonl`, `statusline-rate-limits.json`; round 1 added the synthetic
+`stream/claude-rate-limit-over-cap.jsonl` and `statusline-rate-limits-over-cap.json`).
+**Decided:** `rate_limit_event` comes at least once on a run that gets an API response, then only
+when a window's rounded percent or reset time moves (at most every 30 s), with camelCase fields and
+per-window use under `unifiedWindows` (not the research's snake_case); parsers key on that and
+ignore unknown keys. `utilization` can pass 1.0 and the status line's `used_percentage` is a
+one-decimal number that can pass 100 (round 1, R1): parse f64, keep over-cap readings, clamp only
+for display. The rejected shape is taken from the binary, not forced live (Shapour's call).
+**Verified:** `grep -rE '/Users/|[0-9a-f]{8}-[0-9a-f]{4}-'` over the new fixtures finds nothing;
+`gate: green (pnpm install, pnpm check, test_task, test_commands, cargo test (Kiritimati))`.
+**Open:** cc-hg isn't logged in; the Codex CLI isn't installed, so the Codex part is mu-126's. A
+rejected run hasn't been seen live.
+
 ## 2026-10-14 — The task pane's Files opens screenshots in place, not in a lightbox (mu-91)
 **Did:** Files' thumbnails are toggle buttons that open their image at the pane's full width,
 in a row under the two columns (`FilesOpen`), several at once; a second click on the thumbnail or
