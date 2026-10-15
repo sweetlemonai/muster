@@ -4,6 +4,26 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — Spike: the owner's six flows through the app, walked headless (mu-106)
+**Did (pouya_4, researcher):** `docs/research/ux-flows.md`: F1–F6 (what's waiting, answer, check
+and accept, what's running, start/pause/ping/file, find), each a step table with what's visible and
+what's hidden, clicks and keys, and the Focus differences; 19 findings ranked; proposals checked
+against DESIGN.md. Captured with the lead's headless harness (Playwright WebKit, mocked IPC) on a
+synthetic fixture with the queue's shape and none of its text: 160 shots in light and dark at 1100
+and 1440 px, ADHD for all six flows and Focus for F1 and F3 (the other flows' Focus lines are code
+reads), plus a Persian pass and keyboard walks, in `.muster/attachments/0106/ux/`. The findings
+filed as notes became mu-197 to mu-207; the table names each.
+**Decided:** the worst three are Your check past the board's right edge (R4), the board vanishing
+when the pane opens (R5) and counts without words or with two meanings ("N working", R3). 11 new
+backlog notes cite mu-106. 8 findings went as notes to mu-169, mu-172, mu-184, mu-98, mu-138,
+mu-142, mu-144 and mu-149. No code changed.
+**Verified:** the six `## F` headings and their Hidden columns; every finding row names a task or a
+note file present in `.muster/backlog/`; the owner's projects.json, settings.json, roles.toml and
+helper/ hash the same before and after (notified.json is written by the running Muster.app); the
+hash lists name files relative to the config folder, and no attachment holds the user name or a
+real project name (grep, plus `leakcheck.py` on the fixtures and notes).
+**Open:** native surfaces (menu bar, Dock, notifications) are from a code read; R12's timing needs
+/profile on a release build; contrast wasn't measured.
 ## 2026-10-15 — mu-194: the filter bar's Type row says task, feature and idea in Persian too
 **Fixed (Asghar_37, builder):** in فارسی the Type row showed "idea" and "feature" in English →
 `kindChip` translated only the core's `KINDS` → `fields.ts` has `LEGACY_KINDS` (task, feature,
@@ -229,6 +249,7 @@ R5 (no listener; no focus back), R6 (no focus on the Next step), R7 (Rust and TS
 Testing words). Round 1: headless WebKit shots of the pane before/after Release, light and dark.
 **Open:** فارسی shot: mu-146 has merged, but the pane's strings are still English until mu-148
 moves them. mu-185 keeps the Testing `held-by:` re-stamp.
+||||||| base
 
 ## 2026-10-15 — mu-173 review round 2: the legend keeps its height, the Graph's top outline whole
 **Fixed (Gholi_34, builder):** R4: the wrapping legend was as tall as the window's marks, so
@@ -256,6 +277,7 @@ call, from the owner's "out of sight is out of mind" rule.
 1000×640 (sidebar 210): Timeline Week with 11 legend items wraps to 2 rows, 0 items outside, LTR
 and RTL; Graph with 4 queues scrolled 2412px, legend top 45px before and after. Shots in
 `attachments/0173/r1-*.png`.
+||||||| base
 ## 2026-10-15 — Backlog shaped: mu-189 to mu-195, two notes folded into mu-147; mu-131 stalls on a gate check
 **Did (shapour):** 0034 → mu-189 (hand merge re-checks review and gate records under the lock, after 0131).
 0038 → mu-190 (high: merge-log keeps both sides' entries inserted at one point below the top; amends
