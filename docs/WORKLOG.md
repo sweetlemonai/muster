@@ -3,6 +3,15 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+
+## 2026-10-15 — A reported merge-log loss in mu-151's rebase doesn't reproduce: its base predated mu-210
+**Verified:** mu-151's rebase began at 08:07:38 on 1327284; mu-210 (98668d8) reached main at 08:07:41, so the
+base never had mu-210's 21-line entry, and the result rightly lacked it. Re-run on the 07:26 binary: O 5f098aa,
+A 1327284, B 23a7364 exits 0 with 4,225 + 29 lines; O 1327284, A 98668d8, B 18cd846 keeps the entry both sides
+added once and matches c991cea byte for byte. No commit through 5f3fda7 lacks a line of 98668d8's work log.
+**Decided:** no bug filed. After a rebase, compare the work log with the commit rebased onto (the reflog's
+"checkout <sha>"), not with main as it is now.
+
 ## 2026-10-15 — mu-210: the transcript reader reads only what a live transcript appended
 **Did:** `transcripts::Reader::summary` reads a cached transcript that only grew on from just past
 its last line end (`read_on`, `Progress` in `Cached`), instead of re-reading it from byte 0 on every
