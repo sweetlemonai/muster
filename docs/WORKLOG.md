@@ -337,7 +337,6 @@ R5 (no listener; no focus back), R6 (no focus on the Next step), R7 (Rust and TS
 Testing words). Round 1: headless WebKit shots of the pane before/after Release, light and dark.
 **Open:** فارسی shot: mu-146 has merged, but the pane's strings are still English until mu-148
 moves them. mu-185 keeps the Testing `held-by:` re-stamp.
-||||||| base
 
 ## 2026-10-15 — mu-173 review round 2: the legend keeps its height, the Graph's top outline whole
 **Fixed (Gholi_34, builder):** R4: the wrapping legend was as tall as the window's marks, so
@@ -365,7 +364,6 @@ call, from the owner's "out of sight is out of mind" rule.
 1000×640 (sidebar 210): Timeline Week with 11 legend items wraps to 2 rows, 0 items outside, LTR
 and RTL; Graph with 4 queues scrolled 2412px, legend top 45px before and after. Shots in
 `attachments/0173/r1-*.png`.
-||||||| base
 ## 2026-10-15 — Backlog shaped: mu-189 to mu-195, two notes folded into mu-147; mu-131 stalls on a gate check
 **Did (shapour):** 0034 → mu-189 (hand merge re-checks review and gate records under the lock, after 0131).
 0038 → mu-190 (high: merge-log keeps both sides' entries inserted at one point below the top; amends
