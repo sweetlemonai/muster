@@ -279,6 +279,7 @@ Latin script stays in commands, task fields (`claimed-by:`) and anything an agen
 | card | کارت | a task on the board | common Persian software usage |
 | holder ribbon | روبان دارنده | the card corner naming who holds the task (0097); دارنده is the one holding it | (proposed) |
 | chip | چیپ | a small pill button (the mode chip, a column folded to a chip); transliterated like تگ and کارت. Not تراشه, which reads first as a microchip (review of 2026-10-14) | (proposed) |
+| past the edge (the board's) | بیرون از لبه‌ی بورد | the cue naming the open columns the board's scroll hides (mu-198): «بیرون از لبه‌ی بورد: بررسی شما · ۲۱ مورد به شما نیاز دارد، انجام شد»; لبه, not حاشیه (a margin) | (proposed) |
 | tag | تگ | pl. تگ‌ها; برچسب is kept for labels | common Persian software usage |
 | label (a project's) | نام نمایشی | what the window calls a project; its folder's name stays as it is | (proposed) |
 | category / heading | دسته / سرفصل | the sidebar's category headings: «سرفصل دسته»; the Other heading is سایر (projects.json keeps "Other") | (proposed) |

@@ -3,8 +3,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import appSource from "./App.tsx?raw";
 import columnRowSource from "./ColumnRow.tsx?raw";
-import ColumnRow, { chipWords, placeCount, type PlaceCounts, type RowChip, RowCue, rowChipsOf } from "./ColumnRow";
+import ColumnRow, { BoardCue, chipWords, edgeColumnsOf, placeCount, type PlaceCounts, type RowChip, RowCue, rowChipsOf } from "./ColumnRow";
 import { tn } from "./i18n";
+import { setLocale } from "./i18n/runtime";
+import pausedSource from "./PausedLane.tsx?raw";
+import rowCueSource from "./rowCue.ts?raw";
 import { columns, STAGES } from "./lib";
 import { ColumnHead } from "./ModeViews";
 import {
@@ -87,8 +90,8 @@ describe("which places are open and which are chips (AC1)", () => {
     expect(tn("shell", "app.allFolded")).toBe("Every column is folded into the row above: click one to open it.");
   });
   it("App draws only the open columns, never a strip, and the row under the filter bar", () => {
-    const plain = appSource.slice(appSource.indexOf('{!grid && groupBy === "none" && <main className="board"'), appSource.indexOf("</main>}", appSource.indexOf('{!grid && groupBy === "none" && <main className="board"')));
-    expect(plain).toContain('<main className="board" style={{ gridTemplateColumns: plain.tracks }}>');
+    const plain = appSource.slice(appSource.indexOf('{!grid && groupBy === "none" && <main ref={setBoardEl} className="board"'), appSource.indexOf("</main>}", appSource.indexOf('{!grid && groupBy === "none" && <main ref={setBoardEl} className="board"')));
+    expect(plain).toContain('<main ref={setBoardEl} className="board" style={{ gridTemplateColumns: plain.tracks }}>');
     expect(plain).toContain('{plain.isOpen("paused") && <PausedColumn');
     expect(plain).toContain("{STAGES.filter((c) => plain.isOpen(c.id)).map((c) => {");
     expect(plain).toContain('className={columnClass(c.id, "open")}');
@@ -142,11 +145,16 @@ describe("the row as drawn (AC1, AC3)", () => {
     // Past its room the chips scroll sideways in a list of their own, never down; the cue after
     // the list stays put (R7).
     const listRule = rule(".col-row-chips");
-    expect(listRule).toContain("flex: 1 1 auto; min-width: 0;");
+    // The list takes its chips' width, no more: the room after them is the board cue's (mu-198).
+    expect(listRule).toContain("flex: 0 1 auto; min-width: 0;");
     expect(listRule).toContain("flex-wrap: nowrap;");
     expect(listRule).toContain("overflow-x: auto; overflow-y: hidden;");
     expect(rowRule).not.toContain("overflow");
-    expect(css).not.toMatch(/\.col-row[^{]*\{[^}]*flex-wrap: wrap/);
+    // The one wrap: too narrow for both cues, the board's has a line of its own, set by the row's
+    // width alone (a container query), never by a count (mu-198, review R1).
+    const wraps = [...css.matchAll(/\n\s*(\.col-row[^{]*)\{[^}]*flex-wrap: wrap/g)].map((m) => m[1].trim());
+    expect(wraps).toEqual([".col-row:has(> .col-edge-slot)"]);
+    expect(css).toMatch(/@container colrow \(width < [\d.]+em\) \{\n {2}\.col-row:has\(> \.col-edge-slot\) \{ flex-wrap: wrap;/);
     // Short of room only the names shorten, to an ellipsis on one line, never under 2.5em; the
     // counts and the needs-you and blocked words keep their width.
     expect(rule(".col-row .col-chip > *")).toBe(" flex: none; ");
@@ -168,7 +176,7 @@ describe("the row as drawn (AC1, AC3)", () => {
     const grouped = (chips: RowChip[]) => renderToStaticMarkup(createElement(ColumnRow, { chips, grouped: true, onOpen: () => {} }));
     expect(grouped([])).toBe('<div class="col-row" role="group" aria-label="Folded and empty columns"></div>');
     expect(grouped([chip(RAIL_ID, 4)])).toContain("col-chip col-recent");
-    expect(appSource).toContain('<ColumnRow key={`${queue}/${modes.mode}`} chips={grid ? rowChipsOf(plain.row, true, placeCounts) : rowChips} grouped={grid || groupBy !== "none"} onOpen={(id) => setColumnOpen(id, true)} />');
+    expect(appSource).toContain('<ColumnRow key={`${queue}/${modes.mode}`} chips={grid ? rowChipsOf(plain.row, true, placeCounts) : rowChips} grouped={grid || groupBy !== "none"} onOpen={(id) => setColumnOpen(id, true)} board={!grid && groupBy === "none" ? boardEl : null} columns={edgeColumnsOf(plain.open, cols)} />');
   });
   it("mirrors in right to left: flex from the start, no left or right of its own", () => {
     const rules = [...css.matchAll(/\n(\.col-row[^{]*)\{([^}]*)\}/g)].map((m) => m[2]);
@@ -184,7 +192,7 @@ describe("the row as drawn (AC1, AC3)", () => {
 
 describe("opening and folding (AC2)", () => {
   it("a chip's click opens its column, a head's Fold sends it back", () => {
-    expect(appSource).toContain('<ColumnRow key={`${queue}/${modes.mode}`} chips={grid ? rowChipsOf(plain.row, true, placeCounts) : rowChips} grouped={grid || groupBy !== "none"} onOpen={(id) => setColumnOpen(id, true)} />');
+    expect(appSource).toContain('<ColumnRow key={`${queue}/${modes.mode}`} chips={grid ? rowChipsOf(plain.row, true, placeCounts) : rowChips} grouped={grid || groupBy !== "none"} onOpen={(id) => setColumnOpen(id, true)} board={!grid && groupBy === "none" ? boardEl : null} columns={edgeColumnsOf(plain.open, cols)} />');
     expect(appSource).toContain("const hide = () => setColumnOpen(c.id, false);");
     expect(appSource).toContain('<PausedColumn tasks={cols.paused} onHide={() => setColumnOpen("paused", false)}');
     expect(appSource).toContain("onFold={() => setColumnOpen(RAIL_ID, false)}");
@@ -631,7 +639,7 @@ describe("past the row's room: the cue at its end (review R7)", () => {
     function fake(children: unknown[]) {
       const listeners = new Map<string, { fn: () => void; opts: unknown }>();
       const b = box({ row: 690, list: 587, chips: FOCUS6_AT });
-      const row = { clientWidth: 690 };
+      const row = { clientWidth: 690, querySelector: () => null };
       const list = {
         ...b.list,
         children,
@@ -667,6 +675,26 @@ describe("past the row's room: the cue at its end (review R7)", () => {
       b.mo.fire([{ addedNodes: [second, text], removedNodes: [first] }]);
       expect([...b.ro.observed]).toEqual([row, list, second]);
     });
+    it("takes the board cue's slot and its gap from the chips' room while it's on their line, nothing when it has its own (mu-198, review R4)", () => {
+      // Three chips ending at 419px fit the 690px row's 662 alone; beside the slot's 240px and
+      // its 6px gap (416 left) they don't. Without the gap (422) they would.
+      const chips = spans(["paused", "backlog", "shaping"], [[0, 130], [136, 270], [276, 419]]);
+      const measured = (slotTop: number) => {
+        const b = browser();
+        const bx = box({ row: 690, list: 587, chips });
+        const slot = { getBoundingClientRect: () => ({ top: slotTop }) };
+        const row = { clientWidth: 690, querySelector: (s: string) => (s === ".col-edge-slot" ? slot : null) };
+        const list = { ...bx.list, getBoundingClientRect: () => ({ ...bx.list.getBoundingClientRect(), top: 4, bottom: 32 }), children: [], querySelector: () => ({}), addEventListener: () => {}, removeEventListener: () => {} };
+        vi.stubGlobal("getComputedStyle", (el: unknown) => (el === slot ? { minWidth: "240px" } : { paddingInlineStart: "14px", paddingInlineEnd: "14px", minWidth: "30px", columnGap: "6px" }));
+        const seen: unknown[] = [];
+        watchRow(row as unknown as HTMLElement, list as unknown as HTMLElement, (v) => seen.push(v));
+        b.run();
+        return seen[0];
+      };
+      expect(measured(4)).toMatchObject({ overflow: true });
+      // Narrow: the slot is on the line under the chips' (its top at their bottom).
+      expect(measured(32)).toBe(ALL_IN_VIEW);
+    });
     it("lets everything go when the row unmounts", () => {
       const b = browser();
       const { row, list, listeners } = fake([]);
@@ -691,5 +719,165 @@ describe("past the row's room: the cue at its end (review R7)", () => {
     const cueRule = css.match(/\n\.col-row \.col-cue \{([^}]*)\}/)?.[1] ?? "";
     expect(cueRule).toContain("flex: none;");
     expect(cueRule).toContain("white-space: nowrap;");
+  });
+});
+
+describe("the board's own cue at the row's end (mu-198)", () => {
+  const edge = (hidden: [string, string, number][], target = hidden[0][0]) => ({
+    hidden: hidden.map(([id, label, needs]) => ({ id, label, needs })),
+    needs: hidden.reduce((n, h) => n + h[2], 0),
+    target,
+  });
+  const draw = (cue: ReturnType<typeof edge>) => renderToStaticMarkup(createElement(BoardCue, { cue, onShow: () => {} }));
+  const p = (id: string, label: string, count: number, needs = 0): RowChip => ({ id, label, count, needs, blocked: 0 });
+  /** A row and its list as measureRow reads them, the list `list` wide at x 14. */
+  const box = (o: { row: number; list: number; chips: ChipSpan[] }) => {
+    const rect = (l: number, r: number) => ({ left: l + 14, right: r + 14, width: r - l });
+    return {
+      row: { clientWidth: o.row, padding: 28, nameMin: 30 },
+      list: {
+        clientWidth: o.list,
+        clientLeft: 0,
+        getBoundingClientRect: () => rect(0, o.list),
+        querySelectorAll: () => o.chips.map((c) => ({ dataset: { chip: c.id }, getBoundingClientRect: () => rect(c.start, c.end), querySelector: () => ({ getBoundingClientRect: () => rect(0, 30) }) })),
+      },
+    };
+  };
+  afterEach(async () => {
+    await setLocale("en");
+  });
+  it("is a button whose name says the columns in words, showing each name and its needs-you words (AC2)", () => {
+    const html = draw(edge([["your-check", "Your check", 21], ["done", "Done", 0]]));
+    expect(html).toBe(
+      '<button type="button" aria-label="2 columns past the edge: Your check, 21 need you; Done. Show them" title="Past the edge: Your check · 21 need you, Done" class="ui-pill col-cue col-edge">' +
+        'Past the edge: <span class="col-edge-list"><span class="col-edge-item"><span class="col-edge-name">Your check</span> · <b class="count warn">21 need you</b></span>' +
+        '<span class="col-edge-item">, <span class="col-edge-name">Done</span></span></span></button>',
+    );
+    // Nothing that needs you: no needs-you colour at all.
+    expect(draw(edge([["done", "Done", 0]]))).not.toContain("warn");
+  });
+  it("names the open columns as their heads do, Paused and the stages, with their needs-you counts", () => {
+    const cols: Record<string, Task[]> = {
+      paused: [task("2", { waitingForOwner: true })],
+      "your-check": [task("1", { stage: "your-check", waitingForOwner: true }), task("3", { stage: "your-check" })],
+      done: [],
+    };
+    expect(edgeColumnsOf(["paused", "your-check", "done"], cols)).toEqual([
+      { id: "paused", label: "Paused", needs: 1 },
+      { id: "your-check", label: "Your check", needs: 1 },
+      { id: "done", label: "Done", needs: 0 },
+    ]);
+  });
+  it("in Persian: the lead-in, the names and the needs-you words from the language files (AC4)", async () => {
+    await setLocale("fa");
+    expect(edgeColumnsOf(["paused", "your-check"], {})).toEqual([
+      { id: "paused", label: "متوقف شده", needs: 0 },
+      { id: "your-check", label: "بررسی شما", needs: 0 },
+    ]);
+    const html = draw(edge([["your-check", "بررسی شما", 21], ["done", "انجام شد", 0]]));
+    expect(html).toContain("بیرون از لبه‌ی بورد: ");
+    expect(html).toContain('<b class="count warn">۲۱ مورد به شما نیاز دارد</b>');
+    expect(html).toContain("، ");
+    expect(html).not.toMatch(/>[^<]*[A-Za-z][^<]*</);
+  });
+  it("only while a column is past the edge; the row's chips keep their markup either way (AC2)", () => {
+    // No board measured yet: no cue, and the row is drawn as before, with its live region.
+    const html = renderToStaticMarkup(createElement(ColumnRow, { chips: [chip("shaping")], onOpen: () => {}, board: {} as HTMLElement, columns: [] }));
+    expect(html).not.toContain("col-edge\"");
+    expect(html).not.toContain("<button type=\"button\" aria-label=\"1 column");
+    // Its slot is there, empty, holding its place, then the live region.
+    expect(html).toContain('<span class="col-edge-slot"></span><span class="sr-only" aria-live="polite"></span></div>');
+    expect(html.replace('<span class="col-edge-slot"></span><span class="sr-only" aria-live="polite"></span>', "")).toBe(row([chip("shaping")]));
+    // No board (the grid, Group by): no slot, no live region.
+    expect(row([chip("shaping")])).not.toMatch(/col-edge-slot|aria-live/);
+    const src = columnRowSource;
+    expect(src).toContain("const stop = watchBoard(board, (v) => setBoardView((prev) => (sameView(prev, v) ? prev : v)));");
+    expect(src).toContain("const edge = board && boardView.overflow ? edgeCue(columns, boardView.visible, edgeFrom) : null;");
+    // A board gone (the grid, Group by) leaves no stale cue behind.
+    expect(src).toMatch(/stop\(\);\s*setBoardView\(ALL_IN_VIEW\);/);
+    // The row's own cue comes first, then the board's.
+    const body = src.slice(src.indexOf("export default function ColumnRow"));
+    expect(body.indexOf("<RowCue")).toBeGreaterThan(0);
+    expect(body.indexOf("<RowCue")).toBeLessThan(body.indexOf("<EdgeSlot"));
+  });
+  it("its click scrolls the board, not the page, keeps the focus on the cue, walks on and says where it went (AC2)", () => {
+    // Run for real in ColumnRowClick.test.tsx; here, that it's the board and nothing else.
+    const src = columnRowSource;
+    expect(src).toMatch(/onShow=\{\(target\) => \{\s*setEdgeFrom\(target\);\s*showColumn\(board, target\);\s*setSaid\(edgeSaid\(columns, target\)\);/);
+    const show = src.slice(src.indexOf("export function showColumn"), src.indexOf("/** Scrolls the list to a chip"));
+    expect(show).not.toContain("scrollIntoView");
+    expect(show).not.toContain("focus(");
+    expect(tn("board", "edge.live", { name: "Your check" })).toBe("Your check is in view");
+  });
+  it("on two lines or counted, the same button and name; the needs-you words whole in every form (review R1, R2)", async () => {
+    const cue = edge([["your-check", "Your check", 258], ["testing", "Testing", 0], ["done", "Done", 0]]);
+    const at = (fit: "line" | "wrap" | "count") => renderToStaticMarkup(createElement(BoardCue, { cue, fit, onShow: () => {} }));
+    const open = (cls: string) => `<button type="button" aria-label="3 columns past the edge: Your check, 258 need you; Testing; Done. Show them" title="Past the edge: Your check · 258 need you, Testing, Done" class="${cls}">`;
+    // Two lines: every name still there, whole.
+    expect(at("wrap")).toBe(at("line").replace(open("ui-pill col-cue col-edge"), open("ui-pill col-cue col-edge col-edge-two")));
+    expect(at("wrap")).toContain("Testing");
+    // Counted: how many in words, and what needs you.
+    expect(at("count")).toBe(`${open("ui-pill col-cue col-edge col-edge-two")}3 columns past the edge · <b class="count warn">258 need you</b></button>`);
+    const one = renderToStaticMarkup(createElement(BoardCue, { cue: edge([["done", "Done", 0]]), fit: "count", onShow: () => {} }));
+    expect(one).toContain(">1 column past the edge</button>");
+    expect(one).not.toContain("warn");
+    await setLocale("fa");
+    const fa = renderToStaticMarkup(createElement(BoardCue, { cue: edge([["your-check", "بررسی شما", 258], ["done", "انجام شد", 0]]), fit: "count", onShow: () => {} }));
+    expect(fa).toContain("۲ ستون بیرون از لبه‌ی بورد · ");
+    expect(fa).toContain('<b class="count warn">۲۵۸ مورد به شما نیاز دارد</b>');
+    expect(fa).not.toMatch(/>[^<]*[A-Za-z][^<]*</);
+  });
+  it("its slot holds two hidden probes of the whole words while the cue shows, out of the reading order", () => {
+    const src = columnRowSource;
+    const slot = src.slice(src.indexOf("function EdgeSlot"), src.indexOf("export const edgeSaid"));
+    expect(slot).toContain('<span className="col-edge-probe" aria-hidden="true">');
+    expect(slot).toContain('<span className="col-cue col-edge col-edge-probe-line">');
+    expect(slot).toContain('<span className="col-cue col-edge col-edge-two col-edge-probe-wrap">');
+    expect(slot).toContain("return watchEdge(slot.current, setFit);");
+    expect(slot).toContain("}, [shows]);");
+  });
+  it("App hands it the plain board and its open columns, each column marked for measuring", () => {
+    expect(appSource).toContain("const [boardEl, setBoardEl] = useState<HTMLElement | null>(null);");
+    expect(appSource).toContain('<section key={c.id} className={columnClass(c.id, "open")} data-col={c.id}>');
+    expect(pausedSource).toContain('<section className={columnClass("paused", "open")} data-col="paused">');
+  });
+  it("its slot's least width is the chips' never, cue or no cue, so the chips don't move; it takes the row's free room and cuts nothing (review R1, R2)", () => {
+    // The 1440 row: 1120px with 28px padding; the chips need 900px; the slot's 13em and its gap 175.
+    const b = box({ row: 1120, list: 872, chips: [{ id: "a", start: 0, end: 440 }, { id: "b", start: 446, end: 920 }] });
+    expect(measureRow(b.row, b.list)).toBe(ALL_IN_VIEW);
+    expect(measureRow({ ...b.row, reserved: 175 }, b.list).overflow).toBe(true);
+    expect(overflowCue([p("a", "A", 1), p("b", "B", 1, 2)], ["a"])).toEqual({ more: 1, needs: 2, target: "b" });
+    // The slot's min-width, not the cue's drawn width: the same whatever the cue says.
+    expect(rowCueSource).toContain('const slot = row.querySelector(".col-edge-slot");');
+    expect(rowCueSource).toContain("parseFloat(getComputedStyle(slot).minWidth)");
+    const rule = (sel: string) => css.match(new RegExp(`\\n${sel.replace(/[.]/g, "\\.")} \\{([^}]*)\\}`))?.[1] ?? "";
+    // It grows into the room the chips and the row's cue leave (from a 0 basis, so never by what
+    // the cue says), no cap, at least 13em: the counted form on two lines, in both languages
+    // (headless WebKit: 169px holds "۲ ستون بیرون از لبه‌ی بورد · ۲۵۸ مورد به شما نیاز دارد").
+    expect(rule(".col-row .col-edge-slot")).toBe(" position: relative; flex: 1 1 0; display: flex; align-items: center; justify-content: flex-end; min-width: 13em; height: 100%; ");
+    expect(rule(".col-row .col-edge")).toBe(" display: block; max-inline-size: 100%; text-align: start; ");
+    // Two lines of 13px fill the row's 28px with the pill's 1px borders: 34 less its 4px and 2px padding.
+    expect(rule(".col-row .col-edge-two")).toBe(" font-size: 11px; line-height: 13px; padding-block: 0; border-radius: 8px; white-space: normal; ");
+    expect(rule(".col-row .col-edge .count")).toBe(" white-space: nowrap; ");
+    // Nothing of it shortens or clips its words.
+    const edgeRules = [...css.matchAll(/\n\s*(\.col-row[^{]*col-edge[^{]*)\{([^}]*)\}/g)];
+    expect(edgeRules.length).toBeGreaterThan(5);
+    for (const [, sel, body] of edgeRules) {
+      expect(body, sel).not.toMatch(/ellipsis|line-clamp|max-inline-size: [1-9]\d?%/);
+      if (!sel.includes("probe")) expect(body, sel).not.toContain("overflow");
+    }
+    // The probes: out of sight and of the layout, the one-line one at its whole width.
+    expect(rule(".col-row .col-edge-probe")).toBe(" position: absolute; inset-inline: 0; top: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none; ");
+    expect(rule(".col-row .col-edge-probe-line")).toBe(" inline-size: max-content; max-inline-size: none; ");
+    expect(rule(".col-row .col-edge-probe-wrap")).toBe(" inline-size: fit-content; ");
+    // Narrow (under 30em), its own line under the chips, full width: a 62px row.
+    expect(css).toContain(".col-row-box { container: colrow / inline-size; }");
+    expect(css).toContain(".col-row > .col-edge-slot { flex: 1 0 100%; min-width: 0; height: 28px; }");
+    // A wrapping row lines items up by their flex basis, so the chips' list has a zero one there:
+    // with its content's basis it took line 1 alone, the row's cue line 2 and the board's a third,
+    // past the row's 62px and over the column heads (review R6).
+    expect(css).toContain(".col-row:has(> .col-edge-slot) > .col-row-chips { flex: 1 1 0; height: 28px; }");
+    expect(css).toMatch(/@container colrow \(width < 30em\) \{\n {2}\.col-row:has\(> \.col-edge-slot\) \{ flex-wrap: wrap; align-content: space-between; row-gap: 0; height: 62px; \}/);
+    expect(appSource).toContain('<div className="col-row-box"><ColumnRow ');
   });
 });

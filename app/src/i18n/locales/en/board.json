@@ -64,5 +64,21 @@
     "session": "Session {{id}}",
     "localOnly": "read on this Mac, not sent anywhere",
     "readingTranscript": "Reading the transcript…"
+  },
+  "edge": {
+    "lead": "Past the edge: <list/>",
+    "item": "<name>{{name}}</name> · <needs>{{needs}}</needs>",
+    "sep": ", ",
+    "needYou_one": "{{count}} needs you",
+    "needYou_other": "{{count}} need you",
+    "label_one": "{{count}} column past the edge: {{list}}. Show it",
+    "label_other": "{{count}} columns past the edge: {{list}}. Show them",
+    "labelItem": "{{name}}, {{needs}}",
+    "labelSep": "; ",
+    "count_one": "{{count}} column past the edge",
+    "count_other": "{{count}} columns past the edge",
+    "countNeeds_one": "{{count}} column past the edge · <needs>{{needs}}</needs>",
+    "countNeeds_other": "{{count}} columns past the edge · <needs>{{needs}}</needs>",
+    "live": "{{name}} is in view"
   }
 }

@@ -39,7 +39,7 @@ import { Machine, machineOf, RoleNamesContext, type SettingsGroup } from "./sett
 import { bandFold, columnClass, loadMode, loadPicks, plainBoard, look, Mode, pickColumn, pickMode, RAIL_ID, storeMode, storePicks, toggleBand, toggleFocus, type BoardLooks, type ColumnFolds, type ColumnPicks, type ModePicks, type ModeState } from "./modes";
 import { blockedCount, ChoiceChips, ColumnHead, ModeChip } from "./ModeViews";
 import ColumnCards from "./ColumnCards";
-import ColumnRow, { placeCount, type PlaceCounts, type RowChip, rowChipsOf } from "./ColumnRow";
+import ColumnRow, { edgeColumnsOf, placeCount, type PlaceCounts, type RowChip, rowChipsOf } from "./ColumnRow";
 import { PausedColumn } from "./PausedLane";
 import { sessionKey } from "./sessionsData";
 import { type KindFilter, loadKind, storeKind, weekCount } from "./recentData";
@@ -229,6 +229,8 @@ export default function App() {
   const [view, setView] = useState<View>("board");
   const [pane, setPane] = useState<Pane>(null);
   const [showAllDone, setShowAllDone] = useState(false);
+  // The plain board while it shows: the column row's edge cue measures its columns (mu-198).
+  const [boardEl, setBoardEl] = useState<HTMLElement | null>(null);
   const [query, setQuery] = useState<Query>(EMPTY_QUERY);
   const [views, setViews] = useSavedViews(queue);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -528,7 +530,9 @@ export default function App() {
               {/* Every folded or empty column is a chip in one row under the filter bar, in board order (mu-84). A new
                   project or mode starts the row afresh, scrolled to its start (QA_4). */}
               {/* In the Feature grid, as under Group by, the row holds only Recently finished when it's folded. */}
-              {view === "board" && <ColumnRow key={`${queue}/${modes.mode}`} chips={grid ? rowChipsOf(plain.row, true, placeCounts) : rowChips} grouped={grid || groupBy !== "none"} onOpen={(id) => setColumnOpen(id, true)} />}
+              {/* At the row's end, the plain board's own cue names its open columns past its edge (mu-198);
+                  the box is the row's width for the CSS that gives that cue a line of its own when narrow. */}
+              {view === "board" && <div className="col-row-box"><ColumnRow key={`${queue}/${modes.mode}`} chips={grid ? rowChipsOf(plain.row, true, placeCounts) : rowChips} grouped={grid || groupBy !== "none"} onOpen={(id) => setColumnOpen(id, true)} board={!grid && groupBy === "none" ? boardEl : null} columns={edgeColumnsOf(plain.open, cols)} /></div>}
               {/* Recently finished (0051) is docked at the board's right edge, grouped or not; under it when the row is too narrow for both. */}
               {/* The grid says a full Your check in its own alert line, over it. */}
               {view === "board" && !grid && <OverLine over={overCheck} queue={queue} />}
@@ -575,7 +579,7 @@ export default function App() {
                   stays open for its quick add unless Focus (0038) folds it or the owner does. The
                   Paused lane (mu-59) comes first, beside Backlog. An open column is at most
                   OPEN_COLUMN_MAX wide, and the room left over stays at the right (mu-83). */}
-              {!grid && groupBy === "none" && <main className="board" style={{ gridTemplateColumns: plain.tracks }}>
+              {!grid && groupBy === "none" && <main ref={setBoardEl} className="board" style={{ gridTemplateColumns: plain.tracks }}>
                 {plain.open.length === 0 && <p className="none">{t("app.allFolded")}</p>}
                 {plain.isOpen("paused") && <PausedColumn tasks={cols.paused} onHide={() => setColumnOpen("paused", false)} renderCard={card} />}
                 {STAGES.filter((c) => plain.isOpen(c.id)).map((c) => {
@@ -587,7 +591,7 @@ export default function App() {
                   const kept = c.id === "your-check" && boardResult;
                   const hide = () => setColumnOpen(c.id, false);
                   return (
-                    <section key={c.id} className={columnClass(c.id, "open")}>
+                    <section key={c.id} className={columnClass(c.id, "open")} data-col={c.id}>
                       <ColumnHead stage={c} count={count} countNode={c.id === "your-check" ? <CheckCount count={count} over={overCheck} queue={queue} /> : undefined} needs={needsYouCount(list)} blocked={blockedCount(list)} fold="fixed" onFold={hide} onHide={hide}>
                         {c.role && <span className="role">{c.role}</span>}
                       </ColumnHead>

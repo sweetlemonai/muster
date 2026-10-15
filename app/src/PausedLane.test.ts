@@ -60,7 +60,7 @@ describe("what a card in the Paused lane says", () => {
 describe("the Paused lane on the board", () => {
   it("holds the paused tasks with its count and what Resume does", () => {
     const html = column([task({ ...paused, id: "0001" }), task({ ...paused, id: "0002", stage: "backlog" })]);
-    expect(html).toMatch(/^<section class="column col-paused">/);
+    expect(html).toMatch(/^<section class="column col-paused" data-col="paused">/);
     expect(text(html)).toMatch(/^⏸︎ Paused 2 Fold Resume puts it back in its column/);
     expect([...html.matchAll(/card-stub">(\d+)</g)].map((m) => m[1])).toEqual(["0001", "0002"]);
   });

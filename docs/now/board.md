@@ -1,5 +1,5 @@
 ---
-covers: app/src/App.tsx, app/src/FeatureGrid.tsx, app/src/ColumnRow.tsx, app/src/ColumnCards.tsx, app/src/Card, app/src/TaskPanel, app/src/StageTrack.tsx, app/src/Recent, app/src/modes.ts
+covers: app/src/App.tsx, app/src/FeatureGrid.tsx, app/src/ColumnCards.tsx, app/src/Card, app/src/TaskPanel, app/src/StageTrack.tsx, app/src/Recent, app/src/modes.ts
 ---
 # The board and the task pane
 
@@ -15,11 +15,8 @@ covers: app/src/App.tsx, app/src/FeatureGrid.tsx, app/src/ColumnRow.tsx, app/src
 - The owner's own tasks share the board, hatched gold with the You ribbon. (mu-22)
 - A held card's ribbon says its session's state after the name: working, waiting for input (needs-you orange), session ended. No session line under the title. (mu-171)
 - Tokens count input, output and cache writes, never cache reads: the held card's token ribbon (with its one live dot) and the Work table by stage; times in hours, shared sessions shown, not counted. (mu-172)
-- Every place not open is a chip in one fixed-height row above the board, in board order. (mu-84)
-- A chip shows its name, count, and needs-you and blocked counts. (mu-84)
-- The row never wraps; names shorten, counts and needs-you words stay whole. (mu-84)
+- The row of folded columns and the board's edge cue above the board: [column row](column-row.md). (mu-198)
 - Open columns are at most 400px; a card never stretches. (mu-84)
-- The owner's column opens and folds are kept per display mode. (mu-84)
 - Columns scroll without scrollbars, with "+N above" and "+N below". (AS_BUILT "Columns scroll without scrollbars")
 - A paused task sits in the Paused lane, left of Backlog. (mu-59)
 - What needs you never folds, in any mode. (DESIGN.md "In every mode")

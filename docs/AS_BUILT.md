@@ -1143,7 +1143,8 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   Recently finished) or when the owner folded it. The row is a labelled group of buttons, each
   read out with its counts in words, and keeps its one line of a fixed 34 px ("Every column is
   open" on the plain board, empty under Group by) so nothing moves: it never wraps
-  (`flex-wrap: nowrap`); short of room the names shorten to an ellipsis (a one-line clamp that
+  (`flex-wrap: nowrap`; the one exception, set by width alone, is the board's edge cue's own line
+  under 30em, mu-198 below); short of room the names shorten to an ellipsis (a one-line clamp that
   breaks anywhere, `word-break: break-all`, at least 2.5em) while counts and needs-you and blocked
   stay whole. That's only while it makes the chips fit: `measureRow` works out the least room they
   can take (`leastRoom`: their boxes less what each name could still give up), the same whether
@@ -1173,6 +1174,49 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   (`pickColumn`), so a mode switch resets nothing. Backlog stays open empty for its quick add, Your
   check while it has Accept all's result or its limit. With Group by, the bands keep 0083's strips
   (a column the owner hid is folded there too) and the row holds only Recently finished.
+- **The board's own cue: columns past the edge** (task mu-198, the UX spike's R4; `rowCue.ts`
+  `edgeCue`, `measureBoard`, `watchBoard`, `scrollDelta`; `ColumnRow.tsx` `BoardCue`,
+  `edgeColumnsOf`). The plain board (`main.board`, App hands ColumnRow the element through a
+  callback ref, `boardEl`, only while it shows: not in the Feature grid or under Group by) is a
+  grid of its open columns, each `data-col` marked, that scrolls sideways. `watchBoard` measures
+  it with the row's machinery (`watchScroll`: a ResizeObserver on the board and each column, a
+  passive scroll listener, once a frame) and `measureBoard` says which columns are wholly inside
+  the board's client box and which an edge cuts; content that fits (`scrollWidth` within a pixel
+  of `clientWidth`) is all in view. `edgeCue` takes the open columns (`edgeColumnsOf`: the stage
+  names, Paused from `board.json` `legend.paused`, and each one's `needsYouCount`, as its head
+  counts it), hides the ones not wholly in view, names those that need you first and walks with
+  `overflowCue` (generalised from chips to anything with an id and a needs count). The Pill after
+  the row's cue (`col-cue col-edge`) reads "Past the edge: Your check · 21 need you, Done"
+  (`board.json` `edge.lead` with `<list/>`, `edge.item` with the name and the `count warn` badge,
+  `edge.sep`), its label "2 columns past the edge: Your check, 21 need you; Done. Show them"
+  (`edge.label`, plural) and its tooltip the whole text. A click scrolls only the board
+  (`scrollBy` by `scrollDelta`: the column's start to the view's inline start inside the board's
+  padding, its right edge in right to left; `auto` with reduced motion), keeps the focus, and puts
+  "Your check is in view" (`edge.live`) in the row's polite live region, there while the board
+  is. The cue sits in a slot (`EdgeSlot`, `.col-edge-slot`) rendered while the board is, cue or
+  no cue: `flex: 1 1 0` (the row's free room, never sized by the cue's words; the chips' list is
+  `flex: 0 1 auto` and doesn't grow), at least 13em; `watchRow` takes that min-width and the row's
+  gap from the chips' room (`slotReserve`, `measureRow`'s `reserved`) while the slot is on the
+  chips' line, so the chips' answer never changes with the cue's words. The cue never cuts a name
+  (review R1, R2): `watchEdge` (a ResizeObserver on the slot and two hidden, `aria-hidden` probes
+  holding the whole words, one frame each) gives `edgeFit`: "line" when the one-line probe fits
+  the slot, "wrap" (`col-edge-two`, 11px on 13px lines, padding-block 0: two lines fill the row's
+  28px) when the wrapping probe takes two lines and no word sticks out, else "count" (`edge.count`,
+  `edge.countNeeds`: "4 columns past the edge · 265 need you", on up to two lines, which 13em holds
+  in en and fa). The probes hold every name whatever is drawn, so the form never feeds back on
+  itself. The needs-you badge is `white-space: nowrap`. App wraps the row in `.col-row-box`, a
+  size container (`colrow`): under 30em (the task pane open at 1100) the row wraps, 62px, and the
+  slot takes a full line of its own under the chips and the row's cue. A wrapping row lines items
+  up by their flex basis, so there the chips' list is `flex: 1 1 0`: it shares line 1 with the
+  row's cue instead of taking it alone and pushing the board's cue to a third line over the column
+  heads (review R6; 96 headless runs, en and fa, half with Building folded, polls changing every
+  count: every row item inside the row). ColumnRow
+  loads the `board` namespace itself (`useT`), so the first cue never draws empty. Persian in `fa/board.json`
+  ("بیرون از لبه‌ی بورد"). Headless WebKit on the synthetic 944-task fixture
+  (`attachments/0198/`): ADHD and Standard at 1440 "Past the edge: Your check · 258 need you,
+  Done", one click scrolls 191 px and Your check is wholly in view; at 1100 one click (to Building,
+  the first hidden that needs you) scrolls to the end, 462 px, with Your check in view too; Focus
+  at 1100 one click, 206 px; Focus at 1440 fits, no cue.
 - **Columns scroll without scrollbars** (owner, 2026-10-13: "hide the scrollbar, in the columns
   doesn't feel good"): `.board .cards` hides its scrollbar (`scrollbar-width: none` and
   `::-webkit-scrollbar`), plain and grouped board; other scroll areas keep theirs. `ColumnCards.tsx`
@@ -2444,7 +2488,8 @@ how things were built. The rules of the queue are in [queue](now/queue.md), clai
 the takeover in [claims](now/claims.md), sessions, handoffs, check-ins and mail in
 [handoffs](now/handoffs.md), worktrees and the merge in [parallel](now/parallel.md), Testing and the
 review in [testing](now/testing.md), shaping and the vision check in [shaping](now/shaping.md),
-the board and the task pane in [board](now/board.md), the sidebar and Settings in
+the board and the task pane in [board](now/board.md), the row of folded columns above the board
+and its edge cue in [column row](now/column-row.md), the sidebar and Settings in
 [sidebar](now/sidebar.md), the Sessions view and its recap in [sessions](now/sessions.md), the
 Table, Timeline and Graph views in [views](now/views.md), and the account meter in
 [accounts](now/accounts.md). The format and the pass rule are in PROTOCOL.md ("What's true now").

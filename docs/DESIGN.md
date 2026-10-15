@@ -51,7 +51,9 @@ stay open) the owner chose **A**.
   Open it". Recently finished's count is what its list shows, of the kind its chips pick. The
   row is a labelled group, always one line of a fixed height ("Every column is open" when nothing
   is folded on the plain board; nothing under Group by, whose bands fold their own columns), so
-  folding, or a poll changing a count, never moves the bar or the board's top. It never wraps:
+  folding, or a poll changing a count, never moves the bar or the board's top. (The one
+  exception is set by its width alone: under 30em, beside the board, the board's edge cue below
+  gets a second line, and the chips and the row's own cue keep the first.) The chips never wrap:
   short of room the chips' names shorten to an ellipsis, breaking anywhere so they keep what fits
   (never under 2.5em; the full name is in the label and tooltip), while their counts and
   needs-you and blocked words stay whole. They shorten only when that makes every chip fit: when
@@ -70,6 +72,28 @@ stay open) the owner chose **A**.
   that: shorter badges ("1 you"), which only move the edge. Considered: B, short stubs at the
   top of each column's track (still takes width per empty stage and reads as broken columns), and
   C, empty columns open (a board of empty frames pushes the work off screen).
+- **The board says which columns are past its edge** (mu-198, the UX spike's R4). The board
+  scrolls sideways when its open columns need more than its width (each at least 118px), and
+  macOS hides the scrollbar, so Your check, last but Done, was the column cut with nothing saying
+  so. At the row's end, after the row's own cue, a second Pill names the open columns past the
+  board's edge, what needs you first: "Past the edge: Your check · 21 need you, Done". A column
+  the edge cuts counts as past it, and so does one scrolled out at the start. It's a button
+  ("2 columns past the edge: Your check, 21 need you; Done. Show them"); a click scrolls only the
+  board, never the page, so the first hidden column that needs you is wholly in view at the
+  board's start (else the next past the edge), and each click after walks on in board order and
+  back to the start: the row's walk (`overflowCue`), measured the same way (`watchBoard`, on
+  resize and scroll only). The focus stays on the cue, and the row's polite live region says
+  "Your check is in view". With every open column in view it isn't there. Its slot is there as
+  long as the board is and takes the room the row has free, never less than 13em whether the cue
+  shows or not, and the chips never have those 13em, so nothing moves when it comes, goes or
+  changes its words. It never cuts a name or drops a column out of sight (review R1, R2): every
+  name whole on one line where they fit, else the same words on two lines, broken only between
+  words, else counted: "4 columns past the edge · 265 need you". The needs-you words never break.
+  Too narrow for the chips, the row's cue and this one on one line (under 30em: the task pane
+  open), it has a line of its own under them, so the row is two lines there, set by its width
+  alone. In right to left it sits at the row's left end and the far edge is the board's left. Considered: pinning
+  Your check at the board's start (breaks the stage order and fixed places: a column that moves
+  when it gets cards), and "+2 columns" (a count without its words).
 - **No strips on the plain board.** The grid holds only the open columns, each at most 400px
   (`modes.ts` `OPEN_COLUMN_MAX`), about a card's reading width; the room left over stays empty at
   the board's right, and a card never stretches. With every column folded, the board says so.

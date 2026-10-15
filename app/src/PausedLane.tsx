@@ -19,7 +19,7 @@ export const PAUSED_LANE = { id: "paused", label: `${PAUSE_GLYPH} Paused`, role:
  *  Fold that sends it to the row (modes.ts `plainBoard` says when it's open). */
 export function PausedColumn({ tasks, onHide, renderCard }: { tasks: Task[]; onHide: () => void; renderCard: (t: Task) => ReactNode }) {
   return (
-    <section className={columnClass("paused", "open")}>
+    <section className={columnClass("paused", "open")} data-col="paused">
       <ColumnHead stage={PAUSED_LANE} count={tasks.length} needs={needsYouCount(tasks)} blocked={blockedCount(tasks)} fold="fixed" onFold={onHide} onHide={onHide}>
         <span className="role">{PAUSED_LANE.role}</span>
       </ColumnHead>

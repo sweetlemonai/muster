@@ -1524,7 +1524,7 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
    name, its count, and its needs-you and blocked words when there are any: the colour is never
    the only cue. */
 .col-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; height: 34px; padding: 4px 14px 2px; }
-.col-row-chips { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; height: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.col-row-chips { flex: 0 1 auto; min-width: 0; display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; height: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
 .col-row-none { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .col-row .col-chip { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border: 1px solid var(--line); font-size: 12px; color: var(--text); white-space: nowrap; }
 .col-row .col-chip > * { flex: none; }
@@ -1539,6 +1539,34 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 /* Past the row's room, the cue at its end (review R7): never shrinks, never scrolls away. */
 .col-row .col-cue { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border: 1px solid var(--line); background: var(--selected); font-size: 12px; color: var(--text); white-space: nowrap; }
 .col-row .col-cue .count { margin: 0; }
+/* The board's own cue (mu-198): after the row's, at its end, in a slot that's there while the board
+   is. The slot takes the room the row has free (it grows from a 0 basis, so its width never
+   depends on what the cue says) and never less than its min-width, which the chips don't have
+   (`watchRow`), so nothing moves when the cue comes, goes or changes its words. The cue never cuts
+   a name or drops a column (review R1, R2): every name whole on one line where they fit, else the
+   same words on two lines (11px on 13px lines, broken only between words), else counted: "4
+   columns past the edge · 265 need you", which the slot's min-width holds on two lines. Two hidden
+   probes hold the first two forms for `watchEdge` to measure. The needs-you words never break. */
+.col-row .col-edge-slot { position: relative; flex: 1 1 0; display: flex; align-items: center; justify-content: flex-end; min-width: 13em; height: 100%; }
+.col-row .col-edge { display: block; max-inline-size: 100%; text-align: start; }
+.col-row .col-edge-two { font-size: 11px; line-height: 13px; padding-block: 0; border-radius: 8px; white-space: normal; }
+.col-row .col-edge .count { white-space: nowrap; }
+.col-row .col-edge-probe { position: absolute; inset-inline: 0; top: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none; }
+.col-row .col-edge-probe-line { inline-size: max-content; max-inline-size: none; }
+.col-row .col-edge-probe-wrap { inline-size: fit-content; }
+/* Too narrow for the chips, the row's cue and the board's on one line (under 30em: the task pane
+   open at 1100): the board's cue has a line of its own under them, so neither is cut. The row is
+   then two lines, 62px, a height set by its width alone, never by what the cues say. 30em leaves
+   the chips about 50px beside the row's cue and the slot's 13em; measured in en and fa. A wrapping
+   row puts items on lines by their flex basis, so the chips' list has a zero one here: the chips
+   and the row's cue share line 1 and only the slot (basis 100%) goes to line 2 (review R6). */
+.col-row-box { container: colrow / inline-size; }
+@container colrow (width < 30em) {
+  .col-row:has(> .col-edge-slot) { flex-wrap: wrap; align-content: space-between; row-gap: 0; height: 62px; }
+  .col-row:has(> .col-edge-slot) > .col-row-chips { flex: 1 1 0; height: 28px; }
+  .col-row:has(> .col-edge-slot) > .col-row-none { line-height: 28px; }
+  .col-row > .col-edge-slot { flex: 1 0 100%; min-width: 0; height: 28px; }
+}
 /* An open column's Fold, quiet at the end of its head, back to full contrast on hover or focus. */
 .column h2 .col-hide { float: inline-end; margin-top: -2px; margin-inline-start: 6px; padding: 0 7px; font-size: 10.5px; font-weight: 400; text-transform: none; letter-spacing: 0; }
 .rail-unfold { margin-inline-start: 8px; font-size: 10.5px; padding: 0 7px; text-transform: none; letter-spacing: 0; }

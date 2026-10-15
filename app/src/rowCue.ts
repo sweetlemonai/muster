@@ -4,8 +4,8 @@
 // the chips don't fit, a cue at the row's end, outside the scrolling part, counts what's out of
 // sight and what of that needs the owner: what needs you is always in view (docs/DESIGN.md).
 
-import type { RowChip } from "./ColumnRow";
 import { needsWords } from "./human";
+import { tn } from "./i18n";
 
 /** A chip's place along the row: where it starts and ends, in the same coordinates as the view. */
 export type ChipSpan = { id: string; start: number; end: number };
@@ -42,7 +42,7 @@ export function cutBy(spans: readonly ChipSpan[], start: number, end: number): s
  *  goes back to the start, the first hidden chip, so every chip comes into view once per round
  *  (QA_4: going back to what needs you first never reached the chips before it). A `from` that's no
  *  longer a chip (its column was opened) goes back to the start too. */
-export function overflowCue(chips: readonly RowChip[], visible: readonly string[], from: string | null = null): Cue | null {
+export function overflowCue(chips: readonly { id: string; needs: number }[], visible: readonly string[], from: string | null = null): Cue | null {
   const seen = new Set(visible);
   const hidden = chips.filter((c) => !seen.has(c.id));
   if (hidden.length === 0) return null;
@@ -70,8 +70,11 @@ export const sameView = (a: RowView, b: RowView) => a.overflow === b.overflow &&
 type Box = { getBoundingClientRect(): { left: number; right: number; width: number } };
 type ChipBox = Box & { dataset: { chip?: string }; querySelector(selector: string): Box | null };
 /** What `measureRow` reads of the row and of its scrolling list of chips. `padding` is the row's
- *  inline padding, `nameMin` the least a chip's name shrinks to (its min-width, 2.5em). */
-type RowBox = Pick<HTMLElement, "clientWidth"> & { padding: number; nameMin: number };
+ *  inline padding, `nameMin` the least a chip's name shrinks to (its min-width, 2.5em), and
+ *  `reserved` the least room the board's edge cue's slot and its gap take at the row's end
+ *  (mu-198): a fixed width, the same whether the cue shows or what it says, so the chips' answer
+ *  never changes with it. */
+type RowBox = Pick<HTMLElement, "clientWidth"> & { padding: number; nameMin: number; reserved?: number };
 type ListBox = Pick<HTMLElement, "clientWidth" | "clientLeft"> & Box & { querySelectorAll(selector: string): ArrayLike<ChipBox> };
 
 /** The least room the chips can take: their boxes end to end, less what each name could still
@@ -89,7 +92,7 @@ export function leastRoom(chips: readonly { start: number; end: number; name: nu
  *  enough and nothing scrolls. Either way the answer doesn't depend on which is drawn now, so
  *  neither the cue nor the names keep themselves there. */
 export function measureRow(row: RowBox, list: ListBox): RowView {
-  const room = row.clientWidth - row.padding;
+  const room = row.clientWidth - row.padding - (row.reserved ?? 0);
   const chips = Array.from(list.querySelectorAll("[data-chip]"), (c) => {
     const r = c.getBoundingClientRect();
     return { id: c.dataset.chip ?? "", start: r.left, end: r.right, name: c.querySelector(".col-chip-name")?.getBoundingClientRect().width ?? 0 };
@@ -100,25 +103,21 @@ export function measureRow(row: RowBox, list: ListBox): RowView {
   return { overflow: true, visible: inView(chips, start, end), cut: cutBy(chips, start, end) };
 }
 
-/** Watches the row and calls `onChange` with what's in view: when the row, the list or a chip
- *  changes size (a ResizeObserver; chips are followed as they come and go), on scroll (passive)
- *  and once at the start, each burst measured once on the next frame. A poll that leaves every
- *  size as it was measures nothing. Returns the function that stops it all. */
-export function watchRow(row: HTMLElement, list: HTMLElement, onChange: (v: RowView) => void): () => void {
+/** Watches what `observe` holds and calls `onChange` with `measure()`: when one of them or a child
+ *  of `list` changes size (a ResizeObserver; children are followed as they come and go), on
+ *  `scroller`'s scroll (passive) and once at the start, each burst measured once on the next frame.
+ *  A poll that leaves every size as it was measures nothing. Returns the function that stops it. */
+function watchScroll(observe: readonly HTMLElement[], list: HTMLElement, scroller: HTMLElement, measure: () => RowView, onChange: (v: RowView) => void): () => void {
   let frame = 0;
-  const measure = () => {
+  const run = () => {
     frame = 0;
-    const s = getComputedStyle(row);
-    const name = list.querySelector(".col-chip-name");
-    const nameMin = name ? parseFloat(getComputedStyle(name).minWidth) || 0 : 0;
-    onChange(measureRow({ clientWidth: row.clientWidth, padding: parseFloat(s.paddingInlineStart) + parseFloat(s.paddingInlineEnd), nameMin }, list));
+    onChange(measure());
   };
   const schedule = () => {
-    if (!frame) frame = requestAnimationFrame(measure);
+    if (!frame) frame = requestAnimationFrame(run);
   };
   const sizes = new ResizeObserver(schedule);
-  sizes.observe(row);
-  sizes.observe(list);
+  for (const el of observe) sizes.observe(el);
   for (const child of Array.from(list.children)) sizes.observe(child);
   const isElement = (n: Node): n is Element => n.nodeType === 1;
   const children = new MutationObserver((records) => {
@@ -129,11 +128,167 @@ export function watchRow(row: HTMLElement, list: HTMLElement, onChange: (v: RowV
     schedule();
   });
   children.observe(list, { childList: true });
-  list.addEventListener("scroll", schedule, { passive: true });
+  scroller.addEventListener("scroll", schedule, { passive: true });
   schedule();
   return () => {
-    list.removeEventListener("scroll", schedule);
+    scroller.removeEventListener("scroll", schedule);
     children.disconnect();
+    sizes.disconnect();
+    if (frame) cancelAnimationFrame(frame);
+    frame = 0;
+  };
+}
+
+/** The least room the board's edge cue's slot takes from the chips: its min-width and the gap
+ *  before it while it's on the chips' line, nothing when the row is too narrow and the slot has a
+ *  line of its own, under theirs (`top` at or below the list's bottom). */
+export function slotReserve(slot: { minWidth: number; top: number } | null, list: { bottom: number }, gap: number): number {
+  if (!slot || slot.top >= list.bottom - EDGE) return 0;
+  return slot.minWidth + gap;
+}
+
+/** Watches the row and calls `onChange` with what's in view: when the row, the list or a chip
+ *  changes size, on scroll and once at the start (`watchScroll`). The board's edge cue's slot, while
+ *  the board shows, takes its least width from the chips' room (`slotReserve`). Returns the
+ *  function that stops it. */
+export function watchRow(row: HTMLElement, list: HTMLElement, onChange: (v: RowView) => void): () => void {
+  return watchScroll([row, list], list, list, () => {
+    const s = getComputedStyle(row);
+    const name = list.querySelector(".col-chip-name");
+    const nameMin = name ? parseFloat(getComputedStyle(name).minWidth) || 0 : 0;
+    const slot = row.querySelector(".col-edge-slot");
+    const at = slot && { minWidth: parseFloat(getComputedStyle(slot).minWidth) || 0, top: slot.getBoundingClientRect().top };
+    const reserved = slotReserve(at, list.getBoundingClientRect(), parseFloat(s.columnGap) || 0);
+    return measureRow({ clientWidth: row.clientWidth, padding: parseFloat(s.paddingInlineStart) + parseFloat(s.paddingInlineEnd), nameMin, reserved }, list);
+  }, onChange);
+}
+
+// The board's own cue (mu-198, the spike's R4): the board is a grid of its open columns that
+// scrolls sideways past its room, and macOS shows the scrollbar only while scrolling, so Your check,
+// last but Done, was the column past the edge with nothing saying so. The same rule as the row's
+// cue: the columns past either edge, cut ones too, are named in a Pill at the row's end, what needs
+// the owner first, and each click walks to the next one (`overflowCue`).
+
+/** One open column of the board as its cue names it: its id, its name and how many of its tasks
+ *  need the owner (`needsYouCount`, as its head says). */
+export type EdgeColumn = { id: string; label: string; needs: number };
+/** The board's cue: the columns not wholly in view, what needs the owner first, then board order;
+ *  their needs-you total; and the column its click brings in view. */
+export type EdgeCue = { hidden: EdgeColumn[]; needs: number; target: string };
+
+/** The cue for the open columns not in `visible`, or null when every one is in view. The walk is
+ *  the row's (`overflowCue`): the first click goes to a hidden column that needs the owner, else the
+ *  next past the edge; each after walks on from `from` in board order, then back to the start. */
+export function edgeCue(cols: readonly EdgeColumn[], visible: readonly string[], from: string | null = null): EdgeCue | null {
+  const cue = overflowCue(cols, visible, from);
+  if (!cue) return null;
+  const seen = new Set(visible);
+  const hidden = cols.filter((c) => !seen.has(c.id));
+  return { hidden: [...hidden.filter((c) => c.needs > 0), ...hidden.filter((c) => c.needs === 0)], needs: cue.needs, target: cue.target };
+}
+
+/** "21 need you", in the language shown. */
+export const edgeNeeds = (n: number) => tn("board", "edge.needYou", { count: n });
+
+const TAGS = /<\/?\w+\s*\/?>/g;
+/** One column as the cue's text says it: "Your check · 21 need you", or its name alone. */
+const edgeItem = (c: EdgeColumn) => (c.needs > 0 ? tn("board", "edge.item", { name: c.label, needs: edgeNeeds(c.needs) }).replace(TAGS, "") : c.label);
+
+/** The cue's words as it shows them, every name whole (its tooltip): "Past the edge: Your check ·
+ *  21 need you, Done". */
+export function edgeText(cue: EdgeCue): string {
+  const list = cue.hidden.map(edgeItem).join(tn("board", "edge.sep"));
+  return tn("board", "edge.lead").split("<list/>").join(list);
+}
+
+/** The cue as a screen reader says it: "2 columns past the edge: Your check, 21 need you; Done.
+ *  Show them". */
+export function edgeWords(cue: EdgeCue): string {
+  const list = cue.hidden.map((c) => (c.needs > 0 ? tn("board", "edge.labelItem", { name: c.label, needs: edgeNeeds(c.needs) }) : c.label)).join(tn("board", "edge.labelSep"));
+  return tn("board", "edge.label", { count: cue.hidden.length, list });
+}
+
+/** What `measureBoard` reads of the board: its visible box, how wide its content is, and each open
+ *  column's box (`data-col`). */
+type BoardBox = Pick<HTMLElement, "clientWidth" | "clientLeft" | "scrollWidth"> & Box & { querySelectorAll(selector: string): ArrayLike<Box & { dataset: { col?: string } }> };
+
+/** Which open columns are wholly in view and which an edge cuts; every one is in view when the
+ *  board's content fits its box. Both edges count, so it reads the same right to left. */
+export function measureBoard(board: BoardBox): RowView {
+  if (board.scrollWidth <= board.clientWidth + EDGE) return ALL_IN_VIEW;
+  const start = board.getBoundingClientRect().left + board.clientLeft;
+  const end = start + board.clientWidth;
+  const spans = Array.from(board.querySelectorAll("[data-col]"), (c) => {
+    const r = c.getBoundingClientRect();
+    return { id: c.dataset.col ?? "", start: r.left, end: r.right };
+  });
+  return { overflow: true, visible: inView(spans, start, end), cut: cutBy(spans, start, end) };
+}
+
+/** How far to scroll the board, in px along x, to put a column at the view's inline start, `pad`
+ *  inside it (the board's own padding): its left edge to the left one, right to left its right
+ *  edge to the right one. A column at the far end stops where the scroll does, still wholly in
+ *  view when it's no wider than the view. */
+export function scrollDelta(span: { start: number; end: number }, view: { start: number; end: number }, pad: number, rtl: boolean): number {
+  return rtl ? span.end - (view.end - pad) : span.start - (view.start + pad);
+}
+
+/** Watches the board's columns: on resize (the board and each column), on the board's scroll and
+ *  once at the start, as `watchRow` does. Returns the function that stops it. */
+export function watchBoard(board: HTMLElement, onChange: (v: RowView) => void): () => void {
+  return watchScroll([board], board, board, () => measureBoard(board), onChange);
+}
+
+/** How the board's cue says it in the room its slot has (review R1, R2; the owner's rule that
+ *  nothing is cut out of sight): every name whole on one line; else the same words on two lines,
+ *  broken only between words; else how many columns are past the edge, in words, with their
+ *  needs-you words. Never a name cut short, never a column dropped off the end. */
+export type EdgeFit = "line" | "wrap" | "count";
+
+/** What `edgeFit` weighs: the slot's width, the one-line cue's width, and the two-line cue's
+ *  lines and whether a word of it is wider than the slot. */
+export type EdgeRoom = { room: number; line: number; lines: number; over: boolean };
+
+export function edgeFit(r: EdgeRoom): EdgeFit {
+  if (r.line <= r.room + EDGE) return "line";
+  if (r.lines <= 2 && !r.over) return "wrap";
+  return "count";
+}
+
+type Probe = Pick<HTMLElement, "offsetWidth" | "clientWidth" | "clientHeight" | "scrollWidth">;
+/** What `measureEdge` reads: the slot's width and its two hidden probes, the whole cue on one line
+ *  and on as many lines as the slot's width makes it (`lineHeight` each). The probes always hold
+ *  every name, so the answer doesn't depend on which form is drawn. */
+export type EdgeSlot = { clientWidth: number; line: Probe; wrap: Probe; lineHeight: number };
+
+export function measureEdge(s: EdgeSlot): EdgeFit {
+  return edgeFit({
+    room: s.clientWidth,
+    line: s.line.offsetWidth,
+    lines: s.lineHeight > 0 ? Math.round(s.wrap.clientHeight / s.lineHeight) : Infinity,
+    over: s.wrap.scrollWidth > s.wrap.clientWidth + EDGE,
+  });
+}
+
+/** Watches the slot and its probes (a ResizeObserver: the row's room changing, or the cue's words)
+ *  and calls `onFit` with `measureEdge` once per frame, and once at the start. Returns the
+ *  function that stops it. */
+export function watchEdge(slot: HTMLElement, onFit: (f: EdgeFit) => void): () => void {
+  const line = slot.querySelector<HTMLElement>(".col-edge-probe-line");
+  const wrap = slot.querySelector<HTMLElement>(".col-edge-probe-wrap");
+  if (!line || !wrap) return () => {};
+  let frame = 0;
+  const run = () => {
+    frame = 0;
+    onFit(measureEdge({ clientWidth: slot.clientWidth, line, wrap, lineHeight: parseFloat(getComputedStyle(wrap).lineHeight) || 0 }));
+  };
+  const schedule = () => {
+    if (!frame) frame = requestAnimationFrame(run);
+  };
+  const sizes = new ResizeObserver(schedule);
+  for (const el of [slot, line, wrap]) sizes.observe(el);
+  schedule();
+  return () => {
     sizes.disconnect();
     if (frame) cancelAnimationFrame(frame);
     frame = 0;

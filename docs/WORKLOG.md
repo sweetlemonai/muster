@@ -4,6 +4,78 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — mu-198: the board says which columns are past its edge
+**Fixed in round 3 (Asghar_45, builder; Reviewer_94's R6, R7):** R6: under 30em, with the chips
+overflowing (ADHD 1100, pane open, Building folded), the row's "+2 more" took line 2 and the
+board's cue line 3, drawn at y 404-432 in a row ending at 411, over the column heads → a wrapping
+flex row lines items up by their basis, and the chips' list had its content's; inside the query
+it's `flex: 1 1 0`, so the chips and the row's cue share line 1 and only the slot wraps. R7:
+docs/now/board.md said the row was one fixed-height row that never wraps, and the short mu-198
+line had lost the click and the needs-you-first order → the row's rules moved to their own page,
+`docs/now/column-row.md` (covers ColumnRow.tsx and rowCue.ts), with "the chips never wrap", the
+under-30em exception and the click; board.md links it and is 3847 bytes after mu-113's line.
+AS_BUILT's now-page list, AS_BUILT, DESIGN and manual 04 say the one exception.
+**Verified (round 3):** the reviewer's steps on the round-2 head reproduce R6 (en and fa: cue
+bottom 432, row bottom 411). After the fix, headless WebKit on the 944-task fixture, 96 runs
+(ADHD, Standard, Focus × en, fa × 1100, 1440 × sidebar 210, 320 × pane open, closed × Building
+folded or not), each measured before and after a click and after two polls that change every
+needs-you count: no row item outside the row, no cue clipped, the row 62px at a 210px box and
+34px elsewhere, Your check wholly in view after each of the 62 clicks (`attachments/0198/r3/`,
+`summary-r3.txt`). A columnRow test pins the zero basis.
+**Fixed in round 2 (Asghar_42, builder; Reviewer_85's R1-R5):** R1: with the task pane open at
+1100 the cue's 20em slot overflowed the 192px row and was clipped ("Past the ed"), the chips
+squeezed to nothing → the slot takes the row's free room (`flex: 1 1 0`, the chips' list no longer
+grows), at least 13em, and under 30em (a container query on `.col-row-box`, App) it has a line
+of its own under the chips: a 62px row, set by its width alone. R2: the 60% cap shortened names
+while the row sat empty, and fa dropped Testing and Done silently → the lead's call from the
+owner's everything-visible rule: no cap, no ellipsis, no clip; whole names on one line, else two
+lines broken between words (`col-edge-two`, 11px on 13px lines), else counted ("4 columns past the
+edge · 265 need you", `edge.count`/`edge.countNeeds`, en and fa). `watchEdge` picks the form from
+two hidden probes of the whole words (`edgeFit`, `measureEdge`), so it never feeds back on what's
+drawn. R3: `showColumn` is run in `ColumnRowClick.test.tsx` (LTR 768, RTL -768, clientLeft,
+reduced motion) and the cue's own onClick from the row's element tree (hooks stubbed, no DOM, no
+new dependency) says "Your check is in view". R4: `slotReserve` and a watchRow test with a slot
+and its gap. R5: the folded-target test has two hidden columns now. docs/now/board.md kept one
+short line for it (round 3 moved the row's rules to their own page).
+**Verified (round 2):** the new tests fail on each of seven mutants (gap dropped, own-line check,
+RTL branch, clientLeft, the announced id, the wrap's overflow check, the walk's restart). Headless
+WebKit, 944-task fixture, `attachments/0198/r2/` (shots, `notes-r2.jsonl`, `summary.txt`, the
+scripts): ADHD, Standard and Focus × en and fa × 1100 and 1440 × sidebar 210 and 320 × pane
+closed and open, the seven themes with the pane open at 1440, and chips overflowing at the 30em
+edge (rows 395 and 385): 114 measures, every cue and row item inside the row, none clipped, no
+page errors; Your check wholly in view after one click wherever the pane is closed.
+**Open:** at 1100 with the pane open the filter bar stacks the row below the window (the R5 task
+filed beside this one); the shots scroll it into view.
+**Did (Asghar_39, builder):** the UX spike's R4: the board scrolls sideways with no scrollbar on
+macOS, so Your check sat past its right edge unseen. A second Pill at the column row's end, after
+the row's own cue, names the open columns not wholly in view, what needs you first: "Past the
+edge: Your check · 258 need you, Done". A click scrolls only the board (the first hidden column
+that needs you to the board's start, then on in board order, back to the start: the row's walk),
+keeps the focus and says "Your check is in view" in a polite live region. `rowCue.ts` `edgeCue`,
+`measureBoard`, `watchBoard`, `scrollDelta` (the row's watcher shared as `watchScroll`;
+`measureRow` leaves the cue's width out of the chips' room); `ColumnRow.tsx` `BoardCue`,
+`edgeColumnsOf`; App hands the plain board's element and marks each column `data-col`; en and
+fa `board.json` `edge.*`, glossary «بیرون از لبه‌ی بورد». DESIGN, AS_BUILT, manual 04,
+docs/now/board.md.
+**Fixed on the way:** in WebKit at 1100 the first cut let each column's box shrink below its
+needs-you badge, which drew the badges over each other; the items are `display: contents` now,
+so only the names shorten. Review (change-reviewer, correctness): the chips' room followed the
+cue's drawn width, so chips could reflow when it came, went or changed words → the cue sits in a
+fixed slot (20em at least, there while the board is) whose min-width is what `watchRow` reserves;
+and the `board` strings loaded only when the first cue mounted, so it drew empty for a frame →
+ColumnRow loads them.
+**Verified:** rowCue and columnRow tests (spans past either edge, cut, RTL, the walk and its
+wrap, the words in en and fa, the render, the CSS). Headless WebKit on the synthetic 944-task
+fixture, sidebar 320, pane closed (`attachments/0198/`, before and after, notes.jsonl): ADHD and
+Standard at 1440 one click scrolls 191 px and Your check is wholly in view; at 1100 one click
+(Building first, it needs you) scrolls to the end, Your check in view too; Focus with Backlog,
+Shaping and Ready opened at 1100 one click, 206 px; Focus at 1440 fits, no cue. فارسی at 1100 and
+1440: the cue at the row's left, the board scrolls left. All seven themes at 1440: the needs-you
+badge 7.38:1. Focus's chips sit at the same x with the cue (1100) and without (1440). No page
+errors. `bin/gate` green.
+**Open:** the row's own words ("Every column is open", the chips) are still English until mu-147.
+
+
 ## 2026-10-15 — check's merge-driver warning reads `<prefix>: warning: …` (mu-166)
 **Fixed:** `muster check`'s merge-driver warning started bare, so `queue::is_warning` and readers
 of check's output didn't take it for a warning → `merge_driver_warning` didn't get the prefix →

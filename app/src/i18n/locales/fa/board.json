@@ -64,5 +64,21 @@
     "session": "نشست {{id}}",
     "localOnly": "روی این مک خوانده شد، به جایی فرستاده نمی‌شود",
     "readingTranscript": "در حال خواندن رونوشت…"
+  },
+  "edge": {
+    "lead": "بیرون از لبه‌ی بورد: <list/>",
+    "item": "<name>{{name}}</name> · <needs>{{needs}}</needs>",
+    "sep": "، ",
+    "needYou_one": "{{count}} مورد به شما نیاز دارد",
+    "needYou_other": "{{count}} مورد به شما نیاز دارد",
+    "label_one": "{{count}} ستون بیرون از لبه‌ی بورد: {{list}}. نمایش آن",
+    "label_other": "{{count}} ستون بیرون از لبه‌ی بورد: {{list}}. نمایش آن‌ها",
+    "labelItem": "{{name}}، {{needs}}",
+    "labelSep": "؛ ",
+    "count_one": "{{count}} ستون بیرون از لبه‌ی بورد",
+    "count_other": "{{count}} ستون بیرون از لبه‌ی بورد",
+    "countNeeds_one": "{{count}} ستون بیرون از لبه‌ی بورد · <needs>{{needs}}</needs>",
+    "countNeeds_other": "{{count}} ستون بیرون از لبه‌ی بورد · <needs>{{needs}}</needs>",
+    "live": "{{name}} اکنون دیده می‌شود"
   }
 }
