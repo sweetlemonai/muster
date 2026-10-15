@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { api } from "./api";
+import { useEffect, useId, useRef, useState } from "react";
+import { api, type Commented } from "./api";
 import { stamp } from "./lib";
 import Markdown from "./Markdown";
 import type { Task } from "./types";
@@ -11,7 +11,10 @@ import { commentNotice, editKey } from "./writeUp";
  *  task too. The core cleans the text and refuses a line that would read as a stage change; its
  *  refusal shows as is and the text stays in the box. Typed text is guarded like the write-up
  *  editor's: `onDirty` tells the pane, so the window won't close it or switch cards (`nudge` goes
- *  up each time it refused to); the first Esc only arms, and the second throws the text away. */
+ *  up each time it refused to); the first Esc only arms, and the second throws the text away.
+ *  The owner's comment that starts with @accept, @sendback, @block or @ask runs that first
+ *  (mu-101, the core's `fields::comment`), and the box's status says what it did; one line under
+ *  the box says so. */
 export default function Comments({ task, onChanged, onDirty = () => {}, nudge = 0, keys, onLink }: {
   task: Task;
   onChanged: () => void;
@@ -29,6 +32,7 @@ export default function Comments({ task, onChanged, onDirty = () => {}, nudge = 
   // The refusals already answered: a refused switch from before this text doesn't count.
   const [seenNudge, setSeenNudge] = useState(nudge);
   const area = useRef<HTMLTextAreaElement>(null);
+  const hintId = useId();
   const dirty = text !== "";
   const refused = nudge !== seenNudge;
   const notice = commentNotice(dirty, armed, refused);
@@ -72,14 +76,19 @@ export default function Comments({ task, onChanged, onDirty = () => {}, nudge = 
     if (!text.trim() || state === "saving") return;
     setState("saving");
     try {
-      await api.addComment(task.queue, task.id, text, stamp(new Date()));
-      setState("done");
-      setMsg("Comment added.");
+      const r = await api.addComment(task.queue, task.id, text, stamp(new Date()));
+      // Its action ran even when the comment then couldn't be saved: the box empties all the
+      // same, so sending it again doesn't run the action twice.
+      setState(r.unsaved ? "error" : "done");
+      setMsg(commentDone(r));
       clear();
       onChanged();
     } catch (e) {
+      // Refused: the text stays in the box. The board is read again all the same, in case a
+      // refusal came after a change (a send-back whose finding couldn't be written).
       setState("error");
       setMsg(String(e));
+      onChanged();
     }
   };
   return (
@@ -104,6 +113,8 @@ export default function Comments({ task, onChanged, onDirty = () => {}, nudge = 
           }}
           placeholder="Add a comment (⌘↩ to send)"
           aria-label="Your comment"
+          aria-describedby={hintId}
+          dir="auto"
           rows={3}
           maxLength={4000}
           onKeyDown={(e) => {
@@ -118,9 +129,17 @@ export default function Comments({ task, onChanged, onDirty = () => {}, nudge = 
             {state === "saving" ? "Sending…" : "Comment"}
           </Button>
           {notice && <span className="err">{notice}</span>}
-          {!notice && msg && <span className={state === "error" ? "err" : "ok"}>{msg}</span>}
+          {!notice && msg && <span className={state === "error" ? "err" : "ok"} role="status">{msg}</span>}
         </div>
+        <p id={hintId} className="meta small comment-hint">Start with @accept, @sendback &lt;why&gt;, @block &lt;why&gt; or @ask &lt;question&gt; to act.</p>
       </div>
     </section>
   );
+}
+
+/** What the box says once the core took a comment: added, and what its @action did; or what the
+ *  action did and why its comment couldn't be saved. */
+export function commentDone(r: Commented): string {
+  if (r.unsaved) return `Done: ${r.did}. The comment couldn't be saved (${r.unsaved}), so it isn't in the thread; don't send it again.`;
+  return r.did ? `Comment added: ${r.did}.` : "Comment added.";
 }

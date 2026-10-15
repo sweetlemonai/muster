@@ -65,6 +65,14 @@ describe("the card's review line", () => {
     expect(reviewStatus(task({ reviewRound: 2, reviewOpen: 1, reviewAnswered: 1 }))).toBe("round 2 of 3: 1 open, 1 answered");
     expect(reviewStatus(task({ reviewRound: 3, reviewOpen: 0, reviewAnswered: 0 }))).toBe("clean after round 3");
   });
+  it("round 0 is an owner send-back before any review round (mu-101): what waits, no round", () => {
+    expect(reviewBadge(task({ stage: "building", reviewRound: 0, reviewOpen: 1, reviewAnswered: 0 }))).toBe("1 to fix · not reviewed yet");
+    expect(reviewBadge(task({ reviewRound: 0, reviewOpen: 0, reviewAnswered: 1 }))).toBe("1 to re-check · not reviewed yet");
+    expect(reviewBadge(task({ reviewRound: 0, reviewOpen: 0, reviewAnswered: 0, branch: "task/x" }))).toBe("not reviewed yet");
+    expect(reviewBadge(task({ stage: "building", reviewRound: 0, reviewOpen: 0, reviewAnswered: 0 }))).toBeNull();
+    expect(reviewStatus(task({ reviewRound: 0, reviewOpen: 1, reviewAnswered: 0, branch: "task/x" }))).toBe("not reviewed yet: 1 open, 0 answered");
+    expect(reviewStatus(task({ reviewRound: 0, reviewOpen: 0, reviewAnswered: 0, branch: "task/x" }))).toBe("not reviewed yet");
+  });
 });
 
 describe("the task pane's Review section", () => {

@@ -5,6 +5,16 @@
 //! the first indented by two spaces (file contract rule 3). Every change holds the queue's lock,
 //! writes atomically, stamps the time itself and logs who did it. Task text is data: it's parsed,
 //! never run, and a link is opened only when it's a plain https address.
+//!
+//! The owner's comment acts (task 0101, `comment`): one whose first word is `@accept`,
+//! `@sendback <why>`, `@block <why>` or `@ask <question>` runs that operation through the same
+//! core call the app's buttons and the commands make, then is saved with what it did. Only the
+//! owner's comments act (`session::is_owner`, the actors those commands accept already); anyone
+//! else's is a plain one, whatever it starts with. Only the first word counts, one action per
+//! comment. The text is matched against the exact verb list and never run, and what follows the
+//! verb goes through the operation's own cleaning and caps (500 for a reason, 4,000 for the
+//! comment). An unknown verb is refused rather than guessed, and nothing is saved; so is a
+//! comment whose action the core refuses, with the core's reason as it is.
 
 use crate::ops::{free_text_line, one_line, set_front};
 use crate::queue::{self, actor, append_log, find_task, front_matter, with_lock, write_atomic};
@@ -334,13 +344,32 @@ pub fn add_comment(
     stamp: &str,
 ) -> Result<String, String> {
     let who = actor(who)?;
+    let text = clean_comment(text)?;
+    write_comment(root, id, &text, &who, stamp)
+}
+
+/// A comment's text as it's saved: cleaned like an answer (control characters out, newlines
+/// kept, trimmed, 4,000 characters), refused when a line of it would read as a stage change.
+pub(crate) fn clean_comment(text: &str) -> Result<String, String> {
     let text = queue::clean_text_as(text, "the comment")?;
     if let Some(line) = text.lines().find(|l| reads_as_stage(l)) {
         return Err(format!(
             "the comment has a line that would read as a stage change in the log (\"<who>: stage <from> → <to>\"); only muster pass, return and stage write those: {line:?}"
         ));
     }
-    let item = format!("- **{who}, {stamp}:** {}", queue::indent_text(&text));
+    Ok(text)
+}
+
+/// Write comment `text` (already `clean_comment`ed, plus any line the tool adds) to task `id` as
+/// `who` (already an `actor`), logged as `commented`. Returns the task's path.
+pub(crate) fn write_comment(
+    root: &Path,
+    id: &str,
+    text: &str,
+    who: &str,
+    stamp: &str,
+) -> Result<String, String> {
+    let item = format!("- **{who}, {stamp}:** {}", queue::indent_text(text));
     let line = free_text_line(format!("{stamp} {who}: commented"), "the comment")?;
     with_lock(root, || {
         let path = find_task(root, id)?;
@@ -351,7 +380,7 @@ pub fn add_comment(
         if t.is_some_and(|t| {
             queue::has_lease(&t.stage)
                 && !t.claimed_by.is_empty()
-                && crate::session::same_holder(&t.claimed_by, &who)
+                && crate::session::same_holder(&t.claimed_by, who)
         }) {
             new = set_front(&new, "heartbeat", stamp)?;
         }
@@ -362,6 +391,204 @@ pub fn add_comment(
             .to_string_lossy()
             .to_string())
     })
+}
+
+// ---- @actions in the owner's comments (mu-101) ----
+
+/// The verbs, as the refusal of an unknown one lists them.
+const KNOWN: &str = "@accept, @sendback <why>, @block <why> or @ask <question>";
+
+/// An action a comment asks for, with what follows its verb (trimmed).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Action {
+    Accept,
+    SendBack(String),
+    Block(String),
+    Ask(String),
+}
+
+/// What a comment did: the task's path, and the action it ran as the comment says it after the
+/// text (`sent back to Building (owner finding R3)`), "" for a plain comment.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Commented {
+    pub path: String,
+    pub did: String,
+    /// Why the comment couldn't be saved once its action had run ("" when it was saved). The
+    /// action stands, so this isn't a refusal: sending the text again would run it twice.
+    pub unsaved: String,
+}
+
+/// The action comment `text` starts with: None when its first word (after leading whitespace,
+/// Unicode's included) doesn't start with `@`, refused when it's an `@` word that isn't one of
+/// accept, sendback, block and ask. The verb is matched without regard to ASCII case.
+pub fn parse_action(text: &str) -> Result<Option<Action>, String> {
+    let text = text.trim_start();
+    let end = text.find(char::is_whitespace).unwrap_or(text.len());
+    let (word, rest) = text.split_at(end);
+    let Some(verb) = word.strip_prefix('@') else {
+        return Ok(None);
+    };
+    let rest = rest.trim().to_string();
+    Ok(Some(match verb.to_ascii_lowercase().as_str() {
+        "accept" => Action::Accept,
+        "sendback" => Action::SendBack(rest),
+        "block" => Action::Block(rest),
+        "ask" => Action::Ask(rest),
+        _ => {
+            let shown: String = word.chars().take(24).collect();
+            return Err(format!(
+                "{shown:?} isn't an action: a comment that starts with @ acts, with {KNOWN}. Nothing was saved"
+            ));
+        }
+    }))
+}
+
+/// Add comment `text` to task `id` as `who`, the owner's acting first when it starts with an
+/// @verb (`parse_action`). The comment is checked before anything runs; the action runs next, and if
+/// the core refuses it the comment isn't saved and the core's reason is returned as it is; once
+/// it has run, the comment is saved with what it did on a line after the text (`→ sent back to
+/// Building`). A comment that can't be saved then is said in `unsaved`, not refused: the action
+/// stands. Each step logs itself on the task (the action's own line, then `commented`).
+/// Anyone else's comment, and the owner's without an @verb first, is a plain comment
+/// (`add_comment`).
+pub fn comment(
+    root: &Path,
+    id: &str,
+    text: &str,
+    who: &str,
+    stamp: &str,
+) -> Result<Commented, String> {
+    let who = actor(who)?;
+    let action = if crate::session::is_owner(&who) {
+        parse_action(text)?
+    } else {
+        None
+    };
+    let clean = clean_comment(text)?;
+    let Some(action) = action else {
+        let path = write_comment(root, id, &clean, &who, stamp)?;
+        return Ok(Commented {
+            path,
+            did: String::new(),
+            unsaved: String::new(),
+        });
+    };
+    let did = run_action(root, id, &action, &who, stamp)?;
+    Ok(
+        match write_comment(root, id, &format!("{clean}\n→ {did}"), &who, stamp) {
+            Ok(path) => Commented {
+                path,
+                did,
+                unsaved: String::new(),
+            },
+            Err(e) => Commented {
+                path: find_task(root, id)
+                    .map(|p| {
+                        p.strip_prefix(root)
+                            .unwrap_or(&p)
+                            .to_string_lossy()
+                            .to_string()
+                    })
+                    .unwrap_or_default(),
+                did,
+                unsaved: e,
+            },
+        },
+    )
+}
+
+/// Run `action` on task `id` as the owner `who`; what it did, in the comment's words.
+fn run_action(
+    root: &Path,
+    id: &str,
+    action: &Action,
+    who: &str,
+    stamp: &str,
+) -> Result<String, String> {
+    let k = crate::key::key(&crate::key::prefix_for(root), id);
+    match action {
+        Action::Accept => {
+            let t = queue::read_task(root, id)?;
+            if t.stage != "your-check" {
+                return Err(format!(
+                    "@accept passes a task out of Your check, and {k} is in {}",
+                    queue::stage_label(&t.stage)
+                ));
+            }
+            let opts = crate::ops::PassOpts {
+                from: Some("your-check".into()),
+                ..crate::ops::PassOpts::default()
+            };
+            crate::ops::pass_task(root, id, who, stamp, &opts)?;
+            Ok("accepted (Done)".into())
+        }
+        Action::SendBack(why) => {
+            if why.is_empty() {
+                return Err("@sendback needs what's wrong: @sendback <why>".into());
+            }
+            // The Send back form's default: an agent's task from Your check to its builder (the
+            // QA send-back), anywhere else (and the owner's own task) one stage back.
+            let t = queue::read_task(root, id)?;
+            let to = (t.stage == "your-check" && !t.is_human()).then_some("building");
+            let r = crate::ops::return_back(root, id, why, to, who, stamp)?;
+            Ok(if r.finding.is_empty() {
+                format!("sent back to {}", queue::stage_label(&r.to))
+            } else {
+                format!(
+                    "sent back to {} (owner finding {})",
+                    queue::stage_label(&r.to),
+                    r.finding
+                )
+            })
+        }
+        Action::Block(why) => {
+            if why.is_empty() {
+                return Err(
+                    "@block needs what it waits on: @block <why>, or the tasks, @block mu-12,mu-14"
+                        .into(),
+                );
+            }
+            let prefix = crate::key::prefix_for(root);
+            let project = crate::projects::default_name(root);
+            // As `--on` reads it (`block::split_on`): task keys first block on those tasks, a
+            // kind word first (you, permission, question, outside) on that; any other words
+            // block on outside, a digit or "tasks" first included (`@block 3pm call`), since
+            // only keys name tasks here. The ids and the reason go apart, so a reason that
+            // starts with a digit isn't read as one more id.
+            let (kind, detail) = match crate::key::leading_tasks(why, &prefix, &project)? {
+                Some((ids, rest)) if rest.is_empty() => ("tasks".to_string(), ids.join(",")),
+                Some((ids, rest)) => ("tasks".to_string(), format!("{}: {rest}", ids.join(","))),
+                None => match crate::block::split_on(why) {
+                    (k, d) if crate::block::TYPED.contains(&k.as_str()) => (k, d),
+                    _ => ("outside".to_string(), why.clone()),
+                },
+            };
+            crate::ops::block_as(root, id, &kind, &detail, who, stamp)?;
+            // Worded from the task as the block left it; the block stands even when that can't
+            // be read back.
+            Ok(match queue::read_task(root, id) {
+                Ok(t) if kind == "tasks" => {
+                    let ids: Vec<String> = t
+                        .depends
+                        .iter()
+                        .map(|d| crate::key::key(&prefix, d))
+                        .collect();
+                    format!("blocked on {}", ids.join(", "))
+                }
+                Ok(t) => format!("blocked ({})", t.blocked_kind),
+                Err(_) if kind == "tasks" => "blocked on tasks".to_string(),
+                Err(_) => format!("blocked ({kind})"),
+            })
+        }
+        Action::Ask(question) => {
+            if question.is_empty() {
+                return Err("@ask needs the question: @ask <question>".into());
+            }
+            let p = crate::ping::question(root, id, question, who, stamp)?;
+            Ok(format!("asked session {}", p.session))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -974,5 +1201,450 @@ mod tests {
         assert_eq!(c.len(), 1);
         assert_eq!(c[0].text, "a\n\nb");
         assert!(comments("---\nid: 0001\n---\n\n# T\n\n## Log\n").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod action_tests {
+    use super::*;
+    use crate::queue::{read_body, read_task, STATUS_FOLDERS};
+    use std::fs;
+
+    const T: &str = "2026-10-14 10:00";
+    /// A builder's stamp, as a claim inside Claude Code records it.
+    const A: &str = "wt-a (wt-0101 · session 7b5e8856 · cc-mg)";
+
+    fn queue() -> tempfile::TempDir {
+        let d = tempfile::tempdir().unwrap();
+        for f in STATUS_FOLDERS {
+            fs::create_dir(d.path().join(f)).unwrap();
+        }
+        fs::write(d.path().join("README.md"), "---\nprefix: ca\n---\nq").unwrap();
+        d
+    }
+
+    /// Task `id` in `stage`, claimed by (or, past Building, built by) `A`, its criteria as given
+    /// (`AC2 (owner)` is the owner's).
+    fn put(d: &Path, id: &str, stage: &str, criteria: &str) {
+        let (folder, claimed, held) = match stage {
+            "ready" => ("todo", "", ""),
+            "building" => ("doing", A, ""),
+            "testing" => ("doing", "", A),
+            _ => ("doing", "", "owner"),
+        };
+        let mut log = format!("- 2026-10-14 08:00 capture: created\n- 2026-10-14 08:10 {A}: stage ready → building (claimed)\n");
+        if matches!(stage, "testing" | "your-check") {
+            log.push_str(&format!(
+                "- 2026-10-14 09:00 {A}: stage building → testing (gate: gate: green)\n"
+            ));
+        }
+        if stage == "your-check" {
+            log.push_str("- 2026-10-14 09:30 qa: stage testing → your-check\n");
+        }
+        fs::write(
+            d.join(folder).join(format!("{id}-t.md")),
+            format!("---\nid: {id}\ntype: code\npriority: normal\nstage: {stage}\nstatus: doing\nclaimed-by: {claimed}\nheld-by: {held}\nheartbeat: 2026-10-14 08:10\nwaiting_on:\n---\n\n# Task {id}\n\n## Acceptance criteria\n{criteria}\n## Log\n{log}"),
+        )
+        .unwrap();
+    }
+
+    const TICKED: &str = "- [x] AC1: one — verify: command\n";
+
+    /// Task `id` built by `A` on its own branch and merged into Your check by the real path:
+    /// `muster start`'s write, the pass to Testing, and the merge's pass (`pass_merged`, which
+    /// clears `branch:` and sets `commit:`).
+    fn merged(d: &Path, id: &str) {
+        put(d, id, "ready", TICKED);
+        crate::ops::start_task(d, id, A, T, "/nowhere/wt", "task/ca-1", false).unwrap();
+        let gate = crate::ops::PassOpts {
+            gate: "gate: green".into(),
+            summary: "A synthetic summary".into(),
+            ..Default::default()
+        };
+        crate::ops::pass_task(d, id, A, T, &gate).unwrap();
+        crate::ops::pass_merged(d, id, "qa", T, &"c".repeat(40), "merged into main").unwrap();
+        let t = read_task(d, id).unwrap();
+        assert_eq!((t.stage.as_str(), t.branch.as_str()), ("your-check", ""));
+    }
+
+    fn file(d: &Path, id: &str) -> String {
+        read_body(d, id).unwrap()
+    }
+
+    #[test]
+    fn only_the_first_word_counts_and_unicode_whitespace_is_whitespace() {
+        assert_eq!(parse_action("Looks good").unwrap(), None);
+        assert_eq!(parse_action("Looks good, @sendback later").unwrap(), None);
+        assert_eq!(
+            parse_action("  \u{3000}@accept").unwrap(),
+            Some(Action::Accept)
+        );
+        assert_eq!(
+            parse_action("@sendback\u{00a0}the icon is wrong\n").unwrap(),
+            Some(Action::SendBack("the icon is wrong".into()))
+        );
+        assert_eq!(
+            parse_action("@Block mu-12,mu-14").unwrap(),
+            Some(Action::Block("mu-12,mu-14".into()))
+        );
+        assert_eq!(
+            parse_action("@ask  which font?").unwrap(),
+            Some(Action::Ask("which font?".into()))
+        );
+        assert_eq!(
+            parse_action("@sendback").unwrap(),
+            Some(Action::SendBack("".into()))
+        );
+        let e = parse_action("@sendbak the icon").unwrap_err();
+        assert!(e.starts_with("\"@sendbak\" isn't an action"), "{e}");
+        assert!(
+            e.contains("@accept, @sendback <why>, @block <why> or @ask <question>"),
+            "{e}"
+        );
+        assert!(parse_action("@").is_err() && parse_action("@sendback:").is_err());
+    }
+
+    #[test]
+    fn sendback_from_your_check_is_the_qa_send_back_and_the_comment_says_what_it_did() {
+        let d = queue();
+        merged(d.path(), "0001");
+        let c = comment(d.path(), "0001", "@sendback the icon is bad", "owner", T).unwrap();
+        assert_eq!(c.did, "sent back to Building (owner finding R1)");
+        let t = read_task(d.path(), "0001").unwrap();
+        assert_eq!((t.stage.as_str(), t.sent_back), ("building", true));
+        assert_eq!(
+            (t.sent_back_by.as_str(), t.sent_back_why.as_str()),
+            ("owner", "the icon is bad")
+        );
+        assert_eq!(
+            (t.comments[0].who.as_str(), t.comments[0].text.as_str()),
+            (
+                "owner",
+                "@sendback the icon is bad\n→ sent back to Building (owner finding R1)"
+            )
+        );
+        let body = file(d.path(), "0001");
+        // Each step logged, the action's first, then the comment.
+        let at = |s: &str| body.find(s).unwrap_or_else(|| panic!("{s}: {body}"));
+        assert!(
+            at("owner: stage your-check → building (returned: the icon is bad)")
+                < at("owner: review: owner finding R1")
+        );
+        assert!(
+            at("told session 7b5e8856 it was sent back (R1)")
+                < at(&format!("{T} owner: commented"))
+        );
+    }
+
+    #[test]
+    fn sendback_elsewhere_goes_one_stage_back_and_needs_a_why() {
+        let d = queue();
+        put(d.path(), "0001", "testing", TICKED);
+        let before = file(d.path(), "0001");
+        let e = comment(d.path(), "0001", "@sendback   ", "owner", T).unwrap_err();
+        assert_eq!(e, "@sendback needs what's wrong: @sendback <why>");
+        assert_eq!(file(d.path(), "0001"), before, "nothing saved");
+        let c = comment(d.path(), "0001", "@sendback AC1 fails", "owner", T).unwrap();
+        assert_eq!(c.did, "sent back to Building");
+        assert!(crate::review::load(d.path(), "0001").unwrap().is_none());
+    }
+
+    #[test]
+    fn accept_passes_out_of_your_check_and_a_refusal_saves_nothing() {
+        let d = queue();
+        put(
+            d.path(),
+            "0001",
+            "your-check",
+            "- [x] AC1: one — verify: command\n- [ ] AC2: looks right — verify: owner\n",
+        );
+        let before = file(d.path(), "0001");
+        let e = comment(d.path(), "0001", "@accept", "owner", T).unwrap_err();
+        assert!(e.contains("of the owner's criteria aren't ticked"), "{e}");
+        assert_eq!(file(d.path(), "0001"), before, "refused: nothing saved");
+        put(d.path(), "0002", "your-check", TICKED);
+        let c = comment(d.path(), "0002", "@accept ship it", "owner", T).unwrap();
+        assert_eq!(c.did, "accepted (Done)");
+        let t = read_task(d.path(), "0002").unwrap();
+        assert_eq!(t.stage, "done");
+        assert_eq!(t.comments[0].text, "@accept ship it\n→ accepted (Done)");
+        // Only in Your check.
+        put(d.path(), "0003", "testing", TICKED);
+        let before = file(d.path(), "0003");
+        assert_eq!(
+            comment(d.path(), "0003", "@accept", "owner", T).unwrap_err(),
+            "@accept passes a task out of Your check, and ca-3 is in Testing"
+        );
+        assert_eq!(file(d.path(), "0003"), before);
+    }
+
+    #[test]
+    fn block_on_task_keys_or_on_outside() {
+        let d = queue();
+        for id in ["0001", "0002", "0003"] {
+            put(d.path(), id, "ready", TICKED);
+        }
+        put(d.path(), "0004", "building", TICKED);
+        let c = comment(
+            d.path(),
+            "0004",
+            "@block ca-1, ca-2 the API first",
+            "owner",
+            T,
+        )
+        .unwrap();
+        assert_eq!(c.did, "blocked on ca-1, ca-2");
+        let t = read_task(d.path(), "0004").unwrap();
+        assert_eq!(t.depends, ["0001", "0002"]);
+        assert_eq!(
+            t.comments[0].text,
+            "@block ca-1, ca-2 the API first\n→ blocked on ca-1, ca-2"
+        );
+        assert!(
+            file(d.path(), "0004").contains(&format!(
+                "{T} owner: blocked on tasks: ca-1, ca-2 (the API first)\n"
+            )),
+            "the reason is kept: {}",
+            file(d.path(), "0004")
+        );
+        let c = comment(d.path(), "0003", "@block Apple review", "owner", T).unwrap();
+        assert_eq!(c.did, "blocked (outside)");
+        let t = read_task(d.path(), "0003").unwrap();
+        assert_eq!(
+            (t.blocked_kind.as_str(), t.waiting_on.as_str()),
+            ("outside", "Apple review")
+        );
+        let before = file(d.path(), "0002");
+        assert!(comment(d.path(), "0002", "@block", "owner", T)
+            .unwrap_err()
+            .starts_with("@block needs what it waits on"));
+        assert_eq!(file(d.path(), "0002"), before);
+    }
+
+    #[test]
+    fn block_keeps_a_reason_that_starts_with_a_digit_and_a_colon_ends_the_keys() {
+        let d = queue();
+        put(d.path(), "0001", "ready", TICKED);
+        put(d.path(), "0002", "building", TICKED);
+        let c = comment(
+            d.path(),
+            "0002",
+            "@block ca-1 3pm call with Apple",
+            "owner",
+            T,
+        )
+        .unwrap();
+        assert_eq!(c.did, "blocked on ca-1");
+        assert_eq!(read_task(d.path(), "0002").unwrap().depends, ["0001"]);
+        assert!(file(d.path(), "0002")
+            .contains("owner: blocked on tasks: ca-1 (3pm call with Apple)\n"));
+        // A four-digit word would read as a task: a colon after the keys sets the reason apart.
+        put(d.path(), "0003", "building", TICKED);
+        let c = comment(d.path(), "0003", "@block ca-1: 2026 budget", "owner", T).unwrap();
+        assert_eq!(c.did, "blocked on ca-1");
+        assert_eq!(read_task(d.path(), "0003").unwrap().depends, ["0001"]);
+        assert!(file(d.path(), "0003").contains("owner: blocked on tasks: ca-1 (2026 budget)\n"));
+    }
+
+    #[test]
+    fn block_reads_the_kind_words_as_on_does() {
+        let d = queue();
+        for id in ["0001", "0002", "0003", "0004", "0005", "0006", "0007"] {
+            put(d.path(), id, "building", TICKED);
+        }
+        let kind = |id: &str| {
+            let t = read_task(d.path(), id).unwrap();
+            (t.blocked_kind, t.waiting_on)
+        };
+        let c = comment(d.path(), "0001", "@block you: pick the icon", "owner", T).unwrap();
+        assert_eq!(c.did, "blocked (you)");
+        assert_eq!(kind("0001").0, "you");
+        assert!(file(d.path(), "0001").contains("owner: blocked on you: pick the icon\n"));
+        let c = comment(
+            d.path(),
+            "0002",
+            "@block Permission Full Disk Access",
+            "owner",
+            T,
+        )
+        .unwrap();
+        assert_eq!(c.did, "blocked (permission)");
+        assert!(file(d.path(), "0002").contains("owner: blocked on permission: Full Disk Access\n"));
+        let c = comment(d.path(), "0003", "@block outside Apple review", "owner", T).unwrap();
+        assert_eq!(c.did, "blocked (outside)");
+        assert!(file(d.path(), "0003").contains("owner: blocked on outside: Apple review\n"));
+        // A question block takes the question's number, as --on does: refused, nothing saved.
+        let before = file(d.path(), "0004");
+        let e = comment(d.path(), "0004", "@block question for legal", "owner", T).unwrap_err();
+        assert!(
+            e.starts_with("a block on question needs the question's number"),
+            "{e}"
+        );
+        assert_eq!(file(d.path(), "0004"), before);
+        // A kind word with nothing after it is refused the same way.
+        assert_eq!(
+            comment(d.path(), "0004", "@block you", "owner", T).unwrap_err(),
+            "a block on you needs what you have to do or decide"
+        );
+        assert_eq!(file(d.path(), "0004"), before);
+        // Words with no task key block on outside, a digit or "tasks" first too (R10), and a
+        // clock time is no task (R11).
+        for (id, text) in [
+            ("0005", "3pm call with Apple"),
+            ("0006", "tasks from design first"),
+            ("0007", "9:30 standup with Apple"),
+        ] {
+            let c = comment(d.path(), id, &format!("@block {text}"), "owner", T).unwrap();
+            assert_eq!(c.did, "blocked (outside)", "{text}");
+            assert_eq!(kind(id), ("outside".to_string(), text.to_string()));
+            assert!(
+                read_task(d.path(), id).unwrap().depends.is_empty(),
+                "{text}"
+            );
+            assert!(
+                file(d.path(), id).contains(&format!("owner: blocked on outside: {text}\n")),
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn sendback_on_the_owners_own_task_goes_where_the_form_does() {
+        let d = queue();
+        for id in ["0001", "0002"] {
+            put(d.path(), id, "your-check", TICKED);
+            let path = crate::queue::find_task(d.path(), id).unwrap();
+            let text = fs::read_to_string(&path).unwrap();
+            fs::write(&path, crate::ops::set_front(&text, "for", "human").unwrap()).unwrap();
+        }
+        let c = comment(d.path(), "0001", "@sendback not yet", "owner", T).unwrap();
+        // One stage back, as the form's default for the owner's own task: no builder to send
+        // it to, so no owner finding.
+        assert_eq!(c.did, "sent back to Testing");
+        let t = read_task(d.path(), "0001").unwrap();
+        assert_eq!((t.stage.as_str(), t.sent_back), ("testing", false));
+        assert!(crate::review::load(d.path(), "0001").unwrap().is_none());
+        // Building picked by hand in the form: still no owner finding on the owner's own task.
+        let r = crate::ops::return_back(d.path(), "0002", "redo", Some("building"), "owner", T)
+            .unwrap();
+        assert_eq!((r.to.as_str(), r.finding.as_str()), ("building", ""));
+        assert!(crate::review::load(d.path(), "0002").unwrap().is_none());
+    }
+
+    #[test]
+    fn sendback_of_a_task_never_started_records_the_owner_finding_too() {
+        let d = queue();
+        put(d.path(), "0001", "your-check", TICKED);
+        let c = comment(d.path(), "0001", "@sendback the icon is bad", "owner", T).unwrap();
+        assert_eq!(c.did, "sent back to Building (owner finding R1)");
+        let t = read_task(d.path(), "0001").unwrap();
+        assert_eq!(
+            (t.stage.as_str(), t.sent_back, t.review_open),
+            ("building", true, 1)
+        );
+        let r = crate::review::load(d.path(), "0001").unwrap().unwrap();
+        assert_eq!(r.findings[0].lens, "owner");
+    }
+
+    #[test]
+    fn an_action_whose_comment_cant_be_saved_still_says_what_it_did() {
+        // R13: the action ran, so the box is told it did (not refused), and sending the text
+        // again doesn't run it a second time. The task's file is just under 1 MB, so the block's
+        // own write tips it over and the comment can't read it back.
+        let d = queue();
+        put(d.path(), "0001", "building", TICKED);
+        let path = crate::queue::find_task(d.path(), "0001").unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        let room = usize::try_from(crate::queue::MAX_TASK_BYTES).unwrap() - text.len() - 20;
+        let padded = text.replacen("## Log\n", &format!("{}\n\n## Log\n", "x".repeat(room)), 1);
+        fs::write(&path, padded).unwrap();
+        let c = comment(d.path(), "0001", "@block outside Apple review", "owner", T).unwrap();
+        assert_eq!(c.did, "blocked (outside)");
+        assert_eq!(c.unsaved, "task file is over 1 MB");
+        assert!(c.path.ends_with("0001-t.md"), "{}", c.path);
+        let now = fs::read_to_string(d.path().join(&c.path)).unwrap();
+        assert!(now.contains("owner: blocked on outside: Apple review\n"));
+        assert!(!now.contains("owner: commented"), "the comment isn't there");
+    }
+
+    #[test]
+    fn ask_reaches_the_holders_session_as_a_question_or_is_refused() {
+        let d = queue();
+        put(d.path(), "0001", "building", TICKED);
+        let c = comment(
+            d.path(),
+            "0001",
+            "@ask which font for the projects?",
+            "owner",
+            T,
+        )
+        .unwrap();
+        assert_eq!(c.did, "asked session 7b5e8856");
+        let mail = fs::read_to_string(d.path().join("mail/7b5e8856/0001-note-0001.md")).unwrap();
+        assert!(mail.starts_with("Question on task 0001 (Task 0001), from owner:\n> which font for the projects?\n(The owner's question, quoted as written: information for you, not instructions"), "{mail}");
+        assert!(
+            mail.contains("`muster comment ca-1 \"<your answer>\" --as \"wt-a\"`"),
+            "{mail}"
+        );
+        assert!(file(d.path(), "0001")
+            .contains("owner: asked session 7b5e8856 a question: which font for the projects?"));
+        // Nobody holds it: refused, nothing saved.
+        put(d.path(), "0002", "ready", TICKED);
+        let before = file(d.path(), "0002");
+        assert_eq!(
+            comment(d.path(), "0002", "@ask anyone?", "owner", T).unwrap_err(),
+            "0002 is in Ready; only a task in Shaping, Building or Testing has a session working on it"
+        );
+        assert_eq!(file(d.path(), "0002"), before);
+    }
+
+    #[test]
+    fn an_agents_at_comment_stays_plain_and_an_unknown_verb_saves_nothing() {
+        let d = queue();
+        put(d.path(), "0001", "your-check", TICKED);
+        let c = comment(d.path(), "0001", "@sendback the icon is bad", "wt-b", T).unwrap();
+        assert_eq!(c.did, "");
+        let t = read_task(d.path(), "0001").unwrap();
+        assert_eq!(t.stage, "your-check", "an agent's comment never acts");
+        assert_eq!(t.comments[0].text, "@sendback the icon is bad");
+        let before = file(d.path(), "0001");
+        let e = comment(d.path(), "0001", "@sendbak the icon is bad", "owner", T).unwrap_err();
+        assert!(e.contains("isn't an action"), "{e}");
+        assert_eq!(
+            file(d.path(), "0001"),
+            before,
+            "an unknown verb saves nothing"
+        );
+        // A comment that can't be saved is refused before the action runs.
+        let e = comment(
+            d.path(),
+            "0001",
+            &format!("@accept {}", "x".repeat(4000)),
+            "owner",
+            T,
+        )
+        .unwrap_err();
+        assert!(e.contains("longer"), "{e}");
+        assert_eq!(read_task(d.path(), "0001").unwrap().stage, "your-check");
+        // The owner's comment without a verb first is plain too.
+        let c = comment(d.path(), "0001", "Close, see @sendback later", "owner", T).unwrap();
+        assert_eq!(c.did, "");
+    }
+
+    #[test]
+    fn a_persian_reason_is_stored_as_written() {
+        let d = queue();
+        merged(d.path(), "0001");
+        let why = "آیکون باز و بسته بد است؛ دسته‌ها و پروژه‌ها یک قلم دارند";
+        let c = comment(d.path(), "0001", &format!("@sendback {why}"), "owner", T).unwrap();
+        assert_eq!(c.did, "sent back to Building (owner finding R1)");
+        let t = read_task(d.path(), "0001").unwrap();
+        assert_eq!(t.sent_back_why, why);
+        let r = crate::review::load(d.path(), "0001").unwrap().unwrap();
+        assert_eq!(r.findings[0].title, why);
+        assert_eq!(
+            t.comments[0].text,
+            format!("@sendback {why}\n→ sent back to Building (owner finding R1)")
+        );
     }
 }

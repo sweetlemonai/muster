@@ -597,8 +597,11 @@ pub struct Started {
 /// `muster start <id>`: claim it (0002's rules) with a branch `task/<id>-<slug>` from the local
 /// main's commit and a worktree for it, both recorded in the task. Git first, then the claim
 /// under the queue's lock; a refused claim removes the fresh branch and worktree again. A task
-/// with a worktree on record (returned or reclaimed since) is picked up there instead. `cwd` is
-/// where the command runs: it finds the repo.
+/// with a worktree on record (returned or reclaimed since) is picked up there instead. A task
+/// back in Building with no branch, held by `who` (mu-101: sent back from Your check after its
+/// merge), gets a fresh branch and worktree the same way, its claim kept (`ops::restart_task`),
+/// so a review round can settle its owner finding. `cwd` is where the command runs: it finds the
+/// repo.
 pub fn start(
     root: &Path,
     id: &str,
@@ -611,7 +614,11 @@ pub fn start(
     if !t.branch.is_empty() {
         return resume(root, &t, who, stamp, cwd, place);
     }
-    if t.stage != "ready" {
+    let again = t.stage == "building";
+    if again {
+        // Its own rules, checked again under the lock once git has made the branch.
+        ops::check_restart(root, id, who)?;
+    } else if t.stage != "ready" {
         return Err(format!(
             "{id} is in {}, not Ready; start takes a Ready task",
             queue::stage_label(&t.stage)
@@ -635,9 +642,11 @@ pub fn start(
         ));
     }
     // What it depends on, before any branch or worktree is made (`start_task` checks again under
-    // the lock).
-    if let Some(e) = ops::deps_refusal(id, &ops::tasks_now(root), "muster ready --parallel") {
-        return Err(e);
+    // the lock). A task back in Building was past them already.
+    if !again {
+        if let Some(e) = ops::deps_refusal(id, &ops::tasks_now(root), "muster ready --parallel") {
+            return Err(e);
+        }
     }
     let repo = repo_of(cwd)
         .map_err(|e| format!("muster start runs in the project's repo or a worktree of it: {e}"))?;
@@ -688,7 +697,12 @@ pub fn start(
     };
     let wt_text = utf8(&worktree)?.to_string();
     let runner = matches!(place, Place::Here);
-    match ops::start_task(root, id, who, stamp, &wt_text, &branch, runner) {
+    let recorded = if again {
+        ops::restart_task(root, id, who, stamp, &wt_text, &branch, runner)
+    } else {
+        ops::start_task(root, id, who, stamp, &wt_text, &branch, runner)
+    };
+    match recorded {
         Ok(path) => Ok(Started {
             worktree,
             branch,
@@ -2015,7 +2029,9 @@ pub(crate) mod tests {
         );
         assert_eq!(g(&f.repo, &["branch", "--list", "task/*"]), "");
         assert!(!f.base.join("proj/worktrees").exists());
-        // Merged again: start takes it.
+        // Merged again: start takes it. (Its owner finding holds it while it has no branch, mu-101;
+        // the owner settles it here, as there's no branch to review.)
+        crate::review::settle(r, &base, "R1", "confirmed", "redone", "owner", T0).unwrap();
         ops::pass_task(r, &base, "wt-x", T0, &gate).unwrap();
         ops::pass_task(r, &base, "qa", T0, &PassOpts::default()).unwrap();
         start(r, &after, "wt-a", T0, &f.repo, &Place::Default).unwrap();
@@ -2935,6 +2951,116 @@ pub(crate) mod tests {
             (t.built_by.as_str(), t.tested_by.as_str()),
             ("wt-a", "qa-0001")
         );
+    }
+
+    #[test]
+    fn a_merged_task_sent_back_from_your_check_starts_again_and_its_round_settles_the_owner_finding(
+    ) {
+        // mu-101 R9: the real merge clears branch:, the send-back still records the owner
+        // finding, and the builder's next start makes a fresh branch whose round settles it.
+        let f = fx();
+        let id = task(&f.root, "Icons", "i/");
+        let first = built(&f, &id, "i/x.txt");
+        let gate = green(&f);
+        let Merge::Merged { commit: merged, .. } = run_merge(&f, &id, &gate).0.unwrap() else {
+            panic!("not merged")
+        };
+        let t = read(&f.root, &id);
+        assert_eq!(
+            (t.stage.as_str(), t.branch.as_str(), t.commit.as_str()),
+            ("your-check", "", merged.as_str())
+        );
+        assert!(!has_branch(&f, &first.branch));
+        let back = ops::return_back(
+            &f.root,
+            &id,
+            "the icon is bad",
+            Some("building"),
+            "owner",
+            T0,
+        )
+        .unwrap();
+        assert_eq!(
+            (back.to.as_str(), back.finding.as_str()),
+            ("building", "R1")
+        );
+        let r = crate::review::load(&f.root, &id).unwrap().unwrap();
+        let owner = r.findings.iter().find(|f| f.id == "R1").unwrap();
+        assert_eq!(
+            (owner.lens.as_str(), owner.state.as_str()),
+            ("owner", "open")
+        );
+        assert!(
+            owner
+                .evidence
+                .starts_with(&format!("found on the merged commit {}", &merged[..7])),
+            "{}",
+            owner.evidence
+        );
+        // Someone else can't start it; its builder gets a fresh branch from main, claim kept.
+        let e = start(&f.root, &id, "wt-b", T0, &f.repo, &Place::Default).unwrap_err();
+        assert!(e.contains("only its holder starts it again"), "{e}");
+        assert!(!has_branch(&f, &first.branch), "refused before any git");
+        let again = start(&f.root, &id, "wt-a", T0, &f.repo, &Place::Default).unwrap();
+        assert_eq!(
+            (again.branch.as_str(), again.resumed),
+            (first.branch.as_str(), false)
+        );
+        assert_eq!(
+            g(&again.worktree, &["rev-parse", "HEAD"]),
+            g(&f.repo, &["rev-parse", "main"])
+        );
+        let t = read(&f.root, &id);
+        assert_eq!(
+            (t.stage.as_str(), t.claimed_by.as_str(), t.branch.as_str()),
+            ("building", "wt-a", again.branch.as_str())
+        );
+        // A second start picks it up there.
+        assert!(
+            start(&f.root, &id, "wt-a", T0, &f.repo, &Place::Default)
+                .unwrap()
+                .resumed
+        );
+        commit(&again.worktree, "i/y.txt", "a chevron\n", "fix the icon");
+        crate::review::answer(
+            &f.root,
+            &id,
+            "R1",
+            crate::review::Reply::Fixed,
+            "a chevron now",
+            "wt-a",
+            T0,
+        )
+        .unwrap();
+        let opts = PassOpts {
+            gate: "gate: green (built)".into(),
+            summary: "A synthetic summary".into(),
+            from: Some("building".into()),
+            ..Default::default()
+        };
+        ops::pass_task(&f.root, &id, "wt-a", T0, &opts).unwrap();
+        // The merge waits for a round, and the round must settle R1 first.
+        let e = run_merge(&f, &id, &gate).0.unwrap_err();
+        assert!(e.contains("R1"), "{e}");
+        let span = crate::review::span(&f.root, &id).unwrap();
+        let tip = g(&again.worktree, &["rev-parse", "HEAD"]);
+        let skips = format!(r#"{{"head":"{tip}","tier":"light"}}"#);
+        let e = crate::review::record(&f.root, &id, &skips, "qa", "2026-10-13 12:00", &span)
+            .unwrap_err();
+        assert!(e.contains("the builder answered R1"), "{e}");
+        let settles = format!(
+            r#"{{"head":"{tip}","tier":"light","answers":[{{"finding":"R1","accept":true,"why":"a chevron"}}]}}"#
+        );
+        let rec =
+            crate::review::record(&f.root, &id, &settles, "qa", "2026-10-13 12:00", &span).unwrap();
+        assert_eq!(
+            (rec.confirmed.clone(), rec.then.as_str()),
+            (vec!["R1".to_string()], "clean")
+        );
+        let Merge::Merged { .. } = run_merge(&f, &id, &gate).0.unwrap() else {
+            panic!("not merged again")
+        };
+        assert_eq!(read(&f.root, &id).stage, "your-check");
     }
 
     #[test]

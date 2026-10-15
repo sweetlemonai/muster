@@ -130,15 +130,34 @@ export function sameHolder(a: string, b: string): boolean {
   return x.label === y.label && (!x.id || !y.id || x.id === y.id);
 }
 
-/** What a card says about the order a holder works their tasks in (mu-66): a task sent back from
- *  Testing comes first, and the holder's other tasks in Building wait behind it. Nothing for a
- *  blocked one, which isn't held; the core's `ops::sent_back_first` says the same for `next`. */
-export function sendBackLine(t: Pick<Task, "prefix" | "id" | "blocked" | "sentBack" | "behind">): { kind: "first" | "behind"; text: string } | null {
+/** What a card says about the order a holder works their tasks in (mu-66): a task sent back to
+ *  its builder comes first, and the holder's other tasks in Building wait behind it. Sent back
+ *  from Your check (mu-101), it says who sent it ("by you" for the owner) and, in `why`, the
+ *  reason: "Sent back by you: <why>", with `by` and `reason` apart so the card can isolate a
+ *  right-to-left reason from the English around it. Nothing for a blocked one, which isn't held; the core's
+ *  `ops::sent_back_first` says the same for `next`. */
+export function sendBackLine(t: Pick<Task, "prefix" | "id" | "blocked" | "sentBack" | "sentBackBy" | "sentBackWhy" | "behind" | "behindBy">): { kind: "first" | "behind"; text: string; why: string; by: string; reason: string } | null {
   if (t.blocked) return null;
-  if (t.sentBack && !t.behind) return { kind: "first", text: `fix ${taskKey(t)} first (sent back by the review)` };
-  if (t.behind) return { kind: "behind", text: `waiting behind ${keyOf(t.prefix, t.behind)} (sent back by the review)` };
+  const by = t.sentBack ? sentBackSender(t) : "";
+  const reason = by ? (t.sentBackWhy ?? "") : "";
+  const why = by ? `Sent back by ${by}: ${reason}` : "";
+  const sentBy = { why, by, reason };
+  if (t.sentBack && !t.behind) return { kind: "first", text: `fix ${taskKey(t)} first (sent back by ${by || "the review"})`, ...sentBy };
+  if (t.behind) {
+    const aheadBy = (t.behindBy ?? "").trim();
+    const ahead = !aheadBy ? "the review" : splitHolder(aheadBy).label === "owner" ? "you" : aheadBy;
+    return { kind: "behind", text: `waiting behind ${keyOf(t.prefix, t.behind)} (sent back by ${ahead})`, ...sentBy };
+  }
   return null;
 }
+
+/** Who sent a task back from Your check, as its card says it: "you" for the owner, else their
+ *  label; "" for the review's send-back from Testing (session.rs is_owner). */
+const sentBackSender = (t: Pick<Task, "sentBackBy" | "sentBackWhy">): string => {
+  const by = (t.sentBackBy ?? "").trim();
+  if (!by || !t.sentBackWhy) return "";
+  return splitHolder(by).label === "owner" ? "you" : by;
+};
 
 /** An agent's task in Testing still held by one of its builders (0047, `builders`): a session
  *  that didn't build it has to test it and pass it on (or the owner). */

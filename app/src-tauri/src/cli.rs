@@ -464,10 +464,11 @@ fn task_lists(a: &mut Args, cmd: &str, prefix: &str, project: &str) -> Result<()
     if let Some(on) = a.flags.get("on") {
         if let Some((i, rest)) = crate::key::leading_tasks(on, prefix, project)? {
             let joined = i.join(",");
+            // The ids and the reason apart, so a reason that starts with a digit stays one.
             let on = if rest.is_empty() {
                 joined
             } else {
-                format!("{joined} {rest}")
+                format!("{joined}: {rest}")
             };
             a.flags.insert("on".into(), on);
         }
@@ -480,6 +481,27 @@ fn task_lists(a: &mut Args, cmd: &str, prefix: &str, project: &str) -> Result<()
         }
     }
     Ok(())
+}
+
+/// What `return` says after its stage line, for task `k`: the owner finding a QA send-back
+/// recorded (mu-101), and whether the builder's session was told, whenever it was meant to be.
+fn returned_lines(k: &str, r: &ops::Returned) -> Vec<String> {
+    let mut out = Vec::new();
+    if !r.finding.is_empty() {
+        out.push(format!(
+            "{k}: owner finding {} for the builder to fix or dispute; first in line",
+            r.finding
+        ));
+    }
+    if !r.not_told.is_empty() {
+        out.push(format!(
+            "{k}: the builder's session wasn't told ({}); muster next shows it",
+            r.not_told
+        ));
+    } else if !r.told.is_empty() {
+        out.push(format!("{k}: told session {}", r.told));
+    }
+    out
 }
 
 /// `claimed mu-19 in muster (/…/muster/tasks)`, then where it is now.
@@ -1472,6 +1494,15 @@ fn started_text(root: &Path, prefix: &str, id: &str, s: &crate::parallel::Starte
     // What reviews of earlier tasks taught, for where this one works (0027).
     let book = lessons::load(root).unwrap_or_default();
     let learned = lessons::for_builders(&book, &review::all(root), &touches, &local_stamp());
+    // Sent back from Your check (mu-101): the owner's findings come first, and this branch's
+    // review round settles them.
+    let owners = review::owner_to_recheck(root, id);
+    if !owners.is_empty() {
+        out.push_str(&format!(
+            "owner findings first: {} (sent back from Your check; see the task's Review section): fix each here and answer it with muster review {k} --fixed R<n> \"<how>\" or --dispute R<n> \"<why>\"; this branch's review round re-checks them\n",
+            owners.join(", ")
+        ));
+    }
     if !learned.is_empty() {
         out.push_str("lessons (the owner accepted these from earlier reviews; follow them):\n");
         for l in &learned {
@@ -1930,8 +1961,11 @@ fn run_on(
             need(a, 2, "the reason")?;
             let why = a.pos[2..].join(" ").replace("\\n", " ");
             let to = a.flags.get("to").map(String::as_str);
-            let p = ops::return_task(root, id, &why, to, &me(), stamp)?;
-            println!("{}", stage_message(root, prefix, id, &p));
+            let r = ops::return_back(root, id, &why, to, &me(), stamp)?;
+            println!("{}", stage_message(root, prefix, id, &r.path));
+            for l in returned_lines(&key(id), &r) {
+                println!("{l}");
+            }
             Ok(0)
         }
         "block" => {
@@ -1940,9 +1974,14 @@ fn run_on(
                 "block needs --on <0014,0016|you|permission|question|outside> and what it waits on (see `muster help`)",
             )?;
             // The kind, and what it waits on: the rest of --on, then the words after the id.
+            // After bare task ids, a colon sets those words apart, so a reason that starts with
+            // a digit (`--on 0014 3pm call`) isn't read as one more id.
             let (kind, mut detail) = crate::block::split_on(on);
             let more = a.pos.get(2..).unwrap_or_default().join(" ");
             if !more.trim().is_empty() {
+                if kind == "tasks" && !detail.contains(':') {
+                    detail.push(':');
+                }
                 if !detail.is_empty() {
                     detail.push(' ');
                 }
@@ -2089,8 +2128,21 @@ fn run_on(
                     a.pos[2..].join(" ")
                 }
             };
-            fields::add_comment(root, id, &text, &me(), stamp)?;
-            println!("{}: commented", key(id));
+            let c = fields::comment(root, id, &text, &me(), stamp)?;
+            if c.did.is_empty() {
+                println!("{}: commented", key(id));
+            } else if c.unsaved.is_empty() {
+                println!("{}: {}; commented", key(id), c.did);
+            } else {
+                // The action ran: sending the comment again would run it twice.
+                println!("{}: {}", key(id), c.did);
+                eprintln!(
+                    "{}: the comment couldn't be saved ({}); the action stands, so don't send it again",
+                    key(id),
+                    c.unsaved
+                );
+                return Ok(1);
+            }
             Ok(0)
         }
         "attach" => {
@@ -3487,7 +3539,7 @@ mod tests {
             v.extend(sv(&["--queue", &q, "--as", "wt-a"]));
             main(&v)
         };
-        for title in ["One", "Two", "Three"] {
+        for title in ["One", "Two", "Three", "Four"] {
             assert_eq!(code(&["new", title]), 0);
         }
         assert_eq!(
@@ -3557,6 +3609,26 @@ mod tests {
         );
         assert_eq!(code(&["unblock", "0003"]), 1, "it clears by itself");
         assert_eq!(code(&["unblock", "0001"]), 0);
+        // A reason that starts with a digit stays the reason (mu-101 R4).
+        assert_eq!(code(&["block", "0002", "--on", "0001", "3pm call"]), 0);
+        assert_eq!(t("0002").depends, ["0001"]);
+        let two = queue::read_body(d.path(), "0002").unwrap();
+        assert!(
+            two.contains("wt-a: blocked on tasks: tm-1 (3pm call)\n"),
+            "{two}"
+        );
+        // The same as one --on value, through the key rewrite (mu-101 R15).
+        assert_eq!(code(&["block", "0004", "--on", "tm-1 4pm call"]), 0);
+        assert_eq!(t("0004").depends, ["0001"]);
+        let four = queue::read_body(d.path(), "0004").unwrap();
+        assert!(
+            four.contains("wt-a: blocked on tasks: tm-1 (4pm call)\n"),
+            "{four}"
+        );
+        // A clock time isn't a task (R11): refused, not a block on 0009.
+        assert_eq!(code(&["block", "0001", "--on", "9:30", "standup"]), 1);
+        assert_eq!(code(&["block", "0001", "--on", "9:30 standup"]), 1);
+        assert!(t("0001").depends.is_empty() && !t("0001").blocked);
         // The help says it all.
         let help = crate::help::command_text("block").unwrap();
         for k in [
@@ -4181,6 +4253,187 @@ mod tests {
         assert_eq!(code("capture", &["reclaim", "--after", "soon"]), 1);
         assert_eq!(t("0002").stage, "building");
         assert_eq!(code("wt-a", &["show", "0002", "--json"]), 0);
+    }
+
+    #[test]
+    fn an_owners_at_comment_acts_and_an_agents_stays_a_comment() {
+        // mu-101: `muster comment … --as owner` runs the @verb; anyone else's is a plain comment.
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let args = |who: &str, a: &[&str]| {
+            let mut v = sv(a);
+            v.extend(sv(&["--queue", &q, "--as", who]));
+            v
+        };
+        let code = |who: &str, a: &[&str]| main(&args(who, a));
+        std::fs::write(
+            d.path().join("todo/0001-t.md"),
+            "---\nid: 0001\ntype: code\npriority: normal\nstage: ready\nstatus: todo\nclaimed-by:\nheartbeat:\nwaiting_on:\n---\n\n# One\n\n## Acceptance criteria\n- [x] AC1: one — verify: command\n\n## Log\n- 2026-10-14 08:00 capture: created\n",
+        )
+        .unwrap();
+        let t = || queue::read_task(d.path(), "0001").unwrap();
+        // Started on its own branch, built, and merged into Your check by the real path (the git
+        // side left out): the merge's pass clears branch:.
+        let at = "2026-10-14 09:00";
+        ops::start_task(
+            d.path(),
+            "0001",
+            "wt-a",
+            at,
+            "/nowhere/wt",
+            "task/tm-1-one",
+            false,
+        )
+        .unwrap();
+        let built = [
+            "pass",
+            "0001",
+            "--from",
+            "building",
+            "--gate",
+            "green",
+            "--summary",
+            "Built it",
+        ];
+        assert_eq!(code("wt-a", &built), 0);
+        ops::pass_merged(
+            d.path(),
+            "0001",
+            "qa",
+            at,
+            &"d".repeat(40),
+            "merged into main",
+        )
+        .unwrap();
+        assert_eq!(
+            (t().stage, t().branch),
+            ("your-check".into(), String::new())
+        );
+        assert_eq!(code("wt-b", &["comment", "0001", "@sendback the icon"]), 0);
+        assert_eq!((t().stage, t().comments.len()), ("your-check".into(), 1));
+        assert_eq!(code("owner", &["comment", "0001", "@sendbak the icon"]), 1);
+        assert_eq!(t().comments.len(), 1, "an unknown verb saves nothing");
+        assert_eq!(
+            code(
+                "owner",
+                &["comment", "0001", "@sendback", "the icon is bad"]
+            ),
+            0
+        );
+        let after = t();
+        assert_eq!(
+            (
+                after.stage.as_str(),
+                after.sent_back,
+                after.sent_back_why.as_str()
+            ),
+            ("building", true, "the icon is bad")
+        );
+        assert_eq!(
+            after.comments[1].text,
+            "@sendback the icon is bad\n→ sent back to Building (owner finding R1)"
+        );
+        // Answered, but with no branch no round can re-check it: the pass waits for a start.
+        assert_eq!(
+            code(
+                "wt-a",
+                &["review", "0001", "--fixed", "R1", "a chevron now"]
+            ),
+            0
+        );
+        let fixed = [
+            "pass",
+            "0001",
+            "--from",
+            "building",
+            "--gate",
+            "green",
+            "--summary",
+            "Fixed it",
+        ];
+        assert_eq!(code("wt-a", &fixed), 1);
+        assert_eq!(t().stage, "building");
+        // Started again (start's write once git made the branch), gated, reviewed (the round
+        // settles R1) and merged into Your check again: `return --to building` is the same
+        // send-back, its finding numbered on.
+        ops::restart_task(
+            d.path(),
+            "0001",
+            "wt-a",
+            at,
+            "/nowhere/wt2",
+            "task/tm-1-one",
+            false,
+        )
+        .unwrap();
+        assert_eq!(code("wt-a", &fixed), 0);
+        let head = "5".repeat(40);
+        let span = crate::review::Span {
+            base: "1".repeat(40),
+            head: head.clone(),
+            since: None,
+        };
+        let settles = format!(
+            r#"{{"head":"{head}","tier":"light","answers":[{{"finding":"R1","accept":true,"why":"a chevron"}}]}}"#
+        );
+        assert_eq!(
+            crate::review::record(d.path(), "0001", &settles, "qa", at, &span)
+                .unwrap()
+                .then,
+            "clean"
+        );
+        ops::pass_merged(
+            d.path(),
+            "0001",
+            "qa",
+            at,
+            &"e".repeat(40),
+            "merged into main",
+        )
+        .unwrap();
+        assert_eq!(t().stage, "your-check");
+        assert_eq!(
+            code(
+                "owner",
+                &["return", "0001", "still", "bad", "--to", "building"]
+            ),
+            0
+        );
+        let r = crate::review::load(d.path(), "0001").unwrap().unwrap();
+        assert_eq!(
+            r.findings
+                .iter()
+                .map(|f| (f.id.as_str(), f.lens.as_str()))
+                .collect::<Vec<_>>(),
+            [("R1", "owner"), ("R2", "owner")]
+        );
+    }
+
+    #[test]
+    fn return_says_whether_the_builder_was_told_with_or_without_a_finding() {
+        // R14: the told / not-told line doesn't hang on a finding.
+        let r = |finding: &str, told: &str, not_told: &str| ops::Returned {
+            finding: finding.into(),
+            told: told.into(),
+            not_told: not_told.into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            returned_lines("mu-1", &r("R2", "7b5e8856", "")),
+            [
+                "mu-1: owner finding R2 for the builder to fix or dispute; first in line",
+                "mu-1: told session 7b5e8856"
+            ]
+        );
+        assert_eq!(
+            returned_lines("mu-1", &r("", "", "no session")),
+            ["mu-1: the builder's session wasn't told (no session); muster next shows it"]
+        );
+        assert_eq!(
+            returned_lines("mu-1", &r("", "7b5e8856", "")),
+            ["mu-1: told session 7b5e8856"]
+        );
+        assert!(returned_lines("mu-1", &r("", "", "")).is_empty());
     }
 
     #[test]

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { BLOCK_KINDS, type BlockKind, blockRequest } from "./blockWords";
+import { isHuman } from "./human";
 import { earlierStages } from "./lib";
 import { isWork } from "./levels";
 import type { Question, Task } from "./types";
@@ -67,30 +68,91 @@ export function GateFormView({ gate, summary, needsSummary, busy, onGate, onSumm
   );
 }
 
+/** Your check's verdict (mu-101): an agent's task there goes back to its builder, the owner's QA
+ *  send-back. The owner's own task has no builder. */
+export const toBuilder = (stage: string, human: boolean) => stage === "your-check" && !human;
+
+/** Where Send back goes: the choice, while it's still an earlier stage; else the default, which
+ *  is Building from Your check (the builder) and one stage back anywhere else. "" when it can't
+ *  go back. */
+export function backTarget(stage: string, human: boolean, choice: string): string {
+  const back = earlierStages(stage);
+  if (back.some((s) => s.id === choice)) return choice;
+  return toBuilder(stage, human) ? "building" : (back[0]?.id ?? "");
+}
+
+/** ⌘↩ (Ctrl+↩) sends a stage form from its text box, as it does the comment box; not while an
+ *  input method is composing. */
+export const submitKey = (e: { key: string; metaKey: boolean; ctrlKey: boolean; isComposing: boolean }) =>
+  e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.isComposing;
+
 function BackForm({ task, a }: { task: Task; a: TaskActions }) {
-  const back = earlierStages(task.stage);
-  const [backTo, setBackTo] = useState("");
+  const [choice, setChoice] = useState("");
   const [why, setWhy] = useState("");
-  // Where it goes: the choice, while it's still an earlier stage; else one back.
-  const target = back.some((s) => s.id === backTo) ? backTo : back[0].id;
+  const human = isHuman(task);
+  return (
+    <BackFormView
+      stage={task.stage}
+      human={human}
+      choice={choice}
+      why={why}
+      busy={a.busy}
+      onChoice={setChoice}
+      onWhy={setWhy}
+      onSubmit={() => {
+        if (why.trim()) a.sendBack(why, backTarget(task.stage, human, choice));
+      }}
+      onCancel={a.close}
+    />
+  );
+}
+
+/** The Send back form, drawn: Back to (every earlier stage, the default picked) and why. To the
+ *  builder from Your check it asks what's wrong, which the builder gets as a finding. */
+export function BackFormView({ stage, human, choice, why, busy, onChoice, onWhy, onSubmit, onCancel }: {
+  stage: string;
+  human: boolean;
+  choice: string;
+  why: string;
+  busy: boolean;
+  onChoice: (v: string) => void;
+  onWhy: (v: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  const target = backTarget(stage, human, choice);
+  const verdict = toBuilder(stage, human) && target === "building";
   return (
     <form
       className="control-row stage-form"
       data-part="form"
       onSubmit={(e) => {
         e.preventDefault();
-        if (why.trim()) a.sendBack(why, target);
+        onSubmit();
       }}
     >
       <label>
         Back to
-        <select value={target} onChange={(e) => setBackTo(e.target.value)}>
-          {back.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+        <select value={target} onChange={(e) => onChoice(e.target.value)}>
+          {earlierStages(stage).map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
       </label>
-      <input autoFocus value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Why: what's wrong or missing" aria-label="Why it goes back" maxLength={500} />
-      <Button type="submit" disabled={a.busy || !why.trim()}>Send back</Button>
-      <Button type="button" onClick={a.close}>Cancel</Button>
+      <input
+        autoFocus
+        value={why}
+        onChange={(e) => onWhy(e.target.value)}
+        onKeyDown={(e) => {
+          if (!submitKey({ key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, isComposing: e.nativeEvent.isComposing })) return;
+          e.preventDefault();
+          if (!busy) onSubmit();
+        }}
+        placeholder={verdict ? "What's wrong (the builder gets this)" : "Why: what's wrong or missing"}
+        aria-label={verdict ? "What's wrong" : "Why it goes back"}
+        maxLength={500}
+        dir="auto"
+      />
+      <Button type="submit" disabled={busy || !why.trim()}>{verdict ? "Send back to builder" : "Send back"}</Button>
+      <Button type="button" onClick={onCancel}>Cancel</Button>
     </form>
   );
 }

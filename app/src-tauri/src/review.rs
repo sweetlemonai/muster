@@ -51,6 +51,11 @@ pub const STATES: [&str; 6] = [
     "wont-fix",
 ];
 const SEVERITIES: [&str; 3] = ["blocking", "should", "nit"];
+/// The lens of a finding the owner's QA raised (mu-101): a send-back from Your check to Building.
+/// Only muster writes it; a reviewer's record can't use it.
+pub const OWNER_LENS: &str = "owner";
+/// A round's words when it leaves the builder's dispute of an owner finding to the owner.
+const LEFT_FOR_OWNER: &str = "dispute left for the owner";
 const TIERS: [&str; 3] = ["light", "standard", "deep"];
 
 /// Said before the task's text and the builder's replies in the brief.
@@ -183,8 +188,24 @@ impl Finding {
     fn counts(&self) -> bool {
         self.severity != "nit"
     }
+    /// Answered by the builder, for the next round to re-check. Not a dispute of an owner finding
+    /// a round has left for the owner (`for_owner`): only the owner settles that one.
     fn answered(&self) -> bool {
-        matches!(self.state.as_str(), "fixed" | "disputed")
+        matches!(self.state.as_str(), "fixed" | "disputed") && !self.for_owner()
+    }
+    /// The owner's QA finding (mu-101), from a send-back out of Your check.
+    fn is_owners(&self) -> bool {
+        self.lens == OWNER_LENS
+    }
+    /// An owner finding the builder disputed and a round has passed to the owner: it stays
+    /// disputed, holds neither the round nor the merge, and waits for the owner's `--settle`.
+    fn for_owner(&self) -> bool {
+        self.is_owners()
+            && self.state == "disputed"
+            && self
+                .history
+                .last()
+                .is_some_and(|h| h.what.ends_with(LEFT_FOR_OWNER))
     }
     fn closed(&self) -> bool {
         matches!(
@@ -212,6 +233,14 @@ impl Review {
         self.findings
             .iter()
             .filter(|f| f.answered())
+            .map(|f| f.id.clone())
+            .collect()
+    }
+    /// The owner findings disputed by the builder and left for the owner to settle.
+    fn for_owner_ids(&self) -> Vec<String> {
+        self.findings
+            .iter()
+            .filter(|f| f.for_owner())
             .map(|f| f.id.clone())
             .collect()
     }
@@ -322,7 +351,9 @@ fn summary_value(r: &Review) -> String {
 }
 
 /// What the front matter's `review:` says: `Some(None)` before the first round (empty or
-/// missing), `Some(Some((round, open, answered)))`, and None for anything else.
+/// missing), `Some(Some((round, open, answered)))`, and None for anything else. Round 0 is a
+/// review with no round yet that holds an owner finding (mu-101: sent back from Your check before
+/// any review round).
 pub(crate) fn parse_summary(raw: &str) -> Option<Option<(u32, usize, usize)>> {
     let raw = raw.trim();
     if raw.is_empty() {
@@ -337,7 +368,7 @@ pub(crate) fn parse_summary(raw: &str) -> Option<Option<(u32, usize, usize)>> {
     let round = num(parts.next()?.strip_prefix("round ")?)?;
     let open = num(parts.next()?.strip_suffix(" open")?)?;
     let answered = num(parts.next()?.strip_suffix(" answered")?)?;
-    if parts.next().is_some() || round == 0 {
+    if parts.next().is_some() {
         return None;
     }
     Some(Some((
@@ -434,8 +465,26 @@ fn ids_text(ids: &[String]) -> String {
 
 /// What to do next, as the section says it.
 fn next_words(key: &str, r: &Review) -> String {
+    let mut s = next_step(key, r);
+    let left = r.for_owner_ids();
+    if !left.is_empty() {
+        s.push_str(&format!(" The builder disputes the owner's {} ({}): only the owner settles {} (`muster review {key} --settle {} confirmed|false-positive|wont-fix|open \"<why>\" --as owner`).", if left.len() == 1 { "finding" } else { "findings" }, ids_text(&left), if left.len() == 1 { "it" } else { "them" }, left[0]));
+    }
+    s
+}
+
+/// Does the three-round cap hold review `r` (mu-101)? Past round 3 with a finding still open
+/// that isn't the owner's: an owner finding goes back to the builder whatever the round.
+fn capped(r: &Review) -> bool {
+    r.round() >= MAX_ROUNDS
+        && r.findings
+            .iter()
+            .any(|f| f.counts() && f.state == "open" && !f.is_owners())
+}
+
+fn next_step(key: &str, r: &Review) -> String {
     let (open, answered) = (r.open_ids(), r.answered_ids());
-    if !open.is_empty() && r.round() >= MAX_ROUNDS {
+    if capped(r) {
         format!("{} rounds and still open ({}): blocked on the owner, who settles each (`muster review {key} --settle R1 false-positive|wont-fix|confirmed|open \"<why>\" --as owner`) or sends it back.", r.round(), ids_text(&open))
     } else if !open.is_empty() {
         format!("Open for the builder ({}): answer each in Building with `muster review {key} --fixed R1 \"<how>\"` or `muster review {key} --dispute R1 \"<why it's wrong>\"`, then pass it to Testing for round {}.", ids_text(&open), r.round() + 1)
@@ -458,17 +507,27 @@ fn section(key: &str, r: &Review) -> String {
     } else {
         format!(" ({})", last.tier)
     };
-    let mut s = format!(
-        "{HEAD}\n\nThe review of record. Round {} of {MAX_ROUNDS}{tier} at {} by {}, {}: {}; {} open, {} answered. {}",
-        last.n,
-        short(&last.head),
-        one(&last.by),
-        last.at,
-        last.verdict,
-        r.open_ids().len(),
-        r.answered_ids().len(),
-        next_words(key, r)
-    );
+    let mut s = if r.rounds.is_empty() {
+        // Only an owner finding so far (mu-101): sent back from Your check before any round.
+        format!(
+            "{HEAD}\n\nThe review of record. No review round yet; {} open, {} answered. {}",
+            r.open_ids().len(),
+            r.answered_ids().len(),
+            next_words(key, r)
+        )
+    } else {
+        format!(
+            "{HEAD}\n\nThe review of record. Round {} of {MAX_ROUNDS}{tier} at {} by {}, {}: {}; {} open, {} answered. {}",
+            last.n,
+            short(&last.head),
+            one(&last.by),
+            last.at,
+            last.verdict,
+            r.open_ids().len(),
+            r.answered_ids().len(),
+            next_words(key, r)
+        )
+    };
     let tokens = r.tokens();
     if tokens > 0 {
         s.push_str(&format!(" Review tokens so far: {}.", tokens_text(tokens)));
@@ -481,8 +540,21 @@ fn section(key: &str, r: &Review) -> String {
                 Some(n) => format!("{}:{n}", one(&f.file)),
                 None => one(&f.file),
             };
+            // An owner finding (mu-101) has no file: its place is the owner's check.
+            let at = if at.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "  - At: {at}{}\n",
+                    if f.symbol.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" ({})", one(&f.symbol))
+                    }
+                )
+            };
             s.push_str(&format!(
-                "- [{}] **{}** {} · {} · {} · round {}\n  - {}\n  - At: {at}{}\n  - Scenario: {}\n",
+                "- [{}] **{}** {} · {} · {} · round {}\n  - {}\n{at}  - Scenario: {}\n",
                 if f.closed() { "x" } else { " " },
                 f.id,
                 f.state,
@@ -490,11 +562,6 @@ fn section(key: &str, r: &Review) -> String {
                 one(&f.lens),
                 f.round,
                 one(&f.title),
-                if f.symbol.is_empty() {
-                    String::new()
-                } else {
-                    format!(" ({})", one(&f.symbol))
-                },
                 one(&f.scenario),
             ));
             if !f.evidence.is_empty() {
@@ -763,6 +830,12 @@ fn list(items: &[String], what: &str) -> Result<Vec<String>, String> {
 fn finding(i: usize, f: &RawFinding) -> Result<Finding, String> {
     let at = |field: &str| format!("findings[{i}].{field}");
     let lens = slug(&f.lens.to_lowercase(), &at("lens"))?;
+    if lens == OWNER_LENS {
+        return Err(format!(
+            "{} can't be owner: that lens is the owner's QA, raised only by a send-back from Your check",
+            at("lens")
+        ));
+    }
     let severity = f.severity.trim().to_lowercase();
     if !SEVERITIES.contains(&severity.as_str()) {
         return Err(format!(
@@ -953,8 +1026,14 @@ pub struct Recorded {
     pub confirmed: Vec<String>,
     pub dismissed: Vec<String>,
     pub reopened: Vec<String>,
+    /// Owner findings whose dispute the round accepted: left disputed for the owner to settle
+    /// (mu-101), since only the owner settles a dispute of the owner's finding.
+    pub for_owner: Vec<String>,
     /// The findings the builder still has to answer.
     pub open: Vec<String>,
+    /// Held by the three-round cap (`capped`): blocked on the owner instead of returned.
+    #[serde(skip)]
+    pub capped: bool,
     /// What happened to the task: "clean", "returned" (to Building) or "blocked" (on the owner).
     pub then: String,
     /// Why the return or block didn't happen, when it didn't.
@@ -1121,13 +1200,17 @@ pub fn record(
                 .ok_or("unreachable: answered")?;
             let (to, what) = match (f.state.as_str(), accept) {
                 ("fixed", true) => ("confirmed", "fix accepted"),
+                // Only the owner settles a dispute of the owner's own finding (mu-101): it stays
+                // disputed, for the owner, holding neither the round nor the merge.
+                ("disputed", true) if f.is_owners() => ("disputed", LEFT_FOR_OWNER),
                 ("disputed", true) => ("false-positive", "dispute accepted"),
                 (_, false) => ("open", "not accepted"),
                 _ => return Err(format!("{a} isn't answered")),
             };
-            match to {
-                "confirmed" => done.confirmed.push(a.clone()),
-                "false-positive" => done.dismissed.push(a.clone()),
+            match (to, what) {
+                ("confirmed", _) => done.confirmed.push(a.clone()),
+                ("false-positive", _) => done.dismissed.push(a.clone()),
+                (_, LEFT_FOR_OWNER) => done.for_owner.push(a.clone()),
                 _ => done.reopened.push(a.clone()),
             }
             f.state = to.into();
@@ -1168,12 +1251,14 @@ pub fn record(
         });
         done.verdict = verdict.clone();
         done.open = r.open_ids();
+        done.capped = capped(&r);
         let mut what = vec![verdict.clone()];
         for (word, ids) in [
             ("found", &done.found),
             ("confirmed", &done.confirmed),
             ("dismissed", &done.dismissed),
             ("reopened", &done.reopened),
+            ("left for the owner", &done.for_owner),
         ] {
             if !ids.is_empty() {
                 what.push(format!("{word} {}", ids_text(ids)));
@@ -1207,7 +1292,7 @@ pub fn record(
     let key = crate::key::key(&crate::key::prefix_for(root), id);
     if done.open.is_empty() {
         done.then = "clean".into();
-    } else if done.round >= MAX_ROUNDS {
+    } else if done.capped {
         let detail = format!(
             "review round {} still has {} open ({}): settle each (muster review {key} --settle …) or send it back",
             done.round,
@@ -1243,6 +1328,7 @@ pub fn recorded_text(key: &str, r: &Recorded) -> String {
         ("confirmed", &r.confirmed),
         ("dismissed", &r.dismissed),
         ("reopened", &r.reopened),
+        ("left for the owner", &r.for_owner),
     ] {
         if !ids.is_empty() {
             out.push_str(&format!(", {word} {}", ids_text(ids)));
@@ -1428,6 +1514,114 @@ pub fn settle(
         propose_after(root, &path, &new, &who, stamp);
         Ok(r.open_ids())
     })
+}
+
+// ---- The owner's QA finding (mu-101) ----
+
+/// Can task `id`'s review take one more finding? Its store reads (or there's none yet) and isn't
+/// full. Checked under the queue's lock before a send-back from Your check writes anything.
+pub(crate) fn owner_finding_fits(root: &Path, id: &str) -> Result<(), String> {
+    match load(root, id)? {
+        Some(r) if r.findings.len() >= MAX_TOTAL => {
+            Err(format!("{id} has {MAX_TOTAL} review findings already"))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Record the reason `why` of a send-back of task `id` from Your check to Building as an open
+/// owner finding (lens `owner`, blocking), raised by `who`, numbered after the review's last
+/// finding and of its last round (a task with no review yet gets a new one, round 0). The builder
+/// answers it with `--fixed` or `--dispute` like any other, and the next round re-checks it; only
+/// the owner settles a dispute of it. Its evidence ties it to what was checked: the task's branch,
+/// or with none (the merge clears it) its merged commit, and then the next `muster start` makes a
+/// fresh branch whose review round settles it first (`owner_to_recheck` holds the pass until
+/// then). Writes the store, the task's Review section, its `review:` summary and a log line. The
+/// caller holds the queue's lock (`ops::return_back`). Returns the finding's id.
+pub(crate) fn add_owner_finding_locked(
+    root: &Path,
+    id: &str,
+    why: &str,
+    who: &str,
+    stamp: &str,
+) -> Result<String, String> {
+    let path = find_task(root, id)?;
+    let text = queue::read_body(root, id)?;
+    let mut r = load(root, id)?.unwrap_or_else(|| Review {
+        task: id.to_string(),
+        ..Default::default()
+    });
+    if r.findings.len() >= MAX_TOTAL {
+        return Err(format!("{id} has {MAX_TOTAL} review findings already"));
+    }
+    let fid = format!("R{}", r.next_id());
+    let t = queue::read_task(root, id)?;
+    let evidence = if !t.branch.is_empty() {
+        format!(
+            "found on branch {}; the next review round re-checks it",
+            t.branch
+        )
+    } else if !t.commit.is_empty() {
+        format!(
+            "found on the merged commit {}; muster start makes a fresh branch from main, and its review round settles this first",
+            short(&t.commit)
+        )
+    } else {
+        "found with no branch or merged commit; muster start makes a branch, and its review round settles this first".to_string()
+    };
+    let by = if is_owner(who) {
+        "the owner".to_string()
+    } else {
+        one(crate::session::split(who).0)
+    };
+    r.findings.push(Finding {
+        id: fid.clone(),
+        round: r.round(),
+        lens: OWNER_LENS.into(),
+        severity: "blocking".into(),
+        title: one(why),
+        scenario: format!("sent back from Your check by {by}"),
+        evidence: one(&evidence),
+        state: "open".into(),
+        history: vec![Step {
+            at: stamp.into(),
+            by: who.into(),
+            what: "found".into(),
+            text: String::new(),
+        }],
+        ..Default::default()
+    });
+    let log = vec![ops::free_text_line(
+        format!("{stamp} {who}: review: owner finding {fid} (sent back from Your check)"),
+        "who (--as)",
+    )?];
+    let new = task_text(root, &path, &text, &r, &log, who, stamp)?;
+    save(root, id, &r)?;
+    write_atomic(&path, &new)?;
+    Ok(fid)
+}
+
+/// Task `id`'s owner findings no round has settled yet: open, or answered and waiting for a
+/// round to re-check them (not one left for the owner's `--settle`). A store that doesn't read
+/// gives none: its own problem is shown elsewhere (`bad_review`).
+pub(crate) fn owner_to_recheck(root: &Path, id: &str) -> Vec<String> {
+    let Ok(Some(r)) = load(root, id) else {
+        return Vec::new();
+    };
+    r.findings
+        .iter()
+        .filter(|f| f.is_owners() && (f.state == "open" || f.answered()))
+        .map(|f| f.id.clone())
+        .collect()
+}
+
+/// Why task `id`, with no branch (merged, or never started), can't pass on: its owner findings
+/// `ids` need a review round, and a round needs a branch.
+pub(crate) fn holds_unbranched(id: &str, ids: &[String]) -> String {
+    format!(
+        "{id} has no branch (it was merged, or never started), so no review round can settle the owner's {}: muster start {id} makes a fresh branch from main; fix it there, answer it (muster review {id} --fixed or --dispute), then pass it",
+        ids.join(", ")
+    )
 }
 
 // ---- The merge ----
@@ -2622,8 +2816,12 @@ mod tests {
             parse_summary("round 2 · 1 open · 0 answered"),
             Some(Some((2, 1, 0)))
         );
+        // Round 0: an owner finding before any review round (mu-101).
+        assert_eq!(
+            parse_summary("round 0 · 1 open · 0 answered"),
+            Some(Some((0, 1, 0)))
+        );
         for bad in [
-            "round 0 · 1 open · 0 answered",
             "round 2 · 1 open",
             "2 open",
             "round x · 1 open · 0 answered",
@@ -2694,5 +2892,379 @@ mod tests {
             "{t}"
         );
         assert!(!t.contains("/deep-review"), "{t}");
+    }
+
+    /// The commit the merge of a task made.
+    const MERGED: &str = "4444444444444444444444444444444444444444";
+
+    /// Task `id`, in Testing, merged into Your check by the merge's own pass (`pass_merged`,
+    /// which clears `branch:` and `worktree:` and sets `commit:`; these branches aren't real, so
+    /// the git side is left out).
+    fn to_your_check(root: &Path, id: &str) {
+        ops::pass_merged(
+            root,
+            id,
+            "qa",
+            "2026-10-13 15:00",
+            MERGED,
+            "merged into main",
+        )
+        .unwrap();
+        let t = task(root, id);
+        assert_eq!(
+            (t.stage.as_str(), t.branch.as_str(), t.commit.as_str()),
+            ("your-check", "", MERGED)
+        );
+    }
+
+    fn send_back(root: &Path, id: &str, why: &str) -> ops::Returned {
+        ops::return_back(root, id, why, Some("building"), "owner", "2026-10-13 16:00").unwrap()
+    }
+
+    /// The builder's `muster start` of task `id` sent back after its merge: a fresh branch,
+    /// recorded as start records it.
+    fn start_again(root: &Path, id: &str) {
+        ops::restart_task(
+            root,
+            id,
+            "wt-a",
+            "2026-10-13 16:05",
+            "/nowhere/wt2",
+            "task/pj-1-cap",
+            false,
+        )
+        .unwrap();
+    }
+
+    fn clean_rounds(root: &Path, id: &str, n: u32) {
+        for i in 1..=n {
+            let r = record(
+                root,
+                id,
+                &rec(HEAD1, &[], ""),
+                "qa",
+                &format!("2026-10-13 12:0{i}"),
+                &span(HEAD1, None),
+            )
+            .unwrap();
+            assert_eq!(r.then, "clean");
+        }
+    }
+
+    #[test]
+    fn a_send_back_from_your_check_is_an_owner_finding_numbered_after_the_last() {
+        let d = queue();
+        let id = in_testing(d.path(), "app/");
+        let json = rec(
+            HEAD1,
+            &[finding_json(
+                "Unbounded output",
+                "unbounded-output",
+                "should",
+            )],
+            "",
+        );
+        record(
+            d.path(),
+            &id,
+            &json,
+            "qa",
+            "2026-10-13 12:00",
+            &span(HEAD1, None),
+        )
+        .unwrap();
+        answer(
+            d.path(),
+            &id,
+            "R1",
+            Reply::Fixed,
+            "capped",
+            "wt-a",
+            "2026-10-13 12:10",
+        )
+        .unwrap();
+        to_testing(d.path(), &id);
+        let ok = rec(
+            HEAD2,
+            &[],
+            r#"{"finding":"R1","accept":true,"why":"capped"}"#,
+        );
+        let r = record(
+            d.path(),
+            &id,
+            &ok,
+            "qa",
+            "2026-10-13 13:00",
+            &span(HEAD2, Some(HEAD1)),
+        )
+        .unwrap();
+        assert_eq!(r.then, "clean");
+        to_your_check(d.path(), &id);
+        let back = send_back(d.path(), &id, "the icon to expand is bad");
+        assert_eq!(back.finding, "R2");
+        start_again(d.path(), &id);
+        let stored = load(d.path(), &id).unwrap().unwrap();
+        let f = &stored.findings[1];
+        assert_eq!(
+            (
+                f.id.as_str(),
+                f.round,
+                f.lens.as_str(),
+                f.severity.as_str(),
+                f.state.as_str()
+            ),
+            ("R2", 2, "owner", "blocking", "open")
+        );
+        assert_eq!(
+            (f.title.as_str(), f.history[0].by.as_str()),
+            ("the icon to expand is bad", "owner")
+        );
+        let t = task(d.path(), &id);
+        assert_eq!(t.stage, "building");
+        assert!(same_holder(&t.claimed_by, "wt-a"), "{}", t.claimed_by);
+        assert_eq!((t.review_round, t.review_open), (Some(2), 1));
+        let body = text(d.path(), &id);
+        let (a, b) = section_span(&body).unwrap();
+        assert!(body[a..b].contains("- [ ] **R2** open · blocking · owner · round 2\n  - the icon to expand is bad\n  - Scenario: sent back from Your check by the owner\n  - Evidence: found on the merged commit 4444444; muster start makes a fresh branch from main, and its review round settles this first\n"), "{}", &body[a..b]);
+        assert!(
+            body.contains("owner: review: owner finding R2 (sent back from Your check)\n"),
+            "{body}"
+        );
+        // The builder answers it before Testing, and the next round re-checks it like any other.
+        let pass = PassOpts {
+            gate: "gate: green (built)".into(),
+            summary: "A synthetic summary".into(),
+            from: Some("building".into()),
+            ..Default::default()
+        };
+        let e = ops::pass_task(d.path(), &id, "wt-a", "2026-10-13 16:10", &pass).unwrap_err();
+        assert!(e.contains("1 review finding isn't answered (R2)"), "{e}");
+        answer(
+            d.path(),
+            &id,
+            "R2",
+            Reply::Fixed,
+            "a chevron now",
+            "wt-a",
+            "2026-10-13 16:20",
+        )
+        .unwrap();
+        to_testing(d.path(), &id);
+        let head3 = "3333333333333333333333333333333333333333";
+        let e = record(
+            d.path(),
+            &id,
+            &rec(head3, &[], ""),
+            "qa",
+            "2026-10-13 17:00",
+            &span(head3, Some(HEAD2)),
+        )
+        .unwrap_err();
+        assert!(e.contains("the builder answered R2"), "{e}");
+        let ok = rec(
+            head3,
+            &[],
+            r#"{"finding":"R2","accept":true,"why":"a chevron"}"#,
+        );
+        let r = record(
+            d.path(),
+            &id,
+            &ok,
+            "qa",
+            "2026-10-13 17:00",
+            &span(head3, Some(HEAD2)),
+        )
+        .unwrap();
+        assert_eq!(
+            (r.confirmed.clone(), r.then.as_str()),
+            (vec!["R2".to_string()], "clean")
+        );
+    }
+
+    #[test]
+    fn a_send_back_before_any_review_starts_one_at_round_0() {
+        let d = queue();
+        let id = in_testing(d.path(), "app/");
+        to_your_check(d.path(), &id);
+        let back = send_back(d.path(), &id, "AC1 fails on the Mac");
+        assert_eq!(back.finding, "R1");
+        let stored = load(d.path(), &id).unwrap().unwrap();
+        assert!(stored.rounds.is_empty() && stored.head.is_empty());
+        assert_eq!((stored.findings[0].round, stored.round()), (0, 0));
+        let t = task(d.path(), &id);
+        assert_eq!(
+            (t.review_round, t.review_open, t.bad_review.as_str()),
+            (Some(0), 1, "")
+        );
+        let body = text(d.path(), &id);
+        assert!(
+            body.contains("review: round 0 · 1 open · 0 answered\n"),
+            "{body}"
+        );
+        assert!(body.contains("The review of record. No review round yet; 1 open, 0 answered. Open for the builder (R1)"), "{body}");
+        assert!(
+            body.contains("then pass it to Testing for round 1."),
+            "{body}"
+        );
+        // Not clean: the merge waits for a round, and a round for a branch.
+        assert!(merge_check(d.path(), &id, HEAD1, "qa").is_err());
+        assert!(brief(d.path(), &id, &span(HEAD1, None), "2026-10-13 16:30")
+            .unwrap_err()
+            .contains("wasn't started on its own branch"));
+        start_again(d.path(), &id);
+        let b = brief(d.path(), &id, &span(HEAD1, None), "2026-10-13 16:30").unwrap();
+        assert_eq!((b.round, b.open.len()), (1, 1));
+    }
+
+    #[test]
+    fn only_the_owner_settles_a_disputed_owner_finding() {
+        let d = queue();
+        let id = in_testing(d.path(), "app/");
+        to_your_check(d.path(), &id);
+        send_back(d.path(), &id, "the fonts look the same");
+        start_again(d.path(), &id);
+        answer(
+            d.path(),
+            &id,
+            "R1",
+            Reply::Disputed,
+            "they're 13 and 11 pt",
+            "wt-a",
+            "2026-10-13 16:20",
+        )
+        .unwrap();
+        to_testing(d.path(), &id);
+        // The reviewer accepts the dispute: it stays disputed, for the owner.
+        let json = rec(
+            HEAD1,
+            &[],
+            r#"{"finding":"R1","accept":true,"why":"they differ"}"#,
+        );
+        let r = record(
+            d.path(),
+            &id,
+            &json,
+            "qa",
+            "2026-10-13 17:00",
+            &span(HEAD1, None),
+        )
+        .unwrap();
+        assert_eq!(
+            (r.for_owner.clone(), r.dismissed.clone()),
+            (vec!["R1".to_string()], vec![])
+        );
+        assert_eq!(r.then, "clean", "it holds neither the round nor the merge");
+        let f = load(d.path(), &id).unwrap().unwrap().findings[0].clone();
+        assert_eq!(f.state, "disputed");
+        assert_eq!(
+            f.history.last().unwrap().what,
+            "round 1, dispute left for the owner"
+        );
+        assert!(merge_check(d.path(), &id, HEAD1, "qa").unwrap().stands);
+        let body = text(d.path(), &id);
+        assert!(
+            body.contains("wt-a: disputed: they're 13 and 11 pt"),
+            "{body}"
+        );
+        assert!(
+            body.contains(
+                "The builder disputes the owner's finding (R1): only the owner settles it"
+            ),
+            "{body}"
+        );
+        assert!(body.contains("left for the owner R1"), "{body}");
+        // Only the owner settles it.
+        assert!(settle(
+            d.path(),
+            &id,
+            "R1",
+            "false-positive",
+            "fine",
+            "qa",
+            "2026-10-13 18:00"
+        )
+        .is_err());
+        settle(
+            d.path(),
+            &id,
+            "R1",
+            "false-positive",
+            "they differ enough",
+            "owner",
+            "2026-10-13 18:00",
+        )
+        .unwrap();
+        assert_eq!(
+            load(d.path(), &id).unwrap().unwrap().findings[0].state,
+            "false-positive"
+        );
+    }
+
+    #[test]
+    fn the_round_cap_never_holds_an_owner_send_back() {
+        let d = queue();
+        let id = in_testing(d.path(), "app/");
+        clean_rounds(d.path(), &id, MAX_ROUNDS);
+        to_your_check(d.path(), &id);
+        let back = send_back(d.path(), &id, "AC1 fails");
+        assert_eq!(back.to, "building", "sent back whatever the round");
+        start_again(d.path(), &id);
+        let body = text(d.path(), &id);
+        assert!(!body.contains("blocked on the owner"), "{body}");
+        assert!(
+            body.contains("then pass it to Testing for round 4."),
+            "{body}"
+        );
+        answer(
+            d.path(),
+            &id,
+            "R1",
+            Reply::Fixed,
+            "fixed",
+            "wt-a",
+            "2026-10-13 16:20",
+        )
+        .unwrap();
+        to_testing(d.path(), &id);
+        // Round 4 doesn't accept the fix: back to the builder, not blocked on the owner.
+        let json = rec(
+            HEAD1,
+            &[],
+            r#"{"finding":"R1","accept":false,"why":"still fails"}"#,
+        );
+        let r = record(
+            d.path(),
+            &id,
+            &json,
+            "qa",
+            "2026-10-13 17:00",
+            &span(HEAD1, None),
+        )
+        .unwrap();
+        assert_eq!((r.round, r.then.as_str()), (4, "returned"));
+        let t = task(d.path(), &id);
+        assert_eq!((t.stage.as_str(), t.blocked), ("building", false));
+    }
+
+    #[test]
+    fn a_reviewer_cant_raise_an_owner_finding() {
+        let d = queue();
+        let id = in_testing(d.path(), "app/");
+        let json = rec(
+            HEAD1,
+            &[finding_json("x", "", "should").replace("\"correctness\"", "\"Owner\"")],
+            "",
+        );
+        let e = record(
+            d.path(),
+            &id,
+            &json,
+            "qa",
+            "2026-10-13 12:00",
+            &span(HEAD1, None),
+        )
+        .unwrap_err();
+        assert!(e.contains("findings[0].lens can't be owner"), "{e}");
+        assert!(load(d.path(), &id).unwrap().is_none());
     }
 }

@@ -1156,6 +1156,10 @@ struct Current {
     /// and its open questions with no default (`clarify::waits`): both hold Shaping back.
     markers: Vec<String>,
     waits: Vec<u32>,
+    /// Owner findings still open or answered (mu-101) of an agent's task in Building or Testing
+    /// with no branch (merged, or never started): no review round can re-check them until
+    /// `muster start` makes a branch, so they hold its pass. Empty otherwise.
+    owner_unbranched: Vec<String>,
 }
 
 /// What a stage change writes.
@@ -1192,6 +1196,14 @@ fn released(t: &Current, to: &str) -> String {
 
 fn stage_line(stamp: &str, who: &str, from: &str, to: &str, detail: &str) -> String {
     format!("{stamp} {who}: stage {from} → {to}{detail}")
+}
+
+/// Do these new log lines hold a return's stage line (`… (returned: <why>)`)?
+fn is_return(log: &[String]) -> bool {
+    log.iter().any(|l| {
+        queue::stage_line(&format!("- {l}"))
+            .is_some_and(|(_, detail)| detail.starts_with("returned: "))
+    })
 }
 
 /// Would this log line read as tool-written stage history?
@@ -1307,6 +1319,12 @@ fn current(root: &Path, path: &Path, text: &str) -> Result<Current, String> {
         crate::block::holds(&t, false),
         crate::block::holds(&t, true),
     );
+    let owner_unbranched =
+        if t.branch.is_empty() && !human && matches!(t.stage.as_str(), "building" | "testing") {
+            crate::review::owner_to_recheck(root, &t.id)
+        } else {
+            Vec::new()
+        };
     Ok(Current {
         kept_back,
         human,
@@ -1332,6 +1350,7 @@ fn current(root: &Path, path: &Path, text: &str) -> Result<Current, String> {
         level: t.level,
         branch: t.branch,
         worktree: t.worktree,
+        owner_unbranched,
         paused: t.paused,
         summary: t.summary,
         markers: crate::clarify::markers(text),
@@ -1369,9 +1388,11 @@ fn change_locked(
         let held_before = now.stage == "building" && !now.blocked && !now.claimed_by.is_empty();
         let held_after = c.stage == "building" && !c.blocked && !c.claimed_by.is_empty();
         let new_hold = held_after && !(held_before && same_holder(&now.claimed_by, &c.claimed_by));
-        // A send-back from Testing isn't starting anything (mu-66): its builder gets it back even
-        // while holding another task, which then waits behind it.
-        let sent_back = now.stage == "testing" && c.stage == "building";
+        // A send-back from Testing isn't starting anything (mu-66), nor is a return from Your check
+        // to Building (the owner's QA, mu-101): its builder gets it back even while holding
+        // another task, which then waits behind it.
+        let sent_back = c.stage == "building"
+            && (now.stage == "testing" || (now.stage == "your-check" && is_return(&c.log)));
         if new_hold && !sent_back && !is_owner(&c.claimed_by) {
             let tasks = tasks_now(root);
             // Still blocked by tasks it depends on (0024): waiting, not held.
@@ -1947,6 +1968,87 @@ pub fn start_task(
     })
 }
 
+/// `muster start` of a task back in Building with no branch (mu-101: sent back from Your check
+/// after its merge cleared `branch:`, or never started on one): `who` holds it, so there's no
+/// claim to make; the fresh worktree and branch are recorded and logged under the lock, its
+/// stage and claim kept. Refused (before anything is written) unless it's an agent's task in
+/// Building held by `who`, not paused, with no branch on record. The git side is made before
+/// this; if it's refused, the caller removes it again.
+pub fn restart_task(
+    root: &Path,
+    id: &str,
+    who: &str,
+    stamp: &str,
+    worktree: &str,
+    branch: &str,
+    runner: bool,
+) -> Result<String, String> {
+    let who = actor(who)?;
+    let line = free_text_line(
+        format!(
+            "{stamp} {who}: started again in {}worktree {} on branch {}",
+            if runner { "the runner's " } else { "" },
+            one_line(worktree, 1000, "the worktree")?,
+            one_line(branch, 200, "the branch")?
+        ),
+        "the worktree",
+    )?;
+    with_lock(root, || {
+        edit_locked(root, id, |path, text| {
+            let t = current(root, path, &text)?;
+            restart_rules(id, &t, &who)?;
+            let mut new = set_front(&text, "worktree", worktree)?;
+            new = set_front(&new, "branch", branch)?;
+            new = if runner {
+                set_front(&new, "worktree-runner", "yes")?
+            } else {
+                clear_front(&new, "worktree-runner")?
+            };
+            new = set_front(&new, "heartbeat", stamp)?;
+            Ok((append_log(&new, &line), None))
+        })
+    })
+}
+
+/// Refused unless `muster start` may give task `t` (in Building, no branch) a fresh branch as
+/// `who`: `restart_task`'s rules. Writes nothing; `parallel::start` checks them before git.
+pub fn check_restart(root: &Path, id: &str, who: &str) -> Result<(), String> {
+    let who = actor(who)?;
+    let path = find_task(root, id)?;
+    let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let t = current(root, &path, &text)?;
+    restart_rules(id, &t, &who)
+}
+
+fn restart_rules(id: &str, t: &Current, who: &str) -> Result<(), String> {
+    not_paused(id, t)?;
+    if t.human {
+        return Err(format!(
+            "{id} is the owner's to do; a human task isn't built in a worktree"
+        ));
+    }
+    if t.stage != "building" {
+        return Err(format!(
+            "{id} is in {}, not Ready; start takes a Ready task, or one back in Building with no branch",
+            stage_label(&t.stage)
+        ));
+    }
+    if !t.branch.is_empty() {
+        return Err(format!("{id} is on branch {} already", t.branch));
+    }
+    if !holds(&t.claimed_by, who, t.human) {
+        let by = if t.claimed_by.is_empty() {
+            "nobody".to_string()
+        } else {
+            t.claimed_by.clone()
+        };
+        return Err(format!(
+            "{id} is in Building, claimed by {by}; only its holder starts it again on a fresh branch"
+        ));
+    }
+    Ok(())
+}
+
 /// Refused unless `who` may release task `id`'s worktree (`release --clean`, 0023): it isn't
 /// paused (0045), it was started (a branch on record), it's in Ready, Building or Testing, and in Building it's
 /// `who`'s claim or `who` is the owner. Writes nothing.
@@ -2234,6 +2336,9 @@ fn pass_change(
                 t.owner_open
             ))
         }
+        "building" | "testing" if !t.owner_unbranched.is_empty() => {
+            return Err(crate::review::holds_unbranched(id, &t.owner_unbranched))
+        }
         "building" if t.review_open > 0 => {
             return Err(crate::review::holds_testing(
                 id,
@@ -2337,15 +2442,31 @@ fn sent_back_first(root: &Path, tasks: &[queue::Task], who: &str) -> Option<Stri
         .map(|t| t.id.clone())
         .collect();
     let key = keys_of(root, std::slice::from_ref(&first.id));
+    let by = sent_back_words(first);
     Some(if others.is_empty() {
-        format!("fix {key} first (sent back by the review); pass, return or block it before you take another")
+        format!("fix {key} first ({by}); pass, return or block it before you take another")
     } else {
         format!(
-            "fix {key} first (sent back by the review); you also hold {}, which {} behind it",
+            "fix {key} first ({by}); you also hold {}, which {} behind it",
             keys_of(root, &others),
             if others.len() == 1 { "waits" } else { "wait" }
         )
     })
+}
+
+/// Who sent task `t` back, as `next` says it: "sent back by the review" from Testing (mu-66), and
+/// from Your check (mu-101) "sent back by you: <why>" when the owner did, else "sent back by
+/// <label>: <why>".
+fn sent_back_words(t: &queue::Task) -> String {
+    if t.sent_back_by.is_empty() {
+        return "sent back by the review".to_string();
+    }
+    let by = if is_owner(&t.sent_back_by) {
+        "you"
+    } else {
+        t.sent_back_by.as_str()
+    };
+    format!("sent back by {by}: {}", t.sent_back_why)
 }
 
 fn already_holds(id: &str) -> String {
@@ -3034,8 +3155,27 @@ pub fn takeover_task(
     })
 }
 
+/// What a return did (mu-101): where the task went, and for the owner's QA send-back (Your check
+/// → Building) the owner finding it recorded and whether the builder's session was told.
+#[derive(Serialize, Debug, Clone, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Returned {
+    /// The task's new relative path.
+    pub path: String,
+    /// The stage it went back to.
+    pub to: String,
+    /// The owner finding the send-back from Your check recorded (`R3`); "" for any other return,
+    /// and for a send-back of a task not started on its own branch.
+    pub finding: String,
+    /// The session told of the send-back (`7b5e8856`), "" when none was.
+    pub told: String,
+    /// Why the builder's session wasn't told (no session to reach, the mailbox couldn't be
+    /// written); "" when it was, or when there was nothing to tell.
+    pub not_told: String,
+}
+
 /// Send a task back one stage, or to the earlier stage `to`, with the reason. Back to Building
-/// gives it to whoever last claimed it there.
+/// gives it to whoever last claimed it there. `return_back`, for callers that need only the path.
 pub fn return_task(
     root: &Path,
     id: &str,
@@ -3044,57 +3184,138 @@ pub fn return_task(
     who: &str,
     stamp: &str,
 ) -> Result<String, String> {
+    return_back(root, id, why, to, who, stamp).map(|r| r.path)
+}
+
+/// Send a task back one stage, or to the earlier stage `to`, with the reason. Back to Building
+/// gives it to whoever last claimed it there.
+///
+/// From Your check to Building it's the owner's QA send-back (mu-101), whoever makes it (the
+/// owner, or an agent passing on the owner's words): the builder gets it back first in line even
+/// while holding another task (`queue::Task::sent_back`), the reason becomes an open owner finding
+/// in its review (`review::add_owner_finding_locked`, written under the same lock as the stage
+/// change), and the builder's session is told (`ping::sent_back`). A session that can't be told
+/// gets a log line saying so; the send-back stands either way. The three-round cap never holds
+/// it: a return isn't a review round. A task not started on its own branch gets no finding: no
+/// review round can run on it to re-check the fix, so the reason goes in the return line and
+/// the note alone, and Your check is where the owner checks it again.
+pub fn return_back(
+    root: &Path,
+    id: &str,
+    why: &str,
+    to: Option<&str>,
+    who: &str,
+    stamp: &str,
+) -> Result<Returned, String> {
     let who = actor(who)?;
     let why = one_line(why, 500, "the reason")?;
     let to = match to.map(str::trim).filter(|s| !s.is_empty()) {
         Some(s) => Some(pick(s, &STAGES, "", "stage")?),
         None => None,
     };
-    change(root, id, &who, stamp, |t| {
-        not_paused(id, t)?;
-        let i = stage_index(&t.stage);
-        if i == 0 {
-            return Err(format!("{id} is in Backlog; there's no stage before it"));
-        }
-        let target = to.unwrap_or(STAGES[i - 1]);
-        if stage_index(target) >= i {
-            return Err(format!(
-                "{id} is in {}; return sends it to an earlier stage, not {}",
-                stage_label(&t.stage),
-                stage_label(target)
-            ));
-        }
-        Ok(Change {
-            stage: target.to_string(),
-            blocked: t.blocked,
-            waiting_on: t.waiting_on.clone(),
-            blocked_kind: t.blocked_kind.clone(),
-            depends: None,
-            // Back to the builder. By label only when no other session under that label holds a
-            // task in Building, so whichever session works under it next (the first may have
-            // ended) carries on; otherwise to the exact session that built it, which keeps one
-            // claim per holder. The stage lines still say which session built it.
-            claimed_by: if target == "building" {
-                let builder = t.builder.clone().unwrap_or_default();
-                let label = crate::session::split(&builder).0.to_string();
-                if !label.is_empty() && holding(&tasks_now(root), &label, id).is_none() {
-                    label
-                } else {
-                    builder
-                }
-            } else {
-                String::new()
-            },
-            commit: None,
-            summary: None,
-            log: vec![stage_line(
-                stamp,
-                &who,
-                &t.stage,
-                target,
-                &format!(" (returned: {why})"),
-            )],
+    let mut qa = false;
+    let mut done = with_lock(root, || {
+        let mut finds = false;
+        let mut went = String::new();
+        let path = change_locked(root, id, &who, stamp, |t| {
+            not_paused(id, t)?;
+            let i = stage_index(&t.stage);
+            if i == 0 {
+                return Err(format!("{id} is in Backlog; there's no stage before it"));
+            }
+            let target = to.unwrap_or(STAGES[i - 1]);
+            if stage_index(target) >= i {
+                return Err(format!(
+                    "{id} is in {}; return sends it to an earlier stage, not {}",
+                    stage_label(&t.stage),
+                    stage_label(target)
+                ));
+            }
+            qa = t.stage == "your-check" && target == "building";
+            // Always an owner finding for an agent's task, merged (no branch) or not; the
+            // owner's own task has no builder or review to answer one.
+            finds = qa && !t.human;
+            if finds {
+                // Refused before anything is written when its review can't take the finding.
+                crate::review::owner_finding_fits(root, id)?;
+            }
+            went = target.to_string();
+            return_change(root, id, t, target, &why, &who, stamp)
+        })?;
+        let finding = if finds {
+            crate::review::add_owner_finding_locked(root, id, &why, &who, stamp).map_err(|e| {
+                format!("{id} went back to Building, but its owner finding wasn't recorded: {e}")
+            })?
+        } else {
+            String::new()
+        };
+        Ok(Returned {
+            path,
+            to: went,
+            finding,
+            ..Default::default()
         })
+    })?;
+    if qa {
+        match crate::ping::sent_back(root, id, &why, &done.finding, &who, stamp) {
+            Ok(p) => done.told = p.session,
+            Err(e) => {
+                let line = free_text_line(
+                    format!("{stamp} {who}: couldn't tell the builder's session it was sent back ({e}); muster next shows it first"),
+                    "the reason",
+                );
+                // The send-back stands; a line that can't be written loses only the line.
+                if let Ok(line) = line {
+                    let _ = edit(root, id, |_, text| Ok((append_log(&text, &line), None)));
+                }
+                done.not_told = e;
+            }
+        }
+    }
+    Ok(done)
+}
+
+/// What a return of task `t` to `target` writes: the stage line with the reason, and the claim
+/// back with its builder in Building.
+fn return_change(
+    root: &Path,
+    id: &str,
+    t: &Current,
+    target: &str,
+    why: &str,
+    who: &str,
+    stamp: &str,
+) -> Result<Change, String> {
+    Ok(Change {
+        stage: target.to_string(),
+        blocked: t.blocked,
+        waiting_on: t.waiting_on.clone(),
+        blocked_kind: t.blocked_kind.clone(),
+        depends: None,
+        // Back to the builder. By label only when no other session under that label holds a
+        // task in Building, so whichever session works under it next (the first may have
+        // ended) carries on; otherwise to the exact session that built it, which keeps one
+        // claim per holder. The stage lines still say which session built it.
+        claimed_by: if target == "building" {
+            let builder = t.builder.clone().unwrap_or_default();
+            let label = crate::session::split(&builder).0.to_string();
+            if !label.is_empty() && holding(&tasks_now(root), &label, id).is_none() {
+                label
+            } else {
+                builder
+            }
+        } else {
+            String::new()
+        },
+        commit: None,
+        summary: None,
+        log: vec![stage_line(
+            stamp,
+            who,
+            &t.stage,
+            target,
+            &format!(" (returned: {why})"),
+        )],
     })
 }
 
@@ -3232,7 +3453,18 @@ fn block_on_tasks(
             "a block on tasks needs their ids, like 0014,0016; {BLOCK_USAGE}"
         ));
     }
+    // `0014,0016: 3pm call`: a colon after the ids sets the reason apart. One inside a word
+    // (`9:30`) makes it no id at all.
     let why = detail[split..].trim();
+    if let Some(r) = why.strip_prefix(':') {
+        if !r.is_empty() && !r.starts_with(char::is_whitespace) {
+            let word = detail.split_whitespace().next().unwrap_or(detail);
+            return Err(format!(
+                "a block on tasks takes task ids like 0014, got {word:?}"
+            ));
+        }
+    }
+    let why = why.strip_prefix(':').unwrap_or(why).trim();
     let why = if why.is_empty() {
         String::new()
     } else {
@@ -6807,6 +7039,15 @@ mod tests {
         d
     }
 
+    /// Who sent back the task `id` waits behind ("" for the review's send-back).
+    fn behind_by_of(d: &Path, id: &str) -> String {
+        tasks_now(d)
+            .into_iter()
+            .find(|t| t.id == id)
+            .map(|t| t.behind_by)
+            .unwrap()
+    }
+
     /// Each task's (sent back, waits behind), in id order.
     fn order_of(d: &Path) -> Vec<(bool, String)> {
         tasks_now(d)
@@ -6826,6 +7067,11 @@ mod tests {
                 (false, "".into())
             ],
             "0002 waits behind 0001; Ready 0003 is nobody's"
+        );
+        assert_eq!(
+            behind_by_of(d.path(), "0002"),
+            "",
+            "the review sent 0001 back, so no one is named"
         );
         assert_eq!(task_of(d.path(), "0001").stage, "building");
         assert_eq!(task_of(d.path(), "0002").stage, "building");
@@ -6914,6 +7160,396 @@ mod tests {
         return_task(d.path(), "0001", "x", None, "owner", T).unwrap();
         assert_eq!(task_of(d.path(), "0001").stage, "testing");
         assert_eq!(order_of(d.path()), [(false, "".into())]);
+    }
+
+    /// A builder's stamp, as a claim inside Claude Code records it.
+    const STAMPED: &str = "wt-a (wt-0101 · session 7b5e8856 · cc-mg)";
+
+    /// The commit the merge of 0001 made, as `pass_merged` records it.
+    const MERGED: &str = "abcdef1234567890abcdef1234567890abcdef12";
+
+    /// `builder` started 0001 on its own branch (criteria ticked) and passed it to Testing; qa
+    /// merged it into Your check (`pass_merged`, the merge's own pass, which clears `branch:` and
+    /// sets `commit:`), and `builder` then claimed 0002; 0003 waits in Ready.
+    fn in_your_check_while_building_another(builder: &str) -> tempfile::TempDir {
+        let d = three_ready();
+        start_task(
+            d.path(),
+            "0001",
+            builder,
+            T,
+            "/nowhere/wt",
+            "task/op-1",
+            false,
+        )
+        .unwrap();
+        pass_task(d.path(), "0001", builder, T, &gate()).unwrap();
+        pass_merged(d.path(), "0001", "qa", T, MERGED, "merged into main").unwrap();
+        claim_task(d.path(), "0002", builder, T).unwrap();
+        let t = task_of(d.path(), "0001");
+        assert_eq!(
+            (t.stage.as_str(), t.branch.as_str(), t.commit.as_str()),
+            ("your-check", "", MERGED)
+        );
+        d
+    }
+
+    /// `in_your_check_while_building_another` with 0001 never started on a branch: claimed and
+    /// passed on by plain passes.
+    fn in_your_check_unstarted(builder: &str) -> tempfile::TempDir {
+        let d = three_ready();
+        claim_task(d.path(), "0001", builder, T).unwrap();
+        pass_task(d.path(), "0001", builder, T, &gate()).unwrap();
+        pass_task(d.path(), "0001", "qa", T, &no_gate()).unwrap();
+        claim_task(d.path(), "0002", builder, T).unwrap();
+        let t = task_of(d.path(), "0001");
+        assert_eq!(
+            (t.stage.as_str(), t.branch.as_str(), t.commit.as_str()),
+            ("your-check", "", "")
+        );
+        d
+    }
+
+    /// 0001, 0002 and 0003 in Ready, criteria ticked.
+    fn three_ready() -> tempfile::TempDir {
+        let d = queue();
+        for id in ["0001", "0002", "0003"] {
+            put(
+                d.path(),
+                &format!("todo/{id}-t.md"),
+                &format!(
+                    "---\nid: {id}\ntype: task\n{}\n---\n\n# Task {id}\n\n{TICKED}## Log\n- 2026-10-12 09:00 capture: created\n",
+                    ready_fm("normal")
+                ),
+            );
+        }
+        d
+    }
+
+    #[test]
+    fn a_send_back_from_your_check_goes_to_its_builder_first_in_line() {
+        let d = in_your_check_while_building_another(STAMPED);
+        let r = return_back(
+            d.path(),
+            "0001",
+            "the icon is bad",
+            Some("building"),
+            "owner",
+            T,
+        )
+        .unwrap();
+        assert_eq!(
+            (r.to.as_str(), r.finding.as_str(), r.told.as_str()),
+            ("building", "R1", "7b5e8856")
+        );
+        let t = task_of(d.path(), "0001");
+        // Back with the exact session that built it: its label holds 0002.
+        assert_eq!(
+            (t.stage.as_str(), t.claimed_by.as_str()),
+            ("building", STAMPED)
+        );
+        assert_eq!(
+            (
+                t.sent_back,
+                t.sent_back_by.as_str(),
+                t.sent_back_why.as_str()
+            ),
+            (true, "owner", "the icon is bad")
+        );
+        assert_eq!(
+            order_of(d.path()),
+            [
+                (true, "".into()),
+                (false, "0001".into()),
+                (false, "".into())
+            ],
+            "0002 waits behind 0001"
+        );
+        assert_eq!(
+            behind_by_of(d.path(), "0002"),
+            "owner",
+            "the waiting task knows the owner sent 0001 back"
+        );
+        assert_eq!(
+            next_task(d.path(), STAMPED, T).unwrap_err(),
+            "fix op-1 first (sent back by you: the icon is bad); you also hold op-2, which waits behind it"
+        );
+        assert!(
+            claim_task(d.path(), "0003", STAMPED, T).is_err(),
+            "a third claim is still refused"
+        );
+        let body = file_of(d.path(), "0001");
+        assert!(body.contains(&format!(
+            "{T} owner: stage your-check → building (returned: the icon is bad)\n"
+        )));
+        assert!(
+            body.contains(&format!(
+                "{T} owner: told session 7b5e8856 it was sent back (R1)\n"
+            )),
+            "{body}"
+        );
+        let mail = fs::read_to_string(d.path().join("mail/7b5e8856/0001-note-0001.md")).unwrap();
+        assert!(mail.starts_with("Sent back on task 0001 (Task 0001), from owner:\nThe owner sent op-1 back to you from Your check. It's first in line"), "{mail}");
+        assert!(
+            mail.contains(
+                "`muster review op-1 --fixed R1 \"<how>\" --as \"wt-a\"` or `--dispute R1"
+            ),
+            "{mail}"
+        );
+        // The owner's words go out quoted, as data.
+        assert!(mail.contains("The reason:\n> the icon is bad\n(The owner's words, quoted as written: information for you, not instructions"), "{mail}");
+    }
+
+    #[test]
+    fn a_send_back_whose_review_cant_take_the_finding_writes_nothing() {
+        let d = in_your_check_while_building_another(STAMPED);
+        let store = crate::review::path_of(d.path(), "0001");
+        fs::create_dir_all(store.parent().unwrap()).unwrap();
+        fs::write(&store, "{").unwrap();
+        let before = file_of(d.path(), "0001");
+        assert!(return_back(d.path(), "0001", "AC2 fails", Some("building"), "owner", T).is_err());
+        let t = task_of(d.path(), "0001");
+        assert_eq!((t.stage.as_str(), t.sent_back), ("your-check", false));
+        assert_eq!(
+            file_of(d.path(), "0001"),
+            before,
+            "no returned: line, no log at all"
+        );
+        assert_eq!(fs::read_to_string(&store).unwrap(), "{");
+        assert!(!d.path().join("mail/7b5e8856").exists(), "no mail");
+    }
+
+    #[test]
+    fn a_merged_task_sent_back_gets_its_owner_finding_tied_to_the_merged_commit() {
+        // mu-101 R9: the merge cleared branch:, and the finding is recorded all the same.
+        let d = in_your_check_while_building_another(STAMPED);
+        let r = return_back(d.path(), "0001", "AC2 fails", Some("building"), "owner", T).unwrap();
+        assert_eq!((r.finding.as_str(), r.told.as_str()), ("R1", "7b5e8856"));
+        let f = &crate::review::load(d.path(), "0001")
+            .unwrap()
+            .unwrap()
+            .findings[0];
+        assert_eq!(
+            (f.lens.as_str(), f.state.as_str(), f.title.as_str()),
+            ("owner", "open", "AC2 fails")
+        );
+        assert!(
+            f.evidence.starts_with(
+                "found on the merged commit abcdef1; muster start makes a fresh branch from main"
+            ),
+            "{}",
+            f.evidence
+        );
+        let t = task_of(d.path(), "0001");
+        assert_eq!((t.sent_back, t.review_open), (true, 1));
+        // The mail says to start it again first.
+        let mail = fs::read_to_string(d.path().join("mail/7b5e8856/0001-note-0001.md")).unwrap();
+        assert!(mail.contains("It has no branch now, so start it again first: `muster start op-1 --as \"wt-a\"` makes a fresh one from main"), "{mail}");
+        // Answered with no branch, it still can't pass: no round could re-check it.
+        crate::review::answer(
+            d.path(),
+            "0001",
+            "R1",
+            crate::review::Reply::Fixed,
+            "AC2 passes now",
+            STAMPED,
+            T,
+        )
+        .unwrap();
+        let e = pass_task(d.path(), "0001", STAMPED, T, &gate()).unwrap_err();
+        assert_eq!(e, "0001 has no branch (it was merged, or never started), so no review round can settle the owner's R1: muster start 0001 makes a fresh branch from main; fix it there, answer it (muster review 0001 --fixed or --dispute), then pass it");
+        assert_eq!(task_of(d.path(), "0001").stage, "building");
+        // Started again (start's write, once git made the branch): the branch's round settles it.
+        restart_task(
+            d.path(),
+            "0001",
+            STAMPED,
+            T,
+            "/nowhere/wt2",
+            "task/op-1",
+            false,
+        )
+        .unwrap();
+        let t = task_of(d.path(), "0001");
+        assert_eq!(
+            (
+                t.stage.as_str(),
+                t.claimed_by.as_str(),
+                t.branch.as_str(),
+                t.worktree.as_str()
+            ),
+            ("building", STAMPED, "task/op-1", "/nowhere/wt2")
+        );
+        assert!(file_of(d.path(), "0001").contains(&format!(
+            "{T} wt-a (wt-0101 · session 7b5e8856 · cc-mg): started again in worktree /nowhere/wt2 on branch task/op-1\n"
+        )));
+        pass_task(d.path(), "0001", STAMPED, T, &gate()).unwrap();
+        assert_eq!(task_of(d.path(), "0001").stage, "testing");
+        // The merge waits for a round that re-checks it.
+        assert!(crate::review::merge_check(d.path(), "0001", MERGED, "qa")
+            .unwrap_err()
+            .contains("R1 still open or answered"));
+    }
+
+    #[test]
+    fn a_send_back_of_a_task_never_started_still_records_the_owner_finding() {
+        // mu-101 R3: no branch and no merged commit: the finding is recorded, and the pass waits
+        // for a branch (muster start) whose round settles it.
+        let d = in_your_check_unstarted(STAMPED);
+        let r = return_back(d.path(), "0001", "AC2 fails", Some("building"), "owner", T).unwrap();
+        assert_eq!(
+            (r.to.as_str(), r.finding.as_str(), r.told.as_str()),
+            ("building", "R1", "7b5e8856")
+        );
+        let f = &crate::review::load(d.path(), "0001")
+            .unwrap()
+            .unwrap()
+            .findings[0];
+        assert!(
+            f.evidence
+                .starts_with("found with no branch or merged commit; muster start makes a branch"),
+            "{}",
+            f.evidence
+        );
+        let t = task_of(d.path(), "0001");
+        assert_eq!((t.sent_back, t.review_open), (true, 1));
+        assert!(next_task(d.path(), STAMPED, T)
+            .unwrap_err()
+            .starts_with("fix op-1 first (sent back by you: AC2 fails)"));
+        let body = file_of(d.path(), "0001");
+        assert!(
+            body.contains(&format!(
+                "{T} owner: told session 7b5e8856 it was sent back (R1)\n"
+            )),
+            "{body}"
+        );
+        block_task(d.path(), "0002", "outside: Apple review", STAMPED, T).unwrap();
+        // Open: answer it first; answered: start it on a branch first.
+        let e = pass_task(d.path(), "0001", STAMPED, T, &gate()).unwrap_err();
+        assert!(
+            e.contains("so no review round can settle the owner's R1"),
+            "{e}"
+        );
+        // The owner may settle it by hand; then nothing holds the pass.
+        crate::review::settle(
+            d.path(),
+            "0001",
+            "R1",
+            "confirmed",
+            "checked on the Mac",
+            "owner",
+            T,
+        )
+        .unwrap();
+        pass_task(d.path(), "0001", STAMPED, T, &gate()).unwrap();
+        assert_eq!(task_of(d.path(), "0001").stage, "testing");
+    }
+
+    #[test]
+    fn restart_takes_only_its_holders_task_in_building_with_no_branch() {
+        let d = in_your_check_while_building_another(STAMPED);
+        // In Your check: not back in Building.
+        assert!(
+            restart_task(d.path(), "0001", STAMPED, T, "/w", "task/op-1", false)
+                .unwrap_err()
+                .contains("is in Your check, not Ready")
+        );
+        return_back(d.path(), "0001", "AC2 fails", Some("building"), "owner", T).unwrap();
+        let before = file_of(d.path(), "0001");
+        // Someone else's claim.
+        assert_eq!(
+            check_restart(d.path(), "0001", "wt-b").unwrap_err(),
+            format!("0001 is in Building, claimed by {STAMPED}; only its holder starts it again on a fresh branch")
+        );
+        assert!(restart_task(d.path(), "0001", "wt-b", T, "/w", "task/op-1", false).is_err());
+        assert_eq!(file_of(d.path(), "0001"), before, "nothing written");
+        restart_task(d.path(), "0001", STAMPED, T, "/w", "task/op-1", true).unwrap();
+        let t = task_of(d.path(), "0001");
+        assert!(t.worktree_runner);
+        // Once it has a branch, start resumes it there instead.
+        assert_eq!(
+            check_restart(d.path(), "0001", STAMPED).unwrap_err(),
+            "0001 is on branch task/op-1 already"
+        );
+        // The owner's own task is never built in a worktree.
+        let d = in_your_check_unstarted(STAMPED);
+        set_field(d.path(), "0003", "for", "human", "owner", T).unwrap();
+        assert!(check_restart(d.path(), "0003", "owner")
+            .unwrap_err()
+            .contains("is the owner's to do"));
+    }
+
+    #[test]
+    fn a_send_back_by_an_agent_names_who_sent_it() {
+        let d = in_your_check_while_building_another(STAMPED);
+        return_back(
+            d.path(),
+            "0001",
+            "owner: the icon is bad",
+            Some("building"),
+            "lead (main · session 11112222 · cc-mg)",
+            T,
+        )
+        .unwrap();
+        let t = task_of(d.path(), "0001");
+        assert_eq!(t.sent_back_by, "lead");
+        assert_eq!(
+            next_task(d.path(), STAMPED, T).unwrap_err(),
+            "fix op-1 first (sent back by lead: owner: the icon is bad); you also hold op-2, which waits behind it"
+        );
+        let r = crate::review::load(d.path(), "0001").unwrap().unwrap();
+        assert_eq!(
+            (
+                r.findings[0].lens.as_str(),
+                r.findings[0].history[0].by.as_str()
+            ),
+            ("owner", "lead (main · session 11112222 · cc-mg)")
+        );
+    }
+
+    #[test]
+    fn an_unreachable_builder_gets_a_log_line_and_the_send_back_stands() {
+        // Claimed outside Claude Code: no session in the stamp to reach.
+        let d = in_your_check_while_building_another("wt-a");
+        let r = return_back(d.path(), "0001", "AC2 fails", Some("building"), "owner", T).unwrap();
+        assert_eq!((r.finding.as_str(), r.told.as_str()), ("R1", ""));
+        assert_eq!(r.not_told, crate::ping::NO_SESSION);
+        let t = task_of(d.path(), "0001");
+        assert_eq!((t.stage.as_str(), t.sent_back), ("building", true));
+        assert!(file_of(d.path(), "0001").ends_with(&format!(
+            "{T} owner: couldn't tell the builder's session it was sent back ({}); muster next shows it first\n",
+            crate::ping::NO_SESSION
+        )));
+        assert!(!d.path().join("mail/7b5e8856").exists());
+        assert!(next_task(d.path(), "wt-a", T)
+            .unwrap_err()
+            .starts_with("fix op-1 first (sent back by you: AC2 fails)"));
+    }
+
+    #[test]
+    fn a_builder_holding_nothing_else_is_reached_at_the_session_that_built_it() {
+        let d = in_your_check_while_building_another(STAMPED);
+        block_task(d.path(), "0002", "outside: Apple review", STAMPED, T).unwrap();
+        // 0002 is blocked, so the claim goes back by label, with no session in it.
+        let r = return_back(d.path(), "0001", "AC2 fails", Some("building"), "owner", T).unwrap();
+        assert_eq!(task_of(d.path(), "0001").claimed_by, "wt-a");
+        assert_eq!(r.told, "7b5e8856");
+    }
+
+    #[test]
+    fn a_plain_return_and_a_set_from_your_check_are_not_qa_send_backs() {
+        let d = in_your_check_while_building_another(STAMPED);
+        let r = return_back(d.path(), "0001", "x", None, "owner", T).unwrap();
+        assert_eq!((r.to.as_str(), r.finding.as_str()), ("testing", ""));
+        assert!(crate::review::load(d.path(), "0001").unwrap().is_none());
+        // The owner's override back to Building isn't a return: not first in line, no finding.
+        let d = in_your_check_while_building_another(STAMPED);
+        block_task(d.path(), "0002", "outside: Apple review", STAMPED, T).unwrap();
+        set_stage(d.path(), "0001", "building", None, "owner", T).unwrap();
+        let t = task_of(d.path(), "0001");
+        assert_eq!((t.stage.as_str(), t.sent_back), ("building", false));
+        assert!(crate::review::load(d.path(), "0001").unwrap().is_none());
+        assert!(!d.path().join("mail/7b5e8856").exists());
     }
 
     #[test]

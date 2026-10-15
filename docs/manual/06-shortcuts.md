@@ -28,7 +28,7 @@ Every keyboard shortcut in the app, and the slash commands for Claude Code. This
 
 | Keys | What it does | Where |
 | --- | --- | --- |
-| ⌘↩ | Create the task, send the answer or the comment, file the note, or send to the helper | New task's description, an answer box, the comment box, a note's File as task form, the Helper |
+| ⌘↩ | Create the task, send the answer or the comment, file the note, send to the helper, or send a task back | New task's description, an answer box, the comment box, a note's File as task form, the Helper, and the task pane's Send back form |
 | ⌘S | Save the write-up | A task's write-up, after Edit |
 | Esc, twice | Leave the editor or empty the comment box. With typed text, the first Esc only warns and the second throws the text away | A task's write-up after Edit, and the comment box |
 

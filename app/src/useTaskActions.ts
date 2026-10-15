@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, type Paused } from "./api";
+import { api, type Paused, type Returned } from "./api";
 import { isStage, nextStage, oneAtATime, readFiles, stageLabel, stamp } from "./lib";
 import { isHuman } from "./human";
 import { releaseWords, trackMove } from "./paneData";
@@ -47,7 +47,7 @@ export function useTaskActions(task: Task, onChanged: () => void) {
     });
   const now = () => stamp(new Date());
   // A stage form closes only once the core took the change; its text goes with it.
-  const submit = (what: () => Promise<unknown>, done: string) =>
+  const submit = <T,>(what: () => Promise<T>, done: string | ((r: T) => string)) =>
     void stageRun(what, done).then((ok) => {
       if (ok) setOpened(null);
     });
@@ -78,7 +78,7 @@ export function useTaskActions(task: Task, onChanged: () => void) {
           : task.stage === "your-check" ? "Accepted: it's done." : `Passed to ${next?.label ?? "the next stage"}.`;
       passFrom("", done);
     },
-    sendBack: (why: string, to: string) => submit(() => api.returnTask(task.queue, task.id, why, to, now()), `Sent back to ${stageLabel(to)}.`),
+    sendBack: (why: string, to: string) => submit(() => api.returnTask(task.queue, task.id, why, to, now()), sentBackMsg),
     block: (kind: string, detail: string) =>
       submit(() => api.blockTask(task.queue, task.id, kind, detail, now()), kind === "tasks" ? "Blocked by those tasks: added to its depends." : "Blocked. It keeps its stage."),
     unblock: () => void stageRun(() => api.unblockTask(task.queue, task.id, now()), "Unblocked."),
@@ -110,6 +110,17 @@ export function useTaskActions(task: Task, onChanged: () => void) {
 }
 
 export type TaskActions = ReturnType<typeof useTaskActions>;
+
+/** What the pane says after Send back, from what the core did: a QA send-back from Your check
+ *  (mu-101) recorded the reason as an owner finding, first in line; any other return didn't. And
+ *  whether the builder's session was told, when it was meant to be. */
+export function sentBackMsg(r: Returned): string {
+  const head = r.finding
+    ? `Sent back to its builder: first in line, with what's wrong as owner finding ${r.finding} to fix or dispute.`
+    : `Sent back to ${stageLabel(r.to)}.`;
+  if (r.notTold) return `${head} Its session can't be told (${r.notTold}); muster next shows it first.`;
+  return r.told ? `${head} Session ${r.told} was told.` : head;
+}
 
 /** What the pane says after a pause or resume: what it means, and whether its session was told. */
 export function pausedMsg(p: Paused, paused: boolean): string {

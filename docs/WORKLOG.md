@@ -4,6 +4,54 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Your check sends back to the builder as an owner finding; @actions in comments (mu-101)
+**Did (Akbar_8):** a return from Your check to Building (the app's Send back to builder,
+`muster return --to building`, `@sendback`) goes to its builder first in line, records the reason
+as an `owner` finding in `reviews/<id>.json`, and pings the builder's mailbox (a log line when it
+can't). Only the owner settles a disputed owner finding; the round cap never holds one. An owner's
+comment starting with `@accept`, `@sendback`, `@block` or `@ask` runs that step through
+`fields::comment`, for the app and the CLI; agents' comments stay plain. The app's Your check row
+reads Accept and Send back to builder (form defaults to Building, "What's wrong"), cards say "Sent
+back by you: <why>", and the comment box has the @-hint. `ops.rs` `return_back`, `review.rs`,
+`ping.rs`, `fields.rs`, `block.rs` (`behindBy`), `StageForms.tsx`, `Comments.tsx`, `lib.ts`.
+**Decided:** Accept isn't refused while an owner finding is still disputed (the owner sees it
+beside the builder's reason); a first word like "@akbar" is refused like any unknown verb.
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`;
+screenshots from a mocked core, light and dark, in the task's attachments.
+**Open:** AC8 (a real send-back by button and by `@sendback`) is the owner's.
+**Fixed (review round 1, Akbar_14):** R1 the pre-write refusal now has a test (an unreadable
+store: nothing written, no mail). R3 a task with no branch got an owner finding no round could
+re-check → `return_back` records one only for a started task; the ping says the reason without
+a finding. R2, R7 assertions pinned. R4 `@block mu-12 3pm call` read "3" as an id → ids and
+reason go to the core apart (`ids: reason`), and a colon after keys ends them (`leading_tasks`,
+CLI `--on` too). R5 the card's reason is a `<bdi>`. R6 `@sendback` on the owner's own task in
+Your check goes one stage back, as the form. R8 retook mu101-3 from a fixture the real core
+built (`behindBy: owner`).
+**Decided:** `@block` reads kind words as `--on` does (`you`, `permission`, `question`,
+`outside`), the lead's call; an unstarted task gets no owner finding (the reviewer's second
+option: no round can run on it, so Your check is its re-check).
+**Verified (round 1):** `gate: green (pnpm check, test_task, test_commands, cargo test
+(Kiritimati))`; mu101-3 retaken in headless WebKit from `muster list --json` of a fixture queue
+in `$TMPDIR`, light and dark.
+**Fixed (review round 2, Akbar_19):** R9/R3 the merge clears `branch:`, so round 1's "started
+only" gate meant no real send-back ever got an owner finding → every agent's task sent back gets
+one, its evidence naming the branch or the merged `commit:`; with no branch, its pass waits
+(`review::owner_to_recheck`, `holds_unbranched`) until `muster start` makes a fresh branch from
+main (`ops::restart_task`, claim kept), whose review round settles it; the mail and the start
+brief say so. Tests build the task with `start_task` + `pass_merged`, and a git-level test runs
+start, merge, send-back, start again, round, merge. R10 `@block 3pm call` / `@block tasks from
+design` were refused → only typed kinds count without a key, else outside. R11 `9:30` read as task
+0009 → a colon ends keys only after a whole word, and `block_on_tasks` refuses `9:30`. R12 the
+pane claimed a finding it didn't have → `return_task` returns `Returned` and `sentBackMsg` words
+it. R13 an action whose comment couldn't be saved left the box full → `Commented.unsaved`, the box
+empties. R14 the told line no longer needs a finding (`returned_lines`). R15 a one-value `--on
+"tm-1 4pm call"` test. R16 the ⌘↩ row names the Send back form.
+**Decided:** the lead's design call for R9 (owner may overrule): always record the owner finding,
+tied to `commit:` with no branch; the next `start` makes the branch and its round settles it;
+`check_recorder` still needs a branch. Not taken: reopening the old branch (deleted by the
+merge), or letting a round run without one. The owner can still settle it by hand. The owner's
+own task (`for: human`) gets no owner finding: no builder, no review.
+
 ## 2026-10-14 — Shaping is a claim, and held cards wear a holder ribbon (mu-97)
 **Did (Asghar_11, builder):** `muster shape` claims the note in `shaping.json` (`--peek` reads
 without taking; someone else's live claim is refused); `file` carries the claim to the Shaping task;

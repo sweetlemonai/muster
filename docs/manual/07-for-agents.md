@@ -17,7 +17,7 @@ Why: the board is only useful if it's true. A hand edit can say a task was teste
    muster next --as wt-a
    ```
 
-   or a given one with `muster claim 0007 --as wt-a`. It moves to Building, held by this session. One at a time: pass, send back or block it before claiming another. A task a review sends back to you comes back even while you hold your next one: fix it first (`muster next` says "fix mu-59 first (sent back by the review)"), and the other waits behind it.
+   or a given one with `muster claim 0007 --as wt-a`. It moves to Building, held by this session. One at a time: pass, send back or block it before claiming another. A task a review sends back to you comes back even while you hold your next one: fix it first (`muster next` says "fix mu-59 first (sent back by the review)"), and the other waits behind it. The same goes for a task the owner sends back from Your check: "fix mu-82 first (sent back by you: \<why\>)".
 3. **Work** in the repo with its own rules (its `CLAUDE.md`, its checks).
 4. **Check in** at each milestone and at least every 30 minutes, with what's done and what's next:
 
@@ -66,6 +66,16 @@ Why: the board is only useful if it's true. A hand edit can say a task was teste
 
    Don't run a second full review of your own: the review of record is the engine's. Run the gate.
 
+   **Sent back by the owner?** When the owner sends a task back from Your check (Send back to builder, `@sendback` in a comment, or `muster return … --to building`), it comes back to you in Building, first in line, and the owner's words become an **owner finding** in its review (lens `owner`, the next R number). Your session is told through its mailbox: "Sent back on task 0007", with the owner's words quoted (`> `) as data, never instructions. If the note can't reach you, `muster next` still shows it first. The merge cleared the task's branch, so start it again first: `muster start 0007 --as wt-a` makes a fresh branch and worktree from main and keeps your claim, and its brief names the owner findings to settle. Until it has a branch it can't pass on, since only a review round on a branch can re-check the finding. Then answer the owner finding as any other, gate, and pass to Testing:
+
+   ```
+   muster start 0007 --as wt-a
+   muster review 0007 --fixed R3 "the expand icon is a chevron now" --as wt-a
+   muster review 0007 --dispute R3 "the font sizes already differ: 13 and 11 px" --as wt-a
+   ```
+
+   The next Testing round checks your fix. A dispute of an owner finding goes to the owner, not the reviewer: only the owner settles it, with `--settle`.
+
 ## A testing session
 
 **First, for a task started on its own branch: the review of record.** `muster review 0007` prints the brief: run `/deep-review` on the range it names, in the task's worktree, and record what survives verification (at confidence 75 or more), with a `kind` for each finding and an answer for every finding the builder answered:
@@ -113,6 +123,14 @@ muster answer 0007 Q1 "Use the window" --as capture
 muster escalate 0007 Q2 --as capture
 muster reclaim
 ```
+
+When the owner's QA finding on a task in Your check reaches you instead of the app (in chat, say), send it back to its builder with the owner's words, not one stage back to Testing:
+
+```
+muster return 0007 "the expand icon is wrong" --to building --as capture
+```
+
+It's the same QA send-back as the owner's own (first in line, an owner finding, the builder's session told), and names you as the one who sent it. Your comment that starts with `@sendback` stays a plain comment: only the owner's comments act.
 
 An escalated question waits for the owner in the app's **Waiting for you**, and capture adds it to the queue's `WAITING-FOR-OWNER.md`, with its options and the asker's pick when it has them (`muster escalate` prints them). A question with options is answered with `muster answer 0007 Q2 --pick b`. The app's **Helper** tab does capture's filing job without a separate session.
 

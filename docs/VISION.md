@@ -42,7 +42,7 @@ budgeted; no terms risk: one person's use per account, pinned by hand
 | Ready | — | claimable when its `depends:` are merged (Your check or Done; a human task's, Done, 0042); `muster ready --parallel` picks a safe set | 0019, 0023 |
 | Building | code agent (or the owner, for `for: human`) | `muster start`: claim (0002) + branch + worktree (0023); lessons for its `touches:` in the brief (0027); gate | 0002, 0023, 0027 |
 | Testing | review engine + QA agent | the engine reviews the branch on this Mac (`muster review`, a session that didn't build it), the builder fixes or disputes (up to 3 rounds, then the owner); QA verifies each criterion; then merge (needs the review clean at the tip), clean up the worktree | 0023, 0027 |
-| Your check | the owner | try it on main; tick the owner-only criteria (0028); Accept | 0014, 0028 |
+| Your check | the owner | try it on main; tick the owner-only criteria (0028); Accept, or Send back to builder: the reason goes to the builder first in line as an owner finding to fix or dispute (0101); `@accept`, `@sendback`, `@block`, `@ask` in a comment do the same | 0014, 0028, 0101 |
 | Done | — | actuals stamped (0017, 0025) | 0017 |
 
 **Agent teams** (decision 0008): roles that argue (the planning room, review lenses) run as a

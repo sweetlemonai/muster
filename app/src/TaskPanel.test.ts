@@ -42,8 +42,18 @@ describe("task pane stage controls", () => {
     expect(pane({ stage: "backlog" }).buttons).toEqual(["Pass to Shaping", "Block"]);
     expect(pane({ stage: "ready" }).buttons).toEqual(["Pass to Building", "Send back", "Block"]);
   });
-  it("in Your check reads Accept and Send back", () => {
-    expect(pane({ stage: "your-check" }).buttons).toEqual(["Accept", "Send back", "Block"]);
+  it("in Your check reads Accept and Send back to builder (mu-101), Accept the one primary", () => {
+    const p = pane({ stage: "your-check" });
+    expect(p.buttons).toEqual(["Accept", "Send back to builder", "Block"]);
+    expect(p.primary).toEqual(["Accept"]);
+    // The owner's own task has no builder to send it to.
+    expect(pane({ stage: "your-check", forWho: "human" }).buttons).toEqual(["Done", "Send back", "Block"]);
+  });
+  it("the comment box says how a comment acts, linked to the box (mu-101)", () => {
+    const html = pane({ stage: "your-check" }).html;
+    const hint = /<p id="([^"]+)" class="meta small comment-hint">Start with @accept, @sendback &lt;why&gt;, @block &lt;why&gt; or @ask &lt;question&gt; to act\.<\/p>/.exec(html);
+    expect(hint).not.toBeNull();
+    expect(html).toMatch(new RegExp(`<textarea[^>]*aria-label="Your comment"[^>]*aria-describedby="${hint?.[1]}"[^>]*dir="auto"`));
   });
   it("Done has no pass, only Send back", () => {
     const p = pane({ stage: "done" });
@@ -60,7 +70,7 @@ describe("task pane stage controls", () => {
     const p = pane({ stage: "your-check", blocked: true, status: "blocked", waitingOn: "pick a colour", blockedKind: "you", blockDetail: "pick a colour" });
     expect(p.line).toBe("Your check Your action : pick a colour LIVE Your turn owner Waiting on you: accept or send back · your action");
     expect(p.html).toContain('<span class="ui-status-pill ui-status-pill--blocked block-why for-you look-action"><b>Your action</b>: pick a colour</span>');
-    expect(p.buttons).toEqual(["Accept (disabled)", "Send back", "Unblock"]);
+    expect(p.buttons).toEqual(["Accept (disabled)", "Send back to builder", "Unblock"]);
     expect(p.html).toContain("Your action: pick a colour. Unblock it to pass it on.");
   });
   it("puts Answer on a block waiting on the owner's answer, next to the question's own box (0060)", () => {

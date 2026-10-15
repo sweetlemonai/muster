@@ -59,9 +59,9 @@ export const api = {
   // Accept all (0043): each id passed from Your check to Done as Accept does, in order; what the
   // core refused comes back with why, and the rest still go.
   acceptAll: (queue: string, ids: string[], stamp: string) => invoke<AcceptResult>("accept_all", { queue, ids, stamp }),
-  // `to` is an earlier stage; null sends it back one.
+  // `to` is an earlier stage; null sends it back one. What the core did comes back (mu-101).
   returnTask: (queue: string, id: string, why: string, to: string | null, stamp: string) =>
-    invoke<string>("return_task", { queue, id, why, to, stamp }),
+    invoke<Returned>("return_task", { queue, id, why, to, stamp }),
   // Why (0024): kind is tasks, you, permission, question or outside; detail what it waits on.
   blockTask: (queue: string, id: string, kind: string, detail: string, stamp: string) => invoke<string>("block_task", { queue, id, kind, detail, stamp }),
   unblockTask: (queue: string, id: string, stamp: string) => invoke<string>("unblock_task", { queue, id, stamp }),
@@ -108,8 +108,10 @@ export const api = {
   // when the text is unchanged (nothing written), else the task's path.
   editBody: (queue: string, id: string, body: string, expected: string, stamp: string) =>
     invoke<string | null>("edit_body", { queue, id, body, expected, stamp }),
-  // A comment (0017), as the owner, at any stage; returns the task's path.
-  addComment: (queue: string, id: string, text: string, stamp: string) => invoke<string>("add_comment", { queue, id, text, stamp }),
+  // A comment (0017), as the owner, at any stage. One that starts with @accept, @sendback, @block
+  // or @ask runs that first (mu-101): `did` says what it did, "" for a plain comment. Refused
+  // (an unknown @verb, or the action refused) it saves nothing and the core's reason comes back.
+  addComment: (queue: string, id: string, text: string, stamp: string) => invoke<Commented>("add_comment", { queue, id, text, stamp }),
   // Reach the session holding a task (0039), as the owner, through its mailbox: ask it for a
   // check-in (Building), or send it a message (Building or Testing). Refused, with why, when the
   // holder's claim has no session stamp.
@@ -159,6 +161,13 @@ export type Pinged = { session: string; path: string };
 /** What a pause or resume did: the session it told ("" for none), or why none could be ("" when
  *  nobody works on it in its stage). */
 export type Paused = { path: string; session: string; unreached: string };
+/** What a comment did (mu-101, fields::Commented): the task's path, and the action it ran in the
+ *  comment's words ("sent back to Building (owner finding R1)"), "" for a plain comment.
+ *  `unsaved` says why the comment couldn't be saved after its action ran ("" when it was). */
+export type Commented = { path: string; did: string; unsaved: string };
+/** What a return did (mu-101, ops::Returned): where the task went, the owner finding a send-back
+ *  from Your check recorded ("" for none), and whether the builder's session was told. */
+export type Returned = { path: string; to: string; finding: string; told: string; notTold: string };
 /** A pre-0045 pause: a block whose reason says paused. `reason` is the why it keeps ("" for none
  *  besides paused), `since` when it was paused. */
 export type OldPause = { queue: string; id: string; key: string; title: string; stage: string; reason: string; since: string; path: string };

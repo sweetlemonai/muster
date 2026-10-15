@@ -115,18 +115,18 @@ here):
 | `backlog.rs` | Backlog notes: add, shape (the brief), file as a task, drop |
 | `lenses.rs` | The shaping lenses (accessibility, i18n, themes, payments, architecture, security, privacy, performance, tests, docs): a project's skips with their reasons, read from `.muster/config.toml`'s `[shaping]` or an old queue's README front matter (written by hand, never by Muster) and their problems for `check`; a task's `**Lenses:**` lines; a VISION's `**Lenses needed:**` line. Read by `backlog.rs` (shape, file), `vision.rs` and `queue.rs` (problems) |
 | `block.rs` | Why a task is blocked: five kinds, the sentence every screen shows, and `depends:` met once merged |
-| `fields.rs` | A task's links and comments |
+| `fields.rs` | A task's links and comments; the owner's comment @actions (`parse_action`, `comment`: @accept, @sendback, @block, @ask, run before the comment is saved) |
 | `choices.rs` | Pick-one questions: 2 to 6 options, a pick, what happens with no answer |
 | `clarify.rs` | The clarify pass in Shaping (mu-103): `[NEEDS CLARIFICATION: …]` markers that hold Ready, open questions without a default that hold it, and `muster clarify`, the batch of open questions on unstarted tasks sent to the owner at once |
 | `key.rs` | Task keys (`mu-12`): the project's prefix, stored with the queue |
 | `search.rs` | `muster list`'s search, filters and sort, held to the app's by a shared fixture |
 | `vision.rs` | The vision check: the brief, the agent's result recorded, conflicts resolved |
 | `now.rs` | What's true now (mu-102): the `docs/now/` pages read and matched to a task's `touches:`, the building pass's page check, `check`'s warnings |
-| `review.rs` | The review of record: the brief, the result recorded, rounds, the merge check |
+| `review.rs` | The review of record: the brief, the result recorded, rounds, the merge check; owner findings from a send-back out of Your check (lens `owner`) |
 | `lessons.rs` | Lessons from reviews: proposed from repeated findings, accepted or rejected by the owner |
 | `pause.rs` | Pause and Resume: a task keeps its stage and claim, nobody works it |
 | `old_pause.rs` | Turning pre-0045 "paused" blocks into pauses (`muster check --fix-pauses`) |
-| `ping.rs` | Asking a working session for a check-in, or sending it a message, through its mailbox |
+| `ping.rs` | Asking a working session for a check-in, or sending it a message, through its mailbox; the owner's `@ask` question and the send-back notice to the builder |
 | `parallel.rs` | Parallel sessions: which Ready tasks are safe together, `muster start`'s worktree, the merge, `release`, what's left behind |
 | `merge_log.rs` | Git's merge driver for `docs/WORKLOG.md` (`muster merge-log`), and setting it in a repo's config |
 | `session.rs` | The holder stamp (`label (checkout · session 7b5e8856 · cc-hg)`, a teammate's with `· agent a1b2c3d4` after the session), its mailbox, and when two holders are the same (label, session and agent) |
@@ -280,7 +280,7 @@ status folders and `inbox/` for the backlog):
 | `mail/.lock` | The queue's one lock (`flock`) | every write | every write |
 | `mail/asks.json` | Which mailbox asked which question: `<session8>`, or `<session8>/<agent8>` for a teammate | `muster ask`; a takeover repoints the task's entries | `muster answer` |
 | `mail/<session8>/` | A session's mailbox: answers, check-in, pause and resume requests, messages; `delivered/` once handed over. A teammate's is `<agent8>/` inside it, which the lead never takes | `muster answer`, `ping`, `pause`, `resume`, the app; a takeover moves the task's mail to the successor's | `bin/answer-hook.py` (a teammate's by the hook input's `agent_id`), `muster inbox` |
-| `reviews/<id>.json` | The review of record's rounds and findings (the truth) | `muster review --record`, `--fixed`, `--dispute`, `--settle` | the core, the task's `## Review` section |
+| `reviews/<id>.json` | The review of record's rounds and findings (the truth); an owner finding has lens `owner` | `muster review --record`, `--fixed`, `--dispute`, `--settle`; a return from Your check to Building adds the owner finding (a new store at round 0 when there's none) | the core, the task's `## Review` section |
 | `reviews/lessons.json`, `lessons.md` | Lessons from reviews (truth, and rendered) | the core, under the lock; `muster lessons` | `muster start`'s brief, the review brief, the app |
 | `INDEX.md` | The master list, generated | the core after every write; `muster index` | the owner, `muster check`, `manifest.py --check` |
 | `tasks.json` | The manifest, generated | `manifest.py` only | scripts |
@@ -320,7 +320,7 @@ Elsewhere:
 | Gate | Testing | the builder | `bin/gate`, then `muster pass <id> --from building --gate "<its last line>" --summary "<what was built>"` (a task needs its one-line summary, mu-78) |
 | Review of record | Testing (or back to Building) | a session that didn't build it | `muster review <id>` (the brief), `/deep-review <range>`, `muster review <id> --record -`; open findings send it back to Building (rounds 1 and 2) or block it on the owner (round 3); the builder answers with `--fixed` or `--dispute` |
 | Merge | Your check | the QA session | `muster tick <id> <AC>` for each criterion with its proof, then `muster pass <id> --from testing`: rebase on main, gate again, fast-forward main, push, remove the worktree and branch |
-| Your check | Done | the owner | Accept in the app (or Accept all), or `muster pass <id> --from your-check --as owner` after ticking the owner's criteria; Send back returns it with a reason |
+| Your check | Done | the owner | Accept in the app (or Accept all, or a comment starting `@accept`), or `muster pass <id> --from your-check --as owner` after ticking the owner's criteria; Send back to builder (or `@sendback <why>`, or `muster return <id> "<why>" --to building`) gives it back to its builder first in line, the reason an owner finding to fix or dispute (mu-101) |
 
 Anywhere along it: `muster block <id> --on <what>` and `unblock`, `muster pause` and `resume`,
 `muster return <id> "<why>"`. A task that waits on others (`depends:`) can't be started until each
@@ -359,6 +359,7 @@ is in section 6.
 | Sidebar: activity, labels and categories, drag to reorder, colours, folds, one state builder | Built, tested | mu-37, mu-44, mu-57, mu-70, mu-73 |
 | Settings, display modes, themes and accents, Drover's token names and atoms; one CSS class per component | Built, tested | mu-36, mu-38, mu-12, mu-53, mu-81 |
 | Your check: next step, effort groups, Accept all, the limit per project | Built, tested | mu-43, mu-50 |
+| Your check's verdict: Send back to builder (first in line, an owner finding, the builder's session told) and the owner's comment @actions (@accept, @sendback, @block, @ask) | Built, tested; on its branch, not on main | mu-101 |
 | Dock badge | Built, tested | mu-6 |
 | Mac notifications | Built, tested, merged 2026-10-13 (`5d1329b`) | mu-52 |
 | The owner's icons: app icon light and dark, the sidebar's logo, the menu bar icon | Built, tested; on its branch, not on main | mu-85 |
@@ -774,6 +775,31 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   so a review can always send a task back to its builder; the sent-back task comes first (`muster
   next` refuses with "fix mu-59 first", its card says so, the holder's other card says it waits
   behind it). Claiming another task stays refused while you hold one.
+- **The owner's QA send-back** (mu-101, `ops.rs` `return_back`, `review.rs`, `ping::sent_back`):
+  any return from Your check to Building (the app's Send back to builder, `muster return <id>
+  "<why>" --to building`, `@sendback`, an agent relaying the owner) is sent back first in line, as
+  from Testing: `sent_back` now covers Your check → Building too, and the `Task` carries
+  `sentBackBy` (the return's label, stamp left off; "owner" for the owner) and `sentBackWhy` (its
+  reason), both empty for a review's send-back; the holder's other task gets `behindBy` (the
+  sender of the one it waits behind), so its card reads "waiting behind mu-82 (sent back by you)". `muster next` says "fix mu-82 first (sent back by
+  you: <why>)", or "by <label>", and the card "Sent back by you: <why>". The reason becomes an
+  owner finding: lens `owner`, blocking, open, numbered after the last R (no review yet: a new
+  store at round 0), `history[0].by` the sender, for every agent's task (none for the owner's
+  own). Its `evidence` ties it to the branch, or with no `branch:` (the merge, `pass_merged`,
+  clears it) to `commit:` ("found on the merged commit abc1234; muster start makes a fresh branch
+  from main, and its review round settles this first"). While such a task has no branch,
+  `ops::current` loads `review::owner_to_recheck` (owner findings open, or answered and not
+  re-checked) and `pass_change` refuses Building → Testing and Testing → on with
+  `review::holds_unbranched`. `parallel::start` takes a Building task with no branch held by the
+  caller (`ops::check_restart` before git, `ops::restart_task` under the lock after): a fresh
+  `task/<key>-<slug>` branch and worktree from main, the claim and stage kept, heartbeat set,
+  logged "started again in worktree … on branch …"; its brief names the owner findings first.
+  That branch's round must answer them (`record` refuses a round that skips an answered
+  finding), and `merge_check` waits for it. The builder's session gets a mailbox note with
+  the reason quoted under `> `; the session is the claim's stamp, else `built_by`'s when its label
+  matches. No stamp, or an unwritable mailbox, logs "couldn't tell the builder's session it was
+  sent back (…); muster next shows it first", and the send-back stands. Dependents as any return
+  from Your check. A plain `muster return` from Your check still goes to Testing.
 - **Pause and Resume** (0045, `pause.rs`, `pause_cmds.rs`, `Pause.tsx`): **Pause** or **Resume**
   in the strip under a card (Backlog through Testing; the strip a quiet card's Ask for a check-in
   shares) and beside the stage in the pane's status line, with an optional why typed in place. A
@@ -1186,6 +1212,17 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   - `links:` hold https links, opened only if the task has them.
   - Comments live in a tool-written `## Comments` section (`muster comment`), and Edit never
     rewrites them.
+  - The owner's comment acts when its first word is an @action (mu-101, `fields::comment`, shared
+    by the app's `add_comment` and `muster comment --as owner`): `@accept` (Your check only),
+    `@sendback <why>` (the Send back form's default: from Your check the QA send-back, elsewhere
+    one stage back; the owner's own task one stage back, as the form), `@block <why|keys>`
+    (as `--on`: keys block on those tasks, a colon after them setting the reason apart; a
+    `block::KINDS` word first blocks on that kind; other words on outside) and `@ask <question>` (`ping::question` to the holder's session;
+    refused with no reachable holder). First word only, case-insensitive after Unicode
+    whitespace, one action. An unknown @word is refused naming the four and saves nothing; the
+    action runs first, and its refusal saves nothing; on success the comment is saved with
+    `\n→ <what it did>`. An agent's comment never acts. `add_comment` returns `{path, did}`
+    (`fields::Commented`, `did` empty for a plain comment). The comment box has the one hint line.
 - **INDEX.md** (task 0018): one generated list per queue, regenerated after every write. Goals,
   features and tasks by stage, each with its estimate, what it waits on, comments and open vision
   conflicts, then backlog notes and Done. `muster index` rebuilds it, and `check` flags a stale one.
@@ -1214,7 +1251,7 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   "Outside: …", "Question: Q2 …, waiting on capture" neutral, each with a red mark), and Your check
   cards count as "needs you". The task pane has a
   stage picker, Pass to <next> (with the gate line out of Building), Send back with a reason,
-  Block/Unblock, and Accept / Send back in Your check. Only one action runs at a time. Cards show the key, title, type, priority (on every card: HIGH filled magenta, normal outlined, low faint), tags,
+  Block/Unblock, and Accept / Send back to builder in Your check (its form defaults to Building and asks "What's wrong (the builder gets this)", mu-101). Only one action runs at a time. Cards show the key, title, type, priority (on every card: HIGH filled magenta, normal outlined, low faint), tags,
   "needs you", open questions, files, who's on it (flagged when quiet for 12 h), what a blocked
   task waits on, and when it last changed. Tasks waiting on the owner sort first. Done shows the
   latest 8.
@@ -1684,6 +1721,13 @@ Comments and Log; `muster edit` leaves it out and refuses a new `## Review` line
 After a record, open findings (not nits) return it to Building (rounds 1 and 2, `ops::return_task`)
 or block it on you (round 3 on, `ops::block_as`), each after the lock is let go. `--fixed` and
 `--dispute` are the holder's in Building (keep the claim alive); `--settle` is the owner's.
+Owner findings (mu-101) are answered with `--fixed` and `--dispute` like any other, and the next
+round checks them; a round that accepts the dispute of an owner finding leaves it disputed
+("dispute left for the owner"): it doesn't hold the round or the merge, and only the owner's
+`--settle` closes it. The three-round cap applies only while a finding that isn't the owner's is
+open. `--record` refuses a finding with lens `owner`: only a send-back raises one. A send-back of
+a merged task (no branch) records it too, tied to `commit:`; its pass waits for `muster start`'s
+fresh branch, whose round settles it (`owner_to_recheck`, `holds_unbranched`).
 `parallel::merge` calls `review::merge_check` before its lock, rebase and gate (clean at the
 tip, or the owner's override, said in the report) and `review::carry` after each rebase.
 **The work log's merge driver** (task 0067, decision 0009, `merge_log.rs`): `muster merge-log

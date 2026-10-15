@@ -101,8 +101,9 @@ pub fn same_project_ids(
 
 /// The tasks a block's `--on` starts with (`mu-14, mu-16 waiting for review`, `14,16`), as their
 /// ids, and the words after them as they were typed: the words up to the first that isn't a task
-/// of `project` (`prefix`), split at commas and spaces. None when it doesn't start with a task;
-/// refused when one names another project.
+/// of `project` (`prefix`) or a colon after a whole word (`mu-14: 2026 budget`, so a reason may
+/// start with a number), split at commas and spaces. A word with a colon inside (`9:30`, `1:1`)
+/// isn't a task. None when it doesn't start with a task; refused when one names another project.
 pub fn leading_tasks(
     value: &str,
     prefix: &str,
@@ -112,8 +113,12 @@ pub fn leading_tasks(
     let mut rest = value.trim_start();
     loop {
         let word_end = rest.find([',', ' ', '\t', '\n']).unwrap_or(rest.len());
-        let word = &rest[..word_end];
-        let Some(t) = parse(word).filter(|_| !word.is_empty()) else {
+        // `mu-14:` ends the tasks; `9:30` has its colon inside, so it's no task at all.
+        let (word, ends) = match rest[..word_end].strip_suffix(':') {
+            Some(w) => (w, true),
+            None => (&rest[..word_end], false),
+        };
+        let Some(t) = parse(word).filter(|_| !word.is_empty() && !word.contains(':')) else {
             break;
         };
         if t.prefix.as_deref().is_some_and(|p| p != prefix) {
@@ -122,7 +127,19 @@ pub fn leading_tasks(
             ));
         }
         ids.push(t.id);
+        if ends {
+            rest = rest[word_end..].trim_start();
+            break;
+        }
         rest = rest[word_end..].trim_start_matches([',', ' ', '\t', '\n']);
+        // A colon standing alone (`mu-2, mu-3 : 4pm`) ends them too.
+        if let Some(after) = rest
+            .strip_prefix(':')
+            .filter(|a| a.is_empty() || a.starts_with(char::is_whitespace))
+        {
+            rest = after.trim_start();
+            break;
+        }
     }
     Ok((!ids.is_empty()).then(|| (ids, rest.trim_end().to_string())))
 }
@@ -533,6 +550,29 @@ mod tests {
         assert_eq!(
             on(" MU-2 ,3 waiting for review, then 4 ").unwrap(),
             got(&["0002", "0003"], "waiting for review, then 4")
+        );
+        // A colon ends the tasks, so a reason may start with a number.
+        assert_eq!(
+            on("mu-2: 2026 budget").unwrap(),
+            got(&["0002"], "2026 budget")
+        );
+        assert_eq!(
+            on("mu-2, mu-3 : 4pm").unwrap(),
+            got(&["0002", "0003"], "4pm")
+        );
+        assert_eq!(on("mu-2 3pm call").unwrap(), got(&["0002"], "3pm call"));
+        assert_eq!(
+            on("12: 2026 budget").unwrap(),
+            got(&["0012"], "2026 budget")
+        );
+        assert_eq!(on("mu-2:").unwrap(), got(&["0002"], ""));
+        // A clock time isn't a task: its colon is inside the word.
+        assert_eq!(on("9:30 standup with Apple").unwrap(), None);
+        assert_eq!(on("1:1 with Sam").unwrap(), None);
+        assert_eq!(on("mu-2:30 later").unwrap(), None);
+        assert_eq!(
+            on("mu-2, 9:30 standup").unwrap(),
+            got(&["0002"], "9:30 standup")
         );
         assert_eq!(on("you: pick a colour").unwrap(), None);
         assert_eq!(on("question Q2").unwrap(), None);

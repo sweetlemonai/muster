@@ -90,6 +90,7 @@ function HeldLines({ t, now, lines, named }: { t: Task; now: number; lines: Card
       {lines !== "brief" && whoText !== "" && <span className={who || named ? "card-who" : "card-who nobody"}>{whoText}</span>}
       {needsTester(t) && <span className="card-tester">needs a tester</span>}
       {order && <span className={order.kind === "first" ? "card-first" : "card-behind"}>{order.text}</span>}
+      {order?.why && <span className="card-first card-why" title={order.why}>Sent back by {order.by}: <bdi>{order.reason}</bdi></span>}
       {session && (
         <span className={`card-session ${t.sessionState}`}>
           {t.sessionState === "working" && <i className="dot" aria-hidden="true" />}

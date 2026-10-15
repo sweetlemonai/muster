@@ -426,27 +426,28 @@ fn held(t: &Task) -> bool {
 }
 
 /// A send-back comes first (mu-66): of the tasks one holder holds in Building, the lowest-id one
-/// sent back from Testing is `behind` for each of the others they hold.
+/// sent back (from Testing, or from Your check: mu-101) is `behind` for each of the others they
+/// hold, and its `sent_back_by` is their `behind_by`.
 fn put_sent_back_first(tasks: &mut [Task]) {
-    let first: Vec<(String, String)> = tasks
+    let first: Vec<(String, String, String)> = tasks
         .iter()
         .filter(|t| held(t) && t.sent_back)
-        .map(|t| (t.id.clone(), t.claimed_by.clone()))
+        .map(|t| (t.id.clone(), t.claimed_by.clone(), t.sent_back_by.clone()))
         .collect();
     for t in tasks.iter_mut() {
-        t.behind = if held(t) {
+        let ahead = if held(t) {
             first
                 .iter()
-                .filter(|(id, by)| *id != t.id && crate::session::same_holder(by, &t.claimed_by))
-                .map(|(id, _)| id)
+                .filter(|(id, by, _)| *id != t.id && crate::session::same_holder(by, &t.claimed_by))
                 // A sent-back task is behind another sent-back one with a lower id only.
-                .filter(|id| !t.sent_back || **id < t.id)
-                .min()
-                .cloned()
-                .unwrap_or_default()
+                .filter(|(id, _, _)| !t.sent_back || *id < t.id)
+                .min_by(|a, b| a.0.cmp(&b.0))
         } else {
-            String::new()
+            None
         };
+        (t.behind, t.behind_by) = ahead
+            .map(|(id, _, sender)| (id.clone(), sender.clone()))
+            .unwrap_or_default();
     }
 }
 
@@ -1491,6 +1492,9 @@ mod tests {
             "0001 went back after it was merged, and 0003 is under way, so it doesn't wait for it again; block on outside or you to wait anyway"
         );
         // Merged again: the unclaimed one is free and says so; the claimed one has nothing new.
+        // (The send-back's owner finding holds a task with no branch until a round settles it,
+        // mu-101; with no branch to review here, the owner settles it.)
+        crate::review::settle(p, "0001", "R1", "confirmed", "fixed, checked", "owner", at).unwrap();
         let n3 = task(p, "0003").log_tail.len();
         pass_task(
             p,

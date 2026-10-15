@@ -63,11 +63,19 @@ export type Task = {
   builtBy?: string;
   /** Who last passed it Building → Testing with the gate's line (0047), a builder too, or "". */
   gatedBy?: string;
-  /** Sent back from Testing to Building (mu-66): its latest stage change. Optional, like the other
-   *  later fields. */
+  /** Sent back to its builder (mu-66): in Building, and its latest stage change is Testing →
+   *  Building, or a return from Your check to Building (the owner's QA, mu-101). Optional, like
+   *  the other later fields. */
   sentBack?: boolean;
+  /** Who sent it back from Your check (mu-101), the session stamp left off: "owner" for the
+   *  owner. "" for a send-back from Testing (the review's), and when it isn't sent back. */
+  sentBackBy?: string;
+  /** The reason that send-back from Your check gave, as written; "" otherwise. */
+  sentBackWhy?: string;
   /** The id of the task its holder has to fix first (mu-66), or "": this one waits behind it. */
   behind?: string;
+  /** Who sent `behind` back from Your check (mu-101; "owner" is the owner), or "" when the review did. */
+  behindBy?: string;
   /** Who passed it into Your check most recently: its tester, or the owner's override; or "". */
   testedBy?: string;
   /** When the current stage began (the latest stage line into it), or "". */

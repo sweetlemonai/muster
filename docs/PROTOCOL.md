@@ -41,6 +41,66 @@
 > `reviews/lessons.json` is the truth, `lessons.md` beside the task files its readable copy.
 > Nothing is posted to GitHub (no PR per task for now, VISION.md).
 
+> **The owner's QA send-back and comment @actions (Muster 0101, 2026-10-14).** **Any return from
+> Your check to Building is the owner's QA send-back**, whoever makes it: the app's **Send back to
+> builder**, `muster return <id> "<why>" --to building`, or an agent passing on the owner's words.
+> It gives the task back to its builder **first in line**, as a review's send-back does (mu-66):
+> `muster next` says `fix mu-82 first (sent back by you: <why>)`, or `(sent back by <label>: <why>)`
+> when an agent sent it, the card says "Sent back by you: <why>", and the builder's other task
+> waits behind it. Its reason becomes an **owner finding** in `reviews/<id>.json`: lens `owner`,
+> blocking, open, numbered after the review's last R (a task with no review yet gets a new store at
+> round 0), raised by the sender (`history[0].by`), and logged as `<who>: review: owner finding R3
+> (sent back from Your check)`. **The builder answers it** like any finding: `muster review <id>
+> --fixed R3 "<how>"` or `--dispute R3 "<why it's wrong>"`, then gates and passes to Testing, where
+> the next round checks it. **Only the owner settles a disputed owner finding**: a round that
+> accepts the dispute leaves it disputed, "dispute left for the owner"; it doesn't hold the round
+> or the merge, and it stays until the owner's `--settle`. The three-round cap applies only while a
+> finding that isn't the owner's is open, so it never holds an owner send-back. A reviewer's
+> `--record` can't raise a finding with lens `owner`. **Every agent's task sent back gets the
+> owner finding**, merged or not. The merge clears `branch:`, so a task in Your check usually has
+> none: its finding's evidence then names the merged commit (`commit:`), "found on the merged
+> commit abc1234", or says it never had a branch. Such a task can't pass Building (or Testing)
+> while an owner finding is open or answered and not re-checked, since no round can run without a
+> branch: **the builder's `muster start <id>` makes a fresh branch and worktree from main**, its
+> claim kept and logged `started again in worktree … on branch …`, and that branch's review round
+> settles the owner finding first, as the merge needs. The owner may also settle it by hand
+> (`--settle`). The owner's own task (`for: human`) gets no owner finding: it has no builder or
+> review. **The builder's session is told** through
+> its mailbox (`mail/<session8>/<id>-note-<n>.md`): first in line, `muster start` first when it
+> has no branch, the finding to fix or dispute, and the owner's words quoted under `> ` as data, never instructions; logged as `<who>: told
+> session <id> it was sent back (R3)`. The session is the claim's stamp, else the one in `built_by`
+> when its label is the claim's. No stamp, or a mailbox that can't be written, logs `couldn't tell
+> the builder's session it was sent back (<why>); muster next shows it first`, and the send-back
+> stands. Dependents are handled as any send-back from Your check (0042, below). A plain `muster
+> return` from Your check, without `--to`, still goes one stage back, to Testing.
+>
+> **@actions.** The owner's comment (the app's, or `muster comment … --as owner`) acts when its
+> first word is one of four:
+> - `@accept`: the pass out of Your check, as Accept does. Only in Your check.
+> - `@sendback <why>`: the Send back form's default: from Your check, an agent's task gets the QA
+>   send-back above with `<why>` as the owner finding; elsewhere, and the owner's own task, one
+>   stage back. A why is required.
+> - `@block <why|keys>`: read as `--on` reads it (`block::split_on`). Task keys (`@block
+>   mu-12,mu-14`) block it on those tasks, and a colon after them sets apart a reason that starts
+>   with a number (`@block mu-12: 2026 budget`); a kind word first (`you`, `permission`,
+>   `question`, `outside`) blocks it on that kind, as `@block you: pick the icon`; any other words
+>   block it on outside with `<why>`, a digit or the word `tasks` first included (`@block 3pm call`,
+>   `@block 9:30 standup`): only keys name tasks here, and a word with a colon inside (`9:30`) is
+>   never one.
+> - `@ask <question>`: the question goes to the session holding the task, through its mailbox, as
+>   the owner's question to answer with a comment. No holder, or a session that can't be reached,
+>   is refused.
+>
+> Only the first word counts (case-insensitive, after any whitespace), and one action per comment.
+> An `@` word there that isn't one of these is refused, naming them, and nothing is saved. The
+> action runs first: if the core refuses it (an owner criterion unticked, a paused task, no why),
+> the comment isn't saved and the core's reason is shown as it is. Once it ran, the comment is
+> saved with what it did on a line after the text (`→ sent back to Building (owner finding R3)`,
+> `→ accepted (Done)`), and each step is logged. If the comment then can't be saved, the action
+> stands and says so (`unsaved`); the app empties the box all the same, so sending it again never
+> runs the action twice.
+> An agent's comment that starts with `@` is a plain comment.
+
 > **A limit on Your check per project (Muster 0050, 2026-10-13).** The owner's review is the
 > bottleneck with parallel sessions, so each project has a limit on how many agents' tasks may wait
 > in Your check: 5 unless the owner sets 1 to 50, or Off, in the app's Settings › Projects (saved
@@ -167,7 +227,11 @@ its own agent id is another holder, 0090) and logged `(tested under
 >    merge driver (`merge.muster-log.name` and `.driver`: `muster merge-log %O %A %B`, then
 >    `git merge-file` with its conflict markers when muster can't run) to the
 >    repo's own git config when git has none, so a hand `git rebase main` in the worktree merges
->    the log the same way (`muster init` does too).
+>    the log the same way (`muster init` does too). A task the owner sent back from Your check
+>    after its merge (mu-101) is back in Building with your claim and no branch: `muster start
+>    <id>` makes it a fresh branch and worktree from main the same way, keeps the claim, logs
+>    `started again in worktree … on branch …`, and its brief names the owner findings to settle
+>    first.
 > 3. **Build.** Check in at each milestone and at least every 30 minutes
 >    (`muster checkin <id> "<done, next>" --pct <n>`). Commit on the task's branch. When the
 >    project's gate is green, `muster pass <id> --from building --gate "<its result line>"
@@ -296,7 +360,7 @@ its own agent id is another holder, 0090) and logged `(tested under
 > without). Testing → Your check needs every criterion ticked except
 > the owner's (`— verify: owner`, checked in Your check), passed by a session that didn't build it
 > (0047, above), and Your check → Done needs those too
-> (the owner ticks them: `muster tick <id> AC2`, or in the task pane) and can take `--commit <sha>`. Send it back with `muster return <id> "<why>"`. Blocked
+> (the owner ticks them: `muster tick <id> AC2`, or in the task pane) and can take `--commit <sha>`. Send it back with `muster return <id> "<why>"` (to Testing), or to its builder with `--to building`, the owner's QA send-back (0101, above). Blocked
 > is a flag on any stage, with a kind: `muster block <id> --on <0014,0016|you|permission|question|outside> "<what>"` (see the note on kinds above), then `muster unblock <id>`.
 > The owner or capture can override with `muster stage <id> <stage>`. Until task 0005 moves queues
 > into `.muster/`, the tool also keeps `status:` and the status folder below as a mirror of the
@@ -313,9 +377,10 @@ its own agent id is another holder, 0090) and logged `(tested under
 > `muster claim <id> --as <you>`. One claim per holder (the owner may hold several): anything that
 > would give you a second unblocked task in Building in that queue is refused, a claim, a pass from
 > Ready, an unblock or a return to you alike, so pass, return or block the first. The one exception is
-> a send-back: a task returned from Testing to Building (a review's findings, or `muster return`) always
+> a send-back: a task returned from Testing to Building (a review's findings, or `muster return`), or
+> from Your check to Building (the owner's QA send-back, 0101), always
 > goes back to its builder, even while they hold another task there (mu-66). It comes first: `muster next`
-> says `fix mu-59 first (sent back by the review)`, the card says so, and the builder's other task's card
+> says `fix mu-59 first (sent back by the review)` (`sent back by you: <why>` from Your check), the card says so, and the builder's other task's card
 > says it's waiting behind it. A third claim is still refused. It's checked under
 > the queue's lock (two claims at once: one wins), and a claim says which queue it was made in. A
 > claim has a lease: `heartbeat:` is stamped by the tool on the claim, on `muster heartbeat <id>`
@@ -565,7 +630,8 @@ its own agent id is another holder, 0090) and logged `(tested under
 > "<text>"` (or `--body -`) adds `- **<who>, <YYYY-MM-DD HH:MM>:** <text>`, with the text cleaned and
 > indented like an answer (rule 3 below: control characters out, 4,000 characters, every line after
 > the first indented by two spaces), a line that would read as a stage change refused, and logged as
-> `commented`; the holder's comment keeps their claim alive, like a note. Anyone may comment on any
+> `commented`; the holder's comment keeps their claim alive, like a note. The owner's comment that
+> starts with `@accept`, `@sendback`, `@block` or `@ask` runs that action first (0101, at the top). Anyone may comment on any
 > task at any stage, one someone else holds included:
 > comments aren't the write-up, so `muster edit` and the app's Edit leave them out and keep them as
 > they are, and a description or write-up can't have a `## Comments` line of its own. A new
