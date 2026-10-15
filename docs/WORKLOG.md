@@ -4,6 +4,23 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — Shaping: the backlog emptied into 20 Ready tasks, and the open 1d+ estimates redone
+**Did (vqa, gates coordinator, with Shapour agents):** every backlog note checked against main and
+filed: mu-156 (takeover mail, R7 folded in), 157, 158, 159, 160, 161 (personal layer), 162, 163,
+164, 165, 166, 168 (measured actuals in the shaping brief), 170 (EPIPE), 167 and 169 (sidebar rail,
+search always shown, filters and Recently finished fold), 171 and 172 (working and token ribbons,
+after mu-97), 173 (timeline legend), 174 (hover card); mu-106 shaped into a UX-flows spike. All in
+Ready, vision checks recorded.
+**Decided:** a token is input + output + cache writes (not cache reads) and `est-tokens` is redefined
+to match (mu-172); the hover card is DESIGN.md's one exception, it repeats and never holds (mu-174);
+mu-162 keeps a disabled View on rows whose transcript exists; test-only tasks word the needed
+lenses "nothing to build, nothing may regress" instead of n/a. 29 open estimates of 1d+ redone from
+measured actuals (p50 0.39x, median 1.1 h; e.g. mu-56 4d → 10h), tasks in Building only noted.
+**Fixed:** none in code. A suspected test escape on mu-131 (a commit as `T <t@e.x>`) was a tester's
+hand commit, not a test: that author is nowhere in the repo; finding withdrawn before recording.
+**Verified:** `muster check` reports nothing on the new tasks; backlog empty.
+**Open:** mu-131 is with its tester (kia-131); mu-132 onward wait for it to merge.
+
 ## 2026-10-15 — Coordinator (Muster_Team_Lead_5): mu-87, 108, 99, 130, 102 merged; lead moves to QA_10 on cc-hg
 **Did:** merged mu-87 (0e4d905), mu-108 (ba6b048), mu-99 (23ecba7), mu-130 (6036641), mu-102
 (f07fc54); the last four by the owner's override after docs-only rebases of approved reviews
