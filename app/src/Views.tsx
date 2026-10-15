@@ -1,8 +1,9 @@
 import { useContext, useMemo, useState } from "react";
-import { estimateText } from "./fields";
+import { estimateText, kindLabel } from "./fields";
 import BlockWhy from "./BlockWhy";
 import { blockedRed, blockLead, isBlocked } from "./blockWords";
-import { ago, holder, key, stageLabel, stageOf } from "./lib";
+import { type TFn, tl, tn, useT } from "./i18n";
+import { ago, holderShown, key, priorityName, stageLabel, stageOf } from "./lib";
 import { PAUSE_GLYPH } from "./Pause";
 import type { Task } from "./types";
 import { Badge, Pill, StatusPill } from "./ui";
@@ -19,18 +20,11 @@ import ProjectName, { TaskKey } from "./ProjectName";
 import { RoleNamesContext } from "./settingsData";
 import { Legend, TIMELINE_RESERVE, timelineLegend } from "./Legend";
 
-const COLS: { key: SortKey; label: string }[] = [
-  { key: "queue", label: "Project" },
-  { key: "id", label: "Id" },
-  { key: "title", label: "Title" },
-  { key: "kind", label: "Type" },
-  { key: "priority", label: "Priority" },
-  { key: "stage", label: "Stage" },
-  { key: "who", label: "On it / waiting on" },
-  { key: "estimate", label: "Estimate" },
-  { key: "captured", label: "Captured" },
-  { key: "changed", label: "Changed" },
-];
+/** The sortable columns in order; each heading is board.json `views.col.<key>`. */
+const COLS: SortKey[] = ["queue", "id", "title", "kind", "priority", "stage", "who", "estimate", "captured", "changed"];
+
+/** A priority in the language shown; one the window doesn't know, as written. */
+const priorityWord = (p: string) => (priorityName(p) === p ? tl(`priority.${priorityName(p)}`) : p);
 
 /** Every task as a row: sortable by any column, everything at a glance. Grouped (by feature or
  *  goal), each band's heading row is the feature or goal, and its rows are sorted inside it. */
@@ -63,23 +57,24 @@ export function TableView({ tasks, now, multi, openKey, onOpen, groups, by: grou
     }
   };
   const names = useContext(RoleNamesContext);
+  const tr = useT("board");
   const rows = useMemo(() => sortTasks(tasks, by, desc, names), [tasks, by, desc, names]);
-  const cols = multi ? COLS : COLS.filter((c) => c.key !== "queue");
-  const row = (t: Task) => <Row key={key(t)} t={t} now={now} multi={multi} active={openKey === key(t)} onOpen={onOpen} words={words} />;
+  const cols = multi ? COLS : COLS.filter((c) => c !== "queue");
+  const row = (t: Task) => <Row key={key(t)} t={t} now={now} multi={multi} active={openKey === key(t)} onOpen={onOpen} words={words} tr={tr} />;
   return (
     <main className="table-view">
       <table className="tasks-table">
         <thead>
           <tr>
             {cols.map((c) => (
-              <th key={c.key} aria-sort={by === c.key ? (desc ? "descending" : "ascending") : "none"}>
-                <button className="sort" onClick={() => sortBy(by === c.key ? { by, desc: !desc } : { by: c.key, desc: false })}>
-                  {c.label}
-                  {by === c.key ? (desc ? " ↓" : " ↑") : ""}
+              <th key={c} aria-sort={by === c ? (desc ? "descending" : "ascending") : "none"}>
+                <button className="sort" onClick={() => sortBy(by === c ? { by, desc: !desc } : { by: c, desc: false })}>
+                  {tr(`views.col.${c}`)}
+                  {by === c ? (desc ? " ↓" : " ↑") : ""}
                 </button>
               </th>
             ))}
-            <th className="plain">Tags</th>
+            <th className="plain">{tr("views.col.tags")}</th>
           </tr>
         </thead>
         {groups && groupBy && groupBy !== "none"
@@ -95,14 +90,15 @@ export function TableView({ tasks, now, multi, openKey, onOpen, groups, by: grou
             ))
           : <tbody>{rows.map(row)}</tbody>}
       </table>
-      {rows.length === 0 && <p className="empty">No tasks match.</p>}
+      {rows.length === 0 && <p className="empty">{tr("views.noMatch")}</p>}
     </main>
   );
 }
 
 /** One row of the table. A goal or feature says so, with its progress, the stage its tasks give
- *  it and the estimate left of its open tasks. */
-function Row({ t, now, multi, active, onOpen, words }: { t: Task; now: number; multi: boolean; active: boolean; onOpen: (t: Task) => void; words: string[] }) {
+ *  it and the estimate left of its open tasks. The task's own title and tags keep their own
+ *  direction (dir="auto"). */
+function Row({ t, now, multi, active, onOpen, words, tr }: { t: Task; now: number; multi: boolean; active: boolean; onOpen: (t: Task) => void; words: string[]; tr: TFn<"board"> }) {
   const parentLevel = !isWork(t);
   const own = estimateText(t);
   const names = useContext(RoleNamesContext);
@@ -113,37 +109,36 @@ function Row({ t, now, multi, active, onOpen, words }: { t: Task; now: number; m
       <td className="t-title">
         {isHuman(t) && <YouRibbon />}
         {parentLevel && <Badge variant="level">{levelLabel(t.level)}</Badge>}
-        {t.waitingForOwner && <Badge variant="warn">needs you</Badge>} <Hl text={t.title} words={words} />
+        {t.waitingForOwner && <Badge variant="warn">{tr("views.needsYou")}</Badge>} <span dir="auto"><Hl text={t.title} words={words} /></span>
         {parentLevel && <span className="meta rollup">{progressText(t.progress)}</span>}
-        {t.openQuestions > 0 && <Badge>{t.openQuestions} open Q</Badge>}
+        {t.openQuestions > 0 && <Badge>{tr("views.openQuestions", { count: t.openQuestions })}</Badge>}
       </td>
-      <td className={`kind ${t.kind}`}>{t.kind}</td>
-      <td><span className={`pri pri-${t.priority || "normal"}`}>{t.priority || "normal"}</span></td>
+      <td className={`kind ${t.kind}`}>{kindLabel(t.kind)}</td>
+      <td><span className={`pri pri-${t.priority || "normal"}`}>{priorityWord(t.priority || "normal")}</span></td>
       <td>
         {/* A paused task (mu-59) reads as the board's Paused lane has it: Paused, then where it was. */}
         {parentLevel ? (
           <StatusPill status={shownStageClass(t)}>{shownStageLabel(t)}</StatusPill>
         ) : t.paused ? (
           <>
-            <StatusPill status="paused">{`${PAUSE_GLYPH} Paused`}</StatusPill>
-            <StatusPill status={stageOf(t)} className="was">{`was ${stageLabel(t.stage)}`}</StatusPill>
+            <StatusPill status="paused">{`${PAUSE_GLYPH} ${tr("views.paused")}`}</StatusPill>
+            <StatusPill status={stageOf(t)} className="was">{tr("views.was", { stage: stageLabel(t.stage) })}</StatusPill>
           </>
         ) : (
           <StatusPill status={stageOf(t)}>{stageLabel(t.stage)}</StatusPill>
         )}
-        {blockedRed(t) && <StatusPill status="blocked">blocked</StatusPill>}
+        {blockedRed(t) && <StatusPill status="blocked">{tr("views.blocked")}</StatusPill>}
       </td>
-      <td className="meta" dir="auto">{isBlocked(t) ? <BlockWhy t={t} short pill={false} /> : holder(t, names)}</td>
+      <td className="meta" dir="auto">{isBlocked(t) ? <BlockWhy t={t} short pill={false} /> : holderShown(t, names)}</td>
       <td className="meta est-cell">{own || (parentLevel ? estimateLeft(t.progress) : "")}</td>
       <td className="meta">{t.captured}</td>
       <td className="meta">{ago(now, t.modified)}</td>
-      <td>{t.tags.map((g) => <span key={g} className="tag">#<Hl text={g} words={words} /></span>)}</td>
+      <td>{t.tags.map((g) => <span key={g} className="tag" dir="auto">#<Hl text={g} words={words} /></span>)}</td>
     </tr>
   );
 }
 
 const SCALE_KEY = "muster.timelineScale";
-const CURRENT: Record<Scale, string> = { day: "Now", week: "This week", month: "This month" };
 /** Pixels per slot: an hour at Day, a quarter day at Week, a day at Month. */
 const SLOT_PX: Record<Scale, number> = { day: 40, week: 32, month: 30 };
 const pct = (x: number) => `${(x * 100).toFixed(3)}%`;
@@ -160,6 +155,9 @@ export function TimelineView({ tasks, now, multi, openKey, onOpen, words }: { ta
   const ticks = useMemo(() => axis(scale, win, at), [scale, win, at]);
   const nowLine = nowAt(win, at);
   const marks = useMemo(() => timelineLegend(legendMarks(rows, nowLine)), [rows, nowLine]);
+  // The controls and the chart read their words with `tn`, so they stay plain functions; this
+  // renders them again when the language changes.
+  const tr = useT("board");
   const pick = (s: Scale) => {
     setScale(s);
     setOffset(0);
@@ -174,15 +172,9 @@ export function TimelineView({ tasks, now, multi, openKey, onOpen, words }: { ta
       </div>
       <div className="tl-scroll">
         <TimelineChart scale={scale} rows={rows} ticks={ticks} now={nowLine} multi={multi} openKey={openKey} onOpen={onOpen} words={words} />
-        {rows.length === 0 && <p className="empty">{tasks.length ? `No work ${scale === "day" ? "in these 24 hours" : `in this ${scale}`}.` : "No tasks match."}</p>}
-        {(list.notStarted ?? 0) > 0 && (
-          <p className="meta tl-not-started">{list.notStarted} {list.notStarted === 1 ? "task hasn't" : "tasks haven't"} started yet (or the log has no times for them), so they aren't drawn.</p>
-        )}
-        <p className="meta tl-note">
-          A bar runs from when the task was claimed to when it reached Your check or Done, from the times muster logged. Tasks
-          still being worked run to the now line. Paused time isn't counted as work. Day is the last 24 hours; Week shows quarter
-          days, Month days.
-        </p>
+        {rows.length === 0 && <p className="empty">{tasks.length ? tr(`views.noWork.${scale}`) : tr("views.noMatch")}</p>}
+        {(list.notStarted ?? 0) > 0 && <p className="meta tl-not-started">{tr("views.notStarted", { count: list.notStarted ?? 0 })}</p>}
+        <p className="meta tl-note">{tr("views.timelineNote")}</p>
       </div>
     </main>
   );
@@ -192,22 +184,30 @@ export function TimelineView({ tasks, now, multi, openKey, onOpen, words }: { ta
 export function TimelineControls({ scale, offset, label, onScale, onStep, onToday }: {
   scale: Scale; offset: number; label: string; onScale: (s: Scale) => void; onStep: (by: number) => void; onToday: () => void;
 }) {
+  const previous = tn("board", `views.previous.${scale}`);
+  const next = tn("board", `views.next.${scale}`);
   return (
-    <div className="tl-controls" role="toolbar" aria-label="Timeline scale">
-      <span className="meta">Scale</span>
+    <div className="tl-controls" role="toolbar" aria-label={tn("board", "views.scaleAria")}>
+      <span className="meta">{tn("board", "views.scaleLabel")}</span>
       {SCALES.map((s) => (
         <Pill key={s.id} on={s.id === scale} aria-pressed={s.id === scale} onClick={() => onScale(s.id)}>
           {s.label}
         </Pill>
       ))}
       <span className="tl-nav">
-        <Pill onClick={() => onStep(-1)} title={`Previous ${scale}`} aria-label={`Previous ${scale}`}>◀</Pill>
-        <Pill onClick={onToday} disabled={offset === 0}>{CURRENT[scale]}</Pill>
-        <Pill onClick={() => onStep(1)} title={`Next ${scale}`} aria-label={`Next ${scale}`}>▶</Pill>
+        <Pill onClick={() => onStep(-1)} title={previous} aria-label={previous}>◀</Pill>
+        <Pill onClick={onToday} disabled={offset === 0}>{tn("board", `views.current.${scale}`)}</Pill>
+        <Pill onClick={() => onStep(1)} title={next} aria-label={next}>▶</Pill>
         <span className="tl-window">{label}</span>
       </span>
     </div>
   );
+}
+
+/** The words on a bar: its stage (Paused, and where it was), then blocked and high when they are. */
+function barText(t: Task): string {
+  const stage = t.paused ? tn("board", "views.barPaused", { stage: stageLabel(t.stage) }) : stageLabel(t.stage);
+  return [stage, isBlocked(t) ? tn("board", "views.blocked") : "", t.priority === "high" ? tn("board", "views.high") : ""].filter(Boolean).join(" · ");
 }
 
 /** The axis, one row per placed bar (label left, bar with its segments), and the now line. */
@@ -222,7 +222,7 @@ export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen,
   return (
     <div className={`tl-grid tl-${scale}`} style={style}>
       <div className="tl-head">
-        <span className="tl-label meta">{rows.length} {rows.length === 1 ? "task" : "tasks"}</span>
+        <span className="tl-label meta">{tn("board", "views.tasks", { count: rows.length })}</span>
         <span className="tl-track">
           {ticks.map((k) => (
             <span key={k.at} className={k.current ? "tl-tick now" : "tl-tick"} style={{ left: pct(k.left), width: pct(k.width) }}>{k.label}</span>
@@ -235,7 +235,7 @@ export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen,
           <button key={key(t)} className={openKey === key(t) ? "tl-row active" : "tl-row"} onClick={() => onOpen(t)}>
             <span className="tl-label">
               {isHuman(t) && <YouRibbon />}
-              {multi && <ProjectName name={t.queue} />} <TaskKey t={t}><HlId t={t} words={words} /></TaskKey> <Hl text={t.title} words={words} />
+              {multi && <ProjectName name={t.queue} />} <TaskKey t={t}><HlId t={t} words={words} /></TaskKey> <span dir="auto"><Hl text={t.title} words={words} /></span>
             </span>
             <span className="tl-track">
               <span
@@ -257,7 +257,7 @@ export function TimelineChart({ scale, rows, ticks, now, multi, openKey, onOpen,
                 {p.pauses.map((g) => (
                   <span key={`p${g.left}`} className="tl-pause" style={{ left: pct(g.left), width: pct(g.width) }} />
                 ))}
-                <span className="tl-bar-text">{t.paused ? `Paused · was ${stageLabel(t.stage)}` : stageLabel(t.stage)}{isBlocked(t) ? " · blocked" : ""}{t.priority === "high" ? " · high" : ""}</span>
+                <span className="tl-bar-text">{barText(t)}</span>
               </span>
             </span>
           </button>

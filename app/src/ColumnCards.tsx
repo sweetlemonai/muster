@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useT } from "./i18n";
 import { NOTHING_MORE, sameMore, watchMore } from "./scrollMore";
 
 /** One screen's scroll, smooth unless the system asks for less motion. */
@@ -12,11 +13,12 @@ function page(el: HTMLElement | null, dir: 1 | -1) {
  *  strip keeps its height when there's nothing that way, so the count coming and going moves
  *  nothing. */
 export function MoreCount({ side, n, onPage }: { side: "above" | "below"; n: number; onPage: () => void }) {
+  const t = useT("board");
   return (
     <div className={`col-more col-more-${side}`}>
       {n > 0 && (
-        <button type="button" className="more-count" onClick={onPage} title={side === "above" ? "Scroll up one screen" : "Scroll down one screen"}>
-          +{n} {side}
+        <button type="button" className="more-count" onClick={onPage} title={side === "above" ? t("lane.pageUp") : t("lane.pageDown")}>
+          {side === "above" ? t("lane.moreAbove", { count: n }) : t("lane.moreBelow", { count: n })}
         </button>
       )}
     </div>

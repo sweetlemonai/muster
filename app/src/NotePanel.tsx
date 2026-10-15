@@ -3,20 +3,22 @@ import { api } from "./api";
 import { fileDraft, noteTitle } from "./Backlog";
 import { ago, oneAtATime, stamp } from "./lib";
 import { HelpButton } from "./HelpButton";
+import { tl, tn, useT } from "./i18n";
 import Markdown from "./Markdown";
 import type { Note } from "./types";
 
-import { KINDS } from "./fields";
+import { KINDS, kindLabel } from "./fields";
 import ProjectName from "./ProjectName";
 import { Button, Pill } from "./ui";
 const PRIORITIES = ["high", "normal", "low"] as const;
 
 /** Put `text` on the clipboard now, in the click that asked: WebKit refuses a write made after an
  *  await (the IPC for the brief), so the brief is loaded before the click and nothing is awaited
- *  before `writeText` is called. `what` names the brief in the refusal. */
-export function copyNow(text: string | null, clipboard: Pick<Clipboard, "writeText"> | undefined, what = "The shaping brief"): Promise<void> {
-  if (text === null) return Promise.reject(new Error(`${what} is still loading.`));
-  if (!clipboard) return Promise.reject(new Error("The clipboard isn't available here."));
+ *  before `writeText` is called. `what` names the brief in the refusal, in the language shown
+ *  (the shaping brief's when not given). */
+export function copyNow(text: string | null, clipboard: Pick<Clipboard, "writeText"> | undefined, what = tn("board", "note.shapingBrief")): Promise<void> {
+  if (text === null) return Promise.reject(new Error(tn("board", "note.stillLoading", { what })));
+  if (!clipboard) return Promise.reject(new Error(tn("board", "note.noClipboard")));
   return clipboard.writeText(text);
 }
 
@@ -37,6 +39,7 @@ export default function NotePanel({ note, now, onClose, onChanged, onFiled }: {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [once] = useState(oneAtATime);
+  const t = useT("board");
   // The shaping brief, loaded when the pane opens (and when the note changes), so Copy needs no IPC.
   const [brief, setBrief] = useState<{ text: string | null; error: string }>({ text: null, error: "" });
   useEffect(() => {
@@ -84,36 +87,37 @@ export default function NotePanel({ note, now, onClose, onChanged, onFiled }: {
   // Not through `run`: its awaits would come before the write.
   const copy = () =>
     copyNow(brief.text, navigator.clipboard).then(
-      () => setMsg({ ok: true, text: "Copied the shaping brief. Paste it into a session to shape the note." }),
+      () => setMsg({ ok: true, text: tn("board", "note.copied") }),
       (e) => setMsg({ ok: false, text: String(e) }),
     );
   const shown = note.text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "");
 
   return (
-    <div className="panel note-panel" aria-label={`Backlog note ${note.file}`}>
+    <div className="panel note-panel" aria-label={t("note.aria", { file: note.file })}>
       <header>
         <div>
           <div className="meta">
-            <ProjectName name={note.queue} className="" /> · backlog note · added {ago(now, note.added)} ago
+            <ProjectName name={note.queue} className="" /> · {now - note.added < 60 ? t("note.metaNow") : t("note.meta", { ago: ago(now, note.added) })}
           </div>
           <div className="title-row">
-            <h1>{noteTitle(note)}</h1>
+            {/* The note's own title keeps its own direction; "(empty note)" is the window's. */}
+            <h1>{note.title.trim() ? <span dir="auto">{noteTitle(note)}</span> : noteTitle(note)}</h1>
             <HelpButton topic="note-pane" />
           </div>
           <div className="meta">
-            <span title={note.file}>{note.file}</span>
+            <span title={note.file} dir="auto">{note.file}</span>
           </div>
         </div>
-        <button className="close" onClick={onClose} aria-label="Close">×</button>
+        <button className="close" onClick={onClose} aria-label={t("note.close")}>×</button>
       </header>
 
       <section className="controls">
         <div className="control-row">
-          <Button type="button" variant="primary" className={form === "file" ? "on" : undefined} disabled={busy} onClick={() => setForm("file")}>File as task</Button>
-          <Button type="button" className={form === "drop" ? "on" : undefined} disabled={busy} onClick={() => setForm("drop")}>Drop</Button>
-          <Button type="button" disabled={busy || brief.text === null} title={brief.text === null && !brief.error ? "Loading the brief…" : undefined} onClick={() => void copy()}>Copy shaping brief</Button>
+          <Button type="button" variant="primary" className={form === "file" ? "on" : undefined} disabled={busy} onClick={() => setForm("file")}>{t("note.file")}</Button>
+          <Button type="button" className={form === "drop" ? "on" : undefined} disabled={busy} onClick={() => setForm("drop")}>{t("note.drop")}</Button>
+          <Button type="button" disabled={busy || brief.text === null} title={brief.text === null && !brief.error ? t("note.loadingBrief") : undefined} onClick={() => void copy()}>{t("note.copy")}</Button>
         </div>
-        {brief.error && <p className="err small">Couldn't load the shaping brief: {brief.error}</p>}
+        {brief.error && <p className="err small">{t("note.briefFailed", { error: brief.error })}</p>}
         {form === "file" && (
           <form
             className="note-file"
@@ -122,22 +126,23 @@ export default function NotePanel({ note, now, onClose, onChanged, onFiled }: {
               file();
             }}
           >
-            <input autoFocus value={draft.title} onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))} placeholder="The task's title, in one line" aria-label="The task's title" maxLength={200} />
+            <input autoFocus dir="auto" value={draft.title} onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))} placeholder={t("note.titlePlaceholder")} aria-label={t("note.titleAria")} maxLength={200} />
             <div className="chip-row">
-              <span className="meta">Type</span>
+              <span className="meta">{t("note.type")}</span>
               {KINDS.map((k) => (
-                <Pill key={k} type="button" on={draft.kind === k} aria-pressed={draft.kind === k} onClick={() => setDraft((d) => ({ ...d, kind: k }))}>{k}</Pill>
+                <Pill key={k} type="button" on={draft.kind === k} aria-pressed={draft.kind === k} onClick={() => setDraft((d) => ({ ...d, kind: k }))}>{kindLabel(k)}</Pill>
               ))}
-              <span className="meta sep">Priority</span>
+              <span className="meta sep">{t("note.priority")}</span>
               {PRIORITIES.map((p) => (
-                <Pill key={p} type="button" on={draft.priority === p} className={draft.priority === p ? `pchip-${p}` : undefined} aria-pressed={draft.priority === p} onClick={() => setDraft((d) => ({ ...d, priority: p }))}>{p}</Pill>
+                <Pill key={p} type="button" on={draft.priority === p} className={draft.priority === p ? `pchip-${p}` : undefined} aria-pressed={draft.priority === p} onClick={() => setDraft((d) => ({ ...d, priority: p }))}>{tl(`priority.${p}`)}</Pill>
               ))}
             </div>
             <textarea
+              dir="auto"
               value={draft.body}
               onChange={(e) => setDraft((d) => ({ ...d, body: e.target.value }))}
-              placeholder="What the owner said, the details, and ## Acceptance criteria"
-              aria-label="The task's body, in Markdown"
+              placeholder={t("note.bodyPlaceholder")}
+              aria-label={t("note.bodyAria")}
               rows={10}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -146,10 +151,10 @@ export default function NotePanel({ note, now, onClose, onChanged, onFiled }: {
                 }
               }}
             />
-            <p className="meta small">It's filed in Shaping, with the note in its files. Pass it to Ready once it has acceptance criteria.</p>
+            <p className="meta small">{t("note.filedIn")}</p>
             <div className="control-row">
-              <Button type="submit" variant="primary" disabled={busy || !draft.title.trim()}>{busy ? "Filing…" : "Save (⌘↩)"}</Button>
-              <Button type="button" onClick={() => setForm(null)}>Cancel</Button>
+              <Button type="submit" variant="primary" disabled={busy || !draft.title.trim()}>{busy ? t("note.filing") : t("note.save")}</Button>
+              <Button type="button" onClick={() => setForm(null)}>{t("common:cancel")}</Button>
             </div>
           </form>
         )}
@@ -161,17 +166,17 @@ export default function NotePanel({ note, now, onClose, onChanged, onFiled }: {
               drop();
             }}
           >
-            <input autoFocus value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Why: a duplicate of 0012, not needed, done already…" aria-label="Why it's dropped" maxLength={500} />
-            <Button type="submit" disabled={busy || !why.trim()}>Drop</Button>
-            <Button type="button" onClick={() => setForm(null)}>Cancel</Button>
+            <input autoFocus dir="auto" value={why} onChange={(e) => setWhy(e.target.value)} placeholder={t("note.whyPlaceholder")} aria-label={t("note.whyAria")} maxLength={500} />
+            <Button type="submit" disabled={busy || !why.trim()}>{t("note.drop")}</Button>
+            <Button type="button" onClick={() => setForm(null)}>{t("common:cancel")}</Button>
           </form>
         )}
         {msg && <p className={msg.ok ? "ok small" : "err small"}>{msg.text}</p>}
       </section>
 
       <section className="body">
-        {shown.trim() ? <Markdown text={shown} /> : <p className="none">This note is empty.</p>}
-        {note.truncated && <p className="meta small">Shown up to 20 KB. The whole note goes into the task's files when it's filed, and into the shaping brief.</p>}
+        {shown.trim() ? <Markdown text={shown} /> : <p className="none">{t("note.empty")}</p>}
+        {note.truncated && <p className="meta small">{t("note.truncated")}</p>}
       </section>
     </div>
   );

@@ -26,7 +26,7 @@ describe("kindLabel (mu-194)", () => {
     await setLocale("en");
   });
   const EN = ["code", "bug", "chore", "tech-debt", "spike", "design", "docs", "research", "task", "feature", "idea"];
-  const FA = ["کد", "باگ", "کار جانبی", "بدهی فنی", "اسپایک", "طراحی", "مستندات", "پژوهش", "تسک", "قابلیت", "ایده"];
+  const FA = ["کد", "باگ", "نگهداری", "بدهی فنی", "اسپایک", "طراحی", "مستندات", "پژوهش", "تسک", "قابلیت", "ایده"];
   it("names the older types the queues still hold, apart from the core's", () => {
     expect(LEGACY_KINDS).toEqual(["task", "feature", "idea"]);
     for (const k of LEGACY_KINDS) expect(KINDS as readonly string[]).not.toContain(k);

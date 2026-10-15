@@ -2,7 +2,7 @@ import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode }
 import { lastLabel, loadOrder, nextOrder, type OrderMemo, type ProjectRow, projectRows, SIDEBAR_ORDERS, storeOrder, sumActivity, type ProjectActivity, type SidebarOrder, type Sums } from "./activity";
 import { projectCount } from "./Backlog";
 import { SideLimit } from "./CheckLimit";
-import { needsYouCount, stalledProjectsWords, WORKING_IN, workingInParams, workingInWords, workingWords } from "./human";
+import { NEEDS_CHIP, needsWords, needsYouCount, stalledProjectsWords, WORKING_IN, workingInParams, workingInWords, workingWords } from "./human";
 import { api, type Moved } from "./api";
 import { tl, tn, Trans, useT } from "./i18n";
 import { LABEL_MAX } from "./labels";
@@ -338,7 +338,7 @@ export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClic
         <span className="side-badges">
           {!full && stalled && <span className="side-stalled" title={stalledBadge?.title ?? tn("shell", "sidebar.stalledTitle", { hint: tn("shell", "sidebar.stalledHint") })}>{stalledBadge?.text ?? stalled}</span>}
           {running && <span className="run-chip" title={tn("shell", "sidebar.runningTitle")}>{tn("shell", "run.running")}</span>}
-          {needs > 0 && <span className="count warn" title={tn("shell", "sidebar.needYou", { count: needs })}>{needs}</span>}
+          {needs > 0 && <span className="count warn" title={needsWords(needs)}>{needs}</span>}
           {full && doing > 0 && <span className="side-doing" title={tn("shell", "sidebar.inProgress", { count: doing })}>{doing}</span>}
           {paused > 0 && <span className="side-paused" title={tn("shell", "sidebar.paused", { count: paused })}>{`${PAUSE_GLYPH} ${paused}`}</span>}
           {full && <small>{total}</small>}
@@ -363,7 +363,7 @@ export function ProjectItem({ name, title, total, tasks, lessons = 0, on, onClic
 function rowWords({ name, needs, doing, paused, total, running, working, stalled }: { name: string; needs: number; doing: number; paused: number; total: number; running: boolean; working: string; stalled: string }) {
   const sep = tl("listSep");
   const counts = [
-    needs > 0 ? tn("shell", "sidebar.needYou", { count: needs }) : "",
+    needs > 0 ? needsWords(needs) : "",
     doing > 0 ? tn("shell", "sidebar.rowInProgress", { count: doing }) : "",
     paused > 0 ? tn("shell", "sidebar.paused", { count: paused }) : "",
     tn("shell", "heading.tasks", { count: total }),
@@ -406,7 +406,7 @@ function CategoryHead({ name, rows, total, fresh = false, drag, onRename, onRemo
         <span className="side-cat-counts" title={tn("shell", "heading.countsTitle", { said, tasks: tn("shell", "heading.tasks", { count: total }) })}>
           {c.needs > 0 && (
             <span className="side-cat-needs">
-              <Trans ns="shell" k="heading.needsChip" params={{ count: c.needs }} components={{ chip: <span className="count warn" />, words: <span className="side-cat-needs-words" /> }} />
+              <Trans ns="common" k={NEEDS_CHIP} params={{ count: c.needs }} components={{ chip: <span className="count warn" />, words: <span className="side-cat-needs-words" /> }} />
             </span>
           )}
           <span className="side-cat-rest">

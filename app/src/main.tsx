@@ -14,8 +14,9 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
 installZoomKeys();
 
 // The last language's text (and <html lang dir>) before the first render, so nothing shows in
-// English first; then the window follows the core's language (i18n/boot.ts, mu-146).
-void startLocale(["shell"]).finally(() =>
+// English first; then the window follows the core's language (i18n/boot.ts, mu-146). The board's
+// is the first screen's, and the waiting list and the task pane read its words too (mu-147).
+void startLocale(["shell", "board"]).finally(() =>
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <App />

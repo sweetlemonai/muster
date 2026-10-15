@@ -1,8 +1,10 @@
 import { createElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import BlockWhy from "./BlockWhy";
 import { askedOf, BLOCK_KINDS, BLOCK_LOOKS, blockedRed, blockLead, blockLook, blockRequest, blockSentence, blockWords, isBlocked } from "./blockWords";
+import { unmarked } from "./i18n";
+import { setLocale } from "./i18n/runtime";
 import type { BlockedBy, Question, Task } from "./types";
 
 const by = (id: string, stage: string, holder = ""): BlockedBy => ({ id, stage, holder });
@@ -197,5 +199,58 @@ describe("the block's words on screen, each kind its own look (0060)", () => {
     expect(out).toContain('<button type="button" class="link" title="Open 0016">0016</button> (Ready)');
     // The card's short form: ids only, plain text (the card itself is the button).
     expect(html(t, { short: true })).toBe('<span class="ui-badge block-why not-you look-tasks"><b>After</b> 0014, 0016</span>');
+  });
+});
+
+describe("why a task is blocked, in Persian (mu-147)", () => {
+  afterEach(async () => {
+    await setLocale("en");
+  });
+  const html = (t: Block, opts: { short?: boolean; onOpenTask?: (id: string) => void; onAnswer?: (q: Question) => void } = {}) =>
+    renderToStaticMarkup(createElement(BlockWhy, { t, ...opts }));
+  /** Words in Latin letters on screen, tags and isolation marks aside: only the data put in may be. */
+  const latin = (s: string) => unmarked(s).replace(/<[^>]+>/g, " ").match(/[A-Za-z]{2,}/g) ?? [];
+
+  it("says each kind's sentence in Persian, the detail and the tasks' keys as written", async () => {
+    await setLocale("fa");
+    const tasks = [by("0014", "building", "codex"), by("0016", "ready")];
+    expect(unmarked(blockSentence(b("tasks", "", tasks)))).toBe("پس از 0014 (در حال ساخت، codex)، 0016 (آماده)");
+    expect(unmarked(blockSentence(b("tasks", "", tasks), true))).toBe("پس از 0014، 0016");
+    expect(unmarked(blockSentence({ ...b("tasks", "", [by("0014", "ready")]), prefix: "mu" }))).toBe("پس از mu-14 (آماده)");
+    expect(blockSentence(b("tasks", "", []))).toBe("پس از تسک‌های دیگر");
+    expect(unmarked(blockSentence(b("you", "set the API key")))).toBe("اقدام شما: set the API key");
+    expect(blockSentence(b("you", ""))).toBe("اقدام شما");
+    expect(unmarked(blockSentence(b("permission", "repo write")))).toBe("اجازه: repo write");
+    expect(unmarked(blockSentence(onQ(asked("کدام رنگ؟", true))))).toBe("پاسخ شما: Q2 کدام رنگ؟");
+    expect(unmarked(blockSentence(onQ(asked("which port?", false))))).toBe("پرسش: Q2 which port?، در انتظار سرپرست");
+    expect(blockSentence(b("question", ""))).toBe("پرسش: در انتظار سرپرست");
+    expect(unmarked(blockSentence(b("outside", "Apple review")))).toBe("بیرونی: Apple review");
+    expect(blockLead("")).toBe("مسدود");
+    // A Latin key keeps its place in the Persian line: it's isolated, as the stage put in is.
+    expect(blockSentence({ ...b("tasks", "", [by("0014", "ready")]), prefix: "mu" })).toBe("پس از \u2068mu-14\u2069 (\u2068آماده\u2069)");
+  });
+  it("offers the Block form's kinds and asks for each one's detail in Persian", async () => {
+    await setLocale("fa");
+    expect(BLOCK_KINDS.map((k) => k.label)).toEqual(["تسک‌ها", "شما", "اجازه", "پرسش", "بیرونی"]);
+    expect(BLOCK_KINDS.map((k) => k.id)).toEqual(["tasks", "you", "permission", "question", "outside"]);
+    expect(blockRequest("tasks", "soon")).toEqual({ ok: false, why: "تسک‌ها با کلید یا شماره، مانند 14، 16" });
+    expect(blockRequest("you", "")).toEqual({ ok: false, why: "آنچه باید انجام دهید یا درباره‌اش تصمیم بگیرید" });
+    expect(blockRequest("you", "  یک رنگ ")).toEqual({ ok: true, kind: "you", detail: "یک رنگ" });
+    for (const k of BLOCK_KINDS) expect(latin(`${k.label} ${k.need}`), k.id).toEqual([]);
+    // And back in English, the words follow the switch.
+    await setLocale("en");
+    expect(BLOCK_KINDS.map((k) => k.label)).toEqual(["tasks", "you", "permission", "question", "outside"]);
+  });
+  it("draws the pill in Persian: the lead, each task a link titled to open it, the Answer button", async () => {
+    await setLocale("fa");
+    const t = { ...b("tasks", "", [by("0014", "ready"), by("0016", "building", "codex")]), prefix: "mu" };
+    const out = html(t, { onOpenTask: () => {} });
+    expect(unmarked(out)).toBe(
+      '<span class="ui-status-pill ui-status-pill--blocked block-why not-you look-tasks"><b>پس از</b> <button type="button" class="link" title="باز کردن mu-14">mu-14</button> (آماده)، <button type="button" class="link" title="باز کردن mu-16">mu-16</button> (در حال ساخت، codex)</span>',
+    );
+    expect(latin(out)).toEqual(["mu", "mu", "codex"]);
+    const answer = html(onQ(asked("کدام رنگ؟", true)), { onAnswer: () => {} });
+    expect(unmarked(answer)).toContain('<b>پاسخ شما</b>: Q2 کدام رنگ؟ <button type="button" class="ui-button block-answer">پاسخ</button>');
+    expect(latin(answer)).toEqual([]);
   });
 });

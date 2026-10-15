@@ -1,7 +1,7 @@
 // The Feature grid's model (mu-143): rows and cells, the per-cell cap, each card's one status and
 // its trouble chip, the column heads' who line, the header line, the Your check limit's alert, the
 // Layout setting per project, and the arrow keys between cells.
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   activeCell,
   alertLine,
@@ -25,6 +25,7 @@ import {
   troubleOf,
   viewSpan,
 } from "./featureGridData";
+import { setLocale } from "./i18n/runtime";
 import type { Note, QueueInfo, Task } from "./types";
 
 const task = (over: Partial<Task>): Task => ({
@@ -372,5 +373,52 @@ describe("the grid's one Tab stop (review R10)", () => {
     expect(activeCell(rows, { row: "muster/0999", c: 2 })).toEqual({ r: 0, c: 2 });
     expect(activeCell(rows, { row: "", c: 0 })).toEqual({ r: 0, c: 0 });
     expect(activeCell([], { row: "muster/0010", c: 4 })).toEqual({ r: 0, c: 4 });
+  });
+});
+
+// mu-147: the grid's words in Persian, whole sentences per case, counts for 0, 1 and many.
+describe("in Persian (mu-147)", () => {
+  const bare = (s: string) => s.replace(/[⁦-⁩]/g, "");
+  const q = (name: string, waiting: number, limit: number | null): QueueInfo => ({ name, path: "", counts: {}, yourCheck: waiting, yourCheckLimit: limit, label: name });
+  afterEach(async () => {
+    await setLocale("en");
+  });
+  it("the header line: nothing, one and many", async () => {
+    await setLocale("fa");
+    expect(headerLine([], 0, TODAY)).toEqual({ needs: "چیزی در انتظار شما نیست", rest: "هیچ‌کدام در حال ساخت نیست، هیچ‌کدام در حال تست نیست، امروز هیچ‌کدام انجام نشد" });
+    const items = [task({ stage: "building" }), task({ stage: "testing" }), task({ stage: "testing" }), task({ stage: "done", doneAt: `${TODAY} 08:00` })];
+    expect(headerLine(items, 1, TODAY)).toEqual({ needs: "۱ مورد در انتظار شما", rest: "۱ در حال ساخت، ۲ در حال تست، ۱ مورد امروز انجام شد" });
+  });
+  it("a card's status, its trouble and the column heads' who line", async () => {
+    await setLocale("fa");
+    expect(cardStatus(task({ waitingForOwner: true }), {})).toEqual({ kind: "you", text: "نیاز به شما" });
+    expect(cardStatus(task({ paused: "2026-10-14 10:00" }), {})).toEqual({ kind: "paused", text: "متوقف شده" });
+    expect(cardStatus(task({ stage: "testing", heldBy: "owner" }), {})).toMatchObject({ kind: "who", text: "شما" });
+    const back = (n: number) => task({ stage: "building", sentBack: true, heartbeat: "2026-10-14 11:55", stageHistory: Array.from({ length: n }, () => ({ at: "", who: "", from: "testing", to: "building" })) });
+    expect([1, 2, 3].map((n) => troubleOf(back(n), NOW))).toEqual(["یک بار برگردانده شد", "دو بار برگردانده شد", "۳ بار برگردانده شد"]);
+    expect(troubleOf(task({ stage: "testing", heldBy: "kaveh-1", builtBy: "kaveh-1" }), NOW)).toBe("نیاز به تستر");
+    const held = (who: string[]) => who.map((w) => ({ kind: "task" as const, task: task({ stage: "testing", heldBy: w }) }));
+    expect(bare(stageWho("testing", held(["a", "b"]), {}))).toBe("a و b");
+    expect(bare(stageWho("testing", held(["a", "b", "c"]), {}))).toBe("a، b و c");
+    expect(bare(stageWho("testing", held(["a", "b", "c", "d", "e"]), {}))).toBe("a، b، c و ۲ نفر دیگر");
+    expect(stageWho("backlog", [], {})).toBe("یادداشت‌ها، هنوز شکل داده نشده");
+    expect(stageWho("ready", [], {})).toBe("هیچ‌کدام آماده‌ی شروع نیست");
+    expect(stageWho("ready", held(["x"]).map((i) => ({ ...i, task: { ...i.task, stage: "ready", heldBy: "" } })), {})).toBe("۱ مورد آماده‌ی شروع");
+    expect(columnChips([]).at(-1)?.label).toBe("انجام شد");
+  });
+  it("Your check's head and its alert, in one project and in all of them", async () => {
+    await setLocale("fa");
+    expect(checkHead([q("muster", 3, null)], "muster").text).toBe("برای بررسی شما");
+    expect(checkHead([q("muster", 3, 5)], "muster").text).toBe("۳ از ۵");
+    expect(checkHead([q("muster", 5, 5)], "muster").text).toBe("۵ از ۵، پر");
+    expect(checkHead([q("muster", 5, 5)], "all").text).toBe("پر در ۱ پروژه");
+    expect(checkHead([q("muster", 5, 5), q("drover", 9, 8)], "all").text).toBe("پر در ۲ پروژه");
+    expect(alertLine(checkFull([q("muster", 7, 5)], "muster"), "muster")).toBe("«بررسی شما» بیش از سقف است (۷ از ۵): پیش از شروع کارهای بیشتر، چند مورد را بررسی کنید.");
+    expect(bare(alertLine(checkFull([q("muster", 5, 5), q("drover", 9, 8)], "all"), "all"))).toBe("«بررسی شما» در muster (۵ از ۵) و drover (۹ از ۸) پر است: پیش از شروع کارهای بیشتر، چند مورد را بررسی کنید.");
+  });
+  it("the rows with no feature: Other and All tasks", async () => {
+    await setLocale("fa");
+    expect(gridRows({ work: [task({ id: "0200" })], all: [], notes: [], by: "feature", today: TODAY }).map((r) => r.title)).toEqual(["سایر"]);
+    expect(gridRows({ work: [task({ id: "0200" })], all: [], notes: [], by: "none", today: TODAY }).map((r) => r.title)).toEqual(["همه‌ی تسک‌ها"]);
   });
 });

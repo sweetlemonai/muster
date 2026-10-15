@@ -1,5 +1,6 @@
 import { useContext, type ReactNode } from "react";
 import { isHuman } from "./human";
+import { tl, tn, useT } from "./i18n";
 import { agoText, leaseRunOut, minutesSince, nameOf, shownHolder, splitHolder } from "./lib";
 import { useLook } from "./modes";
 import { ribbonStateWords, sessionWords } from "./sessionState";
@@ -77,47 +78,49 @@ export function nameEnds(name: string): { head: string; tail: string } {
 
 /** The name as the ribbon shows it: whole where it fits, else its head ends in … and its number
  *  stays (styles.css `.holder-name.tail-N`, the tail's length in digits). `dir="auto"` keeps a
- *  right-to-left name's head and number in its own reading order. The two parts are flex items,
- *  which a screen reader may read apart, so it hears the name whole instead. */
+ *  right-to-left name's head and number in its own reading order. Hidden from a screen reader,
+ *  which hears the name whole in the ribbon's sentence instead (`Ribbon`'s `spoken`). */
 function HolderName({ name }: { name: string }) {
   const { head, tail } = nameEnds(name);
-  if (!tail) return <span className="holder-name" dir="auto">{name}</span>;
+  if (!tail) return <span aria-hidden="true" className="holder-name" dir="auto">{name}</span>;
   return (
-    <span className={`holder-name tail-${tail.length}`} dir="auto">
-      <span className="sr-only">{name}</span>
-      <span aria-hidden="true" className="holder-head">{head}</span>
-      <span aria-hidden="true" className="holder-tail">{tail}</span>
+    <span aria-hidden="true" className={`holder-name tail-${tail.length}`} dir="auto">
+      <span className="holder-head">{head}</span>
+      <span className="holder-tail">{tail}</span>
     </span>
   );
 }
 
-const quietTip = (lease: number) => `. Quiet: no heartbeat for over ${spanText(lease)}, its lease ran out`;
+/** A ribbon's tooltip, and when its lease ran out, the sentence that says so after it. */
+const withQuiet = (tip: string, quiet: boolean, lease: number) => (quiet ? tn("board", "ribbon.tipQuiet", { tip, span: spanText(lease) }) : tip);
 
-/** The ribbon itself: `spoken` before the name for a screen reader, `shown` and a "·" before it
- *  on screen, the short name cut by CSS with the whole label in the tooltip, and "quiet" in words.
- *  Where it's narrow, `shown` gives way first, the "·" stays, and the name keeps a few characters
- *  (styles.css). `children` follow the name (a card's session state, its live dot). Not a
- *  control: the card is the button, and the keyboard order stays the card's. */
+/** The ribbon itself: `spoken`, its whole sentence for a screen reader (who, and the session's
+ *  state where it says one: one sentence per case, in the language's own order), `shown` and a
+ *  "·" before the name on screen, the short name cut by CSS with the whole label in the tooltip,
+ *  and "quiet" in words. Where it's narrow, `shown` gives way first, the "·" stays, and the name
+ *  keeps a few characters (styles.css). `children` follow the name (a card's session state, its
+ *  live dot). Not a control: the card is the button, and the keyboard order stays the card's. */
 function Ribbon({ who, spoken, shown, tip, quiet, state = "", children }: { who: string; spoken: string; shown?: string; tip: string; quiet: boolean; state?: string; children?: ReactNode }) {
   const names = useContext(RoleNamesContext);
+  // i18n-ignore: class names, not text
   const cls = ["holder-ribbon", state && `stated ${state}`, quiet && "quiet"].filter(Boolean).join(" ");
   return (
     <span className={cls} title={tip}>
-      <span className="sr-only">{`${spoken} `}</span>
+      <span className="sr-only">{spoken}</span>
       {shown && <span aria-hidden="true" className="holder-prefix">{shown}</span>}
       {shown && <span aria-hidden="true" className="holder-sep"> · </span>}
       <HolderName name={nameOf(who, names)} />
       {children}
-      {quiet && <span className="holder-quiet"> · quiet</span>}
+      {quiet && <span className="holder-quiet"> · {tl("youRibbon.quiet")}</span>}
     </span>
   );
 }
 
 /** What Claude Code says the holder's session is doing (mu-171), after the name: the full words,
  *  and the short ones a narrow card shows instead (styles.css picks by the ribbon's room), both
- *  hidden from a screen reader, which hears `sessionWords`' full words after the name. Waiting
- *  for input is a needs-you block running to the card's edge, which separates it from the name,
- *  so it has no "·". */
+ *  hidden from a screen reader, which hears `sessionWords`' full words in the ribbon's sentence.
+ *  Waiting for input is a needs-you block running to the card's edge, which separates it from
+ *  the name, so it has no "·". */
 function RibbonState({ t }: { t: Task }) {
   const full = ribbonStateWords(t, false);
   const short = ribbonStateWords(t, true);
@@ -125,7 +128,6 @@ function RibbonState({ t }: { t: Task }) {
   const state = t.sessionState ?? "unknown";
   return (
     <>
-      <span className="sr-only">{`, ${sessionWords(t)}`}</span>
       {state !== "needs-input" && <span aria-hidden="true" className="holder-sep"> · </span>}
       <span aria-hidden="true" className={`holder-state ${state}`}>
         {full === short ? full : <><span className="holder-full">{full}</span><span className="holder-short">{short}</span></>}
@@ -141,6 +143,7 @@ function RibbonState({ t }: { t: Task }) {
  *  words by its width. Every mode shows it.
  *  The live dot is the token ribbon's, by the number it moves (mu-172). */
 export function CardHolderRibbon({ t, now }: { t: Task; now: number }) {
+  const tr = useT("board");
   const on = useLook("holder-ribbon");
   const lease = useContext(Machine).leaseMinutes;
   const names = useContext(RoleNamesContext);
@@ -149,10 +152,13 @@ export function CardHolderRibbon({ t, now }: { t: Task; now: number }) {
   const stated = ribbonStateWords(t, false) !== "";
   const state = stated ? (t.sessionState ?? "") : "";
   const quiet = leaseRunOut(t, now, lease);
-  const tip = `Held by ${shownHolder(who, names)}${stated ? `, ${sessionWords(t)}` : ""}${quiet ? quietTip(lease) : ""}`;
+  const name = nameOf(who, names);
+  const full = shownHolder(who, names);
+  const spoken = stated ? tr("ribbon.heldByState", { name, state: sessionWords(t) }) : tr("ribbon.heldBy", { name });
+  const tip = withQuiet(stated ? tr("ribbon.tipState", { who: full, state: sessionWords(t) }) : tr("ribbon.tip", { who: full }), quiet, lease);
   return (
     <span className="holder-room">
-      <Ribbon who={who} spoken="held by" tip={tip} quiet={quiet && state !== "needs-input"} state={state}>
+      <Ribbon who={who} spoken={spoken} tip={tip} quiet={quiet && state !== "needs-input"} state={state}>
         <RibbonState t={t} />
       </Ribbon>
     </span>
@@ -163,15 +169,20 @@ export function CardHolderRibbon({ t, now }: { t: Task; now: number }) {
  *  owner does, as on a card the owner holds. Either says quiet once the lease ran out: reclaim
  *  ends the owner's claim on a note too. */
 export function NoteHolderRibbon({ n, now }: { n: Note; now: number }) {
+  const tr = useT("board");
   const on = useLook("holder-ribbon");
   const lease = useContext(Machine).leaseMinutes;
   const names = useContext(RoleNamesContext);
   const who = n.heldBy.trim();
   if (on !== "show" || !who) return null;
   const taken = minutesSince(n.heldSince, now);
-  const since = taken === null ? "" : `, taken ${agoText(taken)}`;
+  const ago = taken === null ? "" : agoText(taken);
   const quiet = noteQuiet(n, now, lease);
-  const tip = `${since}${quiet ? quietTip(lease) : ""}`;
-  if (isOwner(who)) return <YouRibbon title={`You're shaping it${tip}`} spoken="being shaped by" quiet={quiet} />;
-  return <Ribbon who={who} spoken="being shaped by" shown="shaping" tip={`Being shaped by ${shownHolder(who, names)}${tip}`} quiet={quiet} />;
+  if (isOwner(who)) {
+    const tip = withQuiet(ago ? tr("ribbon.youShapingTaken", { ago }) : tr("ribbon.youShaping"), quiet, lease);
+    return <YouRibbon title={tip} spoken={tr(quiet ? "ribbon.youShapingSpokenQuiet" : "ribbon.youShapingSpoken")} quiet={quiet} />;
+  }
+  const full = shownHolder(who, names);
+  const tip = withQuiet(ago ? tr("ribbon.shapedTipTaken", { who: full, ago }) : tr("ribbon.shapedTip", { who: full }), quiet, lease);
+  return <Ribbon who={who} spoken={tr("ribbon.shapedBy", { name: nameOf(who, names) })} shown={tr("ribbon.shaping")} tip={tip} quiet={quiet} />;
 }

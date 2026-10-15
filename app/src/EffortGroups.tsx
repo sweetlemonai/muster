@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api } from "./api";
+import { useT } from "./i18n";
 import { key, oneAtATime, stamp } from "./lib";
 import { pressed } from "./shortcuts";
 import { taskKey } from "./taskKey";
@@ -38,6 +39,7 @@ export const useAcceptResults = (): ReadonlyMap<string, AcceptOutcome> => useSyn
  *  its place does (a board card, a Waiting for you item); each group keeps the order it's given.
  *  With no tasks left, only the place's result line shows, until the next change. */
 export default function EffortGroups({ tasks, place, renderCard, onChanged }: { tasks: Task[]; place: string; renderCard: (t: Task) => ReactNode; onChanged: () => void }) {
+  const t = useT("board");
   const result = useAcceptResults().get(place);
   useEffect(() => {
     if (result && staleResult(result, tasks)) putAcceptResult(place, null);
@@ -49,11 +51,13 @@ export default function EffortGroups({ tasks, place, renderCard, onChanged }: { 
     <>
       {EFFORTS.map((e) => {
         const list = groups[e.id];
+        // The group's name in the language shown, by its id.
+        const label = t(`effort.${e.id}`);
         return (
-          <div key={e.id} className={`effort-group effort-${e.id}${list.length ? "" : " effort-empty"}`} role="group" aria-label={e.label}>
-            <h3 className="effort-head">{e.label} <small>{list.length}</small></h3>
+          <div key={e.id} className={`effort-group effort-${e.id}${list.length ? "" : " effort-empty"}`} role="group" aria-label={label}>
+            <h3 className="effort-head">{label} <small>{list.length}</small></h3>
             {e.id === "accept" && accept}
-            {list.map((t) => <Fragment key={key(t)}>{renderCard(t)}</Fragment>)}
+            {list.map((x) => <Fragment key={key(x)}>{renderCard(x)}</Fragment>)}
           </div>
         );
       })}
@@ -157,17 +161,18 @@ export function AcceptAllView({ count, asked, busy, msg, onAsk, onConfirm, onCan
   buttonRef?: React.Ref<HTMLButtonElement>;
   cancelRef?: React.Ref<HTMLButtonElement>;
 }) {
+  const t = useT("board");
   if (count === 0 && !asked && !msg) return null;
   return (
     <span className="accept-all-bar">
       {asked ? (
-        <span className="accept-confirm" role="group" aria-label="Confirm Accept all">
-          {`Accept ${asked.length}: ${asked.join(", ")}? `}
-          <Button type="button" variant="primary" disabled={busy} onClick={onConfirm}>{busy ? "Accepting…" : `Yes, accept ${asked.length}`}</Button>
-          <Button type="button" disabled={busy} onClick={onCancel} ref={cancelRef}>Cancel</Button>
+        <span className="accept-confirm" role="group" aria-label={t("effort.confirmLabel")}>
+          {t("effort.confirm", { count: asked.length, list: asked.join(t("common:listSep")) })}{" "}
+          <Button type="button" variant="primary" disabled={busy} onClick={onConfirm}>{busy ? t("effort.accepting") : t("effort.yes", { count: asked.length })}</Button>
+          <Button type="button" disabled={busy} onClick={onCancel} ref={cancelRef}>{t("common:cancel")}</Button>
         </span>
       ) : (
-        count > 0 && <Button type="button" className="accept-all" onClick={onAsk} ref={buttonRef}>Accept all {count}</Button>
+        count > 0 && <Button type="button" className="accept-all" onClick={onAsk} ref={buttonRef}>{t("effort.all", { count })}</Button>
       )}
       {msg && <span className={msg.ok ? "ok small" : "err small"} role="status">{msg.text}</span>}
     </span>

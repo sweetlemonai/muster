@@ -35,7 +35,7 @@ export function rowChipsOf(row: readonly string[], grouped: boolean, p: PlaceCou
     .filter((id) => !grouped || id === RAIL_ID)
     .map((id) => {
       const list = id === RAIL_ID ? [] : p.cols[id] ?? [];
-      const label = id === "paused" ? PAUSED_LANE.label : id === RAIL_ID ? "Recently finished" : STAGES.find((s) => s.id === id)?.label ?? id;
+      const label = id === "paused" ? PAUSED_LANE.label : id === RAIL_ID ? tn("shell", "recent.title") : STAGES.find((s) => s.id === id)?.label ?? id;
       return { id, label, count: placeCount(id, p), needs: needsYouCount(list), blocked: blockedCount(list) };
     });
 }
@@ -43,15 +43,18 @@ export function rowChipsOf(row: readonly string[], grouped: boolean, p: PlaceCou
 /** A chip as a screen reader says it, the counts in words: "Shaping: 4 items, 1 needs you, 2
  *  blocked. Open it". */
 export function chipWords(c: RowChip): string {
-  return `${placeWords(c.label, itemWords(c.count), c.needs, c.blocked)}. Open it`;
+  return tn("board", "row.chip", { place: placeWords(c.label, itemWords(c.count), c.needs, c.blocked) });
 }
 
 /** The cue at the row's end when its chips don't all fit (review R7): how many are past the edge
  *  and how many of their tasks need you. Its click shows them. */
 export function RowCue({ cue, onShow }: { cue: Cue; onShow: () => void }) {
+  const t = useT("board");
+  // "+2 more": right to left, the text holds "+2" in a left-to-right isolate, so the sign stays
+  // before its number.
   return (
-    <Pill type="button" className="col-cue" aria-label={cueWords(cue)} title="Show the columns past the edge" onClick={onShow}>
-      <span>+{cue.more} more</span>
+    <Pill type="button" className="col-cue" aria-label={cueWords(cue)} title={t("cue.title")} onClick={onShow}>
+      <span>{t("cue.more", { count: cue.more })}</span>
       {cue.needs > 0 && (
         <>
           <span aria-hidden="true">·</span>
@@ -203,8 +206,8 @@ export default function ColumnRow({
   const [boardView, setBoardView] = useState(ALL_IN_VIEW);
   const [edgeFrom, setEdgeFrom] = useState<string | null>(null);
   const [said, setSaid] = useState("");
-  // The cue's words are the board's: loaded with the row, before a cue first shows.
-  useT("board");
+  // The row's and the cue's words are the board's: loaded with the row, before a cue first shows.
+  const t = useT("board");
   useEffect(() => {
     if (!board) return;
     const stop = watchBoard(board, (v) => setBoardView((prev) => (sameView(prev, v) ? prev : v)));
@@ -215,15 +218,15 @@ export default function ColumnRow({
   }, [board]);
   const edge = board && boardView.overflow ? edgeCue(columns, boardView.visible, edgeFrom) : null;
   return (
-    <div ref={row} className="col-row" role="group" aria-label="Folded and empty columns">
-      {!any && !grouped && <span className="col-row-none">Every column is open</span>}
+    <div ref={row} className="col-row" role="group" aria-label={t("row.label")}>
+      {!any && !grouped && <span className="col-row-none">{t("row.allOpen")}</span>}
       {any && (
         <div ref={list} className={view.overflow ? "col-row-chips col-row-scrolls" : "col-row-chips"}>
           {chips.map((c) => (
-            <Pill key={c.id} type="button" className={`col-chip col-${c.id}`} aria-expanded={false} aria-label={chipWords(c)} title={`Open ${c.label} here`} data-chip={c.id} onClick={() => onOpen(c.id)}>
+            <Pill key={c.id} type="button" className={`col-chip col-${c.id}`} aria-expanded={false} aria-label={chipWords(c)} title={t("row.openHere", { name: c.label })} data-chip={c.id} onClick={() => onOpen(c.id)}>
               <span className="col-chip-name">{c.label}</span> <small>{c.count}</small>
               {c.needs > 0 && <b className="count warn">{needsWords(c.needs)}</b>}
-              {c.blocked > 0 && <b className="count blocked-count">{c.blocked} blocked</b>}
+              {c.blocked > 0 && <b className="count blocked-count">{t("modes.blocked", { count: c.blocked })}</b>}
             </Pill>
           ))}
         </div>

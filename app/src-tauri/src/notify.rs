@@ -11,7 +11,9 @@
 //! read for them. Several new at once go in one notification.
 //! The keys seen are kept, bounded, in `notified.json` beside `settings.json`, so a restart
 //! doesn't notify again. Posted from the core through `tauri-plugin-notification`, so the window
-//! needs no permission for it. Local only: nothing leaves the Mac.
+//! needs no permission for it. Local only: nothing leaves the Mac. Its words are in the language
+//! in effect when it's posted (`i18n`, `native.json`'s `notify`, mu-147); what a task or lesson
+//! says is shown as written, in plain text.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -20,6 +22,7 @@ use std::sync::{Mutex, MutexGuard};
 use serde::{Deserialize, Serialize};
 
 use crate::agents::{Known, SessionState, Snapshot};
+use crate::i18n;
 use crate::queue::{QueueInfo, State, Task};
 
 /// The file of keys seen, in the app's config folder.
@@ -36,10 +39,44 @@ const SHORT: usize = 80;
 /// key, why and project, and nothing it names (a task id, a project's name) runs on.
 const LONG: usize = 200;
 
-/// Why an escalated question waits on the owner, in its item's line; a task's several are folded
-/// into one line by `message`, so a batch (`muster clarify --send`, mu-103) is one notification
-/// that names each task once and counts its questions.
-const ASKS: &str = "asks you a question";
+/// Why something waits on the owner, as its line in a notification says it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Why {
+    /// Their own task.
+    Own,
+    /// In Your check.
+    Check,
+    /// A question escalated to them; a task's several are folded into one line by `message`, so
+    /// a batch (`muster clarify --send`, mu-103) is one notification that names each task once
+    /// and counts its questions.
+    Asks,
+    /// Blocked on them.
+    Blocked,
+    /// Blocked by a permission.
+    Permission,
+    /// Its session waits for their input.
+    Input,
+    /// An agent's task that waits for them otherwise.
+    Waiting,
+    /// A lesson from reviews waiting for their yes.
+    Lesson,
+}
+
+impl Why {
+    /// Its line in `native.json`.
+    fn key(self) -> &'static str {
+        match self {
+            Why::Own => "notify.line.own",
+            Why::Check => "notify.line.check",
+            Why::Asks => "notify.line.asks",
+            Why::Blocked => "notify.line.blocked",
+            Why::Permission => "notify.line.permission",
+            Why::Input => "notify.line.input",
+            Why::Waiting => "notify.line.waiting",
+            Why::Lesson => "notify.line.lesson",
+        }
+    }
+}
 
 /// One thing waiting on the owner.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,8 +88,13 @@ pub struct Item {
     pub queue: String,
     /// Its project's label (0044), for the notification.
     pub label: String,
-    /// What the notification says about it: `mu-12 Fix the board: ready for your check`.
-    pub line: String,
+    /// The task's key (`mu-12`); empty for a lesson.
+    pub id: String,
+    /// The start of the task's title, or of the lesson's rule, as written (`short`).
+    pub title: String,
+    /// Why it waits: with `id` and `title`, what the notification says about it
+    /// (`mu-12 Fix the board: ready for your check`, `Item::line`).
+    pub why: Why,
     /// Its session waits for input: Claude Code's word (0048), known only once it was read.
     pub input: bool,
     /// The Claude account of that session: the one it was found waiting on (0182), else its
@@ -95,29 +137,29 @@ fn task_items(t: &Task, label: &str) -> Vec<Item> {
     ) {
         return Vec::new();
     }
-    let mut why: Vec<(String, &str)> = Vec::new();
+    let mut why: Vec<(String, Why)> = Vec::new();
     if t.for_who == "human" {
-        why.push(("own".into(), "your task"));
+        why.push(("own".into(), Why::Own));
     } else {
         // `queue::needs_owner`'s reasons, and a session waiting for input (`agents::apply`).
         if t.stage == "your-check" {
             // Named by when it came in: back in Your check after a return is news again.
-            why.push((format!("check@{}", t.stage_since), "ready for your check"));
+            why.push((format!("check@{}", t.stage_since), Why::Check));
         }
         for q in t.questions.iter().filter(|q| !q.ticked && q.escalated) {
             let n = q.n.map(|n| n.to_string()).unwrap_or_default();
-            why.push((format!("q{n}"), ASKS));
+            why.push((format!("q{n}"), Why::Asks));
         }
         match t.blocked_kind.as_str() {
-            "you" => why.push(("blocked".into(), "blocked on you")),
-            "permission" => why.push(("blocked".into(), "needs your permission")),
+            "you" => why.push(("blocked".into(), Why::Blocked)),
+            "permission" => why.push(("blocked".into(), Why::Permission)),
             _ => {}
         }
         if t.session_state == SessionState::NeedsInput {
-            why.push(("input".into(), "its session waits for your input"));
+            why.push(("input".into(), Why::Input));
         }
         if why.is_empty() {
-            why.push(("waiting".into(), "waits for you"));
+            why.push(("waiting".into(), Why::Waiting));
         }
     }
     let key = crate::key::key(&t.prefix, &t.id);
@@ -129,9 +171,9 @@ fn task_items(t: &Task, label: &str) -> Vec<Item> {
         t.session_account.clone()
     };
     why.into_iter()
-        .map(|(k, words)| Item {
-            input: k == "input",
-            account: if k == "input" {
+        .map(|(k, why)| Item {
+            input: why == Why::Input,
+            account: if why == Why::Input {
                 account.clone()
             } else {
                 String::new()
@@ -139,7 +181,9 @@ fn task_items(t: &Task, label: &str) -> Vec<Item> {
             key: format!("{}/{}/{k}", t.queue, t.id),
             queue: t.queue.clone(),
             label: label.to_string(),
-            line: format!("{key} {}: {words}", short(&t.title)),
+            id: key.clone(),
+            title: short(&t.title),
+            why,
         })
         .collect()
 }
@@ -152,7 +196,9 @@ fn lesson_items(q: &QueueInfo, proposed: &[(String, String)]) -> Vec<Item> {
             key: format!("{}/lesson/{id}", q.name),
             queue: q.name.clone(),
             label: q.label.clone(),
-            line: format!("A lesson to approve: {}", short(rule)),
+            id: String::new(),
+            title: short(rule),
+            why: Why::Lesson,
             input: false,
             account: String::new(),
         })
@@ -240,48 +286,83 @@ pub fn message(items: &[Item]) -> (String, String) {
     };
     let one_project = items.iter().all(|i| i.queue == first.queue);
     // A task's questions are one line, with their count: (item, how many).
-    let asks = format!(": {ASKS}");
     let mut folded: Vec<(&Item, usize)> = Vec::new();
     for i in items {
         let same = |(f, _): &&mut (&Item, usize)| {
-            f.queue == i.queue && f.line == i.line && i.line.ends_with(&asks)
+            i.why == Why::Asks
+                && f.why == Why::Asks
+                && f.queue == i.queue
+                && f.id == i.id
+                && f.title == i.title
         };
         match folded.iter_mut().find(same) {
             Some((_, n)) => *n += 1,
             None => folded.push((i, 1)),
         }
     }
-    let all_asks = items.iter().all(|i| i.line.ends_with(&asks));
+    let all_asks = items.iter().all(|i| i.why == Why::Asks);
+    // In the language in effect (mu-147, `native.json`'s `notify`): the project's label, a task's
+    // key and title, and a lesson's rule are each their own run in a right-to-left language.
+    let project = [("project", first.label.as_str())];
     let title = match (items.len(), one_project) {
-        (1, _) => format!("New for you in {}", first.label),
-        (n, true) if all_asks => format!(
-            "{} for you in {}",
-            crate::clarify::counted(n, folded.len()),
-            first.label
+        (1, _) => i18n::t_args("notify.heading.one", &project),
+        // Every one a question: at least two, on `folded.len()` tasks.
+        (n, true) if all_asks => i18n::t_count(
+            "notify.heading.asksIn",
+            count(folded.len()),
+            &[("questions", &i18n::num(n)), project[0]],
         ),
-        (n, false) if all_asks => format!("{} for you", crate::clarify::counted(n, folded.len())),
-        (n, true) => format!("{n} new for you in {}", first.label),
-        (n, false) => format!("{n} new for you"),
+        (n, false) if all_asks => i18n::t_count(
+            "notify.heading.asks",
+            count(folded.len()),
+            &[("questions", &i18n::num(n))],
+        ),
+        (n, true) => i18n::t_count("notify.heading.newIn", count(n), &project),
+        (n, false) => i18n::t_count("notify.heading.new", count(n), &[]),
     };
     let mut lines: Vec<String> = folded
         .iter()
         .take(LINES)
         .map(|(i, n)| {
-            let line = match i.line.strip_suffix(ASKS) {
-                Some(head) if *n > 1 => format!("{head}asks you {n} questions"),
-                _ => i.line.clone(),
-            };
+            let line = i.line(*n);
             if one_project {
                 cut(&line, LONG)
             } else {
-                cut(&format!("{}: {line}", i.label), LONG)
+                let at = [("project", i.label.as_str()), ("line", line.as_str())];
+                cut(&i18n::t_args("notify.inProject", &at), LONG)
             }
         })
         .collect();
     if folded.len() > LINES {
-        lines.push(format!("and {} more", folded.len() - LINES));
+        lines.push(i18n::t_count(
+            "notify.more",
+            count(folded.len() - LINES),
+            &[],
+        ));
     }
     (cut(&title, LONG), lines.join("\n"))
+}
+
+/// A count as the plural forms take it (`usize` is at most 64 bits on every target).
+fn count(n: usize) -> u64 {
+    u64::try_from(n).unwrap_or(u64::MAX)
+}
+
+impl Item {
+    /// What a notification says about it, in the language in effect, with `questions` of its
+    /// kind folded into the line: `mu-12 Fix the board: ready for your check`. Plain text: the
+    /// title and the rule go in as written.
+    pub fn line(&self, questions: usize) -> String {
+        match self.why {
+            Why::Lesson => i18n::t_args(self.why.key(), &[("rule", &self.title)]),
+            Why::Asks if questions > 1 => i18n::t_count(
+                "notify.line.asksMany",
+                count(questions),
+                &[("id", &self.id), ("title", &self.title)],
+            ),
+            why => i18n::t_args(why.key(), &[("id", &self.id), ("title", &self.title)]),
+        }
+    }
 }
 
 /// What has been seen: every key, oldest first, the projects of the last read, and the accounts
@@ -613,7 +694,9 @@ mod tests {
             key: key.into(),
             queue: queue.into(),
             label: queue.to_uppercase(),
-            line: format!("{key} line"),
+            id: key.into(),
+            title: "line".into(),
+            why: Why::Own,
             input: key.ends_with("/input"),
             account: String::new(),
         }
@@ -652,10 +735,8 @@ mod tests {
         );
         let s = read(&d);
         let items = waiting(&s.tasks, &s.queues);
-        let lines: Vec<(&str, &str)> = items
-            .iter()
-            .map(|i| (i.key.as_str(), i.line.as_str()))
-            .collect();
+        let said: Vec<(&str, String)> = items.iter().map(|i| (i.key.as_str(), i.line(1))).collect();
+        let lines: Vec<(&str, &str)> = said.iter().map(|(k, l)| (*k, l.as_str())).collect();
         assert_eq!(
             lines,
             [
@@ -728,7 +809,10 @@ mod tests {
             .into_iter()
             .find(|i| i.key == "muster/0001/own")
             .unwrap();
-        assert_eq!(own.line, format!("mu-1 {}…: your task", "é".repeat(SHORT)));
+        assert_eq!(
+            own.line(1),
+            format!("mu-1 {}…: your task", "é".repeat(SHORT))
+        );
     }
 
     #[test]
@@ -981,14 +1065,17 @@ mod tests {
         let one = [item("a/1/own", "a")];
         assert_eq!(
             message(&one),
-            ("New for you in A".to_string(), "a/1/own line".to_string())
+            (
+                "New for you in A".to_string(),
+                "a/1/own line: your task".to_string()
+            )
         );
         let two = [item("a/1/own", "a"), item("a/2/own", "a")];
         assert_eq!(
             message(&two),
             (
                 "2 new for you in A".to_string(),
-                "a/1/own line\na/2/own line".to_string()
+                "a/1/own line: your task\na/2/own line: your task".to_string()
             )
         );
         // From more than one project: each line says which, and past three, how many more.
@@ -1003,7 +1090,7 @@ mod tests {
             message(&five),
             (
                 "5 new for you".to_string(),
-                "A: a/1/own line\nB: b/1/own line\nA: a/2/own line\nand 2 more".to_string()
+                "A: a/1/own line: your task\nB: b/1/own line: your task\nA: a/2/own line: your task\nand 2 more".to_string()
             )
         );
     }
@@ -1013,7 +1100,9 @@ mod tests {
         // muster clarify --send (mu-103): 5 questions on 2 tasks, read at once.
         let q = |id: &str, n: u32, title: &str| Item {
             key: format!("a/{id}/q{n}"),
-            line: format!("mu-{id} {title}: {ASKS}"),
+            id: format!("mu-{id}"),
+            title: title.into(),
+            why: Why::Asks,
             ..item("x", "a")
         };
         let batch = [
@@ -1037,7 +1126,7 @@ mod tests {
             message(&mixed),
             (
                 "3 new for you in A".to_string(),
-                "mu-1 Port: asks you 2 questions\na/3/own line".to_string()
+                "mu-1 Port: asks you 2 questions\na/3/own line: your task".to_string()
             )
         );
         // Across projects, each line says which; the same key in another project isn't folded.
@@ -1061,6 +1150,178 @@ mod tests {
         assert_eq!(new.len(), 5);
     }
 
+    /// `s` as a right-to-left line fills it in: its own run (`i18n::isolate_in`).
+    fn iso(s: &str) -> String {
+        format!("\u{2068}{s}\u{2069}")
+    }
+
+    /// What's left of `s` once every isolated run is taken out: the language's own words.
+    fn outside_isolates(s: &str) -> String {
+        let mut depth = 0;
+        s.chars()
+            .filter(|c| match c {
+                '\u{2068}' => {
+                    depth += 1;
+                    false
+                }
+                '\u{2069}' => {
+                    depth -= 1;
+                    false
+                }
+                _ => depth == 0,
+            })
+            .collect()
+    }
+
+    /// mu-147: in Persian each reason is a Persian sentence, and what it names (the task's key,
+    /// its title, a lesson's rule, the project) is its own run, as written.
+    #[test]
+    fn a_notification_speaks_persian_and_isolates_what_it_names() {
+        let d = queue();
+        lessons(&d, &[("L1", "proposed")]);
+        let s = read(&d);
+        let items = waiting(&s.tasks, &s.queues);
+        crate::i18n::stub::app("fa", || {
+            let lines: Vec<String> = items.iter().map(|i| i.line(1)).collect();
+            let task =
+                |id: &str, title: &str, why: &str| format!("{} {}: {why}", iso(id), iso(title));
+            assert_eq!(
+                lines,
+                [
+                    task("mu-1", "Buy the domain", "تسک خودتان"),
+                    task("mu-3", "Fix the board", "آماده‌ی بررسی شما"),
+                    task("mu-5", "Pick a colour", "در انتظار شما مسدود است"),
+                    task("mu-7", "Needs access", "به اجازه‌ی شما نیاز دارد"),
+                    task("mu-8", "Ask a question", "پرسشی از شما دارد"),
+                    task("mu-9", "Waits for input", "نشستش منتظر ورودی شماست"),
+                    format!("درسی برای تأیید: {}", iso("Say why in L1")),
+                ]
+            );
+            let waits = Item {
+                id: "mu-4".into(),
+                title: "Build it".into(),
+                why: Why::Waiting,
+                ..item("a/4/waiting", "a")
+            };
+            assert_eq!(waits.line(1), task("mu-4", "Build it", "منتظر شماست"));
+            // One is named in full; several are counted in Persian digits, past three as «و n
+            // مورد دیگر».
+            let check = &items[1];
+            assert_eq!(
+                message(std::slice::from_ref(check)),
+                (
+                    format!("مورد تازه‌ای برای شما در {}", iso("Muster app")),
+                    lines[1].clone()
+                )
+            );
+            let (title, body) = message(&items);
+            assert_eq!(
+                title,
+                format!("۷ مورد تازه برای شما در {}", iso("Muster app"))
+            );
+            assert_eq!(
+                body,
+                format!("{}\n{}\n{}\nو ۴ مورد دیگر", lines[0], lines[1], lines[2])
+            );
+            assert!(message(&items[..4]).1.ends_with("\nو ۱ مورد دیگر"));
+        });
+    }
+
+    #[test]
+    fn a_batch_of_questions_and_news_from_several_projects_read_in_persian() {
+        let q = |id: &str, n: u32, title: &str| Item {
+            key: format!("a/{id}/q{n}"),
+            id: format!("mu-{id}"),
+            title: title.into(),
+            why: Why::Asks,
+            ..item("x", "a")
+        };
+        let batch = [
+            q("1", 1, "Port"),
+            q("1", 2, "Port"),
+            q("2", 1, "Lease"),
+            q("1", 3, "Port"),
+            q("2", 2, "Lease"),
+        ];
+        let other = Item {
+            queue: "b".into(),
+            label: "B".into(),
+            ..q("1", 1, "Port")
+        };
+        // One task's questions: the task in the singular, in English.
+        assert_eq!(message(&batch[..2]).0, "2 questions on 1 task for you in A");
+        crate::i18n::stub::app("fa", || {
+            assert_eq!(
+                message(&batch[..2]).0,
+                format!("{} پرسش در ۱ تسک برای شما در {}", iso("۲"), iso("A"))
+            );
+            assert_eq!(
+                message(&batch),
+                (
+                    format!("{} پرسش در ۲ تسک برای شما در {}", iso("۵"), iso("A")),
+                    format!(
+                        "{} {}: ۳ پرسش از شما دارد\n{} {}: ۲ پرسش از شما دارد",
+                        iso("mu-1"),
+                        iso("Port"),
+                        iso("mu-2"),
+                        iso("Lease")
+                    )
+                )
+            );
+            // From more than one project, each line opens with a Persian word, so the line
+            // still reads right to left with the project's name first.
+            let line = format!("{} {}: پرسشی از شما دارد", iso("mu-1"), iso("Port"));
+            assert_eq!(
+                message(&[q("1", 1, "Port"), other.clone()]),
+                (
+                    format!("{} پرسش در ۲ تسک برای شما", iso("۲")),
+                    format!(
+                        "در {}: {}\nدر {}: {}",
+                        iso("A"),
+                        iso(&line),
+                        iso("B"),
+                        iso(&line)
+                    )
+                )
+            );
+            let two = [item("a/1/own", "a"), item("b/1/own", "b")];
+            assert_eq!(message(&two).0, "۲ مورد تازه برای شما");
+            // No English word is left outside what the owner wrote.
+            for (title, body) in [message(&batch), message(&two), message(&[other])] {
+                for text in [title, body] {
+                    let words = outside_isolates(&text);
+                    assert!(!words.chars().any(|c| c.is_ascii_alphabetic()), "{text}");
+                }
+            }
+        });
+    }
+
+    /// A task's title stays plain text in a notification, in either language: no markup is read
+    /// in it, only its first line shows, cut as in English.
+    #[test]
+    fn a_title_is_plain_text_and_cut_in_persian_too() {
+        let d = queue();
+        let long = format!("<b>{}</b>", "é".repeat(SHORT + 5));
+        fs::write(
+            d.path().join("0001-buy.md"),
+            format!("---\nid: 0001\nstage: ready\nfor: human\n---\n\n# {long}\n\n## Log\n- 2026-10-13 captured\n"),
+        )
+        .unwrap();
+        let s = read(&d);
+        let own = waiting(&s.tasks, &s.queues)
+            .into_iter()
+            .find(|i| i.key == "muster/0001/own")
+            .unwrap();
+        let cut_title = format!("<b>{}…", "é".repeat(SHORT - 3));
+        assert_eq!(own.line(1), format!("mu-1 {cut_title}: your task"));
+        crate::i18n::stub::app("fa", || {
+            assert_eq!(
+                own.line(1),
+                format!("{} {}: تسک خودتان", iso("mu-1"), iso(&cut_title))
+            );
+        });
+    }
+
     #[test]
     fn every_line_is_cut_on_a_character_however_long_what_it_names() {
         // A task id, a project name or a label has no bound of its own.
@@ -1068,7 +1329,9 @@ mod tests {
             key: "a/1/own".into(),
             queue: "q".repeat(LONG + 5),
             label: "ü".repeat(LONG + 5),
-            line: format!("mu-{} Title: your task", "9".repeat(LONG + 5)),
+            id: format!("mu-{}", "9".repeat(LONG + 5)),
+            title: "Title".into(),
+            why: Why::Own,
             input: false,
             account: String::new(),
         };
@@ -1081,7 +1344,7 @@ mod tests {
         let (_, body) = message(&two);
         let lines: Vec<&str> = body.lines().collect();
         assert_eq!(lines[0], format!("{}…", "ü".repeat(LONG)));
-        assert_eq!(lines[1], "B: b/1/own line");
+        assert_eq!(lines[1], "B: b/1/own line: your task");
         // A line that fits stays whole.
         assert_eq!(cut("mu-1 Fix: your task", LONG), "mu-1 Fix: your task");
     }
@@ -1138,7 +1401,7 @@ mod tests {
             *fake.posted.borrow(),
             [(
                 "2 new for you in A".to_string(),
-                "a/2/q1 line\na/3/own line".to_string()
+                "a/2/q1 line: your task\na/3/own line: your task".to_string()
             )]
         );
         let later = [item("a/1/own", "a"), item("a/4/own", "a")];

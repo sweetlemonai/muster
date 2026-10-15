@@ -1,4 +1,4 @@
-import { tl } from "./i18n";
+import { isolate, tl } from "./i18n";
 import type { Task } from "./types";
 
 /** A task's type, the core's list (ops::KINDS, task 0017) in its order: the only ones offered.
@@ -17,9 +17,16 @@ const isKnownKind = (v: string): v is KnownKind => KNOWN.includes(v);
 export const kindLabel = (v: string): string => (isKnownKind(v) ? tl(`kind.${v}`) : v);
 
 /** The estimates in one line, as the card shows them: "agent 2h · test 30m · 400k", only the parts
- *  set (the same as the core's ops::estimate_text). */
+ *  set (the same as the core's ops::estimate_text). The words in the language shown, each figure as
+ *  typed. */
 export function estimateText(t: Pick<Task, "estTime" | "estTestTime" | "estTokens">): string {
-  return [t.estTime && `agent ${t.estTime}`, t.estTestTime && `test ${t.estTestTime}`, t.estTokens].filter(Boolean).join(" · ");
+  return [
+    t.estTime && tl("estimatePart.agent", { time: t.estTime }),
+    t.estTestTime && tl("estimatePart.test", { time: t.estTestTime }),
+    isolate(t.estTokens),
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 const heading = (line: string) => line.replace(/\r?\n$/, "").trimEnd();

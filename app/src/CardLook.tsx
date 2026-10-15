@@ -1,5 +1,5 @@
 import { useContext } from "react";
-import { tl, tn } from "./i18n";
+import { tl, tn, useT } from "./i18n";
 import { priorityName, stageLabel } from "./lib";
 import { Machine } from "./settingsData";
 import { CARD_LOOKS, type CardColour, type CardLook } from "./themes";
@@ -12,6 +12,7 @@ import YouRibbon from "./YouRibbon";
  *  selected one; and `human` for the owner's own task (0022), hatched in gold (styles.css
  *  `.card.human`) with the You ribbon in every look. */
 export function cardClass(t: Pick<Task, "priority" | "blocked" | "blockedKind" | "waitingForOwner"> & { forWho?: string }, active: boolean): string {
+  // i18n-ignore: class names, not text
   return `card p-${priorityName(t.priority)}${active ? " active" : ""}${t.waitingForOwner ? " needs-you" : ""}${t.blocked || (t.blockedKind && t.blockedKind !== "tasks") ? " blocked" : ""}${t.forWho === "human" ? " human" : ""}`;
 }
 
@@ -33,10 +34,11 @@ export function CardBand({ t }: { t: Pick<Task, "stage" | "blocked" | "blockedKi
  *  "being used now", mu-172): a shape only, not read out a second time. Never animated. */
 export function LiveDot({ t, silent = false }: { t: Pick<Task, "live">; silent?: boolean }) {
   const live = useContext(Machine).liveMinutes;
+  const tr = useT("board");
   if (!t.live) return null;
-  const title = `A session on it is working now: its transcript changed in the last ${live} minute${live === 1 ? "" : "s"}`;
+  const title = tr("card.liveTitle", { count: live });
   if (silent) return <i className="dot live-dot" aria-hidden="true" title={title} />;
-  return <i className="dot live-dot" role="img" aria-label="live" title={title} />;
+  return <i className="dot live-dot" role="img" aria-label={tr("card.live")} title={title} />;
 }
 
 type Sample = { stage: string; title: string; priority: string; blocked?: boolean; needsYou?: boolean; human?: boolean };

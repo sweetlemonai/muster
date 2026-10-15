@@ -1,5 +1,6 @@
+import { tl } from "./i18n";
 import { agoText, currentCheckin, holderOf, minutesSince, quietCheckin, splitHolder, stageLabel } from "./lib";
-import { ANSWER_FIRST } from "./sessionState";
+import { answerFirst } from "./sessionState";
 import type { Task } from "./types";
 
 // Reaching the session working on a task (0039): who can be reached, and whether a check-in was
@@ -16,34 +17,34 @@ export function messageLength(text: string): number {
 
 /** Why a holder can't be reached: its claim names no session, and what the owner can do about it
  *  (mu-184): Release it, or a session under its label takes it over. `{label}` stands for the
- *  holder's label (noSession). Word for word ping::NO_SESSION; a test in ping.rs reads this line. */
-export const NO_SESSION = "no session to reach: Release it, or let a new session under {label} take it over";
+ *  holder's label (noSession). Word for word ping::NO_SESSION; a test in ping.rs reads this line,
+ *  and reach.test.ts holds board.json's `reach.noSession`, what the window says, to it. */
+export const NO_SESSION = "no session to reach: Release it, or let a new session under {label} take it over"; // i18n-ignore: the core's words, which ping.rs's test reads here
 /** NO_SESSION for a hold in Testing: only Release, as nobody takes a hold over there. Word for word
- *  ping::NO_SESSION_HELD; a test in ping.rs reads this line. */
-export const NO_SESSION_HELD = "no session to reach: Release it";
-/** NO_SESSION for a holder's label (ping::no_session). */
-export const noSession = (label: string) => NO_SESSION.replace("{label}", () => label.trim());
-/** Why Testing has no check-in to ask for: `muster checkin` is Building's. */
-export const CHECKIN_IN_TESTING = "check-ins are for Building; send a message instead";
+ *  ping::NO_SESSION_HELD; a test in ping.rs reads this line (board.json `reach.noSessionHeld`). */
+export const NO_SESSION_HELD = "no session to reach: Release it"; // i18n-ignore: the core's words, which ping.rs's test reads here
+/** NO_SESSION for a holder's label (ping::no_session), in the language shown. */
+export const noSession = (label: string) => tl("reach.noSession", { label: label.trim() });
 /** The longest message (ping::MAX_MESSAGE). */
 export const MAX_MESSAGE = 500;
 
 /** Why the session on a task can't be reached, or "" when it can (ping::reach): only a holder in
  *  Building or Testing, not the owner, whose claim has a session stamp. */
 export function unreachable(t: Pick<Task, "stage" | "claimedBy" | "heldBy">): string {
-  if (t.stage !== "building" && t.stage !== "testing") return `${stageLabel(t.stage)} has no session working on it`;
+  if (t.stage !== "building" && t.stage !== "testing") return tl("reach.noStageSession", { stage: stageLabel(t.stage) });
   const who = holderOf(t);
-  if (!who) return "nobody holds it";
+  if (!who) return tl("reach.nobody");
   const { label, id } = splitHolder(who);
-  if (label === "owner") return "you hold it yourself";
+  if (label === "owner") return tl("reach.yours");
   if (id) return "";
-  return t.stage === "testing" ? NO_SESSION_HELD : noSession(label);
+  return t.stage === "testing" ? tl("reach.noSessionHeld") : noSession(label);
 }
 
-/** Why a check-in can't be asked for, or "" when it can: reachable, in Building, and not waiting
- *  for input in Claude Code (0048), where it couldn't read the request until that's answered. */
+/** Why a check-in can't be asked for, or "" when it can: reachable, in Building (in Testing,
+ *  `muster checkin` isn't the holder's: a message is), and not waiting for input in Claude Code
+ *  (0048), where it couldn't read the request until that's answered. */
 export function cantAsk(t: Pick<Task, "stage" | "claimedBy" | "heldBy" | "sessionState">): string {
-  return unreachable(t) || (t.sessionState === "needs-input" ? ANSWER_FIRST : "") || (t.stage === "testing" ? CHECKIN_IN_TESTING : "");
+  return unreachable(t) || (t.sessionState === "needs-input" ? answerFirst() : "") || (t.stage === "testing" ? tl("reach.checkinInTesting") : "");
 }
 
 /** "asked 2 min ago" while a check-in asked for in this Building stage hasn't come; a check-in
@@ -54,7 +55,7 @@ export function askedText(t: Pick<Task, "stage" | "stageSince" | "checkins" | "c
   const c = currentCheckin(t);
   if (c && c.at >= asked) return "";
   const m = minutesSince(asked, now);
-  return m === null ? "" : `asked ${agoText(m)}`;
+  return m === null ? "" : tl("reach.asked", { ago: agoText(m) });
 }
 
 /** A project's quiet claims (the card's "no check-in for N min"), and the ones a check-in request

@@ -1,8 +1,9 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { backlogNotes, NoteCard, QuickAdd } from "./Backlog";
 import { GroupByChips, GroupedBoard } from "./Groups";
+import { setLocale } from "./i18n/runtime";
 import { groupItems, isWork } from "./levels";
 import type { BoardSort } from "./lib";
 import type { Note, Task } from "./types";
@@ -164,7 +165,7 @@ describe("the grouped board's Backlog band (task 0046)", () => {
 
   it("marks the search's words in the note titles", () => {
     const html = grouped("feature", notes.slice(0, 1), ["flick"]);
-    expect(html).toContain('<span class="title">Board <mark>flick</mark>ers</span>');
+    expect(html).toContain('<span class="title"><span dir="auto">Board <mark>flick</mark>ers</span></span>');
   });
 
   it("takes the place of No feature when every loose task is in Backlog, and doesn't say nothing matches", () => {
@@ -212,7 +213,7 @@ describe("grouped table", () => {
       createElement(TableView, { tasks: all, now: 0, multi: false, openKey: null, onOpen: () => {}, groups: groupItems(all, all, "feature"), by: "feature", words: ["ship", "5"] }),
     );
     // The goal is a row in No feature: its level badge, then its title with the word marked.
-    expect(html).toContain('<span class="ui-badge ui-badge--level">Goal</span> <mark>Ship</mark> 1.0');
+    expect(html).toContain('<span class="ui-badge ui-badge--level">Goal</span> <span dir="auto"><mark>Ship</mark> 1.0');
     expect(html).toContain('<td class="id" title="muster · 0005"><mark>0005</mark></td>');
   });
 });
@@ -222,5 +223,46 @@ describe("Group by chips", () => {
     const html = renderToStaticMarkup(createElement(GroupByChips, { value: "goal", onChange: () => {} }));
     const chips = [...html.matchAll(/<button[^>]*class="([^"]+)">([^<]+)<\/button>/g)].map((m) => `${m[2]}${m[1].includes("ui-pill--on") ? "*" : ""}`);
     expect(chips).toEqual(["None", "Feature", "Goal*"]);
+  });
+});
+
+// mu-147: the bands' own words in Persian (the level, the progress and the stage words are
+// levels.ts's and lib.ts's, checked there).
+describe("the grouped board in Persian (mu-147)", () => {
+  afterEach(async () => {
+    await setLocale("en");
+  });
+  const draw = (by: "feature" | "goal", list: Task[], backlog = false) =>
+    renderToStaticMarkup(
+      createElement(GroupedBoard, {
+        groups: groupItems(list.filter(isWork), list, by), by, sort: "priority", multi: false, openKey: null, onOpen: () => {},
+        renderCard: (t: Task) => createElement("i", { className: "card-stub" }, `${t.id}`),
+        backlog: backlog ? { notes: [], renderNote: () => null, quickAdd: null } : undefined,
+      }),
+    );
+  it("English reads as it did", () => {
+    const html = draw("feature", [...all, task({ id: "0012", title: "Blocked feature", level: "feature", blocked: true, due: "2026-11-01", progress: { done: 0, total: 0, estMinutes: 0, estTokenCount: 0 } })], true);
+    expect(html).toContain('title="Open feature 0002"');
+    expect(html).toContain('<span class="ui-status-pill ui-status-pill--blocked">blocked</span>');
+    expect(html).toContain('<span class="meta">due 2026-11-01</span>');
+    expect(html).toMatch(/<span class="band-title">No feature<\/span><span class="meta">\d+ items<\/span>/);
+    expect(html).toContain('<span class="band-title">Backlog · not in a feature yet</span><span class="meta">0 items</span>');
+    expect(html).toContain('<p class="none">Nothing here</p>');
+  });
+  it("Persian: the band heads, the Backlog band, the empty and paused lines, for 0, 1 and many", async () => {
+    await setLocale("fa");
+    const html = draw("feature", [...all, task({ id: "0012", title: "Blocked feature", level: "feature", blocked: true, due: "2026-11-01", progress: { done: 0, total: 0, estMinutes: 0, estTokenCount: 0 } })], true);
+    expect(html).toContain('title="باز کردن قابلیت ⁨0002⁩"');
+    expect(html).toContain(">مسدود</span>");
+    expect(html).toContain('<span class="meta">سررسید ⁨2026-11-01⁩</span>');
+    expect(html).toMatch(/<span class="band-title">بدون قابلیت<\/span><span class="meta">[۰-۹]+ مورد<\/span>/);
+    expect(html).toContain('<span class="band-title">بک‌لاگ · هنوز در هیچ قابلیتی نیست</span><span class="meta">۰ مورد</span>');
+    expect(html).toContain('<p class="none">اینجا چیزی نیست</p>');
+    expect(html).toContain('<p class="none">هنوز تسکی نیست</p>');
+    expect(draw("goal", [task({ id: "0030", title: "Goal", level: "goal" }), task({ id: "0031", parent: "0030" })])).toContain('title="باز کردن هدف ⁨0030⁩"');
+    expect(draw("goal", [task({ id: "0031" })])).toContain('<span class="band-title">بدون هدف</span><span class="meta">۱ مورد</span>');
+    expect(draw("feature", [task({ id: "0040", title: "F", level: "feature" }), task({ id: "0041", parent: "0040", paused: "2026-10-14 10:00" })])).toContain("همه‌ی تسک‌های اینجا متوقف شده‌اند");
+    expect(renderToStaticMarkup(createElement(GroupedBoard, { groups: [], by: "feature", sort: "priority", multi: false, openKey: null, onOpen: () => {}, renderCard: () => null }))).toContain("هیچ تسکی مطابقت ندارد.");
+    expect(html).not.toMatch(/No feature|items|Nothing here|not in a|Open feature|>blocked<|due /);
   });
 });

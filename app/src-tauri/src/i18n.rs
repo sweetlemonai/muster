@@ -545,7 +545,11 @@ mod tests {
     fn every_key_the_core_names_is_in_english() {
         let en = &files()["en"];
         let mut checked = 0;
-        for src in [include_str!("tray.rs")] {
+        for src in [
+            include_str!("tray.rs"),
+            include_str!("notify.rs"),
+            include_str!("app_menu.rs"),
+        ] {
             for (i, _) in src.match_indices('"') {
                 let rest = &src[i + 1..];
                 let Some(end) = rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '.'))

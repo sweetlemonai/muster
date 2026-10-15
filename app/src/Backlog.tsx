@@ -2,14 +2,15 @@ import { useContext, useState } from "react";
 import { api } from "./api";
 import { Hl } from "./FilterBar";
 import { NoteHolderRibbon } from "./HolderRibbon";
+import { tn, useT } from "./i18n";
 import { ago, oneAtATime, queueTotal, stamp } from "./lib";
 import type { Note, Task } from "./types";
 import ProjectName from "./ProjectName";
 import { labelOf, Labels } from "./labels";
 import { Badge, Pill } from "./ui";
 
-/** A note's title on the board; an empty note says so. */
-export const noteTitle = (n: Pick<Note, "title">) => n.title.trim() || "(empty note)";
+/** A note's title on the board; an empty note says so, in the language shown. */
+export const noteTitle = (n: Pick<Note, "title">) => n.title.trim() || tn("board", "backlog.emptyNote");
 
 /** Which pane shows a note: its queue and file name. */
 export const noteKey = (n: Pick<Note, "queue" | "file">) => `${n.queue}/${n.file}`;
@@ -50,13 +51,15 @@ export function fileDraft(n: Pick<Note, "title" | "text">) {
  *  and how long ago it was added. The search's `words` are marked in the title, as on task cards.
  *  A note a session is shaping says who in its corner (0097), whose room the title always keeps. */
 export function NoteCard({ n, now, multi, active, onOpen, words }: { n: Note; now: number; multi: boolean; active: boolean; onOpen: () => void; words: string[] }) {
+  const t = useT("board");
   return (
     <button className={`note-card${active ? " active" : ""}`} onClick={onOpen} title={n.file}>
       <NoteHolderRibbon n={n} now={now} />
-      <span className="title">{n.title.trim() ? <Hl text={noteTitle(n)} words={words} /> : noteTitle(n)}</span>
+      {/* The note's own title keeps its own direction. */}
+      <span className="title">{n.title.trim() ? <span dir="auto"><Hl text={noteTitle(n)} words={words} /></span> : noteTitle(n)}</span>
       <span className="note-meta">
         {multi && <ProjectName name={n.queue} />}
-        <Badge variant="note">note</Badge>
+        <Badge variant="note">{t("backlog.note")}</Badge>
         <span className="age">{ago(now, n.added)}</span>
       </span>
     </button>
@@ -81,6 +84,7 @@ export function QuickAdd({ queues, onAdded }: { queues: string[]; onAdded: () =>
   const [text, setText] = useState("");
   const [target, setTarget] = useState("");
   const labels = useContext(Labels);
+  const t = useT("board");
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState("");
   const [once] = useState(oneAtATime);
@@ -106,8 +110,8 @@ export function QuickAdd({ queues, onAdded }: { queues: string[]; onAdded: () =>
       <input
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="Add to the backlog…"
-        aria-label={queue ? `Add to the backlog of ${queue}` : "Add to the backlog"}
+        placeholder={t("backlog.placeholder")}
+        aria-label={queue ? t("backlog.addTo", { project: queue }) : t("backlog.add")}
         disabled={!queue}
         onKeyDown={(e) => {
           const act = quickAddKey(e.key, e.nativeEvent.isComposing);
@@ -123,7 +127,7 @@ export function QuickAdd({ queues, onAdded }: { queues: string[]; onAdded: () =>
         }}
       />
       {queues.length > 1 && (
-        <div className="quick-add-to" role="group" aria-label="Which project">
+        <div className="quick-add-to" role="group" aria-label={t("backlog.whichProject")}>
           {picking ? (
             queues.map((q) => (
               <Pill key={q} type="button" on={q === queue} aria-pressed={q === queue} onClick={() => { setTarget(q); setPicking(false); }}>
@@ -131,8 +135,8 @@ export function QuickAdd({ queues, onAdded }: { queues: string[]; onAdded: () =>
               </Pill>
             ))
           ) : (
-            <Pill type="button" title="The project the note goes to; click to change it" onClick={() => setPicking(true)}>
-              {`to ${labelOf(labels, queue)}`}
+            <Pill type="button" title={t("backlog.pickTitle")} onClick={() => setPicking(true)}>
+              {t("backlog.to", { project: labelOf(labels, queue) })}
             </Pill>
           )}
         </div>

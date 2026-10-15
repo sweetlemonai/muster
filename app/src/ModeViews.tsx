@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { blockedRed } from "./blockWords";
 import { needsWords } from "./human";
-import { tl, tn } from "./i18n";
+import { tl, tn, useT } from "./i18n";
 import { modeLabel, useLook, type ColumnFold, type DisplayMode } from "./modes";
 import type { Task } from "./types";
 import { Pill } from "./ui";
@@ -24,24 +24,29 @@ export function ModeChip({ mode, onOpen }: { mode: DisplayMode; onOpen: () => vo
 export const blockedCount = (tasks: Pick<Task, "blocked" | "blockedKind">[]) => tasks.filter(blockedRed).length;
 
 /** A column's count in words, as its strip and chip say it: "empty", "1 item", "4 items". */
-export const itemWords = (n: number) => (n === 0 ? "empty" : `${n} ${n === 1 ? "item" : "items"}`);
+export const itemWords = (n: number) => (n === 0 ? tn("board", "modes.empty") : tn("board", "modes.items", { count: n }));
+
+/** "2 blocked", in the language shown. */
+const blockedWords = (n: number) => tn("board", "modes.blocked", { count: n });
 
 /** A folded place's counts as a screen reader says them (mu-159), its badges in words: "Shaping: 4
  *  items, 1 needs you, 2 blocked". A strip, a band and a chip in the row above the board say it
  *  the same way. `count` is its count in words, as shown ("4 items", "2 tasks"). */
 export function placeWords(label: string, count: string, needs: number, blocked: number): string {
-  const parts = [count];
-  if (needs > 0) parts.push(needsWords(needs));
-  if (blocked > 0) parts.push(`${blocked} blocked`);
-  return `${label}: ${parts.join(", ")}`;
+  const params = { label, items: count, needs: needsWords(needs), blocked: blockedWords(blocked) };
+  if (needs > 0 && blocked > 0) return tn("board", "modes.placeBoth", params);
+  if (needs > 0) return tn("board", "modes.placeNeeds", params);
+  if (blocked > 0) return tn("board", "modes.placeBlocked", params);
+  return tn("board", "modes.place", params);
 }
 
 /** What a folded strip says about the cards it hides: how many need you and how many are blocked. */
 export function FoldCounts({ needs, blocked }: { needs: number; blocked: number }) {
+  useT("board");
   return (
     <>
       {needs > 0 && <b className="count warn" title={needsWords(needs)}>{needs}</b>}
-      {blocked > 0 && <b className="count blocked-count" title={`${blocked} blocked`}>{blocked} blocked</b>}
+      {blocked > 0 && <b className="count blocked-count" title={blockedWords(blocked)}>{blockedWords(blocked)}</b>}
     </>
   );
 }
@@ -69,10 +74,12 @@ export function ColumnHead({ stage, count, countNode, needs, blocked, fold, onFo
   /** After the count in an open column's head (the board's role line). */
   children?: ReactNode;
 }) {
+  const t = useT("board");
   const title = stage.role ? `${stage.label}: ${stage.role}` : stage.label;
   const folded = fold === "folded";
   // A strip, empty or folded, says "empty" for nothing in it: a bare 0 down a strip reads as a mark.
-  const shown = countNode ?? <small>{count === 0 && (empty || folded) ? "empty" : count}</small>;
+  const shown = countNode ?? <small>{count === 0 && (empty || folded) ? t("modes.empty") : count}</small>;
+  const foldInto = t("modes.foldInto", { name: stage.label });
   if (fold === "fixed") {
     if (empty) {
       return (
@@ -87,8 +94,8 @@ export function ColumnHead({ stage, count, countNode, needs, blocked, fold, onFo
       <h2 title={title}>
         {stage.label} {shown}
         {onHide && (
-          <Pill type="button" className="col-hide" aria-expanded={true} aria-label={`Fold ${stage.label} into the row above the board`} title={`Fold ${stage.label} into the row above the board`} onClick={onHide}>
-            Fold
+          <Pill type="button" className="col-hide" aria-expanded={true} aria-label={foldInto} title={foldInto} onClick={onHide}>
+            {t("common:fold")}
           </Pill>
         )}
         {children}
@@ -97,7 +104,7 @@ export function ColumnHead({ stage, count, countNode, needs, blocked, fold, onFo
   }
   return (
     <h2 title={title}>
-      <button type="button" className="col-fold" aria-expanded={!folded} aria-label={placeWords(stage.label, itemWords(count), needs, blocked)} onClick={onFold} title={folded ? `Open ${stage.label} here` : `Fold ${stage.label} back to its strip`}>
+      <button type="button" className="col-fold" aria-expanded={!folded} aria-label={placeWords(stage.label, itemWords(count), needs, blocked)} onClick={onFold} title={folded ? t("row.openHere", { name: stage.label }) : t("modes.foldBack", { name: stage.label })}>
         {stage.label} {shown}
         <FoldCounts needs={needs} blocked={blocked} />
       </button>

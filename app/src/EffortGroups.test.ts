@@ -1,7 +1,8 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import EffortGroups, { AcceptAllView, confirmEscape, putAcceptResult } from "./EffortGroups";
+import { setLocale } from "./i18n/runtime";
 import { windowKey } from "./keys";
 import css from "./styles.css?raw";
 import { GroupedBoard } from "./Groups";
@@ -79,6 +80,36 @@ describe("Accept all's confirm, in place (0043)", () => {
     expect(view({ count: 0, msg: { ok: true, text: "Accepted 2: they're done." } })).toBe('<span class="accept-all-bar"><span class="ok small" role="status">Accepted 2: they&#x27;re done.</span></span>');
     expect(view({ count: 1, msg: { ok: false, text: "Accepted none. Not accepted: muster 0014: no." } })).toContain('<span class="err small" role="status">');
     expect(view({ count: 0 })).toBe("");
+  });
+});
+
+// mu-147: the groups' names and Accept all's words in Persian. The result line's text is
+// yourCheck.ts's (mu-148), drawn as it comes.
+describe("Your check by effort, in Persian (mu-147)", () => {
+  afterEach(async () => {
+    await setLocale("en");
+  });
+  const view = (over: Partial<Parameters<typeof AcceptAllView>[0]>) =>
+    renderToStaticMarkup(createElement(AcceptAllView, { count: 2, asked: null, busy: false, msg: null, onAsk: () => {}, onConfirm: () => {}, onCancel: () => {}, ...over }));
+  it("names the groups and their counts", async () => {
+    await setLocale("fa");
+    const html = renderToStaticMarkup(createElement(EffortGroups, { tasks: CHECK, place: "fa", renderCard: (t: Task) => createElement("i", { className: "card" }, t.id), onChanged: () => {} }));
+    expect([...html.matchAll(/role="group" aria-label="([^"]+)"><h3 class="effort-head">([^<]*) <small>/g)].map((m) => [m[1], m[2]])).toEqual([
+      ["فقط پذیرفتن", "فقط پذیرفتن"],
+      ["یک نگاه", "یک نگاه"],
+      ["نیاز به یک نشست", "نیاز به یک نشست"],
+    ]);
+    expect(html).toContain(">پذیرفتن همه (۲)</button>");
+  });
+  it("asks, accepts and cancels in Persian, for one and many", async () => {
+    await setLocale("fa");
+    expect(view({ count: 1 })).toContain(">پذیرفتن همه (۱)</button>");
+    const many = view({ asked: ["0014", "0021"] });
+    expect(many).toContain('aria-label="تأیید پذیرفتن همه"');
+    expect(text(many).replace(/[⁦-⁩]/g, "")).toBe("۲ مورد پذیرفته شود: 0014، 0021؟ بله، پذیرفتن ۲ مورد لغو");
+    expect(text(view({ asked: ["0014"] })).replace(/[⁦-⁩]/g, "")).toBe("۱ مورد پذیرفته شود: 0014؟ بله، پذیرفتن ۱ مورد لغو");
+    expect(view({ asked: ["0014"], busy: true })).toContain(">در حال پذیرفتن…</button>");
+    expect(text(many)).not.toMatch(/Accept|Yes|Cancel/);
   });
 });
 

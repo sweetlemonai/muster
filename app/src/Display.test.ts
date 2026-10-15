@@ -169,7 +169,8 @@ describe("a card in each mode", () => {
     // Who holds it is in the holder ribbon, in every mode (0097): the one place the brief card names it.
     expect(html).not.toContain("card-who");
     expect(quiet.match(/muster\/wt-0038/g)).toHaveLength(1);
-    expect(html).toContain('<span class="holder-name tail-3" dir="auto"><span class="sr-only">muster/wt-0038</span><span aria-hidden="true" class="holder-head">muster/wt-0</span><span aria-hidden="true" class="holder-tail">038</span></span>');
+    // Read out whole in the ribbon's one sentence; shown as its head and number (mu-147).
+    expect(html).toContain('<span class="sr-only">held by muster/wt-0038</span><span aria-hidden="true" class="holder-name tail-3" dir="auto"><span class="holder-head">muster/wt-0</span><span class="holder-tail">038</span></span>');
     const picked = text(card("standard", busy, true, "0005 Display"));
     for (const words of ["muster/wt-0038", "40%", "#design", "0005 Display", "1d", "1 file"]) expect(picked, words).toContain(words);
   });

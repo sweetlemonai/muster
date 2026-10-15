@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { isWorking, projectActivity } from "./activity";
 import { cardLines, look, Mode, MODES } from "./modes";
 import CardStatus from "./CardStatus";
@@ -8,9 +8,10 @@ import { needsYouCount, waitingForYou } from "./human";
 import { waitingOnYou } from "./paneData";
 import { StatusLine } from "./PaneHeader";
 import { CardPing, QuietPing } from "./Ping";
+import { setLocale } from "./i18n/runtime";
 import { cantAsk } from "./reach";
 import Card from "./Card";
-import { ANSWER_FIRST, ribbonStateWords, sessionStatesLine, sessionWords } from "./sessionState";
+import { answerFirst, ribbonStateWords, sessionStatesLine, sessionWords } from "./sessionState";
 import css from "./styles.css?raw";
 import type { Task } from "./types";
 import WaitingList from "./WaitingList";
@@ -83,6 +84,25 @@ describe("the ribbon's words for each state (mu-171)", () => {
         const t = task({ stage, sessionState });
         expect(ribbonStateWords(t, false) !== "", `${stage} ${sessionState}`).toBe(sessionWords(t) !== "");
       }
+  });
+});
+
+describe("the words for each state in Persian (mu-147)", () => {
+  afterEach(async () => {
+    await setLocale("en");
+  });
+  it("says the pane's and the ribbon's words in Persian, Claude Code's name as it is", async () => {
+    await setLocale("fa");
+    expect(sessionWords(task({ sessionState: "working" }))).toBe("در حال کار");
+    expect(sessionWords(task({ sessionState: "needs-input" }))).toBe("در انتظار ورودی در Claude Code");
+    expect(sessionWords(task({ sessionState: "ended" }))).toBe("نشست تمام شد، تسک هنوز «در حال ساخت» است");
+    expect(sessionWords(task({ stage: "testing", sessionState: "ended" }))).toBe("");
+    expect(sessionWords(task({ sessionState: "unknown" }))).toBe("");
+    expect([false, true].map((short) => ribbonStateWords(task({ sessionState: "working" }), short))).toEqual(["در حال کار", "در حال کار"]);
+    expect([false, true].map((short) => ribbonStateWords(task({ sessionState: "needs-input" }), short))).toEqual(["در انتظار ورودی", "نیاز به شما"]);
+    expect([false, true].map((short) => ribbonStateWords(task({ sessionState: "ended" }), short))).toEqual(["نشست تمام شد", "تمام شد"]);
+    expect(ribbonStateWords(task({ sessionState: "working", paused: "2026-10-13 10:00" }), false)).toBe("");
+    expect(answerFirst()).toBe("در انتظار ورودی در Claude Code: اول همان‌جا پاسخ دهید");
   });
 });
 
@@ -180,12 +200,12 @@ describe("the sidebar's working now", () => {
 
 describe("Ask for a check-in while the session waits for input", () => {
   it("is refused in the window with why: answer it in Claude Code first", () => {
-    expect(ANSWER_FIRST).toBe("waiting for input in Claude Code: answer it there first");
-    expect(cantAsk(task(waiting))).toBe(ANSWER_FIRST);
+    expect(answerFirst()).toBe("waiting for input in Claude Code: answer it there first");
+    expect(cantAsk(task(waiting))).toBe(answerFirst());
     expect(cantAsk(task({ ...quiet, sessionState: "working" }))).toBe("");
     const card = renderToStaticMarkup(createElement(CardPing, { t: task(waiting), now: NOW }));
     expect(card).toContain("disabled");
-    expect(card).toContain(`<span class="why">${ANSWER_FIRST}</span>`);
+    expect(card).toContain(`<span class="why">${answerFirst()}</span>`);
   });
   it("the sidebar's Ask all leaves it out and says so", () => {
     const html = renderToStaticMarkup(createElement(QuietPing, { tasks: [task(waiting), task({ ...quiet, id: "0049" })], now: NOW }));

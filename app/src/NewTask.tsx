@@ -1,33 +1,38 @@
 import { useContext, useEffect, useRef, useState } from "react";
 import { api } from "./api";
-import { KINDS } from "./fields";
+import { KINDS, kindLabel } from "./fields";
 import { paneEscape } from "./keys";
 import { readFiles, stamp } from "./lib";
 import TagEditor from "./Tags";
 import { LEVELS } from "./levels";
 import { HelpButton } from "./HelpButton";
-import { useT } from "./i18n";
+import { tn, useT } from "./i18n";
 import { pressed } from "./shortcuts";
 import { parseKey } from "./taskKey";
 import { labelOf, Labels } from "./labels";
 import { Button, Pill } from "./ui";
 
-/** Who does a new task (0022), as a chip pair: an agent (the default) or you. */
-export const FOR_CHOICES = [
-  { id: "human", label: "Human", hint: "Yours to do: on the board hatched, with the You ribbon, and agents never take it" },
-  { id: "ai", label: "AI", hint: "An agent's: on the board as usual" },
-] as const;
+/** Who does a new task (0022), as a chip pair: an agent (the default) or you; named in the
+ *  language shown. */
+const forChoice = <I extends "human" | "ai">(id: I) => ({
+  id,
+  get label() { return tn("board", `newTask.${id}`); },
+  get hint() { return tn("board", `newTask.${id}Hint`); },
+});
+export const FOR_CHOICES = [forChoice("human"), forChoice("ai")] as const;
 
 /** The Parent field (0033): its key (`mu-30`, `MU-30`) or number (`30`, `0030`) as the id the core
- *  takes; "" for none. Another project's key, or something that isn't a task, says why. */
+ *  takes; "" for none. Another project's key, or something that isn't a task, says why, in the
+ *  language shown. */
 export function parentRequest(typed: string, prefix: string | undefined): { ok: true; id: string } | { ok: false; why: string } {
   const t = typed.trim();
   if (!t) return { ok: true, id: "" };
-  const example = prefix ? `${prefix}-30 or 30` : "30";
+  // The key and the number as they're typed: Latin, whatever the language.
+  const example = prefix ? tn("board", "newTask.example", { key: `${prefix}-30`, number: "30" }) : "30";
   const k = parseKey(t);
-  if (!k) return { ok: false, why: `A parent is a feature or goal of this project: ${example}` };
+  if (!k) return { ok: false, why: tn("board", "newTask.parentNotTask", { example }) };
   if (k.prefix !== null && prefix && k.prefix !== prefix) {
-    return { ok: false, why: `${t} is another project's task: a parent is in this one (${example})` };
+    return { ok: false, why: tn("board", "newTask.parentElsewhere", { typed: t, example }) };
   }
   return { ok: true, id: k.id };
 }
@@ -42,7 +47,7 @@ export default function NewTask({ queues, initial, prefixes = {}, onClose, onCre
   onClose: () => void;
   onCreated: (queue: string, id: string) => void;
 }) {
-  const t = useT("common");
+  const t = useT("board");
   const [queue, setQueue] = useState(initial);
   const labels = useContext(Labels);
   const [title, setTitle] = useState("");
@@ -120,39 +125,42 @@ export default function NewTask({ queues, initial, prefixes = {}, onClose, onCre
         }}
       >
         <header className="pane-head">
-          <h1>New task <HelpButton topic="new-task" /></h1>
-          <button type="button" className="close" onClick={onClose} aria-label="Close">×</button>
+          <h1>{t("newTask.title")} <HelpButton topic="new-task" /></h1>
+          <button type="button" className="close" onClick={onClose} aria-label={t("newTask.close")}>×</button>
         </header>
         <div className="row">
           <label>
-            Project
+            {t("newTask.project")}
             <select value={queue} onChange={(e) => setQueue(e.target.value)}>
               {queues.map((q) => <option key={q} value={q}>{labelOf(labels, q)}</option>)}
             </select>
           </label>
           <label>
-            Priority
+            {t("newTask.priority")}
             <select value={priority} onChange={(e) => setPriority(e.target.value)}>
-              <option value="high">High</option>
-              <option value="normal">Normal</option>
-              <option value="low">Low</option>
+              <option value="high">{t("newTask.priorityValue.high")}</option>
+              <option value="normal">{t("newTask.priorityValue.normal")}</option>
+              <option value="low">{t("newTask.priorityValue.low")}</option>
             </select>
           </label>
-          <label title={t("estimateField.agentTime")}>
-            Agent time
+          <label title={t("common:estimateField.agentTime")}>
+            {t("newTask.agentTime")}
+            {/* i18n-ignore: an estimate as it's typed */}
             <input value={estTime} onChange={(e) => setEstTime(e.target.value)} placeholder="2h" size={6} maxLength={10} />
           </label>
-          <label title={t("estimateField.testTime")}>
-            Test time
+          <label title={t("common:estimateField.testTime")}>
+            {t("newTask.testTime")}
+            {/* i18n-ignore: an estimate as it's typed */}
             <input value={estTestTime} onChange={(e) => setEstTestTime(e.target.value)} placeholder="30m" size={6} maxLength={10} />
           </label>
           <label>
-            Tokens
+            {t("newTask.tokens")}
+            {/* i18n-ignore: an estimate as it's typed */}
             <input value={estTokens} onChange={(e) => setEstTokens(e.target.value)} placeholder="500k" size={6} maxLength={10} />
           </label>
         </div>
-        <div className="chip-row" role="group" aria-label="Who does it">
-          <span className="meta">For</span>
+        <div className="chip-row" role="group" aria-label={t("newTask.whoAria")}>
+          <span className="meta">{t("newTask.for")}</span>
           {FOR_CHOICES.map((f) => (
             <Pill
               key={f.id}
@@ -169,8 +177,8 @@ export default function NewTask({ queues, initial, prefixes = {}, onClose, onCre
             </Pill>
           ))}
         </div>
-        <div className="row level-pick" role="group" aria-label="Level">
-          <span className="meta">Level</span>
+        <div className="row level-pick" role="group" aria-label={t("newTask.level")}>
+          <span className="meta">{t("newTask.level")}</span>
           {LEVELS.map((l) => (
             <Pill
               key={l.id}
@@ -178,36 +186,37 @@ export default function NewTask({ queues, initial, prefixes = {}, onClose, onCre
               on={level === l.id}
               aria-pressed={level === l.id}
               disabled={forWho === "human" && l.id !== "task"}
-              title={forWho === "human" && l.id !== "task" ? "Your own task is a task: a goal or feature is its tasks' sum" : undefined}
+              title={forWho === "human" && l.id !== "task" ? t("newTask.humanIsTask") : undefined}
               onClick={() => setLevel(l.id)}
             >
               {l.label}
             </Pill>
           ))}
-          <label className="parent-field" title={level === "goal" ? "A goal has no parent" : "The feature or goal it sits under, by its key or number"}>
-            Parent
+          <label className="parent-field" title={level === "goal" ? t("newTask.goalNoParent") : t("newTask.parentHint")}>
+            {t("newTask.parent")}
             <input
               value={level === "goal" ? "" : parent}
               onChange={(e) => setParent(e.target.value.slice(0, 12))}
-              placeholder={level === "goal" ? "none" : prefixes[queue] ? `${prefixes[queue]}-30` : "30"}
+              placeholder={level === "goal" ? t("newTask.parentNone") : prefixes[queue] ? `${prefixes[queue]}-30` : "30"}
               size={7}
               disabled={level === "goal"}
             />
           </label>
           {!parentAsked.ok && <span className="err small" role="alert">{parentAsked.why}</span>}
         </div>
-        <div className="chip-row" role="group" aria-label="Type">
-          <span className="meta">Type</span>
+        <div className="chip-row" role="group" aria-label={t("newTask.type")}>
+          <span className="meta">{t("newTask.type")}</span>
           {KINDS.map((k) => (
-            <Pill key={k} type="button" on={kind === k} aria-pressed={kind === k} onClick={() => setKind(k)}>{k}</Pill>
+            <Pill key={k} type="button" on={kind === k} aria-pressed={kind === k} onClick={() => setKind(k)}>{kindLabel(k)}</Pill>
           ))}
         </div>
-        <input ref={titleRef} className="title-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What's wrong or wanted, in one line" maxLength={200} />
+        <input ref={titleRef} className="title-input" dir="auto" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("newTask.titlePlaceholder")} maxLength={200} />
         <TagEditor tags={tags} onChange={setTags} />
         <textarea
+          dir="auto"
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          placeholder="Details in Markdown: steps to reproduce, where in the app, what done looks like. Paste or drop screenshots anywhere here."
+          placeholder={t("newTask.bodyPlaceholder")}
           rows={10}
           onKeyDown={(e) => {
             if (pressed(e, "send")) void submit();
@@ -218,21 +227,21 @@ export default function NewTask({ queues, initial, prefixes = {}, onClose, onCre
             {files.map(([name, url], i) => (
               <span key={name + i} className="pending-file">
                 {url.startsWith("data:image/") ? <img src={url} alt="" /> : null}
-                {name}
-                <button type="button" className="remove" onClick={() => setFiles((f) => f.filter((_, j) => j !== i))} aria-label={`Remove ${name}`}>×</button>
+                <span dir="auto">{name}</span>
+                <button type="button" className="remove" onClick={() => setFiles((f) => f.filter((_, j) => j !== i))} aria-label={t("newTask.removeFile", { name })}>×</button>
               </span>
             ))}
           </div>
         )}
         <div className="modal-bar">
           <label className="file-pick">
-            Add files…
+            {t("newTask.addFiles")}
             <input type="file" multiple onChange={(e) => void add(e.target.files)} />
           </label>
           {error && <span className="err">{error}</span>}
           <span className="spacer" />
-          <Button type="button" onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="primary" disabled={!title.trim() || busy}>{busy ? "Creating…" : "Create (⌘↩)"}</Button>
+          <Button type="button" onClick={onClose}>{t("common:cancel")}</Button>
+          <Button type="submit" variant="primary" disabled={!title.trim() || busy}>{busy ? t("newTask.creating") : t("newTask.create")}</Button>
         </div>
       </form>
     </div>

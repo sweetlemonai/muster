@@ -83,6 +83,15 @@ describe("the Type row in Persian (mu-194)", () => {
     expect(type.chip("task")).toBe("تسک");
     expect(row()).toEqual(["باگ", "epic", "قابلیت", "ایده", "تسک"]);
   });
+  it("says the owner as holder with the word the Table, the Graph and the card use, a session as written (mu-147)", async () => {
+    const held = GROUPS.find((g) => g.id === "holder")!;
+    expect(held.chip("owner")).toBe("you");
+    expect(held.active("owner")).toBe("held by you");
+    expect(held.chip("drover/main")).toBe("drover/main");
+    await setLocale("fa");
+    expect(held.chip("owner")).toBe("شما");
+    expect(held.chip("drover/main")).toBe("drover/main");
+  });
 });
 
 describe("applyQuery", () => {

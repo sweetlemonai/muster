@@ -13,7 +13,7 @@ describe("the note pane", () => {
     const html = pane({});
     const row = /<section class="controls">\s*<div class="control-row">([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "";
     expect([...row.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1])).toEqual(["File as task", "Drop", "Copy shaping brief"]);
-    expect(html).toContain("<h1>Board flickers</h1>");
+    expect(html).toContain('<h1><span dir="auto">Board flickers</span></h1>');
     expect(html).toContain("<strong>on resize</strong>");
     expect(html).toContain("added 1 h ago");
     const raw = pane({ text: "<img src=x onerror=alert(1)>" });

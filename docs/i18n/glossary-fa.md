@@ -199,6 +199,17 @@ column header, the stage track and the task's detail.
 | review | بازبینی | | Drover |
 | criteria / acceptance criterion | معیارها / معیار پذیرش | pl. معیارهای پذیرش | common Persian software usage |
 | worktree | worktree (Latin) | pl. worktree‌ها | Drover, Pro Git fa |
+| pass (a task to the next stage) | فرستادن | «فرستادن به «آماده»»; a history line's kind «فرستادن به بعد»; not ارسال, which is Send for a message (mu-147) | (proposed) |
+| sent back (state) | برگردانده‌شده | «برگردانده‌شده توسط {{by}}»; the verb is Drover's برگرداندن (mu-147) | Drover (برگرداندن) |
+| Paused (the lane) | لین «متوقف شده» | the lane's name uses the pause state; «پیش‌تر {{stage}}» for "was {{stage}}" (mu-147) | (proposed) |
+| take over (a claim) | در دست گرفتن | the history kind and «آن را به دست بگیرد» (mu-147) | (proposed) |
+| Who does it: Human / AI | انسان / ایجنت | the new-task chip pair; ایجنت, not هوش مصنوعی, on a chip (mu-147) | (proposed) |
+| chore (task type) | نگهداری | not «کار جانبی» (a side job) (mu-147) | (proposed) |
+| docs (task type) | مستندات | not «مستند» (a documentary) (mu-147) | common Persian software usage |
+| lesson (to approve) | درس | pl. درس‌ها; «درس‌هایی برای تأیید» (mu-147) | (proposed) |
+| dependency / needed first | وابستگی / پیش‌نیاز | the Graph view (mu-147) | common Persian software usage |
+| proven / ticked (a criterion) | اثبات‌شده / تیک‌خورده | «اثبات‌نشده» for not proven (mu-147) | (proposed) |
+| due (date) | سررسید | (mu-147) | common usage |
 
 ### Roles
 
@@ -211,6 +222,7 @@ column header, the stage track and the task's detail.
 | owner | مالک | the person who owns the queue | Drover |
 | role | نقش | pl. نقش‌ها; a role profile in roles.toml (0112) | common usage |
 | slot | جایگاه | pl. جایگاه‌ها; a role's numbered place (Kaveh-2) that a session claims | (proposed) |
+| capture (old name of the lead session) | سرپرست | the word for the role it became; never Latin "capture" in Persian text (mu-147) | Muster (lead) |
 
 The role titles in Settings › Agents › Roles (mu-195): the words for the core's eleven roles,
 shell.json `roles.title.<id>`. Shaper, tester (QA tester) and lead use the words above. The role's
@@ -333,6 +345,10 @@ Latin script stays in commands, task fields (`claimed-by:`) and anything an agen
 | status line | نوار وضعیت | Claude Code's status line | common Persian software usage |
 | meter (the header's) | سنجه | «سنجه‌ی سرصفحه» | (proposed) |
 | balancing (across accounts) | توازن | «توازن خودکار بین حساب‌ها در کار نیست» | (proposed) |
+| recap (a session's) | خلاصه | (mu-147) | common usage |
+| handoff chain | زنجیره‌ی واگذاری | built from Drover's واگذاری (mu-147) | Drover (واگذاری) |
+| Your turn | نوبت شما | the Your check card (mu-147) | common usage |
+| timeline scale | مقیاس | Day / Week / Month: روز / هفته / ماه (mu-147) | common usage |
 
 ## Sources
 
@@ -349,6 +365,7 @@ Latin script stays in commands, task fields (`claimed-by:`) and anything an agen
 The "(proposed)" words (شکل‌دهی، در حال ساخت، برداشتن، مهلت، زاویه‌ی دید، گزارش وضعیت، ضربان،
 سازنده، شکل‌دهنده، تسک برداشته‌شده, and the shell's: بورد (or برد)، دستیار، نما، چیپ، نام نمایشی، سرصفحه، سرفصل، ترتیب دلخواه،
 راکد، ساکت، رها کردن، زنده، چشم‌انداز، رونوشت, and mu-172's: روبان توکن، بیش، خواندن از کش، نوشتن
-در کش، نشست مشترک، زمان ایجنت، انتظار شما, and mu-113's: خوانش، رزرو، جا تا رزرو، کهنه، سنجه، توازن) have no source and wait on a native-speaking review.
+در کش، نشست مشترک، زمان ایجنت، انتظار شما, and mu-113's: خوانش، رزرو، جا تا رزرو، کهنه، سنجه، توازن, and mu-147's:
+فرستادن، لین «متوقف شده»، در دست گرفتن، انسان / ایجنت، نگهداری، درس، اثبات‌شده / تیک‌خورده) have no source and wait on a native-speaking review.
 The token ribbon writes its figures in Persian digits, with the k and M as they are (۲۱۰k). The digits rule waits on mu-151: until then a number filled into a Persian string is in
 Persian digits (the layer formats it), and a number written alone on screen (a count chip) is not.

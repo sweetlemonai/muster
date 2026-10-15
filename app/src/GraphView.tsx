@@ -4,7 +4,8 @@ import { blockedRed, blockSentence, isBlocked } from "./blockWords";
 import { downstream, edgeLit, type Graph, graphMarks, hiddenDeps, isLoopEdge, layoutGraph, readyToStart, upstream } from "./graph";
 import { GRAPH_RESERVE, graphLegend, Legend } from "./Legend";
 import { isHuman } from "./human";
-import { holder, key, stageLabel, stageOf } from "./lib";
+import { tl, Trans, useT } from "./i18n";
+import { holderShown, key, stageLabel, stageOf } from "./lib";
 import { PAUSE_GLYPH } from "./Pause";
 import { siblingKey, taskKey } from "./taskKey";
 import type { Task } from "./types";
@@ -36,15 +37,16 @@ export function GraphView({ tasks, all, multi, openKey, onOpen }: { tasks: Task[
   // Each queue's layout, here so the legend names what every queue draws.
   const graphs = useMemo(() => new Map([...groups.shown].map(([q, ts]) => [q, layoutGraph(ts)])), [groups.shown]);
   const legend = useMemo(() => graphLegend(graphMarks([...graphs.values()])), [graphs]);
+  const t = useT("board");
   return (
     <main className="graph-view">
       {/* The bar and the legend stay in view: only the graphs below them scroll (mu-173 R2). */}
       <div className="graph-strip">
         <div className="graph-bar">
           <Pill type="button" on={hideDone} aria-pressed={hideDone} onClick={() => setHideDone(!hideDone)}>
-            Hide done
+            {t("graph.hideDone")}
           </Pill>
-          <span className="meta">Arrows point from a task to what waits on it.</span>
+          <span className="meta">{t("graph.arrows")}</span>
         </div>
         <Legend items={legend} reserve={GRAPH_RESERVE} />
       </div>
@@ -60,7 +62,7 @@ export function GraphView({ tasks, all, multi, openKey, onOpen }: { tasks: Task[
             onOpen={onOpen}
           />
         ))}
-        {queues.length === 0 && <p className="empty">No tasks to show.</p>}
+        {queues.length === 0 && <p className="empty">{t("graph.empty")}</p>}
       </div>
     </main>
   );
@@ -72,21 +74,23 @@ const EMPTY: Graph = layoutGraph(NONE);
 /** The state line every task shows, as a node or a chip: stage, ready, paused, blocked, who holds
  *  it. A space between the parts, so a chip reads "Done high", not "Donehigh". */
 function Status({ t, ready }: { t: Task; ready: boolean }) {
-  const who = holder(t, useContext(RoleNamesContext));
+  const who = holderShown(t, useContext(RoleNamesContext));
+  const tr = useT("board");
   const parts = [
     <span key="stage" className="g-stage">{stageLabel(t.stage)}</span>,
-    t.priority === "high" && <span key="pri" className="pri pri-high">high</span>,
-    ready && <span key="ready" className="g-ready">ready</span>,
-    t.paused && <Badge key="paused" variant="paused">{`${PAUSE_GLYPH} paused`}</Badge>,
-    blockedRed(t) ? <Badge key="blocked" variant="blocked">blocked</Badge> : isBlocked(t) && <BlockWhy key="why" t={t} short />,
-    t.waitingForOwner && <Badge key="needs" variant="warn">needs you</Badge>,
-    who && <span key="who" className="g-who">{who}</span>,
+    t.priority === "high" && <span key="pri" className="pri pri-high">{tl("priority.high")}</span>,
+    ready && <span key="ready" className="g-ready">{tr("graph.ready")}</span>,
+    t.paused && <Badge key="paused" variant="paused">{`${PAUSE_GLYPH} ${tr("graph.paused")}`}</Badge>,
+    blockedRed(t) ? <Badge key="blocked" variant="blocked">{tr("views.blocked")}</Badge> : isBlocked(t) && <BlockWhy key="why" t={t} short />,
+    t.waitingForOwner && <Badge key="needs" variant="warn">{tr("views.needsYou")}</Badge>,
+    who && <span key="who" className="g-who" dir="auto">{who}</span>,
   ].filter((p) => p !== false && p !== "");
   return <>{parts.flatMap((p, i) => (i === 0 ? [p] : [" ", p]))}</>;
 }
 
 function QueueGraph({ name, g, tasks, all, openKey, onOpen }: { name: string; g: Graph; tasks: Task[]; all: Task[]; openKey: string | null; onOpen: (t: Task) => void }) {
   const labels = useContext(Labels);
+  const tr = useT("board");
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const selected = g.nodes.find((n) => key(n.task) === openKey)?.id ?? null;
   const up = useMemo(() => (selected ? upstream(g, selected) : new Set<string>()), [g, selected]);
@@ -103,13 +107,14 @@ function QueueGraph({ name, g, tasks, all, openKey, onOpen }: { name: string; g:
   }, [g]);
 
   return (
-    <section className="graph-queue" aria-label={name ? `${labelOf(labels, name)} dependencies` : "Dependencies"}>
+    <section className="graph-queue" aria-label={name ? tr("graph.aria", { project: labelOf(labels, name) }) : tr("graph.ariaOne")}>
       {name && <h2><ProjectName name={name} className="" /></h2>}
       {g.nodes.length === 0 ? (
         <p className="meta">
           {all.some((t) => t.depends.some((d) => d !== t.id))
-            ? "Nothing linked among the tasks shown: what they wait on is done (hidden) or filtered out."
-            : <>No task here depends on another yet. Set one with <code>muster set &lt;id&gt; depends {taskKey(tasks[0] ?? all[0])}</code>.</>}
+            ? tr("graph.nothingLinked")
+            // i18n-ignore: a command, the same in every language
+            : <Trans ns="board" k="graph.noDeps" params={{ cmd: `muster set <id> depends ${taskKey(tasks[0] ?? all[0])}` }} components={{ code: <code /> }} />}
         </p>
       ) : (
         <div className="graph-canvas" style={{ width, height }}>
@@ -143,17 +148,24 @@ function QueueGraph({ name, g, tasks, all, openKey, onOpen }: { name: string; g:
                 className={`g-node s-${stageOf(t)}${isHuman(t) ? " human" : ""}${blockedRed(t) ? " blocked" : ""}${ready ? " ready" : ""}${role(n.id)}`}
                 style={{ left: p.x, top: p.y, width: W, height: H }}
                 onClick={() => onOpen(t)}
-                title={`${taskKey(t)} ${t.title}\n${stageLabel(t.stage)}${t.blockedKind ? `\n${blockSentence(t)}` : ""}${t.depends.length ? `\nwaits on ${t.depends.map((d) => siblingKey(t, d)).join(", ")}` : ""}`}
+                title={[
+                  `${taskKey(t)} ${t.title}`,
+                  stageLabel(t.stage),
+                  t.blockedKind ? blockSentence(t) : "",
+                  t.depends.length ? tr("graph.waitsOn", { list: t.depends.map((d) => siblingKey(t, d)).join(tl("listSep")) }) : "",
+                ]
+                  .filter(Boolean)
+                  .join("\n")}
                 aria-pressed={n.id === selected}
               >
                 <span className="g-top">
                   <span className="id">{taskKey(t)}</span>
                   {isHuman(t) && <YouRibbon />}
-                  {up.has(n.id) && <span className="g-rel">needed first</span>}
-                  {down.has(n.id) && <span className="g-rel">waits for it</span>}
+                  {up.has(n.id) && <span className="g-rel">{tr("graph.neededFirst")}</span>}
+                  {down.has(n.id) && <span className="g-rel">{tr("graph.waitsForIt")}</span>}
                   <Status t={t} ready={ready} />
                 </span>
-                <span className="g-title">{t.title || "(no title)"}</span>
+                {t.title ? <span className="g-title" dir="auto">{t.title}</span> : <span className="g-title">{tr("graph.noTitle")}</span>}
                 <DepsLine t={t} hidden={hiddenDeps(t, shown)} neededBy={neededBy.get(n.id) ?? 0} />
               </button>
             );
@@ -162,10 +174,10 @@ function QueueGraph({ name, g, tasks, all, openKey, onOpen }: { name: string; g:
       )}
       {g.loose.length > 0 && (
         <div className="graph-loose">
-          <span className="meta">Not linked to any task ({g.loose.length})</span>
+          <span className="meta">{tr("graph.loose", { count: g.loose.length })}</span>
           {g.loose.map((t) => (
             <Pill key={t.id} type="button" on={key(t) === openKey} className={`g-loose s-${stageOf(t)}${isHuman(t) ? " human" : ""}`} onClick={() => onOpen(t)} title={t.title}>
-              <span className="id">{taskKey(t)}</span>{isHuman(t) && <YouRibbon />} {t.title.length > 34 ? `${t.title.slice(0, 33)}…` : t.title} <Status t={t} ready={readyToStart(t)} />
+              <span className="id">{taskKey(t)}</span>{isHuman(t) && <YouRibbon />} <span dir="auto">{t.title.length > 34 ? `${t.title.slice(0, 33)}…` : t.title}</span> <Status t={t} ready={readyToStart(t)} />
             </Pill>
           ))}
         </div>
@@ -176,13 +188,13 @@ function QueueGraph({ name, g, tasks, all, openKey, onOpen }: { name: string; g:
 
 /** In words, what the arrows say: what it waits on (naming any not drawn here) and how many wait on it. */
 function DepsLine({ t, hidden, neededBy }: { t: Task; hidden: string[]; neededBy: number }) {
+  const tr = useT("board");
   const deps = t.depends.filter((d) => d !== t.id);
   if (!deps.length && !neededBy) return null;
+  const list = deps.map((d) => (hidden.includes(d) ? tr("graph.notShown", { key: siblingKey(t, d) }) : siblingKey(t, d))).join(tl("listSep"));
   return (
     <span className="g-deps">
-      {deps.length > 0 && <>waits on {deps.map((d) => (hidden.includes(d) ? `${siblingKey(t, d)} (not shown)` : siblingKey(t, d))).join(", ")}</>}
-      {deps.length > 0 && neededBy > 0 && " · "}
-      {neededBy > 0 && <>{neededBy} wait{neededBy === 1 ? "s" : ""} on it</>}
+      {[deps.length > 0 ? tr("graph.waitsOn", { list }) : "", neededBy > 0 ? tr("graph.waitOnIt", { count: neededBy }) : ""].filter(Boolean).join(" · ")}
     </span>
   );
 }

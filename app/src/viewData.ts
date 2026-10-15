@@ -1,5 +1,6 @@
 import { blockedRed, blockSentence, isBlocked } from "./blockWords";
-import { holder, stageLabel, stageOf, stageRank, stampMinutes, type RoleNames, type StageId } from "./lib";
+import { fmt, tn } from "./i18n";
+import { holderShown, stageLabel, stageOf, stageRank, stampMinutes, type RoleNames, type StageId } from "./lib";
 import type { Task } from "./types";
 import { isWork, shownStageRank } from "./levels";
 
@@ -31,7 +32,7 @@ export function sortTasks(tasks: Task[], by: SortKey, desc: boolean, names: Role
       case "stage": return !isWork(t) ? shownStageRank(t) : t.paused ? -1 : stageRank(t.stage);
       case "changed": return t.modified;
       case "estimate": return (t.estMinutes + t.estTestMinutes) * 1e7 + t.estTokenCount;
-      case "who": return isBlocked(t) ? blockSentence(t, true) : holder(t, names);
+      case "who": return isBlocked(t) ? blockSentence(t, true) : holderShown(t, names);
       case "kind": return t.kind;
       default: return t[by];
     }
@@ -61,13 +62,11 @@ export function dayNumber(date: string): number | null {
 
 export const DAY = 1440;
 export type Scale = "day" | "week" | "month";
-/** The scales in the order the chips show them. `slot` is the smallest unit a bar snaps to:
- *  hours at Day (bars are exact there), quarter days at Week, days at Month. */
-export const SCALES: { id: Scale; label: string; slot: number }[] = [
-  { id: "day", label: "Day", slot: 60 },
-  { id: "week", label: "Week", slot: 360 },
-  { id: "month", label: "Month", slot: DAY },
-];
+/** The scales in the order the chips show them, each named in the language shown. `slot` is the
+ *  smallest unit a bar snaps to: hours at Day (bars are exact there), quarter days at Week, days
+ *  at Month. */
+const scale = (id: Scale, slot: number) => ({ id, slot, get label() { return tn("board", `views.scale.${id}`); } });
+export const SCALES: { id: Scale; readonly label: string; slot: number }[] = [scale("day", 60), scale("week", 360), scale("month", DAY)];
 const slotOf = (scale: Scale) => SCALES.find((s) => s.id === scale)?.slot ?? DAY;
 /** A saved scale, or Week (the default) for anything else. */
 export const parseScale = (v: string | null): Scale => (v === "day" || v === "month" ? v : "week");
@@ -171,9 +170,18 @@ export function taskSpan(t: Task, now: number): Span | null {
 /** A timeline bar's tooltip: the stage, that it's paused and why (0045), why it's blocked (0024),
  *  and its days. */
 export function barTitle(t: Task, timed: boolean): string {
-  const why = blockSentence(t);
-  const paused = t.paused ? ` · paused${t.pausedWhy ? `: ${t.pausedWhy}` : ""}` : "";
-  return `${stageLabel(t.stage)}${paused}${why ? ` · ${why}` : ""} · captured ${t.captured}${t.claimedOn ? ` · started ${t.claimedOn}` : ""}${t.doneOn ? ` · done ${t.doneOn}` : ""}${timed ? "" : " · dates only"}`;
+  const paused = t.pausedWhy ? tn("board", "views.tip.pausedWhy", { why: t.pausedWhy }) : tn("board", "views.tip.paused");
+  return [
+    stageLabel(t.stage),
+    t.paused ? paused : "",
+    blockSentence(t),
+    tn("board", "views.tip.captured", { date: t.captured }),
+    t.claimedOn ? tn("board", "views.tip.started", { date: t.claimedOn }) : "",
+    t.doneOn ? tn("board", "views.tip.done", { date: t.doneOn }) : "",
+    timed ? "" : tn("board", "views.tip.datesOnly"),
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** The tasks with work to show, earliest start first, and how many have none yet (not started,
@@ -212,28 +220,39 @@ export function timeWindow(scale: Scale, now: number, offset: number): TimeWindo
   return { from: Date.UTC(y, m, 1) / 60000, to: Date.UTC(y, m + 1, 1) / 60000 };
 }
 
-// English names, like the rest of the app's words; no locale dependence.
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+// The language's own names for the days and months (shell.json `recent.date`, as Activity writes
+// them; the months in full from board.json `views.month`), on the Gregorian calendar, and its own
+// digits through fmt: the same on every machine, whatever its region's date format.
+const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"] as const;
 const dateOf = (m: number) => new Date(Math.floor(m / DAY) * 86400000);
-const pad2 = (n: number) => String(n).padStart(2, "0");
+const pad2 = (n: number) => fmt.number(n, { minimumIntegerDigits: 2, useGrouping: false });
+const yearOf = (d: Date) => fmt.number(d.getUTCFullYear(), { useGrouping: false });
+const weekday = (d: Date) => tn("shell", `recent.date.weekday.${WEEKDAYS[d.getUTCDay()]}`);
+const month = (d: Date) => tn("shell", `recent.date.month.${MONTHS[d.getUTCMonth()]}`);
 const clock = (m: number) => `${pad2(Math.floor((m % DAY) / 60))}:${pad2(m % 60)}`;
 const shortDate = (m: number) => {
   const d = dateOf(m);
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()].slice(0, 3)}`;
+  return tn("board", "views.date.dayMonth", { day: d.getUTCDate(), month: month(d) });
 };
+/** "14 Oct 13:00". */
+const dateAt = (m: number) => tn("board", "views.date.at", { date: shortDate(m), clock: clock(m) });
+const range = (from: string, to: string) => tn("board", "views.date.range", { from, to });
 
-/** "Wed 14 Oct 2026", "12 – 18 Oct 2026", "28 Sep – 4 Oct 2026", "October 2026". */
+/** "Tue 13 Oct 21:00 – Wed 14 Oct 21:00", "12 – 18 Oct 2026", "28 Sep – 4 Oct 2026", "October 2026". */
 export function windowLabel(scale: Scale, w: TimeWindow): string {
   const a = dateOf(w.from), b = dateOf(w.to - DAY);
-  if (scale === "month") return `${MONTHS[a.getUTCMonth()]} ${a.getUTCFullYear()}`;
+  if (scale === "month") return tn("board", "views.date.monthYear", { month: tn("board", `views.month.${MONTHS[a.getUTCMonth()]}`), year: yearOf(a) });
   if (scale === "day") {
-    const at = (m: number) => `${WEEKDAYS[dateOf(m).getUTCDay()]} ${shortDate(m)} ${clock(m)}`;
-    return `${at(w.from)} – ${at(w.to)}`;
+    const at = (m: number) => {
+      const d = dateOf(m);
+      return tn("board", "views.date.weekdayAt", { weekday: weekday(d), day: d.getUTCDate(), month: month(d), clock: clock(m) });
+    };
+    return range(at(w.from), at(w.to));
   }
-  const end = `${shortDate(w.to - DAY)} ${b.getUTCFullYear()}`;
-  if (a.getUTCFullYear() !== b.getUTCFullYear()) return `${shortDate(w.from)} ${a.getUTCFullYear()} – ${end}`;
-  return a.getUTCMonth() === b.getUTCMonth() ? `${a.getUTCDate()} – ${end}` : `${shortDate(w.from)} – ${end}`;
+  const withYear = (d: Date) => tn("board", "views.date.dayMonthYear", { day: d.getUTCDate(), month: month(d), year: yearOf(d) });
+  if (a.getUTCFullYear() !== b.getUTCFullYear()) return range(withYear(a), withYear(b));
+  return range(a.getUTCMonth() === b.getUTCMonth() ? fmt.number(a.getUTCDate()) : shortDate(w.from), withYear(b));
 }
 
 /** One axis label: where it sits (fractions of the window) and whether now is in it. */
@@ -248,7 +267,7 @@ export function axis(scale: Scale, w: TimeWindow, now: number): Tick[] {
     const d = dateOf(at);
     // Day: the clock hour, and the weekday at midnight so the change of day shows.
     const hour = Math.floor((((at % DAY) + DAY) % DAY) / 60);
-    const label = scale === "day" ? (hour === 0 ? WEEKDAYS[d.getUTCDay()] : pad2(hour)) : scale === "week" ? `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()}` : String(d.getUTCDate());
+    const label = scale === "day" ? (hour === 0 ? weekday(d) : pad2(hour)) : scale === "week" ? tn("board", "views.date.weekTick", { weekday: weekday(d), day: d.getUTCDate() }) : fmt.number(d.getUTCDate());
     out.push({ at, left: (at - w.from) / len, width: step / len, label, current: now >= at && now < at + step });
   }
   return out;
@@ -261,13 +280,14 @@ export function nowAt(w: TimeWindow, now: number): number | null {
 
 /** "Building 14 Oct 13:00 – 15:00"; dates only where that's all that's known. */
 export function segmentTitle(g: Segment): string {
-  const name = g.stage === "waiting" ? "Waiting" : stageLabel(g.stage);
-  const from = g.fuzzy ? shortDate(g.from) : `${shortDate(g.from)} ${clock(g.from)}`;
+  // The waiting stretch has the legend's name for it.
+  const name = g.stage === "waiting" ? tn("board", "legend.waiting") : stageLabel(g.stage);
+  const from = g.fuzzy ? shortDate(g.from) : dateAt(g.from);
   let to: string;
   if (g.fuzzy && g.to % DAY === 0) to = shortDate(g.to - DAY);
   else if (!g.fuzzy && Math.floor(g.to / DAY) === Math.floor(g.from / DAY)) to = clock(g.to);
-  else to = `${shortDate(g.to)} ${clock(g.to)}`;
-  return `${name} ${from} – ${to}`;
+  else to = dateAt(g.to);
+  return tn("board", "views.segment", { stage: name, from, to });
 }
 
 /** A bar placed in a window: `left` and `width` as fractions of the window, its segments as

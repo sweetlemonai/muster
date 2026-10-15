@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { humanColumn } from "./human";
 import {
   ago, boardColumn, checkinLine, claimant, columns, currentCheckin, earlierStages, estimateTotal, feed, fileName, fmtMinutes, fmtTokens, heldByOther, holder, holderOf, inProgress, LEASE_SECS, leaseRunOut,
-  builtTested, homePath, copiedPath, fmtHours, needsTester, nextStage, oneAtATime, passLabel, queueTotal, quietCheckin, quietMinutes, sameHolder, shortTokens, shortWho, splitHolder, stageHolders, stageOf, STAGES, stamp, stampMinutes, startedAgo, tokenRibbonText, tokensOver, whoLine,
+  agoText, builtTested, homePath, copiedPath, fmtHours, needsTester, nextStage, oneAtATime, passLabel, queueTotal, quietCheckin, quietMinutes, quietText, sameHolder, sendBackLine, shortTokens, shortWho, splitHolder, stageHolders, stageLabel, stageOf, STAGES, stamp, stampMinutes, startedAgo, tokenRibbonText, tokensOver, whoLine,
 } from "./lib";
 import { unmarked } from "./i18n";
 import { setLocale } from "./i18n/runtime";
@@ -745,5 +745,110 @@ describe("homePath: a path under the home folder shown as ~ (owner, 2026-10-13)"
     expect(copiedPath(shown, full, { text: `Settings ${shown}` })).toBeNull();
     // A path that wasn't shortened copies as selected.
     expect(copiedPath("/Volumes/x", "/Volumes/x", { text: "Volumes", start: 1, end: 8 })).toBeNull();
+  });
+});
+
+describe("the shared words in both languages (mu-147)", () => {
+  const at = (s: string) => {
+    const [y, mo, d, h, mi] = s.split(/[- :]/).map(Number);
+    return new Date(y, mo - 1, d, h, mi).getTime() / 1000;
+  };
+  const now = at("2026-10-12 14:05");
+  const A = "wt-a (main-29 · wt-0030 · session 7b5e8856 · cc-hg)";
+  /** What's in Latin letters, the isolation marks aside: only the data put in may be left. */
+  const latin = (s: string) => unmarked(s).match(/[A-Za-z][A-Za-z-]+/g) ?? [];
+  const fa = async (check: () => void) => {
+    try {
+      await setLocale("fa");
+      check();
+    } finally {
+      await setLocale("en");
+    }
+  };
+
+  it("stageLabel names each stage in English, an unknown one Backlog", () => {
+    expect(["backlog", "shaping", "ready", "building", "testing", "your-check", "done", "weird"].map(stageLabel)).toEqual([
+      "Backlog", "Shaping", "Ready", "Building", "Testing", "Your check", "Done", "Backlog",
+    ]);
+  });
+  it("stageLabel names each stage in Persian, the glossary's words, an unknown one بک‌لاگ", async () => {
+    await fa(() => {
+      expect(["backlog", "shaping", "ready", "building", "testing", "your-check", "done", "weird"].map(stageLabel)).toEqual([
+        "بک‌لاگ", "شکل‌دهی", "آماده", "در حال ساخت", "در حال تست", "بررسی شما", "انجام شد", "بک‌لاگ",
+      ]);
+      expect(STAGES.map((s) => s.label)).toEqual(["بک‌لاگ", "شکل‌دهی", "آماده", "در حال ساخت", "در حال تست", "بررسی شما", "انجام شد"]);
+    });
+    // And back: the words follow the switch, nothing kept from it.
+    expect(stageLabel("your-check")).toBe("Your check");
+  });
+  it("says the pass button in Persian: the next stage in quotes, Accept, and the owner's Start and Done", async () => {
+    await fa(() => {
+      expect(unmarked(passLabel("building") ?? "")).toBe("فرستادن به «در حال تست»");
+      expect(passLabel("your-check")).toBe("پذیرفتن");
+      expect(passLabel("ready", true)).toBe("شروع");
+      expect(passLabel("building", true)).toBe("انجام شد");
+      expect(passLabel("done")).toBeNull();
+    });
+  });
+  it("says ago, started and quiet in Persian, units in full words, with Persian digits", async () => {
+    expect([0, 1, 59, 60, 1439, 1440, 4000].map(agoText)).toEqual(["just now", "1 min ago", "59 min ago", "1 h ago", "23 h ago", "1 d ago", "2 d ago"]);
+    expect(quietText(45)).toBe("no check-in for 45 min");
+    await fa(() => {
+      expect([0, 1, 59, 60, 1440, 4000].map(agoText)).toEqual(["لحظاتی پیش", "۱ دقیقه پیش", "۵۹ دقیقه پیش", "۱ ساعت پیش", "۱ روز پیش", "۲ روز پیش"]);
+      expect(unmarked(startedAgo(task({ stage: "building", stageSince: "2026-10-12 12:00" }), now))).toBe("۲ ساعت پیش شروع شد");
+      expect(unmarked(startedAgo(task({ stage: "building", stageSince: "2026-10-12 14:05" }), now))).toBe("لحظاتی پیش شروع شد");
+      expect(unmarked(startedAgo(task({ stage: "testing", stageSince: "2026-10-10 09:00" }), now))).toBe("۲ روز پیش شروع شد");
+      expect(startedAgo(task({ stage: "ready", stageSince: "2026-10-12 12:00" }), now)).toBe("");
+      expect(unmarked(quietText(45))).toBe("۴۵ دقیقه بدون گزارش وضعیت");
+      expect(unmarked(quietText(180))).toBe("۳ ساعت بدون گزارش وضعیت");
+      expect([ago(100, 90), ago(1000, 400), ago(200000, 0)]).toEqual(["اکنون", "۱۰ دقیقه", "۲ روز"]);
+    });
+  });
+  it("says a check-in in Persian: its percentage with ٪, the worker's words as written", async () => {
+    const c = { at: "2026-10-12 13:53", who: A, pct: 60, text: "gate green, writing tests" };
+    await fa(() => {
+      expect(unmarked(checkinLine(c, now))).toBe("۶۰٪ · gate green, writing tests · ۱۲ دقیقه پیش");
+      expect(unmarked(checkinLine({ ...c, pct: null, at: "2026-10-12 14:05" }, now))).toBe("gate green, writing tests · لحظاتی پیش");
+    });
+  });
+  it("names the owner شما on the who line and in built and tested", async () => {
+    const OLD = "wt-a (session 1c6af0d9)", NEW = "wt-b (session 2d7b0e1a)";
+    const short = (w: string) => shortWho(w, {});
+    await fa(() => {
+      expect(whoLine(task({ stage: "your-check" }), {})).toBe("شما");
+      expect(whoLine(task({ stage: "building", claimedBy: "owner (session 7b5e8856)" }), {})).toBe("شما · 7b5e8856");
+      expect(whoLine(task({ stage: "building", claimedBy: A }), {})).toBe("wt-a · main-29 · wt-0030 · 7b5e8856");
+      expect(shortWho("owner", {})).toBe("شما");
+      expect(unmarked(builtTested(task({ stage: "testing", heldBy: A, builtBy: A }), short))).toBe("سازنده: wt-a · نیاز به تستر");
+      expect(unmarked(builtTested(task({ stage: "testing", heldBy: OLD, builders: [OLD, NEW], builtBy: NEW, gatedBy: NEW }), short))).toBe("سازنده: wt-a و wt-b · نیاز به تستر");
+      expect(unmarked(builtTested(task({ stage: "your-check", builders: [OLD, NEW], builtBy: NEW, gatedBy: "wt-c", testedBy: "qa" }), short))).toBe("سازنده: wt-a، wt-b و wt-c · تستر: qa");
+      expect(unmarked(builtTested(task({ stage: "done", builtBy: A, testedBy: "owner (session 22222222)" }), short))).toBe("سازنده: wt-a · تستر: شما");
+      // Each name in its own isolate, so a Latin name keeps its place in the Persian line.
+      expect(builtTested(task({ stage: "your-check", builtBy: A, testedBy: "qa" }), short)).toBe("سازنده: \u2068wt-a\u2069 · تستر: \u2068qa\u2069");
+    });
+  });
+  it("says a task sent back in Persian: by you, by its sender, or by the review, the key isolated", async () => {
+    const t = { prefix: "mu", id: "0082", blocked: false, sentBack: true, sentBackBy: "owner (session 7b5e8856)", sentBackWhy: "آیکون بد است.", behind: "", behindBy: "" };
+    expect(sendBackLine(t)).toEqual({ kind: "first", text: "fix mu-82 first (sent back by you)", why: "Sent back by you: آیکون بد است.", by: "you", reason: "آیکون بد است." });
+    await fa(() => {
+      const first = sendBackLine(t);
+      expect(first && { ...first, text: unmarked(first.text), why: unmarked(first.why) }).toEqual({ kind: "first", text: "اول mu-82 را درست کنید (برگردانده‌شده توسط شما)", why: "برگردانده‌شده توسط شما: آیکون بد است.", by: "شما", reason: "آیکون بد است." });
+      expect(first?.text).toContain("\u2068mu-82\u2069");
+      expect(unmarked(sendBackLine({ ...t, sentBack: true, sentBackBy: "", sentBackWhy: "" })?.text ?? "")).toBe("اول mu-82 را درست کنید (برگردانده‌شده توسط بازبینی)");
+      expect(unmarked(sendBackLine({ ...t, sentBack: false, behind: "0059", behindBy: "" })?.text ?? "")).toBe("در انتظار mu-59 (برگردانده‌شده توسط بازبینی)");
+      expect(unmarked(sendBackLine({ ...t, sentBack: false, behind: "0059", behindBy: "owner" })?.text ?? "")).toBe("در انتظار mu-59 (برگردانده‌شده توسط شما)");
+      expect(unmarked(sendBackLine({ ...t, sentBack: false, behind: "0059", behindBy: "lead" })?.text ?? "")).toBe("در انتظار mu-59 (برگردانده‌شده توسط lead)");
+    });
+  });
+  it("says the activity feed's task lines in Persian, the task's own words as written", async () => {
+    await fa(() => {
+      const b = feed([], [task({ stage: "testing", blocked: true, waitingOn: "0012" })]);
+      expect(unmarked(b[0].what)).toBe("0001 T · در حال تست، مسدود در انتظار 0012");
+      const s = feed([], [task({ blocked: true })]);
+      expect(unmarked(s[0].what)).toBe("0001 T · آماده، مسدود در انتظار چیزی");
+      const l = feed([], [task({ title: "عنوان", logTail: ["x done"] })]);
+      expect(unmarked(l[0].what)).toBe("0001 عنوان · آماده · x done");
+      expect(latin(l[0].what)).toEqual(["done"]);
+    });
   });
 });

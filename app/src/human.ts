@@ -34,15 +34,20 @@ export function needsYou(t: Pick<Task, "forWho" | "waitingForOwner" | "stage" | 
 /** How many tasks need the owner: their own to do and doing, plus what the agents wait on them for. */
 export const needsYouCount = (tasks: Pick<Task, "forWho" | "waitingForOwner" | "stage" | "paused">[]) => tasks.filter(needsYou).length;
 
-/** The needs-you count's words without the number, for a heading whose digit is its own chip:
- *  "needs you" for one, "need you" for any other. The one place the app chooses them (mu-159), so
- *  translating it (mu-147) is one plural key. */
-export const needsVerb = (n: number) => (n === 1 ? "needs you" : "need you");
-
 /** A needs-you count in words, the same everywhere it's said: "1 needs you", "2 need you" (mu-87,
- *  mu-159): the sidebar's rows and headings, the column chips and their cue, and the folded strips,
- *  bands and Paused lane. */
-export const needsWords = (n: number) => `${n} ${needsVerb(n)}`;
+ *  mu-159), «۲ مورد به شما نیاز دارد»: the sidebar's rows and headings, the column chips and their
+ *  cue, and the folded strips, bands and Paused lane. The one place the app chooses the words:
+ *  common.json `needs`, in the language shown (mu-147). */
+export const needsWords = (n: number) => tl("needs.words", { count: n });
+
+/** The needs-you count as a chip and its words, for a heading (0082): `<chip>` holds the number,
+ *  `<words>` the rest. `<Trans ns="common" k={NEEDS_CHIP} params={{ count }}>`. */
+export const NEEDS_CHIP = "needs.chip";
+
+/** The needs-you count's words without the number: "needs you" for one, "need you" for any other,
+ *  the chip sentence's `<words>`. No screen calls it now (the heading renders `NEEDS_CHIP` through
+ *  `<Trans>`); it stays as AC8's second reader of the one key pair, and its tests pin that pair. */
+export const needsVerb = (n: number) => /<words>([\s\S]*?)<\/words>/.exec(tl(NEEDS_CHIP, { count: n }))?.[1] ?? "";
 
 /** A working count in words, the same everywhere the sidebar says it (mu-197): "1 working",
  *  "16 working", on a project's row and a heading. It counts tasks being worked on now

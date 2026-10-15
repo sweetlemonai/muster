@@ -151,7 +151,8 @@ describe("GraphView", () => {
     expect(chip("0022")).toContain('<span class="ui-badge ui-badge--blocked">blocked</span>');
     expect(chip("0022")).not.toContain("g-ready");
     expect(chip("0023")).toContain('<span class="g-stage">Building</span>');
-    expect(chip("0023")).toContain('<span class="g-who">wt-b</span>');
+    // The holder's name keeps its own direction (dir="auto", mu-147).
+    expect(chip("0023")).toContain('<span class="g-who" dir="auto">wt-b</span>');
     expect(chip("0024")).toContain('<span class="ui-badge ui-badge--warn">needs you</span>');
   });
   it("marks a task blocked only by the tasks it depends on as its card does: neutral, after them (0024, 0060)", () => {

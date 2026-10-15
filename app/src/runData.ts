@@ -1,5 +1,6 @@
 // Run from the app (0079): what the window holds of a project's run, put together from the core's
 // `run_state` and its `run` events, and how the Run block words it.
+import { tn } from "./i18n";
 import type { RunSnap } from "./types";
 
 /** The most lines the window keeps of a run, as the core's ring does. */
@@ -68,12 +69,12 @@ function bounded(s: RunSnap): RunSnap {
   return drop ? { ...s, first: s.first + drop, lines: s.lines.slice(drop) } : s;
 }
 
-/** A run's time: "12s", "1m 20s", "1h 5m". */
+/** A run's time: "12s", "1m 20s", "1h 5m" (in Persian, units in full words). */
 export function fmtRunTime(secs: number): string {
   const s = Math.max(0, Math.floor(secs));
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
-  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+  if (s < 60) return tn("board", "run.secs", { s });
+  if (s < 3600) return tn("board", "run.minSecs", { m: Math.floor(s / 60), s: s % 60 });
+  return tn("board", "run.hourMins", { h: Math.floor(s / 3600), m: Math.floor((s % 3600) / 60) });
 }
 
 /** The checkout as the Run block names it: its last two folders ("muster/main"). */
@@ -85,14 +86,18 @@ export function shortFolder(path: string): string {
  *  told): "Running bin/run in muster/main", "Exited 0 after 2m 10s", "Ended by a signal after
  *  4s", "Stopped after 1m 2s". The running time, which ticks, isn't in it. */
 export function statusWords(run: RunSnap): string {
-  const took = run.ended === null ? "" : ` after ${fmtRunTime(run.ended - run.since)}`;
+  const time = run.ended === null ? null : fmtRunTime(run.ended - run.since);
   switch (run.status.kind) {
     case "running":
-      return `Running ${run.command} in ${shortFolder(run.folder)}`;
-    case "exited":
-      return run.status.code === null ? `Ended by a signal${took}` : `Exited ${run.status.code}${took}`;
+      return tn("board", "run.running", { command: run.command, folder: shortFolder(run.folder) });
+    case "exited": {
+      // The exit code is the program's, in its own digits.
+      const code = run.status.code === null ? null : String(run.status.code);
+      if (code === null) return time === null ? tn("board", "run.signal") : tn("board", "run.signalAfter", { time });
+      return time === null ? tn("board", "run.exited", { code }) : tn("board", "run.exitedAfter", { code, time });
+    }
     case "stopped":
-      return `Stopped${took}`;
+      return time === null ? tn("board", "run.stopped") : tn("board", "run.stoppedAfter", { time });
   }
 }
 

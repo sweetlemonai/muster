@@ -137,6 +137,64 @@ describe("the needs-you count in words: one helper app-wide (mu-159)", () => {
   });
 });
 
+// Every translation file, as its keys' strings: the wording's one home is common.json `needs`
+// (mu-147, mu-146 review R9), and no other key may say a count of what needs you again.
+const locales = import.meta.glob<Record<string, unknown>>("./i18n/locales/*/*.json", { import: "default", eager: true });
+/** Each string of a file with its dotted key: ["needs.words_one", "{{count}} needs you"]. */
+function strings(m: unknown, at = ""): [string, string][] {
+  if (typeof m === "string") return [[at, m]];
+  if (typeof m !== "object" || m === null) return [];
+  return Object.entries(m).flatMap(([k, v]) => strings(v, at ? `${at}.${k}` : k));
+}
+/** A needs-you count in a translation: a placeholder (the count), then, with nothing but space,
+ *  tags and up to two words between (a counted noun: "tasks", «مورد»), "needs you"/"need you" or
+ *  «به شما نیاز دارد». Prose about it ("what needs you first", "the needs-you count", a "Needs
+ *  you" label, «اول آنچه به شما نیاز دارد») has no count before it. */
+const COUNT_PHRASE = /\{\{\s*\w+\s*\}\}(?:\s|<\/?\w+>)*(?:[\p{L}\u200c]+\s+){0,2}(?:needs? you\b|به شما نیاز دار)/iu;
+/** The one pair the helpers read, and the chip sentence the sidebar's heading shows it in. */
+const NEEDS_HOME = /^\.\/i18n\/locales\/[\w-]+\/common\.json needs\.(words|chip)_\w+$/;
+
+describe("the needs-you count in words: one key pair in every language (mu-147)", () => {
+  afterEach(async () => {
+    await setLocale("en");
+  });
+
+  it("says it in Persian with the counted noun, the same for 0, 1 and many", async () => {
+    await setLocale("fa");
+    expect(needsWords(0)).toBe("۰ مورد به شما نیاز دارد");
+    expect(needsWords(1)).toBe("۱ مورد به شما نیاز دارد");
+    expect(needsWords(21)).toBe("۲۱ مورد به شما نیاز دارد");
+    expect(needsVerb(1)).toBe("مورد به شما نیاز دارد");
+    expect(needsVerb(3)).toBe("مورد به شما نیاز دارد");
+  });
+
+  it("is said by one key pair (and its chip) in the translation files, in every language", () => {
+    const files = Object.keys(locales);
+    expect(files).toContain("./i18n/locales/en/common.json");
+    expect(files).toContain("./i18n/locales/fa/shell.json");
+    const said = files.flatMap((f) => strings(locales[f]).filter(([, s]) => COUNT_PHRASE.test(s)).map(([k]) => `${f} ${k}`));
+    expect(said.filter((k) => !NEEDS_HOME.test(k))).toEqual([]);
+    // The home itself is seen, in both languages, so the check reads what it should.
+    expect(said.filter((k) => NEEDS_HOME.test(k)).length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("the check catches a count said again in either language, and lets prose and labels be", () => {
+    for (const bad of ["{{count}} needs you", "{{count}} need you", "{{count}} tasks need you", "{{n}} open tasks need you", "<chip>{{count}}</chip> <words>need you</words>", "{{tasks}} working · {{n}} need you", "{{count}} مورد به شما نیاز دارد", "{{count}} تسک به شما نیاز دارند", "<b>{{count}}</b> به شما نیاز دارد"])
+      expect(COUNT_PHRASE.test(bad), bad).toBe(true);
+    for (const ok of ["What needs you first, then high to low; Done newest finished first", "Needs you", "needs you", "the needs-you count", "Blocked and \"needs you\" take over the colour", "{{count}} in progress", "{{name}}: what needs you first", "نیاز به شما", "اول آنچه به شما نیاز دارد، بعد از اولویت بالا به پایین", "شمار «نیاز به شما»", "{{name}}: آنچه به شما نیاز دارد"])
+      expect(COUNT_PHRASE.test(ok), ok).toBe(false);
+  });
+
+  it("is read only by human.ts: everywhere else calls needsWords, needsVerb or the chip's key from there", () => {
+    const keys = /["'`](common:)?needs\.(words|verb|chip)["'`]|["'`](sidebar|heading)\.needYou["'`]|["'`]heading\.needsChip["'`]/;
+    const files = Object.keys(sources);
+    const offenders = files.filter((f) => f !== "./human.ts" && keys.test(code(sources[f])));
+    expect(offenders).toEqual([]);
+    for (const bad of ['tl("needs.words", { count })', 'tn("shell", "common:needs.verb", { count })', 'k="needs.chip"', 'tn("shell", "sidebar.needYou", { count: needs })', 'k="heading.needsChip"']) expect(keys.test(code(bad)), bad).toBe(true);
+    for (const ok of ['t("needs.label")', 'tl("flag.needsYou")', 'k={NEEDS_CHIP}']) expect(keys.test(code(ok)), ok).toBe(false);
+  });
+});
+
 describe("the working count in words: tasks, one helper (mu-197)", () => {
   afterEach(async () => {
     await setLocale("en");

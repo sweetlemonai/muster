@@ -1,5 +1,6 @@
 import { Fragment } from "react";
-import { BLOCK_LOOKS, blockedByText, blockWords } from "./blockWords";
+import { BLOCK_LOOKS, blockedByStage, blockWords } from "./blockWords";
+import { tl } from "./i18n";
 import { keyOf } from "./taskKey";
 import type { Question, Task } from "./types";
 import { Badge, Button, StatusPill } from "./ui";
@@ -32,9 +33,9 @@ export default function BlockWhy({ t, short = false, pill = true, onOpenTask, on
           {sep}
           {tasks.map((b, i) => (
             <Fragment key={b.id}>
-              {i > 0 && ", "}
-              <button type="button" className="link" title={`Open ${keyOf(t.prefix, b.id)}`} onClick={() => onOpenTask(b.id)}>{keyOf(t.prefix, b.id)}</button>
-              {blockedByText(b, t.prefix).slice(keyOf(t.prefix, b.id).length)}
+              {i > 0 && tl("listSep")}
+              <button type="button" className="link" title={tl("block.open", { key: keyOf(t.prefix, b.id) })} onClick={() => onOpenTask(b.id)}>{keyOf(t.prefix, b.id)}</button>
+              {blockedByStage(b) && ` ${blockedByStage(b)}`}
             </Fragment>
           ))}
         </>
@@ -44,7 +45,7 @@ export default function BlockWhy({ t, short = false, pill = true, onOpenTask, on
       {answer && (
         <>
           {" "}
-          <Button type="button" className="block-answer" onClick={answer}>Answer</Button>
+          <Button type="button" className="block-answer" onClick={answer}>{tl("block.answer")}</Button>
         </>
       )}
     </>

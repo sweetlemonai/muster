@@ -11,6 +11,61 @@
     "tooltipWaiting_one": "Muster · {{count}} thing waits for you",
     "tooltipWaiting_other": "Muster · {{count}} things wait for you"
   },
+  "notify": {
+    "heading": {
+      "one": "New for you in {{project}}",
+      "newIn_one": "{{count}} new for you in {{project}}",
+      "newIn_other": "{{count}} new for you in {{project}}",
+      "new_one": "{{count}} new for you",
+      "new_other": "{{count}} new for you",
+      "asksIn_one": "{{questions}} questions on {{count}} task for you in {{project}}",
+      "asksIn_other": "{{questions}} questions on {{count}} tasks for you in {{project}}",
+      "asks_one": "{{questions}} questions on {{count}} task for you",
+      "asks_other": "{{questions}} questions on {{count}} tasks for you"
+    },
+    "line": {
+      "own": "{{id}} {{title}}: your task",
+      "check": "{{id}} {{title}}: ready for your check",
+      "asks": "{{id}} {{title}}: asks you a question",
+      "asksMany_one": "{{id}} {{title}}: asks you {{count}} question",
+      "asksMany_other": "{{id}} {{title}}: asks you {{count}} questions",
+      "blocked": "{{id}} {{title}}: blocked on you",
+      "permission": "{{id}} {{title}}: needs your permission",
+      "input": "{{id}} {{title}}: its session waits for your input",
+      "waiting": "{{id}} {{title}}: waits for you",
+      "lesson": "A lesson to approve: {{rule}}"
+    },
+    "inProject": "{{project}}: {{line}}",
+    "more_one": "and {{count}} more",
+    "more_other": "and {{count}} more"
+  },
+  "appMenu": {
+    "menu": {
+      "file": "File",
+      "edit": "Edit",
+      "view": "View",
+      "window": "Window",
+      "help": "Help"
+    },
+    "item": {
+      "about": "About Muster",
+      "services": "Services",
+      "hide": "Hide Muster",
+      "hideOthers": "Hide Others",
+      "showAll": "Show All",
+      "quit": "Quit Muster",
+      "closeWindow": "Close Window",
+      "undo": "Undo",
+      "redo": "Redo",
+      "cut": "Cut",
+      "copy": "Copy",
+      "paste": "Paste",
+      "selectAll": "Select All",
+      "fullscreen": "Toggle Full Screen",
+      "minimize": "Minimize",
+      "zoom": "Zoom"
+    }
+  },
   "list": {
     "separator": ", "
   }

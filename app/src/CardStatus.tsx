@@ -1,5 +1,6 @@
 import { useContext } from "react";
 import { BranchCardLine } from "./Branch";
+import { Trans, useT } from "./i18n";
 import { builtTested, checkinLine, currentCheckin, holderOf, leaseRunOut, needsTester, sendBackLine, quietCheckin, quietText, shortWho, splitHolder, startedAgo, whoLine } from "./lib";
 import { askedText } from "./reach";
 import { finishText } from "./recentData";
@@ -47,14 +48,16 @@ export default function CardStatus({ t, now, lines = "all", named = false }: { t
 /** In Done (0051): when it was done, "done 4 min ago", as Recently finished says it; the stamp
  *  in the tooltip. Nothing when the log doesn't know. */
 function DoneLine({ t, now }: { t: Task; now: number }) {
+  const tr = useT("board");
   const text = finishText(t, now);
-  return text ? <span className="card-done" title={`Done ${t.doneAt || t.doneOn}`}>{text}</span> : null;
+  return text ? <span className="card-done" title={tr("card.doneTitle", { at: t.doneAt || t.doneOn })}>{text}</span> : null;
 }
 
 /** Your check (0043): whose turn it is (yours, unless the file names someone else) and the one
  *  thing to try, cut to fit with the whole of it in the tooltip, or "All 4 proven: Accept"; then
  *  what was built (mu-78), the builder's one line cut to the card's width, whole in the tooltip. */
 function YourTurn({ t, lines }: { t: Task; lines: CardLines }) {
+  const tr = useT("board");
   const yours = splitHolder(holderOf(t)).label === "owner";
   const step = nextStep(t);
   // Role slots by their role's name now (0112).
@@ -62,8 +65,8 @@ function YourTurn({ t, lines }: { t: Task; lines: CardLines }) {
   const built = builtTested(t, (w) => shortWho(w, names));
   return (
     <>
-      {yours ? <span className="card-who your-turn">Your turn</span> : <span className="card-who" dir="auto">{whoLine(t, names)}</span>}
-      {lines !== "status" && <span className="card-next" title={step.full}>{`${step.text}${step.more ? ` · ${step.more} more` : ""}`}</span>}
+      {yours ? <span className="card-who your-turn">{tr("card.yourTurn")}</span> : <span className="card-who" dir="auto">{whoLine(t, names)}</span>}
+      {lines !== "status" && <span className="card-next" title={step.full}>{step.more ? tr("card.nextMore", { step: step.text, count: step.more }) : step.text}</span>}
       {lines !== "status" && t.summary && <span className="card-summary" dir="auto" title={t.summary}>{t.summary}</span>}
       {lines === "all" && built && <span className="card-built">{built}</span>}
     </>
@@ -73,10 +76,11 @@ function YourTurn({ t, lines }: { t: Task; lines: CardLines }) {
 /** With `named`, the who line leaves out the name the ribbon says ("wt-0097 · a82f2534 · started
  *  2 h ago"), and a held card with nothing more to say has no who line, never "nobody on it". */
 function HeldLines({ t, now, lines, named }: { t: Task; now: number; lines: CardLines; named: boolean }) {
+  const tr = useT("board");
   const line = whoLine(t, useContext(RoleNamesContext));
   const who = named ? line.split(" · ").slice(1).join(" · ") : line;
   const started = startedAgo(t, now);
-  const whoText = [who || (named ? "" : "nobody on it"), started].filter(Boolean).join(" · ");
+  const whoText = [who || (named ? "" : tr("card.nobody")), started].filter(Boolean).join(" · ");
   const checkin = currentCheckin(t);
   // Asked for a check-in (0039): it says when in the check-in's place until one comes.
   const asked = askedText(t, now);
@@ -84,7 +88,7 @@ function HeldLines({ t, now, lines, named }: { t: Task; now: number; lines: Card
   // This machine's lease (Settings, 0036), as the core's reclaim judges it.
   const lease = useContext(Machine).leaseMinutes;
   const stale = leaseRunOut(t, now, lease);
-  const flag = [stale ? `quiet ${spanText(lease)}+` : "", quiet === null ? "" : quietText(quiet)].filter(Boolean).join(" · ");
+  const flag = [stale ? tr("card.quietLease", { span: spanText(lease) }) : "", quiet === null ? "" : quietText(quiet)].filter(Boolean).join(" · ");
   // What Claude Code says the session is doing (0048) is on the holder ribbon (mu-171); when it
   // says something, the flag stays, quiet.
   const session = sessionWords(t);
@@ -92,9 +96,13 @@ function HeldLines({ t, now, lines, named }: { t: Task; now: number; lines: Card
   return (
     <>
       {lines !== "brief" && whoText !== "" && <span className={who || named ? "card-who" : "card-who nobody"} dir="auto">{whoText}</span>}
-      {needsTester(t) && <span className="card-tester">needs a tester</span>}
+      {needsTester(t) && <span className="card-tester">{tr("words.built.needsTester")}</span>}
       {order && <span className={order.kind === "first" ? "card-first" : "card-behind"}>{order.text}</span>}
-      {order?.why && <span className="card-first card-why" title={order.why}>Sent back by {order.by}: <bdi>{order.reason}</bdi></span>}
+      {order?.why && (
+        <span className="card-first card-why" title={order.why}>
+          <Trans ns="board" k="card.sentBack" params={{ by: order.by, reason: order.reason }} components={{ reason: <bdi /> }} />
+        </span>
+      )}
       {lines === "all" && (asked ? <span className="card-asked">{asked}</span> : checkin && <span className="card-checkin">{checkinLine(checkin, now)}</span>)}
       {flag && <span className={session ? "card-quiet calm" : "card-quiet"}>{flag}</span>}
     </>

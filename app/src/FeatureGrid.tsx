@@ -15,6 +15,7 @@ import {
   checkHead,
   columnChips,
   dimmed,
+  doneTodayWords,
   GRID_STAGES,
   type GridItem,
   type GridRow,
@@ -24,6 +25,7 @@ import {
   viewSpan,
 } from "./featureGridData";
 import { needsYou } from "./human";
+import { useT } from "./i18n";
 import { key, type RoleNames } from "./lib";
 import { GROUP_BYS, type GroupBy, progressText } from "./levels";
 import { PAUSE_GLYPH } from "./Pause";
@@ -70,6 +72,7 @@ export type FeatureGridProps = {
 };
 
 export default function FeatureGrid(p: FeatureGridProps) {
+  const t = useT("board");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   // Role slots go by their role's name now (0112), in the who lines and on the cards.
   const roles = useContext(RoleNamesContext);
@@ -180,22 +183,24 @@ export default function FeatureGrid(p: FeatureGridProps) {
   };
 
   return (
-    <section className="fg" aria-label="Feature grid">
+    <section className="fg" aria-label={t("grid.label")}>
       <div className="fg-top">
         <h2 className="fg-title">{p.title}</h2>
         <p className="fg-summary">
-          <b className={p.needs ? "fg-needs" : undefined}>{p.header.needs}</b>, {p.header.rest}
+          <b className={p.needs ? "fg-needs" : undefined}>{p.header.needs}</b>
+          {t("common:listSep")}
+          {p.header.rest}
         </p>
         <span className="fg-tools">
-          <Segmented aria-label="Rows of the grid" className="fg-by">
+          <Segmented aria-label={t("grid.rowsBy")} className="fg-by">
             {ROWS_BY.map((o) => (
               <Segment key={o.id} type="button" active={p.by === o.id} onClick={() => p.onBy(o.id)}>
                 {o.label}
               </Segment>
             ))}
           </Segmented>
-          <Pill type="button" className="fg-mine-pick" on={p.mine} aria-pressed={p.mine} onClick={() => p.onMine(!p.mine)} title="Dims every card that doesn't wait on you">
-            Only what needs me
+          <Pill type="button" className="fg-mine-pick" on={p.mine} aria-pressed={p.mine} onClick={() => p.onMine(!p.mine)} title={t("grid.mineTitle")}>
+            {t("grid.mine")}
           </Pill>
         </span>
       </div>
@@ -209,7 +214,7 @@ export default function FeatureGrid(p: FeatureGridProps) {
         {cue && <RowCue cue={cue} onShow={() => showColumn(cue.target)} />}
       </div>
       <div className="fg-frame" ref={frame}>
-        <div className="fg-grid" role="grid" aria-label={`Feature grid: ${p.title}`} aria-rowcount={p.rows.length + 1} aria-colcount={COLS + 1} ref={grid} onKeyDown={onKey}>
+        <div className="fg-grid" role="grid" aria-label={t("grid.labelOf", { title: p.title })} aria-rowcount={p.rows.length + 1} aria-colcount={COLS + 1} ref={grid} onKeyDown={onKey}>
           <div className="fg-row fg-headrow" role="row">
             <div className="fg-corner" role="columnheader">{p.by === "none" ? "" : ROWS_BY.find((o) => o.id === p.by)?.label}</div>
             {GRID_STAGES.map((s) => {
@@ -223,8 +228,8 @@ export default function FeatureGrid(p: FeatureGridProps) {
                 </div>
               );
             })}
-            <div role="columnheader" className="fg-colhead col-done" data-col="done" aria-label={`Done today: ${doneToday}`}>
-              <b>Done</b> <span className="fg-n">· {doneToday} today</span>
+            <div role="columnheader" className="fg-colhead col-done" data-col="done" aria-label={t("grid.doneTodayLabel", { n: doneToday })}>
+              <b>{t("common:stage.done")}</b> <span className="fg-n">{t("grid.todayCount", { n: doneToday })}</span>
             </div>
           </div>
           {p.rows.map((row, r) => (
@@ -255,10 +260,10 @@ export default function FeatureGrid(p: FeatureGridProps) {
                         className="fg-more"
                         tabIndex={-1}
                         aria-expanded={open}
-                        aria-label={open ? `Show fewer in ${row.title}, ${s.label}` : `${more} more in ${row.title}, ${s.label}: show them here`}
+                        aria-label={open ? t("grid.fewerIn", { row: row.title, stage: s.label }) : t("grid.moreIn", { count: more, row: row.title, stage: s.label })}
                         onClick={() => toggle(id)}
                       >
-                        {open ? "Show fewer" : `+${more} more`}
+                        {open ? t("grid.fewer") : t("cue.more", { count: more })}
                       </button>
                     )}
                   </div>
@@ -269,7 +274,7 @@ export default function FeatureGrid(p: FeatureGridProps) {
                 className="fg-cell fg-donecell"
                 data-cell={`${r}:${COLS - 1}`}
                 tabIndex={at.r === r && at.c === COLS - 1 ? 0 : -1}
-                aria-label={`${row.doneToday || "none"} done today`}
+                aria-label={doneTodayWords(row.doneToday)}
                 onFocus={(e) => {
                   if (e.target === e.currentTarget) setActive({ row: row.id, c: COLS - 1 });
                 }}
@@ -279,7 +284,7 @@ export default function FeatureGrid(p: FeatureGridProps) {
             </div>
           ))}
         </div>
-        {p.rows.length === 0 && <p className="none">No tasks match.</p>}
+        {p.rows.length === 0 && <p className="none">{t("groups.noMatch")}</p>}
       </div>
     </section>
   );
@@ -329,6 +334,7 @@ function watchGrid(frame: HTMLElement, grid: HTMLElement, onChange: (visible: st
 /** A row's head: the feature or goal (a click opens it beside the board), its progress bar and
  *  "3 of 11 done"; Other and All tasks are words. */
 function RowHead({ r, row, multi, active, onOpen }: { r: number; row: GridRow; multi: boolean; active: boolean; onOpen: (t: Task) => void }) {
+  const t = useT("board");
   const h = row.head;
   const pct = row.progress.total ? Math.round((row.progress.done / row.progress.total) * 100) : 0;
   return (
@@ -336,7 +342,7 @@ function RowHead({ r, row, multi, active, onOpen }: { r: number; row: GridRow; m
       {/* The title in an isolate of its own (review R3): in All projects the project's name comes
           first, and the title's direction is the title's, not the name's. */}
       {h ? (
-        <button type="button" className={`fg-rowtitle link${active ? " fg-active" : ""}`} tabIndex={-1} onClick={() => onOpen(h)} title={`Open ${taskKey(h)}: ${row.title}`}>
+        <button type="button" className={`fg-rowtitle link${active ? " fg-active" : ""}`} tabIndex={-1} onClick={() => onOpen(h)} title={t("grid.open", { key: taskKey(h), title: row.title })}>
           {multi && (
             <>
               <ProjectName name={h.queue} />{" "}
@@ -360,6 +366,7 @@ type CardProps = FeatureGridProps & { item: GridItem; dim: boolean; roles: RoleN
 /** A small card: the title, any trouble on its own line under it, then one status and the key. A
  *  card waiting on you has the needs-you edge; the one open in the pane is selected. */
 function GridCard({ item, dim, roles, ...p }: CardProps) {
+  const tr = useT("board");
   if (item.kind === "note") {
     const n = item.note;
     const on = p.openNoteKey === `${n.queue}/${n.file}`;
@@ -367,7 +374,7 @@ function GridCard({ item, dim, roles, ...p }: CardProps) {
       <button type="button" className={`fg-card fg-note${on ? " fg-active" : ""}${dim ? " fg-dim" : ""}`} tabIndex={-1} onClick={() => p.onOpenNote(n)}>
         <span className="fg-t" dir="auto" title={noteTitle(n)}><Hl text={noteTitle(n)} words={p.words} /></span>
         <span className="fg-meta">
-          <Badge variant="note">note</Badge>
+          <Badge variant="note">{tr("grid.note")}</Badge>
           {p.multi && <ProjectName name={n.queue} />}
         </span>
       </button>
@@ -380,7 +387,7 @@ function GridCard({ item, dim, roles, ...p }: CardProps) {
   const cls = ["fg-card", needsYou(t) && "fg-you", p.openKey === key(t) && "fg-active", dim && "fg-dim"].filter(Boolean).join(" ");
   return (
     <button type="button" className={cls} tabIndex={-1} onClick={() => p.onOpen(t)}>
-      <span className="fg-t" dir="auto" title={t.title || undefined}>{t.title ? <Hl text={t.title} words={p.words} /> : "(no title)"}</span>
+      <span className="fg-t" dir="auto" title={t.title || undefined}>{t.title ? <Hl text={t.title} words={p.words} /> : tr("groups.noTitle")}</span>
       {trouble && <span className="fg-trouble" title={trouble}>{trouble}</span>}
       {/* Why it waits can name several tasks: its own line, so the key keeps its place. */}
       {status.kind === "blocked" && <span className="fg-wait"><BlockWhy t={t} short /></span>}
@@ -394,6 +401,7 @@ function GridCard({ item, dim, roles, ...p }: CardProps) {
 }
 
 function StatusLine({ status }: { status: ReturnType<typeof cardStatus> }) {
+  const t = useT("board");
   switch (status.kind) {
     case "you":
       return <Badge variant="warn">{status.text}</Badge>;
@@ -401,7 +409,7 @@ function StatusLine({ status }: { status: ReturnType<typeof cardStatus> }) {
       return <Badge variant="paused">{PAUSE_GLYPH} {status.text}</Badge>;
     case "who":
       return (
-        <span className="fg-who" title={status.live ? `${status.text}, working now` : status.text}>
+        <span className="fg-who" title={status.live ? t("grid.workingNow", { who: status.text }) : status.text}>
           <i className={status.live ? "dot fg-dot" : "fg-idle"} aria-hidden="true" />
           {status.text}
         </span>

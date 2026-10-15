@@ -57,11 +57,11 @@ export function overflowCue(chips: readonly { id: string; needs: number }[], vis
   return { more: hidden.length, needs: hidden.reduce((n, c) => n + c.needs, 0), target: target.id };
 }
 
-/** The cue as a screen reader says it: "3 more columns past the edge, 1 needs you. Show them". */
+/** The cue as a screen reader says it, in the language shown: "3 more columns past the edge, 1
+ *  needs you. Show them". */
 export function cueWords(c: Cue): string {
-  const what = `${c.more} more ${c.more === 1 ? "column" : "columns"} past the edge`;
-  const needs = c.needs > 0 ? `, ${needsWords(c.needs)}` : "";
-  return `${what}${needs}. Show ${c.more === 1 ? "it" : "them"}`;
+  if (c.needs === 0) return tn("board", "cue.label", { count: c.more });
+  return tn("board", "cue.labelNeeds", { count: c.more, needs: needsWords(c.needs) });
 }
 
 const sameIds = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((id, i) => id === b[i]);
@@ -187,8 +187,8 @@ export function edgeCue(cols: readonly EdgeColumn[], visible: readonly string[],
   return { hidden: [...hidden.filter((c) => c.needs > 0), ...hidden.filter((c) => c.needs === 0)], needs: cue.needs, target: cue.target };
 }
 
-/** "21 need you", in the language shown. */
-export const edgeNeeds = (n: number) => tn("board", "edge.needYou", { count: n });
+/** "21 need you", in the language shown, as the chips and the column heads say it. */
+export const edgeNeeds = (n: number) => needsWords(n);
 
 const TAGS = /<\/?\w+\s*\/?>/g;
 /** One column as the cue's text says it: "Your check · 21 need you", or its name alone. */

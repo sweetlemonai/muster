@@ -137,7 +137,7 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 
 /* clip, not hidden: a scroll container's flex min-size is 0, so a full column would squash its
    cards instead of scrolling. flex: none keeps every card its own height either way. */
-.card { display: flex; flex-direction: column; gap: 6px; text-align: left; border-radius: var(--radius); padding: 9px 10px; overflow: clip; flex: none; position: relative; }
+.card { display: flex; flex-direction: column; gap: 6px; text-align: start; border-radius: var(--radius); padding: 9px 10px; overflow: clip; flex: none; position: relative; }
 /* Card looks (0026). The card's colour: its stage (from the column), or its priority, and blocked
    or needs you on top. --card-fill is the colour as a fill, --card-c the same colour as an edge
    (3:1 on the card, from themes.ts edgeColour). Each look below only sets variables. */
@@ -152,7 +152,7 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 .card {
   background: var(--card-bg, var(--panel));
   border: var(--card-bw, 1px) solid var(--card-hover, var(--card-border, var(--line)));
-  border-left: var(--card-left-w, 5px) solid var(--card-left, var(--card-c));
+  border-inline-start: var(--card-left-w, 5px) solid var(--card-left, var(--card-c));
 }
 .card:hover { --card-hover: var(--accent); }
 .card.active { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -175,7 +175,7 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 .id { font-variant-numeric: tabular-nums; }
 .q { font-size: 11px; color: var(--accent-text); }
 .kind.bug { color: var(--text); font-weight: 600; } /* a type is a word, not a colour: red means blocked */
-.pri { margin-left: auto; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; border-radius: 4px; padding: 0 5px; }
+.pri { margin-inline-start: auto; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; border-radius: 4px; padding: 0 5px; }
 .pri-high { background: var(--pri-high, #E879C9); color: var(--on-status); font-weight: 700; } /* priority's own colour, never a stage's */
 .pri-normal { color: var(--muted); border: 1px solid var(--line); }
 .pri-low { color: var(--faint); }
@@ -209,7 +209,7 @@ code, kbd, pre { direction: ltr; unicode-bidi: isolate; }
 .card-quiet.calm { color: var(--muted); font-weight: 400; }
 .ui-badge.ui-badge--blocked { background: var(--st-blocked); color: var(--on-status); }
 .column h2 .role { display: block; margin-top: 2px; font-size: 10px; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--muted); }
-.age { margin-left: auto; }
+.age { margin-inline-start: auto; }
 
 /* The owner's own tasks (0022), in the same columns as the agents': a faint diagonal hatch in the
    human gold plus the You ribbon, in every card look (owner, 2026-10-13). The stripes are the gold
@@ -559,7 +559,7 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 
 /* Tags. */
 .tags { display: flex; flex-wrap: wrap; gap: 4px; }
-.tag { font-size: 11px; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; } /* labels are neutral: no stage or accent colour */
+.tag { font-size: 11px; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; unicode-bidi: isolate; } /* labels are neutral: no stage or accent colour; a tag reads in its own direction (dir="auto") */
 .tag-editor { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .tag-editor .ui-pill { font-size: 12px; padding: 1px 8px; }
 .tag-editor input { width: 90px; padding: 2px 6px; font-size: 12px; }
@@ -598,8 +598,8 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .ui-status-pill.ui-status-pill--blocked { background: var(--st-blocked); margin-left: 4px; }
 .table-view { flex: 1; overflow: auto; padding: 0 14px 14px; }
 .tasks-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
-.tasks-table th { position: sticky; top: 0; background: var(--bg); text-align: left; border-bottom: 1px solid var(--line); padding: 0; z-index: 1; }
-.tasks-table th button { width: 100%; text-align: left; border: none; background: none; padding: 7px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+.tasks-table th { position: sticky; top: 0; background: var(--bg); text-align: start; border-bottom: 1px solid var(--line); padding: 0; z-index: 1; }
+.tasks-table th button { width: 100%; text-align: start; border: none; background: none; padding: 7px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
 .tasks-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .tasks-table tr { cursor: pointer; }
 .tasks-table tbody tr:hover td { background: var(--panel); }
@@ -940,9 +940,9 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .tasks-table tr.group-row { cursor: default; }
 .tasks-table .group-row td, .tasks-table tbody tr.group-row:hover td { background: var(--hover); padding: 0; }
 .tasks-table .group-row .band-head { padding: 6px 10px; font-size: 12.5px; }
-.tasks-table .rollup { margin-left: 6px; font-weight: 400; }
+.tasks-table .rollup { margin-inline-start: 6px; font-weight: 400; }
 .pane-form .level-pick { align-items: center; gap: 4px; }
-.level-pick .parent-field { flex-direction: row; align-items: center; gap: 6px; margin-left: 10px; }
+.level-pick .parent-field { flex-direction: row; align-items: center; gap: 6px; margin-inline-start: 10px; }
 .rollup-panel { padding: 4px 0 8px; }
 .rollup-panel h2 { margin: 0 0 4px; font-size: 13px; }
 .rollup-panel p { margin: 2px 0; }
@@ -1075,7 +1075,7 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .g-edge.dim { opacity: 0.25; }
 .g-head { fill: var(--faint); }
 .g-head-on { fill: var(--accent); }
-.g-node { position: absolute; display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 6px 8px; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--edge, var(--status, var(--line))); border-radius: var(--radius); overflow: clip; }
+.g-node { position: absolute; display: flex; flex-direction: column; gap: 3px; text-align: start; padding: 6px 8px; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--edge, var(--status, var(--line))); border-radius: var(--radius); overflow: clip; }
 .g-node:hover { border-color: var(--accent); border-left-color: var(--edge, var(--status)); }
 .g-node.ready { box-shadow: inset 0 0 0 1.5px var(--ok); }
 .g-node.blocked { border-left-color: var(--st-blocked); }
@@ -1119,7 +1119,7 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .fg-by { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--hover); }
 .fg-by .ui-segment { border: 0; background: none; border-radius: 6px; padding: 2px 10px; font-size: 12px; color: var(--muted); }
 .fg-by .ui-segment.ui-segment--active { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: 0 0 0 1px var(--line); }
-.fg-mine-pick { font-size: 12px; border-color: var(--line); }
+.fg-mine-pick { font-size: 12px; border-color: var(--line); white-space: nowrap; }
 /* The alert's place is always there (one line), so the grid never moves when Your check fills. */
 .fg-over { display: flex; align-items: center; gap: 8px; margin: 2px 14px 4px; }
 .fg-over .col-cue { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border: 1px solid var(--line); background: var(--selected); font-size: 12px; color: var(--text); white-space: nowrap; }
@@ -1588,7 +1588,7 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
   .col-row > .col-edge-slot { flex: 1 0 100%; min-width: 0; height: 28px; }
 }
 /* An open column's Fold, quiet at the end of its head, back to full contrast on hover or focus. */
-.column h2 .col-hide { float: inline-end; margin-top: -2px; margin-inline-start: 6px; padding: 0 7px; font-size: 10.5px; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.column h2 .col-hide { white-space: nowrap; float: inline-end; margin-top: -2px; margin-inline-start: 6px; padding: 0 7px; font-size: 10.5px; font-weight: 400; text-transform: none; letter-spacing: 0; }
 .rail-unfold { margin-inline-start: 8px; font-size: 10.5px; padding: 0 7px; text-transform: none; letter-spacing: 0; }
 /* The Your check limit (0050): words in the needs-you orange (--warn, 4.5:1). The column's
    short line (two lines) and the line above the board (one) always have their places, so nothing
@@ -1641,8 +1641,15 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .recap-fold { border: none; background: none; padding: 0; color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; }
 .recap-fold::before { content: "▸ "; }
 .recap-fold[aria-expanded="true"]::before { content: "▾ "; }
+.recap-fold:dir(rtl)::before { content: "◂ "; }
+.recap-fold[aria-expanded="true"]:dir(rtl)::before { content: "▾ "; }
 .recap-events { list-style: none; margin: 0; padding: 0; font-size: 12px; }
 .recap-event { display: flex; flex-wrap: wrap; gap: 2px 8px; padding-block: 3px; border-block-end: 1px solid var(--line); align-items: baseline; }
 .recap-event .when { width: auto; font-variant-numeric: tabular-nums; }
 .recap-event .kind { color: var(--muted); }
 .recap-event .what { flex: 1 1 12em; min-width: 0; overflow-wrap: anywhere; }
+
+/* Persian is never letter-spaced (glossary-fa.md, Conventions): the spacing the uppercase English
+   heads, bands, chips and labels carry would break its joined letters apart. One rule for every
+   one of them (mu-147), so a new head can't forget it. */
+:root:lang(fa) * { letter-spacing: normal !important; }

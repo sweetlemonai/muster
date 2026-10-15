@@ -46,7 +46,7 @@
   "kind": {
     "code": "کد",
     "bug": "باگ",
-    "chore": "کار جانبی",
+    "chore": "نگهداری",
     "tech-debt": "بدهی فنی",
     "spike": "اسپایک",
     "design": "طراحی",
@@ -59,6 +59,64 @@
   "flag": {
     "blocked": "مسدود",
     "needsYou": "نیاز به شما"
+  },
+  "needs": {
+    "words_one": "{{count}} مورد به شما نیاز دارد",
+    "words_other": "{{count}} مورد به شما نیاز دارد",
+    "chip_one": "<chip>{{count}}</chip> <words>مورد به شما نیاز دارد</words>",
+    "chip_other": "<chip>{{count}}</chip> <words>مورد به شما نیاز دارد</words>"
+  },
+  "holder": {
+    "you": "شما"
+  },
+  "tagEditor": {
+    "add": "+ تگ",
+    "addLabel": "افزودن تگ",
+    "full_one": "حداکثر {{count}} تگ",
+    "full_other": "حداکثر {{count}} تگ"
+  },
+  "block": {
+    "kind": {
+      "tasks": { "label": "تسک‌ها", "need": "تسک‌ها با کلید یا شماره، مانند 14، 16" },
+      "you": { "label": "شما", "need": "آنچه باید انجام دهید یا درباره‌اش تصمیم بگیرید" },
+      "permission": { "label": "اجازه", "need": "چه دسترسی‌ای ندارد، و کجا باید آن را بدهید" },
+      "question": { "label": "پرسش", "need": "پرسش بازی را که منتظرش است انتخاب کنید" },
+      "outside": { "label": "بیرونی", "need": "آنچه بیرون از اینجا منتظرش است" }
+    },
+    "lead": {
+      "answer": "پاسخ شما",
+      "action": "اقدام شما",
+      "permission": "اجازه",
+      "question": "پرسش",
+      "tasks": "پس از",
+      "outside": "بیرونی",
+      "other": "مسدود"
+    },
+    "waitingOnCapture": "در انتظار سرپرست",
+    "detailWaitingOnCapture": "{{detail}}، در انتظار سرپرست",
+    "afterOther": "پس از تسک‌های دیگر",
+    "afterOtherDetail": "پس از تسک‌های دیگر: {{detail}}",
+    "taskStage": "({{stage}})",
+    "taskStageHolder": "({{stage}}، {{holder}})",
+    "open": "باز کردن {{key}}",
+    "answer": "پاسخ"
+  },
+  "reach": {
+    "noSession": "نشستی برای دسترسی نیست: رهایش کنید، یا بگذارید نشستی تازه با نام {{label}} آن را به دست بگیرد",
+    "noSessionHeld": "نشستی برای دسترسی نیست: رهایش کنید",
+    "checkinInTesting": "گزارش وضعیت مخصوص «در حال ساخت» است؛ به‌جایش پیام بفرستید",
+    "answerFirst": "در انتظار ورودی در Claude Code: اول همان‌جا پاسخ دهید",
+    "noStageSession": "در «{{stage}}» نشستی روی آن کار نمی‌کند",
+    "nobody": "کسی آن را در دست ندارد",
+    "yours": "خودتان آن را در دست دارید",
+    "asked": "{{ago}} درخواست شد"
+  },
+  "feed": {
+    "task": "{{key}} {{title}} · {{stage}}",
+    "taskLog": "{{key}} {{title}} · {{stage}} · {{log}}",
+    "blocked": "{{key}} {{title}} · {{stage}}، مسدود در انتظار {{on}}",
+    "blockedLog": "{{key}} {{title}} · {{stage}}، مسدود در انتظار {{on}} · {{log}}",
+    "something": "چیزی"
   },
   "groupBy": {
     "label": "گروه‌بندی",
@@ -98,6 +156,8 @@
     "minAgo_other": "{{count}} دقیقه پیش",
     "hAgo_one": "{{count}} ساعت پیش",
     "hAgo_other": "{{count}} ساعت پیش",
+    "dAgo_one": "{{count}} روز پیش",
+    "dAgo_other": "{{count}} روز پیش",
     "yesterday": "دیروز",
     "daysAgo_one": "{{count}} روز پیش",
     "daysAgo_other": "{{count}} روز پیش",
@@ -130,6 +190,10 @@
   "estimateField": {
     "agentTime": "زمان ایجنت، بازبینی و تست هم در آن است (45m، 2h، 1.5d)",
     "testTime": "زمان تست، فقط بررسی شما: تست ایجنت در زمان ایجنت است (30m، 1h)"
+  },
+  "estimatePart": {
+    "agent": "ایجنت {{time}}",
+    "test": "تست {{time}}"
   },
   "estimateSome": "≈ {{parts}} مانده ({{est}} از {{open}} تسک باز تخمین دارد)",
   "help": {

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, type Paused } from "./api";
+import { isolate, tn, useT } from "./i18n";
 import { agoText, minutesSince, stageLabel, stamp } from "./lib";
 import type { Task } from "./types";
 import { Button } from "./ui";
@@ -22,23 +23,33 @@ export const pausable = (t: Pick<Task, "stage" | "paused">) => PAUSABLE.has(t.st
 export function pausedText(t: Pick<Task, "paused" | "pausedWhy">, now: number): string {
   if (!t.paused) return "";
   const m = minutesSince(t.paused, now);
-  const when = m === null ? `since ${t.paused}` : agoText(m);
-  return t.pausedWhy ? `${when} · ${t.pausedWhy}` : when;
+  const when = m === null ? tn("board", "pause.since", { at: t.paused }) : agoText(m);
+  return withWhy(when, t.pausedWhy);
 }
+
+/** "2 h ago · the design changes first": the why after the rest, as written (isolated); the rest
+ *  alone without one. */
+const withWhy = (text: string, why: string | undefined) => (why ? `${text} · ${isolate(why)}` : text);
 
 /** "was Building · paused 2 h ago · the design changes first": what a card in the Paused lane
  *  (mu-59) says, where it was, since when and why; "" when it isn't paused. */
 export function wasText(t: Pick<Task, "stage" | "paused" | "pausedWhy">, now: number): string {
-  return t.paused ? `was ${stageLabel(t.stage)} · paused ${pausedText(t, now)}` : "";
+  if (!t.paused) return "";
+  const m = minutesSince(t.paused, now);
+  const stage = stageLabel(t.stage);
+  const was = m === null ? tn("board", "pause.wasSince", { stage, at: t.paused }) : tn("board", "pause.was", { stage, ago: agoText(m) });
+  return withWhy(was, t.pausedWhy);
 }
 
 /** The Paused chip and when and why, in the pane; nothing for a task that isn't. With `was`, a
  *  card in the Paused lane: the glyph and where it was (`wasText`), since the lane says Paused. */
 export function PausedChip({ t, now, was = false }: { t: Task; now: number; was?: boolean }) {
+  const tr = useT("board");
   if (!t.paused) return null;
+  const title = t.pausedWhy ? tr("pause.titleWhy", { at: t.paused, why: t.pausedWhy }) : tr("pause.title", { at: t.paused });
   return (
-    <span className="card-paused" title={`Paused since ${t.paused}${t.pausedWhy ? `: ${t.pausedWhy}` : ""}. Nobody claims or passes it until it's resumed`}>
-      <span className="paused-chip">{was ? PAUSE_GLYPH : `${PAUSE_GLYPH} Paused`}</span> {was ? wasText(t, now) : pausedText(t, now)}
+    <span className="card-paused" title={title}>
+      <span className="paused-chip">{was ? PAUSE_GLYPH : `${PAUSE_GLYPH} ${tr("pause.paused")}`}</span> {was ? wasText(t, now) : pausedText(t, now)}
     </span>
   );
 }
@@ -46,7 +57,7 @@ export function PausedChip({ t, now, was = false }: { t: Task; now: number; was?
 /** What the card's strip says after a pause or resume: only that its session couldn't be told,
  *  with why; "" when it was, or nobody works on it. */
 export function cardPauseNote(p: Paused): string {
-  return p.session || !p.unreached ? "" : `its session can't be told: ${p.unreached}`;
+  return p.session || !p.unreached ? "" : tn("board", "pause.unreached", { why: p.unreached });
 }
 
 /** Pause or Resume under a card, one click: Pause from Backlog through Testing, Resume on a paused
@@ -54,6 +65,7 @@ export function cardPauseNote(p: Paused): string {
  *  since the card is itself a button. What came of it stays beside it until the task is paused or
  *  resumed again, from here or anywhere (the card keys it on `paused`). */
 export function CardPause({ t }: { t: Task }) {
+  const tr = useT("board");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
@@ -77,10 +89,10 @@ export function CardPause({ t }: { t: Task }) {
       <Button
         type="button"
         disabled={busy}
-        title={paused ? "Back to its column as it was; its session is told to carry on" : "Not now: it goes to the Paused lane with its stage and claim, nobody works it, and its session is asked to stop"}
+        title={paused ? tr("pause.resumeTitle") : tr("pause.pauseTitle")}
         onClick={() => void go()}
       >
-        {paused ? "Resume" : "Pause"}
+        {paused ? tr("pause.resume") : tr("pause.pause")}
       </Button>
       {note && <span className="why">{note}</span>}
       {error && <span className="err">{error}</span>}
@@ -90,11 +102,12 @@ export function CardPause({ t }: { t: Task }) {
 
 /** The pane header's Pause (with an optional why, typed in place) or Resume. */
 export function PanePause({ task, busy, onPause, onResume }: { task: Task; busy: boolean; onPause: (why: string) => Promise<boolean>; onResume: () => void }) {
+  const tr = useT("board");
   const [why, setWhy] = useState("");
   if (task.paused) {
     return (
-      <Button type="button" className="pause-btn" disabled={busy} title="Back to its column as it was; its session is told to carry on" onClick={onResume}>
-        Resume
+      <Button type="button" className="pause-btn" disabled={busy} title={tr("pause.resumeTitle")} onClick={onResume}>
+        {tr("pause.resume")}
       </Button>
     );
   }
@@ -110,10 +123,10 @@ export function PanePause({ task, busy, onPause, onResume }: { task: Task; busy:
         });
       }}
     >
-      <Button type="submit" className="pause-btn" disabled={busy} title="Not now: it goes to the Paused lane with its stage and claim, nobody works it, and its session is asked to stop">
-        Pause
+      <Button type="submit" className="pause-btn" disabled={busy} title={tr("pause.pauseTitle")}>
+        {tr("pause.pause")}
       </Button>
-      <input value={why} onChange={(e) => setWhy(e.target.value)} placeholder="why (optional)" aria-label="Why pause it (optional)" />
+      <input value={why} onChange={(e) => setWhy(e.target.value)} placeholder={tr("pause.why")} aria-label={tr("pause.whyLabel")} dir="auto" />
     </form>
   );
 }

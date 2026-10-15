@@ -1,10 +1,11 @@
 import BlockWhy from "./BlockWhy";
 import { CardBand, cardClass, LiveDot } from "./CardLook";
 import CardStatus from "./CardStatus";
-import { estimateText } from "./fields";
+import { estimateText, kindLabel } from "./fields";
 import { Hl, HlId } from "./FilterBar";
 import { CardHolderRibbon, cardRibbon, ribbonNames, ribbonStage, ribbonWaits } from "./HolderRibbon";
 import { isHuman } from "./human";
+import { tl, useT } from "./i18n";
 import { ago } from "./lib";
 import { cardLines, useLook } from "./modes";
 import { CardPause, pausable, PausedChip } from "./Pause";
@@ -16,6 +17,13 @@ import YouRibbon from "./YouRibbon";
 import ProjectName, { TaskKey } from "./ProjectName";
 
 type CardProps = { t: Task; now: number; multi: boolean; parent: string; onOpen: () => void; active: boolean; words: string[] };
+
+const PRIORITIES = ["high", "normal", "low"] as const;
+/** A priority in the language shown; one the board reads but has no word for (P0) as written. */
+function priorityWord(p: string): string {
+  const named = PRIORITIES.find((n) => n === p);
+  return named ? tl(`priority.${named}`) : p;
+}
 
 /** A board card, and under it, in one strip, a quiet one's Ask for a check-in (0039) and Pause or
  *  Resume (0045): beside the card, not in it, since the card is itself a button. */
@@ -39,6 +47,7 @@ export default function Card(props: CardProps) {
  *  one waiting on the owner (Your check, an escalated question, blocked on you or by a permission,
  *  its session waiting for input) is a needs-you card. */
 function CardButton({ t, now, multi, parent, onOpen, active, words }: CardProps) {
+  const tr = useT("board");
   const priority = t.priority || "normal";
   // The display mode (0038): every line, Standard's brief card, or Focus's title and status line.
   const lines = cardLines(useLook("card-lines"), active);
@@ -52,33 +61,34 @@ function CardButton({ t, now, multi, parent, onOpen, active, words }: CardProps)
   const holdable = ribbonStage(t);
   return (
     <button className={`${cardClass(t, active)}${holdable ? " holdable" : ""}`} onClick={onOpen}>
-      {ribbon === "you" && (isHuman(t) ? <YouRibbon /> : <YouRibbon title="You hold it" spoken="held by" />)}
+      {ribbon === "you" && (isHuman(t) ? <YouRibbon /> : <YouRibbon title={tr("card.youHold")} spoken={tr("card.youHoldSpoken")} />)}
       {ribbon === "holder" && <CardHolderRibbon t={t} now={now} />}
       <CardBand t={t} />
       <span className="card-top">
         {multi && <ProjectName name={t.queue} />}
         <TaskKey t={t}><HlId t={t} words={words} /></TaskKey>
         {!holdable && <LiveDot t={t} />}
-        {lines !== "status" && <span className={`kind ${t.kind}`}>{t.kind}</span>}
-        {lines !== "status" && <span className={`pri pri-${priority}`} title={`Priority: ${priority}`}>{priority}</span>}
+        {lines !== "status" && <span className={`kind ${t.kind}`}>{kindLabel(t.kind)}</span>}
+        {lines !== "status" && <span className={`pri pri-${priority}`} title={tr("card.priority", { priority: priorityWord(priority) })}>{priorityWord(priority)}</span>}
       </span>
-      <span className="title">{t.title ? <Hl text={t.title} words={words} /> : "(no title)"}</span>
+      {/* The task's own words, as written: <bdi> keeps a title in either script in its own order. */}
+      <span className="title">{t.title ? <bdi><Hl text={t.title} words={words} /></bdi> : tr("card.noTitle")}</span>
       {all && parent && <span className="parent-line">{parent}</span>}
       {/* Paused (0045) shows in every mode: a paused task must never look worked on. Its card is in
           the Paused lane (mu-59), so it says where it was. */}
       <PausedChip t={t} now={now} was />
       {all && t.tags.length > 0 && (
         <span className="tags">
-          {t.tags.map((g) => <span key={g} className="tag">#<Hl text={g} words={words} /></span>)}
+          {t.tags.map((g) => <span key={g} className="tag" dir="auto">#<Hl text={g} words={words} /></span>)}
         </span>
       )}
       <CardStatus t={t} now={now} lines={lines} named={ribbonNames(t)} />
       <span className="card-bottom">
         <BlockWhy t={t} short />
-        {t.waitingForOwner && !ribbonSaysNeedsYou && <Badge variant="warn">needs you</Badge>}
-        {lines !== "status" && t.openQuestions > 0 && <Badge>{t.openQuestions} open Q</Badge>}
-        {all && t.attachments.length > 0 && <Badge>{t.attachments.length} file{t.attachments.length === 1 ? "" : "s"}</Badge>}
-        {all && estimateText(t) && <Badge variant="est" title="Estimated agent time, test time and tokens">{estimateText(t)}</Badge>}
+        {t.waitingForOwner && !ribbonSaysNeedsYou && <Badge variant="warn">{tr("words.session.ribbon.needsYou")}</Badge>}
+        {lines !== "status" && t.openQuestions > 0 && <Badge>{tr("card.openQuestions", { count: t.openQuestions })}</Badge>}
+        {all && t.attachments.length > 0 && <Badge>{tr("card.files", { count: t.attachments.length })}</Badge>}
+        {all && estimateText(t) && <Badge variant="est" title={tr("card.estimate")}>{estimateText(t)}</Badge>}
         {lines !== "status" && <span className="age">{ago(now, t.modified)}</span>}
       </span>
       {holdable && <TokenRibbon t={t} active={active} />}

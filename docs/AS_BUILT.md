@@ -151,7 +151,8 @@ here):
 | `i18n.rs` | The core's languages (mu-146, from Drover's): the language in effect (the setting, else macOS's), and the menu bar's text from `native.json` with the same plural rule and digits as the window |
 | `badge.rs` | The Dock badge's count, set from Rust |
 | `tray.rs` | The menu bar icon: idle or waiting with the count beside it, its tooltip and menu, from the badge's count, in the language in effect |
-| `notify.rs` | Mac notifications of what newly waits for the owner, and `notified.json` |
+| `app_menu.rs` | The app's menus in the Mac's menu bar (Tauri's default: the app menu, File, Edit, View, Window, Help), titled in the language in effect and set again when it changes (mu-147) |
+| `notify.rs` | Mac notifications of what newly waits for the owner, in the language in effect, and `notified.json` |
 | `run.rs` | Run from the app: a project's run command in its main checkout, its output in a bounded ring, Stop and quitting end its process group |
 | `helper.rs` | The AI helper: the owner's own `claude` on an allowed account, restricted to `muster` and reading |
 | `helper_cmds.rs` | The app's commands for the helper |
@@ -1985,7 +1986,8 @@ Rust core reads the same JSON.
 - **Lazy:** the files aren't in the JavaScript. `tools/vite-locales.mjs` (Drover's plugin) serves
   them at `/locales/<language>/<ns>.json` in development and copies them, minified and checked,
   into the build; the window fetches only the language it shows. Before the first render
-  (`main.tsx`) it loads `common` and `shell` in the language saved in `localStorage`
+  (`main.tsx`) it loads `common`, `shell` and `board` (the first screen's; the waiting list and the
+  task pane read board words too, mu-147) in the language saved in `localStorage`
   (`muster.locale`, a copy of the core's), sets `<html lang dir>`, then asks the core
   (`locale_info`) and follows it, and its `locale-changed` event after.
 - **The setting:** `lang` in `settings.json` (`settings.rs`), written only once picked, so a file
@@ -1998,12 +2000,18 @@ Rust core reads the same JSON.
   rebuilds the menu bar's menu (`MenuBar::retext`), and the window switches at once, no restart.
 - **The core's text** (`i18n.rs`): `include_str!` of each language's `native.json`, the same
   plural rule as `Intl.PluralRules`, Persian digits for counts; the menu bar's menu, tooltip and
-  count are in it (`tray.rs`), its title keeps Western digits like the Dock badge.
+  count are in it (`tray.rs`), its title keeps Western digits like the Dock badge. Mac
+  notifications (`notify.rs`, `native.json` `notify.*`) build their title and body in the language
+  in effect when posted, a task's title and a project's name kept plain text, cut as before and
+  isolated right to left. The app's menus (`app_menu.rs`, `native.json` `appMenu.*`) are Tauri's
+  default macOS menu with each title and item in the language in effect, "Muster" as it is,
+  rebuilt and set again whenever the language changes; the items AppKit adds itself (Start
+  Dictation, Emoji & Symbols, window tiling) stay in macOS's language (mu-147).
 - **The guard** (`literals.test.ts`): reads every source file with the TypeScript parser and
   fails on text written straight into a screen (JSX text, text props, text fields, sentences).
   Until every area has moved, the files still holding text are listed with the task that moves
-  them (mu-147, mu-148); a file off the list fails, and so does a listed one with nothing left.
-  The shell's files are off it. `Sidebar.tsx` is the task pane's right column, not the window's
+  them (mu-148); a file off the list fails, and so does a listed one with nothing left.
+  The shell's files are off it, and so are the board's (mu-147), each checked by name. `Sidebar.tsx` is the task pane's right column, not the window's
   sidebar, so it's mu-148's. mu-155 removes the list.
 - **The shell in the layer** (mu-146): the sidebar, the header, the filter bar, every Settings
   group, Waiting for you and Recently finished read their words from `shell.json`, and the words
@@ -2020,6 +2028,23 @@ Rust core reads the same JSON.
   draws all of it in Persian and fails on any Latin word that isn't a product name, a key or the
   data shown. The header's account meter and Settings › Accounts (mu-113) read theirs from
   `shell.json`'s `meter` and `profiles`; a reset time's month is Recently finished's.
+- **The board in the layer** (mu-147): the board in every mode and layout (cards, holder and You
+  ribbons, column row and its off-edge cue, effort groups, bands, the Feature grid, the Paused
+  lane, Your check's words and limit), Table, Timeline, Graph, the backlog, the note pane, New
+  task, Sessions and its recap, the run pane, the check-in ping, the old-pauses offer and Lessons
+  read their words from `board.json`, the words the sidebar shares (block reasons, a session's
+  reach, the needs-you count) from `common.json`. The needs-you count has one key pair,
+  `common.json` `needs.words` (and `needs.chip` for a heading's chip), read only by
+  `human.ts` `needsWords`/`needsVerb`; `human.test.ts` fails on a second count phrase in any
+  locale file. The off-edge cue's "+2 more" keeps its sign beside its number right to left
+  («+۲ دیگر»). A screen-reader sentence on a card (the holder ribbon, the You ribbon) is one key
+  per case, the shown words hidden from it. Titles, tags, holder names and session names show as
+  written, isolated (`dir="auto"`, `<bdi>`). Right to left the card's stripe is on the right,
+  table heads start on the cells' side, and no Persian is letter-spaced (one `:lang(fa)` rule in
+  `styles.css`, `rtlCss.test.ts`). The Timeline and the Graph keep their left-to-right drawing
+  (time and dependencies run left to right); their words are Persian. Left in English on purpose:
+  the core's own words (refusals, a session's state in the recap, history texts: mu-153), and
+  time stamps' Latin digits (mu-151).
 - **A type as the screen says it** (mu-194): `fields.ts` `kindLabel` says the core's types
   (`KINDS`) and the older ones the queues still hold (`LEGACY_KINDS`: task, feature, idea) through
   `common.json` `kind.*`, and any other value as written. The filter bar's Type row uses it.
@@ -2570,7 +2595,8 @@ returns and blocks in [stages](now/stages.md), claims, the lease and the takeove
 [claims](now/claims.md), sessions, handoffs, check-ins and mail in [handoffs](now/handoffs.md),
 worktrees and the merge in [parallel](now/parallel.md), Testing and the review in
 [testing](now/testing.md), shaping and the vision check in [shaping](now/shaping.md), the board and
-the task pane in [board](now/board.md), the row of folded columns above the board and its edge cue
+the task pane in [board](now/board.md), its words in every language in
+[board words](now/board-words.md), the row of folded columns above the board and its edge cue
 in [column row](now/column-row.md), the projects sidebar in [sidebar](now/sidebar.md), Settings in
 [settings](now/settings.md), the Sessions view and its recap in [sessions](now/sessions.md), the
 Table, Timeline and Graph views in [views](now/views.md), the account meter in

@@ -5,6 +5,7 @@
 pub mod accounts;
 mod accounts_cmds;
 pub mod agents;
+pub mod app_menu;
 pub mod arrange;
 pub mod backlog;
 pub mod badge;
@@ -1402,17 +1403,25 @@ async fn locale_info(app: tauri::State<'_, AppState>) -> Result<LocaleInfo, Stri
 }
 
 /// Following macOS (no language picked): its languages are read off the main thread, then the
-/// core's text and the menu bar switch to the one in effect.
+/// core's text, the menu bar icon and the app's menus switch to the one in effect.
 fn follow_macos(handle: tauri::AppHandle) {
     std::thread::spawn(move || {
         let app = handle.state::<AppState>();
         let s = settings::load(&app.settings_file);
         let effective = i18n::resolve(s.lang.unwrap_or(""), &i18n::system_languages());
         if effective != i18n::current() {
-            i18n::set_current(effective);
-            app.menu_bar.retext(s.menu_bar, &tray::Tray(&handle));
+            switch_lang(&handle, effective, s.menu_bar);
         }
     });
+}
+
+/// A switch to `lang`: the core's text, the menu bar icon and the app's menus (mu-147) at once.
+/// Settings and following macOS both switch through here (`switches_go_through_one_place`).
+fn switch_lang(handle: &tauri::AppHandle, lang: &'static str, menu_bar: bool) {
+    i18n::set_current(lang);
+    let app = handle.state::<AppState>();
+    app.menu_bar.retext(menu_bar, &tray::Tray(handle));
+    app_menu::set(handle);
 }
 
 /// About for the settings in `settings_file`, with the Claude accounts under `home`.
@@ -1490,7 +1499,8 @@ async fn set_role(
 /// Change one of this machine's settings, `lease` or `live`, to a span like `12h` or `5m` (empty
 /// is the default), a switch, or the language (`settings::set`). The core checks the name, the
 /// units and the bounds; the next poll uses it, the menu bar icon follows its switch at once, and
-/// a new language switches the core's text, the menu bar and the window at once (mu-146).
+/// a new language switches the core's text, the menu bar, the app's menus (mu-147) and the window
+/// at once (mu-146).
 #[tauri::command]
 async fn set_setting(
     handle: tauri::AppHandle,
@@ -1509,8 +1519,7 @@ async fn set_setting(
             }
             if name == "lang" {
                 let effective = i18n::resolve(now.lang.unwrap_or(""), &i18n::system_languages());
-                i18n::set_current(effective);
-                app.menu_bar.retext(now.menu_bar, &tray::Tray(&handle));
+                switch_lang(&handle, effective, now.menu_bar);
                 // The window switches on the answer too; the event is Drover's way (boot.ts).
                 let _ = handle.emit(
                     LOCALE_CHANGED,
@@ -1864,6 +1873,9 @@ pub fn run() {
             if let Some(lang) = s.lang {
                 i18n::set_current(lang);
             }
+            // The app's menus in it (mu-147), in place of Tauri's English ones; ones that can't
+            // be made leave Tauri's.
+            app_menu::set(app.handle());
             state
                 .menu_bar
                 .sync(s.menu_bar, None, &tray::Tray(app.handle()));
@@ -1981,6 +1993,35 @@ fn run_events(handle: tauri::AppHandle) -> run::Emit {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A language switch reaches the app's menus too (mu-147 R1): both switches go through
+    /// `switch_lang`, and it sets the core's text, the menu bar icon and the menus. Tauri's menus
+    /// need a running app, so this reads the source; `app_menu`'s tests check what they say.
+    #[test]
+    fn switches_go_through_one_place() {
+        let src = include_str!("lib.rs");
+        let body = |name: &str| {
+            let at = src.find(&format!("fn {name}(")).expect(name);
+            let end = src[at..].find("\n}\n").expect(name);
+            &src[at..at + end]
+        };
+        let switch = body("switch_lang");
+        for call in [
+            "i18n::set_current(lang)",
+            ".retext(",
+            "app_menu::set(handle)",
+        ] {
+            assert!(switch.contains(call), "switch_lang lacks {call}");
+        }
+        for caller in ["follow_macos", "set_setting"] {
+            let b = body(caller);
+            assert!(b.contains("switch_lang(&handle, effective,"), "{caller}");
+            assert!(
+                !b.contains("set_current("),
+                "{caller} switches around switch_lang"
+            );
+        }
+    }
 
     #[test]
     fn command_arguments_are_checked() {
@@ -2489,7 +2530,7 @@ mod tests {
         let s = read();
         let lines: Vec<String> = notify::waiting(&s.tasks, &s.queues)
             .into_iter()
-            .map(|i| format!("{}: {}", i.label, i.line))
+            .map(|i| format!("{}: {}", i.label, i.line(1)))
             .collect();
         assert_eq!(
             lines,

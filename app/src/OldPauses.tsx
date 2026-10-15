@@ -1,18 +1,17 @@
 import { useEffect, useState } from "react";
 import { api, type OldPause } from "./api";
+import { Trans, tn, useT } from "./i18n";
 import { failedLine, fixItems, offerShown, oldPauseLine } from "./oldPauseData";
 import { Button } from "./ui";
 
 /** The offer, inline above the board (no dialog): every old pause it would change, then Make them
  *  pauses and Not now. Either is the answer: the board doesn't offer it again. */
 export function OldPausesNotice({ list, busy, error, onFix, onLater }: { list: OldPause[]; busy: boolean; error: string; onFix: () => void; onLater: () => void }) {
-  const n = list.length;
+  const t = useT("board");
+  const count = list.length;
   return (
-    <section className="old-pauses" aria-label="Old pauses">
-      <p>
-        {n === 1 ? "1 task was" : `${n} tasks were`} paused before Pause existed, so {n === 1 ? "it's" : "they're"} still blocked as paused. Make{" "}
-        {n === 1 ? "it a pause" : "them pauses"}? Each keeps its reason and since when, and moves to the Paused lane.
-      </p>
+    <section className="old-pauses" aria-label={t("oldPauses.aria")}>
+      <p>{t("oldPauses.offer", { count })}</p>
       <ul>
         {list.map((p) => (
           <li key={`${p.queue}/${p.id}`}>{oldPauseLine(p)}</li>
@@ -20,13 +19,13 @@ export function OldPausesNotice({ list, busy, error, onFix, onLater }: { list: O
       </ul>
       <p className="old-pauses-do">
         <Button type="button" variant="primary" disabled={busy} onClick={onFix}>
-          {n === 1 ? "Make it a pause" : "Make them pauses"}
+          {t(count === 1 ? "oldPauses.fixIt" : "oldPauses.fixThem")}
         </Button>
         <Button type="button" disabled={busy} onClick={onLater}>
-          Not now
+          {t("oldPauses.later")}
         </Button>
         <span className="meta">
-          Either way it isn't offered again; <code>muster check --fix-pauses</code> does it any time.
+          <Trans ns="board" k="oldPauses.either" components={{ code: <code /> }} />
         </span>
       </p>
       {error && <p className="err small" role="alert">{error}</p>}
@@ -44,6 +43,7 @@ export default function OldPausesOffer({ offered, onDone }: { offered: boolean |
   const [error, setError] = useState("");
   const [answered, setAnswered] = useState(false);
   const [failed, setFailed] = useState<string[]>([]);
+  useT("board");
   useEffect(() => {
     if (offered !== false) return;
     let live = true;
@@ -52,7 +52,7 @@ export default function OldPausesOffer({ offered, onDone }: { offered: boolean |
         if (live) setList(got);
       },
       (e: unknown) => {
-        if (live) setError(`Can't look for old pauses: ${String(e)}`);
+        if (live) setError(tn("board", "oldPauses.cantLook", { error: String(e) }));
       },
     );
     return () => {

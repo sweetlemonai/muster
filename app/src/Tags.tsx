@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { useT } from "./i18n";
 import { Pill } from "./ui";
 
 export const SUGGESTED_TAGS = ["spike", "chore", "tech-debt", "code", "docs", "design", "research", "test", "perf", "security"];
@@ -25,6 +26,7 @@ export function tagSuggestions(tags: string[]): string[] {
 /** The task's own tags, each with × to remove it, and a box to add one: Enter or comma adds it,
  *  and the suggested tags complete as you type. Unpicked suggestions stay out of view. */
 export default function TagEditor({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) => void }) {
+  const tr = useT("common");
   const [text, setText] = useState("");
   const listId = useId();
   const full = tags.length >= MAX_TAGS;
@@ -53,9 +55,9 @@ export default function TagEditor({ tags, onChange }: { tags: string[]; onChange
         onBlur={add}
         list={listId}
         disabled={full}
-        placeholder={full ? `${MAX_TAGS} tags max` : "+ tag"}
+        placeholder={full ? tr("tagEditor.full", { count: MAX_TAGS }) : tr("tagEditor.add")}
         maxLength={24}
-        aria-label="Add a tag"
+        aria-label={tr("tagEditor.addLabel")}
       />
       <datalist id={listId}>
         {tagSuggestions(tags).map((t) => <option key={t} value={t} />)}

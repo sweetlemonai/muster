@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { estimateLeft, groupHead, groupItems, indexTasks, isWork, levelLabel, parentLine, parseGroupBy, progressText, shownStageClass, shownStageLabel } from "./levels";
+import { afterEach, describe, expect, it } from "vitest";
+import { unmarked } from "./i18n";
+import { setLocale } from "./i18n/runtime";
+import { estimateLeft, groupHead, groupItems, indexTasks, isWork, LEVELS, levelLabel, parentLine, parseGroupBy, progressText, shownStageClass, shownStageLabel } from "./levels";
 import type { Task } from "./types";
 
 const task = (over: Partial<Task>): Task => ({
@@ -100,5 +102,35 @@ describe("levels", () => {
   });
   it("remembers Group by, and reads anything else as None", () => {
     expect([parseGroupBy("feature"), parseGroupBy("goal"), parseGroupBy("none"), parseGroupBy(null), parseGroupBy("epic")]).toEqual(["feature", "goal", "none", "none", "none"]);
+  });
+});
+
+describe("levels in Persian (mu-147)", () => {
+  afterEach(async () => {
+    await setLocale("en");
+  });
+  it("names the levels, the New task form's choices and a parent line in Persian, the title as written", async () => {
+    await setLocale("fa");
+    expect([levelLabel("goal"), levelLabel("feature"), levelLabel("task"), levelLabel("")]).toEqual(["هدف", "قابلیت", "تسک", "تسک"]);
+    expect(LEVELS.map((l) => l.label)).toEqual(["تسک", "قابلیت", "هدف"]);
+    expect(LEVELS.map((l) => l.id)).toEqual(["task", "feature", "goal"]);
+    // The marker points the way a right-to-left line reads.
+    expect(unmarked(parentLine(t5, index))).toBe("◂ قابلیت 0002 Stage track");
+    expect(unmarked(parentLine(task({ parent: "0099", prefix: "mu" }), index))).toBe("◂ mu-99 (پیدا نشد)");
+    expect(parentLine(t7, index)).toBe("");
+    await setLocale("en");
+    expect(LEVELS.map((l) => l.label)).toEqual(["Task", "Feature", "Goal"]);
+  });
+  it("says progress, the estimate left and In progress in Persian, for 0, 1 and many", async () => {
+    await setLocale("fa");
+    expect(progressText(progress(0, 1))).toBe("۰ از ۱ انجام شد");
+    expect(progressText(progress(1, 1))).toBe("۱ از ۱ انجام شد");
+    expect(progressText(progress(3, 7))).toBe("۳ از ۷ انجام شد");
+    expect(progressText(empty.progress)).toBe("هنوز تسکی ندارد");
+    expect(progressText(null)).toBe("");
+    expect(unmarked(estimateLeft(stageTrack.progress))).toBe("≈ ۲ ساعت · 200k توکن مانده");
+    expect(unmarked(estimateLeft(progress(0, 1, 45)))).toBe("≈ ۴۵ دقیقه مانده");
+    expect(shownStageLabel(stageTrack)).toBe("در جریان");
+    expect(shownStageLabel(goal)).toBe("آماده");
   });
 });

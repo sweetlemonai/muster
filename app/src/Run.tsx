@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import { api } from "./api";
-import { tn } from "./i18n";
+import { tn, Trans, useT } from "./i18n";
 import { keyed, merged, received, fmtRunTime, shownLines, statusWords, SHOWN_LINES, type RunInbox } from "./runData";
 import type { RunSnap, RunView } from "./types";
 import { Button } from "./ui";
@@ -94,18 +94,21 @@ export function RunLine({ project, info, run, busy, error, onRun }: {
   error: string;
   onRun: () => void;
 }) {
+  useT("board");
   if (!info) return <span className="small meta">{error || "…"}</span>;
   if (!info.command) {
     return (
       <span className="small meta">
-        No run command: <code dir="ltr">muster projects set {project} run …</code>
+        <Trans ns="board" k="run.noCommand" params={{ project }} components={{ code: <code dir="ltr" /> }} />
       </span>
     );
   }
-  const word = going(run) ? "Restart" : "Run";
+  const restart = going(run);
   return (
     <span className="small run-line-cmd">
-      <Button type="button" aria-label={`${word} ${project}`} disabled={busy || info.refused !== ""} onClick={onRun}>{word}</Button>{" "}
+      <Button type="button" aria-label={tn("shell", restart ? "run.restartAria" : "run.runAria", { project })} disabled={busy || info.refused !== ""} onClick={onRun}>
+        {tn("shell", restart ? "run.restart" : "run.run")}
+      </Button>{" "}
       <code dir="ltr">{info.command}</code>
       {info.refused && <span className="err small"> {info.refused}</span>}
       {!info.refused && error && <span className="err small" role="alert"> {error}</span>}
@@ -127,10 +130,11 @@ export function RunBlock({ project, run, nowSecs, busy, all, onAll, onRun, onSto
   onRun: () => void;
   onStop: () => void;
 }) {
+  const t = useT("board");
   const running = going(run);
   return (
-    <div className="stage-block run-block" data-part="run" role="group" aria-label={`Run of ${project}`}>
-      <span className="lbl">Run</span>
+    <div className="stage-block run-block" data-part="run" role="group" aria-label={t("run.blockAria", { project })}>
+      <span className="lbl">{tn("shell", "run.run")}</span>
       <p className="wline run-status">
         <span className="small">{statusWords(run)}</span>
         {running && <span className="small meta"> · {fmtRunTime(nowSecs - run.since)}</span>}
@@ -138,16 +142,16 @@ export function RunBlock({ project, run, nowSecs, busy, all, onAll, onRun, onSto
       <p className="wline">
         {running ? (
           <>
-            <Button type="button" aria-label={`Stop ${project}`} disabled={busy} onClick={onStop}>Stop</Button>{" "}
-            <Button type="button" aria-label={`Restart ${project}`} disabled={busy} onClick={onRun}>Restart</Button>
+            <Button type="button" aria-label={tn("shell", "run.stopAria", { project })} disabled={busy} onClick={onStop}>{tn("shell", "run.stop")}</Button>{" "}
+            <Button type="button" aria-label={tn("shell", "run.restartAria", { project })} disabled={busy} onClick={onRun}>{tn("shell", "run.restart")}</Button>
           </>
         ) : (
-          <Button type="button" aria-label={`Run again ${project}`} disabled={busy} onClick={onRun}>Run again</Button>
+          <Button type="button" aria-label={t("run.runAgainAria", { project })} disabled={busy} onClick={onRun}>{t("run.runAgain")}</Button>
         )}
       </p>
-      <div className={all ? "run-output all" : "run-output"} role="log" aria-live="off" aria-label={`${project}'s run output`}>
+      <div className={all ? "run-output all" : "run-output"} role="log" aria-live="off" aria-label={t("run.outputAria", { project })}>
         {run.lines.length === 0 ? (
-          <span className="meta">No output yet.</span>
+          <span className="meta">{t("run.noOutput")}</span>
         ) : (
           shownLines(run, all).map((l) => (
             <div key={l.n} className="run-out-line">{l.text || "\u00a0"}</div>
@@ -156,7 +160,7 @@ export function RunBlock({ project, run, nowSecs, busy, all, onAll, onRun, onSto
       </div>
       {run.lines.length > SHOWN_LINES && (
         <Button type="button" aria-expanded={all} onClick={onAll}>
-          {all ? `Last ${SHOWN_LINES} lines` : `All output (${run.lines.length} lines)`}
+          {all ? t("run.lastLines", { count: SHOWN_LINES }) : t("run.allOutput", { count: run.lines.length })}
         </Button>
       )}
     </div>
@@ -166,6 +170,7 @@ export function RunBlock({ project, run, nowSecs, busy, all, onAll, onRun, onSto
 /** Where the run stands, for screen readers: a polite live region there from the start, before
  *  any run, so the first "Running …" is announced too, and changing with the state only. */
 export function RunStatusLive({ run }: { run: RunSnap | null }) {
+  useT("board");
   return <span className="sr-only" aria-live="polite">{run ? statusWords(run) : ""}</span>;
 }
 

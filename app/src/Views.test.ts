@@ -67,8 +67,9 @@ describe("the timeline chart", () => {
   });
   it("labels each row with its id and title, and marks the open task", () => {
     const html = chart("week");
-    expect(html).toMatch(/<button class="tl-row"[^>]*><span class="tl-label"> ?<span class="id" title="q · 0031">0031<\/span> Timeline scales<\/span>/);
-    expect(html).toMatch(/<button class="tl-row active"[^>]*><span class="tl-label"> ?<span class="id" title="q · 0032">0032<\/span> Still going/);
+    // The title keeps its own direction (dir="auto", mu-147).
+    expect(html).toMatch(/<button class="tl-row"[^>]*><span class="tl-label"> ?<span class="id" title="q · 0031">0031<\/span> <span dir="auto">Timeline scales<\/span><\/span>/);
+    expect(html).toMatch(/<button class="tl-row active"[^>]*><span class="tl-label"> ?<span class="id" title="q · 0032">0032<\/span> <span dir="auto">Still going/);
   });
   it("marks the owner's own task with the You ribbon, and only theirs (0022)", () => {
     // The Timeline shows work from when it started: both are in Building (Doing, for the owner's).
@@ -76,11 +77,11 @@ describe("the timeline chart", () => {
     const mixed = [t({ id: "0041", title: "Buy the domain", forWho: "human", ...started }), t({ id: "0042", title: "Agent work", ...started })];
     const win = timeWindow("week", NOW, 0);
     const html = renderToStaticMarkup(createElement(TimelineChart, { scale: "week", rows: layout(spans(mixed, NOW), win, "week"), ticks: axis("week", win, NOW), now: nowAt(win, NOW), multi: false, openKey: null, onOpen: () => {} }));
-    expect(html).toMatch(/<span class="tl-label"><span class="you-ribbon"[^>]*>You<\/span> ?<span class="id" title="q · 0041">0041<\/span> Buy the domain<\/span>/);
-    expect(html).toMatch(/<span class="tl-label"> ?<span class="id" title="q · 0042">0042<\/span> Agent work<\/span>/);
+    expect(html).toMatch(/<span class="tl-label"><span class="you-ribbon"[^>]*>You<\/span> ?<span class="id" title="q · 0041">0041<\/span> <span dir="auto">Buy the domain<\/span><\/span>/);
+    expect(html).toMatch(/<span class="tl-label"> ?<span class="id" title="q · 0042">0042<\/span> <span dir="auto">Agent work<\/span><\/span>/);
     const table = renderToStaticMarkup(createElement(TableView, { tasks: mixed, now: 0, multi: false, openKey: null, onOpen: () => {}, words: [] }));
     expect(table.match(/class="you-ribbon"/g)).toHaveLength(1);
-    expect(table).toMatch(/<td class="t-title"><span class="you-ribbon"[^>]*>You<\/span>[^<]*Buy the domain/);
+    expect(table).toMatch(/<td class="t-title"><span class="you-ribbon"[^>]*>You<\/span>[^<]*<span dir="auto">Buy the domain/);
   });
   it("draws the now line where now is, and none in a window without it", () => {
     expect(chart("day")).toMatch(new RegExp(`class="tl-now" style="left:${(((20 * 60 + 20) / 1440) * 100).toFixed(3)}%"`));

@@ -338,8 +338,8 @@ describe("the recap (AC3, AC4)", () => {
 
   it("gives the share in the same digits as the token figures beside it (review R6)", async () => {
     await setLocale("fa");
-    // The recap's words wait on mu-147; its figures already follow the language, the share too.
-    expect(text(recapView(recap()))).toContain("۵۳k of ۱٫۵M (۴%)");
+    // The figures follow the language, the share too (its words are Persian since mu-147).
+    expect(text(recapView(recap())).replace(/[\u2066-\u2069]/g, "")).toContain("۵۳k از ۱٫۵M (۴٪)");
   });
 
   it("says no cache reads when there were none, and the counted tokens alone without an estimate", () => {

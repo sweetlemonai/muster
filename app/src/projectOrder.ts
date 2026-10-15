@@ -4,7 +4,7 @@
 // what a move says in projects.json (arrange.rs) and sends each queue's place back with the state
 // (`QueueInfo.rank`, `categoryRank`).
 import type { Moved } from "./api";
-import { workingWords } from "./human";
+import { needsWords, workingWords } from "./human";
 import { tn } from "./i18n";
 import { byCategory, type CategoryGroup } from "./labels";
 
@@ -253,7 +253,7 @@ export function headingCounts(rows: { needs: number; lessons: number; activity: 
  *  sidebar's narrowest it's never the part cut; what's 0 left out, but never the projects. */
 export function countsText(c: HeadingCounts, sep = " · "): string {
   return [
-    c.needs > 0 && tn("shell", "heading.needYou", { count: c.needs }),
+    c.needs > 0 && needsWords(c.needs),
     tn("shell", "heading.projects", { count: c.projects }),
     c.working > 0 && workingWords(c.working),
   ].filter(Boolean).join(sep);

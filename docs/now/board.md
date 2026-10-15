@@ -17,6 +17,7 @@ covers: app/src/App.tsx, app/src/FeatureGrid.tsx, app/src/ColumnCards.tsx, app/s
 - A held card's ribbon says its session's state after the name: working, waiting for input (needs-you orange), session ended. No session line under the title. (mu-171)
 - Tokens count input, output and cache writes, never cache reads: the held card's token ribbon (with its one live dot) and the Work table by stage; times in hours, shared sessions shown, not counted. (mu-172)
 - The row of folded columns and the board's edge cue above the board: [column row](column-row.md). (mu-198)
+- Its words in every language: [board words](board-words.md). (mu-147)
 - Open columns are at most 400px; a card never stretches. (mu-84)
 - Columns scroll without scrollbars, with "+N above" and "+N below". (AS_BUILT "Columns scroll without scrollbars")
 - A paused task sits in the Paused lane, left of Backlog. (mu-59)

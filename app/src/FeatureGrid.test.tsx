@@ -258,4 +258,36 @@ describe("in Persian", () => {
     expect(byRole(html, "columnheader")[0]).toBe("هدف");
     expect(text(html)).not.toMatch(/By feature|By goal|No grouping/);
   });
+
+  // mu-147: every word of the grid is in the language shown; what stays Latin is the tasks' own
+  // text (titles, keys, holders) and the project's label.
+  const DATA = new Set(all.flatMap((t) => [t.title, t.id, t.prefix ?? "", t.claimedBy, t.heldBy, t.queue]).concat("Muster").join(" ").match(/[A-Za-z]+/g));
+  /** The Latin words a person sees or hears that aren't the fixture's own data. */
+  const latin = (html: string) => {
+    const attrs = [...html.matchAll(/\s(?:title|aria-label)="([^"]*)"/g)].map((m) => m[1]);
+    const words = [text(html), ...attrs].join(" ").replace(/&[a-z#0-9]+;/gi, " ").match(/[A-Za-z]+/g) ?? [];
+    return [...new Set(words)].filter((w) => !DATA.has(w));
+  };
+  it("English: the check sees the grid's own words", () => {
+    for (const w of ["more", "waiting", "built", "testing", "Only", "needs", "sent", "full", "Feature"]) expect(latin(draw())).toContain(w);
+  });
+  it("Persian: no English word in the grid, its header line, its alert, its cells or its cards", async () => {
+    await setLocale("fa");
+    const html = draw();
+    expect(latin(html)).toEqual([]);
+    expect(text(html)).toContain("۵ مورد در انتظار شما");
+    expect(text(html)).toContain("فقط نیاز به شما");
+    expect(text(html)).toContain("«بررسی شما» پر است (۵ از ۵)");
+    // "+3 more" in a cell: the sign with its number, left to right, before "دیگر".
+    expect(html).toContain(">⁦+۳⁩ دیگر</button>");
+    expect(html).toContain('aria-label="شبکه‌ی قابلیت‌ها"');
+    // With no grouping, the one row is All tasks, said in Persian; Other too.
+    expect(latin(draw({ by: "none", rows: gridRows({ work, all, notes: [], by: "none", today: TODAY }) }))).toEqual([]);
+  });
+  it("Persian: a row kept from before the switch reads its Other and All tasks in the language shown", async () => {
+    const rows = gridRows({ work: [task({ id: "0200", title: "Loose" })], all, notes: [], by: "feature", today: TODAY });
+    expect(rows.map((r) => r.title)).toEqual(["Other"]);
+    await setLocale("fa");
+    expect(rows.map((r) => r.title)).toEqual(["سایر"]);
+  });
 });

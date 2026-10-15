@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { api } from "./api";
 import { HelpButton } from "./HelpButton";
+import { useT } from "./i18n";
 import { labelOf, Labels } from "./labels";
 import { useLook } from "./modes";
 import ProjectName from "./ProjectName";
@@ -65,6 +66,8 @@ export function SessionsView({ list, error, now, all, selected, onOpen }: {
   selected: string | null;
   onOpen: (r: SessionItem) => void;
 }) {
+  // Its words (sessionsData's WORDS) are the board's: loaded, and drawn again on a language switch.
+  useT("board");
   const how = useLook("session-groups");
   const root = useRef<HTMLElement>(null);
   const grouped = groupSessions(list?.rows ?? [], now);

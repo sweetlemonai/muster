@@ -3,6 +3,49 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-147: the board, views, backlog, sessions, notifications and menus in Persian
+**Fixed in round 1 (Akbar_49, builder; reviewer_110's nits):** R1: Settings and following macOS
+switch the language through one `switch_lang` (`lib.rs`), pinned by `switches_go_through_one_place`,
+so the app menus can't drop out of a switch unseen. R3: `human.test.ts`'s count check also catches
+up to two words between the count and "need you" ("{{count}} tasks need you"). R5: `needsVerb`'s
+comment says no screen calls it; EffortGroups' stale comment is gone. R2, English that changed on
+purpose in the move: a note under a minute old reads "added just now" (was "added now ago"), Run
+reads "All output (1,500 lines)" (grouped digits, was "1500"), and three accounts read "hg, mg,
+and ih" (`Intl.ListFormat`, was "hg and mg and ih"). R4 (bidi controls in a notification title) is
+left as the review's nit. Rebased onto main 44dde9a: mu-212's heading markup with `NEEDS_CHIP`.
+**Did (Akbar_45, builder, with seven area agents):** every word of the board (all modes, the
+Feature grid, cards, holder and You ribbons, the column row and its off-edge cue, effort groups,
+bands, the Paused lane, Your check's words and limit), Table, Timeline, Graph, the backlog, the
+note pane, New task, Sessions and its recap, the run pane, the check-in ping, old pauses and
+Lessons moved into `board.json` (words the sidebar shares into `common.json`), with Persian. 42
+files are off `literals.test.ts`'s list, checked by name; `yourCheck.ts` and `yourCheckLimit.ts`
+came over from mu-148's share because their words are on the board, and so did `fields.ts`
+`estimateText` (the card's effort line; `fields.ts` leaves the list) and Tags.tsx's add
+placeholder (noted on mu-148). The Table and Graph say "you" for the owner as holder, as the
+card does (`lib.ts` `holderShown`; they said "owner"). The core:
+notifications (`notify.rs`) and a new `app_menu.rs` (Tauri's default macOS menu, titled in the
+language in effect and rebuilt on a switch) read `native.json`. `main.tsx` loads `board` before
+the first render with `shell`. AS_BUILT, `docs/now/board-words.md` (new), and the board, views,
+sessions and column-row pages say it.
+**Fixed:** AC8: the needs-you count lived in three places (`shell.json` twice, `board.json` once)
+→ one pair, `common.json` `needs.words`/`needs.chip`, read only by `human.ts`; `human.test.ts`
+fails on a second count phrase in any locale file. AC9: the off-edge cue read "more 2+" right to
+left → its words from `board.json`, the "+N" isolated: «+۲ دیگر». The You ribbon's screen-reader
+text was "held by" + "You" glued → one sentence per case, the shown word hidden from it. Right to
+left the card's stripe stayed on the left and table heads sat left of their cells → logical
+properties; no Persian is letter-spaced (one `:lang(fa)` rule, `rtlCss.test.ts`).
+**Decided:** Timeline and Graph keep drawing left to right in Persian (time and dependencies read
+that way; mirroring is design, not translation); only their words change. The core's own words
+(refusals, recap state, history) and time stamps' Latin digits stay for mu-153 and mu-151. A note
+under a minute old says "added just now" (was "added now ago").
+**Verified:** the independent fa review (`docs/i18n/reviews/mu-147-fa-review.md`): 0 blocking,
+14 should, 12 nits, all 26 fixed, 16 glossary rows added as proposed. Vitest 2462 passed, tsc clean;
+`bin/gate`: green (pnpm check, test_task, test_commands, cargo test (Kiritimati)); cargo test 1174 passed, clippy and fmt clean. Headless WebKit shots before and after, en
+and fa, light and dark, every mode and view, 900px and the edge cue: `attachments/0147/`.
+**Open:** Latin digits still sit beside Persian ones (column-head counts, token totals like
+14.7M, table dates, recap times): mu-151 decides digits. AppKit's own menu items (Start Dictation, Emoji & Symbols, tiling) stay in macOS's
+language. The real menu bar, a notification banner and a live switch weren't seen on screen
+(headless only). mu-148: VisionPanel and ReviewPanel pass English nouns to `copyNow`.
 
 ## 2026-10-15 — mu-209's merge-log repros pass; mu-215 to mu-217 shaped, one note folded into mu-149
 **Verified:** with mu-209 in the 07:26 release binary, `muster merge-log` on mu-131's three work logs (O e530e74,

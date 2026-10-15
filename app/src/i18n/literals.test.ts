@@ -22,50 +22,14 @@ const sources = import.meta.glob(["../**/*.{ts,tsx}", "!../**/*.test.{ts,tsx}", 
   eager: true,
 }) as Record<string, string>;
 
-/** The task that moves a file's text into the layer. The shell's (mu-146) has moved. */
-type Owner = "mu-147" | "mu-148";
+/** The task that moves a file's text into the layer. The shell's (mu-146) and the board's
+ *  (mu-147) have moved. */
+type Owner = "mu-148";
 
 /** The files that still have text outside the layer, by the task that moves it. Files the shell
  *  shows a part of (the filter bar's Who and Group by, Settings' card previews and helper account,
  *  the sidebar's check-in button) have that part in the layer already; the rest is their owner's. */
 const ALLOWED: Record<string, Owner> = {
-  // ── board, views, backlog, sessions — mu-147 ──
-  "src/Backlog.tsx": "mu-147",
-  "src/NotePanel.tsx": "mu-147", // the backlog note's pane
-  "src/NewTask.tsx": "mu-147",
-  "src/BlockWhy.tsx": "mu-147",
-  "src/blockWords.ts": "mu-147",
-  "src/Card.tsx": "mu-147",
-  "src/CardLook.tsx": "mu-147",
-  "src/CardStatus.tsx": "mu-147",
-  "src/HolderRibbon.tsx": "mu-147", // the card's holder ribbon (0097), board words
-  "src/ColumnCards.tsx": "mu-147",
-  "src/ColumnRow.tsx": "mu-147",
-  "src/rowCue.ts": "mu-147",
-  "src/EffortGroups.tsx": "mu-147",
-  "src/FeatureGrid.tsx": "mu-147", // the board's second layout (mu-143)
-  "src/featureGridData.ts": "mu-147",
-  "src/GraphView.tsx": "mu-147",
-  "src/Groups.tsx": "mu-147",
-  "src/ModeViews.tsx": "mu-147",
-  "src/modes.ts": "mu-147",
-  "src/PausedLane.tsx": "mu-147",
-  "src/Views.tsx": "mu-147",
-  "src/viewData.ts": "mu-147",
-  "src/Run.tsx": "mu-147",
-  "src/runData.ts": "mu-147",
-  "src/SessionRecap.tsx": "mu-147", // the Sessions view's recap pane (mu-98)
-  "src/sessionsData.ts": "mu-147", // the Sessions view's words (mu-98)
-  "src/sessionState.ts": "mu-147",
-  "src/Ping.tsx": "mu-147",
-  "src/Pause.tsx": "mu-147",
-  "src/OldPauses.tsx": "mu-147",
-  "src/Lessons.tsx": "mu-147", // mu-147 lists it under sessions and work
-  "src/oldPauseData.ts": "mu-147",
-  "src/reach.ts": "mu-147",
-  "src/levels.ts": "mu-147",
-  "src/lib.ts": "mu-147", // shared words (stage names, "min ago"), the board's first
-
   // ── task pane, comments, review, help — mu-148 ──
   "src/TaskPanel.tsx": "mu-148",
   // The task pane's right column (next step, priority, type, estimate, files), not the window's
@@ -83,7 +47,6 @@ const ALLOWED: Record<string, Owner> = {
   "src/StageForms.tsx": "mu-148",
   "src/StageTrack.tsx": "mu-148",
   "src/Tags.tsx": "mu-148",
-  "src/fields.ts": "mu-148",
   "src/EditBody.tsx": "mu-148",
   "src/writeUp.ts": "mu-148",
   "src/useTaskActions.ts": "mu-148",
@@ -92,8 +55,6 @@ const ALLOWED: Record<string, Owner> = {
   "src/Comments.tsx": "mu-148",
   "src/Review.tsx": "mu-148",
   "src/ReviewPanel.tsx": "mu-148",
-  "src/yourCheck.ts": "mu-148",
-  "src/yourCheckLimit.ts": "mu-148", // mu-148 lists it under talking and checking
   "src/Helper.tsx": "mu-148", // the Helper view; mu-148 lists it under talking and checking
   "src/Help.tsx": "mu-148",
   "src/manual.ts": "mu-148",
@@ -252,7 +213,7 @@ describe("UI text goes through the translation layer", () => {
     // The repo's check below, given that file: it isn't on the list, so it fails.
     expect(unlisted([["src/Untranslated.tsx", hits]], ALLOWED)).toEqual(["src/Untranslated.tsx:\n  4: aria-label=Waiting tasks\n  5: Nothing waits for you\n  6: tasks"]);
     // And passes once its text has an owner, as the listed files have.
-    expect(unlisted([["src/Untranslated.tsx", hits]], { ...ALLOWED, "src/Untranslated.tsx": "mu-147" })).toEqual([]);
+    expect(unlisted([["src/Untranslated.tsx", hits]], { ...ALLOWED, "src/Untranslated.tsx": "mu-148" })).toEqual([]);
   });
 
   it("finds no UI text outside the layer but in the files listed, each with its owner", () => {
@@ -264,10 +225,17 @@ describe("UI text goes through the translation layer", () => {
     expect(Object.keys(ALLOWED).filter((f) => !left.has(f))).toEqual([]);
   });
 
-  it("names the task that moves each listed file: mu-147 or mu-148 (the shell's, mu-146, has moved)", () => {
-    expect(Object.entries(ALLOWED).filter(([, owner]) => !/^mu-14[78]$/.test(owner))).toEqual([]);
-    const by = (o: Owner) => Object.values(ALLOWED).filter((x) => x === o).length;
-    expect(by("mu-147") > 0 && by("mu-148") > 0).toBe(true);
+  it("names the task that moves each listed file: mu-148 (the shell's, mu-146, and the board's, mu-147, have moved)", () => {
+    expect(Object.entries(ALLOWED).filter(([, owner]) => owner !== "mu-148")).toEqual([]);
+    expect(Object.keys(ALLOWED).length).toBeGreaterThan(0);
+  });
+
+  it("lists none of the board's files: the board, views, backlog and sessions are all in the layer (mu-147)", () => {
+    const board = ["Backlog.tsx", "NotePanel.tsx", "NewTask.tsx", "BlockWhy.tsx", "blockWords.ts", "Card.tsx", "CardLook.tsx", "CardStatus.tsx", "HolderRibbon.tsx", "ColumnCards.tsx", "ColumnRow.tsx", "rowCue.ts", "EffortGroups.tsx", "FeatureGrid.tsx", "featureGridData.ts", "GraphView.tsx", "Groups.tsx", "ModeViews.tsx", "modes.ts", "PausedLane.tsx", "Views.tsx", "viewData.ts", "Run.tsx", "runData.ts", "SessionRecap.tsx", "sessionsData.ts", "sessionState.ts", "Ping.tsx", "Pause.tsx", "OldPauses.tsx", "Lessons.tsx", "oldPauseData.ts", "reach.ts", "levels.ts", "lib.ts", "human.ts", "yourCheck.ts", "yourCheckLimit.ts", "CheckLimit.tsx", "YouRibbon.tsx", "Legend.tsx", "Work.tsx"];
+    expect(board.map((f) => `src/${f}`).filter((f) => f in ALLOWED)).toEqual([]);
+    expect(board.every((f) => `../${f}` in sources), "each of them is still a source file").toBe(true);
+    // And none of them has text the guard finds (the list above is the proof, not a hope).
+    expect(found.filter(([f]) => board.includes(f.replace(/^src\//, ""))).map(([f]) => f)).toEqual([]);
   });
 
   it("lists none of the shell's files: the window's frame is all in the layer (mu-146)", () => {

@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from "react";
-import { tl } from "./i18n";
+import { tl, useT } from "./i18n";
 import { backlogColumn, noteKey } from "./Backlog";
 import { boardColumn, type BoardSort, columns, key, STAGES } from "./lib";
 import { taskKey } from "./taskKey";
@@ -30,26 +30,28 @@ export function BandHead({ group, by, multi, active, onOpen }: {
   active: boolean;
   onOpen: (t: Task) => void;
 }) {
+  const t = useT("board");
   const h = group.head;
   if (!h) {
     return (
       <div className="band-head">
-        <span className="band-title">{by === "goal" ? "No goal" : "No feature"}</span>
-        <span className="meta">{group.items.length} {group.items.length === 1 ? "item" : "items"}</span>
+        <span className="band-title">{by === "goal" ? t("groups.noGoal") : t("groups.noFeature")}</span>
+        <span className="meta">{t("modes.items", { count: group.items.length })}</span>
       </div>
     );
   }
   const left = estimateLeft(h.progress);
+  const open = h.level === "goal" ? "groups.openGoal" : h.level === "feature" ? "groups.openFeature" : "groups.openTask";
   return (
     <div className="band-head">
-      <button className={`band-title link${active ? " active" : ""}`} onClick={() => onOpen(h)} title={`Open ${levelLabel(h.level).toLowerCase()} ${taskKey(h)}`}>
-        {multi && <ProjectName name={h.queue} />} <span className="level">{levelLabel(h.level)}</span> <span className="id">{taskKey(h)}</span> {h.title || "(no title)"}
+      <button className={`band-title link${active ? " active" : ""}`} onClick={() => onOpen(h)} title={t(open, { key: taskKey(h) })}>
+        {multi && <ProjectName name={h.queue} />} <span className="level">{levelLabel(h.level)}</span> <span className="id">{taskKey(h)}</span> {h.title ? <bdi dir="auto">{h.title}</bdi> : t("groups.noTitle")}
       </button>
       <StatusPill status={shownStageClass(h)}>{shownStageLabel(h)}</StatusPill>
-      {h.blocked && <StatusPill status="blocked">blocked</StatusPill>}
+      {h.blocked && <StatusPill status="blocked">{t("groups.blocked")}</StatusPill>}
       <span className="meta">{progressText(h.progress)}</span>
       {left && <span className="meta">{left}</span>}
-      {h.due && <span className="meta">due {h.due}</span>}
+      {h.due && <span className="meta">{t("groups.due", { date: h.due })}</span>}
     </div>
   );
 }
@@ -68,9 +70,10 @@ export type BacklogBandParts = {
  *  them. Drawn with nothing in it too, so the quick add never disappears; Focus (0038) folds it to
  *  its head, a button with its counts, one click from open. */
 function BacklogBand({ by, parts, tasks, renderCard, fold }: { by: "feature" | "goal"; parts: BacklogBandParts; tasks: Task[]; renderCard: (t: Task) => ReactNode; fold?: ColumnFolds }) {
+  const t = useT("board");
   const items = backlogColumn(parts.notes, tasks);
-  const title = `Backlog · not in a ${by} yet`;
-  const count = `${items.length} ${items.length === 1 ? "item" : "items"}`;
+  const title = by === "goal" ? t("groups.backlogGoal") : t("groups.backlogFeature");
+  const count = t("modes.items", { count: items.length });
   // Focus (0038) folds it as it folds the plain board's Backlog column: its head is the button.
   const folded = fold?.of("backlog") ?? "fixed";
   const needs = needsYouCount(tasks);
@@ -83,7 +86,7 @@ function BacklogBand({ by, parts, tasks, renderCard, fold }: { by: "feature" | "
           <span className="meta">{count}</span>
         </div>
       ) : (
-        <button type="button" className="band-fold" aria-expanded={folded === "opened"} aria-label={placeWords(title, count, needs, blocked)} onClick={() => fold?.toggle("backlog")} title={folded === "folded" ? "Open the Backlog here" : "Fold the Backlog to its head"}>
+        <button type="button" className="band-fold" aria-expanded={folded === "opened"} aria-label={placeWords(title, count, needs, blocked)} onClick={() => fold?.toggle("backlog")} title={folded === "folded" ? t("groups.openBacklog") : t("groups.foldBacklog")}>
           {title} <small>{count}</small>
           <FoldCounts needs={needs} blocked={blocked} />
         </button>
@@ -97,7 +100,7 @@ function BacklogBand({ by, parts, tasks, renderCard, fold }: { by: "feature" | "
                 ? <Fragment key={`note:${noteKey(item.note)}`}>{parts.renderNote(item.note)}</Fragment>
                 : <Fragment key={key(item.task)}>{renderCard(item.task)}</Fragment>,
             )}
-            {items.length === 0 && <p className="none">Nothing here</p>}
+            {items.length === 0 && <p className="none">{t("groups.nothing")}</p>}
           </ColumnCards>
         </section>
       </div>}
@@ -127,17 +130,18 @@ export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderC
    *  when it holds their tasks. */
   limit?: { over: Over[]; queue: string };
 }) {
+  const t = useT("board");
   const results = useAcceptResults();
   const paused = columns(groups.flatMap((g) => g.items), sort).paused;
   const loose = backlog ? groups.find((g) => !g.head) : undefined;
   const looseBacklog = loose ? columns(loose.items, sort).backlog : [];
-  const rest = loose ? loose.items.filter((t) => !t.paused && boardColumn(t) !== "backlog") : [];
+  const rest = loose ? loose.items.filter((x) => !x.paused && boardColumn(x) !== "backlog") : [];
   const bands = loose ? groups.flatMap((g) => (g !== loose ? [g] : rest.length ? [{ head: null, items: rest }] : [])) : groups;
   return (
     <main className="bands">
       <PausedBand tasks={paused} renderCard={renderCard} fold={fold} />
       {backlog && <BacklogBand by={by} parts={backlog} tasks={looseBacklog} renderCard={renderCard} fold={fold} />}
-      {bands.length === 0 && looseBacklog.length === 0 && paused.length === 0 && <p className="empty">No tasks match.</p>}
+      {bands.length === 0 && looseBacklog.length === 0 && paused.length === 0 && <p className="empty">{t("groups.noMatch")}</p>}
       {bands.map((g) => {
         const cols = columns(g.items, sort);
         // The band's Your check keeps its place while Accept all's result line has something to say.
@@ -147,9 +151,9 @@ export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderC
           <section key={g.head ? key(g.head) : "none"} className="band">
             <BandHead group={g} by={by} multi={multi} active={!!g.head && openKey === key(g.head)} onOpen={onOpen} />
             {g.items.length === 0 ? (
-              <p className="none">No tasks yet</p>
-            ) : g.items.every((t) => t.paused) ? (
-              <p className="none">Every task here is paused: they're in Paused, at the top</p>
+              <p className="none">{t("groups.noTasks")}</p>
+            ) : g.items.every((x) => x.paused) ? (
+              <p className="none">{t("groups.allPaused")}</p>
             ) : (
               <div className="board band-board" style={{ gridTemplateColumns: STAGES.map((s) => columnTrack(columnState(fold?.of(s.id) ?? "fixed", (cols[s.id] ?? []).length, kept(s.id)))).join(" ") }}>
                 {STAGES.map((c) => {
@@ -162,8 +166,8 @@ export function GroupedBoard({ groups, by, sort, multi, openKey, onOpen, renderC
                       <ColumnCards>
                         {c.id === "your-check" && onChanged && (list.length > 0 || kept(c.id))
                           ? <EffortGroups tasks={list} place={place} renderCard={renderCard} onChanged={onChanged} />
-                          : list.map((t) => (
-                              <Fragment key={key(t)}>{renderCard(t)}</Fragment>
+                          : list.map((x) => (
+                              <Fragment key={key(x)}>{renderCard(x)}</Fragment>
                             ))}
                       </ColumnCards>
                     </section>

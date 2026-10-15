@@ -2,7 +2,7 @@ import { backlogColumn, type BacklogItem } from "./Backlog";
 import { isBlocked } from "./blockWords";
 import type { RowChip } from "./ColumnRow";
 import { isHuman, needsYou } from "./human";
-import { tn } from "./i18n";
+import { tl, tn } from "./i18n";
 import { groupItems, type GroupBy } from "./levels";
 import { boardColumn, type BoardSort, holder, needsTester, quietCheckin, quietText, type RoleNames, sortBoard, STAGES } from "./lib";
 import type { Over } from "./yourCheckLimit";
@@ -70,7 +70,9 @@ export function doneTodayCount(tasks: Pick<Task, "stage" | "doneAt" | "doneOn">[
   return tasks.filter((t) => t.stage === "done" && doneDay(t) === today).length;
 }
 
-function rowOf(id: string, head: Task | null, title: string, items: Task[], notes: Note[], today: string, sort: BoardSort): GridRow {
+/** A row's title, read when it's shown: App keeps the rows (`useMemo`), and Other, All tasks and
+ *  "(no title)" follow a language switch. */
+function rowOf(id: string, head: Task | null, title: () => string, items: Task[], notes: Note[], today: string, sort: BoardSort): GridRow {
   const cells = Object.fromEntries(GRID_STAGES.map((s) => [s.id, [] as Task[]])) as Record<GridStage, Task[]>;
   // A paused task (mu-59) keeps its stage, so it stays in its stage's cell, last: it's calm.
   const sorted = sortBoard(items, sort);
@@ -82,7 +84,16 @@ function rowOf(id: string, head: Task | null, title: string, items: Task[], note
   out.backlog = backlogColumn(notes, cells.backlog);
   const own = { done: items.filter((t) => t.stage === "done").length, total: items.length };
   const p = head?.progress;
-  return { id, head, title, progress: p ? { done: p.done, total: p.total } : own, cells: out, doneToday: doneTodayCount(items, today) };
+  return {
+    id,
+    head,
+    get title() {
+      return title();
+    },
+    progress: p ? { done: p.done, total: p.total } : own,
+    cells: out,
+    doneToday: doneTodayCount(items, today),
+  };
 }
 
 /** The grid's rows: with Group by Feature (or Goal), one per feature in flight, by project and id
@@ -101,17 +112,18 @@ export function gridRows({ work, all, notes, by, today, sort = "priority", shown
   sort?: BoardSort;
   shown?: Task[];
 }): GridRow[] {
-  if (by === "none") return work.length || notes.length ? [rowOf("all", null, "All tasks", work, notes, today, sort)] : [];
+  if (by === "none") return work.length || notes.length ? [rowOf("all", null, () => tn("board", "grid.allTasks"), work, notes, today, sort)] : [];
   const groups = groupItems(work, all, by, shown);
   const lit = new Set(shown.filter((t) => t.level === by).map((t) => `${t.queue}/${t.id}`));
   const rows: GridRow[] = [];
   for (const g of groups) {
     if (!g.head) continue;
     const inFlight = g.items.some((t) => t.stage !== "done") || doneTodayCount(g.items, today) > 0 || (g.head.progress?.total ?? 0) === 0 || lit.has(`${g.head.queue}/${g.head.id}`);
-    if (inFlight) rows.push(rowOf(`${g.head.queue}/${g.head.id}`, g.head, g.head.title || "(no title)", g.items, [], today, sort));
+    const head = g.head;
+    if (inFlight) rows.push(rowOf(`${head.queue}/${head.id}`, head, () => head.title || tn("board", "groups.noTitle"), g.items, [], today, sort));
   }
   const rest = groups.find((g) => !g.head)?.items ?? [];
-  if (rest.length || notes.length) rows.push(rowOf("other", null, "Other", rest, notes, today, sort));
+  if (rest.length || notes.length) rows.push(rowOf("other", null, () => tn("board", "grid.other"), rest, notes, today, sort));
   return rows;
 }
 
@@ -139,7 +151,7 @@ export function columnChips(rows: GridRow[]): RowChip[] {
     const tasks = items.flatMap((i) => (i.kind === "task" ? [i.task] : []));
     return { id: s.id, label: s.label, count: items.length, needs: tasks.filter(needsYou).length, blocked: tasks.filter(isBlocked).length };
   });
-  return [...stages, { id: "done", label: "Done", count: rows.reduce((n, r) => n + r.doneToday, 0), needs: 0, blocked: 0 }];
+  return [...stages, { id: "done", label: tl("stage.done"), count: rows.reduce((n, r) => n + r.doneToday, 0), needs: 0, blocked: 0 }];
 }
 
 /** The part of the grid's frame that shows the stage columns: the frame less the sticky feature
@@ -159,10 +171,10 @@ export type CardStatusInfo =
 
 export function cardStatus(t: Task, roles: RoleNames): CardStatusInfo {
   if (isBlocked(t) && t.blockedKind) return { kind: "blocked" };
-  if (needsYou(t)) return { kind: "you", text: "needs you" };
-  if (t.paused) return { kind: "paused", text: "paused" };
+  if (needsYou(t)) return { kind: "you", text: tn("board", "grid.needsYou") };
+  if (t.paused) return { kind: "paused", text: tn("board", "grid.paused") };
   const who = holder(t, roles);
-  if (who && !(t.stage === "your-check" && who === "owner")) return { kind: "who", text: who === "owner" ? "you" : who, live: t.live };
+  if (who && !(t.stage === "your-check" && who === "owner")) return { kind: "who", text: who === "owner" ? tn("board", "grid.you") : who, live: t.live };
   return { kind: "none", text: "" };
 }
 
@@ -171,39 +183,46 @@ export function sentBackTimes(t: Pick<Task, "stageHistory">): number {
   return t.stageHistory.filter((h) => h.to === "building" && (h.from === "testing" || h.from === "your-check")).length;
 }
 
-const TIMES = ["", "once", "twice"];
+/** "sent back once", "sent back twice", "sent back 3 times". */
+function sentBackWords(n: number): string {
+  if (n === 1) return tn("board", "grid.sentBackOnce");
+  if (n === 2) return tn("board", "grid.sentBackTwice");
+  return tn("board", "grid.sentBackTimes", { n });
+}
 
 /** The card's trouble, on its own line under the title: sent back (while it's back), a claim gone
  *  quiet, or a builder still holding Testing; "" when it's going well. */
 export function troubleOf(t: Task, now: number): string {
-  if (t.sentBack && t.stage === "building") {
-    const n = Math.max(1, sentBackTimes(t));
-    return `sent back ${TIMES[n] ?? `${n} times`}`;
-  }
+  if (t.sentBack && t.stage === "building") return sentBackWords(Math.max(1, sentBackTimes(t)));
   const quiet = quietCheckin(t, now);
   if (quiet !== null) return quietText(quiet);
-  if (needsTester(t)) return "needs a tester";
+  if (needsTester(t)) return tn("board", "grid.needsTester");
   return "";
+}
+
+/** "a and b", "a, b and c": the last two joined by "and", the rest by the list separator. */
+function andList(list: string[]): string {
+  if (list.length <= 1) return list.join("");
+  return tn("board", "grid.and", { a: list.slice(0, -1).join(tl("listSep")), b: list[list.length - 1] });
 }
 
 /** "a", "a and b", "a, b, c and 2 more". */
 function names(list: string[]): string {
-  if (list.length <= 2) return list.join(" and ");
-  const shown = list.slice(0, 3);
-  const more = list.length - shown.length;
-  return more ? `${shown.join(", ")} and ${more} more` : `${shown.slice(0, -1).join(", ")} and ${shown[2]}`;
+  if (list.length <= 3) return andList(list);
+  return tn("board", "grid.andMore", { list: list.slice(0, 3).join(tl("listSep")), count: list.length - 3 });
 }
 
 /** A stage column's second line, who works there: the holders of its tasks by name (the owner as
  *  "you"), else the stage's role; Backlog says what it holds and Ready how many can start. */
 export function stageWho(stage: GridStage, items: GridItem[], roles: RoleNames): string {
   const tasks = items.flatMap((i) => (i.kind === "task" ? [i.task] : []));
-  if (stage === "backlog") return "notes, not shaped yet";
+  if (stage === "backlog") return tn("board", "grid.backlogWho");
   if (stage === "ready") {
     const n = tasks.filter((t) => !isBlocked(t) && !t.paused && !isHuman(t)).length;
-    return n ? `${n} can start` : "none can start";
+    return n ? tn("board", "grid.canStart", { count: n }) : tn("board", "grid.noneCanStart");
   }
-  const who = [...new Set(tasks.map((t) => holder(t, roles)).filter(Boolean).map((w) => (w === "owner" ? "you" : w)))];
+  const you = tn("board", "grid.you");
+  const who = [...new Set(tasks.map((t) => holder(t, roles)).filter(Boolean).map((w) => (w === "owner" ? you : w)))];
   return who.length ? names(who) : (STAGES.find((s) => s.id === stage)?.role ?? "");
 }
 
@@ -225,35 +244,41 @@ export function checkHead(queues: QueueInfo[], queue: string): { text: string; f
   if (queue !== "all") {
     const q = queues.find((x) => x.name === queue);
     const limit = q?.yourCheckLimit;
-    if (!q || typeof limit !== "number") return { text: "yours to check", full: false };
-    return { text: `${q.yourCheck ?? 0} of ${limit}${full.length ? ", full" : ""}`, full: full.length > 0 };
+    if (!q || typeof limit !== "number") return { text: tn("board", "grid.yoursToCheck"), full: false };
+    return { text: tn("board", full.length ? "grid.checkFull" : "grid.checkOf", { n: q.yourCheck ?? 0, limit }), full: full.length > 0 };
   }
-  if (!full.length) return { text: "yours to check", full: false };
-  return { text: `full in ${full.length} ${full.length === 1 ? "project" : "projects"}`, full: true };
+  if (!full.length) return { text: tn("board", "grid.yoursToCheck"), full: false };
+  return { text: tn("board", "grid.fullIn", { count: full.length }), full: true };
 }
 
 /** The one alert line over the grid when Your check is full; "" when it isn't. */
 export function alertLine(full: Over[], queue: string): string {
   if (!full.length) return "";
-  const then = "check some before more start.";
   if (queue !== "all") {
     const o = full[0];
-    return `Your check is ${o.waiting > o.limit ? "over its limit" : "full"} (${o.waiting} of ${o.limit}): ${then}`;
+    return tn("board", o.waiting > o.limit ? "grid.overLimit" : "grid.full", { n: o.waiting, limit: o.limit });
   }
-  const each = full.map((o) => `${o.label} (${o.waiting} of ${o.limit})`);
-  const list = each.length > 1 ? `${each.slice(0, -1).join(", ")} and ${each[each.length - 1]}` : each[0];
-  return `Your check is full in ${list}: ${then}`;
+  const list = andList(full.map((o) => tn("board", "grid.project", { label: o.label, n: o.waiting, limit: o.limit })));
+  return tn("board", "grid.fullInList", { list });
 }
+
+/** "2 done today", "none done today": a row's Done cell and the header line say it alike. */
+export const doneTodayWords = (n: number) => (n ? tn("board", "grid.doneToday", { count: n }) : tn("board", "grid.noneDoneToday"));
 
 /** The header line: what waits for you (in its own part, to stand out), then what's being built,
  *  in testing and done today, each whole in words. `tasks` is the place's work (no features or
  *  goals), before the filters: the line says where the project stands. */
 export function headerLine(tasks: Task[], needs: number, today: string): { needs: string; rest: string } {
-  const n = (k: number, words: string) => `${k || "none"} ${words}`;
   const live = (stage: string) => tasks.filter((t) => t.stage === stage && !t.paused).length;
+  const building = live("building");
+  const testing = live("testing");
   return {
-    needs: needs ? `${needs} waiting for you` : "nothing waiting for you",
-    rest: [n(live("building"), "being built"), n(live("testing"), "in testing"), n(doneTodayCount(tasks, today), "done today")].join(", "),
+    needs: needs ? tn("board", "grid.waiting", { count: needs }) : tn("board", "grid.nothingWaiting"),
+    rest: [
+      building ? tn("board", "grid.building", { count: building }) : tn("board", "grid.noneBuilding"),
+      testing ? tn("board", "grid.testing", { count: testing }) : tn("board", "grid.noneTesting"),
+      doneTodayWords(doneTodayCount(tasks, today)),
+    ].join(tl("listSep")),
   };
 }
 

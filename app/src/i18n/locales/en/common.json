@@ -60,6 +60,64 @@
     "blocked": "Blocked",
     "needsYou": "Needs you"
   },
+  "needs": {
+    "words_one": "{{count}} needs you",
+    "words_other": "{{count}} need you",
+    "chip_one": "<chip>{{count}}</chip> <words>needs you</words>",
+    "chip_other": "<chip>{{count}}</chip> <words>need you</words>"
+  },
+  "holder": {
+    "you": "you"
+  },
+  "tagEditor": {
+    "add": "+ tag",
+    "addLabel": "Add a tag",
+    "full_one": "{{count}} tag max",
+    "full_other": "{{count}} tags max"
+  },
+  "block": {
+    "kind": {
+      "tasks": { "label": "tasks", "need": "Tasks by key or number, like 14, 16" },
+      "you": { "label": "you", "need": "What you have to do or decide" },
+      "permission": { "label": "permission", "need": "What access it lacks, and where to grant it" },
+      "question": { "label": "question", "need": "Pick the open question it waits on" },
+      "outside": { "label": "outside", "need": "What it waits on outside" }
+    },
+    "lead": {
+      "answer": "Your answer",
+      "action": "Your action",
+      "permission": "Permission",
+      "question": "Question",
+      "tasks": "After",
+      "outside": "Outside",
+      "other": "Blocked"
+    },
+    "waitingOnCapture": "waiting on capture",
+    "detailWaitingOnCapture": "{{detail}}, waiting on capture",
+    "afterOther": "After other tasks",
+    "afterOtherDetail": "After other tasks: {{detail}}",
+    "taskStage": "({{stage}})",
+    "taskStageHolder": "({{stage}}, {{holder}})",
+    "open": "Open {{key}}",
+    "answer": "Answer"
+  },
+  "reach": {
+    "noSession": "no session to reach: Release it, or let a new session under {{label}} take it over",
+    "noSessionHeld": "no session to reach: Release it",
+    "checkinInTesting": "check-ins are for Building; send a message instead",
+    "answerFirst": "waiting for input in Claude Code: answer it there first",
+    "noStageSession": "{{stage}} has no session working on it",
+    "nobody": "nobody holds it",
+    "yours": "you hold it yourself",
+    "asked": "asked {{ago}}"
+  },
+  "feed": {
+    "task": "{{key}} {{title}} · {{stage}}",
+    "taskLog": "{{key}} {{title}} · {{stage}} · {{log}}",
+    "blocked": "{{key}} {{title}} · {{stage}}, blocked on {{on}}",
+    "blockedLog": "{{key}} {{title}} · {{stage}}, blocked on {{on}} · {{log}}",
+    "something": "something"
+  },
   "groupBy": {
     "label": "Group by",
     "none": "None",
@@ -98,6 +156,8 @@
     "minAgo_other": "{{count}} min ago",
     "hAgo_one": "{{count}} h ago",
     "hAgo_other": "{{count}} h ago",
+    "dAgo_one": "{{count}} d ago",
+    "dAgo_other": "{{count}} d ago",
     "yesterday": "yesterday",
     "daysAgo_one": "{{count}} day ago",
     "daysAgo_other": "{{count}} days ago",
@@ -130,6 +190,10 @@
   "estimateField": {
     "agentTime": "Agent time, review and QA included (45m, 2h, 1.5d)",
     "testTime": "Test time, your check only: QA is in agent time (30m, 1h)"
+  },
+  "estimatePart": {
+    "agent": "agent {{time}}",
+    "test": "test {{time}}"
   },
   "estimateSome": "≈ {{parts}} left ({{est}} of {{open}} open tasks estimated)",
   "help": {

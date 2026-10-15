@@ -103,9 +103,9 @@ function dateGroup(id: "captured" | "changed" | "done", day: (t: Task) => string
   );
 }
 
-/** A holder as its chip says it: the owner (lib.ts `holder`'s "owner") in the language shown, a
- *  session by its name. */
-const holderChip = (v: string) => (v === "owner" ? tn("shell", "filter.owner") : v);
+/** A holder as its chip says it: the owner (lib.ts `holder`'s "owner") as the Table, the Graph and
+ *  the card say it (common.json `holder.you`, mu-147), a session by its name. */
+const holderChip = (v: string) => (v === "owner" ? tl("holder.you") : v);
 const PRIORITIES = ["high", "normal", "low"] as const;
 const priorityChip = (v: string) => (PRIORITIES.some((p) => p === v) ? tl(`priority.${v as (typeof PRIORITIES)[number]}`) : v);
 

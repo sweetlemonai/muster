@@ -11,6 +11,61 @@
     "tooltipWaiting_one": "Muster · {{count}} مورد منتظر شماست",
     "tooltipWaiting_other": "Muster · {{count}} مورد منتظر شماست"
   },
+  "notify": {
+    "heading": {
+      "one": "مورد تازه‌ای برای شما در {{project}}",
+      "newIn_one": "{{count}} مورد تازه برای شما در {{project}}",
+      "newIn_other": "{{count}} مورد تازه برای شما در {{project}}",
+      "new_one": "{{count}} مورد تازه برای شما",
+      "new_other": "{{count}} مورد تازه برای شما",
+      "asksIn_one": "{{questions}} پرسش در {{count}} تسک برای شما در {{project}}",
+      "asksIn_other": "{{questions}} پرسش در {{count}} تسک برای شما در {{project}}",
+      "asks_one": "{{questions}} پرسش در {{count}} تسک برای شما",
+      "asks_other": "{{questions}} پرسش در {{count}} تسک برای شما"
+    },
+    "line": {
+      "own": "{{id}} {{title}}: تسک خودتان",
+      "check": "{{id}} {{title}}: آماده‌ی بررسی شما",
+      "asks": "{{id}} {{title}}: پرسشی از شما دارد",
+      "asksMany_one": "{{id}} {{title}}: {{count}} پرسش از شما دارد",
+      "asksMany_other": "{{id}} {{title}}: {{count}} پرسش از شما دارد",
+      "blocked": "{{id}} {{title}}: در انتظار شما مسدود است",
+      "permission": "{{id}} {{title}}: به اجازه‌ی شما نیاز دارد",
+      "input": "{{id}} {{title}}: نشستش منتظر ورودی شماست",
+      "waiting": "{{id}} {{title}}: منتظر شماست",
+      "lesson": "درسی برای تأیید: {{rule}}"
+    },
+    "inProject": "در {{project}}: {{line}}",
+    "more_one": "و {{count}} مورد دیگر",
+    "more_other": "و {{count}} مورد دیگر"
+  },
+  "appMenu": {
+    "menu": {
+      "file": "فایل",
+      "edit": "ویرایش",
+      "view": "نمایش",
+      "window": "پنجره",
+      "help": "راهنما"
+    },
+    "item": {
+      "about": "درباره‌ی Muster",
+      "services": "خدمات",
+      "hide": "پنهان کردن Muster",
+      "hideOthers": "پنهان کردن بقیه",
+      "showAll": "نمایش همه",
+      "quit": "خروج از Muster",
+      "closeWindow": "بستن پنجره",
+      "undo": "واگرد",
+      "redo": "ازنو",
+      "cut": "برش",
+      "copy": "کپی",
+      "paste": "چسباندن",
+      "selectAll": "انتخاب همه",
+      "fullscreen": "تغییر حالت تمام‌صفحه",
+      "minimize": "کوچک کردن",
+      "zoom": "بزرگ کردن"
+    }
+  },
   "list": {
     "separator": "، "
   }

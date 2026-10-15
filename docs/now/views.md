@@ -15,3 +15,4 @@ covers: app/src/Views.tsx, app/src/viewData.ts, app/src/GraphView.tsx, app/src/g
 - Legend names are the i18n layer's `board:legend.*`; nothing from a task file reaches the legend. (mu-173)
 - The Graph's legend follows Hide done; a loop is the one rule `isLoopEdge`, for drawing and legend. (mu-173)
 - One colour, one meaning: a stage colour only ever says a stage. (DESIGN.md "The colour code")
+- Table heads start on the cells' side right to left; the Timeline and Graph keep drawing left to right. (mu-147)

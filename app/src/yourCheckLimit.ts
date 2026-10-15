@@ -2,7 +2,7 @@
 // set for a project, the board, the sidebar and Settings › Projects say so. It only warns. The
 // core counts the waiting tasks and keeps the limits (check_limit.rs, in projects.json by queue
 // folder); these are the words. Tested in yourCheckLimit.test.ts.
-import { tn } from "./i18n";
+import { tl, tn } from "./i18n";
 import type { QueueInfo } from "./types";
 
 /** The default limit and its bounds, as the core's check_limit::DEFAULT, MIN and MAX. */
@@ -28,8 +28,8 @@ export function overLimit(queues: QueueInfo[], queue: string): Over[] {
 
 /** "Muster (7 of 5) and drover (9 of 8)", by their labels. */
 const named = (over: Over[]) => {
-  const each = over.map((o) => `${o.label} (${o.waiting} of ${o.limit})`);
-  return each.length > 1 ? `${each.slice(0, -1).join(", ")} and ${each[each.length - 1]}` : each.join("");
+  const each = over.map((o) => tn("board", "check.limit.each", { label: o.label, waiting: o.waiting, limit: o.limit }));
+  return each.length > 1 ? tn("board", "check.limit.and", { rest: each.slice(0, -1).join(tl("listSep")), last: each[each.length - 1] }) : each.join("");
 };
 
 /** The Your check column's header count: "7 of 5" when the project shown is over its limit (the
@@ -39,9 +39,13 @@ export function checkCount(count: number, over: Over[], queue: string): { text: 
   if (over.length === 0) return { text: String(count), over: false, title: "" };
   if (queue !== "all") {
     const o = over[0];
-    return { text: `${o.waiting} of ${o.limit}`, over: true, title: `${o.waiting} tasks wait in Your check, over your limit of ${o.limit} (Settings › Projects)` };
+    return {
+      text: tn("board", "check.limit.count", { waiting: o.waiting, limit: o.limit }),
+      over: true,
+      title: tn("board", "check.limit.pileSettings", { count: o.waiting, limit: o.limit }),
+    };
   }
-  return { text: String(count), over: true, title: `Over the limit in ${named(over)}` };
+  return { text: String(count), over: true, title: tn("board", "check.limit.overIn", { list: named(over) }) };
 }
 
 /** The longest the column's own line gets: it has two short lines of room in a narrow column. */
@@ -52,29 +56,28 @@ export const COLUMN_LINE_MAX = 24;
  *  the line above the board); "" within the limit. */
 export function columnLine(over: Over[], queue: string): string {
   if (over.length === 0) return "";
-  if (queue !== "all") return `Over your limit of ${over[0].limit}`;
-  return `${over.length} ${over.length === 1 ? "project" : "projects"} over limit`;
+  if (queue !== "all") return tn("board", "check.limit.column", { limit: over[0].limit });
+  return tn("board", "check.limit.columnAll", { count: over.length });
 }
 
-const CHECK_THESE = "check these before more start.";
 /** "7 tasks wait in Your check, over your limit of 5". */
-const pile = (o: Over) => `${o.waiting} tasks wait in Your check, over your limit of ${o.limit}`;
+const pile = (o: Over) => tn("board", "check.limit.pile", { count: o.waiting, limit: o.limit });
 
 /** The line above the board, short enough for one line at any width it's likely to have: the
  *  numbers first for one project ("7 of 5 in Your check: …"), how many projects in All (each
  *  sidebar row says its own); "" within the limit. `overTitle` has it whole. */
 export function overLine(over: Over[], queue: string): string {
   if (over.length === 0) return "";
-  if (queue !== "all") return `${over[0].waiting} of ${over[0].limit} in Your check: ${CHECK_THESE}`;
-  return `Over your limit in ${over.length} ${over.length === 1 ? "project" : "projects"}: ${CHECK_THESE}`;
+  if (queue !== "all") return tn("board", "check.limit.line", { waiting: over[0].waiting, limit: over[0].limit });
+  return tn("board", "check.limit.lineAll", { count: over.length });
 }
 
 /** The line above the board in full, its title: the pile and the limit, or in All each project
  *  over with its count and limit; "" within the limit. */
 export function overTitle(over: Over[], queue: string): string {
   if (over.length === 0) return "";
-  if (queue !== "all") return `${pile(over[0])}: ${CHECK_THESE}`;
-  return `Over your limit in ${named(over)}: ${CHECK_THESE}`;
+  if (queue !== "all") return tn("board", "check.limit.title", { count: over[0].waiting, limit: over[0].limit });
+  return tn("board", "check.limit.titleAll", { list: named(over) });
 }
 
 /** A Group by band's Your check count: its own, in orange when it holds tasks (`queues`, one per
@@ -82,7 +85,7 @@ export function overTitle(over: Over[], queue: string): string {
 export function bandLimit(queues: string[], over: Over[], queue: string): { over: boolean; title: string } {
   const here = over.filter((o) => queues.includes(o.name));
   if (here.length === 0) return { over: false, title: "" };
-  const title = here.map((o) => (queue === "all" ? `${o.label}: ${pile(o)}` : pile(o))).join("; ");
+  const title = here.map((o) => (queue === "all" ? tn("board", "check.limit.pileIn", { label: o.label, count: o.waiting, limit: o.limit }) : pile(o))).join(tl("clauseSep"));
   return { over: true, title };
 }
 

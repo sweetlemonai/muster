@@ -246,6 +246,7 @@ export const columnTrack = (s: ColumnState) => (s === "open" ? `minmax(118px, ${
 
 /** A column's classes. A strip is `col-strip`, with `col-empty` or `folded`: never `empty`, the
  *  empty message's class, whose padding once pushed a strip out of its track. */
+// i18n-ignore: class names, not text
 export const columnClass = (stage: string, s: ColumnState) => `column col-${stage}${s === "folded" ? " col-strip folded" : s === "empty" ? " col-strip col-empty" : ""}`;
 
 /** The plain board's columns in their order: the Paused lane, then every stage. */

@@ -80,8 +80,9 @@ describe("backlog notes on the board", () => {
 
   it("marks the words the search matched in a note's title, as task cards do", () => {
     const card = (title: string, words: string[]) => renderToStaticMarkup(createElement(NoteCard, { n: note({ title }), now: 0, multi: false, active: false, onOpen: () => {}, words }));
-    expect(card("Board flickers on Résumé", ["flick", "resume"])).toContain('<span class="title">Board <mark>flick</mark>ers on <mark>Résumé</mark></span>');
-    expect(card("Board flickers", [])).toContain('<span class="title">Board flickers</span>');
+    // The note's own title keeps its own direction (dir="auto", mu-147).
+    expect(card("Board flickers on Résumé", ["flick", "resume"])).toContain('<span class="title"><span dir="auto">Board <mark>flick</mark>ers on <mark>Résumé</mark></span></span>');
+    expect(card("Board flickers", [])).toContain('<span class="title"><span dir="auto">Board flickers</span></span>');
     expect(card("", ["empty"])).toContain('<span class="title">(empty note)</span>');
   });
 

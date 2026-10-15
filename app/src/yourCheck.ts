@@ -2,6 +2,7 @@
 // it asks of the owner (its effort), the views a criterion names, and Accept all. Tested in
 // yourCheck.test.ts.
 import { blockSentence, isBlocked } from "./blockWords";
+import { tl, tn, type TKey } from "./i18n";
 import { key } from "./lib";
 import { keyOf } from "./taskKey";
 import { isWork } from "./levels";
@@ -10,11 +11,13 @@ import type { Criterion, Task } from "./types";
 /** How much a task in Your check asks of the owner: nothing to try, one look in the app, or a
  *  session or terminal to run something in. */
 export type Effort = "accept" | "look" | "session";
-export const EFFORTS: { id: Effort; label: string }[] = [
-  { id: "accept", label: "Just accept" },
-  { id: "look", label: "One look" },
-  { id: "session", label: "Needs a session" },
-];
+export const EFFORTS: { readonly id: Effort; readonly label: string }[] = (["accept", "look", "session"] as const).map((id) => ({
+  id,
+  // In the language shown, each time it's read (board.json `effort`).
+  get label() {
+    return tn("board", `effort.${id}`);
+  },
+}));
 
 /** A criterion's own say, `— effort: look` or `— effort: session`, anywhere in it. */
 const EFFORT_TAG = /\s*[—–-]*\s*\beffort:\s*(look|session)\b/i;
@@ -51,7 +54,9 @@ const askedOwner = (t: Pick<Task, "questions">) => t.questions.filter((q) => !q.
 /** Blocked on the owner or by a permission: a person has to act (as the core's needs_owner). */
 const blockedOnOwner = (t: Pick<Task, "blockedKind">) => t.blockedKind === "you" || t.blockedKind === "permission";
 /** A criterion as Your check names it: its label, else its place ("criterion 3"). */
-const critName = (c: Pick<Criterion, "label" | "n">) => c.label || `criterion ${c.n}`;
+const critName = (c: Pick<Criterion, "label" | "n">) => c.label || tn("board", "check.criterion", { n: c.n });
+/** Criteria named one after another: "AC2, criterion 3". */
+const critNames = (cs: Pick<Criterion, "label" | "n">[]) => cs.map(critName).join(tl("listSep"));
 /** An agent's criterion not ticked: nothing proves it (mu-78). */
 const unproven = (t: Pick<Task, "criteria">) => (t.criteria ?? []).filter((c) => !c.owner && !c.ticked);
 /** Every criterion ticked, and each of the agents' with its proof written: proven, not only
@@ -108,12 +113,13 @@ export function tryText(words: string): string {
   const w = words.trim().replace(/[.\s]+$/, "");
   const m = /^(?:the\s+)?owner\s+(\S+)(.*)$/i.exec(w);
   const first = m ? base(m[1]) : null;
-  if (!m || first === null) return `Check: ${w || "(no words)"}`;
+  if (!m || first === null) return tn("board", "check.step.check", { words: w || tn("board", "check.step.noWords") });
   const rest = m[2].replace(/\band (\S+)/g, (all, v: string) => {
     const b = base(v);
+    // i18n-ignore: the criterion's own English words, with its verb as an instruction
     return b === null ? all : `and ${b}`;
   });
-  return `Try: ${first}${rest}`;
+  return tn("board", "check.step.try", { words: `${first}${rest}` });
 }
 
 /** A next step: what it is, the words cut to fit a card, the words whole, and how many more
@@ -133,15 +139,15 @@ export function nextStep(t: StepTask): NextStep {
   const asked = askedOwner(t);
   if (asked.length > 0) {
     const first = asked[0].text.split("\n").find((l) => l.trim())?.trim() ?? "";
-    return step("question", `Answer Q${asked[0].n ?? "?"}: ${first}`, asked.length - 1 + open.length);
+    return step("question", tn("board", "check.step.answer", { n: asked[0].n ?? "?", text: first }), asked.length - 1 + open.length);
   }
-  if (blockedOnOwner(t)) return step("block", `Unblock: ${(t.blockDetail ?? "").trim() || blockSentence(t)}`, open.length);
+  if (blockedOnOwner(t)) return step("block", tn("board", "check.step.unblock", { detail: (t.blockDetail ?? "").trim() || blockSentence(t) }), open.length);
   if (open.length === 0) {
     const all = t.criteria ?? [];
     const notYet = unproven(t);
-    if (all.length === 0) return step("accept", "Nothing to try: Accept", 0);
-    if (notYet.length > 0) return step("accept", `Not proven: ${notYet.map(critName).join(", ")} · send it back, or check it yourself`, 0);
-    return step("accept", `All ${all.length} ${allProven(t) ? "proven" : "ticked"}: Accept`, 0);
+    if (all.length === 0) return step("accept", tn("board", "check.step.nothingToTry"), 0);
+    if (notYet.length > 0) return step("accept", tn("board", "check.step.notProven", { list: critNames(notYet) }), 0);
+    return step("accept", tn("board", allProven(t) ? "check.step.allProven" : "check.step.allTicked", { count: all.length }), 0);
   }
   return step("criterion", tryText(criterionWords(open[0].text.replace(/^AC\d+:\s*/, ""))), open.length - 1);
 }
@@ -154,34 +160,43 @@ export function nextStep(t: StepTask): NextStep {
 export type AcceptWords = { kind: "blocked" | "unproven" | "yours" | "proven" | "ticked" | "none"; text: string };
 
 export function acceptWords(t: StepTask & Pick<Task, "blocked">): AcceptWords {
-  if (t.blocked) return { kind: "blocked", text: `Blocked (${blockSentence(t) || "it waits on something"}): Accept waits until that's cleared.` };
+  if (t.blocked) return { kind: "blocked", text: tn("board", "check.accept.blocked", { why: blockSentence(t) || tn("board", "check.accept.waitsOnSomething") }) };
   const all = t.criteria ?? [];
-  if (all.length === 0) return { kind: "none", text: "No acceptance criteria are written, so nothing is proven. Accept moves it to Done." };
+  if (all.length === 0) return { kind: "none", text: tn("board", "check.accept.none") };
   const notYet = unproven(t);
-  if (notYet.length > 0) return { kind: "unproven", text: `Not proven yet: ${notYet.map(critName).join(", ")}. Send it back, or check it yourself before you accept it.` };
+  if (notYet.length > 0) return { kind: "unproven", text: tn("board", "check.accept.unproven", { list: critNames(notYet) }) };
   const open = openOwner(t);
-  if (open.length > 0) return { kind: "yours", text: `Accept after you check ${open.length}: ${open.map(critName).join(", ")}.` };
-  if (!allProven(t)) return { kind: "ticked", text: "Every criterion is ticked: Accept moves it to Done." };
-  return { kind: "proven", text: "Every criterion is proven: Accept moves it to Done." };
+  if (open.length > 0) return { kind: "yours", text: tn("board", "check.accept.yours", { count: open.length, list: critNames(open) }) };
+  if (!allProven(t)) return { kind: "ticked", text: tn("board", "check.accept.ticked") };
+  return { kind: "proven", text: tn("board", "check.accept.proven") };
 }
 
 /** The app's views a criterion can name, in the app's order. "board", "table", "timeline",
  *  "graph" and "appearance" count in any case; the rest are everyday words, so only their name
  *  with its capital counts ("Help", not "helps"). */
 export type NamedView = "board" | "table" | "timeline" | "graph" | "helper" | "waiting" | "activity" | "problems" | "projects" | "help" | "settings" | "appearance";
-export const VIEW_NAMES: { id: NamedView; label: string; find: RegExp }[] = [
-  { id: "board", label: "Board", find: /\bboard\b/i },
-  { id: "table", label: "Table", find: /\btable\b/i },
-  { id: "timeline", label: "Timeline", find: /\btimeline\b/i },
-  { id: "graph", label: "Graph", find: /\bgraph\b/i },
-  { id: "helper", label: "Helper", find: /\bHelper\b/ },
-  { id: "waiting", label: "Waiting for you", find: /\bWaiting for you\b/ },
-  { id: "activity", label: "Activity", find: /\bActivity\b/ },
-  { id: "problems", label: "Problems", find: /\bProblems\b/ },
-  { id: "projects", label: "Projects", find: /\bProjects\b/ },
-  { id: "help", label: "Help", find: /\bHelp\b/ },
-  { id: "settings", label: "Settings", find: /\bSettings\b/ },
-  { id: "appearance", label: "Appearance", find: /\bappearance\b/i },
+/** A view the criteria name: what finds it in a criterion's (English) words, and its name as the
+ *  window says it (shell.json, the header's and Settings' own words), read each time. */
+const view = (id: NamedView, find: RegExp, name: TKey<"shell">) => ({
+  id,
+  find,
+  get label() {
+    return tn("shell", name);
+  },
+});
+export const VIEW_NAMES: { readonly id: NamedView; readonly label: string; readonly find: RegExp }[] = [
+  view("board", /\bboard\b/i, "app.view.board"),
+  view("table", /\btable\b/i, "app.view.table"),
+  view("timeline", /\btimeline\b/i, "app.view.timeline"),
+  view("graph", /\bgraph\b/i, "app.view.graph"),
+  view("helper", /\bHelper\b/, "app.view.helper"),
+  view("waiting", /\bWaiting for you\b/, "app.view.waiting"),
+  view("activity", /\bActivity\b/, "app.view.activity"),
+  view("problems", /\bProblems\b/, "app.view.problems"),
+  view("projects", /\bProjects\b/, "sidebar.projects"),
+  view("help", /\bHelp\b/, "app.view.help"),
+  view("settings", /\bSettings\b/, "app.view.settings"),
+  view("appearance", /\bappearance\b/i, "settings.groups.appearance.label"),
 ];
 export const namedViews = (text: string): NamedView[] => VIEW_NAMES.filter((v) => v.find.test(text)).map((v) => v.id);
 
@@ -193,8 +208,10 @@ export type AcceptResult = { accepted: string[]; refused: [string, string][] };
  *  and without command-line hints ("muster tick …"), which aren't how the app does it. */
 export function refusalText(id: string, why: string): string {
   let s = why.trim().replace(new RegExp(`^${id}:\\s*`), "").replace(new RegExp(`^${id}\\s+`), "it ");
-  if (/\bmuster tick\b/.test(s)) s = s.replace(/;[\s\S]*$/, "; tick its criteria first");
-  return s.replace(/\s*\(muster [^)]*\)/g, "");
+  const tick = /\bmuster tick\b/.test(s);
+  if (tick) s = s.replace(/;[\s\S]*$/, "");
+  s = s.replace(/\s*\(muster [^)]*\)/g, "");
+  return tick ? tn("board", "check.result.tickFirst", { why: s }) : s;
 }
 
 /** Accept all: the tasks shown, one call to the core per project with exactly their ids, in the
@@ -213,16 +230,17 @@ export async function acceptAllRun(tasks: Task[], accept: (queue: string, ids: s
       const r = await accept(queue, ids);
       accepted += r.accepted.length;
       for (const [id, why] of r.refused) {
-        notes.push(`${queue} ${keyOf(prefix, id)}: ${refusalText(id, why)}`);
+        notes.push(tn("board", "check.result.refused", { project: queue, key: keyOf(prefix, id), why: refusalText(id, why) }));
         refused.push(key({ queue, id }));
       }
     } catch (e) {
-      notes.push(`${queue}: ${String(e)}`);
+      notes.push(tn("board", "check.result.unreachable", { project: queue, error: String(e) }));
       refused.push(...ids.map((id) => key({ queue, id })));
     }
   }
-  if (notes.length === 0) return { ok: true, text: `Accepted ${accepted}: ${accepted === 1 ? "it's" : "they're"} done.`, refused };
-  return { ok: false, text: `Accepted ${accepted || "none"}. Not accepted: ${notes.join("; ")}.`, refused };
+  if (notes.length === 0) return { ok: true, text: tn("board", "check.result.done", { count: accepted }), refused };
+  const said = notes.join(tl("clauseSep"));
+  return { ok: false, text: accepted === 0 ? tn("board", "check.result.noneAccepted", { notes: said }) : tn("board", "check.result.notAll", { count: accepted, notes: said }), refused };
 }
 
 /** Accept all's result line, kept by its place so it outlives the column it was clicked in:

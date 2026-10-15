@@ -1,19 +1,24 @@
+import { isolate, tl } from "./i18n";
 import { isStage, stageLabel } from "./lib";
 import { keyOf, parseKey } from "./taskKey";
 import type { BlockedBy, Question, Task } from "./types";
 
 // Why a task is blocked, in words (task 0024). The core's block.rs says the same words: its
 // `sentence` and this file's `blockSentence` are tested on the same cases, so the card, the pane,
-// the table and the timeline read like `muster list` and INDEX.md.
+// the table and the timeline read like `muster list` and INDEX.md. The words are in common.json
+// `block` (mu-147): the Waiting for you tab, the shell's, says them too.
 
-/** The kinds, in the order the Block form shows them, with what each asks for. */
-export const BLOCK_KINDS = [
-  { id: "tasks", label: "tasks", need: "Tasks by key or number, like 14, 16" },
-  { id: "you", label: "you", need: "What you have to do or decide" },
-  { id: "permission", label: "permission", need: "What access it lacks, and where to grant it" },
-  { id: "question", label: "question", need: "Pick the open question it waits on" },
-  { id: "outside", label: "outside", need: "What it waits on outside" },
-] as const;
+/** The kinds, in the order the Block form shows them, with what each asks for, in the language
+ *  shown. */
+export const BLOCK_KINDS = (["tasks", "you", "permission", "question", "outside"] as const).map((id) => ({
+  id,
+  get label() {
+    return tl(`block.kind.${id}.label`);
+  },
+  get need() {
+    return tl(`block.kind.${id}.need`);
+  },
+}));
 export type BlockKind = (typeof BLOCK_KINDS)[number]["id"];
 
 /** The most of a detail the card's short form shows, in characters (block.rs SHORT). */
@@ -27,13 +32,13 @@ type Block = Pick<Task, "blockedKind" | "blockDetail" | "blockedBy" | "prefix"> 
  *  are neutral with a small red mark. The one table for the card, the pane, the table, the
  *  timeline and Waiting for you; the core's block.rs `look` and `lead` say the same. */
 export const BLOCK_LOOKS = {
-  answer: { lead: "Your answer", owner: true },
-  action: { lead: "Your action", owner: true },
-  permission: { lead: "Permission", owner: true },
-  question: { lead: "Question", owner: false },
-  tasks: { lead: "After", owner: false },
-  outside: { lead: "Outside", owner: false },
-  other: { lead: "Blocked", owner: false },
+  answer: { get lead() { return tl("block.lead.answer"); }, owner: true },
+  action: { get lead() { return tl("block.lead.action"); }, owner: true },
+  permission: { get lead() { return tl("block.lead.permission"); }, owner: true },
+  question: { get lead() { return tl("block.lead.question"); }, owner: false },
+  tasks: { get lead() { return tl("block.lead.tasks"); }, owner: false },
+  outside: { get lead() { return tl("block.lead.outside"); }, owner: false },
+  other: { get lead() { return tl("block.lead.other"); }, owner: false },
 } as const;
 export type BlockLook = keyof typeof BLOCK_LOOKS;
 
@@ -65,12 +70,19 @@ function cut(text: string): string {
   return chars.length <= SHORT ? text : `${chars.slice(0, SHORT).join("").trimEnd()}…`;
 }
 
+/** What follows a task's key in the full sentence: "(Building, codex)", "(Ready)", or "" for a
+ *  stage the window doesn't know. */
+export function blockedByStage(b: BlockedBy): string {
+  if (!isStage(b.stage)) return "";
+  return b.holder ? tl("block.taskStageHolder", { stage: stageLabel(b.stage), holder: b.holder }) : tl("block.taskStage", { stage: stageLabel(b.stage) });
+}
+
 /** One task as the full sentence names it, by its key with its project's `prefix` (0033): "mu-14
- *  (Building, codex)", "mu-16 (Ready)", "mu-99". */
+ *  (Building, codex)", "mu-16 (Ready)", "mu-99". The key is isolated in a right-to-left language. */
 export function blockedByText(b: BlockedBy, prefix?: string): string {
-  const k = keyOf(prefix, b.id);
-  if (!isStage(b.stage)) return k;
-  return `${k} (${stageLabel(b.stage)}${b.holder ? `, ${b.holder}` : ""})`;
+  const k = isolate(keyOf(prefix, b.id));
+  const stage = blockedByStage(b);
+  return stage ? `${k} ${stage}` : k;
 }
 
 /** The look, its lead, and what follows it (block.rs `words`): the tasks it waits on (`tasks`, for
@@ -86,10 +98,10 @@ export function blockWords(t: Block, short = false): { look: BlockLook; lead: st
   const detail = [(t.blockDetail ?? "").trim(), first].filter(Boolean).join(" ");
   const shown = short ? cut(detail) : detail;
   if (look === "tasks" && by.length > 0) {
-    return { look, lead, text: by.map((b) => (short ? keyOf(t.prefix, b.id) : blockedByText(b, t.prefix))).join(", "), tasks: by, asked };
+    return { look, lead, text: by.map((b) => (short ? isolate(keyOf(t.prefix, b.id)) : blockedByText(b, t.prefix))).join(tl("listSep")), tasks: by, asked };
   }
-  if (look === "question" && !short) return { look, lead, text: shown ? `${shown}, waiting on capture` : "waiting on capture", tasks: [], asked };
-  return { look, lead, text: shown, tasks: [], asked };
+  if (look === "question" && !short) return { look, lead, text: shown ? tl("block.detailWaitingOnCapture", { detail: shown }) : tl("block.waitingOnCapture"), tasks: [], asked };
+  return { look, lead, text: isolate(shown), tasks: [], asked };
 }
 
 /** The sentence, saying plainly what it waits for: "After mu-14 (Building, codex)", "Your action:
@@ -97,7 +109,7 @@ export function blockWords(t: Block, short = false): { look: BlockLook; lead: st
 export function blockSentence(t: Block, short = false): string {
   if (!t.blockedKind) return "";
   const { look, lead, text, tasks } = blockWords(t, short);
-  if (look === "tasks") return tasks.length > 0 ? `${lead} ${text}` : `${lead} other tasks${text ? `: ${text}` : ""}`;
+  if (look === "tasks") return tasks.length > 0 ? `${lead} ${text}` : text ? tl("block.afterOtherDetail", { detail: text }) : tl("block.afterOther");
   return text ? `${lead}: ${text}` : lead;
 }
 

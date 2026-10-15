@@ -881,3 +881,65 @@ describe("the board's own cue at the row's end (mu-198)", () => {
     expect(appSource).toContain('<div className="col-row-box"><ColumnRow ');
   });
 });
+
+// mu-147, AC9: the row's off-edge cue, its chips and a column head's Fold speak the language shown.
+// In Persian the cue's "+2" sits in a left-to-right isolate, so its sign stays before its number
+// ("+۲ دیگر", never "۲+"), on the board and in the Feature grid (FeatureGrid.test.tsx).
+describe("the row in Persian (mu-147, AC9)", () => {
+  const LRI = "⁦";
+  const PDI = "⁩";
+  const cueHtml = (more: number, needs = 0) => renderToStaticMarkup(createElement(RowCue, { cue: { more, needs, target: "ready" }, onShow: () => {} }));
+  const bare = (s: string) => s.replace(/[⁦-⁩]/g, "");
+  /** Text and the title and aria-label values, tags and isolation marks out. */
+  const words = (html: string) => bare([html.replace(/<[^>]+>/g, " "), ...[...html.matchAll(/\s(?:title|aria-label)="([^"]*)"/g)].map((m) => m[1])].join(" "));
+  afterEach(async () => {
+    await setLocale("en");
+  });
+  it("English reads as it did: '+2 more', its title and its spoken words", () => {
+    expect(cueHtml(2)).toBe('<button type="button" aria-label="2 more columns past the edge. Show them" title="Show the columns past the edge" class="ui-pill col-cue"><span>+2 more</span></button>');
+    expect(cueHtml(1)).toContain("<span>+1 more</span>");
+    expect(cueWords({ more: 1, needs: 0, target: "a" })).toBe("1 more column past the edge. Show it");
+    expect(cueWords({ more: 3, needs: 2, target: "a" })).toBe("3 more columns past the edge, 2 need you. Show them");
+  });
+  it("Persian: the count with its sign in a left-to-right isolate, the title and the spoken words, for 0, 1 and many", async () => {
+    await setLocale("fa");
+    for (const [n, digits] of [[0, "۰"], [1, "۱"], [2, "۲"], [12, "۱۲"]] as const) {
+      const html = cueHtml(n);
+      expect(html, `${n}`).toContain(`<span>${LRI}+${digits}${PDI} دیگر</span>`);
+      expect(html).toContain('title="نمایش ستون‌های بیرون از لبه"');
+      expect(words(html), `${n}`).not.toMatch(/[A-Za-z]/);
+    }
+    expect(cueWords({ more: 1, needs: 0, target: "a" })).toBe("۱ ستون دیگر بیرون از لبه. نمایش آن");
+    expect(cueWords({ more: 3, needs: 0, target: "a" })).toBe("۳ ستون دیگر بیرون از لبه. نمایش آن‌ها");
+    const needs = bare(cueWords({ more: 3, needs: 2, target: "a" }));
+    expect(needs.startsWith("۳ ستون دیگر بیرون از لبه، ")).toBe(true);
+    expect(needs.endsWith(". نمایش آن‌ها")).toBe(true);
+    expect(needs).not.toMatch(/[A-Za-z]/);
+    // What needs you is in the cue as on the chips, and no Latin word is left.
+    expect(words(cueHtml(6, 6))).not.toMatch(/[A-Za-z]/);
+  });
+  it("Persian: the row's name, its empty line, each chip's words and its title", async () => {
+    await setLocale("fa");
+    const counts: PlaceCounts = { cols: { backlog: [task("1", { stage: "backlog", waitingForOwner: true }), task("2", { stage: "backlog", blocked: true })] }, notes: 0, finished: 129 };
+    const html = renderToStaticMarkup(createElement(ColumnRow, { chips: rowChipsOf(["shaping", "backlog", RAIL_ID], false, counts), onOpen: () => {} }));
+    expect(html).toContain('aria-label="ستون‌های جمع‌شده و خالی"');
+    expect(html).toContain('title="باز کردن ');
+    expect(html).toContain("اخیراً انجام شد");
+    expect(html).toContain('<b class="count blocked-count">۱ مسدود</b>');
+    expect(words(html)).not.toMatch(/[A-Za-z]/);
+    expect(bare(chipWords(chip("shaping")))).toBe("شکل‌دهی: خالی. باز کردن آن");
+    expect(bare(chipWords(chip("ready", 4, 0, 2)))).toBe("آماده: ۴ مورد، ۲ مسدود. باز کردن آن");
+    expect(bare(chipWords(chip("ready", 1, 1, 0)))).toMatch(/^آماده: ۱ مورد، [^A-Za-z]+\. باز کردن آن$/);
+    expect(words(renderToStaticMarkup(createElement(ColumnRow, { chips: [], onOpen: () => {} })))).toContain("همه‌ی ستون‌ها باز هستند");
+  });
+  it("Persian: an open column's Fold and a folded strip's words", async () => {
+    await setLocale("fa");
+    const open = renderToStaticMarkup(createElement(ColumnHead, { stage: STAGES[2], count: 3, needs: 0, blocked: 0, fold: "fixed", onFold: () => {}, onHide: () => {} }));
+    expect(open).toContain('aria-label="جمع کردن ');
+    expect(open).toContain(">جمع کردن</button>");
+    expect(words(open)).not.toMatch(/[A-Za-z]/);
+    const strip = renderToStaticMarkup(createElement(ColumnHead, { stage: STAGES[1], count: 0, needs: 0, blocked: 2, fold: "folded", onFold: () => {} }));
+    expect(strip).toContain("<small>خالی</small>");
+    expect(words(strip)).not.toMatch(/[A-Za-z]/);
+  });
+});

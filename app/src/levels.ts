@@ -1,4 +1,4 @@
-import { tl } from "./i18n";
+import { tl, tn } from "./i18n";
 import { fmtMinutes, fmtTokens, key, type StageId, stageLabel, stageOf, stageRank } from "./lib";
 import { siblingKey, taskKey } from "./taskKey";
 import type { Progress, Task } from "./types";
@@ -7,12 +7,14 @@ import type { Progress, Task } from "./types";
 // group tasks by their feature or goal. The roll-ups come from the core (queue::rollup); these are
 // pure helpers for showing them (tested in levels.test.ts).
 
-/** The levels as the New task form offers them, the default first. */
-export const LEVELS = [
-  { id: "task", label: "Task" },
-  { id: "feature", label: "Feature" },
-  { id: "goal", label: "Goal" },
-] as const;
+/** The levels as the New task form offers them, the default first, their words in the language
+ *  shown (board.json `levels`, mu-147). */
+export const LEVELS = (["task", "feature", "goal"] as const).map((id) => ({
+  id,
+  get label() {
+    return tn("board", `levels.${id}`);
+  },
+}));
 
 export type GroupBy = "none" | "feature" | "goal";
 /** Group by's choices, in the filter bar: their words in the language shown (common.json, mu-146). */
@@ -31,7 +33,7 @@ export function parseGroupBy(value: string | null): GroupBy {
 
 /** "Goal", "Feature", "Task" (no level is a task). */
 export function levelLabel(level: string): string {
-  return LEVELS.find((l) => l.id === level)?.label ?? "Task";
+  return (LEVELS.find((l) => l.id === level) ?? LEVELS[0]).label;
 }
 
 /** Work for the stage columns: tasks. Goals and features show as bands and table rows instead. */
@@ -57,7 +59,7 @@ export function childrenOf(t: Pick<Task, "queue" | "children">, index: Map<strin
 export function parentLine(t: Pick<Task, "queue" | "parent" | "prefix">, index: Map<string, Task>): string {
   if (!t.parent) return "";
   const p = parentOf(t, index);
-  return p ? `▸ ${levelLabel(p.level)} ${taskKey(p)} ${p.title}` : `▸ ${siblingKey(t, t.parent)} (not found)`;
+  return p ? tn("board", "levels.parent", { level: levelLabel(p.level), key: taskKey(p), title: p.title }) : tn("board", "levels.parentMissing", { key: siblingKey(t, t.parent) });
 }
 
 /** The band an item goes in: its feature (its parent, if that's a feature), or its goal (its
@@ -102,7 +104,7 @@ export function groupItems(items: Task[], all: Task[], by: "feature" | "goal", s
 /** "3 of 7 done", "no tasks yet", or "" for a task. */
 export function progressText(p: Pick<Progress, "done" | "total"> | null): string {
   if (!p) return "";
-  return p.total ? `${p.done} of ${p.total} done` : "no tasks yet";
+  return p.total ? tn("board", "levels.progress", { done: p.done, count: p.total }) : tn("board", "levels.noTasks");
 }
 
 /** The estimate of its open tasks: "≈ 2 h · 200k tokens left", or "" without one. The time is
@@ -110,12 +112,12 @@ export function progressText(p: Pick<Progress, "done" | "total"> | null): string
 export function estimateLeft(p: Progress | null): string {
   if (!p) return "";
   const parts = [fmtMinutes(p.estMinutes), fmtTokens(p.estTokenCount)].filter(Boolean).join(" · ");
-  return parts ? `≈ ${parts} left` : "";
+  return parts ? tl("estimate", { parts }) : "";
 }
 
 /** The stage to show: "In progress" for a goal or feature with tasks under way. */
 export function shownStageLabel(t: Pick<Task, "stage" | "shownStage">): string {
-  return t.shownStage === "in-progress" ? "In progress" : stageLabel(t.shownStage || t.stage);
+  return t.shownStage === "in-progress" ? tn("board", "levels.inProgress") : stageLabel(t.shownStage || t.stage);
 }
 
 /** Where the stage it shows sorts: a stage's place, In progress with Building. */

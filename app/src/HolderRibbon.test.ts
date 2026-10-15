@@ -26,11 +26,12 @@ const NOW = at("2026-10-14 19:00");
 const SHAPOUR = "shapour (main · session 1137d98f · cc-mg)";
 const ASGHAR = "Asghar_7 (wt-0097 · session a82f2534 · cc-mg)";
 
-/** The name's markup on the ribbon: whole, or its head and the number it ends in (mu-171 R1). */
+/** The name's markup on the ribbon: whole, or its head and the number it ends in (mu-171 R1).
+ *  Hidden from a screen reader, which hears the name whole in the ribbon's sentence (mu-147). */
 const nameHtml = (head: string, tail = "") =>
   tail
-    ? `<span class="holder-name tail-${[...tail].length}" dir="auto"><span class="sr-only">${head}${tail}</span><span aria-hidden="true" class="holder-head">${head}</span><span aria-hidden="true" class="holder-tail">${tail}</span></span>`
-    : `<span class="holder-name" dir="auto">${head}</span>`;
+    ? `<span aria-hidden="true" class="holder-name tail-${[...tail].length}" dir="auto"><span class="holder-head">${head}</span><span class="holder-tail">${tail}</span></span>`
+    : `<span aria-hidden="true" class="holder-name" dir="auto">${head}</span>`;
 
 /** The styles.css rule whose selector starts its line, as written. */
 const rule = (selector: string) => {
@@ -119,10 +120,10 @@ describe("a held card wears its holder's ribbon (0097)", () => {
       expect(html.match(/you-ribbon/g), t.stage).toHaveLength(1);
       expect(html, t.stage).not.toContain("holder-ribbon");
     }
-    expect(card(task({ stage: "testing", heldBy: "owner" }))).toContain('<span class="you-ribbon" title="You hold it"><span class="sr-only">held by </span>You</span>');
+    expect(card(task({ stage: "testing", heldBy: "owner" }))).toContain('<span class="you-ribbon" title="You hold it"><span class="sr-only">held by you</span><span aria-hidden="true">You</span></span>');
   });
   it("reads out who holds it on an agent's task the owner holds, as the holder ribbon does; the owner's own task is just You", () => {
-    expect(spoken(card(task({ stage: "building", claimedBy: "owner" })))).toContain("held by You");
+    expect(spoken(card(task({ stage: "building", claimedBy: "owner" })))).toMatch(/^held by you(?!You)/);
     const own = card(task({ forWho: "human", stage: "ready" }));
     expect(own).toContain('<span class="you-ribbon" title="Your own task: only you do it, agents never take it">You</span>');
     expect(spoken(own)).not.toContain("held by");
@@ -182,12 +183,12 @@ describe("a held card wears its holder's ribbon (0097)", () => {
   it("keeps a long name whole for CSS to end in …, with the whole label in the tooltip", () => {
     const long = "a-very-long-session-name-that-will-never-fit-the-corner (main · session 1137d98f · cc-mg)";
     const r = ribbon(card(task({ claimedBy: long })));
-    expect(r).toContain('<span class="holder-name" dir="auto">a-very-long-session-name-that-will-never-fit-the-corner</span>');
+    expect(r).toContain(nameHtml("a-very-long-session-name-that-will-never-fit-the-corner"));
     expect(r).toContain(`title="Held by ${long}"`);
   });
   it("isolates a right-to-left name and shows it as text, never markup", () => {
     const r = ribbon(card(task({ claimedBy: "شاپور (main · session 1137d98f · cc-mg)" })));
-    expect(r).toContain('<span class="holder-name" dir="auto">شاپور</span>');
+    expect(r).toContain(nameHtml("شاپور"));
     expect(ribbon(card(task({ claimedBy: "<b>x</b>" })))).toContain("&lt;b&gt;x&lt;/b&gt;");
   });
 });
@@ -268,7 +269,7 @@ describe("a backlog note being shaped (0097)", () => {
       const html = noteCard(note(shaped), mode);
       const r = ribbon(html);
       expect(seen(r)).toBe("shaping · shapour");
-      expect(r).toContain('<span class="holder-name" dir="auto">shapour</span>');
+      expect(r).toContain(nameHtml("shapour"));
       expect(r).toContain(`title="Being shaped by ${SHAPOUR}, taken 20 min ago"`);
       expect(spoken(html)).toContain("being shaped by shapour");
       expect(spoken(html)).not.toContain("shaping ·");
@@ -284,8 +285,8 @@ describe("a backlog note being shaped (0097)", () => {
   it("wears the gold You ribbon when the owner shapes it, never the holder's", () => {
     const html = noteCard(note({ ...shaped, heldBy: "owner" }));
     expect(html).not.toContain("holder-ribbon");
-    expect(html).toMatch(/^<button class="note-card"[^>]*><span class="you-ribbon" title="You&#x27;re shaping it, taken 20 min ago"><span class="sr-only">being shaped by <\/span>You<\/span>/);
-    expect(spoken(html)).toContain("being shaped by You");
+    expect(html).toMatch(/^<button class="note-card"[^>]*><span class="you-ribbon" title="You&#x27;re shaping it, taken 20 min ago"><span class="sr-only">being shaped by you<\/span><span aria-hidden="true">You<\/span><\/span>/);
+    expect(spoken(html)).toMatch(/^being shaped by you(?!You)/);
     // An owner's label with a where still reads as the owner.
     expect(noteCard(note({ ...shaped, heldBy: "owner (main · session 1137d98f · cc-mg)" }))).toContain('<span class="you-ribbon"');
   });
@@ -297,7 +298,7 @@ describe("a backlog note being shaped (0097)", () => {
     // In words, on the gold: the attention colour wouldn't read on it.
     expect(html).toContain('<span class="you-ribbon" title="You&#x27;re shaping it, taken 20 min ago. Quiet: no heartbeat for over 12 h, its lease ran out">');
     expect(seen(html)).toMatch(/^You · quiet/);
-    expect(spoken(html)).toMatch(/^being shaped by You · quiet/);
+    expect(spoken(html)).toMatch(/^being shaped by you, quiet(?!You)/);
   });
   it("wears nothing when nobody is shaping it", () => {
     expect(noteCard(note({}))).not.toContain("ribbon");
@@ -333,7 +334,9 @@ describe("the session's state on the ribbon (mu-171)", () => {
   it("says waiting for input in a needs-you block, the short words beside the full for a narrow card, and no ·", () => {
     const r = ribbon(card(task({ ...held, sessionState: "needs-input", waitingForOwner: true })));
     expect(r).toMatch(/^<span class="holder-ribbon stated needs-input" title="Held by [^"]*, waiting for input in Claude Code">/);
-    expect(r).toContain(`${nameHtml("Asghar_", "7")}<span class="sr-only">, waiting for input in Claude Code</span><span aria-hidden="true" class="holder-state needs-input"><span class="holder-full">waiting for input</span><span class="holder-short">needs you</span></span>`);
+    // The full words are read out in the ribbon's one sentence ("held by Asghar_7, waiting for input in Claude Code").
+    expect(spoken(r)).toBe("held by Asghar_7, waiting for input in Claude Code");
+    expect(r).toContain(`${nameHtml("Asghar_", "7")}<span aria-hidden="true" class="holder-state needs-input"><span class="holder-full">waiting for input</span><span class="holder-short">needs you</span></span>`);
     expect(r).not.toContain("holder-sep");
   });
   it("says session ended in Building, and nothing for ended in Testing or Shaping", () => {

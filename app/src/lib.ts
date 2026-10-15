@@ -1,4 +1,4 @@
-import { fmt, tl } from "./i18n";
+import { fmt, isolate, tl, tn } from "./i18n";
 import { keyOf, taskKey } from "./taskKey";
 import type { Activity, Checkin, Question, Task } from "./types";
 
@@ -45,9 +45,9 @@ export function nextStage(stage: string, human = false): Stage | null {
 export function passLabel(stage: string, human = false): string | null {
   const next = nextStage(stage, human);
   if (!next) return null;
-  if (human && next.id === "building") return "Start";
-  if (human && next.id === "done") return "Done";
-  return stage === "your-check" ? "Accept" : `Pass to ${next.label}`;
+  if (human && next.id === "building") return tn("board", "words.pass.start");
+  if (human && next.id === "done") return tn("board", "words.pass.done");
+  return stage === "your-check" ? tn("board", "words.pass.accept") : tn("board", "words.pass.to", { stage: next.label });
 }
 /** Where `return` can send a task: every earlier stage, the nearest (the default) first. */
 export function earlierStages(stage: string): Stage[] {
@@ -78,6 +78,13 @@ export function holderOf(t: Pick<Task, "stage" | "claimedBy" | "heldBy">): strin
 export function holder(t: Pick<Task, "stage" | "claimedBy" | "heldBy">, names: RoleNames): string {
   const who = holderOf(t);
   return who ? nameOf(who, names) : "";
+}
+
+/** Who holds a task as the Table and the Graph show it: `holder`, the owner as "you" (as the
+ *  card's who line says it). */
+export function holderShown(t: Pick<Task, "stage" | "claimedBy" | "heldBy">, names: RoleNames): string {
+  const who = holderOf(t);
+  return who ? shortWho(who, names) : "";
 }
 
 /** Who else holds a task in Ready or Building, the stages that are claims; "" when nobody or the
@@ -195,13 +202,13 @@ export function sendBackLine(t: Pick<Task, "prefix" | "id" | "blocked" | "sentBa
   if (t.blocked) return null;
   const by = t.sentBack ? sentBackSender(t) : "";
   const reason = by ? (t.sentBackWhy ?? "") : "";
-  const why = by ? `Sent back by ${by}: ${reason}` : "";
+  const why = by ? tn("board", "words.sentBack.why", { by, reason }) : "";
   const sentBy = { why, by, reason };
-  if (t.sentBack && !t.behind) return { kind: "first", text: `fix ${taskKey(t)} first (sent back by ${by || "the review"})`, ...sentBy };
+  if (t.sentBack && !t.behind) return { kind: "first", text: tn("board", "words.sentBack.first", { key: taskKey(t), by: by || tn("board", "words.sentBack.review") }), ...sentBy };
   if (t.behind) {
     const aheadBy = (t.behindBy ?? "").trim();
-    const ahead = !aheadBy ? "the review" : splitHolder(aheadBy).label === "owner" ? "you" : aheadBy;
-    return { kind: "behind", text: `waiting behind ${keyOf(t.prefix, t.behind)} (sent back by ${ahead})`, ...sentBy };
+    const ahead = !aheadBy ? tn("board", "words.sentBack.review") : splitHolder(aheadBy).label === "owner" ? tl("holder.you") : aheadBy;
+    return { kind: "behind", text: tn("board", "words.sentBack.behind", { key: keyOf(t.prefix, t.behind), by: ahead }), ...sentBy };
   }
   return null;
 }
@@ -211,7 +218,7 @@ export function sendBackLine(t: Pick<Task, "prefix" | "id" | "blocked" | "sentBa
 const sentBackSender = (t: Pick<Task, "sentBackBy" | "sentBackWhy">): string => {
   const by = (t.sentBackBy ?? "").trim();
   if (!by || !t.sentBackWhy) return "";
-  return splitHolder(by).label === "owner" ? "you" : by;
+  return splitHolder(by).label === "owner" ? tl("holder.you") : by;
 };
 
 /** An agent's task in Testing still held by one of its builders (0047, `builders`): a session
@@ -240,7 +247,7 @@ function builderNames(t: Pick<Task, "builders" | "builtBy" | "gatedBy">): string
 /** A holder in a few words: "you" for the owner, else the name before any brackets (a role slot
  *  by its role's name now, 0112). */
 export const shortWho = (who: string, names: RoleNames) =>
-  splitHolder(who).label === "owner" ? "you" : nameOf(who, names);
+  splitHolder(who).label === "owner" ? tl("holder.you") : nameOf(who, names);
 
 /** Who built an agent's task and who tested it (0047), from Testing on: "built by wt-a · tested
  *  by qa-0042" (Your check and Done), "built by wt-a · needs a tester" (Testing, still the
@@ -252,9 +259,10 @@ export function builtTested(t: Pick<Task, "stage" | "heldBy" | "builders" | "bui
   const built = [...new Set(builderNames(t).map(name))];
   if (built.length === 0 || t.forWho === "human" || stageRank(t.stage) < stageRank("testing")) return "";
   const tested = (t.testedBy ?? "").trim();
-  const second = t.stage === "testing" ? (needsTester(t) ? "needs a tester" : "") : tested ? `tested by ${name(tested)}` : "";
-  const names = built.length > 1 ? `${built.slice(0, -1).join(", ")} and ${built[built.length - 1]}` : built[0];
-  return [`built by ${names}`, second].filter(Boolean).join(" · ");
+  const second = t.stage === "testing" ? (needsTester(t) ? tn("board", "words.built.needsTester") : "") : tested ? tn("board", "words.built.testedBy", { name: name(tested) }) : "";
+  // Each name of a list isolated in a right-to-left language, so the list keeps its order.
+  const names = built.length > 1 ? tn("board", "words.built.and", { rest: built.slice(0, -1).map(isolate).join(tl("listSep")), last: built[built.length - 1] }) : built[0];
+  return [tn("board", "words.built.by", { names }), second].filter(Boolean).join(" · ");
 }
 
 /** The card's who line (0030): who's on it, short: "wt-a · main-29 · wt-0030 · 7b5e8856", the
@@ -266,18 +274,23 @@ export function whoLine(t: Pick<Task, "stage" | "claimedBy" | "heldBy">, names: 
   // A role slot shows its role's name now (0112); any other label, its name before brackets.
   const name = slot ? shownLabel(who, names) : claimant(label);
   const session = id || (/\bsession ([0-9a-f]{8})\b/.exec(label)?.[1] ?? "");
-  const shown = [name === "owner" ? "you" : name, ...parts, session].filter(Boolean);
+  const shown = [name === "owner" ? tl("holder.you") : name, ...parts, session].filter(Boolean);
   return [...new Set(shown)].join(" · ");
 }
 
 /** "45 min", "2 h", "3 d": a span of whole minutes. */
 function span(m: number): string {
-  if (m < 60) return `${m} min`;
-  if (m < 1440) return `${Math.floor(m / 60)} h`;
-  return `${Math.floor(m / 1440)} d`;
+  if (m < 60) return tl("time.min", { count: m });
+  if (m < 1440) return tl("time.h", { count: Math.floor(m / 60) });
+  return tl("time.d", { count: Math.floor(m / 1440) });
 }
-/** "12 min ago", or "just now" under a minute. */
-export const agoText = (m: number) => (m < 1 ? "just now" : `${span(m)} ago`);
+/** "12 min ago", "2 h ago", "3 d ago", or "just now" under a minute. */
+export function agoText(m: number): string {
+  if (m < 1) return tl("time.justNow");
+  if (m < 60) return tl("time.minAgo", { count: m });
+  if (m < 1440) return tl("time.hAgo", { count: Math.floor(m / 60) });
+  return tl("time.dAgo", { count: Math.floor(m / 1440) });
+}
 
 /** Wall-clock minutes from a tool stamp to `now` (seconds since 1970), as quietMinutes counts
  *  them; null when `at` isn't a stamp. */
@@ -291,7 +304,7 @@ export function minutesSince(at: string, now: number): number | null {
 export function startedAgo(t: Pick<Task, "stage" | "stageSince">, now: number): string {
   if (t.stage !== "building" && t.stage !== "testing") return "";
   const m = minutesSince(t.stageSince, now);
-  return m === null ? "" : `started ${agoText(m)}`;
+  return m === null ? "" : tn("board", "words.startedAgo", { ago: agoText(m) });
 }
 
 /** The latest check-in of the current Building stage (the core's Task::current_checkin). */
@@ -303,7 +316,7 @@ export function currentCheckin(t: Pick<Task, "stage" | "stageSince" | "checkins"
 /** A check-in in one line: "60% · gate green, writing tests · 12 min ago". */
 export function checkinLine(c: Checkin, now: number): string {
   const m = minutesSince(c.at, now);
-  return [c.pct === null ? "" : `${c.pct}%`, c.text, m === null ? "" : agoText(m)].filter(Boolean).join(" · ");
+  return [c.pct === null ? "" : tn("board", "words.pct", { pct: c.pct }), isolate(c.text), m === null ? "" : agoText(m)].filter(Boolean).join(" · ");
 }
 
 /** A working session checks in at least this often (docs/PROTOCOL.md). */
@@ -321,7 +334,7 @@ export function quietCheckin(t: Pick<Task, "stage" | "blocked" | "blockedKind" |
 }
 
 /** "no check-in for 45 min". */
-export const quietText = (m: number) => `no check-in for ${span(m)}`;
+export const quietText = (m: number) => tn("board", "words.quiet", { span: span(m) });
 
 /** Who held each stage from Building on, as far as the task has got, in full: the current
  *  stage's holder live, Building's earlier claimer and Testing's earlier holder from the stage
@@ -501,17 +514,20 @@ export function claimant(claimedBy: string): string {
  *  by (a block by tasks has no flag, 0024); "" when nothing blocks it. */
 function blockedOn(t: Pick<Task, "blocked" | "blockedKind" | "waitingOn" | "blockedBy" | "prefix">): string {
   if (!t.blocked && !t.blockedKind) return "";
-  return t.waitingOn || (t.blockedBy ?? []).map((b) => keyOf(t.prefix, b.id)).join(", ") || "something";
+  return t.waitingOn || (t.blockedBy ?? []).map((b) => keyOf(t.prefix, b.id)).join(tl("listSep")) || tl("feed.something");
 }
 
-/** Recent changes: commits, plus tasks whose files changed, newest first. */
+/** Recent changes: commits, plus tasks whose files changed, newest first. A task's line: its key,
+ *  title and stage, what blocks it, and its log's last line. */
 export function feed(activity: Activity[], tasks: Task[], limit = 60): Activity[] {
   const touched: Activity[] = tasks.map((t) => {
     const on = blockedOn(t);
+    const log = t.logTail.length ? t.logTail[t.logTail.length - 1] : "";
+    const params = { key: taskKey(t), title: t.title, stage: stageLabel(t.stage), on, log };
     return {
       queue: t.queue,
       at: t.modified,
-      what: `${taskKey(t)} ${t.title} · ${stageLabel(t.stage)}${on ? `, blocked on ${on}` : ""}${t.logTail.length ? ` · ${t.logTail[t.logTail.length - 1]}` : ""}`,
+      what: tl(on ? (log ? "feed.blockedLog" : "feed.blocked") : log ? "feed.taskLog" : "feed.task", params),
       source: "file",
     };
   });
@@ -539,7 +555,7 @@ export async function readFiles(list: FileList | File[], stampText: string): Pro
 export function fileName(f: { name: string; type: string }, i: number, stampText: string): string {
   if (f.name && f.name !== "image.png") return f.name;
   const ext = f.type.split("/")[1]?.replace("jpeg", "jpg") || "bin";
-  return `pasted-${stampText.replace(/[ :]/g, "-")}${i ? `-${i + 1}` : ""}.${ext}`;
+  return `pasted-${stampText.replace(/[ :]/g, "-")}${i ? `-${i + 1}` : ""}.${ext}`; // i18n-ignore: a file name, not text on screen
 }
 
 /** "14 h", "2 d 3 h" (8-hour agent days, as the core counts them), "45 min". */
