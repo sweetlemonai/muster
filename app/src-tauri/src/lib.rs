@@ -953,7 +953,8 @@ pub(crate) fn save_body(
     ops::edit_body(root, id, body, expected, "owner", stamp)
 }
 
-/// The owner comments on a task (0017): any stage, whoever holds it.
+/// The owner comments on a task (0017): any stage, whoever holds it. A comment that starts with
+/// an @verb acts first (mu-101, `fields::comment`): what it did comes back in `did`.
 #[tauri::command]
 async fn add_comment(
     app: tauri::State<'_, AppState>,
@@ -961,7 +962,7 @@ async fn add_comment(
     id: String,
     text: String,
     stamp: String,
-) -> Result<String, String> {
+) -> Result<fields::Commented, String> {
     let file = app.config_file.clone();
     blocking(move || in_queue(&file, &queue, |root| comment(root, &id, &text, &stamp))).await
 }
@@ -972,10 +973,10 @@ pub(crate) fn comment(
     id: &str,
     text: &str,
     stamp: &str,
-) -> Result<String, String> {
+) -> Result<fields::Commented, String> {
     check_id(id)?;
     check_stamp(stamp)?;
-    fields::add_comment(root, id, text, "owner", stamp)
+    fields::comment(root, id, text, "owner", stamp)
 }
 
 /// Open one of a task's links in the system browser: only an address the task has, and only a
@@ -1687,7 +1688,10 @@ mod tests {
             .contains("empty"));
         assert_eq!(
             comment(d.path(), "0007", "Hi.", t).unwrap(),
-            "doing/0007-t.md"
+            fields::Commented {
+                path: "doing/0007-t.md".into(),
+                did: String::new()
+            }
         );
         let task = queue::read_task(d.path(), "0007").unwrap();
         assert_eq!(
@@ -1696,6 +1700,21 @@ mod tests {
                 task.comments[0].text.as_str()
             ),
             ("owner", "Hi.")
+        );
+        // The app's comment is the owner's: an @verb acts (mu-101), an unknown one saves nothing.
+        assert!(comment(d.path(), "0007", "@sendbak x", t)
+            .unwrap_err()
+            .contains("isn't an action"));
+        assert_eq!(
+            comment(d.path(), "0007", "@block Apple review", t)
+                .unwrap()
+                .did,
+            "blocked (outside)"
+        );
+        let task = queue::read_task(d.path(), "0007").unwrap();
+        assert_eq!(
+            (task.blocked_kind.as_str(), task.comments.len()),
+            ("outside", 2)
         );
         assert_eq!(
             link_to_open(d.path(), "0007", "https://example.com/spec").unwrap(),

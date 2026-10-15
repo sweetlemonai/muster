@@ -1796,8 +1796,25 @@ fn run_on(
             need(a, 2, "the reason")?;
             let why = a.pos[2..].join(" ").replace("\\n", " ");
             let to = a.flags.get("to").map(String::as_str);
-            let p = ops::return_task(root, id, &why, to, &me(), stamp)?;
-            println!("{}", stage_message(root, prefix, id, &p));
+            let r = ops::return_back(root, id, &why, to, &me(), stamp)?;
+            println!("{}", stage_message(root, prefix, id, &r.path));
+            // The owner's QA send-back (mu-101): its finding, and whether the builder was told.
+            if !r.finding.is_empty() {
+                println!(
+                    "{}: owner finding {} for the builder to fix or dispute; first in line",
+                    key(id),
+                    r.finding
+                );
+                if r.told.is_empty() {
+                    println!(
+                        "{}: the builder's session wasn't told ({}); muster next shows it",
+                        key(id),
+                        r.not_told
+                    );
+                } else {
+                    println!("{}: told session {}", key(id), r.told);
+                }
+            }
             Ok(0)
         }
         "block" => {
@@ -1955,8 +1972,12 @@ fn run_on(
                     a.pos[2..].join(" ")
                 }
             };
-            fields::add_comment(root, id, &text, &me(), stamp)?;
-            println!("{}: commented", key(id));
+            let c = fields::comment(root, id, &text, &me(), stamp)?;
+            if c.did.is_empty() {
+                println!("{}: commented", key(id));
+            } else {
+                println!("{}: {}; commented", key(id), c.did);
+            }
             Ok(0)
         }
         "attach" => {
@@ -3873,6 +3894,91 @@ mod tests {
         assert_eq!(code("capture", &["reclaim", "--after", "soon"]), 1);
         assert_eq!(t("0002").stage, "building");
         assert_eq!(code("wt-a", &["show", "0002", "--json"]), 0);
+    }
+
+    #[test]
+    fn an_owners_at_comment_acts_and_an_agents_stays_a_comment() {
+        // mu-101: `muster comment … --as owner` runs the @verb; anyone else's is a plain comment.
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        let args = |who: &str, a: &[&str]| {
+            let mut v = sv(a);
+            v.extend(sv(&["--queue", &q, "--as", who]));
+            v
+        };
+        let code = |who: &str, a: &[&str]| main(&args(who, a));
+        std::fs::write(
+            d.path().join("doing/0001-t.md"),
+            "---\nid: 0001\ntype: code\npriority: normal\nstage: your-check\nstatus: doing\nclaimed-by:\nheld-by: owner\nheartbeat:\nwaiting_on:\n---\n\n# One\n\n## Acceptance criteria\n- [x] AC1: one — verify: command\n\n## Log\n- 2026-10-14 08:00 capture: created\n- 2026-10-14 08:10 wt-a: stage ready → building (claimed)\n- 2026-10-14 09:00 wt-a: stage building → testing (gate: green)\n- 2026-10-14 09:30 qa: stage testing → your-check\n",
+        )
+        .unwrap();
+        let t = || queue::read_task(d.path(), "0001").unwrap();
+        assert_eq!(code("wt-b", &["comment", "0001", "@sendback the icon"]), 0);
+        assert_eq!((t().stage, t().comments.len()), ("your-check".into(), 1));
+        assert_eq!(code("owner", &["comment", "0001", "@sendbak the icon"]), 1);
+        assert_eq!(t().comments.len(), 1, "an unknown verb saves nothing");
+        assert_eq!(
+            code(
+                "owner",
+                &["comment", "0001", "@sendback", "the icon is bad"]
+            ),
+            0
+        );
+        let after = t();
+        assert_eq!(
+            (
+                after.stage.as_str(),
+                after.sent_back,
+                after.sent_back_why.as_str()
+            ),
+            ("building", true, "the icon is bad")
+        );
+        assert_eq!(
+            after.comments[1].text,
+            "@sendback the icon is bad\n→ sent back to Building (owner finding R1)"
+        );
+        // Answered, gated, tested and back in Your check: `return --to building` is the same
+        // send-back, its finding numbered on.
+        assert_eq!(
+            code(
+                "wt-a",
+                &["review", "0001", "--fixed", "R1", "a chevron now"]
+            ),
+            0
+        );
+        assert_eq!(
+            code(
+                "wt-a",
+                &[
+                    "pass",
+                    "0001",
+                    "--from",
+                    "building",
+                    "--gate",
+                    "green",
+                    "--summary",
+                    "Fixed it"
+                ]
+            ),
+            0
+        );
+        assert_eq!(code("qa", &["pass", "0001", "--from", "testing"]), 0);
+        assert_eq!(t().stage, "your-check");
+        assert_eq!(
+            code(
+                "owner",
+                &["return", "0001", "still", "bad", "--to", "building"]
+            ),
+            0
+        );
+        let r = crate::review::load(d.path(), "0001").unwrap().unwrap();
+        assert_eq!(
+            r.findings
+                .iter()
+                .map(|f| (f.id.as_str(), f.lens.as_str()))
+                .collect::<Vec<_>>(),
+            [("R1", "owner"), ("R2", "owner")]
+        );
     }
 
     #[test]

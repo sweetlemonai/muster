@@ -84,6 +84,7 @@ function HeldLines({ t, now, lines }: { t: Task; now: number; lines: CardLines }
       {lines !== "brief" && <span className={who ? "card-who" : "card-who nobody"}>{[who || "nobody on it", started].filter(Boolean).join(" · ")}</span>}
       {needsTester(t) && <span className="card-tester">needs a tester</span>}
       {order && <span className={order.kind === "first" ? "card-first" : "card-behind"}>{order.text}</span>}
+      {order?.why && <span className="card-first card-why" dir="auto" title={order.why}>{order.why}</span>}
       {session && (
         <span className={`card-session ${t.sessionState}`}>
           {t.sessionState === "working" && <i className="dot" aria-hidden="true" />}

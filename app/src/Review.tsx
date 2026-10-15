@@ -60,10 +60,17 @@ const reviewed = (t: Pick<Task, "reviewRound">) => (t.reviewRound ?? null) !== n
  *  Null elsewhere (after the merge it's history, in the pane). */
 export function reviewBadge(t: Reviewed): string | null {
   if (t.stage !== "building" && t.stage !== "testing") return null;
-  if (!reviewed(t)) return t.stage === "testing" && t.branch ? "not reviewed yet" : null;
-  const round = `review ${t.reviewRound}/${MAX_ROUNDS}`;
+  const unreviewed = t.stage === "testing" && t.branch ? "not reviewed yet" : null;
+  if (!reviewed(t)) return unreviewed;
   const open = t.reviewOpen ?? 0;
   const answered = t.reviewAnswered ?? 0;
+  // Round 0 (mu-101): only an owner send-back's finding, before any review round.
+  if (t.reviewRound === 0) {
+    if (open > 0) return `${open} to fix · not reviewed yet`;
+    if (answered > 0) return `${answered} to re-check · not reviewed yet`;
+    return unreviewed;
+  }
+  const round = `review ${t.reviewRound}/${MAX_ROUNDS}`;
   if (open > 0) return `${round} · ${open} to fix`;
   if (answered > 0) return `${round} · ${answered} to re-check`;
   return `review clean · round ${t.reviewRound}`;
@@ -90,6 +97,7 @@ export function reviewStatus(t: Reviewed): string {
   if (!reviewed(t)) return t.branch ? "not reviewed yet" : "not started on its own branch";
   const open = t.reviewOpen ?? 0;
   const answered = t.reviewAnswered ?? 0;
+  if (t.reviewRound === 0) return open === 0 && answered === 0 ? "not reviewed yet" : `not reviewed yet: ${open} open, ${answered} answered`;
   if (open === 0 && answered === 0) return `clean after round ${t.reviewRound}`;
   return `round ${t.reviewRound} of ${MAX_ROUNDS}: ${open} open, ${answered} answered`;
 }

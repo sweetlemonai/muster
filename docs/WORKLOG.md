@@ -4,6 +4,22 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Your check sends back to the builder as an owner finding; @actions in comments (mu-101)
+**Did (Akbar_8):** a return from Your check to Building (the app's Send back to builder,
+`muster return --to building`, `@sendback`) goes to its builder first in line, records the reason
+as an `owner` finding in `reviews/<id>.json`, and pings the builder's mailbox (a log line when it
+can't). Only the owner settles a disputed owner finding; the round cap never holds one. An owner's
+comment starting with `@accept`, `@sendback`, `@block` or `@ask` runs that step through
+`fields::comment`, for the app and the CLI; agents' comments stay plain. The app's Your check row
+reads Accept and Send back to builder (form defaults to Building, "What's wrong"), cards say "Sent
+back by you: <why>", and the comment box has the @-hint. `ops.rs` `return_back`, `review.rs`,
+`ping.rs`, `fields.rs`, `block.rs` (`behindBy`), `StageForms.tsx`, `Comments.tsx`, `lib.ts`.
+**Decided:** Accept isn't refused while an owner finding is still disputed (the owner sees it
+beside the builder's reason); a first word like "@akbar" is refused like any unknown verb.
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`;
+screenshots from a mocked core, light and dark, in the task's attachments.
+**Open:** AC8 (a real send-back by button and by `@sendback`) is the owner's.
+
 ## 2026-10-14 — Spike: how Claude Code reports 5-hour and weekly use on this Mac (mu-111)
 **Did:** short `claude -p` stream-json runs and interactive sessions with a throwaway status line,
 on Claude Code 2.1.296; findings posted on mu-9 (three comments). Fixtures for mu-113 and mu-117 in

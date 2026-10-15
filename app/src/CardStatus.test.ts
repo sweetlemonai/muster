@@ -132,6 +132,39 @@ describe("the card's who and progress lines", () => {
       expect(html, look).toContain("fix mu-59 first (sent back by the review)");
     }
   });
+  it("a task sent back from Your check says who sent it and why, first in line (mu-101)", () => {
+    const base = { ...building, prefix: "mu", id: "0082", sentBack: true };
+    expect(lines({ ...base, sentBackBy: "owner", sentBackWhy: "the icon is bad" })).toEqual([
+      ["card-who", "wt-a · wt-0030 · 7b5e8856 · started 2 h ago"],
+      ["card-first", "fix mu-82 first (sent back by you)"],
+      ["card-first card-why", "Sent back by you: the icon is bad"],
+    ]);
+    // An agent relaying it is named; behind another send-back, it still says why.
+    expect(lines({ ...base, sentBackBy: "lead", sentBackWhy: "AC2 fails", behind: "0059" }).slice(1)).toEqual([
+      ["card-behind", "waiting behind mu-59 (sent back by the review)"],
+      ["card-first card-why", "Sent back by lead: AC2 fails"],
+    ]);
+    // The holder's other task names who sent the first one back.
+    expect(lines({ ...building, prefix: "mu", id: "0085", behind: "0082", behindBy: "owner" }).slice(1)).toEqual([
+      ["card-behind", "waiting behind mu-82 (sent back by you)"],
+    ]);
+    expect(lines({ ...building, prefix: "mu", id: "0085", behind: "0082", behindBy: "lead" }).slice(1)).toEqual([
+      ["card-behind", "waiting behind mu-82 (sent back by lead)"],
+    ]);
+    // A Persian reason reads right to left, and a long one is cut with the whole of it in the tooltip.
+    const html = renderToStaticMarkup(createElement(CardStatus, { t: task({ ...base, sentBackBy: "owner", sentBackWhy: "آیکون بد است" }), now: NOW }));
+    expect(html).toContain('<span class="card-first card-why" dir="auto" title="Sent back by you: آیکون بد است">Sent back by you: آیکون بد است</span>');
+    // Blocked, it isn't first: neither line.
+    expect(lines({ ...base, sentBackBy: "owner", sentBackWhy: "x", blocked: true, waitingOn: "owner" }).map(([c]) => c)).toEqual(["card-who"]);
+    // Every look keeps both.
+    for (const look of ["brief", "status"] as const) {
+      const out = renderToStaticMarkup(createElement(CardStatus, { t: task({ ...base, sentBackBy: "owner", sentBackWhy: "x" }), now: NOW, lines: look }));
+      expect(out, look).toContain("fix mu-82 first (sent back by you)");
+      expect(out, look).toContain("Sent back by you: x");
+    }
+    // The why line shares the first-in-line token: no colour of its own.
+    expect(css).not.toMatch(/\.card-why[^{]*\{[^}]*color/);
+  });
   it("in Ready says nobody is on it yet, and Backlog, Shaping and Done say nothing", () => {
     expect(lines({ stage: "ready" })).toEqual([["card-who nobody", "nobody on it"]]);
     expect(lines({ stage: "ready", claimedBy: "wt-b" })).toEqual([["card-who", "wt-b"]]);

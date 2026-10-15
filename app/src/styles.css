@@ -190,6 +190,9 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .card-first, .card-behind { font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
 .card-first { color: var(--text); font-weight: 600; }
 .card-behind { color: var(--muted); }
+/* Who sent it back from Your check and why (mu-101): the first-in-line colour, one line cut to the
+   card, the whole reason in its tooltip. */
+.card-first.card-why { font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 100%; }
 .card-who.nobody { color: var(--faint); }
 .card-done { color: var(--muted); }
 .card-checkin { color: var(--text); opacity: 0.8; }

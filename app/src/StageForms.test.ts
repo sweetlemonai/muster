@@ -1,8 +1,9 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { BlockFormView, GateFormView } from "./StageForms";
+import { BackFormView, backTarget, BlockFormView, GateFormView, submitKey } from "./StageForms";
 import type { BlockKind } from "./blockWords";
+import { sentBackMsg } from "./useTaskActions";
 import type { Question } from "./types";
 
 const q = (n: number, text: string, ticked = false): Question => ({ n, ticked, asker: "wt-a", text, escalated: false, ownerAnswered: false });
@@ -65,5 +66,56 @@ describe("the gate form out of Building asks for the summary too (mu-78)", () =>
     expect(pass(gate("gate: green", "Built it"))).toBe("enabled");
     expect(pass(gate("gate: green", "Built it", true, true))).toBe("disabled");
     expect(pass(gate("gate: green", "", false))).toBe("enabled");
+  });
+});
+
+describe("Send back: in Your check it's the verdict, to the builder (mu-101)", () => {
+  const back = (stage: string, why = "", choice = "", human = false, busy = false) =>
+    renderToStaticMarkup(createElement(BackFormView, { stage, human, choice, why, busy, onChoice: () => {}, onWhy: () => {}, onSubmit: () => {}, onCancel: () => {} }));
+  const options = (html: string) => [...html.matchAll(/<option value="([^"]+)"( selected="")?>/g)].map((m) => `${m[1]}${m[2] ? " (on)" : ""}`);
+  const send = (html: string) => /<button type="submit"([^>]*)>([^<]*)<\/button>/.exec(html);
+  it("defaults to Building from Your check, Testing still in the list; other stages one back", () => {
+    expect(backTarget("your-check", false, "")).toBe("building");
+    expect(backTarget("your-check", false, "testing")).toBe("testing");
+    expect(backTarget("your-check", false, "done")).toBe("building");
+    expect(backTarget("testing", false, "")).toBe("building");
+    expect(backTarget("done", false, "")).toBe("your-check");
+    expect(backTarget("ready", false, "")).toBe("shaping");
+    // The owner's own task has no builder: one back, as before.
+    expect(backTarget("your-check", true, "")).toBe("testing");
+    expect(options(back("your-check"))).toEqual(["testing", "building (on)", "ready", "shaping", "backlog"]);
+    expect(options(back("done"))).toEqual(["your-check (on)", "testing", "building", "ready", "shaping", "backlog"]);
+  });
+  it("asks what's wrong for the builder, labelled, right to left when it's Persian", () => {
+    const html = back("your-check", "آیکون بد است");
+    expect(html).toMatch(/<input[^>]*placeholder="What&#x27;s wrong \(the builder gets this\)"[^>]*aria-label="What&#x27;s wrong"[^>]*maxLength="500"[^>]*dir="auto"[^>]*value="آیکون بد است"/);
+    expect(send(html)?.[2]).toBe("Send back to builder");
+    // Sent to Testing instead, it's a plain send-back.
+    const testing = back("your-check", "x", "testing");
+    expect(testing).toContain('placeholder="Why: what&#x27;s wrong or missing"');
+    expect(send(testing)?.[2]).toBe("Send back");
+    // Elsewhere, the form as before.
+    const done = back("done");
+    expect(done).toMatch(/aria-label="Why it goes back"[^>]*dir="auto"/);
+    expect(send(done)?.[2]).toBe("Send back");
+  });
+  it("waits for a why and while a change is in flight", () => {
+    expect(send(back("your-check"))?.[1]).toContain("disabled");
+    expect(send(back("your-check", "  "))?.[1]).toContain("disabled");
+    expect(send(back("your-check", "the icon is bad"))?.[1]).not.toContain("disabled");
+    expect(send(back("your-check", "the icon is bad", "", false, true))?.[1]).toContain("disabled");
+  });
+  it("says the builder gets it first, with the reason as a finding; other send-backs say where", () => {
+    expect(sentBackMsg("your-check", "building")).toBe("Sent back to its builder: first in line, with what's wrong as a finding to fix or dispute.");
+    expect(sentBackMsg("your-check", "testing")).toBe("Sent back to Testing.");
+    expect(sentBackMsg("testing", "building")).toBe("Sent back to Building.");
+  });
+  it("sends on ⌘↩ (or Ctrl+↩), never mid-composition", () => {
+    const ev = (key: string, metaKey: boolean, ctrlKey = false, isComposing = false) => ({ key, metaKey, ctrlKey, isComposing });
+    expect(submitKey(ev("Enter", true))).toBe(true);
+    expect(submitKey(ev("Enter", false, true))).toBe(true);
+    expect(submitKey(ev("Enter", false))).toBe(false);
+    expect(submitKey(ev("a", true))).toBe(false);
+    expect(submitKey(ev("Enter", true, false, true))).toBe(false);
   });
 });

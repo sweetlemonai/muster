@@ -252,7 +252,7 @@ muster note 0007 "Checked on the Mac, works"
 
 ### muster comment
 
-Add a comment to a task's thread: under ## Comments, above the Log, stamped with who and when, and logged as commented. Anyone may comment on any task at any stage, one someone else holds included: comments don't touch the write-up, and edit leaves them alone. The holder's own comment keeps their claim alive, like a note. Lines are kept (each after the first indented in the file); control characters go, at most 4,000 characters, and a line that would read as a stage change is refused.
+Add a comment to a task's thread: under ## Comments, above the Log, stamped with who and when, and logged as commented. Anyone may comment on any task at any stage, one someone else holds included: comments don't touch the write-up, and edit leaves them alone. The holder's own comment keeps their claim alive, like a note. Lines are kept (each after the first indented in the file); control characters go, at most 4,000 characters, and a line that would read as a stage change is refused. The owner's comment (the app's, or --as owner) acts when its first word is an @action: @accept passes it out of Your check, as Accept does (only in Your check); @sendback \<why\> sends it back as the Send back form does by default (from Your check to its builder, with \<why\> as an owner finding, as \`muster return --to building\` does; elsewhere one stage back), and needs a why; @block \<why\> blocks it, on the tasks when \<why\> starts with their keys (@block mu-12,mu-14), else on outside with \<why\>; @ask \<question\> sends the question to the session working on it, to answer with a comment (refused when nobody holds it or its session can't be reached). Only the first word counts, one action per comment. The action runs first: if it's refused, the comment isn't saved and the reason is shown as it is; once it ran, the comment is saved with what it did on a line after the text ("→ sent back to Building (owner finding R3)"). An @ word that isn't one of these is refused, naming them, and nothing is saved. Anyone else's comment that starts with @ is a plain comment.
 
 ```
 muster comment <id> "<text>" | --body <text>|-
@@ -271,6 +271,14 @@ muster comment 0007 "Tried it on the Mac: the board still flickers once"
 
 ```
 pbpaste | muster comment 0007 --body -
+```
+
+```
+muster comment 0007 "@sendback the expand icon is wrong" --as owner
+```
+
+```
+muster comment 0007 "@block mu-12 the API first" --as owner
 ```
 
 ### muster link
@@ -357,7 +365,7 @@ muster pass 0031 --from testing --as qa
 
 ### muster return
 
-Send a task back one stage, or to an earlier stage with --to, with the reason (one line, 500 characters). Back to Building gives it to whoever last claimed it there. A send-back from Testing is always allowed, even when that holder already holds another task in Building: it isn't a new claim. It comes first (\`muster next\` says "fix mu-59 first (sent back by the review)", and the card does), and the holder's other task waits behind it. Sent back from Your check (merged), the tasks that depend on it and haven't started show blocked by it again; ones already under way keep going, with a note on their log ("0002 went back to Building: \<why\>").
+Send a task back one stage, or to an earlier stage with --to, with the reason (one line, 500 characters). Back to Building gives it to whoever last claimed it there. A send-back from Testing is always allowed, even when that holder already holds another task in Building: it isn't a new claim. It comes first (\`muster next\` says "fix mu-59 first (sent back by the review)", and the card does), and the holder's other task waits behind it. Sent back from Your check (merged), the tasks that depend on it and haven't started show blocked by it again; ones already under way keep going, with a note on their log ("0002 went back to Building: \<why\>"). From Your check to Building (--to building) it's the owner's QA send-back, whoever runs it: it goes to its builder first in line in the same way ("fix mu-82 first (sent back by you: \<why\>)", or "by \<who\>" when an agent sent it), its reason becomes an owner finding in the task's review (the next R number; a task with no review yet gets one, round 0) that the builder answers with \`muster review \<id\> --fixed R\<n\>\` or \`--dispute R\<n\>\` before passing it to Testing, where the next round checks it like any finding, and the builder's session is told through its mailbox (when it can't be, the task's log says so and the send-back still stands). Only the owner settles a disputed owner finding: a round that accepts the dispute leaves it for the owner, and the three-round cap never holds an owner finding. Without --to, from Your check it goes to Testing.
 
 ```
 muster return <id> "<why>" [--to <stage>]
@@ -375,6 +383,10 @@ muster return 0007 "AC2 fails: the board still flickers"
 
 ```
 muster return 0007 "the spec misses the empty state" --to shaping
+```
+
+```
+muster return 0007 "the expand icon is wrong" --to building --as owner
 ```
 
 ### muster block

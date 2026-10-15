@@ -78,7 +78,7 @@ export function useTaskActions(task: Task, onChanged: () => void) {
           : task.stage === "your-check" ? "Accepted: it's done." : `Passed to ${next?.label ?? "the next stage"}.`;
       passFrom("", done);
     },
-    sendBack: (why: string, to: string) => submit(() => api.returnTask(task.queue, task.id, why, to, now()), `Sent back to ${stageLabel(to)}.`),
+    sendBack: (why: string, to: string) => submit(() => api.returnTask(task.queue, task.id, why, to, now()), sentBackMsg(task.stage, to)),
     block: (kind: string, detail: string) =>
       submit(() => api.blockTask(task.queue, task.id, kind, detail, now()), kind === "tasks" ? "Blocked by those tasks: added to its depends." : "Blocked. It keeps its stage."),
     unblock: () => void stageRun(() => api.unblockTask(task.queue, task.id, now()), "Unblocked."),
@@ -110,6 +110,13 @@ export function useTaskActions(task: Task, onChanged: () => void) {
 }
 
 export type TaskActions = ReturnType<typeof useTaskActions>;
+
+/** What the pane says after Send back: from Your check to Building it's the owner's QA send-back
+ *  (mu-101), which the builder gets first in line with the reason as a finding. */
+export function sentBackMsg(from: string, to: string): string {
+  if (from === "your-check" && to === "building") return "Sent back to its builder: first in line, with what's wrong as a finding to fix or dispute.";
+  return `Sent back to ${stageLabel(to)}.`;
+}
 
 /** What the pane says after a pause or resume: what it means, and whether its session was told. */
 export function pausedMsg(p: Paused, paused: boolean): string {

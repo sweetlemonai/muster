@@ -1786,7 +1786,17 @@ pub(crate) mod tests {
         );
         assert_eq!(g(&f.repo, &["branch", "--list", "task/*"]), "");
         assert!(!f.base.join("proj/worktrees").exists());
-        // Merged again: start takes it.
+        // Merged again, once its builder answered the owner's finding (mu-101): start takes it.
+        crate::review::answer(
+            r,
+            &base,
+            "R1",
+            crate::review::Reply::Fixed,
+            "redone",
+            "wt-x",
+            T0,
+        )
+        .unwrap();
         ops::pass_task(r, &base, "wt-x", T0, &gate).unwrap();
         ops::pass_task(r, &base, "qa", T0, &PassOpts::default()).unwrap();
         start(r, &after, "wt-a", T0, &f.repo, &Place::Default).unwrap();

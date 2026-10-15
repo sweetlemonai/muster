@@ -10,6 +10,7 @@ import Links from "./Links";
 import { ownerOpen } from "./OwnerChecklist";
 import { IMAGE } from "./paneData";
 import { ImageThumb, toggled } from "./StageContent";
+import { toBuilder } from "./StageForms";
 import TagEditor from "./Tags";
 import { Button, Segment, Segmented } from "./ui";
 import type { Task } from "./types";
@@ -111,7 +112,7 @@ function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a: TaskAc
           Release
         </Button>
       )}
-      {back.length > 0 && <Button type="button" disabled={a.busy} onClick={() => a.open("back")}>Send back</Button>}
+      {back.length > 0 && <Button type="button" disabled={a.busy} onClick={() => a.open("back")}>{toBuilder(task.stage, human) ? "Send back to builder" : "Send back"}</Button>}
       {task.blocked ? (
         <Button type="button" disabled={a.busy} onClick={a.unblock}>Unblock</Button>
       ) : (

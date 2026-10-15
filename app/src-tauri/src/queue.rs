@@ -537,12 +537,21 @@ pub struct Task {
     /// unlike an override into Testing. "" when nobody has.
     pub gated_by: String,
     /// Sent back to its builder (mu-66): in Building, and the latest stage line is Testing →
-    /// Building (a review's findings, or `muster return` from Testing). It stays so until it
-    /// moves on.
+    /// Building (a review's findings, or `muster return` from Testing), or a return from Your
+    /// check to Building (the owner's QA, mu-101). It stays so until it moves on.
     pub sent_back: bool,
+    /// Who sent it back from Your check (mu-101): the label of that return's stage line, its
+    /// session stamp left off ("owner" for the owner). "" for a send-back from Testing (the
+    /// review's) and when it isn't sent back.
+    pub sent_back_by: String,
+    /// The reason that return from Your check gave (`returned: <why>`), as written; "" otherwise.
+    pub sent_back_why: String,
     /// The task of the same holder that comes before this one (`block::derive`): the lowest id
     /// among the holder's sent-back tasks in Building, when this isn't it. "" when none does.
     pub behind: String,
+    /// Who sent `behind` back from Your check (its `sent_back_by`, mu-101), so the waiting card
+    /// can say "sent back by you"; "" when the review sent it back, or nothing is ahead.
+    pub behind_by: String,
     /// Who passed it into Your check from an earlier stage most recently (its tester, or the
     /// owner's override), or "".
     pub tested_by: String,
@@ -1280,10 +1289,21 @@ pub fn parse_task(
         })
         .map(|(s, _)| s.who.clone())
         .unwrap_or_default();
-    let sent_back = stage == "building"
-        && steps
-            .last()
-            .is_some_and(|(s, _)| s.from == "testing" && s.to == "building");
+    let returned = |detail: &str| detail.strip_prefix("returned: ").map(str::to_string);
+    let (sent_back, sent_back_by, sent_back_why) = match steps.last() {
+        Some((s, _)) if stage == "building" && s.from == "testing" && s.to == "building" => {
+            (true, String::new(), String::new())
+        }
+        Some((s, detail))
+            if stage == "building" && s.from == "your-check" && s.to == "building" =>
+        {
+            match returned(detail) {
+                Some(why) => (true, crate::session::split(&s.who).0.to_string(), why),
+                None => (false, String::new(), String::new()),
+            }
+        }
+        _ => (false, String::new(), String::new()),
+    };
     let tested_by = steps
         .iter()
         .rev()
@@ -1328,7 +1348,10 @@ pub fn parse_task(
         builders,
         gated_by,
         sent_back,
+        sent_back_by,
+        sent_back_why,
         behind: String::new(),
+        behind_by: String::new(),
         tested_by,
         stage_since,
         checkins,
