@@ -17,6 +17,7 @@ vision.md (docs/VISION.md). mu-217 leaves `parseKey`, `key::parse` and key-cases
 and makes digits Latin only at the app's search and Parent field; the CLI is mu-152's call. mu-216's default
 fix is CSS only (hidden widest forms in one grid cell), as mu-202 did for the counts.
 
+## 2026-10-15 — mu-189: a hand-merged task's pass re-checks its review and gate records under the queue lock
 **Fixed:** a hand merge (`parallel::record_hand_merge`, worktree gone) checked the review and the
 gate records once, then spent seconds asking origin (`ls-remote`, `fetch`) and recorded the merge
 without looking again, so a G3 record turned red meanwhile was missed (mu-131 R17). Now, after the
