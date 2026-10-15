@@ -4,6 +4,31 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Lead moves to cc-hg (QA_10); mu-150, 103, 110, 97, 101, 157 merged
+**Did (QA_10, lead):** the owner made QA_10 the lead ("take over the lead as the orchestrator if
+the mechanical is not yet deployed": mu-116/117/118 still Ready). Muster_Team_Lead_5 finished its
+merges, handed off and stopped. cc-mg is nearly out of credit, so new sessions run on cc-hg; the
+cc-mg builders still running reach the lead at its socket (`uds:/tmp/cc-socks/<pid>.sock`), since
+SendMessage by name stays inside one account. 76 finished sessions removed at the owner's ask
+(gholi-131 kept: mu-131 is in Testing). Merged: mu-150, mu-103, mu-110, mu-97, mu-101, mu-157.
+The owner's UI asks became backlog notes (sidebar, Recently finished and filters toggles; search
+always shown; working and token ribbons; timeline legend; hover card; estimates).
+**Decided (overrule any time):** mu-110 and mu-112, held at the round cap, went back to Building
+instead of to the owner, since their open findings were real and fixable. mu-112 R15: one session
+holds one Building slot across every queue on this Mac, not per queue. mu-101 R9: a send-back
+from Your check always records the owner finding; with no branch it's tied to `commit:` and the
+next `muster start`'s branch must settle it. Merges whose only change after review was a rebase
+went in as owner after a check that the code diff was unchanged (mu-150, mu-110), or after a
+light rebase review (mu-97). mu-101's rebase onto mu-97 needed two test-only edits by the lead (a
+test conflict, and its refusal text now names Shaping); gate green, merged as owner.
+**Measured:** estimates: 80 finished tasks took p50 0.39× their time estimate (median 1.1 h);
+tokens: 19 readable tasks, real use vs estimate p50 18× with cache reads, 0.78× without, no
+correlation (backlog notes 2026-10-14-2122, -2123).
+**Open:** mu-112 (Akbar_20), mu-160 (Akbar_22) fixing; mu-109, mu-161, mu-163 in review; mu-146,
+mu-98, mu-113 building on cc-mg. Your check holds 8, over its limit of 5. Owner questions: the
+mu-113 status-line helper, a minimum macOS for mu-150, and mu-109's suggestion to add
+`main/.git/muster` to the layer's allowWrite.
+
 ## 2026-10-14 — migrate's probe takes a scratch folder of its own (mu-157)
 **Fixed (Gholi_24, builder):** parallel migrate tests sometimes failed with a false "would both
 be" (mu-95's gate) → `probe` named its scratch folder pid + nanos, and the clock ticks in µs on
