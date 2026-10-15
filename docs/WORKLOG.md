@@ -3,6 +3,28 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-212: a sidebar heading's "N need you" stays inside the sidebar at 150px, in Persian too
+**Fixed:** at 150px in فارسی, a heading's "۴۴ مورد به شما نیاز دارد" ran past the sidebar's edge
+(L9 again). The second line the counts took held only what was left under the name (about 108px),
+and the needs piece never shrank. Now the chevron, the name and the counts wrap in the heading's
+own box (`.side-cat-text` is gone from `ProjectList.tsx`), so the counts' second line runs the
+heading's full width from under the chevron. The counts ask for "N need you" on one line
+(`width: max-content`). Only on a line of their own may the needs words wrap, between words
+(`white-space: normal`, no `min-width: 0`), with the chip beside the first line.
+**Decided:** a heading's inline margins are 4px, down from 8. At 8px the full-width line at 150px
+is 117px. WebKit measures "۴۴ مورد به شما نیاز دارد" at 118.2px, so a 2-digit Persian count still
+wrapped, and a poll from ۹ to ۱۰ grew the heading. That would fail AC3. At 4px the line is 125px,
+which fits "۴۴۴" too, and the headings line up with the order chips (also 4px). Shrinking the chip
+or its gap would have left under 2px of room. DESIGN.md's heading rule now has the wrap exception
+(vision V1). In `docs/now/sidebar.md` the two mu-82 heading lines became one plus a short
+mu-212 line, and mu-194's line is shorter, so the page stays under its 4096-byte limit (4095).
+**Verified:** `pnpm vitest run ProjectList`: 100 passed, with a new structure test (44 need you,
+12 projects, 3 working) and width tests that read the margins from the CSS. Headless WebKit
+(`attachments/0212/`, 64 runs): 192 heading checks with every needs rect inside the sidebar, no
+"…" and no cut, at 150/210/320 × en/fa × 1100/1440 × ADHD/Standard/Focus and the seven themes at
+150. From 9 to 10, no heading's height changes and no row moves. With 4444, the Persian words wrap
+between words, inside the sidebar.
+
 ## 2026-10-15 — Backlog shaped: mu-210 to mu-214; three notes folded into mu-149, mu-189 and mu-200
 **Did (Shapour, shaper):** filed mu-210 (transcript reader reads only what was appended), mu-211 (migrate
 tests compare canonical paths), mu-212 (sidebar headings at 150px in فارسی), mu-213 (split the sidebar and

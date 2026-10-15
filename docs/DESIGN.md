@@ -366,13 +366,20 @@ for one project or All.
   - **The name gives way first:** it ends in "…" down to about 4em (60px), and its tooltip and
     the heading's aria-label say it whole.
   - **"N need you" always shows whole, in words,** the chip and "need you" together, at every
-    width down to 150px; it never shrinks, wraps or ends in "…".
+    width down to 150px; it never shrinks, ends in "…" or runs past the sidebar's edge. Its words
+    wrap only as the last resort, below (mu-212).
   - **"· N projects" and "· N working"** each show whole where there's room after that; otherwise
     they're left out whole (never "· 1…") and are in the tooltip and the aria-label.
   - **Where even the name's 4em and "N need you" don't fit beside the chevron** (the narrowest
-    sidebar, 150px, in Focus or with the splitter at its minimum), the counts take a second line
-    under the name, whole and labelled. At the default 210px and wider it's one line, a 3-digit
-    count included.
+    sidebar, 150px, in Focus or with the splitter at its minimum), the counts take a second line,
+    whole and labelled. That second line runs the heading's full width, from under the chevron to
+    the inline end (mu-212), so Persian's "۴۴ مورد به شما نیاز دارد" fits it whole (a heading's
+    inline margins are 4px, which leaves that line 125px at 150px). At the default 210px and wider
+    English is one line, a 3-digit count included; Persian takes the second line there too.
+  - **Only where even that full-width second line is too narrow** (a 4-digit count in Persian at
+    150px, a larger text size), the needs words wrap between words onto one more line, the chip
+    beside the first line. Never mid-word, never cut, never "…", never past the edge. A poll
+    changes a heading's height only when the count gains a digit that crosses that limit.
   - The whole line, and the heading's tasks, are in the tooltip and read out on the heading.
 - **A project's row follows the same rule** (task 0087): one line, the name giving way first,
   ending in "…", its full name in the tooltip. Its badges (running, needs you, in progress, paused

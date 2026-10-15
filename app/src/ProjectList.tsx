@@ -395,33 +395,33 @@ function CategoryHead({ name, rows, total, fresh = false, drag, onRename, onRemo
   // One line, the same open and folded, in every mode (0082): the name, then what needs you in the
   // chip a project's row has and in words, never cut; then its projects and what's being worked on,
   // each whole where there's room. The name gives way first; where the sidebar is too narrow for
-  // the name's least and what needs you, the counts go under it (styles.css). Its tasks are in the
-  // tooltip; everything is in the tooltip and the heading's aria-label.
+  // the name's least and what needs you, the counts take the heading's full width on a second line,
+  // under the chevron too (mu-212): they sit beside it and the name, not in a box of their own
+  // (styles.css). Its tasks are in the tooltip; everything is in the tooltip and the heading's
+  // aria-label.
   return (
     <HeadingFrame name={name} count={rows.length} summary={countsText(c, ", ")} fresh={fresh} folded={folded} drag={drag ?? into} onRename={onRename} onRemove={onRemove} onFold={onFold}>
-      <span className="side-cat-text">
-        <span className="side-cat-name" title={headingName(name)}>{headingName(name)}</span>
-        {!fresh && (
-          <span className="side-cat-counts" title={tn("shell", "heading.countsTitle", { said, tasks: tn("shell", "heading.tasks", { count: total }) })}>
-            {c.needs > 0 && (
-              <span className="side-cat-needs">
-                <Trans ns="shell" k="heading.needsChip" params={{ count: c.needs }} components={{ chip: <span className="count warn" />, words: <span className="side-cat-needs-words" /> }} />
+      <span className="side-cat-name" title={headingName(name)}>{headingName(name)}</span>
+      {!fresh && (
+        <span className="side-cat-counts" title={tn("shell", "heading.countsTitle", { said, tasks: tn("shell", "heading.tasks", { count: total }) })}>
+          {c.needs > 0 && (
+            <span className="side-cat-needs">
+              <Trans ns="shell" k="heading.needsChip" params={{ count: c.needs }} components={{ chip: <span className="count warn" />, words: <span className="side-cat-needs-words" /> }} />
+            </span>
+          )}
+          <span className="side-cat-rest">
+            {/* Each piece brings its own no-break space, so a hidden one leaves no gap. */}
+            <span className="side-cat-part">{`${c.needs > 0 ? "\u00a0· " : ""}${projects}`}</span>
+            {c.working > 0 && (
+              <span className="side-cat-part side-working">
+                {"\u00a0· "}
+                <i className="dot" aria-hidden="true" />
+                {workingWords(c.working)}
               </span>
             )}
-            <span className="side-cat-rest">
-              {/* Each piece brings its own no-break space, so a hidden one leaves no gap. */}
-              <span className="side-cat-part">{`${c.needs > 0 ? "\u00a0· " : ""}${projects}`}</span>
-              {c.working > 0 && (
-                <span className="side-cat-part side-working">
-                  {"\u00a0· "}
-                  <i className="dot" aria-hidden="true" />
-                  {workingWords(c.working)}
-                </span>
-              )}
-            </span>
           </span>
-        )}
-      </span>
+        </span>
+      )}
     </HeadingFrame>
   );
 }

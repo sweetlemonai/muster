@@ -816,7 +816,7 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 /* A category heading (0082): it starts its group with a divider, its name plainly larger and
    heavier than its projects' (15px 750 against 13px 550; the owner saw 13px 650 as the same font)
    in the text colour, a Persian name kept in its own direction. */
-.side-cat { display: flex; align-items: center; gap: 6px; margin: 8px 8px 2px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 13px; color: var(--text); }
+.side-cat { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin: 8px 4px 2px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 13px; color: var(--text); }
 .side-cat-name { flex: 1000 1 4em; max-width: max-content; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 750; line-height: 1.25; unicode-bidi: plaintext; }
 .side-cat .side-working { font-size: 11px; }
 /* A label set in place takes its row's place and height. */
@@ -968,8 +968,6 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .side-cat.drop-into { outline: 1px dashed var(--accent); outline-offset: 2px; border-radius: 4px; color: var(--text); }
 .side-cat:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 .side-cat.side-editing { flex-direction: column; align-items: stretch; gap: 2px; }
-/* A new heading wraps, so its hint goes under the name instead of squeezing it to nothing (review R2). */
-.side-cat.fresh { flex-wrap: wrap; }
 /* A heading's chevron (0070), a Pill-size button with a drawn chevron in the text colour that
    points where the text starts, turned down when open (0082; the owner found the ▸ glyph bad); its
    one line, open or folded, of labelled counts: what needs you first and never cut, in a row's
@@ -985,13 +983,17 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
    shrinks, so its words always show; "· N projects" and "· N working" each show whole where there's
    room, otherwise they wrap onto a second line the rest's one-line height hides. Where even the
    name's 4em and "N need you" don't fit beside the chevron (the narrowest sidebar, 150px), the
-   counts take a second line under the name, whole and labelled: name and counts sit in one
-   wrapping box, and the counts' least width is the needs piece's. The tooltip and the heading's
-   aria-label always say them all. */
-.side-cat-text { flex: 1 1 0; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
-.side-cat-counts { display: flex; align-items: center; flex: 1 1 0; line-height: 16px; font-size: 11px; font-weight: 400; color: var(--muted); white-space: nowrap; }
-.side-cat-needs { flex: none; display: flex; align-items: center; column-gap: 0.3em; color: var(--warn); }
+   counts take a second line, whole and labelled, the heading's full width from under the chevron
+   (mu-212): the chevron, the name and the counts wrap in the heading's one box (a new heading's
+   hint too, review R2), and the counts ask for "N need you" on one line (their max-content; the
+   rest adds nothing to it). Only where even that line is too narrow (Persian at 150px with a
+   3-digit count, a larger text) do the needs words wrap, between words, the chip beside the first
+   line: never cut, never "…", never past the edge. The tooltip and the heading's aria-label always
+   say them all. */
+.side-cat-counts { display: flex; align-items: center; flex: 1 1 auto; width: max-content; line-height: 16px; font-size: 11px; font-weight: 400; color: var(--muted); white-space: nowrap; }
+.side-cat-needs { flex: 0 1 auto; display: flex; align-items: baseline; column-gap: 0.3em; color: var(--warn); }
 .side-cat-needs .count.warn { flex: none; margin: 0; }
+.side-cat-needs-words { white-space: normal; }
 .side-cat-rest { flex: 1 1 0; min-width: 0; contain: inline-size; display: flex; flex-wrap: wrap; align-content: flex-start; height: 16px; overflow: hidden; }
 /* An empty first piece the line's height: a flex line always takes its first item, so without it
    a piece too wide for the room would show cut instead of wrapping onto the hidden second line. */

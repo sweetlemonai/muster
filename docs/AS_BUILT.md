@@ -772,13 +772,18 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   motion), mirrored with `:dir(rtl)`. One line of labelled counts, the same open, folded and in every mode: "77 need you ·
   17 projects · 18 working" (needs from tasks and lessons, as the row badge; 0 left out but the
   projects), the needs part in the row's `.count.warn` chip (its digits in `--on-status` everywhere
-  since 0087) and never shrinking. The name and counts sit in `.side-cat-text`, a wrapping flex box beside the chevron.
+  since 0087). The chevron, the name and the counts wrap in the heading's own box (`.side-cat`,
+  `flex-wrap: wrap`, `gap: 2px 6px`, inline margins 4px; a new heading's hint wraps there too).
   The name (`flex: 1000 1 4em`, `max-width: max-content`, ellipsis, its own `title`) grows to its
-  width before the counts get any room and gives way first, down to 4em. "N need you" is one
-  `flex: none` piece, so the counts' least width is its width: where the name's 4em and it don't
-  fit on the line (the 150px sidebar), the counts wrap under the name. "· N projects" and
+  width before the counts get any room and gives way first, down to 4em. The counts
+  (`flex: 1 1 auto`, `width: max-content`) ask for "N need you" on one line: where the name's 4em
+  and that don't fit beside the chevron (the 150px sidebar), the counts take a second line spanning
+  the heading's full width, from under the chevron (mu-212). The needs piece is `flex: 0 1 auto`
+  and its words (`.side-cat-needs-words`) may wrap, between words, the chip beside their first
+  line, only where even that full line is too narrow (Persian at 150px with a 3-digit count, a
+  larger text): never cut, never "…", never past the edge. "· N projects" and
   "· N working" are `.side-cat-part` pieces in `.side-cat-rest` (`contain: inline-size`, so it adds
-  nothing to that least width; one-line height, `flex-wrap: wrap`, overflow hidden, and an empty
+  nothing to the counts' width; one-line height, `flex-wrap: wrap`, overflow hidden, and an empty
   `::before` of the line's height so even the first piece wraps out of sight rather than showing
   cut); each brings its own no-break space. The tasks in the tooltip, the counts in the heading's
   `aria-label`. Projects indent 14px with `margin-inline-start` in every mode. Folded is that one
