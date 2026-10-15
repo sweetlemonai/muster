@@ -3,6 +3,18 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — mu-189: a hand-merged task's pass re-checks its review and gate records under the queue lock
+**Fixed:** a hand merge (`parallel::record_hand_merge`, worktree gone) checked the review and the
+gate records once, then spent seconds asking origin (`ls-remote`, `fetch`) and recorded the merge
+without looking again, so a G3 record turned red meanwhile was missed (mu-131 R17). Now, after the
+origin probes and before anything is deleted, one `queue::with_lock` block runs
+`review::still_stands`, `gates::still_stands` and `gates::merge_check` at the tip and builds the
+report there, as `merge` does before its fast-forward. A refusal leaves the task in Testing with
+its branch and origin's copy. `fast_forwards_to_the_checked_commit` now asserts the merge's notes
+(only origin's kept-copy note), so mu-187's `if !moved` guard on `branch -d` is tested.
+**Verified:** `hand_merge_rechecks_under_the_lock` and `hand_merge_rechecks_the_review_under_the_lock`
+failed before the change (the red record's pass went through and deleted the branch; the unclean
+review passed to Your check) and pass now; the `if true` mutant fails the notes assert. Gate below.
 ## 2026-10-15 — mu-213: the sidebar and queue now pages split in two, each under 3 KB
 **Did:** `docs/now/sidebar.md` (4,095 bytes) became `sidebar.md`, the projects sidebar (1,789),
 and the new `settings.md`, Settings (2,422). `docs/now/queue.md` (4,056) became `queue.md`, the

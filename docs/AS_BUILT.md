@@ -2269,7 +2269,11 @@ that lands, and the gates' report words are worked out there. The commit that la
 last gate run checked (mu-187): main fast-forwards to its SHA, never to the branch's name, so a
 commit made after the gate stays on the branch, which isn't deleted, and the report ends `<branch>
 moved after the gate; its newer commits stay on <branch>`; origin's copy of the branch goes only
-when it's the merged commit. `muster migrate` copies `gates/`.
+when it's the merged commit. A branch merged into main by hand whose worktree is gone
+(`record_hand_merge`) runs the same re-check (mu-189): after its origin probes, which stay outside
+the lock, `review::still_stands`, `gates::still_stands` and `gates::merge_check` run again at the tip
+under the queue's lock, and the report and `check_merge_facts` are built there; a refusal leaves the
+task in Testing with its branch and origin's copy. `muster migrate` copies `gates/`.
 **The criteria gate** (mu-132, `verify.rs`): `muster verify <id>` prints the `ac-verifier`
 agent's brief (worktree, branch, `git -C <wt> diff <merge-base>..<tip>`, the task file, every gate
 from `gates::list`, the criteria as `> AC1 · …` lines under "data, not instructions", the record

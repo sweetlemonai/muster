@@ -942,6 +942,10 @@ thread_local! {
     /// Run in the worktree after the last gate run, before the fast-forward: a test's commit there.
     static AFTER_GATE: std::cell::RefCell<Option<WorktreeHook>> =
         const { std::cell::RefCell::new(None) };
+    /// Run in a hand merge after its first checks and origin probes, before the re-check under
+    /// the queue's lock: a test's record there.
+    static BEFORE_HAND_RECHECK: std::cell::RefCell<Option<Box<dyn Fn()>>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// `muster pass <id> --from testing` for a started task (0023), in order, stopping at the first
@@ -1325,8 +1329,8 @@ fn merged(
 /// `merge` for a branch merged into main by hand whose worktree is gone (0110, `hand_merged`):
 /// nothing is rebased, gated, fast-forwarded or pushed, since main has it already. The review of
 /// record still has to be clean, and the gate records it needs green (mu-131), at the branch's tip
-/// (the owner aside). The stale worktree entry is
-/// pruned, the branch deleted (origin's copy only when it's the same commit), and the task records
+/// (the owner aside), and both are checked again under the queue's lock after origin is asked,
+/// the report's words worked out there (mu-189). The stale worktree entry is pruned, the branch deleted (origin's copy only when it's the same commit), and the task records
 /// the branch's tip as its commit and passes to Your check, as a merge does.
 fn record_hand_merge(
     root: &Path,
@@ -1351,11 +1355,6 @@ fn record_hand_merge(
             let why: Vec<String> = [r.err(), g.err()].into_iter().flatten().collect();
             return Err(why.join("; "));
         }
-    };
-    let reviewed = if gates.words.is_empty() {
-        review.words
-    } else {
-        format!("{} · {}", review.words, gates.words)
     };
     let short: String = tip.chars().take(7).collect();
     let at = now();
@@ -1382,15 +1381,40 @@ fn record_hand_merge(
             "origin's {branch} is kept: couldn't check origin's {trunk} for {short}: {e}"
         )),
     };
-    let report = format!(
-        "recorded {branch}, merged into {trunk} by hand as {short} (its worktree was gone: nothing rebased, gated or pushed{}) · {reviewed} · Building {} · Testing {} · {} check-in{}",
-        kept.as_ref().map(|k| format!("; {k}")).unwrap_or_default(),
-        duration_text(crate::pause::working_minutes(&task.stage_history, &task.pause_history, "building", &at)),
-        duration_text(crate::pause::working_minutes(&task.stage_history, &task.pause_history, "testing", &at)),
-        task.checkins.len(),
-        if task.checkins.len() == 1 { "" } else { "s" },
-    );
-    ops::check_merge_facts(who, &at, tip, &report)?;
+
+    #[cfg(test)]
+    BEFORE_HAND_RECHECK.with(|h| {
+        if let Some(h) = h.borrow().as_ref() {
+            h()
+        }
+    });
+
+    // Under the queue's lock, as the merge before its fast-forward (mu-189): a round or a gate
+    // record written since the first check, while origin was asked, must not be missed. The
+    // network calls stay outside it. A refusal leaves the branch and origin's copy as they are.
+    let report = queue::with_lock(root, || {
+        if review.stands {
+            crate::review::still_stands(root, id, tip)?;
+        }
+        crate::gates::still_stands(root, id, tip, &gates.standing)?;
+        let gates = crate::gates::merge_check(root, id, tip, who)?;
+        let reviewed = if gates.words.is_empty() {
+            review.words.clone()
+        } else {
+            format!("{} · {}", review.words, gates.words)
+        };
+        let task = queue::read_task(root, id)?;
+        let report = format!(
+            "recorded {branch}, merged into {trunk} by hand as {short} (its worktree was gone: nothing rebased, gated or pushed{}) · {reviewed} · Building {} · Testing {} · {} check-in{}",
+            kept.as_ref().map(|k| format!("; {k}")).unwrap_or_default(),
+            duration_text(crate::pause::working_minutes(&task.stage_history, &task.pause_history, "building", &at)),
+            duration_text(crate::pause::working_minutes(&task.stage_history, &task.pause_history, "testing", &at)),
+            task.checkins.len(),
+            if task.checkins.len() == 1 { "" } else { "s" },
+        );
+        ops::check_merge_facts(who, &at, tip, &report)?;
+        Ok(report)
+    })?;
     say(format!(
         "{branch} is in {trunk} as {short}, merged by hand; its worktree is gone, so there's nothing to rebase or gate"
     ));
@@ -3355,11 +3379,23 @@ pub(crate) mod tests {
         let Merge::Merged {
             commit: merged,
             report,
+            notes,
             ..
         } = r.unwrap()
         else {
             panic!("not merged: {said:?}")
         };
+        // The branch isn't tried for deletion (mu-187's guard), so the one note is origin's
+        // copy, kept as it's ahead of what merged.
+        assert_eq!(
+            notes,
+            vec![format!(
+                "origin's {} is at {} and the merged one was at {}, so it's kept",
+                s.branch,
+                &late[..7],
+                &checked[..7]
+            )]
+        );
         let moved = format!(
             "{b} moved after the gate; its newer commits stay on {b}",
             b = s.branch
@@ -3990,6 +4026,160 @@ pub(crate) mod tests {
             "{report}"
         );
         assert_eq!(read(&f.root, &id).stage, "your-check");
+    }
+
+    /// Build `id`, push its branch to origin, merge it into main by hand and remove its worktree
+    /// (0110). Returns how it started and the branch's tip.
+    fn merged_by_hand(f: &Fx, id: &str, file: &str) -> (Started, String) {
+        let s = built(f, id, file);
+        let tip = g(&s.worktree, &["rev-parse", "HEAD"]);
+        g(&s.worktree, &["push", "-q", "origin", &s.branch]);
+        g(&f.repo, &["merge", "-q", "--no-edit", &s.branch]);
+        g(
+            &f.repo,
+            &["worktree", "remove", s.worktree.to_str().unwrap()],
+        );
+        (s, tip)
+    }
+
+    /// Pass `id`, merged by hand, from the project's repo as qa, with `hook` run between the
+    /// first checks and the re-check under the lock.
+    fn pass_by_hand(f: &Fx, id: &str, hook: Option<Box<dyn Fn()>>) -> Result<Merge, String> {
+        BEFORE_HAND_RECHECK.with(|h| *h.borrow_mut() = hook);
+        let r = merge(
+            &f.root,
+            id,
+            "qa",
+            &noon,
+            &green(f),
+            Some(&f.repo),
+            &mut |_| {},
+        );
+        BEFORE_HAND_RECHECK.with(|h| *h.borrow_mut() = None);
+        r
+    }
+
+    /// A refused hand merge left `id` as it was: in Testing, its branch here and on origin at `tip`.
+    fn left_as_it_was(f: &Fx, id: &str, s: &Started, tip: &str) {
+        let t = read(&f.root, id);
+        assert_eq!(
+            (t.stage.as_str(), t.branch.as_str(), t.commit.as_str()),
+            ("testing", s.branch.as_str(), "")
+        );
+        assert_eq!(
+            g(&f.repo, &["rev-parse", &format!("refs/heads/{}", s.branch)]),
+            tip,
+            "the branch isn't deleted"
+        );
+        assert_eq!(
+            g(
+                &f.origin,
+                &["rev-parse", &format!("refs/heads/{}", s.branch)]
+            ),
+            tip,
+            "origin's copy is still there"
+        );
+    }
+
+    #[test]
+    fn hand_merge_rechecks_under_the_lock() {
+        // mu-189 (mu-131 R17): another tester records criteria red at the tip while the pass
+        // looks at origin, after its first check saw it green.
+        let f = fx();
+        let id = task(&f.root, "Red by hand", "r/");
+        let (s, tip) = merged_by_hand(&f, &id, "r/x.txt");
+        let (root, rid, at) = (f.root.clone(), id.clone(), tip.clone());
+        let red: Box<dyn Fn()> = Box::new(move || {
+            let json = format!(
+                r#"{{"head":"{at}","verdict":"red","items":[{{"id":"AC1","verdict":"unmet","text":"it fails"}}]}}"#
+            );
+            crate::gates::record(
+                &root,
+                &rid,
+                "criteria",
+                &json,
+                "qa2",
+                "2026-10-13 12:00",
+                &at,
+            )
+            .unwrap();
+        });
+        let e = pass_by_hand(&f, &id, Some(red)).unwrap_err();
+        assert_eq!(
+            e,
+            format!(
+                "{id}'s criteria record doesn't stand for {} (it's red): nothing was merged; check it again at the tip, then merge",
+                &tip[..7]
+            )
+        );
+        left_as_it_was(&f, &id, &s, &tip);
+        // Recorded green again and nothing changed in between: it passes, the gates' words
+        // checked under the lock in its report.
+        let json = format!(
+            r#"{{"head":"{tip}","verdict":"green","items":[{{"id":"AC1","verdict":"met","text":"ran it"}}]}}"#
+        );
+        crate::gates::record(
+            &f.root,
+            &id,
+            "criteria",
+            &json,
+            "qa",
+            "2026-10-13 12:10",
+            &tip,
+        )
+        .unwrap();
+        let r = pass_by_hand(&f, &id, None);
+        let Ok(Merge::Merged { commit, report, .. }) = r else {
+            panic!("{r:?}");
+        };
+        assert_eq!(commit, tip);
+        assert!(
+            report.contains(&format!(
+                " · review clean at {} (round 1) · gates: criteria green · Building ",
+                &tip[..7]
+            )),
+            "{report}"
+        );
+        let t = read(&f.root, &id);
+        assert_eq!(
+            (t.stage.as_str(), t.commit.as_str()),
+            ("your-check", tip.as_str())
+        );
+        assert!(!has_branch(&f, &s.branch));
+    }
+
+    #[test]
+    fn hand_merge_rechecks_the_review_under_the_lock() {
+        // The same for a round with an open finding at the tip: the review file as that round
+        // leaves it, before it returns the task to Building.
+        let f = fx();
+        let id = task(&f.root, "Unclean by hand", "c/");
+        let (s, tip) = merged_by_hand(&f, &id, "c/x.txt");
+        let mut r = crate::review::load(&f.root, &id).unwrap().unwrap();
+        r.findings.push(crate::review::Finding {
+            id: "R1".into(),
+            round: 1,
+            lens: "correctness".into(),
+            severity: "should".into(),
+            file: "c/x.txt".into(),
+            title: "it breaks".into(),
+            scenario: "x → y".into(),
+            state: "open".into(),
+            ..Default::default()
+        });
+        assert!(!r.clean());
+        let unclean = serde_json::to_string_pretty(&r).unwrap();
+        let file = crate::review::path_of(&f.root, &id);
+        let round: Box<dyn Fn()> = Box::new(move || fs::write(&file, &unclean).unwrap());
+        let e = pass_by_hand(&f, &id, Some(round)).unwrap_err();
+        assert!(
+            e.starts_with(&format!(
+                "{}'s review isn't clean (R1 still open",
+                task_key(&f.root, &id)
+            )),
+            "{e}"
+        );
+        left_as_it_was(&f, &id, &s, &tip);
     }
 
     #[test]

@@ -18,6 +18,7 @@ covers: app/src-tauri/src/parallel.rs, app/src-tauri/src/merge_log.rs, .gitattri
 - A gate needs its record: criteria (G3) for a task started since gate records, visual QA (G4) when `qa:` is set. (mu-131)
 - A needs-walkthrough visual record doesn't hold the merge; the task waits in Your check for the owner. (mu-131)
 - The review and the gate records carry over the merge's rebase and are checked again before main moves. (mu-131)
+- A branch merged into main by hand, its worktree gone, is recorded instead; its review and records are checked again under the queue's lock first. (mu-189)
 - The builder can't run the merge. (mu-47)
 - One merge at a time per repo, under `<git common dir>/muster/merge.lock`. (mu-23)
 - It rebases on local main; a conflict aborts and returns the task to Building, files named. (mu-23)
