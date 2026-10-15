@@ -901,6 +901,24 @@ and `tasks.json`, which scripts read, keep ids.
   carries its stamp and the owner can reach it.
 - **Coordinators stay thin:** they read `muster list --json` and builders' short reports, merge,
   and talk to other coordinators; subagents read the code.
+- **Git in a worktree (task 0193):** never `reset --hard`, `checkout --`, `restore` over changes
+  or `clean`: the guard asks and nobody answers, so the session stalls. A rebase gone wrong:
+  `git rebase --abort`, then rebase again; squash only with `reset --soft`. `muster instructions
+  coder` and `tester` print this rule.
+- **A stalled session: only the lead acts (task 0193).** Any other session (a builder, a tester,
+  the shaper, another coordinator) that sees a session waiting for input for more than 10 minutes
+  reports it to the lead (the session, its task, what it's waiting on) and never stops, resumes or
+  starts it itself. The lead looks at each session holding a task that has shown waiting for input
+  for more than 10 minutes and reads the tail of its transcript:
+  - **On a guard prompt:** put the worktree's git state right (`git rebase --abort`, or what the
+    prompt was about to do, only if nothing uncommitted is lost), stop the session, release its
+    claim with `muster return <id> --to ready "<why>" --as owner` (the task keeps `worktree:` and
+    `branch:`), and start a successor that picks it up in the same worktree with `muster start
+    <id>`. A successor under the same label may instead run `muster claim <id> --takeover` once
+    the session has been quiet 30 minutes (0090).
+  - **On a question or a permission it really needs:** answer it; don't restart it.
+  No Muster command or timer does this; a timed alarm for headless runs is the dispatcher's
+  stuck-run rule (task 0118).
 - **Hand off by yourself at ~60% context or the token cap (decision 0011)**, coordinator or
   builder, whichever comes first. The cap is 150k, or 600k for `Muster_Team_Lead*`
   (`~/playground/.claude/handoff.json`). Don't wait until the context is full; every turn re-reads

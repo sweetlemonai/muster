@@ -4,6 +4,17 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — Builders' briefs say how to undo a bad rebase; only the lead restarts a stalled session (mu-193)
+**Did (Gholi_39, builder):** `muster instructions coder` and `tester` print the git rule
+(`GIT_RULE` in `roles.rs`): never `reset --hard`, `checkout --`, `restore` over changes or
+`clean` in a worktree; `git rebase --abort`, then rebase again; squash only with `reset --soft`.
+PROTOCOL "Sessions" has the same rule and the lead's 10-minute rule for a session waiting for
+input; `docs/now/claims.md` has its line, AS_BUILT the briefs' rule.
+**Decided:** brief and PROTOCOL text only, no command or timer (shapour's call in the task); a
+timed alarm is mu-118's dispatcher.
+**Verified:** `instructions_print_the_roles_brief` red, then green (coder and tester carry the
+rule, the shaper doesn't); the gate's line is in the task's pass.
+
 ## 2026-10-15 — mu-195 Settings › Agents › Roles shows each role's title in the language shown, not its id
 **Did (Akbar_37, builder):** a Roles row reads "Kaveh  برنامه‌نویس · ۳ جایگاه" in fa, "Kaveh  Coder ·
 3 slots" in en (`roleTitle` in `rolesData.ts`, shell.json `roles.title.<id>` for the eleven built-in

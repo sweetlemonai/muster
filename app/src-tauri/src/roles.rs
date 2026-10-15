@@ -141,6 +141,10 @@ struct Brief {
     rules: &'static [&'static str],
 }
 
+/// The coder's and the tester's way out of a bad rebase (mu-193; PROTOCOL.md "Sessions"): the
+/// layer's guard asks before these commands and a background session can't answer.
+const GIT_RULE: &str = "Git in a worktree: never `reset --hard`, `checkout --`, `restore` over changes or `clean`: the guard asks and nobody answers, so the session stalls. A rebase gone wrong: `git rebase --abort`, then rebase again; squash only with `reset --soft`.";
+
 const BRIEFS: &[Brief] = &[
     Brief {
         id: "shaper",
@@ -176,6 +180,7 @@ const BRIEFS: &[Brief] = &[
             "Ask in the task (`muster ask`), never the owner directly; carry on while you wait.",
             "When the gate is green: `muster pass <id> --from building --gate \"<the gate's line>\" --summary \"<one line>\"`.",
             "Hand off at ~60% context or the cap: `muster checkin <id> --handoff`; the successor runs `muster claim <id> --takeover`.",
+            GIT_RULE,
         ],
     },
     Brief {
@@ -185,6 +190,7 @@ const BRIEFS: &[Brief] = &[
             "Tick each criterion with its proof (`muster tick`); a criterion you couldn't verify stays open, with why.",
             "Pass with `muster pass <id> --from testing`, which merges a started task; or `muster return <id> \"<why>\"`.",
             "Start the lens reviewers (security, performance, accessibility) as subagents, chosen by the task's lenses.",
+            GIT_RULE,
         ],
     },
     Brief {
@@ -1828,6 +1834,22 @@ mod tests {
         ] {
             assert!(text.contains(want), "{want}\n{text}");
         }
+        // The git rule (mu-193): the coder and the tester get out of a bad rebase without the
+        // guard's prompt; the shaper never rebases.
+        for id in ["coder", "tester"] {
+            let text = instructions(find(&roles, id).unwrap());
+            for want in [
+                "never `reset --hard`, `checkout --`, `restore` over changes or `clean`",
+                "the guard asks and nobody answers",
+                "`git rebase --abort`, then rebase again",
+                "squash only with `reset --soft`",
+            ] {
+                assert!(text.contains(want), "{id}: {want}\n{text}");
+            }
+        }
+        let shaper = instructions(find(&roles, "shaper").unwrap());
+        assert!(!shaper.contains("rebase --abort"), "{shaper}");
+        assert!(!shaper.contains("reset --hard"), "{shaper}");
         let pouya = instructions(find(&roles, "researcher").unwrap());
         assert!(pouya.contains("- Writes only under: docs/research/, docs/plans/\n"));
         assert!(pouya.contains(", 8 workers\n"));
