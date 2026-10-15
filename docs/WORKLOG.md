@@ -4,6 +4,32 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — The task pane's Files opens screenshots in place, not in a lightbox (mu-91)
+**Did:** Files' thumbnails are toggle buttons that open their image at the pane's full width,
+in a row under the two columns (`FilesOpen`), several at once; a second click on the thumbnail or
+the image shuts it; the board stays beside it. Files and Your check's proof lines draw their
+thumbnails with one shared `ImageThumb` (StageContent.tsx) and `toggled`; a proof image still
+grows in place in the main column, Files' thumbnail stays small and marked open (`aria-controls`
+the row). TaskPanel holds Files' open set. The lightbox, its CSS, its
+window keydown handler and its ← →/Esc shortcuts are gone (shortcuts.ts, manual 06). The open
+image's alt is its file name and the name under it is `dir="auto"`, in both places. Manual 04 and
+AS_BUILT say so.
+**Decided:** kept the proof thumbnail's look (`--bg` with a `--line` border) for Files' thumbnails
+rather than `--panel`, so the two stay one component; the large image's frame is `--panel`; Esc now closes the pane even with an image open, since
+nothing is left to escape from.
+**Fixed:** round 2 (QA_5): Files' images opened inside the 176px side column, ~160px wide and
+unreadable → the image grew in place in `.tp-side` → it opens in the full-width row instead.
+Round 3 (review R1–R5, QA_6): shutting an image from the large one dropped the focus to the body,
+its button being gone → `FilesOpen` focuses its thumbnail (`thumbId`). An image that opened below
+the fold stayed out of sight → `fileToggler` scrolls its figure into view after the render
+(`showSoon`: `block: "nearest"`, not smooth under reduced motion, again once the image loads). An
+open thumbnail lost its accent border on hover and focus → a `.tp-side` rule keeps it. Tests now
+cover the row right after the columns and `.files-open[hidden]`.
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`;
+StageContent and TaskPanel tests 88/88 (round 3); `grep -rn lightbox app/src` finds
+nothing.
+**Open:** AC3's release-app screenshots (light and dark, ADHD) are QA's.
+
 ## 2026-10-14 — mu-95 round 1: the logout stand-ins' delays run, and the cap after the mark is pinned
 **Fixed:** R1, the two-write and logout stand-ins called `sleep` after setting a PATH without
 `/bin`, so on macOS it exited 127 at once and the drain and split-read mutants came down to a race

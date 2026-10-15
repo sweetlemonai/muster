@@ -264,9 +264,6 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .pick-one .pick-chip:disabled { opacity: 0.5; cursor: default; }
 .pick-one .pick-tag { border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; margin-left: 6px; font-size: 10.5px; color: var(--muted); }
 .pick-one .pick-fallback { color: var(--muted); font-size: 12px; }
-.lightbox { position: fixed; inset: 0; background: rgb(0 0 0 / 0.82); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 20; padding: 24px; }
-.lightbox img { max-width: 100%; max-height: calc(100% - 40px); object-fit: contain; border-radius: 6px; }
-.lightbox p { color: #ddd; font-size: 12px; }
 .body-bar { display: flex; gap: 4px; margin-bottom: 8px; }
 .body-bar .edit { margin-left: auto; border-color: var(--line); color: var(--text); }
 .write-up-edit { display: flex; flex-direction: column; gap: 6px; }
@@ -948,7 +945,19 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .est-pair input { width: 46px; font: inherit; font-size: 12px; text-align: center; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px; }
 .tp-side .tag-editor input { width: 72px; }
 .file-list { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; max-width: 100%; }
+/* Files' open images (mu-91): a row under the two columns at the pane's full width, in its flow;
+   each image as wide as fits, its whole height, its name under it. */
+.files-open { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.files-open[hidden] { display: none; }
+.file-big { margin: 0; padding: 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); display: flex; flex-direction: column; gap: 3px; }
+.file-big-btn { display: block; padding: 0; border: 0; background: none; cursor: zoom-out; max-width: 100%; }
+.file-big-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.file-big img { display: block; width: auto; height: auto; max-width: 100%; max-height: 80vh; object-fit: contain; border-radius: 3px; }
+.file-big figcaption { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
 .tp-side .mini-thumb { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 2px 6px 2px 2px; background: var(--bg); font-size: 11px; }
+.proof-thumb.on { color: var(--text); border-color: var(--accent); background: var(--selected); }
+/* An open thumbnail keeps its accent border while hovered or focused (the side column's buttons turn muted). */
+.tp-side .proof-thumb.on:not(:disabled):hover, .tp-side .proof-thumb.on:focus-visible { border-color: var(--accent); }
 .mini-thumb img, .mini-img { display: block; width: 34px; height: 22px; object-fit: cover; border-radius: 3px; flex: none; background: var(--hover); }
 .mini-thumb .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .other-file { max-width: 100%; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

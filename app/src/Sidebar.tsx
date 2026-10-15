@@ -9,6 +9,7 @@ import { isWork } from "./levels";
 import Links from "./Links";
 import { ownerOpen } from "./OwnerChecklist";
 import { IMAGE } from "./paneData";
+import { ImageThumb, toggled } from "./StageContent";
 import TagEditor from "./Tags";
 import { Button, Segment, Segmented } from "./ui";
 import type { Task } from "./types";
@@ -18,7 +19,14 @@ import type { TaskActions } from "./useTaskActions";
  *  Block or Unblock; under a rule, priority, type and who does it (the current value; click to choose),
  *  a started task's branch and worktree or its merge (0023), the estimate, tags, files and the
  *  task's links (0017). Every control is always in the same place. */
-export default function Sidebar({ task, nowSecs, a, images }: { task: Task; nowSecs: number; a: TaskActions; images: Record<string, string> }) {
+export default function Sidebar({ task, nowSecs, a, images, files }: {
+  task: Task;
+  nowSecs: number;
+  a: TaskActions;
+  images: Record<string, string>;
+  /** Which of Files' images are open, flipping one, and the row under the columns that shows them. */
+  files: { open: ReadonlySet<string>; onToggle: (name: string) => void; openId: string };
+}) {
   return (
     <aside className="tp-side" aria-label="Actions and settings">
       <NextStep task={task} nowSecs={nowSecs} a={a} />
@@ -56,7 +64,7 @@ export default function Sidebar({ task, nowSecs, a, images }: { task: Task; nowS
           <span className="lbl">Tags</span>
           <TagEditor tags={task.tags} onChange={(t) => a.setField("tags", t.join(","), "Tags saved.")} />
         </div>
-        <Files task={task} images={images} onAttach={a.attachPick} />
+        <FilesView task={task} images={images} open={files.open} onToggle={files.onToggle} onAttach={a.attachPick} openId={files.openId} />
         <Links task={task} />
       </div>
     </aside>
@@ -200,47 +208,104 @@ function Estimate({ task, onSave }: { task: Task; onSave: (field: string, value:
   );
 }
 
-/** The task's files: images as small thumbnails that open large (← → between them, Esc to
- *  close), the others by name, and Attach. Paste or drop files anywhere on the pane too. The
- *  images come loaded from the pane (`images`, by file name), shared with Your check's proof. */
-function Files({ task, images, onAttach }: { task: Task; images: Record<string, string>; onAttach: () => void }) {
-  const [big, setBig] = useState<number | null>(null);
+/** The task's files: images as small thumbnails, the others by name, and Attach. Paste or drop
+ *  files anywhere on the pane too. The images come loaded from the pane (`images`, by file name),
+ *  shared with Your check's proof. A click opens an image large in the pane's full-width row under
+ *  the columns (FilesOpen, mu-91: this column is too narrow to read one in), several at once; a
+ *  second click shuts it. The pane holds which are open (`open`, by file name). */
+export function FilesView({ task, images, open, onToggle, onAttach, openId }: {
+  task: Task;
+  images: Record<string, string>;
+  open: ReadonlySet<string>;
+  onToggle: (name: string) => void;
+  onAttach: () => void;
+  /** The id of the row that shows the open images. */
+  openId: string;
+}) {
   const names = task.attachments.filter((n) => IMAGE.test(n));
   const others = task.attachments.filter((n) => !IMAGE.test(n));
-
-  useEffect(() => {
-    if (big === null) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight") setBig((i) => (i === null ? i : (i + 1) % names.length));
-      if (e.key === "ArrowLeft") setBig((i) => (i === null ? i : (i - 1 + names.length) % names.length));
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        setBig(null);
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [big, names.length]);
-
   return (
     <div className="kv stack files" aria-label="Files">
       <span className="lbl">Files <small>{task.attachments.length}</small></span>
       <span className="file-list">
-        {names.map((n, i) => (
-          <button key={n} type="button" className="mini-thumb" onClick={() => setBig(i)} title={n}>
-            {images[n] ? <img src={images[n]} alt="" /> : <span className="mini-img" />}
-            <span className="name">{n}</span>
-          </button>
-        ))}
+        {names.map((n, i) => <ImageThumb key={n} id={thumbId(openId, i)} name={n} url={images[n]} open={open.has(n)} onToggle={() => onToggle(n)} controls={openId} />)}
         {others.map((n) => <span key={n} className="other-file" title={n}>{n}</span>)}
         <Button type="button" className="attach" onClick={onAttach}>+ Attach</Button>
       </span>
-      {big !== null && names[big] && (
-        <div className="lightbox" onClick={() => setBig(null)} role="dialog" aria-label={names[big]}>
-          {images[names[big]] && <img src={images[names[big]]} alt={names[big]} />}
-          <p>{names[big]} · {big + 1} of {names.length} · ← → to move · Esc to close</p>
-        </div>
-      )}
+    </div>
+  );
+}
+
+/** The id of Files' i-th image thumbnail, from the open row's id. */
+export function thumbId(openId: string, i: number): string {
+  return `${openId}-thumb-${i}`;
+}
+
+function focusById(id: string) {
+  document.getElementById(id)?.focus();
+}
+
+/** The id of Files' i-th image as it shows open, in the row under the columns. */
+export function bigId(openId: string, i: number): string {
+  return `${openId}-big-${i}`;
+}
+
+/** What toggling a Files image does (mu-91): flips it in `open`, and one that opens is brought
+ *  into view (`show`, given its figure's id) once it's drawn, since the row can sit below the fold. */
+export function fileToggler(task: Pick<Task, "attachments">, openId: string, open: ReadonlySet<string>, setOpen: (f: (o: ReadonlySet<string>) => Set<string>) => void, show: (id: string) => void = showSoon) {
+  const names = task.attachments.filter((n) => IMAGE.test(n));
+  return (n: string) => {
+    setOpen((o) => toggled(o, n));
+    if (!open.has(n) && names.includes(n)) show(bigId(openId, names.indexOf(n)));
+  };
+}
+
+/** Scrolls the element with this id into view after the next render: as little as shows it, and
+ *  not smoothly when the system asks for less motion. Again once its image has loaded, since it
+ *  only then has its height. */
+export function showSoon(id: string, win: Pick<Window, "requestAnimationFrame" | "matchMedia" | "document"> = window) {
+  win.requestAnimationFrame(() => {
+    const el = win.document.getElementById(id);
+    if (!el) return;
+    const still = win.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const go = () => el.scrollIntoView({ block: "nearest", behavior: still ? "auto" : "smooth" });
+    go();
+    const img = el.querySelector("img");
+    if (img && !img.complete) img.addEventListener("load", go, { once: true });
+  });
+}
+
+/** Files' open images (mu-91), each at the pane's full width in a row under the two columns, in
+ *  the task's order, with its name under it; clicking one shuts it, as its thumbnail does. Nothing
+ *  while none is open: the row stays, hidden, so the thumbnails' `aria-controls` always resolve; a
+ *  task with no image has no row. Shutting one from here puts the focus on its thumbnail, since
+ *  the button that had it is gone. */
+export function FilesOpen({ task, images, open, onToggle, id, focus = focusById }: {
+  task: Task;
+  images: Record<string, string>;
+  open: ReadonlySet<string>;
+  onToggle: (name: string) => void;
+  id: string;
+  /** Puts the focus on the element with this id (a test passes its own). */
+  focus?: (id: string) => void;
+}) {
+  const names = task.attachments.filter((n) => IMAGE.test(n));
+  if (names.length === 0) return null;
+  const shown = names.filter((n) => open.has(n));
+  const shut = (n: string) => {
+    onToggle(n);
+    focus(thumbId(id, names.indexOf(n)));
+  };
+  return (
+    <div className="files-open" id={id} data-part="files-open" aria-label="Open files" hidden={shown.length === 0}>
+      {shown.map((n) => (
+        <figure key={n} id={bigId(id, names.indexOf(n))} className="file-big">
+          <button type="button" className="file-big-btn" aria-label={`Shut ${n}`} title={`Shut ${n}`} onClick={() => shut(n)}>
+            {images[n] ? <img src={images[n]} alt={n} /> : <span className="mini-img" />}
+          </button>
+          <figcaption dir="auto">{n}</figcaption>
+        </figure>
+      ))}
     </div>
   );
 }

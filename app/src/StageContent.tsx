@@ -60,11 +60,27 @@ export default function StageContent({ task, nowSecs, body, childTasks, busy, on
   }
 }
 
-/** Which proof thumbnails are open, by `<criterion n>/<file>`: `key` opened, or shut again. */
+/** Which thumbnails are open (proof ones by `<criterion n>/<file>`, Files' by file name): `key`
+ *  opened, or shut again. */
 export function toggled(open: ReadonlySet<string>, key: string): Set<string> {
   const next = new Set(open);
   if (!next.delete(key)) next.add(key);
   return next;
+}
+
+/** A screenshot as a small thumbnail button that opens it large in the pane's flow and shuts it on
+ *  a second click: no overlay. Its file name names the button and stays under the image; a
+ *  placeholder until the image has loaded. A proof's opens right there, at the main column's width
+ *  (mu-78). Files' (mu-91) sits in the narrow side column, so it stays small, marked open, and
+ *  `controls` names the full-width row below the columns that holds the large image. */
+export function ImageThumb({ name, url, open, onToggle, controls, id }: { name: string; url: string | undefined; open: boolean; onToggle: () => void; controls?: string; id?: string }) {
+  const big = open && controls === undefined;
+  return (
+    <button type="button" id={id} className={big ? "mini-thumb proof-thumb open" : open ? "mini-thumb proof-thumb on" : "mini-thumb proof-thumb"} aria-expanded={open} aria-controls={controls} aria-label={name} title={name} onClick={onToggle}>
+      {url ? <img className={big ? "proof-big" : undefined} src={url} alt={big ? name : ""} /> : <span className="mini-img" />}
+      <span className="name" dir="auto">{name}</span>
+    </button>
+  );
 }
 
 /** Your check's "What you're accepting" (mu-78): which thumbnails are open, shut again for
@@ -157,13 +173,7 @@ function ProofLine({ c, urls, open, onToggle }: { c: Criterion; urls: Record<str
           {files.map((n) => {
             const k = `${c.n}/${n}`;
             if (!IMAGE.test(n)) return <span key={n} className="other-file" title={n}>{n}</span>;
-            const big = open.has(k);
-            return (
-              <button key={n} type="button" className={big ? "mini-thumb proof-thumb open" : "mini-thumb proof-thumb"} aria-expanded={big} aria-label={n} title={n} onClick={() => onToggle(k)}>
-                {urls[n] ? <img className={big ? "proof-big" : undefined} src={urls[n]} alt="" /> : <span className="mini-img" />}
-                <span className="name">{n}</span>
-              </button>
-            );
+            return <ImageThumb key={n} name={n} url={urls[n]} open={open.has(k)} onToggle={() => onToggle(k)} />;
           })}
         </span>
       )}

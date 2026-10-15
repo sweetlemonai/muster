@@ -99,8 +99,8 @@ describe("What you're accepting, in Your check (mu-78)", () => {
     expect(shut.map((b) => attr(b.attrs, "aria-expanded"))).toEqual(["false", "false"]);
     expect(open.map((b) => attr(b.attrs, "aria-expanded"))).toEqual(["true", "false"]);
     const html = block(task(), ["2/0010-ac2-keyboard.png"], urls);
-    expect(lines(html)[1]).toMatch(/class="mini-thumb proof-thumb open"[^>]*><img class="proof-big" src="data:image\/png;base64,AAA" alt=""\/>/);
-    expect(html).not.toMatch(/lightbox|role="dialog"|position: ?fixed/);
+    expect(lines(html)[1]).toMatch(/class="mini-thumb proof-thumb open"[^>]*><img class="proof-big" src="data:image\/png;base64,AAA" alt="0010-ac2-keyboard.png"\/><span class="name" dir="auto">0010-ac2-keyboard.png<\/span>/);
+    expect(html).not.toMatch(/role="dialog"|aria-modal|position: ?fixed|overlay/);
     // Clicking toggles that one: open, then shut again.
     const once = toggled(new Set(), "2/0010-ac2-keyboard.png");
     expect([...once]).toEqual(["2/0010-ac2-keyboard.png"]);
@@ -120,7 +120,7 @@ describe("What you're accepting, in Your check (mu-78)", () => {
     // With that key open, the same button says so and holds the large image.
     const [first] = toggles(block(task(), [onToggle.mock.calls[0][0]], urls));
     expect(attr(first.attrs, "aria-expanded")).toBe("true");
-    expect(lines(block(task(), [onToggle.mock.calls[0][0]], urls))[1]).toContain('<img class="proof-big" src="data:image/png;base64,AAA" alt=""/>');
+    expect(lines(block(task(), [onToggle.mock.calls[0][0]], urls))[1]).toContain('<img class="proof-big" src="data:image/png;base64,AAA" alt="0010-ac2-keyboard.png"/>');
   });
 
   it("makes each thumbnail a button named by its file, that Tab reaches and Enter or Space works", () => {

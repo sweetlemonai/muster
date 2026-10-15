@@ -1,10 +1,11 @@
-import { createElement } from "react";
+import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { answerId } from "./answerFocus";
 import { TitleEdit } from "./PaneHeader";
 import PaneMsg from "./PaneMsg";
-import { ValueChipView } from "./Sidebar";
+import { FilesOpen, FilesView, fileToggler, showSoon, ValueChipView } from "./Sidebar";
+import css from "./styles.css?raw";
 import StageTrack from "./StageTrack";
 import { trackSteps } from "./paneData";
 import TaskPanel from "./TaskPanel";
@@ -518,5 +519,187 @@ describe("the pane's message", () => {
     );
     expect(html).toContain('class="ok small pane-msg"');
     expect(text(html)).toBe("Put in Testing. Undo: back to Building");
+  });
+});
+
+describe("Files opens a screenshot in the pane, at its full width (mu-91)", () => {
+  const t = task({ attachments: ["a-shot.png", "b-shot.jpg", "notes.txt"] });
+  const urls = { "a-shot.png": "data:image/png;base64,AAA", "b-shot.jpg": "data:image/jpeg;base64,BBB" };
+  const files = (open: string[]) =>
+    renderToStaticMarkup(createElement(FilesView, { task: t, images: urls, open: new Set(open), onToggle: () => {}, onAttach: () => {}, openId: "fo1" }));
+  const big = (open: string[], images: Record<string, string> = urls) =>
+    renderToStaticMarkup(createElement(FilesOpen, { task: t, images, open: new Set(open), onToggle: () => {}, id: "fo1" }));
+  const thumbs = (html: string) => [...html.matchAll(/<button([^>]*\baria-expanded="(?:true|false)"[^>]*)>([\s\S]*?)<\/button>/g)].map((m) => ({ attrs: m[1], inner: m[2] }));
+  const figures = (html: string) => [...html.matchAll(/<figure id="fo1-big-\d" class="file-big">([\s\S]*?)<\/figure>/g)].map((m) => m[1]);
+  const attr = (attrs: string, name: string) => new RegExp(`\\b${name}="([^"]*)"`).exec(attrs)?.[1];
+  /** The elements a view draws, its own components called through (none holds state), so a test
+   *  can fire a handler without a DOM. */
+  type Props = { children?: ReactNode; onClick?: () => void; "aria-label"?: string };
+  const elements = (node: ReactNode): ReactElement<Props>[] => {
+    if (Array.isArray(node)) return node.flatMap(elements);
+    if (!isValidElement<Props>(node)) return [];
+    if (typeof node.type === "function") return elements((node.type as (p: Props) => ReactNode)(node.props));
+    return [node, ...elements(node.props.children)];
+  };
+  /** The style sheet's rules, comments left out: selector and body. */
+  const rules = [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ sel: m[1].trim(), body: m[2] }));
+  const rule = (sel: string) => rules.find((r) => r.sel === sel)?.body ?? "";
+
+  it("draws each image as a toggle button named by its file, controlling the open row; the others by name", () => {
+    const html = files([]);
+    const shut = thumbs(html);
+    expect(shut.map((b) => attr(b.attrs, "aria-label"))).toEqual(["a-shot.png", "b-shot.jpg"]);
+    for (const b of shut) {
+      expect(attr(b.attrs, "type")).toBe("button");
+      expect(attr(b.attrs, "aria-expanded")).toBe("false");
+      expect(attr(b.attrs, "aria-controls")).toBe("fo1");
+      expect(attr(b.attrs, "title")).toBe(attr(b.attrs, "aria-label"));
+      expect(attr(b.attrs, "tabindex")).toBeUndefined();
+    }
+    expect(shut[0].inner).toBe('<img src="data:image/png;base64,AAA" alt=""/><span class="name" dir="auto">a-shot.png</span>');
+    expect(html).toContain('<span class="other-file" title="notes.txt">notes.txt</span>');
+    expect(html).toContain('<span class="lbl">Files <small>3</small></span>');
+  });
+
+  it("an open one's thumbnail stays small in the narrow column and says it's open", () => {
+    const [a, b] = thumbs(files(["a-shot.png"]));
+    expect(attr(a.attrs, "aria-expanded")).toBe("true");
+    expect(attr(a.attrs, "class")).toBe("mini-thumb proof-thumb on");
+    expect(a.inner).toBe('<img src="data:image/png;base64,AAA" alt=""/><span class="name" dir="auto">a-shot.png</span>');
+    expect(attr(b.attrs, "aria-expanded")).toBe("false");
+    // Not a proof thumbnail's growth in place: the side column is too narrow to read an image in.
+    expect(files(["a-shot.png", "b-shot.jpg"])).not.toMatch(/proof-big|proof-thumb open/);
+  });
+
+  it("shows the open images large in the row under the columns, in the task's order, each named", () => {
+    const html = big(["b-shot.jpg", "a-shot.png"]);
+    expect(html).toMatch(/^<div class="files-open" id="fo1" data-part="files-open" aria-label="Open files">/);
+    expect(figures(html)).toEqual([
+      '<button type="button" class="file-big-btn" aria-label="Shut a-shot.png" title="Shut a-shot.png"><img src="data:image/png;base64,AAA" alt="a-shot.png"/></button><figcaption dir="auto">a-shot.png</figcaption>',
+      '<button type="button" class="file-big-btn" aria-label="Shut b-shot.jpg" title="Shut b-shot.jpg"><img src="data:image/jpeg;base64,BBB" alt="b-shot.jpg"/></button><figcaption dir="auto">b-shot.jpg</figcaption>',
+    ]);
+    expect(figures(big(["a-shot.png"]))).toHaveLength(1);
+    // A placeholder until the image has loaded; a name no longer attached isn't shown.
+    expect(figures(big(["a-shot.png"], {}))[0]).toContain('<span class="mini-img"></span>');
+    expect(figures(big(["gone.png"]))).toEqual([]);
+  });
+
+  it("keeps the row, empty and hidden, while none is open, so aria-controls always resolves", () => {
+    expect(big([])).toBe('<div class="files-open" id="fo1" data-part="files-open" aria-label="Open files" hidden=""></div>');
+    // A task with no image has no row, and nothing points at one.
+    const none = renderToStaticMarkup(createElement(FilesOpen, { task: { ...t, attachments: ["notes.txt"] }, images: urls, open: new Set<string>(), onToggle: () => {}, id: "fo1" }));
+    expect(none).toBe("");
+  });
+
+  it("draws no overlay: no dialog, no modal, nothing fixed over the board", () => {
+    for (const html of [files([]), files(["a-shot.png"]), big(["a-shot.png", "b-shot.jpg"])]) {
+      expect(html).not.toMatch(/role="dialog"|aria-modal|<dialog|position: ?fixed|overlay/);
+    }
+    // The one fixed, full-window rule left is the modal for confirming something destructive.
+    expect(rules.filter((r) => /position: ?fixed/.test(r.body) && /inset: ?0/.test(r.body)).map((r) => r.sel)).toEqual([".modal-back"]);
+  });
+
+  it("toggles an image by its file name from its thumbnail, and shuts it from the large one", () => {
+    const onToggle = vi.fn();
+    const side = elements(FilesView({ task: t, images: urls, open: new Set(), onToggle, onAttach: () => {}, openId: "fo1" }));
+    const thumb = (name: string) => side.find((e) => e.type === "button" && e.props["aria-label"] === name);
+    thumb("b-shot.jpg")?.props.onClick?.();
+    thumb("a-shot.png")?.props.onClick?.();
+    const row = elements(FilesOpen({ task: t, images: urls, open: new Set(["a-shot.png"]), onToggle, id: "fo1", focus: () => {} }));
+    row.find((e) => e.type === "button" && e.props["aria-label"] === "Shut a-shot.png")?.props.onClick?.();
+    expect(onToggle.mock.calls).toEqual([["b-shot.jpg"], ["a-shot.png"], ["a-shot.png"]]);
+  });
+
+  it("puts the focus back on an image's thumbnail when it's shut from the large one, whose button goes", () => {
+    const focus = vi.fn();
+    const onToggle = vi.fn();
+    const row = elements(FilesOpen({ task: t, images: urls, open: new Set(["a-shot.png", "b-shot.jpg"]), onToggle, id: "fo1", focus }));
+    row.find((e) => e.type === "button" && e.props["aria-label"] === "Shut b-shot.jpg")?.props.onClick?.();
+    expect(onToggle.mock.calls).toEqual([["b-shot.jpg"]]);
+    expect(focus.mock.calls).toEqual([["fo1-thumb-1"]]);
+    // The ids it focuses are the thumbnails' own, in the task's order, other files skipped.
+    expect(thumbs(files([])).map((b) => attr(b.attrs, "id"))).toEqual(["fo1-thumb-0", "fo1-thumb-1"]);
+    // Shutting from the thumbnail moves no focus: that button stays.
+    const side = elements(FilesView({ task: t, images: urls, open: new Set(["a-shot.png"]), onToggle, onAttach: () => {}, openId: "fo1" }));
+    side.find((e) => e.type === "button" && e.props["aria-label"] === "a-shot.png")?.props.onClick?.();
+    expect(focus).toHaveBeenCalledTimes(1);
+  });
+
+  it("brings an image that opens into view, and not one that shuts", () => {
+    const show = vi.fn();
+    let open: ReadonlySet<string> = new Set();
+    const setOpen = (f: (o: ReadonlySet<string>) => Set<string>) => {
+      open = f(open);
+    };
+    fileToggler(t, "fo1", open, setOpen, show)("b-shot.jpg");
+    expect([...open]).toEqual(["b-shot.jpg"]);
+    expect(show.mock.calls).toEqual([["fo1-big-1"]]);
+    fileToggler(t, "fo1", open, setOpen, show)("b-shot.jpg");
+    expect([...open]).toEqual([]);
+    expect(show).toHaveBeenCalledTimes(1);
+    // The id it shows is the open figure's.
+    expect(big(["b-shot.jpg"])).toContain('<figure id="fo1-big-1" class="file-big">');
+  });
+
+  it("scrolls an opened image into view as little as shows it, smoothly only when motion is welcome", () => {
+    const run = (still: boolean, complete: boolean) => {
+      const frames: (() => void)[] = [];
+      const scrolls: ScrollIntoViewOptions[] = [];
+      const loads: (() => void)[] = [];
+      const img = { complete, addEventListener: (_: string, f: () => void) => loads.push(f) };
+      const el = { scrollIntoView: (o: ScrollIntoViewOptions) => scrolls.push(o), querySelector: () => img };
+      const win = {
+        requestAnimationFrame: (f: () => void) => frames.push(f),
+        matchMedia: (q: string) => ({ matches: still && q === "(prefers-reduced-motion: reduce)" }),
+        document: { getElementById: (id: string) => (id === "fo1-big-0" ? el : null) },
+      } as unknown as Window;
+      showSoon("fo1-big-0", win);
+      expect(scrolls).toEqual([]); // not before the image is drawn
+      frames.forEach((f) => f());
+      loads.forEach((f) => f());
+      return scrolls;
+    };
+    expect(run(false, true)).toEqual([{ block: "nearest", behavior: "smooth" }]);
+    expect(run(true, true)).toEqual([{ block: "nearest", behavior: "auto" }]);
+    // An image still loading has no height yet: once it has, it's scrolled to again.
+    expect(run(true, false)).toEqual([{ block: "nearest", behavior: "auto" }, { block: "nearest", behavior: "auto" }]);
+    // Gone by the next frame: nothing to scroll, nothing thrown.
+    const frames: (() => void)[] = [];
+    showSoon("x", { requestAnimationFrame: (f: () => void) => frames.push(f), matchMedia: () => ({ matches: false }), document: { getElementById: () => null } } as unknown as Window);
+    expect(() => frames.forEach((f) => f())).not.toThrow();
+  });
+
+  it("sits in the pane under the two columns, not in the side column", () => {
+    const html = renderToStaticMarkup(createElement(TaskPanel, { task: t, now: 0, onClose: () => {}, onChanged: () => {} }));
+    const row = html.indexOf('data-part="files-open"');
+    expect(row).toBeGreaterThan(html.indexOf("</aside>"));
+    // Right after the two columns close, in the pane itself.
+    expect(html).toContain('</aside></div><div class="files-open"');
+    expect(row).toBeLessThan(html.indexOf('data-part="path"'));
+    const id = /<div class="files-open" id="([^"]+)"/.exec(html)?.[1];
+    expect(id).toBeTruthy();
+    expect([...html.matchAll(/aria-controls="([^"]*)"/g)].map((m) => m[1])).toEqual([id, id]);
+  });
+
+  it("fits an open image to the pane's width, whole, and never inside the side column", () => {
+    const img = rule(".file-big img");
+    expect(img).toMatch(/max-width: 100%/);
+    expect(img).toMatch(/height: auto/);
+    expect(img).toMatch(/object-fit: contain/);
+    expect(rules.some((r) => /\.tp-side[^,]*\.(files-open|file-big)/.test(r.sel))).toBe(false);
+    // A proof image still grows in place, at the main column's width.
+    expect(rule(".proof-thumb img.proof-big")).toMatch(/max-width: 100%/);
+    // Files' open thumbnail is marked, not grown, and keeps its accent while hovered or focused.
+    expect(rule(".proof-thumb.on")).toMatch(/border-color: var\(--accent\)/);
+    const lit = rules.find((r) => r.sel.includes(".proof-thumb.on:focus-visible"));
+    expect(lit?.sel).toContain(".tp-side .proof-thumb.on:not(:disabled):hover");
+    expect(lit?.body).toMatch(/border-color: var\(--accent\)/);
+    // The large image sits on the pane's own colour.
+    expect(rule(".file-big")).toMatch(/background: var\(--panel\)/);
+  });
+
+  it("hides the row while none is open, whatever its display otherwise", () => {
+    expect(rule(".files-open[hidden]")).toMatch(/display: none/);
+    expect(rule(".files-open")).toMatch(/display: flex/);
   });
 });

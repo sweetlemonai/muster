@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import AnswerBox from "./AnswerBox";
 import { answerId } from "./answerFocus";
 import { api } from "./api";
@@ -15,7 +15,7 @@ import { IMAGE, isFileDrag, logSummary, releasedBy, undoFor } from "./paneData";
 import { SessionPing } from "./Ping";
 import { reviewStatus, withoutReview } from "./Review";
 import ReviewPanel from "./ReviewPanel";
-import Sidebar from "./Sidebar";
+import Sidebar, { FilesOpen, fileToggler } from "./Sidebar";
 import StageContent from "./StageContent";
 import StageForms from "./StageForms";
 import StageTrack from "./StageTrack";
@@ -76,6 +76,11 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
   };
 
   const images = usePaneImages(task);
+  // Files' open images (mu-91), shown full width under the columns; shut again for another task.
+  const [openFiles, setOpenFiles] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => setOpenFiles(new Set()), [task.queue, task.id]);
+  const filesId = useId();
+  const files = { open: openFiles, onToggle: fileToggler(task, filesId, openFiles, setOpenFiles), openId: filesId };
 
   // Reload the text when the file changes (its modified time moves).
   useEffect(() => {
@@ -142,8 +147,9 @@ export default function TaskPanel({ task, now, onClose, onChanged, onDirty, nudg
           <div className="tp-main">
             <StageContent task={task} nowSecs={now} body={body === null ? null : shown} childTasks={childTasks} busy={a.busy} onTick={a.tick} onView={onOpenView} images={images} />
           </div>
-          <Sidebar task={task} nowSecs={now} a={a} images={images} />
+          <Sidebar task={task} nowSecs={now} a={a} images={images} files={files} />
         </div>
+        <FilesOpen task={task} images={images} open={openFiles} onToggle={files.onToggle} id={filesId} />
         <StageForms task={task} a={a} />
         <SessionPing task={task} now={now} onChanged={onChanged} />
         {a.msg && <PaneMsg msg={a.msg} undo={undo} busy={a.busy} onUndo={a.undo} />}

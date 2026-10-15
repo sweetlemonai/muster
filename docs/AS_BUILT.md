@@ -1333,8 +1333,12 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   `categories`, `gate`, `run`, `yourCheck`, `colours`, `groupNames`) are `BTreeMap`s, saved in key
   order, so a save that changes nothing else (a fold and its unfold) keeps the file's bytes (mu-88).
 - **Task panel** (loads on first open): the task rendered as Markdown with a Raw switch,
-  open questions with an answer box (⌘↩), the files as thumbnails that open large (← → between
-  them, Esc to close), who's on it, what it waits on, and the commit.
+  open questions with an answer box (⌘↩), the files as thumbnails (the shared `ImageThumb` of
+  Your check's proof) that open their image at the pane's full width in a row under the two
+  columns (`FilesOpen`, `data-part="files-open"`), several at once, a second click on the
+  thumbnail or the image shutting one; one that opens is scrolled into view, and shutting it
+  from the image puts the focus on its thumbnail; the side column is too narrow to read one in
+  (mu-91, no overlay), who's on it, what it waits on, and the commit.
 - **Pick-one questions** (task 0049, `choices.rs`, `PickOne.tsx`): a question asked with options
   shows them as chips in the pane's open questions and in its Waiting for you entry, every option
   on screen, the asker's pick marked **pick** and "with no answer: a" after them. One click
