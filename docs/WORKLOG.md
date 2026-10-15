@@ -3,7 +3,7 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
-## 2026-10-15 — Lead (QA_10): 13 merges since 09:00, and the calls behind them
+## 2026-10-15 — Lead (QA_10): 11 merges since 09:00, and the calls behind them
 **Did:** merged mu-215, mu-216, mu-217, mu-162, mu-148, mu-220, mu-201, mu-149, mu-152, mu-204
 and mu-218, each with G1, G2 and G3 green (mu-149 under the owner's override, below). Rebuilt the
 release binary after mu-218 (12:36) so the merge driver has the guard. Filed mu-220 (speed tests
