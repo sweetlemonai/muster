@@ -11,7 +11,8 @@ import appSource from "./App.tsx?raw";
 import { byPlace, CategoryCell, ColourCell, GateCell, GateRow, mineLayout, NameCell, PlaceCell, PrefixCell, PROJECT_COLUMNS } from "./Projects";
 import { AccountPicker } from "./Helper";
 import helperSource from "./Helper.tsx?raw";
-import Settings, { AboutView, AccountsRow, AgentsView, saveAccounts, saveAgentsSetting, SpanSetting, withModel } from "./Settings";
+import Settings, { AboutView, AccountAdd, AccountsRow, AccountsView, AgentsView, addAccount, ProfileEditor, profileKey, removeAccount, saveAccounts, saveAgentsSetting, saveProfile, SpanSetting, withModel } from "./Settings";
+import { type AccountsInfo, type AccountView, profileForm, type ProfileSave } from "./accountsData";
 import settingsSource from "./Settings.tsx?raw";
 import { accountsEdit, DEFAULT_MACHINE, machineOf, SETTINGS_GROUPS, type SettingsInfo, spanInput, spanText } from "./settingsData";
 import css from "./styles.css?raw";
@@ -20,6 +21,7 @@ import type { Project } from "./types";
 // The core, at the process boundary: set_setting is answered without a window.
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => null) }));
 
+const decode = (s: string) => s.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
 
 /** One CSS rule's body. */
@@ -60,10 +62,10 @@ describe("Settings (0036)", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("lists its groups in a fixed order, the open one marked, with room for later groups", () => {
-    expect(SETTINGS_GROUPS.map((g) => g.label)).toEqual(["Appearance", "Display", "Projects", "Agents", "Notifications", "About"]);
+    expect(SETTINGS_GROUPS.map((g) => g.label)).toEqual(["Appearance", "Display", "Projects", "Agents", "Accounts", "Notifications", "About"]);
     const html = settings("agents");
     const list = /<nav class="settings-groups"[^>]*>([\s\S]*?)<\/nav>/.exec(html)?.[1] ?? "";
-    expect([...list.matchAll(/<button[^>]*>([^<]*)<small>/g)].map((m) => m[1])).toEqual(["Appearance", "Display", "Projects", "Agents", "Notifications", "About"]);
+    expect([...list.matchAll(/<button[^>]*>([^<]*)<small>/g)].map((m) => m[1])).toEqual(["Appearance", "Display", "Projects", "Agents", "Accounts", "Notifications", "About"]);
     expect(list.match(/aria-current="page"/g)).toHaveLength(1);
     expect(list).toMatch(/aria-current="page"[^>]*>Agents</);
     // Each says what it holds, so nothing is behind a click to find out.
@@ -570,7 +572,7 @@ describe("About", () => {
 describe("the manual and Settings", () => {
   it("the manual describes every group of Settings", () => {
     const slugs = headings(inTheApp).map((h) => h.slug);
-    for (const s of ["settings", "appearance", "projects", "agents", "about"]) expect(slugs).toContain(s);
+    for (const s of ["settings", "appearance", "projects", "agents", "accounts", "about"]) expect(slugs).toContain(s);
   });
   // settings.json holds the language once one is picked (mu-146): About and the manual say so.
   it("the manual has a Language section, and it and About list the language in settings.json", () => {
@@ -628,5 +630,150 @@ describe("settings data", () => {
     expect(machineOf({})).toEqual(DEFAULT_MACHINE);
     expect(machineOf({ settings: { leaseMinutes: -1, liveMinutes: 1.5 } })).toEqual(DEFAULT_MACHINE);
     expect(DEFAULT_MACHINE).toEqual({ leaseMinutes: 720, liveMinutes: 5 });
+  });
+});
+
+describe("Settings › Accounts (0113)", () => {
+  const at = (y: number, mo: number, d: number, h: number, mi: number) => new Date(y, mo - 1, d, h, mi).getTime() / 1000;
+  const NOW = at(2026, 10, 14, 11, 5);
+  const MG: AccountView = {
+    provider: "claude", label: "mg", name: "cc-mg", plan: "Max 5x", roles: ["builder", "tester"], models: ["opus"], concurrency: 2, reserve: 20, paused: false, projects: [],
+    fiveHour: { usedPercentage: 42, resetsAt: at(2026, 10, 14, 14, 20), stale: false, headroom: 38 },
+    sevenDay: { usedPercentage: 85, resetsAt: at(2026, 10, 18, 9, 0), stale: false, headroom: -5 },
+    readingAt: NOW - 180, source: "statusline",
+  };
+  const HG: AccountView = { ...MG, label: "hg", name: "cc-hg", plan: "", roles: [], models: [], fiveHour: null, sevenDay: null, readingAt: null, source: null, projects: ["drover"] };
+  const calls = { add: async () => {}, remove: async () => {}, save: async () => {}, after: () => {} };
+  const view = (info: AccountsInfo | null, error = "") => renderToStaticMarkup(createElement(AccountsView, { info, error, calls }));
+
+  it("is a group of Settings after Agents, its ? opening its section of the manual", () => {
+    expect(SETTINGS_GROUPS.find((g) => g.id === "accounts")).toEqual({ id: "accounts", label: "Accounts", holds: "Each account's use, reserve and limits", topic: "accounts" });
+    expect(HELP_TOPICS.accounts).toEqual({ file: "04-in-the-app.md", slug: "accounts", label: "Accounts" });
+    expect(text(settings("accounts"))).toContain("Accounts ? Each account's use, reserve and limits");
+  });
+
+  it("shows each account's reading and its fields inline, and the one quiet line on balancing", () => {
+    const html = view({ accounts: [MG, HG], now: NOW });
+    const t = text(html);
+    expect(t).toContain("No automatic balancing across accounts (decision 0013).");
+    expect(html).toContain('<p class="meta">No automatic balancing across accounts (decision 0013).</p>');
+    expect(t).toContain("cc-mg Claude · Max 5x");
+    expect(t).toContain("5 h: 42% used, resets 14:20, 38% to spare above the reserve");
+    expect(t).toContain("7 d: 85% used, resets 18 Oct 09:00, 5% into the reserve");
+    expect(t).toContain("Read 3 min ago, from the status line.");
+    // Every field in place, with its value: no overlay, nothing behind a click.
+    for (const [label, value] of [["Plan", "Max 5x"], ["Reserve %", "20"], ["Concurrency", "2"], ["Roles", "builder, tester"], ["Models", "opus"]]) {
+      expect(decode(html)).toMatch(new RegExp(`<label class="profile-field"><span class="meta">${label.replace("%", "\\%")}</span> <input[^>]* value="${value}"`));
+    }
+    expect(html).toMatch(/<label class="profile-field"><input type="checkbox"\/> Paused<\/label>/);
+    expect(html).toContain('aria-label="cc-mg&#x27;s profile"');
+    expect(html).toMatch(/<button type="button" class="ui-button">Remove…<\/button>/);
+    // An account with no reading says so, and names the projects pinned to it.
+    expect(t).toContain("cc-hg Claude 5 h: no reading 7 d: no reading No reading yet.");
+    expect(t).toContain("Pinned to it: drover");
+    expect(html).not.toMatch(/role="dialog"|aria-modal/);
+  });
+
+  it("adds an account by label and provider, its refusal shown in place", () => {
+    const t = text(view({ accounts: [MG], now: NOW }));
+    expect(t).toContain("Add an account Label Claude Codex Add");
+    const add = (error: string) => renderToStaticMarkup(createElement(AccountAdd, { typed: "x", provider: "claude", error, busy: false, onTyped: () => {}, onProvider: () => {}, onAdd: () => {} }));
+    expect(add("")).toMatch(/<button type="button" aria-pressed="true" class="ui-pill ui-pill--on">Claude<\/button>/);
+    const refused = add("cc-x isn't on the allowlist of Claude accounts (Settings): add it there first");
+    expect(refused).toContain('<p class="err profile-error" aria-live="polite">cc-x isn&#x27;t on the allowlist of Claude accounts (Settings): add it there first</p>');
+    // Add, Save and Remove look like Settings' other buttons, never the system's (QA).
+    expect(add("")).toMatch(/<button type="submit" class="ui-button">Add<\/button>/);
+    expect(rule(".settings-sections section > button, .setting-edit button, .profile-form .ui-button")).toBe(" border: 1px solid var(--line); background: var(--bg); border-radius: 6px; padding: 4px 12px; ");
+  });
+
+  /** The ref the button saying `label` is given, in a tree of plain elements and hook-free
+   *  components. */
+  function refOf(node: ReactNode, label: string): unknown {
+    if (!node || typeof node !== "object") return undefined;
+    if (Array.isArray(node)) return node.map((n: ReactNode) => refOf(n, label)).find((r) => r !== undefined);
+    const el = node as ReactElement<{ children?: ReactNode; ref?: unknown }>;
+    if (typeof el.type === "function") return refOf((el.type as (p: unknown) => ReactNode)(el.props), label);
+    if (el.type === "button" && el.props.children === label) return el.props.ref ?? null;
+    return refOf(el.props.children, label);
+  }
+
+  it("keeps the keyboard's place through Remove's ask: Keep, back to Remove…, then the add form (review R6)", () => {
+    const removeRef = { current: null };
+    const keepRef = { current: null };
+    const editor = (removing: boolean) =>
+      ProfileEditor({ a: MG, form: profileForm(MG), error: "", busy: false, removing, removeRef, keepRef, onForm: () => {}, onSave: () => {}, onRemoving: () => {}, onRemove: () => {} });
+    expect(refOf(editor(false), "Remove…")).toBe(removeRef);
+    expect(refOf(editor(true), "Keep")).toBe(keepRef);
+    // Profile moves the focus once the ask opens or closes, and a removal hands it to the add form.
+    expect(settingsSource).toMatch(/useEffect\(\(\) => \{\s*if \(removing\) keepButton\.current\?\.focus\(\);\s*else if \(backToRemove\.current\) \{\s*backToRemove\.current = false;\s*removeButton\.current\?\.focus\(\);/);
+    expect(settingsSource).toContain("backToRemove.current = !asking;");
+    expect(settingsSource).toContain("if (refused === null) onRemoved();");
+    expect(settingsSource).toContain("onRemoved={() => addField.current?.focus()}");
+    expect(settingsSource).toContain("<AddAccount calls={calls} field={addField} />");
+    expect(settingsSource).toContain("<input ref={field} value={typed}");
+  });
+
+  it("names the account by provider and label when it saves or removes, so cc-mg and codex-mg stay apart (review R5)", () => {
+    expect(settingsSource).toContain("saveProfile(a.name, form, calls)");
+    expect(settingsSource).toContain("removeAccount(a.name, calls)");
+  });
+
+  it("says when there are no accounts, while they load, and when they can't be read", () => {
+    expect(text(view({ accounts: [], now: NOW }))).toContain("No accounts yet. Add one below.");
+    expect(text(view(null))).toContain("Loading…");
+    expect(view(null, "accounts.json: permission denied")).toContain('<p class="err" role="alert">Can\'t read the accounts: accounts.json: permission denied</p>'.replace("'", "&#x27;"));
+  });
+
+  it("saves a profile through the core, checking its bounds first, and shows the core's refusal as is", async () => {
+    const sent: ProfileSave[] = [];
+    let after = 0;
+    const to = { ...calls, save: async (p: ProfileSave) => void sent.push(p), after: () => void after++ };
+    const form = profileForm(MG);
+    expect(await saveProfile("mg", { ...form, reserve: "25" }, to)).toBeNull();
+    expect(sent).toEqual([{ label: "mg", plan: "Max 5x", roles: ["builder", "tester"], models: ["opus"], concurrency: 2, reserve: 25, paused: false }]);
+    expect(after).toBe(1);
+    // The client's refusal never reaches the core.
+    expect(await saveProfile("mg", { ...form, reserve: "95" }, to)).toBe("Reserve is a whole percent from 0 to 90.");
+    expect(sent).toHaveLength(1);
+    const refusing = { ...to, save: () => Promise.reject("accounts.json: permission denied") };
+    expect(await saveProfile("mg", form, refusing)).toBe("accounts.json: permission denied");
+    expect(after).toBe(1);
+  });
+
+  it("adds and removes through the core, with its refusals: the company account, one off the allowlist", async () => {
+    const sent: string[] = [];
+    let after = 0;
+    const to = {
+      ...calls,
+      add: async (label: string, provider: string) => {
+        if (label === "claude") throw "~/.claude is the company account: Muster never adds it";
+        sent.push(`add ${label} ${provider}`);
+      },
+      remove: async (label: string) => void sent.push(`remove ${label}`),
+      after: () => void after++,
+    };
+    expect(await addAccount(" cc-hg ", "claude", to)).toBeNull();
+    expect(await addAccount("work", "codex", to)).toBeNull();
+    expect(await addAccount("claude", "claude", to)).toBe("~/.claude is the company account: Muster never adds it");
+    expect(await addAccount("  ", "claude", to)).toBe("Type an account's label, like mg for cc-mg.");
+    expect(await removeAccount("hg", to)).toBeNull();
+    expect(sent).toEqual(["add hg claude", "add work codex", "remove hg"]);
+    expect(after).toBe(3);
+  });
+
+  it("keeps a profile's typing when only a reading changes, and starts afresh when the profile does", () => {
+    expect(profileKey(MG)).toBe(profileKey({ ...MG, fiveHour: null, readingAt: NOW }));
+    expect(profileKey(MG)).not.toBe(profileKey({ ...MG, reserve: 25 }));
+  });
+
+  it("About lists the accounts' files", () => {
+    const t = about(PROJECTS);
+    expect(t).toContain("accounts.json : each account's profile: plan, roles, models, concurrency, reserve, paused");
+    expect(t).toContain("usage/ : each account's readings of its 5-hour and weekly use, the last 7 days");
+  });
+
+  it("the manual describes it", () => {
+    expect(headings(inTheApp).map((h) => h.slug)).toContain("accounts");
+    expect(inTheApp).toContain("No automatic balancing across accounts");
   });
 });

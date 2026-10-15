@@ -776,7 +776,7 @@ pub fn validate(roles: &[Role]) -> Result<(), String> {
 
 /// A character a one-line text mustn't hold: a control, a line or paragraph separator, or one
 /// that reorders the text around it (as projects.rs refuses in a command).
-fn breaks_line(c: char) -> bool {
+pub(crate) fn breaks_line(c: char) -> bool {
     c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') || crate::index::is_bidi_control(c)
 }
 

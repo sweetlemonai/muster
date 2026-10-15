@@ -46,6 +46,7 @@ import { type KindFilter, loadKind, storeKind, weekCount } from "./recentData";
 import OldPausesOffer from "./OldPauses";
 import FeatureGrid from "./FeatureGrid";
 import { gridRows, headerLine, type Layout, LAYOUTS, loadLayout, storeLayout } from "./featureGridData";
+import AccountMeter from "./AccountMeter";
 import logoDark from "./logo-dark.svg";
 import logoLight from "./logo-light.svg";
 
@@ -475,9 +476,14 @@ export default function App() {
           <Pill on={view === "help"} onClick={() => setView("help")}>{t("app.view.help")}</Pill>
           <Pill on={view === "settings"} onClick={() => setView("settings")} title={t("app.view.settingsTitle")}>{t("app.view.settings")}</Pill>
         </nav>
-        <ModeChip mode={modes.mode} onOpen={() => openSettings("display")} />
-        <span className="live" title={error || t("app.liveTitle")}>
-          {error ? <span className="err">{t("app.cantRead")}</span> : at ? <><i className="dot" /> {t("app.live")}</> : t("app.loading")}
+        {/* The status area, one unit: where the header is too narrow for one line it drops whole to
+            a second, never cut (0113). */}
+        <span className="top-status">
+          <AccountMeter onOpen={() => openSettings("accounts")} />
+          <ModeChip mode={modes.mode} onOpen={() => openSettings("display")} />
+          <span className="live" title={error || t("app.liveTitle")}>
+            {error ? <span className="err">{t("app.cantRead")}</span> : at ? <><i className="dot" /> {t("app.live")}</> : t("app.loading")}
+          </span>
         </span>
       </header>
 

@@ -48,7 +48,7 @@ const card = (mode: DisplayMode, t: Task, active = false, parent = "") =>
 
 describe("Settings › Display (0038, AC1)", () => {
   it("is a Settings group after Appearance, with its ? into the manual", () => {
-    expect(SETTINGS_GROUPS.map((g) => g.id)).toEqual(["appearance", "display", "projects", "agents", "notifications", "about"]);
+    expect(SETTINGS_GROUPS.map((g) => g.id)).toEqual(["appearance", "display", "projects", "agents", "accounts", "notifications", "about"]);
     expect(SETTINGS_GROUPS[1]).toMatchObject({ label: "Display", topic: "display" });
   });
 

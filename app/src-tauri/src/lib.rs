@@ -3,6 +3,7 @@
 //! the core gave it, never by a path it made up. Folders are picked by the core's own dialog.
 
 pub mod accounts;
+mod accounts_cmds;
 pub mod agents;
 pub mod arrange;
 pub mod backlog;
@@ -37,6 +38,7 @@ pub mod pause;
 mod pause_cmds;
 pub mod ping;
 mod ping_cmds;
+pub mod profiles;
 pub mod projects;
 pub mod queue;
 pub mod review;
@@ -52,6 +54,7 @@ pub mod testing;
 mod testkit;
 pub mod transcripts;
 pub mod tray;
+pub mod usage;
 pub mod vision;
 pub mod work;
 
@@ -89,6 +92,9 @@ pub(crate) struct AppState {
     runs: run::Runs,
     /// The menu bar icon's latest count and what it shows (0085), fed by the same reads.
     menu_bar: tray::MenuBar,
+    /// The accounts with their latest readings (0113), in memory, read again when their files
+    /// change; the poll tells the window (`accounts-changed`).
+    accounts: accounts_cmds::Accounts,
 }
 
 /// The folder queues are found under, from `projects::places`.
@@ -183,6 +189,8 @@ async fn state(
         let sessions = monitor.poll(&s.tasks, &allowed, s.now);
         agents::apply(&mut s.tasks, &sessions, &allowed);
         notify_new(&h, &s, &sessions);
+        // The header's account meter (0113): told when a reading or a profile changed.
+        accounts_cmds::notify(&h);
         // The sidebar's "running" chip (0079).
         let running = h.state::<AppState>().runs.running();
         for q in &mut s.queues {
@@ -1846,6 +1854,7 @@ pub fn run() {
                 notify: notify::Notifier::new(dir.join(notify::FILE)),
                 runs: run::Runs::new(run_events(app.handle().clone())),
                 menu_bar: tray::MenuBar::default(),
+                accounts: accounts_cmds::Accounts::default(),
             });
             // Up at launch, before the first read has a count, unless Settings turned it off; in
             // the language picked (mu-146), or in macOS's once it's read.
@@ -1943,7 +1952,11 @@ pub fn run() {
             review_cmds::decide_lessons,
             run_start,
             run_stop,
-            run_state
+            run_state,
+            accounts_cmds::accounts_info,
+            accounts_cmds::account_add,
+            accounts_cmds::account_remove,
+            accounts_cmds::account_save
         ])
         .build(tauri::generate_context!())
         .expect("error while building Muster")

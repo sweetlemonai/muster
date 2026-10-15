@@ -4,6 +4,72 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — mu-113 rebased onto main 2730c13 (mu-131, mu-172, mu-191, mu-208)
+**Did (Akbar_41, builder):** conflicts in cli.rs, help.rs, App.tsx, commands/mu.md and muster.md,
+AS_BUILT.md, glossary-fa.md and docs/now/sidebar.md resolved keeping both sides. mu-113's tests build
+their folders with `testkit::tempdir()` (mu-191). The meter's two board lines move to a new
+`docs/now/accounts.md`, as board.md went past the 4 KB cap; board.md points to it.
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`.
+
+## 2026-10-15 — mu-113 rebased onto mu-146's i18n layer: the meter and Settings › Accounts in English and Persian
+**Did (Akbar_33, builder):** rebased on main ed2474c. The header meter (`AccountMeter.tsx`), its
+words (`accountsData.ts`) and Settings › Accounts read their text from `shell.json`'s `meter` and
+`profiles`, en and fa; the Accounts group, its help topic and About's `accounts.json` and `usage/`
+lines too. Reset times use Persian digits and Activity's month names; under a minute is "just now"
+by the clock, not by comparing `ago`'s English word. No file goes on literals.test's ALLOWED.
+`shellFa.test.ts` draws the meter and Accounts in every state; the glossary has the new words
+(proposed where no source has them: خوانش، رزرو، جا تا رزرو، کهنه، سنجه، توازن).
+**Fixed:** the gate failed `broken_pipe::cli_rs_has_no_bare_print` → `muster accounts` printed with
+bare `print!`/`println!`, from before mu-170's single writer → they go through `out!`/`outln!`, and
+`reads_only` takes a bare `muster accounts` for a read (its subcommands are writes).
+**Decided:** translated rather than listing AccountMeter.tsx and accountsData.ts under mu-147/148:
+the meter is the header's and Settings › Accounts is the shell's, which mu-146 has already moved.
+**Verified:** `gate: green (pnpm check, test_task, test_commands, cargo test (Kiritimati))`. `pnpm release:build`
+(tauri build) exits 0 and puts both bins in `target/release` and in `Muster.app/Contents/MacOS`:
+`muster` (11 MB) and `muster-statusline` (452 KB, `otool -L`: libSystem only); stdin passes through
+both it and `bin/statusline-usage` unchanged in a scratch HOME.
+
+## 2026-10-15 — mu-113 review round 1: the shim falls through to cat, a lean status-line reader, readings pruned on read
+**Fixed (Asghar_29, builder):** R1 a muster that refuses (no release build, one from before 0113)
+blanked the status line → the shim `exec`'d it → it runs each with `&& exit 0` and stderr off, then
+`exec cat`; one that refuses never read stdin, so cat gets it all. R2 the shim cost +8 to +12 ms →
+dyld loading AppKit and WebKit for the app's binary → `src/bin/muster-statusline.rs`, a second
+`[[bin]]` calling `cli::statusline()`, linked with `-dead_strip_dylibs` (build.rs, that bin only), so
+the release build links only libSystem (452 KB); the shim execs it first, and `default-run = "muster"`.
+No new dependency. R3 plan and names refuse U+2028/2029 and bidi controls (`roles::breaks_line`). R4
+`profiles::remove` deletes a Claude account's readings and `profiles::read` runs `usage::prune`: files
+off the allowlist go, a file past 7 days keeps its last 6. R5 accounts are found by provider and label
+(`cc-mg`/`codex-mg`; a bare `mg` only when one provider has it), duplicates are per provider, Codex
+profiles get no readings, Settings sends the account's name. R6 Remove… focuses Keep, Keep focuses
+Remove…, a removal the add form's label. R7 within one window use only rises (`Reading::rising_from`).
+R8-R10 the shim's order test can fail now, a write that fails is tested, Settings splits lists on commas only.
+**Verified:** a mutant per fix, each failing its test (16 in all: shim, cli, profiles, usage, Settings,
+accountsData). R2, release builds from `pnpm release:build` (which builds both bins), 300
+interleaved hermetic runs at load 20.8, median over `cat` (3.46 ms): the old shim (dash, then the app
+binary) +8.51 ms, the app binary alone +6.24, the new shim +2.99 (p10 +2.18), the lean reader alone
++0.87. `otool -L` on it: libSystem only. Gate below.
+**Open:** the `--from stream` path still takes only `cc-` names (Codex has no source yet).
+
+## 2026-10-15 — mu-113: accounts and their usage, read from Claude Code, in the header and `muster accounts`
+**Did:** account profiles in `accounts.json` (`profiles.rs`: provider, plan, roles, models,
+concurrency, reserve, paused, pinned projects; seeded from the allowlist; the company `~/.claude`
+and labels off the allowlist refused with why). Readings in `usage/<label>.jsonl` (`usage.rs`):
+`parse_rate_limit_event` for the runner (mu-117) and the status line's `rate_limits`, typed and
+bounded, over-cap kept, stale past reset, 5-minute dedupe, 7 days kept. `muster accounts [--json|add|
+remove|set|record]`, `bin/statusline-usage` (stdin passed through byte for byte). The Tauri commands
+(`accounts_cmds.rs`) and `accounts-changed` from the state poll's stat check. The header meter
+(`AccountMeter.tsx`, `accountsData.ts`) and Settings › Accounts; the header now wraps instead of
+clipping. PROTOCOL, DESIGN (the meter; orange near the reserve), the manual, help and AS_BUILT.
+**Decided:** orange (`--warn`) on a bar once use passes into the reserve, as the task's Themes lens asks,
+always with words; DESIGN's colour table names it as the meter's one exception. The refresh uses the
+existing 2 s state poll's stat check rather than a new file watcher. The shim runs under dash.
+**Verified:** see the gate line in mu-113's pass. Headless WebKit shots with mocked IPC, light and dark,
+at 1280 and 1680 (attachments/0113): nothing clipped, and the meter click opens Settings › Accounts.
+**Open:** the shim adds 6 to 8.5 ms per status line on this Mac under load (budget 5 ms). The floor is
+the muster binary loading AppKit and WebKit; a small separate binary would meet the budget. AC3's real
+reading on cc-mg needs the shim installed in the owner's status line, which this task didn't do (it's the
+owner's settings). Installing it before rebuilding blanks the status line (manual says so).
+
 ## 2026-10-15 — Work-log merges: two more shapes the driver refused (mu-196, mu-209); mu-197 to mu-208 shaped
 **Fixed:** mu-173's rebase stopped on docs/WORKLOG.md with mu-190 in the binary → its branch inserted
 entries at two points (round entries on top, its first entry under main's newer ones), and mu-190 took one

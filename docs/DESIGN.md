@@ -369,6 +369,7 @@ to have a solid color code"). `themes.ts` holds the values; tests keep them apar
 | the panel, outlined, in the text colour | Who holds a task or is shaping a note (the holder ribbon, 0097): an identity, not a state; the session's state after the name keeps its own colour (working in the accent, waiting for input in the orange, mu-171) | stages, the YOU gold |
 | muted text grey, outlined, with ⏸ | Paused (0045): a calm state, never a stage's fill or the blocked red | |
 | lime · orchid · pink · tan · mint, a small dot | A project's own colour (0057), by its name wherever it's named: an identity, not a state | stages, priority, needs you, blocked (a test keeps each 30 apart from all of them in every theme) |
+| accent · orange, on the account meter's bars (0113) | an account's window use, and orange once it passes into the owner's reserve: the one place orange means "near the limit" rather than "needs you", always with the words ("5% into the reserve" in Settings and the bar's name) | |
 
 A stage colour only ever says a stage. Words carry everything else.
 
@@ -400,6 +401,21 @@ paused, in its colour), **Badge** (a small label: needs you, blocked, paused, a 
 a level), **Segmented** with **Segment**s (the task pane's joined value picker). Screens use them;
 a test fails on a screen that draws one of these with its own class, or leaves a plain `<button>`.
 Drover's Menu, Modal, Overlay, Select and Lightbox are not taken: they hide or cover things.
+
+## The account meter (task 0113)
+
+- **In the header's status unit**, before the display mode and "live": per account its name
+  (`cc-mg`), two 3 px bars (the 5-hour window over the weekly one) and "resets 14:20". The whole
+  row is one button that opens Settings › Accounts.
+- **Read, never guessed** (decision 0013): a bar shows the latest reading. Over-cap readings fill
+  the bar and stop at 100%. A mark sits where the reserve starts (100 − reserve), ringed in the
+  header's colour so it shows over hatching.
+- **Every state in words:** a stale window (past its reset) is hatched and says "stale"; no reading
+  says "no reading"; a paused account says "paused". Each bar's accessible name says it all:
+  "cc-mg 5 h: 42% used, resets 14:20; reserve 20%".
+- **Never clipped:** the header wraps instead of hiding. The status unit (meter, mode, live) moves
+  to a second line as one piece when the row is too narrow (the 320 px sidebar at 1280 wide).
+- No animation; logical CSS, so it mirrors in RTL. The numbers are the same as `muster accounts` gives.
 
 ## Out of the way
 

@@ -1,0 +1,24 @@
+#!/bin/dash
+# The status line's usage shim (task 0113). Chained before your own status line command, it passes
+# Claude Code's status-line JSON through unchanged and records only its rate_limits, each
+# account's 5-hour and weekly use, for the account CLAUDE_CONFIG_DIR names (never ~/.claude):
+#   "statusLine": {"type": "command",
+#                  "command": "~/playground/muster/main/bin/statusline-usage | <your command>"}
+# It runs this checkout's lean reader (muster-statusline: no app frameworks to load, and nothing
+# it can refuse before stdin is passed through) when it's built. Else it tries the release build,
+# then `muster` on the PATH, and moves on only when one fails: one that refuses (not built, too
+# old for `accounts record`) exits before it reads stdin, so the last resort, plain `cat`, still
+# gets all of it and the status line never breaks. It runs after every message, so it's kept
+# cheap: POSIX sh in dash (macOS's /bin/dash starts in about 1 ms, its /bin/sh in about 4), no
+# subshells, and the reader exec'd in the shell's place.
+release=${0%/*}/../app/src-tauri/target/release
+if [ -x "$release/muster-statusline" ]; then
+  exec "$release/muster-statusline" 2>/dev/null
+fi
+if [ -x "$release/muster" ]; then
+  "$release/muster" accounts record --from statusline 2>/dev/null && exit 0
+fi
+if command -v muster >/dev/null 2>&1; then
+  muster accounts record --from statusline 2>/dev/null && exit 0
+fi
+exec cat

@@ -317,6 +317,21 @@ Latin script stays in commands, task fields (`claimed-by:`) and anything an agen
 | run / stop / restart (a project's run) | اجرا / متوقف کردن / اجرای دوباره | stop is not توقف, which is the pause button | (proposed) |
 | colour names | لیمویی، ارکیده‌ای، صورتی، خاکی، نعنایی | project colours; the accents are بنفش، سبزآبی، گلی، طلایی، سبز، گرافیتی | (proposed) |
 | Settings › Projects | تنظیمات ← پروژه‌ها | the arrow rule above, for every Settings path | Drover |
+| account | حساب | pl. حساب‌ها; a Claude or Codex login Muster runs work on (0113) | common usage |
+| profile (an account's) | پروفایل | | common Persian software usage |
+| reading (of use) | خوانش | pl. خوانش‌ها; what Claude Code reported, never a guess: «بدون خوانش» | (proposed) |
+| use / used | مصرف / مصرف‌شده | «۴۲٪ مصرف‌شده» | common usage |
+| window (5-hour, weekly) | بازه | «بازه‌ی ۵ ساعته»، «هفتگی»; the short names on the bars are ۵ ساعت and ۷ روز, in full words per the times rule | Drover (بازه‌ی زنده) |
+| reserve | رزرو | the share of a window kept for the owner; not ذخیره, which is Save | (proposed) |
+| headroom | جا تا رزرو | «۳۸٪ جا تا رزرو»; past it «وارد رزرو» | (proposed) |
+| reset (a window's) | بازنشانی | «بازنشانی ۱۴:۲۰»; a past one «قرار بود ۰۹:۰۰ بازنشانی شود» | Mozilla |
+| stale | کهنه | a reading past its window's reset | (proposed) |
+| over the limit | بیش از سقف | | common usage |
+| concurrency | همزمانی | | common Persian software usage |
+| provider | ارائه‌دهنده | Claude or Codex | common usage |
+| status line | نوار وضعیت | Claude Code's status line | common Persian software usage |
+| meter (the header's) | سنجه | «سنجه‌ی سرصفحه» | (proposed) |
+| balancing (across accounts) | توازن | «توازن خودکار بین حساب‌ها در کار نیست» | (proposed) |
 
 ## Sources
 
@@ -333,6 +348,6 @@ Latin script stays in commands, task fields (`claimed-by:`) and anything an agen
 The "(proposed)" words (شکل‌دهی، در حال ساخت، برداشتن، مهلت، زاویه‌ی دید، گزارش وضعیت، ضربان،
 سازنده، شکل‌دهنده، تسک برداشته‌شده, and the shell's: بورد (or برد)، دستیار، نما، چیپ، نام نمایشی، سرصفحه، سرفصل، ترتیب دلخواه،
 راکد، ساکت، رها کردن، زنده، چشم‌انداز، رونوشت, and mu-172's: روبان توکن، بیش، خواندن از کش، نوشتن
-در کش، نشست مشترک، زمان ایجنت، انتظار شما) have no source and wait on a native-speaking review.
+در کش، نشست مشترک، زمان ایجنت، انتظار شما, and mu-113's: خوانش، رزرو، جا تا رزرو، کهنه، سنجه، توازن) have no source and wait on a native-speaking review.
 The token ribbon writes its figures in Persian digits, with the k and M as they are (۲۱۰k). The digits rule waits on mu-151: until then a number filled into a Persian string is in
 Persian digits (the layer formats it), and a number written alone on screen (a count chip) is not.

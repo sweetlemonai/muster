@@ -2,7 +2,7 @@
 // itself, so the window's first chunk doesn't carry its pages. A test checks every section exists.
 import { tl } from "./i18n";
 
-export type HelpTopic = "board" | "table" | "timeline" | "graph" | "sessions" | "helper" | "projects" | "task-pane" | "note-pane" | "new-task" | "appearance" | "display" | "agents" | "notifications" | "about";
+export type HelpTopic = "board" | "table" | "timeline" | "graph" | "sessions" | "helper" | "projects" | "task-pane" | "note-pane" | "new-task" | "appearance" | "display" | "agents" | "accounts" | "notifications" | "about";
 
 /** A place in the manual: a page's file and a heading's slug ("" for the page's top). */
 export type HelpAt = { file: string; slug: string };
@@ -31,6 +31,7 @@ export const HELP_TOPICS: Record<HelpTopic, HelpAt & { readonly label: string }>
   appearance: inApp("appearance", "appearance"),
   display: inApp("display", "display"),
   agents: inApp("agents", "agents"),
+  accounts: inApp("accounts", "accounts"),
   notifications: inApp("notifications", "notifications"),
   about: inApp("about", "about"),
 };

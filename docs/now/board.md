@@ -4,6 +4,7 @@ covers: app/src/App.tsx, app/src/FeatureGrid.tsx, app/src/ColumnRow.tsx, app/src
 # The board and the task pane
 
 - No overlays: a task, a note and New task open in a pane docked beside the board, which stays live. (DESIGN.md "ADHD mode")
+- Account meter: [accounts](accounts.md). (mu-113)
 - Modals only to confirm something destructive. (DESIGN.md "ADHD mode")
 - One column per stage; a blocked card stays in its stage and says what it waits for. (mu-60)
 - Two layouts, kept per project: Columns, the default, and the Feature grid; Columns is the same either way. (mu-143)

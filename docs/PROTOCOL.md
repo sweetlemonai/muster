@@ -663,6 +663,25 @@ its own agent id is another holder, 0090) and logged `(tested under
 > task `sessionState` (`working`, `needs-input`, `ended` or `unknown`), read for that listing only;
 > no other command runs it. **Sessions still check in**: the states don't replace check-ins.
 
+> **Accounts and their usage (Muster 0113, 2026-10-15).** Each account Muster may run work on has
+> a profile in `accounts.json` in the app's settings folder: provider (claude or codex), label, plan
+> (shown only), roles, models, concurrency (default 2), the owner's reserve (default 20%), paused,
+> and the projects pinned to it. Profiles start from the allowlist (decision 0012). Adding the company
+> `~/.claude`, a folder that resolves into it, or a Claude label off the allowlist is refused, and
+> the refusal says why. Use is **read, never guessed** (decision 0013): from a run's
+> `rate_limit_event` (`usage::parse_rate_limit_event`, which the runner calls) and from the status
+> line through the shim `bin/statusline-usage`, chained before the owner's own status line
+> (`bin/statusline-usage | <own command>`). It runs the lean reader `muster-statusline` when that's
+> built, else the release build, the PATH's `muster` and `cat` in turn, each only when the one
+> before refused. The shim passes its stdin through byte for byte and
+> keeps only `rate_limits`, for the account `CLAUDE_CONFIG_DIR` names when that account is allowed.
+> Readings go to `usage/<label>.jsonl` (percentages, reset times, when and from where; the last 7
+> days). They are bounded and typed, and a malformed one is ignored. A window past its reset reads
+> as stale. Muster never calls a usage endpoint and never reads a token. `muster accounts [--json]`
+> shows, per account, both windows' use, reset, reserve, headroom (window left minus reserve), concurrency,
+> paused, and the reading's age and source. The header's meter and Settings › Accounts show the
+> same. There is no automatic balancing across accounts.
+
 > **Pausing a task (Muster 0045, 2026-10-13).** "Not now, keep it as it is": `muster pause <id>
 > ["<why>"]` (the app's **Pause**, under a card and beside the stage in the task pane) and `muster
 > resume <id>` (**Resume**). A task (not a goal or feature), from Backlog through Testing. A paused task keeps its stage, write-up,

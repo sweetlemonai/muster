@@ -7,6 +7,8 @@ import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { HelperInfo } from "./api";
+import { AccountMeterView } from "./AccountMeter";
+import { type AccountView, profileForm, type WindowView } from "./accountsData";
 import { ChoiceChips, ModeChip } from "./ModeViews";
 import FilterBar from "./FilterBar";
 import { dayContext, EMPTY_QUERY, type Query } from "./filters";
@@ -22,7 +24,7 @@ import ProjectList, { type ProjectEdits } from "./ProjectList";
 import Projects, { CategoryCell, ColourCell, GateRow, HistoryCell, NameCell, PlaceCell, PrefixCell } from "./Projects";
 import { RolesView } from "./Roles";
 import { LimitCell } from "./CheckLimit";
-import Settings, { AboutView, AgentsView } from "./Settings";
+import Settings, { AboutView, AccountAdd, AccountsView, AgentsView, ProfileEditor } from "./Settings";
 import { SETTINGS_GROUPS, type SettingsInfo } from "./settingsData";
 import type { HistoryState, Project, QueueInfo, Role, Task } from "./types";
 
@@ -117,20 +119,40 @@ function shell(): string {
     createElement(RolesView, { roles: [ROLE], open: "builder", onOpen: () => {}, onSave: async () => null }),
     createElement(RolesView, { roles: null, open: "", onOpen: () => {}, onSave: async () => null }),
     ...HISTORIES.map((h, i) => createElement(HistoryCell, { key: i, h, now: NOW, name: "alpha", onFix: () => {} })),
+    // mu-113's header meter and Settings › Accounts, every state: live, stale, over the limit and
+    // into the reserve, no reading, paused, none, unreadable, loading; Remove's ask.
+    ...ACCOUNT_INFOS.map((info, i) => createElement(AccountMeterView, { key: i, info, error: "", onOpen: () => {} })),
+    createElement(AccountMeterView, { info: null, error: "boom", onOpen: () => {} }),
+    ...ACCOUNT_INFOS.map((info, i) => createElement(AccountsView, { key: i, info, error: "", calls: ACCOUNT_CALLS })),
+    createElement(AccountsView, { info: null, error: "boom", calls: ACCOUNT_CALLS }),
+    createElement(AccountsView, { info: null, error: "", calls: ACCOUNT_CALLS }),
+    createElement(() => ProfileEditor({ a: ACCOUNTS[0], form: profileForm(ACCOUNTS[0]), error: "", busy: false, removing: true, onForm: () => {}, onSave: () => {}, onRemoving: () => {}, onRemove: () => {} })),
+    createElement(AccountAdd, { typed: "", provider: "codex", error: "", busy: false, onTyped: () => {}, onProvider: () => {}, onAdd: () => {} }),
   ];
   return parts.map((p) => renderToStaticMarkup(p)).join("\n");
 }
 
+const win = (over: Partial<WindowView> = {}): WindowView => ({ usedPercentage: 42, resetsAt: secs(16, 20), stale: false, headroom: 38, ...over });
+const ACCOUNTS: AccountView[] = [
+  { provider: "claude", label: "mg", name: "cc-mg", plan: "", roles: [], models: [], concurrency: 2, reserve: 20, paused: false, projects: ["alpha"], fiveHour: win(), sevenDay: win({ resetsAt: NOW + 3 * 86400 }), readingAt: NOW - 600, source: "statusline" },
+  { provider: "claude", label: "hg", name: "cc-hg", plan: "", roles: [], models: [], concurrency: 2, reserve: 20, paused: true, projects: [], fiveHour: win({ usedPercentage: 104, headroom: -24, stale: true, resetsAt: secs(9, 0) }), sevenDay: win({ stale: true, resetsAt: NOW - 86400 }), readingAt: NOW - 30, source: "stream" },
+  { provider: "claude", label: "mg", name: "cc-mg", plan: "", roles: [], models: [], concurrency: 2, reserve: 20, paused: false, projects: [], fiveHour: null, sevenDay: win({ stale: true }), readingAt: NOW - 30, source: "stream" },
+  { provider: "codex", label: "mg", name: "codex-mg", plan: "", roles: [], models: [], concurrency: 2, reserve: 20, paused: false, projects: [], fiveHour: null, sevenDay: null, readingAt: null, source: null },
+];
+const ACCOUNT_INFOS = [{ accounts: ACCOUNTS, now: NOW }, { accounts: [], now: NOW }];
+const ACCOUNT_CALLS = { add: async () => {}, remove: async () => {}, save: async () => {}, after: () => {} };
+
 /** Product and model names, macOS's own names, keys and the language chips' names: the same in
  *  every language (docs/i18n/glossary-fa.md: names stay Latin; worktree stays Latin). */
-const KEPT = new Set(["Muster", "Claude", "Code", "macOS", "Anthropic", "Sonnet", "Haiku", "Opus", "ADHD", "WCAG", "AA", "Drover", "Braindump", "Dock", "Control", "Shift", "Esc", "English", "worktree", "SIL", "Open", "Font", "License"]);
+const KEPT = new Set(["Muster", "Claude", "Code", "Codex", "macOS", "Anthropic", "Sonnet", "Haiku", "Opus", "ADHD", "WCAG", "AA", "Drover", "Braindump", "Dock", "Control", "Shift", "Esc", "English", "worktree", "SIL", "Open", "Font", "License"]);
 /** The fixture's own data: project names and a category, the saved view, a holder, a plan, the
  *  prefix and a task key (mu-12), the branch main, commands (muster reclaim), an error, and the
  *  core's summary of session states ("on": the core's own text, mu-153's), and the Claude accounts
  *  read, as their commands (cc-mg) and labels (mg); a role's slot name (Kaveh), its roles.toml
  *  values (title, stage, permission, moves, models, providers) and the commands muster team and
- *  --role. The font's licence is a name. */
-const DATA = new Set(["alpha", "zeta", "gone", "Clients", "Mine", "flicker", "gholi", "max", "al", "boom", "mu", "main", "muster", "reclaim", "on", "cc-mg", "cc-hg", "mg", "Kaveh", "builder", "building", "testing", "acceptEdits", "opus", "sonnet", "haiku", "fable", "claude", "codex", "team", "role"]);
+ *  --role; the role names a profile's Roles field shows as its example (builder, tester). The
+ *  font's licence is a name. */
+const DATA = new Set(["alpha", "zeta", "gone", "Clients", "Mine", "flicker", "gholi", "max", "al", "boom", "mu", "main", "muster", "reclaim", "on", "cc-mg", "cc-hg", "mg", "Kaveh", "builder", "tester", "building", "testing", "acceptEdits", "opus", "sonnet", "haiku", "fable", "claude", "codex", "codex-mg", "team", "role"]);
 
 /** The Latin words a person sees or hears: text and the text attributes, without code, paths
  *  (~/… and /…), keys like ⌘N and the fixture's data. */

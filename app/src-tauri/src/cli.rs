@@ -5,7 +5,7 @@
 use crate::session::{self, Session};
 use crate::{
     accounts, agents, backlog, check_limit, fields, gates, index, lessons, old_pause, ops, pause,
-    ping, projects, queue, review, search, settings, vision,
+    ping, profiles, projects, queue, review, search, settings, usage, vision,
 };
 use std::path::{Path, PathBuf};
 
@@ -99,7 +99,7 @@ fn reads_only(a: &Args) -> bool {
     match a.pos.first().map_or("help", String::as_str) {
         "help" | "-h" | "--help" | "team" | "instructions" | "list" | "show" | "ready" => true,
         "projects" => sub != Some("set"),
-        "history" | "lessons" => sub.is_none(),
+        "history" | "lessons" | "accounts" => sub.is_none(),
         "inbox" => a.keep,
         "index" => a.check,
         "check" => !a.fix_pauses || a.dry_run,
@@ -232,7 +232,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             | "--due" | "--pct" | "--remove" | "--record" | "--resolve" | "--search"
             | "--holder" | "--sort" | "--at" | "--touches" | "--prefix" | "--pick"
             | "--no-answer" | "--fixed" | "--dispute" | "--settle" | "--summary" | "--as-built"
-            | "--agent" | "--now-unchanged" | "--role" => {
+            | "--agent" | "--now-unchanged" | "--role" | "--account" | "--provider" => {
                 let v = it.next().ok_or_else(|| format!("{x} needs a value"))?;
                 a.flags
                     .insert(x.trim_start_matches("--").to_string(), v.clone());
@@ -260,14 +260,143 @@ pub fn config_file() -> PathBuf {
 fn machine_settings(env: Env) -> settings::Settings {
     env("HOME")
         .filter(|h| !h.is_empty())
-        .map(|h| {
-            settings::load(
-                &Path::new(&h)
-                    .join("Library/Application Support/ai.sweetlemon.muster")
-                    .join(settings::FILE),
-            )
-        })
+        .map(|h| settings::load(&app_dir(Path::new(&h)).join(settings::FILE)))
         .unwrap_or_default()
+}
+
+/// The app's config folder under `home`: settings.json, accounts.json and usage/ (0113).
+fn app_dir(home: &Path) -> PathBuf {
+    home.join("Library/Application Support/ai.sweetlemon.muster")
+}
+
+/// The `muster accounts` command line (0113): the accounts with their use, a profile's
+/// changes, and readings recorded from the status line or a run's stream.
+fn accounts_cmd(a: &Args, env: Env) -> Result<i32, String> {
+    let Some(home) = env("HOME").filter(|h| !h.is_empty()).map(PathBuf::from) else {
+        return Err("muster accounts needs $HOME: the accounts are under it".into());
+    };
+    let dir = app_dir(&home);
+    let file = dir.join(profiles::FILE);
+    let settings = machine_settings(env);
+    let allowed = accounts::allowed(&settings, &home);
+    let label = || need(a, 2, "the account's label, like mg");
+    match a.pos.get(1).map(String::as_str) {
+        None => {
+            let now = now_secs();
+            let info = profiles::info_of(&profiles::read(&dir, &allowed, now), now);
+            if a.json {
+                print_json(&info)?;
+            } else {
+                out!(
+                    "{}",
+                    profiles::text(&info, &|secs| usage::local_time(secs, None))
+                );
+            }
+        }
+        Some("add") => {
+            let provider = a.flags.get("provider").map(String::as_str).unwrap_or("");
+            let p = profiles::add(&file, &settings, &home, label()?, provider)?;
+            outln!("added {}", p.name());
+        }
+        Some("remove") => {
+            let p = profiles::remove(&file, &allowed, label()?)?;
+            outln!("removed {}", p.name());
+        }
+        Some("set") => {
+            let field = need(a, 3, "the field to set")?;
+            let p = profiles::set(&file, &allowed, label()?, field, need(a, 4, "its value")?)?;
+            outln!("{}: {field} saved", p.name());
+        }
+        Some("record") => match a.flags.get("from").map(String::as_str) {
+            Some("statusline") => return Ok(record_statusline(env)),
+            Some("stream") => {
+                let typed = a
+                    .flags
+                    .get("account")
+                    .ok_or("--from stream needs --account <label> (see `muster help`)")?;
+                let label = typed.strip_prefix("cc-").unwrap_or(typed);
+                let Some(account) = accounts::find(label, &allowed) else {
+                    let t: String = typed.chars().take(24).collect();
+                    return Err(format!(
+                        "{t:?} isn't one of the Claude accounts Muster reads (Settings)"
+                    ));
+                };
+                let n = record_stream(std::io::stdin().lock(), account.label(), &dir)?;
+                let s = if n == 1 { "" } else { "s" };
+                outln!("recorded {n} reading{s} for cc-{}", account.label());
+            }
+            _ => {
+                return Err(
+                    "muster accounts record needs --from statusline or --from stream (see `muster help`)"
+                        .into(),
+                )
+            }
+        },
+        Some(other) => {
+            let other: String = other.chars().take(24).collect();
+            return Err(format!(
+                "unknown accounts command {other:?}: add, remove, set or record (see `muster help`)"
+            ));
+        }
+    }
+    Ok(0)
+}
+
+fn now_secs() -> i64 {
+    queue::now_secs() as i64
+}
+
+/// Each `rate_limit_event` in the stream-json lines of `input`, recorded for `label` in the app's
+/// config folder `dir`; how many readings were written. A line that isn't UTF-8 is skipped.
+fn record_stream(input: impl std::io::BufRead, label: &str, dir: &Path) -> Result<usize, String> {
+    let mut n = 0;
+    for line in input.split(b'\n') {
+        let line = line.map_err(|e| format!("stdin: {e}"))?;
+        let now = now_secs();
+        let Some(w) = std::str::from_utf8(&line)
+            .ok()
+            .and_then(|l| usage::parse_rate_limit_event(l, now))
+        else {
+            continue;
+        };
+        let r = usage::Reading::new(label, w, now, usage::Source::Stream);
+        if usage::record(dir, &r, now)? {
+            n += 1;
+        }
+    }
+    Ok(n)
+}
+
+/// `muster accounts record --from statusline` (0113, `bin/statusline-usage`): the status line's
+/// stdin to stdout, byte for byte, first; then its `rate_limits` recorded for the allowed account
+/// `CLAUDE_CONFIG_DIR` names (`usage::record_statusline`). Always 0 and nothing on stderr,
+/// whatever fails: a status line must never break. Over 1 MB of stdin passes through unread.
+fn record_statusline(env: Env) -> i32 {
+    use std::io::{Read, Write};
+    let mut buf = Vec::new();
+    let _ = std::io::stdin().lock().read_to_end(&mut buf);
+    {
+        let mut out = std::io::stdout().lock();
+        let _ = out.write_all(&buf);
+        let _ = out.flush();
+    }
+    let Some(home) = env("HOME").filter(|h| !h.is_empty()).map(PathBuf::from) else {
+        return 0;
+    };
+    if buf.len() as u64 <= MAX_EDIT_BYTES {
+        let config = env("CLAUDE_CONFIG_DIR")
+            .filter(|d| !d.is_empty())
+            .map(PathBuf::from);
+        let _ = usage::record_statusline(
+            &buf,
+            config.as_deref(),
+            &machine_settings(env),
+            &home,
+            &app_dir(&home),
+            now_secs(),
+        );
+    }
+    0
 }
 
 /// What `muster migrate` carries in projects.json from the old queue to the new (0005, with 0050's
@@ -1964,6 +2093,12 @@ fn out_status(code: i32, failed: bool) -> i32 {
     }
 }
 
+/// `muster-statusline` (0113): `muster accounts record --from statusline` from a lean binary of
+/// its own (src/bin/muster-statusline.rs), so the status line doesn't wait on the app's frameworks.
+pub fn statusline() -> i32 {
+    record_statusline(&|k: &str| std::env::var(k).ok())
+}
+
 /// `main`, with the caller's environment given.
 fn main_with(argv: &[String], env: Env) -> i32 {
     match run_with(argv, env) {
@@ -1983,6 +2118,14 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
     // Git's merge driver (0067): three file paths, as git gives them, never options.
     if argv.first().map(String::as_str) == Some("merge-log") {
         return crate::merge_log::run(&argv[1..]);
+    }
+    // The status line's shim (0113): its stdin passes through before anything else can refuse.
+    if argv
+        .iter()
+        .map(String::as_str)
+        .eq(["accounts", "record", "--from", "statusline"])
+    {
+        return Ok(record_statusline(env));
     }
     let a = parse(argv)?;
     if !reads_only(&a) {
@@ -2048,6 +2191,7 @@ fn run_with(argv: &[String], env: Env) -> Result<i32, String> {
             out!("{}", crate::roles::instructions(r));
             Ok(0)
         }
+        "accounts" => accounts_cmd(&a, env),
         "projects" => {
             if a.pos.get(1).map(String::as_str) == Some("set") {
                 let file = config_file();
@@ -3503,6 +3647,7 @@ mod tests {
             &["projects"],
             &["index", "--check"],
             &["check"],
+            &["accounts", "--json"],
         ] {
             assert!(reads(r), "{r:?}");
         }
@@ -3518,6 +3663,8 @@ mod tests {
             &["projects", "set", "x", "gate", "y"],
             &["index"],
             &["check", "--fix-pauses"],
+            &["accounts", "set", "mg", "reserve", "30"],
+            &["accounts", "record", "--from", "statusline"],
             &["some-new-command"],
         ] {
             assert!(!reads(w), "{w:?}");
@@ -3587,6 +3734,85 @@ mod tests {
             machine_settings(&|_: &str| Some(String::new())),
             settings::Settings::default()
         );
+    }
+
+    /// 0113: `muster accounts` reads and changes the profiles in the caller's home, refusing the
+    /// company account and one off the allowlist; without a home it reads nothing.
+    #[test]
+    fn muster_accounts_works_on_the_callers_home_only() {
+        let home = crate::accounts::tests::fake_home();
+        let h = home.path().to_string_lossy().to_string();
+        let env = move |k: &str| (k == "HOME").then(|| h.clone());
+        let file = app_dir(home.path()).join(profiles::FILE);
+        let accounts = |argv: &[&str]| run_with(&sv(argv), &env);
+        assert_eq!(accounts(&["accounts", "--json"]), Ok(0));
+        assert_eq!(accounts(&["accounts"]), Ok(0));
+        assert!(!file.exists(), "listing writes nothing");
+        assert_eq!(
+            accounts(&["accounts", "set", "cc-mg", "reserve", "25"]),
+            Ok(0)
+        );
+        assert_eq!(profiles::load(&file, &[])[0].reserve, 25);
+        assert_eq!(accounts(&["accounts", "remove", "hg"]), Ok(0));
+        assert_eq!(
+            accounts(&["accounts", "add", "hg", "--provider", "claude"]),
+            Ok(0)
+        );
+        let names: Vec<String> = profiles::load(&file, &[])
+            .iter()
+            .map(profiles::Profile::name)
+            .collect();
+        assert_eq!(names, ["cc-mg", "cc-hg"]);
+        let before = std::fs::read_to_string(&file).unwrap();
+        assert_eq!(
+            accounts(&["accounts", "add", "ih"]).unwrap_err(),
+            "cc-ih isn't on the allowlist of Claude accounts (Settings): add it there first"
+        );
+        assert!(accounts(&["accounts", "add", ".claude"])
+            .unwrap_err()
+            .contains("company account"));
+        assert!(accounts(&["accounts", "set", "mg", "reserve", "95"]).is_err());
+        assert!(accounts(&["accounts", "frob"])
+            .unwrap_err()
+            .starts_with("unknown accounts command \"frob\""));
+        assert!(accounts(&["accounts", "record"])
+            .unwrap_err()
+            .contains("--from statusline or --from stream"));
+        assert!(accounts(&["accounts", "record", "--from", "stream"])
+            .unwrap_err()
+            .contains("needs --account"));
+        assert!(
+            accounts(&["accounts", "record", "--from", "stream", "--account", "ih"])
+                .unwrap_err()
+                .contains("isn't one of the Claude accounts")
+        );
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), before);
+        assert!(run(&sv(&["accounts"])).unwrap_err().contains("needs $HOME"));
+    }
+
+    /// 0113: a run's stream, line by line: each rate_limit_event recorded once, other lines and
+    /// lines that aren't UTF-8 skipped.
+    #[test]
+    fn a_streams_rate_limit_events_are_recorded() {
+        let dir = crate::testkit::tempdir().unwrap();
+        let resets = queue::now_secs() + 3600;
+        let event = |u: f64| {
+            format!(
+                r#"{{"type":"rate_limit_event","rate_limit_info":{{"unifiedWindows":{{"five_hour":{{"utilization":{u},"resetsAt":{resets}}}}}}}}}"#
+            )
+        };
+        let input = format!(
+            "{{\"type\":\"system\"}}\n{}\n\u{0}\n{}\n{}",
+            event(0.1),
+            event(0.1),
+            event(0.2)
+        );
+        let mut bytes = input.into_bytes();
+        bytes.extend_from_slice(b"\n\xff\xfe\n");
+        assert_eq!(record_stream(&bytes[..], "mg", dir.path()), Ok(2));
+        let latest = usage::latest(dir.path(), "mg").unwrap();
+        assert_eq!(latest.five_hour.unwrap().used_percentage, 20.0);
+        assert_eq!(latest.source, usage::Source::Stream);
     }
 
     /// Every file under `root`, with what it says, by path: to see that nothing was written.

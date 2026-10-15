@@ -34,3 +34,29 @@ describe("layout fixes (0061)", () => {
     expect(rule(".waiting > button")).toMatch(/margin: 0 8px 4px 0;/);
   });
 });
+
+// The header (task 0113's QA): at a 960 px header (a 1280 px window with the widest sidebar) its
+// items didn't fit one line and overflow: hidden cut the account meter, the display mode and
+// "live" off. It wraps instead: the status area (meter, mode, live) is one unit that drops whole
+// to a second line, at the end; New task stays at the start; nothing is ever cut.
+describe("the header never cuts anything off (0113)", () => {
+  const all = (sel: string) => [...css.matchAll(new RegExp(`(?:^|\\n)${sel.replace(/[.*+?^${}()|[\]\\>]/g, "\\$&")} \\{([^}]*)\\}`, "g"))].map((m) => m[1]).join(";");
+
+  it("wraps rather than hides", () => {
+    const top = all(".top");
+    expect(top).toContain("flex-wrap: wrap;");
+    expect(top).not.toMatch(/overflow(?:-x)?: hidden/);
+    expect(top).not.toContain("flex-wrap: nowrap");
+    // A wrapped line's items sit at its end, like the status area on one line.
+    expect(top).toContain("justify-content: flex-end;");
+    // New task keeps the start of the first line, wherever the rest wraps.
+    expect(rule(".top .new")).toContain("margin-inline-end: auto;");
+    // The views shrink and wrap only when even they don't fit a line alone.
+    expect(rule(".top .views")).toMatch(/flex: 0 1 auto;[^]*flex-wrap: wrap;/);
+  });
+
+  it("keeps the status area whole, as one unit", () => {
+    expect(rule(".top-status")).toMatch(/display: flex;[^]*flex: none;/);
+    expect(rule(".meter")).toContain("flex: none;");
+  });
+});

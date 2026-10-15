@@ -1519,6 +1519,55 @@ muster help
 muster help new
 ```
 
+## Accounts
+
+The accounts Muster runs work on, how much of each one's 5-hour and weekly window is used, read from Claude Code and never guessed, and the reserve you keep on each. Only the personal accounts on the allowlist (Settings), never the company `~/.claude`; no balancing across accounts (decision 0013).
+
+### muster accounts
+
+The accounts Muster runs work on, each with how much of its 5-hour and weekly window is used, when each resets, its reserve (the share of each window kept for you, 20% unless set), its headroom (what's left of the window above the reserve; below 0 is into the reserve), how many runs it takes at once, whether it's paused, and how old its latest reading is and where it came from (the status line or a run). Use is read from Claude Code, never guessed (decision 0013): a window that has reset since it was read says stale, and an account with no reading says so. Use past a window's cap shows as it is (104%). The profiles are in accounts.json in the app's config folder (Settings › Accounts edits them too); with no file, one per account on the allowlist of Claude accounts (Settings). add takes a label, mg or cc-mg for ~/.claude-mg: a Claude account must be on that allowlist, and its folder there; a Codex one is ~/.codex-\<label\> (--provider codex, or codex-mg). A Claude and a Codex account may share a label: then say cc-mg or codex-mg. remove takes a Claude account's readings with it. The company account, ~/.claude or any folder that leads into it, is refused (decision 0012). set changes plan (shown only, up to 80 characters), roles, models or projects (comma-separated; empty clears), concurrency (1 to 8, default 2), reserve (0 to 90%) or paused (yes or no). There's no balancing across accounts (decision 0013). record --from statusline is what bin/statusline-usage runs (through muster-statusline, its build without the app's frameworks, when that's built): it passes the status line's input through unchanged, always, and keeps only its rate\_limits, for the account CLAUDE\_CONFIG\_DIR names when that's on the allowlist, in usage/\<label\>.jsonl in the app's config folder, 7 days at most (held on read too, and an account off the allowlist loses its readings). Chain it before your own status line: "statusLine": {"type": "command", "command": "~/playground/muster/main/bin/statusline-usage \| \<your command\>"}. record --from stream reads a run's stream-json on stdin and keeps each rate\_limit\_event.
+
+```
+muster accounts [--json] | muster accounts add <label> [--provider claude|codex] | muster accounts remove <label> | muster accounts set <label> <field> <value> | muster accounts record --from statusline | muster accounts record --from stream --account <label>
+```
+
+| Option | What it does |
+| --- | --- |
+| `--json` | the accounts for scripts: {"accounts": \[{provider, label, name, plan, roles, models, concurrency, reserve, paused, projects, fiveHour, sevenDay, readingAt, source}\], "now"}, each window {usedPercentage, resetsAt, stale, headroom}, times in seconds since 1970 |
+| `--provider` | add: claude (default) or codex |
+| `--from` | record: statusline (the status line's input on stdin) or stream (a run's stream-json on stdin) |
+| `--account` | record --from stream: the account the run used, mg or cc-mg |
+
+Examples:
+
+```
+muster accounts
+```
+
+```
+muster accounts --json
+```
+
+```
+muster accounts set mg reserve 25
+```
+
+```
+muster accounts set cc-hg plan "Max 5x"
+```
+
+```
+muster accounts add hg
+```
+
+```
+muster accounts remove hg
+```
+
+```
+claude -p "hi" --output-format stream-json --verbose | muster accounts record --from stream --account mg
+```
+
 ## On every command
 
 | Option | What it does |

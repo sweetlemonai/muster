@@ -34,7 +34,7 @@ function buttons(node: ReactNode): { words: string; click: () => void }[] {
 
 describe("Notifications (0052)", () => {
   it("is a Settings group of its own, before About, with its section in the manual", () => {
-    expect(SETTINGS_GROUPS.map((g) => g.id)).toEqual(["appearance", "display", "projects", "agents", "notifications", "about"]);
+    expect(SETTINGS_GROUPS.map((g) => g.id)).toEqual(["appearance", "display", "projects", "agents", "accounts", "notifications", "about"]);
     expect(SETTINGS_GROUPS.find((g) => g.id === "notifications")).toMatchObject({ label: "Notifications", topic: "notifications" });
     expect(HELP_TOPICS.notifications).toMatchObject({ file: "04-in-the-app.md", slug: "notifications" });
   });

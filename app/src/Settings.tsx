@@ -1,5 +1,7 @@
 import { type ReactNode, type Ref, useEffect, useRef, useState } from "react";
 import { api, type HelperInfo } from "./api";
+import { useAccounts } from "./AccountMeter";
+import { type AccountsInfo, type AccountView, addEdit, type ProfileForm, profileEdit, profileForm, type ProfileSave, type Provider, readingText, WINDOWS, windowLine } from "./accountsData";
 import Appearance from "./Appearance";
 import { DisplayModes } from "./Display";
 import { AccountPicker } from "./Helper";
@@ -16,7 +18,7 @@ import { ACCOUNTS_WORDS, accountsEdit, DEFAULT_MACHINE, SETTINGS_GROUPS, type Se
 import type { Project, QueueInfo } from "./types";
 import { Button, Pill, Segment, Segmented } from "./ui";
 
-/** Settings (0036): one place for Appearance, Display, Projects, Agents, Notifications and About. A view in the
+/** Settings (0036): one place for Appearance, Display, Projects, Agents, Accounts, Notifications and About. A view in the
  *  header's row, never a window: the groups are a docked list on the left, and the open group's
  *  settings on the right, all of them at once. Every change applies at once and is remembered. */
 export default function Settings({ group, onGroup, queues, onChanged, mode, onMode }: {
@@ -65,6 +67,7 @@ export default function Settings({ group, onGroup, queues, onChanged, mode, onMo
         {g.id === "display" && <DisplayModes mode={mode} onMode={onMode} />}
         {g.id === "projects" && <Projects queues={queues} home={info?.home ?? ""} onChanged={onChanged} />}
         {g.id === "agents" && <Agents info={info} queues={queues} onInfo={setInfo} onChanged={onChanged} />}
+        {g.id === "accounts" && <Accounts />}
         {g.id === "notifications" && <Notifications info={info} onInfo={setInfo} />}
         {g.id === "about" && (info ? <About info={info} /> : !error && <p className="none">{t("common:loading")}</p>)}
       </section>
@@ -384,6 +387,278 @@ export function AccountsRow({ labels, typed, error, field, onTyped, onAdd, onRem
   );
 }
 
+/** What Settings › Accounts asks of the core, and `after`, which reads the accounts again once
+ *  one of them is saved (the core's accounts-changed comes too; this doesn't wait for it). */
+export type AccountCalls = {
+  add: (label: string, provider: Provider) => Promise<void>;
+  remove: (label: string) => Promise<void>;
+  save: (profile: ProfileSave) => Promise<void>;
+  after: () => void;
+};
+
+/** Settings › Accounts (0113) with its data: the same accounts the header's meter shows. */
+function Accounts() {
+  const { info, error, reload } = useAccounts();
+  return <AccountsView info={info} error={error} calls={{ add: api.accountAdd, remove: api.accountRemove, save: api.accountSave, after: reload }} />;
+}
+
+/** Saves a profile from its form: null when the core saved it, else the refusal to show, the
+ *  client's (profileEdit, never sent) or the core's. */
+export async function saveProfile(label: string, form: ProfileForm, calls: Pick<AccountCalls, "save" | "after">): Promise<string | null> {
+  const edit = profileEdit(label, form);
+  if ("error" in edit) return edit.error;
+  try {
+    await calls.save(edit.profile);
+  } catch (e) {
+    return String(e);
+  }
+  calls.after();
+  return null;
+}
+
+/** Adds an account by what was typed (`mg` or `cc-mg`): null when added, else why not. */
+export async function addAccount(typed: string, provider: Provider, calls: Pick<AccountCalls, "add" | "after">): Promise<string | null> {
+  const edit = addEdit(typed);
+  if ("error" in edit) return edit.error;
+  try {
+    await calls.add(edit.label, provider);
+  } catch (e) {
+    return String(e);
+  }
+  calls.after();
+  return null;
+}
+
+/** Removes an account's profile: null when removed, else the core's refusal. */
+export async function removeAccount(label: string, calls: Pick<AccountCalls, "remove" | "after">): Promise<string | null> {
+  try {
+    await calls.remove(label);
+  } catch (e) {
+    return String(e);
+  }
+  calls.after();
+  return null;
+}
+
+/** What a profile's form starts from: a new reading leaves the typing alone; a saved change to
+ *  the profile, here or by `muster accounts set`, starts the form afresh. */
+export const profileKey = (a: AccountView) => JSON.stringify([a.provider, a.label, a.plan, a.roles, a.models, a.concurrency, a.reserve, a.paused]);
+
+// Product names, the same in every language.
+const PROVIDERS: { id: Provider; label: string }[] = [
+  { id: "claude", label: "Claude" },
+  { id: "codex", label: "Codex" },
+];
+const providerName = (p: Provider) => PROVIDERS.find((x) => x.id === p)?.label ?? p;
+
+/** Accounts as drawn: the quiet line on balancing, then each account with its reading and its
+ *  fields inline, then the add form. `info` is null while the accounts load. */
+export function AccountsView({ info, error, calls }: { info: AccountsInfo | null; error: string; calls: AccountCalls }) {
+  // A removed account's section goes: the keyboard carries on from the add form's label.
+  const addField = useRef<HTMLInputElement>(null);
+  const t = useT("shell");
+  return (
+    <div className="settings-sections">
+      <section>
+        <p className="meta">{t("profiles.noBalancing")}</p>
+        <p className="meta">{t("profiles.intro")}</p>
+        {error && <p className="err" role="alert">{t("profiles.cantRead", { error })}</p>}
+        {!info && !error && <p className="none">{t("common:loading")}</p>}
+        {info?.accounts.length === 0 && <p className="none">{t("profiles.empty")}</p>}
+      </section>
+      {info?.accounts.map((a) => (
+        <section key={`${a.provider}/${a.label}`} aria-label={a.name}>
+          <h2>
+            {a.name} <span className="meta">{[providerName(a.provider), a.plan].filter(Boolean).join(" · ")}</span>
+          </h2>
+          {WINDOWS.map((w) => (
+            <p key={w.key} className={a[w.key]?.stale ? "profile-reading stale" : "profile-reading"}>{windowLine(w.short, a[w.key], info.now)}</p>
+          ))}
+          <p className="meta">{readingText(a, info.now)}</p>
+          {a.projects.length > 0 && <p className="meta">{t("profiles.pinned", { projects: a.projects.join(t("common:listSep")) })}</p>}
+          <Profile key={profileKey(a)} a={a} calls={calls} onRemoved={() => addField.current?.focus()} />
+        </section>
+      ))}
+      <section>
+        <h2>{t("accounts.add")}</h2>
+        <AddAccount calls={calls} field={addField} />
+      </section>
+    </div>
+  );
+}
+
+/** One account's fields with what's typed, its last refusal, and Remove's ask in place. It's
+ *  named by provider and label (`cc-mg`, `codex-mg`), so the core finds this one. Remove… puts
+ *  the focus on Keep, Keep puts it back on Remove…, and a removal hands it to `onRemoved`. */
+function Profile({ a, calls, onRemoved }: { a: AccountView; calls: AccountCalls; onRemoved: () => void }) {
+  const [form, setForm] = useState(() => profileForm(a));
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const removeButton = useRef<HTMLButtonElement>(null);
+  const keepButton = useRef<HTMLButtonElement>(null);
+  const backToRemove = useRef(false);
+  useEffect(() => {
+    if (removing) keepButton.current?.focus();
+    else if (backToRemove.current) {
+      backToRemove.current = false;
+      removeButton.current?.focus();
+    }
+  }, [removing]);
+  const run = async (call: () => Promise<string | null>) => {
+    setBusy(true);
+    const refused = await call();
+    setBusy(false);
+    setError(refused ?? "");
+    return refused;
+  };
+  return (
+    <ProfileEditor
+      a={a}
+      form={form}
+      error={error}
+      busy={busy}
+      removing={removing}
+      removeRef={removeButton}
+      keepRef={keepButton}
+      onForm={setForm}
+      onSave={() => void run(() => saveProfile(a.name, form, calls))}
+      onRemoving={(asking) => {
+        backToRemove.current = !asking;
+        setRemoving(asking);
+      }}
+      onRemove={() =>
+        void run(() => removeAccount(a.name, calls)).then((refused) => {
+          if (refused === null) onRemoved();
+        })
+      }
+    />
+  );
+}
+
+/** An account's fields as drawn, all inline: plan, reserve, concurrency, roles, models and
+ *  paused, then Save, and Remove, which asks in place before it goes. The refusal under them. */
+export function ProfileEditor({ a, form, error, busy, removing, removeRef, keepRef, onForm, onSave, onRemoving, onRemove }: {
+  a: AccountView;
+  form: ProfileForm;
+  error: string;
+  busy: boolean;
+  removing: boolean;
+  removeRef?: Ref<HTMLButtonElement>;
+  keepRef?: Ref<HTMLButtonElement>;
+  onForm: (f: ProfileForm) => void;
+  onSave: () => void;
+  onRemoving: (asking: boolean) => void;
+  onRemove: () => void;
+}) {
+  // Not useT: its tests call it as a plain function; AccountsView, which holds it, renders it
+  // again on a language switch.
+  const t: TFn<"shell"> = (key, params) => tn("shell", key, params);
+  const unchanged = JSON.stringify(form) === JSON.stringify(profileForm(a));
+  const field = (label: string, key: "plan" | "reserve" | "concurrency" | "roles" | "models", size: number, more: { maxLength?: number; placeholder?: string; numeric?: boolean } = {}) => (
+    <label className="profile-field">
+      <span className="meta">{label}</span>{" "}
+      <input
+        value={form[key]}
+        onChange={(e) => onForm({ ...form, [key]: e.target.value })}
+        size={size}
+        maxLength={more.maxLength}
+        placeholder={more.placeholder}
+        inputMode={more.numeric ? "numeric" : undefined}
+        disabled={busy}
+        spellCheck={false}
+      />
+    </label>
+  );
+  return (
+    <>
+      <form
+        className="profile-form"
+        aria-label={t("profiles.formAria", { name: a.name })}
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSave();
+        }}
+      >
+        {field(t("profiles.plan"), "plan", 14, { maxLength: 80 })}
+        {field(t("profiles.reserve"), "reserve", 3, { maxLength: 2, numeric: true })}
+        {field(t("profiles.concurrency"), "concurrency", 2, { maxLength: 1, numeric: true })}
+        {field(t("profiles.roles"), "roles", 16, { placeholder: "builder, tester" /* i18n-ignore: role names, as typed in every language */ })}
+        {field(t("profiles.models"), "models", 16, { placeholder: "opus, sonnet" /* i18n-ignore: model names */ })}
+        <label className="profile-field"><input type="checkbox" checked={form.paused} onChange={(e) => onForm({ ...form, paused: e.target.checked })} disabled={busy} /> {t("profiles.paused")}</label>
+        <Button type="submit" disabled={busy || unchanged}>{t("common:save")}</Button>
+        {removing ? (
+          <span className="profile-remove">
+            {t("profiles.removeAsk", { name: a.name })}{" "}
+            <Button type="button" disabled={busy} onClick={onRemove}>{t("common:remove")}</Button>{" "}
+            <Button type="button" ref={keepRef} onClick={() => onRemoving(false)}>{t("profiles.keep")}</Button>
+          </span>
+        ) : (
+          <Button type="button" ref={removeRef} disabled={busy} onClick={() => onRemoving(true)}>{t("profiles.removeAsking")}</Button>
+        )}
+      </form>
+      <p className="err profile-error" aria-live="polite">{error}</p>
+    </>
+  );
+}
+
+/** The add form with what's typed, the provider picked and the last refusal. */
+function AddAccount({ calls, field }: { calls: AccountCalls; field: Ref<HTMLInputElement> }) {
+  const [typed, setTyped] = useState("");
+  const [provider, setProvider] = useState<Provider>("claude");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const add = async () => {
+    setBusy(true);
+    const refused = await addAccount(typed, provider, calls);
+    setBusy(false);
+    setError(refused ?? "");
+    if (refused === null) setTyped("");
+  };
+  return <AccountAdd typed={typed} provider={provider} error={error} busy={busy} field={field} onTyped={setTyped} onProvider={setProvider} onAdd={() => void add()} />;
+}
+
+/** Adding an account as drawn: its label, Claude or Codex, Add (↩ too), the refusal in place
+ *  where a screen reader hears it, and which folders can be added. */
+export function AccountAdd({ typed, provider, error, busy, field, onTyped, onProvider, onAdd }: {
+  typed: string;
+  provider: Provider;
+  error: string;
+  busy: boolean;
+  field?: Ref<HTMLInputElement>;
+  onTyped: (typed: string) => void;
+  onProvider: (p: Provider) => void;
+  onAdd: () => void;
+}) {
+  const t = useT("shell");
+  return (
+    <>
+      <form
+        className="profile-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onAdd();
+        }}
+      >
+        <label className="profile-field">
+          <span className="meta">{t("profiles.label")}</span>{" "}
+          <input ref={field} value={typed} onChange={(e) => onTyped(e.target.value)} placeholder="mg" size={10} maxLength={20} autoCapitalize="off" autoCorrect="off" spellCheck={false} disabled={busy} />
+        </label>
+        <span className="look-colour" role="group" aria-label={t("profiles.provider")}>
+          {PROVIDERS.map((p) => (
+            <Pill key={p.id} type="button" aria-pressed={provider === p.id} on={provider === p.id} onClick={() => onProvider(p.id)}>
+              {p.label}
+            </Pill>
+          ))}
+        </span>
+        <Button type="submit" disabled={busy}>{t("profiles.add")}</Button>
+      </form>
+      <p className="err profile-error" aria-live="polite">{error}</p>
+      <p className="meta">{t("profiles.which")}</p>
+    </>
+  );
+}
+
 /** About with the projects as the core lists them, asked again each time About opens. */
 function About({ info }: { info: SettingsInfo }) {
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -439,6 +714,8 @@ export function AboutView({ info, projects, error = "" }: { info: SettingsInfo; 
           <li><Trans ns="shell" k="about.settingsJson" params={{ file: "settings.json" }} components={code} /></li>
           <li><Trans ns="shell" k="about.notifiedJson" params={{ file: "notified.json" }} components={code} /></li>
           <li><Trans ns="shell" k="about.helperDir" params={{ file: "helper/" }} components={code} /></li>
+          <li><Trans ns="shell" k="about.accountsJson" params={{ file: "accounts.json" }} components={code} /></li>
+          <li><Trans ns="shell" k="about.usageDir" params={{ file: "usage/" }} components={code} /></li>
         </ul>
         <p className="meta">{t("about.window")}</p>
       </section>

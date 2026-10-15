@@ -137,7 +137,9 @@ here):
 | `roles.rs` | The role profiles (0112): `roles.toml`'s strict reader (no TOML crate: strings, numbers and lists of strings; an unknown table or key, a wrong shape or a value off its bounds or allowlist refused with its line and key), the defaults (the brief's ten roles and Pouya), the file cached by modified time and size, `edit` for Settings, slots (`Slot`, `slot_of_label`, `held`, `lowest_free`), `muster team` and `muster instructions` (each role's brief: what it does and its rules from PROTOCOL; the coder's and the tester's carry the git rule, `GIT_RULE`: never `reset --hard`, `checkout --`, `restore` over changes or `clean` in a worktree, `git rebase --abort` and rebase again, squash only with `reset --soft`, mu-193). `--role` gives a session (and agent) the slot it already holds in Building or Testing, so one session is one slot; `session::keep_slot` carries a claim's slot to the Testing holder and a takeover's successor, even under its old name after a rename. `ops::slot_refusal` keeps one session to one slot across every queue (`ops::elsewhere` reads the others) and a slot to one session; `ops::unless_taken` brings a task back to a holder without the slot when another session holds it now (`session::without_slot`), and a takeover of a claim without a slot takes it over without one; a stamp without a slot part holds none |
 | `work.rs` | Who worked on a task and what it cost, from the sessions its claim and log name; only sessions stamped with an allowed account are read (0012) |
 | `transcripts.rs` | The one reader of Claude Code transcripts on this Mac, sums only: the allowed accounts' `projects` folders, and in them only project folders under `~/playground` (0012) |
-| `accounts.rs` | The Claude accounts Muster reads (0012): the `claude_accounts` allowlist resolved to `~/.claude-<label>` folders (`allowed`), never `~/.claude` or inside it; the playground key that filters transcript folders (`playground_key`, `is_under`) |
+| `accounts.rs` | The Claude accounts Muster reads (0012): the `claude_accounts` allowlist resolved to `~/.claude-<label>` folders (`allowed`), never `~/.claude` or inside it; the playground key that filters transcript folders (`playground_key`, `is_under`); the account a `CLAUDE_CONFIG_DIR` names (`from_config_dir`) |
+| `profiles.rs` | The accounts Muster runs work on (0113), in `accounts.json`: provider, plan, roles, models, concurrency, reserve, paused, pinned projects; seeded from the allowlist; add refuses the company account and any off the allowlist; the views the header and `muster accounts` show (headroom, stale) |
+| `usage.rs` | Each account's 5-hour and weekly use (0113), read never guessed (decision 0013): the stream's `rate_limit_event` (`parse_rate_limit_event`, for the runner) and the status line's `rate_limits` (`parse_statusline`), bounded; `usage/<label>.jsonl`, one line per change, 7 days at most |
 | `agents.rs` | Claude Code's own session states (`claude agents --json`), allowed accounts only, off the main thread, at most every 15 s; and the Sessions view's wider list read (`ListEntry`, 0098) |
 | `sessions.rs` | The Sessions view (0098): every session of the allowed accounts grouped as the agents view groups them, its project matched from `cwd` in the core (only the name goes out), and a session's recap (tasks, history, handoff chain, time, tokens, progress); polled only while the view is open |
 | `projects.rs` | Which queues the app shows (discovery under `~/playground`, added, hidden), `projects.json` under its lock, new queues, the sidebar's state builder |
@@ -152,6 +154,7 @@ here):
 | `run.rs` | Run from the app: a project's run command in its main checkout, its output in a bounded ring, Stop and quitting end its process group |
 | `helper.rs` | The AI helper: the owner's own `claude` on an allowed account, restricted to `muster` and reading |
 | `helper_cmds.rs` | The app's commands for the helper |
+| `accounts_cmds.rs` | The app's commands for the accounts (0113); the readings kept in memory and read again when their files change, which the 2 s poll notices and tells the window (`accounts-changed`) |
 | `pause_cmds.rs` | The app's commands for pause, resume and old pauses |
 | `ping_cmds.rs` | The app's commands for check-ins and messages |
 | `review_cmds.rs` | The app's commands for the review brief and the lessons |
@@ -197,24 +200,25 @@ is in its range) but draws pixel for pixel the same. `fonts.test.ts` holds the f
 the README, the licence records in its name table and the bundled licence. How to cut it again,
 byte for byte: `app/src/assets/fonts/README.md`. No other fonts are bundled.
 
-The 80 commands it can call (`generate_handler!` in `lib.rs`), by what they do:
+The 84 commands it can call (`generate_handler!` in `lib.rs`), by what they do:
 
 | Group | Commands |
 |---|---|
 | Reading | `state` (the 2 s poll), `search_index`, `help`, `task_body`, `image`, `projects`, `settings_info`, `locale_info`, `task_sessions`, `session_transcript`, `editable_body`, `shape_note`, `vision_brief` |
 | Changing a task | `create_task`, `pass_task`, `accept_all`, `return_task`, `block_task`, `unblock_task`, `reclaim_task`, `release_unreached`, `set_stage`, `set_field`, `add_note`, `tick_criterion`, `edit_body`, `add_comment`, `attach_data`, `attach_pick`, `answer`, `answer_pick`, `resolve_vision`, `move_task` (registered; the window no longer calls it) |
 | Backlog | `add_backlog_note`, `file_note`, `drop_note` |
-| Projects and settings | `add_project`, `create_project`, `set_project_label`, `set_project_category`, `set_project_colour`, `arrange_projects`, `rename_category`, `fold_category`, `show_project_title`, `set_project_prefix`, `hide_project`, `remove_project`, `set_setting`, `set_your_check_limit` |
+| Projects and settings | `add_project`, `create_project`, `set_project_label`, `set_project_category`, `set_project_colour`, `arrange_projects`, `rename_category`, `fold_category`, `show_project_title`, `set_project_prefix`, `hide_project`, `remove_project`, `set_setting`, `set_your_check_limit`, `roles_info`, `set_role` |
 | Sessions | `ask_checkin`, `message_session`, `pause_task`, `resume_task`, `old_pauses`, `fix_old_pauses`, `set_old_pauses_offered` |
 | Review | `review_brief`, `lessons`, `decide_lessons` |
 | Helper | `helper_info`, `helper_set_account`, `helper_set_model`, `helper_reset`, `helper_stop`, `helper_send`, `helper_login` |
 | Links | `open_link` (a task's https links only) |
 | Run | `run_start`, `run_stop`, `run_state` (a project's name only) |
+| Accounts | `accounts_info`, `account_add`, `account_remove`, `account_save`; the event `accounts-changed` |
 
 ### The `muster` command line
 
 The app's binary, run with arguments (`main.rs`). `bin/muster` finds the release build
-(`app/src-tauri/target/release/muster`) and runs it; it's linked into `~/.local/bin`. 48 commands
+(`app/src-tauri/target/release/muster`) and runs it; it's linked into `~/.local/bin`. 50 commands
 in `help.rs`, grouped as the manual groups them:
 
 | Group | Commands |
@@ -224,9 +228,10 @@ in `help.rs`, grouped as the manual groups them:
 | Claims | `claim`, `next`, `heartbeat`, `checkin`, `ping`, `reclaim`, `ready`, `start`, `release`, `merge-log` |
 | Review | `review`, `lessons` |
 | Team | `team`, `instructions` |
-| Questions | `ask`, `answer`, `escalate`, `inbox` |
+| Questions | `ask`, `answer`, `escalate`, `clarify`, `inbox` |
 | Backlog | `add`, `shape`, `file`, `drop`, `vision` |
 | Projects and the queue | `projects`, `init`, `migrate`, `check`, `index`, `help` |
+| Accounts | `accounts` |
 
 ### `bin/` and the hooks
 
@@ -240,8 +245,9 @@ Every script in `bin/` (the same test fails when one is missing here):
 | `bin/manifest.py` | Builds `tasks.json` from the task files and `--check` reports queue problems, both layouts | by hand, and by `muster migrate` |
 | `bin/gate` | The gate: `pnpm check` (typecheck, UI tests, build, `cargo fmt --check`, clippy with warnings as errors, `cargo test`), both Python suites, and `cargo test` again in the Kiritimati time zone, each in a temporary home. Prints `gate: green (…)` or `gate: RED (…)` last | builders before `muster pass --from building`, and the merge (`muster projects set muster gate bin/gate`) |
 | `bin/run` | Muster's run command (0077): builds the release app from the checkout it's in and becomes that build's binary (`exec`, 0079), a second Muster beside the one running, in the process group the app's Run started | the app's Run, through `muster projects set muster run bin/run`; or by hand |
+| `bin/statusline-usage` | The status line's usage shim (0113): passes Claude Code's status-line JSON through unchanged and records only its `rate_limits` (`muster accounts record --from statusline`), through this checkout's lean reader `muster-statusline` (`src/bin/muster-statusline.rs`; it links only libSystem, so dyld loads no AppKit or WebKit), else its release build, else `muster` on the PATH, else `cat`, each tried only when the one before refused without reading stdin; `/bin/dash` for its start-up time | the owner's `statusLine` command, chained before their own |
 | `bin/test_task.py` | Tests for `bin/task` and the answer hook | `bin/gate` |
-| `bin/test_commands.py` | Tests for `/muster` and `/mu` against `docs/COMMANDS.md` and `muster help --json`, and the merge driver end to end | `bin/gate` |
+| `bin/test_commands.py` | Tests for `/muster` and `/mu` against `docs/COMMANDS.md` and `muster help --json`, the merge driver end to end, and the status-line shim | `bin/gate` |
 
 `.gitattributes` names the work log's merge driver (`docs/WORKLOG.md merge=muster-log`, decision
 0009); `muster start` and `muster init` write the driver into the repo's git config when it's
@@ -1922,7 +1928,8 @@ Rust core reads the same JSON.
   Other heading ("Other" in projects.json, سایر on screen), a span typed as `30m`. Dates in
   Recently finished say the weekday and month in the language's own words. `shellFa.test.ts`
   draws all of it in Persian and fails on any Latin word that isn't a product name, a key or the
-  data shown.
+  data shown. The header's account meter and Settings › Accounts (mu-113) read theirs from
+  `shell.json`'s `meter` and `profiles`; a reset time's month is Recently finished's.
 - **A type as the screen says it** (mu-194): `fields.ts` `kindLabel` says the core's types
   (`KINDS`) and the older ones the queues still hold (`LEGACY_KINDS`: task, feature, idea) through
   `common.json` `kind.*`, and any other value as written. The filter bar's Type row uses it.
@@ -2420,9 +2427,9 @@ the takeover in [claims](now/claims.md), sessions, handoffs, check-ins and mail 
 [handoffs](now/handoffs.md), worktrees and the merge in [parallel](now/parallel.md), Testing and the
 review in [testing](now/testing.md), shaping and the vision check in [shaping](now/shaping.md),
 the board and the task pane in [board](now/board.md), the sidebar and Settings in
-[sidebar](now/sidebar.md), the Sessions view and its recap in [sessions](now/sessions.md), and the
-Table, Timeline and Graph views in [views](now/views.md). The format and the pass rule are in
-PROTOCOL.md ("What's true now").
+[sidebar](now/sidebar.md), the Sessions view and its recap in [sessions](now/sessions.md), the
+Table, Timeline and Graph views in [views](now/views.md), and the account meter in
+[accounts](now/accounts.md). The format and the pass rule are in PROTOCOL.md ("What's true now").
 
 - **Reading** (`now.rs`): only plain `*.md` files directly in `docs/now/` (100 at most), each read
   up to 16 KB, control characters out. A symlinked page is passed over, and so is a `docs/now/`

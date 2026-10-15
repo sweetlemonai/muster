@@ -75,10 +75,7 @@ pub fn allowed(settings: &Settings, home: &Path) -> Vec<Account> {
 /// `~/.claude-x → ~` and `..` tricks are refused). The rest are left out. Cheap: one `canonicalize` per label, so it's resolved on every read, and a folder
 /// made after the app started is picked up.
 pub fn resolve(labels: &[String], home: &Path) -> Vec<Account> {
-    // Where ~/.claude is, or would be: a missing one still can't be reached through a link.
-    let company = fs::canonicalize(home.join(".claude"))
-        .or_else(|_| fs::canonicalize(home).map(|h| h.join(".claude")))
-        .ok();
+    let company = company_dir(home);
     let mut out: Vec<Account> = Vec::new();
     for label in labels {
         if !is_label(label) || out.iter().any(|a| &a.label == label) {
@@ -100,6 +97,33 @@ pub fn resolve(labels: &[String], home: &Path) -> Vec<Account> {
         }
     }
     out
+}
+
+/// Where `~/.claude` is, canonical, or would be: a missing one still can't be reached through a
+/// link.
+fn company_dir(home: &Path) -> Option<PathBuf> {
+    fs::canonicalize(home.join(".claude"))
+        .or_else(|_| fs::canonicalize(home).map(|h| h.join(".claude")))
+        .ok()
+}
+
+/// Is the canonical folder `real` the company's `~/.claude` under `home`, inside it, or a folder
+/// holding it? `resolve`'s rule, for a Codex account's folder too (task 0113).
+pub fn is_company(real: &Path, home: &Path) -> bool {
+    company_dir(home).is_some_and(|c| real.starts_with(&c) || c.starts_with(real))
+}
+
+/// The allowed account a `CLAUDE_CONFIG_DIR` names (task 0113, the status line's shim): a folder
+/// named `.claude-<label>` whose label is on `settings`' allowlist and which, canonicalized, is
+/// that account's own folder under `home`. None for `~/.claude`, a folder of the same name
+/// elsewhere, and a label off the list.
+pub fn from_config_dir(dir: &Path, settings: &Settings, home: &Path) -> Option<Account> {
+    let label = dir.file_name()?.to_str()?.strip_prefix(".claude-")?;
+    if !settings.claude_accounts.iter().any(|l| l == label) {
+        return None;
+    }
+    let account = resolve(&[label.to_string()], home).pop()?;
+    (fs::canonicalize(dir).ok()? == account.real).then_some(account)
 }
 
 /// Is `label` one of `allowed`, exactly?
@@ -244,6 +268,50 @@ pub(crate) mod tests {
         let names: Vec<&str> = got.iter().map(Account::label).collect();
         assert_eq!(names, ["ih"], "only a real folder of its own");
         assert!(resolve(&[], h).is_empty(), "an empty list reads nothing");
+    }
+
+    #[test]
+    fn a_config_dir_names_an_account_only_when_it_is_that_allowed_accounts_own_folder() {
+        let d = fake_home();
+        let h = d.path();
+        let s = Settings::default();
+        let got = from_config_dir(&h.join(".claude-mg"), &s, h).unwrap();
+        assert_eq!(got.label(), "mg");
+        // A trailing slash is the same folder.
+        let slash = PathBuf::from(format!("{}/", h.join(".claude-hg").display()));
+        assert_eq!(from_config_dir(&slash, &s, h).unwrap().label(), "hg");
+        // The company account, one off the list, and a folder of the same name elsewhere.
+        let elsewhere = crate::testkit::tempdir().unwrap();
+        fs::create_dir(elsewhere.path().join(".claude-mg")).unwrap();
+        for dir in [
+            h.join(".claude"),
+            h.join(".claude-ih"),
+            h.join(".claude-none"),
+            elsewhere.path().join(".claude-mg"),
+            h.to_path_buf(),
+            PathBuf::new(),
+        ] {
+            assert!(from_config_dir(&dir, &s, h).is_none(), "{}", dir.display());
+        }
+        // A link to ~/.claude under an allowed label.
+        let s2 = Settings {
+            claude_accounts: labels(&["x"]),
+            ..Settings::default()
+        };
+        symlink(h.join(".claude"), h.join(".claude-x")).unwrap();
+        assert!(from_config_dir(&h.join(".claude-x"), &s2, h).is_none());
+        // The company folder rule, as Codex folders are checked.
+        let company = fs::canonicalize(h.join(".claude")).unwrap();
+        assert!(is_company(&company, h));
+        assert!(is_company(&company.join("projects"), h));
+        assert!(
+            is_company(&fs::canonicalize(h).unwrap(), h),
+            "a folder holding it"
+        );
+        assert!(!is_company(
+            &fs::canonicalize(h.join(".claude-mg")).unwrap(),
+            h
+        ));
     }
 
     #[test]

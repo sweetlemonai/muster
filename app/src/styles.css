@@ -666,12 +666,33 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 /* 4px here and 6px atop .graph-scroll: the same 10px gap, with room for the top node's outline. */
 .graph-strip > .legend { padding-inline: 0; margin-block-end: 4px; }
 
-/* Header: one line, always. Project chips scroll sideways rather than wrap. */
-.top { flex-wrap: nowrap; gap: 10px; overflow: hidden; }
+/* Header: never cut off (0113's QA: at a 960 px header the meter, the mode and "live" were).
+   What doesn't fit a line wraps to the next, at its end: the status area (meter, mode, live) as
+   one unit, and only then the views, which wrap last. New task keeps the first line's start. */
+.top { flex-wrap: wrap; justify-content: flex-end; gap: 6px 10px; }
 .top .ui-pill, .top .new, .brand { white-space: nowrap; flex: none; }
 .top .queues { flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .top .queues::-webkit-scrollbar { display: none; }
-.top .views { flex: none; }
+.top .views { flex: 0 1 auto; min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
+.top .new { margin-inline-end: auto; }
+.top-status { display: flex; align-items: center; gap: 10px; flex: none; }
+/* The account meter (task 0113), in the header's status area: per account a quiet button, its
+   short name, two 3 px bars (5 h over 7 d) and the next reset in words. The use in the accent,
+   the warning colour once into the reserve, the track hatched when stale; the reserve's mark a
+   2 px line where it starts, ringed in the header's background so it shows over the hatching.
+   Logical sides only, so it mirrors in right-to-left; nothing moves. */
+.meter { display: flex; align-items: center; gap: 4px; flex: none; }
+.meter-account { display: inline-flex; align-items: center; gap: 6px; padding-block: 2px; padding-inline: 6px; border: none; border-radius: 6px; background: none; color: var(--muted); font-size: 11.5px; white-space: nowrap; cursor: pointer; }
+.meter-account:hover, .meter-account:focus-visible { background: var(--hover); color: var(--text); }
+.meter-name { font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); }
+.meter-bars { display: flex; flex-direction: column; gap: 2px; inline-size: 48px; }
+.meter-bar { position: relative; display: block; block-size: 3px; border-radius: 2px; background: var(--line); }
+.meter-bar.stale { background: repeating-linear-gradient(135deg, var(--muted) 0 1px, transparent 1px 3px); }
+.meter-fill { position: absolute; inset-block: 0; inset-inline-start: 0; border-radius: 2px; background: var(--accent); }
+.meter-bar.warn .meter-fill { background: var(--warn); }
+.meter-bar.stale .meter-fill { background: color-mix(in srgb, var(--muted) 60%, transparent); }
+.meter-reserve { position: absolute; inset-block: -2px; inline-size: 2px; background: var(--text); box-shadow: 0 0 0 1px var(--panel); }
+.meter-when.stale { color: var(--text); font-weight: 600; }
 .tasks-table td.meta, .tasks-table .id, .tasks-table .q, .tasks-table td:nth-last-child(2), .tasks-table td:nth-last-child(3) { white-space: nowrap; }
 .tasks-table th.plain { padding: 7px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); font-weight: 600; }
 
@@ -1339,7 +1360,7 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .settings-sections { max-width: 980px; }
 .settings-sections > section { padding: 12px 24px; border-bottom: 1px solid var(--line); }
 .settings-sections h2 { font-size: 13px; margin: 0 0 8px; }
-.settings-sections section > button, .setting-edit button { border: 1px solid var(--line); background: var(--bg); border-radius: 6px; padding: 4px 12px; }
+.settings-sections section > button, .setting-edit button, .profile-form .ui-button { border: 1px solid var(--line); background: var(--bg); border-radius: 6px; padding: 4px 12px; }
 .setting { margin-bottom: 14px; }
 .setting-line { display: flex; gap: 8px; align-items: baseline; margin: 0 0 2px; }
 .setting-value { font-weight: 600; }
@@ -1362,6 +1383,15 @@ button.side-swatch-dot:hover, button.side-swatch-dot:focus-visible, button.side-
 .role-row[aria-expanded="true"] { background: var(--selected); box-shadow: inset 3px 0 0 var(--accent); }
 .role-fields { padding: 6px 4px 12px 16px; border-bottom: 1px solid var(--line); }
 .role-fields .setting-edit input { width: auto; }
+/* Settings › Accounts (task 0113): each account's reading, then its fields on one wrapping line,
+   the refusal under them in reserved space so it doesn't push what's below. */
+.profile-reading { margin-block: 0 2px; }
+.profile-reading.stale { color: var(--muted); }
+.profile-form { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin-block-start: 8px; }
+.profile-field { display: inline-flex; align-items: center; gap: 6px; }
+.profile-field input:not([type="checkbox"]) { font: inherit; padding-block: 3px; padding-inline: 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--text); }
+.profile-remove { display: inline-flex; align-items: center; gap: 6px; }
+.profile-error { margin-block: 4px 2px; min-block-size: 1.4em; }
 .about-list { margin: 6px 0; padding-left: 18px; }
 .about-list li { margin-bottom: 4px; }
 .settings .path { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); overflow-wrap: anywhere; }

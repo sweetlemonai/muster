@@ -18,6 +18,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -29,6 +30,8 @@ DOC = REPO / "docs" / "COMMANDS.md"
 CRATE = REPO / "app" / "src-tauri"
 MUSTER = Path(os.environ.get("MUSTER_BIN") or
               Path(os.environ.get("CARGO_TARGET_DIR") or CRATE / "target") / "debug" / "muster")
+# The status line's lean reader (0113), built beside it.
+STATUSLINE = MUSTER.parent / "muster-statusline"
 
 # The routes task 0003 asks for, by first word, and the `muster` command each one runs.
 # "" is a bare /mu, "<id>" a task id, "<other>" anything else (captured as a backlog one-liner).
@@ -117,7 +120,7 @@ def help_commands() -> set[str]:
 
 def setUpModule():
     if not os.environ.get("MUSTER_BIN"):
-        subprocess.run(["cargo", "build", "--quiet", "--bin", "muster",
+        subprocess.run(["cargo", "build", "--quiet", "--bin", "muster", "--bin", "muster-statusline",
                         "--manifest-path", str(CRATE / "Cargo.toml")], check=True)
 
 
@@ -804,6 +807,237 @@ class RunScript(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         self.assertIn("give it as an absolute path", r.stderr)
         self.assertFalse(self.calls.exists())
+
+
+class StatusLineShim(unittest.TestCase):
+    """0113: bin/statusline-usage, chained before the owner's own status line, passes Claude
+    Code's status-line JSON through byte for byte, always, and records only its rate_limits in
+    usage/<label>.jsonl, for an allowed account's CLAUDE_CONFIG_DIR and never the company
+    ~/.claude. The shim is copied into a temp checkout of its own, so this checkout's release
+    build isn't what runs; a home of its own, with ~/.claude, ~/.claude-mg and ~/.claude-ih
+    (off the allowlist)."""
+
+    SHIM = REPO / "bin" / "statusline-usage"
+    FIXTURES = CRATE / "tests" / "fixtures"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        tmp = Path(self.tmp.name)
+        self.home = tmp / "home"
+        for d in (".claude", ".claude-mg", ".claude-hg", ".claude-ih"):
+            (self.home / d).mkdir(parents=True)
+        self.app = self.home / "Library" / "Application Support" / "ai.sweetlemon.muster"
+        # muster on the PATH: this checkout's debug build.
+        self.on_path = tmp / "path"
+        self.on_path.mkdir()
+        (self.on_path / "muster").symlink_to(MUSTER)
+        self.checkout = tmp / "a checkout"
+        (self.checkout / "bin").mkdir(parents=True)
+        self.shim = self.checkout / "bin" / "statusline-usage"
+        shutil.copy2(self.SHIM, self.shim)
+        self.env = {"HOME": str(self.home), "PATH": f"{self.on_path}{os.pathsep}/usr/bin:/bin",
+                    "CLAUDE_CONFIG_DIR": str(self.home / ".claude-mg")}
+        # mu-111's readings with their resets moved to an hour and three days from now: a reset
+        # more than a year off isn't a reading, and one past is stale.
+        now = int(time.time())
+        self.resets = {"1792035600": str(now + 3600), "1792346400": str(now + 3 * 86400)}
+        rl = json.loads(self.moved((self.FIXTURES / "statusline-rate-limits.json").read_text(encoding="utf-8")))
+        # The status line's stdin as Claude Code sends it: private keys beside rate_limits,
+        # Unicode, and no newline at the end.
+        self.stdin = json.dumps({
+            "cwd": "/Users/someone/playground/پروژه naïve 🍋", "session_id": "session-1",
+            "transcript_path": "/Users/someone/.claude-mg/projects/x/session-1.jsonl",
+            "model": {"id": "claude-opus-5-5", "display_name": "Opus"},
+            "cost": {"total_cost_usd": 1.25}, "workspace": {"current_dir": "/Users/someone"},
+            "rate_limits": rl["after_first_response"]["rate_limits"],
+        }, ensure_ascii=False).encode("utf-8")
+
+    def moved(self, text: str) -> str:
+        for old, new in self.resets.items():
+            text = text.replace(old, new)
+        return text
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_shim(self, data: bytes, **env: str | None) -> subprocess.CompletedProcess:
+        e = {**self.env, **env}
+        e = {k: v for k, v in e.items() if v is not None}
+        return subprocess.run([str(self.shim)], input=data, capture_output=True, env=e, timeout=30)
+
+    def usage(self) -> Path:
+        return self.app / "usage" / "mg.jsonl"
+
+    def test_stdin_passes_through_byte_for_byte_and_only_rate_limits_are_kept(self):
+        r = self.run_shim(self.stdin)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout, self.stdin)
+        self.assertEqual(r.stderr, b"")
+        lines = self.usage().read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+        reading = json.loads(lines[0])
+        self.assertEqual(sorted(reading), ["account", "at", "five_hour", "seven_day", "source"])
+        self.assertEqual(reading["account"], "mg")
+        self.assertEqual(reading["source"], "statusline")
+        self.assertEqual(reading["five_hour"],
+                         {"used_percentage": 35.0, "resets_at": int(self.resets["1792035600"])})
+        self.assertEqual(reading["seven_day"],
+                         {"used_percentage": 41.0, "resets_at": int(self.resets["1792346400"])})
+        for private in ("cwd", "session", "transcript", "model", "cost", "someone", "Opus"):
+            self.assertNotIn(private, lines[0])
+        # The status line runs after every message: the same windows aren't written again.
+        self.assertEqual(self.run_shim(self.stdin).stdout, self.stdin)
+        self.assertEqual(len(self.usage().read_text(encoding="utf-8").splitlines()), 1)
+
+    def test_what_isnt_a_reading_still_passes_through_and_records_nothing(self):
+        big = b'{"cwd": "' + b"x" * (2 << 20) + b'"}'
+        for data in (b"", b"\n", b"not json", b"\xff\xfe\x00{\"rate_limits\": 1}\r\n", big,
+                     json.dumps({"cwd": "/x", "session_id": "s"}).encode()):
+            r = self.run_shim(data)
+            self.assertEqual((r.returncode, r.stdout, r.stderr), (0, data, b""), data[:40])
+        self.assertFalse((self.app / "usage").exists())
+
+    def test_the_company_account_and_one_off_the_allowlist_record_nothing(self):
+        for config in (str(self.home / ".claude"), str(self.home / ".claude-ih"), "", None,
+                       str(Path(self.tmp.name) / ".claude-mg")):
+            r = self.run_shim(self.stdin, CLAUDE_CONFIG_DIR=config)
+            self.assertEqual((r.returncode, r.stdout), (0, self.stdin), config)
+        (Path(self.tmp.name) / ".claude-mg").mkdir()
+        r = self.run_shim(self.stdin, CLAUDE_CONFIG_DIR=str(Path(self.tmp.name) / ".claude-mg"))
+        self.assertEqual(r.stdout, self.stdin)
+        self.assertFalse((self.app / "usage").exists(), "nothing recorded")
+
+    def test_without_muster_it_is_cat(self):
+        r = self.run_shim(self.stdin, PATH="/usr/bin:/bin")
+        self.assertEqual((r.returncode, r.stdout), (0, self.stdin))
+        self.assertFalse((self.app / "usage").exists())
+
+    def release(self) -> Path:
+        release = self.checkout / "app" / "src-tauri" / "target" / "release"
+        release.mkdir(parents=True, exist_ok=True)
+        return release
+
+    def stub(self, path: Path, body: str) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("#!/bin/sh\n" + body + "\n", encoding="utf-8")
+        path.chmod(0o755)
+        return path
+
+    # A muster that refuses before it reads stdin, as bin/muster does with no release build and a
+    # release build from before 0113 does on `accounts record`.
+    REFUSES = 'echo "muster: build it first" >&2; exit 2'
+
+    def path_with(self, body: str) -> str:
+        """A PATH whose muster is a stub running `body`."""
+        self.stub(Path(self.tmp.name) / "stub" / "muster", body)
+        return f"{Path(self.tmp.name) / 'stub'}{os.pathsep}/usr/bin:/bin"
+
+    def test_this_checkouts_release_build_comes_before_the_path(self):
+        (self.release() / "muster").symlink_to(MUSTER)
+        # The PATH's muster passes stdin through and records nothing: only the release build can.
+        r = self.run_shim(self.stdin, PATH=self.path_with("exec cat"))
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, self.stdin, b""))
+        self.assertTrue(self.usage().exists(), "the release build recorded")
+
+    def test_the_lean_reader_comes_first_and_records(self):
+        self.assertTrue(STATUSLINE.exists(), f"{STATUSLINE}: cargo build --bin muster-statusline")
+        (self.release() / "muster-statusline").symlink_to(STATUSLINE)
+        self.stub(self.release() / "muster", "exec cat")
+        r = self.run_shim(self.stdin, PATH=self.path_with("exec cat"))
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, self.stdin, b""))
+        reading = json.loads(self.usage().read_text(encoding="utf-8"))
+        self.assertEqual((reading["account"], reading["source"]), ("mg", "statusline"))
+        # What isn't a reading, or the company account, passes through and records nothing.
+        self.usage().unlink()
+        for data, config in ((b"not json", str(self.home / ".claude-mg")),
+                             (self.stdin, str(self.home / ".claude")), (self.stdin, None)):
+            r = self.run_shim(data, CLAUDE_CONFIG_DIR=config)
+            self.assertEqual((r.returncode, r.stdout, r.stderr), (0, data, b""), config)
+        self.assertFalse(self.usage().exists())
+
+    def test_the_lean_reader_links_no_app_frameworks(self):
+        # Only a release build drops them (LTO leaves nothing that uses them, then build.rs's
+        # -dead_strip_dylibs); the debug build keeps every reference.
+        lean = MUSTER.parent.parent / "release" / "muster-statusline"
+        if shutil.which("otool") is None or not lean.exists():
+            self.skipTest("no release build of muster-statusline, or no otool")
+        r = subprocess.run(["otool", "-L", str(lean)], capture_output=True, text=True, check=True)
+        for framework in ("AppKit", "WebKit", "Carbon", "QuartzCore", "CoreVideo"):
+            self.assertNotIn(framework, r.stdout)
+
+    def test_a_muster_that_refuses_falls_through_to_cat(self):
+        # The PATH's muster refuses: cat passes stdin through, nothing on stderr.
+        r = self.run_shim(self.stdin, PATH=self.path_with(self.REFUSES))
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, self.stdin, b""))
+        # A release build too old for `accounts record`, and the PATH's refusing as well.
+        self.stub(self.release() / "muster", self.REFUSES)
+        r = self.run_shim(self.stdin, PATH=self.path_with(self.REFUSES))
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, self.stdin, b""))
+        self.assertFalse((self.app / "usage").exists())
+        # The release build refuses and the PATH's muster records: it gets all of stdin.
+        r = self.run_shim(self.stdin)
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, self.stdin, b""))
+        self.assertTrue(self.usage().exists())
+
+    def test_a_reading_that_cant_be_written_still_passes_through(self):
+        # app/usage is a plain file: the write fails, the status line doesn't. Through the PATH's
+        # muster and through the lean reader.
+        self.app.mkdir(parents=True)
+        (self.app / "usage").write_text("not a folder", encoding="utf-8")
+        r = self.run_shim(self.stdin)
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, self.stdin, b""))
+        (self.release() / "muster-statusline").symlink_to(STATUSLINE)
+        r = self.run_shim(self.stdin, PATH="/usr/bin:/bin")
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, self.stdin, b""))
+        r = subprocess.run([str(MUSTER), "accounts", "record", "--from", "statusline"], input=self.stdin,
+                           capture_output=True, env=self.env, timeout=30)
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, self.stdin, b""))
+        self.assertEqual((self.app / "usage").read_text(encoding="utf-8"), "not a folder")
+
+    def test_a_runs_stream_is_recorded_and_muster_accounts_shows_it(self):
+        stream = self.moved((self.FIXTURES / "stream" / "claude-rate-limit-over-cap.jsonl")
+                            .read_text(encoding="utf-8")).encode("utf-8")
+        r = subprocess.run([str(MUSTER), "accounts", "record", "--from", "stream", "--account", "cc-mg"],
+                           input=stream, capture_output=True, env=self.env, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.decode(), "recorded 1 reading for cc-mg\n")
+        reading = json.loads(self.usage().read_text(encoding="utf-8"))
+        self.assertEqual((reading["source"], reading["five_hour"]["used_percentage"]), ("stream", 104.0))
+        r = subprocess.run([str(MUSTER), "accounts", "--json"], capture_output=True, text=True,
+                           env=self.env, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        info = json.loads(r.stdout)
+        mg = info["accounts"][0]
+        self.assertEqual((mg["name"], mg["source"], mg["fiveHour"]["usedPercentage"]),
+                         ("cc-mg", "stream", 104.0))
+        self.assertEqual(mg["fiveHour"]["headroom"], -20.0)
+        r = subprocess.run([str(MUSTER), "accounts"], capture_output=True, text=True,
+                           env=self.env, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("cc-mg (claude)\n  5 h: 104% used (past the cap)", r.stdout)
+        self.assertIn("cc-hg (claude)\n  no reading yet\n", r.stdout)
+        # Off the allowlist: refused, nothing recorded.
+        r = subprocess.run([str(MUSTER), "accounts", "record", "--from", "stream", "--account", "ih"],
+                           input=stream, capture_output=True, env=self.env, timeout=30)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertFalse((self.app / "usage" / "ih.jsonl").exists())
+
+    def test_it_adds_little_to_the_status_line(self):
+        # 100 runs of the shim, through the lean reader, against 100 of cat. The budget (under
+        # 5 ms) is the release build's, which is what the owner runs; this is the debug build on a
+        # Mac that may be busy, so the number is printed and the bound only catches something gone
+        # badly wrong (a wait, a network call). The release figures are in the WORKLOG.
+        (self.release() / "muster-statusline").symlink_to(STATUSLINE)
+        def loop(cmd: list[str]) -> float:
+            start = time.perf_counter()
+            for _ in range(100):
+                subprocess.run(cmd, input=self.stdin, capture_output=True, env=self.env)
+            return (time.perf_counter() - start) / 100
+        cat = loop(["cat"])
+        shim = loop([str(self.shim)])
+        added_ms = (shim - cat) * 1000
+        print(f"\nstatusline-usage adds {added_ms:.1f} ms a run ({STATUSLINE})")
+        self.assertLess(added_ms, 200)
 
 
 if __name__ == "__main__":

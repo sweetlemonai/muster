@@ -7,11 +7,11 @@ import { tl, tn } from "./i18n";
 import { LEASE_SECS } from "./lib";
 import type { LocaleInfo } from "./types";
 
-export type SettingsGroup = "appearance" | "display" | "projects" | "agents" | "notifications" | "about";
+export type SettingsGroup = "appearance" | "display" | "projects" | "agents" | "accounts" | "notifications" | "about";
 
 /** Settings' groups, in the order the list shows them, each with what it holds. Help isn't one:
  *  the manual is the header's Help tab, and only there (owner, 2026-10-13). */
-export const SETTINGS_GROUPS: { readonly id: SettingsGroup; readonly label: string; readonly holds: string; readonly topic: HelpTopic }[] = (["appearance", "display", "projects", "agents", "notifications", "about"] as const).map((id) => ({
+export const SETTINGS_GROUPS: { readonly id: SettingsGroup; readonly label: string; readonly holds: string; readonly topic: HelpTopic }[] = (["appearance", "display", "projects", "agents", "accounts", "notifications", "about"] as const).map((id) => ({
   id,
   topic: id,
   // In the language shown, each time they're read (shell.json, mu-146).

@@ -5,6 +5,8 @@ description = "Watch Muster task queues: board, what's waiting for you, activity
 authors = ["Sweet Lemon"]
 edition = "2021"
 rust-version = "1.89"
+# The app and its command line; src/bin/muster-statusline.rs is the status line's lean reader.
+default-run = "muster"
 
 [lib]
 name = "muster_lib"

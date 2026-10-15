@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { AccountsInfo, ProfileSave, Provider } from "./accountsData";
 import type { SearchIndex } from "./search";
 import type { SettingsInfo } from "./settingsData";
 import type { HistoryState, LessonListing, Project, Role, RoleField, RunView, SessionRecap, SessionsList, State, Work } from "./types";
@@ -174,6 +175,13 @@ export const api = {
   runStart: (project: string) => invoke<RunView>("run_start", { project }),
   runStop: (project: string) => invoke<RunView>("run_stop", { project }),
   runState: (project: string) => invoke<RunView>("run_state", { project }),
+  // Accounts and their use (0113): each profile with its latest reading, from the core's memory;
+  // an `accounts-changed` event says when to ask again. Add, remove and save are refused with
+  // why (the company ~/.claude, a Claude label off the allowlist, a bound passed), as is.
+  accountsInfo: () => invoke<AccountsInfo>("accounts_info"),
+  accountAdd: (label: string, provider: Provider) => invoke<void>("account_add", { label, provider }),
+  accountRemove: (label: string) => invoke<void>("account_remove", { label }),
+  accountSave: (profile: ProfileSave) => invoke<void>("account_save", { profile }),
 };
 
 /** A project moved under another heading by an arrangement (0057): its key and the heading. */
