@@ -381,6 +381,10 @@ measured actuals (p50 0.39x, median 1.1 h; e.g. mu-56 4d → 10h), tasks in Buil
 hand commit, not a test: that author is nowhere in the repo; finding withdrawn before recording.
 **Verified:** `muster check` reports nothing on the new tasks; backlog empty.
 **Open:** mu-131 is with its tester (kia-131); mu-132 onward wait for it to merge.
+**Later the same night:** four more notes → mu-180 (design: Muster's move into Drover, blocked on
+dr-0033/0034), mu-181 (`muster check-line`), mu-183 (migrate probe clears a stale scratch folder),
+mu-184 (owner-only Release, claims re-stamped; send-backs keep the stamp, per the owner). Drover's
+side of the move has a note in Drover's backlog.
 
 ## 2026-10-15 — Coordinator (Muster_Team_Lead_5): mu-87, 108, 99, 130, 102 merged; lead moves to QA_10 on cc-hg
 **Did:** merged mu-87 (0e4d905), mu-108 (ba6b048), mu-99 (23ecba7), mu-130 (6036641), mu-102
