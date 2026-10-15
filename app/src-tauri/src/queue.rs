@@ -65,6 +65,12 @@ pub struct StageStep {
     pub to: String,
 }
 
+/// The stages whose claim has a lease (0097): Building's builder and Shaping's shaper of a filed
+/// note. The holder acting there, or an unblock, renews it; `reclaim` and `check` count it.
+pub fn has_lease(stage: &str) -> bool {
+    matches!(stage, "building" | "shaping")
+}
+
 /// The stage's name as people read it, or "" for an unknown stage.
 pub fn stage_label(stage: &str) -> &'static str {
     match stage {
@@ -720,11 +726,12 @@ impl Task {
         self.for_who == "human"
     }
 
-    /// Who's on it in its stage: the claim in Ready and Building, `held-by` in Testing and Your
-    /// check (the owner's when it names nobody), nobody elsewhere.
+    /// Who's on it in its stage: the claim in Ready, Shaping (a filed note's shaper, 0097) and
+    /// Building, `held-by` in Testing and Your check (the owner's when it names nobody), nobody
+    /// elsewhere.
     pub fn holder(&self) -> &str {
         match self.stage.as_str() {
-            "ready" | "building" => &self.claimed_by,
+            "ready" | "shaping" | "building" => &self.claimed_by,
             "testing" => &self.held_by,
             "your-check" if self.held_by.is_empty() => "owner",
             "your-check" => &self.held_by,
@@ -1837,6 +1844,8 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str, lease: u64) 
         }
         // Only Building is held by someone; a blocked task (by tasks too) isn't being worked on.
         let building = t.stage == "building" && t.blocked_kind.is_empty();
+        // A task held in Shaping (0097) has a lease too, though it may be nobody's.
+        let shaping = t.stage == "shaping" && t.blocked_kind.is_empty() && !t.claimed_by.is_empty();
         if building && t.claimed_by.is_empty() {
             out.push(format!(
                 "{queue}: {} is being worked on but nobody has claimed it",
@@ -1852,7 +1861,7 @@ pub fn problems(queue: &str, tasks: &[Task], now: u64, stamp: &str, lease: u64) 
         // The lease `muster reclaim` uses: since the heartbeat, else since the file changed. The
         // owner's own task (for: human) has none, and a paused one's doesn't run (0045).
         let quiet = crate::ops::quiet_minutes(&t.heartbeat, t.modified, stamp, now);
-        if building && !t.is_human() && t.paused.is_empty() && quiet > lease {
+        if (building || shaping) && !t.is_human() && t.paused.is_empty() && quiet > lease {
             out.push(format!(
                 "{queue}: {} is claimed but hasn't been heard from in {} h",
                 t.path,
@@ -2552,7 +2561,7 @@ pub fn ask_with(
         // The holder asking is the holder being heard from: it keeps the claim alive.
         let held =
             parse_task("", root, &folder_of(root, &path), &path, &body, 0).is_some_and(|t| {
-                t.stage == "building"
+                has_lease(&t.stage)
                     && !t.claimed_by.is_empty()
                     && crate::session::same_holder(&t.claimed_by, &who)
             });
@@ -3734,6 +3743,12 @@ mod tests {
             "todo",
         );
         assert_eq!(ready.holder(), "wt-a (session aaaa1111)");
+        // Shaping's holder is its claim too (0097): a filed note's shaper.
+        let shaping = parse_one(
+            &text.replace("status: doing", "status: todo\nstage: shaping"),
+            "todo",
+        );
+        assert_eq!(shaping.holder(), "wt-a (session aaaa1111)");
         let done = parse_one(
             &text.replace("status: doing", "status: done\nstage: done"),
             "done",
@@ -3876,6 +3891,54 @@ mod tests {
                 "p: doing/0001-x.md is claimed but hasn't been heard from in 13 h",
                 "p: doing/0003-x.md is claimed but hasn't been heard from in 13 h"
             ]
+        );
+    }
+
+    #[test]
+    fn check_calls_a_shaping_claim_quiet_by_the_same_lease() {
+        // 0097: a task held in Shaping (a filed note's shaper) has a lease too.
+        let now = 2_000_000_000;
+        let stamp = "2026-10-12 14:05";
+        let shaping = |id: &str, who: &str, hb: &str, extra: &str| {
+            let text = format!("---\nid: {id}\nstage: shaping\nstatus: todo\nclaimed-by: {who}\nheartbeat: {hb}\n{extra}---\n\n# T\n");
+            let root = Path::new("/nonexistent-queue");
+            parse_task(
+                "p",
+                root,
+                "todo",
+                &root.join(format!("todo/{id}-x.md")),
+                &text,
+                now,
+            )
+            .unwrap()
+        };
+        let tasks = [
+            shaping("0001", "shapour", "2026-10-12 01:00", ""),
+            shaping("0002", "shapour", "2026-10-12 13:00", ""),
+            // Nobody holds it, it's paused, or the owner's own: no lease.
+            shaping("0003", "", "2026-10-12 01:00", ""),
+            shaping(
+                "0004",
+                "shapour",
+                "2026-10-12 01:00",
+                "paused: 2026-10-12 09:00\n",
+            ),
+            shaping("0005", "owner", "2026-10-12 01:00", "for: human\n"),
+            // Blocked, its shaper waiting on the owner: waiting isn't going quiet.
+            shaping(
+                "0006",
+                "shapour",
+                "2026-10-12 01:00",
+                "waiting_on: which colour?\nblocked-kind: you\n",
+            ),
+        ];
+        let quiet: Vec<_> = problems("p", &tasks, now, stamp, crate::ops::LEASE_MINUTES)
+            .into_iter()
+            .filter(|p| p.contains("heard from"))
+            .collect();
+        assert_eq!(
+            quiet,
+            ["p: todo/0001-x.md is claimed but hasn't been heard from in 13 h"]
         );
     }
 

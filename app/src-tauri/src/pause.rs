@@ -330,7 +330,7 @@ pub fn resume(root: &Path, id: &str, who: &str, stamp: &str) -> Result<Paused, S
         let mut new = clear_front(&text, "paused")?;
         new = clear_front(&new, "paused-why")?;
         // The lease starts over: time paused isn't time gone quiet.
-        if t.stage == "building" && !t.claimed_by.is_empty() && !t.is_human() {
+        if queue::has_lease(&t.stage) && !t.claimed_by.is_empty() && !t.is_human() {
             new = set_front(&new, "heartbeat", stamp)?;
         }
         if let Some(sid) = &sid {
@@ -598,8 +598,14 @@ mod tests {
 
     #[test]
     fn a_paused_claim_never_runs_out_and_resuming_gives_its_holder_one_lease() {
+        // A shaper's claim keeps its lease as a builder's does (0097).
+        for stage in ["building", "shaping"] {
+            paused_claim_keeps_its_lease(stage);
+        }
+    }
+    fn paused_claim_keeps_its_lease(stage: &str) {
         let d = queue();
-        put(d.path(), "0042", "building", A, "");
+        put(d.path(), "0042", stage, A, "");
         pause(d.path(), "0042", "", "owner", T).unwrap();
         // Two days later, far past the 12-hour lease: reclaim leaves it, Release refuses it.
         let later = "2026-10-15 10:00";
@@ -626,7 +632,7 @@ mod tests {
             secs,
         )
         .unwrap();
-        assert!(r.released.is_empty(), "{r:?}");
+        assert!(r.released.is_empty(), "{stage}: {r:?}");
         // …and after one lease without a word, whoever claims it next may have it.
         let r = ops::reclaim(
             d.path(),
@@ -636,7 +642,7 @@ mod tests {
             secs,
         )
         .unwrap();
-        assert_eq!(r.released.len(), 1, "{r:?}");
+        assert_eq!(r.released.len(), 1, "{stage}: {r:?}");
     }
 
     #[test]

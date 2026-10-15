@@ -47,6 +47,12 @@ const TABLE = {
     standard: { how: "show", says: "When it was done, on every Done card: it's the card's status line" },
     focus: { how: "show", says: "When it was done, on every Done card: it's the card's one status line" },
   },
+  "holder-ribbon": {
+    label: "Holder ribbon",
+    adhd: { how: "show", says: "Who holds a task in Shaping, Building or Testing, and who is shaping a backlog note, in the card's corner" },
+    standard: { how: "show", says: "Who holds a task in Shaping, Building or Testing, and who is shaping a backlog note, in the card's corner: on the brief card it's the one place the holder shows" },
+    focus: { how: "show", says: "Who holds a task in Shaping, Building or Testing, and who is shaping a backlog note, in the card's corner: who's on it is status" },
+  },
   columns: {
     label: "Board columns",
     adhd: { how: "all", says: "Every stage with tasks, and Paused before Backlog; an empty one, or one you folded, is a chip in the row above the board with its count, needs you and blocked" },

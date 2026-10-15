@@ -158,6 +158,34 @@ describe("the owner's own tasks' gold (0022)", () => {
   }
 });
 
+describe("the holder ribbon (0097): neutral, readable, apart from the stages and the You gold", () => {
+  const rule = (selector: string) => {
+    const i = css.indexOf(`\n${selector} {`);
+    expect(i, selector).toBeGreaterThanOrEqual(0);
+    return css.slice(i, css.indexOf("}", i));
+  };
+  for (const t of THEMES) {
+    it(`${t.name}: its name and quiet read on it at 4.5:1 with every accent, and its fill is no stage's and not the gold`, () => {
+      for (const a of ACCENTS) {
+        const v = variables(t, a);
+        expect(contrast(v["--text"], v["--panel"]), `text on ${a.name}`).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(v["--warn"], v["--panel"]), `quiet on ${a.name}`).toBeGreaterThanOrEqual(4.5);
+        for (const [s, c] of [...Object.entries(STAGE_COLOURS), ["needs", NEEDS_COLOUR], ["you", HUMAN_COLOUR], ["building", v["--st-building"]]]) {
+          expect(colourDistance(v["--panel"], c), `${s} on ${a.name}`).toBeGreaterThanOrEqual(SAME_AT_A_GLANCE);
+        }
+      }
+    });
+  }
+  it("uses only the neutral tokens and the attention colour for quiet, in every look", () => {
+    const body = rule(".holder-ribbon");
+    expect(body).toContain("background: var(--panel); color: var(--text); border: 1px solid var(--line);");
+    expect(rule(".holder-ribbon.quiet")).toContain("color: var(--warn);");
+    for (const b of [body, rule(".holder-ribbon.quiet"), rule(".holder-name")]) expect(b).not.toMatch(/--st-|--status|--card-|--edge|--accent|--pri/);
+    // The card's own element, as the You ribbon: no look hides or recolours it.
+    for (const l of ["tint", "top", "dot", "outline"]) expect(rule(`:root[data-cards="${l}"] .board .card, .look-${l} .card`)).not.toContain("holder");
+  });
+});
+
 describe("the owner's own task's hatch (0022, owner 2026-10-13: one board, human cards patterned)", () => {
   // A stripe is the gold mixed by HUMAN_HATCH into the card's own background: the surface, or in
   // the Tint look the card washed in its colour (blocked, needs you), which stays under the stripes.

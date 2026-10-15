@@ -876,8 +876,10 @@ fn muster_readme(project: &str, prefix: &str) -> String {
          then `muster unblock NNNN`. It keeps its stage.\n\
          - New bugs or ideas you find: `muster add \"<one line>\" --as <your branch>` puts a note in `backlog/`\n  \
          (a file dropped there by hand counts too). Shaping turns it into a task: `muster shape <note-file>`\n  \
-         prints the brief, `muster file <note-file> \"<title>\" --body -` files it in Shaping, and\n  \
-         `muster drop <note-file> \"<why>\"` sets it aside in `backlog/dropped/`.\n\
+         claims the note for you and prints the brief (`--peek` only reads it; the board shows who's on a note).\n  \
+         `muster file <note-file> \"<title>\" --body -` files it in Shaping, still yours, and\n  \
+         `muster drop <note-file> \"<why>\"` sets it aside in `backlog/dropped/`; either ends the claim, and\n  \
+         `muster release <note-file>` lets it go. One note at a time.\n\
          - Files go in `attachments/NNNN/`; `INDEX.md` and `tasks.json` are rebuilt by the tools, never edited.\n\
          - `config.toml`: `local = true` keeps the queue on this Mac (only `config.toml` is committed).\n"
     )
@@ -951,8 +953,9 @@ fn readme(project: &str, q: &Path, prefix: &str) -> String {
          - Code goes in the project's repo, never in this folder.\n\
          - New bugs or ideas you find: `muster add \"<one line>\" --as <your branch>` puts a note in the backlog\n  \
          (`inbox/`; a file dropped there by hand counts too). Shaping turns it into a task: `muster shape <note-file>`\n  \
-         prints the brief, `muster file <note-file> \"<title>\" --body -` files it in Shaping (the note goes into the\n  \
-         task's attachments), and `muster drop <note-file> \"<why>\"` sets it aside.\n\
+         claims the note for you and prints the brief (`--peek` only reads it), `muster file <note-file> \"<title>\" --body -`\n  \
+         files it in Shaping, still yours (the note goes into the task's attachments), and\n  \
+         `muster drop <note-file> \"<why>\"` sets it aside; either ends the claim, and `muster release <note-file>` lets it go.\n\
          - `bin/` holds stand-ins that run Muster's tools on this queue.\n"
     )
 }
@@ -960,6 +963,24 @@ fn readme(project: &str, q: &Path, prefix: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn both_readmes_say_shape_claims_the_note() {
+        // 0097: shape claims, --peek only reads, file and drop end the claim, release lets go.
+        for text in [
+            muster_readme("demo", "dm"),
+            readme("demo", Path::new("/q"), "dm"),
+        ] {
+            for want in [
+                "claims the note for you",
+                "`--peek` only reads it",
+                "either ends the claim",
+                "`muster release <note-file>` lets it go",
+            ] {
+                assert!(text.contains(want), "{want}: {text}");
+            }
+        }
+    }
 
     #[test]
     fn summary_is_in_both_readmes_builder_steps() {

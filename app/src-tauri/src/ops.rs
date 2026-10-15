@@ -382,6 +382,9 @@ pub(crate) struct CleanTask {
     for_who: &'static str,
     /// `touches:` as written (0023), or "" for none.
     touches: String,
+    /// Who holds it from the start, with its heartbeat at the creation's stamp: a filed note's
+    /// shaper (0097), or "" for nobody.
+    pub(crate) claimed_by: String,
 }
 
 /// Clean a new task's fields: refused when the title is empty, a choice isn't one, or a text is
@@ -405,6 +408,7 @@ pub(crate) fn clean_new(new: &NewTask) -> Result<CleanTask, String> {
         due: String::new(),
         for_who: "ai",
         touches: clean_touches(&new.touches)?,
+        claimed_by: String::new(),
     })
 }
 
@@ -450,8 +454,8 @@ pub fn clean_touches(value: &str) -> Result<String, String> {
 }
 
 /// Write task `id` in `stage` (in its status mirror's folder in the v2 layout), logged as created
-/// and then with `log`'s lines. The caller holds the queue's lock and took `id` from `next_id`
-/// under it.
+/// and then with `log`'s lines, claimed by `t.claimed_by` when it names someone. The caller holds
+/// the queue's lock and took `id` from `next_id` under it.
 pub(crate) fn create_locked(
     root: &Path,
     id: &str,
@@ -495,6 +499,10 @@ pub(crate) fn create_locked(
         if !value.is_empty() && !default {
             text = set_front(&text, key, value)?;
         }
+    }
+    if !t.claimed_by.is_empty() {
+        text = set_front(&text, "claimed-by", &t.claimed_by)?;
+        text = set_front(&text, "heartbeat", stamp)?;
     }
     for line in log {
         text = append_log(&text, line);
@@ -618,7 +626,7 @@ fn set_for(root: &Path, id: &str, value: &str, who: &str, stamp: &str) -> Result
                     waiting_on: t.waiting_on.clone(),
                     blocked_kind: t.blocked_kind.clone(),
                     depends: None,
-                    claimed_by: t.claimed_by.clone(),
+                    claimed_by: released(t, "ready"),
                     commit: None,
                     summary: None,
                     log: vec![stage_line(stamp, &who, &t.stage, "ready", " (yours to do)")],
@@ -1082,7 +1090,7 @@ pub fn move_task(
             waiting_on: String::new(),
             blocked_kind: String::new(),
             depends: None,
-            claimed_by: released(t),
+            claimed_by: released(t, stage),
             commit: None,
             summary: None,
             log,
@@ -1171,9 +1179,11 @@ fn stage_index(stage: &str) -> usize {
     STAGES.iter().position(|s| *s == stage).unwrap_or(0)
 }
 
-/// The claim after leaving the current stage for another: Building's holder lets go.
-fn released(t: &Current) -> String {
-    if t.stage == "building" {
+/// The claim after leaving the current stage for `to`: Building's holder lets go, and so does
+/// Shaping's (0097: the shaper of a filed note). Nothing but `muster file` brings a claim into
+/// Shaping, so a claim held anywhere else (a reservation in Ready) doesn't follow a task there.
+fn released(t: &Current, to: &str) -> String {
+    if queue::has_lease(&t.stage) || to == "shaping" {
         String::new()
     } else {
         t.claimed_by.clone()
@@ -1460,14 +1470,17 @@ fn change_locked(
             new = set_front(&new, "held-by", &held_by)?;
         }
         // The lease restarts when the holder acts, and whenever a change makes a hold: a claim,
-        // a return to the builder, or an unblock (time spent waiting isn't time gone quiet).
-        let holder_acts = now.stage == "building"
+        // a return to the builder, or an unblock (time spent waiting isn't time gone quiet). In
+        // Shaping too (0097): the shaper's acts and an unblock renew it, as in Building.
+        let holder_acts = queue::has_lease(&now.stage)
             && !now.claimed_by.is_empty()
             && same_holder(&now.claimed_by, who);
         let new_claim = c.stage == "building"
             && !c.claimed_by.is_empty()
             && (now.stage != "building" || !same_holder(&now.claimed_by, &c.claimed_by));
-        if holder_acts || new_claim || new_hold {
+        let unblocked =
+            queue::has_lease(&c.stage) && now.blocked && !c.blocked && !c.claimed_by.is_empty();
+        if holder_acts || new_claim || new_hold || unblocked {
             new = set_front(&new, "heartbeat", stamp)?;
         }
         for line in &c.log {
@@ -2246,7 +2259,7 @@ fn pass_change(
         claimed_by: if to == "building" {
             who.to_string()
         } else {
-            released(t)
+            released(t, to)
         },
         commit: (to == "done" && !commit.is_empty()).then(|| commit.to_string()),
         summary: None,
@@ -2449,8 +2462,8 @@ pub fn heartbeat_task(root: &Path, id: &str, who: &str, stamp: &str) -> Result<S
     })
 }
 
-/// Refused unless the task is in Building and `who` holds it: whose lease a heartbeat or a
-/// check-in may renew.
+/// Refused unless the task is in Building or Shaping (a filed note's shaper, 0097) and `who`
+/// holds it: whose lease a heartbeat or a check-in may renew.
 fn held_in_building(
     root: &Path,
     id: &str,
@@ -2460,9 +2473,9 @@ fn held_in_building(
 ) -> Result<(), String> {
     let t = queue::parse_task("", root, &queue::folder_of(root, path), path, text, 0)
         .ok_or("the task has no front matter")?;
-    if t.stage != "building" {
+    if !queue::has_lease(&t.stage) {
         return Err(format!(
-            "{id} is in {}, not Building; only a claim in Building has a lease to keep alive",
+            "{id} is in {}, not Building or Shaping; only a claim there has a lease to keep alive",
             stage_label(&t.stage)
         ));
     }
@@ -2648,7 +2661,7 @@ pub fn quiet_minutes(heartbeat: &str, modified: u64, stamp: &str, now_secs: u64)
 }
 
 /// "13 h", or "45 min" under an hour.
-fn quiet_text(minutes: u64) -> String {
+pub(crate) fn quiet_text(minutes: u64) -> String {
     if minutes >= 60 {
         format!("{} h", minutes / 60)
     } else {
@@ -2656,7 +2669,7 @@ fn quiet_text(minutes: u64) -> String {
     }
 }
 
-/// A claim `reclaim` gave back to Ready.
+/// A claim `reclaim` released: back to Ready from Building, unheld in Shaping (0097).
 #[derive(Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Released {
@@ -2665,6 +2678,8 @@ pub struct Released {
     /// How long it had been quiet ("13 h").
     pub quiet: String,
     pub path: String,
+    /// The stage it's in now: `ready`, or `shaping`.
+    pub stage: String,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq, Default)]
@@ -2673,10 +2688,13 @@ pub struct Reclaimed {
     pub released: Vec<Released>,
     /// Claims past their lease that couldn't be released, with why.
     pub failed: Vec<String>,
+    /// Backlog notes whose shaper's lease ran out (0097), unheld now.
+    pub notes: Vec<crate::backlog::ReleasedNote>,
 }
 
 /// What releasing the claim on `t` writes, or why it's refused: only an agent's claim in
-/// Building, not blocked, quiet for longer than `lease` minutes.
+/// Building or Shaping (0097), not blocked, quiet for longer than `lease` minutes. Building goes
+/// back to Ready; Shaping stays, unheld.
 fn release_change(
     id: &str,
     t: &Current,
@@ -2685,9 +2703,9 @@ fn release_change(
     stamp: &str,
     now_secs: u64,
 ) -> Result<Change, String> {
-    if t.stage != "building" {
+    if !queue::has_lease(&t.stage) {
         return Err(format!(
-            "{id} is in {}, not Building; there's no claim to release",
+            "{id} is in {}, not Building or Shaping; there's no claim to release",
             stage_label(&t.stage)
         ));
     }
@@ -2720,6 +2738,32 @@ fn release_change(
             quiet_text(lease)
         ));
     }
+    if t.stage == "shaping" {
+        // No stage line: it stays where it is. The holder comes from the file, so the line is
+        // checked like any free text, and says less when it would read as something else.
+        let quiet = quiet_text(quiet);
+        let line = free_text_line(
+            format!(
+                "{stamp} {who}: reclaimed from {} (no heartbeat for {quiet}); still in Shaping",
+                t.claimed_by
+            ),
+            "the holder",
+        )
+        .unwrap_or_else(|_| {
+            format!("{stamp} {who}: reclaimed (no heartbeat for {quiet}); still in Shaping")
+        });
+        return Ok(Change {
+            stage: "shaping".into(),
+            blocked: false,
+            waiting_on: t.waiting_on.clone(),
+            blocked_kind: t.blocked_kind.clone(),
+            depends: None,
+            claimed_by: String::new(),
+            commit: None,
+            summary: None,
+            log: vec![line],
+        });
+    }
     Ok(Change {
         stage: "ready".into(),
         blocked: false,
@@ -2745,8 +2789,10 @@ fn release_change(
 
 /// Give every claim whose lease ran out back to Ready: each task in Building, not blocked, not
 /// the owner's own (`for: human`), held by someone, with no heartbeat (or, without one, no change to its file) for longer than
-/// `lease` minutes. Live claims are left alone. One lock for the whole pass, so a heartbeat
-/// lands either before it (and counts) or after it (and is refused: the task isn't Building).
+/// `lease` minutes. A task held in Shaping (0097) is released the same way and stays in Shaping,
+/// and so is a backlog note's claim (`backlog::reclaim_notes_locked`). Live claims are left
+/// alone. One lock for the whole pass, so a heartbeat lands either before it (and counts) or after
+/// it (and is refused: the task isn't Building).
 pub fn reclaim(
     root: &Path,
     lease: u64,
@@ -2758,7 +2804,7 @@ pub fn reclaim(
     with_lock(root, || {
         let mut out = Reclaimed::default();
         let quiet = tasks_now(root).into_iter().filter(|t| {
-            t.stage == "building"
+            queue::has_lease(&t.stage)
                 && t.blocked_kind.is_empty()
                 && t.paused.is_empty()
                 && !t.is_human()
@@ -2771,12 +2817,24 @@ pub fn reclaim(
             }) {
                 Ok(path) => out.released.push(Released {
                     quiet: quiet_text(quiet_minutes(&t.heartbeat, t.modified, stamp, now_secs)),
+                    stage: if t.stage == "shaping" {
+                        "shaping"
+                    } else {
+                        "ready"
+                    }
+                    .into(),
                     id: t.id,
                     holder: t.claimed_by,
                     path,
                 }),
                 Err(e) => out.failed.push(format!("{}: {e}", t.id)),
             }
+        }
+        match crate::backlog::reclaim_notes_locked(root, lease, stamp) {
+            Ok(notes) => out.notes = notes,
+            Err(e) => out
+                .failed
+                .push(format!("{}: {e}", crate::backlog::SHAPING_FILE)),
         }
         Ok(out)
     })
@@ -2826,14 +2884,14 @@ pub struct TakenOver {
 }
 
 /// When the claim in `body` was made or last taken over: the last stage line into Building or
-/// takeover line, by its stamp; and whether its holder (`claimed_by`) checked in handing off
-/// after it.
+/// Shaping (0097) or takeover line, by its stamp; and whether its holder (`claimed_by`) checked
+/// in handing off after it.
 fn claim_state(body: &str, claimed_by: &str) -> (String, bool) {
     let mut since = String::new();
     let mut handed = false;
     for line in queue::log_section(body).unwrap_or("").lines() {
         if let Some((s, _)) = queue::stage_line(line) {
-            if s.to == "building" {
+            if queue::has_lease(&s.to) {
                 since = s.at;
                 handed = false;
             }
@@ -2855,14 +2913,14 @@ fn clock(minutes: i64) -> String {
     format!("{:02}:{:02}", m / 60, m % 60)
 }
 
-/// Take over the claim on task `id` for `who` (0090): a session under the claim's label, other
-/// than the one holding it, after that one checked in handing off (`checkin_task_with`) or went
+/// Take over the claim on task `id` for `who` (0090): a claim in Building, or a filed note's
+/// shaper's in Shaping (0097); by a session under the claim's label, other than the one holding it, after that one checked in handing off (`checkin_task_with`) or went
 /// quiet for `TAKEOVER_QUIET` minutes; a blocked claim (waiting, so quiet by design) only after a
 /// handoff. The owner may always take over, but nobody takes a paused claim. Under the queue's lock, the
 /// claim (`claimed-by:`) is restamped for `who`, its lease renewed and the takeover logged as
 /// `<who>: took over the claim from <old> (handed off | quiet 42 min | owner's override)`; the
 /// mail waiting for the old holder on this task moves to `who`'s mailbox (`queue::move_mail`).
-/// One claim per holder, as for any claim. `stamp` and `now_secs` are the same moment.
+/// One claim per holder in Building, as for any claim. `stamp` and `now_secs` are the same moment.
 pub fn takeover_task(
     root: &Path,
     id: &str,
@@ -2873,20 +2931,21 @@ pub fn takeover_task(
     let who = actor(who)?;
     with_lock(root, || {
         let owner = is_owner(&who);
-        if !owner {
-            if let Some(held) = holding(&tasks_now(root), &who, id) {
-                return Err(already_holds(&held));
-            }
-        }
         let mut out = None;
         let path = edit_locked(root, id, |path, text| {
             let t = queue::parse_task("", root, &queue::folder_of(root, path), path, &text, 0)
                 .ok_or("the task has no front matter")?;
-            if t.stage != "building" {
+            if !queue::has_lease(&t.stage) {
                 return Err(format!(
-                    "{id} is in {}, not Building; only a claim in Building can be taken over",
+                    "{id} is in {}, not Building or Shaping; only a claim there can be taken over",
                     stage_label(&t.stage)
                 ));
+            }
+            // One claim per holder in Building; a shaper's claim in Shaping doesn't count (0097).
+            if !owner && t.stage == "building" {
+                if let Some(held) = holding(&tasks_now(root), &who, id) {
+                    return Err(already_holds(&held));
+                }
             }
             // A paused claim stays its holder's, for anyone, the owner included (0045).
             if !t.paused.is_empty() {
@@ -3410,7 +3469,7 @@ pub fn set_stage(
             waiting_on: t.waiting_on.clone(),
             blocked_kind: t.blocked_kind.clone(),
             depends: None,
-            claimed_by: released(t),
+            claimed_by: released(t, stage),
             commit: None,
             summary: None,
             log: vec![stage_line(
@@ -3440,7 +3499,9 @@ pub fn add_note(
         // The holder's note keeps its claim alive.
         let t = queue::parse_task("", root, &queue::folder_of(root, path), path, &text, 0);
         if t.is_some_and(|t| {
-            t.stage == "building" && !t.claimed_by.is_empty() && same_holder(&t.claimed_by, &who)
+            queue::has_lease(&t.stage)
+                && !t.claimed_by.is_empty()
+                && same_holder(&t.claimed_by, &who)
         }) {
             new = set_front(&new, "heartbeat", stamp)?;
         }
@@ -3851,7 +3912,10 @@ pub fn edit_body(
         };
         new = append_log(&new, &format!("{stamp} {who}: edited the write-up"));
         // The holder's edit keeps its claim alive.
-        if t.stage == "building" && !t.claimed_by.is_empty() && same_holder(&t.claimed_by, &who) {
+        if queue::has_lease(&t.stage)
+            && !t.claimed_by.is_empty()
+            && same_holder(&t.claimed_by, &who)
+        {
             new = set_front(&new, "heartbeat", stamp)?;
         }
         write_atomic(&path, &new)?;
@@ -5944,6 +6008,249 @@ mod tests {
         crate::queue::read_body(d, id).unwrap()
     }
 
+    /// Task `id` in Shaping, held by `who` since `heartbeat` (0097), with one criterion.
+    fn shaping_task(d: &Path, id: &str, who: &str, heartbeat: &str) -> PathBuf {
+        let p = d.join(format!("todo/{id}-t.md"));
+        fs::write(
+            &p,
+            format!("---\nid: {id}\ntype: task\npriority: normal\nstage: shaping\nstatus: todo\nclaimed-by: {who}\nheartbeat: {heartbeat}\nwaiting_on:\n---\n\n# Task {id}\n\n## Acceptance criteria\n- [ ] AC1: it works — verify: command (true)\n\n## Log\n- 2026-10-12 09:00 capture: created\n"),
+        )
+        .unwrap();
+        p
+    }
+    const SHAPER: &str = "shapour (main · session 145fae12 · cc-mg)";
+
+    #[test]
+    fn pass_from_shaping_releases_the_claim() {
+        let d = queue();
+        shaping_task(d.path(), "0001", SHAPER, T);
+        let opts = PassOpts {
+            from: Some("shaping".into()),
+            ..Default::default()
+        };
+        pass_task(d.path(), "0001", SHAPER, T, &opts).unwrap();
+        let t = task_of(d.path(), "0001");
+        assert_eq!((t.stage.as_str(), t.claimed_by.as_str()), ("ready", ""));
+        // Ready is anyone's to claim now, the shaper's too.
+        assert_eq!(
+            claim_task(d.path(), "0001", "wt-b", T).unwrap(),
+            "doing/0001-t.md"
+        );
+    }
+
+    #[test]
+    fn return_or_stage_back_to_backlog_releases_the_shaping_claim() {
+        let d = queue();
+        shaping_task(d.path(), "0001", SHAPER, T);
+        return_task(d.path(), "0001", "not a task after all", None, SHAPER, T).unwrap();
+        let t = task_of(d.path(), "0001");
+        assert_eq!((t.stage.as_str(), t.claimed_by.as_str()), ("backlog", ""));
+        shaping_task(d.path(), "0002", SHAPER, T);
+        set_stage(d.path(), "0002", "backlog", Some("shaping"), "owner", T).unwrap();
+        let t = task_of(d.path(), "0002");
+        assert_eq!((t.stage.as_str(), t.claimed_by.as_str()), ("backlog", ""));
+        shaping_task(d.path(), "0003", SHAPER, T);
+        move_task(d.path(), "0003", "inbox", "", "owner", T).unwrap();
+        assert_eq!(task_of(d.path(), "0003").claimed_by, "");
+        // A block keeps the claim, as in Building: the task keeps its stage.
+        shaping_task(d.path(), "0004", SHAPER, T);
+        block_task(d.path(), "0004", "you: which colour?", SHAPER, T).unwrap();
+        assert_eq!(task_of(d.path(), "0004").claimed_by, SHAPER);
+    }
+
+    #[test]
+    fn a_filed_note_set_for_human_drops_the_shapers_claim_and_the_owner_starts_it() {
+        let d = queue();
+        let p = d.path();
+        let note = crate::backlog::add(p, "Buy the domain", "", "capture", T).unwrap();
+        crate::backlog::claim_note(p, &note, SHAPER, T, LEASE_MINUTES).unwrap();
+        let new = NewTask {
+            title: "Buy the domain".into(),
+            ..Default::default()
+        };
+        let f = crate::backlog::file_note(p, &note, &new, SHAPER, T, LEASE_MINUTES).unwrap();
+        assert_eq!(task_of(p, &f.id).claimed_by, SHAPER);
+        set_field(p, &f.id, "for", "human", "owner", T).unwrap();
+        let t = task_of(p, &f.id);
+        assert_eq!((t.stage.as_str(), t.claimed_by.as_str()), ("ready", ""));
+        let opts = PassOpts {
+            from: Some("ready".into()),
+            ..Default::default()
+        };
+        pass_task(p, &f.id, "owner", T, &opts).unwrap();
+        let t = task_of(p, &f.id);
+        assert_eq!(
+            (t.stage.as_str(), t.claimed_by.as_str()),
+            ("building", "owner")
+        );
+    }
+
+    #[test]
+    fn moving_into_shaping_other_than_by_file_clears_the_claim() {
+        let d = queue();
+        // Reserved in Ready, then set back to Shaping: the reservation isn't a shaper's claim.
+        put_task(
+            d.path(),
+            "todo",
+            "0001",
+            "priority: normal\nstage: ready\nstatus: todo\nclaimed-by: wt-a\nheartbeat: 2026-10-12 09:00",
+        );
+        set_stage(d.path(), "0001", "shaping", Some("ready"), "owner", T).unwrap();
+        let t = task_of(d.path(), "0001");
+        assert_eq!((t.stage.as_str(), t.claimed_by.as_str()), ("shaping", ""));
+        // A claim left on a Backlog task doesn't follow it into Shaping either.
+        put_task(
+            d.path(),
+            "inbox",
+            "0002",
+            "priority: normal\nstage: backlog\nstatus: inbox\nclaimed-by: wt-b",
+        );
+        pass_task(d.path(), "0002", "wt-b", T, &PassOpts::default()).unwrap();
+        let t = task_of(d.path(), "0002");
+        assert_eq!((t.stage.as_str(), t.claimed_by.as_str()), ("shaping", ""));
+        // A Ready reservation stays where it was made.
+        put_task(
+            d.path(),
+            "inbox",
+            "0003",
+            "priority: normal\nstage: backlog\nstatus: inbox\nclaimed-by: wt-c",
+        );
+        set_stage(d.path(), "0003", "ready", None, "owner", T).unwrap();
+        assert_eq!(task_of(d.path(), "0003").claimed_by, "wt-c");
+    }
+
+    #[test]
+    fn a_shaper_renews_its_own_lease_with_heartbeat_and_checkin() {
+        let d = queue();
+        let now = crate::queue::now_secs();
+        shaping_task(d.path(), "0001", SHAPER, "2026-10-12 01:00");
+        heartbeat_task(d.path(), "0001", SHAPER, T).unwrap();
+        assert_eq!(task_of(d.path(), "0001").heartbeat, T);
+        let later = "2026-10-12 14:30";
+        checkin_task(d.path(), "0001", "criteria written", "80", SHAPER, later).unwrap();
+        let t = task_of(d.path(), "0001");
+        assert_eq!((t.stage.as_str(), t.heartbeat.as_str()), ("shaping", later));
+        assert!(file_of(d.path(), "0001").ends_with(&format!(
+            "- {later} {SHAPER}: check-in 80% · criteria written\n"
+        )));
+        // Renewed, it isn't quiet: reclaim leaves it.
+        let r = reclaim(d.path(), LEASE_MINUTES, "capture", later, now).unwrap();
+        assert!(r.released.is_empty(), "{:?}", r.released);
+        // Only its holder.
+        let e = heartbeat_task(d.path(), "0001", "wt-b", T).unwrap_err();
+        assert_eq!(e, format!("0001 is held by {SHAPER}, not wt-b"));
+        assert!(checkin_task(d.path(), "0001", "x", "", "wt-b", T).is_err());
+        // Nobody shaping it: nothing to renew.
+        shaping_task(d.path(), "0002", "", "");
+        assert_eq!(
+            heartbeat_task(d.path(), "0002", SHAPER, T).unwrap_err(),
+            "nobody holds 0002; claim it first"
+        );
+    }
+
+    #[test]
+    fn a_shapers_acts_and_an_unblock_renew_its_lease_as_in_building() {
+        let d = queue();
+        let p = d.path();
+        let now = crate::queue::now_secs();
+        // Filed at 01:00, its shaper's note at 01:05 and block at 01:10 each renew the lease.
+        shaping_task(p, "0001", SHAPER, "2026-10-12 01:00");
+        add_note(p, "0001", "reading the brief", SHAPER, "2026-10-12 01:05").unwrap();
+        assert_eq!(task_of(p, "0001").heartbeat, "2026-10-12 01:05");
+        // So do its comment, its edit to the write-up and its question.
+        crate::fields::add_comment(p, "0001", "a first read", SHAPER, "2026-10-12 01:06").unwrap();
+        assert_eq!(task_of(p, "0001").heartbeat, "2026-10-12 01:06");
+        let opened = open_body(p, "0001", SHAPER).unwrap();
+        let edited = format!("{opened}\n\nShaped a little.");
+        edit_body(p, "0001", &edited, &opened, SHAPER, "2026-10-12 01:07").unwrap();
+        assert_eq!(task_of(p, "0001").heartbeat, "2026-10-12 01:07");
+        crate::queue::ask(
+            p,
+            "0001",
+            "Which colour?",
+            SHAPER,
+            "145fae12-x",
+            "2026-10-12 01:08",
+        )
+        .unwrap();
+        assert_eq!(task_of(p, "0001").heartbeat, "2026-10-12 01:08");
+        // Someone else's comment isn't the shaper being heard from.
+        crate::fields::add_comment(p, "0001", "me too", "wt-b", "2026-10-12 01:09").unwrap();
+        assert_eq!(task_of(p, "0001").heartbeat, "2026-10-12 01:08");
+        block_task(p, "0001", "you: which colour?", SHAPER, "2026-10-12 01:10").unwrap();
+        assert_eq!(task_of(p, "0001").heartbeat, "2026-10-12 01:10");
+        // Someone else's note isn't the shaper being heard from.
+        add_note(p, "0001", "looks good", "wt-b", "2026-10-12 02:00").unwrap();
+        assert_eq!(task_of(p, "0001").heartbeat, "2026-10-12 01:10");
+        // The owner answers 13 h later: time spent waiting isn't time gone quiet.
+        unblock_task(p, "0001", "owner", T).unwrap();
+        let t = task_of(p, "0001");
+        assert_eq!(
+            (
+                t.stage.as_str(),
+                t.claimed_by.as_str(),
+                t.heartbeat.as_str()
+            ),
+            ("shaping", SHAPER, T)
+        );
+        let r = reclaim(p, LEASE_MINUTES, "capture", T, now).unwrap();
+        assert!(r.released.is_empty(), "{:?}", r.released);
+        assert_eq!(task_of(p, "0001").claimed_by, SHAPER);
+        // An unheld Shaping task unblocked gets no heartbeat: there's no lease to renew.
+        shaping_task(p, "0002", "", "");
+        block_task(p, "0002", "you: which colour?", "owner", "2026-10-12 01:10").unwrap();
+        unblock_task(p, "0002", "owner", T).unwrap();
+        assert_eq!(task_of(p, "0002").heartbeat, "");
+    }
+
+    #[test]
+    fn a_reclaimed_shaping_task_stays_in_shaping() {
+        let d = queue();
+        let now = crate::queue::now_secs();
+        // 13 h quiet, and 4 h: only the first is released.
+        shaping_task(d.path(), "0001", SHAPER, "2026-10-12 01:00");
+        shaping_task(d.path(), "0002", "wt-b", "2026-10-12 10:00");
+        let r = reclaim(d.path(), LEASE_MINUTES, "capture", T, now).unwrap();
+        assert!(r.failed.is_empty(), "{:?}", r.failed);
+        assert_eq!(
+            r.released,
+            vec![Released {
+                id: "0001".into(),
+                holder: SHAPER.into(),
+                quiet: "13 h".into(),
+                path: "todo/0001-t.md".into(),
+                stage: "shaping".into()
+            }]
+        );
+        let t = task_of(d.path(), "0001");
+        assert_eq!(
+            (t.stage.as_str(), t.status.as_str(), t.claimed_by.as_str()),
+            ("shaping", "todo", "")
+        );
+        assert!(file_of(d.path(), "0001").ends_with(&format!(
+            "- {T} capture: reclaimed from {SHAPER} (no heartbeat for 13 h); still in Shaping\n"
+        )));
+        // No stage line: the timeline doesn't see a move.
+        assert!(t.stage_history.is_empty(), "{:?}", t.stage_history);
+        assert_eq!(task_of(d.path(), "0002").claimed_by, "wt-b");
+        // The app's one-task release takes a quiet Shaping claim too, and refuses a live one.
+        shaping_task(d.path(), "0003", SHAPER, "2026-10-12 01:00");
+        reclaim_task(d.path(), "0003", LEASE_MINUTES, "owner", T, now).unwrap();
+        assert_eq!(task_of(d.path(), "0003").stage, "shaping");
+        let e = reclaim_task(d.path(), "0002", LEASE_MINUTES, "owner", T, now).unwrap_err();
+        assert!(e.contains("lease hasn't run out"), "{e}");
+        // A holder (hand-written) that would make the line read as a check-in gets the plain line.
+        shaping_task(d.path(), "0004", "x: check-in · y", "2026-10-12 01:00");
+        reclaim_task(d.path(), "0004", LEASE_MINUTES, "owner", T, now).unwrap();
+        assert!(file_of(d.path(), "0004").ends_with(&format!(
+            "- {T} owner: reclaimed (no heartbeat for 13 h); still in Shaping\n"
+        )));
+        // claim and next still take only Ready.
+        shaping_task(d.path(), "0005", "", "");
+        assert!(claim_task(d.path(), "0005", "wt-c", T).is_err());
+        assert_eq!(next_task(d.path(), "wt-c", T).unwrap(), None);
+    }
+
     #[test]
     fn claim_takes_ready_starts_the_lease_and_allows_one_claim_per_holder() {
         let d = queue();
@@ -6127,7 +6434,7 @@ mod tests {
         set_stage(d.path(), "0001", "ready", None, "owner", T).unwrap();
         assert_eq!(
             heartbeat_task(d.path(), "0001", "wt-a", T).unwrap_err(),
-            "0001 is in Ready, not Building; only a claim in Building has a lease to keep alive"
+            "0001 is in Ready, not Building or Shaping; only a claim there has a lease to keep alive"
         );
     }
 
@@ -6235,13 +6542,15 @@ mod tests {
                     id: "0001".into(),
                     holder: "wt-a".into(),
                     quiet: "13 h".into(),
-                    path: "todo/0001-t.md".into()
+                    path: "todo/0001-t.md".into(),
+                    stage: "ready".into()
                 },
                 Released {
                     id: "0003".into(),
                     holder: "wt-c".into(),
                     quiet: "13 h".into(),
-                    path: "todo/0003-t.md".into()
+                    path: "todo/0003-t.md".into(),
+                    stage: "ready".into()
                 },
             ]
         );
@@ -7689,6 +7998,54 @@ mod tests {
     }
 
     #[test]
+    fn takeover_after_a_shapers_handoff_moves_the_shaping_claim() {
+        let d = queue();
+        let p = d.path();
+        // A filed note's shaper holds it in Shaping (0097) and hands off.
+        put(
+            p,
+            "todo/0001-t.md",
+            &format!("---\nid: 0001\ntype: task\npriority: normal\nstage: shaping\nstatus: todo\nclaimed-by: {OLD}\nheartbeat: 2026-10-14 10:00\nwaiting_on:\n---\n\n# Task\n\n## Log\n- 2026-10-14 10:00 {OLD}: filed from backlog note n.md\n"),
+        );
+        // Fresh and not handed off: refused, as in Building.
+        assert!(takeover_task(p, "0001", NEW, "2026-10-14 10:05", 0)
+            .unwrap_err()
+            .contains("ask that session"));
+        checkin_task_with(
+            p,
+            "0001",
+            "criteria half done",
+            "50",
+            true,
+            OLD,
+            "2026-10-14 10:06",
+        )
+        .unwrap();
+        // The successor holds a task in Building: a shaping claim isn't a second Building claim.
+        put_task(
+            p,
+            "doing",
+            "0002",
+            &format!("priority: normal\nstage: building\nstatus: doing\nclaimed-by: {NEW}\nheartbeat: 2026-10-14 10:00\nwaiting_on:"),
+        );
+        let t = takeover_task(p, "0001", NEW, "2026-10-14 10:07", 0).unwrap();
+        assert_eq!((t.from.as_str(), t.why.as_str()), (OLD, "handed off"));
+        let task = crate::queue::read_task(p, "0001").unwrap();
+        assert_eq!(
+            (
+                task.stage.as_str(),
+                task.claimed_by.as_str(),
+                task.heartbeat.as_str()
+            ),
+            ("shaping", NEW, "2026-10-14 10:07")
+        );
+        // The successor shapes on: its check-in and its pass to Ready work.
+        checkin_task(p, "0001", "criteria done", "90", NEW, "2026-10-14 10:20").unwrap();
+        let e = checkin_task(p, "0001", "still here", "", OLD, "2026-10-14 10:21").unwrap_err();
+        assert_eq!(e, format!("0001 is held by {NEW}, not {OLD}"));
+    }
+
+    #[test]
     fn takeover_is_refused_while_the_claim_is_fresh_and_not_handed_off() {
         let d = queue();
         claimed_by_old(d.path());
@@ -7931,7 +8288,7 @@ mod tests {
         );
         assert_eq!(
             takeover_task(d.path(), "0001", NEW, T, 0).unwrap_err(),
-            "0001 is in Ready, not Building; only a claim in Building can be taken over"
+            "0001 is in Ready, not Building or Shaping; only a claim there can be taken over"
         );
         claim_task(d.path(), "0001", OLD, "2026-10-14 10:00").unwrap();
         assert_eq!(
@@ -9163,6 +9520,7 @@ mod human_tests {
             },
             "capture",
             T,
+            LEASE_MINUTES,
         )
         .unwrap();
         assert_eq!(task(d.path(), &filed.id).stage, "shaping");

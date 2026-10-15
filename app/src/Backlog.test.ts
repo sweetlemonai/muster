@@ -5,7 +5,7 @@ import { backlogColumn, backlogNotes, fileDraft, hiddenCount, NoteCard, noteTitl
 import { columns } from "./lib";
 import type { Note, Task } from "./types";
 
-const note = (over: Partial<Note>): Note => ({ queue: "muster", file: "n.md", title: "A note", text: "A note", truncated: false, added: 0, ...over });
+const note = (over: Partial<Note>): Note => ({ queue: "muster", file: "n.md", title: "A note", text: "A note", truncated: false, added: 0, heldBy: "", heldSince: "", heartbeat: "", ...over });
 const task = (over: Partial<Task>): Task => ({
   queue: "muster", id: "0001", title: "T", kind: "task", priority: "normal", status: "inbox", stage: "backlog", blocked: false, stageHistory: [],
   folder: "inbox", path: "inbox/0001-t.md", claimedBy: "", heldBy: "", stageSince: "", checkins: [], heartbeat: "", waitingOn: "", depends: [], forWho: "ai", commit: "", captured: "", capturedAt: "", doneAt: "", blockHistory: [], questions: [],

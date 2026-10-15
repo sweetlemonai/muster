@@ -349,7 +349,7 @@ pub fn add_comment(
         // The holder's comment is the holder being heard from: it keeps the claim alive.
         let t = queue::parse_task("", root, &queue::folder_of(root, &path), &path, &body, 0);
         if t.is_some_and(|t| {
-            t.stage == "building"
+            queue::has_lease(&t.stage)
                 && !t.claimed_by.is_empty()
                 && crate::session::same_holder(&t.claimed_by, &who)
         }) {

@@ -821,7 +821,8 @@ async fn add_backlog_note(
     .await
 }
 
-/// The owner files backlog note `note` (its file name) as a task in Shaping.
+/// The owner files backlog note `note` (its file name) as a task in Shaping; a note a session is
+/// shaping (0097) is taken over, logged so.
 #[tauri::command]
 async fn file_note(
     app: tauri::State<'_, AppState>,
@@ -832,15 +833,18 @@ async fn file_note(
 ) -> Result<backlog::Filed, String> {
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
+    let settings_file = app.settings_file.clone();
     blocking(move || {
         in_queue(&file, &queue, |root| {
-            backlog::file_note(root, &note, &task, "owner", &stamp)
+            let lease = settings::load(&settings_file).lease_minutes;
+            backlog::file_note(root, &note, &task, "owner", &stamp, lease)
         })
     })
     .await
 }
 
-/// The owner drops backlog note `note`, with the reason. Returns where it went.
+/// The owner drops backlog note `note`, with the reason; a note a session is shaping (0097) is
+/// taken over, said so. Returns where it went.
 #[tauri::command]
 async fn drop_note(
     app: tauri::State<'_, AppState>,
@@ -851,9 +855,11 @@ async fn drop_note(
 ) -> Result<String, String> {
     check_stamp(&stamp)?;
     let file = app.config_file.clone();
+    let settings_file = app.settings_file.clone();
     blocking(move || {
         in_queue(&file, &queue, |root| {
-            backlog::drop_note(root, &note, &why, "owner", &stamp)
+            let lease = settings::load(&settings_file).lease_minutes;
+            backlog::drop_note(root, &note, &why, "owner", &stamp, lease)
         })
     })
     .await

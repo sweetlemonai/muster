@@ -98,6 +98,14 @@ describe("task pane stage controls", () => {
     expect(own.buttons).toEqual(["Pass to Testing", "Release", "Send back", "Block"]);
     expect(own.primary).toEqual(["Pass to Testing"]);
   });
+  it("offers Release on a Shaping claim whose lease ran out (0097): it stays in Shaping, unheld", () => {
+    const held = { stage: "shaping", claimedBy: "shapour (main · session 1137d98f · cc-mg)", heartbeat: "", modified: 0 };
+    const p = pane(held, 12 * 3600 + 60);
+    expect(p.buttons).toEqual(["Pass to Ready", "Release", "Send back", "Block"]);
+    expect(p.next).toContain('title="Unheld, still in Shaping, with the claim released and logged as reclaimed"');
+    expect(p.html).toContain("shapour hasn&#x27;t been heard from for 12 h. Release lets go of it, still in Shaping, logged as reclaimed.");
+    expect(pane(held, 12 * 3600).buttons).toEqual(["Pass to Ready", "Send back", "Block"]);
+  });
   it("judges Release and LIVE by this machine's settings (0036)", () => {
     const held = { stage: "building", claimedBy: "drover/main (session 3fba2222)", heartbeat: "", modified: 0 };
     const withSettings = (now: number) =>

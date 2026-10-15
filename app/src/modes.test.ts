@@ -81,6 +81,7 @@ describe("the display modes' table (0038)", () => {
       ["choices", "all"],
       ["card-lines", "all"],
       ["done-line", "show"],
+      ["holder-ribbon", "show"],
       ["columns", "all"],
       ["rail", "open"],
       ["pane-sections", "open"],
@@ -94,11 +95,26 @@ describe("the display modes' table (0038)", () => {
       ["choices", "value", "value"],
       ["card-lines", "selected", "status"],
       ["done-line", "show", "show"],
+      ["holder-ribbon", "show", "show"],
       ["columns", "all", "now"],
       ["rail", "open", "strip"],
       ["pane-sections", "folded", "folded"],
       ["sidebar", "full", "narrow"],
     ]);
+  });
+});
+
+describe("the holder ribbon in the modes' table (0097)", () => {
+  it("shows in every mode: who holds a card is status, and in Standard's brief card the one place it shows", () => {
+    for (const m of ALL) expect(look("holder-ribbon", m), m).toBe("show");
+    expect(ELEMENTS["holder-ribbon"].label).toBe("Holder ribbon");
+    for (const m of ALL) expect(ELEMENTS["holder-ribbon"][m].says, m).toMatch(/Shaping, Building or Testing.*backlog note/);
+    expect(ELEMENTS["holder-ribbon"].standard.says).toContain("the one place the holder shows");
+    // Nothing folded, so nothing to get back.
+    for (const m of ALL) expect(ELEMENTS["holder-ribbon"][m].reach, m).toBeUndefined();
+  });
+  it("is read by the ribbons themselves, on cards and notes", () => {
+    expect(elementsReadIn(sources["HolderRibbon.tsx"])).toEqual(["holder-ribbon", "holder-ribbon"]);
   });
 });
 

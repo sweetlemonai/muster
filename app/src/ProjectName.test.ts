@@ -25,7 +25,7 @@ const task = (over: Partial<Task>): Task => ({
   blockHistory: [], questions: [], openQuestions: 0, live: false, ownerCriteria: [], waitingForOwner: false, tags: [], estTime: "", estTestTime: "", estTokens: "", estMinutes: 0, estTestMinutes: 0, estTokenCount: 0, claimedOn: "", doneOn: "", links: [], comments: [],
   attachments: [], logTail: [], modified: 0, level: "task", parent: "", due: "", children: [], progress: null, shownStage: over.stage ?? "ready", search: "", ...over,
 });
-const note = (over: Partial<Note>): Note => ({ queue: "muster", file: "n.md", title: "A note", text: "A note", truncated: false, added: 0, ...over });
+const note = (over: Partial<Note>): Note => ({ queue: "muster", file: "n.md", title: "A note", text: "A note", truncated: false, added: 0, heldBy: "", heldSince: "", heartbeat: "", ...over });
 
 const LABELS = new Map([["muster", "Muster — the queue"]]);
 const html = (node: ReactNode, labels: ReadonlyMap<string, string> = LABELS) => renderToStaticMarkup(createElement(Labels.Provider, { value: labels }, node));

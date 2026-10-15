@@ -162,9 +162,14 @@ describe("a card in each mode", () => {
   });
 
   it("Standard: who, the check-in, tags, parent, estimate and files on the selected card only", () => {
-    const quiet = text(card("standard", busy, false, "0005 Display"));
+    const html = card("standard", busy, false, "0005 Display");
+    const quiet = text(html);
     expect(quiet).toContain("Task 0038");
-    for (const words of ["muster/wt-0038", "40%", "#design", "0005 Display", "1d", "1 file"]) expect(quiet, words).not.toContain(words);
+    for (const words of ["40%", "#design", "0005 Display", "1d", "1 file"]) expect(quiet, words).not.toContain(words);
+    // Who holds it is in the holder ribbon, in every mode (0097): the one place the brief card names it.
+    expect(html).not.toContain("card-who");
+    expect(quiet.match(/muster\/wt-0038/g)).toHaveLength(1);
+    expect(html).toContain('<span class="holder-name" dir="auto">muster/wt-0038</span>');
     const picked = text(card("standard", busy, true, "0005 Display"));
     for (const words of ["muster/wt-0038", "40%", "#design", "0005 Display", "1d", "1 file"]) expect(picked, words).toContain(words);
   });

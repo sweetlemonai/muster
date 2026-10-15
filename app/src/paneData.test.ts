@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { criteriaSection, fmtWall, isFileDrag, isLive, LIVE_SECS, releasedBy, timeInWork, trackMove, trackPlace, undoFor, waitingOnYou } from "./paneData";
+import { criteriaSection, fmtWall, isFileDrag, isLive, LIVE_SECS, releasedBy, releaseWords, timeInWork, trackMove, trackPlace, undoFor, waitingOnYou } from "./paneData";
 import { stampMinutes } from "./lib";
 import type { Question, StageStep, Task } from "./types";
 
@@ -121,6 +121,18 @@ describe("a move on the track", () => {
     expect(releasedBy(task({ stage: "ready", claimedBy: "wt-a" }), "shaping")).toBe("");
     expect(trackMove(task({ stage: "ready", claimedBy: "wt-a" }), "shaping").undo).toEqual({ back: "ready", to: "shaping" });
     expect(releasedBy(held, "building")).toBe("");
+  });
+  it("out of Shaping held by a session releases the shaper's claim too (0097), as the core does", () => {
+    const shaping = task({ stage: "shaping", claimedBy: "shapour (main · session 1137d98f · cc-mg)" });
+    expect(releasedBy(shaping, "ready")).toBe("shapour");
+    expect(trackMove(shaping, "ready")).toEqual({ done: "Put in Ready. shapour's claim on Shaping was released.", undo: undefined });
+    expect(releasedBy(shaping, "shaping")).toBe("");
+    expect(releasedBy(task({ stage: "shaping", claimedBy: "owner" }), "backlog")).toBe("");
+    expect(releasedBy(task({ stage: "shaping" }), "ready")).toBe("");
+  });
+  it("Release says where a quiet claim goes: Building back to Ready, Shaping stays, unheld (0097)", () => {
+    expect(releaseWords("building").done).toBe("Released: back in Ready.");
+    expect(releaseWords("shaping").done).toBe("Released: still in Shaping, nobody holds it.");
   });
   it("from a stage the window doesn't know: no Undo", () => {
     expect(trackMove(task({ stage: "reviewing" }), "ready")).toEqual({ done: "Put in Ready.", undo: undefined });

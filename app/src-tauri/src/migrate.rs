@@ -744,6 +744,8 @@ mod tests {
         );
         put(&old, "INDEX.md", "old list\n");
         put(&old, "tasks.json", "{}\n");
+        // Who is shaping which note is live state: listed as not copied (0097).
+        put(&old, "shaping.json", "{}\n");
         put(&old, ".gitignore", "mail/\n");
         put(&old, "bin/task", "#!/bin/sh\n");
         put(&old, "inbox/0001-raw.md", &task("0001", "status: inbox"));
@@ -957,7 +959,7 @@ mod tests {
             "note: todo/0010-crlf.md: its byte-order mark taken off and its front matter's CRLF line ends made LF",
             "note: blocked/0006-why.md: blocked without saying on what",
             "note: todo/0009-odd.md: stage \"someday\" isn't a stage; set to ready",
-            "not copied (still in the old queue): attachments/0002/link.txt (a symlink), bin/task, todo/notes.txt",
+            "not copied (still in the old queue): attachments/0002/link.txt (a symlink), bin/task, shaping.json, todo/notes.txt",
             "muster check --queue",
         ] {
             assert!(text.contains(part), "{part:?} in:\n{text}");

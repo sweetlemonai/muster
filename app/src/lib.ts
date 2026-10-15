@@ -54,11 +54,12 @@ export function earlierStages(stage: string): Stage[] {
 /** Being worked: in Building or Testing, and not paused (mu-59: a paused one waits in the Paused lane). */
 export const inProgress = (t: Pick<Task, "stage" | "paused">) => (t.stage === "building" || t.stage === "testing") && !t.paused;
 
-/** Who's on a task in its stage, in full (with the session): the claim in Ready and Building,
- *  `held-by` in Testing and Your check (the owner's when it names nobody), nobody elsewhere. The
- *  core's Task::holder; a leftover `claimed-by` on another stage shows nothing. */
+/** Who's on a task in its stage, in full (with the session): the claim in Shaping (0097), Ready
+ *  and Building, `held-by` in Testing and Your check (the owner's when it names nobody), nobody
+ *  elsewhere. The core's Task::holder; a leftover `claimed-by` on another stage shows nothing. */
 export function holderOf(t: Pick<Task, "stage" | "claimedBy" | "heldBy">): string {
   switch (t.stage) {
+    case "shaping":
     case "ready":
     case "building":
       return t.claimedBy.trim();
@@ -283,12 +284,13 @@ export function quietMinutes(t: Pick<Task, "heartbeat" | "modified">, now: numbe
   return Math.floor(Math.max(0, now - t.modified) / 60);
 }
 
-/** A claim whose lease ran out, exactly what the core's reclaim takes: held, in Building, not
- *  blocked (that's waiting, by tasks too), not the owner's own task (`for: human`, which has no
- *  lease), and quiet for longer than the lease: `leaseMinutes`, this machine's from Settings (0036). */
+/** A claim whose lease ran out, exactly what the core's reclaim takes: held, in Building or
+ *  Shaping (0097: Shaping stays, unheld), not blocked (that's waiting, by tasks too), not the
+ *  owner's own task (`for: human`, which has no lease), and quiet for longer than the lease:
+ *  `leaseMinutes`, this machine's from Settings (0036). */
 export function leaseRunOut(t: Pick<Task, "stage" | "blocked" | "blockedKind" | "claimedBy" | "heartbeat" | "modified" | "forWho" | "paused">, now: number, leaseMinutes = LEASE_SECS / 60): boolean {
   // A paused claim's lease doesn't run (0045), as the core's reclaim judges it.
-  return t.stage === "building" && !t.blocked && !t.blockedKind && !t.paused && t.forWho !== "human" && t.claimedBy.trim() !== "" && quietMinutes(t, now) > leaseMinutes;
+  return (t.stage === "building" || t.stage === "shaping") && !t.blocked && !t.blockedKind && !t.paused && t.forWho !== "human" && t.claimedBy.trim() !== "" && quietMinutes(t, now) > leaseMinutes;
 }
 
 /** Runs one action at a time: a call made while one is in flight is dropped (false), so a

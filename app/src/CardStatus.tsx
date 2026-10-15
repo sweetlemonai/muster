@@ -11,8 +11,10 @@ import { ReviewBadge } from "./Review";
 import { VisionBadge } from "./Vision";
 import { nextStep } from "./yourCheck";
 
-/** Stages where someone can be on a task, so the card says who. */
+/** Stages where someone can be on a task, so the card says who: Shaping (0097) only while held,
+ *  since most Shaping tasks have no shaper on them. */
 const HELD = new Set(["ready", "building", "testing"]);
+const held = (t: Task) => HELD.has(t.stage) || (t.stage === "shaping" && t.claimedBy.trim() !== "");
 
 /** A card's who and progress lines (0030), quiet unless something's wrong: who's on it and since
  *  when, what Claude Code says its session is doing (0048: working, waiting for input, ended),
@@ -26,12 +28,13 @@ const HELD = new Set(["ready", "building", "testing"]);
  *  wrong or waits on you; Focus keeps who's on it, or Your turn, and the alarms (needs a tester
  *  among them: a builder holding Testing isn't work going on). The Done line is
  *  the Done card's status line, read from the modes' table on its own.
+ *  `named`: the card's ribbon names the holder (0097), so the who line keeps only the rest.
  *  `now` is the state's clock, seconds since 1970. */
-export default function CardStatus({ t, now, lines = "all" }: { t: Task; now: number; lines?: CardLines }) {
+export default function CardStatus({ t, now, lines = "all", named = false }: { t: Task; now: number; lines?: CardLines; named?: boolean }) {
   const doneLine = useLook("done-line");
   return (
     <>
-      {HELD.has(t.stage) && <HeldLines t={t} now={now} lines={lines} />}
+      {held(t) && <HeldLines t={t} now={now} lines={lines} named={named} />}
       {t.stage === "your-check" && <YourTurn t={t} lines={lines} />}
       {doneLine === "show" && <DoneLine t={t} now={now} />}
       {lines === "all" && <BranchCardLine t={t} />}
@@ -65,9 +68,12 @@ function YourTurn({ t, lines }: { t: Task; lines: CardLines }) {
   );
 }
 
-function HeldLines({ t, now, lines }: { t: Task; now: number; lines: CardLines }) {
-  const who = whoLine(t);
+/** With `named`, the who line leaves out the name the ribbon says ("wt-0097 · a82f2534 · started
+ *  2 h ago"), and a held card with nothing more to say has no who line, never "nobody on it". */
+function HeldLines({ t, now, lines, named }: { t: Task; now: number; lines: CardLines; named: boolean }) {
+  const who = named ? whoLine(t).split(" · ").slice(1).join(" · ") : whoLine(t);
   const started = startedAgo(t, now);
+  const whoText = [who || (named ? "" : "nobody on it"), started].filter(Boolean).join(" · ");
   const checkin = currentCheckin(t);
   // Asked for a check-in (0039): it says when in the check-in's place until one comes.
   const asked = askedText(t, now);
@@ -81,7 +87,7 @@ function HeldLines({ t, now, lines }: { t: Task; now: number; lines: CardLines }
   const order = sendBackLine(t);
   return (
     <>
-      {lines !== "brief" && <span className={who ? "card-who" : "card-who nobody"}>{[who || "nobody on it", started].filter(Boolean).join(" · ")}</span>}
+      {lines !== "brief" && whoText !== "" && <span className={who || named ? "card-who" : "card-who nobody"}>{whoText}</span>}
       {needsTester(t) && <span className="card-tester">needs a tester</span>}
       {order && <span className={order.kind === "first" ? "card-first" : "card-behind"}>{order.text}</span>}
       {session && (

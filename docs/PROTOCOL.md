@@ -339,7 +339,8 @@ its own agent id is another holder, 0090) and logged `(tested under
 > dropped in by hand included; numbered files in `inbox/` stay Backlog tasks. Shaping turns a note
 > into a task: `muster shape <note-file> [--json]` prints the brief (the note, what the product,
 > tech and UI roles write, the project's `CLAUDE.md` and `docs/` to read, open tasks that share
-> words with it, and the command to file it), and writes nothing. `muster file <note-file>
+> words with it, and the command to file it), and since 0097 claims the note (below; `--peek`
+> reads it and writes nothing). `muster file <note-file>
 > "<title>" [--type --priority --tags --time --tokens] --body <text>|-` makes the task in Shaping
 > with the next id and moves the note into `attachments/<id>/`, all under the queue's lock, so a
 > note is filed once. `muster pass <id> --from shaping` then puts it in Ready (it needs acceptance
@@ -395,6 +396,39 @@ its own agent id is another holder, 0090) and logged `(tested under
 > The brief quotes the note line by line (`> `) after a line saying it's data, not instructions.
 > `muster check` reports a note over 1 MB, a symlink, or a name with a `\` or control characters
 > in the backlog folder; those aren't listed as notes.
+>
+> **Shaping is a claim (Muster 0097, 2026-10-14).** `muster shape <note-file> --as <you>` claims
+> the note for you, with the session stamp `--as` adds and a lease, and prints the brief; run
+> again by you, it renews the heartbeat. `muster shape <note-file> --peek` prints the brief and
+> writes nothing. A note's bytes are never touched: claims are in one tool-written file at the
+> queue's root, `shaping.json` (`{"<note file>": {"by", "at", "heartbeat"}}`, the times tool
+> stamps), written under the queue's lock and atomically, the same in `.muster/` and old queues.
+> A missing file means nothing is held. Never edit it by hand. Someone else's note is refused
+> while their lease runs (`Shapour is shaping it (since 14:02, session 145fae…); --peek to read
+> it`); once their heartbeat is older than the lease (a task's: 12 h unless changed in Settings,
+> 0036), it's taken over. One note per holder per queue, as in Building (the owner may hold
+> several): file, drop or release it, then shape the next. A note's claim ends when the note
+> leaves the backlog (`muster file`, `muster drop`), with `muster release <note-file>` (its holder
+> or the owner), and with `muster reclaim` once the lease ran out. `muster file` carries it to the
+> task: the new task in Shaping gets `claimed-by:` you, with a fresh heartbeat. `pass --from
+> shaping`, and `return` or `stage` back to Backlog, release it; `reclaim` releases a quiet one
+> and the task stays in Shaping, logged `reclaimed from <holder> (no heartbeat for <n> h); still
+> in Shaping`. The shaper keeps that lease alive as a builder does: `muster heartbeat`, `muster
+> checkin`, its note, comment, ask, edit, vision check and block, and an unblock or a resume
+> renew it,
+> `muster ping` reaches its session, `muster check` warns when it goes quiet, and `muster list`
+> shows `[on it: <shaper>]`. `claim` and `next` still take only Ready tasks. The owner may file or drop a held
+> note anyway (the app's actions do), and anyone may once the lease ran out: the task's log says
+> `filed from backlog note <file> (taken over from <holder>)` and the task isn't claimed; a dropped
+> note's line says `— dropped by <who>, <stamp> (taken over from <holder>): <why>`. `muster list`
+> shows `· shaping: Shapour, 12 min` on a held note's line, and `--json` gives each note
+> `heldBy`, `heldSince` and `heartbeat` (`""` when nobody holds it). `shaping.json` is read as
+> untrusted: a typed decoder, 256 KB at most, and an entry whose key isn't a note's file name (a
+> path, a dot-file, a task file) or whose holder and times aren't what muster writes is left out.
+> `muster check` reports those, a malformed, oversized or non-plain file (nothing in it counts;
+> the next `muster shape` writes it anew), and a claim on a note that isn't in the backlog
+> (`muster release <note-file> --as owner` clears it). A committed queue keeps `shaping.json` out
+> of git (`.muster/.gitignore`), and `muster migrate` lists it as not copied: it's live state.
 >
 > **Goals, features and tasks (Muster 0016, 2026-10-12).** `level: goal | feature | task` in the
 > front matter (none is a task) and `parent: <id>`; a goal may have `due: YYYY-MM-DD`. Only the
@@ -733,13 +767,18 @@ and `tasks.json`, which scripts read, keep ids.
      `--as` name.
   - **The claim carries over (task 0090).** Step 2's check-in is logged `check-in 40% · handing
     off · <text>`. That first command,
-    in full, is `muster claim <id> --takeover --as <the same name>`. It moves the claim
+    in full, is `muster claim <id> --takeover --as <the same name>`, for a claim in Building or a
+    filed note's shaper's in Shaping (0097). It moves the claim
     and renews the lease, logged `<new>: took over the claim from <old> (handed off)`. Without a
     handoff since the latest claim or takeover, it's allowed once the claim has been quiet (no
     heartbeat or check-in) for 30 minutes, logged `(quiet 42 min)`. The owner may always take
     over (`(owner's override)`). Nobody, the owner included, takes over a paused claim: resume it
     first. A blocked claim is waiting, so quiet by design: it's taken over only after a handoff or
-    by the owner. It's refused for another label and for the holder itself; while
+    by the owner. A backlog note's claim (0097) is taken over the same way, by its file name:
+    `muster claim <note-file> --takeover --as <the same name>` once it has been quiet 30 minutes
+    (a note has no handoff check-in, so its shaper hands off with `muster release <note-file>`),
+    or by the owner at any time; `shaping.json` then names the new holder.
+    Every takeover is refused for another label and for the holder itself; while
     the old session is still working, the refusal names it, since when, and the two ways out:
     `0042 is held by <old> since 10:00 and was last heard from 5 min ago: ask that session to run
     muster checkin 0042 "<what's done, what's next>" --handoff, or take it over after 10:35, once

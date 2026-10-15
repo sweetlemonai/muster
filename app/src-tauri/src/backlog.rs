@@ -9,9 +9,10 @@
 
 use crate::ops::{self, NewTask};
 use crate::queue::{self, actor, with_lock, write_atomic, MAX_TASK_BYTES};
+use crate::session::{is_owner, same_holder};
 use crate::{lenses, now};
-use serde::Serialize;
-use std::collections::{HashMap, HashSet};
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::{Read as _, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -38,6 +39,13 @@ pub struct Note {
     pub truncated: bool,
     /// When the file last changed, in seconds since 1970.
     pub added: u64,
+    /// Who is shaping it (0097, `shaping.json`): the label `--as` wrote, with its session stamp;
+    /// "" when nobody holds it.
+    pub held_by: String,
+    /// When they took it, a tool stamp (`YYYY-MM-DD HH:MM`); "" when nobody holds it.
+    pub held_since: String,
+    /// Their last heartbeat, a tool stamp as a task's is; "" when nobody holds it.
+    pub heartbeat: String,
 }
 
 /// The backlog folder of a queue: `backlog/` in `.muster/` (task 0005) and in the old flat
@@ -247,6 +255,9 @@ pub(crate) fn read_notes(
                         text,
                         truncated,
                         added: key.1,
+                        held_by: String::new(),
+                        held_since: String::new(),
+                        heartbeat: String::new(),
                     };
                     cache.insert(path.clone(), (key.0, key.1, n.clone()));
                     n
@@ -259,6 +270,26 @@ pub(crate) fn read_notes(
         };
         seen.insert(path);
         out.notes.push(note);
+    }
+    // Who shapes each note (0097): read on every pass, never cached, as a claim changes while the
+    // note's file doesn't.
+    let held = read_holds(root);
+    out.problems
+        .extend(held.problems.into_iter().map(|p| format!("{queue}: {p}")));
+    for (name, h) in held.holds {
+        match out.notes.iter_mut().find(|n| n.file == name) {
+            Some(n) => {
+                n.held_by = h.by;
+                n.held_since = h.at;
+                n.heartbeat = h.heartbeat;
+            }
+            None => out.problems.push(format!(
+                "{queue}: {} holds {name} for {}, but there's no such backlog note; muster release {} --as owner clears it",
+                root.join(SHAPING_FILE).display(),
+                h.by,
+                sh(&name)
+            )),
+        }
     }
     newest_first(&mut out.notes);
     out
@@ -322,21 +353,467 @@ fn note_name(input: &str) -> Result<String, String> {
     Ok(name.to_string())
 }
 
-/// The note `name` in the queue's backlog folder: a plain file, or an error that says why not.
-fn existing_note(root: &Path, name: &str) -> Result<PathBuf, String> {
+/// The note `name` in the queue's backlog folder, as the folder spells its name, and its path: a
+/// plain file, or an error that says why not. A file system that matches names whatever their
+/// case or Unicode normalization (APFS) finds `a.md` when `A.md` is typed; everything about the
+/// note (its claim in `shaping.json` above all, 0097) goes by the folder's own name, so one note
+/// never has two claims.
+fn existing_note(root: &Path, name: &str) -> Result<(String, PathBuf), String> {
     let dir = backlog_dir(root);
     let path = dir.join(name);
     match fs::symlink_metadata(&path) {
         Ok(m) if m.file_type().is_symlink() => {
             Err(format!("{name} is a symlink, not a backlog note"))
         }
-        Ok(m) if m.is_file() => Ok(path),
+        Ok(m) if m.is_file() => {
+            let own = own_name(&dir, name, &m);
+            let path = dir.join(&own);
+            Ok((own, path))
+        }
         Ok(_) => Err(format!("{name} isn't a file")),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             Err(format!("no backlog note {name} in {}", dir.display()))
         }
         Err(e) => Err(format!("{name}: {e}")),
     }
+}
+
+/// How folder `dir` spells the entry found as `name` (with metadata `found`): `name` when the
+/// folder has that very name, else the entry that is the same file (device and inode), typed in
+/// another case or normalization. Std has no Unicode normalization, so the file system's own
+/// matching decides, never a guess. `name` when the folder can't be listed or nothing matches.
+fn own_name(dir: &Path, name: &str, found: &fs::Metadata) -> String {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return name.to_string();
+    };
+    let entries: Vec<fs::DirEntry> = entries.flatten().collect();
+    if entries.iter().any(|e| e.file_name() == name) {
+        return name.to_string();
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let mut same: Vec<String> = entries
+            .iter()
+            .filter(|e| {
+                e.metadata()
+                    .is_ok_and(|m| m.dev() == found.dev() && m.ino() == found.ino())
+            })
+            .filter_map(|e| e.file_name().to_str().map(String::from))
+            .collect();
+        same.sort();
+        if let Some(own) = same.into_iter().next() {
+            return own;
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = found;
+    name.to_string()
+}
+
+/// Who is shaping which note (0097): one file at the queue's root, in `.muster/` and the old
+/// layouts alike, so a note's own bytes are never touched. Only muster writes it, under the
+/// queue's lock; a missing file means nothing is held.
+pub const SHAPING_FILE: &str = "shaping.json";
+/// The most of `shaping.json` that's read: it holds one small entry per holder.
+const MAX_SHAPING_BYTES: u64 = 256 * 1024;
+
+/// A note's claim as `shaping.json` keeps it: the holder (the label `--as` writes, with its
+/// session stamp), when they took it, and their last heartbeat, both tool stamps.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct Hold {
+    #[serde(default)]
+    pub by: String,
+    #[serde(default)]
+    pub at: String,
+    #[serde(default)]
+    pub heartbeat: String,
+}
+
+/// What `read_holds` found: the claims that can be used, by note file name, and what's wrong.
+#[derive(Default)]
+pub(crate) struct Holds {
+    pub(crate) holds: BTreeMap<String, Hold>,
+    pub(crate) problems: Vec<String>,
+}
+
+/// `shaping.json`, read as untrusted: a plain file of at most 256 KB, a JSON object of claims.
+/// An entry whose key isn't a backlog note's file name (a path, a dot-file, a task file…) or
+/// whose holder and times aren't what muster writes is left out, and so is everything in a file
+/// that's malformed, too big or a symlink. Each of those is a problem `muster check` reports.
+pub(crate) fn read_holds(root: &Path) -> Holds {
+    let path = root.join(SHAPING_FILE);
+    let mut out = Holds::default();
+    let mut problem = |what: String| out.problems.push(format!("{} {what}", path.display()));
+    let unread = "and wasn't read, so no note counts as held";
+    match fs::symlink_metadata(&path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return out,
+        Err(e) => {
+            problem(format!("couldn't be read ({e}) {unread}"));
+            return out;
+        }
+        Ok(m) if !m.file_type().is_file() => {
+            problem(format!("isn't a plain file {unread}"));
+            return out;
+        }
+        Ok(_) => {}
+    }
+    let bytes = match read_shaping(&path) {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) => return out,
+        Err(e) => {
+            problem(format!("couldn't be read ({e}) {unread}"));
+            return out;
+        }
+    };
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_SHAPING_BYTES {
+        problem(format!("is over 256 KB {unread}"));
+        return out;
+    }
+    let all: BTreeMap<String, Hold> = match serde_json::from_slice(&bytes) {
+        Ok(all) => all,
+        Err(e) => {
+            problem(format!(
+                "isn't what muster writes ({e}) {unread}; the next muster shape writes it anew"
+            ));
+            return out;
+        }
+    };
+    for (name, hold) in all {
+        if note_name(&name).ok().as_deref() != Some(name.as_str()) {
+            let shown: String = one_line_name(&name).chars().take(80).collect();
+            problem(format!(
+                "has an entry for {shown:?}, which isn't a backlog note's file name; it's left out"
+            ));
+            continue;
+        }
+        let stamps = [&hold.at, &hold.heartbeat]
+            .iter()
+            .all(|s| ops::stamp_minutes(s).is_some());
+        if !stamps || actor(&hold.by).ok().as_deref() != Some(hold.by.as_str()) {
+            problem(format!(
+                "has an entry for {name} without a holder and two times as muster writes them; it's left out"
+            ));
+            continue;
+        }
+        out.holds.insert(name, hold);
+    }
+    out
+}
+
+/// Up to one byte over the cap of `shaping.json`, or `None` when it's gone: an unlocked reader
+/// can find it between its lstat and its open just as the last claim ends and it's removed.
+fn read_shaping(path: &Path) -> std::io::Result<Option<Vec<u8>>> {
+    let f = match fs::File::open(path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let mut bytes = Vec::new();
+    f.take(MAX_SHAPING_BYTES + 1).read_to_end(&mut bytes)?;
+    Ok(Some(bytes))
+}
+
+/// Write `holds` as `shaping.json`, atomically; with none, the file goes. The caller holds the
+/// queue's lock.
+fn write_holds(root: &Path, holds: &BTreeMap<String, Hold>) -> Result<(), String> {
+    let path = root.join(SHAPING_FILE);
+    if holds.is_empty() {
+        return match fs::remove_file(&path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+            _ => Ok(()),
+        };
+    }
+    let text = serde_json::to_string_pretty(holds).map_err(|e| e.to_string())?;
+    write_atomic(&path, &format!("{text}\n"))
+}
+
+/// How long a claim has been quiet at `stamp`, in minutes (0 for a heartbeat after it).
+fn quiet(h: &Hold, stamp: &str) -> u64 {
+    match (ops::stamp_minutes(&h.heartbeat), ops::stamp_minutes(stamp)) {
+        (Some(beat), Some(now)) => u64::try_from(now - beat).unwrap_or(0),
+        _ => 0,
+    }
+}
+
+/// "Shapour is shaping it (since 14:02, session 145fae…)": the holder by label, when they took it
+/// (the time alone on `stamp`'s day) and their session, cut.
+fn shaping_it(h: &Hold, stamp: &str) -> String {
+    let (label, session) = crate::session::split(&h.by);
+    let since = match h.at.split_once(' ') {
+        Some((day, time)) if stamp.get(..10) == Some(day) => time,
+        _ => h.at.as_str(),
+    };
+    let session = session
+        .map(|s| format!(", session {}…", s.id.get(..6).unwrap_or(&s.id)))
+        .unwrap_or_default();
+    format!("{label} is shaping it (since {since}{session})")
+}
+
+/// Who `who` takes a held note over from when they file or drop it: nobody when it isn't held or
+/// is theirs; its holder when `who` is the owner (always allowed) or the holder's lease of `lease`
+/// minutes ran out at `stamp`. Refused while someone else's lease runs.
+fn takes_over(
+    hold: Option<&Hold>,
+    who: &str,
+    stamp: &str,
+    lease: u64,
+) -> Result<Option<String>, String> {
+    match hold {
+        None => Ok(None),
+        Some(h) if same_holder(&h.by, who) => Ok(None),
+        Some(h) if is_owner(who) || quiet(h, stamp) > lease => Ok(Some(h.by.clone())),
+        Some(h) => Err(format!(
+            "{}; only they or the owner file or drop it while their lease runs (--peek reads it)",
+            shaping_it(h, stamp)
+        )),
+    }
+}
+
+/// Take `name` out of `shaping.json` as the note leaves the backlog (filed or dropped), just
+/// before it moves, so a reader without the lock never sees a claim on a note that's gone. The
+/// caller holds the queue's lock. Returns the claim that ended, for `hold_again` should the move
+/// fail. A file that can't be written is left as it was: a claim on a note that's gone holds
+/// nothing (`claim_note` skips it), `muster check` reports it, and `muster release` clears it.
+fn let_go(root: &Path, name: &str) -> Option<Hold> {
+    let mut holds = read_holds(root).holds;
+    let h = holds.remove(name)?;
+    write_holds(root, &holds).ok().map(|()| h)
+}
+
+/// Put back the claim `let_go` ended, when the note didn't leave the backlog after all.
+fn hold_again(root: &Path, name: &str, h: Option<Hold>) {
+    if let Some(h) = h {
+        let mut holds = read_holds(root).holds;
+        holds.insert(name.to_string(), h);
+        let _ = write_holds(root, &holds);
+    }
+}
+
+/// What `claim_note` did.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Claim {
+    pub note: String,
+    pub hold: Hold,
+    /// The holder was `who` already: only the heartbeat was renewed.
+    pub renewed: bool,
+    /// The holder whose lease had run out, taken over; "" for none.
+    pub took_over: String,
+    /// How long they had been quiet ("13 h"); "" when nobody was taken over.
+    pub quiet: String,
+}
+
+/// `muster shape --as <who>` (0097): claim note `note` for `who` with a lease. Their own claim
+/// gets its heartbeat renewed; someone else's live one is refused, naming them, and one whose
+/// lease of `lease` minutes ran out at `stamp` is taken over. One note per holder, as with
+/// Building: a holder shaping another note that's still in the backlog is refused (the owner may
+/// shape several). All under the queue's lock.
+pub fn claim_note(
+    root: &Path,
+    note: &str,
+    who: &str,
+    stamp: &str,
+    lease: u64,
+) -> Result<Claim, String> {
+    let who = actor(who)?;
+    let name = note_name(note)?;
+    crate::check_stamp(stamp)?;
+    with_lock(root, || {
+        let (name, _) = existing_note(root, &name)?;
+        let mut holds = read_holds(root).holds;
+        let mut claim = Claim {
+            note: name.clone(),
+            hold: Hold {
+                by: who.clone(),
+                at: stamp.to_string(),
+                heartbeat: stamp.to_string(),
+            },
+            renewed: false,
+            took_over: String::new(),
+            quiet: String::new(),
+        };
+        match holds.get(&name) {
+            Some(h) if same_holder(&h.by, &who) => {
+                claim.renewed = true;
+                claim.hold.at.clone_from(&h.at);
+            }
+            Some(h) if quiet(h, stamp) <= lease => {
+                return Err(format!("{}; --peek to read it", shaping_it(h, stamp)));
+            }
+            Some(h) => {
+                claim.took_over.clone_from(&h.by);
+                claim.quiet = ops::quiet_text(quiet(h, stamp));
+            }
+            None => {}
+        }
+        one_note_each(root, &holds, &name, &who)?;
+        holds.insert(name.clone(), claim.hold.clone());
+        write_holds(root, &holds)?;
+        Ok(claim)
+    })
+}
+
+/// One note per holder, as with Building: refused while `who` shapes a note other than `name`
+/// that's still in the backlog. The owner may shape several.
+fn one_note_each(
+    root: &Path,
+    holds: &BTreeMap<String, Hold>,
+    name: &str,
+    who: &str,
+) -> Result<(), String> {
+    if is_owner(who) {
+        return Ok(());
+    }
+    let dir = backlog_dir(root);
+    let other = holds
+        .iter()
+        .find(|(n, h)| *n != name && same_holder(&h.by, who) && dir.join(n.as_str()).is_file());
+    match other {
+        Some((other, _)) => Err(format!(
+            "you're shaping {other} already; file, drop or release it first (one note at a time)"
+        )),
+        None => Ok(()),
+    }
+}
+
+/// What `takeover_note` did: the note, whose claim it took and why.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteTakeover {
+    pub note: String,
+    pub from: String,
+    /// "quiet 42 min", or "owner's override".
+    pub why: String,
+}
+
+/// `muster claim <note> --takeover` (0097, as 0090's for a task): a session under the claim's
+/// label, other than the one shaping it, takes the note's claim over once it's been quiet for
+/// `ops::TAKEOVER_QUIET` minutes; the owner always. A note has no handoff check-in: its shaper
+/// hands off with `muster release`, and the successor shapes it. One note per holder, as for any
+/// note claim. Under the queue's lock, the claim is restamped for `who` with a fresh lease.
+pub fn takeover_note(
+    root: &Path,
+    note: &str,
+    who: &str,
+    stamp: &str,
+) -> Result<NoteTakeover, String> {
+    let who = actor(who)?;
+    let name = note_name(note)?;
+    crate::check_stamp(stamp)?;
+    with_lock(root, || {
+        let (name, _) = existing_note(root, &name)?;
+        let mut holds = read_holds(root).holds;
+        let Some(h) = holds.get(&name).cloned() else {
+            return Err(format!(
+                "nobody is shaping {name}; shape it instead: muster shape {}",
+                sh(&name)
+            ));
+        };
+        if same_holder(&h.by, &who) {
+            return Err(format!(
+                "you're shaping {name} already; there's nothing to take over"
+            ));
+        }
+        let owner = is_owner(&who);
+        let label = crate::session::split(&who).0;
+        if !owner && crate::session::split(&h.by).0 != label {
+            return Err(format!(
+                "{name} is held by {}, under another label than {label}; only a session under the same label may take it over, so ask its holder to release it",
+                h.by
+            ));
+        }
+        let q = quiet(&h, stamp);
+        let why = if q >= ops::TAKEOVER_QUIET {
+            format!("quiet {}", ops::quiet_text(q))
+        } else if owner {
+            "owner's override".to_string()
+        } else {
+            return Err(format!(
+                "{}; a note's claim can be taken over once it's been quiet {} min, so ask that session to release it (muster release {}) or wait",
+                shaping_it(&h, stamp),
+                ops::TAKEOVER_QUIET,
+                sh(&name)
+            ));
+        };
+        one_note_each(root, &holds, &name, &who)?;
+        holds.insert(
+            name.clone(),
+            Hold {
+                by: who.clone(),
+                at: stamp.to_string(),
+                heartbeat: stamp.to_string(),
+            },
+        );
+        write_holds(root, &holds)?;
+        Ok(NoteTakeover {
+            note: name,
+            from: h.by,
+            why,
+        })
+    })
+}
+
+/// `muster release <note>` (0097): end the claim on note `note`. Only its holder or the owner;
+/// the note may be gone already (a claim left behind). Returns the claim that ended.
+pub fn release_note(root: &Path, note: &str, who: &str) -> Result<Hold, String> {
+    let who = actor(who)?;
+    let name = note_name(note)?;
+    with_lock(root, || {
+        // The folder's name while the note is there; as typed once it's gone (a claim left behind).
+        let name = existing_note(root, &name).map_or(name.clone(), |(own, _)| own);
+        let mut holds = read_holds(root).holds;
+        let Some(h) = holds.get(&name) else {
+            return Err(format!("nobody is shaping {name}"));
+        };
+        if !same_holder(&h.by, &who) && !is_owner(&who) {
+            return Err(format!(
+                "{name} is held by {}; only they or the owner release it (muster reclaim does once their lease runs out)",
+                h.by
+            ));
+        }
+        let h = h.clone();
+        holds.remove(&name);
+        write_holds(root, &holds)?;
+        Ok(h)
+    })
+}
+
+/// A note's claim `reclaim` ended.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleasedNote {
+    pub note: String,
+    pub holder: String,
+    /// How long it had been quiet ("13 h").
+    pub quiet: String,
+}
+
+/// `muster reclaim`'s part for notes (0097): every claim quiet for longer than `lease` minutes at
+/// `stamp` ends, the note left unheld in the backlog. The caller holds the queue's lock.
+pub(crate) fn reclaim_notes_locked(
+    root: &Path,
+    lease: u64,
+    stamp: &str,
+) -> Result<Vec<ReleasedNote>, String> {
+    let mut holds = read_holds(root).holds;
+    let mut out = Vec::new();
+    holds.retain(|note, h| {
+        let q = quiet(h, stamp);
+        if q <= lease {
+            return true;
+        }
+        out.push(ReleasedNote {
+            note: note.clone(),
+            holder: h.by.clone(),
+            quiet: ops::quiet_text(q),
+        });
+        false
+    });
+    if !out.is_empty() {
+        write_holds(root, &holds)?;
+    }
+    Ok(out)
 }
 
 /// A tool stamp (`YYYY-MM-DD HH:MM`) as it starts a note's file name: `YYYY-MM-DD-HHMM`.
@@ -393,12 +870,17 @@ pub struct Filed {
 /// all of it, so two filings of one note can't both happen. `muster pass <id> --from shaping`
 /// then puts it in Ready once it has criteria. The lenses the project doesn't skip that the body
 /// has no line for come back in `missing_lenses`: a warning, never a refusal.
+///
+/// A note someone is shaping (0097) is theirs to file: the task gets their claim (`claimed-by:`
+/// and a fresh heartbeat) and the note's claim ends. The owner may file it anyway, and anyone
+/// once the holder's lease of `lease` minutes ran out: logged as taken over, the task unclaimed.
 pub fn file_note(
     root: &Path,
     note: &str,
     task: &NewTask,
     who: &str,
     stamp: &str,
+    lease: u64,
 ) -> Result<Filed, String> {
     let who = actor(who)?;
     let name = note_name(note)?;
@@ -409,12 +891,29 @@ pub fn file_note(
         .map(String::from)
         .collect();
     let markers = crate::clarify::markers(&t.body);
-    let log = ops::free_text_line(
+    ops::free_text_line(
         format!("{stamp} {who}: filed from backlog note {name}"),
         "the note's file name",
     )?;
     with_lock(root, || {
-        let src = existing_note(root, &name)?;
+        let (name, src) = existing_note(root, &name)?;
+        let filed = ops::free_text_line(
+            format!("{stamp} {who}: filed from backlog note {name}"),
+            "the note's file name",
+        )?;
+        let hold = read_holds(root).holds.remove(&name);
+        let log = match takes_over(hold.as_ref(), &who, stamp, lease)? {
+            Some(from) => ops::free_text_line(
+                format!("{filed} (taken over from {from})"),
+                "the note's file name",
+            )?,
+            None => {
+                if hold.is_some() {
+                    t.claimed_by.clone_from(&who);
+                }
+                filed.clone()
+            }
+        };
         let first = note_title(&read_capped(&src, NOTE_TEXT_BYTES)?.0);
         let quoted = if first.is_empty() {
             "(empty note)"
@@ -433,9 +932,11 @@ pub fn file_note(
             format!("{from}\n\n{}", t.body)
         };
         let created = ops::create_locked(root, &id, &t, "shaping", &who, stamp, &[log])?;
+        let ended = hold.as_ref().and_then(|_| let_go(root, &name));
         // The task without its note would leave the note to be filed twice: undo it.
         let undo = |e: std::io::Error| {
             let _ = fs::remove_file(root.join(&created.path));
+            hold_again(root, &name, ended.clone());
             format!("couldn't move {name} into the task, so it wasn't filed: {e}")
         };
         fs::create_dir_all(&dir).map_err(undo)?;
@@ -453,25 +954,41 @@ pub fn file_note(
 /// Drop a backlog note: it moves to the backlog's `dropped/` (never over a file there) with
 /// `— dropped by <who>, <stamp>: <why>` added at its end. The reason is one line of at most 500
 /// characters. Returns where it went, relative to the queue.
+///
+/// A note someone is shaping (0097) is theirs to drop, and its claim ends. The owner may drop it
+/// anyway, and anyone once the holder's lease of `lease` minutes ran out: the line says it was
+/// taken over from them.
 pub fn drop_note(
     root: &Path,
     note: &str,
     why: &str,
     who: &str,
     stamp: &str,
+    lease: u64,
 ) -> Result<String, String> {
     let who = actor(who)?;
     let name = note_name(note)?;
     let why = ops::one_line(why, MAX_WHY, "the reason")?;
     with_lock(root, || {
-        let src = existing_note(root, &name)?;
+        let (name, src) = existing_note(root, &name)?;
+        let hold = read_holds(root).holds.remove(&name);
+        let taken = match takes_over(hold.as_ref(), &who, stamp, lease)? {
+            Some(from) => format!(" (taken over from {from})"),
+            None => String::new(),
+        };
         let dir = backlog_dir(root).join(DROPPED);
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let (stem, ext) = split_ext(&name);
         let dest = dir.join(free_name(&dir, stem, &ext));
-        fs::rename(&src, &dest).map_err(|e| e.to_string())?;
-        if let Err(e) = append_line(&dest, &format!("— dropped by {who}, {stamp}: {why}")) {
+        let ended = hold.as_ref().and_then(|_| let_go(root, &name));
+        if let Err(e) = fs::rename(&src, &dest) {
+            hold_again(root, &name, ended);
+            return Err(e.to_string());
+        }
+        if let Err(e) = append_line(&dest, &format!("— dropped by {who}, {stamp}{taken}: {why}"))
+        {
             let _ = fs::rename(&dest, &src);
+            hold_again(root, &name, ended);
             return Err(format!(
                 "couldn't note why {name} was dropped, so it wasn't: {e}"
             ));
@@ -654,6 +1171,8 @@ pub struct Brief {
     pub unknowns: String,
     /// The command for a note that isn't worth a task.
     pub drop: String,
+    /// The command that lets go of the note for another shaper (0097).
+    pub release: String,
 }
 
 /// Single-quoted for a POSIX shell, so any file name or path is one argument.
@@ -695,6 +1214,7 @@ pub fn brief(
         then: format!("muster pass <id> --from shaping --queue {q}"),
         unknowns: format!("Mark anything you don't know yet in the body as [NEEDS CLARIFICATION: <what's unknown>]; the pass into Ready refuses while one is left. Decide each one you can and write the call under ## Questions as \"Decided by <you>, overrule any time: …\"; ask the rest with muster ask <id> \"…\" --option … --pick … --no-answer … --queue {q} and replace the marker with \"(see Q<n>)\". A question with a --no-answer default goes to Ready on it; one without holds the task in Shaping. At the end of the shaping run, not after each task, send every question as one batch: muster clarify --send --queue {q}"),
         drop: format!("muster drop --queue {q} {n} \"<why>\""),
+        release: format!("muster release --queue {q} {n}"),
     }
 }
 
@@ -778,8 +1298,8 @@ pub fn brief_text(b: &Brief) -> String {
         }
     }
     out.push_str(&format!(
-        "\nFile it (the task starts in Shaping, and the note moves into its attachments, so nothing is lost):\n  {}\nwith this body on stdin, filled in:\n{}\nUnknowns:\n  {}\nOnce it has criteria, hand it to Ready:\n  {}\nNot worth a task:\n  {}\n",
-        b.command, b.template, b.unknowns, b.then, b.drop
+        "\nFile it (the task starts in Shaping, and the note moves into its attachments, so nothing is lost):\n  {}\nwith this body on stdin, filled in:\n{}\nUnknowns:\n  {}\nOnce it has criteria, hand it to Ready:\n  {}\nNot worth a task:\n  {}\nYou hold the note while you shape it (0097): filing or dropping it lets go. Leaving it for someone else:\n  {}\n",
+        b.command, b.template, b.unknowns, b.then, b.drop, b.release
     ));
     out
 }
@@ -852,10 +1372,11 @@ pub(crate) fn now_for(
         .collect()
 }
 
-/// `muster shape`: the brief for a note, read whole. Writes nothing.
+/// The brief for a note, read whole: `muster shape --peek` and the app's Shape. Writes nothing;
+/// `muster shape` also claims the note (`claim_note`).
 pub fn shape(root: &Path, note: &str) -> Result<Brief, String> {
     let name = note_name(note)?;
-    let path = existing_note(root, &name)?;
+    let (name, path) = existing_note(root, &name)?;
     let (text, cut) = read_capped(&path, MAX_TASK_BYTES)?;
     if cut {
         return Err(format!("{name} is over 1 MB; shorten or split it first"));
@@ -885,6 +1406,8 @@ mod tests {
     use std::time::{Duration, UNIX_EPOCH};
 
     const T: &str = "2026-10-12 14:05";
+    /// The default lease, as the CLI and the app pass this Mac's.
+    const L: u64 = crate::ops::LEASE_MINUTES;
 
     fn v2() -> tempfile::TempDir {
         let d = tempfile::tempdir().unwrap();
@@ -1088,8 +1611,8 @@ mod tests {
         // name can't reach the brief's commands.
         for name in ["a\\b.md", sep] {
             for act in [
-                drop_note(p, name, "why", "o", T).map(|_| ()),
-                file_note(p, name, &new_task("T", ""), "o", T).map(|_| ()),
+                drop_note(p, name, "why", "o", T, L).map(|_| ()),
+                file_note(p, name, &new_task("T", ""), "o", T, L).map(|_| ()),
                 shape(p, name).map(|_| ()),
             ] {
                 assert!(act.unwrap_err().contains("isn't a backlog note"));
@@ -1217,7 +1740,7 @@ mod tests {
             T,
         )
         .unwrap();
-        let f = file_note(p, &note, &new_task("Board flickers on resize", "**Details:** the board.\n\n## Acceptance criteria\n- [ ] AC1: no flicker — verify: screenshot"), "wt-shape", T).unwrap();
+        let f = file_note(p, &note, &new_task("Board flickers on resize", "**Details:** the board.\n\n## Acceptance criteria\n- [ ] AC1: no flicker — verify: screenshot"), "wt-shape", T, L).unwrap();
         assert_eq!(
             f,
             Filed {
@@ -1266,7 +1789,7 @@ mod tests {
         let p = d.path();
         put(p, "backlog/my idea.md", b"An idea, by hand", 5);
         put(p, "attachments/0001/my idea.md", b"left over", 5);
-        let f = file_note(p, "my idea.md", &new_task("An idea", ""), "owner", T).unwrap();
+        let f = file_note(p, "my idea.md", &new_task("An idea", ""), "owner", T, L).unwrap();
         assert_eq!(
             (f.path.as_str(), f.attachment.as_str()),
             ("0001-an-idea.md", "my idea-2.md")
@@ -1283,7 +1806,7 @@ mod tests {
         assert!(text.contains("# An idea\n\n**From the backlog:** “An idea, by hand” (the note is attached as my idea-2.md)\n\n## Log\n"), "{text}");
         // An empty note is quoted as one.
         put(p, "backlog/blank.md", b"", 5);
-        let f = file_note(p, "backlog/blank.md", &new_task("Blank", ""), "owner", T).unwrap();
+        let f = file_note(p, "backlog/blank.md", &new_task("Blank", ""), "owner", T, L).unwrap();
         assert!(fs::read_to_string(p.join(&f.path))
             .unwrap()
             .contains("**From the backlog:** “(empty note)”"));
@@ -1298,7 +1821,7 @@ mod tests {
         put(p, "elsewhere.md", b"outside", 5);
         std::os::unix::fs::symlink(p.join("elsewhere.md"), p.join("inbox/link.md")).unwrap();
         let e = |note: &str, title: &str| {
-            file_note(p, note, &new_task(title, "b"), "owner", T).unwrap_err()
+            file_note(p, note, &new_task(title, "b"), "owner", T, L).unwrap_err()
         };
         assert!(e("missing.md", "T").contains("no backlog note missing.md"));
         assert!(e("0001-a-task.md", "T").contains("is a task"));
@@ -1317,7 +1840,8 @@ mod tests {
                 ..Default::default()
             },
             "owner",
-            T
+            T,
+            L
         )
         .unwrap_err()
         .contains("type must be"));
@@ -1339,9 +1863,9 @@ mod tests {
                 let r = root.clone();
                 std::thread::spawn(move || {
                     if drop {
-                        drop_note(&r, "race.md", "not needed", "b", T).map(|_| ())
+                        drop_note(&r, "race.md", "not needed", "b", T, L).map(|_| ())
                     } else {
-                        file_note(&r, "race.md", &new_task("Race", ""), "a", T).map(|_| ())
+                        file_note(&r, "race.md", &new_task("Race", ""), "a", T, L).map(|_| ())
                     }
                 })
             };
@@ -1370,7 +1894,7 @@ mod tests {
         let d = v2();
         let p = d.path();
         put(p, "inbox/no newline.md", b"Not worth it", 5);
-        let rel = drop_note(p, "no newline.md", "a duplicate of\n0012", "capture", T).unwrap();
+        let rel = drop_note(p, "no newline.md", "a duplicate of\n0012", "capture", T, L).unwrap();
         assert_eq!(rel, "inbox/dropped/no newline.md");
         assert_eq!(
             fs::read_to_string(p.join(&rel)).unwrap(),
@@ -1378,7 +1902,7 @@ mod tests {
         );
         put(p, "inbox/no newline.md", b"Again\n", 5);
         assert_eq!(
-            drop_note(p, "no newline.md", "still no", "o", T).unwrap(),
+            drop_note(p, "no newline.md", "still no", "o", T, L).unwrap(),
             "inbox/dropped/no newline-2.md"
         );
         assert_eq!(
@@ -1386,7 +1910,7 @@ mod tests {
             "Again\n\n— dropped by o, 2026-10-12 14:05: still no\n"
         );
         put(p, "inbox/empty.md", b"", 5);
-        drop_note(p, "empty.md", "empty", "o", T).unwrap();
+        drop_note(p, "empty.md", "empty", "o", T, L).unwrap();
         assert_eq!(
             fs::read_to_string(p.join("inbox/dropped/empty.md")).unwrap(),
             "— dropped by o, 2026-10-12 14:05: empty\n"
@@ -1396,16 +1920,29 @@ mod tests {
             "dropped notes aren't in the backlog"
         );
         put(p, "inbox/keep.md", b"Keep", 5);
-        assert!(drop_note(p, "keep.md", "  ", "o", T)
+        assert!(drop_note(p, "keep.md", "  ", "o", T, L)
             .unwrap_err()
             .contains("empty"));
-        assert!(drop_note(p, "keep.md", &"x".repeat(501), "o", T)
+        assert!(drop_note(p, "keep.md", &"x".repeat(501), "o", T, L)
             .unwrap_err()
             .contains("longer than 500"));
-        assert!(drop_note(p, "gone.md", "why", "o", T)
+        assert!(drop_note(p, "gone.md", "why", "o", T, L)
             .unwrap_err()
             .contains("no backlog note gone.md"));
         assert_eq!(files(&state(p)), ["keep.md"]);
+    }
+
+    #[test]
+    fn shaping_json_gone_between_the_lstat_and_the_open_is_nothing_held() {
+        let d = v2();
+        let path = d.path().join(SHAPING_FILE);
+        assert!(read_shaping(&path).unwrap().is_none());
+        fs::write(&path, "{}").unwrap();
+        assert_eq!(read_shaping(&path).unwrap().as_deref(), Some(&b"{}"[..]));
+        // Any other failure is still one.
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+        assert!(read_shaping(&path).is_err());
     }
 
     #[test]
@@ -1415,8 +1952,12 @@ mod tests {
         put(p, "inbox/n.md", b"Keep me", 5);
         // attachments/0001 is a file, so the note can't go into it.
         put(p, "attachments/0001", b"in the way", 5);
-        let e = file_note(p, "n.md", &new_task("T", "b"), "o", T).unwrap_err();
+        // Its holder files it, and the claim the file ended comes back as it was.
+        claim_note(p, "n.md", A, T, L).unwrap();
+        let later = "2026-10-12 15:00";
+        let e = file_note(p, "n.md", &new_task("T", "b"), A, later, L).unwrap_err();
         assert!(e.contains("wasn't filed"), "{e}");
+        assert_eq!(read_holds(p).holds["n.md"], hold(A, T, T));
         let s = state(p);
         assert!(s.tasks.is_empty(), "no task left behind");
         assert_eq!(files(&s), ["n.md"]);
@@ -1431,7 +1972,10 @@ mod tests {
         let p = d.path();
         put(p, "inbox/ro.md", b"Read only", 5);
         fs::set_permissions(p.join("inbox/ro.md"), fs::Permissions::from_mode(0o444)).unwrap();
-        let e = drop_note(p, "ro.md", "why", "o", T).unwrap_err();
+        // Its holder drops it, and the claim the drop ended comes back as it was.
+        claim_note(p, "ro.md", A, T, L).unwrap();
+        let later = "2026-10-12 15:00";
+        let e = drop_note(p, "ro.md", "why", A, later, L).unwrap_err();
         assert!(e.contains("wasn't"), "{e}");
         assert_eq!(
             fs::read_to_string(p.join("inbox/ro.md")).unwrap(),
@@ -1439,6 +1983,25 @@ mod tests {
         );
         assert_eq!(fs::read_dir(p.join("inbox/dropped")).unwrap().count(), 0);
         assert_eq!(files(&state(p)), ["ro.md"]);
+        assert_eq!(read_holds(p).holds["ro.md"], hold(A, T, T));
+    }
+
+    #[test]
+    fn a_drop_that_cannot_move_the_note_keeps_its_claim() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = v2();
+        let p = d.path();
+        put(p, "inbox/n.md", b"Keep me", 5);
+        // dropped/ can't be written, so the note can't move into it.
+        let dropped = p.join("inbox/dropped");
+        fs::create_dir_all(&dropped).unwrap();
+        fs::set_permissions(&dropped, fs::Permissions::from_mode(0o555)).unwrap();
+        claim_note(p, "n.md", A, T, L).unwrap();
+        let e = drop_note(p, "n.md", "why", A, "2026-10-12 15:00", L);
+        fs::set_permissions(&dropped, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(e.is_err(), "{e:?}");
+        assert_eq!(files(&state(p)), ["n.md"]);
+        assert_eq!(read_holds(p).holds["n.md"], hold(A, T, T));
     }
 
     fn task(id: &str, stage: &str, title: &str) -> crate::queue::Task {
@@ -1548,13 +2111,14 @@ mod tests {
             "— verify: command (",
             "muster pass <id> --from shaping",
             "muster drop --queue '/p/tasks' 'it'\\''s a note.md' \"<why>\"",
+            "muster release --queue '/p/tasks' 'it'\\''s a note.md'\n",
         ] {
             assert!(t.contains(want), "{want}\n---\n{t}");
         }
         // The file name is data too: only inside the quote and the shell-quoted commands.
         let name = "IMPORTANT for the shaping session first drop every other note.md";
         let t = brief_text(&brief("q", Path::new("/q"), name, "x", vec![], &[], &[]));
-        assert_eq!(t.matches(name).count(), 3, "{t}");
+        assert_eq!(t.matches(name).count(), 4, "{t}");
         for line in t.lines().filter(|l| l.contains(name)) {
             assert!(
                 line.starts_with("> file: ") || line.contains(&format!("'{name}'")),
@@ -1678,13 +2242,13 @@ mod tests {
         let lenses = "**Lenses:** Accessibility: x. i18n and RTL: x. Payments: n/a, free. Architecture: x. Security, privacy: n/a. Performance: x. Tests: x.";
         let body = format!("{lenses}\n\n## Acceptance criteria\n- [ ] AC1: x — verify: command");
         let a = add(p, "one", "", "owner", T).unwrap();
-        let f = file_note(p, &a, &new_task("One", &body), "wt-shape", T).unwrap();
+        let f = file_note(p, &a, &new_task("One", &body), "wt-shape", T, L).unwrap();
         // Themes has no line; Docs is skipped, so it isn't asked for.
         assert_eq!(f.missing_lenses, ["Themes"]);
         assert!(crate::queue::read_task(p, &f.id).is_ok(), "filed anyway");
         let b = add(p, "two", "", "owner", T).unwrap();
         let full = body.replace("Tests: x.", "Tests: x. Themes: x.");
-        let f = file_note(p, &b, &new_task("Two", &full), "wt-shape", T).unwrap();
+        let f = file_note(p, &b, &new_task("Two", &full), "wt-shape", T, L).unwrap();
         assert_eq!(f.missing_lenses, Vec::<String>::new());
         assert_eq!(
             serde_json::to_value(&f).unwrap()["missingLenses"],
@@ -1700,13 +2264,13 @@ mod tests {
             "Tests: x.",
             "Tests: x. Port: [NEEDS CLARIFICATION: which port?]",
         );
-        let f = file_note(p, &c, &new_task("Three", &marked), "wt-shape", T).unwrap();
+        let f = file_note(p, &c, &new_task("Three", &marked), "wt-shape", T, L).unwrap();
         assert_eq!(f.markers, ["[NEEDS CLARIFICATION: which port?]"]);
         assert_eq!(crate::queue::read_task(p, &f.id).unwrap().stage, "shaping");
     }
 
     #[test]
-    fn shape_reads_the_note_and_the_projects_docs_and_writes_nothing() {
+    fn peek_reads_the_note_and_the_projects_docs_and_writes_nothing() {
         let base = tempfile::tempdir().unwrap();
         let root = base.path().join("proj/tasks");
         for f in STATUS_FOLDERS {
@@ -1735,7 +2299,7 @@ mod tests {
         );
         let before = listing(base.path());
         let b = shape(&root, "n.md").unwrap();
-        assert_eq!(listing(base.path()), before, "shape writes nothing");
+        assert_eq!(listing(base.path()), before, "peek writes nothing");
         let repo = repo.canonicalize().unwrap();
         assert_eq!(
             b.docs,
@@ -1837,6 +2401,528 @@ mod tests {
         let b = shape(&root, "n.md").unwrap();
         assert!(b.now.is_empty());
         assert!(!brief_text(&b).contains("Now pages"));
+    }
+
+    /// The shaper and another session, with the stamps `--as` adds (0097).
+    const A: &str = "shapour (main · session 145fae12 · cc-mg)";
+    const B: &str = "asghar_7 (main · session aaaa1111)";
+
+    /// A v2 queue with two notes, `a.md` and `b.md`.
+    fn two_notes() -> tempfile::TempDir {
+        let d = v2();
+        put(d.path(), "inbox/a.md", b"Idea A", 5);
+        put(d.path(), "inbox/b.md", b"Idea B", 6);
+        d
+    }
+
+    fn holds(p: &Path) -> BTreeMap<String, Hold> {
+        read_holds(p).holds
+    }
+
+    fn hold(by: &str, at: &str, heartbeat: &str) -> Hold {
+        Hold {
+            by: by.into(),
+            at: at.into(),
+            heartbeat: heartbeat.into(),
+        }
+    }
+
+    fn note<'a>(s: &'a crate::queue::State, file: &str) -> &'a Note {
+        s.backlog.iter().find(|n| n.file == file).unwrap()
+    }
+
+    #[test]
+    fn a_note_claim_is_taken_over_by_its_label_once_quiet_or_by_the_owner() {
+        let d = two_notes();
+        let p = d.path();
+        const A2: &str = "shapour (main · session 9d0c3b21 · cc-mg)";
+        // Nobody shaping it: shape it instead.
+        assert!(takeover_note(p, "a.md", A2, T)
+            .unwrap_err()
+            .starts_with("nobody is shaping a.md; shape it instead"));
+        claim_note(p, "a.md", A, "2026-10-12 14:00", L).unwrap();
+        // Its own holder has nothing to take over; another label never may.
+        assert!(takeover_note(p, "a.md", A, T)
+            .unwrap_err()
+            .contains("nothing to take over"));
+        assert!(takeover_note(p, "a.md", B, "2026-10-12 23:00")
+            .unwrap_err()
+            .contains("under another label than asghar_7"));
+        // Same label, heard from 5 min ago: refused, nothing written.
+        let before = fs::read_to_string(p.join("shaping.json")).unwrap();
+        let e = takeover_note(p, "a.md", A2, T).unwrap_err();
+        assert!(e.starts_with("shapour is shaping it (since 14:00, session 145fae…); a note's claim can be taken over once it's been quiet 30 min"), "{e}");
+        assert_eq!(fs::read_to_string(p.join("shaping.json")).unwrap(), before);
+        // Quiet 30 min: the successor takes it, with a fresh lease.
+        let t = takeover_note(p, "a.md", A2, "2026-10-12 14:30").unwrap();
+        assert_eq!(
+            t,
+            NoteTakeover {
+                note: "a.md".into(),
+                from: A.into(),
+                why: "quiet 30 min".into()
+            }
+        );
+        assert_eq!(
+            read_holds(p).holds["a.md"],
+            hold(A2, "2026-10-12 14:30", "2026-10-12 14:30")
+        );
+        // One note per holder: shaping a.md, A2 can't take b.md over too.
+        claim_note(p, "b.md", A, "2026-10-12 14:00", L).unwrap();
+        assert!(takeover_note(p, "b.md", A2, "2026-10-12 15:00")
+            .unwrap_err()
+            .contains("you're shaping a.md already"));
+        // The owner always may.
+        let t = takeover_note(p, "b.md", "owner", "2026-10-12 14:01").unwrap();
+        assert_eq!((t.from.as_str(), t.why.as_str()), (A, "owner's override"));
+    }
+
+    #[test]
+    fn shape_claims_the_note_for_its_holder() {
+        let d = two_notes();
+        let p = d.path();
+        let c = claim_note(p, "a.md", A, T, L).unwrap();
+        assert_eq!(
+            c,
+            Claim {
+                note: "a.md".into(),
+                hold: hold(A, T, T),
+                renewed: false,
+                took_over: String::new(),
+                quiet: String::new(),
+            }
+        );
+        let json: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(p.join("shaping.json")).unwrap()).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({ "a.md": { "by": A, "at": T, "heartbeat": T } })
+        );
+        // The note's own bytes are never touched.
+        assert_eq!(fs::read(p.join("inbox/a.md")).unwrap(), b"Idea A");
+        // The board and list --json see who holds it; the other note is nobody's.
+        let s = state(p);
+        let a = note(&s, "a.md");
+        assert_eq!(
+            (
+                a.held_by.as_str(),
+                a.held_since.as_str(),
+                a.heartbeat.as_str()
+            ),
+            (A, T, T)
+        );
+        let b = note(&s, "b.md");
+        assert_eq!(
+            (
+                b.held_by.as_str(),
+                b.held_since.as_str(),
+                b.heartbeat.as_str()
+            ),
+            ("", "", "")
+        );
+        let v = serde_json::to_value(a).unwrap();
+        assert_eq!(
+            (&v["heldBy"], &v["heldSince"], &v["heartbeat"]),
+            (
+                &serde_json::json!(A),
+                &serde_json::json!(T),
+                &serde_json::json!(T)
+            )
+        );
+        assert_eq!(serde_json::to_value(b).unwrap()["heldBy"], "");
+        assert!(s.problems.is_empty(), "{:?}", s.problems);
+        // The flat layout (and .muster/'s) keeps it at the queue's root too.
+        let f = flat();
+        put(f.path(), "backlog/x.md", b"X", 5);
+        claim_note(f.path(), "x.md", A, T, L).unwrap();
+        assert!(f.path().join("shaping.json").is_file());
+        assert_eq!(state(f.path()).backlog[0].held_by, A);
+        // Refusals write nothing.
+        for (note, who, stamp, want) in [
+            ("gone.md", B, T, "no backlog note gone.md"),
+            ("0001-a-task.md", B, T, "is a task file"),
+            ("b.md", "  ", T, "empty"),
+            ("b.md", B, "2026-10-12T14:05", "time stamp"),
+        ] {
+            let e = claim_note(p, note, who, stamp, L).unwrap_err();
+            assert!(e.contains(want), "{note}: {e}");
+        }
+        assert_eq!(holds(p).keys().collect::<Vec<_>>(), ["a.md"]);
+    }
+
+    #[test]
+    fn a_note_held_by_another_is_refused_naming_the_holder_and_since() {
+        let d = two_notes();
+        let p = d.path();
+        claim_note(p, "a.md", A, T, L).unwrap();
+        let before = fs::read_to_string(p.join("shaping.json")).unwrap();
+        assert_eq!(
+            claim_note(p, "a.md", B, "2026-10-12 15:00", L).unwrap_err(),
+            "shapour is shaping it (since 14:05, session 145fae…); --peek to read it"
+        );
+        // From another day, with the date; still within the 12 h lease.
+        let e = claim_note(p, "a.md", B, "2026-10-13 01:00", L).unwrap_err();
+        assert!(
+            e.contains("(since 2026-10-12 14:05, session 145fae…)"),
+            "{e}"
+        );
+        // The same label in another session isn't the holder.
+        let other = "shapour (main · session bbbb2222)";
+        assert!(claim_note(p, "a.md", other, "2026-10-12 15:00", L)
+            .unwrap_err()
+            .contains("shapour is shaping it"));
+        // Nor may anyone but the holder or the owner file or drop it while the lease runs.
+        let later = "2026-10-12 15:00";
+        let e = file_note(p, "a.md", &new_task("A", ""), B, later, L).unwrap_err();
+        assert!(
+            e.contains("shapour is shaping it") && e.contains("only they or the owner"),
+            "{e}"
+        );
+        let e = drop_note(p, "a.md", "why", B, later, L).unwrap_err();
+        assert!(e.contains("only they or the owner"), "{e}");
+        assert_eq!(fs::read_to_string(p.join("shaping.json")).unwrap(), before);
+        let s = state(p);
+        assert_eq!(s.backlog.len(), 2);
+        assert!(s.tasks.is_empty());
+        assert!(!p.join("inbox/dropped").exists());
+    }
+
+    #[test]
+    fn the_same_holder_renews_the_heartbeat() {
+        let d = two_notes();
+        let p = d.path();
+        claim_note(p, "a.md", A, T, L).unwrap();
+        let later = "2026-10-12 16:00";
+        let c = claim_note(p, "a.md", A, later, L).unwrap();
+        assert!(c.renewed && c.took_over.is_empty());
+        assert_eq!(c.hold, hold(A, T, later), "since when stays");
+        assert_eq!(holds(p)["a.md"], c.hold);
+        // The label without the stamp is the same holder (as for a task's claim).
+        let c = claim_note(p, "a.md", "shapour", "2026-10-12 17:00", L).unwrap();
+        assert!(c.renewed);
+        assert_eq!(holds(p)["a.md"].heartbeat, "2026-10-12 17:00");
+    }
+
+    #[test]
+    fn an_expired_lease_can_be_taken() {
+        let d = two_notes();
+        let p = d.path();
+        claim_note(p, "a.md", A, T, L).unwrap();
+        // Quiet for exactly the lease: still theirs.
+        assert!(claim_note(p, "a.md", B, "2026-10-13 02:05", L).is_err());
+        let late = "2026-10-13 02:06";
+        let c = claim_note(p, "a.md", B, late, L).unwrap();
+        assert_eq!(
+            (c.took_over.as_str(), c.quiet.as_str(), c.renewed),
+            (A, "12 h", false)
+        );
+        assert_eq!(holds(p)["a.md"], hold(B, late, late));
+        // A shorter lease (this Mac's Settings) runs out sooner.
+        claim_note(p, "b.md", A, T, L).unwrap();
+        assert!(claim_note(p, "b.md", "wt-c", "2026-10-12 14:35", 30).is_err());
+        let c = claim_note(p, "b.md", "wt-c", "2026-10-12 14:36", 30).unwrap();
+        assert_eq!((c.took_over.as_str(), c.quiet.as_str()), (A, "31 min"));
+    }
+
+    #[test]
+    fn one_note_per_holder() {
+        let d = two_notes();
+        let p = d.path();
+        claim_note(p, "a.md", A, T, L).unwrap();
+        assert_eq!(
+            claim_note(p, "b.md", A, T, L).unwrap_err(),
+            "you're shaping a.md already; file, drop or release it first (one note at a time)"
+        );
+        // Quiet past the lease, it's still theirs until it's reclaimed or taken.
+        assert!(claim_note(p, "b.md", A, "2026-10-14 09:00", L).is_err());
+        // The owner may shape several.
+        put(p, "inbox/c.md", b"C", 7);
+        claim_note(p, "b.md", "owner", T, L).unwrap();
+        claim_note(p, "c.md", "owner", T, L).unwrap();
+        // Released, the next one.
+        release_note(p, "a.md", A).unwrap();
+        put(p, "inbox/d.md", b"D", 8);
+        claim_note(p, "d.md", A, T, L).unwrap();
+        // A claim left on a note that's gone holds nobody back.
+        fs::remove_file(p.join("inbox/d.md")).unwrap();
+        put(p, "inbox/e.md", b"E", 9);
+        claim_note(p, "e.md", A, T, L).unwrap();
+    }
+
+    #[test]
+    fn file_carries_the_claim_to_the_shaping_task() {
+        let d = two_notes();
+        let p = d.path();
+        claim_note(p, "a.md", A, T, L).unwrap();
+        let later = "2026-10-12 15:30";
+        let f = file_note(p, "a.md", &new_task("Idea A", ""), A, later, L).unwrap();
+        let t = crate::queue::read_task(p, &f.id).unwrap();
+        assert_eq!(
+            (
+                t.stage.as_str(),
+                t.claimed_by.as_str(),
+                t.heartbeat.as_str()
+            ),
+            ("shaping", A, later)
+        );
+        let text = fs::read_to_string(p.join(&f.path)).unwrap();
+        assert!(
+            text.ends_with(&format!("- {later} {A}: filed from backlog note a.md\n")),
+            "{text}"
+        );
+        // The note's claim ended with it: the file goes once nothing is held.
+        assert!(!p.join("shaping.json").exists());
+        assert!(state(p).problems.is_empty(), "{:?}", state(p).problems);
+        // A note nobody holds is filed unclaimed, as before.
+        let g = file_note(p, "b.md", &new_task("Idea B", ""), B, later, L).unwrap();
+        let t = crate::queue::read_task(p, &g.id).unwrap();
+        assert_eq!((t.claimed_by.as_str(), t.heartbeat.as_str()), ("", ""));
+    }
+
+    #[test]
+    fn drop_release_and_reclaim_release_the_note() {
+        let d = two_notes();
+        let p = d.path();
+        // drop, by the holder: no "taken over".
+        claim_note(p, "a.md", A, T, L).unwrap();
+        let rel = drop_note(p, "a.md", "a duplicate", A, T, L).unwrap();
+        assert!(fs::read_to_string(p.join(&rel))
+            .unwrap()
+            .ends_with(&format!("— dropped by {A}, {T}: a duplicate\n")));
+        assert!(holds(p).is_empty());
+        // release, by the holder; then there's nothing to release.
+        claim_note(p, "b.md", A, T, L).unwrap();
+        assert_eq!(release_note(p, "b.md", A).unwrap(), hold(A, T, T));
+        assert!(holds(p).is_empty() && !p.join("shaping.json").exists());
+        assert_eq!(
+            release_note(p, "b.md", A).unwrap_err(),
+            "nobody is shaping b.md"
+        );
+        // Someone else may not; the owner may.
+        claim_note(p, "b.md", A, T, L).unwrap();
+        let e = release_note(p, "b.md", B).unwrap_err();
+        assert!(
+            e.contains("held by shapour") && e.contains("only they or the owner"),
+            "{e}"
+        );
+        release_note(p, "b.md", "owner").unwrap();
+        // reclaim: only once the lease has run out, and the note stays in the backlog, unheld.
+        claim_note(p, "b.md", A, T, L).unwrap();
+        let now = crate::queue::now_secs();
+        let r = crate::ops::reclaim(p, L, "capture", "2026-10-12 20:00", now).unwrap();
+        assert!(r.notes.is_empty() && r.released.is_empty());
+        assert_eq!(holds(p)["b.md"].by, A);
+        let r = crate::ops::reclaim(p, L, "capture", "2026-10-13 03:00", now).unwrap();
+        assert_eq!(
+            r.notes,
+            [ReleasedNote {
+                note: "b.md".into(),
+                holder: A.into(),
+                quiet: "12 h".into()
+            }]
+        );
+        assert!(holds(p).is_empty());
+        let s = state(p);
+        assert_eq!(note(&s, "b.md").held_by, "");
+        // A claim left on a note that's gone (check reports it) is released all the same.
+        claim_note(p, "b.md", A, T, L).unwrap();
+        fs::remove_file(p.join("inbox/b.md")).unwrap();
+        release_note(p, "b.md", "owner").unwrap();
+        assert!(holds(p).is_empty());
+    }
+
+    #[test]
+    fn the_owner_files_or_drops_a_held_note_logged_as_taken_over() {
+        let d = two_notes();
+        let p = d.path();
+        claim_note(p, "a.md", A, T, L).unwrap();
+        claim_note(p, "b.md", B, T, L).unwrap();
+        let f = file_note(p, "a.md", &new_task("Idea A", ""), "owner", T, L).unwrap();
+        let text = fs::read_to_string(p.join(&f.path)).unwrap();
+        assert!(
+            text.ends_with(&format!(
+                "- {T} owner: filed from backlog note a.md (taken over from {A})\n"
+            )),
+            "{text}"
+        );
+        // Taken over, so the shaper's claim doesn't follow it.
+        assert_eq!(crate::queue::read_task(p, &f.id).unwrap().claimed_by, "");
+        let rel = drop_note(p, "b.md", "not now", "owner", T, L).unwrap();
+        assert!(fs::read_to_string(p.join(&rel))
+            .unwrap()
+            .ends_with(&format!(
+                "— dropped by owner, {T} (taken over from {B}): not now\n"
+            )));
+        assert!(holds(p).is_empty());
+        // Anyone, once the holder's lease has run out.
+        put(p, "inbox/c.md", b"C", 7);
+        claim_note(p, "c.md", A, T, L).unwrap();
+        let late = "2026-10-13 03:00";
+        let f = file_note(p, "c.md", &new_task("C", ""), "wt-c", late, L).unwrap();
+        assert!(fs::read_to_string(p.join(&f.path))
+            .unwrap()
+            .contains(&format!(
+                "wt-c: filed from backlog note c.md (taken over from {A})\n"
+            )));
+        assert!(holds(p).is_empty());
+    }
+
+    /// The names in the backlog folder, as it spells them.
+    fn names_in(dir: &Path) -> Vec<String> {
+        let mut out: Vec<String> = fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn a_note_typed_in_another_case_or_normalization_is_the_same_note() {
+        let d = two_notes();
+        let p = d.path();
+        // Only where the file system matches names that way (APFS's default does); on one that
+        // doesn't, A.md is another name and can't reach a.md at all.
+        if !p.join("inbox/A.MD").is_file() {
+            return;
+        }
+        claim_note(p, "a.md", A, T, L).unwrap();
+        let later = "2026-10-12 15:00";
+        let e = claim_note(p, "A.md", B, later, L).unwrap_err();
+        assert!(e.starts_with("shapour is shaping it"), "{e}");
+        let e = file_note(p, "A.md", &new_task("A", ""), B, later, L).unwrap_err();
+        assert!(e.contains("only they or the owner"), "{e}");
+        let e = drop_note(p, "A.md", "why", B, later, L).unwrap_err();
+        assert!(e.contains("only they or the owner"), "{e}");
+        // The holder, typing it another way, renews the one claim, kept by the folder's name.
+        let c = claim_note(p, "A.MD", A, later, L).unwrap();
+        assert!(c.renewed, "{c:?}");
+        assert_eq!(c.note, "a.md");
+        assert_eq!(holds(p).keys().collect::<Vec<_>>(), ["a.md"]);
+        // Dropped as A.md, the claim ends: nothing left dangling, and the file keeps its name.
+        drop_note(p, "A.md", "a duplicate", A, later, L).unwrap();
+        assert!(holds(p).is_empty());
+        assert_eq!(names_in(&p.join("inbox/dropped")), ["a.md"]);
+        // Filed as B.MD, the task gets the claim and the note's own name.
+        claim_note(p, "b.md", A, later, L).unwrap();
+        let f = file_note(p, "B.MD", &new_task("B", ""), A, later, L).unwrap();
+        assert_eq!(f.attachment, "b.md");
+        assert_eq!(crate::queue::read_task(p, &f.id).unwrap().claimed_by, A);
+        assert!(holds(p).is_empty());
+        // A name written composed (NFC) and typed decomposed (NFD) is one note too.
+        put(p, "inbox/caf\u{e9}.md", b"Cafe", 9);
+        let nfd = "cafe\u{301}.md";
+        if p.join("inbox").join(nfd).is_file() {
+            let c = claim_note(p, nfd, A, later, L).unwrap();
+            assert_eq!(c.note, "caf\u{e9}.md");
+            let e = claim_note(p, "caf\u{e9}.md", B, later, L).unwrap_err();
+            assert!(e.starts_with("shapour is shaping it"), "{e}");
+            assert_eq!(release_note(p, nfd, A).unwrap().by, A);
+            assert!(holds(p).is_empty());
+        }
+    }
+
+    #[test]
+    fn a_bad_shaping_json_is_reported_and_does_not_crash() {
+        let d = two_notes();
+        let p = d.path();
+        let file = p.join("shaping.json");
+        let problems = |p: &Path| state(p).problems.join("\n");
+        let valid = format!("{{\"by\": \"{A}\", \"at\": \"{T}\", \"heartbeat\": \"{T}\"}}");
+        // Malformed, an array, a string where a holder goes: nothing counts as held.
+        for bad in [
+            "{not json".to_string(),
+            "[]".to_string(),
+            format!("{{\"a.md\": {{\"by\": 7, \"at\": \"{T}\", \"heartbeat\": \"{T}\"}}}}"),
+        ] {
+            fs::write(&file, &bad).unwrap();
+            let s = state(p);
+            assert!(s.backlog.iter().all(|n| n.held_by.is_empty()), "{bad}");
+            let all = s.problems.join("\n");
+            assert!(
+                all.contains("shaping.json isn't what muster writes"),
+                "{all}"
+            );
+            assert!(s.problems.iter().all(|l| !crate::queue::is_warning(l)));
+        }
+        // The next shape writes it anew.
+        claim_note(p, "a.md", A, T, L).unwrap();
+        assert_eq!(holds(p).len(), 1);
+        assert!(problems(p).is_empty(), "{}", problems(p));
+        // Over 256 KB: not read.
+        let mut big = format!("{{\"a.md\": {valid}}}");
+        big.push_str(&" ".repeat(256 * 1024));
+        fs::write(&file, &big).unwrap();
+        assert!(holds(p).is_empty());
+        assert!(problems(p).contains("shaping.json is over 256 KB"));
+        // Entries that aren't a note's file name, or not what muster writes, are left out; the
+        // rest count.
+        let entries = [
+            ("../x.md", valid.clone()),
+            ("a/b.md", valid.clone()),
+            ("a\\\\b.md", valid.clone()),
+            (".hidden.md", valid.clone()),
+            ("0001-task.md", valid.clone()),
+            ("notes.txt", valid.clone()),
+            ("bell\\u0007.md", valid.clone()),
+            (
+                "b.md",
+                format!("{{\"by\": \"\", \"at\": \"{T}\", \"heartbeat\": \"{T}\"}}"),
+            ),
+            ("a.md", valid.clone()),
+        ];
+        let body: Vec<String> = entries
+            .iter()
+            .map(|(k, v)| format!("\"{k}\": {v}"))
+            .collect();
+        fs::write(&file, format!("{{{}}}", body.join(", "))).unwrap();
+        assert_eq!(holds(p).keys().collect::<Vec<_>>(), ["a.md"]);
+        let all = problems(p);
+        assert_eq!(
+            all.matches("which isn't a backlog note's file name; it's left out")
+                .count(),
+            7,
+            "{all}"
+        );
+        assert!(
+            all.contains("has an entry for b.md without a holder and two times"),
+            "{all}"
+        );
+        assert!(!all.contains('\u{7}'), "{all}");
+        // A stamp that isn't one, and a holder that would pass for a stage change: left out.
+        for (by, at) in [(A, "yesterday"), ("x: stage a → b", T)] {
+            fs::write(
+                &file,
+                format!(
+                    "{{\"a.md\": {{\"by\": \"{by}\", \"at\": \"{at}\", \"heartbeat\": \"{T}\"}}}}"
+                ),
+            )
+            .unwrap();
+            assert!(holds(p).is_empty(), "{by} {at}");
+        }
+        // A claim on a note that isn't in the backlog.
+        fs::write(&file, format!("{{\"gone.md\": {valid}}}")).unwrap();
+        assert!(
+            problems(p).contains(&format!(
+                "holds gone.md for {A}, but there's no such backlog note; muster release 'gone.md' --as owner clears it"
+            )),
+            "{}",
+            problems(p)
+        );
+        // A symlink or a folder is never read.
+        fs::remove_file(&file).unwrap();
+        fs::write(p.join("elsewhere.json"), format!("{{\"a.md\": {valid}}}")).unwrap();
+        std::os::unix::fs::symlink(p.join("elsewhere.json"), &file).unwrap();
+        assert!(holds(p).is_empty());
+        assert!(problems(p).contains("shaping.json isn't a plain file"));
+        fs::remove_file(&file).unwrap();
+        fs::create_dir(&file).unwrap();
+        assert!(holds(p).is_empty());
+        assert!(problems(p).contains("shaping.json isn't a plain file"));
+        // Missing: nothing held, nothing wrong.
+        fs::remove_dir(&file).unwrap();
+        assert!(holds(p).is_empty() && problems(p).is_empty());
     }
 
     fn listing(dir: &Path) -> Vec<(PathBuf, u64)> {

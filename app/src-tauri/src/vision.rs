@@ -569,8 +569,8 @@ pub(crate) fn checked(text: &str) -> bool {
     front_matter(text).is_some_and(|(fm, _)| fm.get("vision").is_some_and(|v| !v.trim().is_empty()))
 }
 
-/// `new` with the holder's heartbeat when `who` holds the task (in `text`) in Building: their
-/// record or resolve keeps the claim alive, like their note.
+/// `new` with the holder's heartbeat when `who` holds the task (in `text`) in Building or Shaping
+/// (0097): their record or resolve keeps the claim alive, like their note.
 fn keep_alive(
     root: &Path,
     path: &Path,
@@ -581,7 +581,7 @@ fn keep_alive(
 ) -> Result<String, String> {
     let held = queue::parse_task("", root, &queue::folder_of(root, path), path, text, 0)
         .is_some_and(|t| {
-            t.stage == "building"
+            queue::has_lease(&t.stage)
                 && !t.claimed_by.is_empty()
                 && session::same_holder(&t.claimed_by, who)
         });
@@ -2156,14 +2156,20 @@ mod tests {
 
     #[test]
     fn the_holder_recording_a_check_keeps_its_claim_alive() {
+        // In Building, and a shaper's check in Shaping (0097).
+        for stage in ["building", "shaping"] {
+            holder_check_keeps_claim_alive(stage);
+        }
+    }
+    fn holder_check_keeps_claim_alive(stage: &str) {
         let (_b, root) = project();
-        let p = put(&root, "0024", "building", "Held", "", "x");
+        let p = put(&root, "0024", stage, "Held", "", "x");
         let text = fs::read_to_string(&p)
             .unwrap()
             .replace("claimed-by:\n", "claimed-by: wt-a\n");
         fs::write(&p, text).unwrap();
         record(&root, "0024", &two_conflicts(), "wt-a", T).unwrap();
-        assert_eq!(read_task(&root, "0024").unwrap().heartbeat, T);
+        assert_eq!(read_task(&root, "0024").unwrap().heartbeat, T, "{stage}");
         // The holder acting from a session (0030's stamp) is still the holder.
         resolve(
             &root,

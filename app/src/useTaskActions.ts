@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api, type Paused } from "./api";
 import { isStage, nextStage, oneAtATime, readFiles, stageLabel, stamp } from "./lib";
 import { isHuman } from "./human";
-import { trackMove } from "./paneData";
+import { releaseWords, trackMove } from "./paneData";
 import type { Task } from "./types";
 
 export type StageForm = "gate" | "back" | "block";
@@ -82,7 +82,7 @@ export function useTaskActions(task: Task, onChanged: () => void) {
     block: (kind: string, detail: string) =>
       submit(() => api.blockTask(task.queue, task.id, kind, detail, now()), kind === "tasks" ? "Blocked by those tasks: added to its depends." : "Blocked. It keeps its stage."),
     unblock: () => void stageRun(() => api.unblockTask(task.queue, task.id, now()), "Unblocked."),
-    release: () => void stageRun(() => api.reclaimTask(task.queue, task.id, now()), "Released: back in Ready."),
+    release: () => void stageRun(() => api.reclaimTask(task.queue, task.id, now()), releaseWords(task.stage).done),
     /** Pause (0045), with an optional why: true once the core took it. */
     pause: (why: string) => stageRun(() => api.pauseTask(task.queue, task.id, why, now()), (p) => pausedMsg(p, true)),
     resume: () => void stageRun(() => api.resumeTask(task.queue, task.id, now()), (p) => pausedMsg(p, false)),

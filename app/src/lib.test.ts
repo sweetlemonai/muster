@@ -81,6 +81,18 @@ describe("stages", () => {
     expect(heldByOther(task({ stage: "your-check", heldBy: "owner" }))).toBe("");
     expect(heldByOther(task({ stage: "building", claimedBy: "owner (session 7b5e8856)" }))).toBe("");
   });
+  it("holds a task in Shaping by its claim (0097), as the core's Task::holder", () => {
+    const shaping = task({ stage: "shaping", claimedBy: "shapour (main · session 1137d98f · cc-mg)" });
+    expect(holderOf(shaping)).toBe("shapour (main · session 1137d98f · cc-mg)");
+    expect(holder(shaping)).toBe("shapour");
+    expect(whoLine(shaping)).toBe("shapour · main · 1137d98f");
+    expect(holder(task({ stage: "shaping" }))).toBe("");
+    expect(holder(task({ stage: "shaping", heldBy: "qa" }))).toBe("");
+    // Not a claim the owner's pass waits on: the core lets the owner pass it on, and that releases it.
+    expect(heldByOther(shaping)).toBe("");
+    // Backlog still has no holder.
+    expect(holder(task({ stage: "backlog", claimedBy: "wt-a" }))).toBe("");
+  });
   it("runs one stage action at a time: a second click while one is in flight is dropped", async () => {
     const once = oneAtATime();
     let release = () => {};
@@ -277,6 +289,20 @@ describe("lease (the core's ops::reclaim rule)", () => {
     expect(leaseRunOut(task({ ...old, claimedBy: "owner", forWho: "human" }), now)).toBe(false);
     expect(leaseRunOut(task({ ...old, claimedBy: "owner" }), now)).toBe(true);
     expect(LEASE_SECS).toBe(12 * 3600);
+  });
+  it("runs out on a Shaping claim as on Building's (0097: reclaim takes both, and Shaping stays)", () => {
+    const now = at("2026-10-12 14:05");
+    const held = { stage: "shaping", claimedBy: "shapour (main · session 1137d98f · cc-mg)", modified: now };
+    expect(leaseRunOut(task({ ...held, heartbeat: "2026-10-12 02:04" }), now)).toBe(true);
+    expect(leaseRunOut(task({ ...held, heartbeat: "2026-10-12 02:05" }), now)).toBe(false);
+    expect(leaseRunOut(task({ ...held, heartbeat: "2026-10-12 12:05" }), now, 60)).toBe(true);
+    const old = { ...held, heartbeat: "2026-10-01 10:00" };
+    expect(leaseRunOut(task({ ...old, blocked: true, waitingOn: "owner" }), now)).toBe(false);
+    expect(leaseRunOut(task({ ...old, paused: "2026-10-02 10:00" }), now)).toBe(false);
+    expect(leaseRunOut(task({ ...old, forWho: "human" }), now)).toBe(false);
+    expect(leaseRunOut(task({ ...old, claimedBy: "" }), now)).toBe(false);
+    // Backlog and Ready hold no lease.
+    for (const stage of ["backlog", "ready"]) expect(leaseRunOut(task({ ...old, stage }), now), stage).toBe(false);
   });
   it("uses this machine's lease from Settings when given (0036)", () => {
     const now = at("2026-10-12 14:05");

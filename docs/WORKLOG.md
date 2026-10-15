@@ -4,6 +4,50 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Shaping is a claim, and held cards wear a holder ribbon (mu-97)
+**Did (Asghar_11, builder):** `muster shape` claims the note in `shaping.json` (`--peek` reads
+without taking; someone else's live claim is refused); `file` carries the claim to the Shaping task;
+`file`, `drop`, `release <note>` and `reclaim` let it go; Shaping claims count for `holder()`,
+`heartbeat`, `checkin`, `ping`, `check` and `reclaim` (stays in Shaping); `list`/`--json` show the
+shaper. App: `HolderRibbon.tsx` on cards in Shaping, Building and Testing and on held notes, in every
+mode, a fixed strip above the top row so a claim moves nothing. Core: `backlog.rs`, `ops.rs`,
+`cli.rs`, `queue.rs`, `ping.rs`, `layout.rs`, `help.rs`; docs: PROTOCOL, DESIGN, AS_BUILT, manual.
+**Decided:** no `--as` needed (shape claims as `me()`, like `claim`); the owner holds several notes,
+others one; note names resolve to the folder's own spelling (same inode), so case or NFD typing
+can't get past a claim; moving into Shaping other than by `file` clears a claim; the ribbon reserves
+a 17px strip above the top row rather than the top row's end (that wrapped key/kind/priority at
+170px columns).
+**Fixed (review):** a shaper's claim leaking onto the owner's human task via `set for human`; a
+case-variant note name bypassing a claim; the ribbon's name shrinking to nothing on narrow cards.
+**Fixed (review round 1, Asghar_16/18):** a Shaping lease not renewed by the shaper's acts or an
+unblock → one `queue::has_lease` (building|shaping) everywhere a hold renews; `checkin --handoff`
+in Shaping pointing at a `--takeover` that refused Shaping → takeover takes Shaping, and
+`claim <note> --takeover` takes a note's; the answer hook dropping a shaper's check-in request
+(`still_asked` was Building-only); `file`/`drop` briefly showing a claim on a missing note → the
+claim goes before the rename and comes back if it fails; the owner's shaped note wearing a
+neutral ribbon → You; the live dot squashed; "held by" missing from an owner-held card's spoken
+name; a note's ribbon over its rounded corner. Tests for each, plus shape/reclaim output and a
+too-big note never claimed.
+**Decided (round 1):** a note claim has no handoff check-in: its shaper hands off with `muster release`,
+else the successor waits 30 quiet minutes (as Building has no handoff without a check-in).
+**Fixed (review round 2 and QA, Asghar_21):** `claim <note>.md --takeover` exiting 1 (task_arg
+read the note as a task key) → exempt for `claim --takeover` as for `release`, tested through
+`main()`; resuming a paused Shaping task and a shaper's vision check not renewing the lease →
+`has_lease` in `pause.rs` and `vision.rs`; `hold_again` and the shaper's comment/edit/ask renewals
+untested → tests, each hermetic mutant now killed; the owner's note never saying quiet → "You ·
+quiet"; a false "couldn't be read" when `shaping.json` goes between lstat and open → nothing held.
+QA's AC4: names cut to "asg…" at 106px cards → the ribbon may run the strip's width (half beside the
+stage band), "shaping" gives way first at 100000× the name's rate (at 1000× WebKit's rounding still
+cut the name a letter) and its "·" stays on its own.
+**Verified:** bin/gate green; independent core and app reviews, findings fixed with tests; round 2
+ribbon widths measured in headless WebKit at 70-250px cards ("asghar_16", "shapour_3" whole from
+106px).
+**Open:** screenshots (AC4/AC5) and the owner's look (AC6) are Testing's; shaper instructions in
+`.claude/` should learn `--peek`; mu-90 overlaps ops.rs/cli.rs.
+**Rebased (Asghar_25)** onto 951ce03 (mu-103, mu-110): the shaping brief has both the Unknowns and
+the release lines, `cli.rs` takes `--send` and `--peek`, `file`'s help keeps the marker warning and
+the claim; manual 05 regenerated from `help.rs`.
+
 ## 2026-10-14 — mu-110 round 3: origin's branch kept until main is pushed, review with the worktree gone
 **Fixed (Gholi_23, builder, under gholi_15):** R6: recording a hand merge deleted origin's task
 branch though nothing pushed main → `drop_origin_copy` checked only tip equality → it's dropped now

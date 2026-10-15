@@ -8,7 +8,7 @@ import { isHuman } from "./human";
 import { isWork } from "./levels";
 import Links from "./Links";
 import { ownerOpen } from "./OwnerChecklist";
-import { IMAGE } from "./paneData";
+import { IMAGE, releaseWords } from "./paneData";
 import { ImageThumb, toggled } from "./StageContent";
 import TagEditor from "./Tags";
 import { Button, Segment, Segmented } from "./ui";
@@ -80,7 +80,8 @@ function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a: TaskAc
   const back = earlierStages(task.stage);
   const holder = heldByOther(task);
   const shapedOnly = !isWork(task);
-  // A claim nobody has heard from past the lease (this machine's, Settings 0036): the owner may give it back to Ready.
+  // A claim nobody has heard from past the lease (this machine's, Settings 0036): the owner may give
+  // it back to Ready, or in Shaping let go of it there (0097).
   const lease = useContext(Machine).leaseMinutes;
   const stale = !shapedOnly && leaseRunOut(task, nowSecs, lease);
   const showPass = pass !== null && !holder && (!shapedOnly || task.stage === "backlog" || task.stage === "shaping");
@@ -105,7 +106,7 @@ function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a: TaskAc
           variant={showPass ? "default" : "primary"}
           className={showPass ? "release" : undefined}
           disabled={a.busy}
-          title="Back to Ready, with the claim released and logged as reclaimed"
+          title={releaseWords(task.stage).title}
           onClick={a.release}
         >
           Release
@@ -124,7 +125,7 @@ function NextStep({ task, nowSecs, a }: { task: Task; nowSecs: number; a: TaskAc
       )}
       {stale && (
         <p className="meta small">
-          {claimant(task.claimedBy)} hasn't been heard from for {spanText(lease)}. Release puts it back in Ready, logged as reclaimed.
+          {claimant(task.claimedBy)} hasn't been heard from for {spanText(lease)}. {releaseWords(task.stage).does}
         </p>
       )}
       {showPass && task.blocked && <p className="meta small">{blockSentence(task) || "Blocked on something it doesn't name"}. Unblock it to pass it on.</p>}

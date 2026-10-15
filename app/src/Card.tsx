@@ -3,6 +3,7 @@ import { CardBand, cardClass, LiveDot } from "./CardLook";
 import CardStatus from "./CardStatus";
 import { estimateText } from "./fields";
 import { Hl, HlId } from "./FilterBar";
+import { CardHolderRibbon, cardRibbon, ribbonNames, ribbonStage } from "./HolderRibbon";
 import { isHuman } from "./human";
 import { ago } from "./lib";
 import { cardLines, useLook } from "./modes";
@@ -29,7 +30,9 @@ export default function Card(props: CardProps) {
 }
 
 /** The card itself. The owner's own task (0022) is hatched in the human gold and carries the You
- *  ribbon, in the same columns as the agents' tasks. Why it's blocked is 0024's one sentence (by
+ *  ribbon, in the same columns as the agents' tasks; a task someone holds in Shaping, Building or
+ *  Testing wears their ribbon (0097), and one the owner holds the You ribbon, in the same corner,
+ *  whose room the top row keeps where one can come. Why it's blocked is 0024's one sentence (by
  *  tasks too: an agent's task waiting on the owner's unfinished one says "After 0041");
  *  one waiting on the owner (Your check, an escalated question, blocked on you or by a permission)
  *  is a needs-you card. */
@@ -38,14 +41,16 @@ function CardButton({ t, now, multi, parent, onOpen, active, words }: CardProps)
   // The display mode (0038): every line, Standard's brief card, or Focus's title and status line.
   const lines = cardLines(useLook("card-lines"), active);
   const all = lines === "all";
+  const ribbon = cardRibbon(t);
   return (
-    <button className={cardClass(t, active)} onClick={onOpen}>
-      {isHuman(t) && <YouRibbon />}
+    <button className={`${cardClass(t, active)}${ribbonStage(t) ? " holdable" : ""}`} onClick={onOpen}>
+      {ribbon === "you" && (isHuman(t) ? <YouRibbon /> : <YouRibbon title="You hold it" spoken="held by" />)}
+      {ribbon === "holder" && <CardHolderRibbon t={t} now={now} />}
       <CardBand t={t} />
       <span className="card-top">
         {multi && <ProjectName name={t.queue} />}
         <TaskKey t={t}><HlId t={t} words={words} /></TaskKey>
-        <LiveDot t={t} />
+        {ribbon !== "holder" && <LiveDot t={t} />}
         {lines !== "status" && <span className={`kind ${t.kind}`}>{t.kind}</span>}
         {lines !== "status" && <span className={`pri pri-${priority}`} title={`Priority: ${priority}`}>{priority}</span>}
       </span>
@@ -59,7 +64,7 @@ function CardButton({ t, now, multi, parent, onOpen, active, words }: CardProps)
           {t.tags.map((g) => <span key={g} className="tag">#<Hl text={g} words={words} /></span>)}
         </span>
       )}
-      <CardStatus t={t} now={now} lines={lines} />
+      <CardStatus t={t} now={now} lines={lines} named={ribbonNames(t)} />
       <span className="card-bottom">
         <BlockWhy t={t} short />
         {t.waitingForOwner && <Badge variant="warn">needs you</Badge>}

@@ -132,10 +132,39 @@ describe("the card's who and progress lines", () => {
       expect(html, look).toContain("fix mu-59 first (sent back by the review)");
     }
   });
-  it("in Ready says nobody is on it yet, and Backlog, Shaping and Done say nothing", () => {
+  it("in Ready says nobody is on it yet, and Backlog, Done and an unheld Shaping say nothing", () => {
     expect(lines({ stage: "ready" })).toEqual([["card-who nobody", "nobody on it"]]);
     expect(lines({ stage: "ready", claimedBy: "wt-b" })).toEqual([["card-who", "wt-b"]]);
-    for (const stage of ["backlog", "shaping", "done"]) expect(lines({ stage, claimedBy: A, heldBy: A })).toEqual([]);
+    for (const stage of ["backlog", "done"]) expect(lines({ stage, claimedBy: A, heldBy: A })).toEqual([]);
+    expect(lines({ stage: "shaping", heldBy: A })).toEqual([]);
+  });
+  it("in Shaping, held (0097): who and the lease, as Building's claim says them", () => {
+    const shaping = { stage: "shaping", claimedBy: A, heartbeat: "2026-10-12 13:50", modified: NOW };
+    expect(lines(shaping)).toEqual([["card-who", "wt-a · wt-0030 · 7b5e8856"]]);
+    expect(lines({ ...shaping, heartbeat: "2026-10-12 01:00" })).toEqual([
+      ["card-who", "wt-a · wt-0030 · 7b5e8856"],
+      ["card-quiet", "quiet 12 h+"],
+    ]);
+    // Beside the ribbon that names the shaper, only the rest.
+    const html = renderToStaticMarkup(createElement(CardStatus, { t: task(shaping), now: NOW, named: true }));
+    expect(html).toBe('<span class="card-who">wt-0030 · 7b5e8856</span>');
+  });
+  it("beside a ribbon that names the holder (0097), keeps the rest of the who line and the flags", () => {
+    const named = (over: Partial<Task>, look: "all" | "brief" | "status" = "all") => {
+      const html = renderToStaticMarkup(createElement(CardStatus, { t: task(over), now: NOW, lines: look, named: true }));
+      return [...html.matchAll(/<span class="([^"]+)"[^>]*>([^<]*)<\/span>/g)].map((m) => [m[1], m[2]]);
+    };
+    expect(named({ stage: "building", claimedBy: A, stageSince: "2026-10-12 12:00", heartbeat: "2026-10-12 01:00" })).toEqual([
+      ["card-who", "wt-0030 · 7b5e8856 · started 2 h ago"],
+      ["card-quiet", "quiet 12 h+ · no check-in for 13 h"],
+    ]);
+    expect(named({ stage: "testing", heldBy: "owner", stageSince: "2026-10-12 13:00" }, "status")).toEqual([["card-who", "started 1 h ago"]]);
+    // Nothing left to say: no line, never "nobody on it".
+    expect(named({ stage: "testing", heldBy: "qa" })).toEqual([]);
+    expect(named({ stage: "testing", heldBy: A, builtBy: A })).toEqual([
+      ["card-who", "wt-0030 · 7b5e8856"],
+      ["card-tester", "needs a tester"],
+    ]);
   });
   it("adds open vision conflicts (0029) as one more line, at any stage, and nothing without them", () => {
     expect(lines({ stage: "shaping", visionOpen: 2, visionIds: ["V1", "V2"] })).toEqual([["card-vision", "⚠ 2 vision"]]);

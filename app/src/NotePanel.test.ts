@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import NotePanel, { copyNow } from "./NotePanel";
 import type { Note } from "./types";
 
-const note = (over: Partial<Note>): Note => ({ queue: "muster", file: "2026-10-12-1405-x.md", title: "Board flickers", text: "Board flickers\n\n**on resize**", truncated: false, added: 0, ...over });
+const note = (over: Partial<Note>): Note => ({ queue: "muster", file: "2026-10-12-1405-x.md", title: "Board flickers", text: "Board flickers\n\n**on resize**", truncated: false, added: 0, heldBy: "", heldSince: "", heartbeat: "", ...over });
 const pane = (over: Partial<Note>) =>
   renderToStaticMarkup(createElement(NotePanel, { note: note(over), now: 3600, onClose: () => {}, onChanged: () => {}, onFiled: () => {} }));
 

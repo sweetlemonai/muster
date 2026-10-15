@@ -31,8 +31,8 @@ pub struct Pinged {
     pub path: String,
 }
 
-/// The session a task's holder can be reached at, or why it can't: only a task in Building or
-/// Testing has someone working on it, the owner isn't reached through a mailbox, and only a
+/// The session a task's holder can be reached at, or why it can't: only a task in Shaping (its
+/// shaper's, 0097), Building or Testing has someone working on it, the owner isn't reached through a mailbox, and only a
 /// holder whose stamp names a session can be.
 pub fn reach(t: &queue::Task) -> Result<String, String> {
     reach_mailbox(t).map(|(sid, _)| sid)
@@ -41,9 +41,9 @@ pub fn reach(t: &queue::Task) -> Result<String, String> {
 /// `reach`, with the holder's mailbox under `mail/`: `<session8>`, or `<session8>/<agent8>` for a
 /// teammate (0090), whose stamp names its agent.
 pub fn reach_mailbox(t: &queue::Task) -> Result<(String, String), String> {
-    if t.stage != "building" && t.stage != "testing" {
+    if !matches!(t.stage.as_str(), "shaping" | "building" | "testing") {
         return Err(format!(
-            "{} is in {}; only a task in Building or Testing has a session working on it",
+            "{} is in {}; only a task in Shaping, Building or Testing has a session working on it",
             t.id,
             queue::stage_label(&t.stage)
         ));
@@ -165,8 +165,8 @@ pub(crate) fn rel(root: &Path, path: &Path) -> String {
 /// Ask the session holding task `id` in Building for a check-in: a request in its mailbox
 /// (`mail/<session8>/<id>-checkin.md`, one per task: asking again before it's delivered replaces
 /// it, so it arrives once) and `<who>: asked for a check-in (session <id>)` in the task's log,
-/// which the card shows as "asked 2 min ago" until a check-in comes. Only in Building, where
-/// `muster checkin` works.
+/// which the card shows as "asked 2 min ago" until a check-in comes. Only in Building and Shaping
+/// (0097), where `muster checkin` works.
 pub fn ask_checkin(root: &Path, id: &str, who: &str, stamp: &str) -> Result<Pinged, String> {
     let who = actor(who)?;
     with_lock(root, || {
@@ -397,6 +397,28 @@ mod tests {
     }
 
     #[test]
+    fn a_shaper_is_reached_for_a_check_in_and_a_message() {
+        // 0097: a task held in Shaping has its shaper's session working on it.
+        let d = queue();
+        put(d.path(), "0007", "shaping", A, "");
+        let p = ask_checkin(d.path(), "0007", "owner", T).unwrap();
+        assert_eq!(p.session, "7b5e8856");
+        assert!(mail(d.path(), "0007-checkin.md").contains("muster checkin 0007"));
+        assert_eq!(
+            message(d.path(), "0007", "the owner likes it", "owner", T)
+                .unwrap()
+                .session,
+            "7b5e8856"
+        );
+        // Nobody shaping it: nobody to reach.
+        put(d.path(), "0008", "shaping", "", "");
+        assert_eq!(
+            ask_checkin(d.path(), "0008", "owner", T).unwrap_err(),
+            "nobody holds 0008"
+        );
+    }
+
+    #[test]
     fn only_a_session_working_on_it_is_reached() {
         let d = queue();
         put(d.path(), "0001", "ready", "", "");
@@ -407,7 +429,7 @@ mod tests {
         put(d.path(), "0006", "testing", A, "");
         let err = |id: &str| ask_checkin(d.path(), id, "owner", T).unwrap_err();
         assert!(
-            err("0001").contains("Ready; only a task in Building or Testing"),
+            err("0001").contains("Ready; only a task in Shaping, Building or Testing"),
             "{}",
             err("0001")
         );

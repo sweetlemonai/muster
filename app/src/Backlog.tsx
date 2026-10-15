@@ -1,6 +1,7 @@
 import { useContext, useState } from "react";
 import { api } from "./api";
 import { Hl } from "./FilterBar";
+import { NoteHolderRibbon } from "./HolderRibbon";
 import { ago, oneAtATime, queueTotal, stamp } from "./lib";
 import type { Note, Task } from "./types";
 import ProjectName from "./ProjectName";
@@ -46,10 +47,12 @@ export function fileDraft(n: Pick<Note, "title" | "text">) {
 }
 
 /** A note on the board: quieter than a task's card (no id, no stage colour), with its title, "note"
- *  and how long ago it was added. The search's `words` are marked in the title, as on task cards. */
+ *  and how long ago it was added. The search's `words` are marked in the title, as on task cards.
+ *  A note a session is shaping says who in its corner (0097), whose room the title always keeps. */
 export function NoteCard({ n, now, multi, active, onOpen, words }: { n: Note; now: number; multi: boolean; active: boolean; onOpen: () => void; words: string[] }) {
   return (
     <button className={`note-card${active ? " active" : ""}`} onClick={onOpen} title={n.file}>
+      <NoteHolderRibbon n={n} now={now} />
       <span className="title">{n.title.trim() ? <Hl text={noteTitle(n)} words={words} /> : noteTitle(n)}</span>
       <span className="note-meta">
         {multi && <ProjectName name={n.queue} />}

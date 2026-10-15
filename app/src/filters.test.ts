@@ -159,7 +159,7 @@ describe("applyQuery", () => {
 });
 
 describe("notesFor", () => {
-  const note = (title: string, text = title): Note => ({ queue: "q", file: `${title}.md`, title, text, truncated: false, added: 0 });
+  const note = (title: string, text = title): Note => ({ queue: "q", file: `${title}.md`, title, text, truncated: false, added: 0, heldBy: "", heldSince: "", heartbeat: "" });
   const notes = [note("Flicker on resize", "Flicker on resize\nthe columns jump"), note("Export CSV")];
   const files = (over: Partial<Query>) => notesFor(notes, q(over)).map((n) => n.file);
   it("keeps every note with nothing set", () => {

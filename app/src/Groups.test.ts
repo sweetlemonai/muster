@@ -101,7 +101,7 @@ describe("grouped board", () => {
 });
 
 describe("the grouped board's Backlog band (task 0046)", () => {
-  const note = (over: Partial<Note>): Note => ({ queue: "muster", file: "n.md", title: "A note", text: "A note", truncated: false, added: 0, ...over });
+  const note = (over: Partial<Note>): Note => ({ queue: "muster", file: "n.md", title: "A note", text: "A note", truncated: false, added: 0, heldBy: "", heldSince: "", heartbeat: "", ...over });
   // Two backlog tasks: one with no feature or goal (the band's), one under feature 0002 (its band's).
   const items = [...all, task({ id: "0008", title: "Loose idea", stage: "backlog" }), task({ id: "0009", title: "Featured idea", parent: "0002", stage: "backlog" }), task({ id: "0010", title: "Older idea", stage: "backlog", priority: "high" })];
   const notes = backlogNotes([note({ file: "old.md", title: "Old note", added: 10 }), note({ file: "new.md", title: "Board flickers", added: 30 })], "all");

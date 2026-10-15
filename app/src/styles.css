@@ -134,7 +134,7 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 /* clip, not hidden: a scroll container's flex min-size is 0, so a full column would squash its
    cards instead of scrolling. flex: none keeps every card its own height either way. */
-.card { display: flex; flex-direction: column; gap: 6px; text-align: left; border-radius: var(--radius); padding: 9px 10px; overflow: clip; flex: none; }
+.card { display: flex; flex-direction: column; gap: 6px; text-align: left; border-radius: var(--radius); padding: 9px 10px; overflow: clip; flex: none; position: relative; }
 /* Card looks (0026). The card's colour: its stage (from the column), or its priority, and blocked
    or needs you on top. --card-fill is the colour as a fill, --card-c the same colour as an edge
    (3:1 on the card, from themes.ts edgeColour). Each look below only sets variables. */
@@ -213,13 +213,39 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
    checks; between them the card is as its look and state make it. The ribbon is the
    card's own element in its top-right corner, with the word so colour isn't the only cue. */
 .card.human { position: relative; background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--st-human) var(--human-hatch), var(--card-bg, var(--panel))) 0 5px, transparent 5px 11px); }
-.card.human .card-top { padding-right: 34px; }
+.card.human .card-top { padding-inline-end: 34px; }
 /* The words a card colours with the accent or the bad red sit just under 4.5:1 on a gold stripe,
    so on the owner's own card they take the --human-* shades (themes.ts wordOnStripes, tested for
    every theme, accent and wash). The stripes and the Tint wash stay as they are. */
 .card.human { --accent-text: var(--human-accent-text); --bad: var(--human-bad); }
 .you-ribbon { background: var(--st-human); color: var(--on-status); border: 1px solid var(--edge-human, var(--st-human)); font-size: 9.5px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; line-height: 1.4; padding: 0 6px; border-radius: 4px; white-space: nowrap; flex: none; }
-.card .you-ribbon { position: absolute; top: 0; right: 0; z-index: 1; border-radius: 0 0 0 6px; border-top: none; border-right: none; }
+/* Both ribbons sit in the card's corner on the side the text ends (top-left right to left), in the
+   card itself, not over its content: a card that can wear the holder ribbon (.card.holdable) and
+   every note keep a strip the ribbon's height above their top row, held or not. */
+.card .you-ribbon, .card .holder-ribbon, .note-card .you-ribbon, .note-card .holder-ribbon { position: absolute; inset-block-start: 0; inset-inline-end: 0; z-index: 1; border-radius: 0; border-end-start-radius: 6px; border-block-start: none; border-inline-end: none; }
+/* The holder ribbon (0097): who holds the task, or is shaping the note. An identity, not a state:
+   neutral tokens only, never a stage colour or the You gold (themes.test.ts), with the You
+   ribbon's size and weight but the name as written. It has the strip above the top row to itself,
+   so it may run nearly the card's width, clipped there (half of it where the stage band shares
+   the strip): "shaping" gives way first, its "·" stays, then the name ends in … with about four
+   characters kept; the whole label is in the tooltip. A lease run out turns the words the
+   attention colour, with "quiet", which never shrinks. */
+.holder-ribbon { display: inline-flex; align-items: center; gap: 4px; max-width: calc(100% - 12px); overflow: hidden; background: var(--panel); color: var(--text); border: 1px solid var(--line); font-size: 9.5px; font-weight: 800; line-height: 1.4; padding: 0 6px; border-radius: 4px; white-space: nowrap; }
+.holder-ribbon.quiet { color: var(--warn); }
+.holder-name { flex: 1 1 auto; min-width: 4ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.holder-prefix { flex: 0 100000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+:root[data-cards="top"] .board .card .holder-ribbon, .look-top .card .holder-ribbon { max-width: 50%; }
+.holder-quiet { flex: none; }
+.holder-sep { flex: none; }
+/* Nor does the live dot: beside a long name it stays round. */
+.holder-ribbon .live-dot { flex: none; }
+/* A card clips its ribbon to its rounded corner (overflow: clip); a note doesn't, so the ribbon
+   rounds that corner itself, just inside the note's 1px dashed border. */
+.note-card .you-ribbon, .note-card .holder-ribbon { border-start-end-radius: calc(var(--radius) - 1px); }
+/* The ribbon is 9.5px × 1.4 plus its 1px border, about 14.3px: the strip is 17px from the card's
+   edge, and the Top bar look's band still starts at the edge, under the ribbon. */
+.card.holdable { padding-block-start: 17px; }
+.card.holdable .card-band { margin-block-start: -17px; }
 
 /* In the filter bar's arrange slot: Who pushes itself right, and Group by follows it. */
 .for-filter { display: inline-flex; gap: 4px; align-items: center; margin-left: auto; }
@@ -468,7 +494,7 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .look-preview .card-top { font-size: 10px; color: var(--text); flex-wrap: nowrap; white-space: nowrap; }
 .look-preview .card-top .id { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .look-preview .you-ribbon { font-size: 7.5px; padding: 0 4px; }
-.look-preview .card.human .card-top { padding-right: 24px; }
+.look-preview .card.human .card-top { padding-inline-end: 24px; }
 .look-colour { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
 .accents { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .accent { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 3px 12px 3px 6px; }
@@ -682,7 +708,9 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .quick-add input:focus { outline: 2px solid var(--focus); outline-offset: 0; border-color: var(--accent); }
 .quick-add-to { display: flex; flex-wrap: wrap; gap: 2px; font-size: 11px; }
 .quick-add-to .ui-pill { padding: 1px 8px; }
-.note-card { display: flex; flex-direction: column; gap: 5px; flex: none; text-align: left; background: transparent; border: 1px dashed var(--line); border-radius: var(--radius); padding: 7px 10px; color: var(--text); }
+/* Every note keeps a strip the holder ribbon's height above its title (0097), held or not, so the
+   title runs full width and a shaper taking it moves nothing. */
+.note-card { display: flex; flex-direction: column; gap: 5px; flex: none; text-align: left; background: transparent; border: 1px dashed var(--line); border-radius: var(--radius); padding: 16px 10px 7px; color: var(--text); position: relative; }
 .note-card:hover { border-color: var(--accent); }
 .note-card.active { outline: 2px solid var(--accent); outline-offset: 2px; }
 .note-card .title { font-weight: 400; overflow-wrap: anywhere; }

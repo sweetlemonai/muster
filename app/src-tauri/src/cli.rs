@@ -45,6 +45,8 @@ struct Args {
     handoff: bool,
     /// `clarify --send` (mu-103): escalate the batch to the owner.
     send: bool,
+    /// `shape --peek` (0097): the brief only, the note not claimed.
+    peek: bool,
 }
 
 /// Options and positionals; after `--`, everything is positional (text that starts with `--`).
@@ -70,6 +72,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         takeover: false,
         handoff: false,
         send: false,
+        peek: false,
     };
     let mut it = argv.iter();
     let mut rest = false;
@@ -100,6 +103,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--takeover" => a.takeover = true,
             "--handoff" => a.handoff = true,
             "--send" => a.send = true,
+            "--peek" => a.peek = true,
             "--queue" | "--as" | "--type" | "--priority" | "--body" | "--status" | "--on"
             | "--tags" | "--tag" | "--time" | "--test-time" | "--tokens" | "--stage" | "--gate"
             | "--commit" | "--to" | "--from" | "--after" | "--session" | "--level" | "--parent"
@@ -298,11 +302,12 @@ const TARGETED: [&str; 17] = [
 ];
 
 /// Is this command checked like a claim (`check_target`)? The TARGETED ones, `vision` when it
-/// writes (`--record`, `--resolve`; its brief only reads), `review` when it writes (0027) and
-/// `lessons accept|reject`.
+/// writes (`--record`, `--resolve`; its brief only reads), `review` when it writes (0027),
+/// `lessons accept|reject`, and `shape` unless `--peek` (0097: it claims the note).
 fn targeted(cmd: &str, a: &Args) -> bool {
     let writes = |keys: &[&str]| keys.iter().any(|k| a.flags.contains_key(*k));
     TARGETED.contains(&cmd)
+        || (cmd == "shape" && !a.peek)
         || (cmd == "vision" && writes(&["record", "resolve"]))
         || (cmd == "review" && writes(&["record", "fixed", "dispute", "settle"]))
         || (cmd == "lessons" && a.pos.len() > 1)
@@ -397,10 +402,18 @@ const TAKES_A_TASK: [&str; 28] = [
     "resume",
 ];
 
-/// Where the task is in `a.pos` for this command, when it takes one and was given it.
+/// Where the task is in `a.pos` for this command, when it takes one and was given it. `release`
+/// and `claim --takeover` take a backlog note's file name too (0097), which isn't a task.
 fn task_arg(cmd: &str, a: &Args) -> Option<usize> {
     let takes = TAKES_A_TASK.contains(&cmd) && !(cmd == "vision" && a.all);
-    (takes && a.pos.len() > 1).then_some(1)
+    let note = (cmd == "release" || (cmd == "claim" && a.takeover))
+        && a.pos.get(1).is_some_and(|p| names_a_note(p));
+    (takes && !note && a.pos.len() > 1).then_some(1)
+}
+
+/// A `.md` file name (any case): what `release` reads as a backlog note rather than a task.
+fn names_a_note(arg: &str) -> bool {
+    arg.to_ascii_lowercase().ends_with(".md")
 }
 
 /// The queue a key names (0033): the one `--queue` names, refused unless it's that project's;
@@ -478,6 +491,67 @@ fn claimed_message(root: &Path, prefix: &str, id: &str, path: &str) -> String {
         root.display(),
         stage_message(root, prefix, id, path)
     )
+}
+
+/// What `muster shape` says of the note's claim (0097), before the brief.
+fn claim_line(c: &backlog::Claim) -> String {
+    let ends = format!(
+        "muster file or drop ends it; muster release {} lets it go",
+        backlog::sh(&c.note)
+    );
+    if c.renewed {
+        format!(
+            "you're shaping {} (since {}); heartbeat {}. {ends}",
+            c.note, c.hold.at, c.hold.heartbeat
+        )
+    } else if c.took_over.is_empty() {
+        format!("you're shaping {} now. {ends}", c.note)
+    } else {
+        format!(
+            "took {} over from {} (no heartbeat for {}); you're shaping it now. {ends}",
+            c.note, c.took_over, c.quiet
+        )
+    }
+}
+
+/// What `muster reclaim` says, a line per claim released (tasks, then backlog notes, 0097), or
+/// that there was nothing to release, every claim heard from `within`. Failures go to stderr.
+fn reclaim_text(r: &ops::Reclaimed, within: &str, key: impl Fn(&str) -> String) -> String {
+    let mut out = String::new();
+    for x in &r.released {
+        let now = if x.stage == "shaping" {
+            "unheld, still in Shaping"
+        } else {
+            "back in Ready"
+        };
+        out += &format!(
+            "released {} from {} (no heartbeat for {}): {now} ({})\n",
+            key(&x.id),
+            x.holder,
+            x.quiet,
+            x.path
+        );
+    }
+    for n in &r.notes {
+        out += &format!(
+            "released backlog note {} from {} (no heartbeat for {}): nobody is shaping it now\n",
+            n.note, n.holder, n.quiet
+        );
+    }
+    if r.released.is_empty() && r.failed.is_empty() && r.notes.is_empty() {
+        out += &format!("nothing to release: every claim in Shaping and Building, and on a backlog note, was heard from within {within}\n");
+    }
+    out
+}
+
+/// What `muster shape --json` prints: the brief, with the note's claim under `claim` unless it
+/// was only peeked at (0097).
+fn shape_json(b: &backlog::Brief, claim: Option<&backlog::Claim>) -> serde_json::Value {
+    let mut v = serde_json::json!(b);
+    if let Some(c) = claim {
+        v["claim"] = serde_json::json!(c);
+    }
+    v
 }
 
 /// `filed mu-31 in muster (Shaping)`: what `muster file` made, and where.
@@ -852,10 +926,27 @@ fn list_json(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> serde_json::Va
     serde_json::json!({ "tasks": tasks, "backlog": notes })
 }
 
-/// `muster list` as text: the backlog notes first (file name and title), then a heading per
-/// stage in STAGES order, then one line per task, by its key (0033). In two parts, cut after Your
-/// check, so the over-limit line (0050), on stderr, shows under it in a terminal.
-fn list_parts(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> (String, String) {
+/// A held note's part of its `muster list` line (0097): `  · shaping: Shapour, 12 min`, the
+/// holder by label and how long since they took it at `stamp`; "" when nobody holds it.
+fn shaping_text(n: &backlog::Note, stamp: &str) -> String {
+    if n.held_by.is_empty() {
+        return String::new();
+    }
+    let who = session::split(&n.held_by).0;
+    match (ops::stamp_minutes(&n.held_since), ops::stamp_minutes(stamp)) {
+        (Some(at), Some(now)) => format!(
+            "  · shaping: {who}, {}",
+            ops::quiet_text(u64::try_from(now - at).unwrap_or(0))
+        ),
+        _ => format!("  · shaping: {who}"),
+    }
+}
+
+/// `muster list` as text: the backlog notes first (file name and title, and who is shaping it
+/// for how long at `stamp`, 0097), then a heading per stage in STAGES order, then one line per
+/// task, by its key (0033). In two parts, cut after Your check, so the over-limit line (0050), on
+/// stderr, shows under it in a terminal.
+fn list_parts(notes: &[&backlog::Note], tasks: &[&queue::Task], stamp: &str) -> (String, String) {
     let mut head = String::new();
     let mut tail = String::new();
     let mut out = &mut head;
@@ -869,7 +960,11 @@ fn list_parts(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> (String, Stri
             } else {
                 &n.title
             };
-            out.push_str(&format!("  {}  {title}\n", n.file));
+            out.push_str(&format!(
+                "  {}  {title}{}\n",
+                n.file,
+                shaping_text(n, stamp)
+            ));
         }
     }
     for st in ops::STAGES {
@@ -1759,7 +1854,7 @@ fn run_on(
                     eprintln!("{l}");
                 }
             } else {
-                let (head, tail) = list_parts(&notes, &tasks);
+                let (head, tail) = list_parts(&notes, &tasks, stamp);
                 print!("{head}");
                 if let Some(l) = over {
                     eprintln!("{l}");
@@ -2044,7 +2139,15 @@ fn run_on(
             Ok(0)
         }
         "claim" if a.takeover => {
-            let id = need(a, 1, "a task id")?;
+            let id = need(a, 1, "a task id, or a backlog note's file name")?;
+            if names_a_note(id) {
+                let t = backlog::takeover_note(root, id, &me(), stamp)?;
+                println!(
+                    "took {} over from {} ({}); you're shaping it now, heartbeat {stamp}",
+                    t.note, t.from, t.why
+                );
+                return Ok(0);
+            }
             let t = ops::takeover_task(root, id, &me(), stamp, queue::now_secs())?;
             println!(
                 "{}: took over the claim from {} ({}); heartbeat {stamp} ({})",
@@ -2101,7 +2204,15 @@ fn run_on(
         }
         "ready" => ready_cmd(a, root, prefix),
         "release" => {
-            let id = need(a, 1, "a task id")?;
+            let id = need(a, 1, "a task id, or a backlog note's file name")?;
+            if names_a_note(id) {
+                let h = backlog::release_note(root, id, &me())?;
+                println!(
+                    "released {id}: {} isn't shaping it any more",
+                    session::split(&h.by).0
+                );
+                return Ok(0);
+            }
             if !a.clean {
                 return Err(format!(
                     "release takes --clean: it gives {} back to Ready and removes its worktree and branch (to send it back and keep them: muster return) (see `muster help`)",
@@ -2160,23 +2271,12 @@ fn run_on(
             if a.json {
                 print_json(&r)?;
             } else {
-                for x in &r.released {
-                    println!(
-                        "released {} from {} (no heartbeat for {}): back in Ready ({})",
-                        key(&x.id),
-                        x.holder,
-                        x.quiet,
-                        x.path
-                    );
-                }
-                if r.released.is_empty() && r.failed.is_empty() {
-                    let within = if after.trim().is_empty() {
-                        settings::span_text(lease)
-                    } else {
-                        after.to_string()
-                    };
-                    println!("nothing to release: every claim in Building was heard from within {within}");
-                }
+                let within = if after.trim().is_empty() {
+                    settings::span_text(lease)
+                } else {
+                    after.to_string()
+                };
+                print!("{}", reclaim_text(&r, &within, key));
             }
             for f in &r.failed {
                 eprintln!("muster: couldn't release {f}");
@@ -2292,10 +2392,21 @@ fn run_on(
             Ok(0)
         }
         "shape" => {
-            let b = backlog::shape(root, need(a, 1, "a backlog note's file name")?)?;
-            if a.json {
-                print_json(&b)?;
+            let note = need(a, 1, "a backlog note's file name")?;
+            // The brief is read first, so a note it can't read is never claimed (0097).
+            let b = backlog::shape(root, note)?;
+            let claim = if a.peek {
+                None
             } else {
+                let lease = machine_settings(env).lease_minutes;
+                Some(backlog::claim_note(root, note, &me(), stamp, lease)?)
+            };
+            if a.json {
+                print_json(&shape_json(&b, claim.as_ref()))?;
+            } else {
+                if let Some(c) = &claim {
+                    println!("{}", claim_line(c));
+                }
                 print!("{}", backlog::brief_text(&b));
             }
             Ok(0)
@@ -2306,7 +2417,8 @@ fn run_on(
             let body = body_arg(a)?
                 .ok_or("file needs --body <text>|- with the shaped task (see `muster help`)")?;
             let new = new_task(a, &a.pos[2..].join(" "), body);
-            let f = backlog::file_note(root, note, &new, &me(), stamp)?;
+            let lease = machine_settings(env).lease_minutes;
+            let f = backlog::file_note(root, note, &new, &me(), stamp, lease)?;
             if a.json {
                 print_json(&with_key(serde_json::json!(f), key(&f.id)))?;
             } else {
@@ -2325,7 +2437,8 @@ fn run_on(
             let note = need(a, 1, "a backlog note's file name")?;
             need(a, 2, "why it's dropped")?;
             let why = a.pos[2..].join(" ").replace("\\n", " ");
-            let p = backlog::drop_note(root, note, &why, &me(), stamp)?;
+            let lease = machine_settings(env).lease_minutes;
+            let p = backlog::drop_note(root, note, &why, &me(), stamp, lease)?;
             println!("dropped {note} ({p})");
             Ok(0)
         }
@@ -3025,7 +3138,7 @@ mod tests {
 
     /// `muster list` as text, whole.
     fn list_text(notes: &[&backlog::Note], tasks: &[&queue::Task]) -> String {
-        let (head, tail) = list_parts(notes, tasks);
+        let (head, tail) = list_parts(notes, tasks, "2026-10-14 14:14");
         head + &tail
     }
 
@@ -3180,13 +3293,13 @@ mod tests {
         // list cuts its text after Your check, where the line goes.
         let s = tasks_of(d.path());
         let all = list_filter(&s.tasks, &lq(None, None, None));
-        let (head, tail) = list_parts(&[], &all);
+        let (head, tail) = list_parts(&[], &all, "2026-10-14 14:14");
         assert!(head.contains("Your check (9)\n"), "{head}");
         assert!(!head.contains("Done ("), "{head}");
         assert!(tail.starts_with("Done (1)\n"), "{tail}");
         // Without Done, everything is above the line.
         let open: Vec<_> = all.iter().copied().filter(|t| t.stage != "done").collect();
-        assert_eq!(list_parts(&[], &open).1, "");
+        assert_eq!(list_parts(&[], &open, "2026-10-14 14:14").1, "");
     }
 
     #[test]
@@ -4671,6 +4784,282 @@ mod tests {
     }
 
     #[test]
+    fn shape_says_whether_the_claim_is_new_renewed_or_taken_over() {
+        let hold = backlog::Hold {
+            by: "shapour".into(),
+            at: "2026-10-12 09:00".into(),
+            heartbeat: "2026-10-12 14:05".into(),
+        };
+        let mut c = backlog::Claim {
+            note: "a b.md".into(),
+            hold,
+            renewed: false,
+            took_over: String::new(),
+            quiet: String::new(),
+        };
+        let ends = "muster file or drop ends it; muster release 'a b.md' lets it go";
+        assert_eq!(claim_line(&c), format!("you're shaping a b.md now. {ends}"));
+        c.took_over = "wt-b".into();
+        c.quiet = "13 h".into();
+        assert_eq!(
+            claim_line(&c),
+            format!(
+                "took a b.md over from wt-b (no heartbeat for 13 h); you're shaping it now. {ends}"
+            )
+        );
+        c.renewed = true;
+        assert_eq!(
+            claim_line(&c),
+            format!("you're shaping a b.md (since 2026-10-12 09:00); heartbeat 2026-10-12 14:05. {ends}")
+        );
+        // --json: the brief, with the claim under `claim` unless peeked.
+        let d = v2_queue();
+        std::fs::write(d.path().join("inbox/a b.md"), "An idea").unwrap();
+        let b = backlog::shape(d.path(), "a b.md").unwrap();
+        let v = shape_json(&b, Some(&c));
+        assert_eq!(v["claim"]["note"], "a b.md");
+        assert_eq!(v["claim"]["renewed"], true);
+        assert_eq!(v["claim"]["hold"]["by"], "shapour");
+        assert_eq!(v["note"], serde_json::json!(b)["note"]);
+        assert!(shape_json(&b, None).get("claim").is_none());
+    }
+
+    #[test]
+    fn reclaim_says_each_task_and_note_it_released_or_that_nothing_was() {
+        let key = |id: &str| format!("mu-{}", id.trim_start_matches('0'));
+        let mut r = ops::Reclaimed::default();
+        assert_eq!(
+            reclaim_text(&r, "12 h", key),
+            "nothing to release: every claim in Shaping and Building, and on a backlog note, was heard from within 12 h\n"
+        );
+        // A note alone is something released.
+        r.notes.push(backlog::ReleasedNote {
+            note: "a.md".into(),
+            holder: "shapour".into(),
+            quiet: "13 h".into(),
+        });
+        assert_eq!(
+            reclaim_text(&r, "12 h", key),
+            "released backlog note a.md from shapour (no heartbeat for 13 h): nobody is shaping it now\n"
+        );
+        r.released = vec![
+            ops::Released {
+                id: "0007".into(),
+                holder: "wt-a".into(),
+                quiet: "14 h".into(),
+                path: "todo/0007-t.md".into(),
+                stage: "shaping".into(),
+            },
+            ops::Released {
+                id: "0008".into(),
+                holder: "wt-b".into(),
+                quiet: "15 h".into(),
+                path: "todo/0008-t.md".into(),
+                stage: "ready".into(),
+            },
+        ];
+        assert_eq!(
+            reclaim_text(&r, "12 h", key),
+            "released mu-7 from wt-a (no heartbeat for 14 h): unheld, still in Shaping (todo/0007-t.md)\n\
+             released mu-8 from wt-b (no heartbeat for 15 h): back in Ready (todo/0008-t.md)\n\
+             released backlog note a.md from shapour (no heartbeat for 13 h): nobody is shaping it now\n"
+        );
+        // Only failures: no "nothing to release" (they're on stderr).
+        let failed = ops::Reclaimed {
+            failed: vec!["0009: no".into()],
+            ..Default::default()
+        };
+        assert_eq!(reclaim_text(&failed, "12 h", key), "");
+    }
+
+    #[test]
+    fn a_note_too_big_to_shape_is_never_claimed() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        std::fs::write(d.path().join("inbox/huge.md"), vec![b'a'; 1024 * 1024 + 1]).unwrap();
+        std::fs::write(d.path().join("inbox/idea.md"), "An idea").unwrap();
+        let shape = |note: &str| main(&sv(&["shape", "--queue", &q, "--as", "wt-a", note]));
+        assert_eq!(shape("huge.md"), 1);
+        assert!(!d.path().join("shaping.json").exists(), "nothing claimed");
+        // So the same session may shape another note.
+        assert_eq!(shape("idea.md"), 0);
+        let s = tasks_of(d.path());
+        let held: Vec<_> = s
+            .backlog
+            .iter()
+            .map(|n| (n.file.as_str(), n.held_by.as_str()))
+            .collect();
+        assert!(held.contains(&("idea.md", "wt-a")), "{held:?}");
+        let holds = std::fs::read_to_string(d.path().join("shaping.json")).unwrap();
+        assert!(!holds.contains("huge.md"), "{holds}");
+    }
+
+    #[test]
+    fn shape_claims_peek_reads_and_release_lets_go_with_their_exit_codes() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        std::fs::write(d.path().join("inbox/idea.md"), "An idea").unwrap();
+        std::fs::write(d.path().join("inbox/other.md"), "Another").unwrap();
+        let argv = |who: &str, args: &[&str]| {
+            let mut v = sv(&args[..1]);
+            v.extend(sv(&["--queue", &q, "--as", who]));
+            v.extend(sv(&args[1..]));
+            v
+        };
+        let code = |who: &str, args: &[&str]| main(&argv(who, args));
+        let held = |file: &str| {
+            let s = tasks_of(d.path());
+            let n = s.backlog.iter().find(|n| n.file == file).unwrap();
+            n.held_by.clone()
+        };
+        // --peek prints the brief and writes nothing.
+        let before = files_under(d.path());
+        assert_eq!(code("wt-a", &["shape", "idea.md", "--peek"]), 0);
+        assert_eq!(code("wt-a", &["shape", "idea.md", "--peek", "--json"]), 0);
+        assert_eq!(files_under(d.path()), before, "peek writes nothing");
+        // Without it, shape claims the note; again by the holder renews it.
+        assert_eq!(code("wt-a", &["shape", "idea.md"]), 0);
+        assert_eq!(held("idea.md"), "wt-a");
+        assert_eq!(code("wt-a", &["shape", "idea.md", "--json"]), 0);
+        // Someone else is refused, told who and since when; they may peek.
+        let e = run(&argv("wt-b", &["shape", "idea.md"])).unwrap_err();
+        assert!(
+            e.starts_with("wt-a is shaping it (since ") && e.ends_with("); --peek to read it"),
+            "{e}"
+        );
+        assert_eq!(code("wt-b", &["shape", "idea.md"]), 1);
+        assert_eq!(code("wt-b", &["shape", "idea.md", "--peek"]), 0);
+        // One note at a time.
+        let e = run(&argv("wt-a", &["shape", "other.md"])).unwrap_err();
+        assert!(e.contains("you're shaping idea.md already"), "{e}");
+        // release <note>: the holder or the owner, never someone else.
+        assert_eq!(code("wt-b", &["release", "idea.md"]), 1);
+        assert_eq!(code("wt-a", &["release", "idea.md"]), 0);
+        assert_eq!(held("idea.md"), "");
+        assert_eq!(code("wt-a", &["release", "idea.md"]), 1, "nothing held");
+        assert_eq!(code("wt-a", &["release"]), 2);
+        assert_eq!(code("wt-b", &["shape", "idea.md"]), 0);
+        // Typed in another case, it's the same note where the file system says so (APFS).
+        let same = d.path().join("inbox/IDEA.MD").is_file();
+        assert_eq!(
+            code("owner", &["release", "IDEA.MD"]),
+            if same { 0 } else { 1 }
+        );
+        if !same {
+            assert_eq!(code("owner", &["release", "idea.md"]), 0);
+        }
+        assert_eq!(held("idea.md"), "");
+        // A task is still released with --clean, by its key too.
+        let e = run(&argv("wt-a", &["release", "0001"])).unwrap_err();
+        assert!(e.contains("release takes --clean"), "{e}");
+        // check reports a shaping.json it can't read, and is clean again once it's gone.
+        assert_eq!(code("wt-a", &["check"]), 0);
+        std::fs::write(d.path().join("shaping.json"), "{not json").unwrap();
+        assert_eq!(code("wt-a", &["check"]), 1);
+        assert_eq!(code("wt-a", &["shape", "idea.md"]), 0, "writes it anew");
+        assert_eq!(code("wt-a", &["check"]), 0);
+        // A claim on a note that went some other way is reported until it's released.
+        std::fs::remove_file(d.path().join("inbox/idea.md")).unwrap();
+        assert_eq!(code("wt-a", &["check"]), 1);
+        assert_eq!(code("wt-a", &["release", "idea.md"]), 0);
+        assert_eq!(code("wt-a", &["check"]), 0);
+    }
+
+    #[test]
+    fn claim_takeover_takes_a_note_from_the_command_line() {
+        let d = v2_queue();
+        let q = d.path().to_string_lossy().to_string();
+        std::fs::write(d.path().join("inbox/idea.md"), "An idea").unwrap();
+        let code = |who: &str, args: &[&str]| {
+            let mut v = sv(&args[..1]);
+            v.extend(sv(&["--queue", &q, "--as", who]));
+            v.extend(sv(&args[1..]));
+            main(&v)
+        };
+        let holds = || std::fs::read_to_string(d.path().join("shaping.json")).unwrap();
+        assert_eq!(code("wt-a", &["shape", "idea.md"]), 0);
+        // Another label is refused, and a plain claim never takes a note.
+        assert_eq!(code("wt-b", &["claim", "idea.md", "--takeover"]), 1);
+        assert_eq!(code("wt-b", &["claim", "idea.md"]), 1);
+        assert!(holds().contains("\"by\": \"wt-a\""), "{}", holds());
+        // The owner overrides.
+        assert_eq!(code("owner", &["claim", "idea.md", "--takeover"]), 0);
+        assert!(holds().contains("\"by\": \"owner\""), "{}", holds());
+        assert!(!holds().contains("wt-a"), "{}", holds());
+    }
+
+    #[test]
+    fn list_shows_who_is_shaping_a_note_and_json_gives_held_by_since_and_heartbeat() {
+        let d = v2_queue();
+        let p = d.path();
+        std::fs::write(p.join("inbox/idea.md"), "Board flickers").unwrap();
+        std::fs::write(p.join("inbox/other.md"), "Export CSV").unwrap();
+        let who = "Shapour (main · session 145fae12 · cc-mg)";
+        // list_text's clock is 2026-10-14 14:14: held for 12 minutes.
+        backlog::claim_note(p, "idea.md", who, "2026-10-14 14:02", ops::LEASE_MINUTES).unwrap();
+        let s = tasks_of(p);
+        let notes: Vec<&backlog::Note> = s.backlog.iter().collect();
+        let text = list_text(&notes, &[]);
+        assert!(
+            text.contains("  idea.md  Board flickers  · shaping: Shapour, 12 min\n"),
+            "{text}"
+        );
+        assert!(text.contains("  other.md  Export CSV\n"), "{text}");
+        let json = list_json(&notes, &[]);
+        let note = |file: &str| {
+            json["backlog"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|n| n["file"] == file)
+                .unwrap()
+                .clone()
+        };
+        let held = note("idea.md");
+        assert_eq!(
+            (&held["heldBy"], &held["heldSince"], &held["heartbeat"]),
+            (
+                &serde_json::json!(who),
+                &serde_json::json!("2026-10-14 14:02"),
+                &serde_json::json!("2026-10-14 14:02")
+            )
+        );
+        let free = note("other.md");
+        assert_eq!(
+            (&free["heldBy"], &free["heldSince"], &free["heartbeat"]),
+            (
+                &serde_json::json!(""),
+                &serde_json::json!(""),
+                &serde_json::json!("")
+            )
+        );
+        // Over an hour: in hours, as reclaim says it.
+        let (head, _) = list_parts(&notes, &[], "2026-10-14 16:30");
+        assert!(head.contains("· shaping: Shapour, 2 h\n"), "{head}");
+        // Filed, the task in Shaping is the shaper's, and its line says who's on it.
+        let new = ops::NewTask {
+            title: "Board flickers".into(),
+            ..Default::default()
+        };
+        backlog::file_note(
+            p,
+            "idea.md",
+            &new,
+            who,
+            "2026-10-14 14:20",
+            ops::LEASE_MINUTES,
+        )
+        .unwrap();
+        let s = tasks_of(p);
+        let tasks: Vec<&queue::Task> = s.tasks.iter().collect();
+        let text = list_text(&[], &tasks);
+        assert!(
+            text.contains(&format!("Board flickers  [on it: {who}]\n")),
+            "{text}"
+        );
+    }
+
+    #[test]
     fn backlog_add_shape_file_and_drop_with_their_exit_codes() {
         let d = v2_queue();
         let q = d.path().to_string_lossy().to_string();
@@ -5524,7 +5913,9 @@ mod tests {
             &a(&["vision", "0001", "--resolve", "V1", "how"])
         ));
         assert!(targeted("claim", &a(&["claim", "0001"])));
-        assert!(!targeted("shape", &a(&["shape", "n.md"])));
+        // Shape claims the note (0097); --peek only reads it.
+        assert!(targeted("shape", &a(&["shape", "n.md"])));
+        assert!(!targeted("shape", &a(&["shape", "n.md", "--peek"])));
         assert!(a(&["vision", "--all"]).all);
     }
 

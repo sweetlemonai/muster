@@ -254,12 +254,13 @@ pub fn config_text(local: bool, prefix: Option<&str>) -> String {
 }
 
 /// `.muster/.gitignore`: a local queue commits only `config.toml` (and this file); a committed
-/// one leaves out what's per Mac (`mail/`, the lock) or rebuilt (`INDEX.md`, `tasks.json`).
+/// one leaves out what's per Mac (`mail/`, the lock, and `shaping.json`, the live claims on
+/// backlog notes, 0097) or rebuilt (`INDEX.md`, `tasks.json`).
 pub fn gitignore_text(local: bool) -> &'static str {
     if local {
         "# Muster: a local queue (config.toml says local = true). Only config.toml is committed.\n*\n!.gitignore\n!config.toml\n"
     } else {
-        "# Muster: per-Mac mail and the lists muster rebuilds stay out of git.\n/mail/\n/INDEX.md\n/tasks.json\n"
+        "# Muster: per-Mac mail, who is shaping which note, and the lists muster rebuilds stay out of git.\n/mail/\n/shaping.json\n/INDEX.md\n/tasks.json\n"
     }
 }
 
@@ -637,7 +638,7 @@ pub(crate) mod resolve {
         }
         let ignore = fs::read_to_string(q.join(".gitignore")).unwrap();
         // Anchored to .muster/ itself, so a task's attachment named mail/ isn't left out.
-        for line in ["/mail/", "/INDEX.md", "/tasks.json"] {
+        for line in ["/mail/", "/INDEX.md", "/tasks.json", "/shaping.json"] {
             assert!(ignore.lines().any(|l| l == line), "{line}: {ignore}");
         }
         assert!(!ignore.lines().any(|l| l == "mail/"), "{ignore}");
@@ -1068,12 +1069,22 @@ mod flows {
                 title: "Dark mode".into(),
                 ..Default::default()
             };
-            let f = crate::backlog::file_note(&root, &n, &new, "shaper", T).unwrap();
+            let f =
+                crate::backlog::file_note(&root, &n, &new, "shaper", T, crate::ops::LEASE_MINUTES)
+                    .unwrap();
             assert_eq!(f.path, place(name, "todo", "0001-dark-mode.md"), "{name}");
             assert!(root.join("attachments/0001").join(&f.attachment).is_file());
             assert_eq!(task(&root, "0001").stage, "shaping", "{name}");
             let old = crate::backlog::add(&root, "Old idea", "", "wt-a", T).unwrap();
-            let gone = crate::backlog::drop_note(&root, &old, "not now", "owner", T).unwrap();
+            let gone = crate::backlog::drop_note(
+                &root,
+                &old,
+                "not now",
+                "owner",
+                T,
+                crate::ops::LEASE_MINUTES,
+            )
+            .unwrap();
             assert_eq!(gone, format!("{notes}/dropped/{old}"), "{name}");
             let s = state(&root);
             assert_eq!((s.backlog.len(), s.tasks.len()), (0, 1), "{name}");

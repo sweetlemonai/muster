@@ -230,6 +230,12 @@ export type Note = {
   truncated: boolean;
   /** When the file last changed, in seconds since 1970. */
   added: number;
+  /** Who is shaping it (0097, the queue's shaping.json), the full session-stamped label as a
+   *  task's `claimedBy`; "" when nobody is. */
+  heldBy: string;
+  /** When the shaping began and its last heartbeat, "YYYY-MM-DD HH:MM"; "" when not held. */
+  heldSince: string;
+  heartbeat: string;
 };
 
 /** A goal's or feature's tasks: done of total, and the estimates of the open ones, summed. */

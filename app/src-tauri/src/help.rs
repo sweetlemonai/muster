@@ -112,9 +112,9 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "claim",
         usage: "muster claim <id> [--takeover] [--as <who>]",
-        what: "Take a Ready task: it moves to Building, held by you, with its lease started (heartbeat). Inside a Claude Code session muster adds the session to who you are (name, short id, checkout, account), so you never type it. Refused while you already hold another task in Building in this queue (pass, return or block that first; a task sent back to you from Testing counts, and comes first), when it's blocked, when a task it depends on isn't merged yet (an agent's task counts once it's in Your check, the owner's own once it's Done), when it isn't in Ready any more, and for a human task (the owner's own) unless you're the owner. Says which queue it claimed in. With --takeover, a successor session takes over a claim in Building made under its own label by another session: allowed once that session checked in with --handoff after the claim, or when the claim has been quiet for 30 minutes; the owner may always take over. The claim and its lease become yours, the task's mail waiting for the old session moves to yours (answers to its questions come to you), you count as its builder (so you don't test it), and the log says \"took over the claim from <old> (handed off)\" or \"(quiet 42 min)\". Refused for another label, while the task is paused, for a blocked task unless its holder handed off (it's waiting, not gone; the owner may still take it over), and while the old session is still working: then it says who holds it, since when, and when you may take it over.",
+        what: "Take a Ready task: it moves to Building, held by you, with its lease started (heartbeat). Inside a Claude Code session muster adds the session to who you are (name, short id, checkout, account), so you never type it. Refused while you already hold another task in Building in this queue (pass, return or block that first; a task sent back to you from Testing counts, and comes first), when it's blocked, when a task it depends on isn't merged yet (an agent's task counts once it's in Your check, the owner's own once it's Done), when it isn't in Ready any more, and for a human task (the owner's own) unless you're the owner. Says which queue it claimed in. With --takeover, a successor session takes over a claim in Building, or a filed note's shaper's in Shaping (0097), made under its own label by another session: allowed once that session checked in with --handoff after the claim, or when the claim has been quiet for 30 minutes; the owner may always take over. The claim and its lease become yours, the task's mail waiting for the old session moves to yours (answers to its questions come to you), you count as its builder (so you don't test it), and the log says \"took over the claim from <old> (handed off)\" or \"(quiet 42 min)\". Refused for another label, while the task is paused, for a blocked task unless its holder handed off (it's waiting, not gone; the owner may still take it over), and while the old session is still working: then it says who holds it, since when, and when you may take it over.",
         options: &[
-            ("--takeover", "take over a claim under your label from another session (after its checkin --handoff, or 30 quiet minutes)"),
+            ("--takeover", "take over a claim under your label from another session (after its checkin --handoff, or 30 quiet minutes); with a backlog note's file name, its shaping claim (30 quiet minutes, or its holder releases it)"),
             ("--as", "who you are (your branch or worktree); default $MUSTER_AS, then the folder's git user.name"),
         ],
         examples: &["muster claim 0007 --as wt-a", "muster claim 0007 --as wt-a --queue drover", "muster claim 0007 --takeover --as wt-a"],
@@ -129,14 +129,14 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "heartbeat",
         usage: "muster heartbeat <id> [--as <who>]",
-        what: "Keep your claim alive on long work: stamps the task's heartbeat, no log line. Only the holder, only in Building. Your note, comment, ask, pass, return and block stamp it too, and so does an unblock. A claim quiet past the lease (12 h, unless changed in the app's Settings on this Mac) can be released to Ready.",
+        what: "Keep your claim alive on long work: stamps the task's heartbeat, no log line. Only the holder, only in Building, or in Shaping for the shaper holding a filed note. Your note, comment, ask, edit, vision check, pass, return and block stamp it too, and so do an unblock and a resume. A claim quiet past the lease (12 h, unless changed in the app's Settings on this Mac) can be released: to Ready from Building, unheld in Shaping.",
         options: &[("--as", "who you are; must be who holds it")],
         examples: &["muster heartbeat 0007 --as wt-a"],
     },
     Command {
         name: "checkin",
         usage: "muster checkin <id> \"<what's done, what's next>\" [--pct <0-100>] [--handoff]",
-        what: "Say how the work is going: a line in the task's log that its card shows (\"60% · gate green, writing tests · 12 min ago\"), and the heartbeat with words, so it keeps your claim alive too. Only the holder, only in Building. Check in at each milestone and at least every 30 minutes: a card quiet for longer says \"no check-in for 45 min\". With --handoff it's your last check-in before your session ends, logged as \"check-in · handing off · <text>\": your successor under the same label may then take the claim over at once with muster claim <id> --takeover.",
+        what: "Say how the work is going: a line in the task's log that its card shows (\"60% · gate green, writing tests · 12 min ago\"), and the heartbeat with words, so it keeps your claim alive too. Only the holder, only in Building, or in Shaping for the shaper holding a filed note. Check in at each milestone and at least every 30 minutes: a card quiet for longer says \"no check-in for 45 min\". With --handoff it's your last check-in before your session ends, logged as \"check-in · handing off · <text>\": your successor under the same label may then take the claim over at once with muster claim <id> --takeover.",
         options: &[
             ("--pct", "how far along you think you are, 0 to 100 (your own estimate)"),
             ("--handoff", "you're handing off: say what's done and what's next for your successor"),
@@ -151,7 +151,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "ping",
         usage: "muster ping <id> [\"<message>\"]",
-        what: "Reach the session working on a task, through its mailbox: the answer hook hands it over after that session's next tool call. Without a message it asks for a check-in (Building only), and the session answers with muster checkin before anything else; the card says \"asked 2 min ago\" until it does. With one, it sends the message (at most 500 characters, control characters taken out), quoted as your note, never as instructions. Building or Testing; only a holder whose claim has a session stamp can be reached. Logged on the task.",
+        what: "Reach the session working on a task, through its mailbox: the answer hook hands it over after that session's next tool call. Without a message it asks for a check-in (Building, or Shaping for its shaper), and the session answers with muster checkin before anything else; the card says \"asked 2 min ago\" until it does. With one, it sends the message (at most 500 characters, control characters taken out), quoted as your note, never as instructions. Shaping (its shaper), Building or Testing; only a holder whose claim has a session stamp can be reached. Logged on the task.",
         options: &[("--as", "who's asking: owner, or your own label")],
         examples: &[
             "muster ping 0022 --as owner",
@@ -161,7 +161,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "reclaim",
         usage: "muster reclaim [--after 12h] [--json]",
-        what: "Release every claim whose lease ran out: a task in Building, held, not blocked, with no heartbeat (or, without one, no change to its file) for longer than --after goes back to Ready, its claim cleared and the release logged as a stage change. Live claims are left alone. Prints what it released.",
+        what: "Release every claim whose lease ran out: a task in Building, held, not blocked, with no heartbeat (or, without one, no change to its file) for longer than --after goes back to Ready, its claim cleared and the release logged as a stage change. A task held in Shaping (a filed note's shaper) is released the same way and stays in Shaping, logged as reclaimed. A backlog note whose shaper's heartbeat is that old (muster shape) is nobody's again. Live claims are left alone. Prints what it released.",
         options: &[
             ("--after", "the lease: 30m, 2h, 1d (a day is 24 h); default this Mac's lease from the app's Settings, 12h unless changed"),
             ("--json", "what was released, for scripts"),
@@ -191,13 +191,13 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "release",
-        usage: "muster release <id> --clean [--force]",
-        what: "Give up a started task: back to Ready with its claim released, its worktree removed and its branch deleted (the local one; a branch pushed to origin stays, and so does its work). It first lists what that would lose (uncommitted files in the worktree, commits on no other branch) and refuses it unless --force. Works when the worktree is already gone too. A runner's worktree (start --here) is never removed: it's left detached with its files, and only the branch goes. In Building only its holder or the owner releases it. A paused task is refused: resume it first.",
+        usage: "muster release <id> --clean [--force]   ·   muster release <note-file>",
+        what: "Give up a started task: back to Ready with its claim released, its worktree removed and its branch deleted (the local one; a branch pushed to origin stays, and so does its work). It first lists what that would lose (uncommitted files in the worktree, commits on no other branch) and refuses it unless --force. Works when the worktree is already gone too. A runner's worktree (start --here) is never removed: it's left detached with its files, and only the branch goes. In Building only its holder or the owner releases it. A paused task is refused: resume it first. With a backlog note's file name instead (a .md name), it lets go of the note you're shaping (muster shape), so another session can take it; only its holder or the owner, and a claim left on a note that's gone is cleared the same way.",
         options: &[
             ("--clean", "remove the worktree and the branch (required: to send a task back and keep them, use muster return)"),
             ("--force", "throw away the uncommitted files and unpushed commits it listed"),
         ],
-        examples: &["muster release 0031 --clean", "muster release 0031 --clean --force --as owner"],
+        examples: &["muster release 0031 --clean", "muster release 0031 --clean --force --as owner", "muster release 2026-10-12-1405-board-flickers.md --as wt-shape"],
     },
     Command {
         name: "merge-log",
@@ -463,18 +463,23 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "shape",
-        usage: "muster shape <note-file> [--json]",
-        what: "The shaping brief for a backlog note: its full text, what the product, tech and UI roles each write, the project's docs to read (CLAUDE.md, docs/VISION.md, docs/DESIGN.md, docs/decisions/), open tasks that share words with it (to catch a duplicate) and the now pages (docs/now/) their touches: cover, the lenses, and the exact muster file command with the task template, and what to do with unknowns: mark them [NEEDS CLARIFICATION: …], decide or ask each, and send the run's questions with muster clarify --send once, at its end. The lenses are the concerns every project shares: accessibility, i18n, themes, payments, architecture, security, privacy, performance, tests, docs. The template has a **Lenses:** block with one line for each, which the shaper fills in: what the task must do for it, or \"n/a\" and why. Every lens applies unless the project skips it, with its reason, and the brief names the skipped ones and why. A .muster queue skips in .muster/config.toml: [shaping] skip = [\"payments\"], then [shaping.reasons] payments = \"<why>\". An old queue skips in its README.md's front matter: shaping-skip: payments, themes, and a shaping-reason-payments: <why> line for each. A skip of a lens that doesn't exist, or one with no reason, doesn't count, so the lens still applies, and muster check reports it. Writes nothing.",
-        options: &[("--json", "the same as JSON, for Drover and scripts")],
+        usage: "muster shape <note-file> [--peek] [--json]",
+        what: "Claim a backlog note for shaping and print its brief: its full text, what the product, tech and UI roles each write, the project's docs to read (CLAUDE.md, docs/VISION.md, docs/DESIGN.md, docs/decisions/), open tasks that share words with it (to catch a duplicate) and the now pages (docs/now/) their touches: cover, the lenses, and the exact muster file command with the task template, and what to do with unknowns: mark them [NEEDS CLARIFICATION: …], decide or ask each, and send the run's questions with muster clarify --send once, at its end. The lenses are the concerns every project shares: accessibility, i18n, themes, payments, architecture, security, privacy, performance, tests, docs. The template has a **Lenses:** block with one line for each, which the shaper fills in: what the task must do for it, or \"n/a\" and why. Every lens applies unless the project skips it, with its reason, and the brief names the skipped ones and why. A .muster queue skips in .muster/config.toml: [shaping] skip = [\"payments\"], then [shaping.reasons] payments = \"<why>\". An old queue skips in its README.md's front matter: shaping-skip: payments, themes, and a shaping-reason-payments: <why> line for each. A skip of a lens that doesn't exist, or one with no reason, doesn't count, so the lens still applies, and muster check reports it. The claim is yours (--as, with your session) while you shape: it's in shaping.json at the queue's root, the board shows who holds the note, and muster list says \"· shaping: <you>, 12 min\". Running it again renews its heartbeat. Someone else's note is refused (\"Shapour is shaping it (since 14:02, session 145fae…); --peek to read it\") until their heartbeat is older than the lease (12 h unless changed in the app's Settings), when you take it over. One note at a time: file, drop or release it (muster release <note-file>) before you shape the next; the owner may hold several. Filing it carries the claim to the task in Shaping; passing that to Ready ends it.",
+        options: &[
+            ("--peek", "print the brief only: the note isn't claimed and nothing is written"),
+            ("--json", "the same as JSON, for Drover and scripts, with the claim as claim"),
+            ("--as", "who you are; default $MUSTER_AS, then the folder's git user.name"),
+        ],
         examples: &[
             "muster shape 2026-10-12-1405-board-flickers.md",
             "muster shape 2026-10-12-1405-board-flickers.md --json --queue drover",
+            "muster shape 2026-10-12-1405-board-flickers.md --peek",
         ],
     },
     Command {
         name: "file",
         usage: "muster file <note-file> \"<title>\" [--type code|bug|chore|tech-debt|spike|design|docs|research] [--priority high|normal|low] [--tags a,b] [--time 2h] [--test-time 30m] [--tokens 400k] [--touches <folders,globs>] --body <text>|-",
-        what: "File a shaped backlog note as a task: the next id, in Shaping, with your body after a \"From the backlog\" line quoting the note. The note moves into the task's attachments/<id>/, so nothing is lost; all under the queue's lock, so a note is filed once. Then muster pass <id> --from shaping puts it in Ready (it needs acceptance criteria). It warns, on stderr, naming each lens the project doesn't skip that the body has no **Lenses:** line for (or only the template's <…>), and files it anyway; --json gives them as missingLenses. It warns the same way about each [NEEDS CLARIFICATION: …] marker left in the body (--json: markers): filed anyway, but the pass into Ready waits until each is decided or asked (muster help clarify).",
+        what: "File a shaped backlog note as a task: the next id, in Shaping, with your body after a \"From the backlog\" line quoting the note. The note moves into the task's attachments/<id>/, so nothing is lost; all under the queue's lock, so a note is filed once. Then muster pass <id> --from shaping puts it in Ready (it needs acceptance criteria). It warns, on stderr, naming each lens the project doesn't skip that the body has no **Lenses:** line for (or only the template's <…>), and files it anyway; --json gives them as missingLenses. It warns the same way about each [NEEDS CLARIFICATION: …] marker left in the body (--json: markers): filed anyway, but the pass into Ready waits until each is decided or asked (muster help clarify). A note you're shaping (muster shape) becomes your task: it's claimed by you in Shaping with a fresh heartbeat, and the note's claim ends; passing it to Ready (or back to the backlog) lets go. Someone else's note is refused while their lease runs; the owner may file it anyway, and anyone once the lease ran out, logged as taken over from them.",
         options: &[
             ("--type", "code (default), bug, chore, tech-debt, spike, design, docs or research"),
             ("--priority", "high, normal (default) or low"),
@@ -493,7 +498,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "drop",
         usage: "muster drop <note-file> \"<why>\"",
-        what: "Set a backlog note aside: it moves to the backlog's dropped/ folder with the reason added at its end (one line, 500 characters). It's off the board but kept.",
+        what: "Set a backlog note aside: it moves to the backlog's dropped/ folder with the reason added at its end (one line, 500 characters). It's off the board but kept. Its claim (muster shape) ends with it. Someone else's note is refused while their lease runs; the owner may drop it anyway, and anyone once the lease ran out, said as taken over from them in the line.",
         options: &[],
         examples: &["muster drop 2026-10-12-1405-board-flickers.md \"a duplicate of 0012\""],
     },
@@ -576,7 +581,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "migrate",
         usage: "muster migrate <old-queue> <repo> [--local|--committed] [--dry-run]",
-        what: "Copy an old queue (<project>/tasks, with status folders or flat) into the repo's .muster/, local by default. Every task file goes to tasks/ with stage: set from its old stage or status and status: dropped, the rest kept byte for byte (a front matter it can't read as it is gets its byte-order mark and CRLF line ends made plain); the backlog folder's notes and dropped notes to backlog/; attachments/, mail/, the review of record's reviews/ and lessons.md, and WAITING-FOR-OWNER.md as they are; the old README's front matter into the new README. Writes config.toml, .gitignore, INDEX.md, tasks.json, and migrated-from.txt with the old queue's last commit, and gives the new queue the old one's gate, run command, name, label, category, colour, place in the sidebar's order, hidden and Your check limit from projects.json. Prints what it copied and what it didn't. Copies, never moves: the old queue is left as it was, to retire once muster check is clean. Refuses while an agent holds a task in Building or Testing (it lists them), when .muster/ is there already, when the repo and the old queue overlap, on a folder it can't read, on a task file without front matter it can read, and on two names that would be one file on this Mac (case or accents).",
+        what: "Copy an old queue (<project>/tasks, with status folders or flat) into the repo's .muster/, local by default. Every task file goes to tasks/ with stage: set from its old stage or status and status: dropped, the rest kept byte for byte (a front matter it can't read as it is gets its byte-order mark and CRLF line ends made plain); the backlog folder's notes and dropped notes to backlog/; attachments/, mail/, the review of record's reviews/ and lessons.md, and WAITING-FOR-OWNER.md as they are; the old README's front matter into the new README. Writes config.toml, .gitignore, INDEX.md, tasks.json, and migrated-from.txt with the old queue's last commit, and gives the new queue the old one's gate, run command, name, label, category, colour, place in the sidebar's order, hidden and Your check limit from projects.json. Prints what it copied and what it didn't (shaping.json, who is shaping which note, is one: it's live state, so those notes are shaped again in the new queue). Copies, never moves: the old queue is left as it was, to retire once muster check is clean. Refuses while an agent holds a task in Building or Testing (it lists them), when .muster/ is there already, when the repo and the old queue overlap, on a folder it can't read, on a task file without front matter it can read, and on two names that would be one file on this Mac (case or accents).",
         options: &[
             ("--local", "the default: the queue stays on this Mac, as init"),
             ("--committed", "commit the queue with the code, as init --committed"),
@@ -661,7 +666,7 @@ pub const SESSION: &[Topic] = &[
             "$ muster answer 0007 Q1 \"Use the window\" --as capture",
             "$ muster escalate 0007 Q2 --as capture",
             "$ muster reclaim",
-            "Shapes backlog notes into tasks: the brief says what to read, who writes what, and the command that files it. The note goes into the task's attachments; one not worth a task is dropped with the reason:",
+            "Shapes backlog notes into tasks: shape claims the note (the board shows who's on it) and the brief says what to read, who writes what, and the command that files it. The note goes into the task's attachments; one not worth a task is dropped with the reason. --peek reads a note without taking it:",
             "$ muster shape <note-file>",
             "$ muster file <note-file> \"<title>\" --type bug --time 1h --tokens 300k --body -",
             "$ muster drop <note-file> \"<why>\"",

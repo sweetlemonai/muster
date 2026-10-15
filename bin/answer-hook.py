@@ -125,10 +125,11 @@ def holds(fm: "dict[str, str]", short: str, field: str, agent: str = "") -> bool
 
 def still_asked(root: Path, task: str, short: str, agent: str = "") -> bool:
     """Is a check-in request for `task` still this session's to answer? Only while the task is in
-    Building (where `muster checkin` works) and its claim is this session's. A task file that
-    can't be found or read doesn't count."""
+    Building or Shaping (a filed note's shaper, task 0097: where `muster checkin` works) and its
+    claim is this session's. A task file that can't be found or read doesn't count."""
     fm = task_front(root, task)
-    return fm is not None and fm["stage"] == "building" and holds(fm, short, "claimed-by", agent)
+    return (fm is not None and fm["stage"] in ("building", "shaping")
+            and holds(fm, short, "claimed-by", agent))
 
 
 def still_paused(root: Path, task: str, short: str, paused: bool, agent: str = "") -> bool:
@@ -154,7 +155,7 @@ def agent_part(agent_id: str) -> "str | None":
 def take_mail(root: Path, session: str, agent: str = "") -> "list[tuple[int, str]]":
     """The mail in this session's mailbox, oldest name first, each moved to delivered/ as it's
     taken and framed. One that another reader moved first is skipped, so mail is handed over
-    once. A check-in request for a task that has left Building, or that another session holds
+    once. A check-in request for a task that has left Building or Shaping, or that another session holds
     now, is moved to delivered/ without being handed over: `muster checkin` would refuse it. So is
     a stop request for a task no longer paused, or a carry-on for one paused again, or either one
     for a task this session no longer works on. A teammate (`agent`, task 0090) reads its own

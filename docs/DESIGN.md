@@ -104,6 +104,27 @@ stay open) the owner chose **A**.
   screen, plus the Dock badge, and one Mac notification when something new comes in (0052).
 - **Status on the card:** stage, blocked, who holds it, waiting-on and open questions show on the
   card or row itself, not only in the task panel.
+- **Who holds it is in the card's corner** (task 0097), the YOU ribbon's spot: a task held in
+  Shaping, Building or Testing wears a **holder ribbon** with the holder's short name ("Shapour",
+  "Asghar_7"), and a backlog note a session is shaping says "shaping · Shapour". The owner's own
+  task, and one the owner holds, wears the gold YOU ribbon instead: never two ribbons on a card.
+  - The ribbon has the name; the who line under the title keeps the rest (the session, since
+    when, what it's doing), so the name isn't said twice. In Standard's brief card the ribbon is
+    the one place the holder shows; ADHD, Standard and Focus all show it (`modes.ts`).
+  - An identity, not a state: the panel fill, the line border and the text colour, the YOU
+    ribbon's size and weight, never a stage colour or the gold. A working session's dot sits in
+    it beside the name; a lease run out turns its words the attention colour with "quiet", as the
+    card's flag says it.
+  - In place, no hover-only words: the ribbon has the strip above the top row to itself, so it
+    may run nearly the card's width (half of it when the stage band shares the strip). Where
+    that's tight, "shaping" gives way first while its "·" stays, so what's left never reads as two
+    names; then the name ends in "…" but keeps about four characters; "quiet" never shrinks.
+    A note the owner shapes says "You · quiet" once its lease ran out, since reclaim ends it too. The whole label is in the tooltip and read out with the card
+    ("held by Shapour", "being shaped by Shapour"). It isn't a control, so the keyboard order is the
+    card's. Right to left, it sits top-left, like the YOU ribbon.
+  - Fixed place: a card in Shaping, Building or Testing, and every note, keeps a strip the
+    ribbon's height above its top row, held or not. The top row (key, kind, priority) and a note's
+    title run the card's full width under it, and a claim arriving with the next poll moves nothing.
 
 ## Standard mode: what most apps do
 
@@ -186,6 +207,7 @@ to have a solid color code"). `themes.ts` holds the values; tests keep them apar
 | red | Blocked, and errors (a wait on other tasks alone clears by itself: neutral, with a small red mark, 0060) | a task's type (a bug is the word "bug") |
 | magenta | High priority (a filled chip); normal is an outlined grey chip, low faint text | stages |
 | neutral grey, outlined | tags and types: labels, not states | |
+| the panel, outlined, in the text colour | Who holds a task or is shaping a note (the holder ribbon, 0097): an identity, not a state | stages, the YOU gold |
 | muted text grey, outlined, with ⏸ | Paused (0045): a calm state, never a stage's fill or the blocked red | |
 | lime · orchid · pink · tan · mint, a small dot | A project's own colour (0057), by its name wherever it's named: an identity, not a state | stages, priority, needs you, blocked (a test keeps each 30 apart from all of them in every theme) |
 

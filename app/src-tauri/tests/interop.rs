@@ -309,8 +309,24 @@ fn backlog_notes_from_muster_pass_the_python_check_and_are_listed() {
         body: "## Acceptance criteria\n- [ ] AC1: it works — verify: command (true)".into(),
         ..Default::default()
     };
-    muster_lib::backlog::file_note(d.path(), &filed, &new, "owner", t).unwrap();
-    muster_lib::backlog::drop_note(d.path(), &dropped, "not needed", "owner", t).unwrap();
+    muster_lib::backlog::file_note(
+        d.path(),
+        &filed,
+        &new,
+        "owner",
+        t,
+        muster_lib::ops::LEASE_MINUTES,
+    )
+    .unwrap();
+    muster_lib::backlog::drop_note(
+        d.path(),
+        &dropped,
+        "not needed",
+        "owner",
+        t,
+        muster_lib::ops::LEASE_MINUTES,
+    )
+    .unwrap();
     let (ok, out) = run(d.path(), "manifest.py", &["--check"]);
     assert!(ok, "{out}");
     let (ok, out) = run(d.path(), "manifest.py", &[]);
@@ -1027,7 +1043,9 @@ fn a_short_lease_in_the_settings_reclaims_sooner() {
     let (code, out) = muster(b, b, &env, &["reclaim", "--as", "owner"]);
     assert_eq!(code, 0, "{out}");
     assert!(
-        out.contains("nothing to release: every claim in Building was heard from within 12 h"),
+        out.contains(
+            "nothing to release: every claim in Shaping and Building, and on a backlog note, was heard from within 12 h"
+        ),
         "{out}"
     );
 
@@ -1054,7 +1072,9 @@ fn a_short_lease_in_the_settings_reclaims_sooner() {
     held("0002");
     let (_, out) = muster(b, b, &env, &["reclaim", "--after", "3h", "--as", "owner"]);
     assert!(
-        out.contains("nothing to release: every claim in Building was heard from within 3h"),
+        out.contains(
+            "nothing to release: every claim in Shaping and Building, and on a backlog note, was heard from within 3h"
+        ),
         "{out}"
     );
 }

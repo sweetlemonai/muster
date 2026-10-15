@@ -461,6 +461,13 @@ mod tests {
             "wt-i18n"
         );
         assert_eq!(h("id: 0001\nstage: testing\nclaimed-by: drover/main"), "");
+        // A task held in Shaping (0097) is its shaper's, and search finds it by them.
+        let shaping = task(
+            "id: 0005\nstage: shaping\nclaimed-by: shapour (main · session 145fae12)",
+            "# Shaped\n",
+        );
+        assert_eq!(holder(&shaping), "shapour");
+        assert!(task_matches(&shaping, &words("shapour")));
         assert_eq!(h("id: 0001\nstage: ready\nclaimed-by: (odd)"), "(odd)");
         // Session stamps (0030), and who holds Testing and Your check (`held-by`).
         assert_eq!(

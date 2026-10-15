@@ -275,6 +275,7 @@ status folders and `inbox/` for the backlog):
 | `README.md` | The queue's short rules for agents; an old queue's front matter also holds its prefix and the lenses it skips (`shaping-skip:`, `shaping-reason-<lens>:`) | `init`, `migrate`; the skips by hand | agents; an old queue's front matter: `key.rs`, `lenses.rs` |
 | `tasks/NNNN-slug.md` | One task: front matter, write-up, criteria, Questions, Vision, Review, Comments, Log | only `muster` and the app, under the lock; Drover writes answers (file contract v1) | the core, `manifest.py`, Drover, agents |
 | `backlog/*.md`, `backlog/dropped/` | Backlog notes, and dropped ones with the reason | `muster add`, the app's quick add, anyone dropping a file in | the core |
+| `shaping.json` | Who is shaping which backlog note: `{ "<note>": { "by", "at", "heartbeat" } }` (task 0097); live state, ignored by a committed queue's `.gitignore`; a missing file means nothing is held | `muster shape`, `file`, `drop`, `release`, `reclaim`, under the lock, atomically | the core (`backlog.rs`), `muster check` |
 | `attachments/NNNN/` | A task's files (screenshots, mockups), and the note a task was filed from | `muster attach`, the app, `muster file` | the app, agents |
 | `mail/.lock` | The queue's one lock (`flock`) | every write | every write |
 | `mail/asks.json` | Which mailbox asked which question: `<session8>`, or `<session8>/<agent8>` for a teammate | `muster ask`; a takeover repoints the task's entries | `muster answer` |
@@ -1108,6 +1109,32 @@ Drover later. Open it with `open app/src-tauri/target/release/bundle/macos/Muste
   - **Drop** it: `muster drop`, kept in `inbox/dropped/` with the reason.
   - **Copy shaping brief:** `muster shape` gives the note, quoted as data, with the roles and the docs
     to read, related tasks, and the command to file it.
+  - **Shaping is a claim** (task 0097): `muster shape <note>` also claims the note for the
+    caller in `shaping.json` (label, since, heartbeat); running it again renews the heartbeat, and
+    someone else's live claim is refused with the holder and since when. `--peek` reads without
+    taking. One note per holder per queue (the owner may hold several). `file` carries the claim to
+    the new Shaping task (`claimed-by:`, fresh heartbeat); `file`, `drop`, `release <note>` and
+    `reclaim` after the lease let it go. The owner, or anyone once the lease ran out, may file or
+    drop a held note, logged as taken over. A Shaping task's claim is released by
+    `pass --from shaping` and by going back to Backlog; `reclaim` releases a quiet one and keeps
+    it in Shaping; the shaper renews it with `heartbeat` and `checkin`, and, as in Building, with
+    its own note, comment, ask, edit and vision check and with an unblock or a resume
+    (`queue::has_lease`). After a
+    `checkin --handoff`, `claim --takeover` moves a Shaping claim as it does a Building one;
+    `muster claim <note> --takeover` takes a note's claim (the same label once it's been quiet
+    30 minutes, or the owner). `list` shows
+    "· shaping: <name>, <ago>" on the note's line, `list --json` gives `heldBy`, `heldSince`,
+    `heartbeat`, and `check` reports a malformed, oversized or stale `shaping.json`.
+  - **Holder ribbon** (task 0097, `HolderRibbon.tsx`): a card held in Shaping, Building or Testing
+    wears its holder's short name in the top-right corner (top-left in RTL), where the You ribbon
+    sits on the owner's own; never both. Neutral (`--panel`, `--line`, `--text`; `--warn` and
+    "quiet" when the lease ran out), the LiveDot inside it when the session is working, the name
+    cut with "…" only when it doesn't fit nearly the card's width (half beside the stage band),
+    whole in the tooltip, and "held by …" in the card's accessible name. A held note in the
+    Backlog says "shaping · <name>" ("shaping" gives way first, the "·" stays), or wears the You
+    ribbon when the owner shapes it, with "· quiet" once the lease ran out. The space is reserved
+    whether or not a claim is there, so a claim arriving moves nothing. It shows in every display
+    mode (`modes.ts`).
 
   `muster list` shows notes too. They live in `.muster/backlog/` (0005), and in the old layout's
   `inbox/`.
