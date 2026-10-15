@@ -3,6 +3,23 @@
 
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
+## 2026-10-15 — Backlog shaped: mu-210 to mu-214; three notes folded into mu-149, mu-189 and mu-200
+**Did (Shapour, shaper):** filed mu-210 (transcript reader reads only what was appended), mu-211 (migrate
+tests compare canonical paths), mu-212 (sidebar headings at 150px in فارسی), mu-213 (split the sidebar and
+queue now pages, after mu-212) and mu-214 (the column row's own cue goes to two lines under 30em instead
+of squeezing the chips to 8px). Folded: the working-dot note into mu-149, the styles.css All's-line
+comment (says 176px; the switch is a 230px sidebar) into mu-200 as AC5, and the `if !moved` guard test
+for `branch -d` (the `if true` mutant survives) into mu-189 as AC4.
+**Decided (overrulable):** mu-214's default fix is CSS only: the row's cue takes the board cue's two-line
+form; turned down: cue on line 2, "1 you" badges (DESIGN.md), a min-width on the chips (brings back
+mu-198 R6). No hard dependency on mu-147, logged as an overlap. Small notes go into unbuilt tasks that
+share their file and reviewer rather than becoming 20-minute tasks of their own.
+**Verified:** every note's claim checked on main with file:line (styles.css:788-806, paneSize.ts:15,
+ColumnRow.tsx:158-165, parallel.rs:1248-1253 and :3331-3390); the 30em squeeze measured in headless
+WebKit on the real styles.css (chips 107px → 8px at a 210px row). `.muster/backlog` empty;
+`muster check` has nothing on mu-189, mu-200 or mu-214.
+**Open:** mu-189 and mu-200 weren't re-run through the vision check after the fold (no change of direction).
+
 
 ## 2026-10-15 — Backlog shaped: mu-210 to mu-214; three notes folded into mu-149, mu-189 and mu-200
 **Did (Shapour, shaper):** filed mu-210 (transcript reader reads only what was appended), mu-211 (migrate
