@@ -88,3 +88,16 @@ runs report them typed, and a headless run can be reopened live with `claude --r
 - `docs/VISION.md` and `docs/PIPELINE.md` say where runs start and where they're watched.
 - mu-127 becomes Muster's side of the Drover contract (the run record, opening live and handback).
   Drover task 0018 is superseded by dr-0032 to dr-0035.
+
+## Owner's answers, 2026-10-14
+
+- **Accepted** (mu-127 V1): "Muster is going to be part of Drover later on, but yes it starts its
+  own session there, in drover we can start random sessions too." Muster's runner starts its runs;
+  Drover hosts them, and the owner also starts ad-hoc sessions in Drover outside Muster. Drover
+  task 0018 is closed as superseded.
+- **Runs start through the owner's launcher, not bare `claude -p`:** "do not do claude -p do
+  cc-hg or cc-hg-new". Point 1's command runs through `cc-hg-new` / `cc-mg-new` (the zsh
+  functions that hand Claude the account's login), not `claude` with only `CLAUDE_CONFIG_DIR`.
+  Muster still never reads or stores a token (0013 rule 1): the launcher does. mu-117 and mu-179
+  went back to Shaping to reshape the start command, the token scrub and the account check;
+  mu-175 and mu-178 have the rule as a comment.

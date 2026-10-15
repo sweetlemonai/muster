@@ -4,6 +4,14 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Owner's answers on decision 0016: accepted; runs start through cc-hg-new, not bare claude -p
+**Decided:** mu-127 V1 resolved (Muster starts its own runs, Drover hosts them and also starts the
+owner's ad-hoc sessions); Drover 0018 closed as superseded by dr-33 to dr-35; runs and probes start
+through the launchers (`cc-hg-new` / `cc-mg-new`), never bare `claude -p`. Recorded in
+[0016](decisions/0016-runs-headless-in-a-sandbox-drover-hosts-sessions.md#owners-answers-2026-10-14).
+**Did:** mu-117 and mu-179 returned to Shaping with the rule; comments on mu-127, 175, 178.
+**Verified:** queue commands answered (V1 resolved, 0 open; dr-18 → done); docs-only change.
+
 ## 2026-10-14 — Handoffs carry the claim in the layer's text (mu-161)
 **Did (Asghar_24, builder):** the layer's context-watch stop (step 3) and `/handoff` now tell a
 claim holder to run `muster checkin <id> "…" --handoff` before writing, to put
