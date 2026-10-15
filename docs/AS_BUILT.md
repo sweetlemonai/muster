@@ -1947,8 +1947,8 @@ place that says where a layout keeps what).
   its claim), when `.muster/` is there, when the repo and the old queue overlap, on a folder it
   can't read, on task files without front matter it can read (listed), and when two files would
   be one: the same path, or names that differ only in case (checked in the plan) or accents
-  (checked by making the plan's names in a scratch folder in the temp folder, so the dry run says
-  so too). Prints what it copied, notes (a stage that wasn't one, a file made plain) and what it
+  (checked by making the plan's names in a scratch folder of its own in the temp folder, cleared
+  before and after, so the dry run says so too). Prints what it copied, notes (a stage that wasn't one, a file made plain) and what it
   didn't copy (symlinks, `bin/`, stray files). `--dry-run` prints the same plan and writes nothing
   in the repo or the old queue.
 - **The tools:** `manifest.py` reads `.muster/` (`MUSTER_ROOT=<repo>/.muster`); `bin/task` runs

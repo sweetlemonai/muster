@@ -4,6 +4,15 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-14 — Migrate's probe clears a dead run's scratch folder first (mu-183)
+**Fixed (Gholi_27, builder):** a migrate killed mid-probe left `$TMPDIR/muster-migrate-probe-<pid>-0`;
+a later process reusing the pid refused with a false "another file and … would both be" → since
+mu-157 the name is pid + counter, which repeats across processes → `probe()` in `migrate.rs` now
+removes its folder first (no live process shares the pid, so it can only be a dead run's).
+**Verified:** new `a_stale_probe_folder_left_by_a_killed_run_is_cleared_first` failed before the
+fix and passes after; the accent clash test now also asserts the probe's "would both be" naming
+both files; `cargo test migrate` 24/24 (hermetic HOME); gate below.
+
 ## 2026-10-14 — gates-build-hg stopped; mu-185 also waits on mu-182
 **Fixed:** gates-build-hg (8fc440e1) had sat on a permission prompt since 21:13 at its "replace the stuck
 tester" step, stale since kia-131 was resumed on cc-hg and mu-131 moved on → stopped (`cc-hg-new stop`);

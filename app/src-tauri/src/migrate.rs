@@ -386,8 +386,11 @@ fn add(
 
 /// The plan's paths made as empty files in a scratch folder, so the disk itself says which
 /// names it takes for one (accents written two ways, composed and decomposed, on APFS): refused,
-/// naming both. `scratch` is a folder of this probe's own (`probe_dir`), removed after.
+/// naming both. `scratch` is a folder of this probe's own (`probe_dir`), removed after. It's
+/// cleared first too: a run killed mid-probe leaves its folder, and a later process that reuses
+/// the pid gets the same name. No live process shares the pid, so that folder is a dead run's.
 fn probe(p: &Plan, scratch: &Path) -> Result<(), String> {
+    let _ = fs::remove_dir_all(scratch);
     let result = (|| {
         let mut made: HashMap<(u64, u64), &str> = HashMap::new();
         for (dest, item) in &p.items {
@@ -1291,6 +1294,9 @@ mod tests {
             };
             let e = migrate(&old, &main, &opts, &tools(), T).unwrap_err();
             assert!(e.contains("differ only in case or accents"), "{e}");
+            // The disk's probe names both files, even with its folder cleared first.
+            assert!(e.contains(" would both be .muster/tasks/0006-caf"), "{e}");
+            assert!(!e.contains("another file"), "{e}");
             assert!(!main.join(layout::DIR).exists());
         }
     }
@@ -1452,5 +1458,24 @@ mod tests {
             assert_eq!(result, Ok(()));
             assert!(!dir.exists(), "{}", dir.display());
         }
+    }
+
+    #[test]
+    fn a_stale_probe_folder_left_by_a_killed_run_is_cleared_first() {
+        // A run killed mid-probe leaves its folder; a later process with the same pid gets the
+        // same name (counter 0) and must not take the leftover file for a clash.
+        let mut p = Plan::default();
+        let dest = Path::new("tasks").join("0001-a.md");
+        let item = Item {
+            src: PathBuf::from("todo/0001-a.md"),
+            rel: "todo/0001-a.md".to_string(),
+            text: None,
+        };
+        p.items.insert(dest.clone(), item);
+        let dir = probe_dir();
+        fs::create_dir_all(dir.join("tasks")).unwrap();
+        fs::write(dir.join(&dest), "").unwrap();
+        assert_eq!(probe(&p, &dir), Ok(()));
+        assert!(!dir.exists(), "{}", dir.display());
     }
 }
