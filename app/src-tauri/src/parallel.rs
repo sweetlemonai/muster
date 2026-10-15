@@ -1665,7 +1665,7 @@ pub(crate) mod tests {
     /// `<base>/proj/tasks` (a queue), `<base>/proj/main` (its repo, on main, with `origin` a bare
     /// repo at `<base>/origin.git`), all in a temp folder.
     pub(crate) struct Fx {
-        _dir: tempfile::TempDir,
+        _dir: crate::testkit::TestDir,
         pub(crate) base: PathBuf,
         pub(crate) root: PathBuf,
         pub(crate) repo: PathBuf,
@@ -1674,7 +1674,7 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn fx() -> Fx {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let base = canon(dir.path());
         let root = base.join("proj/tasks");
         for f in queue::STATUS_FOLDERS {
@@ -3867,7 +3867,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_gate_runs_as_words_in_the_worktree_and_reads_its_line() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let dir = canon(d.path());
         fs::create_dir(dir.join("bin")).unwrap();
         // A repo script by its relative path, with arguments as given, run in the folder.

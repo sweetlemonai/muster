@@ -3,6 +3,8 @@
 //! `check`, `claim` and `next`; `deps-cases.test.ts` gives the app the same tasks, with what the
 //! core derives, and checks the board, the Graph and the Human board against the same answers.
 
+mod common;
+
 use muster_lib::queue;
 use serde_json::Value;
 use std::path::Path;
@@ -72,8 +74,8 @@ fn write_queue(root: &Path) {
 /// A home folder of its own for `muster` (task 0048), so `list --json` never runs this Mac's
 /// Claude Code or reads its projects: a `claude` where muster looks first, which lists no
 /// sessions and records each call in `claude.calls`, and the `cc-hg` account's folder.
-fn fake_home() -> tempfile::TempDir {
-    let h = tempfile::tempdir().unwrap();
+fn fake_home() -> common::TestDir {
+    let h = common::tempdir().unwrap();
     let bin = h.path().join(".local/bin");
     std::fs::create_dir_all(&bin).unwrap();
     std::fs::create_dir(h.path().join(".claude-hg")).unwrap();
@@ -113,7 +115,7 @@ fn stdout(o: &Output) -> String {
 #[test]
 fn muster_list_says_what_each_task_is_blocked_by() {
     let c = cases();
-    let d = tempfile::tempdir().unwrap();
+    let d = common::tempdir().unwrap();
     write_queue(d.path());
     let out = muster(d.path(), &["list", "--json"]);
     assert!(
@@ -157,7 +159,7 @@ fn muster_list_says_what_each_task_is_blocked_by() {
 #[test]
 fn the_core_says_each_block_in_the_same_words_as_the_app() {
     let c = cases();
-    let d = tempfile::tempdir().unwrap();
+    let d = common::tempdir().unwrap();
     write_queue(d.path());
     let state = queue::read_state_at(
         &[("q".into(), d.path().to_path_buf())],
@@ -183,7 +185,7 @@ fn claim_and_next_take_exactly_what_is_free() {
         if s(t, "stage") != "ready" {
             continue;
         }
-        let d = tempfile::tempdir().unwrap();
+        let d = common::tempdir().unwrap();
         write_queue(d.path());
         let out = muster(d.path(), &["claim", id, "--as", "wt-z"]);
         assert_eq!(
@@ -194,7 +196,7 @@ fn claim_and_next_take_exactly_what_is_free() {
             String::from_utf8_lossy(&out.stderr)
         );
     }
-    let d = tempfile::tempdir().unwrap();
+    let d = common::tempdir().unwrap();
     write_queue(d.path());
     let out = muster(d.path(), &["next", "--as", "wt-z"]);
     assert!(out.status.success(), "{}", stdout(&out));
@@ -209,9 +211,16 @@ fn claim_and_next_take_exactly_what_is_free() {
 #[test]
 fn muster_check_reads_old_blocks_by_the_same_rule() {
     let c = cases();
-    let d = tempfile::tempdir().unwrap();
+    let d = common::tempdir().unwrap();
     write_queue(d.path());
-    let text = stdout(&muster(d.path(), &["check"]));
+    let out = muster(d.path(), &["check"]);
+    let text = stdout(&out);
+    // The queue's project holds no checkout, so no now page is read (mu-191).
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !err.contains("docs/now/") && !text.contains("docs/now/"),
+        "{err}"
+    );
     for want in strings(&c["check"]) {
         // The command it suggests names the task by its key (0033); the file keeps its id.
         let want = match want.rsplit_once("muster unblock ") {

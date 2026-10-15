@@ -519,8 +519,8 @@ mod tests {
     const A: &str = "7b5e8856-c9c8-45ec-aa03-c0ddbf1d4394";
     const B: &str = "4d517d9d-1173-481b-80cc-27e72f903f3c";
 
-    fn queue() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn queue() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }

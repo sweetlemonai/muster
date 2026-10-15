@@ -1107,8 +1107,8 @@ pub(crate) mod tests {
     /// A home folder with four account folders: `.claude` and `.claude-mg` with their own
     /// projects, `.claude-hg/projects` a link to `.claude/projects`, as on the owner's Mac, and
     /// `.claude-ih`, which isn't allowed.
-    pub(crate) fn home() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    pub(crate) fn home() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         fs::create_dir_all(d.path().join(".claude/projects").join(PROJECT)).unwrap();
         fs::create_dir_all(d.path().join(".claude-mg/projects").join(PROJECT)).unwrap();
         fs::create_dir_all(d.path().join(".claude-ih/projects").join(PROJECT)).unwrap();
@@ -1298,7 +1298,7 @@ pub(crate) mod tests {
             "not on this Mac"
         );
         // No account folders at all.
-        let empty = tempfile::tempdir().unwrap();
+        let empty = crate::testkit::tempdir().unwrap();
         let (r, a) = reader(empty.path());
         assert_eq!(r.usage(&a, "deadbeef", NOW).found, Found::Missing);
     }

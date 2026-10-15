@@ -329,8 +329,8 @@ mod tests {
     }
 
     /// Three found queues (one a group's, `persianUtils/colors`) and their list.
-    fn three() -> (tempfile::TempDir, Config) {
-        let base = tempfile::tempdir().unwrap();
+    fn three() -> (crate::testkit::TestDir, Config) {
+        let base = crate::testkit::tempdir().unwrap();
         for q in ["muster/tasks", "drover/tasks", "persianUtils/colors/tasks"] {
             make_queue(&base.path().join(q));
         }
@@ -386,7 +386,7 @@ mod tests {
 
     #[test]
     fn a_colour_is_one_of_the_palette_or_none_and_is_saved_by_folder() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let f = d.path().join("cfg/projects.json");
         projects::edit(&f, |c| set_colour(c, "/p/a/tasks", " orchid ")).unwrap();
         let saved: serde_json::Value =
@@ -592,7 +592,7 @@ mod tests {
     #[test]
     fn a_group_folder_longer_than_a_heading_can_be_renamed_ranked_and_dropped_onto() {
         // Review R4: the heading the window shows, sends back and the core keeps are one form.
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let group = "a-very-long-group-folder-name-x";
         assert_eq!(group.chars().count(), 31);
         make_queue(&base.path().join(group).join("colors/tasks"));
@@ -649,8 +649,8 @@ mod tests {
     /// A group of two (`persianUtils/colors`, `persianUtils/dates`), two projects of their own with
     /// the group's folder name set by hand as their category (`muster`, `drover`), and one under
     /// `Tools` (`alpha`): synthetic, after this Mac's shape (0070).
-    fn grouped() -> (tempfile::TempDir, Config) {
-        let base = tempfile::tempdir().unwrap();
+    fn grouped() -> (crate::testkit::TestDir, Config) {
+        let base = crate::testkit::tempdir().unwrap();
         for q in [
             "persianUtils/colors/tasks",
             "persianUtils/dates/tasks",
@@ -968,7 +968,7 @@ mod tests {
         // mu-88, the twin of the hidden half above: the sidebar draws only projects that are still
         // a queue (`p.ok`), so a heading only gone folders are under is gone there, fold and all.
         let (base, mut c) = grouped();
-        let away = tempfile::tempdir().unwrap();
+        let away = crate::testkit::tempdir().unwrap();
         let beta = away.path().join("beta/tasks");
         make_queue(&beta);
         projects::add(&mut c, base.path(), &beta).unwrap();
@@ -1005,7 +1005,7 @@ mod tests {
 
     #[test]
     fn folds_and_group_names_are_saved_and_read_leniently() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let f = d.path().join("cfg/projects.json");
         projects::edit(&f, |c| {
             c.folded = vec!["DashAfzar".into()];
@@ -1152,7 +1152,7 @@ mod tests {
 
     #[test]
     fn a_long_group_folder_takes_a_display_name_and_gives_it_back() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let group = "a-very-long-group-folder-name-x";
         make_queue(&base.path().join(group).join("colors/tasks"));
         let mut c = Config::default();
@@ -1220,7 +1220,7 @@ mod tests {
     #[test]
     fn writers_at_once_keep_every_colour_and_arrangement() {
         let (base, c) = three();
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let file = d.path().join("projects.json");
         let list = projects::list(base.path(), &c);
         let keys: Vec<String> = list.iter().map(|p| p.key.clone()).collect();

@@ -672,7 +672,7 @@ mod tests {
 
     #[test]
     fn a_kind_confirmed_on_two_tasks_is_proposed_once_and_needs_the_owners_yes() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let root = d.path();
         write(
             root,
@@ -867,7 +867,7 @@ mod tests {
 
     #[test]
     fn the_waiting_count_is_read_again_only_when_lessons_json_changes() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let root = d.path();
         assert_eq!(waiting(root), 0, "no file");
         fs::create_dir_all(crate::layout::reviews_dir(root)).unwrap();
@@ -905,7 +905,7 @@ mod tests {
 
     #[test]
     fn a_lesson_the_cap_expired_isnt_proposed_again_until_its_kind_comes_back() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let root = d.path();
         // 41 kinds, each confirmed on two tasks.
         let mut items = Vec::new();
@@ -965,7 +965,7 @@ mod tests {
 
     #[test]
     fn a_lesson_expires_after_sixty_quiet_days_and_the_cap_expires_the_stalest() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let root = d.path();
         let mut book = Book::default();
         for i in 1..=MAX_LIVE + 1 {

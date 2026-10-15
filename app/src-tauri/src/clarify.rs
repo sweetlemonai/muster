@@ -322,8 +322,8 @@ mod tests {
             .starts_with("0001 has questions open with no default (Q2, Q4): "));
     }
 
-    fn queue_with(tasks: &[(&str, &str, &str)]) -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn queue_with(tasks: &[(&str, &str, &str)]) -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         fill(d.path(), tasks);
         d
     }
@@ -528,7 +528,7 @@ mod tests {
     #[test]
     fn a_poll_mid_send_waits_and_sees_the_whole_batch() {
         // R2: the app polls while --send is between two tasks; it must not see half the batch.
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let s = mid_send(d.path(), || {
             queue::read_state_settled(
                 &[("q".into(), d.path().to_path_buf())],
@@ -548,7 +548,7 @@ mod tests {
     fn the_windows_poll_and_the_hidden_badge_wait_out_a_send() {
         // Review R10: the app's own readers, the poll (projects::read_state) and the hidden
         // window's badge (waiting_in), read between sends, not just read_state_settled.
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let config = crate::projects::Config::default();
         let s = mid_send(&base.path().join("q/tasks"), || {
             let list = crate::projects::list(base.path(), &config);
@@ -561,8 +561,8 @@ mod tests {
         });
         assert!(whole_batch(&s.tasks));
 
-        let base = tempfile::tempdir().unwrap();
-        let files = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
+        let files = crate::testkit::tempdir().unwrap();
         let home = crate::accounts::tests::fake_home();
         // No task has a session stamp, so Claude Code is never asked.
         let fetch: crate::agents::Fetch =

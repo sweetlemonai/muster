@@ -302,7 +302,7 @@ pub fn set(file: &Path, name: &str, value: &str) -> Result<Settings, String> {
 mod tests {
     use super::*;
 
-    fn file(d: &tempfile::TempDir) -> std::path::PathBuf {
+    fn file(d: &crate::testkit::TestDir) -> std::path::PathBuf {
         d.path().join("ai.sweetlemon.muster").join(FILE)
     }
 
@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn missing_or_broken_reads_as_the_defaults_field_by_field() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let f = file(&d);
         assert_eq!(load(&f), Settings::default(), "no file");
         fs::create_dir_all(f.parent().unwrap()).unwrap();
@@ -376,7 +376,7 @@ mod tests {
 
     #[test]
     fn set_takes_a_span_checks_its_bounds_and_saves() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let f = file(&d);
         // The config folder is made on the first save.
         assert_eq!(set(&f, "lease", "2h").unwrap().lease_minutes, 120);
@@ -416,7 +416,7 @@ mod tests {
 
     #[test]
     fn set_refuses_what_isnt_a_span_or_is_out_of_bounds_and_keeps_the_file() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let f = file(&d);
         set(&f, "lease", "3h").unwrap();
         let before = fs::read_to_string(&f).unwrap();
@@ -454,7 +454,7 @@ mod tests {
 
     #[test]
     fn notifications_are_on_unless_turned_off_and_a_bad_value_reads_as_on() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let f = file(&d);
         assert!(Settings::default().notify);
         assert!(!set(&f, "notify", "off").unwrap().notify);
@@ -494,7 +494,7 @@ mod tests {
 
     #[test]
     fn the_old_pauses_offer_is_remembered_and_kept_by_the_other_settings() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let f = file(&d);
         assert!(!load(&f).old_pauses_offered, "not offered yet");
         assert!(
@@ -542,7 +542,7 @@ mod tests {
 
     #[test]
     fn the_menu_bar_icon_is_on_unless_turned_off_and_a_bad_value_reads_as_on() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let f = file(&d);
         assert!(Settings::default().menu_bar);
         assert!(load(&f).menu_bar, "no file: on");
@@ -587,7 +587,7 @@ mod tests {
 
     #[test]
     fn the_claude_accounts_are_mg_and_hg_unless_set_and_bad_entries_are_dropped() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let f = file(&d);
         assert_eq!(
             load(&f).claude_accounts,
@@ -646,7 +646,7 @@ mod tests {
 
     #[test]
     fn the_language_follows_macos_until_picked_and_an_old_file_loads() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let f = file(&d);
         assert_eq!(Settings::default().lang, None, "unset: macOS's language");
         assert_eq!(load(&f).lang, None, "no file");

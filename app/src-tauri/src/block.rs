@@ -687,8 +687,8 @@ mod tests {
     const READY: &str = "stage: ready\nstatus: todo\nclaimed-by:\nheartbeat:\nwaiting_on:";
     const QUESTIONS: &str = "## Questions\n- [ ] **Q1 (wt-a, session aaaa1111, 2026-10-13 08:00):** Which port?\n- [x] **Q2 (wt-a, session aaaa1111, 2026-10-13 08:01):** Which host?\n  **A (capture, 2026-10-13 08:30):** localhost\n\n";
 
-    fn queue() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn queue() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }

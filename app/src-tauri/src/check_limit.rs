@@ -168,7 +168,7 @@ mod tests {
 
     /// projects.json with `json` in it, read as the app and the command line read it.
     fn config(json: &str) -> Config {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let f = d.path().join("projects.json");
         fs::write(&f, json).unwrap();
         crate::projects::load(&f)
@@ -229,7 +229,7 @@ mod tests {
             your_check: m.clone(),
             ..Default::default()
         };
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let f = d.path().join("projects.json");
         crate::projects::save(&f, &c).unwrap();
         let saved: serde_json::Value =
@@ -265,7 +265,7 @@ mod tests {
 
     #[test]
     fn a_limit_follows_the_folder_through_a_rename_and_never_another_project_of_the_same_name() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let mk = |rel: &str| {
             let q = base.path().join(rel);
             fs::create_dir_all(q.join("todo")).unwrap();

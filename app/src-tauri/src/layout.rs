@@ -413,7 +413,7 @@ pub(crate) mod resolve {
 
     #[test]
     fn a_local_queue_is_the_main_checkouts_from_every_worktree_and_stays_out_of_git() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let main = repo(base.path(), "proj");
         let q = crate::projects::init(&main, true, None, &[]).unwrap().0;
         assert_eq!(canon(&q), canon(&main.join(DIR)));
@@ -485,7 +485,7 @@ pub(crate) mod resolve {
 
     #[test]
     fn two_worktrees_claiming_one_task_at_once_one_wins() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let main = repo(base.path(), "proj");
         let q = crate::projects::init(&main, true, None, &[]).unwrap().0;
         let wts: Vec<PathBuf> = ["wt-a", "wt-b"]
@@ -528,7 +528,7 @@ pub(crate) mod resolve {
 
     #[test]
     fn a_muster_queue_keeps_its_prefix_in_config_toml_never_in_a_readme() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let main = repo(base.path(), "proj");
         let (q, prefix) = crate::projects::init(&main, true, Some("pq"), &[]).unwrap();
         assert_eq!(prefix, "pq");
@@ -579,7 +579,7 @@ pub(crate) mod resolve {
 
     #[test]
     fn a_prefix_the_old_queue_and_its_muster_share_routes_keys_to_the_muster_and_check_says_so() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let b = base.path().canonicalize().unwrap();
         // After `muster migrate`, before the old queue is retired: both have prefix mu. The old
         // one is found (two levels down); the new one, three levels down, was added.
@@ -622,7 +622,7 @@ pub(crate) mod resolve {
 
     #[test]
     fn init_writes_a_committed_queue_when_asked_from_any_folder_of_the_repo_and_never_twice() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let main = repo(base.path(), "proj");
         let wt = base.path().join("proj/wt-1");
         git(
@@ -653,7 +653,7 @@ pub(crate) mod resolve {
         let e = crate::projects::init(&main, true, None, &[]).unwrap_err();
         assert!(e.contains("already exists"), "{e}");
         assert_eq!(read_config(&q), Ok(Config { local: false }), "left alone");
-        let outside = tempfile::tempdir().unwrap();
+        let outside = crate::testkit::tempdir().unwrap();
         let e = crate::projects::init(outside.path(), false, None, &[]).unwrap_err();
         assert!(e.contains("isn't in a git repo"), "{e}");
         assert!(!outside.path().join(DIR).exists());
@@ -661,7 +661,7 @@ pub(crate) mod resolve {
 
     #[test]
     fn discovery_finds_main_checkouts_queues_beside_the_old_ones_never_a_worktrees() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let main = repo(base.path(), "proj");
         let q = crate::projects::init(&main, true, None, &[]).unwrap().0;
         git(&main, &["add", "-A"]);
@@ -753,7 +753,7 @@ pub(crate) mod resolve {
     #[test]
     fn a_repo_whose_git_folder_isnt_a_dot_git_has_no_queue_and_a_broken_worktree_never_splits_one()
     {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let b = base.path();
         // A worktree of a bare repo: git's own folder is bare.git.
         let src = repo(b, "src");
@@ -892,7 +892,7 @@ pub(crate) mod resolve {
 
     #[test]
     fn check_reports_a_bad_config_and_a_local_queue_git_would_see() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let q = d.path().join(DIR);
         fs::create_dir(&q).unwrap();
         fs::write(q.join(CONFIG), "local = maybe\n").unwrap();
@@ -925,8 +925,8 @@ mod flows {
 
     /// One empty queue in each layout, by name: v2 (status folders), flat, and `.muster/` in a
     /// repo folder. The temp folder is kept alive with it.
-    fn layouts() -> Vec<(tempfile::TempDir, PathBuf, &'static str)> {
-        let v2 = tempfile::tempdir().unwrap();
+    fn layouts() -> Vec<(crate::testkit::TestDir, PathBuf, &'static str)> {
+        let v2 = crate::testkit::tempdir().unwrap();
         for f in STATUS_FOLDERS {
             fs::create_dir(v2.path().join(f)).unwrap();
         }
@@ -934,10 +934,10 @@ mod flows {
         // from the projects on this Mac.
         fs::write(v2.path().join("README.md"), "---\nprefix: pp\n---\nq\n").unwrap();
         let v2_root = v2.path().to_path_buf();
-        let flat = tempfile::tempdir().unwrap();
+        let flat = crate::testkit::tempdir().unwrap();
         fs::write(flat.path().join("README.md"), "---\nprefix: pp\n---\nq\n").unwrap();
         let flat_root = flat.path().to_path_buf();
-        let repo = tempfile::tempdir().unwrap();
+        let repo = crate::testkit::tempdir().unwrap();
         let m = repo.path().join(DIR);
         fs::create_dir(&m).unwrap();
         fs::write(m.join("config.toml"), config_text(false, Some("pp"))).unwrap();

@@ -122,8 +122,8 @@ impl Places {
     #[cfg(test)]
     fn empty() -> Places {
         thread_local! {
-            static DIR: tempfile::TempDir =
-                tempfile::tempdir().expect("a temporary folder for a test's empty places");
+            static DIR: crate::testkit::TestDir =
+                crate::testkit::tempdir().expect("a temporary folder for a test's empty places");
         }
         DIR.with(|d| Places {
             base: d.path().join("playground"),
@@ -1010,7 +1010,7 @@ mod tests {
 
     #[test]
     fn writers_at_once_keep_every_edit_and_a_reader_never_sees_half_a_file() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let file = d.path().join("app").join("projects.json");
         // A big file, so a write takes long enough for the others to land in the middle of it.
         edit(&file, |c| {
@@ -1068,7 +1068,7 @@ mod tests {
 
     #[test]
     fn a_refused_edit_writes_nothing() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let file = d.path().join("projects.json");
         edit(&file, |c| {
             c.hidden.push("/x".into());
@@ -1086,9 +1086,9 @@ mod tests {
 
     #[test]
     fn lists_found_and_added_with_names_and_hidden() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         make_queue(&base.path().join("alpha/tasks"));
-        let elsewhere = tempfile::tempdir().unwrap();
+        let elsewhere = crate::testkit::tempdir().unwrap();
         let other = elsewhere.path().join("alpha/tasks");
         make_queue(&other);
         let mut c = Config::default();
@@ -1112,7 +1112,7 @@ mod tests {
 
     #[test]
     fn a_migrated_queue_discovery_cant_see_is_added_when_the_old_one_was_listed() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let base = dir.path().canonicalize().unwrap();
         // <base>/g/p/tasks is found (two levels); <base>/g/p/main/.muster is three levels down.
         let old = base.join("g/p/tasks");
@@ -1129,7 +1129,7 @@ mod tests {
         assert!(lines.join("\n").contains("added"), "{lines:?}");
         assert!(list(&base, &c).iter().any(|p| p.key == key && p.ok));
         // A queue nobody listed stays unlisted.
-        let elsewhere = tempfile::tempdir().unwrap();
+        let elsewhere = crate::testkit::tempdir().unwrap();
         let stray = elsewhere.path().canonicalize().unwrap().join("x/tasks");
         make_queue(&stray);
         let mut c = Config::default();
@@ -1139,7 +1139,7 @@ mod tests {
 
     #[test]
     fn a_migrated_queue_takes_the_old_ones_gate_name_and_hidden() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let base = dir.path().canonicalize().unwrap();
         let old = base.join("proj/tasks");
         make_queue(&old);
@@ -1167,7 +1167,7 @@ mod tests {
         assert!(text.contains("gate \"bin/gate\""), "{text}");
         assert!(text.contains("name \"Muster\""), "{text}");
         // A new queue outside the base is added, so it shows as the old one did; hidden carries.
-        let elsewhere = tempfile::tempdir().unwrap();
+        let elsewhere = crate::testkit::tempdir().unwrap();
         let away = elsewhere.path().canonicalize().unwrap().join("repo");
         fs::create_dir_all(away.join(".git")).unwrap();
         let away_q = away.join(layout::DIR);
@@ -1191,7 +1191,7 @@ mod tests {
     #[test]
     fn a_migrated_queue_keeps_its_run_command() {
         // 0077: a run command alone carries, as a gate does, and the old queue keeps its own.
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let base = dir.path().canonicalize().unwrap();
         let old = base.join("proj/tasks");
         make_queue(&old);
@@ -1226,7 +1226,7 @@ mod tests {
     fn a_run_command_is_set_shown_and_cleared_with_the_gates_rules() {
         // 0077: one line, at most 500 characters, trimmed, "" clears it, an unknown project is
         // refused; the gate beside it is left alone.
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         make_queue(&base.path().join("proj/tasks"));
         let mut c = Config::default();
         let key = set_run(&mut c, base.path(), "proj", "  bin/run --fresh ").unwrap();
@@ -1269,7 +1269,7 @@ mod tests {
     fn run_commands_are_read_leniently() {
         // 0077: a file from before run loads with none; a run that isn't an object, or an entry
         // that isn't a command set_run would keep, is left out, and the rest of the file loads.
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let f = d.path().join("projects.json");
         let read = |text: &str| {
             fs::write(&f, text).unwrap();
@@ -1302,7 +1302,7 @@ mod tests {
     #[test]
     fn a_migrated_queue_keeps_its_your_check_limit() {
         use crate::check_limit::{limit_for, Limit};
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let base = dir.path().canonicalize().unwrap();
         let old = base.join("proj/tasks");
         make_queue(&old);
@@ -1339,7 +1339,7 @@ mod tests {
 
     #[test]
     fn a_migrated_queue_keeps_its_label_and_category() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let base = dir.path().canonicalize().unwrap();
         let old = base.join("proj/tasks");
         make_queue(&old);
@@ -1376,7 +1376,7 @@ mod tests {
 
     #[test]
     fn a_migrated_queue_keeps_its_colour_and_its_place_in_the_sidebar() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let base = dir.path().canonicalize().unwrap();
         let old = base.join("proj/tasks");
         make_queue(&old);
@@ -1422,7 +1422,7 @@ mod tests {
     fn a_migrated_queue_outside_its_group_keeps_the_groups_heading() {
         // 0070: a queue under its group's heading (named DashAfzar) migrates to a .muster/ the
         // base doesn't find in that group: it keeps the heading, as its own category.
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let base = dir.path().canonicalize().unwrap();
         let old = base.join("persianUtils/colors/tasks");
         make_queue(&old);
@@ -1467,7 +1467,7 @@ mod tests {
     fn a_migrated_queue_found_in_the_same_group_takes_no_heading_of_its_own() {
         // Review R6: persianUtils/colors/.muster (a repo of its own, not a main checkout) is found
         // in the group, so it's under the group's heading already.
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let base = dir.path().canonicalize().unwrap();
         let old = base.join("persianUtils/colors/tasks");
         make_queue(&old);
@@ -1497,7 +1497,7 @@ mod tests {
 
     #[test]
     fn a_queue_one_level_deeper_is_named_by_its_own_folder_and_keeps_its_group() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         make_queue(&base.path().join("colors/tasks"));
         make_queue(&base.path().join("persianUtils/colors/tasks"));
         make_queue(&base.path().join("persianUtils/fonts/tasks"));
@@ -1518,7 +1518,7 @@ mod tests {
         assert_eq!(json["group"], "persianUtils");
         assert_eq!(json["source"], "found");
         // An added queue has no group, wherever it is.
-        let elsewhere = tempfile::tempdir().unwrap();
+        let elsewhere = crate::testkit::tempdir().unwrap();
         let other = elsewhere.path().join("grp/sheets/tasks");
         make_queue(&other);
         let mut c = Config::default();
@@ -1536,7 +1536,7 @@ mod tests {
 
     #[test]
     fn a_queue_both_found_and_added_shows_once_as_found() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         // Keys are folders as written; the owner's added ones are canonical, so is this base.
         let base = dir.path().canonicalize().unwrap();
         let q = base.join("persianUtils/ai/tasks");
@@ -1560,9 +1560,9 @@ mod tests {
 
     #[test]
     fn add_refuses_what_isnt_a_queue_and_unhides() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let mut c = Config::default();
-        let not = tempfile::tempdir().unwrap();
+        let not = crate::testkit::tempdir().unwrap();
         assert!(add(&mut c, base.path(), not.path())
             .unwrap_err()
             .contains("isn't a Muster queue"));
@@ -1583,7 +1583,7 @@ mod tests {
 
     #[test]
     fn create_makes_a_working_queue() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let proj = base.path().join("gamma");
         fs::create_dir(&proj).unwrap();
         let (q, prefix) = create(&proj, Path::new("/opt/muster/bin"), None, &[]).unwrap();
@@ -1655,7 +1655,7 @@ mod tests {
 
     #[test]
     fn create_refuses_inside_a_repo() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let repo = base.path().join("repo");
         fs::create_dir_all(repo.join(".git")).unwrap();
         fs::create_dir(repo.join("sub")).unwrap();
@@ -1669,7 +1669,7 @@ mod tests {
     fn a_new_queue_goes_in_the_repos_muster_local_unless_committed_else_beside_it() {
         // What the app's New queue makes, and `muster init` (0004).
         use crate::layout::{read_config, resolve::repo, Config};
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let canon = |p: &Path| p.canonicalize().unwrap();
         let main = repo(base.path(), "app");
         let (q, prefix) = new_queue(&main.join("."), None, None, &[], Path::new("/x")).unwrap();
@@ -1704,7 +1704,7 @@ mod tests {
         // A submodule is in a git repo, but git's folder isn't its own `.git`: it gets init's
         // reason, with or without a mode, never the old tasks/ or "isn't in a git repo".
         use crate::layout::resolve::{git, repo};
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let outer = repo(base.path(), "outer");
         let inner = repo(base.path(), "inner");
         git(
@@ -1729,7 +1729,7 @@ mod tests {
 
     #[test]
     fn config_round_trips_and_tolerates_junk() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let f = d.path().join("cfg/projects.json");
         assert_eq!(load(&f), Config::default());
         let mut c = Config::default();
@@ -1742,7 +1742,7 @@ mod tests {
     }
     #[test]
     fn the_window_sets_a_prefix_by_the_projects_key_with_the_same_checks() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         make_queue(&base.path().join("muster/tasks"));
         make_queue(&base.path().join("braindump/tasks"));
         let c = Config::default();
@@ -1785,10 +1785,10 @@ mod tests {
             (p.base, p.config_file)
         );
         // Given its own, it sees those, and so does every read that starts at `places`.
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         make_queue(&d.path().join("zqmine/tasks"));
         let file = d.path().join("projects.json");
-        let other = tempfile::tempdir().unwrap();
+        let other = crate::testkit::tempdir().unwrap();
         let added = other.path().join("elsewhere/tasks");
         make_queue(&added);
         let mut c = Config::default();
@@ -1808,7 +1808,7 @@ mod tests {
 
     #[test]
     fn a_thread_a_test_starts_gets_empty_places_of_its_own() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         make_queue(&d.path().join("zqmine/tasks"));
         use_places(Places {
             base: d.path().to_path_buf(),
@@ -1851,8 +1851,8 @@ mod tests {
         // mu-88: every map in the file is saved in key order, so a save that changes nothing
         // else (a fold, then its unfold) writes the same bytes, and the file never churns.
         // mu-160: a new map in Config gets filled here too, or it could turn back into a HashMap.
-        let base = tempfile::tempdir().unwrap();
-        let d = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let file = d.path().join("cfg/projects.json");
         let mut keys = Vec::new();
         for i in 0..24 {
@@ -1934,7 +1934,7 @@ mod tests {
     #[test]
     fn read_state_passes_the_settings_through_to_the_state() {
         // mu-73 review: the window shows State.settings; a regression would show the defaults.
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         make_queue(&base.path().join("demo/tasks"));
         let c = Config::default();
         let given = crate::settings::Settings {

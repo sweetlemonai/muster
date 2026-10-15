@@ -509,8 +509,8 @@ mod tests {
     use std::fs;
 
     /// A queue with one task for each way to wait on the owner, and some that don't.
-    fn queue() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn queue() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         fs::write(d.path().join("README.md"), "queue").unwrap();
         let put = |name: &str, front: &str, title: &str, more: &str| {
             let text =
@@ -574,7 +574,7 @@ mod tests {
         d
     }
 
-    fn read(d: &tempfile::TempDir) -> crate::queue::State {
+    fn read(d: &crate::testkit::TestDir) -> crate::queue::State {
         let mut s = crate::queue::read_state_keyed(
             &[("muster".into(), d.path().to_path_buf())],
             &mut crate::queue::Cache::default(),
@@ -591,7 +591,7 @@ mod tests {
         s
     }
 
-    fn lessons(d: &tempfile::TempDir, ids: &[(&str, &str)]) {
+    fn lessons(d: &crate::testkit::TestDir, ids: &[(&str, &str)]) {
         fs::create_dir_all(d.path().join("reviews")).unwrap();
         let all: Vec<String> = ids
             .iter()
@@ -1119,7 +1119,7 @@ mod tests {
 
     #[test]
     fn asks_leave_at_the_first_thing_to_say_posts_one_batch_and_remembers_across_a_restart() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let file = d.path().join("ai.sweetlemon.muster").join(FILE);
         let n = Notifier::new(file.clone());
         let fake = Fake::default();
@@ -1160,7 +1160,7 @@ mod tests {
 
     #[test]
     fn the_focused_window_sees_what_it_shows_and_the_rest_is_posted_once_it_loses_the_focus() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let file = d.path().join(FILE);
         let n = Notifier::new(file.clone());
         let focused = Fake {
@@ -1198,7 +1198,7 @@ mod tests {
     #[test]
     fn off_reads_and_posts_nothing_and_on_again_doesnt_bring_up_what_came_meanwhile() {
         let d = queue();
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let n = Notifier::new(dir.path().join(FILE));
         let fake = Fake::default();
         let mut s = read(&d);
@@ -1234,7 +1234,7 @@ mod tests {
     #[test]
     fn a_session_waiting_for_input_when_claude_code_is_first_read_isnt_posted() {
         let d = queue();
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let n = Notifier::new(dir.path().join(FILE));
         let fake = Fake::default();
         let s = read(&d);
@@ -1260,7 +1260,7 @@ mod tests {
     #[test]
     fn a_session_on_an_account_whose_first_read_failed_isnt_posted_when_a_later_read_lands() {
         let d = queue();
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let n = Notifier::new(dir.path().join(FILE));
         let fake = Fake::default();
         let mut s = read(&d);
@@ -1330,7 +1330,7 @@ mod tests {
     #[test]
     fn a_session_found_waiting_on_another_account_than_its_stamps_is_that_accounts_news() {
         let d = queue();
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let n = Notifier::new(dir.path().join(FILE));
         let fake = Fake::default();
         let mut s = read(&d);
@@ -1365,7 +1365,7 @@ mod tests {
 
     #[test]
     fn refused_leave_or_a_failed_post_notifies_nothing_and_asks_no_more_this_run() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let qs = ["a".to_string()];
         let n = Notifier::new(d.path().join(FILE));
         let refuse = Fake {

@@ -3,11 +3,13 @@
 //! `muster show mu-12`, `12`, `0012` and `MU-12` find the same task; `br-7` finds braindump's
 //! from Muster's folder; a prefix is set, and refused when it's bad or taken.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 struct World {
-    _tmp: tempfile::TempDir,
+    _tmp: common::TestDir,
     home: PathBuf,
     base: PathBuf,
 }
@@ -15,7 +17,7 @@ struct World {
 impl World {
     /// `muster` and `braindump` under the playground, each with a queue beside its repo folder.
     fn new() -> World {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = common::tempdir().unwrap();
         let home = tmp.path().join("home");
         let base = tmp.path().join("playground");
         std::fs::create_dir_all(&home).unwrap();

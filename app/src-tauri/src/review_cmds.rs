@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn the_app_decides_lessons_as_the_owner_with_its_arguments_checked() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         assert_eq!(
             decide_in(d.path(), &["1".into()], false, &[], "", "2026-10-13 10:00").unwrap_err(),
             "bad lesson ids"

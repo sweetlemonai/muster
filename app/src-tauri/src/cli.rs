@@ -3483,7 +3483,7 @@ mod tests {
 
     #[test]
     fn muster_projects_lists_the_real_name_and_says_the_label_and_category_after() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let q = base.path().join("muster/tasks");
         std::fs::create_dir_all(q.join("todo")).unwrap();
         std::fs::write(q.join("README.md"), "q").unwrap();
@@ -3518,7 +3518,7 @@ mod tests {
     #[test]
     fn settings_come_from_the_callers_home_and_are_the_defaults_without_one() {
         assert_eq!(machine_settings(&no_env), settings::Settings::default());
-        let home = tempfile::tempdir().unwrap();
+        let home = crate::testkit::tempdir().unwrap();
         let dir = home
             .path()
             .join("Library/Application Support/ai.sweetlemon.muster");
@@ -3553,8 +3553,8 @@ mod tests {
 
     /// Drover's old queue with dr-22 paused before 0045 and a real block beside it, and Muster's
     /// `.muster/` with mu-42 blocked on you as paused, holding them both.
-    fn old_pause_queues() -> (tempfile::TempDir, Vec<(String, PathBuf)>) {
-        let base = tempfile::tempdir().unwrap();
+    fn old_pause_queues() -> (crate::testkit::TestDir, Vec<(String, PathBuf)>) {
+        let base = crate::testkit::tempdir().unwrap();
         let dr = base.path().join("drover/tasks");
         for f in queue::STATUS_FOLDERS {
             std::fs::create_dir_all(dr.join(f)).unwrap();
@@ -3736,7 +3736,7 @@ mod tests {
         assert_eq!(main_with(&fix, &owner), 0);
         assert_eq!(files_under(base.path()), before, "not given: none known");
         // Drover's found under the base, Muster's `.muster/` (no repo around it) added by hand.
-        let given = tempfile::tempdir().unwrap();
+        let given = crate::testkit::tempdir().unwrap();
         let config_file = given.path().join("projects.json");
         let mut c = projects::Config::default();
         c.added.push(queues[1].1.to_string_lossy().to_string());
@@ -3766,7 +3766,7 @@ mod tests {
 
     /// A queue with `checking` agents' tasks in Your check, the owner's own and a feature there
     /// too (neither counts), one task Ready and one Done.
-    fn checking_queue(checking: usize) -> tempfile::TempDir {
+    fn checking_queue(checking: usize) -> crate::testkit::TestDir {
         let d = v2_queue();
         let file = |id: String, fm: &str| {
             std::fs::write(
@@ -3800,7 +3800,7 @@ mod tests {
 
     #[test]
     fn migrate_carries_the_limit_into_projects_json_under_its_lock_and_a_dry_run_writes_nothing() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let base = dir.path().canonicalize().unwrap();
         let old = base.join("proj/tasks");
         std::fs::create_dir_all(old.join("todo")).unwrap();
@@ -4098,11 +4098,11 @@ mod tests {
     /// ids into depends, and the refusals with their exit codes (1 refused, 2 usage).
     #[test]
     fn block_takes_a_kind_and_what_it_waits_on() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
             std::fs::create_dir(d.path().join(f)).unwrap();
         }
-        std::fs::write(d.path().join("README.md"), "q").unwrap();
+        std::fs::write(d.path().join("README.md"), "---\nprefix: tm\n---\nq").unwrap();
         let q = d.path().to_string_lossy().to_string();
         let code = |args: &[&str]| {
             let mut v = sv(args);
@@ -4216,7 +4216,7 @@ mod tests {
 
     #[test]
     fn runs_against_a_queue_folder() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
             std::fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -4334,7 +4334,7 @@ mod tests {
 
     #[test]
     fn tick_and_untick_the_owners_criteria() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
             std::fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -4369,7 +4369,7 @@ mod tests {
 
     #[test]
     fn summary_from_the_command_line_with_pass_and_set() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
             std::fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -4429,7 +4429,7 @@ mod tests {
 
     #[test]
     fn stage_commands_and_their_exit_codes() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
             std::fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -4550,7 +4550,7 @@ mod tests {
 
     #[test]
     fn list_groups_by_stage_and_filters() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
             std::fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -4653,7 +4653,7 @@ mod tests {
 
     #[test]
     fn list_searches_filters_and_sorts_like_the_app() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
             std::fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -4777,8 +4777,8 @@ mod tests {
         }
     }
 
-    fn v2_queue() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn v2_queue() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
             std::fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -5392,7 +5392,7 @@ mod tests {
     fn index_as_built_fills_the_documents_queue_section_from_the_callers_home() {
         let d = v2_queue();
         let q = d.path().to_string_lossy().to_string();
-        let out = tempfile::tempdir().unwrap();
+        let out = crate::testkit::tempdir().unwrap();
         let file = out.path().join("AS_BUILT.md");
         let f = file.to_string_lossy().to_string();
         let home = out.path().join("home").to_string_lossy().to_string();
@@ -5440,7 +5440,7 @@ mod tests {
     #[test]
     fn a_repos_muster_queue_is_found_from_its_worktrees_and_the_env_check_knows_it() {
         use crate::layout::resolve::{git, repo};
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (drover, drover_repo) = project(base.path(), "drover");
         let main = repo(base.path(), "muster");
         let q = projects::init(&main, true, None, &[]).unwrap().0;
@@ -5488,10 +5488,10 @@ mod tests {
 
     #[test]
     fn init_makes_a_repos_muster_and_migrate_takes_its_options() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let main_dir = crate::layout::resolve::repo(base.path(), "p");
         let m = main_dir.to_string_lossy().to_string();
-        let outside = tempfile::tempdir().unwrap();
+        let outside = crate::testkit::tempdir().unwrap();
         let o = outside.path().to_string_lossy().to_string();
         // --local outside a repo is refused; without it, the old tasks/ as before.
         assert_eq!(main(&sv(&["init", &o, "--local"])), 1);
@@ -5529,7 +5529,7 @@ mod tests {
 
     #[test]
     fn an_env_queue_is_refused_for_claims_made_from_another_projects_folder() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (drover, _) = project(base.path(), "drover");
         let (muster, repo) = project(base.path(), "muster");
         let known = || vec![("drover".to_string(), drover.clone())];
@@ -5569,7 +5569,7 @@ mod tests {
         let (root, source) =
             resolve_queue(None, Some(("MUSTER_ROOT", link)), Some(&repo), &known).unwrap();
         assert!(check_target(&source, &root, Some(&repo), &known).is_ok());
-        let elsewhere = tempfile::tempdir().unwrap();
+        let elsewhere = crate::testkit::tempdir().unwrap();
         let (root, source) = resolve_queue(None, env(), Some(elsewhere.path()), &known).unwrap();
         assert!(check_target(&source, &root, Some(elsewhere.path()), &known).is_ok());
         assert!(check_target(&source, &root, None, &known).is_ok());
@@ -5960,7 +5960,7 @@ mod tests {
             missing_lenses: vec!["Themes".into(), "Docs".into()],
             markers: vec!["[NEEDS CLARIFICATION: which port?]".into()],
         };
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (q, _) = project(base.path(), "drover");
         assert_eq!(
             filed_message(&q, "dr", &f),
@@ -5988,7 +5988,7 @@ mod tests {
 
     #[test]
     fn a_claim_says_which_queue_it_was_made_in() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (q, _) = project(base.path(), "muster");
         for f in queue::STATUS_FOLDERS {
             std::fs::create_dir_all(q.join(f)).unwrap();
@@ -6026,7 +6026,7 @@ mod tests {
     }
 
     /// A v2 queue that is its own git repo with `user.name` set, as `<project>/tasks` is.
-    fn git_queue(name: &str) -> tempfile::TempDir {
+    fn git_queue(name: &str) -> crate::testkit::TestDir {
         let d = v2_queue();
         let git = |args: &[&str]| {
             let ok = std::process::Command::new("git")
@@ -7038,10 +7038,10 @@ mod tests {
 
     #[test]
     fn projects_says_which_queues_were_found_and_which_were_added() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (top, _) = project(base.path(), "drover");
         let (nested, _) = project(&base.path().join("persianUtils"), "colors");
-        let elsewhere = tempfile::tempdir().unwrap();
+        let elsewhere = crate::testkit::tempdir().unwrap();
         let (added, _) = project(elsewhere.path(), "notes");
         let mut c = projects::Config::default();
         projects::add(&mut c, base.path(), &added).unwrap();
@@ -7077,7 +7077,7 @@ mod tests {
 
     #[test]
     fn the_projects_gate_is_set_checked_and_cleared() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (q, _) = project(base.path(), "proj");
         let mut c = projects::Config::default();
         let set = |c: &mut projects::Config, args: &[&str]| {
@@ -7129,7 +7129,7 @@ mod tests {
     #[test]
     fn the_projects_run_command_is_set_checked_and_cleared() {
         // 0077: beside the gate, with the gate's checks; only the app's Run starts it (0079).
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (q, _) = project(base.path(), "proj");
         let mut c = projects::Config::default();
         let set = |c: &mut projects::Config, args: &[&str]| {
@@ -7224,7 +7224,7 @@ mod tests {
         write("0004", "wt-d (main · session 22222222 · cc-ih)");
         // A fake `claude` where the CLI looks first, and the accounts' folders. Each run notes
         // the account folder it was given; every session is waiting on a prompt.
-        let home = tempfile::tempdir().unwrap();
+        let home = crate::testkit::tempdir().unwrap();
         let bin = home.path().join(".local/bin");
         std::fs::create_dir_all(&bin).unwrap();
         for a in [".claude", ".claude-hg", ".claude-mg", ".claude-ih"] {
@@ -7712,7 +7712,7 @@ mod tests {
     )];
 
     /// A queue with `n` tasks the owner made, 0001 up.
-    fn queue_of(n: usize) -> (tempfile::TempDir, String) {
+    fn queue_of(n: usize) -> (crate::testkit::TestDir, String) {
         let d = v2_queue();
         let q = d.path().to_string_lossy().to_string();
         for t in ["One", "Two", "Three", "Four"].iter().take(n) {
@@ -7953,8 +7953,8 @@ mod tests {
 
     /// Two queues Muster knows (`projects::use_places`, this thread only), `al` and `be`, with
     /// `n` tasks the owner made in each.
-    fn two_queues(n: usize) -> (tempfile::TempDir, PathBuf, String, PathBuf, String) {
-        let base = tempfile::tempdir().unwrap();
+    fn two_queues(n: usize) -> (crate::testkit::TestDir, PathBuf, String, PathBuf, String) {
+        let base = crate::testkit::tempdir().unwrap();
         let mut c = projects::Config::default();
         let mut made = Vec::new();
         for (name, prefix) in [("alpha", "al"), ("beta", "be")] {
@@ -8334,7 +8334,7 @@ mod tests {
 
     #[test]
     fn restore_and_history_put_a_cleaned_queue_back_and_check_fails_until_then() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let main_repo = crate::layout::resolve::repo(base.path(), "proj");
         let q = crate::projects::init(&main_repo, true, Some("pq"), &[])
             .unwrap()

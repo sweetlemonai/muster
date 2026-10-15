@@ -1295,7 +1295,7 @@ mod tests {
 
     #[test]
     fn a_missing_file_is_written_from_the_defaults_and_read_back() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let file = d.path().join("app").join(FILE);
         assert_eq!(load(&file).unwrap(), defaults());
         let text = std::fs::read_to_string(&file).unwrap();
@@ -1574,7 +1574,7 @@ mod tests {
         *roles.iter_mut().find(|r| r.id == "coder").unwrap() = hand.clone();
         assert_eq!(parse(&render(&roles)).unwrap(), roles);
         // Settings changes one field of a hand-set file: every other one stays as set.
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let file = d.path().join(FILE);
         std::fs::write(&file, render(&roles)).unwrap();
         edit(&file, "coder", "name", "Kaveh").unwrap();
@@ -1605,7 +1605,7 @@ mod tests {
         );
         // A refused file reads as the same refusal again, from the cache: parsed once until it
         // changes.
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let file = d.path().join(FILE);
         std::fs::write(&file, "[coder]\ncolour = \"red\"\n").unwrap();
         let before = PARSES.get();
@@ -1620,7 +1620,7 @@ mod tests {
 
     #[test]
     fn a_file_over_the_cap_is_refused_and_a_changed_file_is_read_again() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let file = d.path().join(FILE);
         std::fs::write(&file, "#".repeat(70 * 1024)).unwrap();
         assert!(load(&file).unwrap_err().contains("over 64 KB"));
@@ -1633,7 +1633,7 @@ mod tests {
 
     #[test]
     fn settings_edits_one_field_and_refuses_a_bad_value_leaving_the_file() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let file = d.path().join(FILE);
         let roles = edit(&file, "coder", "name", " کاوه ").unwrap();
         assert_eq!(find(&roles, "coder").unwrap().name, "کاوه");

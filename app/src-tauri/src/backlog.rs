@@ -1415,8 +1415,8 @@ mod tests {
     /// The default lease, as the CLI and the app pass this Mac's.
     const L: u64 = crate::ops::LEASE_MINUTES;
 
-    fn v2() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn v2() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -1424,8 +1424,8 @@ mod tests {
         d
     }
 
-    fn flat() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn flat() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         fs::write(d.path().join("README.md"), "q").unwrap();
         d
     }
@@ -2279,7 +2279,7 @@ mod tests {
 
     #[test]
     fn peek_reads_the_note_and_the_projects_docs_and_writes_nothing() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let root = base.path().join("proj/tasks");
         for f in STATUS_FOLDERS {
             fs::create_dir_all(root.join(f)).unwrap();
@@ -2379,7 +2379,7 @@ mod tests {
 
     #[test]
     fn shape_names_the_now_pages_its_matched_tasks_cover() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let root = base.path().join("proj/tasks");
         for f in STATUS_FOLDERS {
             fs::create_dir_all(root.join(f)).unwrap();
@@ -2458,7 +2458,7 @@ mod tests {
     const B: &str = "asghar_7 (main · session aaaa1111)";
 
     /// A v2 queue with two notes, `a.md` and `b.md`.
-    fn two_notes() -> tempfile::TempDir {
+    fn two_notes() -> crate::testkit::TestDir {
         let d = v2();
         put(d.path(), "inbox/a.md", b"Idea A", 5);
         put(d.path(), "inbox/b.md", b"Idea B", 6);

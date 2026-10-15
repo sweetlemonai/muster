@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn the_state_gets_each_projects_prefix() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let (a, b) = (d.path().join("a/tasks"), d.path().join("b/tasks"));
         for q in [&a, &b] {
             queue_at(q, "q");
@@ -623,7 +623,7 @@ mod tests {
 
     #[test]
     fn errors_name_the_queues_tasks_and_what_was_typed() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         queue_at(d.path(), "---\nprefix: nt\n---\n");
         std::fs::write(d.path().join("todo/0007-x.md"), "---\nid: 0007\n---\n").unwrap();
         assert_eq!(
@@ -742,7 +742,7 @@ mod tests {
 
     #[test]
     fn the_stored_prefix_is_readmes_front_matter() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         assert_eq!(stored_prefix(d.path()), None, "no README");
         queue_at(d.path(), "# q\n");
         assert_eq!(stored_prefix(d.path()), None, "no front matter");
@@ -758,7 +758,7 @@ mod tests {
 
     #[test]
     fn storing_a_prefix_keeps_the_rest_of_the_readme() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let readme = "# q — task queue\n\nThe rules.\n";
         queue_at(d.path(), readme);
         store_prefix(d.path(), "qu").unwrap();
@@ -776,7 +776,7 @@ mod tests {
         store_prefix(d.path(), "ow").unwrap();
         let text = std::fs::read_to_string(d.path().join("README.md")).unwrap();
         assert_eq!(text, "---\nowner: x\nprefix: ow\n---\n# q\n");
-        let none = tempfile::tempdir().unwrap();
+        let none = crate::testkit::tempdir().unwrap();
         assert!(
             store_prefix(none.path(), "ab").is_err(),
             "no README to store it in"
@@ -785,7 +785,7 @@ mod tests {
 
     #[test]
     fn the_first_write_pins_the_default_prefix() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let q = d.path().join("zqxpin/tasks");
         let readme = "# zqxpin — task queue\n\nThe rules.\n";
         queue_at(&q, readme);
@@ -800,14 +800,14 @@ mod tests {
         let again = std::fs::read_to_string(q.join("README.md")).unwrap();
         assert_eq!(again, text);
         // A queue with no README has nowhere to keep it, and isn't given one.
-        let flat = tempfile::tempdir().unwrap();
+        let flat = crate::testkit::tempdir().unwrap();
         queue::with_lock(flat.path(), || Ok(())).unwrap();
         assert!(!flat.path().join("README.md").exists());
     }
 
     #[test]
     fn a_new_prefix_is_refused_when_bad_or_taken() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         queue_at(&base.path().join("muster/tasks"), "q");
         queue_at(&base.path().join("drover/tasks"), "---\nprefix: dv\n---\nq");
         queue_at(&base.path().join("braindump/tasks"), "q");
@@ -828,7 +828,7 @@ mod tests {
 
     #[test]
     fn a_queues_prefix_is_stored_or_its_default() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let q = d.path().join("zqxproject/tasks");
         queue_at(&q, "---\nprefix: zqx\n---\n# q\n");
         assert_eq!(prefix_for(&q), "zqx");

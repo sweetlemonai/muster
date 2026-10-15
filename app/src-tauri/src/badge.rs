@@ -119,7 +119,7 @@ mod tests {
 
     #[test]
     fn counts_every_task_that_needs_the_owner_as_the_core_reads_them() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         fs::write(d.path().join("README.md"), "queue").unwrap();
         let put = |name: &str, front: &str| {
             let text = format!("---\n{front}\n---\n\n# {name}\n\n## Log\n- 2026-10-13 captured\n");

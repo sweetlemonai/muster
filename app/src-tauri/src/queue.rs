@@ -3326,8 +3326,8 @@ mod tests {
 
     const TASK: &str = "---\nid: 0042\ntype: bug\npriority: high\nstatus: doing\ncaptured: 2026-10-11\nclaimed-by: wt-a (session aaaa1111)\nheartbeat:\nwaiting_on:\ncommit:\n---\n\n# Something broke\n\n**Details:** test.\n\n## Questions\n- [ ] **Q1 (wt-a, session aaaa1111, 2026-10-11 10:00):** Which port?\n- [ ] **Q2 (wt-a, session aaaa1111, 2026-10-11 10:05):** Product call?\n  **Escalated to owner (capture, 2026-10-11 10:06).**\n\n## Log\n- 2026-10-11 captured\n- 2026-10-11 wt-a: asked Q1\n";
 
-    fn queue() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn queue() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -3339,7 +3339,7 @@ mod tests {
     #[test]
     fn a_questions_asker_carries_the_slot_its_stamps_act_as() {
         let text = "---\nid: 0001\nstage: building\nclaimed-by: Kaveh-2 (main · session 7b5e8856 · slot coder-2 · cc-hg)\n---\n\n# T\n\n## Questions\n\n- [ ] **Q1 (Kaveh-2, session 7b5e8856, 2026-10-14 20:00):** Which port?\n- [ ] **Q2 (akbar, session 7b5e8856, 2026-10-14 20:01):** And?\n- [ ] **Q3 (Sohrab-1, session 1c6af0d9 · agent a1b2c3d4, 2026-10-14 20:02):** Safe?\n- [ ] **Q4 (Kaveh-2, session 0f0f0f0f, 2026-10-14 20:03):** Mine?\n- [ ] **Q5 (Sohrab-1, session 1c6af0d9, 2026-10-14 20:04):** Lead?\n\n## Log\n- 2026-10-14 19:00 Sohrab-1 (wt · session 1c6af0d9 · agent a1b2c3d4 · slot security-1): check-in · on it\n";
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let path = d.path().join("0001-t.md");
         let t = parse_task("", d.path(), "", &path, text, 0).unwrap();
         let slots: Vec<&str> = t.questions.iter().map(|q| q.slot.as_str()).collect();
@@ -3425,7 +3425,7 @@ mod tests {
 
     #[test]
     fn reads_claim_and_done_days_from_the_log() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let text = TASK.replace("status: doing", "status: done").replace(
             "- 2026-10-11 wt-a: asked Q1\n",
             "- 2026-10-11 10:00 claimed by wt-a\n- 2026-10-12 09:00 note\n- 2026-10-13 18:00 done in abc123\n",
@@ -3443,7 +3443,7 @@ mod tests {
 
     #[test]
     fn reads_the_flat_layout_too() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         fs::write(d.path().join("0042-x.md"), TASK).unwrap();
         let s = read_state(
             &[("p".into(), d.path().to_path_buf())],
@@ -3515,7 +3515,7 @@ mod tests {
     #[test]
     fn search_index_gives_each_tasks_text_by_queue_and_id_through_the_cache() {
         let a = queue();
-        let b = tempfile::tempdir().unwrap();
+        let b = crate::testkit::tempdir().unwrap();
         let file = b.path().join("0007-x.md");
         let task = "---\nid: 0007\nstatus: todo\n---\n\n# Board flickers\n\nThe columns jump.\n";
         fs::write(&file, task).unwrap();
@@ -4252,7 +4252,7 @@ mod tests {
     const PLAIN: &str = "---\nid: 0007\ntype: task\npriority: normal\nstatus: doing\nstage: building\nclaimed-by: wt-a\nheartbeat:\nwaiting_on:\n---\n\n# Plain\n\n**Details:** synthetic.\n\n## Log\n- 2026-10-11 captured\n";
     const S: &str = "2026-10-12 09:00";
 
-    fn plain() -> tempfile::TempDir {
+    fn plain() -> crate::testkit::TestDir {
         let d = queue();
         fs::write(d.path().join("doing/0007-plain.md"), PLAIN).unwrap();
         d
@@ -4698,8 +4698,8 @@ mod tests {
     }
 
     /// A flat queue of items `(id, front-matter lines)`, each titled "Item <id>".
-    fn levels_queue(items: &[(&str, &str)]) -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn levels_queue(items: &[(&str, &str)]) -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         for (id, fm) in items {
             fs::write(
                 d.path().join(format!("{id}-x.md")),
@@ -4709,7 +4709,7 @@ mod tests {
         }
         d
     }
-    fn levels_state(d: &tempfile::TempDir) -> State {
+    fn levels_state(d: &crate::testkit::TestDir) -> State {
         read_state_at(
             &[("p".into(), d.path().to_path_buf())],
             &mut Cache::default(),
@@ -5192,7 +5192,7 @@ mod tests {
     fn proof_and_summary_come_with_the_task_in_ai_10s_shape() {
         // ai-10's shape, synthetic text: four criteria ticked with proofs, two naming screenshots,
         // none the owner's, in an old-layout queue.
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -5264,7 +5264,7 @@ mod tests {
     fn criteria_with_proofs_are_sent_only_in_your_check() {
         // mu-78 R4: only Your check reads them, and the state is polled every 2 s; the owner's
         // checklist still comes in every stage.
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let path = d.path().join("doing/0001-t.md");
         let task = |stage: &str| {
             let text = format!("---\nid: 0001\nstage: {stage}\n---\n\n# T\n\n## Acceptance criteria\n- [x] AC1: a — verify: command — proof: ok\n- [ ] AC2: b — verify: owner\n\n## Log\n");
@@ -5285,7 +5285,7 @@ mod tests {
     #[test]
     fn builders_go_to_the_window_as_the_chain_reads_them() {
         // mu-186: the card counts the takeover chain (0090) as the core's tester_rule does.
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let path = d.path().join("doing/0001-t.md");
         let old = "asghar (main · session 1c6af0d9 · cc-mg)";
         let new = "asghar (main · session d6419719 · cc-mg)";
@@ -5311,7 +5311,7 @@ mod tests {
 
     #[test]
     fn summary_reads_as_one_plain_line_or_nothing() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let path = d.path().join("doing/0001-t.md");
         let summary = |fm: &str| {
             let text = format!("---\nid: 0001\nstage: your-check\n{fm}---\n\n# T\n");
@@ -5334,7 +5334,7 @@ mod tests {
 
     #[test]
     fn the_task_carries_only_the_owners_criteria() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let text = "---\nid: 0001\nstatus: doing\nstage: your-check\n---\n\n# T\n\n## Acceptance criteria\n- [x] AC1: a — verify: command\n- [ ] AC2: b — verify: owner\n\n## Log\n";
         let path = d.path().join("doing/0001-t.md");
         let t = parse_task("q", d.path(), "doing", &path, text, 0).unwrap();
@@ -5353,7 +5353,7 @@ mod tests {
 
     #[test]
     fn captured_at_comes_from_the_first_log_line_on_the_capture_day() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let path = d.path().join("todo/0001-t.md");
         let at = |captured: &str, log: &str| {
             let text = format!(
@@ -5454,7 +5454,7 @@ mod tests {
 
     #[test]
     fn captured_at_skips_a_first_line_that_is_a_stage_change() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let path = d.path().join("doing/0001-t.md");
         let text = "---\nid: 0001\nstatus: doing\ncaptured: 2026-10-12\n---\n\n# T\n\n## Log\n- 2026-10-12 16:59 wt-a: stage ready → building (claimed)\n";
         assert_eq!(
@@ -5529,7 +5529,7 @@ mod tests {
 
     #[test]
     fn check_names_bad_self_missing_and_looping_dependencies() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -5567,7 +5567,7 @@ mod tests {
 
     #[test]
     fn discovers_queues() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let q = base.path().join("proj/tasks");
         fs::create_dir_all(q.join("todo")).unwrap();
         fs::write(q.join("README.md"), "q").unwrap();
@@ -5596,7 +5596,7 @@ mod tests {
 
     #[test]
     fn discovers_queues_one_level_deeper_and_no_further() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let b = base.path();
         make_queue(&b.join("proj/tasks"));
         make_queue(&b.join("persianUtils/colors/tasks"));
@@ -5628,7 +5628,7 @@ mod tests {
 
     #[test]
     fn discovery_skips_hidden_archived_and_build_folders() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let b = base.path();
         for skipped in [
             ".hidden",
@@ -5655,12 +5655,12 @@ mod tests {
     #[test]
     fn discovery_stays_inside_the_base_through_symlinks() {
         use std::os::unix::fs::symlink;
-        let outside = tempfile::tempdir().unwrap();
+        let outside = crate::testkit::tempdir().unwrap();
         let o = outside.path();
         make_queue(&o.join("away/tasks"));
         make_queue(&o.join("grp/deep/tasks"));
         make_queue(&o.join("q"));
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let b = base.path();
         make_queue(&b.join("real/tasks"));
         // Out of the base: a project folder, a group folder and a tasks folder.
@@ -5790,7 +5790,7 @@ mod tests {
 
     #[test]
     fn discovery_of_a_missing_base_finds_nothing() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         assert!(discover(&base.path().join("nope")).is_empty());
     }
 }

@@ -46,6 +46,8 @@ pub mod search;
 pub mod session;
 pub mod sessions;
 pub mod settings;
+#[cfg(test)]
+mod testkit;
 pub mod transcripts;
 pub mod tray;
 pub mod vision;
@@ -1973,7 +1975,7 @@ mod tests {
 
     #[test]
     fn the_owners_edit_checks_its_arguments_then_the_rules() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
             std::fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -2009,7 +2011,7 @@ mod tests {
 
     #[test]
     fn the_owners_comment_and_link_check_their_arguments_then_the_rules() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
             std::fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -2077,7 +2079,7 @@ mod tests {
 
     #[test]
     fn search_index_takes_only_a_queue_muster_knows() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let config = d.path().join("projects.json");
         for bad in ["../x", "/tmp", "no such queue"] {
             let err = index_scope(&config, Some(bad)).unwrap_err();
@@ -2087,7 +2089,7 @@ mod tests {
 
     #[test]
     fn accept_all_accepts_exactly_the_just_accept_tasks_each_logged() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
             std::fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -2186,7 +2188,7 @@ mod tests {
     fn accept_all_leaves_a_task_with_an_unproven_criterion() {
         // mu-78 R1: the card and the pane say "not proven" for an agent's criterion left unticked
         // (a hand move into Your check), so Accept all doesn't take it either.
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
             std::fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -2221,7 +2223,7 @@ mod tests {
 
     #[test]
     fn accept_all_leaves_goals_features_and_open_questions_for_the_owner() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
             std::fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -2344,7 +2346,7 @@ mod tests {
 
     #[test]
     fn the_language_in_effect_is_the_setting_else_macos_else_english() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let file = d.path().join(settings::FILE);
         let mac = || vec!["fa-IR".to_string(), "en-US".to_string()];
         let info = |system| info_for(&file, "0.1.0", d.path(), String::new(), system);
@@ -2381,7 +2383,7 @@ mod tests {
 
     #[test]
     fn release_checks_its_arguments_then_the_lease() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
             std::fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -2420,7 +2422,7 @@ mod tests {
 
     #[test]
     fn the_hidden_windows_badge_counts_what_needs_the_owner_in_the_shown_projects() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let put = |project: &str, name: &str, front: &str| {
             let q = base.path().join(project).join("tasks");
             std::fs::create_dir_all(q.join("todo")).unwrap();
@@ -2432,7 +2434,7 @@ mod tests {
         put("alpha", "0002-check.md", "id: 0002\nstage: your-check");
         put("alpha", "0003-build.md", "id: 0003\nstage: building");
         put("beta", "0001-check.md", "id: 0001\nstage: your-check");
-        let config = tempfile::tempdir().unwrap();
+        let config = crate::testkit::tempdir().unwrap();
         let config_file = config.path().join("projects.json");
         let settings_file = config.path().join(settings::FILE);
         let cache = Mutex::new(queue::Cache::default());
@@ -2490,7 +2492,7 @@ mod tests {
 
     #[test]
     fn the_hidden_windows_badge_counts_a_task_whose_session_waits_for_input() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let q = base.path().join("alpha/tasks");
         std::fs::create_dir_all(q.join("todo")).unwrap();
         std::fs::write(q.join("README.md"), "q").unwrap();
@@ -2507,7 +2509,7 @@ mod tests {
             let text = format!("---\nid: {id}\nstage: building\nclaimed-by: {who}\n---\n\n# Build\n\n## Log\n- 2026-10-13 captured\n");
             std::fs::write(q.join(format!("{id}-build.md")), text).unwrap();
         }
-        let config = tempfile::tempdir().unwrap();
+        let config = crate::testkit::tempdir().unwrap();
         let config_file = config.path().join("projects.json");
         let settings_file = config.path().join(settings::FILE);
         // Claude Code says every session is `state`, as the window's poll would apply it.
@@ -2566,7 +2568,7 @@ mod tests {
     /// Mac's (task 0062).
     #[test]
     fn the_old_pauses_the_app_offers_are_in_the_places_a_test_gave() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let q = base.path().join("drover/tasks");
         for f in queue::STATUS_FOLDERS {
             std::fs::create_dir_all(q.join(f)).unwrap();

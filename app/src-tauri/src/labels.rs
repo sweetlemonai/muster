@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn labels_and_categories_are_saved_by_folder_and_read_back() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let f = d.path().join("cfg/projects.json");
         projects::edit(&f, |c| {
             set(&mut c.labels, "/p/a/tasks", " Muster ", MAX_LABEL);
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn a_label_is_only_shown_the_project_keeps_its_name_for_commands() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         make_queue(&base.path().join("muster/tasks"));
         make_queue(&base.path().join("persianUtils/colors/tasks"));
         make_queue(&base.path().join("drover/tasks"));
@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn the_state_carries_each_queues_label_and_category() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         make_queue(&base.path().join("muster/tasks"));
         make_queue(&base.path().join("drover/tasks"));
         let mut c = Config::default();
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn the_window_title_names_the_project_by_its_label() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         make_queue(&base.path().join("muster/tasks"));
         make_queue(&base.path().join("drover/tasks"));
         let mut c = Config::default();

@@ -1231,7 +1231,7 @@ mod tests {
 
     #[test]
     fn init_local_starts_the_history_in_the_common_git_folder_and_a_committed_queue_has_none() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (main, q) = local_queue(base.path());
         let h = q.parent().unwrap().join(".git/muster/history.git");
         assert!(main.join(".git/muster/history.git").join("HEAD").is_file());
@@ -1264,7 +1264,7 @@ mod tests {
 
     #[test]
     fn a_queue_outside_a_main_checkout_or_an_old_queue_keeps_none() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         // A .muster outside any repo.
         let q = base.path().join(".muster");
         fs::create_dir(&q).unwrap();
@@ -1283,7 +1283,7 @@ mod tests {
 
     #[test]
     fn an_existing_local_queue_gets_its_history_on_its_first_write() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (main, q) = local_queue(base.path());
         let (id, path) = task(&q, "Made before the history");
         fs::remove_dir_all(main.join(".git/muster")).unwrap();
@@ -1303,7 +1303,7 @@ mod tests {
 
     #[test]
     fn every_write_is_one_commit_of_only_its_paths_named_by_its_key_and_log_line() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (_, q) = local_queue(base.path());
         let mut n = commits(&q);
         let (id, path) = task(&q, "First");
@@ -1366,7 +1366,7 @@ mod tests {
 
     #[test]
     fn a_hand_edit_is_left_out_of_another_write_and_history_commit_takes_it_in() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (_, q) = local_queue(base.path());
         let (_, a) = task(&q, "A");
         let (b_id, b) = task(&q, "B");
@@ -1399,7 +1399,7 @@ mod tests {
 
     #[test]
     fn a_write_that_cannot_be_committed_is_reported_and_the_next_one_commits_it() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (_, q) = local_queue(base.path());
         let h = of(&q).unwrap();
         let (id, path) = task(&q, "Held");
@@ -1442,7 +1442,7 @@ mod tests {
 
     #[test]
     fn after_git_clean_fdx_restore_all_brings_back_every_file_byte_for_byte() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (main, q) = local_queue(base.path());
         let (id, _) = task(&q, "Kept → نگه‌داشته");
         task(&q, "Second");
@@ -1506,7 +1506,7 @@ mod tests {
 
     #[test]
     fn restore_of_a_path_puts_back_that_file_or_folder_and_refuses_what_the_history_lacks() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (_, q) = local_queue(base.path());
         let (_, a) = task(&q, "A");
         let (_, b) = task(&q, "B");
@@ -1542,7 +1542,7 @@ mod tests {
 
     #[test]
     fn the_message_is_the_key_and_log_line_cleaned_and_names_notes_and_attachments() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let q = base.path().join(".muster");
         fs::create_dir_all(q.join("tasks")).unwrap();
         fs::write(q.join("config.toml"), "local = true\nprefix = \"mu\"\n").unwrap();
@@ -1602,7 +1602,7 @@ mod tests {
 
     #[test]
     fn a_pending_write_whose_file_was_cleaned_since_is_never_committed_as_removed() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (_, q) = local_queue(base.path());
         let h = of(&q).unwrap();
         let (id, path) = task(&q, "Held");
@@ -1637,7 +1637,7 @@ mod tests {
 
     #[test]
     fn restore_all_brings_back_what_is_gone_and_leaves_changed_files_as_they_are() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (_, q) = local_queue(base.path());
         let (_, a) = task(&q, "A");
         let (_, b) = task(&q, "B");
@@ -1652,7 +1652,7 @@ mod tests {
 
     #[test]
     fn a_task_made_before_the_restore_never_takes_an_id_the_history_holds() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (main, q) = local_queue(base.path());
         task(&q, "One");
         task(&q, "Two");
@@ -1677,7 +1677,7 @@ mod tests {
 
     #[test]
     fn a_queue_cleaned_before_its_settings_were_committed_comes_back_whole() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let main = repo(base.path(), "proj");
         let q = crate::projects::init(&main, true, Some("pq"), &[])
             .unwrap()
@@ -1704,7 +1704,7 @@ mod tests {
 
     #[test]
     fn the_history_is_packed_once_git_gc_auto_finds_enough_loose_objects() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (_, q) = local_queue(base.path());
         let h = of(&q).unwrap();
         let (id, path) = task(&q, "Packed");
@@ -1765,7 +1765,7 @@ mod tests {
 
     #[test]
     fn a_write_of_several_files_is_named_by_its_task_and_log_line_not_its_first_path() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (_, q) = local_queue(base.path());
         let (id, path) = in_testing(&q);
 
@@ -1825,7 +1825,7 @@ mod tests {
 
     #[test]
     fn a_file_deleted_on_purpose_is_recorded_as_removed_and_can_still_be_brought_back_by_name() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (_, q) = local_queue(base.path());
         let (id, path) = task(&q, "To delete");
         let (_, kept) = task(&q, "Kept");
@@ -1887,7 +1887,7 @@ mod tests {
 
     #[test]
     fn a_removed_task_s_id_is_never_given_again_and_restore_refuses_a_task_whose_id_is_taken() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (_, q) = local_queue(base.path());
         let (_, one) = task(&q, "Task one");
         let (_, two) = task(&q, "Task two");
@@ -1930,7 +1930,7 @@ mod tests {
 
     #[test]
     fn restore_of_a_folder_brings_back_what_was_removed_under_it_and_nothing_a_write_moved() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (_, q) = local_queue(base.path());
         let (id, _) = task(&q, "With files");
         ops::attach(&q, &id, "a.txt", b"a", "wt-a", T).unwrap();
@@ -1991,7 +1991,7 @@ mod tests {
 
     #[test]
     fn restore_all_never_undoes_a_removal_a_pending_write_made() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (_, q) = local_queue(base.path());
         let h = of(&q).unwrap();
         let note = crate::backlog::add(&q, "Note", "", "wt-a", T).unwrap();
@@ -2016,7 +2016,7 @@ mod tests {
     #[test]
     fn a_write_whose_history_folder_cannot_be_written_is_remembered_in_the_queue_and_retried() {
         use std::os::unix::fs::PermissionsExt;
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (_, q) = local_queue(base.path());
         let h = of(&q).unwrap();
         let (id, path) = task(&q, "Sandboxed");
@@ -2054,7 +2054,7 @@ mod tests {
 
     #[test]
     fn git_s_reason_is_kept_when_it_exits_1_and_paths_are_named_from_the_history() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (_, q) = local_queue(base.path());
         let h = of(&q).unwrap();
         // git checkout of a path it doesn't know exits 1 with its reason on stderr.

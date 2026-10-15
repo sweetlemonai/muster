@@ -517,7 +517,7 @@ mod tests {
 
     #[test]
     fn a_part_containing_the_login_name_is_dropped_wherever_it_comes_from() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let home = dir.path().join("jdoe");
         let repo = home.join("code").join("jdoe.github.io");
         std::fs::create_dir_all(repo.join(".git")).unwrap();
@@ -582,8 +582,12 @@ mod tests {
     }
 
     /// `<tmp>/home/code/wt-0030/app/src`, with `wt-0030` a checkout (`.git` is a file in a worktree).
-    fn tree() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
-        let d = tempfile::tempdir().unwrap();
+    fn tree() -> (
+        crate::testkit::TestDir,
+        std::path::PathBuf,
+        std::path::PathBuf,
+    ) {
+        let d = crate::testkit::tempdir().unwrap();
         let home = d.path().join("home");
         let wt = home.join("code/wt-0030");
         fs::create_dir_all(wt.join("app/src")).unwrap();

@@ -4,6 +4,22 @@
 
 Newest first. What changed, and how it was checked. The current state is in `AS_BUILT.md`.
 
+## 2026-10-15 — Test queues get a private parent, so a checkout in the shared TMPDIR changes no test (mu-191)
+**Fixed:** 17 review tests went red whenever another session's Muster checkout sat in the shared
+`$TMPDIR` → a test queue was a bare `tempfile::tempdir()`, so `backlog::project_places` took its
+siblings as the project's checkouts and their `docs/now/` refused the pass → new `cfg(test)`
+`testkit::tempdir()` (`<tmp>/proj/q`, the parent holds nothing else); every lib test switched to it,
+`project_places` unchanged. `cli` block test pins its prefix (`tm`) instead of reading it off the
+temp folder's name.
+**Fixed (review R1):** the integration tests still made bare temp folders, and the `muster check`
+tests in `interop.rs` and `deps_cases.rs` read sibling checkouts' now pages → `tests/common/mod.rs`
+gives them the same `<tmp>/proj/q`, both check tests assert no now page is read, and the source
+check covers `tests/` (recursively, both helpers exempt).
+**Verified:** `cargo test` hermetic with decoy checkouts in TMPDIR (one now page covering app/,
+docs/, bin/; one with no `covers:`): 1045 lib + 42 integration, all green, same counts as without
+them (main: 17 review tests red). Mutants: the tests' helper made bare → both check tests red on
+the decoy's warning; a `tempfile` temp folder added to `deps_cases.rs` → the source check red.
+
 ## 2026-10-15 — merge-log merges new entries at any number of points, not only one (mu-196)
 **Fixed (Akbar_36, builder):** mu-173's rebase stopped on `docs/WORKLOG.md` → its log had round
 entries on top and its first entry deeper, two runs on one side, and `inserted` took only one →

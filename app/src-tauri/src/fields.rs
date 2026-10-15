@@ -599,8 +599,8 @@ mod tests {
 
     const T: &str = "2026-10-12 14:05";
 
-    fn queue() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn queue() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -1070,7 +1070,7 @@ mod tests {
             "2026-10-12 17:10"
         );
         // Done, and a flat-layout task without a Log: the section and a Log are made.
-        let flat = tempfile::tempdir().unwrap();
+        let flat = crate::testkit::tempdir().unwrap();
         let f = flat.path().join("0001-t.md");
         fs::write(
             &f,
@@ -1135,7 +1135,7 @@ mod tests {
     #[test]
     fn concurrent_comments_all_land() {
         for layout in ["todo", ""] {
-            let d = tempfile::tempdir().unwrap();
+            let d = crate::testkit::tempdir().unwrap();
             if !layout.is_empty() {
                 for f in STATUS_FOLDERS {
                     fs::create_dir(d.path().join(f)).unwrap();
@@ -1214,8 +1214,8 @@ mod action_tests {
     /// A builder's stamp, as a claim inside Claude Code records it.
     const A: &str = "wt-a (wt-0101 · session 7b5e8856 · cc-mg)";
 
-    fn queue() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn queue() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }

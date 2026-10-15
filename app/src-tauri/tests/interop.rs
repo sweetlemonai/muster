@@ -3,6 +3,8 @@
 //! inbox`, the answer hook and `manifest.py --check`. `bin/task` runs the `muster` built for
 //! these tests (`$MUSTER_BIN`), so it's this checkout's code.
 
+mod common;
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -26,7 +28,7 @@ fn no_projects(d: &Path) {
 /// Run a Python tool on the queue `root`, from a folder outside any queue, in an empty home, so
 /// the `muster` it runs knows none of this Mac's projects.
 fn run_code(root: &Path, script: &str, args: &[&str]) -> (i32, String) {
-    let home = tempfile::tempdir().unwrap();
+    let home = common::tempdir().unwrap();
     let out = Command::new("python3")
         .arg("-I")
         .arg(tool(script))
@@ -80,7 +82,7 @@ fn hook(root: &Path, session: &str) -> String {
 
 #[test]
 fn python_asks_app_answers_python_reads() {
-    let d = tempfile::tempdir().unwrap();
+    let d = common::tempdir().unwrap();
     no_projects(d.path());
     for f in muster_lib::queue::STATUS_FOLDERS {
         std::fs::create_dir(d.path().join(f)).unwrap();
@@ -129,7 +131,7 @@ fn python_asks_app_answers_python_reads() {
 #[test]
 fn every_stage_passes_the_python_check() {
     use muster_lib::ops::{self, PassOpts};
-    let d = tempfile::tempdir().unwrap();
+    let d = common::tempdir().unwrap();
     no_projects(d.path());
     for f in muster_lib::queue::STATUS_FOLDERS {
         std::fs::create_dir(d.path().join(f)).unwrap();
@@ -177,7 +179,7 @@ fn every_stage_passes_the_python_check() {
 
 #[test]
 fn tasks_made_by_the_app_pass_the_python_check() {
-    let d = tempfile::tempdir().unwrap();
+    let d = common::tempdir().unwrap();
     no_projects(d.path());
     for f in muster_lib::queue::STATUS_FOLDERS {
         std::fs::create_dir(d.path().join(f)).unwrap();
@@ -276,8 +278,8 @@ fn goals_features_and_parents_read_the_same_both_ways() {
 }
 
 /// A fresh queue in the v2 layout (status folders and a README).
-fn queue() -> tempfile::TempDir {
-    let d = tempfile::tempdir().unwrap();
+fn queue() -> common::TestDir {
+    let d = common::tempdir().unwrap();
     no_projects(d.path());
     for f in muster_lib::queue::STATUS_FOLDERS {
         std::fs::create_dir(d.path().join(f)).unwrap();
@@ -290,7 +292,7 @@ fn queue() -> tempfile::TempDir {
 #[test]
 fn backlog_notes_from_muster_pass_the_python_check_and_are_listed() {
     let d = queue();
-    let base = tempfile::tempdir().unwrap();
+    let base = common::tempdir().unwrap();
     let q = d.path().to_str().unwrap();
     let add = |line: &str| {
         let (code, out) = muster(
@@ -584,7 +586,7 @@ fn muster(base: &Path, cwd: &Path, env: &[(&str, &Path)], args: &[&str]) -> (i32
 
 #[test]
 fn a_claim_from_another_projects_folder_needs_queue_to_mean_it() {
-    let base = tempfile::tempdir().unwrap();
+    let base = common::tempdir().unwrap();
     let mk = |name: &str| {
         let q = base.path().join(name).join("tasks");
         for f in muster_lib::queue::STATUS_FOLDERS {
@@ -722,7 +724,7 @@ fn an_answer_through_bin_task_cannot_forge_stage_history() {
 /// `muster <args> --queue <root>` with `input` on stdin and `env` set ($VISUAL and $EDITOR only
 /// when given), from a folder outside any queue, in an empty home (none of this Mac's projects).
 fn muster_in(root: &Path, env: &[(&str, &str)], args: &[&str], input: &str) -> (i32, String) {
-    let home = tempfile::tempdir().unwrap();
+    let home = common::tempdir().unwrap();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_muster"));
     cmd.args(args)
         .arg("--queue")
@@ -912,6 +914,8 @@ fn comments_and_links_from_muster_pass_the_python_check() {
     );
     let (code, out) = muster_in(d.path(), &[], &["check"], "");
     assert_eq!(code, 0, "{out}");
+    // The queue's project holds no checkout, so no now page is read (mu-191).
+    assert!(!out.contains("docs/now/"), "{out}");
 }
 
 #[test]
@@ -919,7 +923,7 @@ fn edit_opens_visual_or_editor_on_the_write_up_without_a_shell() {
     let d = queue();
     new_task(d.path(), "In the editor", "Before.");
     let file = d.path().join("todo/0001-in-the-editor.md");
-    let tools = tempfile::tempdir().unwrap();
+    let tools = common::tempdir().unwrap();
     let seen = tools.path().join("seen.md");
     // The editor: keeps what it was opened on and where, writes the new text, and with $CLOBBER
     // rewrites the task's write-up meanwhile, as an agent might.
@@ -1009,7 +1013,7 @@ fn edit_opens_visual_or_editor_on_the_write_up_without_a_shell() {
 /// is the default 12 h.
 #[test]
 fn a_short_lease_in_the_settings_reclaims_sooner() {
-    let base = tempfile::tempdir().unwrap();
+    let base = common::tempdir().unwrap();
     let b = base.path();
     let q = b.join("proj/tasks");
     for f in muster_lib::queue::STATUS_FOLDERS {

@@ -3,6 +3,8 @@
 //! for these tests, in an empty home, from a folder outside any queue, with the queue variables
 //! dropped; its stdout is a pipe this test closes.
 
+mod common;
+
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -18,7 +20,7 @@ enum Reader {
 
 /// Runs muster on `root` with stdout a pipe treated per `reader`: (status, what was read, stderr).
 fn muster(root: &Path, args: &[&str], reader: Reader) -> (i32, String, String) {
-    let home = tempfile::tempdir().unwrap();
+    let home = common::tempdir().unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_muster"))
         .args(args)
         .arg("--queue")
@@ -60,8 +62,8 @@ fn muster(root: &Path, args: &[&str], reader: Reader) -> (i32, String, String) {
 }
 
 /// `proj/tasks`, a queue with the prefix `pj`.
-fn queue() -> (tempfile::TempDir, PathBuf) {
-    let d = tempfile::tempdir().unwrap();
+fn queue() -> (common::TestDir, PathBuf) {
+    let d = common::tempdir().unwrap();
     let root = d.path().canonicalize().unwrap().join("proj/tasks");
     for f in muster_lib::queue::STATUS_FOLDERS {
         fs::create_dir_all(root.join(f)).unwrap();

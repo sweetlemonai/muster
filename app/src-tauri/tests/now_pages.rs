@@ -3,12 +3,14 @@
 //! `--now-unchanged`. Each run is the `muster` built for these tests, in an empty home, from a
 //! folder outside any queue, with the queue variables dropped.
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn muster(root: &Path, args: &[&str]) -> (i32, String) {
-    let home = tempfile::tempdir().unwrap();
+    let home = common::tempdir().unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_muster"))
         .args(args)
         .arg("--queue")
@@ -37,8 +39,8 @@ fn muster(root: &Path, args: &[&str]) -> (i32, String) {
 const BOARD: &str = "---\ncovers: app/src/Board*\n---\n# The board\n\n- The +N cue walks chips in board order. (mu-86)\n";
 
 /// `proj/tasks` (a queue) beside `proj/main` (a repo, by its `.git` folder) with `docs/now/`.
-fn project() -> (tempfile::TempDir, PathBuf, PathBuf) {
-    let d = tempfile::tempdir().unwrap();
+fn project() -> (common::TestDir, PathBuf, PathBuf) {
+    let d = common::tempdir().unwrap();
     let base = d.path().canonicalize().unwrap();
     let root = base.join("proj/tasks");
     for f in muster_lib::queue::STATUS_FOLDERS {

@@ -153,9 +153,11 @@ here):
 | `pause_cmds.rs` | The app's commands for pause, resume and old pauses |
 | `ping_cmds.rs` | The app's commands for check-ins and messages |
 | `review_cmds.rs` | The app's commands for the review brief and the lessons |
+| `testkit.rs` | Tests only (`cfg(test)`): `testkit::tempdir()`, the one temp folder a lib test makes, at `<tmp>/proj/q` so its parent holds nothing else (mu-191) |
 
 Integration tests are in `app/src-tauri/tests/` (`interop.rs`, `deps_cases.rs`, `search_cases.rs`,
-`keys.rs`); `examples/probe.rs` and `examples/dump.rs` time and print reads of the real queues.
+`keys.rs`, `broken_pipe.rs`, `now_pages.rs`); their temp folders come from `tests/common/mod.rs`
+(`common::tempdir()`, the same `<tmp>/proj/q` as `testkit`, mu-191); `examples/probe.rs` and `examples/dump.rs` time and print reads of the real queues.
 
 ### The app: webview and IPC
 
@@ -2187,6 +2189,17 @@ for you's Lessons block and the Dock badge (`badge::dock_count`); `muster check`
   `tests/interop.rs`), and every `muster` they run gets a temp `HOME` of its own. Checked by
   running the whole suite with `HOME` set to an empty folder whose projects.json folder and
   `playground` can't be read.
+- Test queues have a private parent (mu-191). A queue's project is its parent folder and every
+  repo beside it is a checkout (`backlog::project_places`), so a queue straight in the shared
+  `$TMPDIR` took other sessions' checkouts there as its own, and their `docs/now/` pages refused
+  the review tests' passes. Every lib test's temp folder comes from `testkit::tempdir()`, and
+  every integration test's from `tests/common/mod.rs`'s `common::tempdir()`: both are
+  `<tmp>/proj/q` with nothing else in `<tmp>/proj`; a test that wants checkouts beside its queue
+  plants them in that parent. `testkit::tests::test_queues_have_a_private_parent` fails when a
+  file under `src/` or `tests/` other than those two helpers names `tempfile`. The `muster check`
+  tests in `interop.rs` and `deps_cases.rs` assert no now page is read. Checked by running
+  `cargo test` with decoy checkouts (`.git/` and a now page covering `app/`, `docs/`, `bin/`; and
+  one with no `covers:`) in `TMPDIR`.
 - `bin/gate` runs every step in a home of its own (task 0062): `HOME`, `XDG_CONFIG_HOME` and
   `MUSTER_BASE` in a temporary folder it removes at the end, `MUSTER_ROOT` and `TASKS_ROOT` unset.
   `CARGO_HOME`, `RUSTUP_HOME`, `~/.cargo/bin` and pnpm's store and cache stay this Mac's, so

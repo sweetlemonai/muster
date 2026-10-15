@@ -492,7 +492,7 @@ mod tests {
 
     #[test]
     fn read_takes_plain_md_files_and_warns_about_symlinks() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let now = d.path().join(DIR);
         fs::create_dir_all(now.join("sub")).unwrap();
         fs::write(
@@ -520,15 +520,15 @@ mod tests {
         );
         assert!(f.pages.iter().all(|p| !p.text.contains("secret")));
         // No folder: nothing, quietly.
-        let e = tempfile::tempdir().unwrap();
+        let e = crate::testkit::tempdir().unwrap();
         let f = read(e.path());
         assert!(f.pages.is_empty() && f.problems.is_empty());
     }
 
     #[test]
     fn read_refuses_a_now_folder_that_leads_out_of_the_repo() {
-        let d = tempfile::tempdir().unwrap();
-        let elsewhere = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
+        let elsewhere = crate::testkit::tempdir().unwrap();
         fs::write(elsewhere.path().join("x.md"), "---\ncovers: a/\n---\n").unwrap();
         fs::create_dir(d.path().join("docs")).unwrap();
         std::os::unix::fs::symlink(elsewhere.path(), d.path().join(DIR)).unwrap();
@@ -543,7 +543,7 @@ mod tests {
 
     #[test]
     fn read_refuses_a_now_folder_linked_to_another_folder_in_the_repo() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let other = d.path().join("docs/other");
         fs::create_dir_all(&other).unwrap();
         fs::write(other.join("x.md"), "---\ncovers: a/\n---\n").unwrap();
@@ -559,7 +559,7 @@ mod tests {
 
     #[test]
     fn read_bounds_a_big_page_and_still_counts_its_size() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         fs::create_dir_all(d.path().join(DIR)).unwrap();
         let big = format!("---\ncovers: a/\n---\n{}", "x\n".repeat(50_000));
         fs::write(d.path().join(DIR).join("big.md"), &big).unwrap();
@@ -680,7 +680,7 @@ mod tests {
 
     #[test]
     fn changed_pages_reads_the_branch_since_it_left_main() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let r = d.path();
         git_in(r, &["init", "-q", "-b", "main"]);
         git_in(r, &["config", "user.email", "t@example.com"]);
@@ -716,7 +716,7 @@ mod tests {
 
     #[test]
     fn changed_pages_names_a_persian_page_as_read_does() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let r = d.path();
         git_in(r, &["init", "-q", "-b", "main"]);
         git_in(r, &["config", "user.email", "t@example.com"]);

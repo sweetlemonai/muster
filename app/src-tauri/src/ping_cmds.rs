@@ -54,7 +54,7 @@ mod tests {
 
     #[test]
     fn the_app_pings_as_the_owner_with_its_arguments_checked() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         fs::create_dir(d.path().join("doing")).unwrap();
         fs::write(d.path().join("README.md"), "q").unwrap();
         fs::write(

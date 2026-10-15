@@ -2,6 +2,8 @@
 //! `app/src/search-cases.json` are written as task files and listed with the real command;
 //! `search-cases.test.ts` runs the app's filter on the same cases.
 
+mod common;
+
 use muster_lib::queue;
 use serde_json::Value;
 use std::path::Path;
@@ -99,8 +101,8 @@ fn args(q: &Value) -> Vec<String> {
 /// A home folder of its own for `muster` (task 0048), so `list --json` never runs this Mac's
 /// Claude Code or reads its projects: a `claude` where muster looks first, which lists no
 /// sessions and records each call in `claude.calls`, and the `cc-hg` account's folder.
-fn fake_home() -> tempfile::TempDir {
-    let h = tempfile::tempdir().unwrap();
+fn fake_home() -> common::TestDir {
+    let h = common::tempdir().unwrap();
     let bin = h.path().join(".local/bin");
     std::fs::create_dir_all(&bin).unwrap();
     std::fs::create_dir(h.path().join(".claude-hg")).unwrap();
@@ -142,7 +144,7 @@ fn list(root: &Path, home: &Path, extra: &[String]) -> Value {
 fn the_core_reads_each_fixture_task_as_the_app_is_told() {
     let c = cases();
     let tasks = c["tasks"].as_array().expect("tasks");
-    let d = tempfile::tempdir().unwrap();
+    let d = common::tempdir().unwrap();
     write_queue(d.path(), s(&c, "prefix"), tasks);
     for t in tasks {
         let got = queue::read_task(d.path(), s(t, "id")).expect("reads");
@@ -195,7 +197,7 @@ fn the_core_reads_each_fixture_task_as_the_app_is_told() {
 #[test]
 fn muster_list_gives_each_cases_tasks_in_order() {
     let c = cases();
-    let d = tempfile::tempdir().unwrap();
+    let d = common::tempdir().unwrap();
     write_queue(
         d.path(),
         s(&c, "prefix"),

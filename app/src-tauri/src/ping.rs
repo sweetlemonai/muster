@@ -387,8 +387,8 @@ mod tests {
     const A: &str = "wt-a (wt-0030 · session 7b5e8856 · cc-hg)";
     const T: &str = "2026-10-13 10:00";
 
-    fn queue() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn queue() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }

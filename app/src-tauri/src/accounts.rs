@@ -151,8 +151,8 @@ pub(crate) mod tests {
     /// transcripts and settings), `~/.claude-ih`, and `~/.claude-mg` and `~/.claude-hg` whose
     /// `projects` are links to `~/.claude/projects`. Transcripts in a code-keyed and a
     /// playground-keyed project folder.
-    pub(crate) fn fake_home() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    pub(crate) fn fake_home() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         let h = d.path();
         let projects = h.join(".claude/projects");
         fs::create_dir_all(projects.join("-Users-x-code-app")).unwrap();
@@ -272,7 +272,7 @@ pub(crate) mod tests {
             assert!(!is_under(bad, root), "{bad}");
         }
         assert!(!is_under("-Users-x-playground", ""), "no root, nothing");
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let canon = fs::canonicalize(d.path()).unwrap();
         assert_eq!(playground_key(d.path()), key(&canon.join("playground")));
         assert!(playground_key(d.path()).ends_with("-playground"));

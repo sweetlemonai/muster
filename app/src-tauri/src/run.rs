@@ -1138,7 +1138,7 @@ mod tests {
 
     #[test]
     fn a_muster_queue_runs_in_its_repo_and_an_old_one_in_the_main_checkout_beside_it() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let q = muster_repo(d.path());
         assert_eq!(checkout(&q).unwrap(), d.path().join("repo"));
         // Old layout: <project>/tasks runs in <project>/main once it's a git checkout.
@@ -1165,7 +1165,7 @@ mod tests {
 
     #[test]
     fn a_plan_needs_a_run_command_that_splits_without_a_shell() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let q = muster_repo(d.path());
         let p = |run: &str| plan(&project("proj", &q, run));
         let ok = p("  bin/run --fresh 'two words' ").unwrap();
@@ -1204,7 +1204,7 @@ mod tests {
 
     #[test]
     fn a_run_starts_as_words_in_the_checkout_without_the_queue_variables_and_exits() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let q = muster_repo(d.path());
         let repo = d.path().join("repo");
         script(
@@ -1271,7 +1271,7 @@ mod tests {
 
     #[test]
     fn stop_ends_the_run_and_everything_it_started() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let s = script(d.path(), "family", FAMILY);
         let (r, sent) = runs(GRACE);
         let snap = r
@@ -1301,7 +1301,7 @@ mod tests {
 
     #[test]
     fn a_run_that_ignores_sigterm_is_killed_after_the_grace() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let s = script(d.path(), "stubborn", &format!("trap '' TERM\n{FAMILY}"));
         let (r, _) = runs(Duration::from_millis(300));
         r.start("proj", plan_of(&[s.to_str().unwrap()], d.path()))
@@ -1320,7 +1320,7 @@ mod tests {
 
     #[test]
     fn run_again_restarts_it_and_quitting_stops_every_run() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let s = script(d.path(), "family", FAMILY);
         let (r, sent) = runs(GRACE);
         let first = r
@@ -1361,7 +1361,7 @@ mod tests {
 
     #[test]
     fn a_hundred_thousand_lines_send_at_most_one_event_per_batch_and_keep_only_the_ring() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let (r, sent) = runs(GRACE);
         r.start("proj", plan_of(&["/usr/bin/seq", "1", "100000"], d.path()))
             .unwrap();
@@ -1393,7 +1393,7 @@ mod tests {
 
     #[test]
     fn the_window_names_a_project_only_by_name_and_is_refused_the_rest() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let q = muster_repo(d.path());
         let list = [
             project("proj", &q, ""),
@@ -1492,7 +1492,7 @@ mod tests {
 
     #[test]
     fn the_login_shells_path_is_what_it_prints_between_the_last_marks() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let shell = stand_in_shell(d.path(), "/nvm/bin:/usr/bin:/bin");
         assert_eq!(
             login_path(&shell, SLOW_WAIT),
@@ -1526,7 +1526,7 @@ mod tests {
 
     #[test]
     fn the_path_is_taken_at_its_end_mark_while_a_startup_file_still_holds_the_output() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let pid = d.path().join("pid");
         let shell = script(
             d.path(),
@@ -1557,7 +1557,7 @@ mod tests {
 
     #[test]
     fn the_login_shell_runs_without_a_controlling_terminal() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let shell = script(
             d.path(),
             "shell",
@@ -1576,7 +1576,7 @@ mod tests {
         extern "C" {
             fn getsid(pid: i32) -> i32;
         }
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let (pid, go) = (d.path().join("pid"), d.path().join("go"));
         // It says who it is, then waits (at most 30 s) to be looked at before it prints.
         let shell = script(
@@ -1638,7 +1638,7 @@ mod tests {
 
     #[test]
     fn the_path_is_found_when_its_end_mark_comes_in_two_writes() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let pid = d.path().join("pid");
         // A child keeps the output open; the last 4 bytes of the end mark come 0.3 s later.
         let shell = script(
@@ -1674,7 +1674,7 @@ mod tests {
     /// runs to its end instead of dying of SIGPIPE, and the PATH is kept whatever the exit.
     #[test]
     fn output_after_the_path_neither_kills_the_shell_nor_costs_the_path() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let done = d.path().join("done");
         let shell = script(
             d.path(),
@@ -1717,7 +1717,7 @@ mod tests {
     /// so the shell dies of SIGPIPE and the PATH comes back long before the wait.
     #[test]
     fn output_without_end_after_the_path_is_capped() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let shell = script(
             d.path(),
             "shell",
@@ -1743,7 +1743,7 @@ mod tests {
         if !Path::new("/bin/zsh").exists() || !Path::new("/usr/bin/script").exists() {
             return;
         }
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let mut cmd = Command::new("/usr/bin/script");
         cmd.arg("-q")
             .arg("/dev/null")
@@ -1790,7 +1790,7 @@ mod tests {
 
     #[test]
     fn a_login_shell_that_fails_prints_no_path_or_hangs_gives_none() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let failing = script(
             d.path(),
             "fails",
@@ -1833,7 +1833,7 @@ mod tests {
 
     #[test]
     fn a_run_gets_the_login_shells_path_read_once() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let q = muster_repo(d.path());
         let repo = d.path().join("repo");
         script(&repo, "bin/path", "echo \"$PATH\"\n");
@@ -1866,7 +1866,7 @@ mod tests {
 
     #[test]
     fn a_run_is_kept_by_its_queue_folder_so_a_rename_or_another_project_cant_take_it() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let q = muster_repo(d.path());
         let s = script(&d.path().join("repo"), "bin/fam", FAMILY);
         assert!(s.exists());

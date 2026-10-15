@@ -849,7 +849,7 @@ mod tests {
 
     #[test]
     fn a_queue_reads_its_own_layouts_skips_and_check_names_the_queue() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         // A .muster queue: config.toml, never a README there.
         let m = d.path().join("repo/.muster");
         fs::create_dir_all(&m).unwrap();
@@ -887,7 +887,7 @@ mod tests {
 
     #[test]
     fn the_queues_problems_carry_a_bad_skip_in_either_layout() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let old = d.path().join("proj/tasks");
         for f in crate::queue::STATUS_FOLDERS {
             fs::create_dir_all(old.join(f)).unwrap();
@@ -1055,7 +1055,7 @@ mod tests {
             ))
         );
         assert_eq!(needed("# Vision\nLenses needed: docs\n"), None);
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let root = d.path().join("proj/tasks");
         fs::create_dir_all(&root).unwrap();
         assert_eq!(vision_needs(&root), None);

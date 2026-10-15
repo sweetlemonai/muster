@@ -992,8 +992,8 @@ mod tests {
 
     /// A playground with a `.muster` project in its main checkout (with worktrees), an old
     /// `<project>/tasks` one, a checkout that's a project of its own, and a hidden one.
-    fn playground() -> (tempfile::TempDir, Vec<ProjectFolders>) {
-        let d = tempfile::tempdir().unwrap();
+    fn playground() -> (crate::testkit::TestDir, Vec<ProjectFolders>) {
+        let d = crate::testkit::tempdir().unwrap();
         let pg = fs::canonicalize(d.path()).unwrap().join("playground");
         for f in [
             "muster/main/.muster",
@@ -1425,8 +1425,8 @@ mod tests {
     }
 
     /// A home with `playground/m/.claude/work/handoffs/`.
-    fn handoff_home() -> (tempfile::TempDir, PathBuf) {
-        let d = tempfile::tempdir().unwrap();
+    fn handoff_home() -> (crate::testkit::TestDir, PathBuf) {
+        let d = crate::testkit::tempdir().unwrap();
         let dir = fs::canonicalize(d.path())
             .unwrap()
             .join("playground/m/.claude/work/handoffs");
@@ -1537,7 +1537,7 @@ mod tests {
 
     /// A → B → C by handoffs: B resumed A's (`session: A`, `successor: Asghar_5`), and both C and
     /// a stray session resumed B's, which names Asghar_6 (C) as its successor.
-    fn chain_fixture() -> (tempfile::TempDir, Vec<(String, ListEntry)>, Prompts) {
+    fn chain_fixture() -> (crate::testkit::TestDir, Vec<(String, ListEntry)>, Prompts) {
         let (d, dir) = handoff_home();
         fs::write(
             dir.join("ha.md"),
@@ -1703,8 +1703,8 @@ waiting_on:
 - 2026-10-14 10:30 asghar_5 (main · session aaaaaaa2 · cc-mg): stage ready → building (claimed)
 ";
 
-    fn tasks_fixture() -> (tempfile::TempDir, Vec<Task>) {
-        let q = tempfile::tempdir().unwrap();
+    fn tasks_fixture() -> (crate::testkit::TestDir, Vec<Task>) {
+        let q = crate::testkit::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
             fs::create_dir(q.path().join(f)).unwrap();
         }
@@ -2058,8 +2058,8 @@ waiting_on:
     }
 
     /// A task file in a queue of its own whose log stamps session `id` with `account` (`cc-hg`).
-    fn stamped(id: &str, account: &str) -> (tempfile::TempDir, Vec<Task>) {
-        let q = tempfile::tempdir().unwrap();
+    fn stamped(id: &str, account: &str) -> (crate::testkit::TestDir, Vec<Task>) {
+        let q = crate::testkit::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
             fs::create_dir(q.path().join(f)).unwrap();
         }

@@ -673,7 +673,7 @@ mod tests {
     }
 
     fn merged_bytes(base: &[u8], ours: &[u8], theirs: &[u8]) -> Merged {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let p = |n: &str| dir.path().join(n);
         fs::write(p("o"), base).unwrap();
         fs::write(p("a"), ours).unwrap();
@@ -903,7 +903,7 @@ mod tests {
     /// `muster merge-log` run as git runs it, through the binary, in a home of its own with no
     /// MUSTER_BASE, MUSTER_ROOT or TASKS_ROOT: its exit code, what it left in ours, its stderr.
     fn through_binary(base: &[u8], ours: &[u8], theirs: &[u8]) -> (i32, Vec<u8>, String) {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let p = |n: &str| dir.path().join(n);
         fs::create_dir(p("home")).unwrap();
         fs::write(p("o"), base).unwrap();
@@ -974,7 +974,7 @@ mod tests {
 
     /// Plain `git merge-file -p`, to show a case is one merge-file can't merge.
     fn merged_file_only(base: &str, ours: &str, theirs: &str) -> Merged {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let p = |n: &str| dir.path().join(n);
         fs::write(p("o"), base).unwrap();
         fs::write(p("a"), ours).unwrap();
@@ -1190,7 +1190,7 @@ mod tests {
             ("rebase", "main", "task"),
             ("rebase", "task", "main"),
         ] {
-            let dir = tempfile::tempdir().unwrap();
+            let dir = crate::testkit::tempdir().unwrap();
             let home = dir.path().join("home");
             fs::create_dir(&home).unwrap();
             let g = |d: &Path, args: &[&str]| home_g(&home, d, args);
@@ -1522,7 +1522,7 @@ mod tests {
 
     #[test]
     fn merge_log_run_writes_the_result_into_ours_and_says_conflict_by_its_exit() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let p = |n: &str| dir.path().join(n);
         let base = format!("{PRE}{OLD}");
         let (a, b) = (entry("2026-10-14", "A"), entry("2026-10-13", "B"));
@@ -1633,7 +1633,7 @@ mod tests {
 
     #[test]
     fn merge_log_runs_as_gits_driver_from_a_path_with_spaces_in_a_worktree() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let repo = log_repo(dir.path());
         let wt = dir.path().join("the worktree");
         g(
@@ -1681,7 +1681,7 @@ mod tests {
             ("rebase", "one", "four"),
             ("rebase", "four", "one"),
         ] {
-            let dir = tempfile::tempdir().unwrap();
+            let dir = crate::testkit::tempdir().unwrap();
             let repo = log_repo(dir.path());
             let bin = this_muster().unwrap();
             g(&repo, &["config", &format!("merge.{DRIVER}.name"), NAME]);
@@ -1720,7 +1720,7 @@ mod tests {
 
     #[test]
     fn merge_log_configure_writes_only_the_missing_keys_to_the_repos_own_config() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let repo = log_repo(dir.path());
         let config = || fs::read_to_string(repo.join(".git/config")).unwrap();
         let before = config();
@@ -1779,7 +1779,7 @@ mod tests {
 
     #[test]
     fn merge_log_a_driver_not_set_says_why_and_the_two_lines_that_set_it() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let repo = log_repo(dir.path());
         assert!(wanted(&repo));
         assert_eq!(missing(&repo).unwrap().len(), 2);
@@ -1917,7 +1917,7 @@ mod tests {
 
     #[test]
     fn merge_log_falls_back_to_gits_markers_when_it_cant_merge() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let p = |n: &str| dir.path().join(n);
         let (a, b) = (entry("2026-10-14", "A"), entry("2026-10-13", "B"));
         fs::write(p("base"), format!("{PRE}{OLD}")).unwrap();
@@ -1959,7 +1959,7 @@ mod tests {
     #[test]
     fn merge_log_replaces_ours_whole_or_not_at_all() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let (side, copy) = (dir.path().join("side"), dir.path().join("copy"));
         let (a, b) = (entry("2026-10-14", "A"), entry("2026-10-13", "B"));
         for d in [&side, &copy] {
@@ -2023,7 +2023,7 @@ mod tests {
 
     #[test]
     fn merge_log_replace_removes_its_new_file_when_it_fails_after_making_it() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         // %A is a folder: the new file is made and written, then the rename over it fails.
         let ours = dir.path().join("ours");
         fs::create_dir(&ours).unwrap();
@@ -2054,7 +2054,7 @@ mod tests {
 
     #[test]
     fn merge_log_a_driver_git_cant_start_still_leaves_markers_with_both_entries() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::testkit::tempdir().unwrap();
         let repo = log_repo(dir.path());
         configure(&repo).unwrap();
         let wt = dir.path().join("the worktree");

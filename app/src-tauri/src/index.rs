@@ -775,8 +775,8 @@ mod tests {
     use crate::ops;
     use crate::queue::{read_state, Cache, STATUS_FOLDERS};
 
-    fn queue() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn queue() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -799,7 +799,7 @@ mod tests {
     }
 
     /// Goals, features and tasks at every stage, one note and one task done.
-    fn sample() -> tempfile::TempDir {
+    fn sample() -> crate::testkit::TestDir {
         let d = queue();
         let p = d.path();
         let created = "- 2026-10-12 09:00 capture: created\n";
@@ -1539,7 +1539,7 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
     fn a_planted_index_is_replaced_never_followed() {
         let d = sample();
         let p = d.path();
-        let outside = tempfile::tempdir().unwrap();
+        let outside = crate::testkit::tempdir().unwrap();
         let target = outside.path().join("victim.md");
         fs::write(&target, "keep me").unwrap();
         std::os::unix::fs::symlink(&target, p.join(FILE)).unwrap();
@@ -1552,7 +1552,7 @@ As of 2026-10-13 08:00 (the newest change in a task's log).
 
     #[test]
     fn a_flat_queue_gets_one_too() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let p = d.path();
         fs::write(p.join("README.md"), "---\nprefix: ix\n---\nq").unwrap();
         let n = ops::NewTask {
@@ -1686,7 +1686,7 @@ As of 2026-10-13 08:00 (the newest change in a task's log). 7 tasks: 1 Backlog, 
     fn muster_index_as_built_writes_what_the_master_list_shows_and_only_between_the_markers() {
         let d = sample();
         let p = d.path();
-        let out = tempfile::tempdir().unwrap();
+        let out = crate::testkit::tempdir().unwrap();
         let file = out.path().join("AS_BUILT.md");
         fs::write(&file, doc("stale text\n")).unwrap();
         assert_eq!(rebuild_with_glance(p, &file, "").unwrap(), (true, true));
@@ -1727,7 +1727,7 @@ As of 2026-10-13 08:00 (the newest change in a task's log). 7 tasks: 1 Backlog, 
     fn a_document_without_its_markers_is_refused_and_nothing_is_written() {
         let d = sample();
         let p = d.path();
-        let out = tempfile::tempdir().unwrap();
+        let out = crate::testkit::tempdir().unwrap();
         let file = out.path().join("AS_BUILT.md");
         let one = |marker: &str| format!("{DOC_HEAD}{marker}\n{DOC_TAIL}");
         let cases = [
@@ -1885,7 +1885,7 @@ As of 2026-10-13 08:00 (the newest change in a task's log). 7 tasks: 1 Backlog, 
             "a | b | c\n| ix-9 | x |",
             log,
         );
-        let out = tempfile::tempdir().unwrap();
+        let out = crate::testkit::tempdir().unwrap();
         let file = out.path().join("AS_BUILT.md");
         fs::write(&file, doc("")).unwrap();
         rebuild_with_glance(p, &file, "").unwrap();

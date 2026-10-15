@@ -4612,8 +4612,8 @@ mod tests {
     use super::*;
     use crate::queue::{base64, read_state_at, Cache};
 
-    fn queue() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn queue() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -4713,7 +4713,7 @@ mod tests {
 
     #[test]
     fn flat_layout_creates_in_the_queue_folder() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let c = create_task(
             d.path(),
             &NewTask {
@@ -5721,7 +5721,7 @@ mod tests {
 
     #[test]
     fn flat_layout_passes_without_moving() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         put(
             d.path(),
             "0001-t.md",
@@ -7324,8 +7324,8 @@ mod tests {
         runs.into_iter().map(|h| h.join().unwrap()).collect()
     }
 
-    fn layouts() -> [(tempfile::TempDir, &'static str); 2] {
-        [(queue(), "todo"), (tempfile::tempdir().unwrap(), "")]
+    fn layouts() -> [(crate::testkit::TestDir, &'static str); 2] {
+        [(queue(), "todo"), (crate::testkit::tempdir().unwrap(), "")]
     }
 
     #[test]
@@ -7474,7 +7474,7 @@ mod tests {
 
     /// `wt-a` holds 0001, sent back from Testing, and 0002, which it claimed meanwhile; 0003 waits
     /// in Ready.
-    fn sent_back_while_holding_another() -> tempfile::TempDir {
+    fn sent_back_while_holding_another() -> crate::testkit::TestDir {
         let d = queue();
         for id in ["0001", "0002", "0003"] {
             put_task(d.path(), "todo", id, &ready_fm("normal"));
@@ -7618,7 +7618,7 @@ mod tests {
     /// `builder` started 0001 on its own branch (criteria ticked) and passed it to Testing; qa
     /// merged it into Your check (`pass_merged`, the merge's own pass, which clears `branch:` and
     /// sets `commit:`), and `builder` then claimed 0002; 0003 waits in Ready.
-    fn in_your_check_while_building_another(builder: &str) -> tempfile::TempDir {
+    fn in_your_check_while_building_another(builder: &str) -> crate::testkit::TestDir {
         let d = three_ready();
         start_task(
             d.path(),
@@ -7643,7 +7643,7 @@ mod tests {
 
     /// `in_your_check_while_building_another` with 0001 never started on a branch: claimed and
     /// passed on by plain passes.
-    fn in_your_check_unstarted(builder: &str) -> tempfile::TempDir {
+    fn in_your_check_unstarted(builder: &str) -> crate::testkit::TestDir {
         let d = three_ready();
         claim_task(d.path(), "0001", builder, T).unwrap();
         pass_task(d.path(), "0001", builder, T, &gate()).unwrap();
@@ -7658,7 +7658,7 @@ mod tests {
     }
 
     /// 0001, 0002 and 0003 in Ready, criteria ticked.
-    fn three_ready() -> tempfile::TempDir {
+    fn three_ready() -> crate::testkit::TestDir {
         let d = queue();
         for id in ["0001", "0002", "0003"] {
             put(
@@ -9896,8 +9896,8 @@ mod edit_tests {
     const LOG: &str = "## Log\n- 2026-10-12 09:00 capture: created\n- 2026-10-12 09:30 capture: stage shaping → ready\n- 2026-10-12 09:40 wt-a: a note\n";
     const READY: &str = "stage: ready\nstatus: todo\nclaimed-by:\nheartbeat:\nwaiting_on:";
 
-    fn queue() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn queue() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -10196,7 +10196,7 @@ mod edit_tests {
 
     #[test]
     fn a_task_without_a_log_gets_one_and_the_flat_layout_works() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let p = d.path().join("0001-t.md");
         fs::write(
             &p,
@@ -10546,8 +10546,8 @@ mod human_tests {
     /// Thirteen hours later: past any claim's 12-hour lease.
     const LATER: &str = "2026-10-13 03:05";
 
-    fn queue() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn queue() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -10978,8 +10978,8 @@ mod unreached_tests {
     const NEW: &str = "asghar (main · session d6419719 · cc-hg)";
     const STAMPED: &str = "wt-a (wt-0101 · session 7b5e8856 · cc-mg)";
 
-    fn queue() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn queue() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }

@@ -1208,7 +1208,7 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
 
     #[test]
     fn the_runner_passes_an_argument_array_and_the_accounts_config_folder() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let claude = fake(d.path(), RECORD);
         let read = |p: &str| fs::read_to_string(d.path().join(p)).unwrap();
         let dir = d.path().join(".claude-hg");
@@ -1350,7 +1350,7 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
 
     #[test]
     fn the_runner_falls_back_with_the_reason_on_a_missing_binary_or_an_exit() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         assert_eq!(
             run(&d.path().join("no-claude"), d.path(), GENEROUS).unwrap_err(),
             "claude isn't installed"
@@ -1371,7 +1371,7 @@ printf '%s' '[{"sessionId": "7b5e8856-c9c8", "state": "working"}]'"#;
 
     #[test]
     fn the_runner_stops_a_run_that_is_past_its_timeout_and_what_it_started() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let timeout = Duration::from_millis(300);
         // The clock runs out once the fake has said it is running (a file next to it).
         let clock = |marker: PathBuf| WhenReady {
@@ -1519,7 +1519,7 @@ printf '%s' '[{"sessionId": "7b5e8856", "state": "blocked"}, {"sessionId": "4d51
     /// A task as the queue reads it, in `stage`, held by `who` (the claim in Shaping and
     /// Building, `held-by` in Testing and Your check).
     fn task(id: &str, stage: &str, who: &str) -> Task {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let claims = matches!(stage, "shaping" | "building");
         let text = format!(
             "---\nid: {id}\nstage: {stage}\nstatus: doing\nclaimed-by: {}\nheld-by: {}\nheartbeat:\nwaiting_on:\n---\n\n# T\n",

@@ -1930,8 +1930,8 @@ mod tests {
     const HEAD2: &str = "2222222222222222222222222222222222222222";
     const BASE: &str = "0000000000000000000000000000000000000000";
 
-    fn queue() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn queue() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         for f in queue::STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }

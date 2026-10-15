@@ -314,8 +314,8 @@ mod tests {
     const A: &str = "wt-a (wt-0045 · session 7b5e8856 · cc-hg)";
 
     /// An old queue (`<project>/tasks`, status folders) with the prefix dr.
-    fn old_queue() -> tempfile::TempDir {
-        let d = tempfile::tempdir().unwrap();
+    fn old_queue() -> crate::testkit::TestDir {
+        let d = crate::testkit::tempdir().unwrap();
         for f in STATUS_FOLDERS {
             fs::create_dir(d.path().join(f)).unwrap();
         }
@@ -323,8 +323,8 @@ mod tests {
         d
     }
     /// A repo's `.muster/` with the prefix mu, and the folder that holds it.
-    fn muster_queue() -> (tempfile::TempDir, PathBuf) {
-        let d = tempfile::tempdir().unwrap();
+    fn muster_queue() -> (crate::testkit::TestDir, PathBuf) {
+        let d = crate::testkit::tempdir().unwrap();
         let q = d.path().join(crate::layout::DIR);
         fs::create_dir_all(q.join("tasks")).unwrap();
         fs::write(
@@ -821,7 +821,7 @@ mod tests {
         assert!(read_task(r, "0003").unwrap().blocked, "not a pause");
         assert!(read_task(r, "0003").unwrap().paused.is_empty());
         // Nothing to convert: not even the lock is taken.
-        let e = tempfile::tempdir().unwrap();
+        let e = crate::testkit::tempdir().unwrap();
         for f in STATUS_FOLDERS {
             fs::create_dir(e.path().join(f)).unwrap();
         }

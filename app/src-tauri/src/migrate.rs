@@ -833,7 +833,7 @@ mod tests {
 
     #[test]
     fn copies_a_v2_queue_with_every_task_note_file_and_answer_and_leaves_it_as_it_was() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let old = v2_queue(base.path());
         let main = repo(base.path(), "proj");
         let before = snapshot(&old);
@@ -995,7 +995,7 @@ mod tests {
 
     #[test]
     fn task_keys_are_the_same_after_a_migrate_stored_prefix_or_default() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         // A stored prefix in the old README goes to config.toml, and only there.
         let old = v2_queue(base.path());
         let main = repo(base.path(), "proj");
@@ -1035,7 +1035,7 @@ mod tests {
 
     #[test]
     fn a_flat_queue_migrates_committed_and_its_check_is_clean() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let old = base.path().join("flat/tasks");
         put(&old, "README.md", "# flat\n");
         put(&old, "tasks.json", "{}\n");
@@ -1075,7 +1075,7 @@ mod tests {
 
     #[test]
     fn the_review_of_record_and_its_lessons_are_copied_and_left_in_the_old_queue() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let old = base.path().join("rev/tasks");
         put(&old, "README.md", "# rev\n");
         put(&old, "tasks.json", "{}\n");
@@ -1138,7 +1138,7 @@ mod tests {
 
     #[test]
     fn refuses_while_an_agent_holds_building_or_testing_and_writes_nothing() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let old = base.path().join("p/tasks");
         for f in STATUS_FOLDERS {
             fs::create_dir_all(old.join(f)).unwrap();
@@ -1197,7 +1197,7 @@ mod tests {
 
     #[test]
     fn a_dry_run_prints_the_plan_and_writes_nothing() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let old = v2_queue(base.path());
         let main = repo(base.path(), "proj");
         let before = snapshot(&old);
@@ -1218,7 +1218,7 @@ mod tests {
 
     #[test]
     fn refuses_what_it_cant_migrate() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let main = repo(base.path(), "p");
         let opts = Options::default();
         let not = base.path().join("not");
@@ -1232,7 +1232,7 @@ mod tests {
         let e = migrate(&old, &main, &opts, &tools(), T).unwrap_err();
         assert!(e.contains("would both be .muster/tasks/0001-a.md"), "{e}");
         fs::remove_file(old.join("doing/0001-a.md")).unwrap();
-        let outside = tempfile::tempdir().unwrap();
+        let outside = crate::testkit::tempdir().unwrap();
         let e = migrate(&old, outside.path(), &opts, &tools(), T).unwrap_err();
         assert!(e.contains("isn't in a git repo"), "{e}");
         let q = crate::projects::init(&main, false, None, &[]).unwrap().0;
@@ -1258,7 +1258,7 @@ mod tests {
 
     #[test]
     fn names_that_are_one_file_on_this_mac_are_refused_in_the_plan_never_overwritten() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         // Case: one file on a case-insensitive disk.
         let (old, main) = queue_with(
             base.path(),
@@ -1304,7 +1304,7 @@ mod tests {
     #[test]
     fn an_unreadable_folder_stops_it_naming_the_folder() {
         use std::os::unix::fs::PermissionsExt;
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let (old, main) = queue_with(
             base.path(),
             "p",
@@ -1326,7 +1326,7 @@ mod tests {
 
     #[test]
     fn big_and_crlf_task_files_keep_their_folders_stage_and_one_it_cant_read_stops_it() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         let big = format!(
             "{}\n{}",
             task("0001", "status: done"),
@@ -1392,7 +1392,7 @@ mod tests {
 
     #[test]
     fn refuses_a_repo_that_is_the_old_queue_or_holds_it() {
-        let base = tempfile::tempdir().unwrap();
+        let base = crate::testkit::tempdir().unwrap();
         // The old queue's own git: `.muster` would land inside it.
         let (old, _) = queue_with(
             base.path(),

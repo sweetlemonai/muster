@@ -1331,8 +1331,8 @@ mod tests {
 
     /// A project: its queue `proj/tasks` (status folders) beside the repo `proj/main`, whose docs are
     /// the picture. Returns the temp folder (kept alive by the caller) and the queue.
-    fn project() -> (tempfile::TempDir, PathBuf) {
-        let base = tempfile::tempdir().unwrap();
+    fn project() -> (crate::testkit::TestDir, PathBuf) {
+        let base = crate::testkit::tempdir().unwrap();
         let root = base.path().join("proj/tasks");
         for f in STATUS_FOLDERS {
             fs::create_dir_all(root.join(f)).unwrap();
@@ -1647,7 +1647,7 @@ mod tests {
 
     #[test]
     fn a_brief_without_a_picture_says_so() {
-        let d = tempfile::tempdir().unwrap();
+        let d = crate::testkit::tempdir().unwrap();
         let root = d.path().join("tasks");
         fs::create_dir_all(root.join("todo")).unwrap();
         fs::write(root.join("README.md"), "q").unwrap();
@@ -2457,7 +2457,7 @@ mod tests {
     const CLAIMS: &str = "---\ncovers: app/src-tauri/src/session.rs\n---\n# Claims\n\n- One claim per session. (decision 0004)\n";
 
     /// The project with two now pages in its repo, and task 0040 touching `touches`.
-    fn with_pages(touches: &str) -> (tempfile::TempDir, PathBuf, PathBuf) {
+    fn with_pages(touches: &str) -> (crate::testkit::TestDir, PathBuf, PathBuf) {
         let (base, root) = project();
         let now = base.path().join("proj/main/docs/now");
         fs::create_dir_all(&now).unwrap();
